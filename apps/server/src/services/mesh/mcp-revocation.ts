@@ -69,12 +69,57 @@
  *    `needs-auth`: the tokenless server also came back `failed` (with an empty
  *    error), because the harness 401'd the dynamic-client-registration request
  *    too and the CLI took a different branch. So that half rests on reading the
- *    shipped binary — `Uc8`/`eo7`, TTL `YE3 = 900000`, and the dispatcher's
- *    "Skipping connection (cached needs-auth)" — not on observation.
+ *    shipped binary — the needs-auth cache's writer/freshness pair, its default
+ *    TTL of 900000 ms, and the dispatcher's "Skipping connection (cached
+ *    needs-auth)" — not on observation.
  *
  * Point 3 is precisely why the probe exists rather than a smarter status filter:
  * the one claim this module cannot fully verify from outside is also the one it
  * refuses to act on.
+ *
+ * ### Re-derived 2026-08-07 against 0.3.224 — statically, no live turn
+ *
+ * 0.3.221 fixed external MCP servers not being connected before the first turn,
+ * which is exactly the timing point 3 above leans on, so the whole anchor was
+ * re-derived by diffing the 0.3.177 and 0.3.224 `claude` binaries side by side.
+ * Every claim survives:
+ *
+ * - `McpServerStatus` in `sdk.d.ts` is **byte-identical** across the two
+ *   versions, down to the five-value `status` union. Point 2 therefore still
+ *   holds by construction: `errorCode` and the newly-added internal
+ *   `displayDetail` are on the CLI's own object and on neither published type.
+ * - The bearer branch still returns `type: 'failed'`, and its message is
+ *   byte-identical to the string in the committed fixture. Point 1 holds.
+ * - The tokenless `needs-auth` branch is still reached only when there is no
+ *   caller `Authorization` header, no CLI-owned bearer, and no first-party auth.
+ *   Point 3's first half holds.
+ * - The needs-auth cache still writes to `mcp-needs-auth-cache.json`, is still
+ *   read through a freshness check with a **default TTL of 900000 ms**, and the
+ *   dispatcher still logs "Skipping connection (cached needs-auth)" and reports
+ *   `needs-auth` without dialling. Point 3's second half holds. 0.3.224 adds a
+ *   per-entry TTL override, used to shorten the cache to 90000 ms when a refresh
+ *   token is already held — which only ever makes a stale verdict shorter-lived.
+ * - Every server is still seeded `pending` before its connect is attempted, so a
+ *   snapshot is still a rumour about a moment that has passed.
+ *
+ * The fixture is therefore **not** refreshed: nothing it encodes changed, and a
+ * fixture rewritten from a run that observed the same thing would be churn.
+ * What 0.3.224 does add is two more ways to be `failed` or `needs-auth` that have
+ * nothing to do with a dead DorkOS token — a managed-policy block, and a
+ * claude.ai-proxy ineligibility gate. Neither needs handling here, and that is
+ * the point: the net stays coarse and the probe stays the arbiter.
+ *
+ * **Deliberately no minified symbol names above.** The 0.3.177 note cited three
+ * (`Uc8`, `eo7`, `YE3`); all three were renamed by 0.3.224, and the binary in
+ * fact carries two independently-minified copies of the bundle that disagree with
+ * each other on names. The string literals quoted instead survived both. Cite
+ * strings, not symbols.
+ *
+ * **Still unverified on 0.3.224**: the live half. Nobody has re-run the two-server
+ * 401 harness against it, so the observed status *distribution* — in particular
+ * whether 0.3.221's connect-before-first-turn fix makes the two unrelated project
+ * servers report something other than `pending` — rests on the 0.3.177 run.
+ * That distribution is not something this module acts on.
  *
  * ## What it refuses to conclude
  *

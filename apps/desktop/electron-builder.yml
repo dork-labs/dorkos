@@ -131,7 +131,7 @@ asarUnpack:
   # via DORKOS_CLAUDE_CLI_PATH, because the server's own require.resolve can't
   # reach it (pnpm links the sibling only inside the SDK's store node_modules).
   # Keep this package version-locked to @anthropic-ai/claude-agent-sdk in
-  # package.json (both 0.3.177) — a lone SDK bump would silently ship a skewed
+  # package.json (both 0.3.224) — a lone SDK bump would silently ship a skewed
   # or missing binary here.
   - '**/node_modules/@anthropic-ai/claude-agent-sdk-darwin-arm64/**'
   # Windows counterpart of the darwin-arm64 binary above: the SDK ships the
