@@ -215,7 +215,12 @@ import {
   followSessionRekeys,
   repairRoomSessionBindings,
 } from './services/rooms/room-session-convergence.js';
-import { ensureTeamRoom, joinTeamRoom } from './services/rooms/ensure-team-room.js';
+import {
+  ensureTeamRoom,
+  joinTeamRoom,
+  watchDefaultAgent,
+  type TeamRoomDeps,
+} from './services/rooms/ensure-team-room.js';
 import { registerLocalCommunity } from './services/communities/index.js';
 import { SearchIndexer } from './services/search/index.js';
 import { TerminalManager, terminalUpgradeRoute } from './services/terminal/index.js';
@@ -1129,11 +1134,27 @@ async function start() {
   //
   // Idempotent on a well-known key, so every boot after the first only backfills
   // a roster, and it never throws.
-  ensureTeamRoom({
+  //
+  // Built once and shared with the `agent-created` seam below and with the
+  // settings watcher: all three ask the same three questions of the same
+  // install, and a second copy is how one of them would come to read a
+  // different registry or a different setting.
+  const teamRoomDeps: TeamRoomDeps = {
     service: roomService,
     operatorAuthorId: resolveOperatorAuthorId,
-    agentPaths: () => meshCore?.listWithPaths().map((agent) => agent.projectPath) ?? [],
-  });
+    agents: () =>
+      meshCore?.listWithPaths().map((agent) => ({ name: agent.name, path: agent.projectPath })) ??
+      [],
+    defaultAgentName: () => configManager.getAll().agents.defaultAgent,
+  };
+  ensureTeamRoom(teamRoomDeps);
+
+  // Typing in #team without addressing anybody reaches your DEFAULT agent, and
+  // that is an `always` membership on an ordinary room rather than a routing
+  // layer (team-room-home spec D3.4). So the setting has to move the membership:
+  // change the default agent in Settings and the next thing you type in #team
+  // goes to the new one, without a restart.
+  watchDefaultAgent(teamRoomDeps, { onChange: (listener) => configManager.onChange(listener) });
 
   // Phase C: adapter manager — now meshCore is available for CWD resolution.
   // Must run after meshCore init so buildContext() can call meshCore.getProjectPath().
@@ -2040,7 +2061,7 @@ async function start() {
   // spec D3.1). It swallows its own failures, so a room that could not seat the
   // agent never costs the Shape re-bind below.
   setOnAgentCreated(async (agent: CreatedAgentInfo) => {
-    joinTeamRoom({ service: roomService, operatorAuthorId: resolveOperatorAuthorId }, agent.path);
+    joinTeamRoom(teamRoomDeps, agent.path);
     const rebound = await rebindShapeSchedulesForAgent(agent, {
       listShapes: () => listInstalledShapeManifests(dorkHome),
       scheduleService: shapeScheduleService,

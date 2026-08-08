@@ -292,6 +292,29 @@ export const rooms = sqliteTable(
      */
     wellKnown: text('well_known'),
 
+    /**
+     * The author id holding this room's **fallback seat** — the one member that
+     * answers a message a person typed without addressing anybody (#team's
+     * default agent, team-room-home spec D3.4). `null` in every ordinary room.
+     *
+     * **Stored, rather than inferred from `response_mode = 'always'`, because
+     * the mode cannot tell two different facts apart.** A person may set any
+     * agent to "Everything" from the room's own member menu, and that is their
+     * deliberate choice; the seat is DorkOS's, moved by the default-agent
+     * setting. Reading the mode as the marker made a person's `always` stand
+     * down when somebody else was named, and made the boot reconcile silently
+     * revert it. One column, on the ROOM rather than the membership, so "at most
+     * one seat" is true by construction instead of by a sweep — and so the
+     * dispatcher gets it for free from a room it already holds, with no extra
+     * query per post.
+     *
+     * Not a foreign key, and not cleaned up when the agent goes: an author row
+     * is retired rather than deleted (`author-registry.ts`), so a stale id names
+     * a member that is still on the roster and simply no longer answers. The
+     * next reconcile moves it.
+     */
+    fallbackSeatAuthorId: text('fallback_seat_author_id'),
+
     createdAt: text('created_at').notNull(),
     lastActivityAt: text('last_activity_at').notNull(),
   },

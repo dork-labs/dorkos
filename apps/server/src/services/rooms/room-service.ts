@@ -617,6 +617,34 @@ export class RoomService {
    * @param operatorAuthorId - The install owner, who is seeded as its first member.
    * @returns The room, and whether this call is what created it.
    */
+  /**
+   * Record which member holds this room's **fallback seat** — the one that
+   * answers a post nobody addressed (team-room-home spec D3.4).
+   * **Operator-only**, for the same reason `updateMembership` is: the seat is
+   * what makes an agent answer without being addressed, so an agent able to
+   * claim it could manufacture a conversation.
+   *
+   * Paired with, and never a substitute for, the `always` mode on that same
+   * membership: the mode is what ADDRESSING selects the seat with, and this is
+   * what tells the dispatcher and the boot reconcile WHICH member the seat is —
+   * a question `always` cannot answer, because a person may set any agent to
+   * "Everything" themselves.
+   *
+   * @internal Reachable only from the `ensureTeamRoom` boot hook and the
+   *   default-agent watcher beside it. Not a route and not a tool.
+   * @param roomId - The room.
+   * @param operatorAuthorId - The install owner.
+   * @param authorId - The member taking the seat, or `null` to empty it.
+   * @returns The updated room.
+   */
+  setFallbackSeat(roomId: string, operatorAuthorId: string, authorId: string | null): Room {
+    this.requireVisibleRoom(roomId, operatorAuthorId);
+    this.requireOperator(operatorAuthorId, 'which agent answers what nobody addressed');
+    const room = this.store.setFallbackSeat(roomId, authorId);
+    if (!room) throw new RoomError('ROOM_NOT_FOUND', 'No such room');
+    return room;
+  }
+
   ensureSystemChannel(
     wellKnown: string,
     seed: { slug: string; topic?: string },

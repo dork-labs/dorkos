@@ -324,6 +324,13 @@ export const RoomSchema = z
       .describe(
         "The stable name a room DorkOS itself depends on is found by — `'team'` for the #team channel every install gets at boot — and `null` for every room a person or an agent opened (team-room-home spec D3.1). It is also the tell that this is a SYSTEM room: only the owner may rename or archive one, so a client draws those controls off this field rather than guessing. It never changes, which is what makes it findable after a rename. The server always sends it, `null` included; it is optional only so that the thirty client fixtures that assemble a room by hand need not each carry a field none of them reads. Absent and `null` mean the same thing — an ordinary room."
       ),
+    fallbackSeatAuthorId: z
+      .string()
+      .nullable()
+      .optional()
+      .describe(
+        'The one member that answers a message somebody typed in this room without addressing anybody — #team\'s default agent (team-room-home spec D3.4) — and `null` in every room a person opened. Held on the room rather than read off a member\'s `always` mode, because a person may set any agent to "Everything" themselves and that choice must not be mistaken for this one. Optional for the same reason `wellKnown` is: client fixtures that assemble a room by hand do not carry a field they never read, and absent means the same as `null`.'
+      ),
     createdAt: z.string(),
     lastActivityAt: z.string(),
     bridge: RoomBridgeInfoSchema.nullable()

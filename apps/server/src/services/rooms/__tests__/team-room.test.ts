@@ -20,30 +20,71 @@
  */
 import { describe, it, expect, vi } from 'vitest';
 import { RoomError } from '../room-errors.js';
-import { ensureTeamRoom, joinTeamRoom, TEAM_ROOM_KEY } from '../ensure-team-room.js';
+import {
+  ensureTeamRoom,
+  joinTeamRoom,
+  watchDefaultAgent,
+  TEAM_ROOM_KEY,
+  type TeamAgent,
+  type TeamRoomDeps,
+} from '../ensure-team-room.js';
 import { agentLookupFor, createRoomHarness, type RoomHarness } from './room-test-harness.js';
 
 const DORKBOT = '/agents/dorkbot';
 const NOVA = '/agents/nova';
+const ACE = '/agents/ace';
 
 const agents = agentLookupFor({
   [DORKBOT]: { name: 'dorkbot', displayName: 'DorkBot', responseMode: 'always' },
   [NOVA]: { name: 'nova', displayName: 'Nova', responseMode: 'always' },
+  [ACE]: { name: 'ace', displayName: 'Ace', responseMode: 'always' },
 });
 
-/** A harness plus the deps the boot hook takes, over a fixed agent table. */
-function install(registered: readonly string[] = [DORKBOT]): RoomHarness & {
-  deps: Parameters<typeof ensureTeamRoom>[0];
-} {
+/** The registry rows behind the directories above. */
+const REGISTERED: Record<string, TeamAgent> = {
+  [DORKBOT]: { name: 'dorkbot', path: DORKBOT },
+  [NOVA]: { name: 'nova', path: NOVA },
+  [ACE]: { name: 'ace', path: ACE },
+};
+
+/**
+ * A harness plus the deps the boot hook takes, over a fixed agent table.
+ *
+ * @param registered - The agent directories this install's registry knows.
+ * @param defaultAgentName - `config.agents.defaultAgent`. Mutable through
+ *   `setDefaultAgent` so a test can drive the settings change.
+ */
+function install(
+  registered: readonly string[] = [DORKBOT],
+  defaultAgentName: string | null = 'dorkbot'
+): RoomHarness & { deps: TeamRoomDeps; setDefaultAgent: (name: string | null) => void } {
   const harness = createRoomHarness({ agents });
+  let configured = defaultAgentName;
   return {
     ...harness,
+    setDefaultAgent: (name) => {
+      configured = name;
+    },
     deps: {
       service: harness.service,
       operatorAuthorId: () => harness.human,
-      agentPaths: () => registered,
+      agents: () => registered.map((path) => REGISTERED[path]!),
+      defaultAgentName: () => configured,
     },
   };
+}
+
+/** Who the room records as holding the fallback seat. */
+function seatOf(harness: RoomHarness): string | null {
+  return teamRoom(harness).fallbackSeatAuthorId ?? null;
+}
+
+/** One agent's response mode in #team, read back through the service. */
+function modeOf(harness: RoomHarness, agentPath: string, displayName: string): string | undefined {
+  const authorId = harness.authors.resolveAgent(agentPath, displayName).id;
+  return harness.service
+    .getRoom(teamRoom(harness).id, harness.human)
+    ?.members.find((m) => m.authorId === authorId)?.responseMode;
 }
 
 /** The one room carrying the well-known key, read straight from the table. */
@@ -87,8 +128,8 @@ describe('opening #team', () => {
     expect(second.map((m) => m.authorId).sort()).toEqual(first.map((m) => m.authorId).sort());
   });
 
-  it('seats you and DorkBot, and gives an agent the channel default', () => {
-    const harness = install();
+  it('seats you and DorkBot, and gives an agent that is not the default the channel default', () => {
+    const harness = install([DORKBOT, NOVA], 'dorkbot');
 
     ensureTeamRoom(harness.deps);
 
@@ -97,7 +138,7 @@ describe('opening #team', () => {
     expect(room?.members.map((m) => m.authorId)).toEqual(
       expect.arrayContaining([harness.human, dorkbot])
     );
-    expect(room?.members.find((m) => m.authorId === dorkbot)?.responseMode).toBe('engaged');
+    expect(modeOf(harness, NOVA, 'Nova')).toBe('engaged');
   });
 
   it('leaves a renamed or re-topiced room exactly as the person left it', () => {
@@ -171,7 +212,7 @@ describe('opening #team', () => {
     // room — a loser that gave up would leave the install booted with no home
     // room and, worse, no agents seated in the one that exists.
     const harness = install([DORKBOT, NOVA]);
-    const winner = ensureTeamRoom({ ...harness.deps, agentPaths: () => [DORKBOT] });
+    const winner = ensureTeamRoom({ ...harness.deps, agents: () => [REGISTERED[DORKBOT]!] });
 
     // The loser's read happens BEFORE the winner's insert lands, which is the
     // only way this race is reachable at all. Its own insert then hits the key.
@@ -232,12 +273,13 @@ describe('a newly created agent', () => {
     // goes dark (its lookup stops answering) and its row, its cursor and its
     // messages stay exactly where they were.
     const dark = createRoomHarness({ agents: agentLookupFor({ [DORKBOT]: { name: 'dorkbot' } }) });
-    const deps = {
+    const deps: TeamRoomDeps = {
       service: dark.service,
       operatorAuthorId: () => dark.human,
-      agentPaths: () => [DORKBOT, NOVA],
+      agents: () => [REGISTERED[DORKBOT]!, REGISTERED[NOVA]!],
+      defaultAgentName: () => 'dorkbot',
     };
-    ensureTeamRoom({ ...deps, agentPaths: () => [DORKBOT] });
+    ensureTeamRoom({ ...deps, agents: () => [REGISTERED[DORKBOT]!] });
     const room = dark.store.findByWellKnown(TEAM_ROOM_KEY)!;
     const gone = dark.authors.resolveAgent(NOVA, 'Nova').id;
     dark.service.addMember(room.id, dark.human, { authorId: gone });
@@ -245,6 +287,242 @@ describe('a newly created agent', () => {
     ensureTeamRoom(deps);
 
     expect(dark.store.getMember(room.id, gone)).not.toBeNull();
+  });
+});
+
+describe('the default agent holds the always membership', () => {
+  it('promotes the agent the setting names and leaves everybody else engaged', () => {
+    const harness = install([DORKBOT, NOVA], 'nova');
+
+    ensureTeamRoom(harness.deps);
+
+    expect(modeOf(harness, NOVA, 'Nova')).toBe('always');
+    expect(modeOf(harness, DORKBOT, 'DorkBot')).toBe('engaged');
+  });
+
+  it('falls back to DorkBot when the setting names nobody registered here', () => {
+    // A default agent can be renamed, unregistered, or left behind on another
+    // machine. Reading the value literally would leave #team with nobody
+    // answering, which is a room that silently swallows what you type.
+    const harness = install([DORKBOT, NOVA], 'someone-who-left');
+
+    ensureTeamRoom(harness.deps);
+
+    expect(modeOf(harness, DORKBOT, 'DorkBot')).toBe('always');
+    expect(modeOf(harness, NOVA, 'Nova')).toBe('engaged');
+  });
+
+  it('falls back to DorkBot when there is no setting at all', () => {
+    const harness = install([DORKBOT, NOVA], null);
+
+    ensureTeamRoom(harness.deps);
+
+    expect(modeOf(harness, DORKBOT, 'DorkBot')).toBe('always');
+  });
+
+  it('moves the mode when the setting changes, without a restart', () => {
+    const harness = install([DORKBOT, NOVA], 'dorkbot');
+    ensureTeamRoom(harness.deps);
+    const changes = new Set<(change: { sections: readonly string[] }) => void>();
+    watchDefaultAgent(harness.deps, {
+      onChange: (listener) => {
+        changes.add(listener);
+        return () => changes.delete(listener);
+      },
+    });
+
+    harness.setDefaultAgent('nova');
+    for (const listener of changes) listener({ sections: ['agents'] });
+
+    expect(modeOf(harness, NOVA, 'Nova')).toBe('always');
+    // The old default DROPS BACK — the assertion that matters, because a
+    // promotion that forgot to demote leaves two agents answering every
+    // unaddressed post, which is the pile-on the channel default exists to stop.
+    expect(modeOf(harness, DORKBOT, 'DorkBot')).toBe('engaged');
+  });
+
+  it('ignores a settings write that did not touch the agents section', () => {
+    const harness = install([DORKBOT, NOVA], 'dorkbot');
+    ensureTeamRoom(harness.deps);
+    let notify = (_change: { sections: readonly string[] }) => {};
+    watchDefaultAgent(harness.deps, {
+      onChange: (listener) => {
+        notify = listener;
+        return () => {};
+      },
+    });
+    harness.setDefaultAgent('nova');
+
+    notify({ sections: ['runtimes'] });
+
+    expect(modeOf(harness, DORKBOT, 'DorkBot')).toBe('always');
+    expect(modeOf(harness, NOVA, 'Nova')).toBe('engaged');
+  });
+
+  it('stops listening once the subscription is dropped', () => {
+    const harness = install([DORKBOT, NOVA], 'dorkbot');
+    ensureTeamRoom(harness.deps);
+    let notify: ((change: { sections: readonly string[] }) => void) | null = null;
+    const stop = watchDefaultAgent(harness.deps, {
+      onChange: (listener) => {
+        notify = listener;
+        return () => {
+          notify = null;
+        };
+      },
+    });
+
+    stop();
+
+    expect(notify).toBeNull();
+  });
+
+  it('reconciles at boot too, for a setting that changed while the server was off', () => {
+    const harness = install([DORKBOT, NOVA], 'dorkbot');
+    ensureTeamRoom(harness.deps);
+    expect(modeOf(harness, DORKBOT, 'DorkBot')).toBe('always');
+
+    harness.setDefaultAgent('nova');
+    ensureTeamRoom(harness.deps);
+
+    expect(modeOf(harness, NOVA, 'Nova')).toBe('always');
+    expect(modeOf(harness, DORKBOT, 'DorkBot')).toBe('engaged');
+  });
+
+  it('leaves the seat alone when the registry cannot name a default agent', () => {
+    // A boot whose mesh failed to start lists NO agents. Demoting on that
+    // evidence would leave #team silently swallowing what a person types until
+    // the next healthy boot, which is far worse than one boot's stale seat — so
+    // "cannot say" is not "there is no default".
+    const harness = install([DORKBOT, NOVA], 'dorkbot');
+    ensureTeamRoom(harness.deps);
+    expect(modeOf(harness, DORKBOT, 'DorkBot')).toBe('always');
+
+    ensureTeamRoom({ ...harness.deps, agents: () => [] });
+
+    expect(modeOf(harness, DORKBOT, 'DorkBot')).toBe('always');
+    expect(seatOf(harness)).toBe(harness.authors.resolveAgent(DORKBOT, 'DorkBot').id);
+  });
+
+  it('leaves the seat alone when reading the registry throws', () => {
+    const harness = install([DORKBOT, NOVA], 'dorkbot');
+    ensureTeamRoom(harness.deps);
+
+    expect(() =>
+      ensureTeamRoom({
+        ...harness.deps,
+        agents: () => {
+          throw new Error('the mesh is down');
+        },
+      })
+    ).not.toThrow();
+
+    expect(modeOf(harness, DORKBOT, 'DorkBot')).toBe('always');
+  });
+
+  it('records who holds the seat, so the next boot knows what it owns', () => {
+    const harness = install([DORKBOT, NOVA], 'nova');
+
+    ensureTeamRoom(harness.deps);
+
+    expect(seatOf(harness)).toBe(harness.authors.resolveAgent(NOVA, 'Nova').id);
+  });
+
+  describe('an always a person set themselves', () => {
+    /** Boot, then set Nova to "Everything" from the room's member menu. */
+    function withPersonsAlways(): RoomHarness & {
+      deps: TeamRoomDeps;
+      setDefaultAgent: (name: string | null) => void;
+    } {
+      const harness = install([DORKBOT, NOVA], 'dorkbot');
+      ensureTeamRoom(harness.deps);
+      const nova = harness.authors.resolveAgent(NOVA, 'Nova').id;
+      harness.service.updateMembership(teamRoom(harness).id, harness.human, nova, 'always');
+      return harness;
+    }
+
+    it('survives a reconcile that changes nothing', () => {
+      const harness = withPersonsAlways();
+
+      ensureTeamRoom(harness.deps);
+
+      expect(modeOf(harness, NOVA, 'Nova')).toBe('always');
+    });
+
+    it('survives the seat moving to somebody else', () => {
+      // The reconcile demotes the member it recorded as the seat and nobody
+      // else, so a person's own choice is not collateral.
+      const harness = withPersonsAlways();
+      harness.setDefaultAgent('ace');
+      ensureTeamRoom({ ...harness.deps, agents: () => [REGISTERED[DORKBOT]!, REGISTERED[ACE]!] });
+
+      expect(modeOf(harness, NOVA, 'Nova')).toBe('always');
+      expect(modeOf(harness, DORKBOT, 'DorkBot')).toBe('engaged');
+    });
+
+    it('is never mistaken for the seat', () => {
+      const harness = withPersonsAlways();
+
+      expect(seatOf(harness)).toBe(harness.authors.resolveAgent(DORKBOT, 'DorkBot').id);
+    });
+  });
+
+  it('leaves a mode a person chose that is neither of the two it owns', () => {
+    // The reconcile moves a membership between `always` and the channel default
+    // and nowhere else. An agent someone deliberately silenced in #team stays
+    // silenced when the default moves.
+    const harness = install([DORKBOT, NOVA], 'dorkbot');
+    ensureTeamRoom(harness.deps);
+    const nova = harness.authors.resolveAgent(NOVA, 'Nova').id;
+    harness.service.updateMembership(teamRoom(harness).id, harness.human, nova, 'silent');
+
+    harness.setDefaultAgent('someone-who-left');
+    ensureTeamRoom(harness.deps);
+
+    expect(modeOf(harness, NOVA, 'Nova')).toBe('silent');
+  });
+
+  it('reaches no room but #team', () => {
+    const harness = install([DORKBOT, NOVA], 'dorkbot');
+    ensureTeamRoom(harness.deps);
+    const dorkbot = harness.authors.resolveAgent(DORKBOT, 'DorkBot').id;
+    const ordinary = harness.service.createRoom(
+      { kind: 'channel', title: 'Backend', members: [], agentPaths: [DORKBOT] },
+      harness.human
+    );
+
+    harness.setDefaultAgent('nova');
+    ensureTeamRoom(harness.deps);
+
+    expect(
+      harness.service
+        .getRoom(ordinary.id, harness.human)
+        ?.members.find((m) => m.authorId === dorkbot)?.responseMode
+    ).toBe('engaged');
+  });
+
+  it('seats a default agent that was not on the roster yet', () => {
+    // The registry can learn about an agent after the roster was last built —
+    // the setting resolving is the moment it becomes seatable.
+    const harness = install([DORKBOT], 'dorkbot');
+    ensureTeamRoom(harness.deps);
+
+    ensureTeamRoom({
+      ...harness.deps,
+      agents: () => [REGISTERED[NOVA]!],
+      defaultAgentName: () => 'nova',
+    });
+
+    expect(modeOf(harness, NOVA, 'Nova')).toBe('always');
+  });
+
+  it('costs nothing on an install with no agents at all', () => {
+    const harness = install([], 'dorkbot');
+
+    expect(() => ensureTeamRoom(harness.deps)).not.toThrow();
+
+    const room = harness.service.getRoom(teamRoom(harness).id, harness.human);
+    expect(room?.members.map((m) => m.authorId)).toEqual([harness.human]);
   });
 });
 

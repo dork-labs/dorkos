@@ -99,6 +99,9 @@ export class RoomStore {
     const row = {
       ...room,
       wellKnown: room.wellKnown ?? null,
+      // Empty at creation always: the seat is assigned by the boot hook that
+      // resolves the default agent, never by whoever opened the room.
+      fallbackSeatAuthorId: null,
       archived: false,
       ambientMaxEntries: DEFAULT_AMBIENT_MAX_ENTRIES,
       lastActivityAt: room.createdAt,
@@ -467,6 +470,25 @@ export class RoomStore {
       .where(and(eq(roomMembers.roomId, roomId), eq(roomMembers.authorId, authorId)))
       .run();
     return this.getMember(roomId, authorId);
+  }
+
+  /**
+   * Record which member holds this room's fallback seat — the one that answers
+   * a post nobody addressed.
+   *
+   * A column rather than a sweep for `response_mode = 'always'`: the mode is
+   * also what a person picks from the member menu, and the two must not be
+   * confused (see the column's own doc in `@dorkos/db`). Not validated against
+   * the roster here, because the only caller resolves the member first and a
+   * second read would just be the same question asked twice.
+   *
+   * @param roomId - The room.
+   * @param authorId - The member holding the seat, or `null` to leave it empty.
+   * @returns The updated room, or `null` when there is no such room.
+   */
+  setFallbackSeat(roomId: string, authorId: string | null): Room | null {
+    this.db.update(rooms).set({ fallbackSeatAuthorId: authorId }).where(eq(rooms.id, roomId)).run();
+    return this.getRoom(roomId);
   }
 
   /**
