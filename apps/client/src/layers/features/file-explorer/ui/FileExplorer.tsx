@@ -13,7 +13,7 @@ import {
   Button,
 } from '@/layers/shared/ui';
 import { useAppStore } from '@/layers/shared/model';
-import { joinPath, parentOf, ROOT_KEY } from '../model/tree';
+import { isAtOrUnder, joinPath, parentOf, ROOT_KEY } from '../model/tree';
 import { useFileExplorer } from '../model/use-file-explorer';
 import { useFileExplorerStore } from '../model/file-explorer-store';
 import { FileTree } from './FileTree';
@@ -46,6 +46,16 @@ export function FileExplorer() {
 
   const [draft, setDraft] = useState<DraftCreate | null>(null);
   const [renamingPath, setRenamingPath] = useState<string | null>(null);
+
+  // Paste is offered only where it could actually land: something has to be on
+  // the clipboard, and a folder cannot be pasted inside itself. Dimming the
+  // item is what makes that legible — the refusal toast is the safety net for
+  // the keyboard, not the explanation.
+  const canPasteInto = useCallback(
+    (toDir: string): boolean =>
+      clipboard !== null && !(clipboard.isDir && isAtOrUnder(toDir, clipboard.path)),
+    [clipboard]
+  );
 
   const startCreate = useCallback(
     (parent: string, type: 'file' | 'dir') => {
@@ -147,10 +157,15 @@ export function FileExplorer() {
             onCopyInto={(from, toDir) => void explorer.copyEntry(from, toDir)}
             onCopy={explorer.copyToClipboard}
             onPaste={(toDir) => {
-              if (clipboard) void explorer.copyEntry(clipboard.path, toDir);
+              if (clipboard) void explorer.copyEntry(clipboard, toDir);
             }}
-            onDuplicate={(entry) => void explorer.copyEntry(entry.path, parentOf(entry.path))}
-            canPaste={clipboard !== null}
+            onDuplicate={(entry) =>
+              void explorer.copyEntry(
+                { path: entry.path, isDir: entry.type === 'dir' },
+                parentOf(entry.path)
+              )
+            }
+            canPasteInto={canPasteInto}
             revealLabel={explorer.revealLabel}
             onReveal={(entry) => void explorer.reveal(entry)}
             onAddToChat={explorer.addToChat}

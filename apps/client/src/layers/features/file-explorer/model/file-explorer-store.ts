@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import type { EntryRef } from './types';
 import { baseName, parentOf } from './tree';
 import {
   emptyExplorerEntry,
@@ -26,14 +27,6 @@ export interface FileExplorerCommands {
   refresh: () => void;
 }
 
-/** The entry sitting on the explorer's own clipboard, waiting to be pasted. */
-export interface ExplorerClipboardEntry {
-  /** The copied entry's path, relative to the working directory it was copied in. */
-  path: string;
-  /** Whether it is a directory — the copy is named differently if so. */
-  isDir: boolean;
-}
-
 interface FileExplorerStore {
   /**
    * Whether dotfiles and gitignored entries are shown. Persisted globally
@@ -55,9 +48,9 @@ interface FileExplorerStore {
    * it). Copy also writes the path as text to the system clipboard, which is
    * what makes pasting into the chat or another app work.
    */
-  clipboard: ExplorerClipboardEntry | null;
+  clipboard: EntryRef | null;
   /** Put an entry on the explorer clipboard, or clear it with `null`. */
-  setClipboard: (entry: ExplorerClipboardEntry | null) => void;
+  setClipboard: (entry: EntryRef | null) => void;
 
   /** The cwd whose entry is live in the store, or `null` when none is loaded. */
   scopeKey: string | null;

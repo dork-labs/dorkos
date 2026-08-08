@@ -89,6 +89,7 @@ function fireDrag(
   });
   Object.defineProperty(event, 'dataTransfer', { value: init.dataTransfer });
   fireEvent(el, event);
+  return event;
 }
 
 /** Build `n` distinct file rows (well under the virtualization threshold). */
@@ -121,7 +122,7 @@ const baseProps = {
   onCopy: noop,
   onPaste: noop,
   onDuplicate: noop,
-  canPaste: false,
+  canPasteInto: () => false,
   revealLabel: 'Reveal in Finder',
   onReveal: noop,
   onAddToChat: noop,
@@ -246,7 +247,9 @@ describe('FileTree drag and drop (DOR-1032)', () => {
     expect(onCopyInto).not.toHaveBeenCalled();
 
     fireDrag(folder, 'drop', { dataTransfer, altKey: true });
-    expect(onCopyInto).toHaveBeenCalledWith('a.ts', 'src');
+    // The copy carries whether the dragged row was a folder, read off the row
+    // itself — a path alone would not say.
+    expect(onCopyInto).toHaveBeenCalledWith({ path: 'a.ts', isDir: false }, 'src');
     expect(onMove).toHaveBeenCalledTimes(1);
   });
 
@@ -262,29 +265,71 @@ describe('FileTree drag and drop (DOR-1032)', () => {
     expect(onMove).toHaveBeenCalledWith('a.ts', 'src');
   });
 
-  it.each([['plain', false] as const, ['virtualized', true] as const])(
-    'accepts a drop in the empty space below the rows (%s)',
-    (_mode, virtualized) => {
-      const onMove = vi.fn();
-      const onCopyInto = vi.fn();
-      // Past VIRTUALIZE_THRESHOLD (100) the tree windows its rows; the drop
-      // target is the scroll container either way, so both must behave.
-      const rows = virtualized ? rowsOf(150) : treeRows;
-      render(<FileTree {...baseProps} rows={rows} onMove={onMove} onCopyInto={onCopyInto} />);
-      const tree = screen.getByRole('tree');
+  it.each([
+    ['plain', treeRows, 'a.ts'] as const,
+    // Past VIRTUALIZE_THRESHOLD (100) the tree windows its rows; the drop
+    // target is the scroll container either way, so both must behave.
+    ['virtualized', rowsOf(150), 'f0.ts'] as const,
+  ])('accepts a drop in the empty space below the rows (%s)', (_mode, rows, dragged) => {
+    const onMove = vi.fn();
+    const onCopyInto = vi.fn();
+    render(<FileTree {...baseProps} rows={rows} onMove={onMove} onCopyInto={onCopyInto} />);
+    const tree = screen.getByRole('tree');
 
-      fireDrag(tree, 'drop', {
-        dataTransfer: fakeDataTransfer({ 'text/plain': 'src/a.ts', [PATH_TYPE]: 'src/a.ts' }),
-      });
-      expect(onMove).toHaveBeenCalledWith('src/a.ts', '');
+    fireDrag(tree, 'drop', {
+      dataTransfer: fakeDataTransfer({ 'text/plain': dragged, [PATH_TYPE]: dragged }),
+    });
+    expect(onMove).toHaveBeenCalledWith(dragged, '');
 
-      fireDrag(tree, 'drop', {
-        dataTransfer: fakeDataTransfer({ 'text/plain': 'src/a.ts', [PATH_TYPE]: 'src/a.ts' }),
-        altKey: true,
-      });
-      expect(onCopyInto).toHaveBeenCalledWith('src/a.ts', '');
-    }
-  );
+    fireDrag(tree, 'drop', {
+      dataTransfer: fakeDataTransfer({ 'text/plain': dragged, [PATH_TYPE]: dragged }),
+      altKey: true,
+    });
+    expect(onCopyInto).toHaveBeenCalledWith({ path: dragged, isDir: false }, '');
+  });
+
+  it('opens the empty space as a drop target while one of our files is over it', () => {
+    // A drop target that never calls `preventDefault` on dragover is not a drop
+    // target at all: the browser refuses the drop and the handler below never
+    // runs. Every other assertion here dispatches `drop` directly, so this is
+    // the only one that can see that.
+    render(<FileTree {...baseProps} rows={treeRows} />);
+    const tree = screen.getByRole('tree');
+
+    const moving = fakeDataTransfer({ [PATH_TYPE]: 'src/a.ts' });
+    const movingEvent = fireDrag(tree, 'dragover', { dataTransfer: moving });
+    expect(movingEvent.defaultPrevented).toBe(true);
+    expect(moving.dropEffect).toBe('move');
+
+    const copying = fakeDataTransfer({ [PATH_TYPE]: 'src/a.ts' });
+    fireDrag(tree, 'dragover', { dataTransfer: copying, altKey: true });
+    expect(copying.dropEffect).toBe('copy');
+  });
+
+  it('opens a folder row as a drop target, but never for text from another app', () => {
+    render(<FileTree {...baseProps} rows={treeRows} />);
+    const folder = screen.getByRole('treeitem', { name: 'src' });
+
+    const ours = fakeDataTransfer({ 'text/plain': 'a.ts', [PATH_TYPE]: 'a.ts' });
+    expect(fireDrag(folder, 'dragover', { dataTransfer: ours }).defaultPrevented).toBe(true);
+
+    // Text dragged out of another app carries `text/plain` and nothing else.
+    const prose = fakeDataTransfer({ 'text/plain': 'a.ts' });
+    const proseEvent = fireDrag(folder, 'dragover', { dataTransfer: prose });
+    expect(proseEvent.defaultPrevented).toBe(false);
+    expect(prose.dropEffect).toBe('none');
+  });
+
+  it('does not move a file because a dragged sentence happened to name it', () => {
+    const onMove = vi.fn();
+    render(<FileTree {...baseProps} rows={treeRows} onMove={onMove} />);
+
+    fireDrag(screen.getByRole('treeitem', { name: 'src' }), 'drop', {
+      dataTransfer: fakeDataTransfer({ 'text/plain': 'a.ts' }),
+    });
+
+    expect(onMove).not.toHaveBeenCalled();
+  });
 
   it('ignores a drag that carries files from the operating system', () => {
     const onMove = vi.fn();

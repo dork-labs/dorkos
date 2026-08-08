@@ -16,7 +16,7 @@ import {
   ResponsiveContextMenuSeparator,
   ResponsiveContextMenuTrigger,
 } from '@/layers/shared/ui';
-import { cn, FILE_PATH_DRAG_TYPE } from '@/layers/shared/lib';
+import { cn, FILE_PATH_DRAG_TYPE, hasFilePathDrag, readFilePathDrag } from '@/layers/shared/lib';
 import { parentOf } from '../model/tree';
 import type { FlatRow } from '../model/types';
 import type { CopyPathKind } from '../model/use-file-actions';
@@ -49,8 +49,8 @@ interface FileTreeRowProps {
   onPaste: (toDir: string) => void;
   /** Copy this entry beside itself. */
   onDuplicate: (entry: FileEntry) => void;
-  /** Whether anything is on the explorer clipboard (else Paste is dimmed). */
-  canPaste: boolean;
+  /** Whether the clipboard holds something a given directory could take. */
+  canPasteInto: (toDir: string) => boolean;
   /**
    * Label for the reveal item, named after the server platform's file manager —
    * `null` hides the item where no file manager can be opened at all.
@@ -93,7 +93,7 @@ export function FileTreeRow({
   onCopy,
   onPaste,
   onDuplicate,
-  canPaste,
+  canPasteInto,
   revealLabel,
   onReveal,
   onAddToChat,
@@ -138,7 +138,10 @@ export function FileTreeRow({
             // row, so the tree's own empty-space drop (the root) must not also
             // claim it.
             e.stopPropagation();
-            if (!isDir) return;
+            // Only our own rows are droppable here. Text dragged out of another
+            // app carries `text/plain` too, and reading that alone turned a
+            // dragged sentence into a move of whatever file it happened to name.
+            if (!isDir || !hasFilePathDrag(e.dataTransfer.types)) return;
             e.preventDefault();
             // Alt held = copy, so the cursor shows a + before the drop lands.
             e.dataTransfer.dropEffect = e.altKey ? 'copy' : 'move';
@@ -148,10 +151,10 @@ export function FileTreeRow({
           onDrop={(e) => {
             e.stopPropagation();
             if (!isDir) return;
-            e.preventDefault();
             setDropTarget(false);
-            const from = e.dataTransfer.getData('text/plain');
-            if (!from) return;
+            const from = readFilePathDrag(e.dataTransfer);
+            if (from === null) return;
+            e.preventDefault();
             if (e.altKey) onCopyInto(from, entry.path);
             else onMove(from, entry.path);
           }}
@@ -228,7 +231,7 @@ export function FileTreeRow({
         <ResponsiveContextMenuSeparator />
         <ResponsiveContextMenuItem onClick={() => onCopy(entry)}>Copy</ResponsiveContextMenuItem>
         {/* On a folder the paste lands inside it; on a file, beside it. */}
-        <ResponsiveContextMenuItem disabled={!canPaste} onClick={() => onPaste(parent)}>
+        <ResponsiveContextMenuItem disabled={!canPasteInto(parent)} onClick={() => onPaste(parent)}>
           Paste
         </ResponsiveContextMenuItem>
         <ResponsiveContextMenuItem onClick={() => onDuplicate(entry)}>

@@ -3,7 +3,7 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import type { FileEntry } from '@dorkos/shared/types';
 import { cn, hasFilePathDrag, readFilePathDrag } from '@/layers/shared/lib';
 import { parentOf, ROOT_KEY } from '../model/tree';
-import type { FlatRow } from '../model/types';
+import type { EntryRef, FlatRow } from '../model/types';
 import { useFileExplorerStore } from '../model/file-explorer-store';
 import type { CopyPathKind } from '../model/use-file-actions';
 import { FileTreeRow } from './FileTreeRow';
@@ -34,15 +34,15 @@ interface FileTreeProps {
   onDelete: (entry: FileEntry) => void;
   onMove: (fromPath: string, toDir: string) => void;
   /** Copy rather than move — an Alt-held drop, or Paste and Duplicate. */
-  onCopyInto: (fromPath: string, toDir: string) => void;
+  onCopyInto: (from: EntryRef, toDir: string) => void;
   /** Put an entry on the explorer clipboard. */
   onCopy: (entry: FileEntry) => void;
   /** Paste the clipboard into a directory. */
   onPaste: (toDir: string) => void;
   /** Copy an entry beside itself. */
   onDuplicate: (entry: FileEntry) => void;
-  /** Whether anything is on the explorer clipboard (else Paste is dimmed). */
-  canPaste: boolean;
+  /** Whether the clipboard holds something this directory could take. */
+  canPasteInto: (toDir: string) => boolean;
   /** Reveal-item label from the server's platform, or null to hide the item. */
   revealLabel: string | null;
   onReveal: (entry: FileEntry) => void;
@@ -185,16 +185,27 @@ export function FileTree(props: FileTreeProps) {
     e.dataTransfer.dropEffect = e.altKey ? 'copy' : 'move';
     setRootDropTarget(true);
   }, []);
+  // A dragged path only ever names a row that is on screen — that is what made
+  // it draggable — so the rows are where its `isDir` comes from.
+  const copyDropped = useCallback(
+    (fromPath: string, toDir: string) => {
+      const dragged = rows.find((r) => r.entry.path === fromPath);
+      if (!dragged) return;
+      onCopyInto({ path: fromPath, isDir: dragged.entry.type === 'dir' }, toDir);
+    },
+    [rows, onCopyInto]
+  );
+
   const handleRootDrop = useCallback(
     (e: React.DragEvent) => {
       setRootDropTarget(false);
       const from = readFilePathDrag(e.dataTransfer);
       if (from === null) return;
       e.preventDefault();
-      if (e.altKey) onCopyInto(from, ROOT_KEY);
+      if (e.altKey) copyDropped(from, ROOT_KEY);
       else onMove(from, ROOT_KEY);
     },
-    [onCopyInto, onMove]
+    [copyDropped, onMove]
   );
 
   const renderRow = (row: FlatRow) => (
@@ -213,11 +224,11 @@ export function FileTree(props: FileTreeProps) {
       onNewFolder={props.onNewFolder}
       onDelete={props.onDelete}
       onMove={props.onMove}
-      onCopyInto={props.onCopyInto}
+      onCopyInto={copyDropped}
       onCopy={props.onCopy}
       onPaste={props.onPaste}
       onDuplicate={props.onDuplicate}
-      canPaste={props.canPaste}
+      canPasteInto={props.canPasteInto}
       revealLabel={props.revealLabel}
       onReveal={props.onReveal}
       onAddToChat={props.onAddToChat}

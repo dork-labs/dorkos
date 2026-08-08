@@ -239,14 +239,19 @@ describe('FileExplorer', () => {
     await waitFor(() => expect(screen.getAllByRole('treeitem', { name: 'x.ts' })).toHaveLength(2));
 
     // Drag the root x.ts onto dst, which collides with dst/x.ts. One shared
-    // dataTransfer round-trips setData (dragStart) → getData (drop).
+    // dataTransfer round-trips setData (dragStart) → getData (drop). `types`
+    // reports what was actually set, the way a real one does — the drop reads
+    // it to tell our own rows apart from text dragged in from another app.
     const dataTransfer = {
       store: {} as Record<string, string>,
+      get types() {
+        return Object.keys(this.store);
+      },
       getData(k: string) {
-        return this.store[k];
+        return this.store[k] ?? '';
       },
       setData(k: string, v: string) {
-        this.store[k] = v;
+        this.store[k.toLowerCase()] = v;
       },
     };
     const rootX = screen.getAllByRole('treeitem', { name: 'x.ts' })[1];

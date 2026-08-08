@@ -74,25 +74,37 @@ afterEach(() => cleanup());
  * so what the tree shows after a paste is what the server would have produced —
  * an optimistic row that the refetch then contradicts would be visible here.
  */
-function transportOverTree(copyFails = false) {
+function transportOverTree(options: { copyError?: unknown; hidden?: FileEntry[] } = {}) {
   const tree: Record<string, FileEntry[]> = {
     '': [dir('src'), file('README.md')],
     src: [file('src/a.ts')],
   };
   const copyEntry = vi.fn(async (_cwd: string, _from: string, to: string) => {
-    if (copyFails) throw new Error('disk full');
+    if (options.copyError) throw options.copyError;
     const parent = to.includes('/') ? to.slice(0, to.lastIndexOf('/')) : '';
     tree[parent] = [...(tree[parent] ?? []), file(to)];
     return { ok: true as const };
   });
+  // Hidden entries are in the directory but out of the tree's own listing —
+  // exactly what the show-hidden toggle does on the server.
+  const readFileTree = vi.fn(
+    async (_cwd: string, opts?: { path?: string; showHidden?: boolean }) => {
+      const visible = tree[opts?.path ?? ''] ?? [];
+      const hidden = opts?.path ? [] : (options.hidden ?? []);
+      return { entries: opts?.showHidden ? [...visible, ...hidden] : visible };
+    }
+  );
   const transport = createMockTransport({
-    readFileTree: vi.fn(async (_cwd: string, opts?: { path?: string }) => ({
-      entries: tree[opts?.path ?? ''] ?? [],
-    })),
+    readFileTree,
     getConfig: vi.fn(async () => ({ platform: 'darwin-arm64' }) as ServerConfig),
     copyEntry,
   });
-  return { transport, copyEntry };
+  return { transport, copyEntry, readFileTree };
+}
+
+/** A coded file-service error, the shape both transports throw. */
+function codedError(code: string) {
+  return Object.assign(new Error(code), { code });
 }
 
 /** Render the explorer and open the context menu on one row. */
@@ -164,13 +176,67 @@ describe('File explorer clipboard (DOR-1032)', () => {
   });
 
   it('takes the copy back off the tree when the server refuses it', async () => {
-    const { transport } = transportOverTree(true);
+    const { transport } = transportOverTree({ copyError: new Error('disk full') });
     await openMenuOn('README.md', transport);
 
     fireEvent.click(await screen.findByText('Duplicate'));
 
     await waitFor(() => expect(toastError).toHaveBeenCalledWith("Couldn't copy"));
     await waitFor(() => expect(screen.queryByText('README copy.md')).not.toBeInTheDocument());
+  });
+
+  it('steers around a name the tree is not even showing', async () => {
+    // `.env` is hidden while the show-hidden toggle is off, but it still owns
+    // its name: naming the copy from the visible listing alone lands on top of
+    // it and the server answers 409.
+    const { transport, copyEntry, readFileTree } = transportOverTree({ hidden: [file('.env')] });
+    await openMenuOn('README.md', transport);
+    fireEvent.click(await screen.findByText('Copy'));
+    await waitFor(() => expect(useFileExplorerStore.getState().clipboard).not.toBeNull());
+    useFileExplorerStore.getState().setClipboard({ path: '.env', isDir: false });
+
+    fireEvent.contextMenu(screen.getByRole('treeitem', { name: 'README.md' }));
+    fireEvent.click(await screen.findByText('Paste'));
+
+    await waitFor(() => expect(copyEntry).toHaveBeenCalledWith(CWD, '.env', '.env copy'));
+    expect(readFileTree).toHaveBeenCalledWith(CWD, expect.objectContaining({ showHidden: true }));
+  });
+
+  it('says so instead of doing nothing when a folder is pasted into itself', async () => {
+    // The most natural way to hit this: copy a folder, then paste with it still
+    // selected. It used to return in silence, which reads as a broken Paste.
+    const { transport, copyEntry } = transportOverTree();
+    await openMenuOn('src', transport);
+    fireEvent.click(await screen.findByText('Copy'));
+    await waitFor(() =>
+      expect(useFileExplorerStore.getState().clipboard).toEqual({ path: 'src', isDir: true })
+    );
+
+    // The menu item is dimmed for exactly this target...
+    fireEvent.contextMenu(screen.getByRole('treeitem', { name: 'src' }));
+    expect(await screen.findByText('Paste')).toHaveAttribute('aria-disabled', 'true');
+
+    // ...and the keyboard, which the dimming cannot stop, is told why. The open
+    // menu hides the rest of the page from the accessibility tree, so close it
+    // the way a person would before reaching for the shortcut.
+    fireEvent.keyDown(document, { key: 'Escape' });
+    fireEvent.click(await screen.findByRole('treeitem', { name: 'src' }));
+    fireEvent.keyDown(screen.getByRole('tree'), { key: 'v', metaKey: true });
+
+    await waitFor(() => expect(toastError).toHaveBeenCalledWith("Can't copy a folder into itself"));
+    expect(copyEntry).not.toHaveBeenCalled();
+  });
+
+  it('explains the server refusing a folder copied into itself in the same words', async () => {
+    // A case-insensitive filesystem can call `SRC` and `src` the same folder,
+    // which the client's own path check cannot see. The server catches it, and
+    // its coded answer must not degrade into the generic "Couldn't copy".
+    const { transport } = transportOverTree({ copyError: codedError('COPY_INTO_SELF') });
+    await openMenuOn('src', transport);
+
+    fireEvent.click(await screen.findByText('Duplicate'));
+
+    await waitFor(() => expect(toastError).toHaveBeenCalledWith("Can't copy a folder into itself"));
   });
 
   it('empties the clipboard when the working directory changes', () => {

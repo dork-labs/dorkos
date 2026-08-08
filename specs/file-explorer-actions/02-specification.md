@@ -123,27 +123,47 @@ throws is never shipped.
   Cmd/Ctrl+C and Cmd/Ctrl+V in `FileTree.tsx`'s key ladder, which already
   stands down while the rename input is open. Modifier detection is
   `metaKey || ctrlKey`, the spelling every other shortcut in the client uses;
-  `isMac` stays for display only. Paste is `disabled` when the clipboard is
-  empty — which required teaching the shared `ResponsiveContextMenuItem` to
-  honour `disabled` in its mobile drawer branch, where it had been dropped.
-- **Collision-free naming** — `lib/copy-name.ts`, pure and unit-tested,
-  computed against the destination's listing (fetched via `ensureQueryData`
-  when that directory has never been expanded). `copyEntry` in
-  `use-file-crud.ts` is optimistic with rollback like its siblings, and needs no
-  collision branch: the name is free by construction.
+  `isMac` stays for display only. Paste is `disabled` wherever it could not
+  land — nothing copied, or a folder being pasted inside itself — which
+  required teaching the shared `ResponsiveContextMenuItem` to honour `disabled`
+  in its mobile drawer branch, where it had been dropped.
+- **Refusals speak.** A folder cannot be copied into itself. The explorer
+  refuses the cases it can see (dimmed item, and a toast for the keyboard,
+  which dimming cannot stop); the server refuses the rest — including a
+  case-insensitive filesystem where `SRC` and `src` are one folder — as 400
+  `COPY_INTO_SELF`, mapped in `crud-errors.ts` to the same sentence, so one
+  mistake never produces two explanations. Silence was the original bug: paste
+  right after copying a folder did nothing at all and said nothing.
+- **Collision-free naming** — `lib/copy-name.ts`, pure and unit-tested. The
+  destination's names are read straight from the transport with
+  `showHidden: true`, NOT through the tree's cache: the tree's listing is
+  filtered by the show-hidden toggle, and a name you cannot see still owns
+  itself, so naming a copy from the visible listing lands `.env` on an existing
+  `.env` and the server answers 409. `copyEntry` in `use-file-crud.ts` is
+  optimistic with rollback like its siblings — it shows the copy only where the
+  destination is already on screen, as a move does — and needs no collision
+  branch: the name is free by construction. It takes an `EntryRef`
+  (`{ path, isDir }`) rather than a path, because the clipboard outlives the row
+  that filled it and the source's listing may have been evicted by then.
 - **Drag and drop** — `dragstart` sets `text/plain` and
   `application/x-dorkos-file-path` and `effectAllowed = 'copyMove'` (without
-  which the browser refuses an Alt-held copy). Rows stop their own drag events
-  from bubbling, so the tree container's handler fires only for drops that
-  landed on nothing — that is the root drop target, and it works identically in
-  the plain and virtualized lists because it rides on the scroll container.
+  which the browser refuses an Alt-held copy). Every drop target reads the
+  custom type, never bare `text/plain`, so a sentence dragged out of another
+  app cannot move whatever file it happens to name. Rows stop their own drag
+  events from bubbling, so the tree container's handler fires only for drops
+  that landed on nothing — that is the root drop target, and it works
+  identically in the plain and virtualized lists because it rides on the scroll
+  container.
 - **Drag into chat** — `ComposerRoot` gained an optional `onPathDropped`
   alongside `onFilesDropped`; `usePathDrop` in the composer-internal
   `use-drag-and-paste.ts` implements it. The drop handler is composed with
-  react-dropzone's by hand rather than passed through `getRootProps`, because
-  react-dropzone calls `preventDefault` before any handler given that way could
-  run. `shared/lib/file-drag.ts` owns the drag type and its two readers (types
-  are compared case-insensitively, since browsers lowercase custom types), and
+  react-dropzone's by hand rather than passed through `getRootProps`, so the
+  ordering is explicit: ours first, then react-dropzone's, **always** — its drop
+  handler is the only thing that clears the drag targets it counted on the way
+  in, and consuming the event instead of passing it on left the "Drop files to
+  attach" overlay stuck on forever after the first drag from the tree.
+  `shared/lib/file-drag.ts` owns the drag type and its two readers (types are
+  compared case-insensitively, since browsers lowercase custom types), and
   `composerFileReference()` in `shared/lib/composer-insert.ts` is the one place
   that spells `@path `.
 
@@ -163,4 +183,8 @@ throws is never shipped.
   implements no `DragEvent`, so Testing Library falls back to a plain `Event`
   and silently drops `altKey` — which would make every Alt-to-copy assertion
   read as a move and pass for the wrong reason.
+- Every drop target is also tested on `dragover`, asserting `defaultPrevented`
+  and `dropEffect`. Tests that only dispatch `drop` cannot see a missing
+  `preventDefault`, and a target without one is not a target at all: a real
+  browser refuses the drop and the handler under test never runs.
 - All user-facing strings are plain language.

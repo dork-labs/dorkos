@@ -143,17 +143,20 @@ function DropCapableCard({
     // eslint-disable-next-line jsx-a11y/no-static-element-interactions
     <div
       {...rootProps}
-      // Composed by hand rather than handed to react-dropzone: its own drop
-      // handler calls `preventDefault` before anything else runs, so a handler
-      // passed through `getRootProps` would never be reached. A file reference
-      // is consumed here; everything else falls through to the upload path
-      // exactly as before.
+      // Composed by hand rather than handed to react-dropzone, so the ordering
+      // is ours to state: ours runs first, then react-dropzone's, ALWAYS —
+      // including for a drop we just consumed. Its drop handler is what clears
+      // the drag targets it counted on the way in, and skipping it left the
+      // "Drop files to attach" overlay stuck on forever after the first file
+      // dragged in from the tree.
       onDragOver={(e) => {
         pathDrop?.onDragOver(e);
         rootProps.onDragOver?.(e);
       }}
       onDrop={(e) => {
-        if (pathDrop?.onDrop(e)) return;
+        // A file reference is not an upload; react-dropzone ignores it anyway
+        // (it acts only on drags carrying real files), so both can run.
+        pathDrop?.onDrop(e);
         rootProps.onDrop?.(e);
       }}
       onPaste={handlePaste}
