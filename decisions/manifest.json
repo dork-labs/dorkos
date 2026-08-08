@@ -4313,9 +4313,10 @@
       "id": "260808-140954",
       "slug": "threads-are-durable-sessions-are-engine-runs",
       "title": "Threads are durable; sessions are engine runs beneath them",
-      "status": "draft",
+      "status": "accepted",
       "created": "2026-08-08",
-      "specSlug": "team-room-home"
+      "specSlug": "team-room-home",
+      "lastVerified": "2026-08-08"
     },
     {
       "id": "260808-140955",
