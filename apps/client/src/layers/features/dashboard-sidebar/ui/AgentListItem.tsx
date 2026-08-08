@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState, type MouseEvent } from 'react';
 import { motion, AnimatePresence, type Variants } from 'motion/react';
 import { Plus, MoreHorizontal, BellOff } from 'lucide-react';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
@@ -192,6 +192,19 @@ export function AgentListItem({
     }
   }, [isActive, onSelect, onToggleExpand]);
 
+  // The handler and its accessible name as ONE value, because they are one
+  // decision: an agent the roster cannot name gets neither, and the face is
+  // plain art rather than a control that opens an empty drawer.
+  const faceControl = onViewProfile
+    ? {
+        onAvatarClick: (event: MouseEvent) => {
+          event.stopPropagation();
+          onViewProfile();
+        },
+        avatarLabel: `Open ${displayName}’s profile`,
+      }
+    : {};
+
   // "New group…" mounts an inline editor; the dropdown's close-time focus
   // restore would blur (and blur-cancel) it, so that item arms this guard
   // (DOR-329). The context-menu variant guards itself inside AgentContextMenu.
@@ -231,6 +244,13 @@ export function AgentListItem({
                 : 'text-muted-foreground hover:bg-accent hover:text-foreground'
             )}
           >
+            {/* The row's OWN verb, first — and it has to be spelled out because
+                the row has no text of its own. The drag layer makes this row a
+                button, which takes its accessible name from its contents in DOM
+                order; with nothing here it opened with the FACE's label and
+                announced as "Open Scout's profile", which is the one thing
+                pressing the row does not do. */}
+            <span className="sr-only">Switch to {displayName}</span>
             <span className="flex min-w-0 flex-1 items-center gap-1">
               <AgentIdentity
                 {...visual}
@@ -238,15 +258,10 @@ export function AgentListItem({
                 size="xs"
                 // The FACE opens the profile; the row keeps its own click,
                 // which selects the agent and opens its last session. The stop
-                // is what keeps one press from doing both.
-                onAvatarClick={
-                  onViewProfile &&
-                  ((event) => {
-                    event.stopPropagation();
-                    onViewProfile();
-                  })
-                }
-                avatarLabel={`Open ${displayName}’s profile`}
+                // is what keeps one press from doing both. Both halves travel
+                // together or not at all — a face control with no label is a
+                // button a screen reader cannot name, which the type refuses.
+                {...faceControl}
               />
               {isMuted && (
                 <BellOff className="text-muted-foreground/60 size-3 shrink-0" aria-label="Muted" />

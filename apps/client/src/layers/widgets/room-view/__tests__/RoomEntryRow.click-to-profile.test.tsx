@@ -203,7 +203,10 @@ describe('a mention pill opens the mentioned identity’s profile', () => {
     expect(harness.openProfileId()).not.toBe(WARDEN_AUTHOR_ID);
   });
 
-  it('opens on Enter — a pill is reachable by keyboard, not only by pointer', async () => {
+  it.each([
+    ['Enter', '{Enter}'],
+    ['Space', '[Space]'],
+  ])('opens on %s — a role of button promises both, so both are wired', async (_name, keys) => {
     const user = userEvent.setup();
     const text = 'thanks @ana!';
     renderMention(text, [spanFor(text, '@ana', ANA_AUTHOR_ID)]);
@@ -211,9 +214,18 @@ describe('a mention pill opens the mentioned identity’s profile', () => {
     const pill = await pillOf();
     expect(pill).toHaveAttribute('role', 'button');
     pill.focus();
-    await user.keyboard('{Enter}');
+    await user.keyboard(keys);
 
     expect(harness.openProfileId()).toBe(ANA_AUTHOR_ID);
+  });
+
+  it('announces what pressing it does, not only who it names', async () => {
+    // The visible text is the display name — the half a reader can already see.
+    // The label carries the verb, matching the Team card and the sidebar face.
+    const text = 'thanks @ana!';
+    renderMention(text, [spanFor(text, '@ana', ANA_AUTHOR_ID)]);
+
+    expect(await pillOf()).toHaveAttribute('aria-label', 'View Ana’s profile');
   });
 
   it('stays inert for an agent the fleet could not name — no id, no click', async () => {

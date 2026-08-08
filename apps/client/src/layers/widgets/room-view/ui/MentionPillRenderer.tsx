@@ -119,6 +119,11 @@ export function MentionPillRenderer({ authors, authorId, children }: MentionPill
     ? {
         role: 'button',
         tabIndex: 0,
+        // Names the ACTION, the same way the Team card and the sidebar face do
+        // — the visible text is only who, which is the half a reader can
+        // already see. The name stays inside the label, so this still satisfies
+        // "label in name" for anyone driving by voice.
+        'aria-label': `View ${author.displayName}’s profile`,
         onClick: viewProfile,
         onKeyDown: (event: KeyboardEvent<HTMLSpanElement>) => {
           if (event.key !== 'Enter' && event.key !== ' ') return;

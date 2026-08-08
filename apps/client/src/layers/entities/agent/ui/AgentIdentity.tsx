@@ -51,7 +51,35 @@ const detailVariants = cva('text-muted-foreground truncate', {
 
 type IdentitySize = 'xs' | 'sm' | 'md' | 'lg';
 
-export interface AgentIdentityProps extends VariantProps<typeof identityVariants> {
+/**
+ * Whether the FACE alone is a control — and if it is, what it announces as.
+ *
+ * A union rather than two optional props, because the two are one decision. An
+ * `onAvatarClick` with no `avatarLabel` is an icon-only button with no
+ * accessible name: it renders, it works with a mouse, and a screen reader calls
+ * it "button". Nothing would have caught that at runtime, so the compiler
+ * refuses the arrangement instead.
+ */
+type AgentFaceControl =
+  | {
+      /**
+       * Make the FACE alone a control, leaving the name as plain text.
+       *
+       * For the surfaces where the row AROUND this lockup already owns the
+       * click — a sidebar agent row selects the agent — so the whole-lockup
+       * {@link AgentIdentityBaseProps.onClick} would eat the row's own target.
+       * The caller stops the event itself if the row must not also fire.
+       *
+       * Ignored when `onClick` is set: that path is already a `<button>`, and a
+       * button inside a button is invalid HTML that browsers silently unnest.
+       */
+      onAvatarClick: (e: React.MouseEvent) => void;
+      /** What the face announces as — name the ACTION, e.g. `Open Scout’s profile`. */
+      avatarLabel: string;
+    }
+  | { onAvatarClick?: never; avatarLabel?: never };
+
+interface AgentIdentityBaseProps extends VariantProps<typeof identityVariants> {
   /** CSS color string (HSL or hex override). */
   color: string;
   /** Single emoji character. */
@@ -76,21 +104,10 @@ export interface AgentIdentityProps extends VariantProps<typeof identityVariants
    * Enables interactive entry points (e.g. opening the Agent Hub).
    */
   onClick?: (e: React.MouseEvent) => void;
-  /**
-   * Make the FACE alone a control, leaving the name as plain text.
-   *
-   * For the surfaces where the row AROUND this lockup already owns the click —
-   * a sidebar agent row selects the agent — so the whole-lockup
-   * {@link AgentIdentityProps.onClick} would eat the row's own target. The
-   * caller stops the event itself if the row must not also fire.
-   *
-   * Ignored when `onClick` is set: that path is already a `<button>`, and a
-   * button inside a button is invalid HTML that browsers silently unnest.
-   */
-  onAvatarClick?: (e: React.MouseEvent) => void;
-  /** Accessible name for the avatar button — required to make one, ignored otherwise. */
-  avatarLabel?: string;
 }
+
+/** Everything the identity lockup draws, plus the optional face control. */
+export type AgentIdentityProps = AgentIdentityBaseProps & AgentFaceControl;
 
 /**
  * Standard agent display — avatar + name + optional detail.
@@ -135,13 +152,16 @@ export function AgentIdentity({
 
   const content = (
     <>
-      {onAvatarClick && !onClick && avatarLabel ? (
+      {onAvatarClick && !onClick ? (
         <button
           type="button"
           data-slot="agent-identity-face"
           onClick={onAvatarClick}
           aria-label={avatarLabel}
-          className="focus-ring shrink-0 cursor-pointer rounded-full transition-opacity hover:opacity-80"
+          // `rounded-md`, matching the disc it wraps: an agent's face is a
+          // rounded SQUARE (spec `identity-consistency` §W1), so a circular
+          // focus ring around it draws a shape the identity does not have.
+          className="focus-ring shrink-0 cursor-pointer rounded-md transition-opacity hover:opacity-80"
         >
           {avatar}
         </button>

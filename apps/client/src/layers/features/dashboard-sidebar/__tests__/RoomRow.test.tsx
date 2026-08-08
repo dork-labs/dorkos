@@ -251,7 +251,7 @@ describe('RoomRow menus', () => {
     // mesh, which is a shared warm cache entry in the app and a cold request
     // here. The item appears when the answer does.
     const menu = openDropdown('Ana actions');
-    fireEvent.click(await within(menu).findByText('Agent profile'));
+    fireEvent.click(await within(menu).findByText('Agent hub'));
 
     expect(onOpenAgentProfile).toHaveBeenCalledWith('/repo/ana');
   });
@@ -264,7 +264,7 @@ describe('RoomRow menus', () => {
     // Waits for the SAME signal the passing case waits for, so this asserts an
     // absence after the answer arrived rather than before it.
     await within(menu).findByText('Members…');
-    expect(itemLabels(menu)).not.toContain('Agent profile');
+    expect(itemLabels(menu)).not.toContain('Agent hub');
   });
 });
 

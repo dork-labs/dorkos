@@ -139,6 +139,76 @@ test.describe('Team — the roster @smoke', () => {
     await expect(page.getByText(/Showing .* and their agents/)).toBeVisible();
   });
 
+  test('the whole card opens that identity’s profile', async ({ page, basePage, roomsApi }) => {
+    const agent = await roomsApi.registerAgent(`E2E Profile ${roomsApi.runId}`, '🪪', '#6366f1');
+    await page.goto('/team');
+    await basePage.waitForAppReady();
+
+    const agentCard = card(page, agent.name);
+    await expect(agentCard).toBeVisible();
+    const memberId = await agentCard.getAttribute('data-member-id');
+
+    await agentCard.getByRole('button', { name: `Open ${agent.name}’s profile` }).click();
+
+    // The id on the URL is the assertion, not "a drawer appeared": the drawer
+    // reads `?profile=` back against the roster, so a card that handed over an
+    // id from any other space would open nothing at all.
+    await expect(page).toHaveURL(new RegExp(`[?&]profile=${memberId}`));
+    await expect(page.locator('[data-slot="profile-drawer"]')).toHaveAttribute(
+      'data-member-id',
+      memberId!
+    );
+
+    // …and it survives a reload, which is what makes a profile shareable.
+    await page.reload();
+    await basePage.waitForAppReady();
+    await expect(page.locator('[data-slot="profile-drawer"]')).toHaveAttribute(
+      'data-member-id',
+      memberId!
+    );
+  });
+
+  test('the card’s hit area covers the whole tile, but not its own attribution', async ({
+    page,
+    basePage,
+    roomsApi,
+  }) => {
+    const agent = await roomsApi.registerAgent(`E2E Hit ${roomsApi.runId}`, '🎯', '#ef4444');
+    await page.goto('/team');
+    await basePage.waitForAppReady();
+
+    const agentCard = card(page, agent.name);
+    await expect(agentCard).toBeVisible();
+    await agentCard.scrollIntoViewIfNeeded();
+
+    // **A paint-order check, and it belongs HERE and nowhere else.** The card's
+    // reach is a `::after` overlay on the name button; the attribution stays
+    // pressable because it is `relative` and so paints ABOVE that overlay. Both
+    // halves are layout facts — jsdom computes no layout, so a jsdom test
+    // passes just as happily with the stacking removed, and the double-fire it
+    // is supposed to catch ships. `elementFromPoint` is the honest question:
+    // what would a real click at this pixel actually land on?
+    const hits = await agentCard.evaluate((node: Element) => {
+      const rect = node.getBoundingClientRect();
+      const attribution = node.querySelector('button[aria-label^="Show only"]');
+      const attrRect = attribution!.getBoundingClientRect();
+      const at = (x: number, y: number) =>
+        document.elementFromPoint(x, y)?.closest('button')?.getAttribute('aria-label') ?? null;
+      return {
+        middle: at(rect.left + rect.width / 2, rect.top + rect.height / 2),
+        bottomRight: at(rect.right - 12, rect.bottom - 8),
+        attribution: at(attrRect.left + attrRect.width / 2, attrRect.top + attrRect.height / 2),
+      };
+    });
+
+    const profileLabel = `Open ${agent.name}’s profile`;
+    expect(hits.middle).toBe(profileLabel);
+    expect(hits.bottomRight).toBe(profileLabel);
+    // The inner control takes its own press. Red the moment the attribution
+    // loses the `relative` that lifts it out from under the overlay.
+    expect(hits.attribution).toMatch(/^Show only /);
+  });
+
   test('Group: manager clusters the roster under a header', async ({
     page,
     basePage,

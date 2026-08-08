@@ -260,9 +260,17 @@ describe('TeamPage — a card opens its own profile', () => {
   });
 
   it('does not open a profile when the attribution inside the card is pressed', async () => {
-    // The card-wide control and a control INSIDE it: pressing the inner one
-    // must reach only itself. This is red the moment the card opens the profile
-    // from a handler the attribution's click can travel up to.
+    // **Half the guard, and only half — say which half.** This covers event
+    // PROPAGATION: it is red the moment the card opens the profile from a
+    // handler the attribution's click can bubble to (an `onClick` on the
+    // `<article>`, the obvious shape this deliberately does not use).
+    //
+    // It cannot cover the other half. The card's reach is a `::after` overlay
+    // and the attribution escapes it by being `relative` — both are PAINT
+    // order, and jsdom computes no layout, so deleting that `relative` leaves
+    // this green while a real click on the attribution starts opening the
+    // profile instead. That half is asserted where a browser can see it:
+    // `apps/e2e/tests/team/team-page.spec.ts`, via `elementFromPoint`.
     const user = userEvent.setup();
     renderPage({ members: MOCK_TEAM_ROSTER });
     await screen.findByText('Warden');
