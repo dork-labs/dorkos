@@ -4,6 +4,7 @@ import type { FileEntry } from '@dorkos/shared/types';
 import { parentOf } from '../model/tree';
 import type { FlatRow } from '../model/types';
 import { useFileExplorerStore } from '../model/file-explorer-store';
+import type { CopyPathKind } from '../model/use-file-actions';
 import { FileTreeRow } from './FileTreeRow';
 
 /** Above this many visible rows, switch from a plain list to a virtualized one. */
@@ -31,6 +32,11 @@ interface FileTreeProps {
   onNewFolder: (parent: string) => void;
   onDelete: (entry: FileEntry) => void;
   onMove: (fromPath: string, toDir: string) => void;
+  /** Reveal-item label from the server's platform, or null to hide the item. */
+  revealLabel: string | null;
+  onReveal: (entry: FileEntry) => void;
+  onAddToChat: (entry: FileEntry) => void;
+  onCopyPath: (entry: FileEntry, kind: CopyPathKind) => void;
 }
 
 /**
@@ -172,6 +178,10 @@ export function FileTree(props: FileTreeProps) {
       onNewFolder={props.onNewFolder}
       onDelete={props.onDelete}
       onMove={props.onMove}
+      revealLabel={props.revealLabel}
+      onReveal={props.onReveal}
+      onAddToChat={props.onAddToChat}
+      onCopyPath={props.onCopyPath}
     />
   );
 

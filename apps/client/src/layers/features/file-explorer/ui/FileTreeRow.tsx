@@ -19,6 +19,7 @@ import {
 import { cn } from '@/layers/shared/lib';
 import { parentOf } from '../model/tree';
 import type { FlatRow } from '../model/types';
+import type { CopyPathKind } from '../model/use-file-actions';
 
 /** Left indentation per nesting level, in pixels. */
 const INDENT_STEP = 12;
@@ -40,14 +41,26 @@ interface FileTreeRowProps {
   onStartRename: (entry: FileEntry) => void;
   onDelete: (entry: FileEntry) => void;
   onMove: (fromPath: string, toDir: string) => void;
+  /**
+   * Label for the reveal item, named after the server platform's file manager —
+   * `null` hides the item where no file manager can be opened at all.
+   */
+  revealLabel: string | null;
+  onReveal: (entry: FileEntry) => void;
+  onAddToChat: (entry: FileEntry) => void;
+  onCopyPath: (entry: FileEntry, kind: CopyPathKind) => void;
 }
 
 /**
  * One file-explorer tree row (spec right-panel-workbench, Chunk B): indentation
  * by depth, an expand chevron for directories, an inline rename input, a
- * right-click / long-press context menu (New File, New Folder, Rename, Delete),
- * and HTML5 drag-to-move. Selection and keyboard navigation are owned by the
- * parent `FileTree`; this row only reports intent.
+ * right-click / long-press context menu, and HTML5 drag-to-move. Selection and
+ * keyboard navigation are owned by the parent `FileTree`; this row only reports
+ * intent.
+ *
+ * The menu is grouped the way editors group theirs (DOR-1032): make something,
+ * then take it somewhere (the file manager, the chat), then copy its path, then
+ * change or remove it — destructive last.
  */
 export function FileTreeRow({
   row,
@@ -64,6 +77,10 @@ export function FileTreeRow({
   onStartRename,
   onDelete,
   onMove,
+  revealLabel,
+  onReveal,
+  onAddToChat,
+  onCopyPath,
 }: FileTreeRowProps) {
   const { entry, depth, expanded, loading } = row;
   const isDir = entry.type === 'dir';
@@ -158,12 +175,28 @@ export function FileTreeRow({
           )}
         </div>
       </ResponsiveContextMenuTrigger>
-      <ResponsiveContextMenuContent className="w-44">
+      <ResponsiveContextMenuContent className="w-52">
         <ResponsiveContextMenuItem onClick={() => onNewFile(parent)}>
           New File
         </ResponsiveContextMenuItem>
         <ResponsiveContextMenuItem onClick={() => onNewFolder(parent)}>
           New Folder
+        </ResponsiveContextMenuItem>
+        <ResponsiveContextMenuSeparator />
+        {revealLabel && (
+          <ResponsiveContextMenuItem onClick={() => onReveal(entry)}>
+            {revealLabel}
+          </ResponsiveContextMenuItem>
+        )}
+        <ResponsiveContextMenuItem onClick={() => onAddToChat(entry)}>
+          Add to Chat
+        </ResponsiveContextMenuItem>
+        <ResponsiveContextMenuSeparator />
+        <ResponsiveContextMenuItem onClick={() => onCopyPath(entry, 'absolute')}>
+          Copy Path
+        </ResponsiveContextMenuItem>
+        <ResponsiveContextMenuItem onClick={() => onCopyPath(entry, 'relative')}>
+          Copy Relative Path
         </ResponsiveContextMenuItem>
         <ResponsiveContextMenuSeparator />
         <ResponsiveContextMenuItem onClick={() => onStartRename(entry)}>

@@ -6,6 +6,7 @@ import { executeUiCommand, QUERY_TIMING, type DispatcherContext } from '@/layers
 import { flattenTree, ROOT_KEY, visibleExpandedDirs } from './tree';
 import type { DirState, FlatRow } from './types';
 import { useFileCrud, type FileCrudApi } from './use-file-crud';
+import { useFileActions, type FileActionsApi } from './use-file-actions';
 import { useFileExplorerStore } from './file-explorer-store';
 
 /**
@@ -22,7 +23,7 @@ import { useFileExplorerStore } from './file-explorer-store';
  */
 
 /** The full explorer API a `FileExplorer` component consumes. */
-export interface FileExplorerApi extends FileCrudApi {
+export interface FileExplorerApi extends FileCrudApi, FileActionsApi {
   /** Ordered visible rows (root children, recursing into expanded directories). */
   rows: FlatRow[];
   /** True while the root level's first fetch is in flight. */
@@ -211,6 +212,8 @@ export function useFileExplorer(cwd: string | null): FileExplorerApi {
     inFlightRef: inFlightMutations,
   });
 
+  const actions = useFileActions(cwd);
+
   return {
     rows,
     rootLoading,
@@ -222,5 +225,6 @@ export function useFileExplorer(cwd: string | null): FileExplorerApi {
     reload,
     retryDir,
     ...crud,
+    ...actions,
   };
 }

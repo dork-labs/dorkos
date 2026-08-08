@@ -194,6 +194,7 @@ export {
   type UiCommandOrigin,
 } from './ui-action-dispatcher';
 export { registerExtensionRemount, requestExtensionRemount } from './extension-remount';
+export { registerComposerInsert, requestComposerInsert } from './composer-insert';
 export {
   buildUiStateSnapshot,
   prepareUiStateForSend,

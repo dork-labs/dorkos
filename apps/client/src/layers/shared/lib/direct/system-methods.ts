@@ -60,8 +60,9 @@ const MAX_TEXT_FILE_BYTES = 5 * 1024 * 1024;
 
 /**
  * Build an Error carrying a stable `code`, matching the codes `HttpTransport`
- * surfaces (`CONFLICT`, `DIR_NOT_EMPTY`, `NOT_FOUND`, `REFUSE_ROOT`) so callers
- * (Chunk B) can branch on `err.code` regardless of transport.
+ * surfaces (`CONFLICT`, `DIR_NOT_EMPTY`, `NOT_FOUND`, `REFUSE_ROOT`,
+ * `COPY_INTO_SELF`) so callers (Chunk B) can branch on `err.code` regardless of
+ * transport.
  */
 function codedError(message: string, code: string): Error & { code: string } {
   const err = new Error(message) as Error & { code: string };
@@ -506,6 +507,70 @@ export function createDirectSystemMethods(services: DirectTransportServices) {
       await fs.mkdir(pathMod.dirname(toResolved), { recursive: true });
       await fs.rename(fromResolved, toResolved);
       return { ok: true };
+    },
+
+    /** Copy an entry via direct fs (recursive for directories); throws if the target exists. */
+    async copyEntry(cwd: string, from: string, to: string): Promise<FileMutationResponse> {
+      const fs = (await import('fs/promises')).default;
+      const pathMod = (await import('path')).default;
+      const { root, resolved: fromResolved } = await confineWithin(cwd, from);
+      const { resolved: toResolved } = await confineWithin(cwd, to);
+      if (fromResolved === root || toResolved === root) {
+        throw codedError('Refusing to copy over the working-directory root', 'REFUSE_ROOT');
+      }
+      const sourceStat = await fs.stat(fromResolved).catch(() => {
+        throw codedError('Source not found', 'NOT_FOUND');
+      });
+      // `lstat`, not `access`: `access` follows symlinks, so a DANGLING symlink
+      // at the destination reads as "free" — and the rollback below would then
+      // delete a link the user put there.
+      const targetWasFree = await fs
+        .lstat(toResolved)
+        .then(() => false)
+        .catch(() => true);
+      if (!targetWasFree) throw codedError('Target already exists', 'CONFLICT');
+      if (
+        sourceStat.isDirectory() &&
+        (toResolved === fromResolved || toResolved.startsWith(fromResolved + pathMod.sep))
+      ) {
+        throw codedError('Refusing to copy a folder into itself', 'COPY_INTO_SELF');
+      }
+      await fs.mkdir(pathMod.dirname(toResolved), { recursive: true });
+      try {
+        await fs.cp(fromResolved, toResolved, {
+          recursive: true,
+          errorOnExist: true,
+          force: false,
+        });
+      } catch (err) {
+        const code = (err as NodeJS.ErrnoException).code;
+        // Someone took the name between the check and the copy: `errorOnExist`
+        // means nothing of ours was written, so there is nothing to undo — and
+        // removing THEIR file is the damage the rollback exists to prevent.
+        if (code === 'ERR_FS_CP_EEXIST') {
+          throw codedError('Target already exists', 'CONFLICT');
+        }
+        // The prefix check misses a case-insensitive filesystem, where
+        // `src` → `SRC/inner` is the same self-copy spelled differently.
+        if (code === 'ERR_FS_CP_EINVAL') {
+          throw codedError('Refusing to copy a folder into itself', 'COPY_INTO_SELF');
+        }
+        // Safe only now: the destination was free before we started, so what is
+        // there is ours. Never leave a half-copied tree for the user to clean up.
+        if (targetWasFree) {
+          await fs.rm(toResolved, { recursive: true, force: true }).catch(() => {});
+        }
+        throw err;
+      }
+      return { ok: true };
+    },
+
+    // Revealing a file needs the desktop shell, which the in-process host does
+    // not expose — the menu item is gated off on `supportsReveal`, so
+    // `revealEntry` is only ever a hard guard (same posture as the terminal).
+    supportsReveal: false as const,
+    revealEntry(): Promise<never> {
+      return Promise.reject(new Error('unsupported'));
     },
 
     /**

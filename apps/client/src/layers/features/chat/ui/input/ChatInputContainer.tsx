@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import type { RefObject } from 'react';
 import type { SessionStatusEvent } from '@dorkos/shared/types';
@@ -19,7 +19,7 @@ import { CommandPalette } from '@/layers/features/commands';
 import { FilePalette } from '@/layers/features/files';
 import { ScanLine } from '@/layers/shared/ui';
 import { useAppStore, useTransport } from '@/layers/shared/model';
-import { getAgentDisplayName } from '@/layers/shared/lib';
+import { getAgentDisplayName, registerComposerInsert } from '@/layers/shared/lib';
 import { useCurrentAgent, useAgentVisual } from '@/layers/entities/agent';
 import {
   useDirectoryState,
@@ -166,6 +166,26 @@ export function ChatInputContainer({
       }
     },
     [sessionId, transport]
+  );
+
+  // "Add to Chat" in the file explorer lands here (`shared/lib/composer-insert`):
+  // append the reference to whatever is already typed and put the caret after
+  // it. The current text is read through a ref so the registration survives
+  // every keystroke instead of re-running on each render.
+  const latestInputRef = useRef(input);
+  useEffect(() => {
+    latestInputRef.current = input;
+  });
+  useEffect(
+    () =>
+      registerComposerInsert((text) => {
+        const current = latestInputRef.current;
+        const separator = current.length > 0 && !/\s$/.test(current) ? ' ' : '';
+        const next = `${current}${separator}${text}`;
+        setInput(next);
+        chatInputRef.current?.focusAt(next.length);
+      }),
+    [setInput, chatInputRef]
   );
 
   const isIdle = !isStreaming && chatQueue.editingIndex === null;

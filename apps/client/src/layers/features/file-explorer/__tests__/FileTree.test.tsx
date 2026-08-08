@@ -61,6 +61,10 @@ const baseProps = {
   onNewFolder: noop,
   onDelete: noop,
   onMove: noop,
+  revealLabel: 'Reveal in Finder',
+  onReveal: noop,
+  onAddToChat: noop,
+  onCopyPath: noop,
 };
 
 beforeAll(() => {
