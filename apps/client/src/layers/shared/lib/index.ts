@@ -194,7 +194,12 @@ export {
   type UiCommandOrigin,
 } from './ui-action-dispatcher';
 export { registerExtensionRemount, requestExtensionRemount } from './extension-remount';
-export { registerComposerInsert, requestComposerInsert } from './composer-insert';
+export {
+  composerFileReference,
+  registerComposerInsert,
+  requestComposerInsert,
+} from './composer-insert';
+export { FILE_PATH_DRAG_TYPE, hasFilePathDrag, readFilePathDrag } from './file-drag';
 export {
   buildUiStateSnapshot,
   prepareUiStateForSend,

@@ -2,14 +2,16 @@ import { useCallback, useMemo } from 'react';
 import { toast } from 'sonner';
 import type { FileEntry } from '@dorkos/shared/types';
 import { useTransport } from '@/layers/shared/model';
-import { requestComposerInsert } from '@/layers/shared/lib';
+import { composerFileReference, requestComposerInsert } from '@/layers/shared/lib';
 import { useConfig } from '@/layers/entities/config';
 import { toastCrudError } from '../lib/crud-errors';
 import { revealActionLabel, toAbsolutePath } from '../lib/paths';
+import { useFileExplorerStore } from './file-explorer-store';
 
 /**
  * The explorer's non-mutating row actions (DOR-1032): show an entry in the
- * operating system's file manager, copy its path, and hand it to the chat.
+ * operating system's file manager, copy its path, hand it to the chat, and put
+ * it on the clipboard for a later Paste.
  *
  * None of these touch the tree, so they stay out of `use-file-crud` (which owns
  * the optimistic cache dance). Copy succeeds silently — the menu closing is the
@@ -36,6 +38,8 @@ export interface FileActionsApi {
   copyPath: (entry: FileEntry, kind: CopyPathKind) => Promise<void>;
   /** Insert `@<path>` into the chat composer and focus it. */
   addToChat: (entry: FileEntry) => void;
+  /** Put an entry on the explorer clipboard, ready for Paste. */
+  copyToClipboard: (entry: FileEntry) => void;
 }
 
 /**
@@ -81,11 +85,25 @@ export function useFileActions(cwd: string | null): FileActionsApi {
   );
 
   const addToChat = useCallback((entry: FileEntry): void => {
-    // Trailing space so the next thing typed is a new word — the same shape the
-    // composer's own `@` file picker inserts.
-    const delivered = requestComposerInsert(`@${entry.path} `);
+    const delivered = requestComposerInsert(composerFileReference(entry.path));
     if (!delivered) toast.error('Open a chat first to add a file to it');
   }, []);
 
-  return { revealLabel, reveal, copyPath, addToChat };
+  const copyToClipboard = useCallback((entry: FileEntry): void => {
+    useFileExplorerStore.getState().setClipboard({
+      path: entry.path,
+      isDir: entry.type === 'dir',
+    });
+    // The path also goes on the SYSTEM clipboard, so a paste into the chat — or
+    // any other app — yields the path. Paste inside the tree never reads this,
+    // so a browser that refuses the write costs nothing worth interrupting for:
+    // the copy the person asked for still happened.
+    try {
+      void navigator.clipboard.writeText(entry.path).catch(() => {});
+    } catch {
+      // No clipboard API at all (an insecure origin). Same reasoning.
+    }
+  }, []);
+
+  return { revealLabel, reveal, copyPath, addToChat, copyToClipboard };
 }

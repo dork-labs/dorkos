@@ -1,6 +1,6 @@
 import { AnimatePresence, motion } from 'motion/react';
 import { cn } from '@/layers/shared/lib';
-import { useDragAndPaste } from './use-drag-and-paste';
+import { useDragAndPaste, usePathDrop } from './use-drag-and-paste';
 
 /** Chat's card chrome, which every surface now shares. */
 const CARD_CHROME = 'bg-surface relative m-2 rounded-xl border p-2';
@@ -21,6 +21,16 @@ export interface ComposerRootProps {
    * overlay. Omitted => no dropzone is mounted at all.
    */
   onFilesDropped?: (files: File[]) => void;
+  /**
+   * Accept a file dragged out of the file tree. Given => a dropped file
+   * reference arrives here as its working-directory-relative path, instead of
+   * being treated as an upload. Omitted => the card ignores those drops.
+   *
+   * Separate from `onFilesDropped` because it is a different event with a
+   * different answer: the tree drags a reference to a file the machine already
+   * has, so the surface writes it into the message rather than uploading it.
+   */
+  onPathDropped?: (path: string) => void;
   /** Merged after the card's own classes, so a caller can override them. */
   className?: string;
 }
@@ -42,7 +52,12 @@ export interface ComposerRootProps {
  * `canAttach` flag, because a flag could disagree with what is on screen:
  * a surface accepts files because it wired the handler, full stop.
  */
-export function ComposerRoot({ children, onFilesDropped, className }: ComposerRootProps) {
+export function ComposerRoot({
+  children,
+  onFilesDropped,
+  onPathDropped,
+  className,
+}: ComposerRootProps) {
   // Not a conditional hook and deliberately not a no-op handler either.
   // `useDragAndPaste` calls `useDropzone`, which attaches document-level drag
   // listeners; mounting that on every room and thread composer with no attach
@@ -51,13 +66,21 @@ export function ComposerRoot({ children, onFilesDropped, className }: ComposerRo
   // obeys the rules of hooks and stays honest about what is listening.
   if (onFilesDropped) {
     return (
-      <DropCapableCard onFilesDropped={onFilesDropped} className={className}>
+      <DropCapableCard
+        onFilesDropped={onFilesDropped}
+        onPathDropped={onPathDropped}
+        className={className}
+      >
         {children}
       </DropCapableCard>
     );
   }
 
-  return <ComposerCard className={className}>{children}</ComposerCard>;
+  return (
+    <ComposerCard onPathDropped={onPathDropped} className={className}>
+      {children}
+    </ComposerCard>
+  );
 }
 
 /**
@@ -69,26 +92,76 @@ export function ComposerRoot({ children, onFilesDropped, className }: ComposerRo
  * element, and it stays the CALLER's to apply — a card that baked it in would
  * push every room and dashboard composer off the bottom of a phone.
  */
-function ComposerCard({ children, className }: { children: React.ReactNode; className?: string }) {
-  return <div className={cn(CARD_CHROME, className)}>{children}</div>;
+function ComposerCard({
+  children,
+  onPathDropped,
+  className,
+}: {
+  children: React.ReactNode;
+  onPathDropped?: (path: string) => void;
+  className?: string;
+}) {
+  const pathDrop = usePathDrop(onPathDropped);
+
+  return (
+    // A drop target is not a control: there is nothing here to focus or
+    // activate, and a keyboard reaches the same file through the composer's own
+    // `@` picker. react-dropzone's root carries these very handlers on a plain
+    // div for the same reason.
+    // eslint-disable-next-line jsx-a11y/no-static-element-interactions
+    <div
+      className={cn(CARD_CHROME, className)}
+      onDragOver={pathDrop?.onDragOver}
+      onDrop={pathDrop ? (e) => void pathDrop.onDrop(e) : undefined}
+    >
+      {children}
+    </div>
+  );
 }
 
 /** The same card, plus the dropzone, hidden file input, and drop overlay. */
 function DropCapableCard({
   children,
   onFilesDropped,
+  onPathDropped,
   className,
 }: {
   children: React.ReactNode;
   onFilesDropped: (files: File[]) => void;
+  onPathDropped?: (path: string) => void;
   className?: string;
 }) {
   const { getRootProps, getInputProps, isDragActive, handlePaste } = useDragAndPaste({
     onFilesSelected: onFilesDropped,
   });
+  const pathDrop = usePathDrop(onPathDropped);
+  const rootProps = getRootProps();
 
   return (
-    <div {...getRootProps()} onPaste={handlePaste} className={cn(CARD_CHROME, className)}>
+    // Same reasoning as `ComposerCard`; `rootProps` already sets the role
+    // react-dropzone chose, which the rule cannot see through the spread.
+    // eslint-disable-next-line jsx-a11y/no-static-element-interactions
+    <div
+      {...rootProps}
+      // Composed by hand rather than handed to react-dropzone, so the ordering
+      // is ours to state: ours runs first, then react-dropzone's, ALWAYS —
+      // including for a drop we just consumed. Its drop handler is what clears
+      // the drag targets it counted on the way in, and skipping it left the
+      // "Drop files to attach" overlay stuck on forever after the first file
+      // dragged in from the tree.
+      onDragOver={(e) => {
+        pathDrop?.onDragOver(e);
+        rootProps.onDragOver?.(e);
+      }}
+      onDrop={(e) => {
+        // A file reference is not an upload; react-dropzone ignores it anyway
+        // (it acts only on drags carrying real files), so both can run.
+        pathDrop?.onDrop(e);
+        rootProps.onDrop?.(e);
+      }}
+      onPaste={handlePaste}
+      className={cn(CARD_CHROME, className)}
+    >
       <input {...getInputProps()} />
 
       <AnimatePresence>

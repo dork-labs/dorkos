@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useLayoutEffect, useRef } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import type { FileEntry } from '@dorkos/shared/types';
-import { parentOf } from '../model/tree';
-import type { FlatRow } from '../model/types';
+import { cn, hasFilePathDrag, readFilePathDrag } from '@/layers/shared/lib';
+import { parentOf, ROOT_KEY } from '../model/tree';
+import type { EntryRef, FlatRow } from '../model/types';
 import { useFileExplorerStore } from '../model/file-explorer-store';
 import type { CopyPathKind } from '../model/use-file-actions';
 import { FileTreeRow } from './FileTreeRow';
@@ -32,6 +33,16 @@ interface FileTreeProps {
   onNewFolder: (parent: string) => void;
   onDelete: (entry: FileEntry) => void;
   onMove: (fromPath: string, toDir: string) => void;
+  /** Copy rather than move — an Alt-held drop, or Paste and Duplicate. */
+  onCopyInto: (from: EntryRef, toDir: string) => void;
+  /** Put an entry on the explorer clipboard. */
+  onCopy: (entry: FileEntry) => void;
+  /** Paste the clipboard into a directory. */
+  onPaste: (toDir: string) => void;
+  /** Copy an entry beside itself. */
+  onDuplicate: (entry: FileEntry) => void;
+  /** Whether the clipboard holds something this directory could take. */
+  canPasteInto: (toDir: string) => boolean;
   /** Reveal-item label from the server's platform, or null to hide the item. */
   revealLabel: string | null;
   onReveal: (entry: FileEntry) => void;
@@ -44,7 +55,8 @@ interface FileTreeProps {
  * Chunk B). Renders a plain list for small trees and a `@tanstack/react-virtual`
  * windowed list once a directory grows past {@link VIRTUALIZE_THRESHOLD} rows.
  * Arrow keys move and expand/collapse the selection; Enter opens, F2 renames,
- * Delete removes.
+ * Delete removes, and Cmd/Ctrl+C and +V copy and paste. Dropping a row in the
+ * empty space below the tree moves it to the root.
  */
 export function FileTree(props: FileTreeProps) {
   const { rows, selectedPath, renamingPath, errorPaths, onSelectPath, onRetryDir } = props;
@@ -162,6 +174,40 @@ export function FileTree(props: FileTreeProps) {
     programmaticTopRef.current = el.scrollTop;
   }, [selectedPath, rows, virtualize, virtualizer]);
 
+  // Dropping in the empty space below the rows moves (or Alt-copies) into the
+  // directory the tree is rooted at. Rows stop their own drag events from
+  // bubbling, so this only ever sees drops that landed on nothing.
+  const [rootDropTarget, setRootDropTarget] = useState(false);
+  const { onCopyInto, onMove } = props;
+  const handleRootDragOver = useCallback((e: React.DragEvent) => {
+    if (!hasFilePathDrag(e.dataTransfer.types)) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = e.altKey ? 'copy' : 'move';
+    setRootDropTarget(true);
+  }, []);
+  // A dragged path only ever names a row that is on screen — that is what made
+  // it draggable — so the rows are where its `isDir` comes from.
+  const copyDropped = useCallback(
+    (fromPath: string, toDir: string) => {
+      const dragged = rows.find((r) => r.entry.path === fromPath);
+      if (!dragged) return;
+      onCopyInto({ path: fromPath, isDir: dragged.entry.type === 'dir' }, toDir);
+    },
+    [rows, onCopyInto]
+  );
+
+  const handleRootDrop = useCallback(
+    (e: React.DragEvent) => {
+      setRootDropTarget(false);
+      const from = readFilePathDrag(e.dataTransfer);
+      if (from === null) return;
+      e.preventDefault();
+      if (e.altKey) copyDropped(from, ROOT_KEY);
+      else onMove(from, ROOT_KEY);
+    },
+    [copyDropped, onMove]
+  );
+
   const renderRow = (row: FlatRow) => (
     <FileTreeRow
       row={row}
@@ -178,6 +224,11 @@ export function FileTree(props: FileTreeProps) {
       onNewFolder={props.onNewFolder}
       onDelete={props.onDelete}
       onMove={props.onMove}
+      onCopyInto={copyDropped}
+      onCopy={props.onCopy}
+      onPaste={props.onPaste}
+      onDuplicate={props.onDuplicate}
+      canPasteInto={props.canPasteInto}
       revealLabel={props.revealLabel}
       onReveal={props.onReveal}
       onAddToChat={props.onAddToChat}
@@ -193,7 +244,13 @@ export function FileTree(props: FileTreeProps) {
       tabIndex={0}
       onKeyDown={handleKeyDown}
       onScroll={handleScroll}
-      className="focus-visible:ring-ring/40 h-full overflow-auto outline-none focus-visible:ring-1 focus-visible:ring-inset"
+      onDragOver={handleRootDragOver}
+      onDragLeave={() => setRootDropTarget(false)}
+      onDrop={handleRootDrop}
+      className={cn(
+        'focus-visible:ring-ring/40 h-full overflow-auto outline-none focus-visible:ring-1 focus-visible:ring-inset',
+        rootDropTarget && 'ring-ring/60 bg-accent/30 ring-1 ring-inset'
+      )}
     >
       {virtualize ? (
         <div style={{ height: virtualizer.getTotalSize() }} className="relative w-full">
@@ -219,6 +276,15 @@ export function FileTree(props: FileTreeProps) {
   );
 }
 
+/**
+ * Where a paste lands given what is selected: inside a selected folder, beside
+ * a selected file, or at the tree's root when nothing is selected.
+ */
+function pasteTargetOf(entry: FileEntry | undefined): string {
+  if (!entry) return ROOT_KEY;
+  return entry.type === 'dir' ? entry.path : parentOf(entry.path);
+}
+
 /** Keyboard navigation for the tree, returning the container `onKeyDown` handler. */
 function useKeyboardNav(props: FileTreeProps, activate: (entry: FileEntry) => void) {
   const { rows, selectedPath, renamingPath, onSelectPath } = props;
@@ -228,6 +294,27 @@ function useKeyboardNav(props: FileTreeProps, activate: (entry: FileEntry) => vo
       if (renamingPath !== null) return; // the rename input owns keys while open
       const index = rows.findIndex((r) => r.entry.path === selectedPath);
       const current = index >= 0 ? rows[index] : undefined;
+
+      // Copy and paste, ahead of the navigation ladder. `metaKey || ctrlKey` is
+      // how every other shortcut in the app spells "the modifier this OS uses"
+      // — Cmd on a Mac, Ctrl everywhere else — and the rename input above has
+      // already returned, so typing a name keeps its own copy and paste.
+      if (e.metaKey || e.ctrlKey) {
+        const key = e.key.toLowerCase();
+        if (key === 'c' && current) {
+          e.preventDefault();
+          props.onCopy(current.entry);
+          return;
+        }
+        if (key === 'v') {
+          e.preventDefault();
+          // Into the selected folder, beside the selected file, or — with
+          // nothing selected — into the directory the tree is rooted at.
+          props.onPaste(pasteTargetOf(current?.entry));
+          return;
+        }
+        return;
+      }
 
       switch (e.key) {
         case 'ArrowDown':

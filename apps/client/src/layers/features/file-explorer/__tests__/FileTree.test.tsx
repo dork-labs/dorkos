@@ -35,6 +35,63 @@ function file(path: string): FileEntry {
   return { name, path, type: 'file', size: 1, mtime: 0, isSymlink: false };
 }
 
+function dir(path: string): FileEntry {
+  const name = path.includes('/') ? path.slice(path.lastIndexOf('/') + 1) : path;
+  return { name, path, type: 'dir', size: 0, mtime: 0, isSymlink: false };
+}
+
+function rowOf(entry: FileEntry): FlatRow {
+  return { entry, depth: 0, expanded: false, loading: false };
+}
+
+/**
+ * A stand-in for the real `DataTransfer`, which jsdom does not implement.
+ * Lowercases type keys the way a browser does, so the readers' case handling is
+ * exercised rather than assumed.
+ */
+function fakeDataTransfer(initial: Record<string, string> = {}) {
+  const data = new Map(Object.entries(initial).map(([k, v]) => [k.toLowerCase(), v]));
+  return {
+    dropEffect: 'none',
+    effectAllowed: 'none',
+    get types() {
+      return [...data.keys()];
+    },
+    setData(type: string, value: string) {
+      data.set(type.toLowerCase(), value);
+    },
+    getData(type: string) {
+      return data.get(type.toLowerCase()) ?? '';
+    },
+  };
+}
+
+const PATH_TYPE = 'application/x-dorkos-file-path';
+
+/**
+ * Dispatch a drag event carrying a `dataTransfer` and a real `altKey`.
+ *
+ * `fireEvent.dragOver` and friends cannot do this: jsdom implements no
+ * `DragEvent`, so Testing Library falls back to a plain `Event`, which drops
+ * every modifier key from the init — and the Alt-to-copy behaviour under test
+ * would silently read as a move. A `MouseEvent` keeps the modifier, and React
+ * dispatches on the event's NAME, so it reaches the drag handlers all the same.
+ */
+function fireDrag(
+  el: Element,
+  type: 'dragstart' | 'dragover' | 'drop',
+  init: { dataTransfer: ReturnType<typeof fakeDataTransfer>; altKey?: boolean }
+) {
+  const event = new MouseEvent(type, {
+    bubbles: true,
+    cancelable: true,
+    altKey: init.altKey ?? false,
+  });
+  Object.defineProperty(event, 'dataTransfer', { value: init.dataTransfer });
+  fireEvent(el, event);
+  return event;
+}
+
 /** Build `n` distinct file rows (well under the virtualization threshold). */
 function rowsOf(n: number): FlatRow[] {
   return Array.from({ length: n }, (_, i) => ({
@@ -61,6 +118,11 @@ const baseProps = {
   onNewFolder: noop,
   onDelete: noop,
   onMove: noop,
+  onCopyInto: noop,
+  onCopy: noop,
+  onPaste: noop,
+  onDuplicate: noop,
+  canPasteInto: () => false,
   revealLabel: 'Reveal in Finder',
   onReveal: noop,
   onAddToChat: noop,
@@ -142,6 +204,229 @@ describe('FileTree scroll restore (review nit 2)', () => {
     sim.scrollHeight = 800;
     view.rerender(<FileTree {...baseProps} rows={rowsOf(6)} />);
     expect(tree.scrollTop).toBe(40);
+  });
+});
+
+describe('FileTree drag and drop (DOR-1032)', () => {
+  const treeRows = [rowOf(dir('src')), rowOf(file('a.ts'))];
+
+  it('puts both the plain path and our own file-reference type on a dragged row', () => {
+    render(<FileTree {...baseProps} rows={treeRows} />);
+    const dataTransfer = fakeDataTransfer();
+
+    fireDrag(screen.getByRole('treeitem', { name: 'a.ts' }), 'dragstart', { dataTransfer });
+
+    expect(dataTransfer.getData('text/plain')).toBe('a.ts');
+    expect(dataTransfer.getData(PATH_TYPE)).toBe('a.ts');
+    // Without this the browser refuses an Alt-held copy outright.
+    expect(dataTransfer.effectAllowed).toBe('copyMove');
+  });
+
+  it('shows the copy cursor while Alt is held over a folder, and the move cursor otherwise', () => {
+    render(<FileTree {...baseProps} rows={treeRows} />);
+    const folder = screen.getByRole('treeitem', { name: 'src' });
+
+    const moving = fakeDataTransfer({ [PATH_TYPE]: 'a.ts' });
+    fireDrag(folder, 'dragover', { dataTransfer: moving, altKey: false });
+    expect(moving.dropEffect).toBe('move');
+
+    const copying = fakeDataTransfer({ [PATH_TYPE]: 'a.ts' });
+    fireDrag(folder, 'dragover', { dataTransfer: copying, altKey: true });
+    expect(copying.dropEffect).toBe('copy');
+  });
+
+  it('moves on a plain drop into a folder and copies when Alt is held', () => {
+    const onMove = vi.fn();
+    const onCopyInto = vi.fn();
+    render(<FileTree {...baseProps} rows={treeRows} onMove={onMove} onCopyInto={onCopyInto} />);
+    const folder = screen.getByRole('treeitem', { name: 'src' });
+    const dataTransfer = fakeDataTransfer({ 'text/plain': 'a.ts', [PATH_TYPE]: 'a.ts' });
+
+    fireDrag(folder, 'drop', { dataTransfer, altKey: false });
+    expect(onMove).toHaveBeenCalledWith('a.ts', 'src');
+    expect(onCopyInto).not.toHaveBeenCalled();
+
+    fireDrag(folder, 'drop', { dataTransfer, altKey: true });
+    // The copy carries whether the dragged row was a folder, read off the row
+    // itself — a path alone would not say.
+    expect(onCopyInto).toHaveBeenCalledWith({ path: 'a.ts', isDir: false }, 'src');
+    expect(onMove).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not let a drop on a folder count as a drop on the root as well', () => {
+    const onMove = vi.fn();
+    render(<FileTree {...baseProps} rows={treeRows} onMove={onMove} />);
+
+    fireDrag(screen.getByRole('treeitem', { name: 'src' }), 'drop', {
+      dataTransfer: fakeDataTransfer({ 'text/plain': 'a.ts', [PATH_TYPE]: 'a.ts' }),
+    });
+
+    expect(onMove).toHaveBeenCalledTimes(1);
+    expect(onMove).toHaveBeenCalledWith('a.ts', 'src');
+  });
+
+  it.each([
+    ['plain', treeRows, 'a.ts'] as const,
+    // Past VIRTUALIZE_THRESHOLD (100) the tree windows its rows; the drop
+    // target is the scroll container either way, so both must behave.
+    ['virtualized', rowsOf(150), 'f0.ts'] as const,
+  ])('accepts a drop in the empty space below the rows (%s)', (_mode, rows, dragged) => {
+    const onMove = vi.fn();
+    const onCopyInto = vi.fn();
+    render(<FileTree {...baseProps} rows={rows} onMove={onMove} onCopyInto={onCopyInto} />);
+    const tree = screen.getByRole('tree');
+
+    fireDrag(tree, 'drop', {
+      dataTransfer: fakeDataTransfer({ 'text/plain': dragged, [PATH_TYPE]: dragged }),
+    });
+    expect(onMove).toHaveBeenCalledWith(dragged, '');
+
+    fireDrag(tree, 'drop', {
+      dataTransfer: fakeDataTransfer({ 'text/plain': dragged, [PATH_TYPE]: dragged }),
+      altKey: true,
+    });
+    expect(onCopyInto).toHaveBeenCalledWith({ path: dragged, isDir: false }, '');
+  });
+
+  it('opens the empty space as a drop target while one of our files is over it', () => {
+    // A drop target that never calls `preventDefault` on dragover is not a drop
+    // target at all: the browser refuses the drop and the handler below never
+    // runs. Every other assertion here dispatches `drop` directly, so this is
+    // the only one that can see that.
+    render(<FileTree {...baseProps} rows={treeRows} />);
+    const tree = screen.getByRole('tree');
+
+    const moving = fakeDataTransfer({ [PATH_TYPE]: 'src/a.ts' });
+    const movingEvent = fireDrag(tree, 'dragover', { dataTransfer: moving });
+    expect(movingEvent.defaultPrevented).toBe(true);
+    expect(moving.dropEffect).toBe('move');
+
+    const copying = fakeDataTransfer({ [PATH_TYPE]: 'src/a.ts' });
+    fireDrag(tree, 'dragover', { dataTransfer: copying, altKey: true });
+    expect(copying.dropEffect).toBe('copy');
+  });
+
+  it('opens a folder row as a drop target, but never for text from another app', () => {
+    render(<FileTree {...baseProps} rows={treeRows} />);
+    const folder = screen.getByRole('treeitem', { name: 'src' });
+
+    const ours = fakeDataTransfer({ 'text/plain': 'a.ts', [PATH_TYPE]: 'a.ts' });
+    expect(fireDrag(folder, 'dragover', { dataTransfer: ours }).defaultPrevented).toBe(true);
+
+    // Text dragged out of another app carries `text/plain` and nothing else.
+    const prose = fakeDataTransfer({ 'text/plain': 'a.ts' });
+    const proseEvent = fireDrag(folder, 'dragover', { dataTransfer: prose });
+    expect(proseEvent.defaultPrevented).toBe(false);
+    expect(prose.dropEffect).toBe('none');
+  });
+
+  it('does not move a file because a dragged sentence happened to name it', () => {
+    const onMove = vi.fn();
+    render(<FileTree {...baseProps} rows={treeRows} onMove={onMove} />);
+
+    fireDrag(screen.getByRole('treeitem', { name: 'src' }), 'drop', {
+      dataTransfer: fakeDataTransfer({ 'text/plain': 'a.ts' }),
+    });
+
+    expect(onMove).not.toHaveBeenCalled();
+  });
+
+  it('ignores a drag that carries files from the operating system', () => {
+    const onMove = vi.fn();
+    render(<FileTree {...baseProps} rows={treeRows} onMove={onMove} />);
+    const tree = screen.getByRole('tree');
+    const dataTransfer = fakeDataTransfer({ Files: '' });
+
+    fireDrag(tree, 'dragover', { dataTransfer });
+    fireDrag(tree, 'drop', { dataTransfer });
+
+    // Not our drag: no drop effect claimed, and nothing moved.
+    expect(dataTransfer.dropEffect).toBe('none');
+    expect(onMove).not.toHaveBeenCalled();
+  });
+});
+
+describe('FileTree copy and paste keys (DOR-1032)', () => {
+  const treeRows = [rowOf(dir('src')), rowOf(file('src/a.ts')), rowOf(file('b.ts'))];
+
+  it('copies the selected row on the platform modifier + C', () => {
+    const onCopy = vi.fn();
+    render(<FileTree {...baseProps} rows={treeRows} selectedPath="b.ts" onCopy={onCopy} />);
+
+    fireEvent.keyDown(screen.getByRole('tree'), { key: 'c', metaKey: true });
+
+    expect(onCopy).toHaveBeenCalledWith(expect.objectContaining({ path: 'b.ts' }));
+  });
+
+  it('pastes into a selected folder, beside a selected file, or into the root', () => {
+    const onPaste = vi.fn();
+    function Harness({ selected }: { selected: string | null }) {
+      return <FileTree {...baseProps} rows={treeRows} selectedPath={selected} onPaste={onPaste} />;
+    }
+
+    const view = render(<Harness selected="src" />);
+    fireEvent.keyDown(screen.getByRole('tree'), { key: 'v', metaKey: true });
+    expect(onPaste).toHaveBeenLastCalledWith('src');
+
+    view.rerender(<Harness selected="src/a.ts" />);
+    fireEvent.keyDown(screen.getByRole('tree'), { key: 'v', metaKey: true });
+    expect(onPaste).toHaveBeenLastCalledWith('src');
+
+    view.rerender(<Harness selected={null} />);
+    fireEvent.keyDown(screen.getByRole('tree'), { key: 'v', metaKey: true });
+    expect(onPaste).toHaveBeenLastCalledWith('');
+  });
+
+  it('answers to Ctrl as well as Cmd, since only one of them exists per platform', () => {
+    const onPaste = vi.fn();
+    render(<FileTree {...baseProps} rows={treeRows} selectedPath="src" onPaste={onPaste} />);
+
+    fireEvent.keyDown(screen.getByRole('tree'), { key: 'v', ctrlKey: true });
+
+    expect(onPaste).toHaveBeenCalledWith('src');
+  });
+
+  it('leaves copy and paste to the rename box while a name is being typed', () => {
+    const onCopy = vi.fn();
+    const onPaste = vi.fn();
+    render(
+      <FileTree
+        {...baseProps}
+        rows={treeRows}
+        selectedPath="b.ts"
+        renamingPath="b.ts"
+        onCopy={onCopy}
+        onPaste={onPaste}
+      />
+    );
+    const tree = screen.getByRole('tree');
+
+    fireEvent.keyDown(tree, { key: 'c', metaKey: true });
+    fireEvent.keyDown(tree, { key: 'v', metaKey: true });
+
+    expect(onCopy).not.toHaveBeenCalled();
+    expect(onPaste).not.toHaveBeenCalled();
+  });
+
+  it('does not treat the modifier as plain navigation', () => {
+    const onSelectPath = vi.fn();
+    const onDelete = vi.fn();
+    render(
+      <FileTree
+        {...baseProps}
+        rows={treeRows}
+        selectedPath="b.ts"
+        onSelectPath={onSelectPath}
+        onDelete={onDelete}
+      />
+    );
+    const tree = screen.getByRole('tree');
+
+    fireEvent.keyDown(tree, { key: 'ArrowDown', metaKey: true });
+    fireEvent.keyDown(tree, { key: 'Backspace', metaKey: true });
+
+    expect(onSelectPath).not.toHaveBeenCalled();
+    expect(onDelete).not.toHaveBeenCalled();
   });
 });
 
