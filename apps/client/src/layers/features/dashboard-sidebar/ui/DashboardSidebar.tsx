@@ -48,6 +48,7 @@ import {
   beginSessionNavigation,
   sessionKeys,
 } from '@/layers/entities/session';
+import { useJumpBackIn } from '@/layers/entities/recents';
 import { getRuntimeDescriptor } from '@/layers/entities/runtime';
 import type { Session } from '@dorkos/shared/types';
 import type { ThreadSummary } from '@dorkos/shared/room-schemas';
@@ -58,7 +59,7 @@ import { useAgentHubStore } from '@/layers/features/agent-hub';
 import { AgentListItem } from './AgentListItem';
 import { AgentOnboardingCard } from './AgentOnboardingCard';
 import { SidebarNavHeader } from './SidebarNavHeader';
-import { RecentSessionsSection } from './RecentSessionsSection';
+import { JumpBackInSection } from './JumpBackInSection';
 import { ChannelsSection } from './rooms/ChannelsSection';
 import { ThreadsSection } from './rooms/ThreadsSection';
 import { DirectMessagesSection } from './rooms/DirectMessagesSection';
@@ -171,9 +172,17 @@ export function DashboardSidebar() {
     () => Object.fromEntries((roomsQuery.data ?? []).map((r) => [r.id, roomDisplayTitle(r)])),
     [roomsQuery.data]
   );
-  const channelsSearch = useSearch({ strict: false }) as { id?: string; thread?: string };
-  const activeRoomId = pathname === '/channels' ? (channelsSearch.id ?? null) : null;
-  const activeThreadId = pathname === '/channels' ? (channelsSearch.thread ?? null) : null;
+  const routeSearch = useSearch({ strict: false }) as {
+    id?: string;
+    thread?: string;
+    session?: string;
+  };
+  const activeRoomId = pathname === '/channels' ? (routeSearch.id ?? null) : null;
+  const activeThreadId = pathname === '/channels' ? (routeSearch.thread ?? null) : null;
+  // Which session is on screen, read off the URL for the same reason the active
+  // room is: a session's identity travels as `?session=`, and the URL is the one
+  // answer every window agrees on.
+  const activeSessionOnScreen = pathname === '/session' ? (routeSearch.session ?? null) : null;
   const handleSelectRoom = useCallback(
     (room: RoomSummary) => {
       navigate({ to: '/channels', search: { id: room.id } });
@@ -217,9 +226,11 @@ export function DashboardSidebar() {
     [navigate]
   );
 
-  // ── Cross-agent recent sessions + per-agent activity (drives the "recent" sort) ──
+  // ── Per-agent activity (drives the "recent" sort) ──
+  // The same query "Jump back in" reads below, so the two share one request and
+  // one cache; this call is here for `agentActivity`, which the sort needs and
+  // the recents model has no use for.
   const recentQuery = useRecentSessions();
-  const recentSessions = useMemo(() => recentQuery.data?.sessions ?? [], [recentQuery.data]);
   const agentActivity = useMemo(() => recentQuery.data?.agentActivity ?? {}, [recentQuery.data]);
 
   // ── Display names (duplicates disambiguated) ──
@@ -241,6 +252,11 @@ export function DashboardSidebar() {
   const attentionMap = useAgentAttentionMap(rawPaths, brokenPaths);
   const mutedPathsSet = useMemo(() => individuallyMutedAgentPaths(sidebarPrefs), [sidebarPrefs]);
   const mutedRoomIdSet = useMemo(() => individuallyMutedRoomIds(sidebarPrefs), [sidebarPrefs]);
+
+  // ── "Jump back in" — sessions, DMs and channels as one ordered list ──
+  // Fed the muted set: a muted room is one the operator asked not to be pulled
+  // back into, and this list's whole job is pulling you back into things.
+  const jumpBackIn = useJumpBackIn({ mutedRoomIds: mutedRoomIdSet });
   const effectiveMutedForRender = useMemo(
     () => effectiveMutedAgentPaths(sidebarPrefs, mutedPathsSet),
     [sidebarPrefs, mutedPathsSet]
@@ -385,7 +401,6 @@ export function DashboardSidebar() {
 
   const agentCount = rawPaths.length;
   const organized = sidebarPrefs.groups.length > 0 || pinnedItems.length > 0;
-  const showRecent = agentCount >= 2 && (recentQuery.isLoading || recentSessions.length > 0);
   // Discovery nudge: only for a fleet big enough to benefit, with no groups yet,
   // and never again once dismissed (Resolved Q — organization is user investment).
   const showGroupsHint =
@@ -705,17 +720,20 @@ export function DashboardSidebar() {
 
       <SidebarContent className="p-3">
         <SidebarDnd displayNames={displayNamesRecord} roomTitles={roomTitles}>
-          {showRecent && (
-            <RecentSessionsSection
-              sessions={recentSessions}
-              isLoading={recentQuery.isLoading}
-              warnings={recentQuery.data?.warnings}
-              agents={agents ?? {}}
-              displayNames={displayNamesRecord}
-              onSelectSession={handleResumeRecentSession}
-              onNewSession={() => handleNewSession()}
-            />
-          )}
+          <JumpBackInSection
+            items={jumpBackIn.items}
+            automated={jumpBackIn.automated}
+            isLoading={jumpBackIn.isLoading}
+            warnings={jumpBackIn.warnings}
+            agents={agents ?? {}}
+            displayNames={displayNamesRecord}
+            visualOf={roomVisualOf}
+            activeRoomId={activeRoomId}
+            activeSessionId={activeSessionOnScreen}
+            onSelectSession={handleResumeRecentSession}
+            onSelectRoom={handleSelectRoom}
+            onNewSession={() => handleNewSession()}
+          />
 
           <ThreadsSection
             threads={threads}

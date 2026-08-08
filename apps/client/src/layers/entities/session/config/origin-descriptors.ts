@@ -7,7 +7,7 @@
  * @module entities/session/config
  */
 import type { ComponentType } from 'react';
-import { Bot, MessagesSquare, CalendarClock, Globe } from 'lucide-react';
+import { Bot, MessagesSquare, CalendarClock, Globe, Hash } from 'lucide-react';
 import type { SessionOrigin } from '@dorkos/shared/types';
 
 /** Visual identity for one non-user session origin. `user` has no entry — it is never marked (calm-tech: automation is marked, humans are not). */
@@ -26,6 +26,13 @@ export interface OriginDescriptor {
 export const ORIGIN_DESCRIPTORS: Partial<Record<SessionOrigin, OriginDescriptor>> = {
   agent: { origin: 'agent', label: 'Agent', icon: Bot },
   channel: { origin: 'channel', label: 'Connection', icon: MessagesSquare },
+  // A turn an agent took in one of this machine's own rooms. `#` is the room
+  // mark the whole cockpit already draws (`RoomAvatar`), so a run from
+  // `#general` wears the same glyph as the place it came from — and the
+  // session's own `originLabel` names that place. Deliberately NOT the
+  // `MessagesSquare` a bridged chat wears: the two origins are one word apart
+  // and must not be one picture apart as well.
+  room: { origin: 'room', label: 'Room', icon: Hash },
   task: { origin: 'task', label: 'Scheduled task', icon: CalendarClock },
   external: { origin: 'external', label: 'External', icon: Globe },
 };

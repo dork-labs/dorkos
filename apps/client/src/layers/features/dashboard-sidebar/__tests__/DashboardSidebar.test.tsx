@@ -389,6 +389,27 @@ function group(overrides: Partial<SidebarGroup> = {}): SidebarGroup {
   };
 }
 
+/**
+ * Every match for `text` OUTSIDE the "Jump back in" shortcut.
+ *
+ * That section is a recency shortcut and re-draws rooms that also live in their
+ * own sections — the same multi-presence Pinned has always had. So every
+ * assertion about WHERE a room is filed has to look past it, or it counts the
+ * shortcut's copy as a second home.
+ */
+function allOutsideShortcut(text: string): HTMLElement[] {
+  const shortcut =
+    screen.queryByText('Jump back in')?.closest('[data-slot="sidebar-group"]') ?? null;
+  return screen.queryAllByText(text).filter((el) => shortcut === null || !shortcut.contains(el));
+}
+
+/** The one match for `text` outside the "Jump back in" shortcut. */
+function outsideShortcut(text: string): HTMLElement {
+  const matches = allOutsideShortcut(text);
+  expect(matches, `expected exactly one "${text}" outside the shortcut`).toHaveLength(1);
+  return matches[0]!;
+}
+
 describe('DashboardSidebar', () => {
   afterEach(() => cleanup());
 
@@ -688,9 +709,9 @@ describe('DashboardSidebar', () => {
     );
 
     renderWithProviders(<DashboardSidebar />);
-    await screen.findByText('#general');
+    await screen.findAllByText('#general');
     fireEvent.click(screen.getAllByText('alpha')[0]); // slow lookup starts
-    fireEvent.click(screen.getByText('#general')); // arrives immediately
+    fireEvent.click(outsideShortcut('#general')); // arrives immediately
 
     await waitFor(() => expect(mockNavigate).toHaveBeenCalled());
     // Real time, on purpose: the claim is that a SECOND navigation never
@@ -732,10 +753,10 @@ describe('DashboardSidebar', () => {
     );
 
     renderWithProviders(<DashboardSidebar />);
-    await screen.findByText('#general');
-    fireEvent.click(screen.getByText('#general')); // reading a room
+    await screen.findAllByText('#general');
+    fireEvent.click(outsideShortcut('#general')); // reading a room
     fireEvent.click(screen.getAllByText('beta')[0]); // slow agent lookup starts
-    fireEvent.click(screen.getByText('#random')); // and you move rooms
+    fireEvent.click(outsideShortcut('#random')); // and you move rooms
 
     // Real time, on purpose: the claim is that the lookup never lands.
     await new Promise((resolve) => setTimeout(resolve, 200));
@@ -759,9 +780,9 @@ describe('DashboardSidebar', () => {
     );
 
     renderWithProviders(<DashboardSidebar />);
-    await screen.findByText('#general');
+    await screen.findAllByText('#general');
     fireEvent.click(screen.getAllByText('beta')[0]);
-    fireEvent.click(screen.getByText('#general')); // they move on
+    fireEvent.click(outsideShortcut('#general')); // they move on
 
     await act(async () => {
       reject(new Error('offline'));
@@ -900,16 +921,29 @@ describe('DashboardSidebar', () => {
     expect(mockUpdateSidebar).not.toHaveBeenCalled(); // never auto-deleted
   });
 
-  // --- Recent section visibility ---
+  // --- "Jump back in" (team-room-home §D2.3) ---
+  //
+  // It replaced the "Recent" section, and the visibility rule went with it: the
+  // old one needed two agents and a session, because a one-agent cockpit's
+  // recents were a copy of its only row. This list holds rooms too, so the only
+  // question it can honestly ask is whether there is anything to go back to.
 
-  it('hides Recent when fewer than 2 agents', () => {
+  it('draws nothing at all when there is nothing to jump back into', async () => {
+    renderWithProviders(<DashboardSidebar />);
+    // Awaited, not asserted on the first frame: the sources are still in flight
+    // then, and a shortcut that showed its skeletons and then vanished would
+    // pass a synchronous check while looking wrong.
+    await waitFor(() => expect(screen.queryByText('Jump back in')).not.toBeInTheDocument());
+  });
+
+  it('offers a session to jump back into, even for a one-agent cockpit', () => {
     mockMeshPaths.mockReturnValue(['/projects/solo']);
     mockRecent.mockReturnValue({
       data: {
         sessions: [
           {
             id: 's1',
-            title: 'Hi',
+            title: 'Fix the bug',
             cwd: '/projects/solo',
             updatedAt: new Date().toISOString(),
             runtime: 'claude-code',
@@ -922,15 +956,22 @@ describe('DashboardSidebar', () => {
       isLoading: false,
     });
     renderWithProviders(<DashboardSidebar />);
-    expect(screen.queryByText('Recent')).not.toBeInTheDocument();
+    expect(screen.getByText('Jump back in')).toBeInTheDocument();
+    expect(screen.getByText('Fix the bug')).toBeInTheDocument();
   });
 
-  it('hides Recent when there are no recent sessions', () => {
-    renderWithProviders(<DashboardSidebar />);
-    expect(screen.queryByText('Recent')).not.toBeInTheDocument();
-  });
-
-  it('shows Recent with session rows when ≥2 agents have recent sessions', () => {
+  // The whole point of the rewrite: a person who spent the morning in #general
+  // used to see nothing about it here.
+  it('offers rooms alongside sessions, most recent first', async () => {
+    mockRooms.mockReturnValue([
+      room({
+        id: 'c1',
+        kind: 'channel',
+        slug: 'general',
+        title: 'general',
+        lastActivityAt: '2026-08-01T12:00:00.000Z',
+      }),
+    ]);
     mockRecent.mockReturnValue({
       data: {
         sessions: [
@@ -938,10 +979,10 @@ describe('DashboardSidebar', () => {
             id: 's1',
             title: 'Fix the bug',
             cwd: '/projects/alpha',
-            updatedAt: new Date().toISOString(),
+            updatedAt: '2026-08-01T09:00:00.000Z',
             runtime: 'claude-code',
             permissionMode: 'default',
-            createdAt: new Date().toISOString(),
+            createdAt: '2026-08-01T08:00:00.000Z',
           },
         ],
         agentActivity: {},
@@ -949,18 +990,37 @@ describe('DashboardSidebar', () => {
       isLoading: false,
     });
     renderWithProviders(<DashboardSidebar />);
-    expect(screen.getByText('Recent')).toBeInTheDocument();
-    expect(screen.getByText('Fix the bug')).toBeInTheDocument();
+
+    const shortcut = (await screen.findByText('Jump back in')).closest(
+      '[data-slot="sidebar-group"]'
+    ) as HTMLElement;
+    await waitFor(() => expect(within(shortcut).getByText('general')).toBeInTheDocument());
+    expect(within(shortcut).getByText('Fix the bug')).toBeInTheDocument();
+    const text = shortcut.textContent ?? '';
+    expect(text.indexOf('general')).toBeLessThan(text.indexOf('Fix the bug'));
   });
 
-  it('shows 3 skeleton rows while Recent is loading', () => {
+  it('opens a room from the shortcut, the same place its own section would', async () => {
+    mockRooms.mockReturnValue([channel('c1', 'general')]);
+    renderWithProviders(<DashboardSidebar />);
+
+    const shortcut = (await screen.findByText('Jump back in')).closest(
+      '[data-slot="sidebar-group"]'
+    ) as HTMLElement;
+    await waitFor(() => expect(within(shortcut).getByText('general')).toBeInTheDocument());
+    fireEvent.click(within(shortcut).getByText('general'));
+
+    expect(mockNavigate).toHaveBeenCalledWith({ to: '/channels', search: { id: 'c1' } });
+  });
+
+  it('shows 3 skeleton rows while the first answer is on its way', () => {
     mockRecent.mockReturnValue({ data: undefined, isLoading: true });
     renderWithProviders(<DashboardSidebar />);
-    // Scoped to the Recent group: the Channels and Direct messages sections
+    // Scoped to the shortcut group: the Channels and Direct messages sections
     // render their own skeletons off a different query, so a whole-container
     // count would be measuring all three at once.
-    const recentGroup = screen.getByText('Recent').closest('[data-slot="sidebar-group"]');
-    expect(recentGroup?.querySelectorAll('[data-slot="sidebar-menu-skeleton"]')).toHaveLength(3);
+    const shortcut = screen.getByText('Jump back in').closest('[data-slot="sidebar-group"]');
+    expect(shortcut?.querySelectorAll('[data-slot="sidebar-menu-skeleton"]')).toHaveLength(3);
   });
 
   // --- Add affordance + onboarding ---
@@ -1382,9 +1442,15 @@ describe('DashboardSidebar mixed groups (sidebar-groups, DOR-580)', () => {
     mockPathname = '/';
   });
 
-  /** The room row's mark, as the accessibility tree exposes it: decorative text. */
+  /**
+   * The room row's mark, as the accessibility tree exposes it: decorative text.
+   *
+   * Read off the row in the room's OWN section — the "Jump back in" shortcut
+   * draws the same room a second time, and a mark that differed between the two
+   * would be exactly the drift this asserts against.
+   */
   function markOf(roomName: string): string {
-    const row = screen.getByText(roomName).closest('[data-slot="sidebar-menu-item"]');
+    const row = outsideShortcut(roomName).closest('[data-slot="sidebar-menu-item"]');
     return row?.querySelector('[data-slot="room-avatar"]')?.textContent ?? '';
   }
 
@@ -1398,7 +1464,7 @@ describe('DashboardSidebar mixed groups (sidebar-groups, DOR-580)', () => {
     // Gate on the CHANNEL, not on the group header: the header renders from
     // prefs on the first pass, so waiting for it proves nothing about whether
     // the room list has arrived yet.
-    await screen.findByText('#general');
+    await screen.findAllByText('#general');
     const groupBody = screen
       .getByText('Clients')
       .closest('[data-slot="sidebar-group"]') as HTMLElement;
@@ -1413,10 +1479,10 @@ describe('DashboardSidebar mixed groups (sidebar-groups, DOR-580)', () => {
 
     // The gate: #random only ever renders once the room list has settled, so
     // reaching it proves the ungrouped Channels list has been built.
-    expect(await screen.findByText('#random')).toBeInTheDocument();
+    expect((await screen.findAllByText('#random'))[0]).toBeInTheDocument();
     // The count is knowable, so assert it rather than "not more than one".
-    expect(screen.getAllByText('#general')).toHaveLength(1);
-    expect(screen.getAllByText('#random')).toHaveLength(1);
+    expect(allOutsideShortcut('#general')).toHaveLength(1);
+    expect(allOutsideShortcut('#random')).toHaveLength(1);
     // And the one #general is the copy inside the group.
     const groupBody = screen.getByText('Clients').closest('[data-slot="sidebar-group"]')!;
     expect(within(groupBody as HTMLElement).getByText('#general')).toBeInTheDocument();
@@ -1430,8 +1496,8 @@ describe('DashboardSidebar mixed groups (sidebar-groups, DOR-580)', () => {
     mockSidebarPrefs.mockReturnValue(makePrefs({ groups: [group({ items: [roomRef('dm1')] })] }));
     renderWithProviders(<DashboardSidebar />);
 
-    expect(await screen.findByText('Bo')).toBeInTheDocument();
-    expect(screen.getAllByText('Ana')).toHaveLength(1);
+    expect((await screen.findAllByText('Bo'))[0]).toBeInTheDocument();
+    expect(allOutsideShortcut('Ana')).toHaveLength(1);
     const groupBody = screen.getByText('Clients').closest('[data-slot="sidebar-group"]')!;
     expect(within(groupBody as HTMLElement).getByText('Ana')).toBeInTheDocument();
   });
@@ -1442,7 +1508,7 @@ describe('DashboardSidebar mixed groups (sidebar-groups, DOR-580)', () => {
     renderWithProviders(<DashboardSidebar />);
 
     await screen.findByText('Pinned');
-    expect(screen.getAllByText('#general')).toHaveLength(2);
+    expect(allOutsideShortcut('#general')).toHaveLength(2);
   });
 
   // --- Empty states that must not lie (spec §4) ---
@@ -1504,7 +1570,7 @@ describe('DashboardSidebar mixed groups (sidebar-groups, DOR-580)', () => {
     mockRooms.mockReturnValue([dmWith('dm1', '/projects/alpha', 'Ana')]);
     renderWithProviders(<DashboardSidebar />);
 
-    await screen.findByText('Ana');
+    await screen.findAllByText('Ana');
     // No manifest is resolved in this fixture, so the face is hashed from the
     // path — the same expression the agent's own row resolves through.
     const expected = resolveAgentVisual({ id: '/projects/alpha' }).emoji;
@@ -1535,7 +1601,7 @@ describe('DashboardSidebar mixed groups (sidebar-groups, DOR-580)', () => {
     mockRooms.mockReturnValue([room({ id: 'dm1', kind: 'dm', title: 'Ana and Bo', participants })]);
     renderWithProviders(<DashboardSidebar />);
 
-    await screen.findByText('Ana and Bo');
+    await screen.findAllByText('Ana and Bo');
     const expected =
       resolveAgentVisual({ id: '/projects/alpha' }).emoji +
       resolveAgentVisual({ id: '/projects/beta' }).emoji;
@@ -1546,8 +1612,8 @@ describe('DashboardSidebar mixed groups (sidebar-groups, DOR-580)', () => {
     mockRooms.mockReturnValue([channel('c1', 'general')]);
     renderWithProviders(<DashboardSidebar />);
 
-    await screen.findByText('#general');
-    const row = screen.getByText('#general').closest('[data-slot="sidebar-menu-item"]')!;
+    await screen.findAllByText('#general');
+    const row = outsideShortcut('#general').closest('[data-slot="sidebar-menu-item"]')!;
     const mark = row.querySelector('[data-slot="room-avatar"]')!;
     // The lucide Hash glyph is an <svg>, and it carries no text at all — which
     // is exactly how it differs from every face-bearing mark.

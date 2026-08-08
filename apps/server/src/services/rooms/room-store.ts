@@ -1160,6 +1160,55 @@ export class RoomStore {
   }
 
   /**
+   * Which of these session ids are room turns, and what to call the room.
+   *
+   * The read behind the session-origin room overlay
+   * (`services/session/room-origin-overlay.ts`). Scoped to the ids asked about —
+   * unlike {@link RoomStore.listRoomSessions}, which is the unscoped whole-table
+   * read a hand-run health check can afford — because this one runs on every
+   * session list a person loads.
+   *
+   * **Bindings are keyed by the CURRENT session id.** A runtime renames a
+   * session mid-turn and `RoomSessionLedger.rebindBySessionId` moves the binding
+   * with it (DOR-784), so matching on `room_sessions.session_id` matches the
+   * live id and a retired one correctly answers nothing.
+   *
+   * The label is what a person calls the room — `#slug` for a channel, the title
+   * for a direct message — the same rule the client's `roomDisplayTitle`
+   * follows. Archived rooms are included deliberately: the session still came
+   * from that room, and a run whose room was archived is exactly the one a
+   * reader would otherwise be unable to place.
+   *
+   * @param sessionIds - The sessions to ask about.
+   * @returns One entry per bound session; absent means "not a room turn".
+   */
+  resolveRoomOrigins(sessionIds: string[]): Map<string, { roomLabel: string; roomId: string }> {
+    const result = new Map<string, { roomLabel: string; roomId: string }>();
+    if (sessionIds.length === 0) return result;
+    const rows = this.db
+      .select({
+        sessionId: roomSessions.sessionId,
+        roomId: rooms.id,
+        kind: rooms.kind,
+        slug: rooms.slug,
+        title: rooms.title,
+      })
+      .from(roomSessions)
+      .innerJoin(rooms, eq(rooms.id, roomSessions.roomId))
+      .where(inArray(roomSessions.sessionId, sessionIds))
+      .all();
+    for (const row of rows) {
+      // Several agents in one room answer with several sessions, so many ids can
+      // map to the same room — but one id is bound in at most one place, and the
+      // first row for it wins if that ever stops being true.
+      if (result.has(row.sessionId)) continue;
+      const label = row.kind === 'channel' && row.slug ? `#${row.slug}` : row.title;
+      result.set(row.sessionId, { roomLabel: label, roomId: row.roomId });
+    }
+    return result;
+  }
+
+  /**
    * Bind an agent member's session for this room. First write wins, mirroring
    * the runtime binding it will carry (ADR-0255).
    *

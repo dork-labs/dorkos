@@ -226,8 +226,23 @@ export type QuestionItem = z.infer<typeof QuestionItemSchema>;
 export const EffortLevelSchema = z.enum(EFFORT_LEVELS).openapi('EffortLevel');
 export type EffortLevel = z.infer<typeof EffortLevelSchema>;
 
+/**
+ * What started a session.
+ *
+ * `channel` is a BRIDGED chat (Telegram, Slack, a webhook) and `room` is one of
+ * this machine's own rooms — a channel or a DM in the cockpit. They are two
+ * different facts and the names are unfortunately close, which is why `room`
+ * exists rather than being folded into `channel`: a room's turns are engine runs
+ * under a thread the reader can already see (ADR 260808-140954,
+ * thread-over-sessions), so a surface that lists threads has to be able to tell
+ * them apart and drop the run.
+ *
+ * `room` is only ever assigned by the server-side overlay that joins against
+ * `room_sessions` — the transcript-head classifier cannot see it, because a room
+ * turn carries no marker of its own.
+ */
 export const SessionOriginSchema = z
-  .enum(['user', 'agent', 'channel', 'task', 'external'])
+  .enum(['user', 'agent', 'channel', 'room', 'task', 'external'])
   .openapi('SessionOrigin');
 export type SessionOrigin = z.infer<typeof SessionOriginSchema>;
 

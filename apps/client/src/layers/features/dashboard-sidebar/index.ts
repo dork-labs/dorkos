@@ -1,6 +1,6 @@
 /**
  * Dashboard sidebar feature — top-level navigation plus the organized agent
- * roster (Recent sessions, Pinned references, user groups, ungrouped agents).
+ * roster (Jump back in, Pinned references, user groups, ungrouped agents).
  *
  * Only symbols consumed outside the feature are exported here; the section
  * components, menus, and CRUD inputs are internal and imported by relative path.
@@ -21,3 +21,6 @@ export {
   buildAgentsHeaderMenuNodes,
   buildChannelsHeaderMenuNodes,
 } from './ui/SectionHeaderMenuItems';
+// The two "Jump back in" rows — exported for the Dev Playground, which is where
+// the three kinds of row can be seen side by side without a real fleet.
+export { JumpBackInRoomRow, JumpBackInSessionRow } from './ui/JumpBackInRow';

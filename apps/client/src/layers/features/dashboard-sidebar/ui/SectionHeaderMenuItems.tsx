@@ -257,8 +257,8 @@ export function buildThreadsHeaderMenuNodes(
   return [collapseNode(model.collapsed, model.onToggleCollapsed)];
 }
 
-/** Inputs the Recent header's item list is built from. */
-export interface RecentHeaderMenuModel {
+/** Inputs the "Jump back in" header's item list is built from. */
+export interface JumpBackInHeaderMenuModel {
   /** Whether the section is collapsed, which names the collapse item. */
   collapsed: boolean;
   /** Start a new session. */
@@ -268,7 +268,13 @@ export interface RecentHeaderMenuModel {
 }
 
 /**
- * Build the Recent header's items, in order.
+ * Build the "Jump back in" header's items, in order.
+ *
+ * **One create action, and it stays "New session" even though the section now
+ * lists rooms too.** Channels and Direct messages each carry their own "+" a few
+ * rows below, so "New channel" and "New message" here would be third and fourth
+ * doors to flows that already have two; a new session is the only thing this
+ * list can start that has no button of its own nearby.
  *
  * "New session" carries no ellipsis on purpose: it opens the session straight
  * away rather than asking anything first, and the agent row's own "New session"
@@ -276,7 +282,9 @@ export interface RecentHeaderMenuModel {
  *
  * @param model - The section's state plus the action callbacks.
  */
-export function buildRecentHeaderMenuNodes(model: RecentHeaderMenuModel): SectionHeaderMenuNode[] {
+export function buildJumpBackInHeaderMenuNodes(
+  model: JumpBackInHeaderMenuModel
+): SectionHeaderMenuNode[] {
   return [
     {
       kind: 'action',

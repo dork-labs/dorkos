@@ -137,6 +137,23 @@ export const FEATURES_SECTIONS: PlaygroundSection[] = [
   },
   // AgentSidebarShowcases
   {
+    id: 'jump-back-in-rows',
+    title: 'Jump back in rows',
+    page: 'features',
+    category: 'Agent',
+    keywords: [
+      'jump back in',
+      'recents',
+      'sidebar',
+      'session',
+      'room',
+      'channel',
+      'direct message',
+      'dm',
+      'shortcut',
+    ],
+  },
+  {
     id: 'sidebarsectionheader',
     title: 'SidebarSectionHeader',
     page: 'features',
