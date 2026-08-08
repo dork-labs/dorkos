@@ -26,7 +26,7 @@ const IME_PROCESS_KEY_CODE = 229;
  * (`foo\\` still sends). Both surfaces get this arithmetic once; each answers
  * `textBeforeCaret()` for itself.
  */
-function countTrailingBackslashes(text: string): number {
+export function countTrailingBackslashes(text: string): number {
   let count = 0;
   for (let i = text.length - 1; i >= 0 && text[i] === '\\'; i -= 1) count += 1;
   return count;

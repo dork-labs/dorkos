@@ -8,7 +8,7 @@
  *
  * @module features/composer/ui/field/LexicalField
  */
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef } from 'react';
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import { ListPlugin } from '@lexical/react/LexicalListPlugin';
 import { LexicalComposer } from '@lexical/react/LexicalComposer';
 import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext';
@@ -16,12 +16,16 @@ import { ContentEditable } from '@lexical/react/LexicalContentEditable';
 import { LexicalErrorBoundary } from '@lexical/react/LexicalErrorBoundary';
 import { HistoryPlugin } from '@lexical/react/LexicalHistoryPlugin';
 import { RichTextPlugin } from '@lexical/react/LexicalRichTextPlugin';
+import { registerMarkdownShortcuts } from '@lexical/markdown';
 import type { EditorThemeClasses } from 'lexical';
 import { useIsTouchOnly } from '@/layers/shared/model';
 import type { EditingSurface } from '../editing-surface';
 import type { ComposerFieldHandle, ComposerFieldProps } from './ComposerFieldProps';
 import { COMPOSER_NODES } from './lexical-nodes';
 import { createLexicalSurface } from './lexical-surface';
+import { COMPOSER_TRANSFORMERS } from './lexical-transformers';
+import { useLadderCommands } from './use-ladder-commands';
+import { usePastePrecedence } from './use-paste-precedence';
 import { useLexicalValue } from './use-lexical-value';
 
 /**
@@ -87,6 +91,7 @@ const LexicalFieldInner = forwardRef<ComposerFieldHandle, ComposerFieldProps>(
       placeholder,
       placeholderOverlay,
       isPaletteOpen,
+      paletteHasResults,
       paletteListboxId,
       activeDescendantId,
       onSurfaceChange,
@@ -100,10 +105,20 @@ const LexicalFieldInner = forwardRef<ComposerFieldHandle, ComposerFieldProps>(
     // Built once from the editor, which is stable for this component's life, so
     // the ladder's callback identity never churns on it.
     const surfaceRef = useRef<EditingSurface | null>(null);
+    const [surface, setSurface] = useState<EditingSurface | null>(null);
     useEffect(() => {
       surfaceRef.current ??= createLexicalSurface(editor);
+      setSurface(surfaceRef.current);
       onSurfaceChange(surfaceRef.current);
     }, [editor, onSurfaceChange]);
+
+    // What makes `**bold**` become bold as the closing pair lands. Registered
+    // here rather than as a plugin component so the transformer set and the
+    // node set are configured in one place.
+    useEffect(() => registerMarkdownShortcuts(editor, [...COMPOSER_TRANSFORMERS]), [editor]);
+
+    useLadderCommands({ onKeyDown, surface, isPaletteOpen, paletteHasResults });
+    usePastePrecedence();
 
     useImperativeHandle(
       ref,
@@ -121,11 +136,6 @@ const LexicalFieldInner = forwardRef<ComposerFieldHandle, ComposerFieldProps>(
     const hasText = value.trim().length > 0;
     const showNativePlaceholder = placeholderOverlay === undefined || placeholderOverlay === null;
 
-    const handleKeyDown = useCallback(
-      (event: React.KeyboardEvent) => onKeyDown(event),
-      [onKeyDown]
-    );
-
     // Every attribute here also appears on the textarea, with the same value.
     // A difference is an a11y regression, not a swap — the flag-on baseline
     // review asserts the two maps match.
@@ -142,7 +152,10 @@ const LexicalFieldInner = forwardRef<ComposerFieldHandle, ComposerFieldProps>(
       // the textarea.
       'aria-label': placeholder,
       'aria-multiline': true,
-      onKeyDown: handleKeyDown,
+      // Deliberately NO React `onKeyDown`. The ladder reaches this field through
+      // Lexical's commands at critical priority (`use-ladder-commands`), and a
+      // synthetic handler here as well would run every rung a second time —
+      // one Enter, two sends.
       onFocus,
       onBlur,
     };

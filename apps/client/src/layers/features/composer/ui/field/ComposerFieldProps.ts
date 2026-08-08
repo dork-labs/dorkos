@@ -35,6 +35,15 @@ export interface ComposerFieldProps {
    */
   placeholderOverlay?: React.ReactNode;
   isPaletteOpen?: boolean;
+  /**
+   * Whether the open palette has rows to pick from.
+   *
+   * A rich-text field needs it to place the two list rows of the Enter table:
+   * a `/` palette open inside a list item is still a palette, so Enter picks
+   * the row rather than continuing the list. The plain field ignores it — the
+   * ladder already reads the same fact from its own props.
+   */
+  paletteHasResults?: boolean;
   /** `id` of the listbox the open palette rendered, for `aria-controls`. */
   paletteListboxId?: string;
   /** `id` of the highlighted palette row, for `aria-activedescendant`. */

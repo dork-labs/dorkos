@@ -364,6 +364,7 @@ export const ComposerInput = forwardRef<ComposerInputHandle, ComposerInputProps>
             placeholder={placeholder}
             placeholderOverlay={placeholderOverlay}
             isPaletteOpen={isPaletteOpen}
+            paletteHasResults={paletteHasResults}
             paletteListboxId={paletteListboxId}
             activeDescendantId={activeDescendantId}
             onSurfaceChange={setSurface}
