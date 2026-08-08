@@ -85,11 +85,18 @@ function ComposerInputDemo({
   initialValue = '',
   isStreaming = false,
   queueDepth = 0,
+  richText = false,
 }: {
   label: string;
   initialValue?: string;
   isStreaming?: boolean;
   queueDepth?: number;
+  /**
+   * Render the formatting field instead of the plain one. Forced through the
+   * prop rather than read from config, so the playground never depends on — or
+   * changes — whoever is looking at it.
+   */
+  richText?: boolean;
 }) {
   const [value, setValue] = useState(initialValue);
   return (
@@ -102,6 +109,7 @@ function ComposerInputDemo({
             onChange={setValue}
             onSubmit={() => {}}
             isStreaming={isStreaming}
+            richText={richText}
             queueDepth={queueDepth}
             onStop={() => {}}
             onQueue={() => {}}
@@ -200,6 +208,11 @@ export function InputShowcases() {
         />
         <ComposerInputDemo label="Streaming (stop button)" isStreaming />
         <ComposerInputDemo label="Streaming with queue" isStreaming queueDepth={2} />
+        <ComposerInputDemo
+          label="Formatting as you type (Settings → Advanced turns this on)"
+          richText
+          initialValue={'# Ship notes\n\n- **check** the `build`\n- then the *docs*'}
+        />
       </PlaygroundSection>
 
       <PlaygroundSection
