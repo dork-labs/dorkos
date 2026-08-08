@@ -547,6 +547,22 @@ function preamble(data: RoomContextData, where: string): string[] {
     );
   }
 
+  // The files on the message being answered. Said HERE, beside "this message
+  // mentions you", because that is where the rest of what DorkOS knows about the
+  // triggering message lives — the message itself is the turn's content and is
+  // the person's words byte for byte (ADR-0273), so nothing may be appended to
+  // it. Paths are labels, sanitized like every other one and outside the fence,
+  // exactly as the bracketed suffix on a windowed entry is.
+  if (data.triggerAttachments.length > 0) {
+    const paths = data.triggerAttachments
+      .map((file) => label(file.path, ATTACHMENT_PATH_MAX_LENGTH))
+      .join(', ');
+    lines.push(
+      `${data.triggerAttachments.length === 1 ? 'A file is' : 'Files are'} attached to the ` +
+        `message you are answering: ${paths}`
+    );
+  }
+
   if (data.thread) {
     // The count and the fact are ours. The message the thread hangs off is
     // somebody's words, so it is quoted inside the fence instead.

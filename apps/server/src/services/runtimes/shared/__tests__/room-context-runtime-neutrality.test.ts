@@ -68,6 +68,7 @@ const ENTRY: AdditionalContextEntry = {
     pendingTruncated: false,
     ownRecent: [],
     acknowledgments: [],
+    triggerAttachments: [],
     addressing: {
       responseMode: 'always',
       engagedUntil: null,

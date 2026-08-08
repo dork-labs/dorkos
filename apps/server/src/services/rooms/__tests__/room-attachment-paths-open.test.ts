@@ -227,6 +227,56 @@ describe('every path the agent is told about', () => {
     ).resolves.toBeUndefined();
   });
 
+  it('delivers the files on the message that TRIGGERED the turn', async () => {
+    // The most ordinary case there is — "@ana look at this" with a file on it —
+    // and the one the window cannot carry: the triggering entry is deliberately
+    // excluded from `pending` because it reaches the model as the turn's
+    // content. That exclusion took its FILES with it, so the words arrived and
+    // the file silently did not.
+    const file = await upload('crash.log');
+    const posted = service.post(room.id, {
+      authorId: human,
+      text: '@ana look at this',
+      attachmentIds: [file],
+    });
+    await service.triggersIdle();
+
+    const { block, projection } = lastTurn();
+    await projectRoomAttachments({
+      store: () => store,
+      roomId: room.id,
+      agentPath,
+      attachments: projection,
+    });
+
+    // The entry is NOT in the window — that is the whole point of the case.
+    const turn = runner.turns[runner.turns.length - 1];
+    expect(turn.roomContext.pending.some((entry) => entry.text.includes('look at this'))).toBe(
+      false
+    );
+
+    // But its file is named, in the labels region beside the rest of what DorkOS
+    // says about the message being answered.
+    const told = `.dork/.temp/room-attachments/${posted.id}/${file}-crash.log`;
+    expect(block).toContain(`A file is attached to the message you are answering: ${told}`);
+
+    // And the claim: the path the model was told OPENS.
+    await expect(
+      access(path.join(agentPath, told)),
+      `the agent was told about ${told}, which is not there`
+    ).resolves.toBeUndefined();
+  });
+
+  it('says nothing about the triggering message when it carried no files', async () => {
+    service.post(room.id, { authorId: human, text: '@ana any idea?' });
+    await service.triggersIdle();
+
+    const { block, projection } = lastTurn();
+
+    expect(block).not.toContain('attached to the message you are answering');
+    expect(projection).toEqual([]);
+  });
+
   it('tells the agent nothing when a message carried no files', async () => {
     service.post(room.id, { authorId: human, text: 'just words' });
     await service.triggersIdle();

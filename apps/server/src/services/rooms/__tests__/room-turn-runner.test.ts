@@ -205,6 +205,7 @@ function request(
       pendingTruncated: false,
       ownRecent: [],
       acknowledgments: [],
+      triggerAttachments: [],
       addressing: {
         responseMode: 'always',
         engagedUntil: null,

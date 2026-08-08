@@ -21,7 +21,15 @@ export interface StoredRoomAttachment {
   stream: Readable;
   /** What the row says it is. Never re-sniffed on the way out. */
   contentType: string;
-  /** A strong ETag, quotes included, derived from the content. */
+  /**
+   * A validator for a conditional request, delimiters included.
+   *
+   * Deliberately not specified as strong-or-weak by this port: a local store
+   * answers a weak `W/"<size>-<mtime>"` from one `stat`, so a 304 costs no read
+   * at all, while a bucket-backed one would hand back whatever validator the
+   * bucket already computed. Both are opaque to the route, which only ever
+   * compares this against `If-None-Match`.
+   */
   etag: string;
   /** The bytes' length, for `Content-Length`. */
   size: number;

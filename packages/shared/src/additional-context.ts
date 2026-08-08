@@ -383,6 +383,21 @@ export interface RoomContextData {
    * nothing to render.
    */
   acknowledgments: RoomContextAcknowledgment[];
+  /**
+   * The files posted with the message this turn is ANSWERING, as paths relative
+   * to the agent's own working directory. Empty when it carried none.
+   *
+   * Separate from every entry's own `attachments` because the triggering entry
+   * is deliberately not in `pending`: it reaches the model as the turn's
+   * content, not as history (`excludeEntryId`). Without this field the most
+   * ordinary case there is — "@agent look at this file" — delivered the words
+   * and silently dropped the file, because the roll-up only ever looked at the
+   * window.
+   *
+   * It cannot ride on the content itself: the prompt is the message byte for
+   * byte (ADR-0273), so anything DorkOS has to say about it belongs here.
+   */
+  triggerAttachments: { name: string; path: string }[];
   /** How this agent is addressed here, and whether it was addressed now. */
   addressing: {
     /** This room's stored override, not the agent's manifest default. */
@@ -590,6 +605,7 @@ export const RoomContextDataSchema = z.object({
   pendingTruncated: z.boolean(),
   ownRecent: z.array(RoomContextEntrySchema),
   acknowledgments: z.array(RoomContextAcknowledgmentSchema),
+  triggerAttachments: z.array(z.object({ name: z.string(), path: z.string() })),
   addressing: z.object({
     responseMode: ResponseModeSchema,
     engagedUntil: z.string().nullable(),

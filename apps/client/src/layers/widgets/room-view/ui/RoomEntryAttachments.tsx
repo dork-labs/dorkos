@@ -79,7 +79,14 @@ export function attachmentsSummary(attachments: RoomAttachment[]): string | null
 function AttachmentItem({ attachment }: { attachment: RoomAttachment }) {
   if (attachment.preview === 'image') {
     return (
-      <a href={attachment.url} target="_blank" rel="noreferrer">
+      // `focus-ring` on the link, matching every other interactive element in
+      // this widget: a thumbnail is reachable by keyboard and has to say so.
+      <a
+        href={attachment.url}
+        target="_blank"
+        rel="noreferrer"
+        className="focus-ring inline-block rounded-md"
+      >
         <img
           src={attachment.url}
           alt={attachment.name}
@@ -96,7 +103,7 @@ function AttachmentItem({ attachment }: { attachment: RoomAttachment }) {
       target="_blank"
       rel="noreferrer"
       data-testid="room-entry-attachment-chip"
-      className="border-border bg-muted/40 text-foreground hover:bg-muted flex max-w-full items-center gap-2 rounded-md border px-2 py-1 text-xs transition-colors"
+      className="focus-ring border-border bg-muted/40 text-foreground hover:bg-muted flex max-w-full items-center gap-2 rounded-md border px-2 py-1 text-xs transition-colors"
     >
       <FileIcon aria-hidden className="text-muted-foreground size-4 shrink-0" />
       {/* `min-w-0` is what lets a long filename actually truncate: a flex item

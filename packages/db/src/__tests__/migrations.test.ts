@@ -16,6 +16,13 @@ const DRIZZLE_DIR = path.join(__dirname, '../../drizzle');
  */
 const PRE_CASCADE_MIGRATION_IDX = 43;
 
+/**
+ * Journal index of the last migration BEFORE `room_attachments` gained `url`.
+ * A database built through this index is the shape an install that had already
+ * applied 0058 and stored a file is upgrading from.
+ */
+const PRE_ATTACHMENT_URL_MIGRATION_IDX = 58;
+
 /** Temp migration folders to remove after each test. */
 const tempMigrationDirs: string[] = [];
 
@@ -421,6 +428,78 @@ describe('Database Migrations', () => {
       )
       .all('relay.sender', '2026-01-01T00:00:00Z') as { detail: string }[];
     expect(plan.some((row) => row.detail.includes('idx_relay_index_sender_created_at'))).toBe(true);
+  });
+
+  it('deleting a room_entries row cascades to the attachments bound to it', () => {
+    const db = createDb(':memory:');
+    runMigrations(db);
+    const raw = db.$client;
+
+    raw
+      .prepare(
+        "INSERT INTO rooms (id, kind, slug, title, topic, workspace_id, archived, created_at, last_activity_at) VALUES ('01ROOM', 'channel', 'backend', '#backend', NULL, NULL, 0, '2026-08-08T10:00:00Z', '2026-08-08T10:00:00Z')"
+      )
+      .run();
+    raw
+      .prepare(
+        "INSERT INTO room_entries (room_id, seq, id, author_id, kind, body, mentions, mention_spans, session_id, cascade_root, cascade_depth, parent_entry_id, thread_root_entry_id, signature, created_at) VALUES ('01ROOM', 1, '01ENTRY', '01HUMAN', 'post', '{\"text\":\"here it is\"}', '[]', '[]', NULL, '01ENTRY', 0, NULL, NULL, NULL, '2026-08-08T10:01:00Z')"
+      )
+      .run();
+    // One bound, one still staged — only the bound one hangs off the entry.
+    raw
+      .prepare(
+        "INSERT INTO room_attachments (room_id, id, entry_id, author_id, name, extension, mime_type, size, preview, url, created_at) VALUES ('01ROOM', '01BOUND', '01ENTRY', '01HUMAN', 'crash.log', 'log', 'text/plain', 11, NULL, '/api/rooms/01ROOM/attachments/01BOUND', '2026-08-08T10:01:00Z')"
+      )
+      .run();
+    raw
+      .prepare(
+        "INSERT INTO room_attachments (room_id, id, entry_id, author_id, name, extension, mime_type, size, preview, url, created_at) VALUES ('01ROOM', '01UNBOUND', NULL, '01HUMAN', 'draft.log', 'log', 'text/plain', 11, NULL, '/api/rooms/01ROOM/attachments/01UNBOUND', '2026-08-08T10:02:00Z')"
+      )
+      .run();
+
+    // Nothing deletes a room entry today. The cascade is the standing answer for
+    // the day something does — the design says a message's files die with it,
+    // and the constraint is where that lives rather than a cleanup step somebody
+    // has to remember to write beside a future `deleteEntry`.
+    expect(() => {
+      raw.prepare("DELETE FROM room_entries WHERE id = '01ENTRY'").run();
+    }).not.toThrow();
+
+    const left = raw.prepare('SELECT id FROM room_attachments ORDER BY id').all();
+    // The bound one went with its message; the staged one is nobody's message
+    // and stays for the TTL sweep to reclaim.
+    expect(left).toEqual([{ id: '01UNBOUND' }]);
+  });
+
+  it('adds the attachment url column to a table that already holds rows', () => {
+    // SQLite refuses `ADD COLUMN ... NOT NULL` without a default on any table
+    // that already has rows, so 0059 shipped with `DEFAULT ''` for exactly this
+    // case. Anyone who applied 0058 and stored a file before upgrading is the
+    // population this protects, and an empty-table test cannot see the
+    // difference — it passes either way.
+    const db = createDb(':memory:');
+    migrate(db, { migrationsFolder: migrationsFolderThrough(PRE_ATTACHMENT_URL_MIGRATION_IDX) });
+    const raw = db.$client;
+
+    expect(
+      (raw.prepare('PRAGMA table_info(room_attachments)').all() as { name: string }[]).some(
+        (c) => c.name === 'url'
+      ),
+      'the fixture must predate the url column, or this proves nothing'
+    ).toBe(false);
+
+    raw
+      .prepare(
+        "INSERT INTO room_attachments (room_id, id, entry_id, author_id, name, extension, mime_type, size, preview, created_at) VALUES ('01ROOM', '01ATT', NULL, '01HUMAN', 'crash.log', 'log', 'text/plain', 11, NULL, '2026-08-08T10:00:00Z')"
+      )
+      .run();
+
+    expect(() => runMigrations(db)).not.toThrow();
+
+    const row = raw.prepare("SELECT url FROM room_attachments WHERE id = '01ATT'").get();
+    // Backfilled to the default rather than left NULL, which the NOT NULL
+    // constraint would have refused.
+    expect(row).toEqual({ url: '' });
   });
 
   it('deleting a pulse_schedules row cascades to its pulse_runs', () => {

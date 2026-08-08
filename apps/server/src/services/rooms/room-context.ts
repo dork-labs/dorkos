@@ -302,14 +302,45 @@ export function buildRoomContext(
 
   // The attachments on those SAME entries, in ONE query. Ungated, unlike the
   // topic labels above: any room may carry files, bridged or not.
-  const attachmentsByEntry = deps.attachmentsFor(
-    input.room.id,
-    rendered.map((entry) => entry.id)
-  );
+  //
+  // **The triggering entry is in this lookup even though it is NOT in the
+  // window.** It is excluded from `missed` on purpose — it reaches the model as
+  // the turn's content rather than as history — but that exclusion silently took
+  // its FILES with it, so the most ordinary case there is, "@agent look at this
+  // file", delivered the words and nothing else. Its attachments are reported
+  // separately, as `triggerAttachments`.
+  const attachmentsByEntry = deps.attachmentsFor(input.room.id, [
+    ...rendered.map((entry) => entry.id),
+    input.entry.id,
+  ]);
   // Built in the same pass as the fill below, from this same map, so the set of
   // paths the model is told about and the set of files the projector creates
   // cannot be two different answers.
   const projection: ProjectableAttachment[] = [];
+
+  /**
+   * Turn one entry's stored attachments into what the model is told, recording
+   * the projection plan as it goes.
+   *
+   * Shared by the windowed entries and by the triggering one so the two cannot
+   * describe a file differently — the path a reader is given and the path the
+   * projector writes come from this one call either way.
+   */
+  const attachmentsOf = (entryId: string): { name: string; path: string }[] =>
+    (attachmentsByEntry.get(entryId) ?? []).map((file) => {
+      const relativePath = projectedAttachmentPath(entryId, file.id, file.name);
+      // Recording the plan HERE is what makes the lockstep structural: an entry
+      // that reaches the model records its files in the same statement that
+      // tells the model about them.
+      projection.push({
+        entryId,
+        attachmentId: file.id,
+        extension: storedExtension(file.name),
+        name: file.name,
+        relativePath,
+      });
+      return { name: file.name, path: relativePath };
+    });
 
   // Reactions on those same posts, in ONE query. Scoped to `ownRecent` because
   // that is what makes an acknowledgment age out on its own: five more messages
@@ -372,20 +403,7 @@ export function buildRoomContext(
       // Already sanitized once, at write time (spec §9.2, A9.3) — carried
       // through raw so the renderer can sanitize it again at render.
       topicLabel: topicNames.get(entry.id) ?? null,
-      attachments: (attachmentsByEntry.get(entry.id) ?? []).map((file) => {
-        const relativePath = projectedAttachmentPath(entry.id, file.id, file.name);
-        // Recording the plan HERE is what makes the lockstep structural: an
-        // entry that reaches the model records its files in the same statement
-        // that tells the model about them.
-        projection.push({
-          entryId: entry.id,
-          attachmentId: file.id,
-          extension: storedExtension(file.name),
-          name: file.name,
-          relativePath,
-        });
-        return { name: file.name, path: relativePath };
-      }),
+      attachments: attachmentsOf(entry.id),
     };
   };
 
@@ -461,6 +479,11 @@ export function buildRoomContext(
     pendingTruncated,
     ownRecent: ownRecent.map(flatten),
     acknowledgments: acknowledgments(),
+    // The files on the message being answered. Resolved through the SAME helper
+    // the windowed entries use, so the trigger's paths and theirs cannot drift
+    // — and so its files are in the projection plan like everything else the
+    // model is told about.
+    triggerAttachments: attachmentsOf(input.entry.id),
     addressing: {
       responseMode:
         self?.responseMode ?? fallbackResponseMode(deps, records.get(input.agentAuthorId)),
