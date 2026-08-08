@@ -1,5 +1,6 @@
 import type { DialogContribution } from '@/layers/shared/model';
 import { ShapeSwitcherDialog } from '@/layers/features/shapes';
+import { ProfileDrawerContainer } from '@/layers/features/profile';
 import { SettingsDialogWrapper } from './wrappers/SettingsDialogWrapper';
 import { DirectoryPickerWrapper } from './wrappers/DirectoryPickerWrapper';
 import { TasksDialogWrapper } from './wrappers/TaskDialogWrapper';
@@ -13,6 +14,17 @@ export const DIALOG_CONTRIBUTIONS: DialogContribution[] = [
     openStateKey: 'settingsOpen',
     priority: 1,
     urlParam: 'settings',
+  },
+  {
+    // Registered beside Settings so one profile panel mounts once for the whole
+    // app and `?profile=<member id>` opens it from any route (spec §W3.2). The
+    // container renders nothing until it is open, so a route that never opens a
+    // profile pays for no roster read.
+    id: 'profile',
+    component: ProfileDrawerContainer,
+    openStateKey: 'profileOpen',
+    priority: 4,
+    urlParam: 'profile',
   },
   {
     id: 'directory-picker',

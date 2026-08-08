@@ -349,54 +349,65 @@ export function StatusLineShowcases() {
         </p>
       </PlaygroundSection>
 
-      <PlaygroundSection
-        title="AgentIdentityChip"
-        description="Who you are talking to — the identity anchor of the left cluster. Click opens the agent profile; right-click (long-press on touch) offers switch agent, profile, and new session."
-      >
-        <ShowcaseLabel>With a name — every tier down to 340px</ShowcaseLabel>
-        <ShowcaseDemo>
-          <AgentIdentityChip
-            agentName={AGENT.name}
-            agentColor={AGENT.color}
-            agentEmoji={AGENT.emoji}
-            agentPath={AGENT.path}
-          />
-        </ShowcaseDemo>
-
-        <ShowcaseLabel>
-          Avatar only — the narrowest tier, name kept for screen readers
-        </ShowcaseLabel>
-        <ShowcaseDemo>
-          <AgentIdentityChip
-            agentName={AGENT.name}
-            agentColor={AGENT.color}
-            agentEmoji={AGENT.emoji}
-            agentPath={AGENT.path}
-            nameHidden
-          />
-        </ShowcaseDemo>
-
-        <ShowcaseLabel>No path — plain identity, no context menu and no click target</ShowcaseLabel>
-        <ShowcaseDemo>
-          <AgentIdentityChip
-            agentName={AGENT.name}
-            agentColor={AGENT.color}
-            agentEmoji={AGENT.emoji}
-          />
-        </ShowcaseDemo>
-
-        <ShowcaseLabel>A long name truncates rather than pushing the line wider</ShowcaseLabel>
-        <ShowcaseDemo>
-          <div className="border-border/60 w-40 rounded-md border p-1">
-            <AgentIdentityChip
-              agentName="release-engineering-assistant"
-              agentColor="#f59e0b"
-              agentEmoji="🚀"
-              agentPath={AGENT.path}
-            />
-          </div>
-        </ShowcaseDemo>
-      </PlaygroundSection>
+      <AgentIdentityChipShowcase />
     </>
+  );
+}
+
+/**
+ * The identity anchor of the status line's left cluster.
+ *
+ * Its own exported component because the Identity page renders it too — it is a
+ * session-chrome surface first, so its registry entry stays on Chat and its
+ * anchor with it (spec `identity-consistency` §W4.2).
+ */
+export function AgentIdentityChipShowcase() {
+  return (
+    <PlaygroundSection
+      title="AgentIdentityChip"
+      description="Who you are talking to — the identity anchor of the left cluster. Click opens the profile drawer, the same one every other face in the cockpit opens; right-click (long-press on touch) offers switch agent, Agent hub, and new session."
+    >
+      <ShowcaseLabel>With a name — every tier down to 340px</ShowcaseLabel>
+      <ShowcaseDemo>
+        <AgentIdentityChip
+          agentName={AGENT.name}
+          agentColor={AGENT.color}
+          agentEmoji={AGENT.emoji}
+          agentPath={AGENT.path}
+        />
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>Avatar only — the narrowest tier, name kept for screen readers</ShowcaseLabel>
+      <ShowcaseDemo>
+        <AgentIdentityChip
+          agentName={AGENT.name}
+          agentColor={AGENT.color}
+          agentEmoji={AGENT.emoji}
+          agentPath={AGENT.path}
+          nameHidden
+        />
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>No path — plain identity, no context menu and no click target</ShowcaseLabel>
+      <ShowcaseDemo>
+        <AgentIdentityChip
+          agentName={AGENT.name}
+          agentColor={AGENT.color}
+          agentEmoji={AGENT.emoji}
+        />
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>A long name truncates rather than pushing the line wider</ShowcaseLabel>
+      <ShowcaseDemo>
+        <div className="border-border/60 w-40 rounded-md border p-1">
+          <AgentIdentityChip
+            agentName="release-engineering-assistant"
+            agentColor="#f59e0b"
+            agentEmoji="🚀"
+            agentPath={AGENT.path}
+          />
+        </div>
+      </ShowcaseDemo>
+    </PlaygroundSection>
   );
 }

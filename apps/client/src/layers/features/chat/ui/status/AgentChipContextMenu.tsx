@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { ArrowLeftRight, User, Plus } from 'lucide-react';
+import { ArrowLeftRight, PanelRight, Plus } from 'lucide-react';
 import {
   ResponsiveContextMenu,
   ResponsiveContextMenuTrigger,
@@ -11,7 +11,8 @@ import {
 interface AgentChipContextMenuProps {
   children: ReactNode;
   onSwitchAgent: () => void;
-  onOpenProfile: () => void;
+  /** Open the Agent Hub — this agent's workbench in the right panel. */
+  onOpenHub: () => void;
   onNewSession: () => void;
 }
 
@@ -19,11 +20,16 @@ interface AgentChipContextMenuProps {
  * Context menu for the agent identity chip in the chat input area.
  *
  * Desktop: right-click. Mobile: long-press opens drawer.
+ *
+ * The Hub entry is named for what it opens rather than "Agent profile", which
+ * is what it used to say: the chip's own click now opens the profile drawer
+ * (DOR-957), and two controls one press apart cannot both be "profile" and mean
+ * different panels. Same destination as before — only the word changed.
  */
 export function AgentChipContextMenu({
   children,
   onSwitchAgent,
-  onOpenProfile,
+  onOpenHub,
   onNewSession,
 }: AgentChipContextMenuProps) {
   return (
@@ -41,9 +47,9 @@ export function AgentChipContextMenu({
           Switch agent
         </ResponsiveContextMenuItem>
         <ResponsiveContextMenuSeparator />
-        <ResponsiveContextMenuItem onClick={onOpenProfile}>
-          <User className="mr-2 size-4" />
-          Agent profile
+        <ResponsiveContextMenuItem onClick={onOpenHub}>
+          <PanelRight className="mr-2 size-4" />
+          Agent hub
         </ResponsiveContextMenuItem>
         <ResponsiveContextMenuSeparator />
         <ResponsiveContextMenuItem onClick={onNewSession}>

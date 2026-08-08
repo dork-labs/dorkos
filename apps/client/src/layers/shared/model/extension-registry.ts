@@ -96,7 +96,7 @@ export interface DialogContribution extends BaseContribution {
    * (e.g., `?dialog=settings`). Omit for dialogs that should not be
    * addressable via URL.
    */
-  urlParam?: 'settings' | 'agent' | 'tasks' | 'relay' | 'mesh';
+  urlParam?: 'settings' | 'agent' | 'tasks' | 'relay' | 'mesh' | 'profile';
 }
 
 export interface SettingsTabContribution extends BaseContribution {

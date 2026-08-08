@@ -1,5 +1,6 @@
 import { cva, type VariantProps } from 'class-variance-authority';
 import { cn } from '@/layers/shared/lib';
+import { identityMarkRing, IDENTITY_MARK_GROUP } from '@/layers/shared/ui';
 import type { AgentHealthStatus } from '@dorkos/shared/mesh-schemas';
 import { AgentAvatar } from './AgentAvatar';
 
@@ -51,7 +52,35 @@ const detailVariants = cva('text-muted-foreground truncate', {
 
 type IdentitySize = 'xs' | 'sm' | 'md' | 'lg';
 
-export interface AgentIdentityProps extends VariantProps<typeof identityVariants> {
+/**
+ * Whether the FACE alone is a control — and if it is, what it announces as.
+ *
+ * A union rather than two optional props, because the two are one decision. An
+ * `onAvatarClick` with no `avatarLabel` is an icon-only button with no
+ * accessible name: it renders, it works with a mouse, and a screen reader calls
+ * it "button". Nothing would have caught that at runtime, so the compiler
+ * refuses the arrangement instead.
+ */
+type AgentFaceControl =
+  | {
+      /**
+       * Make the FACE alone a control, leaving the name as plain text.
+       *
+       * For the surfaces where the row AROUND this lockup already owns the
+       * click — a sidebar agent row selects the agent — so the whole-lockup
+       * {@link AgentIdentityBaseProps.onClick} would eat the row's own target.
+       * The caller stops the event itself if the row must not also fire.
+       *
+       * Ignored when `onClick` is set: that path is already a `<button>`, and a
+       * button inside a button is invalid HTML that browsers silently unnest.
+       */
+      onAvatarClick: (e: React.MouseEvent) => void;
+      /** What the face announces as — name the ACTION, e.g. `Open Scout’s profile`. */
+      avatarLabel: string;
+    }
+  | { onAvatarClick?: never; avatarLabel?: never };
+
+interface AgentIdentityBaseProps extends VariantProps<typeof identityVariants> {
   /** CSS color string (HSL or hex override). */
   color: string;
   /** Single emoji character. */
@@ -78,6 +107,9 @@ export interface AgentIdentityProps extends VariantProps<typeof identityVariants
   onClick?: (e: React.MouseEvent) => void;
 }
 
+/** Everything the identity lockup draws, plus the optional face control. */
+export type AgentIdentityProps = AgentIdentityBaseProps & AgentFaceControl;
+
 /**
  * Standard agent display — avatar + name + optional detail.
  * The entity-layer composition for agent identity, analogous to a user card.
@@ -96,6 +128,8 @@ export function AgentIdentity({
   nameHidden,
   className,
   onClick,
+  onAvatarClick,
+  avatarLabel,
 }: AgentIdentityProps) {
   const resolvedSize: IdentitySize = size ?? 'sm';
   const isStacked = resolvedSize === 'md' || resolvedSize === 'lg';
@@ -107,15 +141,54 @@ export function AgentIdentity({
     </span>
   );
 
+  // Mark tier: when this lockup (or its face alone) is a control, the disc
+  // answers the pointer by ringing itself in the agent's own colour.
+  //
+  // **Health wins.** A disc already spending its 2px ring on mesh health takes
+  // no hover ring at all — a ring that changed colour under the pointer would
+  // make a diagnostic signal look like a hover state. Suppressed here, at the
+  // caller, rather than inside `AgentAvatar`: the disc does not know whether
+  // anything around it is pressable.
+  const marksIdentity =
+    (onClick !== undefined || onAvatarClick !== undefined) && healthStatus === undefined;
+
+  const avatar = (
+    <AgentAvatar
+      color={color}
+      emoji={emoji}
+      imageUrl={imageUrl}
+      size={size}
+      healthStatus={healthStatus}
+      className={cn(marksIdentity && identityMarkRing.group)}
+    />
+  );
+
   const content = (
     <>
-      <AgentAvatar
-        color={color}
-        emoji={emoji}
-        imageUrl={imageUrl}
-        size={size}
-        healthStatus={healthStatus}
-      />
+      {onAvatarClick && !onClick ? (
+        <button
+          type="button"
+          data-slot="agent-identity-face"
+          onClick={onAvatarClick}
+          aria-label={avatarLabel}
+          // `rounded-md`, matching the disc it wraps: an agent's face is a
+          // rounded SQUARE (spec `identity-consistency` §W1), so a circular
+          // focus ring around it draws a shape the identity does not have.
+          //
+          // The NAMED group is what lets the disc inside answer this button's
+          // hover and its keyboard focus with the same ring — and nothing
+          // else's. The press scales to 0.94 — the mark-sized step, because one
+          // number cannot fit a 300px card and a 24px disc.
+          className={cn(
+            IDENTITY_MARK_GROUP,
+            'focus-ring shrink-0 cursor-pointer rounded-md transition-[scale] duration-(--identity-press) ease-(--identity-ease-out) active:scale-[0.94]'
+          )}
+        >
+          {avatar}
+        </button>
+      ) : (
+        avatar
+      )}
       {nameHidden ? <span className="sr-only">{name}</span> : label}
     </>
   );
@@ -128,7 +201,22 @@ export function AgentIdentity({
         onClick={onClick}
         className={cn(
           identityVariants({ size }),
-          'cursor-pointer transition-opacity hover:opacity-80',
+          // Chip tier. It used to dim to 80% on hover, which is the universal
+          // idiom for DISABLED — the one thing a live control must not say. The
+          // identity's own colour answers instead, on the disc, through the
+          // named group.
+          //
+          // `focus-ring` is new here, not moved: this branch had no keyboard
+          // response of any kind, so a keyboard user learned strictly less than
+          // a mouse user. `rounded-md` gives that ring a shape to follow.
+          IDENTITY_MARK_GROUP,
+          'focus-ring cursor-pointer rounded-md transition-[scale] duration-(--identity-press) ease-(--identity-ease-out) active:scale-[0.98]',
+          // When health owns the ring, the identity has no way to answer — so
+          // the lockup falls back to the repo's neutral row hover rather than
+          // to nothing at all. Latent today (no caller passes `healthStatus`
+          // alongside `onClick`), and cheap enough to be worth having before
+          // one does.
+          !marksIdentity && 'hover:bg-accent',
           className
         )}
       >

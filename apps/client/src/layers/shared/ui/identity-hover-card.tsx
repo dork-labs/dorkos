@@ -73,6 +73,17 @@ export interface IdentityHoverCardProps {
    * touch/pen long-press. Wrapped in `asChild`, so it keeps its own tag.
    */
   children: React.ReactNode;
+  /**
+   * Open this identity's profile.
+   *
+   * A **prop, never an import**: the profile drawer is a feature and this card
+   * is a `shared/ui` primitive, so the destination has to arrive from outside.
+   * Supplied, the footer becomes a real control; omitted, it stays the inert
+   * line marked **soon** — which is still the honest state on any surface that
+   * has no id to open a profile with (a mention whose agent the fleet could not
+   * name, for one).
+   */
+  onViewProfile?: () => void;
   /** Extra classes for the popover content. */
   className?: string;
 }
@@ -94,9 +105,15 @@ function InfoChip({ className, children }: { className?: string; children: React
 /**
  * The compact identity card (design direction A): avatar and name up top,
  * `@handle` as its subtitle when there is one, a row of fact chips, and a
- * footer pinned under everything with a "View profile" affordance marked
- * **soon** — the click is deferred until there is a profile route to send it
- * to.
+ * footer pinned under everything carrying "View profile".
+ *
+ * **The footer is only as real as its destination.** Handed
+ * {@link IdentityHoverCardProps.onViewProfile} it is a button that opens the
+ * profile drawer; without one it stays the inert line marked **soon**, because
+ * a surface that cannot name this identity to the roster has nothing to open.
+ * It is also the MOUSE path only — Radix's hover card is not a keyboard or
+ * touch surface, so the trigger itself (a mention pill, a Team card) carries
+ * its own click, and that is what a keyboard and a tap reach.
  *
  * **Opens three ways, one card.** A pointer hovering the trigger opens it
  * after {@link OPEN_DELAY_MS}, and keyboard focus opens it too, both straight
@@ -110,14 +127,13 @@ function InfoChip({ className, children }: { className?: string; children: React
  * controlled `open` state. One card, three ways in; never a second
  * implementation to keep in sync.
  *
- * A plain, quick tap does nothing on its own — deliberately. The mention
- * pill this wraps has no click action yet ("View profile" is still
- * **soon**), and a tap that opened the card would read as a click
- * affordance the pill does not actually have, one this would then have to
- * un-teach once a real tap-to-navigate lands. Long-press is also gated to
- * `pointerType === 'touch' || 'pen'` specifically, so it never doubles up
- * with a mouse holding the trigger down — hover already opens that case,
- * faster.
+ * A plain, quick tap never opens this card, and now for a better reason than
+ * when it was written: on a touch screen a tap on the trigger goes straight to
+ * the profile, which is the full version of what this card summarises. The
+ * card is the glance a pointer gets on the way; a finger skips it. Long-press
+ * is gated to `pointerType === 'touch' || 'pen'` specifically, so it never
+ * doubles up with a mouse holding the trigger down — hover already opens that
+ * case, faster.
  *
  * **Gesture priority: the trigger wins over anything it sits inside, without
  * severing the event.** A mention pill in a room message lives inside
@@ -144,7 +160,12 @@ function InfoChip({ className, children }: { className?: string; children: React
  * source it has — the mock data in the dev playground today, a room roster
  * or `AuthorRef` lookup in the slice that wires this on for real.
  */
-function IdentityHoverCard({ identity, children, className }: IdentityHoverCardProps) {
+function IdentityHoverCard({
+  identity,
+  children,
+  onViewProfile,
+  className,
+}: IdentityHoverCardProps) {
   const { kind, displayName, handle, color, emoji, imageUrl, origin, agent } = identity;
   // `IdentityAvatar` mixes this straight into `color-mix()`, and this app's
   // theme tokens store a bare `H S% L%` triple (e.g. `0 0% 9%`) rather than a
@@ -243,10 +264,27 @@ function IdentityHoverCard({ identity, children, className }: IdentityHoverCardP
           )}
         </div>
 
-        <div className="border-border mt-auto flex items-center justify-between border-t px-3 py-2">
-          <span className="text-brand text-xs font-medium">View profile</span>
-          <span className="text-muted-foreground text-[10px] tracking-wide uppercase">soon</span>
-        </div>
+        {onViewProfile ? (
+          <button
+            type="button"
+            data-slot="identity-hover-card-profile"
+            onClick={onViewProfile}
+            className="border-border hover:bg-accent focus-visible:ring-ring text-brand mt-auto flex w-full items-center border-t px-3 py-2 text-left text-xs font-medium transition-colors focus-visible:ring-2 focus-visible:outline-none"
+          >
+            View profile
+          </button>
+        ) : (
+          <div className="border-border mt-auto flex items-center justify-between border-t px-3 py-2">
+            {/* Muted, not brand orange. Orange means interaction or action
+                (`contributing/design-system.md`), and this line is neither
+                until something hands it a destination — the branch above is
+                where it earns the colour back. Dressing an inert line as a
+                control is the first thing an architect reading the source
+                notices, and it was true here. */}
+            <span className="text-muted-foreground text-xs font-medium">View profile</span>
+            <span className="text-muted-foreground text-[10px] tracking-wide uppercase">soon</span>
+          </div>
+        )}
       </HoverCardContent>
     </HoverCard>
   );

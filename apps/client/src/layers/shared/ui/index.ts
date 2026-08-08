@@ -96,7 +96,13 @@ export { FloatingPanel, clampGeometry } from './floating-panel';
 export type { FloatingPanelProps, FloatingPanelGeometry } from './floating-panel';
 export { HoverBorderGradient } from './hover-border-gradient';
 export { HoverCard, HoverCardTrigger, HoverCardContent } from './hover-card';
-export { IdentityAvatar, identityAvatarVariants } from './identity-avatar';
+export {
+  IdentityAvatar,
+  identityAvatarVariants,
+  identityMarkRing,
+  IDENTITY_MARK_GROUP,
+  IDENTITY_BADGE_WAKE,
+} from './identity-avatar';
 export type { IdentityAvatarProps } from './identity-avatar';
 export { IdentityHoverCard } from './identity-hover-card';
 export type {

@@ -1,5 +1,5 @@
 import type { ChatMessage, ToolCallState } from '@/layers/features/chat/model/chat-types';
-import type { PendingFile } from '@/layers/features/chat/model/use-file-upload';
+import type { PendingFile } from '@/layers/features/composer';
 import type { QueueItem } from '@/layers/features/chat/model/use-message-queue';
 import type {
   TaskItem,
@@ -893,9 +893,14 @@ export const MOCK_IDENTITIES: Record<string, MockIdentity> = {
     kind: 'system',
     displayName: 'General',
   },
+  // Both halves are deliberately long, and the NAME is the longer of the two:
+  // the pill wraps a long handle within a line, while a fixed-width identity row
+  // truncates a long name — two different behaviours that need one cast member
+  // long enough to trigger each. A name that merely looks long (40 characters)
+  // fits the row it was meant to overflow and quietly proves nothing.
   longHandle: {
     kind: 'agent',
-    displayName: 'Codebase Migration Orchestrator (staging)',
+    displayName: 'Codebase Migration Orchestrator for the Northern Monorepo (staging)',
     handle: 'codebase-migration-orchestrator-v2',
     color: '#d4770a',
   },
@@ -964,6 +969,12 @@ export const MOCK_TEAM_ROSTER: TeamMember[] = [
     // has to be able to say which one this is.
     handle: 'miguel.telegram',
     color: '#0ea5e9',
+    // The roster's photo case. On the SELF row it would be redundant with the
+    // Account Menu and Profile Tab showcases, which already draw one; here it
+    // also proves the Team card draws a photo for somebody who is not you —
+    // the surface that silently dropped `imageUrl` until `teamMemberFace`
+    // (DOR-979 review, N2).
+    imageUrl: MOCK_PHOTO,
     isSelf: false,
     ownerId: null,
     origin: { platform: 'telegram' },

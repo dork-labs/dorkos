@@ -45,14 +45,14 @@ async function shootCockpit(page: Page, theme: Theme, rec: RunRecorder): Promise
 
 /** Capture the fleet/agents list. */
 async function shootAgents(page: Page, theme: Theme, rec: RunRecorder): Promise<void> {
-  await page.goto(url('/agents?view=list'));
+  await page.goto(url('/team?view=table'));
   await page.getByText('Sentinel', { exact: false }).first().waitFor({ timeout: WAIT_MS });
   await shoot(page, 'agents', theme, rec);
 }
 
 /** Capture the mesh topology graph. */
 async function shootTopology(page: Page, theme: Theme, rec: RunRecorder): Promise<void> {
-  await page.goto(url('/agents?view=topology'));
+  await page.goto(url('/team?view=topology'));
   await page
     .locator('[data-testid="agent-node"], .react-flow__node')
     .first()
@@ -376,7 +376,7 @@ async function shootWorkbench(page: Page, theme: Theme, rec: RunRecorder): Promi
 
 /** Open Settings → DorkOS account, link, and shoot the pending then linked states. */
 async function shootCloudLink(page: Page, theme: Theme, rec: RunRecorder): Promise<void> {
-  await page.goto(url('/agents?settings=account'));
+  await page.goto(url('/team?settings=account'));
   // One heading per settings panel since DOR-918: the dialog's own panel title.
   const panel = page.getByRole('tabpanel', { name: 'DorkOS account' });
   await panel.getByRole('heading', { name: 'DorkOS account' }).waitFor({ timeout: WAIT_MS });
@@ -495,7 +495,7 @@ const PERSONALITY_PANEL_PCT = 35;
  */
 async function drivePersonality(page: Page, mark?: LoopMark): Promise<void> {
   await seedRightPanelSplit(page, PERSONALITY_PANEL_PCT);
-  await page.goto(url('/agents?view=list'));
+  await page.goto(url('/team?view=table'));
   // The agent-hub panel binds to the agent whose Manage control opened it —
   // a bare ?agent= URL param resolves against the default cwd instead.
   await page.getByRole('button', { name: 'Manage atlas' }).click({ timeout: WAIT_MS });
@@ -710,7 +710,7 @@ export async function captureLoops(browser: Browser, rec: RunRecorder): Promise<
       surface: 'topology',
       durationMs: 6000,
       drive: async (page) => {
-        await page.goto(url('/agents?view=topology'));
+        await page.goto(url('/team?view=topology'));
         await page
           .locator('[data-testid="agent-node"], .react-flow__node')
           .first()

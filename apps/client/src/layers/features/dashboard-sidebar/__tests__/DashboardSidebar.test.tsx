@@ -207,16 +207,34 @@ vi.mock('@/layers/features/agent-hub', () => ({
   useAgentHubStore: { getState: () => ({ openHub: vi.fn() }) },
 }));
 
+/** The fleet as `GET /api/mesh/agent-paths` returns it — id and path deliberately unequal. */
+const meshFleet = () =>
+  mockMeshPaths().map((p) => ({
+    id: `mesh-id${p}`,
+    name: p.split('/').pop() ?? 'agent',
+    projectPath: p,
+  }));
+
+/**
+ * Paths the sidebar LISTS but the roster join cannot name.
+ *
+ * The two are separate reads in production and can genuinely disagree — a
+ * directory the sidebar draws from one payload while the fleet's registry has
+ * no row for it. Empty unless a case says otherwise.
+ */
+const mockUnmappedPaths = vi.fn<() => string[]>(() => []);
+
 vi.mock('@/layers/entities/mesh', () => ({
-  useMeshAgentPaths: () => ({
-    data: {
-      agents: mockMeshPaths().map((p) => ({
-        id: p,
-        name: p.split('/').pop() ?? 'agent',
-        projectPath: p,
-      })),
-    },
-  }),
+  useMeshAgentPaths: () => ({ data: { agents: meshFleet() } }),
+  // The real join's SHAPE, not a stub of its answer: a row's profile link is
+  // only correct if this returns the REGISTRY id for a path, and a mock keyed
+  // path→path would hide exactly that.
+  useMeshMemberIds: () =>
+    new Map(
+      meshFleet()
+        .filter((a) => !mockUnmappedPaths().includes(a.projectPath))
+        .map((a) => [a.projectPath, a.id])
+    ),
 }));
 
 vi.mock('@/layers/entities/agent', async () => ({
@@ -232,9 +250,28 @@ vi.mock('@/layers/entities/agent', async () => ({
   useResolvedAgents: () => ({ data: mockResolvedAgents() }),
   useExecutionExceptions: () => mockExecutionExceptions(),
   useAgentVisual: () => ({ color: '#aaaaaa', emoji: '🤖' }),
-  AgentIdentity: ({ name, emoji }: { name: string; emoji: string }) => (
+  // The face is a control now, so the stub grows one: without it the row's
+  // profile link has nothing to press and the id the sidebar hands down is
+  // untestable from here (the join it comes from lives in this component).
+  AgentIdentity: ({
+    name,
+    emoji,
+    onAvatarClick,
+    avatarLabel,
+  }: {
+    name: string;
+    emoji: string;
+    onAvatarClick?: () => void;
+    avatarLabel?: string;
+  }) => (
     <span>
-      <span>{emoji}</span>
+      {onAvatarClick ? (
+        <button type="button" aria-label={avatarLabel} onClick={onAvatarClick}>
+          {emoji}
+        </button>
+      ) : (
+        <span>{emoji}</span>
+      )}
       <span>{name}</span>
     </span>
   ),
@@ -387,10 +424,10 @@ describe('DashboardSidebar', () => {
     expect(screen.getAllByText('Dashboard').length).toBeGreaterThanOrEqual(1);
   });
 
-  it('navigates to /agents from the Agents nav item', () => {
+  it('navigates to /team from the Team nav item', () => {
     renderWithProviders(<DashboardSidebar />);
-    fireEvent.click(screen.getAllByText('Agents')[0]);
-    expect(mockNavigate).toHaveBeenCalledWith({ to: '/agents' });
+    fireEvent.click(screen.getAllByText('Team')[0]);
+    expect(mockNavigate).toHaveBeenCalledWith({ to: '/team' });
   });
 
   it('renders default agent (dorkbot) and navigates on click', async () => {
@@ -800,9 +837,11 @@ describe('DashboardSidebar', () => {
   it('renders a header-less flat list with no groups and no pins', () => {
     renderWithProviders(<DashboardSidebar />);
     expect(screen.queryByText('Pinned')).not.toBeInTheDocument();
-    // No "Agents" section label in flat mode (nav item "Agents" is a button, not a group label)
-    const agentsLabels = screen.getAllByText('Agents').filter((el) => el.closest('button'));
-    expect(agentsLabels.length).toBe(1); // only the nav button
+    // No "Agents" section label in flat mode — and now nothing else either:
+    // the nav button that used to be the one legitimate "Agents" in the tree
+    // says Team, so the word should be absent from a flat sidebar entirely.
+    expect(screen.queryByText('Agents')).not.toBeInTheDocument();
+    expect(screen.getAllByText('Team').length).toBe(1);
   });
 
   it('shows section headers in order Pinned → groups → Agents when organized', () => {
@@ -1031,6 +1070,74 @@ describe('DashboardSidebar', () => {
       fireEvent.click(screen.getByLabelText('Dismiss grouping tip'));
       expect(mockUpdateSidebar).toHaveBeenCalledTimes(1);
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Click-to-profile — the sidebar's half of the id bridge (DOR-957)
+// ---------------------------------------------------------------------------
+//
+// A row knows an agent by its DIRECTORY; the profile drawer knows it by the id
+// the mesh registered. `meshFleet()` above keeps those two visibly different on
+// purpose, and this is where that pays: handing the path down instead of the id
+// would open a drawer the roster has no row for, and every other assertion in
+// this file would still pass.
+describe('DashboardSidebar click-to-profile (DOR-957)', () => {
+  afterEach(() => cleanup());
+
+  const ALPHA_PATH = '/projects/alpha';
+  const ALPHA_ID = `mesh-id${ALPHA_PATH}`;
+  const GHOST_PATH = '/projects/ghost';
+
+  beforeEach(() => {
+    localStorage.clear();
+    mockMeshPaths.mockReset();
+    mockMeshPaths.mockReturnValue([ALPHA_PATH, '/projects/beta']);
+    mockUnmappedPaths.mockReset();
+    mockUnmappedPaths.mockReturnValue([]);
+    mockSidebarPrefs.mockReset();
+    mockSidebarPrefs.mockReturnValue(makePrefs());
+    mockRecent.mockReset();
+    mockRecent.mockReturnValue({ data: { sessions: [], agentActivity: {} }, isLoading: false });
+    mockNavigate.mockReset();
+    mockResolvedAgents.mockReset();
+    mockResolvedAgents.mockReturnValue({});
+    mockRooms.mockReset();
+    mockRooms.mockReturnValue([]);
+    mockAttentionMap.mockReset();
+    mockAttentionMap.mockImplementation((paths: string[]) =>
+      Object.fromEntries(paths.map((p) => [p, 'active']))
+    );
+    mockExecutionExceptions.mockReset();
+    mockExecutionExceptions.mockReturnValue({
+      exceptions: [],
+      brokenPaths: [],
+      defaultRuntime: 'claude-code',
+    });
+    mockSelectedCwd = null;
+    mockPathname = '/';
+    mockLocation = { pathname: '/', search: {} };
+  });
+
+  it('opens a row’s profile under the REGISTRY id, never the path the row holds', async () => {
+    renderWithProviders(<DashboardSidebar />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Open alpha’s profile' }));
+
+    expect(mockNavigate).toHaveBeenCalled();
+    expect(mockLocation.search.profile).toBe(ALPHA_ID);
+    expect(mockLocation.search.profile).not.toBe(ALPHA_PATH);
+  });
+
+  it('draws no profile control for a row the roster cannot name', async () => {
+    // A directory the sidebar lists while the registry has no row for it — no
+    // id, so no control, rather than a face that opens an empty drawer.
+    mockMeshPaths.mockReturnValue([ALPHA_PATH, GHOST_PATH]);
+    mockUnmappedPaths.mockReturnValue([GHOST_PATH]);
+    renderWithProviders(<DashboardSidebar />);
+
+    await screen.findByRole('button', { name: 'Open alpha’s profile' });
+    expect(screen.queryByRole('button', { name: 'Open ghost’s profile' })).not.toBeInTheDocument();
   });
 });
 

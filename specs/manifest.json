@@ -20,21 +20,21 @@
       "slug": "room-attachments",
       "title": "File attachments in rooms",
       "created": "2026-08-06",
-      "status": "ideation"
+      "status": "specified"
     },
     {
       "id": "260806-215027",
       "slug": "composer-parity",
       "title": "Composer parity: unify the chat and room composers",
       "created": "2026-08-06",
-      "status": "specified"
+      "status": "implemented"
     },
     {
       "id": "260806-214542",
       "slug": "identity-consistency",
       "title": "Agent & Human Identity Consistency — people directory, profiles, one identity language",
       "created": "2026-08-06",
-      "status": "specified"
+      "status": "implemented"
     },
     {
       "id": "260806-185319",

@@ -92,6 +92,6 @@ describe('SystemStatusRow', () => {
     expect(mockRelayOpen).toHaveBeenCalledTimes(1);
 
     fireEvent.click(button('2 agents ready'));
-    expect(mockNavigate).toHaveBeenCalledWith({ to: '/agents', search: { view: 'topology' } });
+    expect(mockNavigate).toHaveBeenCalledWith({ to: '/team', search: { view: 'topology' } });
   });
 });

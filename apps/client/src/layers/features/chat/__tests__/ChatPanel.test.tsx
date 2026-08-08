@@ -160,16 +160,33 @@ vi.mock('@/layers/shared/model/app-store', () => ({
 // see WHICH focus entry point the panel reaches for.
 const chatInputFocus = vi.fn();
 const chatInputFocusIfDesktop = vi.fn();
-vi.mock('../ui/input/ChatInput', () => ({
-  ChatInput: React.forwardRef<unknown, Record<string, unknown>>(function MockChatInput(_p, ref) {
-    React.useImperativeHandle(ref, () => ({
-      focus: chatInputFocus,
-      focusUnlessTouch: chatInputFocusIfDesktop,
-      focusAt: vi.fn(),
-    }));
-    return <div data-testid="chat-input">ChatInput</div>;
-  }),
-}));
+vi.mock('@/layers/features/composer', async (importActual) => {
+  const actual = await importActual<typeof import('@/layers/features/composer')>();
+  return {
+    Composer: {
+      // ChatPanel renders the real ChatInputContainer, which composes the card
+      // and the lane — so both keys must exist or the container renders
+      // `undefined` and every test in this file dies at mount. Root is a
+      // pass-through (nothing here asserts the chrome, and a real one would
+      // mount react-dropzone's document listeners); the lane is real, since it
+      // is a single positioned div with nothing to stub.
+      Root: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+      OverlayLane: actual.Composer.OverlayLane,
+      Input: React.forwardRef<unknown, Record<string, unknown>>(
+        function MockComposerInput(_p, ref) {
+          React.useImperativeHandle(ref, () => ({
+            focus: chatInputFocus,
+            focusUnlessTouch: chatInputFocusIfDesktop,
+            focusAt: vi.fn(),
+          }));
+          return <div data-testid="chat-input">Composer.Input</div>;
+        }
+      ),
+      Attachments: actual.Composer.Attachments,
+      ClearArmedHint: actual.Composer.ClearArmedHint,
+    },
+  };
+});
 
 vi.mock('../ui/MessageList', () => ({
   MessageList: vi.fn(() => <div data-testid="message-list">MessageList</div>),

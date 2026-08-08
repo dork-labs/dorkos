@@ -67,7 +67,7 @@ export function AgentStep({
         role="alert"
         className="text-muted-foreground rounded-md border border-dashed px-4 py-6 text-center text-sm"
       >
-        You have no agents yet. Add one from the Agents page, then come back and set this up.
+        You have no agents yet. Add one from the Team page, then come back and set this up.
       </p>
     );
   }

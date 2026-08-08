@@ -27,7 +27,7 @@ let mockActivity: { groups: { label: string; items: MockActivityItem[] }[]; isLo
 const mockNavigate = vi.fn();
 // Current route the sections read to hide their self-referential overflow link.
 // Default to a neutral route so both "View all" links render unless a test opts in.
-let mockPathname = '/agents';
+let mockPathname = '/team';
 
 // Router: the sections use useNavigate (overflow links) and useRouterState
 // (current pathname, to omit a link that would self-navigate).
@@ -96,7 +96,7 @@ beforeEach(() => {
   mockAttentionItems = [];
   mockAttentionLoading = false;
   mockActivity = { groups: [], isLoading: false };
-  mockPathname = '/agents';
+  mockPathname = '/team';
 });
 
 describe('PulsePanel', () => {

@@ -11,7 +11,7 @@ import { __resetBreadcrumbsForTests, addBreadcrumb } from '@/layers/shared/lib/b
 // A mutable object lets a test put us on a session route to exercise the
 // Conversation toggle without a second module mock.
 const routerState = vi.hoisted(() => ({
-  location: { pathname: '/agents', search: {} as Record<string, unknown> },
+  location: { pathname: '/team', search: {} as Record<string, unknown> },
 }));
 vi.mock('@tanstack/react-router', () => ({
   useRouterState: (opts?: { select?: (s: unknown) => unknown }) =>
@@ -42,7 +42,7 @@ afterEach(() => {
   cleanup();
   vi.clearAllMocks();
   // Reset the route to the default (non-session) location for the next test.
-  routerState.location = { pathname: '/agents', search: {} };
+  routerState.location = { pathname: '/team', search: {} };
 });
 
 function renderDialog(
@@ -81,7 +81,7 @@ describe('FeedbackDialog', () => {
     expect(sendFeedback.mock.calls[0][0]).toMatchObject({
       kind: 'feedback',
       message: 'Love the new sidebar',
-      route: '/agents',
+      route: '/team',
     });
     // Feedback kind attaches nothing extra by default.
     expect(sendFeedback.mock.calls[0][0].diagnostics).toBeUndefined();

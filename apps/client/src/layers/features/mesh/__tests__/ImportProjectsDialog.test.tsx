@@ -94,10 +94,10 @@ describe('ImportProjectsDialog', () => {
     expect(screen.getByTestId('import-joined-summary')).toHaveTextContent('2 projects joined');
     expect(useImportProjectsStore.getState().isOpen).toBe(true);
 
-    // Second Done → close + navigate to the Agents page.
+    // Second Done → close + navigate to the Team page.
     await user.click(screen.getByTestId('import-done'));
     await waitFor(() => expect(useImportProjectsStore.getState().isOpen).toBe(false));
-    expect(mockNavigate).toHaveBeenCalledWith({ to: '/agents' });
+    expect(mockNavigate).toHaveBeenCalledWith({ to: '/team' });
   });
 
   it('resets the join count when reopened', async () => {

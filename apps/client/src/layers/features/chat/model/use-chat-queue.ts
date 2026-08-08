@@ -9,7 +9,7 @@ import type { NativeCommandResult } from './native-commands';
 import { sessionContextKey } from '../lib/session-context-key';
 import { clearComposerOnConfirmed } from '../lib/clear-composer-on-confirmed';
 import type { ChatStatus } from './chat-types';
-import type { ChatInputHandle } from '../ui/input/ChatInput';
+import type { ComposerInputHandle } from '@/layers/features/composer';
 
 interface UseChatQueueOptions {
   input: string;
@@ -33,7 +33,7 @@ interface UseChatQueueOptions {
    * every message queued behind it.
    */
   tryNativeCommand: (content: string) => NativeCommandResult;
-  chatInputRef: RefObject<ChatInputHandle | null>;
+  chatInputRef: RefObject<ComposerInputHandle | null>;
 }
 
 interface UseChatQueueReturn {
@@ -59,7 +59,7 @@ interface UseChatQueueReturn {
  * Facade hook that wraps useMessageQueue with draft-aware queue editing callbacks.
  *
  * Owns the draft ref that preserves the user's in-progress composition when they
- * navigate into the queue. Provides fully-wired callbacks for QueuePanel and ChatInput.
+ * navigate into the queue. Provides fully-wired callbacks for QueuePanel and Composer.Input.
  *
  * Card callbacks (`handleQueueEdit` / `handleQueueRemove` / `handleQueueSend`)
  * address a queue item by its stable id, never its position: the auto-flush

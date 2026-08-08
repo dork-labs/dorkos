@@ -227,4 +227,105 @@ describe('AgentIdentity', () => {
     const button = screen.getByRole('button');
     expect(button.className).toContain('cursor-pointer');
   });
+
+  // ---------------------------------------------------------------------------
+  // The interaction grammar — what this lockup says when you point at it
+  // ---------------------------------------------------------------------------
+
+  describe('the identity answers, and it never plays dead', () => {
+    it('no longer dims to 80% on hover, the idiom for DISABLED', () => {
+      const { container } = render(<AgentIdentity {...baseProps} onClick={vi.fn()} />);
+
+      expect(screen.getByRole('button').className).not.toContain('opacity-80');
+      expect(container.querySelector('[data-slot="agent-avatar"]')!.className).not.toContain(
+        'opacity-80'
+      );
+    });
+
+    it('gives a keyboard the ring a mouse never needed and never had', () => {
+      // This branch shipped with no focus response of any kind: a keyboard user
+      // could tab onto the control and see nothing at all.
+      render(<AgentIdentity {...baseProps} onClick={vi.fn()} />);
+
+      expect(screen.getByRole('button').className).toContain('focus-ring');
+    });
+
+    it('rings the disc in the agent’s own colour, on hover and on focus alike', () => {
+      const { container } = render(<AgentIdentity {...baseProps} onClick={vi.fn()} />);
+      const avatar = container.querySelector('[data-slot="agent-avatar"]')!;
+
+      // A NAMED group on the control is what carries both states to the disc.
+      expect(screen.getByRole('button').className.split(' ')).toContain('group/identity');
+      expect(avatar.className).toContain('group-hover/identity:ring-2');
+      expect(avatar.className).toContain('group-focus-visible/identity:ring-2');
+      expect(avatar.className).toContain('var(--identity-color)');
+    });
+
+    it('never uses the BARE group, which an unrelated ancestor can fire', () => {
+      // Tailwind compiles `group-hover:` to `:where(.group):hover &` — ANY
+      // `.group` ancestor, not the nearest. The sidebar wraps its rows in an
+      // unnamed `.group` spanning most of the pane, so the bare form left every
+      // sidebar face permanently ringed: a hover state that was never not on.
+      // Browser-caught; jsdom renders no ancestors and cannot see it.
+      const { container } = render(
+        <AgentIdentity {...baseProps} onAvatarClick={vi.fn()} avatarLabel="Open profile" />
+      );
+      const face = container.querySelector('[data-slot="agent-identity-face"]')!;
+      const avatar = container.querySelector('[data-slot="agent-avatar"]')!;
+
+      expect(face.className.split(' ')).not.toContain('group');
+      expect(avatar.className).not.toMatch(/(^|\s)group-hover:/);
+      expect(avatar.className).not.toMatch(/(^|\s)group-focus-visible:/);
+    });
+
+    it('stands the hover ring down when mesh health already owns the ring', () => {
+      // Health wins. A diagnostic signal that changed colour under the pointer
+      // would read as a hover state, so the disc takes no second ring at all.
+      const { container } = render(
+        <AgentIdentity {...baseProps} onClick={vi.fn()} healthStatus="inactive" />
+      );
+      const avatar = container.querySelector('[data-slot="agent-avatar"]')!;
+
+      expect(avatar.className).toContain('ring-status-warning/60');
+      expect(avatar.className).not.toContain('group-hover/identity:ring-2');
+      expect(avatar.className).not.toContain('ring-0');
+      // And it still answers, neutrally. Suppressing the identity ring must not
+      // leave a live control with no hover state at all.
+      expect(screen.getByRole('button').className).toContain('hover:bg-accent');
+    });
+
+    it('keeps the neutral fallback off a lockup whose identity can answer', () => {
+      // Two answers to one hover is the noise this grammar exists to remove.
+      const { container } = render(<AgentIdentity {...baseProps} onClick={vi.fn()} />);
+
+      expect(screen.getByRole('button').className).not.toContain('hover:bg-accent');
+      expect(container.querySelector('[data-slot="agent-avatar"]')!.className).toContain(
+        'group-hover/identity:ring-2'
+      );
+    });
+
+    it('leaves an inert lockup with no states to promise', () => {
+      const { container } = render(<AgentIdentity {...baseProps} />);
+      const avatar = container.querySelector('[data-slot="agent-avatar"]')!;
+
+      expect(avatar.className).not.toContain('group-hover/identity:ring-2');
+      expect(container.querySelector('[data-slot="agent-identity"]')!.className).not.toContain(
+        'cursor-pointer'
+      );
+    });
+
+    it('gives the face-alone control a mark-sized press and its own ring', () => {
+      const { container } = render(
+        <AgentIdentity {...baseProps} onAvatarClick={vi.fn()} avatarLabel="Open Scout’s profile" />
+      );
+      const face = container.querySelector('[data-slot="agent-identity-face"]')!;
+
+      expect(face.className).not.toContain('opacity-80');
+      // 0.94, not 0.98: one press number cannot fit a 300px card and a 24px disc.
+      expect(face.className).toContain('active:scale-[0.94]');
+      expect(container.querySelector('[data-slot="agent-avatar"]')!.className).toContain(
+        'group-hover/identity:ring-2'
+      );
+    });
+  });
 });

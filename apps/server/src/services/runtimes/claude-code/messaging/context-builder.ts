@@ -37,7 +37,7 @@ a namespace (explicit in its manifest, or derived from its directory layout);
 agents in the same namespace can message each other, cross-namespace messaging is
 DENIED by default, and the DorkBot system agent can reach (and be reached by) all
 namespaces. A denied send fails with code ACCESS_DENIED plus a hint: the user can
-allow a namespace pair from the Agents page Access panel. Use mesh_query_topology()
+allow a namespace pair from the Team page Access view. Use mesh_query_topology()
 to inspect namespaces and rules.
 
 Subject hierarchy:

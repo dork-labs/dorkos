@@ -161,6 +161,25 @@ export function findTeamOwner(member: TeamMember, roster: TeamMember[]): TeamMem
 }
 
 /**
+ * How many agents on this roster belong to one person.
+ *
+ * Counts agents and only agents. The owner's own card is not one of their
+ * agents, and a person cannot own a person — so this answers "how many things
+ * would still be here if you narrowed to them", which is the sentence the
+ * roster's attribution previews.
+ *
+ * Counted over the **whole** roster rather than the filtered slice, for the
+ * same reason owners are resolved against it: a number that shrank as you typed
+ * in the search box would be describing the search, not the person.
+ *
+ * @param ownerId - The person whose agents are being counted.
+ * @param roster - The whole roster to count within.
+ */
+export function countOwnedAgents(ownerId: string, roster: TeamMember[]): number {
+  return roster.filter((member) => member.kind === 'agent' && member.ownerId === ownerId).length;
+}
+
+/**
  * How to name an identity in one short string: its handle when it has one,
  * its display name when it does not.
  *

@@ -3713,6 +3713,10 @@
             "type": "string",
             "description": "Model identifier (e.g. claude-opus-4-6)"
           },
+          "resolvedModel": {
+            "type": "string",
+            "description": "Canonical wire model id an alias row resolves to (e.g. sonnet -> claude-sonnet-5). Absent when the row is already a wire id, or when the runtime does not report it."
+          },
           "displayName": {
             "type": "string",
             "description": "Human-readable model name"
@@ -6949,6 +6953,31 @@
         "required": [
           "source",
           "message"
+        ]
+      },
+      "ProfileUpdateResponse": {
+        "type": "object",
+        "properties": {
+          "displayName": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "displayName"
+        ]
+      },
+      "ProfileUpdateRequest": {
+        "type": "object",
+        "properties": {
+          "displayName": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          }
+        },
+        "required": [
+          "displayName"
         ]
       },
       "ProfileAvatarResponse": {
@@ -15887,6 +15916,56 @@
           },
           "500": {
             "description": "The roster itself could not be assembled (not a per-source failure)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/profile": {
+      "patch": {
+        "tags": [
+          "Profile"
+        ],
+        "summary": "Set what the operator wants to be called",
+        "description": "Writes the name to the two sources the roster actually reads above the author record: the account record (`user.name`), when this install has an account at all, and the stored profile (`config.profile.displayName`), always. It deliberately does NOT write `authors.display_name`: on an install with login off that column is refreshed back to the literal \"You\" on the next request, and on an install with an account writing it would relabel every message the person has ever posted rather than label them going forward. Only a person may call this; an agent presenting an identity token is refused (403).",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProfileUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Saved. The name the roster will now show.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProfileUpdateResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The name is empty or longer than 80 characters",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is an agent — a person’s name is theirs to set",
             "content": {
               "application/json": {
                 "schema": {

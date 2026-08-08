@@ -29,7 +29,7 @@ describe('useElectronNavigate', () => {
   it('subscribes to onNavigate on mount and forwards the path to the router', () => {
     const unsubscribe = vi.fn();
     const onNavigate = vi.fn((cb: (path: string) => void) => {
-      cb('/agents');
+      cb('/team');
       return unsubscribe;
     });
     window.electronAPI = {
@@ -40,7 +40,7 @@ describe('useElectronNavigate', () => {
     renderHook(() => useElectronNavigate());
 
     expect(onNavigate).toHaveBeenCalledTimes(1);
-    expect(mockNavigate).toHaveBeenCalledWith({ href: '/agents' });
+    expect(mockNavigate).toHaveBeenCalledWith({ href: '/team' });
   });
 
   it('unsubscribes on unmount', () => {

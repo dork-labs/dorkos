@@ -14,7 +14,7 @@ import { useCallback, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { useAgentBirthStore, type AgentBirthRecord } from '@/layers/shared/model';
 import { TOUR_ANCHORS } from '@/layers/shared/config';
-import { ChatInput } from '@/layers/features/chat';
+import { Composer } from '@/layers/features/composer';
 import { useDefaultAgentSession } from '@/layers/entities/config';
 
 /** The composer section rendered first in the dashboard body. */
@@ -54,18 +54,30 @@ export function DashboardComposerSection() {
       <h2 className="text-foreground mb-3 text-lg font-semibold tracking-tight">
         What are we building today?
       </h2>
-      <ChatInput
-        value={value}
-        onChange={setValue}
-        onSubmit={handleSubmit}
-        isStreaming={false}
-        canSubmit={isDefaultAgentResolved}
-        // Nothing else on this screen explains the greyed Send, and this is very
-        // often the first sentence anyone types into DorkOS: they press Enter
-        // and, without this line, nothing happens for no stated reason.
-        canSubmitReason="Getting your agent ready…"
-        placeholder={`Message ${defaultAgentDisplayName}…`}
-      />
+      {/* No `onFilesDropped`: the dashboard has no upload path today, so no
+          dropzone mounts. The capability matrix's "follows chat" means it
+          inherits the seam when chat's reaches it, not that it wires one now.
+
+          `m-0` overrides Root's `m-2`, which is chat's margin and wrong here:
+          this page already spaces its sections (`space-y-6` on a padded
+          `max-w-4xl` column), so the extra margin only pushed the card 8px
+          inside the heading above it and every other card beside it. The
+          override is the caller's, not a change to Root — chat is the
+          reference chrome and its default stays put. */}
+      <Composer.Root className="m-0">
+        <Composer.Input
+          value={value}
+          onChange={setValue}
+          onSubmit={handleSubmit}
+          isStreaming={false}
+          canSubmit={isDefaultAgentResolved}
+          // Nothing else on this screen explains the greyed Send, and this is very
+          // often the first sentence anyone types into DorkOS: they press Enter
+          // and, without this line, nothing happens for no stated reason.
+          canSubmitReason="Getting your agent ready…"
+          placeholder={`Message ${defaultAgentDisplayName}…`}
+        />
+      </Composer.Root>
     </section>
   );
 }

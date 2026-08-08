@@ -2,7 +2,7 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { render, screen, cleanup, fireEvent } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
-import { IdentityAvatar } from '../identity-avatar';
+import { IdentityAvatar, identityMarkRing, IDENTITY_BADGE_WAKE } from '../identity-avatar';
 
 /**
  * A 1x1 transparent GIF. Inline so nothing here reaches the network — jsdom
@@ -514,6 +514,97 @@ describe('IdentityAvatar', () => {
       expect(
         container.querySelector('[data-slot="identity-avatar"] > span.bg-status-success')
       ).not.toBeNull();
+    });
+  });
+
+  describe('publishing the identity colour to CSS', () => {
+    it('carries the colour as --identity-color, not only as a background', () => {
+      // The keystone of the interaction grammar. An inline `background-color`
+      // outranks every stylesheet rule, so while the colour lived only there
+      // no `:hover` could tint it, ring it, or lend it to an ancestor. A
+      // custom property inherits and IS reachable from a class string.
+      const { container } = render(<IdentityAvatar color="#7c3aed" fallback="A" />);
+
+      expect(discOf(container).style.getPropertyValue('--identity-color')).toBe('#7c3aed');
+    });
+
+    it('publishes the fill colour too, not just the tint', () => {
+      // `fill` and `tint` compute different backgrounds from the same colour;
+      // the property is the colour itself either way, so a Mark-tier ring on
+      // an agent's square and on a person's circle are the same shade.
+      const { container } = render(<IdentityAvatar color="#7c3aed" kind="agent" fallback="A" />);
+
+      expect(discOf(container).style.getPropertyValue('--identity-color')).toBe('#7c3aed');
+    });
+
+    it('still lets a caller override the whole style object', () => {
+      // Purely additive: `style` is spread last, exactly as it was before.
+      const { container } = render(
+        <IdentityAvatar color="#7c3aed" fallback="A" style={{ opacity: 0.5 }} />
+      );
+      const disc = discOf(container);
+
+      expect(disc.style.opacity).toBe('0.5');
+      expect(disc.style.getPropertyValue('--identity-color')).toBe('#7c3aed');
+    });
+  });
+
+  describe('the badge wake', () => {
+    const badgeOf = (container: HTMLElement) =>
+      container.querySelector('[data-slot="identity-badge"]')!;
+
+    it('tilts and grows the badge when the disc a pointer is on has opted in', () => {
+      const { container } = render(<IdentityAvatar color="#7c3aed" kind="agent" fallback="A" />);
+      const badge = badgeOf(container);
+
+      expect(badge.className).toContain('group-hover/avatar:-rotate-6');
+      expect(badge.className).toContain('group-hover/avatar:scale-110');
+      // It pivots about the corner it is pinned to, so a rotating plate stays
+      // inside the disc instead of swinging past its edge.
+      expect(badge.className).toContain('origin-bottom-right');
+    });
+
+    it('is NAMED, for the reason the Mark group is', () => {
+      // A bare `group-hover:` compiles to `:where(.group):hover &` and matches
+      // ANY `.group` ancestor rather than the nearest — which is how the
+      // sidebar's pane-wide unnamed group left every face permanently ringed in
+      // slice 1. jsdom cannot see the consequence, but it can see the name.
+      const { container } = render(<IdentityAvatar color="#7c3aed" kind="agent" fallback="A" />);
+      const classes = badgeOf(container).className;
+
+      expect(classes).not.toMatch(/(^|\s)group-hover:/);
+    });
+
+    it('stands completely still under reduced motion, end state included', () => {
+      // A deliberate departure from the design spec's §2.6 table, which would
+      // have kept the tilt and dropped only the travel. The rule that table
+      // serves is "keep the fact, drop the motion" — and a 6° tilt carries no
+      // fact, so there is nothing to keep. `motion-safe:` gates the whole
+      // gesture rather than only its transition, which no CSS reset could do.
+      const { container } = render(<IdentityAvatar color="#7c3aed" kind="agent" fallback="A" />);
+      const classes = badgeOf(container).className;
+
+      expect(classes).toContain('motion-safe:group-hover/avatar:-rotate-6');
+      expect(classes).toContain('motion-safe:group-hover/avatar:scale-110');
+      // No ungated twin: one would re-apply the end state under the preference.
+      expect(classes).not.toMatch(/(^|\s)group-hover\/avatar:-rotate-6/);
+      expect(classes).not.toMatch(/(^|\s)group-hover\/avatar:scale-110/);
+    });
+
+    it('carries the opt-in on every Mark-tier disc, since those are targets', () => {
+      // A disc wearing the Mark tier is a target by definition, so the wake
+      // rides along rather than being remembered at each call site.
+      expect(identityMarkRing.self).toContain(IDENTITY_BADGE_WAKE);
+      expect(identityMarkRing.group).toContain(IDENTITY_BADGE_WAKE);
+    });
+
+    it('does nothing on a disc nobody opted in', () => {
+      // The wake is dormant by default: `group-hover/avatar:` matches only
+      // under an ancestor carrying the name, and the disc does not add it
+      // itself. This is what keeps twenty sidebar rows still.
+      const { container } = render(<IdentityAvatar color="#7c3aed" kind="agent" fallback="A" />);
+
+      expect(discOf(container).className).not.toContain(IDENTITY_BADGE_WAKE);
     });
   });
 

@@ -15,14 +15,24 @@ import { renderHook, act } from '@testing-library/react';
 
 import { setPlatformAdapter } from '@/layers/shared/lib';
 import { useAppStore } from '../app-store';
-import { useSettingsDeepLink, useTasksDeepLink, useOpenConnections } from '../use-dialog-deep-link';
+import {
+  useSettingsDeepLink,
+  useTasksDeepLink,
+  useProfileDeepLink,
+  useOpenConnections,
+} from '../use-dialog-deep-link';
 
 const EMBED = { isEmbedded: true, openFile: async () => {} };
 const WEB = { isEmbedded: false, openFile: async () => {} };
 
 beforeEach(() => {
   setPlatformAdapter(EMBED);
-  useAppStore.setState({ settingsOpen: false, tasksOpen: false });
+  useAppStore.setState({
+    settingsOpen: false,
+    tasksOpen: false,
+    profileOpen: false,
+    profileMemberId: null,
+  });
 });
 
 afterEach(() => {
@@ -65,6 +75,27 @@ describe('dialog deep links in a router-less mount', () => {
 
     act(() => tasks.result.current.close());
     expect(useAppStore.getState().tasksOpen).toBe(false);
+  });
+
+  it('a profile opens on the store half, subject and all', () => {
+    // There is no URL to carry the subject in the embed, so the store carries
+    // it instead — otherwise the drawer would open on nobody.
+    const { result } = renderHook(() => useProfileDeepLink());
+
+    act(() => result.current.open('agent-warden'));
+
+    expect(useAppStore.getState().profileOpen).toBe(true);
+    expect(result.current.memberId).toBe('agent-warden');
+  });
+
+  it('closing a profile opened this way actually closes it', () => {
+    const { result } = renderHook(() => useProfileDeepLink());
+    act(() => result.current.open('agent-warden'));
+
+    act(() => result.current.close());
+
+    expect(useAppStore.getState().profileOpen).toBe(false);
+    expect(result.current.memberId).toBeNull();
   });
 
   it('opening Connections does nothing rather than pretending', () => {

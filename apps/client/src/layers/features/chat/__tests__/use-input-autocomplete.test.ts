@@ -20,7 +20,7 @@ const FILES: FileEntry[] = [
   { path: 'src/main.tsx', filename: 'main.tsx', directory: 'src', isDirectory: false },
 ];
 
-/** Drive the hook the way ChatInput does: type into it, then read the signals. */
+/** Drive the hook the way Composer.Input does: type into it, then read the signals. */
 function typeInto(text: string) {
   const { result } = renderHook(() =>
     useInputAutocomplete({

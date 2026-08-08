@@ -651,6 +651,9 @@ const TeamPersonFactsSchema = z.object({
    (e)1: the two contexts diverge rather than fight. A room renders `'You'` because that is the right
    word from the operator's own seat; a roster has no "you" framing and renders the real name, with a
    small **"you"** chip on the self card doing the job the literal used to.
+   **`authors.display_name` is a render cache, never a settable field** — it is refreshed on every
+   resolve with login off and relabels history retroactively with an account, so no user-facing control
+   writes it and the editable name lives on the two rungs above it (§W3.3).
 4. **`ownerId`** — every non-system agent read from the local mesh gets the operator's roster id. A
    system agent (`isSystem`, i.e. DorkBot) gets `null`: it belongs to the install, not to a person.
 5. **Degradation** — each source is read in its own `try`/`catch` with the same 2s timeout constant
@@ -853,12 +856,31 @@ reachable at `?settings=profile` through the existing deep-link machinery, which
 
 **The form**, top to bottom:
 
-| Field        | Writes to                                                                       | Notes                                                                                                                                                                  |
-| ------------ | ------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Photo        | `POST /api/profile/avatar` (§W3.5)                                              | drop or pick; initials preview; **Remove** clears it                                                                                                                   |
-| Display name | the operator's author record + Better Auth `user.name`                          |                                                                                                                                                                        |
-| `@handle`    | `PATCH /api/rooms/authors/:id/handle` — **the handles spec's route, unchanged** | its three typed refusals (`HANDLE_TAKEN`, `HANDLE_RESERVED`, `INVALID_HANDLE`) map to three different messages, because they are three different things to do about it |
-| Email        | read-only, from the local account                                               | with a line saying login is optional and where to turn it on                                                                                                           |
+| Field        | Writes to                                                                           | Notes                                                                                                                                                                  |
+| ------------ | ----------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Photo        | `POST /api/profile/avatar` (§W3.5)                                                  | drop or pick; initials preview; **Remove** clears it                                                                                                                   |
+| Display name | `PATCH /api/profile` → Better Auth `user.name` **and** `config.profile.displayName` | **Not** `authors.display_name`, and this is a correction to an earlier draft of this row — see below                                                                   |
+| `@handle`    | `PATCH /api/rooms/authors/:id/handle` — **the handles spec's route, unchanged**     | its three typed refusals (`HANDLE_TAKEN`, `HANDLE_RESERVED`, `INVALID_HANDLE`) map to three different messages, because they are three different things to do about it |
+| Email        | read-only, from the local account                                                   | with a line saying login is optional and where to turn it on                                                                                                           |
+
+**Why the display name does not write `authors.display_name`.** An earlier draft of the row above said
+"the operator's author record + Better Auth `user.name`". That was wrong about this codebase, and it was
+found by trying it (DOR-979). `authors.display_name` is a **render cache, not a settable field**, and two
+independent mechanisms enforce that:
+
+1. With login off — the default (ADR-0320) — `resolveCaller` answers with `AuthorRegistry.localHuman()`,
+   which resolves the row with the literal `'You'` and **refreshes the cached `displayName` on every
+   request** (`author-registry.ts` `upsert`). A name written there survives until the next API call.
+2. With an account, `bindOwner` (`author-registry.ts:941-943`) documents at length why it never touches
+   `displayName`: one cache per author means writing a name there does not label the person going
+   forward, it **relabels every message they have ever posted**, retroactively.
+
+So `PATCH /api/profile` writes the two sources `services/identity/operator-profile.ts` actually reads
+_above_ the author record: `user.name` (rung 1, and the only one that can win once an account exists) and
+`config.profile.displayName` (rung 2, and the only durable one on the default install). Both land in one
+request, for the same reason the avatar route writes both of its records together — one identity split
+across two stores is how they come to disagree. Nothing in the product may offer a person a control that
+writes `authors.display_name`.
 
 Settings is a `TabbedDialog` over `ResponsiveDialog`, so **mobile is already solved**: the whole dialog
 is a bottom vaul drawer below 768px (`responsive-dialog.tsx:60-62`). The photo control must be reachable
@@ -1034,6 +1056,15 @@ entry**, which pins it to exactly one `page` (its ⌘K group) and one `/dev/<pag
 4. **The accepted cost, stated rather than discovered:** those three sections still group under
    "Components" in ⌘K and their canonical URL stays `/dev/components#identityavatar`. That is the trade
    for not breaking a single existing anchor.
+
+> **Correction (DOR-980, as built): eight sections moved, not two.** `AvatarPickerGrid` moved because
+> it shares `AgentIdentityShowcases.tsx` with the two below — leaving it registered to `features`
+> while its file rendered only on Identity would have pointed a Features TOC entry at an anchor that
+> page no longer draws. `Team Roster`, `Team Card`, `Profile Drawer`, `Account Menu` and `Profile Tab`
+> moved because tasks 2.2/3.4/3.6 landed them on `features` only for want of an Identity page, and
+> "Subsystems" is a page named for Relay, Mesh and Tasks. Rendering them on both pages would also
+> have made Features keep mounting a whole Team page. Anchors were days old and referenced nowhere
+> outside this repo's prose (grepped).
 
 **Sections that genuinely move** (their entry moves from one array to another and its `page` changes,
 so their anchor changes): `AgentAvatar` and `AgentIdentity`, `features-sections.ts:26-40` → Identity.

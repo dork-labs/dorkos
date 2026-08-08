@@ -23,6 +23,7 @@ import {
   readOwnerAccount,
   getUserById,
   setUserImage,
+  setUserName,
 } from './services/core/auth/index.js';
 import {
   canExpose,
@@ -2051,10 +2052,10 @@ async function start() {
     })
   );
 
-  // The operator's own profile — today, their photo (spec `identity-consistency`
-  // §W3.5). The store is chosen HERE and nowhere else: the router depends on the
-  // `AvatarStore` interface, so the day photos live somewhere other than this
-  // machine, this line is what changes.
+  // The operator's own profile — their photo and their name (spec
+  // `identity-consistency` §W3.3, §W3.5). The store is chosen HERE and nowhere
+  // else: the router depends on the `AvatarStore` interface, so the day photos
+  // live somewhere other than this machine, this line is what changes.
   app.use(
     '/api/profile',
     createProfileRouter({
@@ -2063,6 +2064,10 @@ async function start() {
       authors: roomAuthors,
       ownerAccount: () => readOwnerAccount(),
       setAccountImage: (userId, imageUrl) => setUserImage(userId, imageUrl),
+      setAccountName: (userId, name) => setUserName(userId, name),
+      setProfileDisplayName: (displayName) => {
+        configManager.setDot('profile.displayName', displayName);
+      },
     })
   );
 

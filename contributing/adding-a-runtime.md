@@ -254,6 +254,10 @@ A pinned SDK version is a verified claim, so a bump re-verifies it. Checklist fo
 4. Run the runtime conformance suites: `pnpm vitest run apps/server/src/services/runtimes/codex`.
 5. Run one live smoke turn against a real `codex` binary: `DORKOS_CODEX_LIVE=1 pnpm vitest run src/services/runtimes/codex/__tests__/conformance.test.ts` (from `apps/server`).
 
+A bump also inherits behavior changes no compiler catches. Record the decision on each one here, so the next bump does not re-derive it.
+
+**Subagent spawn depth (claude-agent-sdk 0.3.217, decided 2026-08-07 on the 0.3.177 → 0.3.224 bump).** Upstream dropped the default subagent nesting depth from 5 to 1 and added a cap of 20 concurrent subagents. **DorkOS accepts the new default.** Its documented orchestrator pattern (`claude-code/messaging/context-builder.ts`) is parent-driven and therefore depth-1, and its headline parallelism is multi-_session_ — each session gets its own CLI subprocess and its own depth budget, so only within-session `Task`-in-`Task` is capped at all. A runaway recursive agent tree is a worse failure for an operator than a refused nested spawn. The escape hatch, if a skill genuinely needs nesting: set `CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH` in the CLI subprocess env that `claude-code/messaging/message-sender.ts` already builds. Nothing in the repo sets it today.
+
 ### 2. Create the adapter directory
 
 ```

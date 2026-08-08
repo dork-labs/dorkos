@@ -2,8 +2,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import type { RefObject } from 'react';
 import type { SessionStatusEvent } from '@dorkos/shared/types';
-import { ChatInput } from './ChatInput';
-import type { ChatInputHandle } from './ChatInput';
+import { Composer, type ComposerInputHandle } from '@/layers/features/composer';
 import { InteractiveInputPanel } from './InteractiveInputPanel';
 import type {
   FileUploadProps,
@@ -15,9 +14,7 @@ import { BackgroundTaskBar } from '../tasks/BackgroundTaskBar';
 import { useBackgroundTasks } from '../../model/use-background-tasks';
 import { useChatQueue } from '../../model/use-chat-queue';
 import type { NativeCommandResult } from '../../model/native-commands';
-import { FileChipBar } from './FileChipBar';
 import { QueuePanel } from './QueuePanel';
-import { ClearArmedHint } from './ClearArmedHint';
 import { CommandPalette } from '@/layers/features/commands';
 import { FilePalette } from '@/layers/features/files';
 import { ScanLine } from '@/layers/shared/ui';
@@ -34,11 +31,10 @@ import { useRotatingPlaceholder } from '../../model/use-rotating-placeholder';
 import { AnimatedPlaceholder } from './AnimatedPlaceholder';
 import placeholderHints from '../../config/placeholder-hints.json';
 import type { useInputAutocomplete } from '../../model/use-input-autocomplete';
-import { useDragAndPaste } from './use-drag-and-paste';
 import { sessionContextKey } from '../../lib/session-context-key';
 
 interface ChatInputContainerProps {
-  chatInputRef: RefObject<ChatInputHandle | null>;
+  chatInputRef: RefObject<ComposerInputHandle | null>;
   input: string;
   autocomplete: ReturnType<typeof useInputAutocomplete>;
   handleSubmit: () => void;
@@ -179,10 +175,6 @@ export function ChatInputContainer({
     enabled: isIdle && input === '',
   });
 
-  const { getRootProps, getInputProps, isDragActive, handlePaste } = useDragAndPaste({
-    onFilesSelected,
-  });
-
   // The composer owns WHEN the double-Escape is armed (it owns the keyboard);
   // this component owns WHERE that reads out, because the lane it belongs in
   // floats above the queue panel and the attachment chips, which are rendered
@@ -206,30 +198,15 @@ export function ChatInputContainer({
   }, [autocomplete, chatQueue]);
 
   return (
-    <div
-      {...getRootProps()}
-      onPaste={handlePaste}
-      className="chat-input-container bg-surface relative m-2 rounded-xl border p-2"
-    >
-      <input {...getInputProps()} />
-
+    // `chat-input-container` is not decoration: it is the hook for the
+    // safe-area rule in `index.css`, and it rides on the card element itself.
+    // Root never bakes it in — chat passes it, because chat is the only surface
+    // that sits against the bottom of a notched screen.
+    <Composer.Root className="chat-input-container" onFilesDropped={onFilesSelected}>
+      {/* Chat-only, so it arrives as a child rather than living in Root. */}
       <AnimatePresence>
         {isStreaming && (
           <ScanLine color={agentVisual.color} isTextStreaming={isTextStreaming} edge="top" />
-        )}
-      </AnimatePresence>
-
-      <AnimatePresence>
-        {isDragActive && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.15 }}
-            className="bg-primary/10 border-primary absolute inset-0 z-10 flex items-center justify-center rounded-xl border-2 border-dashed"
-          >
-            <p className="text-primary text-sm font-medium">Drop files to attach</p>
-          </motion.div>
         )}
       </AnimatePresence>
 
@@ -264,10 +241,9 @@ export function ChatInputContainer({
             exit={{ opacity: 0 }}
             transition={{ duration: 0.15 }}
           >
-            {/* The composer's overlay lane: everything transient that floats
-                above the card, stacked bottom-up so nothing lands on the queue
-                rows' controls. */}
-            <div className="absolute right-0 bottom-full left-0 mb-2">
+            {/* Stacking is child order: palettes first, the armed-clear hint
+                last, so the hint never lands on the queue rows' controls. */}
+            <Composer.OverlayLane>
               <AnimatePresence>
                 {autocomplete.commands.show && (
                   <CommandPalette
@@ -284,11 +260,11 @@ export function ChatInputContainer({
                   />
                 )}
               </AnimatePresence>
-              {clearArmed && <ClearArmedHint />}
-            </div>
+              {clearArmed && <Composer.ClearArmedHint />}
+            </Composer.OverlayLane>
 
             {pendingFiles.length > 0 && (
-              <FileChipBar
+              <Composer.Attachments
                 files={pendingFiles}
                 onRemove={onFileRemove}
                 onRetry={onFileRetry}
@@ -325,7 +301,7 @@ export function ChatInputContainer({
             </AnimatePresence>
             <BackgroundTaskBar tasks={backgroundTasks} onStopTask={handleStopTask} />
 
-            <ChatInput
+            <Composer.Input
               ref={chatInputRef}
               value={input}
               onChange={autocomplete.handleInputChange}
@@ -403,6 +379,6 @@ export function ChatInputContainer({
           </motion.div>
         )}
       </AnimatePresence>
-    </div>
+    </Composer.Root>
   );
 }

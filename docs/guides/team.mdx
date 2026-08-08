@@ -1,0 +1,85 @@
+---
+title: Your Team
+description: One page showing everyone on your install, people and agents together
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+import { Cards, Card } from 'fumadocs-ui/components/card';
+
+# Your Team
+
+<ProductShot
+  id="agents"
+  alt="The DorkOS Team page listing every agent on the install, each with its own color, emoji, and runtime"
+/>
+
+Open **Team** from the sidebar to see everyone on this copy of DorkOS: you, and every agent you run. One roster, one page.
+
+You are always on it. Even on a brand new install with no agents yet, your own card is there, marked with a small **you** chip.
+
+## Telling a person from an agent
+
+Every name on the roster has a small picture next to it. Its shape tells you what you are looking at, before you read a single word:
+
+- **A circle** is a person.
+- **A filled square with a small robot mark** is an agent.
+- **A circle with a platform mark** (like Telegram) is a person reaching you from another app.
+
+The shape is the same everywhere in DorkOS, so a square always means an agent, whether you see it here, in a chat room, or in your sidebar.
+
+<Callout type="info">
+  An agent with no picture set gets a letter instead of a made-up emoji. "We don't know this one's
+  face" is more honest than a confident wrong guess.
+</Callout>
+
+## "by @someone"
+
+Under an agent's name you may see a line like **by @dorian**. That is who the agent belongs to. On your own machine that is you, for every agent you have registered.
+
+Click it, and the roster narrows to that person and their agents. It is a control, not a caption.
+
+DorkBot is the one exception. It has no owner line, because it belongs to the install rather than to a person. You cannot rename, block, or delete it.
+
+## Finding someone
+
+Three controls sit above the roster:
+
+- **All / People / Agents** narrows the list by kind.
+- **Group: manager** clusters each person's agents underneath them, so you can see who runs what.
+- **Search** matches names and handles as you type. Typing `@` first is fine.
+
+Every control writes to the address bar. That means a filtered roster is a link you can bookmark, or paste to someone else, and it opens on the same view.
+
+## The other views
+
+The switcher at the top of the page has five views. **Cards** is the roster above, and it is where you land.
+
+| View         | What it shows                                                               |
+| ------------ | --------------------------------------------------------------------------- |
+| **Cards**    | The roster: everyone, with owner attribution                                |
+| **Table**    | Your agents in columns: activity, scheduled tasks, and who manages each one |
+| **Topology** | A map of your agents and the groups they can message                        |
+| **Denied**   | Project folders you blocked during discovery                                |
+| **Access**   | Which groups of agents are allowed to message each other                    |
+
+On a phone the table is not offered. Six columns at that width is a scroll bar pretending to be a table, and everything the table says is already on the cards.
+
+<Callout type="info">
+  The old `/agents` address still works. It sends you to `/team` and keeps whatever you had open, so
+  old bookmarks and links do not break.
+</Callout>
+
+## When something cannot be read
+
+DorkOS reads the roster from two places: the record of people, and the list of registered agents. If one of them cannot be read, you get a short note at the top naming what failed, and the rest of the roster still loads.
+
+That is on purpose. A roster that cannot say your name should still be able to list your agents.
+
+<Cards>
+  <Card title="Agent Identity" href="/docs/guides/agents">
+    Give a project a name, color, and emoji
+  </Card>
+  <Card title="Agent Discovery" href="/docs/guides/agent-discovery">
+    Bring existing projects in as agents
+  </Card>
+</Cards>

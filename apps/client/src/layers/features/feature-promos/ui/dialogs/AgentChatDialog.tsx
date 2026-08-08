@@ -9,7 +9,7 @@ export function AgentChatDialog({ onClose }: PromoDialogProps) {
 
   const handleExplore = () => {
     onClose();
-    navigate({ to: '/agents' });
+    navigate({ to: '/team' });
   };
 
   return (

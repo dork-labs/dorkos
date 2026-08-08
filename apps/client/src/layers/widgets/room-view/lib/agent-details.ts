@@ -25,6 +25,18 @@ import { formatRuntimeIdentity } from '@/layers/entities/runtime';
  * its models as `provider/model`.
  */
 export interface RosterAgentInfo {
+  /**
+   * The id the TEAM roster files this agent under — its manifest ULID.
+   *
+   * The room and the roster do not share an id space for agents, and this is
+   * the only bridge between them. A room entry stores an AUTHOR id, and an
+   * agent's author row is a different ULID from its manifest (they are joined
+   * server-side on `mintedForManifestId`); the roster's agent rows are keyed by
+   * the manifest id. So a mention pill that wants to open a profile cannot use
+   * the id it already has — it has to come through here, off the same manifest
+   * the runtime label does.
+   */
+  manifestId: string;
   /** Runtime display label, e.g. `'Claude Code'`. */
   runtime: string;
   /**
@@ -62,6 +74,7 @@ export function agentInfoByRef(
     // reads as the same runtime and model everywhere it appears.
     const identity = formatRuntimeIdentity({ runtime: manifest.runtime, model: manifest.model });
     byRef.set(agentAuthorRef(path), {
+      manifestId: manifest.id,
       runtime: identity.label,
       ...(identity.modelLabel !== null && { model: identity.modelLabel }),
     });

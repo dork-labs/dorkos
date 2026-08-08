@@ -17,7 +17,7 @@ vi.mock('@tanstack/react-router', () => ({
 
 let mockCards: DashboardAgentCard[] = [];
 vi.mock('../model/use-dashboard-agents', () => ({
-  useDashboardAgents: () => ({ cards: mockCards, defaultAgentDir: '/agents/default' }),
+  useDashboardAgents: () => ({ cards: mockCards, defaultAgentDir: '/team/default' }),
 }));
 
 function card(path: string, overrides: Partial<DashboardAgentCard> = {}): DashboardAgentCard {
@@ -48,40 +48,40 @@ describe('YourAgentsSection', () => {
   });
 
   it('renders a card per agent with its name and human status', () => {
-    mockCards = [card('/agents/default', { displayName: 'DorkBot', attention: 'fresh' })];
+    mockCards = [card('/team/default', { displayName: 'DorkBot', attention: 'fresh' })];
     render(<YourAgentsSection />);
     expect(screen.getByText('DorkBot')).toBeInTheDocument();
     expect(screen.getByText('New, say hello')).toBeInTheDocument();
   });
 
   it('stamps the tour anchor so the living tour can spotlight it', () => {
-    mockCards = [card('/agents/default', { displayName: 'DorkBot' })];
+    mockCards = [card('/team/default', { displayName: 'DorkBot' })];
     render(<YourAgentsSection />);
     expect(screen.getByTestId(TOUR_ANCHORS.yourAgents)).toBeInTheDocument();
   });
 
   it('opens a session with the agent when its card is clicked', () => {
-    mockCards = [card('/agents/writer', { displayName: 'Writer' })];
+    mockCards = [card('/team/writer', { displayName: 'Writer' })];
     render(<YourAgentsSection />);
     fireEvent.click(screen.getByRole('button', { name: 'Open a session with Writer' }));
     expect(mockNavigate).toHaveBeenCalledWith({
       to: '/session',
-      search: { dir: '/agents/writer' },
+      search: { dir: '/team/writer' },
     });
   });
 
-  it('caps at six cards and shows an overflow link to /agents', () => {
-    mockCards = Array.from({ length: 7 }, (_, i) => card(`/agents/a${i}`));
+  it('caps at six cards and shows an overflow link to /team', () => {
+    mockCards = Array.from({ length: 7 }, (_, i) => card(`/team/a${i}`));
     render(<YourAgentsSection />);
     const cards = screen.getAllByRole('button', { name: /Open a session with/ });
     expect(cards).toHaveLength(6);
-    const link = screen.getByRole('link', { name: /all agents/i });
-    expect(link).toHaveAttribute('href', '/agents');
+    const link = screen.getByRole('link', { name: /see your team/i });
+    expect(link).toHaveAttribute('href', '/team');
   });
 
   it('shows no overflow link when six or fewer agents exist', () => {
-    mockCards = Array.from({ length: 6 }, (_, i) => card(`/agents/a${i}`));
+    mockCards = Array.from({ length: 6 }, (_, i) => card(`/team/a${i}`));
     render(<YourAgentsSection />);
-    expect(screen.queryByRole('link', { name: /all agents/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /see your team/i })).not.toBeInTheDocument();
   });
 });

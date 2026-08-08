@@ -3,7 +3,14 @@ import type { PlaygroundSection } from '../playground-registry';
 /**
  * Feature component sections from FeaturesPage.
  *
- * Sources: AgentIdentityShowcases, AgentSidebarShowcases, RelayShowcases, MeshShowcases, TasksShowcases, PipPanelShowcases, ApprovalsShowcases.
+ * Identity lives on its own page now (`identity-sections.ts`, spec
+ * `identity-consistency` §W4) — the agent avatar, the team roster, the profile
+ * surfaces and the account menu all moved there, so what is left here is the
+ * subsystems the page is named for.
+ *
+ * Sources: PersonalityPickerShowcases, AgentSidebarShowcases, AgentFleetShowcases,
+ * RelayShowcases, AdapterWizardShowcases, MeshShowcases, TasksShowcases,
+ * PipPanelShowcases, ApprovalsShowcases, ConnectionsShowcases, McpServerCardShowcases.
  */
 export const FEATURES_SECTIONS: PlaygroundSection[] = [
   // PersonalityPickerShowcases
@@ -22,43 +29,6 @@ export const FEATURES_SECTIONS: PlaygroundSection[] = [
       'archetype',
       'slider',
     ],
-  },
-  // AgentIdentityShowcases
-  {
-    id: 'agentavatar',
-    title: 'AgentAvatar',
-    page: 'features',
-    category: 'Agent',
-    keywords: ['agent', 'avatar', 'emoji', 'color', 'identity', 'health', 'status'],
-  },
-  {
-    id: 'agentidentity',
-    title: 'AgentIdentity',
-    page: 'features',
-    category: 'Agent',
-    keywords: ['agent', 'identity', 'card', 'name', 'avatar', 'detail', 'profile'],
-  },
-  {
-    id: 'avatarpickergrid',
-    title: 'AvatarPickerGrid',
-    page: 'features',
-    category: 'Agent',
-    keywords: ['agent', 'avatar', 'color', 'emoji', 'picker', 'grid', 'swatch', 'preset'],
-  },
-  // TeamShowcases
-  {
-    id: 'team-roster',
-    title: 'Team Roster',
-    page: 'features',
-    category: 'Agent',
-    keywords: ['team', 'roster', 'people', 'agents', 'grid', 'chips', 'group', 'manager', 'owner'],
-  },
-  {
-    id: 'team-card',
-    title: 'Team Card',
-    page: 'features',
-    category: 'Agent',
-    keywords: ['team', 'card', 'member', 'identity', 'handle', 'owner', 'attribution', 'external'],
   },
   // AgentFleetShowcases
   {

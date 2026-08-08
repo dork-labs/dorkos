@@ -23,6 +23,7 @@ import {
 import { useTunnelStatus } from '@/layers/entities/tunnel';
 import { TunnelDialog } from '@/layers/features/settings';
 import { HelpMenu } from '@/layers/features/report-issue';
+import { AccountMenuContainer } from '@/layers/features/profile';
 import { isNewer, isFeatureUpdate } from '@/layers/features/status';
 import { SidebarUpgradeCard } from './SidebarUpgradeCard';
 import { DesktopUpdateCard } from './DesktopUpdateCard';
@@ -169,6 +170,11 @@ export function SidebarFooterBar() {
           <DorkLogo variant="current" size={60} />
         </a>
         <div className="ml-auto flex items-center gap-0.5">
+          {/* First in the cluster, left of the tunnel globe: the operator's own
+              face, at icon size so it joins the row rather than re-laying it
+              out. It does not displace the brand link, which is a different
+              affordance (spec `identity-consistency` §W3.1). */}
+          <AccountMenuContainer />
           {serverConfig?.tunnel && !getPlatform().isEmbedded && (
             <>
               <button
