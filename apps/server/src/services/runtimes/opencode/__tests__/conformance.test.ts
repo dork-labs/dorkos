@@ -67,7 +67,10 @@ vi.mock('../check-dependencies.js', async (importOriginal) => {
 });
 
 import { OpenCodeRuntime } from '../opencode-runtime.js';
-import { driveDurableTurn } from '../../../session/__tests__/durable-turn-harness.js';
+import {
+  driveDurableTurn,
+  drivePresenceTurn,
+} from '../../../session/__tests__/durable-turn-harness.js';
 import { TurnEventQueue } from '../global-event-hub.js';
 import type { OpenCodeWireEvent } from '../event-mapper.js';
 import type { OpenCodeClientProvider } from '../session-mapper.js';
@@ -215,6 +218,10 @@ runtimeConformance(
     // reconstructable from the durable store after a restart too.
     durableHistory: (runtime, sessionId, content) =>
       driveDurableTurn(runtime, sessionId, content, PROJECT_DIR),
+    // Presence is only assertable against a turn that really runs: drive one
+    // through the same projector the trigger path feeds.
+    presenceTurn: (runtime, sessionId, content, probes) =>
+      drivePresenceTurn(runtime, sessionId, content, PROJECT_DIR, probes),
     // A deterministic failure cannot be scripted against a live sidecar, so
     // the turn-failure gate runs only in mocked mode: `session.error`
     // (non-abort) followed by the `session.idle` terminal.

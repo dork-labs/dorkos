@@ -30,7 +30,10 @@ import path from 'node:path';
 import { runtimeConformance } from '@dorkos/test-utils';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { makeMockThread, codexFailedTurn, codexSimpleTurn } from './codex-scenarios.js';
-import { driveDurableTurn } from '../../../session/__tests__/durable-turn-harness.js';
+import {
+  driveDurableTurn,
+  drivePresenceTurn,
+} from '../../../session/__tests__/durable-turn-harness.js';
 
 /** Hoisted so the (also hoisted) vi.mock factories can branch on it. */
 const LIVE = vi.hoisted(() => process.env.DORKOS_CODEX_LIVE === '1');
@@ -122,6 +125,10 @@ runtimeConformance(
     // DOR-189: a completed turn must survive a restart via the durable store.
     durableHistory: (runtime, sessionId, content) =>
       driveDurableTurn(runtime, sessionId, content, projectDir),
+    // Presence is only assertable against a turn that really runs: drive one
+    // through the same projector the trigger path feeds.
+    presenceTurn: (runtime, sessionId, content, probes) =>
+      drivePresenceTurn(runtime, sessionId, content, projectDir, probes),
     // A deterministic failed turn cannot be scripted against the live binary,
     // so the turn-failure gate runs only in mocked mode: the one-shot selector
     // makes the next minted thread stream `turn.failed`.
