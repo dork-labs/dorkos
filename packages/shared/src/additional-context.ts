@@ -383,7 +383,6 @@ export interface RoomContextData {
    * nothing to render.
    */
   acknowledgments: RoomContextAcknowledgment[];
-  /** How this agent is addressed here, and whether it was addressed now. */
   /**
    * The files posted with the message this turn is ANSWERING, as paths relative
    * to the agent's own working directory. Empty when it carried none.
@@ -399,6 +398,7 @@ export interface RoomContextData {
    * byte (ADR-0273), so anything DorkOS has to say about it belongs here.
    */
   triggerAttachments: { name: string; path: string }[];
+  /** How this agent is addressed here, and whether it was addressed now. */
   addressing: {
     /** This room's stored override, not the agent's manifest default. */
     responseMode: ResponseMode;
