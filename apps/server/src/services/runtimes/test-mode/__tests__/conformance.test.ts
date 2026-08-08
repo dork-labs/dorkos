@@ -2,7 +2,10 @@ import { afterEach } from 'vitest';
 import { runtimeConformance } from '@dorkos/test-utils';
 import { scenarioStore } from '../scenario-store.js';
 import { TestModeRuntime } from '../test-mode-runtime.js';
-import { driveDurableTurn } from '../../../session/__tests__/durable-turn-harness.js';
+import {
+  driveDurableTurn,
+  drivePresenceTurn,
+} from '../../../session/__tests__/durable-turn-harness.js';
 
 // The failing factory below flips the module-level scenario store's DEFAULT,
 // so restore it after every test: the passing tests rely on 'simple-text'.
@@ -34,4 +37,8 @@ runtimeConformance(() => new TestModeRuntime(), {
   // DOR-189: a completed turn must survive a restart via the durable store.
   durableHistory: (runtime, sessionId, content) =>
     driveDurableTurn(runtime, sessionId, content, '/projects/conformance'),
+  // Presence is only assertable against a turn that really runs: drive one
+  // through the same projector the trigger path feeds.
+  presenceTurn: (runtime, sessionId, content, probes) =>
+    drivePresenceTurn(runtime, sessionId, content, '/projects/conformance', probes),
 });

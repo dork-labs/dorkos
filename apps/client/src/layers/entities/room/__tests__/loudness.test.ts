@@ -11,6 +11,7 @@ function agent(displayName: string, responseMode: ResponseMode): RoomRosterEntry
     authorId: `author-${displayName}`,
     responseMode,
     joinedAt: '2026-07-26T10:00:00.000Z',
+    joinedSeq: 0,
     lastReadSeq: 0,
     author: { id: `author-${displayName}`, kind: 'agent', displayName, handle: null },
     origin: 'local',

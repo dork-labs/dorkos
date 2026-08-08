@@ -30,6 +30,7 @@ function member(author: Partial<AuthorRef> & Pick<AuthorRef, 'kind'>): RoomRoste
     authorId: 'author-Ana',
     responseMode: 'mention-only',
     joinedAt: '2026-07-26T10:00:00.000Z',
+    joinedSeq: 0,
     lastReadSeq: 0,
     author: { id: 'author-Ana', displayName: 'Ana', handle: null, ...author },
     origin: 'local',

@@ -47,6 +47,7 @@ function member(
     authorId: id,
     responseMode: 'always',
     joinedAt: '2026-07-26T09:00:00.000Z',
+    joinedSeq: 0,
     lastReadSeq: 0,
     origin: overrides.origin ?? 'local',
     author: {

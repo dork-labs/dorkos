@@ -28,6 +28,7 @@ function channel(overrides: Partial<RoomSummary> = {}): RoomSummary {
     topic: null,
     workspaceId: null,
     archived: false,
+    ambientMaxEntries: 30,
     createdAt: '2026-07-26T10:00:00.000Z',
     lastActivityAt: '2026-07-26T10:00:00.000Z',
     unreadCount: 0,
@@ -90,6 +91,7 @@ function roomWithRoster() {
         authorId: 'me',
         responseMode: 'always' as const,
         joinedAt: '2026-07-26T10:00:00.000Z',
+        joinedSeq: 0,
         lastReadSeq: 0,
         author: { id: 'me', kind: 'human' as const, displayName: 'You' },
       },
@@ -98,6 +100,7 @@ function roomWithRoster() {
         authorId: 'author-ana',
         responseMode: 'mention-only' as const,
         joinedAt: '2026-07-26T10:00:00.000Z',
+        joinedSeq: 0,
         lastReadSeq: 0,
         author: {
           id: 'author-ana',

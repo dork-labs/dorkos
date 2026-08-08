@@ -394,6 +394,7 @@ describe('RoomStore.listUnreadEntries', () => {
     const store = roomWith(10);
     const rows = store.listUnreadEntries(ROOM_ID, {
       afterSeq: 0,
+      throughSeq: Number.MAX_SAFE_INTEGER,
       excludeAuthorId: 'ana',
       excludeEntryId: 'none',
       limit: 3,
@@ -410,6 +411,7 @@ describe('RoomStore.listUnreadEntries', () => {
     const store = roomWith(500);
     const page = store.listUnreadEntries(ROOM_ID, {
       afterSeq: 0,
+      throughSeq: Number.MAX_SAFE_INTEGER,
       excludeAuthorId: 'ana',
       excludeEntryId: 'none',
       limit: 31,
@@ -428,6 +430,7 @@ describe('RoomStore.listUnreadEntries', () => {
 
     const rows = store.listUnreadEntries(ROOM_ID, {
       afterSeq: 0,
+      throughSeq: Number.MAX_SAFE_INTEGER,
       excludeAuthorId: 'ana',
       excludeEntryId: 'the-trigger',
       limit: 30,
@@ -439,11 +442,68 @@ describe('RoomStore.listUnreadEntries', () => {
     const store = roomWith(5);
     const rows = store.listUnreadEntries(ROOM_ID, {
       afterSeq: 3,
+      throughSeq: Number.MAX_SAFE_INTEGER,
       excludeAuthorId: 'ana',
       excludeEntryId: 'none',
       limit: 30,
     });
     expect(rows.map((e) => e.body.text)).toEqual(['m4', 'm5']);
+  });
+
+  it('closes the window at the top too, so a turn never sees past its trigger', () => {
+    // The ceiling is what makes the claim-time cursor advance safe: a message
+    // that lands while a turn is being assembled belongs to the NEXT turn's
+    // window, because the cursor the claim wrote stops at the trigger. Without
+    // it the newest-first page would reach past the ceiling and hand the same
+    // entry to two turns in a row (room-participation spec §8.3).
+    const store = roomWith(10);
+    const rows = store.listUnreadEntries(ROOM_ID, {
+      afterSeq: 3,
+      throughSeq: 6,
+      excludeAuthorId: 'ana',
+      excludeEntryId: 'none',
+      limit: 30,
+    });
+    expect(rows.map((e) => e.body.text)).toEqual(['m4', 'm5', 'm6']);
+  });
+});
+
+describe('RoomStore.rewindReadCursor', () => {
+  /** A room with one member whose cursor has been advanced to `at`. */
+  function memberAt(at: number): RoomStore {
+    const store = new RoomStore(createTestDb());
+    seedRoom(store);
+    store.addMember({
+      roomId: ROOM_ID,
+      authorId: 'ana',
+      responseMode: 'always',
+      joinedAt: '2026-07-26T11:00:00.000Z',
+    });
+    store.setReadCursor(ROOM_ID, 'ana', at);
+    return store;
+  }
+
+  it('puts the cursor back when it is still where the caller left it', () => {
+    const store = memberAt(7);
+    expect(store.rewindReadCursor(ROOM_ID, 'ana', { from: 7, to: 2 })?.lastReadSeq).toBe(2);
+  });
+
+  it('refuses when something else has moved it since', () => {
+    // The whole reason this is a compare-and-set. A refused turn may release long
+    // after a SECOND turn was claimed for the same member — and that turn WAS
+    // shown its window, so walking its cursor back would replay the conversation
+    // to it. The stale rewind has to miss, silently.
+    const store = memberAt(7);
+    store.setReadCursor(ROOM_ID, 'ana', 9);
+
+    expect(store.rewindReadCursor(ROOM_ID, 'ana', { from: 7, to: 2 })?.lastReadSeq).toBe(9);
+  });
+
+  it('is what setReadCursor cannot do, which is why it is its own method', () => {
+    // Pins the monotonic guarantee this deliberately does not relax: the mark-read
+    // route must stay unable to un-read a room for a second client.
+    const store = memberAt(7);
+    expect(store.setReadCursor(ROOM_ID, 'ana', 2)?.lastReadSeq).toBe(7);
   });
 });
 

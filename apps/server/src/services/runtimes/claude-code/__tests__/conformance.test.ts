@@ -109,6 +109,7 @@ vi.mock('../tooling/check-dependency.js', () => ({
 
 import { query } from '@anthropic-ai/claude-agent-sdk';
 import { ClaudeCodeRuntime } from '../claude-code-runtime.js';
+import { drivePresenceTurn } from '../../../session/__tests__/durable-turn-harness.js';
 
 const mockedQuery = vi.mocked(query);
 
@@ -129,6 +130,12 @@ runtimeConformance(
     // The mocked SDK writes no JSONL transcript, so native history is [] here;
     // real-binary history round-trips are covered by integration smokes.
     expectHistory: false,
+    // Presence is only assertable against a turn that really runs: drive one
+    // through the same projector the trigger path feeds. Claude-code takes the
+    // harness WITHOUT the durable store (its transcript is SDK JSONL — it must
+    // not persist, DOR-189), which is exactly what `drivePresenceTurn` does.
+    presenceTurn: (runtime, sessionId, content, probes) =>
+      drivePresenceTurn(runtime, sessionId, content, '/projects/conformance', probes),
     // One-shot failing turn: the SDK stream ends in a non-success result
     // (error_during_execution), driving the result-event-mapper's typed error
     // + terminal done path. mockImplementationOnce takes precedence over the

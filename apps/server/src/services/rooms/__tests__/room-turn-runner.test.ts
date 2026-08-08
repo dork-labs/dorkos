@@ -157,6 +157,7 @@ function request(
     topic: null,
     workspaceId: null,
     archived: false,
+    ambientMaxEntries: 30,
     createdAt: '2026-07-26T10:00:00.000Z',
     lastActivityAt: '2026-07-26T10:00:00.000Z',
     members: [],
@@ -365,6 +366,39 @@ describe('createSessionRoomTurnRunner', () => {
     // questions, so a room session never falls through to the registry's legacy
     // "it must be claude-code" inference for want of a row.
     expect(persistSessionRuntime.mock.calls[0][0]).toBe(result.sessionId);
+  });
+
+  it('still delivers the answer when recording who owns the session fails', async () => {
+    // NOTHING AFTER THE MODEL HAS SPOKEN MAY THROW OUT OF `run`, and this is the
+    // line that used to. `persistSessionRuntime` was awaited above the busy
+    // guard, so a `SQLITE_BUSY` on one bookkeeping row — a live hazard, which is
+    // why `bindRoomSession` in `room-trigger.ts` is already try-wrapped for it —
+    // escaped a turn that had opened, streamed and ended.
+    //
+    // Two things broke, and the second is the quiet one. The room reported an
+    // ANSWERED turn as failed and dropped what the agent said. And because the
+    // dispatcher reads a throw out of `run` as "the turn never started", it
+    // rewound the read cursor and replayed the entire ambient window to the next
+    // turn (room-participation spec §8.3) — a duplicate conversation caused by a
+    // row that has nothing to do with either.
+    persistSessionRuntime.mockRejectedValueOnce(
+      Object.assign(new Error('database is locked'), { code: 'SQLITE_BUSY' })
+    );
+    turnBehaviour = saysAndCloses('Green — nothing failed.');
+
+    const result = await createSessionRoomTurnRunner().run(request());
+
+    // It was really attempted, so the assertions below are about a write that
+    // failed rather than one that never ran.
+    expect(persistSessionRuntime).toHaveBeenCalledTimes(1);
+    // (a) `run` resolves — the dispatcher's "a throw means nothing ran" holds.
+    // (b) and the answer is intact, which is what the room posts.
+    expect(result.text).toBe('Green — nothing failed.');
+    // (c) The read cursor therefore stays advanced. These two assertions ARE
+    // that claim: `rewindClaimCursor` has exactly two triggers — `run` throwing,
+    // and `unanswered === 'busy'` — and this result is neither. The dispatcher
+    // half is pinned in `ambient-pending.test.ts`.
+    expect(result.unanswered).toBeUndefined();
   });
 
   it('says nothing rather than queueing behind an operator who is mid-turn', async () => {

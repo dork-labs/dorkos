@@ -81,6 +81,7 @@ function agentMember(id: string, displayName: string, path: string): RoomRosterE
     authorId: id,
     responseMode: 'always',
     joinedAt: '2026-08-06T09:00:00.000Z',
+    joinedSeq: 0,
     lastReadSeq: 0,
     origin: 'local',
     author: {
@@ -99,6 +100,7 @@ const MEMBERS: RoomRosterEntry[] = [
     authorId: 'ana',
     responseMode: 'always',
     joinedAt: '2026-08-06T09:00:00.000Z',
+    joinedSeq: 0,
     lastReadSeq: 0,
     origin: 'local',
     author: { id: 'ana', kind: 'human', displayName: 'Ana', handle: 'ana' },

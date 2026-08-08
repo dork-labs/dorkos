@@ -34,6 +34,7 @@ function member(authorId: string, responseMode: RoomRosterEntry['responseMode'])
     authorId,
     responseMode,
     joinedAt: '2026-07-26T10:00:00.000Z',
+    joinedSeq: 0,
     lastReadSeq: 0,
     author: {
       id: authorId,
@@ -54,6 +55,7 @@ const ROSTER: RoomWithRoster = {
   topic: null,
   workspaceId: null,
   archived: false,
+  ambientMaxEntries: 30,
   createdAt: '2026-07-26T10:00:00.000Z',
   lastActivityAt: '2026-07-26T10:00:00.000Z',
   members: [member('ana', 'mention-only'), member('bo', 'silent')],

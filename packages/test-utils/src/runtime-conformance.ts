@@ -34,7 +34,7 @@ import {
   StreamEventSchema,
   UsageStatusSchema,
 } from '@dorkos/shared/schemas';
-import { SessionListEventSchema } from '@dorkos/shared/session-stream';
+import { SessionLifecycleSchema, SessionListEventSchema } from '@dorkos/shared/session-stream';
 import type { HistoryMessage, PermissionMode, StreamEvent } from '@dorkos/shared/types';
 
 /**
@@ -101,6 +101,26 @@ export interface RuntimeConformanceOpts {
     content: string
   ) => Promise<HistoryMessage[]>;
   /**
+   * Drives ONE real turn through the trigger path's projector — the
+   * `getOrCreateProjector` → `feedProjector` seam `POST /messages` uses —
+   * calling `midTurn` while the turn is OPEN and `afterTurn` once it has
+   * closed. Wire it to `drivePresenceTurn`
+   * (`apps/server/src/services/session/__tests__/durable-turn-harness.ts`).
+   *
+   * Required for the live half of the presence assertions, and there is no
+   * default that could stand in for it: a runtime's `sendMessage` is a pure
+   * event producer that moves no projector, so presence read off `sendMessage`
+   * alone reports `idle` at every moment for every runtime and asserts nothing.
+   * Omit it and those cases SKIP, loudly and by name, rather than passing on an
+   * absence the suite manufactured.
+   */
+  presenceTurn?: (
+    runtime: AgentRuntime,
+    sessionId: string,
+    content: string,
+    probes: { midTurn: () => Promise<void>; afterTurn: () => Promise<void> }
+  ) => Promise<void>;
+  /**
    * Waives the safety invariant that a runtime's DEFAULT permission mode must
    * still stop for the person — one that would need a consent ritual if a person
    * selected it (`needsConsentRitual`) may not be where a session is BORN. The
@@ -132,6 +152,15 @@ const PERMISSION_AXES = ['trust', 'working'];
 
 /** The turn-terminating event type every sendMessage stream must end with. */
 const TERMINAL_EVENT_TYPE = 'done';
+
+/**
+ * The lifecycle that claims a turn is running RIGHT NOW — what the presence
+ * strip renders as "working".
+ *
+ * `blocked` is deliberately not one: a blocked session is waiting on a person,
+ * not working. `error`/`interrupted` are settled, closed states.
+ */
+const WORKING_LIFECYCLE = 'streaming';
 
 /** Valid `DependencyCheck.status` values per the AgentRuntime contract. */
 const DEPENDENCY_STATUSES = ['satisfied', 'missing', 'outdated'];
@@ -279,6 +308,153 @@ export function validateSettingsCapability(settings: unknown): string[] {
 }
 
 /**
+ * When a presence reading was taken, relative to the session's own turns.
+ *
+ * The three moments differ in what a TRUTHFUL runtime may say, which is why the
+ * validator needs to be told which one it is looking at.
+ */
+export type PresencePhase = 'never-run' | 'mid-turn' | 'after-turn';
+
+/**
+ * One reading of the two presence facts a runtime owns for a session: whether a
+ * turn is running now, and what the session is bound to.
+ *
+ * Fields are typed `unknown` on purpose. The compile-time types say a lifecycle
+ * is a `SessionLifecycle` and a binding is a `string | undefined`; what a
+ * runtime actually reports drifts from that through casts and hand-built
+ * snapshots, and this is the layer that catches the drift.
+ */
+export interface PresenceObservation {
+  /** Which moment this reading was taken at. */
+  phase: PresencePhase;
+  /** `getSessionSnapshot().status.lifecycle`, verbatim. */
+  lifecycle: unknown;
+  /** `getSessionSnapshot().inProgressTurn`, verbatim. */
+  inProgressTurn: unknown;
+  /**
+   * The cwd the session was created with, or `undefined` when it was created
+   * bound to nothing.
+   */
+  boundTo?: string;
+  /**
+   * The binding the runtime reported (`getSession().cwd`), or `null` when the
+   * runtime reported no session at all — a legal answer before the first turn,
+   * and one that carries no binding claim to check.
+   */
+  reportedBinding: unknown;
+}
+
+/**
+ * Check one {@link PresenceObservation} against the presence-truthfulness
+ * contract: returns one message per violation, empty when the reading is honest.
+ *
+ * **The rule the whole thing serves: the strip omits rather than lies.** A
+ * runtime that cannot observe its own running state, or cannot say what a
+ * session is bound to, reports that absence (`idle` with no turn, an omitted
+ * binding) and passes — absence is a valid answer, and it is the only
+ * alternative to a true one. What it may never do is fabricate: claim a turn is
+ * running when none is, keep claiming one after the turn terminated, or name a
+ * directory the session is not bound to. Each of those puts a person in front of
+ * a roster that says an agent is working on something it is not.
+ *
+ * There is deliberately NO opt-out knob on {@link RuntimeConformanceOpts} for
+ * this. "Cannot report presence" and "reports absence" are the same value here,
+ * so a runtime declaring the former would be waiving assertions it already
+ * satisfies.
+ *
+ * Extracted as a pure function for the same reason
+ * {@link validateSettingsCapability} is: the suite only ever runs against
+ * runtimes meant to pass, so its green says nothing about whether these rules
+ * can fire. `__tests__/runtime-conformance-presence.test.ts` drives this
+ * directly with fabricated readings and asserts each is rejected.
+ *
+ * @internal
+ * @param observation - One reading of a session's presence facts.
+ * @returns Failure messages, one per violation; empty when the reading is honest.
+ */
+export function validatePresenceReport(observation: PresenceObservation): string[] {
+  const failures: string[] = [];
+  const { phase, lifecycle, inProgressTurn, boundTo, reportedBinding } = observation;
+
+  // Vocabulary first: an unknown lifecycle string is a claim no consumer can
+  // read, and every rule below would silently pass it through.
+  const knownLifecycle = SessionLifecycleSchema.safeParse(lifecycle).success;
+  if (!knownLifecycle) {
+    failures.push(
+      `status.lifecycle is '${String(lifecycle)}', which is not a SessionLifecycle — ` +
+        'a presence state nothing downstream can read'
+    );
+  }
+
+  // An EMPTY array is not "a turn to show" — it is the absence of one wearing
+  // the shape of presence, and it is not a state the real projector can reach
+  // (`turn_start` opens the turn WITH its own event, `turn_end` nulls it —
+  // session-state-projector). Counting `[]` as a shown turn would let a runtime
+  // satisfy the claim-what-you-can-show rule below with nothing at all.
+  const turnShown = Array.isArray(inProgressTurn) && inProgressTurn.length > 0;
+  if (!Array.isArray(inProgressTurn) && inProgressTurn !== null) {
+    failures.push(
+      `inProgressTurn must be an array of events or null, not '${String(inProgressTurn)}'`
+    );
+  }
+
+  // A turn claimed is a turn showable. The reverse does NOT hold: a snapshot may
+  // carry events with no turn running (an open sign-in card outlives its turn,
+  // DOR-1004), so a non-null turn on an idle session is not a lie.
+  if (lifecycle === WORKING_LIFECYCLE && !turnShown) {
+    failures.push(
+      `reports '${WORKING_LIFECYCLE}' but has no in-progress turn to show — ` +
+        'presence claimed with nothing behind it'
+    );
+  }
+
+  if (phase === 'never-run') {
+    if (knownLifecycle && lifecycle !== 'idle') {
+      failures.push(
+        `a session that has never run a turn must report 'idle', not '${String(lifecycle)}' — ` +
+          'nothing has happened to it yet'
+      );
+    }
+    // `null`, strictly. An empty array is the same absence in the shape of a
+    // turn, and the projector has no state that produces one.
+    if (inProgressTurn !== null) {
+      failures.push('a session that has never run a turn must show no in-progress turn');
+    }
+  }
+
+  // The stuck-working lie, and the one a person actually meets: an agent that
+  // finished hours ago still lit up on the roster.
+  if (phase === 'after-turn' && lifecycle === WORKING_LIFECYCLE) {
+    failures.push(
+      `still reports '${WORKING_LIFECYCLE}' after the turn reached its terminal ` +
+        `'${TERMINAL_EVENT_TYPE}' — nothing is running`
+    );
+  }
+
+  // `null` means the runtime reported no session, which makes no binding claim.
+  if (reportedBinding !== null) {
+    if (reportedBinding !== undefined && typeof reportedBinding !== 'string') {
+      failures.push(
+        `the reported binding must be a directory string or absent, not '${String(reportedBinding)}'`
+      );
+    } else if (typeof reportedBinding === 'string') {
+      if (boundTo === undefined) {
+        failures.push(
+          `reports the binding '${reportedBinding}' for a session created bound to nothing — ` +
+            'an unattributable session must report no binding rather than borrow one'
+        );
+      } else if (reportedBinding !== boundTo) {
+        failures.push(
+          `reports the binding '${reportedBinding}' for a session bound to '${boundTo}'`
+        );
+      }
+    }
+  }
+
+  return failures;
+}
+
+/**
  * Register the shared AgentRuntime conformance suite for one runtime.
  *
  * Call at the top level of a Vitest test file. The factory is invoked once
@@ -302,6 +478,7 @@ export function runtimeConformance(
     makeFailingRuntime,
     makeCompactingRuntime,
     durableHistory,
+    presenceTurn,
     autonomyDefaultReason,
   } = opts;
 
@@ -350,6 +527,55 @@ export function runtimeConformance(
       events.push(event);
     }
     return events;
+  }
+
+  /**
+   * Read a session's two presence facts the way a roster does: whether a turn
+   * is running (the snapshot's projection) and what the session is bound to
+   * (the session's own `cwd`).
+   *
+   * @param runtime - The runtime instance under test.
+   * @param sessionId - The session to read.
+   * @param phase - Which moment the reading is taken at.
+   * @param boundTo - The cwd the session was created with, if any.
+   */
+  async function observePresence(
+    runtime: AgentRuntime,
+    sessionId: string,
+    phase: PresencePhase,
+    boundTo: string | undefined
+  ): Promise<PresenceObservation> {
+    const ctx = {
+      permissionMode: resolvePermissionMode(runtime),
+      ...(boundTo === undefined ? {} : { cwd: boundTo }),
+    };
+    const snapshot = await runtime.getSessionSnapshot(ctx, sessionId);
+    // `getSession` takes the directory to look IN; an unbound session has none,
+    // so it is asked for in the suite's project dir — where, being bound to
+    // nothing, it must still not claim a binding.
+    const session = await runtime.getSession(boundTo ?? projectDir, sessionId);
+    return {
+      phase,
+      lifecycle: snapshot.status.lifecycle,
+      inProgressTurn: snapshot.inProgressTurn,
+      boundTo,
+      reportedBinding: session === null ? null : session.cwd,
+    };
+  }
+
+  /**
+   * Failure preamble naming what was actually reported, so a red says which
+   * presence claim was fabricated without a rerun.
+   *
+   * @param observation - The reading that failed.
+   */
+  function presenceMessage(observation: PresenceObservation): string {
+    return (
+      `presence reported ${observation.phase} was not truthful ` +
+      `(lifecycle '${String(observation.lifecycle)}', ` +
+      `turn ${observation.inProgressTurn === null ? 'absent' : 'present'}, ` +
+      `binding ${String(observation.reportedBinding)})`
+    );
   }
 
   describe(name, () => {
@@ -602,6 +828,87 @@ export function runtimeConformance(
           if (event.type !== 'operation_progress') continue;
           assertOperationProgress(event);
         }
+      });
+    });
+
+    describe('presence truthfulness (the strip omits rather than lies)', () => {
+      it('a session that has never run a turn reports idle, and shows no turn', async () => {
+        const runtime = makeRuntime();
+        const sessionId = nextSessionId();
+        runtime.ensureSession(sessionId, sessionOpts(runtime));
+
+        const observation = await observePresence(runtime, sessionId, 'never-run', projectDir);
+        expect(validatePresenceReport(observation), presenceMessage(observation)).toEqual([]);
+      });
+
+      if (presenceTurn) {
+        it('reports a running turn while it runs, and stops the moment it ends', async () => {
+          // Both live readings come from ONE turn driven through the real
+          // trigger path, so the lifecycle genuinely transitions
+          // idle → streaming → idle underneath them. Read off `sendMessage`
+          // alone these cases would be inert: the generator moves no
+          // projector, every reading would be `idle`, and a runtime latched at
+          // `streaming` forever would sail through.
+          const runtime = makeRuntime();
+          const sessionId = nextSessionId();
+          runtime.ensureSession(sessionId, sessionOpts(runtime));
+
+          let mid: PresenceObservation | undefined;
+          let after: PresenceObservation | undefined;
+          await presenceTurn(runtime, sessionId, messageContent, {
+            midTurn: async () => {
+              mid = await observePresence(runtime, sessionId, 'mid-turn', projectDir);
+            },
+            afterTurn: async () => {
+              after = await observePresence(runtime, sessionId, 'after-turn', projectDir);
+            },
+          });
+
+          expect(mid, 'the driver never read presence with the turn open').toBeDefined();
+          expect(after, 'the driver never read presence after the turn closed').toBeDefined();
+          expect(validatePresenceReport(mid!), presenceMessage(mid!)).toEqual([]);
+          expect(validatePresenceReport(after!), presenceMessage(after!)).toEqual([]);
+
+          // The discriminating half. A runtime that answers this question at
+          // all must MOVE: claiming a turn while one runs is what the strip
+          // renders, and the reading afterwards is what stops it rendering.
+          //
+          // Only `idle` is held to reporting nothing. `blocked` legitimately
+          // carries a live non-null turn — the projector settles there the
+          // moment an approval opens mid-turn, with the turn still open — and
+          // so can a turn that ended in `error`/`interrupted`. Demanding a null
+          // turn from all of them false-reds an honest runtime; the
+          // stuck-working coverage lives in the after-turn rule regardless.
+          if (mid!.lifecycle === 'streaming') {
+            expect(
+              after!.lifecycle,
+              'reported the turn while it ran but never let go of it'
+            ).not.toBe('streaming');
+          } else if (mid!.lifecycle === 'idle') {
+            expect(
+              mid!.inProgressTurn,
+              'a runtime that reports no running turn must report nothing at all'
+            ).toBeNull();
+          }
+        });
+      } else {
+        it.skip(
+          'SKIPPED: no `presenceTurn` driver wired — nothing here proves this runtime ' +
+            'reports a live turn truthfully (see RuntimeConformanceOpts.presenceTurn)',
+          () => {}
+        );
+      }
+
+      it('a session bound to nothing reports no binding — it never borrows one', async () => {
+        // The binding half of the same rule, and the one that put ghost rows
+        // under every agent when it was violated (DOR-202): a session created
+        // with no cwd is bound to nothing, and the only honest answer is none.
+        const runtime = makeRuntime();
+        const sessionId = nextSessionId();
+        runtime.ensureSession(sessionId, { permissionMode: resolvePermissionMode(runtime) });
+
+        const observation = await observePresence(runtime, sessionId, 'never-run', undefined);
+        expect(validatePresenceReport(observation), presenceMessage(observation)).toEqual([]);
       });
     });
 

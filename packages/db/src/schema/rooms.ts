@@ -203,6 +203,18 @@ export const handleTombstones = sqliteTable(
 );
 
 /**
+ * How much ambient history a new room replays to a turn, before anybody tunes it
+ * (room-participation spec §8.3).
+ *
+ * Exported so the column default and the value {@link rooms} rows are INSERTED
+ * with are the same literal spelled once: `better-sqlite3` applies a column
+ * default only to a statement that omits the column, and the insert path builds
+ * the row it returns to its caller, so a second number here would be a room whose
+ * stored cap and reported cap disagree.
+ */
+export const DEFAULT_AMBIENT_MAX_ENTRIES = 30;
+
+/**
  * A membership-scoped durable stream: a channel or a DM (ADR 260726-170125).
  *
  * **There is no third kind, and there is no room hierarchy.** A thread is a
@@ -238,6 +250,26 @@ export const rooms = sqliteTable(
     workspaceId: text('workspace_id'),
 
     archived: integer('archived', { mode: 'boolean' }).notNull().default(false),
+
+    /**
+     * How many entries of ambient history reach a turn in this room at most,
+     * oldest dropped first (room-participation spec §8.3).
+     *
+     * Per room rather than a constant, because "how much backlog is worth
+     * replaying" is a property of the room: a two-person DM and a channel that
+     * takes two hundred messages a day do not want the same number. 30 is the
+     * default the hardcoded cap it replaced already used, so an upgrade changes
+     * nothing about what any existing room shows.
+     *
+     * **It is a bound on what a turn reads, never a bound on the log.** Nothing
+     * here trims `room_entries` — a room never forgets what was said. Dropping
+     * the oldest of an over-long window is reported to the model as
+     * `pendingTruncated`, so a turn always knows it is looking at a tail.
+     */
+    ambientMaxEntries: integer('ambient_max_entries')
+      .notNull()
+      .default(DEFAULT_AMBIENT_MAX_ENTRIES),
+
     createdAt: text('created_at').notNull(),
     lastActivityAt: text('last_activity_at').notNull(),
   },
@@ -285,6 +317,23 @@ export const roomMembers = sqliteTable(
     responseMode: text('response_mode').notNull(),
 
     joinedAt: text('joined_at').notNull(),
+
+    /**
+     * The room's highest `seq` at the moment this membership was written, or 0
+     * for a member who joined an empty room (room-participation spec §8.3).
+     *
+     * **The floor under the ambient window, and the reason it is a seq rather
+     * than a timestamp.** A member who joins a channel does not retroactively
+     * read what was said before they were in it, and an agent is a member — so
+     * the history a turn replays starts here. Comparing integers on the primary
+     * key is cheaper and less ambiguous than comparing ISO strings, and it makes
+     * the clamp a `WHERE seq > ?`.
+     *
+     * Written once at join and never moved: it says when somebody arrived, which
+     * `last_read_seq` (where they have read up to) can never answer, because
+     * that column starts at 0 for everybody.
+     */
+    joinedSeq: integer('joined_seq').notNull().default(0),
 
     /** The `(member, room)` read cursor — the highest `seq` this member has seen. */
     lastReadSeq: integer('last_read_seq').notNull().default(0),

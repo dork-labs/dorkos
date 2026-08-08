@@ -1,7 +1,7 @@
 ---
 id: 260808-140954
 title: Threads are durable; sessions are engine runs beneath them
-status: draft
+status: accepted
 created: 2026-08-08
 spec: team-room-home
 superseded-by: null
@@ -12,7 +12,7 @@ amends: null
 
 ## Status
 
-Draft (extracted from spec: team-room-home)
+Accepted (2026-08-08) — documents the split that already exists in code; realized further by the team-room-home programme (P0 shipped RP3 cursor mechanics, DOR-665).
 
 ## Context
 

@@ -422,6 +422,51 @@ describe('RoomService', () => {
     it('refuses a cursor for someone who is not a member', () => {
       expect(() => service.setReadCursor(roomId, 'stranger', 1)).toThrow(RoomError);
     });
+
+    it('announces a cursor that moved, carrying the count the sidebar should now draw', () => {
+      const broadcast = vi.spyOn(eventFanOut, 'broadcast');
+      service.setReadCursor(roomId, human, 2);
+
+      // The count rides along because a second device cannot work it out: a room
+      // summary carries no seq to measure the new cursor against, so a reader
+      // holding only `lastReadSeq` could guess zero and be wrong about the third
+      // message.
+      expect(broadcast).toHaveBeenCalledWith('room_read_cursor', {
+        roomId,
+        authorId: human,
+        authorKind: 'human',
+        lastReadSeq: 2,
+        unreadCount: 1,
+      });
+      broadcast.mockRestore();
+    });
+
+    it('says nothing when the write moved nothing', () => {
+      service.setReadCursor(roomId, human, 3);
+      const broadcast = vi.spyOn(eventFanOut, 'broadcast');
+
+      service.setReadCursor(roomId, human, 3);
+      service.setReadCursor(roomId, human, 1);
+
+      expect(broadcast.mock.calls.map(([name]) => name)).not.toContain('room_read_cursor');
+      broadcast.mockRestore();
+    });
+
+    it('says whose cursor moved, so a reader never repaints their badge from an agent', () => {
+      // Bo is `silent`, so joining and reading cannot trigger a turn and put a
+      // fourth entry in the room underneath this measurement.
+      service.addMember(roomId, human, { agentPath: '/agents/bo' });
+      const bo = authors.resolveAgent('/agents/bo', 'Bo').id;
+      const broadcast = vi.spyOn(eventFanOut, 'broadcast');
+
+      service.setReadCursor(roomId, bo, 3);
+
+      expect(broadcast).toHaveBeenCalledWith(
+        'room_read_cursor',
+        expect.objectContaining({ authorId: bo, authorKind: 'agent' })
+      );
+      broadcast.mockRestore();
+    });
   });
 
   describe('removing members', () => {

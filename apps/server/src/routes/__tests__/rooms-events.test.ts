@@ -63,19 +63,22 @@ interface OpenStream {
 }
 
 /**
- * Open the room stream against a listening server and collect frames until
- * `until` is satisfied.
+ * Open any SSE path against a listening server and collect frames until `until`
+ * is satisfied.
+ *
+ * Shared by the room stream below and the global `/api/events` stream, which is
+ * a different route with the same wire format — one collector rather than two
+ * that drift.
  *
  * @param port - Port the app is listening on.
- * @param roomId - Room to follow.
+ * @param path - The stream path, query included.
  * @param opts.until - Stop predicate over the frames so far.
  * @param opts.lastEventId - Sent as the `Last-Event-ID` resume header.
- * @param opts.after - Sent as the `?after=` resume query param.
  */
-function openRoomStream(
+function openSseStream(
   port: number,
-  roomId: string,
-  opts: { until: (frames: SseFrame[]) => boolean; lastEventId?: string; after?: number }
+  path: string,
+  opts: { until: (frames: SseFrame[]) => boolean; lastEventId?: string }
 ): OpenStream {
   let signalReady = (): void => {};
   let resolveFrames: (frames: SseFrame[]) => void = () => {};
@@ -93,7 +96,6 @@ function openRoomStream(
     resolveStatus = resolve;
   });
 
-  const path = `/api/rooms/${roomId}/events${opts.after !== undefined ? `?after=${opts.after}` : ''}`;
   const req = http.request(
     {
       host: '127.0.0.1',
@@ -125,6 +127,24 @@ function openRoomStream(
   req.end();
 
   return { ready, frames, status };
+}
+
+/**
+ * Open one room's durable stream.
+ *
+ * @param port - Port the app is listening on.
+ * @param roomId - Room to follow.
+ * @param opts.until - Stop predicate over the frames so far.
+ * @param opts.lastEventId - Sent as the `Last-Event-ID` resume header.
+ * @param opts.after - Sent as the `?after=` resume query param.
+ */
+function openRoomStream(
+  port: number,
+  roomId: string,
+  opts: { until: (frames: SseFrame[]) => boolean; lastEventId?: string; after?: number }
+): OpenStream {
+  const query = opts.after !== undefined ? `?after=${opts.after}` : '';
+  return openSseStream(port, `/api/rooms/${roomId}/events${query}`, opts);
 }
 
 /** Start the app on an ephemeral port for one test. */
@@ -405,5 +425,59 @@ describe('GET /api/rooms/:id/events', () => {
     expect(res.status).toBe(404);
     expect(res.body.code).toBe('ROOM_NOT_FOUND');
     resetAgentIdentityService();
+  });
+});
+
+describe('PUT /api/rooms/:id/read-cursor on the global stream', () => {
+  let roomId: string;
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    setRoomService(createRoomSubsystem({ db: createTestDb() }).service);
+    const created = await request(app)
+      .post('/api/rooms')
+      .send({ kind: 'channel', title: 'Backend' });
+    roomId = created.body.id;
+  });
+
+  it('announces a cursor once, and says nothing the second time', async () => {
+    // The whole point of the event is a SECOND device, so the proof has to be a
+    // real reader on `/api/events` rather than a spy on the broadcaster: the
+    // route, the fan-out and the SSE encoding are all between the write and the
+    // other screen, and a service-level assertion sees none of them.
+    const { getRoomService } = await import('../../services/rooms/index.js');
+    for (const text of ['one', 'two', 'three']) {
+      await request(app).post(`/api/rooms/${roomId}/entries`).send({ text });
+    }
+
+    const server = await listen();
+    // Stop on the sentinel post at the end rather than on the cursor event
+    // itself. Absence is never the condition: waiting for the thing that happens
+    // INSTEAD is what makes "and then nothing" provable, where a timer would
+    // only prove the test was patient.
+    const stream = openSseStream(server.port, '/api/events', {
+      until: (frames) => frames.some((f) => f.event === 'room_activity'),
+    });
+    await stream.ready;
+
+    await request(app).put(`/api/rooms/${roomId}/read-cursor`).send({ lastReadSeq: 3 }).expect(200);
+    // The same cursor again: monotonic, so it writes nothing and must therefore
+    // say nothing. Opening a room already read is the common case, and an event
+    // per no-op would be the loudest name on this stream.
+    await request(app).put(`/api/rooms/${roomId}/read-cursor`).send({ lastReadSeq: 3 }).expect(200);
+    await request(app).post(`/api/rooms/${roomId}/entries`).send({ text: 'sentinel' });
+
+    const frames = await stream.frames;
+    server.close();
+
+    const cursors = frames.filter((f) => f.event === 'room_read_cursor');
+    expect(cursors).toHaveLength(1);
+    expect(cursors[0].data).toEqual({
+      roomId,
+      authorId: getRoomService().authorRegistry.localHuman().id,
+      authorKind: 'human',
+      lastReadSeq: 3,
+      unreadCount: 0,
+    });
   });
 });
