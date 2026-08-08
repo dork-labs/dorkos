@@ -25,6 +25,7 @@ import { COMPOSER_NODES } from './lexical-nodes';
 import { createLexicalSurface } from './lexical-surface';
 import { COMPOSER_TRANSFORMERS } from './lexical-transformers';
 import { useLadderCommands } from './use-ladder-commands';
+import { useMentionNodes } from './use-mention-nodes';
 import { usePastePrecedence } from './use-paste-precedence';
 import { useLexicalValue } from './use-lexical-value';
 
@@ -95,6 +96,7 @@ const LexicalFieldInner = forwardRef<ComposerFieldHandle, ComposerFieldProps>(
       paletteListboxId,
       activeDescendantId,
       onSurfaceChange,
+      mentionSubjects,
     },
     ref
   ) {
@@ -119,6 +121,7 @@ const LexicalFieldInner = forwardRef<ComposerFieldHandle, ComposerFieldProps>(
 
     useLadderCommands({ onKeyDown, surface, isPaletteOpen, paletteHasResults });
     usePastePrecedence();
+    useMentionNodes(mentionSubjects);
 
     useImperativeHandle(
       ref,
@@ -201,7 +204,7 @@ const LexicalFieldInner = forwardRef<ComposerFieldHandle, ComposerFieldProps>(
  * emptied box is gone — that was an artifact of setting a textarea's height
  * imperatively, and a contenteditable grows on its own.
  */
-export const LexicalField = forwardRef<ComposerFieldHandle, ComposerFieldProps>(
+const LexicalField = forwardRef<ComposerFieldHandle, ComposerFieldProps>(
   function LexicalField(props, ref) {
     return (
       <LexicalComposer
@@ -218,4 +221,8 @@ export const LexicalField = forwardRef<ComposerFieldHandle, ComposerFieldProps>(
   }
 );
 
+/**
+ * Default-exported because `ComposerInput` reaches it through `React.lazy`,
+ * which requires a default. One export, so there is no second name to drift.
+ */
 export default LexicalField;

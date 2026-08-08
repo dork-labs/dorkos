@@ -12,6 +12,7 @@
  * @module features/composer/ui/field/ComposerFieldProps
  */
 import type { EditingSurface } from '../editing-surface';
+import type { MentionSubject } from './use-mention-nodes';
 
 /** Everything a composer field needs from the composer around it. */
 export interface ComposerFieldProps {
@@ -57,6 +58,15 @@ export interface ComposerFieldProps {
    * paint.
    */
   onSurfaceChange: (surface: EditingSurface) => void;
+  /**
+   * Handles this composer may draw as identity pills, and the colours to draw
+   * them in.
+   *
+   * Purely presentational: the SERVER still resolves who a mention addresses at
+   * write time. A handle absent from this list stays plain text. Omitted by
+   * surfaces with no roster — chat, the dashboard, onboarding.
+   */
+  mentionSubjects?: readonly MentionSubject[];
 }
 
 /**

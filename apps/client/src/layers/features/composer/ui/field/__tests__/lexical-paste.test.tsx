@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import type { ComposerFieldHandle } from '../ComposerFieldProps';
-import { LexicalField } from '../LexicalField';
+import LexicalField from '../LexicalField';
 
 beforeAll(() => {
   Object.defineProperty(window, 'matchMedia', {
@@ -37,6 +37,11 @@ function CardAroundField({
 }) {
   const [value, setValue] = useState('');
   return (
+    // Stands in for `Composer.Root`, which owns paste and drop on the card. The
+    // real one gets these handlers from react-dropzone's `getRootProps()`, which
+    // the rule cannot see through; here they are literal, so it fires. There is
+    // nothing interactive to make accessible — this is a drop target in a test.
+    // eslint-disable-next-line jsx-a11y/no-static-element-interactions
     <div onPaste={onPaste} onDrop={onDrop} data-testid="card">
       <LexicalField
         ref={handleOut}

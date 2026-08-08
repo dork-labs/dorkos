@@ -3,7 +3,7 @@ import { useRef, useState } from 'react';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { ComposerFieldHandle } from '../ComposerFieldProps';
-import { LexicalField } from '../LexicalField';
+import LexicalField from '../LexicalField';
 
 beforeAll(() => {
   Object.defineProperty(window, 'matchMedia', {

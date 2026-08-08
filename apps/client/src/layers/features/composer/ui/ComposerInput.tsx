@@ -172,6 +172,12 @@ export interface ComposerInputProps {
    */
   onClearArmedChange?: (armed: boolean) => void;
   /**
+   * Handles this composer may draw as identity pills. Purely presentational —
+   * the server still resolves who a mention addresses. Omitted by surfaces with
+   * no roster.
+   */
+  mentionSubjects?: ComposerFieldProps['mentionSubjects'];
+  /**
    * Show formatting as you type — bold, headings and lists take shape in the
    * box instead of staying as markdown characters.
    *
@@ -245,6 +251,7 @@ export const ComposerInput = forwardRef<ComposerInputHandle, ComposerInputProps>
       canSubmit = true,
       canSubmitReason,
       richText = false,
+      mentionSubjects,
     },
     ref
   ) {
@@ -329,6 +336,7 @@ export const ComposerInput = forwardRef<ComposerInputHandle, ComposerInputProps>
       paletteListboxId,
       activeDescendantId,
       onSurfaceChange: setSurface,
+      mentionSubjects,
     };
 
     const hasText = value.trim().length > 0;
