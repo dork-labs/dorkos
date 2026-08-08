@@ -394,6 +394,7 @@ describe('RoomStore.listUnreadEntries', () => {
     const store = roomWith(10);
     const rows = store.listUnreadEntries(ROOM_ID, {
       afterSeq: 0,
+      throughSeq: Number.MAX_SAFE_INTEGER,
       excludeAuthorId: 'ana',
       excludeEntryId: 'none',
       limit: 3,
@@ -410,6 +411,7 @@ describe('RoomStore.listUnreadEntries', () => {
     const store = roomWith(500);
     const page = store.listUnreadEntries(ROOM_ID, {
       afterSeq: 0,
+      throughSeq: Number.MAX_SAFE_INTEGER,
       excludeAuthorId: 'ana',
       excludeEntryId: 'none',
       limit: 31,
@@ -428,6 +430,7 @@ describe('RoomStore.listUnreadEntries', () => {
 
     const rows = store.listUnreadEntries(ROOM_ID, {
       afterSeq: 0,
+      throughSeq: Number.MAX_SAFE_INTEGER,
       excludeAuthorId: 'ana',
       excludeEntryId: 'the-trigger',
       limit: 30,
@@ -439,11 +442,29 @@ describe('RoomStore.listUnreadEntries', () => {
     const store = roomWith(5);
     const rows = store.listUnreadEntries(ROOM_ID, {
       afterSeq: 3,
+      throughSeq: Number.MAX_SAFE_INTEGER,
       excludeAuthorId: 'ana',
       excludeEntryId: 'none',
       limit: 30,
     });
     expect(rows.map((e) => e.body.text)).toEqual(['m4', 'm5']);
+  });
+
+  it('closes the window at the top too, so a turn never sees past its trigger', () => {
+    // The ceiling is what makes the claim-time cursor advance safe: a message
+    // that lands while a turn is being assembled belongs to the NEXT turn's
+    // window, because the cursor the claim wrote stops at the trigger. Without
+    // it the newest-first page would reach past the ceiling and hand the same
+    // entry to two turns in a row (room-participation spec §8.3).
+    const store = roomWith(10);
+    const rows = store.listUnreadEntries(ROOM_ID, {
+      afterSeq: 3,
+      throughSeq: 6,
+      excludeAuthorId: 'ana',
+      excludeEntryId: 'none',
+      limit: 30,
+    });
+    expect(rows.map((e) => e.body.text)).toEqual(['m4', 'm5', 'm6']);
   });
 });
 

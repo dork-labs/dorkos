@@ -502,7 +502,6 @@ export class RoomService {
     // yet — otherwise the caller gets a 404 for a room that is sitting in the
     // table holding its slug.
     const joinedAt = draft.createdAt;
-    const seeded = { ...draft, archived: false, lastActivityAt: joinedAt };
     const creator = this.roster.requireAuthor(creatorAuthorId);
     const resolved = new Map<string, AuthorRecord>([[creator.id, creator]]);
     for (const authorId of request.members) {
@@ -537,7 +536,7 @@ export class RoomService {
 
     const members = [...resolved.values()].map((author) => ({
       authorId: author.id,
-      responseMode: this.roster.seedResponseMode(seeded, author),
+      responseMode: this.roster.seedResponseMode(draft, author),
       joinedAt,
     }));
 
@@ -719,19 +718,17 @@ export class RoomService {
       workspaceId: null,
       createdAt,
     };
-    const seeded = { ...draft, archived: false, lastActivityAt: createdAt };
-
     // The one place this seeds a responseMode that is NOT
     // `RoomRoster.seedResponseMode`'s own answer — mention-only for a bridged
     // channel is a create-time override, resolved atomically with the add
     // (§3.4's implementation 1), not a value that channel's default would have
     // produced (`engaged`) and that a later write would have to correct.
     const agentResponseMode: ResponseMode =
-      kind === 'channel' ? 'mention-only' : this.roster.seedResponseMode(seeded, agent);
+      kind === 'channel' ? 'mention-only' : this.roster.seedResponseMode(draft, agent);
     const members = [
       {
         authorId: operator.id,
-        responseMode: this.roster.seedResponseMode(seeded, operator),
+        responseMode: this.roster.seedResponseMode(draft, operator),
         joinedAt: createdAt,
       },
       { authorId: agent.id, responseMode: agentResponseMode, joinedAt: createdAt },

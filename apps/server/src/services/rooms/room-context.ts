@@ -54,17 +54,6 @@ import type { ReactionStore } from './reaction-store.js';
 import type { RoomAgentLookup } from './room-errors.js';
 import type { RoomStore } from './room-store.js';
 
-/**
- * How many unread entries reach the model at most, oldest dropped.
- *
- * A cap rather than a setting for now. Every agent's read cursor is `0` until
- * something advances it, so without a clamp the first triggered turn in a busy
- * room would replay the entire log. The room-participation spec's RP3 phase
- * turns this into `rooms.ambientMaxEntries` (default 30) when it wires the
- * cursor; until then it is the same number, spelled once.
- */
-const PENDING_MAX_ENTRIES = 30;
-
 /** How many of the agent's own recent posts it is reminded of. */
 const OWN_RECENT_MAX_ENTRIES = 5;
 
@@ -146,6 +135,19 @@ export interface RoomContextInput {
   agentAuthorId: string;
   /** The entry that triggered it. Never appears in `pending`: it IS the message. */
   entry: RoomEntry;
+  /**
+   * This agent's read cursor as it stood when the turn was CLAIMED — the bottom
+   * of the ambient window, before the joined-at floor and the room's cap are
+   * applied below (room-participation spec §8.3).
+   *
+   * Passed in rather than read off the membership row, and that is the whole
+   * shape of RP3's write half. The claim advances the stored cursor to this
+   * entry, so that a turn which errors does not replay to the next turn the
+   * entries it has already seen — which means the row this function would read
+   * has already moved past everything it is supposed to describe. This is the
+   * value it had a moment earlier.
+   */
+  lastReadSeq: number;
   /** Other agents holding a turn claim in this room right now. */
   working: ReadonlyArray<{ authorId: string; since: string }>;
   /** Automatic turns still available this hour, per room and in total. */
@@ -184,21 +186,43 @@ export function buildRoomContext(deps: RoomContextDeps, input: RoomContextInput)
   const members = deps.store.listMembers(input.room.id);
   const self = members.find((member) => member.authorId === input.agentAuthorId);
 
+  // THE AMBIENT WINDOW (room-participation spec §8.3): everything after
+  // `max(lastReadSeq, joinedSeq)`, up to and including the entry being answered,
+  // and never more than this room's cap.
+  //
+  // **The joined-at floor is not the same question as the cursor.** A member who
+  // joins a channel does not retroactively read what was said before they were
+  // in the room, and an agent is a member — so an agent added at message 40 and
+  // addressed at message 50 is shown 41 to 49 even though its cursor, like every
+  // agent's on the day RP3 ships, still reads 0.
+  const ambientFrom = Math.max(input.lastReadSeq, self?.joinedSeq ?? 0);
+  const cap = input.room.ambientMaxEntries;
   // Read one more than the cap: a full page means older entries were dropped,
-  // and that is what `pendingTruncated` reports. The cap, the cursor and both
+  // and that is what `pendingTruncated` reports. The cap, both bounds and both
   // exclusions are in SQL — see the store method for why that matters.
+  //
+  // **The cap is expressed as a LIMIT on qualifying entries rather than as a
+  // `latestSeq - cap` floor**, which is the same window whenever nothing is
+  // excluded and a strictly better one when something is. The seq arithmetic
+  // counts positions, and the two exclusions below take positions out of it — so
+  // a room whose last 30 messages include the agent's own five would quietly show
+  // 25. A limit counts what is actually shown.
   const window = deps.store.listUnreadEntries(input.room.id, {
-    afterSeq: self?.lastReadSeq ?? 0,
+    afterSeq: ambientFrom,
+    // Frozen to the log as it stood at the trigger. Anything that lands while
+    // this turn is being assembled belongs to the NEXT turn's window, because
+    // the cursor the claim wrote stops exactly here.
+    throughSeq: input.entry.seq,
     // Its own posts are reported separately as `ownRecent`, outside the
     // untrusted fence, because it wrote them.
     excludeAuthorId: input.agentAuthorId,
     // The triggering entry is the message the agent is answering; it arrives as
     // the turn's `content`, not as history.
     excludeEntryId: input.entry.id,
-    limit: PENDING_MAX_ENTRIES + 1,
+    limit: cap + 1,
   });
-  const pendingTruncated = window.length > PENDING_MAX_ENTRIES;
-  const missed = pendingTruncated ? window.slice(-PENDING_MAX_ENTRIES) : window;
+  const pendingTruncated = window.length > cap;
+  const missed = pendingTruncated ? window.slice(-cap) : window;
   // Read off the whole log rather than off the unread window: the point of it is
   // that an agent triggered again does not repeat what it already said, and what
   // it already said sits behind its own cursor by definition.

@@ -120,6 +120,18 @@ export interface TriggerTarget {
   dispatchId: string;
   /** The `(room, agent)` session, bound at claim time so a race resolves to one. */
   sessionId: string;
+  /**
+   * This agent's read cursor as it stood the instant BEFORE the claim advanced
+   * it — the bottom of the ambient window its turn will be shown
+   * (room-participation spec §8.3).
+   *
+   * Carried on the target rather than read again inside the turn, because by
+   * then it is gone: taking the claim moves the stored cursor to the entry being
+   * answered, so that a turn which errors does not replay to the next turn what
+   * it has already seen. This is the value that was there, captured at the one
+   * moment it is still true.
+   */
+  lastReadSeq: number;
 }
 
 /**

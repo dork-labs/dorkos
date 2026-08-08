@@ -5920,6 +5920,11 @@
           "archived": {
             "type": "boolean"
           },
+          "ambientMaxEntries": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "How many entries of ambient history a turn in this room replays at most, oldest dropped first (room-participation spec §8.3). A bound on what one turn reads, never on the log — a room never forgets what was said, and a turn whose window was trimmed is told so."
+          },
           "createdAt": {
             "type": "string"
           },
@@ -5967,6 +5972,7 @@
           "topic",
           "workspaceId",
           "archived",
+          "ambientMaxEntries",
           "createdAt",
           "lastActivityAt"
         ]
@@ -6158,6 +6164,11 @@
           "joinedAt": {
             "type": "string"
           },
+          "joinedSeq": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "The room's highest seq when this membership was written — 0 for somebody who joined an empty room. The floor under everything the member may be shown: joining a channel does not retroactively read what was said before you were in it. Distinct from `lastReadSeq`, which starts at 0 for everybody and moves as they read."
+          },
           "lastReadSeq": {
             "type": "integer",
             "minimum": 0,
@@ -6169,6 +6180,7 @@
           "authorId",
           "responseMode",
           "joinedAt",
+          "joinedSeq",
           "lastReadSeq"
         ]
       },

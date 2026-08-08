@@ -15,6 +15,7 @@ function member(id: string, displayName: string): RoomRosterEntry {
     authorId: id,
     responseMode: 'engaged',
     joinedAt: STARTED,
+    joinedSeq: 0,
     lastReadSeq: 0,
     author: { id, kind: 'agent', displayName, handle: null },
     origin: 'local',

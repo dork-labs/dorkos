@@ -310,6 +310,13 @@ export const RoomSchema = z
       .nullable()
       .describe('Optional workspace reference. How it resolves a cwd is out of scope for v1.'),
     archived: z.boolean(),
+    ambientMaxEntries: z
+      .number()
+      .int()
+      .min(0)
+      .describe(
+        'How many entries of ambient history a turn in this room replays at most, oldest dropped first (room-participation spec §8.3). A bound on what one turn reads, never on the log — a room never forgets what was said, and a turn whose window was trimmed is told so.'
+      ),
     createdAt: z.string(),
     lastActivityAt: z.string(),
     bridge: RoomBridgeInfoSchema.nullable()
@@ -369,6 +376,13 @@ export const RoomMemberSchema = z
       'Per-room override, written explicitly at join time. Seeded from the manifest for a DM and "engaged" for a channel. A thread is a position inside a channel rather than a room of its own, so a reply there reads the channel\'s value — but the engaged window itself is thread-scoped, so being addressed in a thread does not engage the agent across the whole channel.'
     ),
     joinedAt: z.string(),
+    joinedSeq: z
+      .number()
+      .int()
+      .min(0)
+      .describe(
+        "The room's highest seq when this membership was written — 0 for somebody who joined an empty room. The floor under everything the member may be shown: joining a channel does not retroactively read what was said before you were in it. Distinct from `lastReadSeq`, which starts at 0 for everybody and moves as they read."
+      ),
     lastReadSeq: z.number().int().min(0).describe('The (member, room) read cursor.'),
   })
   .openapi('RoomMember');

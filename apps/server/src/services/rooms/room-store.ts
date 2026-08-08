@@ -11,6 +11,7 @@
  * @module server/services/rooms/room-store
  */
 import {
+  DEFAULT_AMBIENT_MAX_ENTRIES,
   rooms,
   roomMembers,
   roomEntries,
@@ -20,6 +21,7 @@ import {
   and,
   inArray,
   lt,
+  lte,
   gt,
   ne,
   isNull,
@@ -94,13 +96,21 @@ export class RoomStore {
     members: ReadonlyArray<{ authorId: string; responseMode: ResponseMode; joinedAt: string }>,
     within?: (tx: DbTransaction) => void
   ): Room {
-    const row = { ...room, archived: false, lastActivityAt: room.createdAt };
+    const row = {
+      ...room,
+      archived: false,
+      ambientMaxEntries: DEFAULT_AMBIENT_MAX_ENTRIES,
+      lastActivityAt: room.createdAt,
+    };
     this.db.transaction(
       (tx) => {
         tx.insert(rooms).values(row).run();
         for (const member of members) {
           tx.insert(roomMembers)
-            .values({ ...member, roomId: room.id, lastReadSeq: 0 })
+            // Both seqs are 0 by construction rather than by default: a room
+            // being created holds no entries yet, so nobody seeded onto its
+            // roster has anything behind them or anything to have read.
+            .values({ ...member, roomId: room.id, joinedSeq: 0, lastReadSeq: 0 })
             .onConflictDoNothing()
             .run();
         }
@@ -290,11 +300,20 @@ export class RoomStore {
    * Add a member, or leave an existing membership untouched.
    *
    * @param member - The membership to write.
+   * `joinedSeq` is stamped HERE, from the room's log as it stands at this
+   * moment, rather than being left to the column default: it is the floor under
+   * everything this member may ever be shown (room-participation spec §8.3), and
+   * a default of 0 would claim they had been present since the room's first
+   * message. A conflicting insert leaves the existing row alone, so re-adding
+   * somebody never moves the floor they already had.
+   *
    * @param tx - An open transaction to write inside, when the join has to be
    *   atomic with something else. A bridged room's external human joins in the
    *   very transaction that writes their first entry (chats-as-channels §4.2),
    *   so that a crash can never leave a log holding a message from somebody the
-   *   roster says was never in the room.
+   *   roster says was never in the room. The read below is issued through
+   *   `this.db` for the reason {@link RoomStore.createRoom} records — one
+   *   connection, so it sees that transaction's own uncommitted writes.
    * @returns The stored membership.
    */
   addMember(
@@ -307,7 +326,7 @@ export class RoomStore {
     tx?: DbTransaction
   ): RoomMember {
     const exec = tx ?? this.db;
-    const row = { ...member, lastReadSeq: 0 };
+    const row = { ...member, joinedSeq: this.maxSeq(member.roomId), lastReadSeq: 0 };
     exec.insert(roomMembers).values(row).onConflictDoNothing().run();
     // Read back through `this.db` even inside a transaction, for the reason
     // `createRoom` records: one connection, so a read here sees the open
@@ -569,19 +588,26 @@ export class RoomStore {
    * Ask for one more row than you need: a full page means older entries were
    * dropped, and that is what tells the caller to say so.
    *
-   * @param roomId - The room.
-   * @param opts.afterSeq - Return entries with `seq` strictly above this.
+   * **The window is closed at BOTH ends**, and the upper bound is what makes the
+   * read cursor safe to advance at claim time. A turn's window is frozen to the
+   * log as it stood when the turn was claimed; without a ceiling, a message that
+   * landed while the turn was being assembled would be shown by this turn and
+   * still sit above the cursor the claim wrote, so the next turn would show it a
+   * second time (room-participation spec §8.3).
+   *
    * **Notices ABOUT this agent are dropped too**, and that is the least obvious
    * clause. A notice is the room speaking, so it is not the agent's own entry
    * and the author filter above never touches it — which meant the room's line
    * about Ana ("Ana was busy… send it again when Ana is free") arrived in Ana's
    * next turn as something she had missed. It is not news to her: it is the
-   * room narrating her, in the third person, occupying one of thirty slots that
-   * exist to carry what other people said. Notices about SOMEBODY ELSE stay,
-   * because those are real context — a room-mate went quiet, and this agent may
-   * be the one to pick it up.
+   * room narrating her, in the third person, occupying one of the handful of
+   * slots that exist to carry what other people said. Notices about SOMEBODY
+   * ELSE stay, because those are real context — a room-mate went quiet, and this
+   * agent may be the one to pick it up.
    *
    * @param opts.afterSeq - Return entries with `seq` strictly above this.
+   * @param opts.throughSeq - And with `seq` at or below this — the top of the
+   *   window, which is the triggering entry's own position.
    * @param opts.excludeAuthorId - Drop this author's own entries, and the room's
    *   notices about it; the first are reported separately outside the untrusted
    *   fence, and the second are the room talking about the reader.
@@ -590,7 +616,13 @@ export class RoomStore {
    */
   listUnreadEntries(
     roomId: string,
-    opts: { afterSeq: number; excludeAuthorId: string; excludeEntryId: string; limit: number }
+    opts: {
+      afterSeq: number;
+      throughSeq: number;
+      excludeAuthorId: string;
+      excludeEntryId: string;
+      limit: number;
+    }
   ): RoomEntry[] {
     const rows = this.db
       .select()
@@ -599,6 +631,7 @@ export class RoomStore {
         and(
           eq(roomEntries.roomId, roomId),
           gt(roomEntries.seq, opts.afterSeq),
+          lte(roomEntries.seq, opts.throughSeq),
           ne(roomEntries.authorId, opts.excludeAuthorId),
           ne(roomEntries.id, opts.excludeEntryId),
           // In SQL with the rest of them, for the reason the cap is: filtering

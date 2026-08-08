@@ -51,6 +51,7 @@ const ROOM: RoomSummary = {
   topic: null,
   workspaceId: null,
   archived: false,
+  ambientMaxEntries: 30,
   createdAt: '2026-07-26T10:00:00.000Z',
   lastActivityAt: '2026-07-26T10:00:00.000Z',
   unreadCount: 0,
@@ -67,6 +68,7 @@ function agentMember(
     authorId: `author-${displayName}`,
     responseMode,
     joinedAt: '2026-07-26T10:00:00.000Z',
+    joinedSeq: 0,
     lastReadSeq: 0,
     author: {
       id: `author-${displayName}`,
@@ -84,6 +86,7 @@ const HUMAN: RoomRosterEntry = {
   authorId: 'me',
   responseMode: 'always',
   joinedAt: '2026-07-26T10:00:00.000Z',
+  joinedSeq: 0,
   lastReadSeq: 0,
   author: { id: 'me', kind: 'human', displayName: 'You', handle: null },
   origin: 'local',
@@ -1184,6 +1187,7 @@ describe('RoomDetailsDialog', () => {
               roster([HUMAN, agentMember('Ana', '/repo/ana', 'engaged')], {
                 ...ROOM,
                 archived: true,
+                ambientMaxEntries: 30,
               })
             ),
           }),

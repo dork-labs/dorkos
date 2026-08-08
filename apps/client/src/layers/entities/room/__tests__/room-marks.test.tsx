@@ -56,6 +56,7 @@ function member(author: AuthorRef): RoomRosterEntry {
     authorId: author.id,
     responseMode: 'always',
     joinedAt: '2026-07-26T10:00:00.000Z',
+    joinedSeq: 0,
     lastReadSeq: 0,
     author,
     origin: 'local',

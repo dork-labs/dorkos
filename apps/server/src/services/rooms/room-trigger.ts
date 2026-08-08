@@ -580,6 +580,9 @@ export class RoomTriggerDispatcher {
         // Replaced with the real binding once the budget has been charged; a
         // target that never becomes affordable never mints a session.
         sessionId: '',
+        // Replaced with the real cursor at claim time, for the same reason: a
+        // target that is never claimed never moves one.
+        lastReadSeq: 0,
       });
     }
 
@@ -671,6 +674,21 @@ export class RoomTriggerDispatcher {
       }
     }
     for (const target of bound) {
+      // THE READ CURSOR ADVANCES HERE, AT THE CLAIM — not when the reply posts
+      // (room-participation spec §8.3). The turn is about to be shown everything
+      // between this cursor and this entry; a turn that then errors, times out or
+      // chooses to say nothing has still SEEN those messages, and replaying them
+      // on its next turn would show the agent the same conversation twice.
+      //
+      // Read then written in one synchronous pass, before anything awaits, so no
+      // other writer can land an entry between the two — and the value that was
+      // there rides the target to `buildRoomContext`, which is the only thing
+      // that still needs it.
+      target.lastReadSeq =
+        this.deps.store.getMember(room.id, target.authorId)?.lastReadSeq ?? target.lastReadSeq;
+      // Monotonic in the store, so a target answering an entry BELOW its cursor
+      // — a late turn on an old message — cannot walk it backwards.
+      this.deps.store.setReadCursor(room.id, target.authorId, entry.seq);
       this.holdClaim({
         roomId: room.id,
         cascadeRoot: entry.cascadeRoot,
@@ -823,6 +841,10 @@ export class RoomTriggerDispatcher {
           agentAuthorId: target.authorId,
           entry,
           working: this.workingIn(room.id),
+          // The cursor as it stood before the claim moved it. The stored row has
+          // already advanced past this entry, so reading it here would describe
+          // an empty window every time (room-participation spec §8.3).
+          lastReadSeq: target.lastReadSeq,
           budget: this.deps.budget.remaining(room.id),
           repliesLeftInThisChain: Math.max(0, this.deps.maxAgentDepth() - target.depth),
           engaged: target.engaged,
