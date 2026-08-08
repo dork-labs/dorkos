@@ -162,10 +162,18 @@ describe('a file-free HTML paste is converted through an inert document', () => 
     expect(seen.at(-1)).not.toContain('https://x.test');
   });
 
-  it('leaves a plain-text paste to the browser, with no conversion', async () => {
-    const field = await renderField();
-    const event = paste(field, makeClipboard({ text: 'just text' }));
-    expect(event.defaultPrevented).toBe(false);
+  // ⌘⇧V and any clipboard with no text/html: our converter declines and
+  // Lexical inserts the plain text itself. The requirement is that no
+  // conversion ran, not that nobody consumed the event — Lexical consuming it
+  // IS the plain-text path working.
+  it('inserts a plain-text paste verbatim, with no conversion', async () => {
+    const seen: string[] = [];
+    const field = await renderField({ onValue: (v) => seen.push(v) });
+
+    paste(field, makeClipboard({ text: 'a * b _ c' }));
+
+    await waitFor(() => expect(seen.at(-1)).toBe('a * b _ c'));
+    expect(field.querySelector('strong, b, em, i, code')).toBeNull();
   });
 });
 
