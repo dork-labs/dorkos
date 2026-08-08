@@ -71,6 +71,12 @@ Outbound MCP servers ("give my agents tools") land on the Connections page when 
 
 ## The test (what users see after)
 
+> **Addendum (2026-08-08, `specs/team-room-home`):** the "sidebar unchanged" claim below is
+> superseded. The team-room-home program shrinks the sidebar to **Home · Team · Connections ·
+> Marketplace** (+ Search): "Agents" became "Team" (shipped with `/team`, DOR-973), and
+> Activity, Tasks (labeled "Scheduled"), and Workspaces become tabs of the home surface at
+> their existing routes. Every other decision in this plan stands.
+
 Sidebar: Dashboard, Activity, Agents, Tasks, Workspaces, Connections, Marketplace + Channels/DMs — every noun disjoint, including "agent" (fleet-only). Telegram→Connections›Messaging; Gmail→Connections›Accounts; #release-train→Channels; pick Codex→Settings→Runtimes; install→Marketplace. Settings: 10 tabs, 5 groups + footer Remote Access. Vocab gate script green: no user-facing integration/connector/adapter/provider/platform-channel/runtime-agent outside scoped domains.
 
 ## Rollout

@@ -9,7 +9,9 @@
       "created": "2026-08-04",
       "specSlug": "chats-as-channels",
       "lastVerified": "2026-08-06",
-      "affects": ["apps/server/src/services/relay/chat-bridge/adopt-session.ts"]
+      "affects": [
+        "apps/server/src/services/relay/chat-bridge/adopt-session.ts"
+      ]
     },
     {
       "id": "260804-093321",
@@ -19,7 +21,9 @@
       "created": "2026-08-04",
       "specSlug": "chats-as-channels",
       "lastVerified": "2026-08-06",
-      "affects": ["apps/server/src/services/relay/chat-bridge/deliver.ts"]
+      "affects": [
+        "apps/server/src/services/relay/chat-bridge/deliver.ts"
+      ]
     },
     {
       "id": "260804-093320",
@@ -29,7 +33,9 @@
       "created": "2026-08-04",
       "specSlug": "chats-as-channels",
       "lastVerified": "2026-08-06",
-      "affects": ["apps/server/src/services/rooms/**external-author*"]
+      "affects": [
+        "apps/server/src/services/rooms/**external-author*"
+      ]
     },
     {
       "id": "260804-093319",
@@ -106,7 +112,9 @@
       "created": "2026-08-03",
       "specSlug": "mcp-server-management",
       "lastVerified": "2026-08-06",
-      "affects": ["apps/server/src/services/runtimes/claude-code/mcp-server-config.ts"]
+      "affects": [
+        "apps/server/src/services/runtimes/claude-code/mcp-server-config.ts"
+      ]
     },
     {
       "id": "260803-233420",
@@ -129,7 +137,9 @@
       "created": "2026-08-03",
       "specSlug": "feedback-pipeline",
       "lastVerified": "2026-08-06",
-      "affects": ["apps/site/src/app/api/feedback/route.ts"]
+      "affects": [
+        "apps/site/src/app/api/feedback/route.ts"
+      ]
     },
     {
       "id": "260803-205035",
@@ -192,7 +202,9 @@
       "created": "2026-08-01",
       "specSlug": "mesh-identity-integrity",
       "lastVerified": "2026-08-06",
-      "affects": ["packages/mesh/src/agent-registry.ts"]
+      "affects": [
+        "packages/mesh/src/agent-registry.ts"
+      ]
     },
     {
       "id": "260729-234626",
@@ -229,7 +241,9 @@
       "extractedFrom": "agent-trust",
       "specSlug": "agent-trust",
       "lastVerified": "2026-08-06",
-      "affects": ["apps/server/src/services/core/agent-identity/agent-token-env.ts"]
+      "affects": [
+        "apps/server/src/services/core/agent-identity/agent-token-env.ts"
+      ]
     },
     {
       "id": "260726-022250",
@@ -240,7 +254,9 @@
       "extractedFrom": "agent-trust",
       "specSlug": "agent-trust",
       "lastVerified": "2026-08-06",
-      "affects": ["apps/server/src/services/core/agent-identity/agent-identity-service.ts"]
+      "affects": [
+        "apps/server/src/services/core/agent-identity/agent-identity-service.ts"
+      ]
     },
     {
       "id": "260726-022249",
@@ -251,7 +267,9 @@
       "extractedFrom": "agent-trust",
       "specSlug": "agent-trust",
       "lastVerified": "2026-08-06",
-      "affects": ["apps/server/src/services/core/capabilities/**"]
+      "affects": [
+        "apps/server/src/services/core/capabilities/**"
+      ]
     },
     {
       "id": "260725-004456",
@@ -260,7 +278,9 @@
       "status": "accepted",
       "created": "2026-07-25",
       "lastVerified": "2026-08-06",
-      "affects": ["apps/client/src/layers/features/status/**"]
+      "affects": [
+        "apps/client/src/layers/features/status/**"
+      ]
     },
     {
       "id": "260718-045630",
@@ -289,7 +309,9 @@
       "status": "accepted",
       "created": "2026-07-17",
       "lastVerified": "2026-08-06",
-      "affects": ["meta/positioning-202607/**"]
+      "affects": [
+        "meta/positioning-202607/**"
+      ]
     },
     {
       "id": "260717-180706",
@@ -300,7 +322,10 @@
       "extractedFrom": "relay-flow-animation",
       "specSlug": "relay-flow-animation",
       "lastVerified": "2026-08-06",
-      "affects": ["packages/relay/src/**", "apps/client/src/layers/features/mesh/**"]
+      "affects": [
+        "packages/relay/src/**",
+        "apps/client/src/layers/features/mesh/**"
+      ]
     },
     {
       "id": "260717-163436",
@@ -311,7 +336,10 @@
       "extractedFrom": "agent-budget-enforcement",
       "specSlug": "agent-budget-enforcement",
       "lastVerified": "2026-08-06",
-      "affects": ["packages/shared/src/**", "packages/db/src/**"]
+      "affects": [
+        "packages/shared/src/**",
+        "packages/db/src/**"
+      ]
     },
     {
       "id": "260717-125124",
@@ -350,7 +378,9 @@
       "extractedFrom": "agent-sidebar-organization",
       "specSlug": "agent-sidebar-organization",
       "lastVerified": "2026-08-06",
-      "affects": ["packages/shared/src/config-schema.ts"]
+      "affects": [
+        "packages/shared/src/config-schema.ts"
+      ]
     },
     {
       "id": "260717-001410",
@@ -375,7 +405,10 @@
       "extractedFrom": "agent-sidebar-organization",
       "specSlug": "agent-sidebar-organization",
       "lastVerified": "2026-08-06",
-      "affects": ["apps/client/package.json", "apps/client/src/layers/**"]
+      "affects": [
+        "apps/client/package.json",
+        "apps/client/src/layers/**"
+      ]
     },
     {
       "id": "260713-133412",
@@ -386,7 +419,10 @@
       "extractedFrom": "desktop-windows-support",
       "specSlug": "desktop-windows-support",
       "lastVerified": "2026-08-06",
-      "affects": [".github/workflows/desktop-release.yml", "apps/desktop/electron-builder.yml"]
+      "affects": [
+        ".github/workflows/desktop-release.yml",
+        "apps/desktop/electron-builder.yml"
+      ]
     },
     {
       "id": "260712-005315",
@@ -412,7 +448,9 @@
       "extractedFrom": null,
       "specSlug": null,
       "lastVerified": "2026-08-06",
-      "affects": ["apps/server/src/services/observability/**"]
+      "affects": [
+        "apps/server/src/services/observability/**"
+      ]
     },
     {
       "id": "260711-143626",
@@ -453,7 +491,9 @@
       "extractedFrom": "diff-viewer",
       "specSlug": "diff-viewer",
       "lastVerified": "2026-08-06",
-      "affects": ["apps/server/src/services/diff/**"]
+      "affects": [
+        "apps/server/src/services/diff/**"
+      ]
     },
     {
       "id": "260711-031624",
@@ -491,7 +531,10 @@
       "status": "accepted",
       "created": "2026-07-07",
       "lastVerified": "2026-08-06",
-      "affects": ["changelog/unreleased/**", "changelog/README.md"]
+      "affects": [
+        "changelog/unreleased/**",
+        "changelog/README.md"
+      ]
     },
     {
       "id": "260707-193314",
@@ -547,7 +590,10 @@
       "created": "2026-07-02",
       "specSlug": "accounts-and-auth",
       "lastVerified": "2026-08-06",
-      "affects": ["apps/site/src/lib/instance*.ts", "apps/server/src/services/core/auth/**"]
+      "affects": [
+        "apps/site/src/lib/instance*.ts",
+        "apps/server/src/services/core/auth/**"
+      ]
     },
     {
       "number": 311,
@@ -558,7 +604,10 @@
       "created": "2026-07-02",
       "specSlug": "accounts-and-auth",
       "lastVerified": "2026-08-06",
-      "affects": ["apps/server/src/services/core/auth/**", "apps/site/src/lib/auth.ts"]
+      "affects": [
+        "apps/server/src/services/core/auth/**",
+        "apps/site/src/lib/auth.ts"
+      ]
     },
     {
       "id": "260706-192819",
@@ -567,7 +616,9 @@
       "status": "accepted",
       "created": "2026-07-06",
       "lastVerified": "2026-08-06",
-      "affects": ["packages/harness/src/plan/installed-projector.ts"]
+      "affects": [
+        "packages/harness/src/plan/installed-projector.ts"
+      ]
     },
     {
       "number": 318,
@@ -620,7 +671,9 @@
       "created": "2026-07-03",
       "specSlug": "effortless-runtime-switching",
       "lastVerified": "2026-08-06",
-      "affects": ["apps/server/src/services/core/credential-provider.ts"]
+      "affects": [
+        "apps/server/src/services/core/credential-provider.ts"
+      ]
     },
     {
       "number": 314,
@@ -651,7 +704,10 @@
       "created": "2026-07-03",
       "specSlug": "merge-conflict-prevention",
       "lastVerified": "2026-08-06",
-      "affects": ["decisions/manifest.json", ".claude/scripts/id.ts"]
+      "affects": [
+        "decisions/manifest.json",
+        ".claude/scripts/id.ts"
+      ]
     },
     {
       "number": 310,
@@ -662,7 +718,10 @@
       "created": "2026-07-02",
       "specSlug": "additional-agent-runtimes",
       "lastVerified": "2026-08-06",
-      "affects": ["apps/server/src/routes/sessions.ts", "apps/server/src/services/session/**"]
+      "affects": [
+        "apps/server/src/routes/sessions.ts",
+        "apps/server/src/services/session/**"
+      ]
     },
     {
       "number": 309,
@@ -673,7 +732,10 @@
       "created": "2026-07-02",
       "specSlug": "additional-agent-runtimes",
       "lastVerified": "2026-08-06",
-      "affects": ["apps/server/src/services/runtimes/codex/**", "packages/db/src/schema/codex.ts"]
+      "affects": [
+        "apps/server/src/services/runtimes/codex/**",
+        "packages/db/src/schema/codex.ts"
+      ]
     },
     {
       "number": 308,
@@ -684,7 +746,9 @@
       "created": "2026-07-02",
       "specSlug": "additional-agent-runtimes",
       "lastVerified": "2026-08-06",
-      "affects": ["apps/server/src/services/runtimes/opencode/**"]
+      "affects": [
+        "apps/server/src/services/runtimes/opencode/**"
+      ]
     },
     {
       "number": 307,
@@ -723,7 +787,9 @@
       "created": "2026-07-02",
       "specSlug": "marketplace-scoped-install-visibility",
       "lastVerified": "2026-08-06",
-      "affects": ["apps/server/src/services/runtimes/claude-code/messaging/plugin-activation.ts"]
+      "affects": [
+        "apps/server/src/services/runtimes/claude-code/messaging/plugin-activation.ts"
+      ]
     },
     {
       "number": 304,
@@ -749,7 +815,9 @@
       "created": "2026-06-29",
       "specSlug": "harness-sync",
       "lastVerified": "2026-08-06",
-      "affects": ["packages/harness/src/**"]
+      "affects": [
+        "packages/harness/src/**"
+      ]
     },
     {
       "number": 302,
@@ -760,7 +828,9 @@
       "created": "2026-06-29",
       "specSlug": "harness-sync",
       "lastVerified": "2026-08-06",
-      "affects": ["packages/harness/src/scaffold/**"]
+      "affects": [
+        "packages/harness/src/scaffold/**"
+      ]
     },
     {
       "number": 301,
@@ -771,7 +841,9 @@
       "created": "2026-06-29",
       "specSlug": "harness-sync",
       "lastVerified": "2026-08-06",
-      "affects": ["packages/harness/src/**"]
+      "affects": [
+        "packages/harness/src/**"
+      ]
     },
     {
       "number": 300,
@@ -782,7 +854,9 @@
       "extractedFrom": "web-chat-native-commands",
       "specSlug": "web-chat-native-commands",
       "lastVerified": "2026-08-06",
-      "affects": ["apps/client/src/layers/features/chat/model/native-commands/**"]
+      "affects": [
+        "apps/client/src/layers/features/chat/model/native-commands/**"
+      ]
     },
     {
       "number": 299,
@@ -793,7 +867,9 @@
       "created": "2026-06-27",
       "specSlug": "flow-plugin-extraction",
       "lastVerified": "2026-08-06",
-      "affects": ["contributing/flow-engine.md"]
+      "affects": [
+        "contributing/flow-engine.md"
+      ]
     },
     {
       "number": 298,
@@ -805,7 +881,10 @@
       "specSlug": "flow-plugin-extraction",
       "supersedes": 294,
       "lastVerified": "2026-08-06",
-      "affects": [".dork/plugins/flow/scripts/**", ".claude/scripts/*.ts"]
+      "affects": [
+        ".dork/plugins/flow/scripts/**",
+        ".claude/scripts/*.ts"
+      ]
     },
     {
       "number": 297,
@@ -817,7 +896,9 @@
       "specSlug": "flow-plugin-extraction",
       "supersedes": 281,
       "lastVerified": "2026-08-06",
-      "affects": ["decisions/**"]
+      "affects": [
+        "decisions/**"
+      ]
     },
     {
       "number": 296,
@@ -828,7 +909,9 @@
       "created": "2026-06-26",
       "specSlug": "flow-marketplace-package",
       "lastVerified": "2026-08-06",
-      "affects": ["contributing/flow-engine.md"]
+      "affects": [
+        "contributing/flow-engine.md"
+      ]
     },
     {
       "number": 295,
@@ -860,7 +943,10 @@
       "extractedFrom": "canvas-markdown-editing",
       "specSlug": "canvas-markdown-editing",
       "lastVerified": "2026-08-06",
-      "affects": ["apps/client/src/layers/features/canvas/**", "apps/server/src/routes/files*.ts"]
+      "affects": [
+        "apps/client/src/layers/features/canvas/**",
+        "apps/server/src/routes/files*.ts"
+      ]
     },
     {
       "number": 292,
@@ -871,7 +957,9 @@
       "extractedFrom": "canvas-markdown-editing",
       "specSlug": "canvas-markdown-editing",
       "lastVerified": "2026-08-06",
-      "affects": ["apps/client/src/layers/features/canvas/**"]
+      "affects": [
+        "apps/client/src/layers/features/canvas/**"
+      ]
     },
     {
       "number": 291,
@@ -882,7 +970,10 @@
       "extractedFrom": "canvas-markdown-editing",
       "specSlug": "canvas-markdown-editing",
       "lastVerified": "2026-08-06",
-      "affects": ["apps/client/src/layers/features/canvas/**", "apps/client/package.json"]
+      "affects": [
+        "apps/client/src/layers/features/canvas/**",
+        "apps/client/package.json"
+      ]
     },
     {
       "number": 290,
@@ -893,7 +984,9 @@
       "extractedFrom": "canvas-markdown-editing",
       "specSlug": "canvas-markdown-editing",
       "lastVerified": "2026-08-06",
-      "affects": ["apps/client/src/layers/features/canvas/**"]
+      "affects": [
+        "apps/client/src/layers/features/canvas/**"
+      ]
     },
     {
       "number": 289,
@@ -940,7 +1033,10 @@
       "extractedFrom": "task-execution-safety-guard",
       "specSlug": "task-execution-safety-guard",
       "lastVerified": "2026-08-06",
-      "affects": ["apps/server/src/services/tasks/**", "packages/db/src/schema/tasks.ts"]
+      "affects": [
+        "apps/server/src/services/tasks/**",
+        "packages/db/src/schema/tasks.ts"
+      ]
     },
     {
       "number": 284,
@@ -951,7 +1047,10 @@
       "extractedFrom": "workspace-manager",
       "specSlug": "workspace-manager",
       "lastVerified": "2026-08-06",
-      "affects": ["packages/shared/src/config-schema.ts", "packages/shared/src/workspace.ts"]
+      "affects": [
+        "packages/shared/src/config-schema.ts",
+        "packages/shared/src/workspace.ts"
+      ]
     },
     {
       "number": 283,
@@ -962,7 +1061,10 @@
       "extractedFrom": "workspace-manager",
       "specSlug": "workspace-manager",
       "lastVerified": "2026-08-06",
-      "affects": ["packages/shared/src/workspace.ts", "apps/server/src/services/workspace/**"]
+      "affects": [
+        "packages/shared/src/workspace.ts",
+        "apps/server/src/services/workspace/**"
+      ]
     },
     {
       "number": 282,
@@ -973,7 +1075,9 @@
       "extractedFrom": "unified-workflow-system",
       "specSlug": "unified-workflow-system",
       "lastVerified": "2026-08-06",
-      "affects": ["AGENTS.md"]
+      "affects": [
+        "AGENTS.md"
+      ]
     },
     {
       "number": 281,
@@ -994,7 +1098,9 @@
       "extractedFrom": "unified-workflow-system",
       "specSlug": "unified-workflow-system",
       "lastVerified": "2026-08-06",
-      "affects": ["AGENTS.md"]
+      "affects": [
+        "AGENTS.md"
+      ]
     },
     {
       "number": 279,
@@ -1005,7 +1111,9 @@
       "extractedFrom": "unified-workflow-system",
       "specSlug": "unified-workflow-system",
       "lastVerified": "2026-08-06",
-      "affects": ["contributing/flow-engine.md"]
+      "affects": [
+        "contributing/flow-engine.md"
+      ]
     },
     {
       "number": 278,
@@ -1016,7 +1124,9 @@
       "extractedFrom": "unified-workflow-system",
       "specSlug": "unified-workflow-system",
       "lastVerified": "2026-08-06",
-      "affects": ["specs/manifest.json"]
+      "affects": [
+        "specs/manifest.json"
+      ]
     },
     {
       "number": 277,
@@ -1027,7 +1137,9 @@
       "extractedFrom": "unified-workflow-system",
       "specSlug": "unified-workflow-system",
       "lastVerified": "2026-08-06",
-      "affects": ["contributing/flow-engine.md"]
+      "affects": [
+        "contributing/flow-engine.md"
+      ]
     },
     {
       "number": 276,
@@ -1038,7 +1150,10 @@
       "extractedFrom": "unified-workflow-system",
       "specSlug": "unified-workflow-system",
       "lastVerified": "2026-08-06",
-      "affects": [".github/workflows/merge-tail.yml", "scripts/should-arm-automerge.sh"]
+      "affects": [
+        ".github/workflows/merge-tail.yml",
+        "scripts/should-arm-automerge.sh"
+      ]
     },
     {
       "number": 275,
@@ -1049,7 +1164,9 @@
       "extractedFrom": "unified-workflow-system",
       "specSlug": "unified-workflow-system",
       "lastVerified": "2026-08-06",
-      "affects": ["contributing/flow-engine.md"]
+      "affects": [
+        "contributing/flow-engine.md"
+      ]
     },
     {
       "number": 274,
@@ -1060,7 +1177,9 @@
       "extractedFrom": "unified-workflow-system",
       "specSlug": "unified-workflow-system",
       "lastVerified": "2026-08-06",
-      "affects": ["contributing/flow-engine.md"]
+      "affects": [
+        "contributing/flow-engine.md"
+      ]
     },
     {
       "number": 273,
@@ -1125,7 +1244,9 @@
       "extractedFrom": "core-extensions",
       "specSlug": "core-extensions",
       "lastVerified": "2026-08-06",
-      "affects": ["apps/server/src/services/extensions/extension-enable-resolution.ts"]
+      "affects": [
+        "apps/server/src/services/extensions/extension-enable-resolution.ts"
+      ]
     },
     {
       "number": 268,
@@ -1200,7 +1321,10 @@
       "extractedFrom": "chat-stream-reconnection",
       "specSlug": "chat-stream-reconnection",
       "lastVerified": "2026-08-06",
-      "affects": ["packages/shared/src/session-stream.ts", "apps/server/src/services/session/**"]
+      "affects": [
+        "packages/shared/src/session-stream.ts",
+        "apps/server/src/services/session/**"
+      ]
     },
     {
       "number": 262,
@@ -1219,7 +1343,9 @@
       "status": "accepted",
       "created": "2026-06-08",
       "lastVerified": "2026-08-06",
-      "affects": ["apps/server/src/services/runtimes/claude-code/messaging/message-sender.ts"]
+      "affects": [
+        "apps/server/src/services/runtimes/claude-code/messaging/message-sender.ts"
+      ]
     },
     {
       "number": 260,
@@ -1228,7 +1354,10 @@
       "status": "accepted",
       "created": "2026-06-08",
       "lastVerified": "2026-08-06",
-      "affects": ["packages/db/src/schema/sessions.ts", "apps/server/src/services/core/**"]
+      "affects": [
+        "packages/db/src/schema/sessions.ts",
+        "apps/server/src/services/core/**"
+      ]
     },
     {
       "number": 259,
@@ -1246,7 +1375,9 @@
       "extractedFrom": "codex-runtime-adapter-prework",
       "specSlug": "codex-runtime-adapter-prework",
       "lastVerified": "2026-08-06",
-      "affects": ["packages/shared/src/transport.ts"]
+      "affects": [
+        "packages/shared/src/transport.ts"
+      ]
     },
     {
       "number": 257,
@@ -1257,7 +1388,9 @@
       "extractedFrom": "codex-runtime-adapter-prework",
       "specSlug": "codex-runtime-adapter-prework",
       "lastVerified": "2026-08-06",
-      "affects": ["packages/relay/src/adapters/**"]
+      "affects": [
+        "packages/relay/src/adapters/**"
+      ]
     },
     {
       "number": 256,
@@ -1268,7 +1401,9 @@
       "extractedFrom": "codex-runtime-adapter-prework",
       "specSlug": "codex-runtime-adapter-prework",
       "lastVerified": "2026-08-06",
-      "affects": ["packages/shared/src/agent-runtime.ts"]
+      "affects": [
+        "packages/shared/src/agent-runtime.ts"
+      ]
     },
     {
       "number": 255,
@@ -1279,7 +1414,10 @@
       "extractedFrom": "codex-runtime-adapter-prework",
       "specSlug": "codex-runtime-adapter-prework",
       "lastVerified": "2026-08-06",
-      "affects": ["packages/db/src/schema/sessions.ts", "apps/server/src/services/runtimes/**"]
+      "affects": [
+        "packages/db/src/schema/sessions.ts",
+        "apps/server/src/services/runtimes/**"
+      ]
     },
     {
       "number": 254,
@@ -1290,7 +1428,9 @@
       "extractedFrom": "agent-hub-management-actions",
       "specSlug": "agent-hub-management-actions",
       "lastVerified": "2026-08-06",
-      "affects": ["apps/client/src/layers/features/agent-hub/**"]
+      "affects": [
+        "apps/client/src/layers/features/agent-hub/**"
+      ]
     },
     {
       "number": 253,
@@ -1301,7 +1441,9 @@
       "extractedFrom": "agent-hub-management-actions",
       "specSlug": "agent-hub-management-actions",
       "lastVerified": "2026-08-06",
-      "affects": ["apps/server/src/routes/mesh.ts"]
+      "affects": [
+        "apps/server/src/routes/mesh.ts"
+      ]
     },
     {
       "number": 251,
@@ -1335,7 +1477,9 @@
       "extractedFrom": "create-agent-two-step-flow",
       "specSlug": "create-agent-two-step-flow",
       "lastVerified": "2026-08-06",
-      "affects": ["apps/client/src/layers/features/agent-creation/**"]
+      "affects": [
+        "apps/client/src/layers/features/agent-creation/**"
+      ]
     },
     {
       "number": 248,
@@ -1346,7 +1490,10 @@
       "extractedFrom": "mesh-panel-consolidation",
       "specSlug": "mesh-panel-consolidation",
       "lastVerified": "2026-08-06",
-      "affects": ["apps/client/src/router.tsx", "apps/client/src/layers/widgets/agents/**"]
+      "affects": [
+        "apps/client/src/router.tsx",
+        "apps/client/src/layers/widgets/agents/**"
+      ]
     },
     {
       "number": 247,
@@ -1357,7 +1504,9 @@
       "extractedFrom": "mesh-panel-consolidation",
       "specSlug": "mesh-panel-consolidation",
       "lastVerified": "2026-08-06",
-      "affects": ["apps/client/src/layers/widgets/agents/**"]
+      "affects": [
+        "apps/client/src/layers/widgets/agents/**"
+      ]
     },
     {
       "number": 246,
@@ -1382,7 +1531,9 @@
       "extractedFrom": "standardize-agent-creation-flow",
       "specSlug": "standardize-agent-creation-flow",
       "lastVerified": "2026-08-06",
-      "affects": ["apps/client/src/layers/features/agent-creation/**"]
+      "affects": [
+        "apps/client/src/layers/features/agent-creation/**"
+      ]
     },
     {
       "number": 244,
@@ -1403,7 +1554,9 @@
       "extractedFrom": "agent-sidebar-redesign",
       "specSlug": "agent-sidebar-redesign",
       "lastVerified": "2026-08-06",
-      "affects": ["apps/client/src/layers/features/dashboard-sidebar/**"]
+      "affects": [
+        "apps/client/src/layers/features/dashboard-sidebar/**"
+      ]
     },
     {
       "number": 241,
@@ -1424,7 +1577,9 @@
       "extractedFrom": "permission-mode-management",
       "specSlug": "permission-mode-management",
       "lastVerified": "2026-08-06",
-      "affects": ["apps/server/src/services/runtimes/claude-code/messaging/message-sender.ts"]
+      "affects": [
+        "apps/server/src/services/runtimes/claude-code/messaging/message-sender.ts"
+      ]
     },
     {
       "number": 239,
@@ -1449,7 +1604,9 @@
       "extractedFrom": "marketplace-05-claude-code-format-superset",
       "specSlug": "marketplace-05-claude-code-format-superset",
       "lastVerified": "2026-08-06",
-      "affects": ["packages/marketplace/src/cc-validator.ts"]
+      "affects": [
+        "packages/marketplace/src/cc-validator.ts"
+      ]
     },
     {
       "number": 237,
@@ -1484,7 +1641,11 @@
       "extractedFrom": "marketplace-04-web-and-registry",
       "specSlug": "marketplace-04-web-and-registry",
       "lastVerified": "2026-08-06",
-      "affects": ["apps/site/src/db/**", "apps/site/drizzle.config.ts", "apps/site/drizzle/**"]
+      "affects": [
+        "apps/site/src/db/**",
+        "apps/site/drizzle.config.ts",
+        "apps/site/drizzle/**"
+      ]
     },
     {
       "number": 234,
@@ -1495,7 +1656,10 @@
       "extractedFrom": "marketplace-04-web-and-registry",
       "specSlug": "marketplace-04-web-and-registry",
       "lastVerified": "2026-08-06",
-      "affects": ["apps/site/src/db/**", "apps/site/src/app/api/telemetry/**"]
+      "affects": [
+        "apps/site/src/db/**",
+        "apps/site/src/app/api/telemetry/**"
+      ]
     },
     {
       "number": 233,
@@ -1520,7 +1684,9 @@
       "extractedFrom": "marketplace-02-install",
       "specSlug": "marketplace-02-install",
       "lastVerified": "2026-08-06",
-      "affects": ["apps/server/src/services/marketplace/marketplace-cache.ts"]
+      "affects": [
+        "apps/server/src/services/marketplace/marketplace-cache.ts"
+      ]
     },
     {
       "number": 231,
@@ -1541,7 +1707,9 @@
       "extractedFrom": "marketplace-01-foundation",
       "specSlug": "marketplace-01-foundation",
       "lastVerified": "2026-08-06",
-      "affects": ["packages/marketplace/src/package-types.ts"]
+      "affects": [
+        "packages/marketplace/src/package-types.ts"
+      ]
     },
     {
       "number": 229,
@@ -1552,7 +1720,9 @@
       "extractedFrom": "marketplace-01-foundation",
       "specSlug": "marketplace-01-foundation",
       "lastVerified": "2026-08-06",
-      "affects": ["packages/skills/src/schema.ts"]
+      "affects": [
+        "packages/skills/src/schema.ts"
+      ]
     },
     {
       "number": 228,
@@ -1578,7 +1748,10 @@
       "extractedFrom": "external-mcp-access",
       "specSlug": "external-mcp-access",
       "lastVerified": "2026-08-06",
-      "affects": ["apps/server/src/middleware/mcp-enabled.ts", "apps/server/src/index.ts"]
+      "affects": [
+        "apps/server/src/middleware/mcp-enabled.ts",
+        "apps/server/src/index.ts"
+      ]
     },
     {
       "number": 225,
@@ -1621,7 +1794,10 @@
       "status": "accepted",
       "specSlug": "skills-package",
       "lastVerified": "2026-08-06",
-      "affects": ["packages/skills/src/**", "apps/server/src/services/tasks/**"]
+      "affects": [
+        "packages/skills/src/**",
+        "apps/server/src/services/tasks/**"
+      ]
     },
     {
       "number": 219,
@@ -1646,7 +1822,9 @@
       "extractedFrom": "activity-feed",
       "specSlug": "activity-feed",
       "lastVerified": "2026-08-06",
-      "affects": ["apps/server/src/services/activity/activity-service.ts"]
+      "affects": [
+        "apps/server/src/services/activity/activity-service.ts"
+      ]
     },
     {
       "number": 217,
@@ -1657,7 +1835,10 @@
       "extractedFrom": "activity-feed",
       "specSlug": "activity-feed",
       "lastVerified": "2026-08-06",
-      "affects": ["packages/db/src/schema/activity.ts", "apps/server/src/services/activity/**"],
+      "affects": [
+        "packages/db/src/schema/activity.ts",
+        "apps/server/src/services/activity/**"
+      ],
       "supersedes": 162
     },
     {
@@ -1697,7 +1878,9 @@
       "extractedFrom": "linear-issue-status-extension",
       "specSlug": "linear-issue-status-extension",
       "lastVerified": "2026-08-06",
-      "affects": ["packages/shared/src/extension-secrets.ts"]
+      "affects": [
+        "packages/shared/src/extension-secrets.ts"
+      ]
     },
     {
       "number": 213,
@@ -1708,7 +1891,9 @@
       "extractedFrom": "linear-issue-status-extension",
       "specSlug": "linear-issue-status-extension",
       "lastVerified": "2026-08-06",
-      "affects": ["apps/server/src/services/extensions/**"]
+      "affects": [
+        "apps/server/src/services/extensions/**"
+      ]
     },
     {
       "number": 212,
@@ -1719,7 +1904,9 @@
       "extractedFrom": "client-error-handling",
       "specSlug": "client-error-handling",
       "lastVerified": "2026-08-06",
-      "affects": ["apps/client/src/layers/shared/ui/app-crash-fallback.tsx"]
+      "affects": [
+        "apps/client/src/layers/shared/ui/app-crash-fallback.tsx"
+      ]
     },
     {
       "number": 211,
@@ -1744,7 +1931,10 @@
       "extractedFrom": "client-error-handling",
       "specSlug": "client-error-handling",
       "lastVerified": "2026-08-06",
-      "affects": ["apps/client/src/main.tsx", "apps/client/package.json"]
+      "affects": [
+        "apps/client/src/main.tsx",
+        "apps/client/package.json"
+      ]
     },
     {
       "number": 209,
@@ -1765,7 +1955,9 @@
       "extractedFrom": "session-state-manager",
       "specSlug": "session-state-manager",
       "lastVerified": "2026-08-06",
-      "affects": ["apps/client/src/layers/entities/session/model/session-chat-store.ts"]
+      "affects": [
+        "apps/client/src/layers/entities/session/model/session-chat-store.ts"
+      ]
     },
     {
       "number": 207,
@@ -1776,7 +1968,9 @@
       "extractedFrom": "sse-connection-optimization-02-fetch-transport",
       "specSlug": "sse-connection-optimization-02-fetch-transport",
       "lastVerified": "2026-08-06",
-      "affects": ["apps/client/src/layers/shared/model/event-stream-context.tsx"]
+      "affects": [
+        "apps/client/src/layers/shared/model/event-stream-context.tsx"
+      ]
     },
     {
       "number": 206,
@@ -1812,7 +2006,9 @@
       "extractedFrom": "ext-platform-03-extension-system",
       "specSlug": "ext-platform-03-extension-system",
       "lastVerified": "2026-08-06",
-      "affects": ["apps/client/src/layers/features/extensions/model/extension-api-factory.ts"]
+      "affects": [
+        "apps/client/src/layers/features/extensions/model/extension-api-factory.ts"
+      ]
     },
     {
       "number": 202,
@@ -1823,7 +2019,9 @@
       "extractedFrom": "ext-platform-03-extension-system",
       "specSlug": "ext-platform-03-extension-system",
       "lastVerified": "2026-08-06",
-      "affects": ["apps/server/src/services/extensions/extension-compiler.ts"]
+      "affects": [
+        "apps/server/src/services/extensions/extension-compiler.ts"
+      ]
     },
     {
       "number": 201,
@@ -1848,7 +2046,9 @@
       "extractedFrom": "ext-platform-02-extension-registry",
       "specSlug": "ext-platform-02-extension-registry",
       "lastVerified": "2026-08-06",
-      "affects": ["apps/client/src/app/init-extensions.ts"]
+      "affects": [
+        "apps/client/src/app/init-extensions.ts"
+      ]
     },
     {
       "number": 199,
@@ -1859,7 +2059,9 @@
       "extractedFrom": "ext-platform-02-extension-registry",
       "specSlug": "ext-platform-02-extension-registry",
       "lastVerified": "2026-08-06",
-      "affects": ["apps/client/src/layers/shared/model/extension-registry.ts"]
+      "affects": [
+        "apps/client/src/layers/shared/model/extension-registry.ts"
+      ]
     },
     {
       "number": 198,
@@ -1884,7 +2086,9 @@
       "extractedFrom": "ext-platform-01-agent-ui-control",
       "specSlug": "ext-platform-01-agent-ui-control",
       "lastVerified": "2026-08-06",
-      "affects": ["apps/client/src/layers/shared/lib/ui-action-dispatcher.ts"]
+      "affects": [
+        "apps/client/src/layers/shared/lib/ui-action-dispatcher.ts"
+      ]
     },
     {
       "number": 196,
@@ -1950,7 +2154,9 @@
       "extractedFrom": "relay-outbound-awareness",
       "specSlug": "relay-outbound-awareness",
       "lastVerified": "2026-08-06",
-      "affects": ["apps/server/src/services/runtimes/claude-code/messaging/context-builder.ts"]
+      "affects": [
+        "apps/server/src/services/runtimes/claude-code/messaging/context-builder.ts"
+      ]
     },
     {
       "number": 190,
@@ -1961,7 +2167,9 @@
       "extractedFrom": "sse-resilience-connection-health",
       "specSlug": "sse-resilience-connection-health",
       "lastVerified": "2026-08-06",
-      "affects": ["apps/client/src/layers/shared/lib/transport/ws-connection.ts"]
+      "affects": [
+        "apps/client/src/layers/shared/lib/transport/ws-connection.ts"
+      ]
     },
     {
       "number": 189,
@@ -1972,7 +2180,9 @@
       "extractedFrom": "sse-resilience-connection-health",
       "specSlug": "sse-resilience-connection-health",
       "lastVerified": "2026-08-06",
-      "affects": ["apps/client/src/layers/shared/lib/transport/ws-connection.ts"]
+      "affects": [
+        "apps/client/src/layers/shared/lib/transport/ws-connection.ts"
+      ]
     },
     {
       "number": 188,
@@ -2063,7 +2273,10 @@
       "extractedFrom": "chat-sdk-relay-adapter-refactor",
       "specSlug": "chat-sdk-relay-adapter-refactor",
       "lastVerified": "2026-08-06",
-      "affects": ["packages/relay/src/types.ts", "packages/relay/src/adapters/**"]
+      "affects": [
+        "packages/relay/src/types.ts",
+        "packages/relay/src/adapters/**"
+      ]
     },
     {
       "number": 177,
@@ -2083,7 +2296,9 @@
       "extractedFrom": "enable-subsystems-by-default",
       "specSlug": "enable-subsystems-by-default",
       "lastVerified": "2026-08-06",
-      "affects": ["apps/server/src/index.ts"]
+      "affects": [
+        "apps/server/src/index.ts"
+      ]
     },
     {
       "number": 170,
@@ -2094,7 +2309,9 @@
       "extractedFrom": "relay-subject-folder-names",
       "specSlug": "relay-subject-folder-names",
       "lastVerified": "2026-08-06",
-      "affects": ["packages/relay/src/endpoint-registry.ts"]
+      "affects": [
+        "packages/relay/src/endpoint-registry.ts"
+      ]
     },
     {
       "number": 166,
@@ -2162,7 +2379,9 @@
       "extractedFrom": "dynamic-sidebar-content",
       "specSlug": "dynamic-sidebar-content",
       "lastVerified": "2026-08-06",
-      "affects": ["apps/client/src/AppShell.tsx"]
+      "affects": [
+        "apps/client/src/AppShell.tsx"
+      ]
     },
     {
       "number": 160,
@@ -2173,7 +2392,9 @@
       "extractedFrom": "site-feature-catalog",
       "specSlug": "site-feature-catalog",
       "lastVerified": "2026-08-06",
-      "affects": ["apps/site/src/layers/features/marketing/lib/**"]
+      "affects": [
+        "apps/site/src/layers/features/marketing/lib/**"
+      ]
     },
     {
       "number": 159,
@@ -2193,7 +2414,9 @@
       "extractedFrom": "site-feature-catalog",
       "specSlug": "site-feature-catalog",
       "lastVerified": "2026-08-06",
-      "affects": ["apps/site/src/layers/features/marketing/lib/features.ts"]
+      "affects": [
+        "apps/site/src/layers/features/marketing/lib/features.ts"
+      ]
     },
     {
       "number": 157,
@@ -2204,7 +2427,10 @@
       "extractedFrom": "dashboard-home-route",
       "specSlug": "dashboard-home-route",
       "lastVerified": "2026-08-06",
-      "affects": ["apps/client/src/router.tsx", "apps/client/src/AppShell.tsx"]
+      "affects": [
+        "apps/client/src/router.tsx",
+        "apps/client/src/AppShell.tsx"
+      ]
     },
     {
       "number": 156,
@@ -2215,7 +2441,9 @@
       "extractedFrom": "dashboard-home-route",
       "specSlug": "dashboard-home-route",
       "lastVerified": "2026-08-06",
-      "affects": ["apps/client/src/router.tsx"]
+      "affects": [
+        "apps/client/src/router.tsx"
+      ]
     },
     {
       "number": 155,
@@ -2226,7 +2454,10 @@
       "extractedFrom": "dashboard-home-route",
       "specSlug": "dashboard-home-route",
       "lastVerified": "2026-08-06",
-      "affects": ["apps/client/src/router.tsx", "apps/client/package.json"]
+      "affects": [
+        "apps/client/src/router.tsx",
+        "apps/client/package.json"
+      ]
     },
     {
       "number": 154,
@@ -2237,7 +2468,9 @@
       "extractedFrom": "dashboard-home-route",
       "specSlug": "dashboard-home-route",
       "lastVerified": "2026-08-06",
-      "affects": ["apps/client/src/router.tsx"]
+      "affects": [
+        "apps/client/src/router.tsx"
+      ]
     },
     {
       "number": 153,
@@ -2262,7 +2495,9 @@
       "extractedFrom": "unified-status-strip",
       "specSlug": "unified-status-strip",
       "lastVerified": "2026-08-06",
-      "affects": ["apps/client/src/layers/features/chat/ui/status/strip-state.ts"]
+      "affects": [
+        "apps/client/src/layers/features/chat/ui/status/strip-state.ts"
+      ]
     },
     {
       "number": 151,
@@ -2282,7 +2517,9 @@
       "extractedFrom": "chat-streaming-motion",
       "specSlug": "chat-streaming-motion",
       "lastVerified": "2026-08-06",
-      "affects": ["apps/client/src/layers/features/chat/ui/message/StreamingText.tsx"]
+      "affects": [
+        "apps/client/src/layers/features/chat/ui/message/StreamingText.tsx"
+      ]
     },
     {
       "number": 148,
@@ -2327,7 +2564,9 @@
       "extractedFrom": "sdk-error-observability",
       "specSlug": "sdk-error-observability",
       "lastVerified": "2026-08-06",
-      "affects": ["apps/server/src/services/runtimes/claude-code/messaging/message-sender.ts"]
+      "affects": [
+        "apps/server/src/services/runtimes/claude-code/messaging/message-sender.ts"
+      ]
     },
     {
       "number": 142,
@@ -2403,7 +2642,9 @@
       "extractedFrom": "relay-panel-redesign",
       "specSlug": "relay-panel-redesign",
       "lastVerified": "2026-08-06",
-      "affects": ["apps/client/src/layers/features/relay/ui/RelayHealthBar.tsx"]
+      "affects": [
+        "apps/client/src/layers/features/relay/ui/RelayHealthBar.tsx"
+      ]
     },
     {
       "number": 132,
@@ -2451,7 +2692,10 @@
       "extractedFrom": "slack-adapter",
       "specSlug": "slack-adapter",
       "lastVerified": "2026-08-06",
-      "affects": ["packages/relay/src/lib/payload-utils.ts", "packages/relay/package.json"]
+      "affects": [
+        "packages/relay/src/lib/payload-utils.ts",
+        "packages/relay/package.json"
+      ]
     },
     {
       "number": 118,
@@ -2462,7 +2706,9 @@
       "extractedFrom": "slack-adapter",
       "specSlug": "slack-adapter",
       "lastVerified": "2026-08-06",
-      "affects": ["packages/relay/src/adapters/slack/**"]
+      "affects": [
+        "packages/relay/src/adapters/slack/**"
+      ]
     },
     {
       "number": 117,
@@ -2497,7 +2743,10 @@
       "extractedFrom": "relay-adapter-dx",
       "specSlug": "relay-adapter-dx",
       "lastVerified": "2026-08-06",
-      "affects": ["packages/relay/src/version.ts", "packages/relay/src/adapter-plugin-loader.ts"]
+      "affects": [
+        "packages/relay/src/version.ts",
+        "packages/relay/src/adapter-plugin-loader.ts"
+      ]
     },
     {
       "number": 109,
@@ -2508,7 +2757,10 @@
       "extractedFrom": "relay-adapter-dx",
       "specSlug": "relay-adapter-dx",
       "lastVerified": "2026-08-06",
-      "affects": ["packages/relay/src/base-adapter.ts", "packages/relay/src/adapters/**"]
+      "affects": [
+        "packages/relay/src/base-adapter.ts",
+        "packages/relay/src/adapters/**"
+      ]
     },
     {
       "number": 108,
@@ -2519,7 +2771,9 @@
       "extractedFrom": "shortcut-discoverability",
       "specSlug": "shortcut-discoverability",
       "lastVerified": "2026-08-06",
-      "affects": ["apps/client/src/layers/shared/lib/shortcuts.ts"]
+      "affects": [
+        "apps/client/src/layers/shared/lib/shortcuts.ts"
+      ]
     },
     {
       "number": 107,
@@ -2586,7 +2840,9 @@
       "extractedFrom": "mcp-server",
       "specSlug": "mcp-server",
       "lastVerified": "2026-08-06",
-      "affects": ["apps/server/src/routes/mcp.ts"]
+      "affects": [
+        "apps/server/src/routes/mcp.ts"
+      ]
     },
     {
       "number": 101,
@@ -2597,7 +2853,10 @@
       "extractedFrom": "mcp-server",
       "specSlug": "mcp-server",
       "lastVerified": "2026-08-06",
-      "affects": ["apps/server/src/index.ts", "apps/server/src/routes/mcp.ts"]
+      "affects": [
+        "apps/server/src/index.ts",
+        "apps/server/src/routes/mcp.ts"
+      ]
     },
     {
       "number": 100,
@@ -2623,7 +2882,9 @@
       "extractedFrom": "chat-message-theming",
       "specSlug": "chat-message-theming",
       "lastVerified": "2026-08-06",
-      "affects": ["apps/client/src/index.css"]
+      "affects": [
+        "apps/client/src/index.css"
+      ]
     },
     {
       "number": 97,
@@ -2634,7 +2895,10 @@
       "extractedFrom": "chat-message-theming",
       "specSlug": "chat-message-theming",
       "lastVerified": "2026-08-06",
-      "affects": ["apps/client/src/layers/features/chat/ui/message/**", "apps/client/package.json"]
+      "affects": [
+        "apps/client/src/layers/features/chat/ui/message/**",
+        "apps/client/package.json"
+      ]
     },
     {
       "number": 94,
@@ -2707,7 +2971,10 @@
       "extractedFrom": "agent-runtime-abstraction",
       "specSlug": "agent-runtime-abstraction",
       "lastVerified": "2026-08-06",
-      "affects": ["packages/shared/src/agent-runtime.ts", "apps/server/src/services/runtimes/**"]
+      "affects": [
+        "packages/shared/src/agent-runtime.ts",
+        "apps/server/src/services/runtimes/**"
+      ]
     },
     {
       "number": 86,
@@ -2718,7 +2985,9 @@
       "extractedFrom": "agent-runtime-abstraction",
       "specSlug": "agent-runtime-abstraction",
       "lastVerified": "2026-08-06",
-      "affects": ["apps/server/src/services/core/runtime-registry.ts"]
+      "affects": [
+        "apps/server/src/services/core/runtime-registry.ts"
+      ]
     },
     {
       "number": 85,
@@ -2729,7 +2998,10 @@
       "extractedFrom": "agent-runtime-abstraction",
       "specSlug": "agent-runtime-abstraction",
       "lastVerified": "2026-08-06",
-      "affects": ["packages/shared/src/agent-runtime.ts", "apps/server/src/services/runtimes/**"]
+      "affects": [
+        "packages/shared/src/agent-runtime.ts",
+        "apps/server/src/services/runtimes/**"
+      ]
     },
     {
       "number": 82,
@@ -2740,7 +3012,9 @@
       "extractedFrom": "unify-discovery-system",
       "specSlug": "unify-discovery-system",
       "lastVerified": "2026-08-06",
-      "affects": ["packages/mesh/src/discovery/unified-scanner.ts"]
+      "affects": [
+        "packages/mesh/src/discovery/unified-scanner.ts"
+      ]
     },
     {
       "number": 81,
@@ -2751,7 +3025,9 @@
       "extractedFrom": "relay-inbox-lifecycle",
       "specSlug": "relay-inbox-lifecycle",
       "lastVerified": "2026-08-06",
-      "affects": ["apps/server/src/services/runtimes/claude-code/mcp-tools/relay-tools.ts"]
+      "affects": [
+        "apps/server/src/services/runtimes/claude-code/mcp-tools/relay-tools.ts"
+      ]
     },
     {
       "number": 77,
@@ -2818,7 +3094,10 @@
       "extractedFrom": "agent-tools-elevation",
       "specSlug": "agent-tools-elevation",
       "lastVerified": "2026-08-06",
-      "affects": ["packages/shared/src/mcp-tool-groups.ts", "packages/shared/src/mesh-schemas.ts"]
+      "affects": [
+        "packages/shared/src/mcp-tool-groups.ts",
+        "packages/shared/src/mesh-schemas.ts"
+      ]
     },
     {
       "number": 70,
@@ -2839,7 +3118,9 @@
       "extractedFrom": "agent-tool-context-injection",
       "specSlug": "agent-tool-context-injection",
       "lastVerified": "2026-08-06",
-      "affects": ["packages/shared/src/config-schema.ts"]
+      "affects": [
+        "packages/shared/src/config-schema.ts"
+      ]
     },
     {
       "number": 68,
@@ -2850,7 +3131,9 @@
       "extractedFrom": "agent-tool-context-injection",
       "specSlug": "agent-tool-context-injection",
       "lastVerified": "2026-08-06",
-      "affects": ["apps/server/src/services/runtimes/claude-code/messaging/context-builder.ts"]
+      "affects": [
+        "apps/server/src/services/runtimes/claude-code/messaging/context-builder.ts"
+      ]
     },
     {
       "number": 67,
@@ -2861,7 +3144,9 @@
       "extractedFrom": "command-palette-10x",
       "specSlug": "command-palette-10x",
       "lastVerified": "2026-08-06",
-      "affects": ["apps/client/src/layers/features/command-palette/model/use-agent-frecency.ts"]
+      "affects": [
+        "apps/client/src/layers/features/command-palette/model/use-agent-frecency.ts"
+      ]
     },
     {
       "number": 66,
@@ -2872,7 +3157,9 @@
       "extractedFrom": "command-palette-10x",
       "specSlug": "command-palette-10x",
       "lastVerified": "2026-08-06",
-      "affects": ["apps/client/src/layers/features/command-palette/**"]
+      "affects": [
+        "apps/client/src/layers/features/command-palette/**"
+      ]
     },
     {
       "number": 64,
@@ -2883,7 +3170,10 @@
       "extractedFrom": "shadcn-sidebar-redesign",
       "specSlug": "shadcn-sidebar-redesign",
       "lastVerified": "2026-08-06",
-      "affects": ["apps/client/src/AppShell.tsx", "apps/client/src/layers/shared/ui/sidebar.tsx"]
+      "affects": [
+        "apps/client/src/AppShell.tsx",
+        "apps/client/src/layers/shared/ui/sidebar.tsx"
+      ]
     },
     {
       "number": 63,
@@ -2894,7 +3184,9 @@
       "extractedFrom": "agent-centric-ux",
       "specSlug": "agent-centric-ux",
       "lastVerified": "2026-08-06",
-      "affects": ["apps/client/src/layers/features/command-palette/**"]
+      "affects": [
+        "apps/client/src/layers/features/command-palette/**"
+      ]
     },
     {
       "number": 62,
@@ -2919,7 +3211,9 @@
       "extractedFrom": "settings-reset-restart",
       "specSlug": "settings-reset-restart",
       "lastVerified": "2026-08-06",
-      "affects": ["apps/server/src/routes/admin.ts"]
+      "affects": [
+        "apps/server/src/routes/admin.ts"
+      ]
     },
     {
       "number": 54,
@@ -2930,7 +3224,9 @@
       "extractedFrom": "first-time-user-experience",
       "specSlug": "first-time-user-experience",
       "lastVerified": "2026-08-06",
-      "affects": ["apps/server/src/lib/feature-flag.ts"]
+      "affects": [
+        "apps/server/src/lib/feature-flag.ts"
+      ]
     },
     {
       "number": 48,
@@ -2941,7 +3237,10 @@
       "extractedFrom": "og-seo-ai-readability-overhaul",
       "specSlug": "og-seo-ai-readability-overhaul",
       "lastVerified": "2026-08-06",
-      "affects": ["apps/site/src/app/llms.txt/**", "apps/site/src/app/llms-full.txt/**"]
+      "affects": [
+        "apps/site/src/app/llms.txt/**",
+        "apps/site/src/app/llms-full.txt/**"
+      ]
     },
     {
       "number": 46,
@@ -3003,7 +3302,10 @@
       "extractedFrom": "env-var-discipline",
       "specSlug": "env-var-discipline",
       "lastVerified": "2026-08-06",
-      "affects": ["apps/*/src/env.ts", "packages/cli/src/env.ts"]
+      "affects": [
+        "apps/*/src/env.ts",
+        "packages/cli/src/env.ts"
+      ]
     },
     {
       "number": 41,
@@ -3014,7 +3316,10 @@
       "extractedFrom": "db-drizzle-consolidation",
       "specSlug": "db-drizzle-consolidation",
       "lastVerified": "2026-08-06",
-      "affects": ["lefthook.yml", "packages/db/src/schema/**"]
+      "affects": [
+        "lefthook.yml",
+        "packages/db/src/schema/**"
+      ]
     },
     {
       "number": 40,
@@ -3025,7 +3330,10 @@
       "extractedFrom": "db-drizzle-consolidation",
       "specSlug": "db-drizzle-consolidation",
       "lastVerified": "2026-08-06",
-      "affects": ["apps/server/src/index.ts", "packages/db/src/schema/**"]
+      "affects": [
+        "apps/server/src/index.ts",
+        "packages/db/src/schema/**"
+      ]
     },
     {
       "number": 39,
@@ -3036,7 +3344,9 @@
       "extractedFrom": "db-drizzle-consolidation",
       "specSlug": "db-drizzle-consolidation",
       "lastVerified": "2026-08-06",
-      "affects": ["packages/db/src/**"]
+      "affects": [
+        "packages/db/src/**"
+      ]
     },
     {
       "number": 38,
@@ -3076,7 +3386,9 @@
       "extractedFrom": "mesh-observability-lifecycle",
       "specSlug": "mesh-observability-lifecycle",
       "lastVerified": "2026-08-06",
-      "affects": ["packages/db/src/schema/mesh.ts"]
+      "affects": [
+        "packages/db/src/schema/mesh.ts"
+      ]
     },
     {
       "number": 35,
@@ -3087,7 +3399,10 @@
       "extractedFrom": "mesh-observability-lifecycle",
       "specSlug": "mesh-observability-lifecycle",
       "lastVerified": "2026-08-06",
-      "affects": ["apps/client/src/layers/features/mesh/ui/**", "apps/client/package.json"]
+      "affects": [
+        "apps/client/src/layers/features/mesh/ui/**",
+        "apps/client/package.json"
+      ]
     },
     {
       "number": 34,
@@ -3098,7 +3413,9 @@
       "extractedFrom": "mesh-network-topology",
       "specSlug": "mesh-network-topology",
       "lastVerified": "2026-08-06",
-      "affects": ["apps/server/src/routes/mesh.ts"]
+      "affects": [
+        "apps/server/src/routes/mesh.ts"
+      ]
     },
     {
       "number": 33,
@@ -3124,7 +3441,10 @@
       "extractedFrom": "mesh-network-topology",
       "specSlug": "mesh-network-topology",
       "lastVerified": "2026-08-06",
-      "affects": ["packages/mesh/src/namespace-resolver.ts", "packages/mesh/src/agent-registry.ts"]
+      "affects": [
+        "packages/mesh/src/namespace-resolver.ts",
+        "packages/mesh/src/agent-registry.ts"
+      ]
     },
     {
       "number": 31,
@@ -3144,7 +3464,10 @@
       "extractedFrom": "relay-runtime-adapters",
       "specSlug": "relay-runtime-adapters",
       "lastVerified": "2026-08-06",
-      "affects": ["apps/server/src/services/relay/adapter-factory.ts", "packages/relay/src/**"]
+      "affects": [
+        "apps/server/src/services/relay/adapter-factory.ts",
+        "packages/relay/src/**"
+      ]
     },
     {
       "number": 29,
@@ -3155,7 +3478,10 @@
       "extractedFrom": "relay-runtime-adapters",
       "specSlug": "relay-runtime-adapters",
       "lastVerified": "2026-08-06",
-      "affects": ["apps/server/src/services/relay/adapter-factory.ts", "apps/server/src/index.ts"]
+      "affects": [
+        "apps/server/src/services/relay/adapter-factory.ts",
+        "apps/server/src/index.ts"
+      ]
     },
     {
       "number": 27,
@@ -3176,7 +3502,9 @@
       "extractedFrom": "mesh-core-library",
       "specSlug": "mesh-core-library",
       "lastVerified": "2026-08-06",
-      "affects": ["packages/db/src/schema/mesh.ts"]
+      "affects": [
+        "packages/db/src/schema/mesh.ts"
+      ]
     },
     {
       "number": 24,
@@ -3187,7 +3515,10 @@
       "extractedFrom": "mesh-core-library",
       "specSlug": "mesh-core-library",
       "lastVerified": "2026-08-06",
-      "affects": ["packages/mesh/src/agent-registry.ts", "packages/mesh/src/mesh-core.ts"]
+      "affects": [
+        "packages/mesh/src/agent-registry.ts",
+        "packages/mesh/src/mesh-core.ts"
+      ]
     },
     {
       "number": 23,
@@ -3198,7 +3529,9 @@
       "extractedFrom": "mesh-core-library",
       "specSlug": "mesh-core-library",
       "lastVerified": "2026-08-06",
-      "affects": ["packages/mesh/src/discovery/unified-scanner.ts"]
+      "affects": [
+        "packages/mesh/src/discovery/unified-scanner.ts"
+      ]
     },
     {
       "number": 22,
@@ -3209,7 +3542,9 @@
       "extractedFrom": "relay-external-adapters",
       "specSlug": "relay-external-adapters",
       "lastVerified": "2026-08-06",
-      "affects": ["packages/relay/src/adapters/webhook/webhook-adapter.ts"]
+      "affects": [
+        "packages/relay/src/adapters/webhook/webhook-adapter.ts"
+      ]
     },
     {
       "number": 21,
@@ -3220,7 +3555,9 @@
       "extractedFrom": "relay-external-adapters",
       "specSlug": "relay-external-adapters",
       "lastVerified": "2026-08-06",
-      "affects": ["apps/server/src/services/**"]
+      "affects": [
+        "apps/server/src/services/**"
+      ]
     },
     {
       "number": 20,
@@ -3231,7 +3568,9 @@
       "extractedFrom": "relay-external-adapters",
       "specSlug": "relay-external-adapters",
       "lastVerified": "2026-08-06",
-      "affects": ["packages/relay/src/adapter-registry.ts"]
+      "affects": [
+        "packages/relay/src/adapter-registry.ts"
+      ]
     },
     {
       "number": 19,
@@ -3242,7 +3581,9 @@
       "extractedFrom": "relay-external-adapters",
       "specSlug": "relay-external-adapters",
       "lastVerified": "2026-08-06",
-      "affects": ["packages/relay/src/adapters/telegram/**"]
+      "affects": [
+        "packages/relay/src/adapters/telegram/**"
+      ]
     },
     {
       "number": 18,
@@ -3277,7 +3618,10 @@
       "extractedFrom": "relay-advanced-reliability",
       "specSlug": "relay-advanced-reliability",
       "lastVerified": "2026-08-06",
-      "affects": ["packages/relay/src/types.ts", "packages/relay/src/relay-publish.ts"]
+      "affects": [
+        "packages/relay/src/types.ts",
+        "packages/relay/src/relay-publish.ts"
+      ]
     },
     {
       "number": 15,
@@ -3288,7 +3632,9 @@
       "extractedFrom": "relay-advanced-reliability",
       "specSlug": "relay-advanced-reliability",
       "lastVerified": "2026-08-06",
-      "affects": ["packages/relay/src/circuit-breaker.ts"]
+      "affects": [
+        "packages/relay/src/circuit-breaker.ts"
+      ]
     },
     {
       "number": 14,
@@ -3314,7 +3660,10 @@
       "extractedFrom": "relay-core-library",
       "specSlug": "relay-core-library",
       "lastVerified": "2026-08-06",
-      "affects": ["packages/relay/src/sqlite-index.ts", "packages/db/src/schema/relay.ts"]
+      "affects": [
+        "packages/relay/src/sqlite-index.ts",
+        "packages/db/src/schema/relay.ts"
+      ]
     },
     {
       "number": 12,
@@ -3340,7 +3689,9 @@
       "extractedFrom": "relay-core-library",
       "specSlug": "relay-core-library",
       "lastVerified": "2026-08-06",
-      "affects": ["packages/relay/src/subject-matcher.ts"]
+      "affects": [
+        "packages/relay/src/subject-matcher.ts"
+      ]
     },
     {
       "number": 10,
@@ -3360,7 +3711,9 @@
       "extractedFrom": "pulse-v2-enhancements",
       "specSlug": "pulse-v2-enhancements",
       "lastVerified": "2026-08-06",
-      "affects": ["apps/client/src/layers/features/**"]
+      "affects": [
+        "apps/client/src/layers/features/**"
+      ]
     },
     {
       "number": 8,
@@ -3371,7 +3724,10 @@
       "extractedFrom": "pulse-v2-enhancements",
       "specSlug": "pulse-v2-enhancements",
       "lastVerified": "2026-08-06",
-      "affects": ["apps/client/src/layers/shared/ui/**", ".claude/rules/fsd-layers.md"]
+      "affects": [
+        "apps/client/src/layers/shared/ui/**",
+        ".claude/rules/fsd-layers.md"
+      ]
     },
     {
       "number": 7,
@@ -3382,7 +3738,10 @@
       "extractedFrom": "pulse-ui-overhaul",
       "specSlug": "pulse-ui-overhaul",
       "lastVerified": "2026-08-06",
-      "affects": ["apps/client/src/layers/shared/ui/command.tsx", "apps/client/package.json"]
+      "affects": [
+        "apps/client/src/layers/shared/ui/command.tsx",
+        "apps/client/package.json"
+      ]
     },
     {
       "number": 6,
@@ -3393,7 +3752,10 @@
       "extractedFrom": "pulse-ui-overhaul",
       "specSlug": "pulse-ui-overhaul",
       "lastVerified": "2026-08-06",
-      "affects": ["apps/client/package.json", "apps/client/src/layers/**"]
+      "affects": [
+        "apps/client/package.json",
+        "apps/client/src/layers/**"
+      ]
     },
     {
       "number": 5,
@@ -3403,7 +3765,10 @@
       "created": "2026-02-11",
       "specSlug": "url-persisted-directory-state",
       "lastVerified": "2026-08-06",
-      "affects": ["apps/client/src/layers/shared/model/**", "apps/client/src/layers/entities/**"]
+      "affects": [
+        "apps/client/src/layers/shared/model/**",
+        "apps/client/src/layers/entities/**"
+      ]
     },
     {
       "number": 4,
@@ -3413,7 +3778,10 @@
       "created": "2026-02-11",
       "specSlug": "monorepo-turborepo-migration",
       "lastVerified": "2026-08-06",
-      "affects": ["apps/**", "turbo.json"]
+      "affects": [
+        "apps/**",
+        "turbo.json"
+      ]
     },
     {
       "number": 3,
@@ -3423,7 +3791,9 @@
       "created": "2026-02-06",
       "specSlug": "claude-code-webui-api",
       "lastVerified": "2026-08-06",
-      "affects": ["apps/server/src/services/runtimes/claude-code/sessions/transcript-reader.ts"]
+      "affects": [
+        "apps/server/src/services/runtimes/claude-code/sessions/transcript-reader.ts"
+      ]
     },
     {
       "number": 2,
@@ -3433,7 +3803,10 @@
       "created": "2026-02-15",
       "specSlug": "fsd-architecture",
       "lastVerified": "2026-08-06",
-      "affects": ["apps/client/src/layers/**", "apps/client/eslint.config.js"]
+      "affects": [
+        "apps/client/src/layers/**",
+        "apps/client/eslint.config.js"
+      ]
     },
     {
       "number": 1,
@@ -3443,7 +3816,10 @@
       "created": "2026-02-06",
       "specSlug": "claude-code-webui-api",
       "lastVerified": "2026-08-06",
-      "affects": ["packages/shared/src/transport.ts", "apps/client/src/layers/shared/lib/**"]
+      "affects": [
+        "packages/shared/src/transport.ts",
+        "apps/client/src/layers/shared/lib/**"
+      ]
     },
     {
       "id": "260707-010337",
@@ -3467,7 +3843,9 @@
       "created": "2026-07-06",
       "specSlug": "cloud-account-management",
       "lastVerified": "2026-08-06",
-      "affects": ["apps/site/src/lib/auth.ts"]
+      "affects": [
+        "apps/site/src/lib/auth.ts"
+      ]
     },
     {
       "id": "260707-132518",
@@ -3477,7 +3855,9 @@
       "created": "2026-07-07",
       "specSlug": "runtime-usage-status",
       "lastVerified": "2026-08-06",
-      "affects": ["packages/shared/src/schemas.ts"]
+      "affects": [
+        "packages/shared/src/schemas.ts"
+      ]
     },
     {
       "id": "260707-122350",
@@ -3487,7 +3867,10 @@
       "created": "2026-07-07",
       "specSlug": "cloud-account-management",
       "lastVerified": "2026-08-06",
-      "affects": ["apps/site/src/app/admin/**", "apps/site/src/layers/features/admin/**"]
+      "affects": [
+        "apps/site/src/app/admin/**",
+        "apps/site/src/layers/features/admin/**"
+      ]
     },
     {
       "id": "260708-111459",
@@ -3524,7 +3907,10 @@
       "created": "2026-07-08",
       "specSlug": "gen-ui-tier1",
       "lastVerified": "2026-08-06",
-      "affects": ["packages/shared/src/ui-widget.ts", "packages/shared/package.json"]
+      "affects": [
+        "packages/shared/src/ui-widget.ts",
+        "packages/shared/package.json"
+      ]
     },
     {
       "id": "260708-141143",
@@ -3562,7 +3948,9 @@
       "extractedFrom": "right-panel-workbench",
       "specSlug": "right-panel-workbench",
       "lastVerified": "2026-08-06",
-      "affects": ["apps/server/src/routes/workbench-serve.ts"]
+      "affects": [
+        "apps/server/src/routes/workbench-serve.ts"
+      ]
     },
     {
       "id": "260708-185521",
@@ -3573,7 +3961,10 @@
       "extractedFrom": "right-panel-workbench",
       "specSlug": "right-panel-workbench",
       "lastVerified": "2026-08-06",
-      "affects": ["apps/server/src/services/terminal/**", "apps/server/src/routes/terminal.ts"]
+      "affects": [
+        "apps/server/src/services/terminal/**",
+        "apps/server/src/routes/terminal.ts"
+      ]
     },
     {
       "id": "260708-185522",
@@ -3584,7 +3975,10 @@
       "extractedFrom": "right-panel-workbench",
       "specSlug": "right-panel-workbench",
       "lastVerified": "2026-08-06",
-      "affects": ["packages/shared/src/viewer-registry.ts", "packages/shared/src/config-schema.ts"]
+      "affects": [
+        "packages/shared/src/viewer-registry.ts",
+        "packages/shared/src/config-schema.ts"
+      ]
     },
     {
       "id": "260709-210223",
@@ -3595,7 +3989,10 @@
       "extractedFrom": "desktop-macos-polish",
       "specSlug": "desktop-macos-polish",
       "lastVerified": "2026-08-06",
-      "affects": ["apps/desktop/src/main/navigation.ts", "apps/desktop/src/preload/index.ts"]
+      "affects": [
+        "apps/desktop/src/main/navigation.ts",
+        "apps/desktop/src/preload/index.ts"
+      ]
     },
     {
       "id": "260711-144122",
@@ -3619,7 +4016,10 @@
       "extractedFrom": null,
       "specSlug": null,
       "lastVerified": "2026-08-06",
-      "affects": ["apps/server/src/services/core/**", "packages/shared/src/**"]
+      "affects": [
+        "apps/server/src/services/core/**",
+        "packages/shared/src/**"
+      ]
     },
     {
       "id": "260711-150550",
@@ -3673,7 +4073,9 @@
       "extractedFrom": "gen-ui-pip",
       "specSlug": "gen-ui-pip",
       "lastVerified": "2026-08-06",
-      "affects": ["apps/client/src/layers/shared/lib/transport/stream-manager.ts"]
+      "affects": [
+        "apps/client/src/layers/shared/lib/transport/stream-manager.ts"
+      ]
     },
     {
       "id": "260711-211905",
@@ -3684,7 +4086,9 @@
       "extractedFrom": "pip-mobile-sheet",
       "specSlug": "pip-mobile-sheet",
       "lastVerified": "2026-08-06",
-      "affects": ["apps/client/src/layers/features/pip-panel/ui/PipHost.tsx"]
+      "affects": [
+        "apps/client/src/layers/features/pip-panel/ui/PipHost.tsx"
+      ]
     },
     {
       "id": "260713-143958",
@@ -3694,7 +4098,10 @@
       "created": "2026-07-13",
       "amends": "260711-141639",
       "lastVerified": "2026-08-06",
-      "affects": ["apps/server/src/services/core/**", "packages/shared/src/**"]
+      "affects": [
+        "apps/server/src/services/core/**",
+        "packages/shared/src/**"
+      ]
     },
     {
       "id": "260717-151851",
@@ -3732,7 +4139,10 @@
       "status": "accepted",
       "created": "2026-07-20",
       "lastVerified": "2026-08-06",
-      "affects": ["apps/client/src/layers/widgets/app-banner/**", "apps/client/src/AppShell.tsx"]
+      "affects": [
+        "apps/client/src/layers/widgets/app-banner/**",
+        "apps/client/src/AppShell.tsx"
+      ]
     },
     {
       "id": "260721-153851",
@@ -3783,7 +4193,9 @@
       "extractedFrom": "dorkbot-is-the-onboarding",
       "specSlug": "dorkbot-is-the-onboarding",
       "lastVerified": "2026-08-06",
-      "affects": ["packages/shared/src/dorkbot-templates.ts"]
+      "affects": [
+        "packages/shared/src/dorkbot-templates.ts"
+      ]
     },
     {
       "id": "260722-111315",
@@ -3794,7 +4206,9 @@
       "extractedFrom": "dorkbot-is-the-onboarding",
       "specSlug": "dorkbot-is-the-onboarding",
       "lastVerified": "2026-08-06",
-      "affects": ["apps/client/src/layers/features/onboarding/**"]
+      "affects": [
+        "apps/client/src/layers/features/onboarding/**"
+      ]
     },
     {
       "id": "260722-111316",
@@ -3805,7 +4219,9 @@
       "extractedFrom": "dorkbot-is-the-onboarding",
       "specSlug": "dorkbot-is-the-onboarding",
       "lastVerified": "2026-08-06",
-      "affects": ["apps/client/src/layers/features/chat/model/kickoff/use-auto-kickoff.ts"]
+      "affects": [
+        "apps/client/src/layers/features/chat/model/kickoff/use-auto-kickoff.ts"
+      ]
     },
     {
       "id": "260722-120728",
@@ -3816,7 +4232,9 @@
       "extractedFrom": "dashboard-with-hands",
       "specSlug": "dashboard-with-hands",
       "lastVerified": "2026-08-06",
-      "affects": ["apps/client/src/layers/widgets/dashboard/**"]
+      "affects": [
+        "apps/client/src/layers/widgets/dashboard/**"
+      ]
     },
     {
       "id": "260722-154339",
@@ -3827,7 +4245,9 @@
       "extractedFrom": "dorkbot-living-tour",
       "specSlug": "dorkbot-living-tour",
       "lastVerified": "2026-08-06",
-      "affects": ["apps/client/src/layers/features/tours/**"]
+      "affects": [
+        "apps/client/src/layers/features/tours/**"
+      ]
     },
     {
       "id": "260722-154340",
@@ -3838,7 +4258,10 @@
       "extractedFrom": "dorkbot-living-tour",
       "specSlug": "dorkbot-living-tour",
       "lastVerified": "2026-08-06",
-      "affects": ["apps/client/src/layers/features/tours/**", "apps/client/package.json"]
+      "affects": [
+        "apps/client/src/layers/features/tours/**",
+        "apps/client/package.json"
+      ]
     },
     {
       "id": "260722-154341",
@@ -3863,7 +4286,9 @@
       "extractedFrom": "opencode-connect-overhaul",
       "specSlug": "opencode-connect-overhaul",
       "lastVerified": "2026-08-06",
-      "affects": ["apps/server/src/services/runtimes/opencode/check-dependencies.ts"]
+      "affects": [
+        "apps/server/src/services/runtimes/opencode/check-dependencies.ts"
+      ]
     },
     {
       "id": "260723-013233",
@@ -3894,7 +4319,9 @@
       "extractedFrom": "agents-as-operators",
       "specSlug": "agents-as-operators",
       "lastVerified": "2026-08-06",
-      "affects": ["packages/operating-skills/**"]
+      "affects": [
+        "packages/operating-skills/**"
+      ]
     },
     {
       "id": "260723-013236",
@@ -3929,7 +4356,9 @@
       "extractedFrom": "capability-registry",
       "specSlug": "capability-registry",
       "lastVerified": "2026-08-06",
-      "affects": ["apps/server/src/routes/capabilities-invoke.ts"]
+      "affects": [
+        "apps/server/src/routes/capabilities-invoke.ts"
+      ]
     },
     {
       "id": "260725-133220",
@@ -3940,7 +4369,9 @@
       "extractedFrom": "agent-trust",
       "specSlug": "agent-trust",
       "lastVerified": "2026-08-06",
-      "affects": ["apps/server/src/services/core/approvals/**"]
+      "affects": [
+        "apps/server/src/services/core/approvals/**"
+      ]
     },
     {
       "id": "260725-133221",
@@ -3951,7 +4382,10 @@
       "extractedFrom": "agent-trust",
       "specSlug": "agent-trust",
       "lastVerified": "2026-08-06",
-      "affects": ["apps/server/src/services/core/approvals/**", "apps/server/src/routes/*approval*"]
+      "affects": [
+        "apps/server/src/services/core/approvals/**",
+        "apps/server/src/routes/*approval*"
+      ]
     },
     {
       "id": "260725-133222",
@@ -3962,7 +4396,9 @@
       "extractedFrom": "agent-trust",
       "specSlug": "agent-trust",
       "lastVerified": "2026-08-06",
-      "affects": ["packages/evals/src/runner/isolation/**"]
+      "affects": [
+        "packages/evals/src/runner/isolation/**"
+      ]
     },
     {
       "id": "260725-152018",
@@ -3973,7 +4409,9 @@
       "extractedFrom": "agents-as-operators",
       "specSlug": "agents-as-operators",
       "lastVerified": "2026-08-06",
-      "affects": ["apps/server/src/services/core/operator/config-disclosure.ts"]
+      "affects": [
+        "apps/server/src/services/core/operator/config-disclosure.ts"
+      ]
     },
     {
       "id": "260726-170125",
@@ -3983,7 +4421,10 @@
       "created": "2026-07-26",
       "specSlug": "rooms",
       "lastVerified": "2026-08-06",
-      "affects": ["apps/server/src/services/rooms/**", "packages/db/src/schema/rooms.ts"]
+      "affects": [
+        "apps/server/src/services/rooms/**",
+        "packages/db/src/schema/rooms.ts"
+      ]
     },
     {
       "id": "260726-170126",
@@ -4046,7 +4487,10 @@
       "extractedFrom": null,
       "specSlug": null,
       "lastVerified": "2026-08-06",
-      "affects": ["apps/server/src/middleware/host-guard.ts", "apps/server/src/app.ts"]
+      "affects": [
+        "apps/server/src/middleware/host-guard.ts",
+        "apps/server/src/app.ts"
+      ]
     },
     {
       "id": "260726-232222",
@@ -4057,7 +4501,10 @@
       "extractedFrom": null,
       "specSlug": null,
       "lastVerified": "2026-08-06",
-      "affects": ["apps/server/src/lib/trusted-origins.ts", "apps/server/src/routes/runtimes.ts"]
+      "affects": [
+        "apps/server/src/lib/trusted-origins.ts",
+        "apps/server/src/routes/runtimes.ts"
+      ]
     },
     {
       "id": "260726-234120",
@@ -4068,7 +4515,10 @@
       "extractedFrom": null,
       "specSlug": null,
       "lastVerified": "2026-08-06",
-      "affects": ["apps/server/src/routes/admin.ts", "apps/desktop/src/main/server-process.ts"]
+      "affects": [
+        "apps/server/src/routes/admin.ts",
+        "apps/desktop/src/main/server-process.ts"
+      ]
     },
     {
       "id": "260726-234122",
@@ -4079,7 +4529,10 @@
       "extractedFrom": null,
       "specSlug": null,
       "lastVerified": "2026-08-06",
-      "affects": ["apps/server/src/lib/instance-lock.ts", "apps/server/src/index.ts"]
+      "affects": [
+        "apps/server/src/lib/instance-lock.ts",
+        "apps/server/src/index.ts"
+      ]
     },
     {
       "id": "260727-181825",
@@ -4090,7 +4543,9 @@
       "extractedFrom": null,
       "specSlug": null,
       "lastVerified": "2026-08-06",
-      "affects": ["apps/server/src/services/core/safe-defaults/**"],
+      "affects": [
+        "apps/server/src/services/core/safe-defaults/**"
+      ],
       "amends": 135
     },
     {
@@ -4117,7 +4572,10 @@
       "specSlug": "rooms",
       "amends": "260726-170125",
       "lastVerified": "2026-08-06",
-      "affects": ["packages/db/src/schema/rooms.ts", "apps/server/src/services/rooms/**"]
+      "affects": [
+        "packages/db/src/schema/rooms.ts",
+        "apps/server/src/services/rooms/**"
+      ]
     },
     {
       "id": "260728-112203",
@@ -4126,7 +4584,10 @@
       "status": "accepted",
       "created": "2026-07-28",
       "lastVerified": "2026-08-06",
-      "affects": [".github/workflows/merge-tail.yml", ".github/workflows/*.yml"]
+      "affects": [
+        ".github/workflows/merge-tail.yml",
+        ".github/workflows/*.yml"
+      ]
     },
     {
       "id": "260728-214214",
@@ -4159,7 +4620,9 @@
       "specSlug": "room-details-sheet",
       "extractedFrom": "room-details-sheet",
       "lastVerified": "2026-08-06",
-      "affects": ["apps/client/src/layers/entities/room/lib/response-mode.ts"]
+      "affects": [
+        "apps/client/src/layers/entities/room/lib/response-mode.ts"
+      ]
     },
     {
       "id": "260731-211050",
@@ -4167,7 +4630,10 @@
       "title": "A room-driven claude-code turn leaves a sparse record in session_events, never a history",
       "status": "accepted",
       "created": "2026-07-31",
-      "amends": ["260710-024641", "260726-170125"],
+      "amends": [
+        "260710-024641",
+        "260726-170125"
+      ],
       "lastVerified": "2026-08-06",
       "affects": [
         "apps/server/src/services/session/projector-persistence.ts",
@@ -4183,7 +4649,9 @@
       "specSlug": "claude-code-accounts",
       "extractedFrom": "claude-code-accounts",
       "lastVerified": "2026-08-06",
-      "affects": ["apps/server/src/services/runtimes/claude-code/claude-config-dir.ts"]
+      "affects": [
+        "apps/server/src/services/runtimes/claude-code/claude-config-dir.ts"
+      ]
     },
     {
       "id": "260801-204127",
@@ -4208,7 +4676,9 @@
       "specSlug": "claude-code-accounts",
       "extractedFrom": "claude-code-accounts",
       "lastVerified": "2026-08-06",
-      "affects": ["apps/server/src/services/runtimes/claude-code/claude-config-dir.ts"]
+      "affects": [
+        "apps/server/src/services/runtimes/claude-code/claude-config-dir.ts"
+      ]
     },
     {
       "id": "260801-204129",
@@ -4219,7 +4689,9 @@
       "specSlug": "claude-code-accounts",
       "extractedFrom": "claude-code-accounts",
       "lastVerified": "2026-08-06",
-      "affects": ["apps/server/src/services/runtimes/claude-code/claude-config-env-lock.ts"]
+      "affects": [
+        "apps/server/src/services/runtimes/claude-code/claude-config-env-lock.ts"
+      ]
     },
     {
       "id": "260803-183016",
@@ -4245,8 +4717,17 @@
       "specSlug": null,
       "extractedFrom": null,
       "lastVerified": "2026-08-06",
-      "affects": ["apps/server/src/services/core/streams/**"],
-      "amends": [264, 265, 189, 190, 204, 207],
+      "affects": [
+        "apps/server/src/services/core/streams/**"
+      ],
+      "amends": [
+        264,
+        265,
+        189,
+        190,
+        204,
+        207
+      ],
       "supersedes": 206
     },
     {
@@ -4308,6 +4789,30 @@
       "status": "draft",
       "created": "2026-08-07",
       "specSlug": "room-attachments"
+    },
+    {
+      "id": "260808-140954",
+      "slug": "threads-are-durable-sessions-are-engine-runs",
+      "title": "Threads are durable; sessions are engine runs beneath them",
+      "status": "draft",
+      "created": "2026-08-08",
+      "specSlug": "team-room-home"
+    },
+    {
+      "id": "260808-140955",
+      "slug": "the-home-is-the-team-room-not-a-report",
+      "title": "The home is the #team room, not a report",
+      "status": "draft",
+      "created": "2026-08-08",
+      "specSlug": "team-room-home"
+    },
+    {
+      "id": "260808-140956",
+      "slug": "read-state-is-one-broadcast-server-cursor",
+      "title": "Read state is one broadcast server-side cursor per user and thread",
+      "status": "draft",
+      "created": "2026-08-08",
+      "specSlug": "team-room-home"
     }
   ]
 }
