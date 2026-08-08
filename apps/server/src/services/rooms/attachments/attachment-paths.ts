@@ -24,6 +24,26 @@ import path from 'path';
 export const PROJECTED_ATTACHMENTS_ROOT = '.dork/.temp/room-attachments';
 
 /**
+ * The suffix a stored file is filed under, without its dot, or `''`.
+ *
+ * **Derived from the sanitized NAME, in one place, by everybody.** The upload
+ * route takes the extension off the name it just sanitized and stores both; the
+ * context builder needs the same extension later to ask the store for the
+ * bytes, and the wire `RoomAttachment` carries only the name. Two expressions of
+ * "the suffix of this name" would agree right up until one of them was edited,
+ * and the symptom would be a file the store cannot find. So there is one.
+ *
+ * Lowercased, so `.PNG` and `.png` are one shape on disk, and allowlisted to
+ * alphanumerics for the same reason the ids are — it reaches the filesystem.
+ *
+ * @param name - The sanitized filename.
+ */
+export function storedExtension(name: string): string {
+  const ext = path.extname(name).slice(1).toLowerCase();
+  return /^[A-Za-z0-9]*$/.test(ext) ? ext : '';
+}
+
+/**
  * The directory every projection of one entry lands in, relative to the agent's
  * working directory.
  *

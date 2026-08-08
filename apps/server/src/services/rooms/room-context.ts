@@ -40,7 +40,7 @@ import type {
   RoomContextEntry,
 } from '@dorkos/shared/additional-context';
 import type { ResponseMode } from '@dorkos/shared/mesh-schemas';
-import type { Room, RoomEntry } from '@dorkos/shared/room-schemas';
+import type { Room, RoomAttachment, RoomEntry } from '@dorkos/shared/room-schemas';
 import type { BridgedRoomFraming } from '../relay/chat-bridge/room-context-framing.js';
 import { addressableHandles, rosterMentionCandidates } from './handles/author-handles.js';
 import type { EngagementWindow } from './engagement.js';
@@ -53,6 +53,7 @@ import {
 import type { ReactionStore } from './reaction-store.js';
 import type { RoomAgentLookup } from './room-errors.js';
 import type { RoomStore } from './room-store.js';
+import { projectedAttachmentPath, storedExtension } from './attachments/attachment-paths.js';
 
 /**
  * How many unread entries reach the model at most, oldest dropped.
@@ -129,6 +130,17 @@ export interface RoomContextDeps {
    * rather than once per entry.
    */
   topicNamesFor(entryIds: readonly string[]): Map<string, string>;
+  /**
+   * The attachments on a batch of entries, keyed by entry id, or an empty map
+   * for any entry with none — read once per turn for every candidate in
+   * `pending` and `ownRecent`, exactly as {@link RoomContextDeps.topicNamesFor}
+   * is.
+   *
+   * Takes the room explicitly rather than closing over one: this deps object is
+   * built once per service and reused for every room, so a captured room id
+   * would be the wrong room on the second call.
+   */
+  attachmentsFor(roomId: string, entryIds: readonly string[]): Map<string, RoomAttachment[]>;
 }
 
 /** The one turn being described. */
@@ -165,13 +177,52 @@ export interface RoomContextInput {
 }
 
 /**
- * Describe one room turn for the agent about to run it.
+ * One file the agent is about to be TOLD about, and therefore one the projector
+ * is obliged to put on disk before the turn starts.
+ *
+ * It carries the ids and the extension the built context deliberately does not:
+ * a `RoomContextEntry` names a file by relative path and human name only,
+ * because that is all a model needs.
+ */
+export interface ProjectableAttachment {
+  /** The entry the file was posted with — what scopes its projected directory. */
+  entryId: string;
+  /** The attachment id, which is also its basename in the store. */
+  attachmentId: string;
+  /** The suffix the bytes are stored under, without a dot. May be `''`. */
+  extension: string;
+  /** The sanitized filename, as the model is told it. */
+  name: string;
+  /** Where it must land, relative to the agent's working directory. */
+  relativePath: string;
+}
+
+/**
+ * Describe one room turn for the agent about to run it, and say which files
+ * have to exist for that description to be true.
+ *
+ * **The projection plan comes back from HERE rather than being recomputed.**
+ * ADR 260807-233816 rests on one invariant — the agent is only told about files
+ * it can open — and the two halves of that sentence are written in two
+ * different modules. The rejected alternative was a second, independent query
+ * in the turn runner: it would have made the lockstep a thing two code paths
+ * have to keep agreeing about, over a window (`PENDING_MAX_ENTRIES` plus
+ * `OWN_RECENT_MAX_ENTRIES`) that only this function resolves — and the failure
+ * mode is silent, an agent handed a path to a file that was never projected.
+ * A `RoomContextEntry` cannot carry the plan itself: it has no entry id and no
+ * attachment id, so a projector reading the built context would have to
+ * reverse-parse its own path strings. So the plan is built in the SAME pass,
+ * from the SAME map, and returned beside the context.
  *
  * @param deps - The store, the author registry, and the agent handle lookup.
  * @param input - The room, the agent, the trigger, and the live bounds.
- * @returns The structured entry an adapter renders into `<room_context>`.
+ * @returns The structured entry an adapter renders into `<room_context>`, and
+ *   the exact set of files that context refers to.
  */
-export function buildRoomContext(deps: RoomContextDeps, input: RoomContextInput): RoomContextData {
+export function buildRoomContext(
+  deps: RoomContextDeps,
+  input: RoomContextInput
+): { context: RoomContextData; projection: ProjectableAttachment[] } {
   // Read once, reused for the frame below and for gating the topic-label
   // lookup further down — a second call would be a second bridge-store read
   // for the same answer.
@@ -211,9 +262,21 @@ export function buildRoomContext(deps: RoomContextDeps, input: RoomContextInput)
   // The forum-topic label for every candidate this turn might render, in ONE
   // query — gated on `framing` so an unbridged room's turn never touches the
   // bridge store at all (chats-as-channels §5.6).
+  const rendered = [...missed, ...ownRecent];
   const topicNames = framing
-    ? deps.topicNamesFor([...missed, ...ownRecent].map((entry) => entry.id))
+    ? deps.topicNamesFor(rendered.map((entry) => entry.id))
     : new Map<string, string>();
+
+  // The attachments on those SAME entries, in ONE query. Ungated, unlike the
+  // topic labels above: any room may carry files, bridged or not.
+  const attachmentsByEntry = deps.attachmentsFor(
+    input.room.id,
+    rendered.map((entry) => entry.id)
+  );
+  // Built in the same pass as the fill below, from this same map, so the set of
+  // paths the model is told about and the set of files the projector creates
+  // cannot be two different answers.
+  const projection: ProjectableAttachment[] = [];
 
   // Reactions on those same posts, in ONE query. Scoped to `ownRecent` because
   // that is what makes an acknowledgment age out on its own: five more messages
@@ -276,6 +339,20 @@ export function buildRoomContext(deps: RoomContextDeps, input: RoomContextInput)
       // Already sanitized once, at write time (spec §9.2, A9.3) — carried
       // through raw so the renderer can sanitize it again at render.
       topicLabel: topicNames.get(entry.id) ?? null,
+      attachments: (attachmentsByEntry.get(entry.id) ?? []).map((file) => {
+        const relativePath = projectedAttachmentPath(entry.id, file.id, file.name);
+        // Recording the plan HERE is what makes the lockstep structural: an
+        // entry that reaches the model records its files in the same statement
+        // that tells the model about them.
+        projection.push({
+          entryId: entry.id,
+          attachmentId: file.id,
+          extension: storedExtension(file.name),
+          name: file.name,
+          relativePath,
+        });
+        return { name: file.name, path: relativePath };
+      }),
     };
   };
 
@@ -328,7 +405,7 @@ export function buildRoomContext(deps: RoomContextDeps, input: RoomContextInput)
     return found;
   }
 
-  return {
+  const context: RoomContextData = {
     room: frame.room,
     thread: frame.thread,
     members: members.map((member) => {
@@ -364,6 +441,11 @@ export function buildRoomContext(deps: RoomContextDeps, input: RoomContextInput)
       repliesLeftInThisChain: input.repliesLeftInThisChain,
     },
   };
+
+  // `projection` is filled by `flatten`, which runs inside the object literal
+  // above — so it is complete only here, and only for the entries that actually
+  // reached the model.
+  return { context, projection };
 }
 
 /** How the conversation is named to the agent, and where in it this turn sits. */

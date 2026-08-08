@@ -208,6 +208,7 @@ describe('cascade guard, wired', () => {
           sessionId: request.sessionId,
           prompt: request.entry.body.text,
           roomContext: request.roomContext,
+          attachmentProjection: request.attachmentProjection,
         });
         if (selfPosts < SELF_POST_CAP) {
           selfPosts += 1;
@@ -327,6 +328,7 @@ describe('cascade guard, wired', () => {
           sessionId: req.sessionId,
           prompt: req.entry.body.text,
           roomContext: req.roomContext,
+          attachmentProjection: req.attachmentProjection,
         });
         if (req.authorId === anaId && selfPosts < 1) {
           selfPosts += 1;

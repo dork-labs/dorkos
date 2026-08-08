@@ -41,6 +41,8 @@ import {
   type BlockingInteractionEventType,
 } from '@dorkos/shared/session-stream';
 import { logger } from '../../lib/logger.js';
+import { projectRoomAttachments } from './attachments/attachment-projection.js';
+import { getRoomAttachmentStore } from './index.js';
 import { runtimeRegistry } from '../core/runtime-registry.js';
 import {
   getOrCreateProjector,
@@ -213,6 +215,19 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
       // around the message, which put words nobody typed inside the visible user
       // turn and told the agent almost nothing.
       const prompt = request.entry.body.text;
+
+      // Before the turn, never after: the context about to be handed to the
+      // model names these files by relative path, so they have to be inside the
+      // agent's working directory by the time it reads them (ADR 260807-233816).
+      // It never throws — a missing file is survivable, a room that stopped
+      // answering is not.
+      await projectRoomAttachments({
+        store: getRoomAttachmentStore,
+        roomId: request.room.id,
+        agentPath: request.agentPath,
+        attachments: request.attachmentProjection,
+      });
+
       const waitMs = readWaitMs();
       // The turn's identity, filled in by `triggerTurn` the instant this turn's
       // `turn_start` is stamped and read by the collector to tell that event

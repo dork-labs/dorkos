@@ -45,6 +45,7 @@ import {
 } from '../services/rooms/index.js';
 import { InvalidRoomAttachmentIdError } from '../services/rooms/attachments/room-attachment-store.js';
 import { sniffImageContentType } from '../services/identity/image-sniff.js';
+import { storedExtension } from '../services/rooms/attachments/attachment-paths.js';
 import { configManager } from '../services/core/config-manager.js';
 import { parseBody, sendError } from '../lib/route-utils.js';
 import { roomEventsHandler } from './room-events-handler.js';
@@ -244,18 +245,6 @@ function sanitizeAttachmentName(original: string): string {
 }
 
 /**
- * The suffix a sanitized name ends in, without its dot, or `''`.
- *
- * Read off the SANITIZED name so the extension inherits the allowlist rather
- * than needing its own, and lowercased so `.PNG` and `.png` are one file shape
- * on disk.
- */
-function extensionOf(name: string): string {
-  const ext = path.extname(name).slice(1).toLowerCase();
-  return /^[A-Za-z0-9]*$/.test(ext) ? ext : '';
-}
-
-/**
  * POST /:id/attachments — upload files into a room, before the message that
  * carries them.
  *
@@ -334,7 +323,7 @@ router.post('/:id/attachments', (req, res) => {
       const stored: RoomAttachment[] = [];
       for (const file of files) {
         const name = sanitizeAttachmentName(file.originalname);
-        const extension = extensionOf(name);
+        const extension = storedExtension(name);
         // THE safety line. `preview` is set from the BYTES and never from
         // `file.mimetype`, which is whatever the uploader typed.
         const sniffed = sniffImageContentType(file.buffer);

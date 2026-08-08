@@ -345,6 +345,7 @@ export class RoomService {
         return bridge ? bridgedRoomFraming(bridge) : null;
       },
       topicNamesFor: (entryIds) => topicNamesForEntries(this.bridges, entryIds),
+      attachmentsFor: (roomId, entryIds) => this.attachments.listFor(roomId, entryIds),
       runner: deps.turns,
       budget: deps.budget,
       maxAgentDepth: deps.maxAgentDepth,

@@ -11,6 +11,7 @@
  */
 import { createTestDb } from '@dorkos/test-utils/db';
 import type { RoomContextData } from '@dorkos/shared/additional-context';
+import type { ProjectableAttachment } from '../room-context.js';
 import type { Db } from '@dorkos/db';
 import { BridgeStore } from '../../relay/chat-bridge/bridge-store.js';
 import { AuthorRegistry } from '../author-registry.js';
@@ -67,6 +68,14 @@ export interface RecordedTurn {
   prompt: string;
   /** What the agent was told about the room — derived by the real dispatcher. */
   roomContext: RoomContextData;
+  /**
+   * The files that context refers to, as the dispatcher planned them.
+   *
+   * Recorded beside the context rather than derived from it, because the whole
+   * claim under test is that the two are ONE value: a test that rebuilt the
+   * plan from the rendered paths could not catch them disagreeing.
+   */
+  attachmentProjection: readonly ProjectableAttachment[];
 }
 
 /** A runner that answers from a script instead of a model. */
@@ -135,6 +144,7 @@ export function outcomeRunner(
         sessionId: request.sessionId,
         prompt: request.entry.body.text,
         roomContext: request.roomContext,
+        attachmentProjection: request.attachmentProjection,
       });
       const result = outcome(request);
       if ('throws' in result) return Promise.reject(result.throws);

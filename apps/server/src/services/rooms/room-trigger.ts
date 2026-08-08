@@ -102,6 +102,7 @@
 import { randomUUID } from 'node:crypto';
 import type {
   Room,
+  RoomAttachment,
   RoomEntry,
   RoomPresencePayload,
   RoomPresenceState,
@@ -196,6 +197,11 @@ export interface RoomTriggerDeps {
    * `buildRoomContext`, for the same reason as {@link RoomTriggerDeps.bridgedFraming}.
    */
   topicNamesFor(entryIds: readonly string[]): Map<string, string>;
+  /**
+   * The attachments on a batch of entries. Read only by `buildRoomContext`, for
+   * the same reason as {@link RoomTriggerDeps.bridgedFraming}.
+   */
+  attachmentsFor(roomId: string, entryIds: readonly string[]): Map<string, RoomAttachment[]>;
   runner: RoomTurnRunner;
   writer: RoomTriggerWriter;
   /**
@@ -807,6 +813,17 @@ export class RoomTriggerDispatcher {
     // this frame at all, so its outcome is that method's to report.
     let outcome: ClaimOutcome = 'quiet';
     try {
+      // Built before the request so the context and the projection plan it
+      // implies are one value, resolved once.
+      const turnContext = buildRoomContext(this.deps, {
+        room,
+        agentAuthorId: target.authorId,
+        entry,
+        working: this.workingIn(room.id),
+        budget: this.deps.budget.remaining(room.id),
+        repliesLeftInThisChain: Math.max(0, this.deps.maxAgentDepth() - target.depth),
+        engaged: target.engaged,
+      });
       const result = await this.deps.runner.run({
         room,
         authorId: target.authorId,
@@ -818,15 +835,11 @@ export class RoomTriggerDispatcher {
         // second agent addressed by the same message is already in it. Assembling
         // it runs no model and takes no turn — silence has to stay free
         // (`meta/agent-etiquette.md` E7).
-        roomContext: buildRoomContext(this.deps, {
-          room,
-          agentAuthorId: target.authorId,
-          entry,
-          working: this.workingIn(room.id),
-          budget: this.deps.budget.remaining(room.id),
-          repliesLeftInThisChain: Math.max(0, this.deps.maxAgentDepth() - target.depth),
-          engaged: target.engaged,
-        }),
+        roomContext: turnContext.context,
+        // The files that context refers to, carried to the runner so it can put
+        // them where the context says they are — never recomputed there, which
+        // is the point of returning them together (ADR 260807-233816).
+        attachmentProjection: turnContext.projection,
         // Reported WHILE the turn is still running, which is what makes it
         // worth reporting at all: a turn parked on a person produces nothing
         // until that person acts, and on 2026-07-31 that state was invisible
