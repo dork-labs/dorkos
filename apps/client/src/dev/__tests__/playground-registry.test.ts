@@ -10,6 +10,7 @@ import {
   CHAT_SECTIONS,
   ENTRY_ACTIONS_SECTIONS,
   FEATURES_SECTIONS,
+  IDENTITY_SECTIONS,
   PROMOS_SECTIONS,
   COMMAND_PALETTE_SECTIONS,
   SIMULATOR_SECTIONS,
@@ -25,7 +26,7 @@ import {
   TOUR_SPOTLIGHT_SECTIONS,
 } from '../playground-registry';
 import { slugify } from '../lib/slugify';
-import { PAGE_CONFIGS, PAGE_ORDER, PAGE_LABELS } from '../playground-config';
+import { PAGE_CONFIGS, PAGE_ORDER, PAGE_LABELS, IDENTITY_CROSS_LISTED } from '../playground-config';
 
 describe('playground-registry', () => {
   it('has no duplicate section IDs across the full registry', () => {
@@ -55,6 +56,7 @@ describe('playground-registry', () => {
       ...CHAT_SECTIONS,
       ...ENTRY_ACTIONS_SECTIONS,
       ...FEATURES_SECTIONS,
+      ...IDENTITY_SECTIONS,
       ...PROMOS_SECTIONS,
       ...COMMAND_PALETTE_SECTIONS,
       ...SIMULATOR_SECTIONS,
@@ -204,5 +206,58 @@ describe('the registry matches what the playground actually renders', () => {
       dangling,
       'drop the entry, or retitle it to match the showcase that replaced it'
     ).toEqual([]);
+  });
+});
+
+/**
+ * Cross-listing has a blind spot the checks above cannot see.
+ *
+ * They ask whether a section is rendered ANYWHERE — so a borrowed section keeps
+ * them green from its owning page alone. Delete `<RoomAvatarShowcase />` from
+ * `IdentityPage` and every assertion above still passes while the Identity
+ * page's TOC offers a link to an anchor that page no longer draws. This block
+ * is the only thing that asks the second question: does the page that BORROWS a
+ * section actually render it, and in the order its TOC promises?
+ */
+const CROSS_LISTED_RENDERERS: Record<string, string> = {
+  identityavatar: 'IdentityAvatarShowcase',
+  // Three ids, one component: `IdentityShowcases` draws MentionPill, the hover
+  // card and the in-message mention together, so they share a source position
+  // and their order relative to EACH OTHER is not asserted here — only that the
+  // block as a whole sits where the TOC puts it.
+  mentionpill: 'IdentityShowcases',
+  identityhovercard: 'IdentityShowcases',
+  'a-mention-in-a-real-message': 'IdentityShowcases',
+  messageauthoravatar: 'MessageAuthorAvatarShowcase',
+  agentidentitychip: 'AgentIdentityChipShowcase',
+  roomavatar: 'RoomAvatarShowcase',
+  roommemberrow: 'RoomMemberRowShowcase',
+};
+
+describe('the Identity page renders every section it borrows', () => {
+  const source = readFileSync(join(DEV_DIR, 'pages', 'IdentityPage.tsx'), 'utf8');
+  const positionOf = (id: string): number => source.indexOf(`<${CROSS_LISTED_RENDERERS[id]} />`);
+
+  it('names a renderer for every cross-listed id', () => {
+    expect(
+      Object.keys(CROSS_LISTED_RENDERERS).sort(),
+      'a new entry in IDENTITY_CROSS_LISTED needs the component that draws it named here'
+    ).toEqual([...IDENTITY_CROSS_LISTED].sort());
+  });
+
+  it('renders each borrowed section, so no TOC link points at nothing', () => {
+    const missing = IDENTITY_CROSS_LISTED.filter((id) => positionOf(id) === -1);
+    expect(
+      missing,
+      'IdentityPage borrows these ids for its TOC but does not render the showcase that draws them'
+    ).toEqual([]);
+  });
+
+  it('renders them in the order its TOC lists them', () => {
+    const positions = IDENTITY_CROSS_LISTED.map(positionOf);
+    expect(
+      positions,
+      'the page renders the borrowed showcases in a different order than IDENTITY_CROSS_LISTED promises'
+    ).toEqual([...positions].sort((a, b) => a - b));
   });
 });
