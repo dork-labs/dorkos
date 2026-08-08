@@ -9,9 +9,10 @@
  *
  * @module widgets/room-view/ui/MentionPillRenderer
  */
-import type { ReactNode } from 'react';
+import type { KeyboardEvent, ReactNode } from 'react';
 import type { Components } from 'streamdown';
 import { IdentityHoverCard, MentionPill } from '@/layers/shared/ui';
+import { useProfileDeepLink } from '@/layers/shared/model';
 import { MENTION_AUTHOR_ATTR } from '../lib/mention-markup';
 import type { RosterAuthor } from '../lib/room-timeline';
 import { useAgentInfo } from '../model/agent-info-context';
@@ -40,6 +41,34 @@ function handleLabel(children: ReactNode): string {
 }
 
 /**
+ * The id the TEAM roster files this author under, or `undefined` when nothing
+ * here can say.
+ *
+ * **Two id spaces meet at this line, and they only overlap for people.** A
+ * person's roster row IS their author row, so the id a room entry already
+ * carries opens their profile directly. An agent's does not: its roster row is
+ * keyed by the manifest ULID the mesh registered, while the room knows the
+ * separate author ULID minted for it the first time it spoke. The bridge is
+ * the manifest the room already resolved for the runtime chip
+ * ({@link RosterAgentInfo.manifestId}) — so an agent the fleet could not name
+ * yields nothing, and the pill stays inert rather than pointing at an id the
+ * roster does not hold.
+ *
+ * `system` — the room's own voice — is on nobody's roster and never will be.
+ *
+ * @param author - The room roster's entry for this mention.
+ * @param agent - What the fleet knows about it, when it is an agent.
+ */
+function profileMemberIdOf(
+  author: RosterAuthor,
+  agent: { manifestId: string } | undefined
+): string | undefined {
+  if (author.kind === 'human') return author.id;
+  if (author.kind === 'agent') return agent?.manifestId;
+  return undefined;
+}
+
+/**
  * Draws a resolved mention as {@link MentionPill} wrapped in
  * {@link IdentityHoverCard}, or — for an id the roster no longer holds, a
  * departed member — the pill's own unstyled fallback. Never throws: an id
@@ -51,8 +80,15 @@ function handleLabel(children: ReactNode): string {
  * happened and does not re-check it, so it is not safe to call directly with
  * an arbitrary id from elsewhere.
  *
- * Click is deferred (no profile route exists yet), so the pill renders with
- * `interactive` left at its default `false` — hover-only.
+ * **A resolved pill is a link to a profile** (DOR-957): click, tap, or Enter
+ * opens the drawer, and the hover card's own footer opens the same one. On a
+ * touch screen the tap IS the answer — the card is a pointer affordance, and a
+ * finger goes straight to the full version of what it summarises.
+ *
+ * The pill only becomes interactive when {@link profileMemberIdOf} can name
+ * this author to the ROSTER. A pill that could not be named stays exactly as
+ * it was before this: hover-only, with the card's footer still reading
+ * **soon** — an inert affordance is honest, a click that opens nothing is not.
  */
 export function MentionPillRenderer({ authors, authorId, children }: MentionPillRendererProps) {
   const author = authorId ? authors.get(authorId) : undefined;
@@ -65,6 +101,7 @@ export function MentionPillRenderer({ authors, authorId, children }: MentionPill
   // outside a provider — all one answer, because all three mean the same thing
   // here: draw no chip.
   const agent = useAgentInfo(author?.agentRef);
+  const { open: openProfile } = useProfileDeepLink();
 
   if (!author) {
     // `kind` is ignored on this path — `MentionPill` returns plain text for
@@ -72,8 +109,33 @@ export function MentionPillRenderer({ authors, authorId, children }: MentionPill
     return <MentionPill kind="human" label={handleLabel(children)} resolved={false} />;
   }
 
+  const memberId = profileMemberIdOf(author, agent);
+  const viewProfile = memberId === undefined ? undefined : () => openProfile(memberId);
+  // A `<span>` that acts like a button has to say so and be reachable: Radix's
+  // hover card gives the trigger focus already, and this is what makes that
+  // focus mean something. `Space` as well as `Enter` because a role of button
+  // promises both.
+  const pillControl = viewProfile
+    ? {
+        role: 'button',
+        tabIndex: 0,
+        // Names the ACTION, the same way the Team card and the sidebar face do
+        // — the visible text is only who, which is the half a reader can
+        // already see. The name stays inside the label, so this still satisfies
+        // "label in name" for anyone driving by voice.
+        'aria-label': `View ${author.displayName}’s profile`,
+        onClick: viewProfile,
+        onKeyDown: (event: KeyboardEvent<HTMLSpanElement>) => {
+          if (event.key !== 'Enter' && event.key !== ' ') return;
+          event.preventDefault();
+          viewProfile();
+        },
+      }
+    : {};
+
   return (
     <IdentityHoverCard
+      onViewProfile={viewProfile}
       identity={{
         kind: author.kind,
         displayName: author.displayName,
@@ -87,8 +149,10 @@ export function MentionPillRenderer({ authors, authorId, children }: MentionPill
         origin: author.origin,
         // The card draws a chip per fact it is handed and nothing at all for
         // one it is not, so an agent whose manifest never resolved reads as
-        // name and handle alone rather than as an invented runtime.
-        agent,
+        // name and handle alone rather than as an invented runtime. Spelled
+        // out rather than passed whole because `manifestId` is a routing fact,
+        // not something the card should be able to draw.
+        agent: agent && { runtime: agent.runtime, ...(agent.model && { model: agent.model }) },
       }}
     >
       <MentionPill
@@ -98,6 +162,8 @@ export function MentionPillRenderer({ authors, authorId, children }: MentionPill
         color={author.color}
         origin={author.origin}
         resolved
+        interactive={viewProfile !== undefined}
+        {...pillControl}
       />
     </IdentityHoverCard>
   );

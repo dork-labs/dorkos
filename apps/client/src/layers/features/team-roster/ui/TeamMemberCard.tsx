@@ -40,6 +40,11 @@ export interface TeamMemberCardProps {
   owner?: TeamMember;
   /** Narrow the roster to one person — what the attribution and a person's own card do. */
   onSelectOwner?: (ownerId: string) => void;
+  /**
+   * Open this identity's profile. Wired, the whole card becomes the control
+   * that does it; unwired, the card is the plain read-only tile it was.
+   */
+  onOpenProfile?: (memberId: string) => void;
   className?: string;
 }
 
@@ -68,15 +73,33 @@ export interface TeamMemberCardProps {
  * Nothing here branches on there being one person, and `isSelf` only decides
  * whether a chip is drawn (spec §W2.6) — a second person and a remote member
  * both arrive as more rows, not as another code path.
+ *
+ * **The whole card opens the profile, and the button is the name.** The name
+ * carries an overlay pinned to the card's own box, so a press anywhere on the
+ * tile lands on a real `<button>` a keyboard can reach and a screen reader can
+ * announce — rather than a click handler on the `<article>`, which is neither.
+ * It also settles the double-fire for free: the attribution control sits ABOVE
+ * that overlay in the paint order, so pressing it never reaches the profile at
+ * all and there is no propagation to stop.
  */
-export function TeamMemberCard({ member, owner, onSelectOwner, className }: TeamMemberCardProps) {
+export function TeamMemberCard({
+  member,
+  owner,
+  onSelectOwner,
+  onOpenProfile,
+  className,
+}: TeamMemberCardProps) {
   const face = teamMemberFace(member);
 
   return (
     <article
       data-slot="team-member-card"
       data-member-id={member.id}
-      className={cn('bg-card shadow-soft flex items-start gap-3 rounded-lg border p-4', className)}
+      className={cn(
+        'bg-card shadow-soft relative flex items-start gap-3 rounded-lg border p-4',
+        onOpenProfile && 'card-interactive',
+        className
+      )}
     >
       <IdentityAvatar
         size="md"
@@ -89,7 +112,24 @@ export function TeamMemberCard({ member, owner, onSelectOwner, className }: Team
       />
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1">
-          <h3 className="truncate text-sm font-medium">{member.displayName}</h3>
+          <h3 className="min-w-0 truncate text-sm font-medium">
+            {onOpenProfile ? (
+              // `after:` stretches this button's hit area over the whole card
+              // (the `relative` article above is what it pins to). The visible
+              // text names who; the label names what pressing it does, the same
+              // split the attribution below already makes.
+              <button
+                type="button"
+                onClick={() => onOpenProfile(member.id)}
+                aria-label={`Open ${member.displayName}’s profile`}
+                className="focus-ring max-w-full truncate rounded text-left after:absolute after:inset-0 after:rounded-lg after:content-['']"
+              >
+                {member.displayName}
+              </button>
+            ) : (
+              member.displayName
+            )}
+          </h3>
           {/* A flag on a row, never a branch: the card is the same card. */}
           {member.isSelf && (
             <Badge variant="secondary" className="px-1.5 py-0 text-[0.625rem]">
@@ -121,7 +161,11 @@ export function TeamMemberCard({ member, owner, onSelectOwner, className }: Team
             // it does, which is the part a screen reader cannot infer from
             // "by @dorian".
             aria-label={`Show only ${owner.displayName} and their agents`}
-            className="text-muted-foreground hover:text-foreground focus-ring mt-1.5 max-w-full truncate rounded text-xs underline-offset-2 hover:underline"
+            // `relative` lifts this above the name button's card-wide overlay:
+            // positioned, and later in the DOM, so it paints on top and takes
+            // its own press. Without it the overlay would swallow every click
+            // here and the attribution would silently open a profile instead.
+            className="text-muted-foreground hover:text-foreground focus-ring relative mt-1.5 max-w-full truncate rounded text-xs underline-offset-2 hover:underline"
           >
             by {teamMemberLabel(owner)}
           </button>

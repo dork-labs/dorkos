@@ -1,6 +1,7 @@
-import { Settings, X } from 'lucide-react';
+import { Settings, User, X } from 'lucide-react';
 import { Badge } from '@/layers/shared/ui/badge';
 import { useMeshAgentHealth } from '@/layers/entities/mesh';
+import { useProfileDeepLink } from '@/layers/shared/model';
 import { formatRelativeTime } from '@/layers/shared/lib';
 
 // ---------------------------------------------------------------------------
@@ -45,7 +46,10 @@ function CloseButton({ onClick }: CloseButtonProps) {
 // ---------------------------------------------------------------------------
 
 interface AgentHealthDetailProps {
-  /** ID of the agent to show health details for. */
+  /**
+   * ID of the agent to show health details for — the mesh registry id, which is
+   * also the id the team roster and the profile drawer file this agent under.
+   */
   agentId: string;
   /** Callback invoked when the user closes the detail panel. */
   onClose: () => void;
@@ -58,9 +62,15 @@ interface AgentHealthDetailProps {
  *
  * Renders a loading state while the query is in flight and a "not found"
  * message when no health data is available for the given `agentId`.
+ *
+ * **About mesh health, not identity** (spec `identity-consistency` §W2.5). It is
+ * deliberately not grown into a profile: its "View profile" button opens the one
+ * profile drawer every other face in the cockpit opens, and everything about who
+ * this agent IS belongs there rather than being restated here.
  */
 export function AgentHealthDetail({ agentId, onClose, onOpenSettings }: AgentHealthDetailProps) {
   const { data: health, isLoading } = useMeshAgentHealth(agentId);
+  const { open: openProfile } = useProfileDeepLink();
 
   if (isLoading) {
     return (
@@ -135,8 +145,16 @@ export function AgentHealthDetail({ agentId, onClose, onOpenSettings }: AgentHea
         )}
       </div>
 
-      {onOpenSettings && (
-        <div className="mt-4 border-t pt-3">
+      <div className="mt-4 space-y-2 border-t pt-3">
+        <button
+          type="button"
+          onClick={() => openProfile(agentId)}
+          className="hover:bg-muted inline-flex w-full items-center justify-center gap-2 rounded-md border px-3 py-1.5 text-xs font-medium"
+        >
+          <User className="size-3.5" />
+          View profile
+        </button>
+        {onOpenSettings && (
           <button
             type="button"
             onClick={onOpenSettings}
@@ -145,8 +163,8 @@ export function AgentHealthDetail({ agentId, onClose, onOpenSettings }: AgentHea
             <Settings className="size-3.5" />
             Open Settings
           </button>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }

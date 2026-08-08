@@ -5,6 +5,7 @@
  */
 export { useMeshEnabled } from './model/use-mesh-config';
 export { useMeshAgentPaths } from './model/use-mesh-agent-paths';
+export { useMeshMemberId, useMeshMemberIds } from './model/use-mesh-member-ids';
 export { useRegisteredAgents } from './model/use-mesh-agents';
 export { useRegisterAgent } from './model/use-mesh-register';
 export { useDenyAgent } from './model/use-mesh-deny';

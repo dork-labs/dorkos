@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState, type MouseEvent } from 'react';
 import { motion, AnimatePresence, type Variants } from 'motion/react';
 import { Plus, MoreHorizontal, BellOff } from 'lucide-react';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
@@ -86,6 +86,14 @@ interface AgentListItemProps {
   onToggleExpand: () => void;
   /** Open agent profile in the right panel hub. */
   onOpenProfile: () => void;
+  /**
+   * Open this agent's identity profile — the drawer, from its face.
+   *
+   * Absent when the mesh cannot name this agent to the roster (an id the drawer
+   * would find nothing for), and the face is then plain, unclickable art rather
+   * than a control that opens an empty panel.
+   */
+  onViewProfile?: () => void;
   /** Open the inline group-create flow, moving this agent into the new group on commit. */
   onRequestNewGroup: (ref: SidebarItemRef) => void;
   /** Recent sessions for this agent (only needed when expanded). */
@@ -123,6 +131,7 @@ export function AgentListItem({
   onSelect,
   onToggleExpand,
   onOpenProfile,
+  onViewProfile,
   onRequestNewGroup,
   sessions,
   isLoadingSessions,
@@ -183,6 +192,19 @@ export function AgentListItem({
     }
   }, [isActive, onSelect, onToggleExpand]);
 
+  // The handler and its accessible name as ONE value, because they are one
+  // decision: an agent the roster cannot name gets neither, and the face is
+  // plain art rather than a control that opens an empty drawer.
+  const faceControl = onViewProfile
+    ? {
+        onAvatarClick: (event: MouseEvent) => {
+          event.stopPropagation();
+          onViewProfile();
+        },
+        avatarLabel: `Open ${displayName}’s profile`,
+      }
+    : {};
+
   // "New group…" mounts an inline editor; the dropdown's close-time focus
   // restore would blur (and blur-cancel) it, so that item arms this guard
   // (DOR-329). The context-menu variant guards itself inside AgentContextMenu.
@@ -222,8 +244,25 @@ export function AgentListItem({
                 : 'text-muted-foreground hover:bg-accent hover:text-foreground'
             )}
           >
+            {/* The row's OWN verb, first — and it has to be spelled out because
+                the row has no text of its own. The drag layer makes this row a
+                button, which takes its accessible name from its contents in DOM
+                order; with nothing here it opened with the FACE's label and
+                announced as "Open Scout's profile", which is the one thing
+                pressing the row does not do. */}
+            <span className="sr-only">Switch to {displayName}</span>
             <span className="flex min-w-0 flex-1 items-center gap-1">
-              <AgentIdentity {...visual} name={displayName} size="xs" />
+              <AgentIdentity
+                {...visual}
+                name={displayName}
+                size="xs"
+                // The FACE opens the profile; the row keeps its own click,
+                // which selects the agent and opens its last session. The stop
+                // is what keeps one press from doing both. Both halves travel
+                // together or not at all — a face control with no label is a
+                // button a screen reader cannot name, which the type refuses.
+                {...faceControl}
+              />
               {isMuted && (
                 <BellOff className="text-muted-foreground/60 size-3 shrink-0" aria-label="Muted" />
               )}

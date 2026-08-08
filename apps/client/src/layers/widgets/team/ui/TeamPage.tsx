@@ -7,6 +7,7 @@ import {
   useTeamRoster,
   type TeamRosterFilters,
 } from '@/layers/entities/team';
+import { useProfileDeepLink } from '@/layers/shared/model';
 import { AgentGhostRows } from '@/layers/features/agents-list';
 import {
   TeamRosterGrid,
@@ -71,6 +72,9 @@ export function TeamPage({ filters, onFiltersChange }: TeamPageProps) {
     else setOwnFilters((current) => ({ ...current, ...patch }));
   };
 
+  // The roster rows this page draws ARE the drawer's own id space, so a card
+  // hands its `member.id` straight over with nothing to map.
+  const { open: openProfile } = useProfileDeepLink();
   const { data, isLoading, isError, refetch } = useTeamRoster();
   const roster = useMemo(() => data?.members ?? [], [data]);
   const visible = useMemo(() => filterTeamMembers(roster, activeFilters), [roster, activeFilters]);
@@ -123,6 +127,7 @@ export function TeamPage({ filters, onFiltersChange }: TeamPageProps) {
           roster={roster}
           grouped={activeFilters.group === 'manager'}
           onSelectOwner={(ownerId) => patchFilters({ owner: ownerId })}
+          onOpenProfile={openProfile}
         />
       ) : (
         <p className="text-muted-foreground py-8 text-center text-sm">

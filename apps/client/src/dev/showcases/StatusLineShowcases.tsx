@@ -351,7 +351,7 @@ export function StatusLineShowcases() {
 
       <PlaygroundSection
         title="AgentIdentityChip"
-        description="Who you are talking to — the identity anchor of the left cluster. Click opens the agent profile; right-click (long-press on touch) offers switch agent, profile, and new session."
+        description="Who you are talking to — the identity anchor of the left cluster. Click opens the profile drawer, the same one every other face in the cockpit opens; right-click (long-press on touch) offers switch agent, Agent hub, and new session."
       >
         <ShowcaseLabel>With a name — every tier down to 340px</ShowcaseLabel>
         <ShowcaseDemo>
