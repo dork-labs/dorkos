@@ -3,6 +3,11 @@
  *
  * The /workspaces view (DOR-84): workspaces grouped by project, each card listing
  * its attached sessions, with an empty state when there are none.
+ *
+ * Also pins the page's own scroll container (DOR-1036). The route panel clips its
+ * overflow, so a page that renders its content outside a scroller loses everything
+ * past the first screenful. jsdom cannot measure that clipping, so the tests assert
+ * the structure instead: the content must be inside the ScrollArea viewport.
  */
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
@@ -57,6 +62,11 @@ function renderWith(transport: Transport) {
   );
 }
 
+/** The ScrollArea viewport — the element that actually scrolls. */
+function scrollViewport(container: HTMLElement) {
+  return container.querySelector<HTMLElement>('[data-slot="scroll-area-viewport"]');
+}
+
 describe('WorkspacesPage', () => {
   it('renders workspaces grouped by project with their attached sessions', async () => {
     const workspaces: WorkspaceWithSessions[] = [
@@ -74,18 +84,29 @@ describe('WorkspacesPage', () => {
       listWorkspaces: vi.fn().mockResolvedValue(workspaces),
     });
 
-    renderWith(transport);
+    const { container } = renderWith(transport);
 
     expect(await screen.findByText('DOR-84')).toBeInTheDocument();
     expect(screen.getByText('refactor allocator')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: /core/ })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: /dunny/ })).toBeInTheDocument();
     expect(screen.getByText(/1 changes/)).toBeInTheDocument();
+
+    // Every group sits inside the scroller, so a long list stays reachable.
+    const viewport = scrollViewport(container);
+    expect(viewport).not.toBeNull();
+    expect(viewport).toContainElement(screen.getByRole('heading', { name: /core/ }));
+    expect(viewport).toContainElement(screen.getByRole('heading', { name: /dunny/ }));
   });
 
   it('shows the empty state when there are no workspaces', async () => {
     const transport = createMockTransport({ listWorkspaces: vi.fn().mockResolvedValue([]) });
-    renderWith(transport);
-    expect(await screen.findByText('No workspaces yet')).toBeInTheDocument();
+    const { container } = renderWith(transport);
+    const empty = await screen.findByText('No workspaces yet');
+    expect(empty).toBeInTheDocument();
+
+    const viewport = scrollViewport(container);
+    expect(viewport).not.toBeNull();
+    expect(viewport).toContainElement(empty);
   });
 });
