@@ -185,7 +185,7 @@ export function IdentityShapeMatrixShowcase() {
             const face = teamMemberFace(member);
             return (
               <div key={member.id} className="flex w-32 flex-col items-center gap-2 text-center">
-                <IdentityAvatar {...face} origin={member.origin} size="md" />
+                <IdentityAvatar {...face} size="md" />
                 <span className="text-muted-foreground truncate text-[10px]">
                   {member.handle ? `@${member.handle}` : `${member.displayName} · no handle`}
                 </span>

@@ -197,13 +197,31 @@ export function AgentIdentityShowcases() {
 
         <ShowcaseLabel>Edge cases</ShowcaseLabel>
         <ShowcaseDemo>
+          {/* The pale-fill case (`noEmojiFill`, where the fallback letter has to
+              pick its own contrast) is deliberately NOT here: `AgentAvatar` has
+              no fallback slot at all — an agent's identity language is its emoji
+              and its colour — so this row would substitute the auto emoji and
+              show a case it cannot actually reach. It is drawn where it is real,
+              on IdentityAvatar's fill-variant row. */}
           <div className="flex flex-col gap-3">
-            <AgentIdentity
-              {...agentFace(MOCK_IDENTITIES.longHandle)}
-              size="sm"
-              detail="very long detail text that should also truncate nicely"
-            />
-            <AgentIdentity {...agentFace(MOCK_IDENTITIES.noEmojiFill)} size="sm" />
+            {/* Width-constrained on purpose, and `w-full` is load-bearing.
+                A long name in a full-width demo simply fits — measured at 471px
+                of text in 471px of box — so the row that exists to prove
+                truncation proved nothing. A narrow box alone is still not
+                enough: `AgentIdentity`'s root is `inline-flex`, so it sizes to
+                its content and overflows a narrower parent instead of shrinking
+                into it. The `min-w-0` truncation inside it only engages once the
+                root has a width of its own, which is the usage note a caller
+                needs and the reason this row is shaped like this. */}
+            <div className="w-64 rounded-md border p-2">
+              <AgentIdentity
+                {...agentFace(MOCK_IDENTITIES.longHandle)}
+                size="sm"
+                detail="very long detail text that should also truncate nicely"
+                className="w-full"
+              />
+            </div>
+            <AgentIdentity {...agentFace(MOCK_IDENTITIES.courier)} size="sm" />
             <AgentIdentity
               {...agentFace(MOCK_IDENTITIES.multiCodepointEmoji)}
               size="sm"

@@ -53,14 +53,15 @@ A component does NOT belong if it's:
 
 ### Which page?
 
-Match to the existing page structure. The playground has 4 sidebar groups:
+Match to the existing page structure. The playground has **5** sidebar groups, each derived from `PageConfig.group` in `dev/playground-config.ts` — check there rather than trusting this table, which is a summary and can age:
 
-| Group             | Pages                                                                 | Use for                                            |
-| ----------------- | --------------------------------------------------------------------- | -------------------------------------------------- |
-| **Design System** | Tokens, Forms, Components, Tables                                     | Shared primitives, design tokens, form elements    |
-| **Session**       | Chat Components, Entry Actions, Simulator                             | Chat UI, message rendering, streaming              |
-| **Agents**        | Identity, Subsystems, Topology, Rooms, Marketplace                    | Faces and handles, Relay, Mesh, Tasks, graph nodes |
-| **App Shell**     | Command Palette, Filter Bar, Onboarding, Error States, Feature Promos | App-wide chrome, navigation, onboarding flows      |
+| Group             | Pages                                                                                           | Use for                                            |
+| ----------------- | ----------------------------------------------------------------------------------------------- | -------------------------------------------------- |
+| **Design System** | Design Tokens, Forms, Components, Tables                                                        | Shared primitives, design tokens, form elements    |
+| **Generative UI** | Widgets                                                                                         | Agent-authored widgets rendered from UI fences     |
+| **Session**       | Chat Components, Entry Actions, Simulator                                                       | Chat UI, message rendering, streaming              |
+| **Agents**        | Identity, Subsystems, Topology, Rooms, Marketplace                                              | Faces and handles, Relay, Mesh, Tasks, graph nodes |
+| **App Shell**     | Tour Spotlight, Command Palette, Filter Bar, Onboarding, Error States, Feature Promos, Settings | App-wide chrome, navigation, onboarding flows      |
 
 ### When to create a new page
 

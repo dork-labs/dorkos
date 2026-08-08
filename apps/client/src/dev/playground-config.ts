@@ -78,7 +78,7 @@ export interface PageConfig {
  * their canonical anchor stays where it was. That is the trade for not breaking
  * a single existing `/dev/components#…`, `/dev/rooms#…` or `/dev/chat#…` link.
  */
-const IDENTITY_CROSS_LISTED: readonly string[] = [
+export const IDENTITY_CROSS_LISTED: readonly string[] = [
   'identityavatar',
   'mentionpill',
   'identityhovercard',

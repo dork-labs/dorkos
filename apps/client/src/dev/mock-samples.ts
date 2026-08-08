@@ -893,9 +893,14 @@ export const MOCK_IDENTITIES: Record<string, MockIdentity> = {
     kind: 'system',
     displayName: 'General',
   },
+  // Both halves are deliberately long, and the NAME is the longer of the two:
+  // the pill wraps a long handle within a line, while a fixed-width identity row
+  // truncates a long name — two different behaviours that need one cast member
+  // long enough to trigger each. A name that merely looks long (40 characters)
+  // fits the row it was meant to overflow and quietly proves nothing.
   longHandle: {
     kind: 'agent',
-    displayName: 'Codebase Migration Orchestrator (staging)',
+    displayName: 'Codebase Migration Orchestrator for the Northern Monorepo (staging)',
     handle: 'codebase-migration-orchestrator-v2',
     color: '#d4770a',
   },

@@ -1057,6 +1057,15 @@ entry**, which pins it to exactly one `page` (its ⌘K group) and one `/dev/<pag
    "Components" in ⌘K and their canonical URL stays `/dev/components#identityavatar`. That is the trade
    for not breaking a single existing anchor.
 
+> **Correction (DOR-980, as built): eight sections moved, not two.** `AvatarPickerGrid` moved because
+> it shares `AgentIdentityShowcases.tsx` with the two below — leaving it registered to `features`
+> while its file rendered only on Identity would have pointed a Features TOC entry at an anchor that
+> page no longer draws. `Team Roster`, `Team Card`, `Profile Drawer`, `Account Menu` and `Profile Tab`
+> moved because tasks 2.2/3.4/3.6 landed them on `features` only for want of an Identity page, and
+> "Subsystems" is a page named for Relay, Mesh and Tasks. Rendering them on both pages would also
+> have made Features keep mounting a whole Team page. Anchors were days old and referenced nowhere
+> outside this repo's prose (grepped).
+
 **Sections that genuinely move** (their entry moves from one array to another and its `page` changes,
 so their anchor changes): `AgentAvatar` and `AgentIdentity`, `features-sections.ts:26-40` → Identity.
 They are entity-layer identity components, "Subsystems" is not where anyone looks for them, and nothing
