@@ -10,12 +10,16 @@
 - [x] Re-verify the `mcp-revocation.ts` empirical anchor (dated to 0.3.177; its fixture-pinned test cannot detect staleness — 0.3.221 changed the MCP connect timing it reasons about)
 - [x] Verify `resolveClaudeCliPath` behavior (native-binary packaging is version-sensitive per upgrade_notes)
 - [x] Trivial in-bump adoptions:
-  - `SDKAssistantMessage.aborted` — honest rendering of interrupt-truncated messages
   - `ModelInfo.resolvedModel` — match persisted model id to alias row in `runtime-cache.ts`
+  - ~~`SDKAssistantMessage.aborted`~~ — **moved to the interrupt-receipts spec during
+    execution (2026-08-07)**: DorkOS has no per-assistant-message event (text streams as
+    deltas, and the durable transcript re-reads SDK JSONL per ADR-0310), so an honest
+    truncation mark needs a new StreamEvent + client renderer + transcript-reader change
+    — over the in-bump bar
 
 ## Separate Specs
 
-- Interrupt receipt + `cancel_queued` — "Stop actually stops"; moderate→significant
+- Interrupt receipt + `cancel_queued` — "Stop actually stops"; moderate→significant (now also owns `SDKAssistantMessage.aborted`)
 - `Query.reinitialize()` — prompt redelivery after transport gaps; SDK-side twin of durable SSE replay
 - Verified message origin (`SDKMessageOrigin.verifiedPeerPid`/`body`/`fromSession`) — first non-forgeable sender identity for Relay/Mesh
 - `background_tasks_changed` — level-based background-task state to replace edge-derived mapping in `system-event-mapper.ts`

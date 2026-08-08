@@ -30,8 +30,11 @@ features, 11 of which are high/medium relevance to DorkOS.
 
 ### Nice to Have (trivial in-bump adoptions)
 
-- `SDKAssistantMessage.aborted` — render interrupt-truncated messages honestly
 - `ModelInfo.resolvedModel` — match persisted model id to alias row in `runtime-cache.ts`
+- ~~`SDKAssistantMessage.aborted`~~ — moved to `specs/runtime-interrupt-receipts/` during
+  execution (2026-08-07): an honest truncation mark needs a new StreamEvent, a client
+  renderer, and a transcript-reader change (ADR-0310 JSONL re-read), which is over the
+  in-bump bar — a mark that vanishes on reload would be a dishonest half-feature
 
 ## Out of Scope (separate specs, blocked by this one)
 
