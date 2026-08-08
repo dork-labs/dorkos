@@ -212,7 +212,12 @@ export function RoomComposer({ room, threadRootId, focusOnMount }: RoomComposerP
    * Only the wait for the bytes is asynchronous, and it happens after the box is
    * already free for the next sentence.
    */
-  const deliver = async (body: string, clientId: string, attachmentNames: string[]) => {
+  const deliver = async (
+    body: string,
+    clientId: string,
+    attachmentNames: string[],
+    sentFileIds: string[]
+  ) => {
     let attachmentIds: string[];
     // Only a send that actually carries files can be re-entered destructively,
     // and only that kind arms the guard: two text-only messages in one tick are
@@ -238,8 +243,10 @@ export function RoomComposer({ room, threadRootId, focusOnMount }: RoomComposerP
       if (carriesFiles) uploading.current = false;
     }
     // Cleared only once the ids are safely in the message: a chip removed before
-    // that would take a file out of a send that had not gone yet.
-    attachments.clearFiles();
+    // that would take a file out of a send that had not gone yet. Scoped to the
+    // batch this send took, so a file dropped in DURING the upload survives —
+    // clearing the bar wholesale silently ate it.
+    attachments.clearFiles(sentFileIds);
     // No per-call callbacks: a refusal is handled by the mutation itself, which
     // still runs when this composer is gone. See `usePostToRoom`.
     if (threadRootId !== undefined) {
@@ -286,7 +293,10 @@ export function RoomComposer({ room, threadRootId, focusOnMount }: RoomComposerP
     // the files from the keystroke, and an upload still in flight has no ids to
     // draw them from yet.
     const attachmentNames = attachments.pendingFiles.map((f) => f.file.name);
-    void deliver(body, clientId, attachmentNames);
+    // The batch identity, read in the same breath as the names: what this send
+    // is sending, and therefore exactly what it may clear when it lands.
+    const sentFileIds = attachments.pendingFiles.map((f) => f.id);
+    void deliver(body, clientId, attachmentNames, sentFileIds);
   };
 
   return (
