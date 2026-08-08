@@ -134,6 +134,10 @@ describe('Database Migrations', () => {
       'pulse_schedules',
       'relay_index',
       'relay_traces',
+      // Files uploaded into a room, bound to the entry that carries them inside
+      // that entry's own transaction — nullable `entry_id` is the "uploaded,
+      // not yet posted" state (room-attachments spec, migration 0057).
+      'room_attachments',
       // A room's durable bridge identity and its platform-message external-ref
       // table — the chats-as-channels foundation (spec §3.1, §6.3, migration
       // 0047, DOR-865).
@@ -363,6 +367,29 @@ describe('Database Migrations', () => {
     // Partial: a full index would carry a row per ordinary message to serve a
     // lookup that only ever asks for a non-null root.
     expect(index?.sql).toContain('WHERE "thread_root_entry_id" IS NOT NULL');
+  });
+
+  it('gives room_attachments a nullable entry link, behind a partial index', () => {
+    // The columns and the index that carry an attachment, asserted off the
+    // migrated database rather than off the schema file — same rationale as the
+    // thread-root index above.
+    const db = createDb(':memory:');
+    runMigrations(db);
+
+    const columns = db.$client.prepare('PRAGMA table_info(room_attachments)').all() as {
+      name: string;
+      notnull: number;
+    }[];
+    // Nullable on purpose: a file exists before the message that carries it, and
+    // SQLite skips the composite foreign-key check while `entry_id` is NULL.
+    expect(columns.find((c) => c.name === 'entry_id')?.notnull).toBe(0);
+
+    const index = db.$client
+      .prepare("SELECT sql FROM sqlite_master WHERE type='index' AND name = ?")
+      .get('idx_room_attachments_unbound') as { sql: string } | undefined;
+    // Partial: "unbound" is the rare state, so a full index would carry a row
+    // per posted file to serve a lookup that only asks for a null entry.
+    expect(index?.sql).toContain('WHERE "entry_id" IS NULL');
   });
 
   it('gives relay_index the sender/created_at index ADR-0014 committed to', () => {
