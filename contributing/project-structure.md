@@ -338,6 +338,8 @@ apps/server/src/
 │   │   └── subject-resolver.ts  # Subject pattern resolution helpers
 │   ├── mesh/                    # Mesh state
 │   │   └── mesh-state.ts        # Internal state tracking (Mesh is always-on)
+│   ├── rooms/                   # Channels, DMs and threads (spec `rooms`)
+│   │   └── attachments/         # Files posted with a message — rows, bytes behind a swappable store, and the paths projected to an agent
 │   ├── marketplace/             # Package install/uninstall/update pipeline
 │   │   ├── marketplace-installer.ts  # Orchestrator (8-stage pipeline, dispatches per-kind flows)
 │   │   ├── marketplace-cache.ts      # Content-addressable cache (TTL, prune, listPackages)

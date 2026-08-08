@@ -173,6 +173,13 @@ export const ROOMS_SECTIONS: PlaygroundSection[] = [
     keywords: ['pending', 'sending', 'failed', 'retry', 'discard', 'optimistic', 'offline', 'send'],
   },
   {
+    id: 'roomentryattachments',
+    title: 'RoomEntryAttachments',
+    page: 'rooms',
+    category: 'Delivery',
+    keywords: ['attachment', 'file', 'image', 'thumbnail', 'download', 'chip', 'upload'],
+  },
+  {
     id: 'thread-arrival-animations',
     title: 'Thread arrival animations',
     page: 'rooms',

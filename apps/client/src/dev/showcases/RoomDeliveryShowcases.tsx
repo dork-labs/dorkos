@@ -15,9 +15,9 @@
  */
 import { useMemo } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import type { RoomNoticeCode } from '@dorkos/shared/room-schemas';
+import type { RoomAttachment, RoomNoticeCode } from '@dorkos/shared/room-schemas';
 import type { PendingPost, RoomEntry } from '@/layers/entities/room';
-import { RoomEntryRow, RoomPendingRow } from '@/layers/widgets/room-view';
+import { RoomEntryAttachments, RoomEntryRow, RoomPendingRow } from '@/layers/widgets/room-view';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseDemo } from '../ShowcaseDemo';
 import { ShowcaseLabel } from '../ShowcaseLabel';
@@ -178,6 +178,92 @@ function PendingSection() {
   );
 }
 
+/** One attachment as the server answers it, so the bench never invents a shape. */
+function attachment(over: Partial<RoomAttachment> & { name: string; id: string }): RoomAttachment {
+  return {
+    mimeType: 'application/octet-stream',
+    size: 48_213,
+    preview: null,
+    url: `/api/rooms/${THREAD_ROOM_ID}/attachments/${over.id}`,
+    ...over,
+  };
+}
+
+/**
+ * A 2x2 PNG, inline, so the thumbnail branch draws real pixels with no network.
+ *
+ * A `data:` URL rather than a file on disk: the point of the bench is the
+ * LAYOUT around an image, and a broken `<img>` would review the wrong thing.
+ */
+const TINY_PNG =
+  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAG0lEQVR42mNk+M9Qz0AEYBxVSF+FAAB5bwIB1lDkxQAAAABJRU5ErkJggg==';
+
+/** The two ways a file can arrive, and what several of them do to the row. */
+function AttachmentsSection() {
+  return (
+    <PlaygroundSection
+      title="RoomEntryAttachments"
+      description="What a file looks like once it is part of the conversation. Two branches, and which one draws is decided by the SERVER: an image renders inline only when the bytes themselves were checked, and everything else — including a file merely NAMED .png — is a chip you download. Read these together and check that (a) a thumbnail sits under the words without pushing the reaction pills off the bottom of a short message, (b) a chip stays readable when the filename is long enough to truncate, and (c) several files wrap rather than scroll."
+    >
+      <ShowcaseLabel>Verified image — the only case that renders inline</ShowcaseLabel>
+      <ShowcaseDemo>
+        <RoomEntryAttachments
+          attachments={[
+            attachment({
+              id: 'att-image',
+              name: 'build-graph.png',
+              mimeType: 'image/png',
+              preview: 'image',
+              size: 184_320,
+              url: TINY_PNG,
+            }),
+          ]}
+        />
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>Everything else — a chip you can download</ShowcaseLabel>
+      <ShowcaseDemo>
+        <RoomEntryAttachments
+          attachments={[
+            attachment({ id: 'att-log', name: 'server.log', mimeType: 'text/plain', size: 812 }),
+          ]}
+        />
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>Several at once, one of them named to look like an image</ShowcaseLabel>
+      <ShowcaseDemo>
+        <RoomEntryAttachments
+          attachments={[
+            attachment({
+              id: 'att-shot',
+              name: 'screenshot.png',
+              mimeType: 'image/png',
+              preview: 'image',
+              size: 184_320,
+              url: TINY_PNG,
+            }),
+            attachment({
+              id: 'att-notes',
+              name: 'a-filename-long-enough-to-truncate-in-the-chip.pdf',
+              mimeType: 'application/pdf',
+              size: 2_411_724,
+            }),
+            attachment({
+              id: 'att-liar',
+              name: 'not-really.png',
+              // Declared an image, and `preview` is still null because the bytes
+              // were not one. This is the GIF-in-a-.png case, and it must draw
+              // as a chip.
+              mimeType: 'image/png',
+              size: 4_096,
+            }),
+          ]}
+        />
+      </ShowcaseDemo>
+    </PlaygroundSection>
+  );
+}
+
 /**
  * Notices and pending sends — everything a room says about delivery.
  *
@@ -199,6 +285,7 @@ export function RoomDeliveryShowcases() {
     <QueryClientProvider client={client}>
       <NoticesSection />
       <PendingSection />
+      <AttachmentsSection />
     </QueryClientProvider>
   );
 }
