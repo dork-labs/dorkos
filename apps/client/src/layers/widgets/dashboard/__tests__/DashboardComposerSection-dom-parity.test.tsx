@@ -113,8 +113,12 @@ describe('DashboardComposerSection — the wrap added a card and nothing else', 
     expect(wrapper.kind).toBe('element');
     expect(wrapper.tag).toBe('div');
     expect([...wrapper.classes].sort()).toEqual([...ROOT_CHROME].sort());
-    // Root adds no attributes of its own, and mounts no dropzone here.
-    expect(wrapper.attrs).toEqual({});
+    // Root mounts no dropzone here, and the one attribute it does carry is
+    // inert: DOR-947 stamps `data-composer-card` on every composer card so
+    // `useFeedKeyboardNav` can treat a composer as ONE destination and put
+    // Ctrl+End in the text field rather than on whichever control the markup
+    // happens to put first. No styling and no behaviour of its own.
+    expect(wrapper.attrs).toEqual({ 'data-composer-card': '' });
 
     // And the thing it wraps is the OLD subtree, unchanged — this is the whole
     // claim. `diffDom` compares the two directly, so any drift inside the

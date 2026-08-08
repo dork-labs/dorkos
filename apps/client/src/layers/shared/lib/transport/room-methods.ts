@@ -23,6 +23,7 @@ import {
   type PostThreadReplyRequest,
   type PostToRoomRequest,
   type PostToRoomResponse,
+  type RoomAttachment,
   type RoomEntry,
   type RoomEvent,
   type RoomMember,
@@ -35,9 +36,12 @@ import {
   type UpdateMembershipRequest,
   type UpdateRoomRequest,
 } from '@dorkos/shared/room-schemas';
+import type { UploadProgress } from '@dorkos/shared/types';
+import type { UploadFile } from '@dorkos/shared/transport';
 import { SSE_RESILIENCE } from '../constants';
 import { fetchJSON, fetchNoContent, buildQueryString } from './http-client';
 import { streamSocketFrames, type StreamSocketClosed } from './stream-socket-iterator';
+import { uploadRoomAttachmentsOverHttp } from './upload-methods';
 
 /**
  * A room's event stream answered with an HTTP error rather than a stream.
@@ -145,6 +149,25 @@ export function createRoomMethods(baseUrl: string) {
         method: 'POST',
         body: JSON.stringify(req),
       });
+    },
+
+    /**
+     * Upload files into a room, ahead of the message that names them.
+     *
+     * Its own request rather than a field on {@link postToRoom} because the
+     * body is multipart and the bytes exist before the entry does: the ids come
+     * back here, and the post that follows carries them in `attachmentIds`.
+     *
+     * No `cwd` — a room has none. That is the whole reason this endpoint is not
+     * `/uploads`.
+     */
+    uploadRoomAttachments(
+      id: string,
+      files: UploadFile[],
+      onProgress?: (progress: UploadProgress) => void,
+      signal?: AbortSignal
+    ): Promise<RoomAttachment[]> {
+      return uploadRoomAttachmentsOverHttp(baseUrl, id, files, onProgress, signal);
     },
 
     /**

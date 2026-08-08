@@ -26,20 +26,45 @@ export const FEED_ARTICLE_ATTR = 'data-feed-article';
 /**
  * What counts as "the first focusable element before/after the feed".
  *
- * Tab STOPS, so `tabindex="-1"` is excluded: everything inside this app's
- * roving groups is focusable by script and none of it is a place Ctrl+End
- * should land — a reader leaving the feed wants the composer, not a button
- * belonging to the message they just left.
+ * Tab STOPS, so `tabindex="-1"` is excluded from EVERY clause and not only from
+ * the `[tabindex]` one: everything inside this app's roving groups is focusable
+ * by script and none of it is a place Ctrl+End should land — a reader leaving
+ * the feed wants the composer, not a button belonging to the message they just
+ * left. The composer's own dropzone input is the case that proved the narrower
+ * reading wrong: it is a real `<input>`, visually hidden and `tabindex="-1"`,
+ * and it sits before the text field, so Ctrl+End landed on nothing a person
+ * could see.
+ *
+ * A file input is excluded outright, tab stop or not. Every one in this app is
+ * the invisible half of a visible affordance — the paperclip button, or the
+ * composer card's dropzone — and both of those are reachable in their own
+ * right.
  */
 const TAB_STOP_SELECTOR = [
-  'a[href]',
-  'button:not([disabled])',
-  'input:not([disabled])',
-  'select:not([disabled])',
-  'textarea:not([disabled])',
-  '[contenteditable="true"]',
+  'a[href]:not([tabindex="-1"])',
+  'button:not([disabled]):not([tabindex="-1"])',
+  'input:not([disabled]):not([type="file"]):not([tabindex="-1"])',
+  'select:not([disabled]):not([tabindex="-1"])',
+  'textarea:not([disabled]):not([tabindex="-1"])',
+  '[contenteditable="true"]:not([tabindex="-1"])',
   '[tabindex]:not([tabindex="-1"])',
 ].join(',');
+
+/**
+ * A composer is ONE destination, not a row of separate controls.
+ *
+ * `Composer.Root` stamps `data-composer-card` on its card. A tab stop inside one
+ * therefore resolves to that card's text field, whichever control the walk
+ * happened to reach first — the paperclip sits before the box in the markup, so
+ * without this Ctrl+End puts a reader on "Attach file" when what they asked for
+ * was somewhere to type.
+ *
+ * @param stop - The tab stop the walk found.
+ */
+function composerFieldOf(stop: HTMLElement): HTMLElement {
+  const card = stop.closest<HTMLElement>('[data-composer-card]');
+  return card?.querySelector<HTMLElement>('textarea, [contenteditable="true"]') ?? stop;
+}
 
 /**
  * The tab stop nearest the feed on one side of it, or null when there is none.
@@ -52,16 +77,16 @@ function tabStopOutside(container: HTMLElement, side: 'before' | 'after'): HTMLE
     (node) => !container.contains(node)
   );
   if (side === 'after') {
-    return (
-      stops.find(
-        (node) => (container.compareDocumentPosition(node) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0
-      ) ?? null
+    const next = stops.find(
+      (node) => (container.compareDocumentPosition(node) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0
     );
+    return next === undefined ? null : composerFieldOf(next);
   }
   const before = stops.filter(
     (node) => (container.compareDocumentPosition(node) & Node.DOCUMENT_POSITION_PRECEDING) !== 0
   );
-  return before[before.length - 1] ?? null;
+  const previous = before[before.length - 1];
+  return previous === undefined ? null : composerFieldOf(previous);
 }
 
 /**

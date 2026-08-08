@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { Loader2, TriangleAlert } from 'lucide-react';
+import { File as FileIcon, Loader2, TriangleAlert } from 'lucide-react';
 import { cn } from '@/layers/shared/lib';
 import {
   findLandedEcho,
@@ -53,6 +53,15 @@ interface RoomPendingRowProps {
  * after the server committed it is indistinguishable from one that never landed
  * (see {@link findLandedEcho}, and the copy below, which says so out loud).
  *
+ * **Files ride along, and a retry re-sends them.** The row draws their NAMES as
+ * inert chips — no link and no thumbnail, because the entry that would serve
+ * them does not exist yet — and the row also carries the ids they were uploaded
+ * under, so trying again sends the whole message rather than a stripped copy of
+ * it. That works because nothing binds an attachment until an entry claims it,
+ * and an unbound one stays readable by, and re-nameable by, the person who
+ * uploaded it. So the second attempt costs no bytes and the row needs no
+ * sentence apologising for what it dropped.
+ *
  * @param props - The pending message to draw, and who is reading.
  */
 export function RoomPendingRow({ post, viewerAuthorId }: RoomPendingRowProps) {
@@ -65,7 +74,7 @@ export function RoomPendingRow({ post, viewerAuthorId }: RoomPendingRowProps) {
   const discard = () => usePendingPostStore.getState().discard(post.clientId);
 
   const retry = () => {
-    const { clientId, roomId, threadRootId, text } = post;
+    const { clientId, roomId, threadRootId, text, attachmentIds, attachmentNames } = post;
     // Look before leaping. If these exact words from this reader are already in
     // the room, the send DID land and the confirmation is what went missing —
     // sending again would post it twice and spend a second agent turn on it.
@@ -74,11 +83,23 @@ export function RoomPendingRow({ post, viewerAuthorId }: RoomPendingRowProps) {
       discard();
       return;
     }
+    // The files go back with the words. Nothing bound them — an attachment
+    // belongs to whoever uploaded it and stays unbound until an entry claims it
+    // — so the second attempt names the same ids and no bytes go up twice. A
+    // retry that dropped them would send a message ABOUT files it no longer
+    // carried, which is the DOR-480 failure wearing a different hat.
     if (threadRootId === null) {
-      send.mutate({ roomId, text, clientId });
+      send.mutate({ roomId, text, clientId, attachmentIds, attachmentNames });
       return;
     }
-    reply.mutate({ roomId, rootEntryId: threadRootId, text, clientId });
+    reply.mutate({
+      roomId,
+      rootEntryId: threadRootId,
+      text,
+      clientId,
+      attachmentIds,
+      attachmentNames,
+    });
   };
 
   return (
@@ -100,6 +121,22 @@ export function RoomPendingRow({ post, viewerAuthorId }: RoomPendingRowProps) {
       >
         {post.text}
       </p>
+      {post.attachmentNames.length > 0 && (
+        // Inert on purpose: there is no entry yet, so there is nothing to link
+        // to and nothing to draw a thumbnail from. The chips say only what a
+        // person needs to know here — the files are still in this message.
+        <ul className="flex flex-wrap gap-1.5">
+          {post.attachmentNames.map((name) => (
+            <li
+              key={name}
+              className="bg-muted text-muted-foreground flex items-center gap-1 rounded-md px-2 py-1 text-xs"
+            >
+              <FileIcon aria-hidden className="size-3 shrink-0" />
+              <span className="max-w-32 truncate">{name}</span>
+            </li>
+          ))}
+        </ul>
+      )}
       {failed ? (
         <div className="text-status-warning flex flex-wrap items-center gap-2 text-xs">
           <TriangleAlert aria-hidden className="size-3.5 shrink-0" />

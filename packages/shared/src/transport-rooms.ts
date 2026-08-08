@@ -10,6 +10,8 @@
  *
  * @module shared/transport-rooms
  */
+import type { UploadProgress } from './schemas.js';
+import type { UploadFile } from './transport.js';
 import type {
   AuthorRef,
   AddRoomMemberRequest,
@@ -21,6 +23,7 @@ import type {
   PostThreadReplyRequest,
   PostToRoomRequest,
   PostToRoomResponse,
+  RoomAttachment,
   RoomEntry,
   RoomEvent,
   RoomMember,
@@ -117,6 +120,29 @@ export interface RoomTransport {
    * @param req - What to say, and the session that produced it when one did.
    */
   postToRoom(id: string, req: PostToRoomRequest): Promise<PostToRoomResponse>;
+  /**
+   * Upload files into a room, before the message that carries them.
+   *
+   * Separate from {@link postToRoom} rather than a field on it for the reason
+   * the multipart body forces and the access model confirms: bytes and JSON are
+   * different requests, and the attachment exists — refusable, retryable, its
+   * own progress — before there is an entry to hang it on.
+   *
+   * The ids come back in request order; the post that follows names them in
+   * `attachmentIds`, which is the order they render in.
+   *
+   * @param id - The room to upload into. The caller must be a person and a
+   *   member of it; an agent is refused before its bytes are read.
+   * @param files - The files to upload, in the order they should render.
+   * @param onProgress - Called as the request body goes out.
+   * @param signal - Aborts the request itself, not just this promise.
+   */
+  uploadRoomAttachments(
+    id: string,
+    files: UploadFile[],
+    onProgress?: (progress: UploadProgress) => void,
+    signal?: AbortSignal
+  ): Promise<RoomAttachment[]>;
   /**
    * Reply inside the thread hanging off one entry in this room.
    *

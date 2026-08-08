@@ -107,6 +107,8 @@ function pending(status: PendingPost['status'], text: string, at = Date.now()): 
     roomId: THREAD_ROOM_ID,
     threadRootId: null,
     text,
+    attachmentNames: [],
+    attachmentIds: [],
     status,
     entryId: null,
     at,

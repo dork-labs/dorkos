@@ -6,6 +6,16 @@ import { useDragAndPaste } from './use-drag-and-paste';
 const CARD_CHROME = 'bg-surface relative m-2 rounded-xl border p-2';
 
 /**
+ * Marks this card as one destination rather than a row of separate controls.
+ *
+ * Read by `useFeedKeyboardNav`: Ctrl+End means "leave the feed and go type", and
+ * the first tab stop after a feed is now the paperclip rather than the text
+ * field. Anything that lands anywhere inside a card carrying this lands in its
+ * text field instead.
+ */
+const COMPOSER_CARD_ATTR = { 'data-composer-card': '' };
+
+/**
  * Every prop the composer's card accepts.
  *
  * Exported because the `Composer` namespace object in the barrel infers its
@@ -70,7 +80,11 @@ export function ComposerRoot({ children, onFilesDropped, className }: ComposerRo
  * push every room and dashboard composer off the bottom of a phone.
  */
 function ComposerCard({ children, className }: { children: React.ReactNode; className?: string }) {
-  return <div className={cn(CARD_CHROME, className)}>{children}</div>;
+  return (
+    <div {...COMPOSER_CARD_ATTR} className={cn(CARD_CHROME, className)}>
+      {children}
+    </div>
+  );
 }
 
 /** The same card, plus the dropzone, hidden file input, and drop overlay. */
@@ -88,7 +102,12 @@ function DropCapableCard({
   });
 
   return (
-    <div {...getRootProps()} onPaste={handlePaste} className={cn(CARD_CHROME, className)}>
+    <div
+      {...getRootProps()}
+      {...COMPOSER_CARD_ATTR}
+      onPaste={handlePaste}
+      className={cn(CARD_CHROME, className)}
+    >
       <input {...getInputProps()} />
 
       <AnimatePresence>

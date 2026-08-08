@@ -303,6 +303,10 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     updateRoom: vi.fn(),
     listRoomEntries: vi.fn().mockResolvedValue([]),
     postToRoom: vi.fn().mockResolvedValue({ accepted: true, entryId: 'entry-mock', seq: 1 }),
+    // Nothing attached, by default: a test that is about attachments overrides
+    // this, and every other test posts a message with no files the way a person
+    // usually does.
+    uploadRoomAttachments: vi.fn().mockResolvedValue([]),
     replyInThread: vi.fn().mockResolvedValue({ accepted: true, entryId: 'reply-mock', seq: 2 }),
     // An idle room by default: a halt that stopped nothing is the shape a test
     // gets unless it is specifically about a room with turns in flight.

@@ -60,6 +60,8 @@ function pendingPost(overrides: Partial<PendingPost> = {}): PendingPost {
     roomId: 'room-1',
     threadRootId: null,
     text: 'ok',
+    attachmentNames: [],
+    attachmentIds: [],
     status: 'sending',
     entryId: null,
     at: 0,
