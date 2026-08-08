@@ -713,6 +713,17 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     // `warnings` is OMITTED on a clean read, never `[]`, so a test that does
     // not opt into degradation never renders the banner by accident.
     getTeamRoster: vi.fn().mockResolvedValue({ members: [] }),
+    // The operator's own profile (spec `identity-consistency` §W3.3, §W3.5).
+    // Each resolves with what the real route answers, so a component under test
+    // takes its success path unless a test deliberately makes one reject.
+    updateProfile: vi
+      .fn()
+      .mockImplementation((displayName: string) => Promise.resolve({ displayName })),
+    uploadProfileAvatar: vi
+      .fn()
+      .mockResolvedValue({ imageUrl: '/api/profile/avatar/person-1?v=abc' }),
+    deleteProfileAvatar: vi.fn().mockResolvedValue(undefined),
+    setAuthorHandle: vi.fn(),
     // Shapes (DOR-355)
     listShapes: vi.fn().mockResolvedValue([]),
     applyShape: vi.fn(),

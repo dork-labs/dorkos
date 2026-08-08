@@ -14,6 +14,7 @@
 import {
   RoomEventSchema,
   type AddRoomMemberRequest,
+  type AuthorRef,
   type CreateRoomRequest,
   type HaltRoomResponse,
   type ListRoomEntriesQuery,
@@ -200,6 +201,14 @@ export function createRoomMethods(baseUrl: string) {
         baseUrl,
         `/rooms/${id}/members/${encodeURIComponent(authorId)}`,
         { method: 'PATCH', body: JSON.stringify(req) }
+      );
+    },
+
+    setAuthorHandle(authorId: string, handle: string): Promise<AuthorRef> {
+      return fetchJSON<AuthorRef>(
+        baseUrl,
+        `/rooms/authors/${encodeURIComponent(authorId)}/handle`,
+        { method: 'PATCH', body: JSON.stringify({ handle }) }
       );
     },
 
