@@ -215,6 +215,94 @@ re-recorded all five flag-off chat baselines. They were restored from `HEAD` wit
 byte-identical to `origin/main`. Anyone recording a baseline here should scope the run to the new
 cases and check `git status` over all three `__baselines__` directories immediately afterwards.
 
+## Measured
+
+Every number here was produced by running something, on this machine, on this branch. Nothing is
+an estimate — the spec is explicit that the ideation's "~54 kB" is an expectation and not a result.
+
+**Machine:** Apple M4 Pro, macOS 26.5.2, Node v24.14.1. **Date:** 2026-08-08.
+
+### Bundle
+
+```sh
+pnpm --filter @dorkos/client build
+cd apps/client
+entry=$(grep -oE 'assets/index-[A-Za-z0-9_-]+\.js' dist/index.html | head -1)
+gzip -9 -c "dist/$entry" | wc -c                      # entry chunk
+gzip -9 -c dist/assets/LexicalField-*.js | wc -c      # the lazy editor chunk
+```
+
+|                                            | gzip -9 bytes | raw bytes |
+| ------------------------------------------ | ------------- | --------- |
+| Entry chunk (`index-BI6UuLdY.js`)          | **1,072,679** | 3,665,084 |
+| Lexical chunk (`LexicalField-DixRlYba.js`) | **93,861**    | 291,365   |
+| All `dist/assets/*.js`                     | 3,129,024     | —         |
+
+**The flag-off zero-Lexical-bytes claim, proven directly rather than by size:** the entry chunk
+contains zero occurrences of `createEditor` and zero of `data-lexical-text`. Someone with the flag
+off downloads no editor.
+
+**The entry chunk is not byte-identical to the pre-Lexical baseline, and that was expected by task
+3.6 rather than discovered here.** Against the pre-Lexical commit's 1,072,304 it is +375 gzip
+bytes. Task 3.6 measured +124 of that on an otherwise-identical tree and attributed it to the
+module-graph bookkeeping a dynamic `import()` adds. The remaining ~251 is phase 4 and 5 product
+code — the config field, the Settings row, the list-exit fix, the autocomplete fix — not Lexical.
+
+**The chunk grew 263 bytes since task 3.6 recorded 93,598.** That is `7618e21de`, the empty-list-item
+Enter fix, which lives in `field/`. Recorded rather than restated, because a number carried forward
+without re-measuring is how a stale figure survives.
+
+**Accepted?** Yes. 93,861 gzip bytes is well above the ideation's ~54 kB guess, and that guess is
+now retired. It is paid only by someone who turns the setting on, it arrives lazily behind a
+textarea that works while it loads, and it buys the whole editing surface. A reviewer who wants to
+reject it should reject it on this number, which is the point of writing it down.
+
+### Typing latency
+
+```sh
+# against a test-mode leg you started yourself, on ports nobody else holds
+DORKOS_LATENCY_API=http://localhost:5252 \
+DORKOS_LATENCY_APP=http://localhost:5251 \
+  pnpm --filter @dorkos/e2e exec tsx perf/composer-latency.ts
+```
+
+Script: `apps/e2e/perf/composer-latency.ts`. Fixture: `apps/e2e/perf/composer-latency-fixture.ts`
+— 4 000 characters, 20 mentions, generated from a seed and shape-checked at import so a drifting
+generator fails loudly instead of quietly measuring a smaller document. Both paths are measured in
+ONE browser session, textarea first, 50 samples each after 10 discarded as warm-up.
+
+**Two clocks, because one of them cannot answer the question.** `work` is the synchronous task a
+keystroke sets off — the update listener, serialization, the position map, React's render — which
+is exactly what this spec added. `paint` is that plus the wait for the next frame, and it is
+quantized to the display's ~16.7 ms interval, so it steps in frame-sized jumps however cheap the
+work is. Judging a 16 ms budget on a number that can only take the values ~8, ~17, ~33 would be
+measuring the display. The budget is therefore read off `work`, with `paint` reported beside it.
+
+Run 1 / Run 2, median · p95 · max, in milliseconds:
+
+| path     | clock | median       | p95               | max           |
+| -------- | ----- | ------------ | ----------------- | ------------- |
+| textarea | work  | 4.80 / 4.70  | 14.40 / 13.70     | 14.50 / 14.40 |
+| lexical  | work  | 5.80 / 5.40  | **13.80 / 13.30** | 14.00 / 13.70 |
+| textarea | paint | 10.90 / 6.60 | 14.60 / 13.80     | 15.80 / 14.50 |
+| lexical  | paint | 11.40 / 6.30 | 14.90 / 13.30     | 16.50 / 13.70 |
+
+**p95 under 16 ms on the rich path: MET** (13.80 and 13.30), and in both runs it came in _below_
+the textarea's own p95 — the tail is dominated by scheduling noise on a busy machine, which both
+paths pay equally.
+
+**Median no worse than the textarea: MISSED, by 0.7–1.0 ms.** Stated plainly rather than rounded
+away. The rich path's median keystroke costs about a millisecond more, which is real work
+(serialize + position map) and is consistent across runs. It is roughly a sixteenth of a frame, it
+never reaches paint as a visible delay — the `paint` medians are within noise of each other, and in
+run 2 the rich path was faster — and the p95 that governs felt jank is met. Recorded as a known
+miss on a secondary criterion, not as a pass.
+
+The task names the selection-only fast path as the first suspect if p95 misses. It did not miss,
+and the fast path is present and correct regardless: `use-lexical-value.ts` skips serialization
+entirely when `dirtyElements.size === 0 && dirtyLeaves.size === 0` and emits only `onCursorChange`,
+which its own unit test pins.
+
 ## What phase 5 needs to know
 
 1. **Changelog fragments are NOT minted.** Phase 5 consolidates. One user-facing change to
