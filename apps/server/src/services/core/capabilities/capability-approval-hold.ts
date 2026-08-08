@@ -60,6 +60,24 @@
  * The findings above are pinned to claude-agent-sdk 0.3.177 / claude 2.1.177.
  * Re-check them on a runtime upgrade rather than assuming they carried over.
  *
+ * 2026-08-07, on the bump to 0.3.224 / claude 2.1.224 — PARTIALLY re-verified,
+ * and the split matters:
+ *
+ * - **Re-verified** against the 0.3.224 binary: the MCP tool-call timeout is
+ *   still `min(max(n, 1000), 2^31-1)` where `n` falls back to `1e8` ms (~27.8h)
+ *   unless a per-server `timeout` or `MCP_TOOL_TIMEOUT` says otherwise. So no
+ *   60s ceiling governs this hold, exactly as argued above. New at 0.3.224: a
+ *   server's own config may carry `timeout`, and a value below 1000ms is ignored
+ *   rather than honoured. `MCP_TOOL_TIMEOUT` remains the one thing that can cut a
+ *   hold short, and `mcp-tool-timeout-env.ts` still floors it on the way in.
+ * - **Re-verified**: `CLAUDE_CODE_STREAM_CLOSE_TIMEOUT` still does not exist
+ *   anywhere in the shipped binary. The SDK d.ts comment naming it is still
+ *   stale, and still not a risk.
+ * - **NOT re-verified**: that `handleMcpControlRequest` awaits a bare promise
+ *   with no timer, and that the control channel is timerless. That is the
+ *   load-bearing claim for the ten-minute hold and it is still dated to 0.3.177.
+ *   Treat it as unconfirmed at 0.3.224 until someone reads it again.
+ *
  * @module services/core/capabilities/capability-approval-hold
  */
 import type { StreamEvent } from '@dorkos/shared/types';

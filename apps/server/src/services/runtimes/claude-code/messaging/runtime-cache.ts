@@ -79,6 +79,7 @@ function inferTier(value: string): 'flagship' | 'balanced' | 'fast' | undefined 
 export function mapSdkModelToModelOption(m: SdkReportedModel): ModelOption {
   return {
     value: m.value,
+    resolvedModel: m.resolvedModel,
     displayName: m.displayName,
     description: m.description,
     supportsEffort: m.supportsEffort,
@@ -284,12 +285,28 @@ export class RuntimeCache {
    * undefined when the value is unset or the model cache has not been populated yet —
    * callers should treat that as "unknown capabilities" and fall back to SDK defaults.
    *
+   * Matches on the row's own `value` first, then on `resolvedModel` (SDK 0.3.224).
+   * The SDK reports capabilities on ALIAS rows — `sonnet`, `haiku`, `default` — so
+   * a session that persisted the wire id those aliases expand to used to find
+   * nothing and silently fall back to SDK defaults. `resolvedModel` names that
+   * expansion, which closes the gap. When two alias rows expand to the same wire
+   * id the first wins, and that is harmless: they describe the same model, so
+   * their capabilities agree.
+   *
+   * Rows persisted to disk by a pre-0.3.224 build carry no `resolvedModel`, so on
+   * the first read after an upgrade the fallback simply finds nothing and the old
+   * behaviour stands. It heals itself: the turn's `onModelsReceived` overwrites
+   * the cache with rows that do carry the field.
+   *
    * @param value - The model identifier (e.g. `claude-opus-4-8`).
    */
   getCachedModel(value: string | undefined): ModelOption | undefined {
     if (!value) return undefined;
     if (!this.cachedModels) this.loadFromDisk();
-    return this.cachedModels?.find((m) => m.value === value);
+    return (
+      this.cachedModels?.find((m) => m.value === value) ??
+      this.cachedModels?.find((m) => m.resolvedModel === value)
+    );
   }
 
   /**
@@ -301,7 +318,10 @@ export class RuntimeCache {
    *   model that an unset selection actually runs (e.g. Opus 4.8). This is the common
    *   case and the one that needs the omitted-thinking fix most.
    * - An explicitly-selected alias resolves to its own entry.
-   * - An explicitly-set but unknown value resolves to undefined (the caller falls back
+   * - An explicitly-selected WIRE id resolves to the alias row that expands to it,
+   *   via `resolvedModel` (SDK 0.3.224). Before that field existed this case fell
+   *   through to undefined.
+   * - A value matching neither still resolves to undefined (the caller falls back
    *   to SDK defaults) rather than borrowing the default's capabilities, which could be
    *   wrong — e.g. forcing adaptive thinking onto a non-adaptive model would 400.
    *

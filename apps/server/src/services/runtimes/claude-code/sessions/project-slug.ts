@@ -15,6 +15,17 @@
  * against 104 real transcript directories on a developer machine, and the hash
  * verified byte-identically against an on-disk 207-character truncated name.
  *
+ * Re-checked against 0.3.224's `sdk.mjs` on 2026-08-07, because that release's
+ * headline fix was about project paths past 200 characters — a changed slug
+ * scheme would point every transcript read at the wrong directory with no type
+ * error and no failing test. **The algorithm is unchanged.** Only the minified
+ * names moved: `So` → `jo`, `My` → `Zb`, `a6` → `tSe`, `Di` → `ro`, and 0.3.224
+ * lifts the dash-replace into its own helper (`vE`). The hash body is
+ * character-for-character identical, the cut is still 200, and the appended
+ * base36 hash is still taken over the ORIGINAL path rather than the replaced
+ * string. 0.3.224's fix was on the lookup side (disambiguating two paths that
+ * share a sanitized prefix), which this module gets for free.
+ *
  * Three clauses matter and all three were missing before DOR-782 — a symlinked
  * checkout, a decomposed-Unicode path on macOS, and a path past 200 characters
  * each produced a slug that pointed nowhere.

@@ -166,6 +166,14 @@ export type ModeDecision = 'allow' | 'ask';
  * stays true end-to-end — the auto-accepting happens one layer up, where it can
  * still tell an in-workspace edit from an escape.
  *
+ * The two bullets above are **still dated to SDK 0.3.177 / CLI 2.1.177 and were
+ * NOT re-verified** on the 0.3.224 bump — nobody re-read the CLI's permission
+ * engine for the `acceptEdits` working-directory escalation or the 7-command
+ * allowlist. Note that this function's own conclusion does not rest on them: it
+ * asks for everything but `bypassPermissions`, so a CLI that escalated MORE than
+ * these bullets describe is still handled correctly. They would only become wrong
+ * in the direction that matters if the CLI started escalating LESS.
+ *
  * `bypassPermissions` is the sole exception, because it means "skip all tool
  * approval prompts". Note this is a policy choice, not an unreachable branch:
  * the CLI resolves most calls itself under that mode, but it still escalates a

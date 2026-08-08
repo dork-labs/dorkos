@@ -11,7 +11,9 @@ superseded-by: null
 
 ## Status
 
-Accepted (implemented in spec: additional-agent-runtimes, `@opencode-ai/sdk@1.17.13`)
+Accepted (implemented in spec: additional-agent-runtimes, `@opencode-ai/sdk@1.18.15`)
+
+**2026-08-07**: Bumped from `1.17.13` to `1.18.15` (DOR-1013). No type changes on DorkOS's import surface across the 23-release range; the lockstep `OPENCODE_PACKAGE_VERSION` sidecar pin (`provision.ts`) moved with it.
 
 ## Context
 
