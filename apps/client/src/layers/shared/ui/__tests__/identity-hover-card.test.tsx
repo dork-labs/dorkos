@@ -98,6 +98,28 @@ describe('IdentityHoverCard', () => {
     expect(screen.getByText('soon')).toBeInTheDocument();
   });
 
+  it('turns "View profile" into a real control once a destination is supplied', async () => {
+    const onViewProfile = vi.fn();
+    const user = userEvent.setup();
+    render(
+      <IdentityHoverCard
+        identity={{ kind: 'human', displayName: 'Ana', handle: 'ana' }}
+        onViewProfile={onViewProfile}
+      >
+        <button type="button">Ana</button>
+      </IdentityHoverCard>
+    );
+    await user.hover(screen.getByRole('button', { name: 'Ana' }));
+
+    const viewProfile = await screen.findByRole('button', { name: 'View profile' });
+    // The deferred marker is what a wired footer must no longer be able to show:
+    // "soon" beside a button that works is a promise the product already kept.
+    expect(screen.queryByText('soon')).not.toBeInTheDocument();
+
+    await user.click(viewProfile);
+    expect(onViewProfile).toHaveBeenCalledTimes(1);
+  });
+
   it("shows an agent's runtime/model and working chips, never a person's", async () => {
     await openOn({
       kind: 'agent',

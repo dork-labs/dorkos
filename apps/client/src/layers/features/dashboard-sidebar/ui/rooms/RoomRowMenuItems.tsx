@@ -9,7 +9,7 @@ import {
   FolderPlus,
   Pencil,
   Text,
-  User,
+  PanelRight,
   UserPlus,
   Users,
   type LucideIcon,
@@ -324,8 +324,10 @@ export function buildRoomRowMenuNodes(model: RoomRowMenuModel): RoomRowMenuNode[
     nodes.push({
       kind: 'action',
       id: 'agent-profile',
-      label: 'Agent profile',
-      icon: User,
+      // "Agent hub" for the reason `AgentRowMenuItems` carries: this opens the
+      // right-panel workbench, and the profile drawer now owns the other word.
+      label: 'Agent hub',
+      icon: PanelRight,
       opensInput: false,
       destructive: false,
       run: () => model.onOpenAgentProfile(soleAgentPath),

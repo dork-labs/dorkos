@@ -10,9 +10,9 @@ import { agentAuthorRef } from '@dorkos/shared/room-schemas';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import { agentInfoByRef } from '../lib/agent-details';
 
-/** A manifest with only the two fields this join reads. */
-function manifest(runtime: string, model?: string): AgentManifest {
-  return { runtime, ...(model !== undefined && { model }) } as unknown as AgentManifest;
+/** A manifest with only the fields this join reads. */
+function manifest(runtime: string, model?: string, id = '01JMANIFESTULID'): AgentManifest {
+  return { id, runtime, ...(model !== undefined && { model }) } as unknown as AgentManifest;
 }
 
 describe('agentInfoByRef', () => {
@@ -21,7 +21,11 @@ describe('agentInfoByRef', () => {
 
     // The key a roster's `AuthorRef.agentRef` holds — derived from the path on
     // the server, derived again here, and the two must meet.
-    expect(info.get(agentAuthorRef('/w/bo'))).toEqual({ runtime: 'Claude Code', model: 'opus' });
+    expect(info.get(agentAuthorRef('/w/bo'))).toEqual({
+      manifestId: '01JMANIFESTULID',
+      runtime: 'Claude Code',
+      model: 'opus',
+    });
   });
 
   it('names the runtime the way every other surface names it', () => {
@@ -42,7 +46,7 @@ describe('agentInfoByRef', () => {
     const info = agentInfoByRef(['/w/bo'], { '/w/bo': manifest('claude-code') });
 
     const entry = info.get(agentAuthorRef('/w/bo'));
-    expect(entry).toEqual({ runtime: 'Claude Code' });
+    expect(entry).toEqual({ manifestId: '01JMANIFESTULID', runtime: 'Claude Code' });
     expect(entry).not.toHaveProperty('model');
   });
 

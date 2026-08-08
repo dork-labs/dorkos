@@ -36,6 +36,24 @@ import { TransportProvider } from '@/layers/shared/model';
 import { TooltipProvider } from '@/layers/shared/ui';
 import { RoomTimeline } from '../ui/RoomTimeline';
 
+// A mention pill now reads route state to build its profile link
+// (`useProfileDeepLink`), and these tests mount it with no router. The link's
+// own behaviour has a dedicated file — `RoomEntryRow.click-to-profile.test.tsx`,
+// which mounts a real router and asserts the id that travels. Here it is stubbed
+// so the pill renders, which is what this file is actually about.
+vi.mock('@/layers/shared/model', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/layers/shared/model')>();
+  return {
+    ...actual,
+    useProfileDeepLink: () => ({
+      isOpen: false,
+      memberId: null,
+      open: vi.fn(),
+      close: vi.fn(),
+    }),
+  };
+});
+
 beforeAll(() => {
   Object.defineProperty(window, 'matchMedia', {
     writable: true,

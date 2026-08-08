@@ -89,13 +89,15 @@ export interface MentionPillProps extends Omit<React.ComponentProps<'span'>, 'co
    */
   resolved: boolean;
   /**
-   * Whether this pill carries hover/click affordance. Click itself is not
-   * wired up yet (no profile routes exist) — this only gates the cursor and
-   * hover styling for the surface that will add it. **The `focus-visible`
-   * ring this turns on is dormant, not working keyboard support:** the pill
-   * is still a `<span>`, so nothing here makes it focusable. Real
-   * keyboard/focus wiring belongs to the follow-up slice that adds the click
-   * target.
+   * Whether this pill carries a hover/click affordance — the cursor, the hover
+   * brightness and the focus ring.
+   *
+   * **Appearance only; the behaviour is the caller's.** This pill stays a
+   * `<span>`, so a caller that turns this on also passes what makes it real —
+   * `onClick`, `role="button"` and `tabIndex`, which reach the span through the
+   * prop spread (`MentionPillRenderer` is the live example). Turning it on
+   * alone paints a control that does nothing, which is the one thing the
+   * unresolved branch above exists to avoid.
    */
   interactive?: boolean;
 }

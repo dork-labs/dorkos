@@ -2,7 +2,7 @@ import type { ElementType, ReactNode } from 'react';
 import {
   Pin,
   PinOff,
-  User,
+  PanelRight,
   Plus,
   FolderInput,
   FolderPlus,
@@ -141,8 +141,12 @@ export function buildRowMenuNodes(model: RowMenuModel): RowMenuNode[] {
     {
       type: 'item',
       key: 'profile',
-      label: 'Agent profile',
-      icon: User,
+      // Named for what it opens, not for what it used to be called: the row's
+      // own face opens the profile DRAWER now (DOR-957), and two controls that
+      // close together cannot both claim the word "profile". Same destination
+      // as before — the Agent Hub in the right panel.
+      label: 'Agent hub',
+      icon: PanelRight,
       onSelect: model.onOpenProfile,
     },
     { type: 'separator', key: 'sep-2' },

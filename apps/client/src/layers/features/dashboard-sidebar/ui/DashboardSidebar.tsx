@@ -4,7 +4,12 @@ import { useQueryClient } from '@tanstack/react-query';
 import { AnimatePresence, motion } from 'motion/react';
 import { Plus } from 'lucide-react';
 import { SidebarContent, SidebarGroup, SidebarMenu } from '@/layers/shared/ui';
-import { useAppStore, useTransport, useAgentCreationStore } from '@/layers/shared/model';
+import {
+  useAppStore,
+  useTransport,
+  useAgentCreationStore,
+  useProfileDeepLink,
+} from '@/layers/shared/model';
 import { toast } from 'sonner';
 import { reportClientError } from '@/layers/shared/lib';
 import {
@@ -22,7 +27,7 @@ import {
   moveToGroup,
   setGroupsHintDismissed,
 } from '@/layers/entities/config';
-import { useMeshAgentPaths } from '@/layers/entities/mesh';
+import { useMeshAgentPaths, useMeshMemberIds } from '@/layers/entities/mesh';
 import {
   useRooms,
   useRoomsByKind,
@@ -141,8 +146,13 @@ export function DashboardSidebar() {
   const { update: updateSidebarPrefs } = useUpdateSidebarPrefs();
 
   // ── Full mesh roster (unsorted; per-section sorting is derived below) ──
+  const { open: openProfile } = useProfileDeepLink();
   const { data: meshData } = useMeshAgentPaths();
   const rawPaths = useMemo(() => (meshData?.agents ?? []).map((a) => a.projectPath), [meshData]);
+  // A row knows an agent by its directory; the profile drawer knows it by the
+  // id the mesh registered. One shared join, so this and the chat status chip
+  // cannot disagree about who a row points at.
+  const memberIdByPath = useMeshMemberIds();
   const { data: agents } = useResolvedAgents(rawPaths);
 
   // ── Rooms (channels + DMs, spec `rooms` §7) ──
@@ -530,6 +540,16 @@ export function DashboardSidebar() {
     [setRightPanelOpen, setActiveRightPanelTab]
   );
 
+  // `undefined` — never a no-op handler — for an agent the mesh cannot name, so
+  // the face renders as plain art instead of a control that opens nothing.
+  const viewProfileFor = useCallback(
+    (path: string) => {
+      const memberId = memberIdByPath.get(path);
+      return memberId === undefined ? undefined : () => openProfile(memberId);
+    },
+    [memberIdByPath, openProfile]
+  );
+
   const handleForkSession = useCallback(
     async (sessionId: string) => {
       try {
@@ -575,6 +595,7 @@ export function DashboardSidebar() {
         onSelect: () => handleSelectAgent(path),
         onToggleExpand: () => handleToggleExpand(path),
         onOpenProfile: () => handleOpenProfile(path),
+        onViewProfile: viewProfileFor(path),
         onRequestNewGroup: handleRequestNewGroup,
         sessions: isActive ? previewSessions : [],
         isLoadingSessions: isActive && sessionsLoading,
@@ -607,6 +628,7 @@ export function DashboardSidebar() {
       selectedCwd,
       pathname,
       agents,
+      viewProfileFor,
       displayNamesRecord,
       expandedPath,
       effectiveMutedForRender,

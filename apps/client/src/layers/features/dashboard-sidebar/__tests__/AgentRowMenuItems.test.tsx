@@ -243,7 +243,7 @@ describe('AgentRowMenuItems variant parity', () => {
         'Pin agent',
         'Mute agent',
         'Move to group',
-        'Agent profile',
+        'Agent hub',
         'New session',
         // Submenu contents:
         'Clients',
