@@ -81,7 +81,11 @@ function transportOn(platform: string, overrides: Partial<Transport> = {}) {
   });
 }
 
-/** Render the tree and open the context menu on its one row. */
+/**
+ * Render the tree and open the context menu on its one row, handing back the
+ * row element — an open menu hides the rest of the app from assistive tech, so
+ * the row cannot be queried by role again until the menu has gone.
+ */
 async function openRowMenu(transport = transportOn('darwin-arm64')) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
@@ -96,7 +100,7 @@ async function openRowMenu(transport = transportOn('darwin-arm64')) {
   // back when it closes.
   row.focus();
   fireEvent.contextMenu(row);
-  return transport;
+  return { transport, row };
 }
 
 /**
@@ -133,7 +137,7 @@ describe('File explorer context-menu actions', () => {
   });
 
   it('asks the server to reveal the clicked entry', async () => {
-    const transport = await openRowMenu();
+    const { transport } = await openRowMenu();
 
     fireEvent.click(await screen.findByText('Reveal in Finder'));
 
@@ -215,13 +219,17 @@ describe('File explorer context-menu actions', () => {
     expect(composer.value).toBe('@README.md ');
   });
 
-  it('says so when there is no composer to add the file to', async () => {
-    await openRowMenu();
+  it('says so when there is no composer to add the file to, and keeps the row focused', async () => {
+    const { row } = await openRowMenu();
 
     fireEvent.click(await screen.findByText('Add to Chat'));
 
     await waitFor(() =>
       expect(toastError).toHaveBeenCalledWith('Open a chat first to add a file to it')
     );
+    // Nothing took the caret, so the row keeps it — a keyboard user is not
+    // dropped on the floor by an action that could not do anything.
+    await settleClose();
+    expect(document.activeElement).toBe(row);
   });
 });

@@ -200,7 +200,10 @@ interface ResponsiveContextMenuItemProps extends React.ComponentPropsWithoutRef<
    * closing, and the menu then leaves focus where the action put it. Both halves
    * are needed: while a menu is open it traps focus, so an action that focuses
    * anything outside is undone on the spot, and as the menu goes it hands focus
-   * back to the row (DOR-1038). Every other item is untouched.
+   * back to the row (DOR-1038).
+   *
+   * An action that ends up moving no focus — because it could not do the thing —
+   * gets the ordinary restore, and every other item is untouched.
    */
   movesFocus?: boolean;
 }
@@ -227,7 +230,17 @@ function ResponsiveContextMenuItem({
     // can put the caret somewhere else and have it stay. `keepsFocus` covers the
     // other end: the menu's own focus restore, which lands later still.
     keepsFocus.current = true;
-    setTimeout(() => onClick?.(event), 0);
+    setTimeout(() => {
+      const before = document.activeElement;
+      onClick?.(event);
+      // An action can decline to move focus after all — "Add to Chat" with no
+      // chat open only says so — and then the row should get focus back like it
+      // does from every other item. Cheaper to ask than to promise.
+      const after = document.activeElement;
+      if (after === before || after === null || after === document.body) {
+        keepsFocus.current = false;
+      }
+    }, 0);
   };
 
   if (isDesktop) {

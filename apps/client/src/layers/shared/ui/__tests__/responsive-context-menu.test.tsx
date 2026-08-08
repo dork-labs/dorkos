@@ -69,7 +69,10 @@ async function settleClose() {
   });
 }
 
-/** A menu with one item that focuses the box beside it, and one that does not. */
+/**
+ * A menu with three items: one that focuses the box beside it, one that says it
+ * will and then cannot, and one that never claimed to.
+ */
 function FocusMenu({ onAddToChat }: { onAddToChat?: () => void }) {
   return (
     <>
@@ -87,6 +90,10 @@ function FocusMenu({ onAddToChat }: { onAddToChat?: () => void }) {
             }}
           >
             Add to Chat
+          </ResponsiveContextMenuItem>
+          {/* Stands in for "Add to Chat" with no chat open: it only complains. */}
+          <ResponsiveContextMenuItem movesFocus onClick={vi.fn()}>
+            Add to Chat, no chat
           </ResponsiveContextMenuItem>
           <ResponsiveContextMenuItem onClick={vi.fn()}>Copy Path</ResponsiveContextMenuItem>
         </ResponsiveContextMenuContent>
@@ -143,6 +150,22 @@ describe('Focus after the menu closes', () => {
 
     fireEvent.contextMenu(trigger);
     fireEvent.click(await screen.findByText('Copy Path'));
+    await settleClose();
+
+    expect(document.activeElement).toBe(trigger);
+  });
+
+  it('hands focus back when a focus-moving action turns out to move none', async () => {
+    // Asking to move focus is not the same as managing it: with no chat open,
+    // "Add to Chat" only reports that, and a keyboard user must still land back
+    // on the row rather than nowhere at all.
+    setViewport({ mobile: false });
+    render(<FocusMenu />);
+    const trigger = screen.getByRole('button', { name: 'Open' });
+    trigger.focus();
+
+    fireEvent.contextMenu(trigger);
+    fireEvent.click(await screen.findByText('Add to Chat, no chat'));
     await settleClose();
 
     expect(document.activeElement).toBe(trigger);
