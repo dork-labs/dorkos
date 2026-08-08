@@ -209,6 +209,10 @@
       "types": "./src/room-schemas.ts",
       "default": "./dist/room-schemas.js"
     },
+    "./read-cursor-schemas": {
+      "types": "./src/read-cursor-schemas.ts",
+      "default": "./dist/read-cursor-schemas.js"
+    },
     "./team-schemas": {
       "types": "./src/team-schemas.ts",
       "default": "./dist/team-schemas.js"

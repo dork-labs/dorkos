@@ -236,6 +236,12 @@ export const GENERIC_EVENTS = [
   // room list should now draw, so a badge cleared on one screen clears on the
   // other without waiting for a poll.
   'room_read_cursor',
+  // Somebody moved their UNIFIED read cursor — the one table that answers for
+  // rooms, agent sessions and the inbox alike (team-room-home D4). Distinct
+  // from `room_read_cursor` above, which is the room-membership cursor and
+  // carries a room unread count with it. No UI subscribes yet; listed here so
+  // the event reaches dispatch instead of being dropped once one does.
+  'read_cursor',
   // The whole session list is stale — drop it and refetch (spec
   // `claude-code-accounts` D5). Emitted when the Claude accounts move: the
   // restarted watcher upserts sessions from the roots it now watches but never

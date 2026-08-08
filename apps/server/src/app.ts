@@ -14,6 +14,7 @@ import workbenchServeRoutes from './routes/workbench-serve.js';
 import gitRoutes from './routes/git.js';
 import workspaceRoutes from './routes/workspaces.js';
 import roomRoutes from './routes/rooms.js';
+import readCursorRoutes from './routes/read-cursors.js';
 import tunnelRoutes from './routes/tunnel.js';
 import cloudRoutes from './routes/cloud.js';
 import feedbackRoutes from './routes/feedback.js';
@@ -177,6 +178,7 @@ export function createApp() {
   app.use('/api/git', gitRoutes);
   app.use('/api/workspaces', workspaceRoutes);
   app.use('/api/rooms', roomRoutes);
+  app.use('/api/read-cursors', readCursorRoutes);
   app.use('/api/tunnel', tunnelRoutes);
   app.use('/api/cloud', cloudRoutes);
   app.use('/api/feedback', feedbackRoutes);

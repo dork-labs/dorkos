@@ -132,6 +132,11 @@ describe('Database Migrations', () => {
       'pulse_dispatch_log',
       'pulse_runs',
       'pulse_schedules',
+      // How far each PERSON has read in each thread — the one user-side
+      // read-state store, keyed `(user_id, thread_kind, thread_id)`. The
+      // agent-side cursor stays on `room_members.last_read_seq`
+      // (ADR 260808-140956, migration 0058).
+      'read_cursors',
       'relay_index',
       'relay_traces',
       // A room's durable bridge identity and its platform-message external-ref

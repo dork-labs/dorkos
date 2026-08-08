@@ -3,15 +3,14 @@
  * connect, gap-free replay from `Last-Event-ID`, then live.
  *
  * `collectDurableEvents` from `@dorkos/test-utils` is hardcoded to the session
- * path, so the collector here is the room-shaped sibling — same `parseFrames`,
- * same `until` loop, plus a `ready` promise so a test can post INTO an open
- * stream without sleeping on a timer.
+ * path, so these drive `openSseStream` beside it — same `parseFrames`, same
+ * `until` loop, plus a `ready` promise so a test can post INTO an open stream
+ * without sleeping on a timer.
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import request from 'supertest';
-import { parseFrames, type SseFrame } from '@dorkos/test-utils';
+import { openSseStream, type OpenSseStream, type SseFrame } from '@dorkos/test-utils';
 import { createTestDb } from '@dorkos/test-utils/db';
 import type { Db } from '@dorkos/db';
 
@@ -53,82 +52,6 @@ import { createRoomSubsystem, setRoomService } from '../../services/rooms/index.
 const app = createApp();
 finalizeApp(app);
 
-/** One open room stream: a readiness signal, the collected frames, and a stop. */
-interface OpenStream {
-  /** Resolves once the first frame lands, so a test can post into a live stream. */
-  ready: Promise<void>;
-  /** Resolves with every frame collected when `until` is satisfied. */
-  frames: Promise<SseFrame[]>;
-  status: Promise<number>;
-}
-
-/**
- * Open any SSE path against a listening server and collect frames until `until`
- * is satisfied.
- *
- * Shared by the room stream below and the global `/api/events` stream, which is
- * a different route with the same wire format — one collector rather than two
- * that drift.
- *
- * @param port - Port the app is listening on.
- * @param path - The stream path, query included.
- * @param opts.until - Stop predicate over the frames so far.
- * @param opts.lastEventId - Sent as the `Last-Event-ID` resume header.
- */
-function openSseStream(
-  port: number,
-  path: string,
-  opts: { until: (frames: SseFrame[]) => boolean; lastEventId?: string }
-): OpenStream {
-  let signalReady = (): void => {};
-  let resolveFrames: (frames: SseFrame[]) => void = () => {};
-  let resolveStatus: (status: number) => void = () => {};
-  let rejectFrames: (err: unknown) => void = () => {};
-
-  const ready = new Promise<void>((resolve) => {
-    signalReady = resolve;
-  });
-  const frames = new Promise<SseFrame[]>((resolve, reject) => {
-    resolveFrames = resolve;
-    rejectFrames = reject;
-  });
-  const status = new Promise<number>((resolve) => {
-    resolveStatus = resolve;
-  });
-
-  const req = http.request(
-    {
-      host: '127.0.0.1',
-      port,
-      path,
-      method: 'GET',
-      headers: opts.lastEventId !== undefined ? { 'Last-Event-ID': opts.lastEventId } : {},
-    },
-    (res) => {
-      resolveStatus(res.statusCode ?? 0);
-      let raw = '';
-      let settled = false;
-      res.setEncoding('utf8');
-      const finish = (): void => {
-        if (settled) return;
-        settled = true;
-        req.destroy();
-        resolveFrames(parseFrames(raw));
-      };
-      res.on('data', (chunk: string) => {
-        raw += chunk;
-        signalReady();
-        if (opts.until(parseFrames(raw))) finish();
-      });
-      res.on('end', finish);
-    }
-  );
-  req.on('error', rejectFrames);
-  req.end();
-
-  return { ready, frames, status };
-}
-
 /**
  * Open one room's durable stream.
  *
@@ -142,7 +65,7 @@ function openRoomStream(
   port: number,
   roomId: string,
   opts: { until: (frames: SseFrame[]) => boolean; lastEventId?: string; after?: number }
-): OpenStream {
+): OpenSseStream {
   const query = opts.after !== undefined ? `?after=${opts.after}` : '';
   return openSseStream(port, `/api/rooms/${roomId}/events${query}`, opts);
 }

@@ -208,6 +208,8 @@ import { localDialHost } from './lib/local-dial-host.js';
 import { SERVER_VERSION } from './lib/version.js';
 import { createWorkspaceSubsystem, setWorkspaceManager } from './services/workspace/index.js';
 import { createRoomSubsystem, setRoomService, setRoomInternals } from './services/rooms/index.js';
+import { ReadCursorStore } from './services/core/read-cursor-store.js';
+import { ReadCursorService, setReadCursorService } from './services/core/read-cursor-service.js';
 import {
   followSessionRekeys,
   repairRoomSessionBindings,
@@ -850,6 +852,12 @@ async function start() {
   setRoomService(roomService);
   setRoomInternals(roomBridges, roomAuthors);
   logger.info('[Rooms] RoomService registered');
+
+  // Read state (team-room-home §D4). Unconditional and outside the rooms
+  // subsystem on purpose: the same table answers for rooms, agent sessions and
+  // the inbox, so wiring it from the rooms graph would have made two of the
+  // three depend on a domain they have nothing to do with.
+  setReadCursorService(new ReadCursorService(new ReadCursorStore(db)));
 
   // The install owner's author id, resolved per call (an install becomes owned
   // partway through its life, so a value captured at boot would go stale). The

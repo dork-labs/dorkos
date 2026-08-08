@@ -326,6 +326,9 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     removeRoomMember: vi.fn().mockResolvedValue(undefined),
     setRoomReadCursor: vi.fn().mockResolvedValue({}),
     subscribeRoom: vi.fn(emptyAsyncIterable),
+    // Read state (team-room-home D4) — the unified cursor, not the room
+    // membership one above.
+    setReadCursor: vi.fn().mockResolvedValue({}),
     // Models
     getModels: vi.fn().mockResolvedValue([
       { value: 'claude-sonnet-4-5-20250929', displayName: 'Sonnet 4.5', description: 'Fast model' },

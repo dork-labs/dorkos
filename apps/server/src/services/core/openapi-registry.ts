@@ -110,6 +110,11 @@ import {
   UpdateRoomRequestSchema,
 } from '@dorkos/shared/room-schemas';
 import {
+  ReadCursorParamsSchema,
+  ReadCursorSchema,
+  SetReadCursorPositionRequestSchema,
+} from '@dorkos/shared/read-cursor-schemas';
+import {
   ProfileAvatarResponseSchema,
   ProfileUpdateRequestSchema,
   ProfileUpdateResponseSchema,
@@ -3547,6 +3552,51 @@ registry.registerPath({
       },
     },
     404: roomNotFound,
+  },
+});
+
+// --- Read state (spec `team-room-home` §D4, ADR 260808-140956) ---
+
+registry.registerPath({
+  method: 'put',
+  path: '/api/read-cursors/{kind}/{id}',
+  tags: ['Read state'],
+  summary: "Advance the caller's read cursor in one thread",
+  description:
+    'The one write path onto read state, for every kind of thread there is: a room, an agent ' +
+    'session, or the inbox. Monotonic — a value at or below the stored one is ignored, so a stale ' +
+    'client on a second device cannot un-read a thread for the first one. The response is always ' +
+    'the cursor as it now stands, which is the higher of the stored value and the requested one, ' +
+    'so a refused write answers with what still holds rather than with an error. **Every write ' +
+    'that actually moves the cursor broadcasts `read_cursor` on `GET /api/events`**, carrying the ' +
+    'user, the kind, the thread and the new position; a write that changes nothing broadcasts ' +
+    "nothing. The cursor written is always the caller's own — there is no way to name a user in " +
+    "this request, and therefore no way to read or move anybody else's read state. **Only people " +
+    'have read state here** — a caller the server resolves as an agent (one presenting ' +
+    '`X-DorkOS-Agent`) is refused with 403 `PEOPLE_ONLY`, because what an agent has been shown is ' +
+    'the room-MEMBERSHIP cursor and not this one. Distinct from ' +
+    "`PUT /api/rooms/{id}/read-cursor`, which moves that membership cursor an agent's ambient " +
+    'turn also uses.',
+  request: {
+    params: ReadCursorParamsSchema,
+    body: {
+      content: { 'application/json': { schema: SetReadCursorPositionRequestSchema } },
+    },
+  },
+  responses: {
+    200: {
+      description: 'The cursor as it now stands',
+      content: { 'application/json': { schema: ReadCursorSchema } },
+    },
+    400: {
+      description:
+        'Unknown `kind`, empty `id`, missing body, or a `lastReadSeq` that is not a non-negative integer',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    403: {
+      description: 'The caller resolved to an agent, which has no read state here (`PEOPLE_ONLY`)',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
   },
 });
 
