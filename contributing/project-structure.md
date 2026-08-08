@@ -86,7 +86,6 @@ src/
 │   │   ├── session-list/ # SessionSidebar (Obsidian shell), SessionsView, tabbed views
 │   │   ├── dashboard-sidebar/ # DashboardSidebar — navigation + recent agents list at /
 │   │   ├── dashboard-attention/ # NeedsAttentionSection — conditional zero-DOM attention zone
-│   │   ├── dashboard-status/ # SystemStatusRow — Tasks/Relay/Mesh health cards + activity sparkline
 │   │   ├── dashboard-activity/ # RecentActivityFeed — time-grouped event feed with last-visit tracking
 │   │   ├── settings/    # SettingsDialog (Appearance, Preferences, Server, Tools, Advanced)
 │   │   ├── agent-settings/ # AgentDialog (IdentityTab, PersonaTab, CapabilitiesTab, IntegrationsTab)
@@ -101,6 +100,11 @@ src/
 │   │   └── status/      # StatusLine, GitStatusItem, ModelItem
 │   └── widgets/         # Large UI compositions
 │       ├── app-layout/  # Header, Layout, main workspace
+│       │   ├── ui/
+│       │   └── index.ts
+│       ├── activity/    # ActivityPage (/activity) — feed, week summary, "From your extensions"
+│       │   ├── lib/
+│       │   ├── model/
 │       │   ├── ui/
 │       │   └── index.ts
 │       ├── dashboard/   # DashboardPage — status overview at /

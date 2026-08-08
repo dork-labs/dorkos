@@ -1,6 +1,10 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { createMockTransport } from '@dorkos/test-utils';
-import { useExtensionRegistry, createInitialSlots } from '@/layers/shared/model';
+import {
+  useExtensionRegistry,
+  createInitialSlots,
+  isExtensionContributionId,
+} from '@/layers/shared/model';
 import { setPlatformAdapter } from '@/layers/shared/lib';
 import { initializeExtensions } from '../init-extensions';
 
@@ -193,5 +197,39 @@ describe('initializeExtensions — command palette gating (Obsidian embed)', () 
     }
     // The gate is selective — a self-contained action (theme toggle) still registers.
     expect(actions).toContain('toggleTheme');
+  });
+});
+
+describe('initializeExtensions — built-in ids never look like extension ids', () => {
+  beforeEach(() => {
+    useExtensionRegistry.setState({ slots: createInitialSlots() });
+    setPlatformAdapter({ isEmbedded: false, openFile: async () => {} });
+    initializeExtensions();
+  });
+
+  it('registers no colon-bearing id in any slot before an extension loads', () => {
+    // `isExtensionContributionId` tells first-party contributions apart from
+    // extension ones by the `${extensionId}:${localId}` namespace the extension
+    // API stamps on. Two surfaces split the `dashboard.sections` slot on that
+    // rule, so a built-in id with a colon in it would silently move a first-party
+    // section onto the Activity tab's "From your extensions" group. This walks
+    // every slot, including the ones registered inline in init-extensions rather
+    // than from an exported contribution list.
+    const { slots } = useExtensionRegistry.getState();
+    const offenders: string[] = [];
+    for (const [slotId, contributions] of Object.entries(slots)) {
+      for (const contribution of contributions) {
+        if (isExtensionContributionId(contribution.id)) {
+          offenders.push(`${slotId}/${contribution.id}`);
+        }
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  it('registered something in every slot it walks — the check is not vacuous', () => {
+    const { slots } = useExtensionRegistry.getState();
+    const total = Object.values(slots).reduce((sum, list) => sum + list.length, 0);
+    expect(total).toBeGreaterThan(0);
   });
 });

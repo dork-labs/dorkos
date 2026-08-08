@@ -1,3 +1,9 @@
+/**
+ * The seven-day session sparkline on the Activity tab. It used to sit in the
+ * dashboard System Status row; the row was retired, the sparkline was not.
+ *
+ * @module widgets/activity/ui/ActivitySparkline
+ */
 import { cn } from '@/layers/shared/lib';
 
 interface ActivitySparklineProps {

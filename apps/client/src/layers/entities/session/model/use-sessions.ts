@@ -44,6 +44,15 @@ export function useSessions() {
   return {
     sessions: sessionsQuery.data ?? [],
     isLoading: sessionsQuery.isLoading,
+    /**
+     * True once the list is a real answer rather than an absent one. The query
+     * is disabled until a working directory is chosen, and a disabled query
+     * reports `isLoading: false` with no data — so `sessions.length === 0` on
+     * its own cannot tell "this project has no sessions" from "nobody asked
+     * yet". Anything that makes a positive claim about emptiness must gate on
+     * this instead of on the array's length.
+     */
+    isAnswered: selectedCwd !== null && !sessionsQuery.isLoading && !sessionsQuery.isError,
     activeSessionId,
     setActiveSession,
   };

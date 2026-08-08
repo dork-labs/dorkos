@@ -54,6 +54,7 @@ export function createExtensionAPI(
         label?: string;
         icon?: ComponentType<{ className?: string }>;
         group?: string;
+        visibleWhen?: () => boolean;
       }
     ): () => void {
       const contribution = adaptToContribution(slot, `${extId}:${id}`, component, options);
@@ -271,6 +272,7 @@ function adaptToContribution(
     label?: string;
     icon?: ComponentType<{ className?: string }>;
     group?: string;
+    visibleWhen?: () => boolean;
   }
 ): Record<string, unknown> {
   const base = { id, priority: options?.priority ?? DEFAULT_PRIORITY };
@@ -279,7 +281,10 @@ function adaptToContribution(
 
   switch (slot) {
     case 'dashboard.sections':
-      return { ...base, component };
+      // `visibleWhen` is forwarded, not dropped: the section renders on the
+      // Activity tab, which re-evaluates the predicate on every render, so an
+      // extension can hide its own section without unregistering it.
+      return { ...base, component, visibleWhen: options?.visibleWhen };
     case 'sidebar.footer':
       return {
         ...base,

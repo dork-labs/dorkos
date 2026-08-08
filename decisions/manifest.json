@@ -2125,8 +2125,6 @@
       "specSlug": "dashboard-content",
       "lastVerified": "2026-08-06",
       "affects": [
-        "apps/client/src/layers/widgets/dashboard/model/use-dashboard-agents.ts",
-        "apps/client/src/layers/features/dashboard-status/model/use-subsystem-status.ts",
         "apps/client/src/layers/features/dashboard-attention/model/use-attention-items.ts"
       ]
     },

@@ -189,7 +189,8 @@ export default function register(router: Router, ctx: DataProviderContext): (() 
 
 /**
  * Dashboard card template — creates a dashboard section with a placeholder component.
- * Registers into the `dashboard.sections` slot.
+ * Registers into the `dashboard.sections` slot, which draws extension
+ * contributions under "From your extensions" at the top of the Activity tab.
  */
 function generateDashboardCardTemplate(name: string, description: string): string {
   const pascalName = toPascalCase(name);
