@@ -865,6 +865,15 @@ export class RoomTriggerDispatcher {
           ),
       });
 
+      // A REFUSAL IS NOT A READING. The claim moved this agent's cursor to the
+      // triggering entry on the assumption that the turn would be SHOWN what sits
+      // behind it — but `busy` is the runner declining before any model ran, so
+      // nothing was shown and nothing was read. Left forward, the whole backlog
+      // is permanently invisible, and the notice this outcome writes ("send it
+      // again when Ana is free") invites a message that would land ABOVE the
+      // advanced cursor and arrive with no context at all.
+      if (result.unanswered === 'busy') this.rewindClaimCursor(room, entry, target);
+
       // The turn ran on a session; that session is the one this agent must
       // resume here next time. It is not always the one the room asked with —
       // Claude Code assigns its own id on the first turn and files the
@@ -914,6 +923,22 @@ export class RoomTriggerDispatcher {
       }
     } catch (err) {
       outcome = 'failed';
+      // Same argument as the `busy` rewind above, over the other half of the
+      // same window. A throw out of `run` means the turn NEVER STARTED — the
+      // session would not open, the runtime was unreachable — so no model saw
+      // the backlog. A model that ran and then failed comes back as
+      // `unanswered: 'failed'` instead, and that one keeps the advance: it was
+      // shown the messages, and repeating them next turn is the duplicate RP3
+      // exists to stop.
+      //
+      // **That reading is a contract the runner owes this line**, not something
+      // observable from here: a throw raised AFTER the model streamed looks
+      // identical, and would replay the whole window to the next turn. It held
+      // by luck until a `persistSessionRuntime` await sat above the busy guard
+      // and turned a `SQLITE_BUSY` on one bookkeeping row into exactly that.
+      // `room-turn-runner.ts` now states the rule where it has to be kept —
+      // nothing after the model has spoken may throw past `run`.
+      this.rewindClaimCursor(room, entry, target);
       // The failure detail belongs on the agent's own session stream, where the
       // turn machinery already surfaces it — a room log is no place for a stack
       // trace. But the FACT belongs here: a turn that threw and said nothing is
@@ -1086,6 +1111,35 @@ export class RoomTriggerDispatcher {
         this.releaseClaim(key, outcome);
         this.settleOne();
       });
+  }
+
+  /**
+   * Undo the claim's cursor advance for a turn that never reached a model.
+   *
+   * The advance at claim time is deliberate and load-bearing: a turn that fails
+   * midway has still SEEN what it was shown, and replaying that would hand the
+   * agent the same conversation twice (room-participation spec §8.3). It buys
+   * that by assuming the turn is about to be shown something — and two paths
+   * reach a terminal before it is. The session was busy, or `run` threw on the
+   * way in. On both, no `room_context` ever reached a model, so the messages
+   * behind the cursor were never delivered to anybody and the room owes them to
+   * the next turn.
+   *
+   * **Compare-and-set, not an assignment.** It restores only if the stored value
+   * is still exactly the one this claim wrote. A second turn claimed for the
+   * same member in between has already moved it forward and is relying on it, so
+   * the predicate misses and this does nothing — which is the correct answer,
+   * because that turn WAS shown the window.
+   *
+   * @param room - The room the turn was refused in.
+   * @param entry - The entry it would have answered; the value the claim wrote.
+   * @param target - The refused target, carrying the cursor it had before.
+   */
+  private rewindClaimCursor(room: Room, entry: RoomEntry, target: TriggerTarget): void {
+    this.deps.store.rewindReadCursor(room.id, target.authorId, {
+      from: entry.seq,
+      to: target.lastReadSeq,
+    });
   }
 
   /**

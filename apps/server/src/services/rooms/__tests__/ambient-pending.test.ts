@@ -123,6 +123,45 @@ describe('the ambient window a room turn is shown', () => {
     expect(context.pending.map((entry) => entry.text)).toEqual(['m95', 'm96', 'm97', 'm98', 'm99']);
   });
 
+  it('replays nothing at all when the cap is 0', async () => {
+    // The setting a person reaches for to say "answer me, do not catch up". It
+    // is the one value the obvious `slice(-cap)` gets wrong — `slice(-0)` is
+    // `slice(0)`, the whole array — so a room asking for no history got one
+    // entry, labelled as a truncation of many.
+    const harness = openRoom();
+    harness.db
+      .update(rooms)
+      .set({ ambientMaxEntries: 0 })
+      .where(eq(rooms.id, harness.roomId))
+      .run();
+
+    await say(harness, 'one');
+    await say(harness, 'two');
+    await say(harness, '@ana where are we?');
+
+    const context = contextAt(harness, 0);
+    expect(context.pending).toEqual([]);
+    // Still honest about it: two messages were dropped, and the turn is told.
+    expect(context.pendingTruncated).toBe(true);
+  });
+
+  it('treats a negative cap as 0 rather than as no cap at all', async () => {
+    // SQLite reads a negative LIMIT as UNLIMITED, so the one number that most
+    // obviously means "even less than nothing" would have replayed the entire
+    // window. Clamped at the read, where the value crosses into SQL.
+    const harness = openRoom();
+    harness.db
+      .update(rooms)
+      .set({ ambientMaxEntries: -5 })
+      .where(eq(rooms.id, harness.roomId))
+      .run();
+
+    for (let i = 1; i <= 20; i += 1) await say(harness, `m${i}`);
+    await say(harness, '@ana where are we?');
+
+    expect(contextAt(harness, 0).pending).toEqual([]);
+  });
+
   it('costs no turn when a message addresses nobody', async () => {
     // E7: if an agent is charged for listening, restraint becomes something the
     // product punishes. Asserted on the RUNNER — the stand-in for the model call
@@ -142,10 +181,20 @@ describe('the ambient window a room turn is shown', () => {
   });
 
   it('does not show the same entry twice on two turns in a row', async () => {
-    const harness = openRoom();
+    const harness = openRoom({ runner: outcomeRunner(() => ({ text: 'on it' })) });
     await say(harness, 'one');
     await say(harness, 'two');
-    await say(harness, '@ana first?');
+    const firstTrigger = harness.service.post(harness.roomId, {
+      authorId: harness.human,
+      text: '@ana first?',
+    });
+    await harness.service.triggersIdle();
+    // A turn that ANSWERS keeps its claim-time advance — the other half of the
+    // refusal rewinds below, and the reason a runner must never throw once the
+    // model has spoken (`room-turn-runner.test.ts` holds that end).
+    expect(harness.store.getMember(harness.roomId, harness.ana)?.lastReadSeq).toBe(
+      firstTrigger.seq
+    );
     await say(harness, 'three');
     await say(harness, '@ana second?');
 
@@ -158,12 +207,16 @@ describe('the ambient window a room turn is shown', () => {
     expect(new Set([...first, ...second]).size).toBe(first.length + second.length);
   });
 
-  it('advances the cursor when the turn is CLAIMED, so a failed turn replays nothing', async () => {
-    // The discriminating half. A cursor advanced when the reply posts is
-    // indistinguishable from this one until a turn ends without a reply — and
-    // then it shows the agent the same conversation a second time.
+  it('advances the cursor when the turn is CLAIMED, so a turn that ran and failed replays nothing', async () => {
+    // The discriminating half of the advance. A cursor moved when the REPLY
+    // posts is indistinguishable from one moved at the claim until a turn ends
+    // without a reply — and then it shows the agent the same conversation twice.
+    //
+    // `unanswered: 'failed'` is the outcome where the model RAN: it was handed
+    // the window and then the turn broke. It read those messages, so they are
+    // spent. (A runner that throws never got that far — see below.)
     const harness = openRoom({
-      runner: outcomeRunner(() => ({ throws: new Error('the runtime is down') })),
+      runner: outcomeRunner(() => ({ text: null, unanswered: 'failed' as const })),
     });
     await say(harness, 'one');
     const trigger = harness.service.post(harness.roomId, {
@@ -172,12 +225,73 @@ describe('the ambient window a room turn is shown', () => {
     });
     await harness.service.triggersIdle();
 
-    // The turn threw, so nothing was posted on Ana's behalf — and the cursor
-    // moved anyway, because she had already been shown everything up to here.
+    // Nothing was posted on Ana's behalf, and the cursor moved anyway.
     expect(harness.store.getMember(harness.roomId, harness.ana)?.lastReadSeq).toBe(trigger.seq);
     expect(contextAt(harness, 0).pending.map((entry) => entry.text)).toEqual(['one']);
 
     await say(harness, '@ana second?');
     expect(contextAt(harness, 1).pending).toEqual([]);
+  });
+
+  describe('a turn refused before any model ran', () => {
+    // THE LOST-DELTA CLASS. The claim advances the cursor on the promise that
+    // the turn is about to be SHOWN the backlog. Two paths break that promise
+    // after the claim is taken and before a model exists: the session is already
+    // being written to, and the runner throwing on the way in. Neither delivered
+    // a single message to anybody, so leaving the cursor forward makes the whole
+    // backlog permanently invisible — and the refusal notice ("send it again
+    // when Ana is free") then invites a message that lands above it.
+
+    it('gives the backlog back when the session was busy', async () => {
+      let turns = 0;
+      const harness = openRoom({
+        runner: outcomeRunner(() => {
+          turns += 1;
+          return turns === 1 ? { text: null, unanswered: 'busy' as const } : { text: 'on it' };
+        }),
+      });
+      await say(harness, 'one');
+      await say(harness, 'two');
+      const refused = harness.service.post(harness.roomId, {
+        authorId: harness.human,
+        text: '@ana first?',
+      });
+      await harness.service.triggersIdle();
+
+      // Put back exactly where it was, so the room still owes her everything.
+      expect(harness.store.getMember(harness.roomId, harness.ana)?.lastReadSeq).toBe(0);
+      expect(refused.seq).toBe(3);
+
+      // And on the turn that does run, the backlog is all still there — including
+      // the message she was never shown.
+      await say(harness, '@ana second?');
+      expect(contextAt(harness, 1).pending.map((entry) => entry.text)).toEqual([
+        'one',
+        'two',
+        '@ana first?',
+      ]);
+    });
+
+    it('gives the backlog back when the runner never started the turn', async () => {
+      let turns = 0;
+      const harness = openRoom({
+        runner: outcomeRunner(() => {
+          turns += 1;
+          return turns === 1 ? { throws: new Error('the runtime is down') } : { text: 'on it' };
+        }),
+      });
+      await say(harness, 'one');
+      await say(harness, 'two');
+      await say(harness, '@ana first?');
+
+      expect(harness.store.getMember(harness.roomId, harness.ana)?.lastReadSeq).toBe(0);
+
+      await say(harness, '@ana second?');
+      expect(contextAt(harness, 1).pending.map((entry) => entry.text)).toEqual([
+        'one',
+        'two',
+        '@ana first?',
+      ]);
+    });
   });
 });

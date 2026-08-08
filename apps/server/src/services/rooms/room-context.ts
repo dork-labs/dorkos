@@ -196,7 +196,12 @@ export function buildRoomContext(deps: RoomContextDeps, input: RoomContextInput)
   // addressed at message 50 is shown 41 to 49 even though its cursor, like every
   // agent's on the day RP3 ships, still reads 0.
   const ambientFrom = Math.max(input.lastReadSeq, self?.joinedSeq ?? 0);
-  const cap = input.room.ambientMaxEntries;
+  // Clamped at the READ, not trusted from the column. A negative cap would reach
+  // SQLite as a negative `LIMIT`, which SQLite reads as NO limit — so the one
+  // value a person could set meaning "replay almost nothing" would replay the
+  // entire window instead. Zero is a legitimate setting and survives the clamp:
+  // a room that replays nothing.
+  const cap = Math.max(0, input.room.ambientMaxEntries);
   // Read one more than the cap: a full page means older entries were dropped,
   // and that is what `pendingTruncated` reports. The cap, both bounds and both
   // exclusions are in SQL — see the store method for why that matters.
@@ -222,7 +227,11 @@ export function buildRoomContext(deps: RoomContextDeps, input: RoomContextInput)
     limit: cap + 1,
   });
   const pendingTruncated = window.length > cap;
-  const missed = pendingTruncated ? window.slice(-cap) : window;
+  // Counted from the FRONT, never `slice(-cap)`. A negative index is what a
+  // reader expects to mean "the last cap", and it does — except at zero, where
+  // `slice(-0)` is `slice(0)` and returns the whole array. A room configured to
+  // replay nothing would have replayed one entry and reported it as truncated.
+  const missed = window.slice(Math.max(0, window.length - cap));
   // Read off the whole log rather than off the unread window: the point of it is
   // that an agent triggered again does not repeat what it already said, and what
   // it already said sits behind its own cursor by definition.

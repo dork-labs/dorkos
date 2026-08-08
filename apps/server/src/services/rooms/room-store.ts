@@ -450,6 +450,55 @@ export class RoomStore {
   }
 
   /**
+   * Put a member's read cursor BACK, and only if nothing has moved it since.
+   *
+   * **A second method rather than a relaxed {@link RoomStore.setReadCursor}.**
+   * That one is monotonic on purpose — a stale client must never un-read a room
+   * for a second client — and widening its predicate to allow a lower value
+   * would hand every caller the ability to do exactly that. This one can only
+   * ever undo one specific write: it names the value it expects to find, so it
+   * is a compare-and-set rather than an assignment.
+   *
+   * **What it is for.** The room advances an agent's cursor when its turn is
+   * CLAIMED, because a turn that then fails has still seen the messages it was
+   * shown (room-participation spec §8.3). But a claim is taken before the runner
+   * is asked, and the runner can refuse before any model runs — a busy session,
+   * or a throw on the way in. Nothing was shown, so nothing was read, and
+   * leaving the cursor forward would make that backlog permanently invisible;
+   * the busy notice even invites a re-send that would land above it.
+   *
+   * `from` is what makes this safe to run late. If a SECOND turn has been
+   * claimed for the same member in the meantime, the stored value is no longer
+   * the one this turn wrote, the predicate misses, and the rewind is a no-op —
+   * so a refusal can never walk back a cursor that a live turn is relying on.
+   *
+   * @param roomId - The room.
+   * @param authorId - The member.
+   * @param opts.from - The value this rewind expects to find; anything else and
+   *   nothing is written.
+   * @param opts.to - The value to restore.
+   * @returns The membership as it now stands, or `null` when there is none.
+   */
+  rewindReadCursor(
+    roomId: string,
+    authorId: string,
+    opts: { from: number; to: number }
+  ): RoomMember | null {
+    this.db
+      .update(roomMembers)
+      .set({ lastReadSeq: opts.to })
+      .where(
+        and(
+          eq(roomMembers.roomId, roomId),
+          eq(roomMembers.authorId, authorId),
+          eq(roomMembers.lastReadSeq, opts.from)
+        )
+      )
+      .run();
+    return this.getMember(roomId, authorId);
+  }
+
+  /**
    * Remove a member.
    *
    * @param roomId - The room.

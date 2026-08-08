@@ -468,6 +468,45 @@ describe('RoomStore.listUnreadEntries', () => {
   });
 });
 
+describe('RoomStore.rewindReadCursor', () => {
+  /** A room with one member whose cursor has been advanced to `at`. */
+  function memberAt(at: number): RoomStore {
+    const store = new RoomStore(createTestDb());
+    seedRoom(store);
+    store.addMember({
+      roomId: ROOM_ID,
+      authorId: 'ana',
+      responseMode: 'always',
+      joinedAt: '2026-07-26T11:00:00.000Z',
+    });
+    store.setReadCursor(ROOM_ID, 'ana', at);
+    return store;
+  }
+
+  it('puts the cursor back when it is still where the caller left it', () => {
+    const store = memberAt(7);
+    expect(store.rewindReadCursor(ROOM_ID, 'ana', { from: 7, to: 2 })?.lastReadSeq).toBe(2);
+  });
+
+  it('refuses when something else has moved it since', () => {
+    // The whole reason this is a compare-and-set. A refused turn may release long
+    // after a SECOND turn was claimed for the same member — and that turn WAS
+    // shown its window, so walking its cursor back would replay the conversation
+    // to it. The stale rewind has to miss, silently.
+    const store = memberAt(7);
+    store.setReadCursor(ROOM_ID, 'ana', 9);
+
+    expect(store.rewindReadCursor(ROOM_ID, 'ana', { from: 7, to: 2 })?.lastReadSeq).toBe(9);
+  });
+
+  it('is what setReadCursor cannot do, which is why it is its own method', () => {
+    // Pins the monotonic guarantee this deliberately does not relax: the mark-read
+    // route must stay unable to un-read a room for a second client.
+    const store = memberAt(7);
+    expect(store.setReadCursor(ROOM_ID, 'ana', 2)?.lastReadSeq).toBe(7);
+  });
+});
+
 describe('RoomStore.listEntriesByAuthor', () => {
   it('returns only that author newest entries, oldest first within the page', () => {
     const store = new RoomStore(createTestDb());
