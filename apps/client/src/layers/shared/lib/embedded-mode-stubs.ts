@@ -53,6 +53,7 @@ import type {
   PostThreadReplyRequest,
   PostToRoomRequest,
   PostToRoomResponse,
+  RoomAttachment,
   RoomEntry,
   RoomEvent,
   RoomMember,
@@ -838,6 +839,10 @@ export const roomStubs = {
   },
 
   async postToRoom(_id: string, _req: PostToRoomRequest): Promise<PostToRoomResponse> {
+    throw new Error('Rooms are not supported in embedded mode');
+  },
+
+  async uploadRoomAttachments(): Promise<RoomAttachment[]> {
     throw new Error('Rooms are not supported in embedded mode');
   },
 

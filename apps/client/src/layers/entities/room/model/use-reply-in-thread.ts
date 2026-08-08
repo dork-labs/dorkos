@@ -51,6 +51,10 @@ export interface ReplyInThreadInput {
    * they are in the air. Passed back unchanged on a retry.
    */
   clientId: string;
+  /** The files to send with it, already uploaded, in the order they render. */
+  attachmentIds?: string[];
+  /** What to call those files while the reply is still in the air. */
+  attachmentNames?: string[];
 }
 
 /**
@@ -70,10 +74,24 @@ export function useReplyInThread(): UseMutationResult<
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({ roomId, rootEntryId, text }: ReplyInThreadInput) =>
-      transport.replyInThread(roomId, { rootEntryId, text }),
-    onMutate: ({ roomId, rootEntryId, text, clientId }) => {
-      usePendingPostStore.getState().start({ clientId, roomId, threadRootId: rootEntryId, text });
+    // `attachmentIds` is omitted rather than sent empty, exactly as in
+    // `usePostToRoom`: a reply with no files asks for what it always asked for.
+    mutationFn: ({ roomId, rootEntryId, text, attachmentIds }: ReplyInThreadInput) =>
+      transport.replyInThread(
+        roomId,
+        attachmentIds !== undefined && attachmentIds.length > 0
+          ? { rootEntryId, text, attachmentIds }
+          : { rootEntryId, text }
+      ),
+    onMutate: ({ roomId, rootEntryId, text, clientId, attachmentIds, attachmentNames }) => {
+      usePendingPostStore.getState().start({
+        clientId,
+        roomId,
+        threadRootId: rootEntryId,
+        text,
+        attachmentIds: attachmentIds ?? [],
+        attachmentNames: attachmentNames ?? [],
+      });
     },
     onSuccess: (accepted, { roomId, clientId }) =>
       reconcilePendingPost(queryClient, roomId, clientId, accepted.entryId),

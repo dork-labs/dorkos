@@ -435,7 +435,7 @@ export class RoomStore {
    * claimed and rewound when it refuses (room-participation spec §8.3). Where a
    * PERSON has read is `read_cursors`, and `RoomService.setReadCursor` is what
    * decides which of the two a caller is moving. A human's row here is
-   * historical residue from before the split: migration 0059 copied it forward,
+   * historical residue from before the split: migration 0061 copied it forward,
    * and nothing writes or reads it for a person now.
    *
    * @param roomId - The room.
@@ -551,9 +551,24 @@ export class RoomStore {
    *   holding a message from a non-member is not a state any reader should
    *   have to handle. Ordered first so the membership exists for the whole
    *   life of the entry, never the other way round.
+   * @param bind - Extra writes to run inside the SAME transaction, AFTER the
+   *   entry row is inserted. The mirror of `within`, and both exist because the
+   *   two sides of the insert are not interchangeable: `within` runs first so a
+   *   membership row covers the whole life of the entry, and `bind` runs last so
+   *   a child row carrying a foreign key ONTO the entry has a parent to point
+   *   at. `room_attachments` is the first such child, and putting its UPDATE in
+   *   `within` fails immediately with `FOREIGN KEY constraint failed` —
+   *   `foreign_keys` is ON and drizzle emits no `DEFERRABLE` clause, so the key
+   *   is checked at statement time. All three writes are in one transaction, so
+   *   they land together or not at all. Handed the allocated `seq` for a child
+   *   row that wants to record it.
    * @returns The stored entry, with its allocated `seq`.
    */
-  appendEntry(entry: NewRoomEntry, within?: (tx: DbTransaction) => void): RoomEntry {
+  appendEntry(
+    entry: NewRoomEntry,
+    within?: (tx: DbTransaction) => void,
+    bind?: (tx: DbTransaction, seq: number) => void
+  ): RoomEntry {
     return this.db.transaction(
       (tx) => {
         within?.(tx);
@@ -588,6 +603,8 @@ export class RoomStore {
           .set({ lastActivityAt: entry.createdAt })
           .where(eq(rooms.id, entry.roomId))
           .run();
+
+        bind?.(tx, seq);
 
         return {
           roomId: entry.roomId,
@@ -1178,6 +1195,55 @@ export class RoomStore {
       })
       .from(roomSessions)
       .all();
+  }
+
+  /**
+   * Which of these session ids are room turns, and what to call the room.
+   *
+   * The read behind the session-origin room overlay
+   * (`services/session/room-origin-overlay.ts`). Scoped to the ids asked about —
+   * unlike {@link RoomStore.listRoomSessions}, which is the unscoped whole-table
+   * read a hand-run health check can afford — because this one runs on every
+   * session list a person loads.
+   *
+   * **Bindings are keyed by the CURRENT session id.** A runtime renames a
+   * session mid-turn and `RoomSessionLedger.rebindBySessionId` moves the binding
+   * with it (DOR-784), so matching on `room_sessions.session_id` matches the
+   * live id and a retired one correctly answers nothing.
+   *
+   * The label is what a person calls the room — `#slug` for a channel, the title
+   * for a direct message — the same rule the client's `roomDisplayTitle`
+   * follows. Archived rooms are included deliberately: the session still came
+   * from that room, and a run whose room was archived is exactly the one a
+   * reader would otherwise be unable to place.
+   *
+   * @param sessionIds - The sessions to ask about.
+   * @returns One entry per bound session; absent means "not a room turn".
+   */
+  resolveRoomOrigins(sessionIds: string[]): Map<string, { roomLabel: string; roomId: string }> {
+    const result = new Map<string, { roomLabel: string; roomId: string }>();
+    if (sessionIds.length === 0) return result;
+    const rows = this.db
+      .select({
+        sessionId: roomSessions.sessionId,
+        roomId: rooms.id,
+        kind: rooms.kind,
+        slug: rooms.slug,
+        title: rooms.title,
+      })
+      .from(roomSessions)
+      .innerJoin(rooms, eq(rooms.id, roomSessions.roomId))
+      .where(inArray(roomSessions.sessionId, sessionIds))
+      .all();
+    for (const row of rows) {
+      // Several agents in one room answer with several sessions, so many ids can
+      // map to the same room — but one id is bound in at most one place, and the
+      // first row for it wins if that ever stops being true.
+      if (result.has(row.sessionId)) continue;
+      const label = row.kind === 'channel' && row.slug ? `#${row.slug}` : row.title;
+      result.set(row.sessionId, { roomLabel: label, roomId: row.roomId });
+    }
+    return result;
   }
 
   /**

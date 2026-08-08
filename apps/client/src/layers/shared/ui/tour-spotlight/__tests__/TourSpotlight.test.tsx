@@ -318,17 +318,17 @@ describe('TourSpotlight — S5 reduced motion', () => {
 });
 
 describe('TourSpotlight — S6 smooth movement between steps', () => {
-  const SECOND_CAPTION = 'And these are your agents.';
+  const SECOND_CAPTION = 'And this is your Team.';
   const TWO_STEPS: TourStep[] = [
     GENERAL_STEP,
-    { anchor: TOUR_ANCHORS.yourAgents, caption: SECOND_CAPTION, chipLabel: 'Done' },
+    { anchor: TOUR_ANCHORS.navAgents, caption: SECOND_CAPTION, chipLabel: 'Done' },
   ];
 
   /** Mount a #root that carries both step anchors. */
   function mountRootWithTwoAnchors() {
     const root = document.createElement('div');
     root.id = 'root';
-    for (const id of [TOUR_ANCHORS.dashboardComposer, TOUR_ANCHORS.yourAgents]) {
+    for (const id of [TOUR_ANCHORS.dashboardComposer, TOUR_ANCHORS.navAgents]) {
       const el = document.createElement('button');
       el.setAttribute('data-testid', id);
       el.textContent = id;

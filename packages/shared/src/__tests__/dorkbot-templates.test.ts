@@ -120,11 +120,10 @@ describe('dorkbot-templates', () => {
       expect(DORKBOT_TOUR_LINES.offers.relay).toContain('integration');
       expect(DORKBOT_TOUR_LINES.offers.mesh).toContain('agents');
       expect(DORKBOT_TOUR_LINES.general.composer.length).toBeGreaterThan(0);
-      expect(DORKBOT_TOUR_LINES.general.yourAgents.length).toBeGreaterThan(0);
-      expect(DORKBOT_TOUR_LINES.general.navTasks.length).toBeGreaterThan(0);
+      expect(DORKBOT_TOUR_LINES.general.homeTabs.length).toBeGreaterThan(0);
       expect(DORKBOT_TOUR_LINES.tasks.tasksList.length).toBeGreaterThan(0);
       expect(DORKBOT_TOUR_LINES.relay.relayIntegrations.length).toBeGreaterThan(0);
-      expect(DORKBOT_TOUR_LINES.mesh.navAgents.length).toBeGreaterThan(0);
+      expect(DORKBOT_TOUR_LINES.mesh.teamRoster.length).toBeGreaterThan(0);
     });
 
     it('never uses an em dash (writing-for-humans)', () => {

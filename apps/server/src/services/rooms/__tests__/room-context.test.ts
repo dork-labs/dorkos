@@ -16,6 +16,8 @@ import type { ResponseMode } from '@dorkos/shared/mesh-schemas';
 import type { RoomWithRoster } from '@dorkos/shared/room-schemas';
 import { formatRoomContext } from '../../runtimes/shared/room-context-block.js';
 import type { AuthorRegistry } from '../author-registry.js';
+import type { AttachmentRowStore } from '../attachments/attachment-row-store.js';
+import type { ProjectableAttachment } from '../room-context.js';
 import type { RoomService } from '../room-service.js';
 import { RoomStore } from '../room-store.js';
 import {
@@ -51,6 +53,8 @@ describe('the room context a trigger derives', () => {
   let ana: string;
   let bo: string;
   let cy: string;
+  let attachments: AttachmentRowStore;
+  let uploaded = 0;
 
   /**
    * Open a channel holding `agentPaths`, every one of them answering always.
@@ -75,7 +79,7 @@ describe('the room context a trigger derives', () => {
     } = {}
   ): void {
     const agentPaths = opts.agentPaths ?? ['/agents/ana'];
-    ({ service, authors, runner, human } = createRoomHarness({
+    ({ service, authors, attachments, runner, human } = createRoomHarness({
       agents,
       runner: opts.runner ?? scriptedRunner(() => null),
       maxAgentDepth: MAX_AGENT_DEPTH,
@@ -590,6 +594,148 @@ describe('the room context a trigger derives', () => {
       // itself, which arrives as the turn's content rather than as history.
       const pending = contextFor(ana).pending.map((entry) => entry.text);
       expect(pending).toEqual(['the deploy is stuck', 'unrelated channel chatter', 'which step?']);
+    });
+  });
+
+  describe('the files it is told about', () => {
+    /**
+     * Stage one uploaded-but-unposted file, the way the upload route would.
+     *
+     * @param name - The stored filename.
+     */
+    function upload(name: string): string {
+      uploaded += 1;
+      const id = `att-${uploaded}`;
+      attachments.create(
+        {
+          roomId: room.id,
+          id,
+          authorId: human,
+          name,
+          extension: name.split('.').pop() ?? '',
+          mimeType: 'text/plain',
+          size: 11,
+          preview: null,
+          url: `/api/rooms/${room.id}/attachments/${id}`,
+        },
+        `2026-08-08T10:0${uploaded}:00.000Z`
+      );
+      return id;
+    }
+
+    /** The projection plan handed to one agent's most recent turn. */
+    function projectionFor(authorId: string): readonly ProjectableAttachment[] {
+      const turns = runner.turns.filter((turn) => turn.authorId === authorId);
+      if (turns.length === 0) throw new Error('that agent was never triggered');
+      return turns[turns.length - 1].attachmentProjection;
+    }
+
+    it('names every file on an entry, in upload order, as a relative path', async () => {
+      // `mention-only` so Ana is not woken by the message carrying the files:
+      // her cursor stays put, and that message is genuinely unread when the
+      // `@ana` below finally triggers her (main's ambient window, RP3).
+      open({ responseMode: 'mention-only' });
+      const first = upload('crash.log');
+      const second = upload('trace.txt');
+      const posted = service.post(room.id, {
+        authorId: human,
+        text: 'both of these',
+        attachmentIds: [first, second],
+      });
+      await service.triggersIdle();
+      // A second message, so the one carrying the files is HISTORY rather than
+      // the triggering entry — `pending` is what this test is about.
+      await say('@ana any idea?');
+
+      const carried = contextFor(ana).pending.find((entry) => entry.text === 'both of these');
+      expect(carried?.attachments).toEqual([
+        { name: 'crash.log', path: `.dork/.temp/room-attachments/${posted.id}/${first}-crash.log` },
+        {
+          name: 'trace.txt',
+          path: `.dork/.temp/room-attachments/${posted.id}/${second}-trace.txt`,
+        },
+      ]);
+    });
+
+    it('gives an entry with no files an empty list, never undefined', async () => {
+      open({ responseMode: 'mention-only' });
+      await say('just words');
+      await say('@ana and more words');
+
+      const carried = contextFor(ana).pending.find((entry) => entry.text === 'just words');
+      expect(carried?.attachments).toEqual([]);
+    });
+
+    it('plans exactly the files it named, and nothing else', async () => {
+      open({ responseMode: 'mention-only' });
+      const file = upload('crash.log');
+      const posted = service.post(room.id, {
+        authorId: human,
+        text: 'here it is',
+        attachmentIds: [file],
+      });
+      await service.triggersIdle();
+      await say('@ana any idea?');
+
+      // The plan and the told paths are one value, so they must agree exactly.
+      expect(projectionFor(ana)).toEqual([
+        {
+          entryId: posted.id,
+          attachmentId: file,
+          extension: 'log',
+          name: 'crash.log',
+          relativePath: `.dork/.temp/room-attachments/${posted.id}/${file}-crash.log`,
+        },
+      ]);
+    });
+
+    /**
+     * THE discriminating assertion for this task.
+     *
+     * A file on an entry that has fallen out of the 30-entry window is a file
+     * the model is never told about — so planning it would mean projecting bytes
+     * for a message nobody will read, and the reverse (telling without planning)
+     * is the silent failure ADR 260807-233816 exists to prevent. Both sets are
+     * asserted, because only together do they say "these two are the same set".
+     */
+    it('leaves out a file on an entry that fell outside the window', async () => {
+      open({ responseMode: 'mention-only' });
+      const stale = upload('ancient.log');
+      const staleEntry = service.post(room.id, {
+        authorId: human,
+        text: 'the old one',
+        attachmentIds: [stale],
+      });
+      await service.triggersIdle();
+
+      // Push it out: PENDING_MAX_ENTRIES is 30, so 31 more messages guarantee it.
+      for (let n = 0; n < 31; n += 1) {
+        service.post(room.id, { authorId: human, text: `filler ${n}` });
+      }
+      await service.triggersIdle();
+
+      const fresh = upload('recent.log');
+      const freshEntry = service.post(room.id, {
+        authorId: human,
+        text: 'the new one',
+        attachmentIds: [fresh],
+      });
+      await service.triggersIdle();
+      await say('@ana any idea?');
+
+      const context = contextFor(ana);
+      const window = [...context.pending, ...context.ownRecent];
+      expect(window.some((entry) => entry.text === 'the old one')).toBe(false);
+      expect(window.some((entry) => entry.text === 'the new one')).toBe(true);
+
+      // Told about: only the fresh one.
+      const toldPaths = window.flatMap((entry) => entry.attachments.map((file) => file.path));
+      expect(toldPaths).toEqual([
+        `.dork/.temp/room-attachments/${freshEntry.id}/${fresh}-recent.log`,
+      ]);
+      // Planned: exactly the same one, and nothing for the entry that aged out.
+      expect(projectionFor(ana).map((file) => file.relativePath)).toEqual(toldPaths);
+      expect(projectionFor(ana).some((file) => file.entryId === staleEntry.id)).toBe(false);
     });
   });
 });

@@ -64,7 +64,7 @@ afterEach(cleanup);
 describe('AppTabStrip', () => {
   it('names each tab after its route, and a chat tab after its project', () => {
     renderStrip([DASHBOARD, API_SESSION]);
-    expect(screen.getByRole('tab', { name: /Dashboard/ })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /Home/ })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /api/ })).toBeInTheDocument();
   });
 
@@ -83,7 +83,7 @@ describe('AppTabStrip', () => {
     const active = screen.getByRole('tab', { name: /Team/ });
     expect(active).toHaveAttribute('aria-selected', 'true');
     expect(active).toHaveAttribute('aria-controls', APP_TAB_PANEL_ID);
-    const other = screen.getByRole('tab', { name: /Dashboard/ });
+    const other = screen.getByRole('tab', { name: /Home/ });
     expect(other).toHaveAttribute('aria-selected', 'false');
     expect(other).not.toHaveAttribute('aria-controls');
   });
@@ -113,7 +113,7 @@ describe('AppTabStrip', () => {
 
   it('is one Tab stop: arrows move and switch, keyboard-source', () => {
     renderStrip([DASHBOARD, AGENTS]);
-    const active = screen.getByRole('tab', { name: /Dashboard/ });
+    const active = screen.getByRole('tab', { name: /Home/ });
     expect(active).toHaveAttribute('tabindex', '0');
     expect(screen.getByRole('tab', { name: /Team/ })).toHaveAttribute('tabindex', '-1');
 
@@ -123,13 +123,13 @@ describe('AppTabStrip', () => {
 
   it('closes the focused tab with Delete', () => {
     renderStrip([DASHBOARD, AGENTS]);
-    fireEvent.keyDown(screen.getByRole('tab', { name: /Dashboard/ }), { key: 'Delete' });
+    fireEvent.keyDown(screen.getByRole('tab', { name: /Home/ }), { key: 'Delete' });
     expect(onClose).toHaveBeenCalledWith(DASHBOARD.id, 'keyboard');
   });
 
   it('advertises no Delete shortcut when the last tab cannot be closed', () => {
     renderStrip([DASHBOARD]);
-    const only = screen.getByRole('tab', { name: /Dashboard/ });
+    const only = screen.getByRole('tab', { name: /Home/ });
     expect(only).not.toHaveAttribute('aria-keyshortcuts');
     fireEvent.keyDown(only, { key: 'Delete' });
     expect(onClose).not.toHaveBeenCalled();

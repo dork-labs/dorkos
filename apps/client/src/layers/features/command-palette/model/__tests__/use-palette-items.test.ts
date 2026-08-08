@@ -53,7 +53,7 @@ const DEFAULT_PALETTE_CONTRIBUTIONS: CommandPaletteContribution[] = [
   },
   {
     id: 'dashboard',
-    label: 'Go to Dashboard',
+    label: 'Go home',
     icon: 'Home',
     action: 'navigateDashboard',
     category: 'quick-action',

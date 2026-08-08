@@ -30,17 +30,16 @@
  *
  * | Capability                     | Chat | Room             | Dashboard    |
  * | ------------------------------ | ---- | ---------------- | ------------ |
- * | Attach (chip bar, drag, paste) | yes  | reserved         | follows chat |
+ * | Attach (chip bar, drag, paste) | yes  | yes              | follows chat |
  * | Slash commands                 | yes  | reserved         | follows chat |
  * | `@` mentions                   | no   | yes              | no           |
  * | Queue-while-busy               | yes  | no (session)     | yes          |
  * | Prompt suggestions             | yes  | no (session)     | yes          |
  * | Interactive input panel        | yes  | no (session)     | yes          |
  *
- * "reserved" means the slot exists and is intentionally unwired: room attach
- * lands in DOR-947, and room slash commands are deferred to a follow-up — a
- * room has no single cwd, session, or runtime, so `transport.getCommands` has
- * nothing to key on.
+ * "reserved" means the slot exists and is intentionally unwired: room slash
+ * commands are deferred to a follow-up — a room has no single cwd, session, or
+ * runtime, so `transport.getCommands` has nothing to key on.
  *
  * Only components and types leave this slice. `InputActionButton`,
  * `useInputKeyboard`, `useTextareaResize`, `useDragAndPaste`, and `usePathDrop`

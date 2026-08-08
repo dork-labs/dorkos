@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "f33729c9-dffa-4a6c-9d31-f005f63a1ab3",
+  "id": "fee56a93-7d2d-4424-92f9-23f6431208f9",
   "prevId": "dd2ed775-dd80-4825-9ed9-78c66cbae8ba",
   "tables": {
     "a2a_tasks": {
@@ -2629,6 +2629,128 @@
       "uniqueConstraints": {},
       "checkConstraints": {}
     },
+    "room_attachments": {
+      "name": "room_attachments",
+      "columns": {
+        "room_id": {
+          "name": "room_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "entry_id": {
+          "name": "entry_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "author_id": {
+          "name": "author_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "extension": {
+          "name": "extension",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "mime_type": {
+          "name": "mime_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "size": {
+          "name": "size",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "preview": {
+          "name": "preview",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "idx_room_attachments_entry": {
+          "name": "idx_room_attachments_entry",
+          "columns": [
+            "room_id",
+            "entry_id"
+          ],
+          "isUnique": false
+        },
+        "idx_room_attachments_unbound": {
+          "name": "idx_room_attachments_unbound",
+          "columns": [
+            "room_id",
+            "created_at"
+          ],
+          "isUnique": false,
+          "where": "\"entry_id\" IS NULL"
+        }
+      },
+      "foreignKeys": {
+        "room_attachments_entry_fk": {
+          "name": "room_attachments_entry_fk",
+          "tableFrom": "room_attachments",
+          "tableTo": "room_entries",
+          "columnsFrom": [
+            "room_id",
+            "entry_id"
+          ],
+          "columnsTo": [
+            "room_id",
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "room_attachments_room_id_id_pk": {
+          "columns": [
+            "room_id",
+            "id"
+          ],
+          "name": "room_attachments_room_id_id_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {}
+    },
     "room_entries": {
       "name": "room_entries",
       "columns": {
@@ -3060,69 +3182,6 @@
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "checkConstraints": {}
-    },
-    "read_cursors": {
-      "name": "read_cursors",
-      "columns": {
-        "user_id": {
-          "name": "user_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "thread_kind": {
-          "name": "thread_kind",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "thread_id": {
-          "name": "thread_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "last_read_seq": {
-          "name": "last_read_seq",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {},
-      "compositePrimaryKeys": {
-        "read_cursors_user_id_thread_kind_thread_id_pk": {
-          "columns": [
-            "user_id",
-            "thread_kind",
-            "thread_id"
-          ],
-          "name": "read_cursors_user_id_thread_kind_thread_id_pk"
-        }
-      },
-      "uniqueConstraints": {},
-      "checkConstraints": {
-        "read_cursors_thread_kind": {
-          "name": "read_cursors_thread_kind",
-          "value": "\"read_cursors\".\"thread_kind\" IN ('room', 'session', 'inbox')"
-        },
-        "read_cursors_last_read_seq": {
-          "name": "read_cursors_last_read_seq",
-          "value": "\"read_cursors\".\"last_read_seq\" >= 0"
-        }
-      }
     },
     "room_bridge_messages": {
       "name": "room_bridge_messages",

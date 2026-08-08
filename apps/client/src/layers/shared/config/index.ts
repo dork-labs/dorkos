@@ -6,6 +6,12 @@
  */
 
 export {
+  HOME_SURFACE_PATHS,
+  isHomeSurfacePath,
+  normalizePathname,
+  type HomeSurfacePath,
+} from './home-surface';
+export {
   TOUR_ANCHORS,
   tourAnchorSelector,
   type TourAnchorKey,

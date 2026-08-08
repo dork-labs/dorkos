@@ -123,6 +123,34 @@ describe('createExtensionAPI', () => {
       expect(contribution.priority).toBe(10);
     });
 
+    it('forwards visibleWhen for dashboard.sections so a section can hide itself', () => {
+      const { api } = createExtensionAPI('my-ext', deps);
+      const visibleWhen = () => false;
+
+      api.registerComponent('dashboard.sections', 'widget', () => null, { visibleWhen });
+
+      const [, contribution] = vi.mocked(deps.registry.register).mock.calls[0] as [
+        string,
+        Record<string, unknown>,
+      ];
+      // The Activity tab re-evaluates this on every render, so forwarding it is
+      // what makes "visibleWhen is honoured" true for extensions, not just for
+      // built-in sections.
+      expect(contribution.visibleWhen).toBe(visibleWhen);
+    });
+
+    it('leaves visibleWhen undefined when the extension does not pass one', () => {
+      const { api } = createExtensionAPI('my-ext', deps);
+
+      api.registerComponent('dashboard.sections', 'widget', () => null);
+
+      const [, contribution] = vi.mocked(deps.registry.register).mock.calls[0] as [
+        string,
+        Record<string, unknown>,
+      ];
+      expect(contribution.visibleWhen).toBeUndefined();
+    });
+
     it('uses the label option for a labelled slot, defaulting to the namespaced id', () => {
       const { api } = createExtensionAPI('my-ext', deps);
 

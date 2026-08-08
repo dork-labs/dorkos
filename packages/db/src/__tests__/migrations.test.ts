@@ -16,6 +16,13 @@ const DRIZZLE_DIR = path.join(__dirname, '../../drizzle');
  */
 const PRE_CASCADE_MIGRATION_IDX = 43;
 
+/**
+ * Journal index of the last migration BEFORE `room_attachments` gained `url`.
+ * A database built through this index is the shape an install that had already
+ * applied 0058 and stored a file is upgrading from.
+ */
+const PRE_ATTACHMENT_URL_MIGRATION_IDX = 58;
+
 /** Temp migration folders to remove after each test. */
 const tempMigrationDirs: string[] = [];
 
@@ -135,10 +142,14 @@ describe('Database Migrations', () => {
       // How far each PERSON has read in each thread — the one user-side
       // read-state store, keyed `(user_id, thread_kind, thread_id)`. The
       // agent-side cursor stays on `room_members.last_read_seq`
-      // (ADR 260808-140956, migration 0058).
+      // (ADR 260808-140956, migration 0060).
       'read_cursors',
       'relay_index',
       'relay_traces',
+      // Files uploaded into a room, bound to the entry that carries them inside
+      // that entry's own transaction — nullable `entry_id` is the "uploaded,
+      // not yet posted" state (room-attachments spec, migration 0058).
+      'room_attachments',
       // A room's durable bridge identity and its platform-message external-ref
       // table — the chats-as-channels foundation (spec §3.1, §6.3, migration
       // 0047, DOR-865).
@@ -370,6 +381,33 @@ describe('Database Migrations', () => {
     expect(index?.sql).toContain('WHERE "thread_root_entry_id" IS NOT NULL');
   });
 
+  it('gives room_attachments a nullable entry link, behind a partial index', () => {
+    // The columns and the index that carry an attachment, asserted off the
+    // migrated database rather than off the schema file — same rationale as the
+    // thread-root index above.
+    const db = createDb(':memory:');
+    runMigrations(db);
+
+    const columns = db.$client.prepare('PRAGMA table_info(room_attachments)').all() as {
+      name: string;
+      notnull: number;
+    }[];
+    // Nullable on purpose: a file exists before the message that carries it, and
+    // SQLite skips the composite foreign-key check while `entry_id` is NULL.
+    expect(columns.find((c) => c.name === 'entry_id')?.notnull).toBe(0);
+    // Whatever the store answered, stored rather than rebuilt (migration 0059).
+    // A bucket-backed store's absolute URL is not derivable from the ids, so a
+    // reader that recomputed it would work today and break the day it mattered.
+    expect(columns.find((c) => c.name === 'url')?.notnull).toBe(1);
+
+    const index = db.$client
+      .prepare("SELECT sql FROM sqlite_master WHERE type='index' AND name = ?")
+      .get('idx_room_attachments_unbound') as { sql: string } | undefined;
+    // Partial: "unbound" is the rare state, so a full index would carry a row
+    // per posted file to serve a lookup that only asks for a null entry.
+    expect(index?.sql).toContain('WHERE "entry_id" IS NULL');
+  });
+
   it('gives relay_index the sender/created_at index ADR-0014 committed to', () => {
     // The rate limiter's sliding-window log runs `SELECT COUNT(*) FROM
     // relay_index WHERE sender = ? AND created_at > ?` on every publish
@@ -395,6 +433,78 @@ describe('Database Migrations', () => {
       )
       .all('relay.sender', '2026-01-01T00:00:00Z') as { detail: string }[];
     expect(plan.some((row) => row.detail.includes('idx_relay_index_sender_created_at'))).toBe(true);
+  });
+
+  it('deleting a room_entries row cascades to the attachments bound to it', () => {
+    const db = createDb(':memory:');
+    runMigrations(db);
+    const raw = db.$client;
+
+    raw
+      .prepare(
+        "INSERT INTO rooms (id, kind, slug, title, topic, workspace_id, archived, created_at, last_activity_at) VALUES ('01ROOM', 'channel', 'backend', '#backend', NULL, NULL, 0, '2026-08-08T10:00:00Z', '2026-08-08T10:00:00Z')"
+      )
+      .run();
+    raw
+      .prepare(
+        "INSERT INTO room_entries (room_id, seq, id, author_id, kind, body, mentions, mention_spans, session_id, cascade_root, cascade_depth, parent_entry_id, thread_root_entry_id, signature, created_at) VALUES ('01ROOM', 1, '01ENTRY', '01HUMAN', 'post', '{\"text\":\"here it is\"}', '[]', '[]', NULL, '01ENTRY', 0, NULL, NULL, NULL, '2026-08-08T10:01:00Z')"
+      )
+      .run();
+    // One bound, one still staged — only the bound one hangs off the entry.
+    raw
+      .prepare(
+        "INSERT INTO room_attachments (room_id, id, entry_id, author_id, name, extension, mime_type, size, preview, url, created_at) VALUES ('01ROOM', '01BOUND', '01ENTRY', '01HUMAN', 'crash.log', 'log', 'text/plain', 11, NULL, '/api/rooms/01ROOM/attachments/01BOUND', '2026-08-08T10:01:00Z')"
+      )
+      .run();
+    raw
+      .prepare(
+        "INSERT INTO room_attachments (room_id, id, entry_id, author_id, name, extension, mime_type, size, preview, url, created_at) VALUES ('01ROOM', '01UNBOUND', NULL, '01HUMAN', 'draft.log', 'log', 'text/plain', 11, NULL, '/api/rooms/01ROOM/attachments/01UNBOUND', '2026-08-08T10:02:00Z')"
+      )
+      .run();
+
+    // Nothing deletes a room entry today. The cascade is the standing answer for
+    // the day something does — the design says a message's files die with it,
+    // and the constraint is where that lives rather than a cleanup step somebody
+    // has to remember to write beside a future `deleteEntry`.
+    expect(() => {
+      raw.prepare("DELETE FROM room_entries WHERE id = '01ENTRY'").run();
+    }).not.toThrow();
+
+    const left = raw.prepare('SELECT id FROM room_attachments ORDER BY id').all();
+    // The bound one went with its message; the staged one is nobody's message
+    // and stays for the TTL sweep to reclaim.
+    expect(left).toEqual([{ id: '01UNBOUND' }]);
+  });
+
+  it('adds the attachment url column to a table that already holds rows', () => {
+    // SQLite refuses `ADD COLUMN ... NOT NULL` without a default on any table
+    // that already has rows, so 0059 shipped with `DEFAULT ''` for exactly this
+    // case. Anyone who applied 0058 and stored a file before upgrading is the
+    // population this protects, and an empty-table test cannot see the
+    // difference — it passes either way.
+    const db = createDb(':memory:');
+    migrate(db, { migrationsFolder: migrationsFolderThrough(PRE_ATTACHMENT_URL_MIGRATION_IDX) });
+    const raw = db.$client;
+
+    expect(
+      (raw.prepare('PRAGMA table_info(room_attachments)').all() as { name: string }[]).some(
+        (c) => c.name === 'url'
+      ),
+      'the fixture must predate the url column, or this proves nothing'
+    ).toBe(false);
+
+    raw
+      .prepare(
+        "INSERT INTO room_attachments (room_id, id, entry_id, author_id, name, extension, mime_type, size, preview, created_at) VALUES ('01ROOM', '01ATT', NULL, '01HUMAN', 'crash.log', 'log', 'text/plain', 11, NULL, '2026-08-08T10:00:00Z')"
+      )
+      .run();
+
+    expect(() => runMigrations(db)).not.toThrow();
+
+    const row = raw.prepare("SELECT url FROM room_attachments WHERE id = '01ATT'").get();
+    // Backfilled to the default rather than left NULL, which the NOT NULL
+    // constraint would have refused.
+    expect(row).toEqual({ url: '' });
   });
 
   it('deleting a pulse_schedules row cascades to its pulse_runs', () => {

@@ -154,6 +154,7 @@ function drivenRunner(opts: {
         sessionId: request.sessionId,
         prompt: request.entry.body.text,
         roomContext: request.roomContext,
+        attachmentProjection: request.attachmentProjection,
       });
       // Bound at claim time, so this is never actually null in a triggered turn.
       const sessionId = request.sessionId ?? `session-${request.authorId}`;

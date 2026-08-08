@@ -25,9 +25,19 @@
  * next door, which stubs the composer barrel down to the callbacks it asserts.
  * A stub would make the baseline a record of the stub — and the whole claim
  * being made is about markup.
+ *
+ * The "Jump back in" popover is real here too, with real rows behind it (spec
+ * `team-room-home` §D2.3). That is deliberate: a composer at rest must have
+ * exactly the markup it had before that panel existed, and the only way to say
+ * so is to let it mount and find it has added nothing.
  */
+import type { ReactNode } from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { createMockTransport, createMockSession } from '@dorkos/test-utils';
+import type { Transport } from '@dorkos/shared/transport';
+import { TransportProvider } from '@/layers/shared/model';
 import {
   serializeDom,
   domBaselinePath,
@@ -39,23 +49,51 @@ import { readFileSync } from 'node:fs';
 
 vi.mock('@tanstack/react-router', () => ({ useNavigate: () => vi.fn() }));
 
-// The registered ABSOLUTE path, matching the sibling suite's fixture.
-vi.mock('@/layers/entities/config', () => ({
-  useDefaultAgentSession: () => ({
-    startSession: vi.fn(),
-    defaultAgentDir: '/home/kai/.dork/agents/dorkbot',
-    defaultAgentDisplayName: 'DorkBot',
-    defaultAgentIdentity: {
-      name: 'dorkbot',
-      displayName: 'DorkBot',
-      agentId: 'agent-ulid-1',
-      runtime: 'claude-code',
-    },
-    isDefaultAgentResolved: true,
-  }),
-}));
+// The registered ABSOLUTE path, matching the sibling suite's fixture. Only the
+// default-agent seam is replaced — the rest of the entity is real, because the
+// popover reads the operator's muted rooms through it.
+vi.mock('@/layers/entities/config', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/layers/entities/config')>();
+  return {
+    ...actual,
+    useDefaultAgentSession: () => ({
+      startSession: vi.fn(),
+      defaultAgentDir: '/home/kai/.dork/agents/dorkbot',
+      defaultAgentDisplayName: 'DorkBot',
+      defaultAgentIdentity: {
+        name: 'dorkbot',
+        displayName: 'DorkBot',
+        agentId: 'agent-ulid-1',
+        runtime: 'claude-code',
+      },
+      isDefaultAgentResolved: true,
+    }),
+  };
+});
 
 import { DashboardComposerSection } from '../ui/DashboardComposerSection';
+
+/** A cockpit with something to jump back into, so the panel could draw if it would. */
+function transportWithThreads(): Transport {
+  return createMockTransport({
+    listRecentSessions: vi.fn().mockResolvedValue({
+      sessions: [createMockSession({ id: 'sess-1', title: 'Refactor auth middleware' })],
+      agentActivity: {},
+      warnings: [],
+    }),
+  });
+}
+
+/** Render the section for real: providers add no markup of their own. */
+function renderSection(transport: Transport = transportWithThreads()) {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+  const wrapper = ({ children }: { children: ReactNode }) => (
+    <QueryClientProvider client={queryClient}>
+      <TransportProvider transport={transport}>{children}</TransportProvider>
+    </QueryClientProvider>
+  );
+  return render(<DashboardComposerSection />, { wrapper });
+}
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -85,7 +123,7 @@ function sectionOf(tree: SerializedElement): SerializedElement {
 
 describe('DashboardComposerSection — the wrap added a card and nothing else', () => {
   it('adds exactly one element: a Root div around the untouched composer subtree', () => {
-    const { container } = render(<DashboardComposerSection />);
+    const { container } = renderSection();
 
     // The three things the wrap must leave alone.
     expect(
@@ -113,8 +151,12 @@ describe('DashboardComposerSection — the wrap added a card and nothing else', 
     expect(wrapper.kind).toBe('element');
     expect(wrapper.tag).toBe('div');
     expect([...wrapper.classes].sort()).toEqual([...ROOT_CHROME].sort());
-    // Root adds no attributes of its own, and mounts no dropzone here.
-    expect(wrapper.attrs).toEqual({});
+    // Root mounts no dropzone here, and the one attribute it does carry is
+    // inert: DOR-947 stamps `data-composer-card` on every composer card so
+    // `useFeedKeyboardNav` can treat a composer as ONE destination and put
+    // Ctrl+End in the text field rather than on whichever control the markup
+    // happens to put first. No styling and no behaviour of its own.
+    expect(wrapper.attrs).toEqual({ 'data-composer-card': '' });
 
     // And the thing it wraps is the OLD subtree, unchanged — this is the whole
     // claim. `diffDom` compares the two directly, so any drift inside the
@@ -127,7 +169,7 @@ describe('DashboardComposerSection — the wrap added a card and nothing else', 
     // Recorded as a negative because the migration must NOT acquire one — the
     // capability matrix says the dashboard follows chat on attach, which means
     // it inherits the seam later, not that Root wires one now.
-    const { container } = render(<DashboardComposerSection />);
+    const { container } = renderSection();
 
     expect(container.querySelector('input[type="file"]')).toBeNull();
     expect(screen.queryByRole('button', { name: 'Attach file' })).toBeNull();

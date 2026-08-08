@@ -20,6 +20,8 @@ import { AuthorRegistry } from './author-registry.js';
 import { ensureHandles } from './handles/ensure-handles.js';
 import type { EngagedWindow } from './engagement.js';
 import { ReactionStore } from './reaction-store.js';
+import { AttachmentRowStore } from './attachments/attachment-row-store.js';
+import type { RoomAttachmentStore } from './attachments/room-attachment-store.js';
 import type { RoomAgentLookup } from './room-errors.js';
 import { RoomService } from './room-service.js';
 import { RoomStore } from './room-store.js';
@@ -32,6 +34,8 @@ import { createSessionRoomTurnRunner } from './room-turn-runner.js';
 export interface RoomSubsystem {
   service: RoomService;
   store: RoomStore;
+  /** The attachment ROW store. The bytes live behind `RoomAttachmentStore`. */
+  attachments: AttachmentRowStore;
   authors: AuthorRegistry;
   broadcaster: RoomBroadcaster;
   /** The bridge identity/ref store `createBridgedRoom` writes through. */
@@ -163,6 +167,22 @@ function readEngagedWindow(): EngagedWindow {
   }
 }
 
+/**
+ * How many files one message may carry, read live from `uploads.maxFiles` and
+ * degrading to the shipped default the same way {@link readMaxAgentDepth} does.
+ *
+ * Failing to the default keeps the limit BOUNDED, which is the only safe
+ * direction: an unreadable config must never let one message name every file in
+ * the room.
+ */
+function readMaxAttachmentsPerEntry(): number {
+  try {
+    return configManager.get('uploads').maxFiles;
+  } catch {
+    return USER_CONFIG_DEFAULTS.uploads.maxFiles;
+  }
+}
+
 /** Parse a JSON column, degrading to an empty object rather than throwing. */
 function safeJson(raw: string): unknown {
   try {
@@ -193,6 +213,7 @@ export function createRoomSubsystem(opts: {
 }): RoomSubsystem {
   const store = new RoomStore(opts.db);
   const reactions = new ReactionStore(opts.db);
+  const attachments = new AttachmentRowStore(opts.db);
   const agentLookup = opts.agents ?? createAgentLookup(opts.db);
   const authors = new AuthorRegistry(opts.db, agentLookup);
   const broadcaster = new RoomBroadcaster();
@@ -201,6 +222,7 @@ export function createRoomSubsystem(opts: {
   const service = new RoomService({
     store,
     reactions,
+    attachments,
     authors,
     broadcaster,
     bridges,
@@ -218,6 +240,9 @@ export function createRoomSubsystem(opts: {
     // Read per dispatch, for the same reason: shortening the window in Settings
     // has to bind the very next message, not the next server start.
     engagedWindow: readEngagedWindow,
+    // Read per post, for the same reason: lowering the limit in Settings has to
+    // bind the very next message.
+    maxAttachmentsPerEntry: readMaxAttachmentsPerEntry,
     // Read per check for the same reason, and for one more: an install becomes
     // owned partway through its life (the enable-login flow), so a value
     // captured at boot would leave the rooms domain believing forever that the
@@ -234,7 +259,7 @@ export function createRoomSubsystem(opts: {
   // path there is, including the embedded one. The backfill rides along because
   // it wants the same guarantee — the reservations are taken before it derives.
   ensureHandles(opts.db, authors);
-  return { service, store, authors, broadcaster, bridges, readCursors };
+  return { service, store, attachments, authors, broadcaster, bridges, readCursors };
 }
 
 let active: RoomService | null = null;
@@ -252,6 +277,42 @@ export function setRoomService(service: RoomService): void {
 export function getRoomService(): RoomService {
   if (!active) throw new Error('RoomService not initialized');
   return active;
+}
+
+let activeAttachmentStore: RoomAttachmentStore | null = null;
+let activeAttachmentRows: AttachmentRowStore | null = null;
+
+/**
+ * Register the attachment seams at bootstrap, beside {@link setRoomService}.
+ *
+ * Two of them because a room attachment is two things that must be able to move
+ * apart: the BYTES, behind {@link RoomAttachmentStore}, and the ROWS, in
+ * SQLite. The upload route needs both — it writes the bytes, then records what
+ * it wrote — and the serve route needs both to answer one GET. Registered here
+ * rather than constructed here because WHERE the bytes live is a deployment
+ * decision, made once in `index.ts`, and this module must not make it.
+ *
+ * @param stores.attachments - Where the bytes go.
+ * @param stores.rows - Where the metadata goes.
+ */
+export function setRoomAttachmentStores(stores: {
+  attachments: RoomAttachmentStore;
+  rows: AttachmentRowStore;
+}): void {
+  activeAttachmentStore = stores.attachments;
+  activeAttachmentRows = stores.rows;
+}
+
+/** The active attachment byte store (throws if bootstrap has not run). */
+export function getRoomAttachmentStore(): RoomAttachmentStore {
+  if (!activeAttachmentStore) throw new Error('RoomAttachmentStore not initialized');
+  return activeAttachmentStore;
+}
+
+/** The active attachment row store (throws if bootstrap has not run). */
+export function getAttachmentRowStore(): AttachmentRowStore {
+  if (!activeAttachmentRows) throw new Error('AttachmentRowStore not initialized');
+  return activeAttachmentRows;
 }
 
 let activeBridges: BridgeStore | null = null;

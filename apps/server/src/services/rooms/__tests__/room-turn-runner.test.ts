@@ -7,6 +7,10 @@
  * stream a client renders from, gap-free from a cursor taken before the turn.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { existsSync } from 'fs';
+import { mkdtemp, readFile, rm } from 'fs/promises';
+import { tmpdir } from 'os';
+import path from 'path';
 import { createTestDb } from '@dorkos/test-utils/db';
 import type { RoomContextData } from '@dorkos/shared/additional-context';
 import type { RoomEntry, RoomWithRoster } from '@dorkos/shared/room-schemas';
@@ -129,6 +133,9 @@ vi.mock('../../session/index.js', async (importOriginal) => ({
 
 const { createSessionRoomTurnRunner } = await import('../room-turn-runner.js');
 const { SessionEventStore, setSessionEventStore } = await import('../../session/index.js');
+const { setRoomAttachmentStores } = await import('../index.js');
+const { LocalRoomAttachmentStore } = await import('../attachments/local-room-attachment-store.js');
+const { PROJECTED_ATTACHMENTS_ROOT } = await import('../attachments/attachment-paths.js');
 type SessionEventStoreInstance = InstanceType<typeof SessionEventStore>;
 
 let counter = 0;
@@ -198,6 +205,7 @@ function request(
       pendingTruncated: false,
       ownRecent: [],
       acknowledgments: [],
+      triggerAttachments: [],
       addressing: {
         responseMode: 'always',
         engagedUntil: null,
@@ -210,6 +218,8 @@ function request(
         repliesLeftInThisChain: 3,
       },
     },
+    // Nothing to project by default; the projection test supplies its own.
+    attachmentProjection: [],
     // A no-op by default: most of this file is about what a turn PRODUCES, and
     // only the two tests that are about a turn stopping supply their own.
     onWaiting: () => undefined,
@@ -256,6 +266,61 @@ describe('createSessionRoomTurnRunner', () => {
     persistSessionRuntime.mockClear();
     internalSessionId = () => undefined;
     turnBehaviour = saysAndCloses('green');
+  });
+
+  it('has the files on disk BEFORE the turn is triggered', async () => {
+    // Ordering, not just the end state: the context handed to the model names
+    // these paths, so a projection that landed after `triggerTurn` would be a
+    // window in which the agent could read a path that was not yet there
+    // (ADR 260807-233816).
+    const dorkHome = await mkdtemp(path.join(tmpdir(), 'dorkos-runner-home-'));
+    const agentPath = await mkdtemp(path.join(tmpdir(), 'dorkos-runner-agent-'));
+    try {
+      const store = new LocalRoomAttachmentStore(dorkHome);
+      setRoomAttachmentStores({ attachments: store, rows: {} as never });
+
+      // Built first, so the file is staged under the room id this very request
+      // carries — the runner scopes its store reads by it.
+      const turnRequest = request({
+        agentPath,
+        attachmentProjection: [
+          {
+            entryId: 'entry-x',
+            attachmentId: 'att1',
+            extension: 'log',
+            name: 'crash.log',
+            relativePath: `${PROJECTED_ATTACHMENTS_ROOT}/entry-x/att1-crash.log`,
+          },
+        ],
+      });
+      await store.put(turnRequest.room.id, 'att1', 'log', Buffer.from('crash!'));
+
+      const projected = path.join(
+        agentPath,
+        PROJECTED_ATTACHMENTS_ROOT,
+        'entry-x',
+        'att1-crash.log'
+      );
+      let existedWhenTriggered: boolean | null = null;
+      turnBehaviour = (opts) => {
+        existedWhenTriggered = existsSync(projected);
+        openTurn(opts);
+        opts.projector.ingest({ type: 'text_delta', text: 'got it' });
+        opts.projector.ingest({ type: 'turn_end' });
+        return { accepted: true, canonicalId: opts.sessionId };
+      };
+
+      const result = await createSessionRoomTurnRunner().run(turnRequest);
+
+      expect(result.text).toBe('got it');
+      // The assertion that matters: the file was already there when the turn
+      // opened, not merely there by the time the turn finished.
+      expect(existedWhenTriggered).toBe(true);
+      expect(await readFile(projected)).toEqual(Buffer.from('crash!'));
+    } finally {
+      await rm(dorkHome, { recursive: true, force: true });
+      await rm(agentPath, { recursive: true, force: true });
+    }
   });
 
   it('returns what the agent said, read off the session stream', async () => {

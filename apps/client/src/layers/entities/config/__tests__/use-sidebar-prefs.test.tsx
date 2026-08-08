@@ -38,6 +38,7 @@ import {
   setUngroupedDisplayFilter,
   muteItem,
   unmuteItem,
+  mutedRoomIds,
 } from '../model/use-sidebar-prefs';
 
 /** An agent member reference — every helper below takes one of these now. */
@@ -743,5 +744,32 @@ describe('useUpdateSidebarPrefs optimistic behavior', () => {
         queryClient.getQueryData<ServerConfig>(configKeys.current())!.ui!.sidebar.pinned
       ).toEqual([agent('/original')])
     );
+  });
+});
+
+/**
+ * The one reader both surfaces share.
+ *
+ * It lives here rather than in the sidebar because "Jump back in" drops muted
+ * rooms from a list the sidebar only dims them in, and a second derivation is
+ * how one of the two starts offering what the other was told to stop offering.
+ */
+describe('mutedRoomIds', () => {
+  it('reads only the room members of the muted list', () => {
+    expect([...mutedRoomIds(prefs({ muted: [agent('/a'), room('r1'), room('r2')] }))]).toEqual([
+      'r1',
+      'r2',
+    ]);
+  });
+
+  it('is empty when nothing is muted, and when only agents are', () => {
+    expect(mutedRoomIds(prefs()).size).toBe(0);
+    expect(mutedRoomIds(prefs({ muted: [agent('/a')] })).size).toBe(0);
+  });
+
+  it('answers for what mute wrote, so a muted room is dropped by whoever reads it', () => {
+    const muted = muteItem(prefs(), room('r9'));
+    expect(mutedRoomIds(muted).has('r9')).toBe(true);
+    expect(mutedRoomIds(unmuteItem(muted, room('r9'))).has('r9')).toBe(false);
   });
 });

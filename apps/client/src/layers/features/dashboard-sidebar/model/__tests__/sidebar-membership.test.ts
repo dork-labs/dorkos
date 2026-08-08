@@ -9,7 +9,6 @@ import {
   groupedRoomIds,
   groupMemberItems,
   individuallyMutedAgentPaths,
-  individuallyMutedRoomIds,
   roomIdsOf,
   storedAgentPaths,
 } from '../sidebar-membership';
@@ -181,13 +180,9 @@ describe('roomIdsOf', () => {
   });
 });
 
-describe('individuallyMutedRoomIds', () => {
-  it('reads only the room members of the muted list', () => {
-    expect([...individuallyMutedRoomIds(prefs({ muted: [agent('/a'), room('r1')] }))]).toEqual([
-      'r1',
-    ]);
-  });
-});
+// The room half of the muted list moved to `entities/config` (`mutedRoomIds`),
+// where the sidebar and the "Jump back in" popover both read it; its test lives
+// with it, in `entities/config/__tests__/use-sidebar-prefs.test.tsx`.
 
 describe('groupedRoomIds', () => {
   it('collects every room id across all groups', () => {

@@ -8,6 +8,7 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createSystemMethods } from '../system-methods';
+import { createRoomMethods } from '../room-methods';
 import {
   UPLOAD_CANCELED_MESSAGE,
   UPLOAD_STALLED_MESSAGE,
@@ -27,6 +28,8 @@ class FakeXhr {
   withCredentials = false;
   sent = false;
   aborted = false;
+  /** The URL `open()` was called with — what the two destinations differ by. */
+  url = '';
 
   private readonly listeners = new Map<string, Listener[]>();
   private readonly uploadListeners = new Map<string, Listener[]>();
@@ -51,7 +54,9 @@ class FakeXhr {
     return xhr;
   }
 
-  open() {}
+  open(_method: string, url: string) {
+    this.url = url;
+  }
 
   send() {
     this.sent = true;
@@ -302,6 +307,91 @@ describe('uploadFiles can always be cancelled', () => {
     controller.abort();
     await vi.advanceTimersByTimeAsync(UPLOAD_STALL_TIMEOUT_MS);
 
+    await expect(result).rejects.toThrow(UPLOAD_CANCELED_MESSAGE);
+  });
+});
+
+/**
+ * A room's upload rides the same request machinery and lands somewhere else.
+ *
+ * The watchdog, the progress channel and the cancel are shared code, proven
+ * above; what these assert is the only thing that differs — where the bytes go,
+ * and what shape is read back out.
+ */
+describe('uploadRoomAttachments goes to the room, not to a working directory', () => {
+  /** Start a room upload and wait until the request has actually been sent. */
+  async function startRoomUpload(signal?: AbortSignal) {
+    const rooms = createRoomMethods('http://localhost:4242/api');
+    const onProgress = vi.fn();
+    const result = rooms.uploadRoomAttachments('room 1', [file], onProgress, signal);
+    void result.catch(() => {});
+    for (let i = 0; i < 10 && FakeXhr.instances.length === 0; i += 1) await Promise.resolve();
+    expect(FakeXhr.instances).toHaveLength(1);
+    return { result, onProgress };
+  }
+
+  /** One stored attachment, as the route answers it. */
+  const attachment = {
+    id: '01J000000000000000000000',
+    name: 'notes.txt',
+    mimeType: 'text/plain',
+    size: 5,
+    preview: null,
+    url: '/api/rooms/room%201/attachments/01J000000000000000000000',
+  };
+
+  it('posts to the room, with the id encoded and NO cwd anywhere', async () => {
+    await startRoomUpload();
+
+    // A room has no working directory. A `cwd` here would mean the room upload
+    // was quietly re-derived from chat's endpoint rather than given its own.
+    expect(FakeXhr.latest.url).toBe('http://localhost:4242/api/rooms/room%201/attachments');
+    expect(FakeXhr.latest.url).not.toContain('cwd');
+  });
+
+  it("leaves chat's own URL byte-identical", async () => {
+    // The regression this refactor risks: chat's endpoint is the thing the
+    // generalization moved through, and nothing about it may have shifted.
+    await startUpload();
+
+    expect(FakeXhr.latest.url).toBe('http://localhost:4242/api/uploads?cwd=%2Ftest%2Fproject');
+  });
+
+  it('reports progress and resolves with the attachments the route answered', async () => {
+    const { result, onProgress } = await startRoomUpload();
+    const xhr = FakeXhr.latest;
+
+    xhr.emitUploadProgress(50, 100);
+    expect(onProgress).toHaveBeenCalledWith({ loaded: 50, total: 100, percentage: 50 });
+
+    xhr.status = 200;
+    xhr.responseText = JSON.stringify({ attachments: [attachment] });
+    xhr.emitLoad();
+
+    await expect(result).resolves.toEqual([attachment]);
+  });
+
+  it('refuses a 2xx that is not the room upload response', async () => {
+    // `{ uploads: [...] }` is chat's shape and valid JSON. Resolving on it
+    // would hand the composer a list of the wrong things.
+    const { result } = await startRoomUpload();
+    const xhr = FakeXhr.latest;
+
+    xhr.status = 200;
+    xhr.responseText = JSON.stringify({ uploads: [] });
+    xhr.emitLoad();
+
+    await expect(result).rejects.toThrow(UPLOAD_UNREADABLE_MESSAGE);
+  });
+
+  it('aborts the request when the signal aborts', async () => {
+    const controller = new AbortController();
+    const { result } = await startRoomUpload(controller.signal);
+    const xhr = FakeXhr.latest;
+
+    controller.abort();
+
+    expect(xhr.aborted).toBe(true);
     await expect(result).rejects.toThrow(UPLOAD_CANCELED_MESSAGE);
   });
 });

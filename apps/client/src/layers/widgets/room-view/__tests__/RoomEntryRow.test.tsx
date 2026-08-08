@@ -5,7 +5,7 @@ import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createMockTransport } from '@dorkos/test-utils';
 import type { Transport } from '@dorkos/shared/transport';
-import type { RoomEntry, RoomEntryReaction } from '@dorkos/shared/room-schemas';
+import type { RoomAttachment, RoomEntry, RoomEntryReaction } from '@dorkos/shared/room-schemas';
 import { useRoomDraftStore, useRoomOpenThreadStore } from '@/layers/entities/room';
 import { TransportProvider } from '@/layers/shared/model';
 import { TooltipProvider } from '@/layers/shared/ui';
@@ -91,6 +91,19 @@ function entry(overrides: Partial<RoomEntry> = {}): RoomEntry {
 /** One pill, as the wire carries it. */
 function pill(emoji: string, authorIds: string[]): RoomEntryReaction {
   return { emoji, authorIds, firstAt: '2026-07-26T10:00:00.000Z' };
+}
+
+/** One posted file, as the wire carries it — every field server-derived. */
+function file(overrides: Partial<RoomAttachment> = {}): RoomAttachment {
+  return {
+    id: 'att-1',
+    name: 'screenshot.png',
+    mimeType: 'image/png',
+    size: 2048,
+    preview: 'image',
+    url: '/api/rooms/room-1/attachments/att-1',
+    ...overrides,
+  };
 }
 
 /**
@@ -811,5 +824,70 @@ describe('RoomEntryRow — the layout slot each part is drawn with', () => {
     );
     // Opaque, because the capsule is drawn ON TOP of the words it acts on.
     expect(screen.getByTestId('entry-actions')).toHaveClass('bg-popover');
+  });
+});
+
+/**
+ * Where the files posted with a message sit, and what the row says about them.
+ *
+ * The block itself is `RoomEntryAttachments` and is tested there. What only the
+ * whole row can answer is where it lands in the content column and whether a
+ * message with no files still renders exactly as it did before rooms carried
+ * any — which is every message written until now.
+ */
+describe('RoomEntryRow — the files posted with a message', () => {
+  it('hangs the files under the words and above the pills', () => {
+    // Asserted by document position rather than by child index: the content
+    // column's children come and go — the author line on a group start, the
+    // orphan notice, the pill row — so an index would pass for the wrong reason
+    // on one grouping and fail for the wrong reason on the next.
+    renderRow(entry({ attachments: [file()], reactions: [pill('👍', ['ana'])] }));
+    const content = document.querySelector('[data-slot="message-content"]')!;
+    const files = screen.getByTestId('room-entry-attachments');
+    const pills = screen.getByTestId('entry-reactions');
+
+    expect(content.compareDocumentPosition(files) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(files.compareDocumentPosition(pills) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('tells a screen reader a file came with the words, in the one description', () => {
+    // The block is a SIBLING of the rendered body, so a description pointing at
+    // the body alone would say nothing about it — a reader crossing the room
+    // would hear "why is the build slow?" and never learn a screenshot came
+    // with it. One description per row, holding both.
+    renderRow(entry({ attachments: [file()] }));
+
+    expect(screen.getByTestId('room-entry')).toHaveAccessibleDescription(
+      'why is the build slow? 1 file: screenshot.png'
+    );
+  });
+
+  /**
+   * The row's markup with `useId`'s counter flattened out. Every id on the row
+   * is minted from one `useId`, and the counter runs on for the life of the
+   * module — so two renderings of the same tree differ by the id and by nothing
+   * else, and comparing them raw would only ever prove that.
+   */
+  function markup(): string {
+    return screen.getByTestId('room-entry').outerHTML.replace(/_r_[0-9a-z]+_/g, 'ID');
+  }
+
+  it('leaves a message with no files exactly as it was', () => {
+    // Byte-identical, not merely "looks fine": an entry written before rooms
+    // carried files has no `attachments` field at all, and an empty one is the
+    // same row — no wrapper, no rail, no ghost.
+    renderRow(entry());
+    const without = markup();
+    expect(screen.queryByTestId('room-entry-attachments')).not.toBeInTheDocument();
+    // And the words still describe the row — the summary path a message WITH
+    // files takes must not have moved the one a message without files takes.
+    expect(screen.getByTestId('room-entry').getAttribute('aria-describedby')).toBe(
+      document.querySelector('[data-slot="message-content"]')!.getAttribute('id')
+    );
+
+    cleanup();
+    renderRow(entry({ attachments: [] }));
+
+    expect(markup()).toBe(without);
   });
 });

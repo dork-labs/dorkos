@@ -113,6 +113,18 @@ interface UseInputKeyboardOptions {
    * and send instead of being swallowed. Defaults to `false`.
    */
   paletteHasResults?: boolean;
+  /**
+   * Whether Tab picks the highlighted row alongside Enter. Defaults to `true`.
+   *
+   * True is right for a palette the person ASKED for — typing `/` or `@` is a
+   * request to complete something, and Tab is how completion has always been
+   * taken. It is wrong for one that appears on its own: the home composer's
+   * "Jump back in" panel floats up merely because the caret arrived in an empty
+   * box, and a Tab meant to move to the next control would have opened a thread
+   * instead. Passing `false` leaves Enter as the only pick key and lets Tab do
+   * what it does everywhere else.
+   */
+  tabPicks?: boolean;
   queueHasItems: boolean;
   onSubmit: () => void;
   onStop?: () => void;
@@ -164,6 +176,7 @@ export function useInputKeyboard({
   editingQueueItem,
   isPaletteOpen,
   paletteHasResults = false,
+  tabPicks = true,
   queueHasItems,
   onSubmit,
   onStop,
@@ -329,7 +342,13 @@ export function useInputKeyboard({
         // palette showing "No commands found." (type `/zzz`, or `@zzz`) used to
         // eat the Enter, close itself, and send nothing — so the message needed
         // two presses of the same key.
-        if (paletteHasResults && ((e.key === 'Enter' && !e.shiftKey) || e.key === 'Tab')) {
+        //
+        // Tab is a pick key only where the host says so (`tabPicks`): a palette
+        // that opened on its own must not swallow the key that moves focus on.
+        if (
+          paletteHasResults &&
+          ((e.key === 'Enter' && !e.shiftKey) || (e.key === 'Tab' && tabPicks))
+        ) {
           e.preventDefault();
           onCommandSelect?.();
           return;
@@ -383,6 +402,7 @@ export function useInputKeyboard({
       onClear,
       isPaletteOpen,
       paletteHasResults,
+      tabPicks,
       onArrowUp,
       onArrowDown,
       onCommandSelect,

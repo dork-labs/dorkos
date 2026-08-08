@@ -17,6 +17,7 @@ import {
   useReplyInThread,
   type RoomWithRoster,
 } from '@/layers/entities/room';
+import { useRoomAttachments } from '../model/use-room-attachments';
 
 interface RoomComposerProps {
   /** The room on screen. Its archived flag decides whether posting is offered. */
@@ -86,6 +87,19 @@ export function RoomComposer({ room, threadRootId, focusOnMount }: RoomComposerP
   const reply = useReplyInThread();
   const focusRequest = useComposerFocusRequest(draftKey);
   const inputRef = useRef<ComposerInputHandle>(null);
+  /**
+   * Whether a send is currently waiting for its files to reach the server.
+   *
+   * A ref rather than state on purpose: it is read and written inside one
+   * keystroke's synchronous path, and a re-render between the two would be
+   * exactly the stale-closure window it exists to close.
+   */
+  const uploading = useRef(false);
+  // The chip bar. Keyed to nothing: this composer's files are this composer's,
+  // because the state is its own — see `useRoomAttachments`. None of it reaches
+  // `Composer.Input`, which holds no attachment state at all, so DOR-948's swap
+  // of that component's internals for Lexical stays a swap.
+  const attachments = useRoomAttachments(room.id);
 
   const mentions = useMentionAutocomplete({
     members: room.members,
@@ -190,8 +204,78 @@ export function RoomComposer({ room, threadRootId, focusOnMount }: RoomComposerP
     [mentions, takeInsert]
   );
 
+  /**
+   * Finish a send whose files still have to reach the server.
+   *
+   * Split from `handleSubmit` so everything that must happen AT the keystroke —
+   * emptying the box, minting the id, reading the names — stays synchronous.
+   * Only the wait for the bytes is asynchronous, and it happens after the box is
+   * already free for the next sentence.
+   */
+  const deliver = async (
+    body: string,
+    clientId: string,
+    attachmentNames: string[],
+    sentFileIds: string[]
+  ) => {
+    let attachmentIds: string[];
+    // Only a send that actually carries files can be re-entered destructively,
+    // and only that kind arms the guard: two text-only messages in one tick are
+    // ordinary and must both go.
+    const carriesFiles = attachmentNames.length > 0;
+    if (carriesFiles) uploading.current = true;
+    try {
+      attachmentIds = await attachments.uploadAndGetIds();
+    } catch {
+      // The post was never made, so there is no pending row holding these words
+      // — the box is the only place they can survive, and it is the box they
+      // were typed in. Restored only while it is still empty: merging them into
+      // a sentence typed since is the exact failure DOR-783 removed from the
+      // refusal path, and one sentence lost to a sub-second race is better than
+      // two sentences with a claim on one field. The chips stay, in error, with
+      // their reason on the bar and in the composer's own refusal line.
+      const store = useRoomDraftStore.getState();
+      if ((store.drafts[draftKey] ?? '') === '') store.set(draftKey, body);
+      return;
+    } finally {
+      // Released whichever way it went, so a failed upload does not wedge the
+      // composer shut.
+      if (carriesFiles) uploading.current = false;
+    }
+    // Cleared only once the ids are safely in the message: a chip removed before
+    // that would take a file out of a send that had not gone yet. Scoped to the
+    // batch this send took, so a file dropped in DURING the upload survives —
+    // clearing the bar wholesale silently ate it.
+    attachments.clearFiles(sentFileIds);
+    // No per-call callbacks: a refusal is handled by the mutation itself, which
+    // still runs when this composer is gone. See `usePostToRoom`.
+    if (threadRootId !== undefined) {
+      reply.mutate({
+        roomId: room.id,
+        rootEntryId: threadRootId,
+        text: body,
+        clientId,
+        attachmentIds,
+        attachmentNames,
+      });
+      return;
+    }
+    post.mutate({ roomId: room.id, text: body, clientId, attachmentIds, attachmentNames });
+  };
+
   const handleSubmit = () => {
     if (room.archived) return;
+    // **One send at a time while files are still going up.** `pendingFiles` is
+    // cleared only once the ids are safely in a message, so a second Enter
+    // arriving during that await would read the SAME files and upload them
+    // again — posting duplicates, or taking a 409 for ids the first send had
+    // already claimed. The draft is deliberately NOT taken here: refusing early
+    // leaves the sentence in the box, where the person can send it a moment
+    // later, rather than consuming it into a message that cannot be written.
+    //
+    // Text-only sends never arm this, so two sentences in one tick still both
+    // go — that is the behaviour DOR-783 asked for and it is unchanged.
+    if (uploading.current) return;
     // Sending takes the picker down with it: Enter reaches this path only when
     // there was no row to pick, and nothing else would close a "No one by that
     // name." panel until the next keystroke.
@@ -202,21 +286,24 @@ export function RoomComposer({ room, threadRootId, focusOnMount }: RoomComposerP
     // been emptied by then, so the second submit finds nothing and stops.
     const body = useRoomDraftStore.getState().take(draftKey).trim();
     if (body === '') return;
-    // No per-call callbacks: a refusal is handled by the mutation itself, which
-    // still runs when this composer is gone. See `usePostToRoom`.
-    //
     // The id is minted here, at the keystroke, because that is when the row has
     // to appear — before there is any server id to call it by.
     const clientId = newPendingId();
-    if (threadRootId !== undefined) {
-      reply.mutate({ roomId: room.id, rootEntryId: threadRootId, text: body, clientId });
-      return;
-    }
-    post.mutate({ roomId: room.id, text: body, clientId });
+    // The names are read here for the same reason: the pending row has to show
+    // the files from the keystroke, and an upload still in flight has no ids to
+    // draw them from yet.
+    const attachmentNames = attachments.pendingFiles.map((f) => f.file.name);
+    // The batch identity, read in the same breath as the names: what this send
+    // is sending, and therefore exactly what it may clear when it lands.
+    const sentFileIds = attachments.pendingFiles.map((f) => f.id);
+    void deliver(body, clientId, attachmentNames, sentFileIds);
   };
 
   return (
-    <Composer.Root>
+    // Passing `onFilesDropped` is the whole attach declaration: it is what
+    // mounts the dropzone, the hidden file input and the "Drop files to attach"
+    // overlay. There is no flag to set — see `features/composer`'s doctrine.
+    <Composer.Root onFilesDropped={attachments.addFiles}>
       {/* Mounted whether or not the picker is open, and empty until it has
           something to say. The picker itself cannot carry this: it arrives with
           its "No one by that name." already in it, which is the classic case
@@ -247,6 +334,16 @@ export function RoomComposer({ room, threadRootId, focusOnMount }: RoomComposerP
             whatever is stacked over the composer. */}
         {clearArmed && <Composer.ClearArmedHint />}
       </Composer.OverlayLane>
+      {/* Between the lane and the box, which is where chat puts it, so a file
+          waiting to be sent sits in the same place on every surface. */}
+      {attachments.pendingFiles.length > 0 && (
+        <Composer.Attachments
+          files={attachments.pendingFiles}
+          onRemove={attachments.removeFile}
+          onRetry={attachments.retryFile}
+          onCancel={attachments.cancelUpload}
+        />
+      )}
       <Composer.Input
         ref={inputRef}
         value={text}
@@ -281,12 +378,17 @@ export function RoomComposer({ room, threadRootId, focusOnMount }: RoomComposerP
         // fire-and-forget 202, and closing the submit path for its duration
         // would block the second sentence of anyone who types faster than the
         // network — silently, since a refused submit says nothing.
-        canSubmit={!room.archived}
+        canSubmit={!room.archived && !attachments.hasFailedUpload}
         canSubmitReason={
           room.archived
             ? 'This conversation is archived. You can read it, but not add to it.'
-            : undefined
+            : attachments.hasFailedUpload
+              ? 'A file didn’t upload. Try it again or remove it, then send.'
+              : undefined
         }
+        // The paperclip. Same handler as the dropzone, so clicking, dragging and
+        // pasting a file all land in the same bar.
+        onAttach={attachments.addFiles}
         // Ties the pending double-Escape wipe to this room, so an arm raised in
         // one conversation cannot clear the draft of the next one.
         contextKey={draftKey}

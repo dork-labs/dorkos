@@ -6,12 +6,12 @@ import {
   buildAgentsHeaderMenuNodes,
   buildChannelsHeaderMenuNodes,
   buildDirectMessagesHeaderMenuNodes,
-  buildRecentHeaderMenuNodes,
+  buildJumpBackInHeaderMenuNodes,
   buildThreadsHeaderMenuNodes,
   type AgentsHeaderMenuModel,
   type ChannelsHeaderMenuModel,
   type DirectMessagesHeaderMenuModel,
-  type RecentHeaderMenuModel,
+  type JumpBackInHeaderMenuModel,
   type SectionHeaderMenuNode,
 } from '../ui/SectionHeaderMenuItems';
 import { SidebarSectionHeader } from '../ui/SidebarSectionHeader';
@@ -56,7 +56,7 @@ function dms(
   };
 }
 
-function recent(overrides: Partial<RecentHeaderMenuModel> = {}): RecentHeaderMenuModel {
+function jumpBackIn(overrides: Partial<JumpBackInHeaderMenuModel> = {}): JumpBackInHeaderMenuModel {
   return {
     collapsed: false,
     onNewSession: vi.fn(),
@@ -134,8 +134,8 @@ describe('section header item lists', () => {
     ).toBe('Mark all channels read');
   });
 
-  it('offers the Recent header a new session and its collapse control', () => {
-    expect(ids(buildRecentHeaderMenuNodes(recent()))).toEqual([
+  it('offers the Jump back in header a new session and its collapse control', () => {
+    expect(ids(buildJumpBackInHeaderMenuNodes(jumpBackIn()))).toEqual([
       'new-session',
       'sep-create',
       'collapse',
@@ -174,7 +174,7 @@ describe('section header item lists', () => {
     const labels = [
       ...buildChannelsHeaderMenuNodes(channels({ hasUnread: true })),
       ...buildDirectMessagesHeaderMenuNodes(dms({ hasUnread: true })),
-      ...buildRecentHeaderMenuNodes(recent()),
+      ...buildJumpBackInHeaderMenuNodes(jumpBackIn()),
       ...buildAgentsHeaderMenuNodes(agents()),
     ]
       .filter((node) => node.kind !== 'separator')
@@ -186,7 +186,7 @@ describe('section header item lists', () => {
     const opening = [
       ...buildChannelsHeaderMenuNodes(channels({ hasUnread: true })),
       ...buildDirectMessagesHeaderMenuNodes(dms({ hasUnread: true })),
-      ...buildRecentHeaderMenuNodes(recent()),
+      ...buildJumpBackInHeaderMenuNodes(jumpBackIn()),
       ...buildAgentsHeaderMenuNodes(agents()),
     ]
       .filter((node) => node.kind === 'action' && node.opensInput)
@@ -242,7 +242,7 @@ describe('section header item lists', () => {
     expect(onNewMessage).toHaveBeenCalledOnce();
 
     const onNewSession = vi.fn();
-    action(buildRecentHeaderMenuNodes(recent({ onNewSession })), 'new-session').run();
+    action(buildJumpBackInHeaderMenuNodes(jumpBackIn({ onNewSession })), 'new-session').run();
     expect(onNewSession).toHaveBeenCalledOnce();
 
     const onNewAgent = vi.fn();

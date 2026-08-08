@@ -1,8 +1,8 @@
 /**
- * Migration 0059 — moving every person's room read cursor off the membership
+ * Migration 0061 — moving every person's room read cursor off the membership
  * row and onto `read_cursors` (team-room-home spec §D4, task 3.3).
  *
- * **Why this file exists at all.** 0059 changes no schema, so `db:generate`
+ * **Why this file exists at all.** 0061 changes no schema, so `db:generate`
  * writes nothing for it and `scripts/assert-migrations-current.sh` — which
  * compares the SCHEMA FILES against the snapshot — passes whatever the
  * statement says. Same situation as 0057's backfill, same answer: the gate is a
@@ -30,24 +30,24 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DRIZZLE_DIR = path.join(__dirname, '../../drizzle');
 
 /** The migration under test. */
-const TAG = '0059_burly_thanos';
+const TAG = '0061_burly_thanos';
 
 /** Its index in the journal — the shape this test builds is everything below it. */
-const IDX = 59;
+const IDX = 61;
 
 type Raw = Database.Database;
 
 /**
- * A database at the shape 0058 left: `read_cursors` exists and is empty, and
+ * A database at the shape 0060 left: `read_cursors` exists and is empty, and
  * every person's place in a room is still on their membership row.
  *
- * Built by copying the migration folder minus 0059 and truncating the journal,
+ * Built by copying the migration folder minus 0061 and truncating the journal,
  * because `migrate()` applies everything the journal lists and there is no
  * "up to N" option — the same construction 0057's test uses, for the same
  * reason: a transcribed fixture is a second copy of the schema and it drifts.
  */
 function databaseAtOldShape(): Raw {
-  const folder = mkdtempSync(path.join(tmpdir(), 'dorkos-0058-'));
+  const folder = mkdtempSync(path.join(tmpdir(), 'dorkos-0060-'));
   mkdirSync(path.join(folder, 'meta'));
 
   const journal = JSON.parse(
@@ -55,7 +55,7 @@ function databaseAtOldShape(): Raw {
   ) as { entries: { idx: number; tag: string }[] };
   const before = journal.entries.filter((e) => e.idx < IDX);
 
-  // A renumbered 0059 would leave this asserting against a shape that already
+  // A renumbered 0061 would leave this asserting against a shape that already
   // includes it, and every expectation below would pass for the wrong reason.
   expect(before.map((e) => e.tag)).not.toContain(TAG);
   expect(journal.entries.map((e) => e.tag)).toContain(TAG);
@@ -76,7 +76,7 @@ function databaseAtOldShape(): Raw {
 }
 
 /**
- * Apply 0059 the way production does: through drizzle's own migrator, over the
+ * Apply 0061 the way production does: through drizzle's own migrator, over the
  * repo's real migration folder.
  *
  * **Not `exec` on the file's text, and the difference is the point.**
@@ -90,7 +90,7 @@ function applyMigration(raw: Raw): void {
 }
 
 /**
- * Run 0059's statement again by hand.
+ * Run 0061's statement again by hand.
  *
  * The migrator will not run a migration twice — that is what
  * `__drizzle_migrations` is for — so the only way to ask "what would a second
@@ -187,7 +187,7 @@ function memberships(raw: Raw): Record<string, number> {
 
 // --- Tests -------------------------------------------------------------------
 
-describe('0059 — room read cursors move to the people table', () => {
+describe('0061 — room read cursors move to the people table', () => {
   it('carries every local person forward, and nobody else', () => {
     const raw = databaseAtOldShape();
     seedWorld(raw);

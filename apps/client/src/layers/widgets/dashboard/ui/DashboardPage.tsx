@@ -1,6 +1,6 @@
 import { useCallback, useMemo } from 'react';
 import { ScrollArea } from '@/layers/shared/ui';
-import { useSlotContributions } from '@/layers/shared/model';
+import { useSlotContributions, isExtensionContributionId } from '@/layers/shared/model';
 import {
   DeadLetterDetailSheet,
   FailedRunDetailSheet,
@@ -11,8 +11,13 @@ import type { DashboardSearch } from '@/router';
 
 /**
  * Dashboard page -- mission control overview composing feature sections.
- * Queries the extension registry's dashboard.sections slot and renders
- * contributions in priority order.
+ * Queries the extension registry's dashboard.sections slot and renders the
+ * built-in contributions in priority order.
+ *
+ * Sections contributed by extensions render on the Activity tab instead, under
+ * "From your extensions" — see `widgets/activity/ui/ExtensionSections.tsx`. The
+ * slot id is unchanged; only where its extension half is drawn moved, so this
+ * page filters them out to avoid drawing them twice.
  */
 export function DashboardPage() {
   const search = useSearch({ strict: false }) as Partial<DashboardSearch>;
@@ -20,7 +25,10 @@ export function DashboardPage() {
   const sections = useSlotContributions('dashboard.sections');
 
   const visibleSections = useMemo(
-    () => sections.filter((s) => !s.visibleWhen || s.visibleWhen()),
+    () =>
+      sections.filter(
+        (s) => !isExtensionContributionId(s.id) && (!s.visibleWhen || s.visibleWhen())
+      ),
     [sections]
   );
 

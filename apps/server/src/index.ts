@@ -110,6 +110,7 @@ import { createTeamRouter } from './routes/team.js';
 import { createProfileRouter } from './routes/profile.js';
 import { resolveCaller } from './routes/room-caller.js';
 import { LocalAvatarStore } from './services/identity/local-avatar-store.js';
+import { LocalRoomAttachmentStore } from './services/rooms/attachments/local-room-attachment-store.js';
 import { createDiscoveryRouter } from './routes/discovery.js';
 import { createTemplateRouter } from './routes/templates.js';
 import { createAdminRouter } from './routes/admin.js';
@@ -207,7 +208,12 @@ import { acquireInstanceLock } from './lib/instance-lock.js';
 import { localDialHost } from './lib/local-dial-host.js';
 import { SERVER_VERSION } from './lib/version.js';
 import { createWorkspaceSubsystem, setWorkspaceManager } from './services/workspace/index.js';
-import { createRoomSubsystem, setRoomService, setRoomInternals } from './services/rooms/index.js';
+import {
+  createRoomSubsystem,
+  setRoomService,
+  setRoomInternals,
+  setRoomAttachmentStores,
+} from './services/rooms/index.js';
 import { ReadCursorStore } from './services/core/read-cursor-store.js';
 import { ReadCursorService, setReadCursorService } from './services/core/read-cursor-service.js';
 import {
@@ -855,11 +861,20 @@ async function start() {
   const {
     service: roomService,
     store: roomStore,
+    attachments: roomAttachmentRows,
     authors: roomAuthors,
     bridges: roomBridges,
   } = createRoomSubsystem({ db, readCursors: readCursorService });
   setRoomService(roomService);
   setRoomInternals(roomBridges, roomAuthors);
+  // Where a room's files live is chosen HERE and nowhere else: the routes depend
+  // on the `RoomAttachmentStore` interface and never build a path, so the day
+  // those bytes live somewhere other than this machine, this line is what
+  // changes. Same doctrine as the avatar store below.
+  setRoomAttachmentStores({
+    attachments: new LocalRoomAttachmentStore(dorkHome),
+    rows: roomAttachmentRows,
+  });
   logger.info('[Rooms] RoomService registered');
 
   // The install owner's author id, resolved per call (an install becomes owned
@@ -1974,6 +1989,14 @@ async function start() {
     app.locals.resolveTaskOrigins = (sessionIds: string[]) =>
       taskStore!.resolveTaskOrigins(sessionIds);
   }
+
+  // Session-origin ROOM overlay (team-room-home §D2.3): the same narrow batched
+  // shape as the Pulse lookup above, over `room_sessions`. Its own read rather
+  // than a widening of any bag: a session list asks one question of the rooms
+  // domain ("is this id a room's turn?"), and answering it must not drag the
+  // rooms store into the session router's imports.
+  app.locals.resolveRoomOrigins = (sessionIds: string[]) =>
+    roomStore.resolveRoomOrigins(sessionIds);
 
   // Shape schedule service — file-first schedule creator + re-binder the Shape
   // apply flow and the agent-create seam share. Built here (not just inside the

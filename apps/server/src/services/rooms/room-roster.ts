@@ -406,7 +406,7 @@ export class RoomRoster {
  * A person with no row has read nothing, which is 0 — never the membership
  * column standing in for it. Reading one cursor to answer the other's question
  * is precisely what the split forbids, and the membership column of a person who
- * predates it is frozen historical residue (migration 0059).
+ * predates it is frozen historical residue (migration 0061).
  *
  * @param member - The membership row.
  * @param kind - What the member is.

@@ -128,13 +128,17 @@ export class RoomsPage {
   }
 
   /**
-   * One room's sidebar row, anywhere in the sidebar.
+   * One room's sidebar row, in the Channels or Direct messages section.
+   *
+   * Scoped to the two room sections rather than the whole sidebar because a
+   * room with activity also appears in "Jump back in" above them (team-room-home
+   * P1) — an unscoped match resolves to two elements and trips strict mode.
    *
    * @param spokenName - The room's spoken name: `#slug` for a channel, the title
    *   for a direct message.
    */
   row(spokenName: string): Locator {
-    return this.rowIn(this.page.locator('[data-slot="sidebar-group"]'), spokenName);
+    return this.rowIn(this.channels.or(this.directMessages), spokenName);
   }
 
   /**
@@ -309,6 +313,116 @@ export class RoomsPage {
     const composer = this.composer(spokenName);
     await composer.fill(text);
     await composer.press('Enter');
+  }
+
+  /**
+   * The card one composer lives in — the chrome that holds the chip bar, the
+   * paperclip and the text box.
+   *
+   * Found by the box inside it rather than by position, because a room showing a
+   * thread has TWO composer cards on screen and they are otherwise identical.
+   * The box's accessible name is the only thing that says which conversation a
+   * card writes into, which is exactly the claim a test scoping to one is making.
+   *
+   * @param spokenName - The room's spoken name.
+   */
+  composerCard(spokenName: string): Locator {
+    return this.page.locator('[data-composer-card]').filter({ has: this.composer(spokenName) });
+  }
+
+  /**
+   * Attach files to the open room's composer.
+   *
+   * Drives the paperclip's own hidden `<input type="file">` rather than the
+   * card's, and the distinction is load-bearing: `Composer.Root` renders a
+   * SECOND file input for react-dropzone, so a bare `input[type=file]` inside
+   * the card resolves to two elements and fails strict mode. This one is
+   * located as the input immediately before the "Attach file" button, which is
+   * the relationship the markup actually guarantees.
+   *
+   * `setInputFiles` is the honest gesture for a file picker: the picker itself
+   * is the operating system's, so the click that opens it is the one part of
+   * this flow no browser test can drive. Everything downstream — the chips, the
+   * upload, the send — is the product's.
+   *
+   * @param spokenName - The room's spoken name.
+   * @param filePaths - Absolute paths to the files to attach.
+   */
+  async attach(spokenName: string, filePaths: string[]): Promise<void> {
+    await this.composerCard(spokenName)
+      .getByRole('button', { name: 'Attach file' })
+      .locator('xpath=preceding-sibling::input[@type="file"][1]')
+      .setInputFiles(filePaths);
+  }
+
+  /**
+   * The chips above the box — the files waiting to be sent with the next message.
+   *
+   * Found by each chip's own remove button, which carries the filename in its
+   * accessible name. The chip's visible text truncates a long name to fit, so
+   * the label is both the more stable string and the one a screen reader hears.
+   *
+   * @param spokenName - The room's spoken name.
+   */
+  composerChips(spokenName: string): Locator {
+    return this.composerCard(spokenName).getByRole('button', {
+      name: /^(Remove|Cancel upload of) /,
+    });
+  }
+
+  /**
+   * One chip on the composer's bar, by the file it stands for.
+   *
+   * @param spokenName - The room's spoken name.
+   * @param fileName - The file's name, as the picker handed it over.
+   */
+  composerChip(spokenName: string, fileName: string): Locator {
+    return this.composerCard(spokenName).getByRole('button', {
+      name: `Remove ${fileName}`,
+      exact: true,
+    });
+  }
+
+  /**
+   * The files hanging under one message.
+   *
+   * Absent entirely on a message posted without any — the block renders nothing
+   * rather than an empty rail — so `toHaveCount(0)` is the honest assertion for
+   * a message that carried no files.
+   *
+   * @param entry - The message row, from {@link RoomsPage.entries}.
+   */
+  attachmentsIn(entry: Locator): Locator {
+    return entry.getByTestId('room-entry-attachments');
+  }
+
+  /**
+   * The thumbnail drawn for one attachment, by the file it shows.
+   *
+   * An `<img>` is only ever drawn where the SERVER sniffed the bytes and found
+   * an image, so asking for one by name is asking whether the round trip
+   * preserved that verdict — not merely whether something rendered.
+   *
+   * @param entry - The message row.
+   * @param fileName - The file's name, which is the image's alt text.
+   */
+  attachmentImage(entry: Locator, fileName: string): Locator {
+    return this.attachmentsIn(entry).getByRole('img', { name: fileName, exact: true });
+  }
+
+  /**
+   * The download chip drawn for one attachment, by the file it names.
+   *
+   * The other half of the same verdict: everything the server did not verify as
+   * an image is a link and never an `<img>`.
+   *
+   * @param entry - The message row.
+   * @param fileName - The file's name, as the chip prints it.
+   */
+  attachmentChip(entry: Locator, fileName: string): Locator {
+    return this.attachmentsIn(entry)
+      .getByTestId('room-entry-attachment-chip')
+      .filter({ hasText: fileName });
   }
 
   /**

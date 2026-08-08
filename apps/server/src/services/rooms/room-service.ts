@@ -68,6 +68,7 @@ import {
 import type {
   CreateRoomRequest,
   Room,
+  RoomAttachment,
   RoomEntry,
   RoomEntryBody,
   RoomEntryReaction,
@@ -101,6 +102,7 @@ import { deriveCascade } from './cascade-guard.js';
 import type { EngagedWindow } from './engagement.js';
 import { resolveAddressing } from './mentions.js';
 import type { ReactionStore } from './reaction-store.js';
+import type { AttachmentRowStore } from './attachments/attachment-row-store.js';
 import { RoomError, type RoomAgentLookup } from './room-errors.js';
 import {
   buildBridgeAgentSwappedNotice,
@@ -121,6 +123,8 @@ export interface RoomServiceDeps {
   store: RoomStore;
   /** Reactions on this room's entries — durable state, never a turn. */
   reactions: ReactionStore;
+  /** The rows behind this room's attachments. The BYTES live behind a separate seam. */
+  attachments: AttachmentRowStore;
   authors: AuthorRegistry;
   broadcaster: RoomBroadcaster;
   agents: RoomAgentLookup;
@@ -132,6 +136,16 @@ export interface RoomServiceDeps {
   maxAgentDepth(): number;
   /** The live `rooms.engagedWindow*` ceilings, injected for the same reason. */
   engagedWindow(): EngagedWindow;
+  /**
+   * The live `uploads.maxFiles` — how many files one post may carry.
+   *
+   * Injected in the same style as {@link RoomServiceDeps.maxAgentDepth}, so this
+   * domain still reads no config. Read PER POST rather than captured, because a
+   * person may change the limit between two messages. Deliberately not
+   * `ROOM_ATTACHMENT_MAX_PER_ENTRY`, which is the schema's static 50-ceiling on
+   * what this may be SET to, not the limit anyone feels.
+   */
+  maxAttachmentsPerEntry(): number;
   /**
    * Whether this author is the person who owns the install.
    *
@@ -269,12 +283,15 @@ export interface RebridgeRequest {
 export class RoomService {
   private readonly store: RoomStore;
   private readonly reactions: ReactionStore;
+  private readonly attachments: AttachmentRowStore;
   private readonly authors: AuthorRegistry;
   private readonly broadcaster: RoomBroadcaster;
   private readonly roster: RoomRoster;
   private readonly triggers: RoomTriggerDispatcher;
   /** The live `rooms.maxAgentDepth`. Read per write, so a change takes effect. */
   private readonly maxAgentDepth: () => number;
+  /** The live `uploads.maxFiles`. Read per post, so a change takes effect. */
+  private readonly maxAttachmentsPerEntry: () => number;
   /** Whether an author is the install's owner. Read per check, never captured. */
   private readonly isOwnerAuthor: (authorId: string) => boolean;
   private readonly bridges: BridgeStore;
@@ -307,9 +324,11 @@ export class RoomService {
   constructor(deps: RoomServiceDeps) {
     this.store = deps.store;
     this.reactions = deps.reactions;
+    this.attachments = deps.attachments;
     this.authors = deps.authors;
     this.broadcaster = deps.broadcaster;
     this.maxAgentDepth = deps.maxAgentDepth;
+    this.maxAttachmentsPerEntry = deps.maxAttachmentsPerEntry;
     this.isOwnerAuthor = deps.isOwnerAuthor;
     this.bridges = deps.bridges;
     this.readCursors = deps.readCursors;
@@ -341,6 +360,7 @@ export class RoomService {
         return bridge ? bridgedRoomFraming(bridge) : null;
       },
       topicNamesFor: (entryIds) => topicNamesForEntries(this.bridges, entryIds),
+      attachmentsFor: (roomId, entryIds) => this.attachments.listFor(roomId, entryIds),
       runner: deps.turns,
       budget: deps.budget,
       maxAgentDepth: deps.maxAgentDepth,
@@ -1475,7 +1495,7 @@ export class RoomService {
     opts: { before?: number; limit: number }
   ): RoomEntry[] {
     this.requireVisibleRoom(roomId, viewerAuthorId);
-    return this.withReactions(roomId, this.store.listEntries(roomId, opts));
+    return this.withRollups(roomId, this.store.listEntries(roomId, opts));
   }
 
   /**
@@ -1498,6 +1518,9 @@ export class RoomService {
    * @param input.sessionId - The session that produced it, if any.
    * @param input.trigger - Cascade provenance, when a trigger produced this.
    * @param input.replyTo - The entry this answers, when it is a thread reply.
+   * @param input.attachmentIds - Files already uploaded into this room, in the
+   *   order they should render. Resolved and refused BEFORE anything is
+   *   written, then bound inside the entry's own transaction.
    * @returns The committed entry.
    */
   post(
@@ -1508,6 +1531,7 @@ export class RoomService {
       sessionId?: string;
       trigger?: PostTrigger;
       replyTo?: string;
+      attachmentIds?: readonly string[];
     }
   ): RoomEntry {
     const room = this.requireVisibleRoom(roomId, input.authorId);
@@ -1518,7 +1542,142 @@ export class RoomService {
     if (!this.store.getMember(roomId, input.authorId)) {
       throw new RoomError('MEMBER_NOT_FOUND', 'Not a member of this room');
     }
-    return this.writePost(room, input);
+    // Resolved before the write, so a refusal leaves the room exactly as it was.
+    const attachments = this.resolveAttachments(roomId, input.authorId, input.attachmentIds);
+    const attachmentIds = attachments.map((file) => file.id);
+    return this.writePost(room, input, undefined, {
+      bind: (entryId, tx) => {
+        const bound = this.attachments.bind(roomId, attachmentIds, entryId, tx);
+        // **Asserted, not assumed.** `bind` re-checks `entry_id IS NULL`, so a
+        // file that another post claimed between resolution and here simply
+        // does not update — and without this check the entry would commit
+        // carrying a reference to a file it does not own, which is the one
+        // state the foreign key cannot catch. Throwing rolls the whole
+        // transaction back, entry included, which is exactly the outcome:
+        // either the message and all its files land, or none of it does.
+        if (bound !== attachmentIds.length) {
+          throw new RoomError(
+            'ATTACHMENT_ALREADY_POSTED',
+            'That file was attached to another message first'
+          );
+        }
+      },
+      attachments,
+    });
+  }
+
+  /**
+   * Refuse anyone who may not attach a file to this room, before a single byte
+   * is read.
+   *
+   * The same two gates `post` applies, in the same order and with the same
+   * answers, because an upload is the first half of a message: a caller who
+   * cannot see the room gets the `ROOM_NOT_FOUND` every other room read gives —
+   * never a 403, which would confirm the room exists — and an archived room
+   * refuses `ROOM_ARCHIVED`. Exposed rather than duplicated in the route so the
+   * upload route cannot become the one place that leaks existence.
+   *
+   * @param roomId - The room the file is being uploaded into.
+   * @param authorId - Who is uploading.
+   */
+  assertCanAttach(roomId: string, authorId: string): void {
+    const room = this.requireVisibleRoom(roomId, authorId);
+    if (room.archived) throw new RoomError('ROOM_ARCHIVED', 'This room is archived');
+    if (!this.store.getMember(roomId, authorId)) {
+      throw new RoomError('MEMBER_NOT_FOUND', 'Not a member of this room');
+    }
+  }
+
+  /**
+   * Whether this caller may READ one stored attachment.
+   *
+   * Two rules, and the split is the whole access model:
+   *
+   * - A **bound** attachment is readable by anyone who may read the entry that
+   *   carries it, which is anyone who may see the room. Any other rule would
+   *   let a person read a message and not the file it is about.
+   * - An **unbound** attachment is readable only by whoever uploaded it, so the
+   *   composer can draw its own chip and nobody can enumerate a stranger's
+   *   staging area.
+   *
+   * @param roomId - The room.
+   * @param authorId - The caller.
+   * @param attachment - The row, as the route read it.
+   * @returns `true` when the bytes may be served.
+   */
+  canReadAttachment(
+    roomId: string,
+    authorId: string,
+    attachment: { entryId: string | null; authorId: string }
+  ): boolean {
+    if (attachment.entryId === null) return attachment.authorId === authorId;
+    return this.canSee(roomId, authorId);
+  }
+
+  /**
+   * Settle which files a post may carry, refusing before anything is written.
+   *
+   * Every refusal here is about the CALLER's relationship to the ids, which is
+   * why it happens in the service and not in the row store: an id from another
+   * room, an id somebody else uploaded, and an id already spoken for are three
+   * different mistakes and get three different answers. Two of them collapse to
+   * `ATTACHMENT_NOT_FOUND` on purpose — a 403 for "that is someone else's file"
+   * would confirm the file exists.
+   *
+   * @param roomId - The room the post is being written in.
+   * @param authorId - Who is posting. Only their own unbound files may be named.
+   * @param attachmentIds - The ids the post named, in render order.
+   * @returns The resolved attachments, in the order they were named.
+   */
+  private resolveAttachments(
+    roomId: string,
+    authorId: string,
+    attachmentIds: readonly string[] | undefined
+  ): RoomAttachment[] {
+    if (!attachmentIds || attachmentIds.length === 0) return [];
+
+    // The CONFIGURED limit, read now — not `ROOM_ATTACHMENT_MAX_PER_ENTRY`,
+    // which is only the ceiling that limit may be set to.
+    const limit = this.maxAttachmentsPerEntry();
+    if (attachmentIds.length > limit) {
+      throw new RoomError(
+        'TOO_MANY_ATTACHMENTS',
+        `A message can carry at most ${limit} ${limit === 1 ? 'file' : 'files'}`
+      );
+    }
+    if (new Set(attachmentIds).size !== attachmentIds.length) {
+      throw new RoomError('TOO_MANY_ATTACHMENTS', 'The same file was attached twice');
+    }
+
+    const unbound = new Map(
+      this.attachments.listUnboundFor(roomId, attachmentIds).map((row) => [row.id, row] as const)
+    );
+    return attachmentIds.map((id) => {
+      const row = unbound.get(id);
+      if (!row) {
+        // Absent from the unbound set is either "not here" or "already posted",
+        // and only the second is worth its own code — a person who attached the
+        // same file to two messages can act on that answer.
+        const existing = this.attachments.get(roomId, id);
+        if (existing?.entryId) {
+          throw new RoomError('ATTACHMENT_ALREADY_POSTED', 'That file is already on a message');
+        }
+        throw new RoomError('ATTACHMENT_NOT_FOUND', 'No such file in this room');
+      }
+      // Somebody else's staging area is not readable and not postable, and the
+      // answer is the same one a missing id gets.
+      if (row.authorId !== authorId) {
+        throw new RoomError('ATTACHMENT_NOT_FOUND', 'No such file in this room');
+      }
+      return {
+        id: row.id,
+        name: row.name,
+        mimeType: row.mimeType,
+        size: row.size,
+        preview: row.preview,
+        url: row.url,
+      };
+    });
   }
 
   /**
@@ -1626,6 +1785,13 @@ export class RoomService {
    *   step 6), made atomic with the entry it names (A5.6). Composed with
    *   `within` rather than replacing it, so a first message both joins its author
    *   and records its ref in one transaction.
+   * @param opts.bind - Runs inside the same transaction too, but on the far side
+   *   of the insert — {@link RoomStore.appendEntry}'s `bind` hook, handed the
+   *   entry's id. It is separate from `recordRef` rather than folded into it
+   *   because the two want opposite orderings: a bridge ref has no foreign key
+   *   and may be written first, while binding a `room_attachments` row points a
+   *   foreign key AT the entry and fails with `FOREIGN KEY constraint failed`
+   *   unless the entry is already there.
    */
   private writePost(
     room: Room,
@@ -1640,6 +1806,8 @@ export class RoomService {
     opts?: {
       mentionAugment?: { agentPath: string; names: readonly string[] };
       recordRef?: (entryId: string, tx: DbTransaction) => void;
+      bind?: (entryId: string, tx: DbTransaction) => void;
+      attachments?: RoomAttachment[];
     }
   ): RoomEntry {
     const roomId = room.id;
@@ -1676,6 +1844,13 @@ export class RoomService {
             recordRef?.(id, tx);
           }
         : undefined;
+    // The far side of the insert, and deliberately not folded into
+    // `transactional` above — see `opts.bind`. Built only when there is one, so
+    // an ordinary post pays nothing here either.
+    const bindAfterInsert = opts?.bind;
+    const bindTransactional = bindAfterInsert
+      ? (tx: DbTransaction) => bindAfterInsert(id, tx)
+      : undefined;
     const entry = this.store.appendEntry(
       {
         roomId,
@@ -1700,10 +1875,11 @@ export class RoomService {
         }),
         createdAt: new Date().toISOString(),
       },
-      transactional
+      transactional,
+      bindTransactional
     );
 
-    this.publishEntry(entry);
+    this.publishEntry(entry, opts?.attachments ?? []);
     // Trigger-only, both ways: the post reaches its readers now, and whoever it
     // addresses answers on their own schedule. Deliberately not awaited — the
     // HTTP 202 must not wait on a model call, and the reply arrives on the same
@@ -1918,7 +2094,7 @@ export class RoomService {
     historyLimit: number
   ): { room: RoomWithRoster; entries: RoomEntry[]; cursor: number } {
     const room = this.requireVisibleRoom(roomId, viewerAuthorId);
-    const entries = this.withReactions(
+    const entries = this.withRollups(
       roomId,
       this.store.listEntries(roomId, { limit: historyLimit })
     );
@@ -1947,7 +2123,7 @@ export class RoomService {
    * @param afterSeq - Return entries with `seq` above this.
    */
   entriesAfter(roomId: string, afterSeq: number): RoomEntry[] {
-    return this.withReactions(roomId, this.store.listEntriesAfter(roomId, afterSeq));
+    return this.withRollups(roomId, this.store.listEntriesAfter(roomId, afterSeq));
   }
 
   /**
@@ -2196,31 +2372,43 @@ export class RoomService {
   }
 
   /**
-   * Attach each entry's reactions, in ONE query for the whole page.
+   * Attach each entry's reactions AND its attachments, in one query per side
+   * table for the whole page.
    *
-   * Every read path takes this — the history page, the hydration snapshot and
-   * the resume replay — so a reader never holds an entry without holding its
-   * pills. Chunked because the replay is unbounded by construction (a reader
-   * gone for a week resumes against the whole gap) and SQLite caps how many
-   * parameters one statement may bind; a page nobody can read is a worse answer
-   * than two queries.
+   * **One function rather than two, because the failure mode is a path somebody
+   * forgot.** Every read path takes this — the history page, the hydration
+   * snapshot and the resume replay — so a reader never holds an entry without
+   * holding what hangs off it. A second roll-up written beside this one would
+   * be a fourth place to remember, and the first one anybody would miss.
+   *
+   * Chunked because the replay is unbounded by construction (a reader gone for
+   * a week resumes against the whole gap) and SQLite caps how many parameters
+   * one statement may bind; a page nobody can read is a worse answer than two
+   * queries. Both side tables are chunked on the same boundary, so a page costs
+   * exactly two queries per chunk.
    *
    * @param roomId - The room the entries belong to.
    * @param entries - The page, in whatever order the caller wants it.
    */
-  private withReactions(roomId: string, entries: RoomEntry[]): RoomEntry[] {
+  private withRollups(roomId: string, entries: RoomEntry[]): RoomEntry[] {
     if (entries.length === 0) return entries;
-    const grouped = new Map<string, RoomEntryReaction[]>();
+    const pills = new Map<string, RoomEntryReaction[]>();
+    const files = new Map<string, RoomAttachment[]>();
     for (let from = 0; from < entries.length; from += REACTION_LOOKUP_CHUNK) {
       const chunk = entries.slice(from, from + REACTION_LOOKUP_CHUNK);
-      for (const [entryId, pills] of this.reactions.listFor(
-        roomId,
-        chunk.map((entry) => entry.id)
-      )) {
-        grouped.set(entryId, pills);
+      const ids = chunk.map((entry) => entry.id);
+      for (const [entryId, reactions] of this.reactions.listFor(roomId, ids)) {
+        pills.set(entryId, reactions);
+      }
+      for (const [entryId, attachments] of this.attachments.listFor(roomId, ids)) {
+        files.set(entryId, attachments);
       }
     }
-    return entries.map((entry) => ({ ...entry, reactions: grouped.get(entry.id) ?? [] }));
+    return entries.map((entry) => ({
+      ...entry,
+      reactions: pills.get(entry.id) ?? [],
+      attachments: files.get(entry.id) ?? [],
+    }));
   }
 
   /** Fan one entry's whole current reaction set out to the room's readers. */
@@ -2243,15 +2431,24 @@ export class RoomService {
     this.onEntryCommitted = listener;
   }
 
-  /** Publish a committed entry to the room's readers and bump global activity. */
-  private publishEntry(entry: RoomEntry): void {
+  /**
+   * Publish a committed entry to the room's readers and bump global activity.
+   *
+   * @param entry - The committed entry.
+   * @param attachments - The files bound to it in the same transaction. Unlike
+   *   a reaction, an attachment EXISTS at the instant the entry does, so this
+   *   path carries the real refs rather than an empty list — a reader who saw
+   *   the live frame and a reader who hydrated a moment later must see the same
+   *   message.
+   */
+  private publishEntry(entry: RoomEntry, attachments: RoomAttachment[] = []): void {
     // `reactions: []` rather than omitted: an entry a millisecond old genuinely
     // has none, and a reader that had to treat "absent" and "empty" as the same
     // thing on the live path but not on the others would have two rules.
     this.broadcaster.publish(entry.roomId, {
       type: 'entry',
       seq: entry.seq,
-      entry: { ...entry, reactions: [] },
+      entry: { ...entry, reactions: [], attachments },
     });
     eventFanOut.broadcast('room_activity', {
       roomId: entry.roomId,

@@ -4,8 +4,8 @@
  * It owns what only the whole row can: which of the two kinds of line an entry
  * is, the single tab stop, and the grid a post is laid out on. Every part that
  * can be owned alone lives beside this file — the notice line, who spoke and
- * when, the words, the action surface, the reaction arithmetic, and what the
- * row tells a screen reader about itself.
+ * when, the words, the files posted with them, the action surface, the reaction
+ * arithmetic, and what the row tells a screen reader about itself.
  *
  * @module widgets/room-view/ui/RoomEntryRow
  */
@@ -33,6 +33,7 @@ import type { RosterAuthor } from '../lib/room-timeline';
 import { useEntryReactions } from '../model/use-entry-reactions';
 import { useEntryRowKeys } from '../model/use-entry-row-keys';
 import { RoomEntryActions } from './RoomEntryActions';
+import { RoomEntryAttachments, attachmentsSummary } from './RoomEntryAttachments';
 import { RoomEntryBody } from './RoomEntryBody';
 import { RoomEntryAuthorLine, RoomEntryGutter } from './RoomEntryHeader';
 import { RoomNoticeRow } from './RoomNoticeRow';
@@ -161,7 +162,23 @@ export function RoomEntryRow({
   // Memoised on the text: six passes over a message body is not much, but it is
   // six passes per row per render of a feed that re-renders on every arriving
   // reaction, and the answer only changes when the words do.
-  const summary = useMemo(() => entrySummary(entry.body.text), [entry.body.text]);
+  //
+  // Files posted with the message join that ONE line rather than getting an
+  // `aria-describedby` of their own. The attachments block is a sibling of the
+  // rendered body, so a description pointing at the body says nothing about
+  // it — a reader crossing the room would hear the words and never learn a file
+  // came with them. A message with no files is untouched, `null` and all.
+  const summary = useMemo(() => {
+    const said = entrySummary(entry.body.text);
+    const files = attachmentsSummary(entry.attachments ?? []);
+    if (files === null) return said;
+    // `entrySummary` answers `null` for a message short enough to be its own
+    // description, and a description can only point at one element — so where
+    // there are files the row needs a written line, and the raw body is what
+    // that `null` says the words already are.
+    const spoken = said ?? entry.body.text.trim();
+    return spoken.length > 0 ? `${spoken} ${files}` : files;
+  }, [entry.body.text, entry.attachments]);
   const domId = useId();
   const headerId = `${domId}-author`;
   const contentId = `${domId}-content`;
@@ -284,6 +301,10 @@ export function RoomEntryRow({
             summaryId={summaryId}
             className={styles.content()}
           />
+          {/* The files that came with the message, under the words and above
+              the pills. An entry with none — including every entry written
+              before rooms carried files at all — renders nothing here. */}
+          <RoomEntryAttachments attachments={entry.attachments ?? []} />
           {/* The pills, under the words they are about. A message with no
               reactions renders nothing here at all — no rail, no ghost — which
               is what keeps a quiet room quiet (design record §2, behaviour 4). */}
