@@ -43,15 +43,15 @@ function configWithSecrets(): ServerConfig {
 
 describe('buildClientReport', () => {
   it('captures version, platform, runtimes, and the route as surface', () => {
-    const report = buildClientReport('bug', configWithSecrets(), '/agents');
+    const report = buildClientReport('bug', configWithSecrets(), '/team');
     expect(report.version).toBe('0.45.1');
     expect(report.platform).toBe('darwin-arm64');
     expect(report.runtimes).toEqual(['claude-code', 'codex']);
-    expect(report.surface).toBe('web /agents');
+    expect(report.surface).toBe('web /team');
   });
 
   it('reports only safe on/off flags, never paths, tokens, or URLs', () => {
-    const report = buildClientReport('bug', configWithSecrets(), '/agents');
+    const report = buildClientReport('bug', configWithSecrets(), '/team');
     const serialized = JSON.stringify(report);
 
     expect(serialized).not.toContain('/Users/dorian');

@@ -49,9 +49,13 @@ export function SidebarNavHeader() {
         />
         <NavButton
           icon={Users}
-          label="Agents"
-          isActive={pathname === '/agents'}
-          onClick={() => navigate({ to: '/agents' })}
+          label="Team"
+          isActive={pathname === '/team'}
+          onClick={() => navigate({ to: '/team' })}
+          // The anchor key stays `navAgents` on purpose. A tour anchor is
+          // persisted alongside how far someone got, so renaming it would move
+          // every half-finished tour to a step that no longer exists — for a
+          // rename nobody can see.
           testId={TOUR_ANCHORS.navAgents}
         />
         <NavButton

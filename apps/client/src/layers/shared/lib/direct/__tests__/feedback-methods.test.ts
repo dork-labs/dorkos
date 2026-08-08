@@ -27,7 +27,7 @@ describe('createDirectFeedbackMethods', () => {
       kind: 'bug',
       message: 'it crashed',
       contact: 'a@b.com',
-      route: '/agents',
+      route: '/team',
       sessionId: 'sess_123',
       includeServerLogs: true,
       transcriptExcerpt: 'a transcript excerpt',
@@ -49,7 +49,7 @@ describe('createDirectFeedbackMethods', () => {
       kind: 'bug',
       message: 'it crashed',
       contact: 'a@b.com',
-      route: '/agents',
+      route: '/team',
     });
     // None of the server-only / diagnostics fields ride the wire event.
     for (const forbidden of [

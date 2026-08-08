@@ -32,6 +32,10 @@ function row(overrides: Partial<AgentTableRow> & { id: string; name: string }): 
     chatState: 'inactive',
     isPastOnboardingGrace: true,
     isDefault: false,
+    // Every mock agent here belongs to the one operator, which is what a
+    // single-user install looks like. `null` is the system-agent case, shown
+    // by the DorkBot row below.
+    managedBy: '@kai',
     ...overrides,
   };
 }
@@ -83,6 +87,9 @@ const FLEET: AgentTableRow[] = [
     taskCount: 7,
     isDefault: true,
     isSystem: true,
+    // The system agent belongs to the install, not to a person — the one row
+    // whose Managed by cell is a dash.
+    managedBy: null,
   }),
   row({
     id: '5',

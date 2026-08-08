@@ -54,14 +54,14 @@ afterEach(() => {
 
 describe('useElectronCloseTab', () => {
   it('does nothing in the browser cockpit, where the browser owns Cmd+W', () => {
-    setTabs(['/', '/agents'], 0);
+    setTabs(['/', '/team'], 0);
     renderHook(() => useElectronCloseTab());
     // No electronAPI at all — the hook must not assume the bridge exists.
     expect(useAppTabsStore.getState().tabs).toHaveLength(2);
   });
 
   it('answers synchronously — the shell races the reply and the window wins ties', () => {
-    setTabs(['/', '/agents'], 0);
+    setTabs(['/', '/team'], 0);
     const bridge = installBridge();
     renderHook(() => useElectronCloseTab());
 
@@ -70,7 +70,7 @@ describe('useElectronCloseTab', () => {
   });
 
   it('does nothing when the desktop half of the contract has not shipped', () => {
-    setTabs(['/', '/agents'], 0);
+    setTabs(['/', '/team'], 0);
     window.electronAPI = {
       onNavigate: vi.fn(() => vi.fn()),
     } as unknown as Window['electronAPI'];
@@ -80,7 +80,7 @@ describe('useElectronCloseTab', () => {
   });
 
   it('closes the tab you are on, shows the one that took over, and keeps the window', () => {
-    setTabs(['/', '/agents', '/tasks'], 1);
+    setTabs(['/', '/team', '/tasks'], 1);
     const bridge = installBridge();
 
     renderHook(() => useElectronCloseTab());
@@ -113,7 +113,7 @@ describe('useElectronCloseTab', () => {
     const { rerender } = renderHook(() => useElectronCloseTab());
     expect(bridge.onCloseTab).toHaveBeenCalledTimes(1);
 
-    useAppTabsStore.getState().openTab('/agents');
+    useAppTabsStore.getState().openTab('/team');
     rerender();
     expect(bridge.onCloseTab).toHaveBeenCalledTimes(1);
     expect(bridge.unsubscribe).not.toHaveBeenCalled();
@@ -123,7 +123,7 @@ describe('useElectronCloseTab', () => {
   });
 
   it('unsubscribes on unmount', () => {
-    setTabs(['/', '/agents'], 0);
+    setTabs(['/', '/team'], 0);
     const bridge = installBridge();
 
     const { unmount } = renderHook(() => useElectronCloseTab());

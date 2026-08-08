@@ -56,17 +56,17 @@ afterEach(() => {
 
 describe('useAppTabShortcuts', () => {
   it('opens a new tab on the dashboard', () => {
-    setTabs(['/agents'], 0);
+    setTabs(['/team'], 0);
     renderHook(() => useAppTabShortcuts());
 
     expect(press({ key: 't', code: 'KeyT', metaKey: true })).toBe(true);
 
-    expect(useAppTabsStore.getState().tabs.map((t) => t.href)).toEqual(['/agents', NEW_TAB_HREF]);
+    expect(useAppTabsStore.getState().tabs.map((t) => t.href)).toEqual(['/team', NEW_TAB_HREF]);
     expect(navigate).toHaveBeenCalledWith({ href: NEW_TAB_HREF });
   });
 
   it('works with Ctrl as well as Cmd', () => {
-    setTabs(['/agents'], 0);
+    setTabs(['/team'], 0);
     renderHook(() => useAppTabShortcuts());
 
     press({ key: 't', code: 'KeyT', ctrlKey: true });
@@ -75,7 +75,7 @@ describe('useAppTabShortcuts', () => {
   });
 
   it('leaves plain and Alt-modified keys alone', () => {
-    setTabs(['/agents'], 0);
+    setTabs(['/team'], 0);
     renderHook(() => useAppTabShortcuts());
 
     expect(press({ key: 't', code: 'KeyT' })).toBe(false);
@@ -84,16 +84,16 @@ describe('useAppTabShortcuts', () => {
   });
 
   it('jumps to a tab by number', () => {
-    setTabs(['/', '/agents', '/tasks'], 0);
+    setTabs(['/', '/team', '/tasks'], 0);
     renderHook(() => useAppTabShortcuts());
 
     press({ key: '2', code: 'Digit2', metaKey: true });
 
-    expect(activeHref()).toBe('/agents');
+    expect(activeHref()).toBe('/team');
   });
 
   it('treats 9 as the last tab, however many there are', () => {
-    setTabs(['/', '/agents', '/tasks'], 0);
+    setTabs(['/', '/team', '/tasks'], 0);
     renderHook(() => useAppTabShortcuts());
 
     press({ key: '9', code: 'Digit9', metaKey: true });
@@ -102,7 +102,7 @@ describe('useAppTabShortcuts', () => {
   });
 
   it('does nothing for a number past the end of the strip', () => {
-    setTabs(['/', '/agents'], 0);
+    setTabs(['/', '/team'], 0);
     renderHook(() => useAppTabShortcuts());
 
     press({ key: '5', code: 'Digit5', metaKey: true });
@@ -112,7 +112,7 @@ describe('useAppTabShortcuts', () => {
   });
 
   it('steps right and left, wrapping at both ends', () => {
-    setTabs(['/', '/agents', '/tasks'], 0);
+    setTabs(['/', '/team', '/tasks'], 0);
     renderHook(() => useAppTabShortcuts());
 
     // Shift+[ and Shift+] produce `{`/`}`, so the handler matches on `code`.
@@ -124,7 +124,7 @@ describe('useAppTabShortcuts', () => {
   });
 
   it('ignores a shifted key that is not a bracket', () => {
-    setTabs(['/', '/agents'], 0);
+    setTabs(['/', '/team'], 0);
     renderHook(() => useAppTabShortcuts());
 
     expect(press({ key: 'T', code: 'KeyT', metaKey: true, shiftKey: true })).toBe(false);
@@ -132,7 +132,7 @@ describe('useAppTabShortcuts', () => {
   });
 
   it('stops listening once the shell unmounts', () => {
-    setTabs(['/agents'], 0);
+    setTabs(['/team'], 0);
     const { unmount } = renderHook(() => useAppTabShortcuts());
     unmount();
 
@@ -143,7 +143,7 @@ describe('useAppTabShortcuts', () => {
 
   it('registers everything the shortcuts panel advertises', () => {
     // The panel is a promise; a shortcut listed there and wired nowhere is a lie.
-    setTabs(['/', '/agents'], 0);
+    setTabs(['/', '/team'], 0);
     renderHook(() => useAppTabShortcuts());
 
     expect(SHORTCUTS.NEW_TAB.key).toBe('mod+t');
@@ -170,7 +170,7 @@ describe('useAppTabShortcuts in a browser', () => {
     // tabs here. Cancelling one would break a key the person did not aim at us
     // (DOR-568), so nothing is registered at all — every press comes back
     // uncancelled.
-    setTabs(['/', '/agents'], 0);
+    setTabs(['/', '/team'], 0);
     renderHook(() => useAppTabShortcuts());
 
     expect(press({ key: 't', code: 'KeyT', metaKey: true })).toBe(false);
@@ -180,7 +180,7 @@ describe('useAppTabShortcuts in a browser', () => {
   });
 
   it('leaves the tab set and sessionStorage alone', () => {
-    setTabs(['/', '/agents'], 1);
+    setTabs(['/', '/team'], 1);
     renderHook(() => useAppTabShortcuts());
     sessionStorage.clear();
 
@@ -188,7 +188,7 @@ describe('useAppTabShortcuts in a browser', () => {
     press({ key: '1', code: 'Digit1', metaKey: true });
 
     expect(useAppTabsStore.getState().tabs).toHaveLength(2);
-    expect(activeHref()).toBe('/agents');
+    expect(activeHref()).toBe('/team');
     expect(navigate).not.toHaveBeenCalled();
     expect(sessionStorage.length).toBe(0);
   });

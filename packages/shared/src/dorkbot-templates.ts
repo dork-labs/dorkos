@@ -99,7 +99,7 @@ export const DORKBOT_ONBOARDING_LINES = {
   discoveryZero: 'I looked around. This machine is quiet so far. We can add agents any time.',
   /** Honest line when the scan exceeds its budget or errors (Beat 2). */
   discoveryTimeout:
-    "That's taking longer than I expected. I'll keep looking in the background; check the Agents page later.",
+    "That's taking longer than I expected. I'll keep looking in the background; check the Team page later.",
   /** Reply when the user declines the scan (Beat 2). */
   discoveryDecline: 'No problem.',
   /** Prompt that opens the real composer for the user's first message (Beat 3). */
@@ -151,7 +151,8 @@ export const DORKBOT_TOUR_LINES = {
   },
   /** The Mesh occasion tour, fired when a second agent joins the fleet. */
   mesh: {
-    navAgents: 'This opens your Agents page, where your whole fleet lives. Add more any time.',
+    navAgents:
+      'This opens your Team page. You and every agent you run, in one place. Add more any time.',
   },
 } as const;
 

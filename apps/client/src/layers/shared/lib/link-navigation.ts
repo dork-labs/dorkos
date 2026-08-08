@@ -73,6 +73,7 @@ export const APP_ROUTE_PATHS = [
   '/marketplace/sources',
   '/session',
   '/tasks',
+  '/team',
   '/workspaces',
 ] as const;
 

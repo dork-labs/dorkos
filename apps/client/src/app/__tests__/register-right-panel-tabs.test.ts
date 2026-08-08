@@ -48,7 +48,7 @@ describe('registerRightPanelTabs', () => {
     expect(session?.title).toBe('Session');
     expect(session?.isGlobal).toBeUndefined();
     expect(session?.visibleWhen?.(ctx(true))).toBe(true);
-    expect(session?.visibleWhen?.({ ...ctx(true), pathname: '/agents' })).toBe(false);
+    expect(session?.visibleWhen?.({ ...ctx(true), pathname: '/team' })).toBe(false);
 
     const order = contributions.map((c) => c.id);
     expect(order.indexOf('session')).toBeGreaterThan(order.indexOf('agent-hub'));

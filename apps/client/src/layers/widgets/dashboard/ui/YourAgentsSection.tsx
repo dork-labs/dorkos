@@ -52,10 +52,10 @@ export function YourAgentsSection() {
       {hasOverflow && (
         <div className="mt-3">
           <Link
-            to="/agents"
+            to="/team"
             className="text-muted-foreground hover:text-foreground focus-ring inline-flex items-center gap-1 rounded-md text-xs font-medium transition-colors"
           >
-            All agents
+            See your team
             <ArrowRight className="size-3" />
           </Link>
         </div>

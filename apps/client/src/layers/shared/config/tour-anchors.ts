@@ -27,7 +27,14 @@ export const TOUR_ANCHORS = {
   yourAgents: 'dashboard-your-agents',
   /** The sidebar navigation button that opens the Tasks scheduler. */
   navTasks: 'nav-tasks',
-  /** The sidebar navigation button that opens the Agents page. */
+  /**
+   * The sidebar navigation button that opens the Team page.
+   *
+   * Named for the page's old title, and staying that way: both the key and the
+   * `data-testid` are persisted with how far someone got through a tour, so
+   * renaming either would strand every tour already in progress on a step that
+   * no longer resolves — a real cost for a rename nobody would ever see.
+   */
   navAgents: 'nav-agents',
   /** The Relay integrations list inside settings. */
   relayIntegrations: 'connections-messaging',

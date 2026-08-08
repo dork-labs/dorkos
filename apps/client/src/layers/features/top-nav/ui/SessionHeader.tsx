@@ -26,11 +26,8 @@ export function SessionHeader({ agentName, origin, originLabel }: SessionHeaderP
   return (
     <>
       <nav aria-label="Breadcrumb" className="flex items-center gap-1 text-sm">
-        <Link
-          to="/agents"
-          className="text-muted-foreground hover:text-foreground transition-colors"
-        >
-          Agents
+        <Link to="/team" className="text-muted-foreground hover:text-foreground transition-colors">
+          Team
         </Link>
         {agentName && (
           <>

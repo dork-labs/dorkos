@@ -181,7 +181,7 @@ export function requireRelay(deps: McpToolDeps) {
  */
 export const ACCESS_DENIED_HINT =
   'Cross-namespace agent messaging is denied by default. Ask the user to allow it from the ' +
-  'Agents page Access panel (or PUT /api/mesh/topology/access with ' +
+  'Team page Access view (or PUT /api/mesh/topology/access with ' +
   '{ sourceNamespace, targetNamespace, action: "allow" }). Use mesh_query_topology() to see ' +
   'current namespaces and rules.';
 
