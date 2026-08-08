@@ -1,3 +1,4 @@
+import type { CSSProperties } from 'react';
 import type { TeamMember } from '@dorkos/shared/team-schemas';
 import { Badge, IdentityAvatar } from '@/layers/shared/ui';
 import { cn } from '@/layers/shared/lib';
@@ -95,9 +96,67 @@ export function TeamMemberCard({
     <article
       data-slot="team-member-card"
       data-member-id={member.id}
+      // The card wears this identity's own colour, and paints its border from
+      // it at a STRENGTH the stylesheet can move. Two things force this shape:
+      //
+      // - An ancestor cannot inherit a property its child declares, so the card
+      //   publishes the face colour itself rather than reading it off the disc.
+      // - `index.css` sets a neutral `border-color` on `*` in an UNLAYERED
+      //   rule, and an unlayered rule outranks every `@layer` — Tailwind's
+      //   utilities included. No `border-<colour>` class can change a border in
+      //   this app (see the note in `contributing/design-system.md`). An inline
+      //   declaration does outrank it, so the colour is painted here and only
+      //   its strength moves, through a custom property a class CAN set.
+      style={
+        {
+          '--identity-color': face.color,
+          borderColor:
+            'color-mix(in oklch, var(--identity-color) var(--identity-border-strength), hsl(var(--border)))',
+        } as CSSProperties
+      }
       className={cn(
         'bg-card shadow-soft relative flex items-start gap-3 rounded-lg border p-4',
-        onOpenProfile && 'card-interactive',
+        // The resting strength is a CLASS, not part of the inline style above:
+        // an inline declaration outranks every stylesheet rule, so a resting
+        // value written inline would be one the `hover:` step could never move.
+        // Only what must beat the unlayered `*` border default stays inline.
+        '[--identity-border-strength:0%]',
+        onOpenProfile && [
+          // Surface tier: the whole area is one action, so the whole card
+          // answers — it lifts a hair, its shadow steps up, and its border
+          // firms into this identity's own colour. Named properties rather
+          // than `transition-all`, so what moves stays auditable; every one of
+          // them is paint or transform, so nothing reflows. `translate` and
+          // `scale` are named as themselves because Tailwind v4 writes those
+          // properties directly — listing `transform` transitions nothing.
+          'transition-[box-shadow,border-color,translate,scale] duration-(--identity-settle) ease-(--identity-ease-standard)',
+          'hover:shadow-elevated hover:-translate-y-px',
+          'hover:[--identity-border-strength:var(--identity-border-mix)]',
+          // Focus-visible parity, on the CARD rather than only on the word. A
+          // keyboard reaching the primary control must learn what a pointer
+          // learns: the whole tile is the target. Without this, Tab drew a ring
+          // around a name while a mouse got the whole card answering — and the
+          // negative twin below (standing down for the attribution's focus)
+          // already existed, which is what made the gap an oversight.
+          'has-[[data-slot=team-member-open]:focus-visible]:shadow-elevated has-[[data-slot=team-member-open]:focus-visible]:-translate-y-px',
+          'has-[[data-slot=team-member-open]:focus-visible]:[--identity-border-strength:var(--identity-border-mix)]',
+          'active:translate-y-0 active:scale-[0.99] active:duration-(--identity-press)',
+          // Per-area stand-down: hovering the attribution — a DIFFERENT action
+          // inside the same card — calms the card, so one pointer never lights
+          // two affordances at once and each area telegraphs its OWN verb.
+          //
+          // Scoped to the attribution by name, not to `button:hover`. The
+          // card's primary control is the name button, whose `after:` overlay
+          // covers the whole tile; a pseudo-element hit-tests as part of the
+          // element that generated it, so `has-[button:hover]` would be true
+          // everywhere on the card and the lift would never fire at all.
+          'has-[[data-slot=team-member-owner]:hover]:shadow-soft has-[[data-slot=team-member-owner]:hover]:translate-y-0 has-[[data-slot=team-member-owner]:hover]:[--identity-border-strength:0%]',
+          'has-[[data-slot=team-member-owner]:focus-visible]:shadow-soft has-[[data-slot=team-member-owner]:focus-visible]:translate-y-0 has-[[data-slot=team-member-owner]:focus-visible]:[--identity-border-strength:0%]',
+          // `:active` propagates to ancestors, so without this the card would
+          // shrink under a press the stand-down had only just calmed — the
+          // press echoing on the surface that is deliberately NOT answering.
+          'has-[[data-slot=team-member-owner]:active]:scale-100',
+        ],
         className
       )}
     >
@@ -120,6 +179,10 @@ export function TeamMemberCard({
               // split the attribution below already makes.
               <button
                 type="button"
+                // Named so the card can answer this control's keyboard focus
+                // the way it answers a pointer — see the `has-[…]` rules on the
+                // article above.
+                data-slot="team-member-open"
                 onClick={() => onOpenProfile(member.id)}
                 aria-label={`Open ${member.displayName}’s profile`}
                 className="focus-ring max-w-full truncate rounded text-left after:absolute after:inset-0 after:rounded-lg after:content-['']"
@@ -156,6 +219,9 @@ export function TeamMemberCard({
         {owner && onSelectOwner && (
           <button
             type="button"
+            // Named so the card can stand down for exactly this control and no
+            // other — see the `has-[…]` rules on the article above.
+            data-slot="team-member-owner"
             onClick={() => onSelectOwner(owner.id)}
             // The visible text names the owner; the label names what pressing
             // it does, which is the part a screen reader cannot infer from
@@ -165,7 +231,12 @@ export function TeamMemberCard({
             // positioned, and later in the DOM, so it paints on top and takes
             // its own press. Without it the overlay would swallow every click
             // here and the attribution would silently open a profile instead.
-            className="text-muted-foreground hover:text-foreground focus-ring relative mt-1.5 max-w-full truncate rounded text-xs underline-offset-2 hover:underline"
+            // Chip tier on a text surface: the text steps up to full foreground
+            // colour and an underline arrives. The `focus-visible:` twins are
+            // not decoration — a keyboard user must never learn less than a
+            // mouse user, and the ring alone says "you are here", not "this
+            // filters".
+            className="text-muted-foreground hover:text-foreground focus-visible:text-foreground focus-ring relative mt-1.5 max-w-full truncate rounded text-xs underline-offset-2 transition-[color] duration-(--identity-answer) ease-(--identity-ease-standard) hover:underline focus-visible:underline"
           >
             by {teamMemberLabel(owner)}
           </button>

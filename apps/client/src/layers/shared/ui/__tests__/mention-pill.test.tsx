@@ -25,7 +25,14 @@ describe('MentionPill', () => {
     expect(pill).toHaveAttribute('data-kind', 'agent');
     expect(pill.textContent).toBe('Warden');
     expect(pill.querySelector('svg')).not.toBeNull();
-    expect(pill.style.backgroundColor).toContain('color-mix');
+    // The colour is PUBLISHED, not painted: the background is a class that
+    // reads this property, which is the only reason a `:hover` rule can step
+    // it. An inline `background-color` outranks every stylesheet.
+    expect(pill.style.getPropertyValue('--identity-color')).toBe('#6d5ae0');
+    expect(pill.className).toContain(
+      'bg-[color-mix(in_oklch,var(--identity-color)_14%,transparent)]'
+    );
+    expect(pill.style.color).toContain('color-mix');
   });
 
   it('draws a local person as a neutral @name pill with no glyph', () => {
@@ -77,5 +84,46 @@ describe('MentionPill', () => {
       /cursor-pointer/
     );
     expect(active.querySelector('[data-slot="mention-pill"]')?.className).toMatch(/cursor-pointer/);
+  });
+
+  describe('the Chip tier: one tint step, and never a filter', () => {
+    it('answers an agent hover by raising its own colour, not by dimming it', () => {
+      const { container } = render(
+        <MentionPill kind="agent" label="Warden" color="#6d5ae0" resolved interactive />
+      );
+      const pill = container.querySelector('[data-slot="mention-pill"]') as HTMLElement;
+
+      // `brightness()` multiplies a considered identity colour toward grey —
+      // the opposite of the identity answering, and banned on any surface
+      // already carrying one.
+      expect(pill.className).not.toMatch(/brightness/);
+      // 14% at rest, 20% under the pointer. One step, no ring, no lift: a pill
+      // mid-paragraph that glowed would pull the eye out of the sentence.
+      expect(pill.className).toContain(
+        'hover:bg-[color-mix(in_oklch,var(--identity-color)_20%,transparent)]'
+      );
+    });
+
+    it('steps a neutral pill too, since it has no identity colour to raise', () => {
+      const { container } = render(
+        <MentionPill kind="human" label="dorian" resolved interactive />
+      );
+      const pill = container.querySelector('[data-slot="mention-pill"]') as HTMLElement;
+
+      expect(pill.className).not.toMatch(/brightness/);
+      expect(pill.className).toContain('hover:bg-[color-mix(in_oklch,hsl(var(--secondary))');
+    });
+
+    it('leaves a non-interactive pill with no hover response at all', () => {
+      // An affordance is only honest where a click exists. `interactive` is
+      // what the caller turns on alongside the click itself.
+      const { container } = render(
+        <MentionPill kind="agent" label="Warden" color="#6d5ae0" resolved />
+      );
+      const pill = container.querySelector('[data-slot="mention-pill"]') as HTMLElement;
+
+      expect(pill.className).not.toMatch(/hover:/);
+      expect(pill.className).not.toMatch(/focus-visible:/);
+    });
   });
 });

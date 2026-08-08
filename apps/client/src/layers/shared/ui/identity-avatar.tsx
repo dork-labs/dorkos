@@ -22,6 +22,62 @@ import type { IdentityOrigin } from '../lib/identity-origin';
  */
 const TINT_STRENGTH = '18%';
 
+/**
+ * The **Mark tier** of the identity interaction grammar: a disc that is itself
+ * a target answers a pointer by ringing itself in its OWN colour, one step
+ * quieter than full strength (`--identity-ring-mix`).
+ *
+ * A ring is a change in _state_, not in size — nothing moves, nothing reflows,
+ * and the end state reads on its own, which is what makes it correct under
+ * `prefers-reduced-motion` for free (`index.css` collapses every transition
+ * duration there, so only the destination survives; see the design spec §2.6).
+ *
+ * Two drivers, because a disc is a target in two different shapes:
+ *
+ * - `self` — the disc is the hovered thing itself, and nothing can focus it (a
+ *   tooltip trigger in a room roster). No `focus-visible` twin, deliberately: a
+ *   focus ring on a `<span>` no keyboard can reach is an affordance wired to
+ *   nothing, which is the defect this grammar exists to remove, not add.
+ * - `group` — the disc sits inside a real control that owns the hover and the
+ *   focus (a face button, an identity lockup). Pair it with
+ *   {@link IDENTITY_MARK_GROUP} on that control and the ring answers a keyboard
+ *   exactly as it answers a mouse.
+ *
+ * **The group is NAMED, and that is load-bearing.** Tailwind compiles a bare
+ * `group-hover:` to `:where(.group):hover &`, which matches ANY `.group`
+ * ancestor rather than the nearest one. The sidebar wraps its rows in an
+ * unnamed `.group` that spans most of the pane, so the bare form left every
+ * sidebar face permanently ringed — a hover state that was never not on.
+ * Caught in a browser; jsdom cannot see it. `group/identity` matches only the
+ * control that opted in.
+ *
+ * **Health wins.** A disc already spending its 2px ring on mesh health
+ * ({@link AgentAvatar}) must NOT take this one — a diagnostic signal that
+ * changed colour under the pointer would read as a hover state. Callers gate
+ * it; this recipe does not know about health and never applies itself.
+ *
+ * The transition names `background-color` alongside `box-shadow` so the disc's
+ * own colour crossfade is not silently dropped by class merging; on a Mark disc
+ * both run at `--identity-answer`.
+ */
+const identityMarkRing = {
+  /** The disc is the hover target itself and is not focusable. */
+  self: 'ring-0 ring-[color-mix(in_oklch,var(--identity-color)_var(--identity-ring-mix),transparent)] transition-[background-color,box-shadow] duration-(--identity-answer) ease-(--identity-ease-out) hover:ring-2',
+  /** The disc sits inside a control marked {@link IDENTITY_MARK_GROUP}. */
+  group:
+    'ring-0 ring-[color-mix(in_oklch,var(--identity-color)_var(--identity-ring-mix),transparent)] transition-[background-color,box-shadow] duration-(--identity-answer) ease-(--identity-ease-out) group-hover/identity:ring-2 group-focus-visible/identity:ring-2',
+} as const;
+
+/**
+ * The class a control wears so the {@link identityMarkRing}`.group` disc inside
+ * it answers that control's hover and focus — and nothing else's.
+ *
+ * Exported rather than spelled out per call site so the name cannot drift: a
+ * `group` here and a `group-hover/identity:` there is a ring that never fires,
+ * and nothing would report it.
+ */
+const IDENTITY_MARK_GROUP = 'group/identity';
+
 const identityAvatarVariants = cva(
   'relative inline-flex shrink-0 items-center justify-center transition-[background-color] duration-500 ease-in-out',
   {
@@ -325,13 +381,25 @@ function IdentityAvatar({
       // read against an arbitrary background — `readableForeground` is the
       // same "don't assume white" call this inline exception already makes
       // for the background.
-      style={{
-        backgroundColor: isFill
-          ? color
-          : `color-mix(in oklch, ${color} ${TINT_STRENGTH}, transparent)`,
-        ...(isFill ? { color: readableForeground(color) } : {}),
-        ...style,
-      }}
+      style={
+        {
+          // Published so a STYLESHEET can reach this identity's colour. An
+          // inline `background-color` beats every rule in every stylesheet, so
+          // for as long as the colour lived only there, no `:hover` could tint
+          // it, ring it, or lend it to an ancestor's border — which is the
+          // structural reason identity surfaces had no colour response at all.
+          // A custom property inherits, so the disc, its descendants, and any
+          // ancestor that sets the same property can all read it from a class
+          // string. Purely additive: nothing below changes behaviour. Follows
+          // `--runtime-accent` (`RuntimeCardView.tsx`) exactly.
+          '--identity-color': color,
+          backgroundColor: isFill
+            ? color
+            : `color-mix(in oklch, ${color} ${TINT_STRENGTH}, transparent)`,
+          ...(isFill ? { color: readableForeground(color) } : {}),
+          ...style,
+        } as React.CSSProperties
+      }
     >
       {face}
       {drawnBadge != null && (
@@ -375,4 +443,4 @@ function IdentityAvatar({
   );
 }
 
-export { IdentityAvatar, identityAvatarVariants };
+export { IdentityAvatar, identityAvatarVariants, identityMarkRing, IDENTITY_MARK_GROUP };

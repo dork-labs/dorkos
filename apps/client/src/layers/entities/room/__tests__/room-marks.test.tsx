@@ -177,6 +177,37 @@ describe('MemberList', () => {
     expect(screen.getByText('Ana')).toHaveClass('sr-only');
   });
 
+  it('answers a hovered disc in that member’s own colour, in the list form', () => {
+    // The tooltip should not be the first sign that anything here is
+    // hoverable. Max five discs, each individually addressable — the exact
+    // shape the colour response is for.
+    const { container } = renderRoster([member(ANA), member(YOU)]);
+    const disc = container.querySelector('[data-slot="room-member-avatar"]') as HTMLElement;
+
+    expect(disc.className).toContain('hover:ring-2');
+    expect(disc.className).toContain('var(--identity-color)');
+    // Paint order only, so the ring clears the disc overlapping it and nothing
+    // on the row moves.
+    expect(disc.className).toContain('hover:z-10');
+    // A `<span>` no keyboard can reach must not carry a focus ring: a dormant
+    // affordance is exactly the defect this grammar removes, not one it adds.
+    expect(disc.className).not.toContain('focus-visible:ring');
+  });
+
+  it('gives the button form no per-disc response — one target, one action', () => {
+    // Five discs each answering to one hover would suggest five actions. The
+    // button's own `hover:bg-accent` is the whole answer.
+    const { container } = render(
+      <MemberList members={[member(ANA), member(YOU)]} onClick={vi.fn()} label="Members" />,
+      { wrapper: ({ children }) => <TooltipProvider>{children}</TooltipProvider> }
+    );
+
+    for (const disc of container.querySelectorAll('[data-slot="room-member-avatar"]')) {
+      expect(disc.className).not.toContain('hover:ring-2');
+    }
+    expect(screen.getByRole('button').className).toContain('hover:bg-accent');
+  });
+
   it('counts off the members past the fifth', () => {
     renderRoster(
       Array.from({ length: 7 }, (_, i) =>

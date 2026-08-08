@@ -16,12 +16,15 @@ import { LogOut, Settings, UserRound } from 'lucide-react';
 import type { TeamMember } from '@dorkos/shared/team-schemas';
 import {
   IdentityAvatar,
+  identityMarkRing,
+  IDENTITY_MARK_GROUP,
   ResponsiveDropdownMenu,
   ResponsiveDropdownMenuContent,
   ResponsiveDropdownMenuItem,
   ResponsiveDropdownMenuSeparator,
   ResponsiveDropdownMenuTrigger,
 } from '@/layers/shared/ui';
+import { cn } from '@/layers/shared/lib';
 import { teamMemberFace } from '@/layers/entities/team';
 
 export interface AccountMenuProps {
@@ -68,7 +71,14 @@ export function AccountMenu({
         <button
           type="button"
           data-slot="account-menu-trigger"
-          className="rounded-md p-1 transition-opacity duration-150 hover:opacity-80"
+          // Mark tier. It used to dim to 80% on hover — the universal idiom for
+          // DISABLED — so your own face read as switched off the moment you
+          // pointed at it. Your colour answers instead, on the disc, through the
+          // named group, and a keyboard gets the identical ring.
+          className={cn(
+            IDENTITY_MARK_GROUP,
+            'focus-ring rounded-md p-1 transition-[scale] duration-(--identity-press) ease-(--identity-ease-out) active:scale-[0.94]'
+          )}
           aria-label={`Your account: ${member.displayName}`}
         >
           <IdentityAvatar
@@ -79,6 +89,7 @@ export function AccountMenu({
             imageUrl={face.imageUrl}
             fallback={face.fallback}
             origin={face.origin}
+            className={identityMarkRing.group}
           />
         </button>
       </ResponsiveDropdownMenuTrigger>

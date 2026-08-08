@@ -269,6 +269,35 @@
   --msg-tool-expand-duration: 300ms;
   --msg-tool-expand-easing: cubic-bezier(0.4, 0, 0.2, 1);
 
+  /* === Identity interaction grammar === */
+  /* Three speeds and two curves, and nothing else, for every hover, press and
+     focus an identity surface answers with (design spec
+     `plans/identity-micro-interactions/design-spec.md` §2.2; written up in
+     `contributing/design-system.md` under Identity).
+
+     Press lands before the finger lifts. A mark or a chip answers faster than a
+     card does, because a small target has to feel pre-emptive where a large
+     surface moving that fast reads as a jolt. `settle` is the design system's
+     own "Normal" 200ms.
+
+     Two curves: `out` for anything arriving or growing, `standard` for anything
+     that changes in place and stays, where both ends of the move are visible.
+     No overshoot lives here — overshoot is a signature-moment budget line
+     (the avatar picker, the hub hero), never a hover curve. */
+  --identity-press: 80ms;
+  --identity-answer: 120ms;
+  --identity-settle: 200ms;
+  --identity-ease-out: cubic-bezier(0, 0, 0.2, 1);
+  --identity-ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* How loudly an identity's own colour answers, mixed against the neutral it
+     would otherwise be. The border step keeps a hovered card's edge a border
+     first and a colour second; the ring step keeps a 2px halo from shouting at
+     full saturation. Both are consumed through `var()` inside `color-mix()`, so
+     the identity's colour arrives from `--identity-color` at paint time. */
+  --identity-border-mix: 35%;
+  --identity-ring-mix: 60%;
+
   /* === Elevation tokens === */
   --msg-tool-shadow: none;
   --msg-tool-shadow-hover: 0 1px 3px hsl(0 0% 0% / 0.08);
