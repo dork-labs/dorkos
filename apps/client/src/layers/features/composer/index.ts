@@ -43,7 +43,8 @@
  * nothing to key on.
  *
  * Only components and types leave this slice. `InputActionButton`,
- * `useInputKeyboard`, `useTextareaResize`, and `useDragAndPaste` stay internal:
+ * `useInputKeyboard`, `useTextareaResize`, `useDragAndPaste`, and `usePathDrop`
+ * stay internal:
  * keeping every hook inside the slice is what keeps the cross-feature
  * model-import rule (`.claude/rules/fsd-layers.md`) satisfied. A consumer that
  * needs one of them is a design error, not a reason to widen this barrel.

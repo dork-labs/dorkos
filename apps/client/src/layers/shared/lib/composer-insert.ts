@@ -44,3 +44,15 @@ export function requestComposerInsert(text: string): boolean {
   insertHandler(text);
   return true;
 }
+
+/**
+ * How a file reads in the composer: `@path ` — the same plain text the
+ * composer's own `@` file picker produces, so a file arrives looking identical
+ * whether it was picked, added from the tree, or dragged into the box. The
+ * trailing space means the next thing typed is a new word.
+ *
+ * @param path - Entry path relative to the working directory.
+ */
+export function composerFileReference(path: string): string {
+  return `@${path} `;
+}

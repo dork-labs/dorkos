@@ -174,6 +174,7 @@ function ResponsiveContextMenuItem({
   children,
   onClick,
   variant = 'default',
+  disabled,
   ...props
 }: React.ComponentPropsWithoutRef<typeof ContextMenuItem>) {
   const { isDesktop, close } = React.useContext(ResponsiveContextMenuContext);
@@ -185,6 +186,7 @@ function ResponsiveContextMenuItem({
         className={className}
         onClick={onClick}
         variant={variant}
+        disabled={disabled}
         {...props}
       >
         {children}
@@ -192,15 +194,20 @@ function ResponsiveContextMenuItem({
     );
   }
 
+  // `disabled` is pulled out and applied by hand: the drawer branch renders a
+  // plain button rather than the Radix item, and an item that is dimmed on
+  // desktop but tappable on a phone is worse than one that was never offered.
   return (
     <button
       type="button"
       data-slot="context-menu-item"
       data-variant={variant}
+      disabled={disabled}
       className={cn(
         'border-border flex w-full items-center gap-2 border-b px-4 py-3 text-left text-sm transition-colors',
         'active:bg-accent/50 min-h-[44px]',
         'last:border-b-0',
+        'disabled:pointer-events-none disabled:opacity-50',
         variant === 'destructive' && 'text-destructive',
         className
       )}

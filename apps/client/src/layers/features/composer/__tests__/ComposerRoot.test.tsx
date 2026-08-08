@@ -23,6 +23,19 @@ function dropFiles(target: Element, files: File[]) {
   });
 }
 
+/** The drag the file tree produces: a path under our own type, and no files. */
+function dropPath(target: Element, path: string) {
+  const type = 'application/x-dorkos-file-path';
+  fireEvent.drop(target, {
+    dataTransfer: {
+      files: [],
+      items: [],
+      types: ['text/plain', type],
+      getData: (t: string) => (t === type || t === 'text/plain' ? path : ''),
+    },
+  });
+}
+
 describe('ComposerRoot', () => {
   it('mounts no dropzone at all when the caller wires no attach handler', () => {
     // (a) The reason the two-component split exists: useDropzone attaches
@@ -136,6 +149,56 @@ describe('ComposerRoot', () => {
     const card = screen.getByTestId('child').parentElement!;
     expect(card.classList).toContain('m-0');
     expect(card.classList).not.toContain('m-2');
+  });
+
+  it('hands a file dragged out of the tree to the caller as a path, not an upload', () => {
+    // (DOR-1032) The file tree drags a REFERENCE to a file the machine already
+    // has. It must reach `onPathDropped` and must never be treated as an upload.
+    const onFilesDropped = vi.fn();
+    const onPathDropped = vi.fn();
+    render(
+      <ComposerRoot onFilesDropped={onFilesDropped} onPathDropped={onPathDropped}>
+        <span data-testid="child">hi</span>
+      </ComposerRoot>
+    );
+
+    const card = screen.getByTestId('child').parentElement!;
+    dropPath(card, 'src/a.ts');
+
+    expect(onPathDropped).toHaveBeenCalledWith('src/a.ts');
+    expect(onFilesDropped).not.toHaveBeenCalled();
+  });
+
+  it('accepts a dragged path on a card with no attach wiring at all', () => {
+    // Rooms mount no dropzone; a path drop is a different capability and must
+    // not need one.
+    const onPathDropped = vi.fn();
+    render(
+      <ComposerRoot onPathDropped={onPathDropped}>
+        <span data-testid="child">hi</span>
+      </ComposerRoot>
+    );
+
+    dropPath(screen.getByTestId('child').parentElement!, 'notes.md');
+
+    expect(onPathDropped).toHaveBeenCalledWith('notes.md');
+  });
+
+  it('still uploads files dropped from the operating system', async () => {
+    const onFilesDropped = vi.fn();
+    const onPathDropped = vi.fn();
+    render(
+      <ComposerRoot onFilesDropped={onFilesDropped} onPathDropped={onPathDropped}>
+        <span data-testid="child">hi</span>
+      </ComposerRoot>
+    );
+
+    const card = screen.getByTestId('child').parentElement!;
+    const a = file('a.txt');
+    dropFiles(card, [a]);
+
+    await waitFor(() => expect(onFilesDropped).toHaveBeenCalledWith([a]));
+    expect(onPathDropped).not.toHaveBeenCalled();
   });
 
   it('renders the drop overlay only while a drag is over the card', async () => {

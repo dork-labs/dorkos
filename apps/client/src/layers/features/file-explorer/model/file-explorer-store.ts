@@ -26,6 +26,14 @@ export interface FileExplorerCommands {
   refresh: () => void;
 }
 
+/** The entry sitting on the explorer's own clipboard, waiting to be pasted. */
+export interface ExplorerClipboardEntry {
+  /** The copied entry's path, relative to the working directory it was copied in. */
+  path: string;
+  /** Whether it is a directory — the copy is named differently if so. */
+  isDir: boolean;
+}
+
 interface FileExplorerStore {
   /**
    * Whether dotfiles and gitignored entries are shown. Persisted globally
@@ -38,6 +46,18 @@ interface FileExplorerStore {
   /** Commands published by the mounted tree, or `null` when none is mounted. */
   commands: FileExplorerCommands | null;
   setCommands: (commands: FileExplorerCommands | null) => void;
+
+  /**
+   * What Copy put on the explorer's clipboard, or `null` when nothing is
+   * waiting to be pasted. Deliberately NOT persisted and NOT the system
+   * clipboard: it holds a path inside the active working directory, so it means
+   * nothing after a reload or in another directory (`loadExplorerForCwd` clears
+   * it). Copy also writes the path as text to the system clipboard, which is
+   * what makes pasting into the chat or another app work.
+   */
+  clipboard: ExplorerClipboardEntry | null;
+  /** Put an entry on the explorer clipboard, or clear it with `null`. */
+  setClipboard: (entry: ExplorerClipboardEntry | null) => void;
 
   /** The cwd whose entry is live in the store, or `null` when none is loaded. */
   scopeKey: string | null;
@@ -120,6 +140,9 @@ export const useFileExplorerStore = create<FileExplorerStore>((set) => {
     commands: null,
     setCommands: (commands) => set({ commands }),
 
+    clipboard: null,
+    setClipboard: (clipboard) => set({ clipboard }),
+
     scopeKey: null,
     expanded: {},
     selectedPath: null,
@@ -127,7 +150,7 @@ export const useFileExplorerStore = create<FileExplorerStore>((set) => {
 
     loadExplorerForCwd: (cwd) => {
       if (cwd === null) {
-        set({ scopeKey: null, expanded: {}, selectedPath: null, scrollTop: 0 });
+        set({ scopeKey: null, expanded: {}, selectedPath: null, scrollTop: 0, clipboard: null });
         return;
       }
       const entry = readExplorerEntry(cwd) ?? emptyExplorerEntry();
@@ -137,7 +160,10 @@ export const useFileExplorerStore = create<FileExplorerStore>((set) => {
         selectedPath: entry.selectedPath,
         scrollTop: entry.scrollTop,
       };
-      set(next);
+      // A copied path is relative to the directory it was copied in, so it would
+      // name the wrong file in the next one — but remounting the SAME directory
+      // (a tab switch) is not a change, and must keep what was copied.
+      set((s) => (s.scopeKey === cwd ? next : { ...next, clipboard: null }));
       // Stamp accessedAt: loading a cwd makes it most-recently-used for LRU.
       persist(next);
     },

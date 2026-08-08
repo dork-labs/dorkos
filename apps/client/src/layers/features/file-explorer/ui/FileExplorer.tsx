@@ -42,6 +42,7 @@ export function FileExplorer() {
   // refresh; `renamingPath`/`draft` stay component-local (ephemeral, D7).
   const selectedPath = useFileExplorerStore((s) => s.selectedPath);
   const setSelectedPath = useFileExplorerStore((s) => s.setSelectedPath);
+  const clipboard = useFileExplorerStore((s) => s.clipboard);
 
   const [draft, setDraft] = useState<DraftCreate | null>(null);
   const [renamingPath, setRenamingPath] = useState<string | null>(null);
@@ -143,6 +144,13 @@ export function FileExplorer() {
             onNewFolder={(parent) => startCreate(parent, 'dir')}
             onDelete={(entry) => void explorer.removeEntry(entry)}
             onMove={(from, toDir) => void explorer.moveEntry(from, toDir)}
+            onCopyInto={(from, toDir) => void explorer.copyEntry(from, toDir)}
+            onCopy={explorer.copyToClipboard}
+            onPaste={(toDir) => {
+              if (clipboard) void explorer.copyEntry(clipboard.path, toDir);
+            }}
+            onDuplicate={(entry) => void explorer.copyEntry(entry.path, parentOf(entry.path))}
+            canPaste={clipboard !== null}
             revealLabel={explorer.revealLabel}
             onReveal={(entry) => void explorer.reveal(entry)}
             onAddToChat={explorer.addToChat}
