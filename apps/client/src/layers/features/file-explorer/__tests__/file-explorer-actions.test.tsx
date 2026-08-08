@@ -2,7 +2,7 @@
  * @vitest-environment jsdom
  */
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
-import { render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, cleanup, fireEvent, waitFor, act } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createMockTransport } from '@dorkos/test-utils';
@@ -92,8 +92,23 @@ async function openRowMenu(transport = transportOn('darwin-arm64')) {
     </QueryClientProvider>
   );
   const row = await screen.findByRole('treeitem', { name: 'README.md' });
+  // Right-clicking a row focuses it first, which is the focus the menu hands
+  // back when it closes.
+  row.focus();
   fireEvent.contextMenu(row);
   return transport;
+}
+
+/**
+ * Let the close settle. An item that moves focus runs once the menu is on its
+ * way out, and the menu's own focus restore lands from a later timer still, so
+ * `activeElement` read any earlier is a state nobody sees.
+ */
+async function settleClose() {
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
 }
 
 describe('File explorer context-menu actions', () => {
@@ -171,8 +186,33 @@ describe('File explorer context-menu actions', () => {
     await openRowMenu();
     fireEvent.click(await screen.findByText('Add to Chat'));
 
-    expect(insert).toHaveBeenCalledWith('@README.md ');
+    await waitFor(() => expect(insert).toHaveBeenCalledWith('@README.md '));
     unregister();
+  });
+
+  it('leaves the caret in the composer, ready to type (DOR-1038)', async () => {
+    // The stand-in does what the chat's input container does with the text:
+    // append it and focus the box. What is under test is everything around that
+    // — the menu used to trap the focus on the way in and take it back to the
+    // row on the way out, so a person had to click the composer to carry on.
+    const composer = document.createElement('textarea');
+    document.body.appendChild(composer);
+    const unregister = registerComposerInsert((text) => {
+      composer.value += text;
+      composer.focus();
+    });
+
+    await openRowMenu();
+    fireEvent.click(await screen.findByText('Add to Chat'));
+    await settleClose();
+
+    // Read before tearing the box down — removing a focused element blurs it.
+    const focused = document.activeElement;
+    unregister();
+    composer.remove();
+
+    expect(focused).toBe(composer);
+    expect(composer.value).toBe('@README.md ');
   });
 
   it('says so when there is no composer to add the file to', async () => {
@@ -180,6 +220,8 @@ describe('File explorer context-menu actions', () => {
 
     fireEvent.click(await screen.findByText('Add to Chat'));
 
-    expect(toastError).toHaveBeenCalledWith('Open a chat first to add a file to it');
+    await waitFor(() =>
+      expect(toastError).toHaveBeenCalledWith('Open a chat first to add a file to it')
+    );
   });
 });

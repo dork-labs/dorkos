@@ -2,7 +2,7 @@
  * @vitest-environment jsdom
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, cleanup, fireEvent } from '@testing-library/react';
+import { render, screen, cleanup, fireEvent, act, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import {
   ResponsiveContextMenu,
@@ -56,6 +56,45 @@ function Menu() {
   );
 }
 
+/**
+ * Where focus ends up is only visible once the close has fully settled: both
+ * branches restore focus from a `setTimeout` queued while the menu unmounts, so
+ * reading `activeElement` any earlier reads a state the user never sees. Two
+ * trips through the macrotask queue clear that timer and anything it queues.
+ */
+async function settleClose() {
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+}
+
+/** A menu with one item that focuses the box beside it, and one that does not. */
+function FocusMenu({ onAddToChat }: { onAddToChat?: () => void }) {
+  return (
+    <>
+      <textarea aria-label="Message" />
+      <ResponsiveContextMenu>
+        <ResponsiveContextMenuTrigger asChild>
+          <button type="button">Open</button>
+        </ResponsiveContextMenuTrigger>
+        <ResponsiveContextMenuContent>
+          <ResponsiveContextMenuItem
+            movesFocus
+            onClick={() => {
+              onAddToChat?.();
+              screen.getByLabelText<HTMLTextAreaElement>('Message').focus();
+            }}
+          >
+            Add to Chat
+          </ResponsiveContextMenuItem>
+          <ResponsiveContextMenuItem onClick={vi.fn()}>Copy Path</ResponsiveContextMenuItem>
+        </ResponsiveContextMenuContent>
+      </ResponsiveContextMenu>
+    </>
+  );
+}
+
 describe('ResponsiveContextMenuItem', () => {
   it('dims a disabled item in the desktop menu', async () => {
     setViewport({ mobile: false });
@@ -79,5 +118,54 @@ describe('ResponsiveContextMenuItem', () => {
     await new Promise((resolve) => setTimeout(resolve, 600));
 
     expect(await screen.findByText('Paste')).toBeDisabled();
+  });
+});
+
+describe('Focus after the menu closes', () => {
+  it('leaves focus where the action put it (DOR-1038)', async () => {
+    setViewport({ mobile: false });
+    render(<FocusMenu />);
+    const trigger = screen.getByRole('button', { name: 'Open' });
+    trigger.focus();
+
+    fireEvent.contextMenu(trigger);
+    fireEvent.click(await screen.findByText('Add to Chat'));
+    await settleClose();
+
+    expect(document.activeElement).toBe(screen.getByLabelText('Message'));
+  });
+
+  it('still hands focus back to the trigger when the action moved none', async () => {
+    setViewport({ mobile: false });
+    render(<FocusMenu />);
+    const trigger = screen.getByRole('button', { name: 'Open' });
+    trigger.focus();
+
+    fireEvent.contextMenu(trigger);
+    fireEvent.click(await screen.findByText('Copy Path'));
+    await settleClose();
+
+    expect(document.activeElement).toBe(trigger);
+  });
+
+  it('waits for the drawer to start closing on a phone too', async () => {
+    // The drawer traps focus exactly as the menu does, so the action has to wait
+    // there as well. Where focus finally LANDS cannot be settled here: jsdom
+    // never finishes vaul's slide-out transition, so the sheet is still mounted
+    // when the test ends and the close-focus-restore never runs. What this pins
+    // is the half that is observable — that the tap does not run the action on
+    // the spot, while the drawer is still holding focus.
+    setViewport({ mobile: true });
+    const onAddToChat = vi.fn();
+    render(<FocusMenu onAddToChat={onAddToChat} />);
+    const trigger = screen.getByRole('button', { name: 'Open' });
+
+    fireEvent.pointerDown(trigger, { pointerId: 1, button: 0 });
+    // The drawer opens on a long press.
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    fireEvent.click(await screen.findByText('Add to Chat'));
+
+    expect(onAddToChat).not.toHaveBeenCalled();
+    await waitFor(() => expect(onAddToChat).toHaveBeenCalled());
   });
 });

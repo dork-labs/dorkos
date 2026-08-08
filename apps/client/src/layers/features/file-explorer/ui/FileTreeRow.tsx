@@ -225,7 +225,9 @@ export function FileTreeRow({
             {revealLabel}
           </ResponsiveContextMenuItem>
         )}
-        <ResponsiveContextMenuItem onClick={() => onAddToChat(entry)}>
+        {/* `movesFocus`: this one puts the caret in the composer, so it runs
+            once the menu is on its way out and keeps the focus it takes. */}
+        <ResponsiveContextMenuItem movesFocus onClick={() => onAddToChat(entry)}>
           Add to Chat
         </ResponsiveContextMenuItem>
         <ResponsiveContextMenuSeparator />
