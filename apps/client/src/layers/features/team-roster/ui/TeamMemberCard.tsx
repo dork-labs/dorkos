@@ -1,6 +1,7 @@
-import type { CSSProperties } from 'react';
+import type { CSSProperties, Ref } from 'react';
+import { motion, type MotionProps } from 'motion/react';
 import type { TeamMember } from '@dorkos/shared/team-schemas';
-import { Badge, IdentityAvatar } from '@/layers/shared/ui';
+import { Badge, IdentityAvatar, IDENTITY_BADGE_WAKE } from '@/layers/shared/ui';
 import { cn } from '@/layers/shared/lib';
 import { getRuntimeDescriptor } from '@/layers/entities/runtime';
 import { platformLabel } from '@/layers/entities/room';
@@ -28,6 +29,59 @@ function secondaryLine(member: TeamMember): string {
   return `On ${platformLabel(member.origin.platform)}`;
 }
 
+/**
+ * The motion this card carries when the grid has armed layout animation.
+ *
+ * `layout="position"` and not plain `layout`: every card in the grid is the
+ * same size, so interpolating size as well as position would spend measurement
+ * on a dimension that never changes. `StatusLine.tsx` already uses this exact
+ * prop.
+ *
+ * **And no `layoutId`.** The design spec prescribed `layoutId={member.id}` to
+ * carry a card between the flat grid and its owner's cluster. It is not needed:
+ * `TeamRosterGrid` keeps one flat child list across both arrangements, so a
+ * card never changes parent and never needs a shared-layout identity to survive
+ * the toggle. See the note there — that structure is the reason, and it stands
+ * on its own.
+ *
+ * It is also actively harmful **in this grid**, which is worth recording
+ * because the spec will be read again. Adding `layoutId` beside `layout` here,
+ * changing nothing else, measured at a pinned 1440×1000 viewport with a fresh
+ * load per run:
+ *
+ * | | `layout` alone | `layout` + `layoutId` |
+ * | --- | --- | --- |
+ * | positions a surviving card is sampled at while the roster filters | 51 | 1 |
+ * | cards still in the DOM 500ms after two of six are filtered out | 4 | 6 |
+ * | cards still in the DOM at 2.9s | 4 | 6 |
+ *
+ * So survivors stop travelling and exiting cards are never unmounted — they
+ * stay as invisible, absolutely-positioned ghosts. This is a claim about
+ * `layoutId` **inside an `AnimatePresence mode="popLayout"` list**, which is the
+ * only configuration measured; it is not a claim that `layoutId` is broken
+ * generally, and the nav pill and session row use it happily without
+ * `AnimatePresence`. The underlying mechanism was not established — only the
+ * behaviour was — so do not reason from a cause here, re-measure.
+ *
+ * None of it is visible to jsdom, typecheck or lint.
+ *
+ * The spring is 280/32, the repo's existing layout spring — so a card sliding
+ * matches a nav pill sliding rather than introducing a second physics.
+ */
+const LAYOUT_MOTION: MotionProps = {
+  layout: 'position',
+  initial: { opacity: 0, scale: 0.97 },
+  animate: { opacity: 1, scale: 1 },
+  // Faster leaving than arriving: something on its way out should not hold the
+  // eye as long as something arriving.
+  exit: { opacity: 0, scale: 0.97, transition: { duration: 0.15 } },
+  transition: {
+    layout: { type: 'spring', stiffness: 280, damping: 32 },
+    duration: 0.2,
+    ease: [0, 0, 0.2, 1],
+  },
+};
+
 export interface TeamMemberCardProps {
   /** The identity this card draws. */
   member: TeamMember;
@@ -41,6 +95,35 @@ export interface TeamMemberCardProps {
   owner?: TeamMember;
   /** Narrow the roster to one person — what the attribution and a person's own card do. */
   onSelectOwner?: (ownerId: string) => void;
+  /**
+   * How many agents the owner has, for the attribution's hover echo.
+   *
+   * Resolved by the caller for the same reason `owner` is: a card that could
+   * reach the whole roster is a card that starts making decisions about it.
+   * Omitted, the attribution simply does not echo — which is what a card
+   * rendered outside a roster should do.
+   */
+  ownedAgentCount?: number;
+  /**
+   * Whether this card travels to its new position when the grid re-orders.
+   *
+   * Off by default, because a card rendered on its own has nowhere to travel
+   * from. `TeamRosterGrid` decides for the whole grid at once
+   * (`shouldAnimateRoster`) and passes the same boolean to every card.
+   */
+  layoutAnimated?: boolean;
+  /**
+   * Forwarded to the card's root element.
+   *
+   * **Load-bearing, not a convenience.** `AnimatePresence mode="popLayout"`
+   * takes an exiting card out of the layout flow by writing `position:
+   * absolute` onto its DOM node, and it can only reach that node through a ref
+   * this component passes on. Without it `popLayout` silently does nothing:
+   * measured in a browser, an exiting card kept `position: relative`, held its
+   * grid slot, and every survivor sat still for the length of the exit before
+   * closing the gap. Nothing reports that — the animation simply looks laggy.
+   */
+  ref?: Ref<HTMLElement>;
   /**
    * Open this identity's profile. Wired, the whole card becomes the control
    * that does it; unwired, the card is the plain read-only tile it was.
@@ -88,14 +171,25 @@ export function TeamMemberCard({
   owner,
   onSelectOwner,
   onOpenProfile,
+  ownedAgentCount,
+  layoutAnimated = false,
+  ref,
   className,
 }: TeamMemberCardProps) {
   const face = teamMemberFace(member);
 
   return (
-    <article
+    <motion.article
+      ref={ref}
+      {...(layoutAnimated ? LAYOUT_MOTION : {})}
       data-slot="team-member-card"
       data-member-id={member.id}
+      // The card's half of the gate the grid reports on its root. Emitted from
+      // the same prop that decides the motion props above, so a grid that
+      // stopped passing it cannot leave the root attribute claiming otherwise —
+      // which is the only drift jsdom can catch here, since `test-setup.ts`
+      // strips every motion prop before it reaches the DOM.
+      data-layout-animated={String(layoutAnimated)}
       // The card wears this identity's own colour, and paints its border from
       // it at a STRENGTH the stylesheet can move. Two things force this shape:
       //
@@ -150,8 +244,31 @@ export function TeamMemberCard({
           // covers the whole tile; a pseudo-element hit-tests as part of the
           // element that generated it, so `has-[button:hover]` would be true
           // everywhere on the card and the lift would never fire at all.
+          // The badge wake rides the CARD's hover, not the disc's — and that is
+          // forced, not preferred. The name button's `after:` overlay is
+          // stretched over the whole tile, so it owns the disc's pixels: the
+          // disc never receives `:hover` at all and a wake keyed to it fired
+          // nowhere on this card. Measured — `elementFromPoint` at the disc's
+          // centre returns the overlay, `disc.matches(':hover')` is false.
+          //
+          // Reading it off the card is also the honest version: the card IS the
+          // target here (the disc is not separately pressable), and the lift and
+          // the border already answer on the same hover. The alternative —
+          // lifting the disc above the overlay with `relative z-10` — would
+          // punch a hole in the card's own hit area, so pointing at the face
+          // would stop being a press.
+          IDENTITY_BADGE_WAKE,
           'has-[[data-slot=team-member-owner]:hover]:shadow-soft has-[[data-slot=team-member-owner]:hover]:translate-y-0 has-[[data-slot=team-member-owner]:hover]:[--identity-border-strength:0%]',
           'has-[[data-slot=team-member-owner]:focus-visible]:shadow-soft has-[[data-slot=team-member-owner]:focus-visible]:translate-y-0 has-[[data-slot=team-member-owner]:focus-visible]:[--identity-border-strength:0%]',
+          // …and the badge stands down with it. The wake now rides the card's
+          // hover, so without this, pointing at the attribution would wake the
+          // face while the rest of the card deliberately calmed — one pointer
+          // lighting two affordances, which is the exact thing the stand-down
+          // exists to prevent. Written as one `:has()` variant reaching the
+          // badge inside the disc, because the badge belongs to `IdentityAvatar`
+          // and the card can only reach it as a descendant.
+          '[&:has([data-slot=team-member-owner]:hover)_[data-slot=identity-badge]]:scale-100 [&:has([data-slot=team-member-owner]:hover)_[data-slot=identity-badge]]:rotate-0',
+          '[&:has([data-slot=team-member-owner]:focus-visible)_[data-slot=identity-badge]]:scale-100 [&:has([data-slot=team-member-owner]:focus-visible)_[data-slot=identity-badge]]:rotate-0',
           // `:active` propagates to ancestors, so without this the card would
           // shrink under a press the stand-down had only just calmed — the
           // press echoing on the surface that is deliberately NOT answering.
@@ -168,6 +285,11 @@ export function TeamMemberCard({
         imageUrl={face.imageUrl}
         fallback={face.fallback}
         origin={face.origin}
+        // The disc takes no hover ring — the card's own border is already this
+        // identity answering, and a second colour response on the same hover
+        // would be one fact drawn twice. It carries no wake marker either: the
+        // name button's card-wide overlay sits on top of it, so the disc never
+        // receives `:hover`, and the marker lives on the article instead.
       />
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1">
@@ -217,31 +339,88 @@ export function TeamMemberCard({
           <p className="text-muted-foreground mt-0.5 text-xs">Active in the last hour</p>
         )}
         {owner && onSelectOwner && (
-          <button
-            type="button"
-            // Named so the card can stand down for exactly this control and no
-            // other — see the `has-[…]` rules on the article above.
-            data-slot="team-member-owner"
-            onClick={() => onSelectOwner(owner.id)}
-            // The visible text names the owner; the label names what pressing
-            // it does, which is the part a screen reader cannot infer from
-            // "by @dorian".
-            aria-label={`Show only ${owner.displayName} and their agents`}
-            // `relative` lifts this above the name button's card-wide overlay:
-            // positioned, and later in the DOM, so it paints on top and takes
-            // its own press. Without it the overlay would swallow every click
-            // here and the attribution would silently open a profile instead.
-            // Chip tier on a text surface: the text steps up to full foreground
-            // colour and an underline arrives. The `focus-visible:` twins are
-            // not decoration — a keyboard user must never learn less than a
-            // mouse user, and the ring alone says "you are here", not "this
-            // filters".
-            className="text-muted-foreground hover:text-foreground focus-visible:text-foreground focus-ring relative mt-1.5 max-w-full truncate rounded text-xs underline-offset-2 transition-[color] duration-(--identity-answer) ease-(--identity-ease-standard) hover:underline focus-visible:underline"
-          >
-            by {teamMemberLabel(owner)}
-          </button>
+          // A row rather than the bare button, so the echo has something to
+          // anchor to. `w-fit` shrinks it to the attribution's own width, which
+          // is what makes `left-full` on the echo mean "just past the handle"
+          // rather than "at the far edge of the card".
+          <div className="relative mt-1.5 flex w-fit max-w-full items-baseline">
+            <button
+              type="button"
+              // Named so the card can stand down for exactly this control and
+              // no other — see the `has-[…]` rules on the article above.
+              data-slot="team-member-owner"
+              onClick={() => onSelectOwner(owner.id)}
+              // The visible text names the owner; the label names what pressing
+              // it does, which is the part a screen reader cannot infer from
+              // "by @dorian".
+              aria-label={`Show only ${owner.displayName} and their agents`}
+              // `relative` lifts this above the name button's card-wide
+              // overlay: positioned, and later in the DOM, so it paints on top
+              // and takes its own press. Without it the overlay would swallow
+              // every click here and the attribution would silently open a
+              // profile instead.
+              // Chip tier on a text surface: the text steps up to full
+              // foreground colour and an underline arrives. The
+              // `focus-visible:` twins are not decoration — a keyboard user
+              // must never learn less than a mouse user, and the ring alone
+              // says "you are here", not "this filters".
+              // `peer/owner` is what the echo beside it listens to.
+              className="text-muted-foreground hover:text-foreground focus-visible:text-foreground focus-ring peer/owner relative min-w-0 truncate rounded text-xs underline-offset-2 transition-[color] duration-(--identity-answer) ease-(--identity-ease-standard) hover:underline focus-visible:underline"
+            >
+              by {teamMemberLabel(owner)}
+            </button>
+            {ownedAgentCount !== undefined && ownedAgentCount > 0 && (
+              // The echo: what narrowing to this person would leave behind.
+              //
+              // **It costs the row nothing at rest.** Animating width is banned
+              // outright (spec §2.3) — it reflows — and a suffix that appeared
+              // by taking space would shove the name out from under the cursor
+              // that asked for it. The first version reserved the space
+              // permanently instead, which was honest about the animation but
+              // charged 28–63px of the attribution's width for a suffix that is
+              // invisible 99% of the time; measured, it truncated handles as
+              // short as "@miguel.telegram" on a narrow window. So the echo is
+              // taken out of flow entirely — `absolute left-full` off a `w-fit`
+              // row — and only `opacity` moves. The row is exactly the width of
+              // "by @dorian", hovered or not, at every width measured.
+              //
+              // The residual, stated rather than discovered: out of flow means
+              // nothing stops the echo crossing the card's right edge. Measured
+              // across 375/500/768/1024/1440, one band does — at 768px, where
+              // the grid is two narrow columns, the longest fixture handle puts
+              // it 34px past the edge. It is `aria-hidden` decoration that
+              // paints under the neighbouring card and only while you hold the
+              // pointer on one attribution, so it is left as is; the fix would
+              // be right-anchoring it to the card, which puts the count nowhere
+              // near the handle it is describing on every wider screen.
+              //
+              // Reduced motion needs nothing here. This is a CSS transition, so
+              // the global reset in `index.css` collapses it and the count
+              // simply appears — the end state carries the whole meaning, which
+              // is the test every state in this grammar has to pass.
+              //
+              // `aria-hidden` and `pointer-events-none`: the fact is already on
+              // screen as cards, the button's own label names the action, and a
+              // decoration that ate hovers would be a target pretending not to
+              // be one.
+              //
+              // **It does not exist at all where there is no hover.** This is a
+              // preview of a tap that a touch screen performs directly, so on a
+              // phone it could never be seen, and an out-of-flow element that
+              // can never appear is one more thing to lay out for nothing.
+              // `hover: hover` asks about the pointer rather than the viewport,
+              // so a narrow desktop window still gets the echo it can use.
+              <span
+                aria-hidden
+                data-slot="team-member-owner-count"
+                className="text-muted-foreground pointer-events-none absolute top-0 left-full ml-1 hidden text-xs whitespace-nowrap opacity-0 transition-opacity duration-(--identity-answer) ease-(--identity-ease-standard) peer-hover/owner:opacity-100 peer-focus-visible/owner:opacity-100 [@media(hover:hover)]:block"
+              >
+                · {ownedAgentCount} {ownedAgentCount === 1 ? 'agent' : 'agents'}
+              </span>
+            )}
+          </div>
         )}
       </div>
-    </article>
+    </motion.article>
   );
 }

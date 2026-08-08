@@ -1,12 +1,16 @@
+import type { Ref } from 'react';
+import { AnimatePresence, useReducedMotion } from 'motion/react';
 import type { TeamMember } from '@dorkos/shared/team-schemas';
 import { IdentityAvatar } from '@/layers/shared/ui';
 import { cn } from '@/layers/shared/lib';
 import {
+  countOwnedAgents,
   findTeamOwner,
   groupTeamByOwner,
   teamMemberFace,
   teamMemberLabel,
 } from '@/layers/entities/team';
+import { shouldAnimateRoster } from '../lib/roster-layout';
 import { TeamMemberCard } from './TeamMemberCard';
 
 /** The one grid the roster is drawn in — one column on a phone, more as there is room. */
@@ -26,15 +30,29 @@ export interface TeamRosterGridProps {
   className?: string;
 }
 
-/** The compact lockup that heads one cluster: whose agents these are. */
+/**
+ * The compact lockup that heads one cluster: whose agents these are.
+ *
+ * Spans the whole grid row rather than living in a wrapper of its own — see the
+ * note on `TeamRosterGrid` for why every cluster's header and cards are
+ * siblings in one grid instead of a `<section>` each.
+ */
 function ClusterHeader({
   owner,
   onSelectOwner,
+  ref,
 }: {
   owner: TeamMember;
   onSelectOwner?: (ownerId: string) => void;
+  /** Forwarded for `AnimatePresence mode="popLayout"` — see `TeamMemberCardProps.ref`. */
+  ref?: Ref<HTMLHeadingElement>;
 }) {
   const face = teamMemberFace(owner);
+  // `col-span-full` is what makes a header a full-width row inside the shared
+  // grid; `mt-3` reinstates the breathing room the old per-cluster `space-y-6`
+  // used to provide, and `first:mt-0` keeps the first cluster flush with the
+  // toolbar above it.
+  const headingClass = 'col-span-full mt-3 flex min-w-0 items-center first:mt-0';
 
   const lockup = (
     <>
@@ -63,7 +81,7 @@ function ClusterHeader({
   // Dorian and their agents", which is worse than the repetition it fixes.
   if (onSelectOwner) {
     return (
-      <h2 className="flex min-w-0 items-center">
+      <h2 ref={ref} className={headingClass}>
         <button
           type="button"
           onClick={() => onSelectOwner(owner.id)}
@@ -75,7 +93,11 @@ function ClusterHeader({
     );
   }
 
-  return <h2 className="flex min-w-0 items-center gap-2">{lockup}</h2>;
+  return (
+    <h2 ref={ref} className={cn(headingClass, 'gap-2')}>
+      {lockup}
+    </h2>
+  );
 }
 
 /**
@@ -88,6 +110,34 @@ function ClusterHeader({
  *
  * The whole roster comes in beside the filtered rows because an owner may have
  * been filtered out of view while still being the answer to "whose is this".
+ *
+ * **Both arrangements are ONE flat list of grid children, and that is what
+ * makes the cards travel.** Grouped, a cluster header is a `col-span-full` row
+ * and its cards are the ordinary grid items that follow it — not a `<section>`
+ * wrapping a nested grid, which is what this drew before. The reason is React,
+ * not CSS: a card only animates to a new position if it stays the *same
+ * component instance* across the change, and moving it into a per-cluster
+ * wrapper unmounts it from one parent and mounts it under another. Same list,
+ * same key, new index — so `layout="position"` interpolates, and flipping
+ * Group-by-manager makes every card slide to its cluster.
+ *
+ * The spec's alternative was `layoutId`, which survives a change of parent and
+ * so would not need this structure. This structure is preferred on its own
+ * merits — no shared-layout bookkeeping, and React identity is the thing
+ * actually being preserved — and `layoutId` was additionally measured to misfire
+ * inside this `popLayout` list; see `TeamMemberCard`'s `LAYOUT_MOTION`.
+ *
+ * Nothing is lost in the accessibility tree. A `<section>` with no accessible
+ * name is not exposed as a region at all, so the removed wrappers were never
+ * announced; the `<h2>` headings did — and still do — all the structural work.
+ *
+ * **Grouping drops the people, and that is intended.** A cluster is headed by
+ * its owner, so a person who owns agents becomes the header rather than a card
+ * inside their own cluster — six cards flat can become four cards under three
+ * headers. That has always been true of `groupTeamByOwner`; it is only newly
+ * conspicuous now that the change is animated and you can watch the people
+ * leave. The header still names them, still carries their face, and still
+ * filters to them when pressed, so nobody is lost — only re-drawn.
  */
 export function TeamRosterGrid({
   members,
@@ -97,43 +147,82 @@ export function TeamRosterGrid({
   onOpenProfile,
   className,
 }: TeamRosterGridProps) {
-  if (!grouped) {
-    return (
-      <div data-slot="team-roster-grid" className={cn(GRID, className)}>
-        {members.map((member) => (
-          <TeamMemberCard
-            key={member.id}
-            member={member}
-            owner={findTeamOwner(member, roster)}
-            onSelectOwner={onSelectOwner}
-            onOpenProfile={onOpenProfile}
-          />
-        ))}
-      </div>
-    );
-  }
+  // One boolean, reported as `data-layout-animated` and passed to every card,
+  // so the attribute cannot claim something the cards are not doing.
+  //
+  // `useReducedMotion` from `motion/react` rather than either of the two local
+  // wrappers: it is the 37-call-site majority, and this file already imports
+  // the library. It answers `null` when no preference has been read yet, which
+  // is "nobody asked for less" — the same branch as `false` — so the comparison
+  // against `true` is the honest narrowing rather than a truthiness shortcut.
+  const prefersReducedMotion = useReducedMotion();
+  const animated = shouldAnimateRoster({
+    memberCount: members.length,
+    reducedMotion: prefersReducedMotion === true,
+  });
 
-  const groups = groupTeamByOwner(members, roster);
+  // One flat child list for both arrangements — the structural decision the
+  // whole travel depends on. See the note on this component for why.
+  const cardFor = (member: TeamMember, withAttribution: boolean) => {
+    // No attribution inside a cluster: the header above the cards already says
+    // whose these are, and repeating it under every one would be the same
+    // sentence N times.
+    const owner = withAttribution ? findTeamOwner(member, roster) : undefined;
+    return (
+      <TeamMemberCard
+        key={member.id}
+        member={member}
+        owner={owner}
+        // Counted over the whole roster, not the filtered rows: the echo
+        // previews what narrowing to this person would show, and a number that
+        // shrank as you typed would describe the search instead of the person.
+        ownedAgentCount={owner ? countOwnedAgents(owner.id, roster) : undefined}
+        onSelectOwner={withAttribution ? onSelectOwner : undefined}
+        onOpenProfile={onOpenProfile}
+        layoutAnimated={animated}
+      />
+    );
+  };
+
+  const children = grouped
+    ? groupTeamByOwner(members, roster).flatMap((group) => [
+        group.owner ? (
+          <ClusterHeader
+            key={`cluster:${group.owner.id}`}
+            owner={group.owner}
+            onSelectOwner={onSelectOwner}
+          />
+        ) : (
+          <h2
+            key="cluster:__unowned"
+            className="text-muted-foreground col-span-full mt-3 text-sm font-medium first:mt-0"
+          >
+            No owner
+          </h2>
+        ),
+        ...group.members.map((member) => cardFor(member, false)),
+      ])
+    : members.map((member) => cardFor(member, true));
 
   return (
-    <div data-slot="team-roster-groups" className={cn('space-y-6', className)}>
-      {groups.map((group) => (
-        <section key={group.owner?.id ?? '__unowned'} className="space-y-3">
-          {group.owner ? (
-            <ClusterHeader owner={group.owner} onSelectOwner={onSelectOwner} />
-          ) : (
-            <h2 className="text-muted-foreground text-sm font-medium">No owner</h2>
-          )}
-          <div className={GRID}>
-            {group.members.map((member) => (
-              // No attribution inside a cluster: the header above the cards
-              // already says whose these are, and repeating it under every one
-              // would be the same sentence N times.
-              <TeamMemberCard key={member.id} member={member} onOpenProfile={onOpenProfile} />
-            ))}
-          </div>
-        </section>
-      ))}
+    <div
+      data-slot={grouped ? 'team-roster-groups' : 'team-roster-grid'}
+      data-layout-animated={String(animated)}
+      className={cn(GRID, className)}
+    >
+      {/* `popLayout` pops an exiting card out of the layout flow, so the
+          survivors close the gap around it instead of waiting for it to finish
+          leaving. It only works because every child here forwards a ref — the
+          mode writes `position: absolute` onto the exiting node, and with no
+          ref to reach it does nothing at all, silently. Measured: without the
+          ref an exiting card kept its grid slot and every survivor sat still
+          for the length of the fade.
+
+          `initial={false}` so the roster does not fade itself in on first
+          paint; arriving cards only animate for changes you made. */}
+      <AnimatePresence mode="popLayout" initial={false}>
+        {children}
+      </AnimatePresence>
     </div>
   );
 }

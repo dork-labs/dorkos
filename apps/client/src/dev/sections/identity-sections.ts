@@ -11,8 +11,8 @@ import type { PlaygroundSection } from '../playground-registry';
  * already have. Cross-listing is done by RENDERING, and the page's TOC is
  * composed from both halves in `playground-config.ts`. See §W4.2.
  *
- * Sources: IdentityMatrixShowcases, AgentIdentityShowcases, RoomPresenceShowcases,
- * TeamShowcases, ProfileShowcases, AccountShowcases.
+ * Sources: IdentityMatrixShowcases, IdentityMotionShowcases, AgentIdentityShowcases,
+ * RoomPresenceShowcases, TeamShowcases, ProfileShowcases, AccountShowcases.
  */
 export const IDENTITY_SECTIONS: PlaygroundSection[] = [
   // IdentityMatrixShowcases
@@ -36,6 +36,35 @@ export const IDENTITY_SECTIONS: PlaygroundSection[] = [
       'working',
       'handle',
       'roster',
+    ],
+  },
+  // IdentityMotionShowcases
+  {
+    id: 'motion-and-interaction',
+    title: 'Motion & interaction',
+    page: 'identity',
+    category: 'Identity',
+    keywords: [
+      'motion',
+      'interaction',
+      'hover',
+      'focus',
+      'press',
+      'grammar',
+      'surface',
+      'mark',
+      'chip',
+      'tier',
+      'flip',
+      'layout',
+      'travel',
+      'echo',
+      'owner',
+      'badge',
+      'wake',
+      'drawer',
+      'reduced motion',
+      'keyboard',
     ],
   },
   // AgentIdentityShowcases

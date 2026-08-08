@@ -179,6 +179,222 @@ describe('TeamMemberCard', () => {
       expect(card.className).not.toContain('active:scale-[0.99]');
     });
   });
+
+  describe('the owner echo — what narrowing to this person would leave', () => {
+    const OWNER = MOCK_TEAM_ROSTER.find((member) => member.id === 'person-dorian')!;
+    const AGENT = MOCK_TEAM_ROSTER.find((member) => member.id === 'agent-warden')!;
+
+    const echoOf = (container: HTMLElement) =>
+      container.querySelector('[data-slot="team-member-owner-count"]');
+
+    function renderWithEcho(count: number | undefined) {
+      return render(
+        <TeamMemberCard
+          member={AGENT}
+          owner={OWNER}
+          ownedAgentCount={count}
+          onSelectOwner={() => {}}
+        />
+      );
+    }
+
+    it('says how many agents the owner has', () => {
+      const { container } = renderWithEcho(3);
+      expect(echoOf(container)).toHaveTextContent('· 3 agents');
+    });
+
+    it('counts one agent in the singular', () => {
+      // The kind of thing nobody notices until it says "1 agents".
+      const { container } = renderWithEcho(1);
+      expect(echoOf(container)).toHaveTextContent('· 1 agent');
+      expect(echoOf(container)?.textContent).not.toContain('agents');
+    });
+
+    it('draws no echo when the caller counted nothing', () => {
+      // A card outside a roster has no roster to count, and "· 0 agents" beside
+      // an agent that plainly exists would be a false sentence.
+      expect(echoOf(renderWithEcho(undefined).container)).toBeNull();
+      cleanup();
+      expect(echoOf(renderWithEcho(0).container)).toBeNull();
+    });
+
+    it('costs the row nothing at rest, so revealing it cannot shove the name', () => {
+      // The load-bearing assertion of this whole moment, and the second version
+      // of it. Animating width is banned (it reflows), so the echo cannot grow
+      // into place — but reserving its width in flow, which is what this did
+      // first, charged 28–63px of the attribution's own space for something
+      // invisible almost always, and truncated handles as short as
+      // "@miguel.telegram" on a narrow window. Out of flow costs nothing and
+      // still moves only `opacity`.
+      const { container } = renderWithEcho(2);
+      const echo = echoOf(container)!;
+
+      expect(echo.className).toContain('absolute');
+      expect(echo.className).toContain('left-full');
+      expect(echo.className).toContain('opacity-0');
+      expect(echo.className).toContain('transition-opacity');
+      // Named, not `transition-all`: nothing here may transition a box property.
+      expect(echo.className).not.toContain('transition-all');
+      expect(echo.className).not.toContain('w-0');
+      expect(echo.className).not.toContain('max-w-0');
+    });
+
+    it('anchors to a row sized by the attribution, not by the card', () => {
+      // `left-full` is only "just past the handle" if the row shrink-wraps it.
+      // On a full-width row it would mean "at the far edge of the card", which
+      // puts the echo somewhere that reads as unrelated to what you are
+      // pointing at.
+      const { container } = renderWithEcho(2);
+      const row = container.querySelector('[data-slot="team-member-owner"]')!.parentElement!;
+
+      expect(row.className).toContain('w-fit');
+      expect(row.className).toContain('relative');
+    });
+
+    it('answers a keyboard exactly as it answers a mouse', () => {
+      // The grammar's focus-parity rule: everywhere a `hover:` reveals
+      // something, the `focus-visible:` twin reveals it too. Without this, Tab
+      // reaching the attribution would learn strictly less than a pointer.
+      const { container } = renderWithEcho(2);
+      const echo = echoOf(container)!;
+      const attribution = container.querySelector('[data-slot="team-member-owner"]')!;
+
+      expect(echo.className).toContain('peer-hover/owner:opacity-100');
+      expect(echo.className).toContain('peer-focus-visible/owner:opacity-100');
+      // The peer it listens to has to be the attribution itself, and named —
+      // an unnamed peer would answer any sibling that happened to be one.
+      expect(attribution.className).toContain('peer/owner');
+    });
+
+    it('does not exist at all where there is no hover to preview with', () => {
+      // A touch screen performs the tap directly, so the preview could never be
+      // seen there, and an element that can never appear is one more thing to
+      // lay out for nothing. The query is about the POINTER, not the viewport,
+      // so a narrow desktop window still gets the echo it can use.
+      const { container } = renderWithEcho(2);
+      const echo = echoOf(container)!;
+
+      expect(echo.className).toContain('hidden');
+      expect(echo.className).toContain('[@media(hover:hover)]:block');
+    });
+
+    it('stays out of the accessibility tree and out of the way of the pointer', () => {
+      // The fact is already on screen as cards, and the button's own label
+      // names the action. A decoration that ate hovers would be a target
+      // pretending not to be one.
+      const { container } = renderWithEcho(2);
+      const echo = echoOf(container)!;
+
+      expect(echo).toHaveAttribute('aria-hidden');
+      expect(echo.className).toContain('pointer-events-none');
+    });
+  });
+
+  describe('the badge wake', () => {
+    const AGENT = MOCK_TEAM_ROSTER.find((member) => member.id === 'agent-warden')!;
+
+    const discOf = (container: HTMLElement) =>
+      container.querySelector('[data-slot="identity-avatar"]')!;
+    const cardOf = (container: HTMLElement) =>
+      container.querySelector('[data-slot="team-member-card"]') as HTMLElement;
+
+    it('marks the CARD, not the disc, when there is a profile to open', () => {
+      // The wake cannot ride the disc here. The name button's `after:` overlay
+      // is stretched over the whole tile, so it owns the disc's pixels and the
+      // disc never receives `:hover` — measured in a browser, where
+      // `elementFromPoint` at the disc's centre returns the overlay and the
+      // wake fired nowhere. Reading it off the card is also the honest version:
+      // the card IS the target, and its lift and border answer the same hover.
+      const { container } = render(<TeamMemberCard member={AGENT} onOpenProfile={() => {}} />);
+
+      expect(cardOf(container).className).toContain('group/avatar');
+      // On the disc it would be dead weight pointing at a hover that cannot
+      // happen, so it must not be in two places.
+      expect(discOf(container).className).not.toContain('group/avatar');
+    });
+
+    it('leaves a read-only tile alone', () => {
+      // The wake says "you are pointing at something that answers", which is
+      // false on a card with nothing to open.
+      const { container } = render(<TeamMemberCard member={AGENT} />);
+      expect(cardOf(container).className).not.toContain('group/avatar');
+    });
+
+    it('stands the badge down for the attribution, as the rest of the card does', () => {
+      // The wake rides the card's hover now, so without this, pointing at the
+      // attribution would wake the face while everything else deliberately
+      // calmed — one pointer lighting two affordances.
+      const owner = MOCK_TEAM_ROSTER.find((m) => m.id === 'person-dorian')!;
+      const { container } = render(
+        <TeamMemberCard
+          member={AGENT}
+          owner={owner}
+          onSelectOwner={() => {}}
+          onOpenProfile={() => {}}
+        />
+      );
+      const card = cardOf(container);
+
+      expect(card.className).toContain(
+        '[&:has([data-slot=team-member-owner]:hover)_[data-slot=identity-badge]]:rotate-0'
+      );
+      expect(card.className).toContain(
+        '[&:has([data-slot=team-member-owner]:focus-visible)_[data-slot=identity-badge]]:rotate-0'
+      );
+    });
+
+    it('takes no hover ring — the card border is already this identity answering', () => {
+      const { container } = render(<TeamMemberCard member={AGENT} onOpenProfile={() => {}} />);
+      expect(discOf(container).className).not.toContain('hover:ring-2');
+    });
+  });
+});
+
+describe('TeamRosterGrid owner echo', () => {
+  it('counts the owner’s agents from the whole roster, not the rows on screen', () => {
+    // End-to-end for the one thing the card cannot do for itself. Dorian owns
+    // two agents; showing only one of them must still say two, because the
+    // echo previews what narrowing to Dorian would show — not what the current
+    // filter left behind.
+    const warden = MOCK_TEAM_ROSTER.find((member) => member.id === 'agent-warden')!;
+
+    render(
+      <TeamRosterGrid
+        members={[warden]}
+        roster={MOCK_TEAM_ROSTER}
+        grouped={false}
+        onSelectOwner={() => {}}
+      />
+    );
+
+    expect(document.querySelector('[data-slot="team-member-owner-count"]')).toHaveTextContent(
+      '· 2 agents'
+    );
+  });
+
+  it('draws no echo inside a cluster, where the header already said whose these are', () => {
+    const owner = MOCK_TEAM_ROSTER.find((member) => member.id === 'person-dorian')!;
+    const owned = MOCK_TEAM_ROSTER.filter((member) => member.ownerId === owner.id);
+
+    // Flat first, so the absence below is a decision this grid made and not an
+    // echo that never renders anywhere. Same rows, same roster, one prop apart.
+    const { rerender } = render(
+      <TeamRosterGrid
+        members={owned}
+        roster={MOCK_TEAM_ROSTER}
+        grouped={false}
+        onSelectOwner={() => {}}
+      />
+    );
+    expect(document.querySelectorAll('[data-slot="team-member-owner-count"]')).toHaveLength(
+      owned.length
+    );
+
+    rerender(
+      <TeamRosterGrid members={owned} roster={MOCK_TEAM_ROSTER} grouped onSelectOwner={() => {}} />
+    );
+    expect(document.querySelector('[data-slot="team-member-owner-count"]')).toBeNull();
+  });
 });
 
 describe('TeamRosterGrid cluster header', () => {

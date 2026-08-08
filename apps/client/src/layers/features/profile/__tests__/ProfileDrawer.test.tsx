@@ -14,6 +14,7 @@ import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import type { TeamMember } from '@dorkos/shared/team-schemas';
 import { MOCK_TEAM_ROSTER } from '@/dev/mock-samples';
+import { ResponsiveSheet, ResponsiveSheetContent } from '@/layers/shared/ui';
 import { ProfileDrawer } from '../ui/ProfileDrawer';
 
 const byId = (id: string): TeamMember => MOCK_TEAM_ROSTER.find((member) => member.id === id)!;
@@ -273,6 +274,43 @@ describe('ProfileDrawer — a row with nothing to say', () => {
     expect(baseElement.querySelector('[data-slot="profile-facts"]')).not.toBeNull();
     expect(baseElement.querySelector('[data-slot="sheet-header"]')!.className).toContain(
       'border-b'
+    );
+  });
+});
+
+describe('ProfileDrawer — how fast it arrives', () => {
+  const panelOf = (baseElement: HTMLElement) =>
+    baseElement.querySelector('[data-slot="profile-drawer"]')!;
+
+  it('opens in 300ms, not the primitive’s 500', () => {
+    // 500 made this the slowest transition in the identity flow and the most
+    // noticeable — you watched a panel arrive rather than finding it already
+    // there, every time, on a surface people open to read a project path.
+    const { baseElement } = render(
+      <ProfileDrawer member={operator} open onOpenChange={() => {}} />
+    );
+    const classes = panelOf(baseElement).className;
+
+    expect(classes).toContain('data-[state=open]:duration-300');
+    // And the primitive's own value is gone rather than merely outranked in
+    // source order: `cn` runs tailwind-merge, so the loser is dropped outright.
+    // If it survived here, the winner would be whichever the cascade preferred.
+    expect(classes).not.toContain('data-[state=open]:duration-500');
+  });
+
+  it('leaves every other sheet in the app alone', () => {
+    // Scoped to this panel deliberately: the Sheet primitive is shared with
+    // Settings' panels, and re-timing every sheet is a decision about every
+    // sheet — which this change is not. Rendered rather than read off the
+    // source, so it is the shipped behaviour being checked and not a string.
+    const { baseElement } = render(
+      <ResponsiveSheet open>
+        <ResponsiveSheetContent>a plain sheet</ResponsiveSheetContent>
+      </ResponsiveSheet>
+    );
+
+    expect(baseElement.querySelector('[data-slot="sheet-content"]')!.className).toContain(
+      'data-[state=open]:duration-500'
     );
   });
 });
