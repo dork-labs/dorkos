@@ -1,0 +1,321 @@
+{
+  "kind": "element",
+  "tag": "div",
+  "classes": [],
+  "attrs": {},
+  "children": [
+    {
+      "kind": "element",
+      "tag": "div",
+      "classes": [
+        "bg-surface",
+        "border",
+        "chat-input-container",
+        "m-2",
+        "p-2",
+        "relative",
+        "rounded-xl"
+      ],
+      "attrs": {
+        "data-composer-card": "",
+        "role": "presentation"
+      },
+      "children": [
+        {
+          "kind": "element",
+          "tag": "input",
+          "classes": [],
+          "attrs": {
+            "multiple": "",
+            "style": "border: 0px; clip: rect(0px, 0px, 0px, 0px); clip-path: inset(50%); height: 1px; margin: 0px -1px -1px 0px; overflow: hidden; padding: 0px; position: absolute; width: 1px; white-space: nowrap",
+            "tabindex": "-1",
+            "type": "file"
+          },
+          "children": []
+        },
+        {
+          "kind": "element",
+          "tag": "div",
+          "classes": [],
+          "attrs": {},
+          "children": [
+            {
+              "kind": "element",
+              "tag": "div",
+              "classes": ["absolute", "bottom-full", "left-0", "mb-2", "right-0"],
+              "attrs": {},
+              "children": []
+            },
+            {
+              "kind": "element",
+              "tag": "div",
+              "classes": ["flex", "flex-col", "gap-1.5"],
+              "attrs": {},
+              "children": [
+                {
+                  "kind": "element",
+                  "tag": "div",
+                  "classes": [
+                    "bg-background",
+                    "border",
+                    "border-ring",
+                    "flex",
+                    "gap-1.5",
+                    "items-end",
+                    "p-1.5",
+                    "ring-[1px]",
+                    "ring-ring/75",
+                    "rounded-md",
+                    "shadow-xs",
+                    "transition-[color,box-shadow]"
+                  ],
+                  "attrs": {},
+                  "children": [
+                    {
+                      "kind": "element",
+                      "tag": "input",
+                      "classes": ["hidden"],
+                      "attrs": {
+                        "multiple": "",
+                        "type": "file"
+                      },
+                      "children": []
+                    },
+                    {
+                      "kind": "element",
+                      "tag": "button",
+                      "classes": [
+                        "disabled:opacity-50",
+                        "flex",
+                        "focus-ring",
+                        "hover:text-foreground",
+                        "items-center",
+                        "justify-center",
+                        "px-1.5",
+                        "py-1",
+                        "rounded-md",
+                        "shrink-0",
+                        "text-muted-foreground",
+                        "transition-colors"
+                      ],
+                      "attrs": {
+                        "aria-label": "Attach file",
+                        "type": "button"
+                      },
+                      "children": [
+                        {
+                          "kind": "element",
+                          "tag": "svg",
+                          "classes": ["lucide", "lucide-paperclip", "size-4"],
+                          "attrs": {
+                            "aria-hidden": "true",
+                            "fill": "none",
+                            "height": "24",
+                            "stroke": "currentColor",
+                            "stroke-linecap": "round",
+                            "stroke-linejoin": "round",
+                            "stroke-width": "2",
+                            "viewBox": "0 0 24 24",
+                            "width": "24",
+                            "xmlns": "http://www.w3.org/2000/svg"
+                          },
+                          "children": [
+                            {
+                              "kind": "element",
+                              "tag": "path",
+                              "classes": [],
+                              "attrs": {
+                                "d": "m16 6-8.414 8.586a2 2 0 0 0 2.829 2.829l8.414-8.586a4 4 0 1 0-5.657-5.657l-8.379 8.551a6 6 0 1 0 8.485 8.485l8.379-8.551"
+                              },
+                              "children": []
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "kind": "element",
+                      "tag": "div",
+                      "classes": ["flex-1", "min-h-[24px]", "relative"],
+                      "attrs": {},
+                      "children": [
+                        {
+                          "kind": "element",
+                          "tag": "div",
+                          "classes": [
+                            "absolute",
+                            "flex",
+                            "inset-0",
+                            "items-start",
+                            "overflow-hidden",
+                            "pointer-events-none",
+                            "py-0.5"
+                          ],
+                          "attrs": {},
+                          "children": [
+                            {
+                              "kind": "element",
+                              "tag": "span",
+                              "classes": ["text-muted-foreground", "text-sm", "truncate"],
+                              "attrs": {},
+                              "children": [
+                                {
+                                  "kind": "text",
+                                  "text": "Send a message..."
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        {
+                          "kind": "element",
+                          "tag": "div",
+                          "classes": [
+                            "bg-transparent",
+                            "block",
+                            "focus:outline-none",
+                            "max-h-[200px]",
+                            "min-h-[24px]",
+                            "overflow-y-auto",
+                            "py-0.5",
+                            "text-sm",
+                            "w-full"
+                          ],
+                          "attrs": {
+                            "aria-autocomplete": "list",
+                            "aria-expanded": "false",
+                            "aria-label": "Send a message...",
+                            "aria-multiline": "true",
+                            "contenteditable": "true",
+                            "data-lexical-editor": "true",
+                            "role": "combobox",
+                            "spellcheck": "true",
+                            "style": "user-select: text; white-space: pre-wrap; word-break: break-word"
+                          },
+                          "children": [
+                            {
+                              "kind": "element",
+                              "tag": "p",
+                              "classes": ["m-0"],
+                              "attrs": {
+                                "dir": "auto"
+                              },
+                              "children": [
+                                {
+                                  "kind": "element",
+                                  "tag": "br",
+                                  "classes": [],
+                                  "attrs": {
+                                    "data-lexical-managed-linebreak": "true"
+                                  },
+                                  "children": []
+                                }
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "kind": "element",
+                      "tag": "button",
+                      "classes": [
+                        "focus-ring",
+                        "hover:text-foreground",
+                        "p-1",
+                        "pointer-events-none",
+                        "rounded-lg",
+                        "shrink-0",
+                        "text-muted-foreground",
+                        "transition-colors"
+                      ],
+                      "attrs": {
+                        "aria-label": "Clear message",
+                        "disabled": "",
+                        "type": "button"
+                      },
+                      "children": [
+                        {
+                          "kind": "element",
+                          "tag": "svg",
+                          "classes": ["lucide", "lucide-x", "size-(--size-icon-sm)"],
+                          "attrs": {
+                            "aria-hidden": "true",
+                            "fill": "none",
+                            "height": "24",
+                            "stroke": "currentColor",
+                            "stroke-linecap": "round",
+                            "stroke-linejoin": "round",
+                            "stroke-width": "2",
+                            "viewBox": "0 0 24 24",
+                            "width": "24",
+                            "xmlns": "http://www.w3.org/2000/svg"
+                          },
+                          "children": [
+                            {
+                              "kind": "element",
+                              "tag": "path",
+                              "classes": [],
+                              "attrs": {
+                                "d": "M18 6 6 18"
+                              },
+                              "children": []
+                            },
+                            {
+                              "kind": "element",
+                              "tag": "path",
+                              "classes": [],
+                              "attrs": {
+                                "d": "m6 6 12 12"
+                              },
+                              "children": []
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "kind": "element",
+                      "tag": "div",
+                      "classes": ["relative", "shrink-0"],
+                      "attrs": {},
+                      "children": [
+                        {
+                          "kind": "element",
+                          "tag": "div",
+                          "classes": ["max-md:p-2", "p-1.5"],
+                          "attrs": {
+                            "aria-hidden": "true",
+                            "data-testid": "action-slot-spacer"
+                          },
+                          "children": [
+                            {
+                              "kind": "element",
+                              "tag": "div",
+                              "classes": ["size-(--size-icon-sm)"],
+                              "attrs": {},
+                              "children": []
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "kind": "element",
+              "tag": "div",
+              "classes": [],
+              "attrs": {
+                "data-testid": "chat-status"
+              },
+              "children": []
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
