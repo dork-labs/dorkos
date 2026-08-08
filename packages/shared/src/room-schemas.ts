@@ -317,6 +317,13 @@ export const RoomSchema = z
       .describe(
         'How many entries of ambient history a turn in this room replays at most, oldest dropped first (room-participation spec §8.3). A bound on what one turn reads, never on the log — a room never forgets what was said, and a turn whose window was trimmed is told so.'
       ),
+    wellKnown: z
+      .string()
+      .nullable()
+      .optional()
+      .describe(
+        "The stable name a room DorkOS itself depends on is found by — `'team'` for the #team channel every install gets at boot — and `null` for every room a person or an agent opened (team-room-home spec D3.1). It is also the tell that this is a SYSTEM room: only the owner may rename or archive one, so a client draws those controls off this field rather than guessing. It never changes, which is what makes it findable after a rename. The server always sends it, `null` included; it is optional only so that the thirty client fixtures that assemble a room by hand need not each carry a field none of them reads. Absent and `null` mean the same thing — an ordinary room."
+      ),
     createdAt: z.string(),
     lastActivityAt: z.string(),
     bridge: RoomBridgeInfoSchema.nullable()

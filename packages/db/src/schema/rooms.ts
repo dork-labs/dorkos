@@ -270,6 +270,28 @@ export const rooms = sqliteTable(
       .notNull()
       .default(DEFAULT_AMBIENT_MAX_ENTRIES),
 
+    /**
+     * The stable name a room the PRODUCT depends on is found by — `'team'` for
+     * the #team channel every install gets at boot — and `null` for every room
+     * a person or an agent opened (team-room-home spec D3.1).
+     *
+     * **A second key, because the first one moves.** A channel's slug is its
+     * name, and renaming one rewrites the slug with the title; a boot hook that
+     * re-derived #team from `slug = 'team'` would therefore mint a second one
+     * the first time somebody renamed it. This column never changes, so
+     * `ensureTeamRoom` is idempotent across a rename, an archive, and a restart.
+     *
+     * **It is also the system-room flag**, and one column rather than two on
+     * purpose: "DorkOS created this room and the product needs it" and "nothing
+     * else may take its key" are the same fact. A non-null value is what makes
+     * `RoomService.updateRoom` refuse a rename or an archive from anyone but
+     * the owner (DOR-608's hole, closed for exactly the rooms it matters for).
+     *
+     * Unique, and NULL is distinct from NULL in a SQLite unique index, so every
+     * ordinary room sits under it for free.
+     */
+    wellKnown: text('well_known'),
+
     createdAt: text('created_at').notNull(),
     lastActivityAt: text('last_activity_at').notNull(),
   },
@@ -280,6 +302,11 @@ export const rooms = sqliteTable(
     uniqueIndex('rooms_channel_slug_unique')
       .on(table.slug)
       .where(sql`"kind" = 'channel' AND "archived" = 0`),
+    // One room per well-known key, forever — an archive does NOT release it the
+    // way it releases a slug, because the key is what a restart finds the room
+    // by and a released one would let the next boot open a second #team beside
+    // the archived first.
+    uniqueIndex('rooms_well_known_unique').on(table.wellKnown),
   ]
 );
 

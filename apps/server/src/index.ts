@@ -139,11 +139,8 @@ import {
   type ShapeScheduleServiceLike,
 } from './services/shapes/apply-shape.js';
 import { ShapeScheduleService } from './services/shapes/shape-schedule-service.js';
-import {
-  rebindShapeSchedulesForAgent,
-  type RebindAgent,
-} from './services/shapes/rebind-schedules.js';
-import { setOnAgentCreated } from './services/core/agent-created-hook.js';
+import { rebindShapeSchedulesForAgent } from './services/shapes/rebind-schedules.js';
+import { setOnAgentCreated, type CreatedAgentInfo } from './services/core/agent-created-hook.js';
 import {
   clearActiveShape,
   createFsShapeManifestResolver,
@@ -218,6 +215,7 @@ import {
   followSessionRekeys,
   repairRoomSessionBindings,
 } from './services/rooms/room-session-convergence.js';
+import { ensureTeamRoom, joinTeamRoom } from './services/rooms/ensure-team-room.js';
 import { registerLocalCommunity } from './services/communities/index.js';
 import { SearchIndexer } from './services/search/index.js';
 import { TerminalManager, terminalUpgradeRoute } from './services/terminal/index.js';
@@ -1118,6 +1116,25 @@ async function start() {
     // Mesh failure is non-fatal: server continues without mesh routes.
   }
 
+  // Open #team, the room the home tab renders, and seat every registered agent
+  // in it (team-room-home spec D3.1).
+  //
+  // AFTER the mesh block for the ordering, OUTSIDE it for the degradation. The
+  // ordering: `ensureDorkBot` and startup reconciliation are what put agents in
+  // the registry this reads, and on a fresh install DorkBot is the only one — a
+  // day-one #team with nobody in it would be an empty room where the product
+  // promises a conversation. The degradation: a room needs the room service and
+  // nothing else, so an install whose mesh failed to start still gets its home
+  // room, with whatever roster it can name (none) rather than none at all.
+  //
+  // Idempotent on a well-known key, so every boot after the first only backfills
+  // a roster, and it never throws.
+  ensureTeamRoom({
+    service: roomService,
+    operatorAuthorId: resolveOperatorAuthorId,
+    agentPaths: () => meshCore?.listWithPaths().map((agent) => agent.projectPath) ?? [],
+  });
+
   // Phase C: adapter manager — now meshCore is available for CWD resolution.
   // Must run after meshCore init so buildContext() can call meshCore.getProjectPath().
   // Driven by `relayAgentRuntime` — the concrete claude-code runtime (or, in
@@ -2017,7 +2034,13 @@ async function start() {
   // re-bind) but failures are swallowed at the seam; creation never fails
   // because this reaction threw. A schedule silently starting to run is
   // consequential, so a successful re-bind also lands in the activity feed.
-  setOnAgentCreated(async (agent: RebindAgent) => {
+  // Two independent reactions ride this one seam, and the room join goes first
+  // because it is the one a person sees: a new agent is in your team room by
+  // the time the creation response lands, without a restart (team-room-home
+  // spec D3.1). It swallows its own failures, so a room that could not seat the
+  // agent never costs the Shape re-bind below.
+  setOnAgentCreated(async (agent: CreatedAgentInfo) => {
+    joinTeamRoom({ service: roomService, operatorAuthorId: resolveOperatorAuthorId }, agent.path);
     const rebound = await rebindShapeSchedulesForAgent(agent, {
       listShapes: () => listInstalledShapeManifests(dorkHome),
       scheduleService: shapeScheduleService,

@@ -179,6 +179,7 @@ export function createAgentsRouter(meshCore?: MeshCoreLike): Router {
         id: manifest.id,
         name: manifest.name,
         displayName: manifest.displayName,
+        path: agentPath,
       });
 
       return res.status(201).json(manifest);

@@ -454,6 +454,7 @@ export async function createAgentWorkspace(
       id: manifest.id,
       name: manifest.name,
       displayName: manifest.displayName,
+      path: resolvedPath,
     });
 
     result = { manifest, path: resolvedPath, meta };
