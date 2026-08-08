@@ -107,6 +107,7 @@ describe('responseMode reuse', () => {
           authorId: 'a',
           responseMode,
           joinedAt: '2026-07-26T12:00:00.000Z',
+          joinedSeq: 0,
           lastReadSeq: 0,
         }).responseMode
       ).toBe(responseMode);
@@ -120,6 +121,7 @@ describe('responseMode reuse', () => {
         authorId: 'a',
         responseMode: 'sometimes',
         joinedAt: '2026-07-26T12:00:00.000Z',
+        joinedSeq: 0,
         lastReadSeq: 0,
       }).success
     ).toBe(false);
