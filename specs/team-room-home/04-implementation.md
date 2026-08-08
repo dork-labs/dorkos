@@ -102,7 +102,7 @@ last_read_seq, updated_at)`: composite PK, CHECK-guarded kinds, non-negative seq
   row. Broadcasts `read_cursor` on the global stream only when the stored value actually moved.
   `openSseStream` extracted into `@dorkos/test-utils`.
 - **3.3 + 3.4 — rooms and chats onto one cursor.** Humans moved off `room_members.last_read_seq`
-  (one-time backfill, migration 0059). `room_read_cursor` superseded by the unified `read_cursor`,
+  (one-time backfill, migration 0061). `room_read_cursor` superseded by the unified `read_cursor`,
   which carries a lazily-computed unread count for rooms. Chat sessions dropped the localStorage
   watermark for a transcript-position cursor sharing `unreadPlacement` with rooms, behind a
   session-scoped write queue. Obsidian keeps its divider through a vault-local store behind the
