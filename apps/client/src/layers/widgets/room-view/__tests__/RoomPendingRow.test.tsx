@@ -25,6 +25,8 @@ function post(overrides: Partial<PendingPost> = {}): PendingPost {
     roomId: ROOM,
     threadRootId: null,
     text: 'is the build ok?',
+    attachmentNames: [],
+    attachmentIds: [],
     status: 'sending',
     entryId: null,
     // Freshly sent by default: a row only grows controls once it has been in
@@ -227,5 +229,56 @@ describe('RoomPendingRow', () => {
     expect(usePendingPostStore.getState().posts).toHaveLength(1);
     fireEvent.click(screen.getByRole('button', { name: 'Discard' }));
     expect(usePendingPostStore.getState().posts).toHaveLength(0);
+  });
+});
+
+describe('RoomPendingRow — the files in the message', () => {
+  it('names them, inert: no link and no thumbnail', () => {
+    // There is no entry yet, so there is nothing to link to and nothing to draw
+    // a thumbnail from. The chips exist to say the files are still here.
+    renderRow(post({ attachmentNames: ['screenshot.png', 'server.log'] }));
+    const row = screen.getByTestId('room-pending');
+
+    expect(row).toHaveTextContent('screenshot.png');
+    expect(row).toHaveTextContent('server.log');
+    expect(row.querySelector('a[href]')).toBeNull();
+    expect(row.querySelector('img')).toBeNull();
+  });
+
+  it('draws exactly what it drew before for a message with no files', () => {
+    // The no-regression pin: attach is additive, and somebody who never touches
+    // a file must see the row they had yesterday.
+    renderRow(post({ attachmentNames: [] }));
+    const row = screen.getByTestId('room-pending');
+
+    expect(row).toHaveTextContent('is the build ok?');
+    expect(row).toHaveTextContent('Sending');
+    expect(row.querySelector('ul')).toBeNull();
+  });
+
+  it('re-sends the files with the words when a refused message is tried again', async () => {
+    const transport = createMockTransport();
+    transport.postToRoom = vi
+      .fn()
+      .mockResolvedValue({ accepted: true, entryId: 'entry-1', seq: 1 });
+    const refused = post({
+      status: 'failed',
+      attachmentNames: ['screenshot.png'],
+      attachmentIds: ['att-1'],
+    });
+    usePendingPostStore.setState({ posts: [refused] });
+    renderRow(refused, transport);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+
+    // The same ids: nothing bound them, so the second attempt costs no bytes
+    // and the message arrives whole rather than stripped of what it was about.
+    await waitFor(() => expect(transport.postToRoom).toHaveBeenCalledTimes(1));
+    expect(transport.postToRoom).toHaveBeenCalledWith(ROOM, {
+      text: 'is the build ok?',
+      attachmentIds: ['att-1'],
+    });
+    // And the row keeps showing them while it is back in the air.
+    expect(usePendingPostStore.getState().posts[0]!.attachmentNames).toEqual(['screenshot.png']);
   });
 });

@@ -106,6 +106,7 @@ function gatedRunner({ interruptEndsTurn = true } = {}): GatedRunner {
         sessionId: request.sessionId,
         prompt: request.entry.body.text,
         roomContext: request.roomContext,
+        attachmentProjection: request.attachmentProjection,
       });
       return new Promise<RoomTurnResult>((resolve) => {
         const queued = held.get(request.authorId) ?? [];

@@ -531,6 +531,114 @@ export const roomEntryReactions = sqliteTable(
 );
 
 /**
+ * One file uploaded into a room, before and after the message that carries it.
+ *
+ * **`entry_id` is nullable ON PURPOSE, and that is the whole design.** A file is
+ * uploaded first and posted second, so between those two moments the row exists
+ * with no entry to belong to. SQLite skips a foreign-key check when any column
+ * of the key is NULL, which is exactly that state — and enforces it the instant
+ * the row is bound, so "a bound attachment always points at a real entry" is a
+ * fact the database holds rather than a convention the service remembers.
+ * `createDb` turns `foreign_keys` ON, so the constraint is enforced rather than
+ * decorative.
+ *
+ * **It hangs off `(room_id, id)`, like a reaction does**, and for the same
+ * reason: the entry's ULID is the identifier that survives being talked about,
+ * whereas `seq` is a position in one room's log. The composite unique index
+ * `room_entries_room_id_entry_id_unique` already exists and is exactly the
+ * parent key SQLite needs, so this costs no new index on the parent side.
+ *
+ * **`ON DELETE CASCADE`, for a delete that does not exist yet** — the same
+ * bet `room_entry_reactions` makes. Nothing removes a room entry today, but the
+ * design says a message's files die with it, and the honest place for that is
+ * the constraint rather than a cleanup step somebody has to remember to write
+ * beside a future `deleteEntry`.
+ *
+ * The two indexes serve the two questions asked of this table: the roll-up
+ * fetches every file on a page of entries, and the staging sweep wants the
+ * files nobody ever posted. The second is partial because "unbound" is the rare
+ * state — a full index would carry a row per posted file to serve a lookup that
+ * only ever asks for a null entry.
+ *
+ * **What reclaims rows here, and what does not.** Unbound rows are collected by
+ * `attachments/unbound-sweep.ts` once they are a day old — a person who
+ * attaches a file and closes the tab leaves bytes nobody can reach. BOUND rows
+ * are reclaimed by nothing, because nothing in this product deletes a room or
+ * an entry; the `ON DELETE CASCADE` above is the standing answer for entries.
+ * **When room deletion arrives it must bring attachment cleanup with it** —
+ * these rows and, separately, the bytes behind `RoomAttachmentStore.delete`,
+ * which the cascade cannot reach.
+ */
+export const roomAttachments = sqliteTable(
+  'room_attachments',
+  {
+    roomId: text('room_id').notNull(),
+
+    /** ULID. Also the on-disk basename, and the id a post references. */
+    id: text('id').notNull(),
+
+    /**
+     * The entry this file was posted with, or NULL while it is uploaded and not
+     * yet posted. Bound exactly once, inside the entry's own transaction.
+     */
+    entryId: text('entry_id'),
+
+    /** Who uploaded it. Only they may reference it in a post. */
+    authorId: text('author_id').notNull(),
+
+    /** The original filename, sanitized at write time. What a chip renders. */
+    name: text('name').notNull(),
+
+    /** The file suffix the bytes are stored under, without a dot. May be ''. */
+    extension: text('extension').notNull(),
+
+    /** What it is served as. Sniffed for an image, else the declared type. */
+    mimeType: text('mime_type').notNull(),
+
+    size: integer('size').notNull(),
+
+    /** `'image'` when the bytes were VERIFIED previewable, else NULL. */
+    preview: text('preview'),
+
+    /**
+     * Where to fetch the bytes — **whatever `RoomAttachmentStore.put` answered**,
+     * stored verbatim and never rebuilt.
+     *
+     * This column is what makes the store a real seam rather than a shape. The
+     * local store answers a server-relative `/api/rooms/…` that a reader could
+     * in principle reconstruct from the two ids; a bucket-backed one answers an
+     * absolute `https://…` that nothing could. Recomputing the URL on read would
+     * therefore work today and silently break the day the bytes move, which is
+     * precisely the day the seam exists for. Same reasoning, same shape as the
+     * identity render cache storing `imageUrl` from `AvatarStore.put`
+     * (ADR 260806-222546).
+     *
+     * **The `''` default exists for the migration, not for the model.** SQLite
+     * refuses `ADD COLUMN ... NOT NULL` without one on any table that already
+     * holds rows, so without it migration 0059 would fail outright for anyone
+     * who had applied 0058 and stored a file. Nothing writes an empty url: the
+     * upload route always has one from `RoomAttachmentStore.put` before the row
+     * is created.
+     */
+    url: text('url').notNull().default(''),
+
+    createdAt: text('created_at').notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.roomId, table.id] }),
+    index('idx_room_attachments_entry').on(table.roomId, table.entryId),
+    index('idx_room_attachments_unbound')
+      .on(table.roomId, table.createdAt)
+      .where(sql`"entry_id" IS NULL`),
+    foreignKey({
+      columns: [table.roomId, table.entryId],
+      foreignColumns: [roomEntries.roomId, roomEntries.id],
+      name: 'room_attachments_entry_fk',
+    }).onDelete('cascade'),
+  ]
+);
+
+/**
  * The session an agent member uses when it answers in this room.
  *
  * Three agents in a room means three rows here — three sessions on one stream,

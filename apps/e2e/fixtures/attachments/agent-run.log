@@ -1,0 +1,5 @@
+10:02:41 boot      runtime=claude-code session=e2e
+10:02:41 harness   projected 3 skills, 1 command
+10:02:43 turn      started
+10:02:47 turn      finished in 4.1s
+10:02:47 exit      code=0

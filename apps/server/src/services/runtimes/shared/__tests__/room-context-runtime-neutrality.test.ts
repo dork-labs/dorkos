@@ -61,6 +61,7 @@ const ENTRY: AdditionalContextEntry = {
         at: '2026-07-28T14:01:00.000Z',
         text: 'can someone check the deploy',
         mentionsMe: false,
+        attachments: [],
         topicLabel: null,
       },
     ],

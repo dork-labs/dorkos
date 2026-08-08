@@ -237,6 +237,21 @@ export interface RoomContextEntry {
   text: string;
   /** True when this entry mentioned the agent receiving the context. */
   mentionsMe: boolean;
+  /**
+   * The files posted with this entry, as paths relative to the agent's own
+   * working directory. Empty for an entry with none.
+   *
+   * Relative, so this module stays pure: the path is a function of the entry id
+   * and the stored filename, identical for every agent, and never of a cwd this
+   * builder must not know.
+   *
+   * **Required rather than optional, and that is the safety property.** Every
+   * builder of a `RoomContextEntry` is in this repo, and an optional field here
+   * would let a path silently go missing — which is exactly the failure this
+   * feature cannot have, since a path the model is told about must be one it
+   * can open.
+   */
+  attachments: { name: string; path: string }[];
 }
 
 /**
@@ -540,6 +555,7 @@ export const RoomContextEntrySchema = z.object({
   text: z.string(),
   mentionsMe: z.boolean(),
   topicLabel: z.string().nullable(),
+  attachments: z.array(z.object({ name: z.string(), path: z.string() })),
 });
 
 /** Zod schema for {@link RoomContextAcknowledgment}. */

@@ -537,7 +537,11 @@ Set `DORKOS_CLOUD_URL` to point at a non-production cloud (defaults to `https://
 
 ### Uploads
 
-Uploaded files (from chat, workbench, or anywhere else you attach a file) are stored under `.dork/.temp/uploads/` in your working directory, with limits you can adjust:
+Files you attach in a chat or the workbench are stored under `.dork/.temp/uploads/` in that
+project's working directory. Files you attach in a room are kept with DorkOS itself rather than in
+any project, because a room isn't tied to one — a channel can be about several projects, or none.
+
+Either way the limits below apply to both:
 
 <TypeTable
   type={{

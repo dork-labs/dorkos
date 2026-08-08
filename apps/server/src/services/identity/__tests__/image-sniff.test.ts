@@ -4,7 +4,7 @@
  * whoever is uploading, so neither one is evidence.
  */
 import { describe, it, expect } from 'vitest';
-import { sniffAvatarContentType } from '../avatar-store.js';
+import { sniffImageContentType } from '../image-sniff.js';
 
 const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3]);
 const JPEG = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3]);
@@ -30,25 +30,25 @@ const HIGH_BIT_RIFF = Buffer.concat([
   Buffer.from('<html><script>alert(1)</script></html>'),
 ]);
 
-describe('sniffAvatarContentType', () => {
+describe('sniffImageContentType', () => {
   it.each([
     ['png', PNG, 'image/png'],
     ['jpeg', JPEG, 'image/jpeg'],
     ['webp', WEBP, 'image/webp'],
   ])('recognises a %s by its magic bytes', (_name, bytes, expected) => {
-    expect(sniffAvatarContentType(bytes)).toBe(expected);
+    expect(sniffImageContentType(bytes)).toBe(expected);
   });
 
   it('refuses an SVG — a script vector is not a profile photo', () => {
-    expect(sniffAvatarContentType(SVG)).toBeNull();
+    expect(sniffImageContentType(SVG)).toBeNull();
   });
 
   it('refuses a GIF, whatever it was uploaded as', () => {
-    expect(sniffAvatarContentType(GIF)).toBeNull();
+    expect(sniffImageContentType(GIF)).toBeNull();
   });
 
   it('refuses high-bit bytes that only DECODE to RIFF/WEBP', () => {
-    expect(sniffAvatarContentType(HIGH_BIT_RIFF)).toBeNull();
+    expect(sniffImageContentType(HIGH_BIT_RIFF)).toBeNull();
   });
 
   it('refuses a RIFF container that is not WebP', () => {
@@ -57,11 +57,11 @@ describe('sniffAvatarContentType', () => {
       Buffer.from([0x1a, 0, 0, 0]),
       Buffer.from('WAVEfmt '),
     ]);
-    expect(sniffAvatarContentType(wav)).toBeNull();
+    expect(sniffImageContentType(wav)).toBeNull();
   });
 
   it('refuses bytes too short to be anything', () => {
-    expect(sniffAvatarContentType(Buffer.from([0x89, 0x50]))).toBeNull();
-    expect(sniffAvatarContentType(Buffer.alloc(0))).toBeNull();
+    expect(sniffImageContentType(Buffer.from([0x89, 0x50]))).toBeNull();
+    expect(sniffImageContentType(Buffer.alloc(0))).toBeNull();
   });
 });

@@ -31,6 +31,15 @@ export { RoomThreadReplyRow } from './ui/RoomThreadReplyRow';
  */
 export { RoomPendingRow } from './ui/RoomPendingRow';
 /**
+ * The files posted with a message, exported for the Dev Playground's delivery
+ * bench (`/dev/rooms`) for the same reason `RoomPendingRow` is: producing a
+ * real one on demand means uploading a file into a room, and the case worth
+ * eyeballing — a thumbnail beside a download chip beside a long filename — is
+ * the one nobody has lying around. Nothing in the routed app imports it from
+ * here; `RoomEntryRow` mounts it itself.
+ */
+export { RoomEntryAttachments } from './ui/RoomEntryAttachments';
+/**
  * Seeds "how each agent runs" for a subtree, exported for the Dev Playground's
  * identity bench — a mention pill's hover card reads it from context (see
  * `agent-info-context`), so a benched `RoomEntryRow` needs one above it or its

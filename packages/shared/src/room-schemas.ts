@@ -571,6 +571,64 @@ export const RoomEntryReactionSchema = z
 
 export type RoomEntryReaction = z.infer<typeof RoomEntryReactionSchema>;
 
+/** How the timeline may render an attachment inline, or `null` for a chip. */
+export const RoomAttachmentPreviewSchema = z.enum(['image']).openapi('RoomAttachmentPreview');
+
+/** One of {@link RoomAttachmentPreviewSchema}'s values. */
+export type RoomAttachmentPreview = z.infer<typeof RoomAttachmentPreviewSchema>;
+
+/** The longest original filename a room stores, in UTF-16 code units. */
+export const ROOM_ATTACHMENT_NAME_MAX = 255;
+
+/**
+ * The most attachment ids one post may name.
+ *
+ * The SCHEMA's static ceiling, deliberately not the limit a person feels: it is
+ * the maximum `config.uploads.maxFiles` may be set to
+ * (`packages/shared/src/config-schema.ts` — `z.number().int().min(1).max(50).default(10)`).
+ * The CONFIGURED value is enforced in the service, because config is read per
+ * request and a Zod literal cannot be.
+ */
+export const ROOM_ATTACHMENT_MAX_PER_ENTRY = 50;
+
+/**
+ * One file posted with a room entry.
+ *
+ * Every field is SERVER-DERIVED. `name` is the uploaded filename after the same
+ * sanitization `upload-handler.ts` applies, `size` is what actually landed on
+ * disk, and `mimeType` is what the bytes were sniffed to be for an image and
+ * what the client declared for everything else — which is why nothing is served
+ * inline unless `preview` says the bytes themselves were checked.
+ */
+export const RoomAttachmentSchema = z
+  .object({
+    id: z.string().min(1).describe('ULID. Stable, unique within the room.'),
+    name: z.string().min(1).max(ROOM_ATTACHMENT_NAME_MAX),
+    mimeType: z.string().min(1),
+    size: z.number().int().nonnegative(),
+    preview: RoomAttachmentPreviewSchema.nullable().describe(
+      'Non-null only when the BYTES were verified as that kind. A declared Content-Type never sets this.'
+    ),
+    url: z
+      .string()
+      .min(1)
+      .describe(
+        'Where to fetch it. Server-relative today; a remote store would answer an absolute https URL and no renderer changes.'
+      ),
+  })
+  .openapi('RoomAttachment');
+
+/** One file posted with a room entry, as it reaches a reader. */
+export type RoomAttachment = z.infer<typeof RoomAttachmentSchema>;
+
+/** What `POST /api/rooms/:id/attachments` answers with, in request order. */
+export const RoomAttachmentUploadResponseSchema = z
+  .object({ attachments: z.array(RoomAttachmentSchema) })
+  .openapi('RoomAttachmentUploadResponse');
+
+/** The body of a successful room attachment upload. */
+export type RoomAttachmentUploadResponse = z.infer<typeof RoomAttachmentUploadResponseSchema>;
+
 /**
  * One resolved `@mention`, located by where it sits in the entry's raw body.
  *
@@ -664,6 +722,12 @@ export const RoomEntrySchema = z
       .describe(
         "The entry's reactions right now, oldest pill first. Every path that delivers an entry to a reader carries it — the history page, the stream's hydration snapshot, a resume replay, and a live `entry` event, which carries `[]` because an entry a millisecond old has none. It is optional only because the server's internal entry shape exists before the roll-up runs; on the wire it is always present, and absent should be read as empty."
       ),
+    attachments: z
+      .array(RoomAttachmentSchema)
+      .optional()
+      .describe(
+        "The files posted with this entry. Every path that delivers an entry to a reader carries it — the history page, the stream's hydration snapshot, a resume replay, and a live `entry` event. Optional only because the server's internal entry shape exists before the roll-up runs; on the wire it is always present, and absent should be read as empty."
+      ),
   })
   .openapi('RoomEntry');
 
@@ -731,6 +795,13 @@ export const PostToRoomRequestSchema = z
       .min(1)
       .optional()
       .describe('The session that produced this post, when one did.'),
+    attachmentIds: z
+      .array(z.string().min(1))
+      .max(ROOM_ATTACHMENT_MAX_PER_ENTRY)
+      .optional()
+      .describe(
+        'Ids from POST /api/rooms/:id/attachments, in the order they should render. Yours, from this room, and not already posted.'
+      ),
   })
   .openapi('PostToRoomRequest');
 
@@ -812,6 +883,13 @@ export const PostThreadReplyRequestSchema = z
       .min(1)
       .optional()
       .describe('The session that produced this reply, when one did.'),
+    attachmentIds: z
+      .array(z.string().min(1))
+      .max(ROOM_ATTACHMENT_MAX_PER_ENTRY)
+      .optional()
+      .describe(
+        'Ids from POST /api/rooms/:id/attachments, in the order they should render. Yours, from this room, and not already posted.'
+      ),
   })
   .openapi('PostThreadReplyRequest');
 

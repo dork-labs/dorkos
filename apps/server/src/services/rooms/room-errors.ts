@@ -110,6 +110,15 @@ export type RoomErrorCode =
    * bridge store here rather than trusted from the caller, the same shape the
    * create path takes.
    */
+  /**
+   * A post named an attachment id that is not this room's, or is somebody
+   * else's and not yet posted. Never a 403: existence is not leaked.
+   */
+  | 'ATTACHMENT_NOT_FOUND'
+  /** A post named an attachment that another entry already carries. A file belongs to one message. */
+  | 'ATTACHMENT_ALREADY_POSTED'
+  /** A post named more attachments than `uploads.maxFiles` allows, or named one twice. */
+  | 'TOO_MANY_ATTACHMENTS'
   | 'NOT_A_BRIDGED_ROOM'
   /**
    * `RoomService.rebridge` was asked to re-bridge a `(adapterId, chatId)` that

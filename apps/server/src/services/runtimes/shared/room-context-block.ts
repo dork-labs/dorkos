@@ -98,6 +98,23 @@ const NONCE_CHARS = 8;
  */
 const TOPIC_MAX_LENGTH = 200;
 
+/**
+ * Cap on a rendered attachment path.
+ *
+ * **Sized so it can never actually truncate, and that is the whole point.** The
+ * default {@link IDENTITY_MAX_LENGTH} is 80, and a projected path is already 82
+ * characters BEFORE the filename — `.dork/.temp/room-attachments/` is 28, plus
+ * two 26-character ULIDs and their separators. Sanitizing at the default would
+ * have silently cut every path short, and a truncated path is the exact failure
+ * ADR 260807-233816 forbids: the model is told to open a file that is not
+ * there, and nothing anywhere reports it.
+ *
+ * 338 is the real worst case — that prefix plus `ROOM_ATTACHMENT_NAME_MAX`
+ * (255) and its separator — so this is a ceiling that exists to keep the line
+ * bounded, never one the shortest real path approaches.
+ */
+const ATTACHMENT_PATH_MAX_LENGTH = 338;
+
 /** Prefix for a label that sanitized away to nothing — a name of only tag syntax. */
 const UNNAMEABLE = 'unnamed';
 
@@ -395,7 +412,26 @@ function entryLine(entry: RoomContextEntry): string {
       : ` (${entry.authorIsPerson ? 'person' : 'agent'}${from}${addressNote(author)})`;
   const topic = entry.topicLabel ? ` [topic: ${label(entry.topicLabel, TOPIC_MAX_LENGTH)}]` : '';
   const mention = entry.mentionsMe ? ' [mentions you]' : '';
-  return `[${clock(entry.at)}] ${who}${what}${topic}${mention}: ${body(entry.text)}`;
+  // **A path is a LABEL, not somebody's words**, so it sits OUTSIDE the
+  // untrusted fence beside `[topic: …]` rather than inside it beside
+  // `body(entry.text)`. That is the room-conduct two-region test applied
+  // (`.claude/rules/room-conduct.md`): the string is server-generated — DorkOS
+  // chose the directory, the entry id and the attachment id, and sanitized the
+  // filename at write time — so it is a fact about the message rather than a
+  // quotation from it. It goes through `label()` anyway, which is the second of
+  // the two sanitizations §9.2 requires, exactly as `topicLabel` is sanitized
+  // twice. Writing a second sanitizer here instead is how a NEL gets missed.
+  //
+  // No cap on the count: `config.uploads.maxFiles` already bounds it at write
+  // time, and a second limit here would silently drop a path the projector
+  // still wrote — the one disagreement this whole design forbids.
+  const attached =
+    entry.attachments.length > 0
+      ? ` [attached: ${entry.attachments
+          .map((file) => label(file.path, ATTACHMENT_PATH_MAX_LENGTH))
+          .join(', ')}]`
+      : '';
+  return `[${clock(entry.at)}] ${who}${what}${topic}${mention}${attached}: ${body(entry.text)}`;
 }
 
 /**

@@ -37,7 +37,28 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import React, { createRef } from 'react';
 import { render, screen, cleanup, fireEvent, act } from '@testing-library/react';
 import { createMockTransport } from '@dorkos/test-utils';
-import { serializeDom, matchDomBaseline, formatDomDiff } from '@/test-helpers/dom-parity';
+import {
+  serializeDom,
+  matchDomBaseline,
+  formatDomDiff,
+  type DomDiffEntry,
+} from '@/test-helpers/dom-parity';
+
+/**
+ * The one difference the baselines are allowed to have grown since.
+ *
+ * DOR-947 stamps `data-composer-card` on `Composer.Root`'s card so
+ * `useFeedKeyboardNav` can treat a composer as ONE destination — Ctrl+End lands
+ * in the text field rather than on whichever control the markup puts first.
+ * It is inert: no styling, no behaviour of its own, one attribute on the node
+ * every baseline already has. Everything else must still diff empty.
+ */
+const COMPOSER_CARD_ATTR_DIFF = 'div > div: [attr-added] attribute data-composer-card="" added';
+
+/** The diff, with that one reviewed attribute accounted for. */
+function beyondTheComposerCardAttr(diff: readonly DomDiffEntry[]): string {
+  return formatDomDiff(diff.filter((entry) => formatDomDiff([entry]) !== COMPOSER_CARD_ATTR_DIFF));
+}
 
 vi.mock('../ui/status/ChatStatusSection', () => ({
   ChatStatusSection: () => <div data-testid="chat-status" />,
@@ -190,7 +211,7 @@ describe('ChatInputContainer — serialized-DOM parity against the pre-migration
       'chat-input-container.idle',
       serializeDom(container)
     );
-    expect(formatDomDiff(diff)).toBe('');
+    expect(beyondTheComposerCardAttr(diff)).toBe('');
   });
 
   it('2. streaming with two queued messages', () => {
@@ -216,7 +237,7 @@ describe('ChatInputContainer — serialized-DOM parity against the pre-migration
       'chat-input-container.streaming-queue',
       serializeDom(container)
     );
-    expect(formatDomDiff(diff)).toBe('');
+    expect(beyondTheComposerCardAttr(diff)).toBe('');
   });
 
   it('3. two pending attachments, one failed', () => {
@@ -243,7 +264,7 @@ describe('ChatInputContainer — serialized-DOM parity against the pre-migration
       'chat-input-container.failed-attachment',
       serializeDom(container)
     );
-    expect(formatDomDiff(diff)).toBe('');
+    expect(beyondTheComposerCardAttr(diff)).toBe('');
   });
 
   it('4. clear armed — the overlay lane carrying the hint', () => {
@@ -259,7 +280,7 @@ describe('ChatInputContainer — serialized-DOM parity against the pre-migration
       'chat-input-container.clear-armed',
       serializeDom(container)
     );
-    expect(formatDomDiff(diff)).toBe('');
+    expect(beyondTheComposerCardAttr(diff)).toBe('');
   });
 
   it('5. an active interaction — the InteractiveInputPanel branch', () => {
@@ -286,7 +307,7 @@ describe('ChatInputContainer — serialized-DOM parity against the pre-migration
       'chat-input-container.interactive',
       serializeDom(container)
     );
-    expect(formatDomDiff(diff)).toBe('');
+    expect(beyondTheComposerCardAttr(diff)).toBe('');
   });
 });
 

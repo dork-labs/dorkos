@@ -69,6 +69,7 @@ function gatedRunner(): GatedRunner {
         sessionId: request.sessionId,
         prompt: request.entry.body.text,
         roomContext: request.roomContext,
+        attachmentProjection: request.attachmentProjection,
       });
       return new Promise<RoomTurnResult>((resolve) => {
         const queued = gates.get(request.authorId) ?? [];

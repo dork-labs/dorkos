@@ -47,6 +47,20 @@ export interface PostToRoomInput {
    * row already on screen rather than stack a second copy of the sentence.
    */
   clientId: string;
+  /**
+   * The files to send with it, already uploaded, in the order they render.
+   *
+   * Ids rather than bytes: the upload is its own request, and it has already
+   * happened by the time this runs.
+   */
+  attachmentIds?: string[];
+  /**
+   * What to call those files while the message is still in the air.
+   *
+   * NAMES, because the entry does not exist yet — there is nothing to link to
+   * and nothing to draw a thumbnail from. See `PendingPost.attachmentNames`.
+   */
+  attachmentNames?: string[];
 }
 
 /**
@@ -101,9 +115,22 @@ export function usePostToRoom(): UseMutationResult<PostToRoomResponse, Error, Po
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({ roomId, text }: PostToRoomInput) => transport.postToRoom(roomId, { text }),
-    onMutate: ({ roomId, text, clientId }) => {
-      usePendingPostStore.getState().start({ clientId, roomId, threadRootId: null, text });
+    // `attachmentIds` is omitted rather than sent empty: a message with no files
+    // asks for exactly what it asked for before this field existed.
+    mutationFn: ({ roomId, text, attachmentIds }: PostToRoomInput) =>
+      transport.postToRoom(
+        roomId,
+        attachmentIds !== undefined && attachmentIds.length > 0 ? { text, attachmentIds } : { text }
+      ),
+    onMutate: ({ roomId, text, clientId, attachmentIds, attachmentNames }) => {
+      usePendingPostStore.getState().start({
+        clientId,
+        roomId,
+        threadRootId: null,
+        text,
+        attachmentIds: attachmentIds ?? [],
+        attachmentNames: attachmentNames ?? [],
+      });
     },
     onSuccess: (accepted, { roomId, clientId }) =>
       reconcilePendingPost(queryClient, roomId, clientId, accepted.entryId),

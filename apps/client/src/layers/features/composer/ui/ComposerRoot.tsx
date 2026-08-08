@@ -6,6 +6,16 @@ import { useDragAndPaste, usePathDrop } from './use-drag-and-paste';
 const CARD_CHROME = 'bg-surface relative m-2 rounded-xl border p-2';
 
 /**
+ * Marks this card as one destination rather than a row of separate controls.
+ *
+ * Read by `useFeedKeyboardNav`: Ctrl+End means "leave the feed and go type", and
+ * the first tab stop after a feed is now the paperclip rather than the text
+ * field. Anything that lands anywhere inside a card carrying this lands in its
+ * text field instead.
+ */
+const COMPOSER_CARD_ATTR = { 'data-composer-card': '' };
+
+/**
  * Every prop the composer's card accepts.
  *
  * Exported because the `Composer` namespace object in the barrel infers its
@@ -110,6 +120,7 @@ function ComposerCard({
     // div for the same reason.
     // eslint-disable-next-line jsx-a11y/no-static-element-interactions
     <div
+      {...COMPOSER_CARD_ATTR}
       className={cn(CARD_CHROME, className)}
       onDragOver={pathDrop?.onDragOver}
       onDrop={pathDrop ? (e) => void pathDrop.onDrop(e) : undefined}
@@ -143,6 +154,7 @@ function DropCapableCard({
     // eslint-disable-next-line jsx-a11y/no-static-element-interactions
     <div
       {...rootProps}
+      {...COMPOSER_CARD_ATTR}
       // Composed by hand rather than handed to react-dropzone, so the ordering
       // is ours to state: ours runs first, then react-dropzone's, ALWAYS —
       // including for a drop we just consumed. Its drop handler is what clears

@@ -72,6 +72,24 @@ export interface PendingPost {
   threadRootId: string | null;
   /** What was typed. The words themselves, held nowhere else once sent. */
   text: string;
+  /**
+   * The names of the files sent with this message, in the order they will
+   * render. Empty for a message with none.
+   *
+   * NAMES and not refs: the row exists precisely because the entry does not yet,
+   * so there is nothing to link to and nothing to draw a thumbnail from. What a
+   * person needs to see is that their files are still in the message.
+   */
+  attachmentNames: string[];
+  /**
+   * The ids those files were uploaded under, so a retry re-sends the whole
+   * message rather than a stripped copy of it.
+   *
+   * They survive a refused post because nothing bound them: an attachment
+   * belongs to its uploader and stays unbound until an entry claims it, so the
+   * second attempt names the same files and no bytes go up twice.
+   */
+  attachmentIds: string[];
   /** Whether it is still in the air, or has come back refused. */
   status: PendingPostStatus;
   /**
@@ -108,6 +126,10 @@ interface PendingPostActions {
     roomId: string;
     threadRootId: string | null;
     text: string;
+    /** The files' names, for the row to show. Defaults to none. */
+    attachmentNames?: string[];
+    /** The files' ids, so a retry can re-send them. Defaults to none. */
+    attachmentIds?: string[];
     now?: number;
   }) => void;
   /**
@@ -164,7 +186,15 @@ export const usePendingPostStore = create<PendingPostState & PendingPostActions>
     (set) => ({
       posts: [],
 
-      start: ({ clientId, roomId, threadRootId, text, now = Date.now() }) =>
+      start: ({
+        clientId,
+        roomId,
+        threadRootId,
+        text,
+        attachmentNames = [],
+        attachmentIds = [],
+        now = Date.now(),
+      }) =>
         set(
           (held) => {
             const existing = held.posts.findIndex((post) => post.clientId === clientId);
@@ -176,7 +206,17 @@ export const usePendingPostStore = create<PendingPostState & PendingPostActions>
             return {
               posts: [
                 ...held.posts,
-                { clientId, roomId, threadRootId, text, status: 'sending', entryId: null, at: now },
+                {
+                  clientId,
+                  roomId,
+                  threadRootId,
+                  text,
+                  attachmentNames,
+                  attachmentIds,
+                  status: 'sending',
+                  entryId: null,
+                  at: now,
+                },
               ],
             };
           },

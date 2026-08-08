@@ -6357,6 +6357,13 @@
               "$ref": "#/components/schemas/RoomEntryReaction"
             },
             "description": "The entry's reactions right now, oldest pill first. Every path that delivers an entry to a reader carries it — the history page, the stream's hydration snapshot, a resume replay, and a live `entry` event, which carries `[]` because an entry a millisecond old has none. It is optional only because the server's internal entry shape exists before the roll-up runs; on the wire it is always present, and absent should be read as empty."
+          },
+          "attachments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RoomAttachment"
+            },
+            "description": "The files posted with this entry. Every path that delivers an entry to a reader carries it — the history page, the stream's hydration snapshot, a resume replay, and a live `entry` event. Optional only because the server's internal entry shape exists before the roll-up runs; on the wire it is always present, and absent should be read as empty."
           }
         },
         "required": [
@@ -6475,6 +6482,56 @@
         "description": "One emoji, stored as the string that was sent — grapheme clusters, joiners, skin tones and flags all survive verbatim. There is no enum: an install that only ever accepted a fixed list would have to ship a migration to add a face.",
         "example": "👍"
       },
+      "RoomAttachment": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "ULID. Stable, unique within the room."
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "mimeType": {
+            "type": "string",
+            "minLength": 1
+          },
+          "size": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "preview": {
+            "$ref": "#/components/schemas/RoomAttachmentPreview"
+          },
+          "url": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Where to fetch it. Server-relative today; a remote store would answer an absolute https URL and no renderer changes."
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "mimeType",
+          "size",
+          "preview",
+          "url"
+        ]
+      },
+      "RoomAttachmentPreview": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "enum": [
+          "image",
+          null
+        ],
+        "description": "Non-null only when the BYTES were verified as that kind. A declared Content-Type never sets this."
+      },
       "PostToRoomResponse": {
         "type": "object",
         "properties": {
@@ -6511,10 +6568,33 @@
             "type": "string",
             "minLength": 1,
             "description": "The session that produced this post, when one did."
+          },
+          "attachmentIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "maxItems": 50,
+            "description": "Ids from POST /api/rooms/:id/attachments, in the order they should render. Yours, from this room, and not already posted."
           }
         },
         "required": [
           "text"
+        ]
+      },
+      "RoomAttachmentUploadResponse": {
+        "type": "object",
+        "properties": {
+          "attachments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RoomAttachment"
+            }
+          }
+        },
+        "required": [
+          "attachments"
         ]
       },
       "ToggleReactionResponse": {
@@ -6653,6 +6733,15 @@
             "type": "string",
             "minLength": 1,
             "description": "The session that produced this reply, when one did."
+          },
+          "attachmentIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "maxItems": 50,
+            "description": "Ids from POST /api/rooms/:id/attachments, in the order they should render. Yours, from this room, and not already posted."
           }
         },
         "required": [
@@ -15260,6 +15349,184 @@
           },
           "409": {
             "description": "The room is archived",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/rooms/{id}/attachments": {
+      "post": {
+        "tags": [
+          "Rooms"
+        ],
+        "summary": "Upload files into a room, before the message that carries them",
+        "description": "Multipart, field name `files`. Only a person who is a member of the room may upload; an agent is refused BEFORE its bytes are read (403), because an agent shares files by writing them into its own working directory. Limits come from the `uploads` section of user config — the same limits chat uses. Every field on the stored record is server-derived: the filename is sanitized, the size is what landed, and `preview` is set ONLY when the MAGIC BYTES are PNG, JPEG or WebP — the filename and the `Content-Type` the client claims are not evidence, since both are written by whoever is uploading. That single field decides whether `GET` will ever serve the file inline, which is what keeps an uploaded `.html` or SVG from rendering as a document on the cockpit's own origin. The response carries one `RoomAttachment` per file, in request order; a following `POST /api/rooms/{id}/entries` names them by id in `attachmentIds`, and the server binds them to the entry inside the entry's own transaction, so the message and its files land together or not at all.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "files": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "format": "binary"
+                    }
+                  }
+                },
+                "required": [
+                  "files"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Stored; ids to reference in the post that follows",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoomAttachmentUploadResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Only a person can attach a file; an agent caller is refused",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such room, or the caller may not see it (an agent sees only its own rooms)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The room is archived",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "A file is larger than the configured limit, refused while still being read",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "A file's type is not in the configured allowlist",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/rooms/{id}/attachments/{attachmentId}": {
+      "get": {
+        "tags": [
+          "Rooms"
+        ],
+        "summary": "Download one of a room’s files",
+        "description": "A file that is already ON a message is readable by anyone who may read that message; a file that has been uploaded and not yet posted is readable only by whoever uploaded it, so nobody can enumerate a stranger's staging area. Every other case — wrong room, no such id, somebody else's unposted file — answers 404 rather than 403, so existence is never leaked. `Content-Type` and `Content-Disposition` are decided by the stored `preview` and by nothing else: a byte-verified image is served as what it is, `inline`; everything else is `application/octet-stream` as an `attachment`, whatever it was uploaded as. `X-Content-Type-Options: nosniff` rides along on both. The response carries a strong `ETag` derived from the content, so a conditional request with `If-None-Match` answers 304 with no body.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "attachmentId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The bytes, typed and dispositioned by what they were verified to be",
+            "content": {
+              "*/*": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "Not modified — the `If-None-Match` ETag still matches"
+          },
+          "400": {
+            "description": "The id could never name a stored file",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such file, or not yours to read",
             "content": {
               "application/json": {
                 "schema": {

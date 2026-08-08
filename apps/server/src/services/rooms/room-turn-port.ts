@@ -17,6 +17,7 @@
  */
 import type { RoomContextData } from '@dorkos/shared/additional-context';
 import type { Room, RoomEntry } from '@dorkos/shared/room-schemas';
+import type { ProjectableAttachment } from './room-context.js';
 import type { RoomTurnUnanswered } from './room-notice-log.js';
 import type { WaitingKind } from './room-notices.js';
 
@@ -39,6 +40,17 @@ export interface RoomTurnRequest {
    * as exactly the words a person typed.
    */
   roomContext: RoomContextData;
+  /**
+   * The files {@link RoomTurnRequest.roomContext} refers to, and the runner's
+   * obligation: every one of these must be on disk under `agentPath` before the
+   * turn starts, or the context is describing files the agent cannot open.
+   *
+   * Carried on the request rather than looked up by the runner because the set
+   * is decided by the context window `buildRoomContext` resolved — recomputing
+   * it would make the two agree by convention instead of by construction
+   * (ADR 260807-233816).
+   */
+  attachmentProjection: readonly ProjectableAttachment[];
   /**
    * Say that this turn has STOPPED and is waiting for a person — a tool
    * approval, a question, an MCP prompt.

@@ -11,11 +11,13 @@
  */
 import { createTestDb } from '@dorkos/test-utils/db';
 import type { RoomContextData } from '@dorkos/shared/additional-context';
+import type { ProjectableAttachment } from '../room-context.js';
 import type { Db } from '@dorkos/db';
 import { BridgeStore } from '../../relay/chat-bridge/bridge-store.js';
 import { AuthorRegistry } from '../author-registry.js';
 import type { EngagedWindow } from '../engagement.js';
 import { ReactionStore } from '../reaction-store.js';
+import { AttachmentRowStore } from '../attachments/attachment-row-store.js';
 import type { RoomAgent, RoomAgentLookup } from '../room-errors.js';
 import { RoomService } from '../room-service.js';
 import { RoomStore } from '../room-store.js';
@@ -66,6 +68,14 @@ export interface RecordedTurn {
   prompt: string;
   /** What the agent was told about the room — derived by the real dispatcher. */
   roomContext: RoomContextData;
+  /**
+   * The files that context refers to, as the dispatcher planned them.
+   *
+   * Recorded beside the context rather than derived from it, because the whole
+   * claim under test is that the two are ONE value: a test that rebuilt the
+   * plan from the rendered paths could not catch them disagreeing.
+   */
+  attachmentProjection: readonly ProjectableAttachment[];
 }
 
 /** A runner that answers from a script instead of a model. */
@@ -134,6 +144,7 @@ export function outcomeRunner(
         sessionId: request.sessionId,
         prompt: request.entry.body.text,
         roomContext: request.roomContext,
+        attachmentProjection: request.attachmentProjection,
       });
       const result = outcome(request);
       if ('throws' in result) return Promise.reject(result.throws);
@@ -181,6 +192,8 @@ export interface RoomHarness {
   service: RoomService;
   store: RoomStore;
   reactions: ReactionStore;
+  /** The attachment ROW store — what an attachment test seeds through. */
+  attachments: AttachmentRowStore;
   authors: AuthorRegistry;
   /** The bridge identity/ref store — what a bridged-room test reads back against. */
   bridges: BridgeStore;
@@ -219,6 +232,9 @@ export interface RoomHarness {
  * @param opts.engagedWindow - The two engaged-window ceilings. A literal for the
  *   same reason as the ceiling above, and shipped-default-shaped so a test that
  *   does not care about the window still gets the behaviour a person would.
+ * @param opts.maxAttachmentsPerEntry - How many files one message may carry.
+ *   A literal for the same reason the ceilings above are: a test that read the
+ *   same config the code reads could only prove the two agree.
  * @param opts.ownerUserId - The account that owns this install, when the test is
  *   about one. Omitted means "no accounts", which is the default posture and the
  *   one where the `'local'` author is the owner. Resolved through the real
@@ -232,6 +248,7 @@ export function createRoomHarness(opts: {
   maxAutomaticTurnsPerRoomPerHour?: number;
   maxAutomaticTurnsTotalPerHour?: number;
   engagedWindow?: EngagedWindow;
+  maxAttachmentsPerEntry?: number;
   ownerUserId?: string;
 }): RoomHarness {
   const db = createTestDb();
@@ -242,15 +259,18 @@ export function createRoomHarness(opts: {
   const perRoom = opts.maxAutomaticTurnsPerRoomPerHour ?? 1_000;
   const global = opts.maxAutomaticTurnsTotalPerHour ?? 100_000;
   const engagedWindow = opts.engagedWindow ?? { minutes: 10, posts: 5 };
+  const maxAttachmentsPerEntry = opts.maxAttachmentsPerEntry ?? 10;
   // Mutable so `setOwner` can drive the transition, and read per check the way
   // the live wiring reads it — an install becomes owned partway through its life.
   let ownerUserId = opts.ownerUserId ?? null;
   const store = new RoomStore(db);
   const reactions = new ReactionStore(db);
+  const attachments = new AttachmentRowStore(db);
   const bridges = new BridgeStore(db);
   const service = new RoomService({
     store,
     reactions,
+    attachments,
     authors,
     broadcaster: new RoomBroadcaster(),
     bridges,
@@ -259,6 +279,7 @@ export function createRoomHarness(opts: {
     budget: new RoomTurnBudget({ limits: { perRoom: () => perRoom, global: () => global } }),
     maxAgentDepth: () => maxAgentDepth,
     engagedWindow: () => engagedWindow,
+    maxAttachmentsPerEntry: () => maxAttachmentsPerEntry,
     isOwnerAuthor: (authorId) => authors.isOwner(authorId, ownerUserId),
   });
   const human = ownerUserId === null ? authors.localHuman() : authors.bindOwner(ownerUserId);
@@ -267,6 +288,7 @@ export function createRoomHarness(opts: {
     service,
     store,
     reactions,
+    attachments,
     authors,
     bridges,
     runner,

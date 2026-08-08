@@ -7,7 +7,11 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createMockTransport } from '@dorkos/test-utils';
 import type { Transport } from '@dorkos/shared/transport';
 import { REACTION_FREQUENTS_DEFAULT } from '@dorkos/shared/room-schemas';
-import type { PostToRoomResponse, RoomWithRoster } from '@dorkos/shared/room-schemas';
+import type {
+  PostToRoomResponse,
+  RoomAttachment,
+  RoomWithRoster,
+} from '@dorkos/shared/room-schemas';
 import { usePendingPostStore, useRoomDraftStore } from '@/layers/entities/room';
 import { createQueryClientConfig } from '@/layers/shared/lib';
 import { TransportProvider } from '@/layers/shared/model';
@@ -394,19 +398,17 @@ describe('RoomComposer — the card it now sits in', () => {
     ]);
   });
 
-  it('takes no files: adopting the shared card did not hand rooms an upload path', () => {
-    // Attach is reserved for DOR-947, and `Composer.Root` mounts a dropzone
-    // only for a surface that passes `onFilesDropped`. Rooms pass none, so
-    // there is no hidden file input, no paperclip, and no drop target — a
-    // negative worth asserting because acquiring one silently would be the
-    // easiest way for this migration to ship a half-built feature.
+  it('takes files: the paperclip, the drop target, and the input behind both', () => {
+    // The positive counterpart of the assertion DOR-946 shipped, which pinned
+    // every one of these as absent while attach was still reserved. Rooms now
+    // pass `onFilesDropped`, and `Composer.Root` mounts the whole dropzone —
+    // hidden input, drop target, and all — off that one prop.
     renderComposer(createMockTransport());
     const card = composerCard();
 
-    expect(card.querySelector('input[type="file"]')).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Attach file' })).toBeNull();
-    expect(card.getAttribute('role')).toBeNull();
-    expect(card.querySelector('[role="presentation"]')).toBeNull();
+    expect(card.querySelector('input[type="file"]')).not.toBeNull();
+    expect(screen.getByRole('button', { name: 'Attach file' })).toBeInTheDocument();
+    expect(card.getAttribute('role')).toBe('presentation');
   });
 
   it('keeps the mention picker above the clear-armed hint in the lane', () => {
@@ -429,5 +431,159 @@ describe('RoomComposer — the card it now sits in', () => {
     expect(lane.contains(picker)).toBe(true);
     expect(lane.contains(hint)).toBe(true);
     expect(picker.compareDocumentPosition(hint) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+});
+
+describe('RoomComposer — attaching a file', () => {
+  /** One stored attachment, as the room's upload route answers it. */
+  function attachment(id: string, name: string): RoomAttachment {
+    return {
+      id,
+      name,
+      mimeType: 'text/plain',
+      size: 4,
+      preview: null,
+      url: `/api/rooms/room-1/attachments/${id}`,
+    };
+  }
+
+  /**
+   * The two file inputs the card mounts, in document order: the dropzone's own
+   * (which is what a drop or a paste goes through) and the paperclip's.
+   */
+  function fileInputs(): HTMLInputElement[] {
+    return Array.from(composerCard().querySelectorAll('input[type="file"]'));
+  }
+
+  /** Choose files through one of them, the way the browser reports a pick. */
+  function choose(input: HTMLInputElement, files: File[]) {
+    fireEvent.change(input, { target: { files } });
+  }
+
+  const NOTES = new File(['abcd'], 'notes.txt', { type: 'text/plain' });
+  const LOG = new File(['abcd'], 'server.log', { type: 'text/plain' });
+
+  it('takes files from the paperclip and from a drop, into the same bar', async () => {
+    const transport = createMockTransport();
+    renderComposer(transport);
+    const [dropzone, paperclip] = fileInputs();
+
+    choose(paperclip!, [NOTES]);
+    await waitFor(() => expect(screen.getByText('notes.txt')).toBeInTheDocument());
+
+    // The dropzone's input is what a drop and a paste both arrive through, so
+    // the two affordances are proven to share one handler and one bar.
+    choose(dropzone!, [LOG]);
+    await waitFor(() => expect(screen.getByText('server.log')).toBeInTheDocument());
+    expect(screen.getByText('notes.txt')).toBeInTheDocument();
+  });
+
+  it('uploads the files, sends their ids with the message, and empties the bar', async () => {
+    const transport = createMockTransport();
+    vi.mocked(transport.uploadRoomAttachments).mockResolvedValue([
+      attachment('att-1', 'notes.txt'),
+      attachment('att-2', 'server.log'),
+    ]);
+    const field = renderComposer(transport);
+
+    choose(fileInputs()[1]!, [NOTES, LOG]);
+    await waitFor(() => expect(screen.getByText('server.log')).toBeInTheDocument());
+
+    type(field, 'here they are');
+    fireEvent.keyDown(field, { key: 'Enter' });
+
+    await waitFor(() => expect(transport.postToRoom).toHaveBeenCalledTimes(1));
+    expect(transport.postToRoom).toHaveBeenCalledWith('room-1', {
+      text: 'here they are',
+      attachmentIds: ['att-1', 'att-2'],
+    });
+    // The chips go once the ids are safely in the message, never before.
+    await waitFor(() => expect(screen.queryByText('notes.txt')).toBeNull());
+  });
+
+  it('puts the file names on the pending row, from the keystroke', async () => {
+    // The words already survive the round trip in a pending row. Without this
+    // the files vanish from the bar on Enter and do not reappear until the room
+    // echoes the entry back.
+    const transport = createMockTransport();
+    vi.mocked(transport.uploadRoomAttachments).mockResolvedValue([
+      attachment('att-1', 'notes.txt'),
+      attachment('att-2', 'server.log'),
+    ]);
+    const field = renderComposer(transport);
+
+    choose(fileInputs()[1]!, [NOTES, LOG]);
+    await waitFor(() => expect(screen.getByText('server.log')).toBeInTheDocument());
+
+    type(field, 'here they are');
+    fireEvent.keyDown(field, { key: 'Enter' });
+
+    await waitFor(() => expect(usePendingPostStore.getState().posts).toHaveLength(1));
+    const [held] = usePendingPostStore.getState().posts;
+    expect(held!.attachmentNames).toEqual(['notes.txt', 'server.log']);
+    // And the ids too, so trying again re-sends the whole message.
+    expect(held!.attachmentIds).toEqual(['att-1', 'att-2']);
+  });
+
+  it('refuses a second Enter while the files are still going up', async () => {
+    // The window: `pendingFiles` is cleared only once the ids are in a message,
+    // so a second Enter during the upload would read the SAME files and send
+    // them again — a duplicate post, or a 409 for ids the first send owns.
+    const transport = createMockTransport();
+    let release!: (value: RoomAttachment[]) => void;
+    vi.mocked(transport.uploadRoomAttachments).mockReturnValue(
+      new Promise<RoomAttachment[]>((resolve) => {
+        release = resolve;
+      })
+    );
+    const field = renderComposer(transport);
+
+    choose(fileInputs()[1]!, [NOTES]);
+    await waitFor(() => expect(screen.getByText('notes.txt')).toBeInTheDocument());
+
+    type(field, 'first');
+    fireEvent.keyDown(field, { key: 'Enter' });
+    // The upload is now in flight and has not answered.
+    await waitFor(() => expect(transport.uploadRoomAttachments).toHaveBeenCalledTimes(1));
+
+    // A second sentence, sent before the first one's files have landed.
+    type(field, 'second');
+    fireEvent.keyDown(field, { key: 'Enter' });
+
+    // Refused, and refused WITHOUT eating the words: no second upload, and the
+    // sentence is still in the box for the person to send a moment later.
+    expect(transport.uploadRoomAttachments).toHaveBeenCalledTimes(1);
+    expect(field.value).toBe('second');
+
+    release([attachment('att-1', 'notes.txt')]);
+    await waitFor(() => expect(transport.postToRoom).toHaveBeenCalledTimes(1));
+    expect(transport.postToRoom).toHaveBeenCalledWith('room-1', {
+      text: 'first',
+      attachmentIds: ['att-1'],
+    });
+  });
+
+  it('does not send while a file has failed, and says why', async () => {
+    const transport = createMockTransport();
+    vi.mocked(transport.uploadRoomAttachments).mockRejectedValue(new Error('Upload failed'));
+    const field = renderComposer(transport);
+
+    choose(fileInputs()[1]!, [NOTES]);
+    await waitFor(() => expect(screen.getByText('notes.txt')).toBeInTheDocument());
+
+    type(field, 'here it is');
+    fireEvent.keyDown(field, { key: 'Enter' });
+
+    await waitFor(() =>
+      expect(
+        screen.getByText('A file didn’t upload. Try it again or remove it, then send.')
+      ).toBeInTheDocument()
+    );
+    // Nothing went out — not on that Enter, and not on a second one either.
+    fireEvent.keyDown(field, { key: 'Enter' });
+    expect(transport.postToRoom).not.toHaveBeenCalled();
+    // And the words came back, because no pending row was ever created to hold
+    // them.
+    await waitFor(() => expect(field.value).toBe('here it is'));
   });
 });

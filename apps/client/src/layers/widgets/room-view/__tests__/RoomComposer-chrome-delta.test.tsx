@@ -15,7 +15,22 @@
  *   (`bg-surface rounded-xl border p-2 m-2`; `relative` was already there and
  *   is unchanged, which is why it appears in neither half of the swap);
  * - the overlay lane's offsets go from `right-3 left-3` to `right-0 left-0`,
- *   because the inset the room hand-rolled is now the card's own padding.
+ *   because the inset the room hand-rolled is now the card's own padding;
+ * - **and, since DOR-947, the attach affordances** — the card's dropzone
+ *   (`role="presentation"`, `data-composer-card`, and the hidden
+ *   `<input type="file">` react-dropzone mounts), plus the paperclip button and
+ *   the second hidden input behind it, with `pl-3` leaving the action row
+ *   because the paperclip now supplies that edge.
+ *
+ * The attach nodes are stripped from the ACTUAL tree before the diff runs,
+ * rather than re-baselined away. The differ walks children by index, so four
+ * inserted nodes shift every sibling after them and report a page of tag
+ * mismatches that hide exactly the regressions this file exists to catch. What
+ * is asserted instead is stronger and legible: {@link stripAttachAffordances}
+ * names every node it removes, that list is asserted to be precisely the four
+ * attach nodes, and what is LEFT must still diff to the same two class swaps
+ * the migration was reviewed for. A composer with the files taken back out is
+ * the composer that shipped yesterday, node for node.
  *
  * Asserted as a SHAPE — which class tokens left and arrived at which node —
  * rather than against raw diff text, and paired with the claim that no
@@ -43,6 +58,8 @@ import {
   matchDomBaseline,
   formatDomDiff,
   type DomDiffEntry,
+  type SerializedElement,
+  type SerializedNode,
 } from '@/test-helpers/dom-parity';
 import { RoomComposer } from '../ui/RoomComposer';
 
@@ -161,6 +178,73 @@ const LANE_CLASSES_REMOVED = ['left-3', 'right-3'];
 /** The lane's inset now that the card's `p-2` provides it. */
 const LANE_CLASSES_ADDED = ['left-0', 'right-0'];
 
+/**
+ * Every attach node, in the order a walk of the tree meets them.
+ *
+ * Asserted rather than assumed: the stripping below is only honest if what it
+ * removed is exactly this and nothing else. A fifth entry means the wiring grew
+ * something nobody reviewed; a missing one means attach is not mounted at all
+ * and the empty diff that follows would be proving nothing.
+ */
+const ATTACH_NODES = [
+  'the card’s dropzone attributes',
+  '<input type="file">',
+  '<input type="file">',
+  '<button> Attach file',
+];
+
+/**
+ * The composer with the files taken back out.
+ *
+ * Removes the four nodes DOR-947 added and the two attributes react-dropzone
+ * puts on the card, naming each one as it goes, so what remains can be compared
+ * against a baseline recorded before any of it existed.
+ *
+ * @param node - A serialized subtree.
+ * @param removed - Accumulates the name of every node this strips.
+ */
+function stripAttachAffordances(node: SerializedNode, removed: string[]): SerializedNode {
+  if (node.kind === 'text') return node;
+
+  const attrs = { ...node.attrs };
+  if ('data-composer-card' in attrs) {
+    // The card announces itself as one destination (`data-composer-card`) and
+    // react-dropzone marks it a drop target (`role="presentation"`). Both ride
+    // on the node the baseline already has, so they are attributes to drop
+    // rather than nodes to remove.
+    delete attrs['data-composer-card'];
+    delete attrs.role;
+    removed.push(ATTACH_NODES[0]);
+  }
+
+  const children: SerializedNode[] = [];
+  for (const child of node.children) {
+    if (child.kind === 'element' && child.tag === 'input' && child.attrs.type === 'file') {
+      removed.push('<input type="file">');
+      continue;
+    }
+    if (
+      child.kind === 'element' &&
+      child.tag === 'button' &&
+      child.attrs['aria-label'] === 'Attach file'
+    ) {
+      removed.push('<button> Attach file');
+      continue;
+    }
+    children.push(stripAttachAffordances(child, removed));
+  }
+
+  return { ...node, attrs, children };
+}
+
+/** Serialize the composer, then take the attach affordances back out. */
+function serializeWithoutAttach(container: Element): SerializedElement {
+  const removed: string[] = [];
+  const tree = stripAttachAffordances(serializeDom(container), removed) as SerializedElement;
+  expect(removed).toEqual(ATTACH_NODES);
+  return tree;
+}
+
 /** One node's class swap, as the assertions below compare it. */
 interface ClassSwap {
   path: string;
@@ -201,9 +285,20 @@ function expectIntendedChromeDelta(diff: readonly DomDiffEntry[]) {
   );
   expect(formatDomDiff(notChrome)).toBe('');
 
-  expect(classSwaps(diff)).toEqual([
+  const swaps = classSwaps(diff);
+  const cardAndLane = swaps.filter((swap) => swap.path === ROOT_PATH || swap.path === LANE_PATH);
+  expect(cardAndLane).toEqual([
     { path: ROOT_PATH, added: ROOT_CLASSES_ADDED, removed: ROOT_CLASSES_REMOVED },
     { path: LANE_PATH, added: LANE_CLASSES_ADDED, removed: LANE_CLASSES_REMOVED },
+  ]);
+
+  // The one swap attach costs, and the only node it may cost it at: the action
+  // row drops `pl-3` because the paperclip now supplies that edge. Matched by
+  // its tokens rather than by a path — the row sits one child further down when
+  // the composer is also drawing a refusal line.
+  const fromAttach = swaps.filter((swap) => swap.path !== ROOT_PATH && swap.path !== LANE_PATH);
+  expect(fromAttach.map(({ added, removed }) => ({ added, removed }))).toEqual([
+    { added: [], removed: ['pl-3'] },
   ]);
 }
 
@@ -214,7 +309,7 @@ describe('RoomComposer — serialized-DOM delta against the pre-migration baseli
     expect(screen.getByRole('combobox')).toHaveAttribute('aria-label', 'Message #general…');
 
     expectIntendedChromeDelta(
-      matchDomBaseline(import.meta.url, 'room-composer.idle', serializeDom(container))
+      matchDomBaseline(import.meta.url, 'room-composer.idle', serializeWithoutAttach(container))
     );
   });
 
@@ -226,7 +321,7 @@ describe('RoomComposer — serialized-DOM delta against the pre-migration baseli
     ).toBeInTheDocument();
 
     expectIntendedChromeDelta(
-      matchDomBaseline(import.meta.url, 'room-composer.archived', serializeDom(container))
+      matchDomBaseline(import.meta.url, 'room-composer.archived', serializeWithoutAttach(container))
     );
   });
 
@@ -241,7 +336,11 @@ describe('RoomComposer — serialized-DOM delta against the pre-migration baseli
     expect(lane.querySelector('[role="listbox"]')).not.toBeNull();
 
     expectIntendedChromeDelta(
-      matchDomBaseline(import.meta.url, 'room-composer.mention-open', serializeDom(container))
+      matchDomBaseline(
+        import.meta.url,
+        'room-composer.mention-open',
+        serializeWithoutAttach(container)
+      )
     );
   });
 
@@ -260,7 +359,11 @@ describe('RoomComposer — serialized-DOM delta against the pre-migration baseli
     expect(lane.contains(screen.getByTestId('clear-armed-hint'))).toBe(true);
 
     expectIntendedChromeDelta(
-      matchDomBaseline(import.meta.url, 'room-composer.clear-armed', serializeDom(container))
+      matchDomBaseline(
+        import.meta.url,
+        'room-composer.clear-armed',
+        serializeWithoutAttach(container)
+      )
     );
   });
 });
