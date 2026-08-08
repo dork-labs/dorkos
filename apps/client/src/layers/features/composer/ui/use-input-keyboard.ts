@@ -1,5 +1,5 @@
 import { useRef, useCallback, useEffect, useState } from 'react';
-import type { RefObject } from 'react';
+import type { EditingSurface } from './editing-surface';
 
 /**
  * How long the first bare Escape stays armed, so the second one clears.
@@ -17,68 +17,28 @@ const DOUBLE_ESCAPE_THRESHOLD_MS = 500;
  */
 const IME_PROCESS_KEY_CODE = 229;
 
-/** Count the consecutive `\` characters at the end of `text`. */
+/**
+ * Count the consecutive `\` characters at the end of `text`.
+ *
+ * The rule, not the reach-in, which is why it stayed here when the editing
+ * itself moved behind {@link EditingSurface}. Shell semantics: an odd run of
+ * backslashes ends with an escape character, an even run is escaped literals
+ * (`foo\\` still sends). Both surfaces get this arithmetic once; each answers
+ * `textBeforeCaret()` for itself.
+ */
 function countTrailingBackslashes(text: string): number {
   let count = 0;
   for (let i = text.length - 1; i >= 0 && text[i] === '\\'; i -= 1) count += 1;
   return count;
 }
 
-/**
- * Whether the caret sits immediately after an escaping backslash, so Enter
- * should continue the line instead of sending.
- *
- * Shell semantics: an odd run of backslashes ends with an escape character, an
- * even run is escaped literals (`foo\\` still sends). The caret must be
- * collapsed and touching the backslash — `foo\ ` sends.
- */
-function isEscapedNewline(textarea: HTMLTextAreaElement): boolean {
-  if (textarea.selectionStart !== textarea.selectionEnd) return false;
-  const before = textarea.value.slice(0, textarea.selectionStart);
-  return countTrailingBackslashes(before) % 2 === 1;
-}
-
-/**
- * Insert text at the caret through the browser's own editing pipeline.
- *
- * `document.execCommand` is deprecated on paper but has no replacement and is
- * universally supported. It is the only way to edit a textarea that pushes a
- * real undo entry and fires a native `input` event — rewriting the controlled
- * value with `setState` instead would silently destroy the field's undo stack.
- */
-function insertTextAtCaret(textarea: HTMLTextAreaElement, text: string): void {
-  textarea.focus();
-  document.execCommand('insertText', false, text);
-}
-
-/**
- * Replace the escaping backslash before the caret with a newline, so the
- * continuation leaves exactly the text the user typed minus the escape.
- */
-function consumeEscapeIntoNewline(textarea: HTMLTextAreaElement): void {
-  const caret = textarea.selectionStart;
-  textarea.setSelectionRange(caret - 1, caret);
-  insertTextAtCaret(textarea, '\n');
-}
-
-/**
- * Empty the field through the browser's own editing pipeline, so the wipe lands
- * as ONE undo entry and Cmd+Z brings the draft back.
- *
- * Same reasoning as {@link insertTextAtCaret}, and the same seam: rewriting the
- * controlled value with `setState` is invisible to the field's native undo
- * stack. That matters more here than anywhere else in this file — this clear
- * sits two taps behind a key someone is already hammering to stop a turn that
- * will not stop.
- */
-function clearThroughUndoStack(textarea: HTMLTextAreaElement): void {
-  textarea.focus();
-  textarea.setSelectionRange(0, textarea.value.length);
-  document.execCommand('insertText', false, '');
-}
-
-interface UseInputKeyboardOptions {
-  textareaRef: RefObject<HTMLTextAreaElement | null>;
+/** Everything the keyboard ladder needs to decide what a key means. */
+export interface UseInputKeyboardOptions {
+  /**
+   * The document under the caret, whatever kind of field is drawing it. See
+   * {@link EditingSurface} for why the ladder asks rather than reaches.
+   */
+  surface: EditingSurface;
   value: string;
   isStreaming: boolean;
   /**
@@ -150,9 +110,9 @@ interface UseInputKeyboardReturn {
   clearArmed: boolean;
 }
 
-/** Keyboard handler for the chat input textarea. */
+/** Keyboard handler for the composer's field, whichever field is drawing it. */
 export function useInputKeyboard({
-  textareaRef,
+  surface,
   value,
   isStreaming,
   isTouchOnly,
@@ -215,7 +175,18 @@ export function useInputKeyboard({
       // --- IME composition guard (must precede every other branch) ---
       // While an IME candidate window is open, Enter commits the candidate.
       // Acting on it here would send a half-typed message.
-      if (e.nativeEvent.isComposing || e.keyCode === IME_PROCESS_KEY_CODE) return;
+      //
+      // The surface gets the third say because a rich-text editor tracks its own
+      // composition state and can report one in progress on a keydown whose
+      // event flags are clear. A textarea has no such state and answers `false`,
+      // so that path is exactly what it was.
+      if (
+        e.nativeEvent.isComposing ||
+        e.keyCode === IME_PROCESS_KEY_CODE ||
+        surface.isComposing()
+      ) {
+        return;
+      }
 
       // --- Escape priority ladder ---
       // palette dismiss → cancel queue edit → stop streaming → cancel upload →
@@ -263,8 +234,7 @@ export function useInputKeyboard({
           // one Cmd+Z away. `onClear` still runs for whatever the host hangs off
           // it (dismissing a palette); the state write it performs is the same
           // empty string the native `input` event already produced.
-          const textarea = textareaRef.current;
-          if (textarea) clearThroughUndoStack(textarea);
+          surface.clearThroughUndoStack();
           onClear?.();
           disarm();
           e.preventDefault();
@@ -284,8 +254,7 @@ export function useInputKeyboard({
       // --- Queue navigation (priority over palette when queue has items and palette closed) ---
       if (!isPaletteOpen && queueHasItems) {
         if (e.key === 'ArrowUp') {
-          const textarea = textareaRef.current;
-          const isAtStart = !textarea || textarea.selectionStart === 0;
+          const isAtStart = surface.isCaretAtStart();
           if (!value.trim() || isAtStart) {
             e.preventDefault();
             onQueueNavigateUp?.();
@@ -293,8 +262,7 @@ export function useInputKeyboard({
           }
         }
         if (e.key === 'ArrowDown') {
-          const textarea = textareaRef.current;
-          const isAtEnd = !textarea || textarea.selectionStart === textarea.value.length;
+          const isAtEnd = surface.isCaretAtEnd();
           if (editingQueueItem && isAtEnd) {
             e.preventDefault();
             onQueueNavigateDown?.();
@@ -308,8 +276,7 @@ export function useInputKeyboard({
       // its own undo entry). Alt+Enter has no native effect, so insert it here.
       if (e.key === 'Enter' && e.altKey) {
         e.preventDefault();
-        const textarea = textareaRef.current;
-        if (textarea) insertTextAtCaret(textarea, '\n');
+        surface.insertLineBreak();
         return;
       }
 
@@ -341,10 +308,10 @@ export function useInputKeyboard({
       // every platform, so the resulting text is identical on mobile (where a
       // bare Enter is already a newline) as on desktop.
       if (e.key === 'Enter' && !e.shiftKey) {
-        const textarea = textareaRef.current;
-        if (textarea && isEscapedNewline(textarea)) {
+        const before = surface.textBeforeCaret();
+        if (before !== null && countTrailingBackslashes(before) % 2 === 1) {
           e.preventDefault();
-          consumeEscapeIntoNewline(textarea);
+          surface.consumeEscapeIntoNewline();
           return;
         }
       }
@@ -395,7 +362,7 @@ export function useInputKeyboard({
       onQueueNavigateDown,
       sessionBusy,
       canSubmit,
-      textareaRef,
+      surface,
       clearArmed,
       arm,
       disarm,
