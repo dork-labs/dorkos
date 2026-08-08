@@ -179,6 +179,7 @@ export const CONFIG_WRITE_POLICY = {
   'ui.shapes.agentDefaults': 'agent-writable',
   'ui.shapes.autoFollowAgent': 'agent-writable',
   'ui.statusBar.pins': 'agent-writable',
+  'ui.composer.richText': 'agent-writable',
   // A record of what a PERSON read and agreed to. Writing it stops DorkOS ever
   // explaining Full autonomy to them again, and an agent forging that record
   // would be signing a consent form on somebody else's behalf. It is the only

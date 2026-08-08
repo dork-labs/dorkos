@@ -1368,6 +1368,38 @@ export function migrateStatusBarToPins(store: {
 }
 
 /**
+ * Migration body: backfill `ui.composer: { richText: false }` onto an EXISTING
+ * `ui` block (the message box's formatting preference, DOR-948). conf merges
+ * top-level defaults SHALLOWLY, so a `ui` object already on disk never inherits
+ * a newly-added nested section; the whole-`ui`-absent case needs nothing,
+ * because the shallow merge brings in the default `ui` with this section already
+ * in it. Same shape and same reasoning as {@link migrateStatusBarToPins}.
+ *
+ * Seeds `false` — the plain markdown box everyone has today. An upgrade must
+ * never change what someone's composer does under them; turning it on is the
+ * person's choice, in Settings.
+ *
+ * Additive + idempotent: an existing `ui.composer` object is left exactly as it
+ * stands, so re-running (corrupt-recovery, a hand-edited migration version)
+ * never flips someone's preference back off.
+ *
+ * @internal Exported for testing only.
+ * @param store - The `conf` store instance (provides `get`/`set`).
+ */
+export function backfillComposerPrefs(store: {
+  get: (key: string) => unknown;
+  set: (key: string, value: unknown) => void;
+}): void {
+  const ui = store.get('ui');
+  if (!ui || typeof ui !== 'object') return;
+
+  const composer = (ui as { composer?: unknown }).composer;
+  if (composer !== null && typeof composer === 'object') return;
+
+  store.set('ui', { ...(ui as Record<string, unknown>), composer: { richText: false } });
+}
+
+/**
  * Migration body: backfill `ui.autonomyAcknowledgedAt: null` onto an EXISTING
  * `ui` block (the standing Full-autonomy acknowledgement; spec `trust-dial`,
  * decision 5). conf merges top-level defaults SHALLOWLY, so a `ui` object
@@ -2182,6 +2214,24 @@ export const CONFIG_MIGRATIONS = {
     // guarantee exist. Additive + idempotent; every leaf seeds `null`, which
     // leaves each runtime starting new sessions exactly where it does today.
     backfillDefaultTrustStops(store);
+  },
+  // v0.58.0 is tagged and `package.json` reads 0.58.0, so the next key that can
+  // still run for everybody is 0.59.0 — strictly above the newest `v*` tag, and
+  // not the current version (`conf` runs a key only in
+  // `(storedVersion, projectVersion]`). Enforced by
+  // `__tests__/migration-safety.ts`.
+  '0.59.0': (store: {
+    get: (key: string) => unknown;
+    set: (key: string, value: unknown) => void;
+  }) => {
+    // `ui.composer` (whether the message box shows formatting as you type,
+    // DOR-948). Added-with-defaults, so this is a no-op anchor in the same sense
+    // `backfillProfileDefaults` is: conf builds Ajv with `useDefaults`, so the
+    // declared default is written into a stored `ui` block during validation
+    // whether or not this runs. It writes the section through on the upgrade
+    // where it lands, which keeps the intent — seeded OFF — reviewable in the
+    // table rather than implicit in a schema default. Additive + idempotent.
+    backfillComposerPrefs(store);
   },
 } as const;
 
