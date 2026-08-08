@@ -78,7 +78,10 @@ const agent = await runtime.spawn({
 > DorkOS coordinates. Agents deliver.
 `;
 
-/** Data display component showcases: PathBreadcrumb, ScanLine, MarkdownContent, FeatureDisabledState, IdentityAvatar, ScrollArea. */
+/**
+ * Data display component showcases: PathBreadcrumb, ScanLine, MarkdownContent,
+ * FeatureDisabledState, ScrollArea, and {@link IdentityAvatarShowcase}.
+ */
 export function DataDisplayShowcases() {
   const [isStreaming, setIsStreaming] = useState(true);
   const [scanColor, setScanColor] = useState('#3b82f6');
@@ -229,252 +232,254 @@ export function DataDisplayShowcases() {
         </ShowcaseDemo>
       </PlaygroundSection>
 
-      <PlaygroundSection
-        title="IdentityAvatar"
-        description="The one disc every identity is drawn as — an agent, a person, whoever a direct message is with. Shows its emoji when it has one, its initial when it does not; circle or square, tinted or filled."
-      >
-        <ShowcaseLabel>Sizes</ShowcaseLabel>
-        <ShowcaseDemo>
-          <div className="flex items-end gap-4">
-            {(['xs', 'sm', 'md', 'lg'] as const).map((size) => (
-              <div key={size} className="flex flex-col items-center gap-2">
-                <IdentityAvatar color="#6366f1" emoji="🔍" size={size} />
-                <IdentityAvatar color="#6366f1" fallback="R" size={size} />
-                <span className="text-muted-foreground text-[10px]">{size}</span>
-              </div>
-            ))}
-          </div>
-        </ShowcaseDemo>
+      <IdentityAvatarShowcase />
+    </>
+  );
+}
 
-        <ShowcaseLabel>Badge — agents get the glyph, people get nothing</ShowcaseLabel>
-        <ShowcaseDemo>
-          {/* Every size, because the badge has to survive the smallest one:
+/**
+ * The one disc every identity is drawn as, in every state it has.
+ *
+ * Its own exported component because the Identity page renders it too — it is a
+ * shared primitive first, so its registry entry stays on Components and its
+ * `/dev/components#identityavatar` anchor with it (spec `identity-consistency`
+ * §W4.2).
+ */
+export function IdentityAvatarShowcase() {
+  return (
+    <PlaygroundSection
+      title="IdentityAvatar"
+      description="The one disc every identity is drawn as — an agent, a person, whoever a direct message is with. Shows its emoji when it has one, its initial when it does not; circle or square, tinted or filled."
+    >
+      <ShowcaseLabel>Sizes</ShowcaseLabel>
+      <ShowcaseDemo>
+        <div className="flex items-end gap-4">
+          {(['xs', 'sm', 'md', 'lg'] as const).map((size) => (
+            <div key={size} className="flex flex-col items-center gap-2">
+              <IdentityAvatar color="#6366f1" emoji="🔍" size={size} />
+              <IdentityAvatar color="#6366f1" fallback="R" size={size} />
+              <span className="text-muted-foreground text-[10px]">{size}</span>
+            </div>
+          ))}
+        </div>
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>Badge — agents get the glyph, people get nothing</ShowcaseLabel>
+      <ShowcaseDemo>
+        {/* Every size, because the badge has to survive the smallest one:
               `xs` is a 20px disc and it is where most of these end up — a
               picker row, a sidebar line. If the mark is a smudge here it is
               unusable, whatever it looks like at `lg`. */}
-          <div className="flex items-end gap-4">
-            {(['xs', 'sm', 'md', 'lg'] as const).map((size) => (
-              <div key={size} className="flex flex-col items-center gap-2">
-                <IdentityAvatar color="#6366f1" emoji="🔍" size={size} badge={<Bot />} />
-                <IdentityAvatar color="#10b981" fallback="P" size={size} />
-                <span className="text-muted-foreground text-[10px]">{size}</span>
-              </div>
-            ))}
-          </div>
-        </ShowcaseDemo>
+        <div className="flex items-end gap-4">
+          {(['xs', 'sm', 'md', 'lg'] as const).map((size) => (
+            <div key={size} className="flex flex-col items-center gap-2">
+              <IdentityAvatar color="#6366f1" emoji="🔍" size={size} badge={<Bot />} />
+              <IdentityAvatar color="#10b981" fallback="P" size={size} />
+              <span className="text-muted-foreground text-[10px]">{size}</span>
+            </div>
+          ))}
+        </div>
+      </ShowcaseDemo>
 
-        <ShowcaseLabel>Both faces, side by side</ShowcaseLabel>
-        <ShowcaseDemo>
-          <div className="flex items-center gap-3">
-            {IDENTITIES.map((identity) => (
-              <IdentityAvatar
-                key={identity.name}
-                color={identity.color}
-                emoji={'emoji' in identity ? identity.emoji : undefined}
-                fallback={identity.name[0]}
-                size="md"
-              />
-            ))}
-          </div>
-        </ShowcaseDemo>
+      <ShowcaseLabel>Both faces, side by side</ShowcaseLabel>
+      <ShowcaseDemo>
+        <div className="flex items-center gap-3">
+          {IDENTITIES.map((identity) => (
+            <IdentityAvatar
+              key={identity.name}
+              color={identity.color}
+              emoji={'emoji' in identity ? identity.emoji : undefined}
+              fallback={identity.name[0]}
+              size="md"
+            />
+          ))}
+        </div>
+      </ShowcaseDemo>
 
-        <ShowcaseLabel>Overlapping, as a room roster draws them</ShowcaseLabel>
-        <ShowcaseDemo>
-          <div className="flex items-center -space-x-1.5">
-            {IDENTITIES.map((identity) => (
-              <IdentityAvatar
-                key={identity.name}
-                color={identity.color}
-                emoji={'emoji' in identity ? identity.emoji : undefined}
-                fallback={identity.name[0]}
-                size="xs"
-                className="border-background size-6 border"
-              />
-            ))}
-          </div>
-        </ShowcaseDemo>
+      <ShowcaseLabel>Overlapping, as a room roster draws them</ShowcaseLabel>
+      <ShowcaseDemo>
+        <div className="flex items-center -space-x-1.5">
+          {IDENTITIES.map((identity) => (
+            <IdentityAvatar
+              key={identity.name}
+              color={identity.color}
+              emoji={'emoji' in identity ? identity.emoji : undefined}
+              fallback={identity.name[0]}
+              size="xs"
+              className="border-background size-6 border"
+            />
+          ))}
+        </div>
+      </ShowcaseDemo>
 
-        <ShowcaseLabel>Three faces, in order — a photo, then an emoji, then a letter</ShowcaseLabel>
-        <ShowcaseDemo>
-          {/* The middle disc carries a photo AND an emoji, which is the case
+      <ShowcaseLabel>Three faces, in order — a photo, then an emoji, then a letter</ShowcaseLabel>
+      <ShowcaseDemo>
+        {/* The middle disc carries a photo AND an emoji, which is the case
               worth seeing: they are alternatives, not layers, and the photo
               wins. The right-hand pair shows the same identity as a person and
               as an agent, so the photo can be checked for inheriting the disc's
               radius rather than rounding a square back into a circle. */}
-          <div className="flex items-end gap-4">
-            {(
-              [
-                { label: 'photo', imageUrl: MOCK_IDENTITIES.photographed.imageUrl },
-                {
-                  label: 'photo + emoji',
-                  imageUrl: MOCK_IDENTITIES.photographed.imageUrl,
-                  emoji: '🐙',
-                },
-                { label: 'emoji', emoji: '🐙' },
-                { label: 'letter' },
-                {
-                  label: 'photo, agent',
-                  imageUrl: MOCK_IDENTITIES.photographed.imageUrl,
-                  kind: 'agent' as const,
-                },
-                { label: 'photo gone', imageUrl: '/this-photo-is-not-there.png', emoji: '🐙' },
-              ] as const
-            ).map(({ label, ...identity }) => (
-              <div key={label} className="flex flex-col items-center gap-2">
-                <IdentityAvatar color="#0ea5e9" fallback="D" size="lg" {...identity} />
-                <span className="text-muted-foreground text-[10px]">{label}</span>
-              </div>
-            ))}
-          </div>
-        </ShowcaseDemo>
+        <div className="flex items-end gap-4">
+          {(
+            [
+              { label: 'photo', imageUrl: MOCK_IDENTITIES.photographed.imageUrl },
+              {
+                label: 'photo + emoji',
+                imageUrl: MOCK_IDENTITIES.photographed.imageUrl,
+                emoji: '🐙',
+              },
+              { label: 'emoji', emoji: '🐙' },
+              { label: 'letter' },
+              {
+                label: 'photo, agent',
+                imageUrl: MOCK_IDENTITIES.photographed.imageUrl,
+                kind: 'agent' as const,
+              },
+              { label: 'photo gone', imageUrl: '/this-photo-is-not-there.png', emoji: '🐙' },
+            ] as const
+          ).map(({ label, ...identity }) => (
+            <div key={label} className="flex flex-col items-center gap-2">
+              <IdentityAvatar color="#0ea5e9" fallback="D" size="lg" {...identity} />
+              <span className="text-muted-foreground text-[10px]">{label}</span>
+            </div>
+          ))}
+        </div>
+      </ShowcaseDemo>
 
-        <ShowcaseLabel>Kind — one prop decides shape, fill and badge together</ShowcaseLabel>
-        <ShowcaseDemo>
-          {/* The four kinds as a caller writes them: `kind` and nothing else.
+      <ShowcaseLabel>Kind — one prop decides shape, fill and badge together</ShowcaseLabel>
+      <ShowcaseDemo>
+        {/* The four kinds as a caller writes them: `kind` and nothing else.
               Square is the agent shape, circle the person shape — a
               colourblind-safe distinction that survives without the badge. */}
-          <div className="flex items-end gap-4">
-            {KIND_MATRIX.map(({ label, ...identity }) => (
-              <div key={label} className="flex flex-col items-center gap-2">
+        <div className="flex items-end gap-4">
+          {KIND_MATRIX.map(({ label, ...identity }) => (
+            <div key={label} className="flex flex-col items-center gap-2">
+              <IdentityAvatar
+                color={identity.color}
+                emoji={identity.emoji}
+                fallback={identity.fallback}
+                kind={identity.kind}
+                origin={identity.origin}
+                size="md"
+              />
+              <span className="text-muted-foreground text-[10px]">{label}</span>
+            </div>
+          ))}
+        </div>
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>Kind at every size — the badge has to survive a 20px disc</ShowcaseLabel>
+      <ShowcaseDemo>
+        <div className="flex items-end gap-4">
+          {(['xs', 'sm', 'md', 'lg'] as const).map((size) => (
+            <div key={size} className="flex flex-col items-center gap-2">
+              {KIND_MATRIX.map(({ label, ...identity }) => (
                 <IdentityAvatar
+                  key={label}
                   color={identity.color}
                   emoji={identity.emoji}
                   fallback={identity.fallback}
                   kind={identity.kind}
                   origin={identity.origin}
-                  size="md"
+                  size={size}
                 />
-                <span className="text-muted-foreground text-[10px]">{label}</span>
-              </div>
-            ))}
-          </div>
-        </ShowcaseDemo>
+              ))}
+              <span className="text-muted-foreground text-[10px]">{size}</span>
+            </div>
+          ))}
+        </div>
+      </ShowcaseDemo>
 
-        <ShowcaseLabel>Kind at every size — the badge has to survive a 20px disc</ShowcaseLabel>
-        <ShowcaseDemo>
-          <div className="flex items-end gap-4">
-            {(['xs', 'sm', 'md', 'lg'] as const).map((size) => (
-              <div key={size} className="flex flex-col items-center gap-2">
-                {KIND_MATRIX.map(({ label, ...identity }) => (
-                  <IdentityAvatar
-                    key={label}
-                    color={identity.color}
-                    emoji={identity.emoji}
-                    fallback={identity.fallback}
-                    kind={identity.kind}
-                    origin={identity.origin}
-                    size={size}
-                  />
-                ))}
-                <span className="text-muted-foreground text-[10px]">{size}</span>
-              </div>
-            ))}
+      <ShowcaseLabel>Explicit props override the derivation, one axis at a time</ShowcaseLabel>
+      <ShowcaseDemo>
+        <div className="flex items-end gap-4">
+          <div className="flex flex-col items-center gap-2">
+            <IdentityAvatar color="#6366f1" emoji="🔍" kind="agent" size="md" />
+            <span className="text-muted-foreground text-[10px]">kind only</span>
           </div>
-        </ShowcaseDemo>
-
-        <ShowcaseLabel>Explicit props override the derivation, one axis at a time</ShowcaseLabel>
-        <ShowcaseDemo>
-          <div className="flex items-end gap-4">
-            <div className="flex flex-col items-center gap-2">
-              <IdentityAvatar color="#6366f1" emoji="🔍" kind="agent" size="md" />
-              <span className="text-muted-foreground text-[10px]">kind only</span>
-            </div>
-            <div className="flex flex-col items-center gap-2">
-              <IdentityAvatar color="#6366f1" emoji="🔍" kind="agent" shape="circle" size="md" />
-              <span className="text-muted-foreground text-[10px]">shape=&quot;circle&quot;</span>
-            </div>
-            <div className="flex flex-col items-center gap-2">
-              <IdentityAvatar color="#6366f1" emoji="🔍" kind="agent" variant="tint" size="md" />
-              <span className="text-muted-foreground text-[10px]">variant=&quot;tint&quot;</span>
-            </div>
-            <div className="flex flex-col items-center gap-2">
-              <IdentityAvatar color="#6366f1" emoji="🔍" kind="agent" badge={null} size="md" />
-              <span className="text-muted-foreground text-[10px]">badge={'{null}'}</span>
-            </div>
+          <div className="flex flex-col items-center gap-2">
+            <IdentityAvatar color="#6366f1" emoji="🔍" kind="agent" shape="circle" size="md" />
+            <span className="text-muted-foreground text-[10px]">shape=&quot;circle&quot;</span>
           </div>
-        </ShowcaseDemo>
+          <div className="flex flex-col items-center gap-2">
+            <IdentityAvatar color="#6366f1" emoji="🔍" kind="agent" variant="tint" size="md" />
+            <span className="text-muted-foreground text-[10px]">variant=&quot;tint&quot;</span>
+          </div>
+          <div className="flex flex-col items-center gap-2">
+            <IdentityAvatar color="#6366f1" emoji="🔍" kind="agent" badge={null} size="md" />
+            <span className="text-muted-foreground text-[10px]">badge={'{null}'}</span>
+          </div>
+        </div>
+      </ShowcaseDemo>
 
-        <ShowcaseLabel>Working — the pulse says it is happening right now</ShowcaseLabel>
-        <ShowcaseDemo>
-          {/* Kind-agnostic on purpose: an agent mid-turn and a person mid-task
+      <ShowcaseLabel>Working — the pulse says it is happening right now</ShowcaseLabel>
+      <ShowcaseDemo>
+        {/* Kind-agnostic on purpose: an agent mid-turn and a person mid-task
               are the same fact to a roster. */}
-          <div className="flex items-end gap-4">
-            <div className="flex flex-col items-center gap-2">
-              <IdentityAvatar color="#6366f1" emoji="🔍" kind="agent" working size="md" />
-              <span className="text-muted-foreground text-[10px]">agent, working</span>
-            </div>
-            <div className="flex flex-col items-center gap-2">
-              <IdentityAvatar color="#10b981" fallback="P" kind="human" working size="md" />
-              <span className="text-muted-foreground text-[10px]">person, working</span>
-            </div>
-            <div className="flex flex-col items-center gap-2">
-              <IdentityAvatar color="#6366f1" emoji="🔍" kind="agent" working size="xs" />
-              <span className="text-muted-foreground text-[10px]">xs</span>
-            </div>
+        <div className="flex items-end gap-4">
+          <div className="flex flex-col items-center gap-2">
+            <IdentityAvatar color="#6366f1" emoji="🔍" kind="agent" working size="md" />
+            <span className="text-muted-foreground text-[10px]">agent, working</span>
           </div>
-        </ShowcaseDemo>
+          <div className="flex flex-col items-center gap-2">
+            <IdentityAvatar color="#10b981" fallback="P" kind="human" working size="md" />
+            <span className="text-muted-foreground text-[10px]">person, working</span>
+          </div>
+          <div className="flex flex-col items-center gap-2">
+            <IdentityAvatar color="#6366f1" emoji="🔍" kind="agent" working size="xs" />
+            <span className="text-muted-foreground text-[10px]">xs</span>
+          </div>
+        </div>
+      </ShowcaseDemo>
 
-        <ShowcaseLabel>
-          Square at every size — the radius steps with the diameter so it never clamps to a circle
-          at xs/sm
-        </ShowcaseLabel>
-        <ShowcaseDemo>
-          {/* The compound-variant radius table only earns its keep at xs/sm: a
+      <ShowcaseLabel>
+        Square at every size — the radius steps with the diameter so it never clamps to a circle at
+        xs/sm
+      </ShowcaseLabel>
+      <ShowcaseDemo>
+        {/* The compound-variant radius table only earns its keep at xs/sm: a
               fixed radius sized for `lg` clamps to a full circle on a 20px `xs`
               disc, erasing the shape distinction exactly where the design calls
               it dominant. Circle sits alongside square at every size so the
               difference stays visible, not just present. */}
-          <div className="flex items-end gap-4">
-            {(['xs', 'sm', 'md', 'lg'] as const).map((size) => (
-              <div key={size} className="flex flex-col items-center gap-2">
-                <div className="flex items-end gap-2">
-                  <IdentityAvatar
-                    color="#6366f1"
-                    emoji="🔍"
-                    shape="square"
-                    size={size}
-                    badge={<Bot />}
-                  />
-                  <IdentityAvatar color="#10b981" fallback="P" shape="circle" size={size} />
-                </div>
-                <span className="text-muted-foreground text-[10px]">{size}</span>
+        <div className="flex items-end gap-4">
+          {(['xs', 'sm', 'md', 'lg'] as const).map((size) => (
+            <div key={size} className="flex flex-col items-center gap-2">
+              <div className="flex items-end gap-2">
+                <IdentityAvatar
+                  color="#6366f1"
+                  emoji="🔍"
+                  shape="square"
+                  size={size}
+                  badge={<Bot />}
+                />
+                <IdentityAvatar color="#10b981" fallback="P" shape="circle" size={size} />
               </div>
-            ))}
-          </div>
-        </ShowcaseDemo>
+              <span className="text-muted-foreground text-[10px]">{size}</span>
+            </div>
+          ))}
+        </div>
+      </ShowcaseDemo>
 
-        <ShowcaseLabel>
-          Fill variant — the solid disc, and the fallback letter picking its own contrast
-        </ShowcaseLabel>
-        <ShowcaseDemo>
-          <div className="flex items-end gap-4">
-            <div className="flex flex-col items-center gap-2">
-              <IdentityAvatar color="#6366f1" emoji="🔍" variant="fill" shape="square" size="lg" />
-              <span className="text-muted-foreground text-[10px]">emoji fill</span>
-            </div>
-            <div className="flex flex-col items-center gap-2">
-              <IdentityAvatar
-                color="#fde68a"
-                fallback="R"
-                variant="fill"
-                shape="square"
-                size="lg"
-              />
-              <span className="text-muted-foreground text-[10px]">light fill → dark letter</span>
-            </div>
-            <div className="flex flex-col items-center gap-2">
-              <IdentityAvatar
-                color="#1e1b4b"
-                fallback="R"
-                variant="fill"
-                shape="square"
-                size="lg"
-              />
-              <span className="text-muted-foreground text-[10px]">dark fill → light letter</span>
-            </div>
+      <ShowcaseLabel>
+        Fill variant — the solid disc, and the fallback letter picking its own contrast
+      </ShowcaseLabel>
+      <ShowcaseDemo>
+        <div className="flex items-end gap-4">
+          <div className="flex flex-col items-center gap-2">
+            <IdentityAvatar color="#6366f1" emoji="🔍" variant="fill" shape="square" size="lg" />
+            <span className="text-muted-foreground text-[10px]">emoji fill</span>
           </div>
-        </ShowcaseDemo>
-      </PlaygroundSection>
-    </>
+          <div className="flex flex-col items-center gap-2">
+            <IdentityAvatar color="#fde68a" fallback="R" variant="fill" shape="square" size="lg" />
+            <span className="text-muted-foreground text-[10px]">light fill → dark letter</span>
+          </div>
+          <div className="flex flex-col items-center gap-2">
+            <IdentityAvatar color="#1e1b4b" fallback="R" variant="fill" shape="square" size="lg" />
+            <span className="text-muted-foreground text-[10px]">dark fill → light letter</span>
+          </div>
+        </div>
+      </ShowcaseDemo>
+    </PlaygroundSection>
   );
 }

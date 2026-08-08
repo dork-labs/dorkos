@@ -191,8 +191,14 @@ const WORKING: RoomPresenceAuthor = {
   elapsedMs: 3 * 60_000,
 };
 
-/** The member row in each of the six states one can be in. */
-function RoomMemberRowShowcase() {
+/**
+ * The member row in each of the six states one can be in.
+ *
+ * Exported because the Identity page renders it too — it is a room surface
+ * first, so its entry stays registered to Rooms and the anchor with it (spec
+ * `identity-consistency` §W4.2).
+ */
+export function RoomMemberRowShowcase() {
   return (
     <PlaygroundSection
       title="RoomMemberRow"
@@ -269,8 +275,13 @@ function MarkDemo({ label, children }: { label: string; children: React.ReactNod
   );
 }
 
-/** Every face a room can wear, and the three sizes it wears them at. */
-function RoomAvatarShowcase() {
+/**
+ * Every face a room can wear, and the three sizes it wears them at.
+ *
+ * Exported for the Identity page, which renders it beside the other faces;
+ * the entry stays registered to Rooms (spec `identity-consistency` §W4.2).
+ */
+export function RoomAvatarShowcase() {
   const MIO_DM = { id: 'room-dm-mio', kind: 'dm', title: 'Mio Clicker PM' } as const;
   return (
     <PlaygroundSection

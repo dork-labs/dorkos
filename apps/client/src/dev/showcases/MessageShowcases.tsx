@@ -332,40 +332,53 @@ export function MessageShowcases() {
         </ShowcaseDemo>
       </PlaygroundSection>
 
-      <PlaygroundSection
-        title="MessageAuthorAvatar"
-        description="Shape and fill are the colourblind-safe signal for who is speaking, in both the room feed and session chat (spec composer-identity-components, direction C): an agent draws as a filled square with a small Bot badge; a person stays a tinted circle, gaining a Send badge only when they are bridged in from outside this machine. The unbranded agent below is the common case, not the exception — its fallback letter still has to read against whatever the id hashes to. The runtime-brand agent stays square but draws TINTED rather than filled: its colour is a theme token, which the fill variant's contrast pass cannot parse, so it falls back to the same tint every person uses."
-      >
-        <ShowcaseLabel>Agent — stored emoji and colour</ShowcaseLabel>
-        <ShowcaseDemo>
-          <MessageAuthorAvatar author={AGENT_AUTHOR} />
-        </ShowcaseDemo>
-
-        <ShowcaseLabel>Agent — no stored emoji or colour (the common case)</ShowcaseLabel>
-        <ShowcaseDemo>
-          <MessageAuthorAvatar author={AGENT_AUTHOR_UNBRANDED} />
-        </ShowcaseDemo>
-
-        <ShowcaseLabel>Agent — runtime brand fallback, no agent for the session</ShowcaseLabel>
-        <ShowcaseDemo>
-          <MessageAuthorAvatar author={AGENT_AUTHOR_RUNTIME_BRAND} />
-        </ShowcaseDemo>
-
-        <ShowcaseLabel>Person — on this machine</ShowcaseLabel>
-        <ShowcaseDemo>
-          <MessageAuthorAvatar author={HUMAN_AUTHOR} />
-        </ShowcaseDemo>
-
-        <ShowcaseLabel>Person — bridged in from another platform</ShowcaseLabel>
-        <ShowcaseDemo>
-          <MessageAuthorAvatar author={EXTERNAL_HUMAN_AUTHOR} />
-        </ShowcaseDemo>
-
-        <ShowcaseLabel>System</ShowcaseLabel>
-        <ShowcaseDemo>
-          <MessageAuthorAvatar author={SYSTEM_AUTHOR} />
-        </ShowcaseDemo>
-      </PlaygroundSection>
+      <MessageAuthorAvatarShowcase />
     </>
+  );
+}
+
+/**
+ * Who is speaking, as the feed draws them.
+ *
+ * Its own exported component because the Identity page renders it too — it is a
+ * chat surface first, so its registry entry stays on Chat and its anchor with it
+ * (spec `identity-consistency` §W4.2).
+ */
+export function MessageAuthorAvatarShowcase() {
+  return (
+    <PlaygroundSection
+      title="MessageAuthorAvatar"
+      description="Shape and fill are the colourblind-safe signal for who is speaking, in both the room feed and session chat (spec composer-identity-components, direction C): an agent draws as a filled square with a small Bot badge; a person stays a tinted circle, gaining a Send badge only when they are bridged in from outside this machine. The unbranded agent below is the common case, not the exception — its fallback letter still has to read against whatever the id hashes to. The runtime-brand agent stays square but draws TINTED rather than filled: its colour is a theme token, which the fill variant's contrast pass cannot parse, so it falls back to the same tint every person uses."
+    >
+      <ShowcaseLabel>Agent — stored emoji and colour</ShowcaseLabel>
+      <ShowcaseDemo>
+        <MessageAuthorAvatar author={AGENT_AUTHOR} />
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>Agent — no stored emoji or colour (the common case)</ShowcaseLabel>
+      <ShowcaseDemo>
+        <MessageAuthorAvatar author={AGENT_AUTHOR_UNBRANDED} />
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>Agent — runtime brand fallback, no agent for the session</ShowcaseLabel>
+      <ShowcaseDemo>
+        <MessageAuthorAvatar author={AGENT_AUTHOR_RUNTIME_BRAND} />
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>Person — on this machine</ShowcaseLabel>
+      <ShowcaseDemo>
+        <MessageAuthorAvatar author={HUMAN_AUTHOR} />
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>Person — bridged in from another platform</ShowcaseLabel>
+      <ShowcaseDemo>
+        <MessageAuthorAvatar author={EXTERNAL_HUMAN_AUTHOR} />
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>System</ShowcaseLabel>
+      <ShowcaseDemo>
+        <MessageAuthorAvatar author={SYSTEM_AUTHOR} />
+      </ShowcaseDemo>
+    </PlaygroundSection>
   );
 }

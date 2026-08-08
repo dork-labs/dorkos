@@ -30,6 +30,7 @@ import { createPlaygroundTransport } from './playground-transport';
 import { ChatPage } from './pages/ChatPage';
 import { EntryActionsPage } from './pages/EntryActionsPage';
 import { FeaturesPage } from './pages/FeaturesPage';
+import { IdentityPage } from './pages/IdentityPage';
 import { TokensPage } from './pages/TokensPage';
 import { FormsPage } from './pages/FormsPage';
 import { ComponentsPage } from './pages/ComponentsPage';
@@ -93,6 +94,7 @@ const PAGE_COMPONENTS: Record<string, React.ComponentType<PlaygroundPageProps>> 
   chat: ChatPage,
   'entry-actions': EntryActionsPage,
   features: FeaturesPage,
+  identity: IdentityPage,
   topology: TopologyPage,
   promos: PromosPage,
   'command-palette': CommandPalettePage,
