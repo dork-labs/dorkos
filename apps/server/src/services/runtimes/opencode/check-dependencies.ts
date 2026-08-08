@@ -19,9 +19,14 @@ import type { DependencyCheck } from '@dorkos/shared/agent-runtime';
 import type { UserConfig } from '@dorkos/shared/config-schema';
 import { configManager } from '../../core/config-manager.js';
 import { credentialProvider, type CredentialProvider } from '../../core/credential-provider.js';
+import { logger } from '../../../lib/logger.js';
 import { resolveRuntimeBinary } from '../shared/resolve-binary.js';
 import { runBinaryProbe, findBinaryOnPath } from '../shared/run-probe.js';
-import { resolveProvisionedOpenCodePath } from './provision.js';
+import {
+  OPENCODE_PACKAGE_VERSION,
+  ensureProvisionedOpenCodeVersion,
+  resolveProvisionedOpenCodePath,
+} from './provision.js';
 
 /**
  * Each failure mode gets its own remedy so the onboarding screen never renders
@@ -109,7 +114,8 @@ export interface OpenCodeDependencyDeps {
  * Precedence (ADR-0316, refined): a configured `runtimes.opencode.binaryPath` is
  * authoritative — when set but absent we report the dependency missing rather
  * than silently probing a different binary — then an on-demand provisioned
- * install, then an `opencode` on `PATH`.
+ * install (re-provisioned in place when its version has drifted from the pin,
+ * DOR-1034), then an `opencode` on `PATH`.
  *
  * @returns Absolute path to the binary, or `null` when unresolvable.
  */
@@ -117,9 +123,32 @@ export function resolveOpenCodeBinaryPath(): Promise<string | null> {
   const { binaryPath } = configManager.get('runtimes').opencode;
   return resolveRuntimeBinary([
     { resolve: () => binaryPath, authoritative: true },
-    { resolve: resolveProvisionedOpenCodePath },
+    { resolve: ensureProvisionedOpenCodeVersion },
     { resolve: () => findBinaryOnPath('opencode', PROBE_TIMEOUT_MS) },
   ]);
+}
+
+/**
+ * Emit a visible, non-blocking warning when a `PATH`- or `binaryPath`-resolved
+ * `opencode` reports a version other than the pin. Never affects `status` —
+ * these binaries are not DorkOS's to reinstall (a configured `binaryPath` or a
+ * system `opencode` the user manages themselves), unlike the provisioned
+ * install, whose drift {@link ensureProvisionedOpenCodeVersion} already
+ * resolves by re-provisioning. Surfaces the pin as `requiredVersion` on the
+ * check so the client can show it without a schema change.
+ *
+ * @param binary - The resolved binary path (used only to skip the provisioned
+ *   candidate, whose drift is already handled upstream).
+ * @param version - The version the binary itself reported.
+ * @returns `requiredVersion` to merge into the check when drifted, else `undefined`.
+ */
+function warnIfVersionDrifted(binary: string, version: string): string | undefined {
+  if (binary === resolveProvisionedOpenCodePath()) return undefined;
+  if (version === OPENCODE_PACKAGE_VERSION) return undefined;
+  logger.warn(
+    `[OpenCode] opencode CLI at ${binary} reports version ${version}, DorkOS is pinned to ${OPENCODE_PACKAGE_VERSION} — continuing (you manage this binary)`
+  );
+  return OPENCODE_PACKAGE_VERSION;
 }
 
 /** Check that the OpenCode CLI binary resolves and answers `--version`. */
@@ -130,7 +159,8 @@ async function checkCliBinary(binary: string | null): Promise<DependencyCheck> {
   if (binary) {
     try {
       const version = await runOpenCode(binary, ['--version']);
-      return { name, description, status: 'satisfied', version };
+      const requiredVersion = warnIfVersionDrifted(binary, version);
+      return { name, description, status: 'satisfied', version, requiredVersion };
     } catch {
       // Binary resolved but failed to launch — fall through to "missing".
     }
