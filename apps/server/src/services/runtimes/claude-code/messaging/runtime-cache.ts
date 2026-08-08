@@ -293,6 +293,11 @@ export class RuntimeCache {
    * id the first wins, and that is harmless: they describe the same model, so
    * their capabilities agree.
    *
+   * Rows persisted to disk by a pre-0.3.224 build carry no `resolvedModel`, so on
+   * the first read after an upgrade the fallback simply finds nothing and the old
+   * behaviour stands. It heals itself: the turn's `onModelsReceived` overwrites
+   * the cache with rows that do carry the field.
+   *
    * @param value - The model identifier (e.g. `claude-opus-4-8`).
    */
   getCachedModel(value: string | undefined): ModelOption | undefined {

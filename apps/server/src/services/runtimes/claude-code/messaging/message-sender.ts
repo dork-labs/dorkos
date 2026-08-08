@@ -635,6 +635,18 @@ export async function* executeSdkQuery(
   // not asserted either way (DOR-795) — the reasoning lives in the native CLI
   // binary rather than the shipped JS. Replacing one confident unverified claim
   // with another is how the first one survived this long.
+  //
+  // 2026-08-07, on the 0.3.177 → 0.3.224 bump: upstream now has an ANSWER-SHAPED
+  // change, but not yet an answer we have earned. The 0.3.186 release note says
+  // background agents route permission prompts to the host's `canUseTool` instead
+  // of auto-denying them. Against that, a static read of the 0.3.224 binary shows
+  // the `shouldAvoidPermissionPrompts` gate and its `{type:'asyncAgent'}` deny
+  // still present — so the deny path was NOT removed wholesale, and what changed
+  // is presumably WHEN that flag gets set. Which of the two governs a DorkOS
+  // background subagent has not been observed live, so this stays unresolved on
+  // purpose. Either way the backstop holds: `interactive-handlers.ts` auto-denies
+  // on abort and on timeout, so a prompt that arrives outside a foreground turn
+  // degrades gracefully rather than hanging one.
   sdkOptions.hooks = {
     PreToolUse: [
       {
