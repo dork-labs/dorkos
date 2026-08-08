@@ -1,17 +1,22 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { execFile } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import type { UserConfig } from '@dorkos/shared/config-schema';
 import { checkOpenCodeDependencies } from '../check-dependencies.js';
-import { resolveProvisionedOpenCodePath } from '../provision.js';
+import { OPENCODE_PACKAGE_VERSION, resolveProvisionedOpenCodePath } from '../provision.js';
 import { configManager } from '../../../core/config-manager.js';
+import { logger } from '../../../../lib/logger.js';
 
 // execFile (callback form) is the async probe primitive after the T0 async
 // conversion; existsSync (mocked) decides which resolver candidate wins.
 vi.mock('node:child_process', () => ({ execFile: vi.fn(), spawn: vi.fn() }));
-vi.mock('node:fs', () => ({ existsSync: vi.fn() }));
+vi.mock('node:fs', () => ({ existsSync: vi.fn(), readFileSync: vi.fn() }));
 vi.mock('../../../core/config-manager.js', () => ({
   configManager: { get: vi.fn() },
+}));
+vi.mock('../../../../lib/logger.js', () => ({
+  logger: { warn: vi.fn(), error: vi.fn(), info: vi.fn(), debug: vi.fn() },
+  logError: vi.fn(() => ({ error: '' })),
 }));
 
 const INSTALL_HINT = 'npm i -g opencode-ai';
@@ -22,6 +27,9 @@ const INFO_URL = 'https://opencode.ai/docs/server';
 const PATH_OPENCODE = '/usr/local/bin/opencode';
 /** The on-demand provisioned binary location (dork-home scoped). */
 const PROVISIONED = resolveProvisionedOpenCodePath();
+
+/** package.json contents reporting a provisioned install that matches the pin. */
+const PINNED_PACKAGE_JSON = JSON.stringify({ version: OPENCODE_PACKAGE_VERSION });
 
 function mockRuntimesConfig(opencode: {
   enabled: boolean;
@@ -109,10 +117,49 @@ describe('checkOpenCodeDependencies', () => {
     expect(auth.status).toBe('satisfied');
   });
 
+  it('warns (but stays satisfied) when a PATH-resolved binary reports a version other than the pin — never blocks, the user owns this binary', async () => {
+    mockRuntimesConfig({ enabled: true, binaryPath: null, port: 0 });
+    vi.mocked(existsSync).mockImplementation((p) => p === PATH_OPENCODE);
+    pathProbes({ version: '1.17.13' }); // the pin is OPENCODE_PACKAGE_VERSION (1.18.15)
+
+    const [cli, auth] = await checkOpenCodeDependencies();
+
+    expect(cli).toMatchObject({
+      name: 'OpenCode CLI',
+      status: 'satisfied',
+      version: '1.17.13',
+      requiredVersion: OPENCODE_PACKAGE_VERSION,
+    });
+    expect(auth.status).toBe('satisfied');
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.stringContaining(
+        `reports version 1.17.13, DorkOS is pinned to ${OPENCODE_PACKAGE_VERSION}`
+      )
+    );
+  });
+
+  it('warns for a configured binaryPath version mismatch too, never for a match', async () => {
+    mockRuntimesConfig({ enabled: true, binaryPath: '/opt/opencode/bin/opencode', port: 0 });
+    vi.mocked(existsSync).mockReturnValue(true);
+    onExecFile((_file, args) => {
+      if (args[0] === '--version') return { stdout: `${OPENCODE_PACKAGE_VERSION}\n` };
+      if (args[0] === 'auth') return { stdout: '1 credential\n' };
+      return { error: new Error(`unexpected args: ${args.join(' ')}`) };
+    });
+
+    const [cli] = await checkOpenCodeDependencies();
+
+    expect(cli).toMatchObject({ status: 'satisfied', version: OPENCODE_PACKAGE_VERSION });
+    expect(cli.requiredVersion).toBeUndefined();
+    expect(logger.warn).not.toHaveBeenCalled();
+  });
+
   it('resolves the on-demand provisioned binary before consulting PATH', async () => {
     mockRuntimesConfig({ enabled: true, binaryPath: null, port: 0 });
     // The provisioned binary exists; PATH is never consulted.
     vi.mocked(existsSync).mockImplementation((p) => p === PROVISIONED);
+    // Its package.json matches the pin, so no re-provision is triggered.
+    vi.mocked(readFileSync).mockReturnValue(PINNED_PACKAGE_JSON);
     onExecFile((_file, args) => {
       if (args[0] === '--version') return { stdout: '1.17.13\n' };
       if (args[0] === 'auth') return { stdout: '1 credential\n' };
