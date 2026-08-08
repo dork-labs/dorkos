@@ -64,6 +64,11 @@ describe('/api/profile/avatar', () => {
         ownerAccount: () => ({ id: OWNER_USER_ID }),
         setAccountImage: (userId, imageUrl) =>
           db.update(user).set({ image: imageUrl }).where(eq(user.id, userId)).run(),
+        // The name half of the router, which this file does not exercise —
+        // `profile-name.test.ts` owns it.
+        setAccountName: (userId, name) =>
+          db.update(user).set({ name }).where(eq(user.id, userId)).run(),
+        setProfileDisplayName: () => {},
         ...overrides,
       })
     );

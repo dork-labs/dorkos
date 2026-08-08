@@ -109,7 +109,12 @@ import {
   UpdateMembershipRequestSchema,
   UpdateRoomRequestSchema,
 } from '@dorkos/shared/room-schemas';
-import { ProfileAvatarResponseSchema, TeamRosterResponseSchema } from '@dorkos/shared/team-schemas';
+import {
+  ProfileAvatarResponseSchema,
+  ProfileUpdateRequestSchema,
+  ProfileUpdateResponseSchema,
+  TeamRosterResponseSchema,
+} from '@dorkos/shared/team-schemas';
 import { DeepHealthResponseSchema } from '@dorkos/shared/health-schemas';
 import { SessionSnapshotSchema, SessionEventSchema } from '@dorkos/shared/session-stream';
 import {
@@ -3577,7 +3582,39 @@ registry.registerPath({
   },
 });
 
-// --- Profile (spec `identity-consistency` §W3.5, ADR 260806-222546) ---
+// --- Profile (spec `identity-consistency` §W3.3, §W3.5, ADR 260806-222546) ---
+
+registry.registerPath({
+  method: 'patch',
+  path: '/api/profile',
+  tags: ['Profile'],
+  summary: 'Set what the operator wants to be called',
+  description:
+    'Writes the name to the two sources the roster actually reads above the author record: the ' +
+    'account record (`user.name`), when this install has an account at all, and the stored ' +
+    'profile (`config.profile.displayName`), always. It deliberately does NOT write ' +
+    '`authors.display_name`: on an install with login off that column is refreshed back to the ' +
+    'literal "You" on the next request, and on an install with an account writing it would ' +
+    'relabel every message the person has ever posted rather than label them going forward. ' +
+    'Only a person may call this; an agent presenting an identity token is refused (403).',
+  request: {
+    body: { content: { 'application/json': { schema: ProfileUpdateRequestSchema } } },
+  },
+  responses: {
+    200: {
+      description: 'Saved. The name the roster will now show.',
+      content: { 'application/json': { schema: ProfileUpdateResponseSchema } },
+    },
+    400: {
+      description: 'The name is empty or longer than 80 characters',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    403: {
+      description: 'The caller is an agent — a person’s name is theirs to set',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
 
 registry.registerPath({
   method: 'post',

@@ -243,3 +243,39 @@ export const ProfileAvatarResponseSchema = z
 
 /** The `POST /api/profile/avatar` response (see {@link ProfileAvatarResponseSchema}). */
 export type ProfileAvatarResponse = z.infer<typeof ProfileAvatarResponseSchema>;
+
+/**
+ * Body of `PATCH /api/profile` — what the operator wants to be called
+ * (spec `identity-consistency` §W3.3).
+ *
+ * One field, and no `null`: clearing your own name is not a thing a person
+ * wants, and an empty name would render as a blank row on the roster the rest
+ * of this program exists to fill.
+ */
+export const ProfileUpdateRequestSchema = z
+  .object({
+    /** The name every surface should call this person. Trimmed, 1–80 characters. */
+    displayName: z.string().trim().min(1).max(80),
+  })
+  .openapi('ProfileUpdateRequest');
+
+/** The `PATCH /api/profile` body (see {@link ProfileUpdateRequestSchema}). */
+export type ProfileUpdateRequest = z.infer<typeof ProfileUpdateRequestSchema>;
+
+/**
+ * Response to `PATCH /api/profile` — the name as it will now be read back.
+ *
+ * Echoed rather than assumed by the client, because the write and the read do
+ * not use the same source: the roster resolves a *precedence* over the account
+ * name, the stored profile and the author record, so the only honest answer to
+ * "what did that do" is the one the server computes after writing.
+ */
+export const ProfileUpdateResponseSchema = z
+  .object({
+    /** What the roster will now show for this person. */
+    displayName: z.string().min(1),
+  })
+  .openapi('ProfileUpdateResponse');
+
+/** The `PATCH /api/profile` response (see {@link ProfileUpdateResponseSchema}). */
+export type ProfileUpdateResponse = z.infer<typeof ProfileUpdateResponseSchema>;

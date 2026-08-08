@@ -1,6 +1,6 @@
 /**
- * The operator's own profile — today, their photo (spec `identity-consistency`
- * §W3.5, ADR 260806-222546).
+ * The operator's own profile — their photo and what they want to be called
+ * (spec `identity-consistency` §W3.3, §W3.5, ADR 260806-222546).
  *
  * Thin by the route rule, and thin in a specific way: **it never touches a
  * path**. Bytes go to an {@link AvatarStore}, a URL comes back, and that URL is
@@ -8,18 +8,25 @@
  * bucket and this file does not change — which is the point of the seam and the
  * thing `profile-avatar.test.ts` asserts rather than assumes.
  *
- * Two writes per upload, deliberately: `authors.image_url` is what the roster
- * and every room renderer read, and Better Auth's `user.image` is what the
- * account record holds. Writing one without the other is how an account and a
- * roster come to disagree about what somebody looks like.
+ * **Every write here lands in two places at once**, because one identity split
+ * across two records is how an account and a roster come to disagree about the
+ * same person. A photo goes to `authors.image_url` (what the roster and every
+ * room renderer read) and Better Auth's `user.image` (what the account record
+ * holds). A name goes to `user.name` and `config.profile.displayName` — the
+ * top two rungs of the ladder in `services/identity/operator-profile.ts`, and
+ * NOT the author record; the PATCH handler says why at length.
  *
  * @module routes/profile
  */
 import { Router, type Response } from 'express';
 import multer from 'multer';
-import type { ProfileAvatarResponse } from '@dorkos/shared/team-schemas';
+import {
+  ProfileUpdateRequestSchema,
+  type ProfileAvatarResponse,
+  type ProfileUpdateResponse,
+} from '@dorkos/shared/team-schemas';
 import { logError, logger } from '../lib/logger.js';
-import { sendError } from '../lib/route-utils.js';
+import { parseBody, sendError } from '../lib/route-utils.js';
 import type { AuthorRecord, AuthorRegistry } from '../services/rooms/author-registry.js';
 import {
   InvalidAvatarIdError,
@@ -47,6 +54,18 @@ export interface ProfileRouterDeps {
   ownerAccount: () => { id: string } | null;
   /** Write Better Auth's `user.image`, so the account record agrees with the roster. */
   setAccountImage: (userId: string, imageUrl: string | null) => void;
+  /**
+   * Write Better Auth's `user.name` — the FIRST thing the roster's name
+   * precedence reads (`operator-profile.ts`), so on an install with an account
+   * this is the only write that can change what a person is called.
+   */
+  setAccountName: (userId: string, name: string) => void;
+  /**
+   * Write `config.profile.displayName` — the SECOND thing that precedence
+   * reads, and the only durable one on an install with login off, which is the
+   * default (ADR-0320).
+   */
+  setProfileDisplayName: (displayName: string) => void;
 }
 
 /**
@@ -82,11 +101,17 @@ const AVATAR_FIELD = 'avatar';
 export function createProfileRouter(deps: ProfileRouterDeps): Router {
   const router = Router();
 
-  /** The operator, or `null` after answering the refusal an agent gets. */
-  function operatorOrRefuse(res: Response): AuthorRecord | null {
+  /**
+   * The operator, or `null` after answering the refusal an agent gets.
+   *
+   * @param res - The response, carrying whatever the caller presented.
+   * @param subject - What the agent was trying to change, so the refusal names
+   *   the thing it refused rather than the route it arrived at.
+   */
+  function operatorOrRefuse(res: Response, subject: string): AuthorRecord | null {
     const caller = deps.caller(res);
     if (caller.kind !== 'human') {
-      sendError(res, 403, 'Only a person can change a profile photo.', 'OPERATOR_ONLY');
+      sendError(res, 403, `Only a person can change a profile ${subject}.`, 'OPERATOR_ONLY');
       return null;
     }
     return caller;
@@ -117,11 +142,52 @@ export function createProfileRouter(deps: ProfileRouterDeps): Router {
     deps.authors.setImageUrl(authorId, imageUrl);
   }
 
+  /**
+   * PATCH / — what the operator wants to be called.
+   *
+   * **Two writes, and deliberately NOT the two the spec's one-line table named.**
+   * §W3.3 says "the operator's author record + Better Auth `user.name`". Writing
+   * `authors.display_name` was tried against the merged code and does not hold:
+   *
+   * 1. On an install with login off — the default — `resolveCaller` answers with
+   *    `AuthorRegistry.localHuman()`, which resolves the row with the literal
+   *    `'You'` and refreshes the cached `displayName` on every single request.
+   *    A name written there survives until the next API call, which is to say
+   *    it does not survive.
+   * 2. On an install with an account, `bindOwner` documents at length why it
+   *    never touches `displayName`: the column is one render cache per author,
+   *    so writing a name into it does not label the person going forward, it
+   *    relabels every message they have ever posted, retroactively.
+   *
+   * So this writes the two sources `services/identity/operator-profile.ts`
+   * actually reads *above* the author record — the account name and the stored
+   * profile — which is the same "both records or neither" rule the avatar
+   * writes follow, applied to the precedence that exists rather than the one
+   * the table assumed. The author record keeps saying `'You'`, which is still
+   * the right word from the operator's own seat in a room.
+   */
+  router.patch('/', (req, res) => {
+    const operator = operatorOrRefuse(res, 'name');
+    if (!operator) return;
+    const body = parseBody(ProfileUpdateRequestSchema, req.body, res);
+    if (!body) return;
+
+    const owner = deps.ownerAccount();
+    if (owner && deps.authors.isOwner(operator.id, owner.id)) {
+      deps.setAccountName(owner.id, body.displayName);
+    }
+    deps.setProfileDisplayName(body.displayName);
+
+    // Echoed rather than re-resolved: both sources above the author record now
+    // hold this string, so the precedence cannot answer with anything else.
+    return res.json({ displayName: body.displayName } satisfies ProfileUpdateResponse);
+  });
+
   // POST /avatar — replace the operator's photo.
   router.post('/avatar', (req, res) => {
     // Resolved BEFORE multer runs: an agent's upload is refused without its
     // bytes ever being read.
-    const operator = operatorOrRefuse(res);
+    const operator = operatorOrRefuse(res, 'photo');
     if (!operator) return;
 
     uploadAvatar(req, res, async (err: unknown) => {
@@ -161,7 +227,7 @@ export function createProfileRouter(deps: ProfileRouterDeps): Router {
 
   // DELETE /avatar — remove it from the store and from both records.
   router.delete('/avatar', async (req, res) => {
-    const operator = operatorOrRefuse(res);
+    const operator = operatorOrRefuse(res, 'photo');
     if (!operator) return;
     try {
       await deps.avatars.delete(operator.id);
