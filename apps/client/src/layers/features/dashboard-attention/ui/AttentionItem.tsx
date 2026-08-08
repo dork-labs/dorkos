@@ -23,24 +23,29 @@ export function AttentionItemRow({ item }: AttentionItemProps) {
       variants={staggerItem}
       className="hover:bg-accent/50 flex min-w-0 items-center gap-2.5 rounded-md px-2 py-1 transition-colors"
     >
+      {/* Theme tokens, not raw palette: this row draws in light, dark and the
+          Obsidian theme, and only the tokens are defined in all three. */}
       <span
         className={cn(
           'size-1.5 shrink-0 rounded-full',
-          item.severity === 'error' ? 'bg-red-500' : 'bg-amber-500'
+          item.severity === 'error' ? 'bg-status-error' : 'bg-status-warning'
         )}
       />
       <Icon
         className={cn(
           'size-3.5 shrink-0',
-          item.severity === 'error' ? 'text-red-500/70' : 'text-amber-500/70'
+          item.severity === 'error' ? 'text-status-error/70' : 'text-status-warning/70'
         )}
       />
       <span className="text-foreground/90 min-w-0 flex-1 truncate text-xs">{item.description}</span>
       <span className="text-muted-foreground shrink-0 text-xs tabular-nums">{relativeTime}</span>
+      {/* A 24px button on a row this tight is under a fingertip on a phone, and
+          a bigger one would break the row. So the target grows and the button
+          does not, the way `SidebarGroupAction` does it. */}
       <Button
         variant="ghost"
         size="sm"
-        className="h-6 shrink-0 px-2 text-xs"
+        className="relative h-6 shrink-0 px-2 text-xs after:absolute after:-inset-3 md:after:hidden"
         onClick={item.action.onClick}
       >
         {item.action.label}

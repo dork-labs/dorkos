@@ -10,7 +10,8 @@ import type { PlaygroundSection } from '../playground-registry';
  *
  * Sources: PersonalityPickerShowcases, AgentSidebarShowcases, AgentFleetShowcases,
  * RelayShowcases, AdapterWizardShowcases, MeshShowcases, TasksShowcases,
- * PipPanelShowcases, ApprovalsShowcases, ConnectionsShowcases, McpServerCardShowcases.
+ * PipPanelShowcases, ApprovalsShowcases, TriageHeaderShowcases, ConnectionsShowcases,
+ * McpServerCardShowcases.
  */
 export const FEATURES_SECTIONS: PlaygroundSection[] = [
   // PersonalityPickerShowcases
@@ -306,6 +307,24 @@ export const FEATURES_SECTIONS: PlaygroundSection[] = [
     page: 'features',
     category: 'Approvals',
     keywords: ['approval', 'error', 'offline', 'retry', 'unavailable', 'failed read'],
+  },
+  // TriageHeaderShowcases
+  {
+    id: 'pinned-triage-header',
+    title: 'Pinned triage header',
+    page: 'features',
+    category: 'Home',
+    keywords: [
+      'triage',
+      'pinned',
+      'header',
+      'home',
+      'waiting on you',
+      'needs attention',
+      'approval',
+      'sticky',
+      'presence',
+    ],
   },
   // ConnectionsShowcases
   {

@@ -10,6 +10,7 @@ import { TasksShowcases } from '../showcases/TasksShowcases';
 import { PersonalityPickerShowcases } from '../showcases/PersonalityPickerShowcases';
 import { PipPanelShowcases } from '../showcases/PipPanelShowcases';
 import { ApprovalsShowcases } from '../showcases/ApprovalsShowcases';
+import { TriageHeaderShowcases } from '../showcases/TriageHeaderShowcases';
 import { ConnectionsShowcases } from '../showcases/ConnectionsShowcases';
 import { McpServerCardShowcases } from '../showcases/McpServerCardShowcases';
 
@@ -31,6 +32,7 @@ export function FeaturesPage() {
       <TasksShowcases />
       <PipPanelShowcases />
       <ApprovalsShowcases />
+      <TriageHeaderShowcases />
       <ConnectionsShowcases />
       <McpServerCardShowcases />
     </PlaygroundPageLayout>

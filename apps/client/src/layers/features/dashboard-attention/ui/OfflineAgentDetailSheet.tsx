@@ -63,7 +63,10 @@ function AgentRow({ agent }: AgentRowProps) {
  * visual identity, status badges, runtime info, and last-seen timestamps.
  */
 export function OfflineAgentDetailSheet({ open, onClose }: OfflineAgentDetailSheetProps) {
-  const { data: topology } = useTopology();
+  // Gated on `open`, like the run sheet beside it: this sheet is mounted on
+  // every home render and closed almost always, and an ungated query polls the
+  // whole mesh topology every 30s for a panel nobody opened.
+  const { data: topology } = useTopology(undefined, open);
 
   // Flatten all agents from all namespaces and filter to unreachable
   const offlineAgents = useMemo(() => {

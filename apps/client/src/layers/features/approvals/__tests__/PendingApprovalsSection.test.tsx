@@ -248,6 +248,120 @@ describe('PendingApprovalsSection', () => {
     }
   });
 
+  it('confirms the answer on the card itself, where the decision was made', async () => {
+    renderSection({
+      listPendingApprovals: vi.fn().mockResolvedValue({ approvals: [buildApproval()] }),
+      grantApproval: vi.fn().mockResolvedValue({ ok: true, approvalId: 'x', outcome: 'granted' }),
+    });
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Allow' }));
+
+    expect(await screen.findByText('Allowed')).toBeInTheDocument();
+    // The answer replaces the question: leaving Allow on a card that has been
+    // allowed invites a second click on something already done.
+    expect(screen.queryByRole('button', { name: 'Allow' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: "Don't allow" })).not.toBeInTheDocument();
+  });
+
+  it('confirms a refusal the same way', async () => {
+    renderSection({
+      listPendingApprovals: vi.fn().mockResolvedValue({ approvals: [buildApproval()] }),
+      denyApproval: vi.fn().mockResolvedValue({ ok: true, approvalId: 'x', outcome: 'denied' }),
+    });
+
+    await userEvent.click(await screen.findByRole('button', { name: "Don't allow" }));
+
+    expect(await screen.findByText('Not allowed')).toBeInTheDocument();
+  });
+
+  it('hands the card back when the answer is refused, rather than leaving a checkmark on it', async () => {
+    // The swap is optimistic. If the server will not take the answer, the
+    // request is still sitting there answerable, and a card wearing a checkmark
+    // over it is a lie a person would act on.
+    renderSection({
+      listPendingApprovals: vi.fn().mockResolvedValue({ approvals: [buildApproval()] }),
+      denyApproval: vi.fn().mockRejectedValue(new Error('nope')),
+    });
+
+    await userEvent.click(await screen.findByRole('button', { name: "Don't allow" }));
+
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: "Don't allow" })).toBeInTheDocument()
+    );
+    expect(screen.queryByText('Not allowed')).not.toBeInTheDocument();
+  });
+
+  it('leaves once the list drops it', async () => {
+    const listPendingApprovals = vi.fn().mockResolvedValue({ approvals: [buildApproval()] });
+    renderSection({
+      listPendingApprovals,
+      grantApproval: vi.fn().mockResolvedValue({ ok: true, approvalId: 'x', outcome: 'granted' }),
+    });
+
+    await screen.findByText('Uninstall a marketplace package');
+    listPendingApprovals.mockResolvedValue({ approvals: [] });
+
+    await userEvent.click(screen.getByRole('button', { name: 'Allow' }));
+
+    await waitFor(() => expect(document.querySelector('[data-slot="approval-card"]')).toBeNull());
+  });
+
+  it('moves focus to the next card when one is answered', async () => {
+    // Answering removes the button the reader was standing on. Without a
+    // handoff a keyboard user is dropped on the body by their own decision.
+    renderSection({
+      listPendingApprovals: vi.fn().mockResolvedValue({
+        approvals: [
+          buildApproval({ approvalId: '01JZ0000000000000000000001' }),
+          buildApproval({ approvalId: '01JZ0000000000000000000002' }),
+          buildApproval({ approvalId: '01JZ0000000000000000000003' }),
+        ],
+      }),
+      grantApproval: vi.fn().mockResolvedValue({ ok: true, approvalId: 'x', outcome: 'granted' }),
+    });
+
+    await screen.findAllByRole('button', { name: 'Allow' });
+    const allows = screen.getAllByRole('button', { name: 'Allow' });
+    allows[1].focus();
+
+    await userEvent.click(allows[1]);
+
+    await waitFor(() => expect(document.activeElement).toBe(allows[2]));
+  });
+
+  it('falls back to the list when the card answered was the last one', async () => {
+    renderSection({
+      listPendingApprovals: vi.fn().mockResolvedValue({ approvals: [buildApproval()] }),
+      grantApproval: vi.fn().mockResolvedValue({ ok: true, approvalId: 'x', outcome: 'granted' }),
+    });
+
+    const allow = await screen.findByRole('button', { name: 'Allow' });
+    allow.focus();
+
+    await userEvent.click(allow);
+
+    // Nowhere left to answer, so focus lands on the list rather than the body.
+    await waitFor(() => expect(document.activeElement).not.toBe(document.body));
+    expect(document.activeElement?.contains(document.querySelector('[data-approval-id]'))).toBe(
+      true
+    );
+  });
+
+  it('grows the answer buttons’ touch target on a phone without growing the buttons', async () => {
+    // The buttons sit beside a summary in a 424px panel, so they stay small and
+    // the hit area is what gets bigger — the `SidebarGroupAction` pattern.
+    renderSection({
+      listPendingApprovals: vi.fn().mockResolvedValue({ approvals: [buildApproval()] }),
+    });
+
+    const allow = await screen.findByRole('button', { name: 'Allow' });
+    expect(allow.className).toContain('after:-inset-3');
+    expect(allow.className).toContain('md:after:hidden');
+    // `after:absolute` positions against the nearest positioned ancestor, so
+    // without this the overlay lands somewhere else entirely.
+    expect(allow.className).toContain('relative');
+  });
+
   it('shows more than one waiting approval', async () => {
     renderSection({
       listPendingApprovals: vi.fn().mockResolvedValue({

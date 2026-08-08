@@ -14,3 +14,10 @@
 // export them then.
 export { HomeSurfaceLayout } from './ui/HomeSurfaceLayout';
 export { HOME_TABS } from './lib/home-tabs';
+// The pinned triage header, in two halves: the wired one the Home tab mounts,
+// and the presentational one behind it, which is exported so the Dev Playground
+// can draw states a real cockpit only reaches when something is wrong.
+export { PinnedTriageHeader } from './ui/PinnedTriageHeader';
+export type { PinnedTriageHeaderProps } from './ui/PinnedTriageHeader';
+export { PinnedTriageHeaderView } from './ui/PinnedTriageHeaderView';
+export type { PinnedTriageHeaderViewProps, TriagePresenceSlot } from './ui/PinnedTriageHeaderView';

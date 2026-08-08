@@ -1,8 +1,11 @@
-import { motion } from 'motion/react';
+import { useState } from 'react';
+import { motion, useReducedMotion } from 'motion/react';
+import { Check, X } from 'lucide-react';
 import type { PendingApproval } from '@dorkos/shared/approval-schemas';
 import { Badge, Button } from '@/layers/shared/ui';
 import { useNow } from '@/layers/shared/model';
 import { cn } from '@/layers/shared/lib';
+import { approvalExitTransition } from '../lib/approval-exit-transition';
 import { formatTimeLeft } from '../lib/format-time-left';
 import { formatTrustWindow } from '../lib/format-trust-window';
 import { agentLabelFrom } from '../lib/agent-label';
@@ -22,9 +25,23 @@ const TIER_LABEL = {
   destructive: 'Cannot be undone',
 } as const;
 
+/** What a person answered, once they have. */
+type Decision = 'granted' | 'denied';
+
+/** The touch target a small button gets on a phone, without growing the button. */
+const TOUCH_TARGET = 'relative after:absolute after:-inset-3 md:after:hidden';
+
 export interface ApprovalCardProps {
   /** The approval waiting on a decision. */
   approval: PendingApproval;
+  /**
+   * Called the moment this card is answered, before the answer has landed.
+   *
+   * The buttons are gone by the next render, so whoever owns the surrounding
+   * list uses this to put focus somewhere real — otherwise a keyboard user is
+   * dropped on the body by their own decision.
+   */
+  onDecided?: (approvalId: string) => void;
 }
 
 /**
@@ -48,13 +65,38 @@ export interface ApprovalCardProps {
  * where a row genuinely fits. It also keeps the unclamped destructive summary
  * (below) from pushing Allow and Don't allow down a narrow panel, since in the
  * stacked layout they already sit under the text.
+ *
+ * ## The answer lands before the server says so
+ *
+ * Clicking an answer swaps the buttons for a checkmark straight away, holds it
+ * long enough to read, and only then lets the card melt out of the list. The
+ * card is what confirms the decision, where the decision was made — nothing
+ * navigates and no toast is needed to say a normal thing went normally.
+ *
+ * The swap is optimistic, so it is also reversible: a refusal the server would
+ * not accept puts the buttons back rather than leaving a checkmark over a
+ * request that is still sitting there answerable.
  */
-export function ApprovalCard({ approval }: ApprovalCardProps) {
+export function ApprovalCard({ approval, onDecided }: ApprovalCardProps) {
   const now = useNow(30_000);
   const grant = useGrantApproval();
   const deny = useDenyApproval();
   const deciding = grant.isPending || deny.isPending;
   const { canGrant, windowMinutes } = useStandingGrantPolicy();
+  const reducedMotion = useReducedMotion();
+  const [decision, setDecision] = useState<Decision | null>(null);
+
+  /**
+   * Show the answer, tell the list focus is about to lose its button, and send
+   * it. A rejected mutation hands the card back: `use-approval-decision` already
+   * says what went wrong, and the buttons have to be answerable again for that
+   * sentence to be actionable.
+   */
+  const answer = (kind: Decision, send: (onError: () => void) => void) => {
+    setDecision(kind);
+    onDecided?.(approval.approvalId);
+    send(() => setDecision(null));
+  };
 
   // Both conditions are needed and neither implies the other. `canGrant` is a
   // setting (and login being on); `hasAgentPath` is a property of THIS request.
@@ -72,7 +114,23 @@ export function ApprovalCard({ approval }: ApprovalCardProps) {
     // ancestor-relationship assertion in the tests catches this).
     // This stays the direct child of `ApprovalList`'s stagger parent so the
     // `staggerChildren` variants still propagate.
-    <motion.div variants={staggerItem} className="@container/approval min-w-0">
+    <motion.div
+      variants={staggerItem}
+      data-approval-id={approval.approvalId}
+      // The card leaves under `AnimatePresence` in `ApprovalList`, which is what
+      // keeps it mounted — checkmark and all — for the hold below. `height: 0`
+      // needs the clip, or the card's own text spills over the one under it on
+      // its way out.
+      exit={{
+        opacity: 0,
+        height: 0,
+        transition: approvalExitTransition({
+          decided: decision !== null,
+          reducedMotion: reducedMotion === true,
+        }),
+      }}
+      className="@container/approval min-w-0 overflow-hidden"
+    >
       <div
         data-slot="approval-card"
         className="border-status-warning-border bg-background/60 flex min-w-0 flex-col gap-2 rounded-lg border p-3 @[34rem]/approval:flex-row @[34rem]/approval:items-center"
@@ -129,32 +187,63 @@ export function ApprovalCard({ approval }: ApprovalCardProps) {
             simply bigger than the word "Allow". Prominence is carried by fill,
             colour, weight, and order instead — see the button itself. */}
         <div className="flex min-w-0 shrink-0 flex-col items-start gap-1.5 @[34rem]/approval:items-end">
-          <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-7 px-2.5 text-xs"
-              disabled={deciding}
-              onClick={() => deny.mutate({ approvalId: approval.approvalId })}
+          {decision ? (
+            <p
+              data-slot="approval-resolved"
+              // `role="status"` rather than a bare line: the buttons the reader
+              // was on have just gone, so the answer has to say itself.
+              role="status"
+              className="text-muted-foreground flex shrink-0 items-center gap-1.5 text-xs"
             >
-              Don&apos;t allow
-            </Button>
-            <Button
-              size="sm"
-              className="h-7 px-2.5 text-xs"
-              disabled={deciding}
-              onClick={() => grant.mutate({ approvalId: approval.approvalId })}
-            >
-              Allow
-            </Button>
-          </div>
+              {decision === 'granted' ? (
+                <Check className="text-status-success size-3.5" aria-hidden />
+              ) : (
+                <X className="text-muted-foreground size-3.5" aria-hidden />
+              )}
+              {decision === 'granted' ? 'Allowed' : 'Not allowed'}
+            </p>
+          ) : (
+            <div className="flex items-center gap-2">
+              {/* The buttons stay small — they sit beside a summary, not under
+                  it — so the target grows instead of the glyph, the way
+                  `SidebarGroupAction` does. Phone only: a pointer does not need
+                  it, and the overlay would swallow hovers between the two. */}
+              <Button
+                variant="outline"
+                size="sm"
+                data-slot="approval-deny"
+                className={cn('h-7 px-2.5 text-xs', TOUCH_TARGET)}
+                disabled={deciding}
+                onClick={() =>
+                  answer('denied', (onError) =>
+                    deny.mutate({ approvalId: approval.approvalId }, { onError })
+                  )
+                }
+              >
+                Don&apos;t allow
+              </Button>
+              <Button
+                size="sm"
+                data-slot="approval-allow"
+                className={cn('h-7 px-2.5 text-xs', TOUCH_TARGET)}
+                disabled={deciding}
+                onClick={() =>
+                  answer('granted', (onError) =>
+                    grant.mutate({ approvalId: approval.approvalId }, { onError })
+                  )
+                }
+              >
+                Allow
+              </Button>
+            </div>
+          )}
 
           {/* The third answer. Quieter than Allow (ghost, no fill) because a
               bounded one-time yes should stay the obvious default — but it names
               its whole scope on the button itself, so nobody learns what they
               granted afterwards. "Don't allow" stays first and unstyled: neither
               answer is dressed up as the safe one. */}
-          {offerStanding && (
+          {offerStanding && !decision && (
             <div className="flex min-w-0 flex-col gap-0.5 @[34rem]/approval:items-end">
               {/* `whitespace-normal` and `h-auto` override the Button base, which
                   is nowrap and fixed-height. The label is a whole sentence and the
@@ -173,9 +262,16 @@ export function ApprovalCard({ approval }: ApprovalCardProps) {
               <Button
                 variant="ghost"
                 size="sm"
-                className="text-muted-foreground hover:text-foreground h-auto min-h-7 px-2.5 py-1 text-xs leading-snug font-normal whitespace-normal md:h-auto @[34rem]/approval:text-right"
+                className={cn(
+                  'text-muted-foreground hover:text-foreground h-auto min-h-7 px-2.5 py-1 text-xs leading-snug font-normal whitespace-normal md:h-auto @[34rem]/approval:text-right',
+                  TOUCH_TARGET
+                )}
                 disabled={deciding}
-                onClick={() => grant.mutate({ approvalId: approval.approvalId, standing: true })}
+                onClick={() =>
+                  answer('granted', (onError) =>
+                    grant.mutate({ approvalId: approval.approvalId, standing: true }, { onError })
+                  )
+                }
               >
                 Allow, and stop asking about this for {formatTrustWindow(windowMinutes)}
               </Button>
