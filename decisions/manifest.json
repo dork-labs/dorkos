@@ -4308,6 +4308,30 @@
       "status": "draft",
       "created": "2026-08-07",
       "specSlug": "room-attachments"
+    },
+    {
+      "id": "260808-140954",
+      "slug": "threads-are-durable-sessions-are-engine-runs",
+      "title": "Threads are durable; sessions are engine runs beneath them",
+      "status": "draft",
+      "created": "2026-08-08",
+      "specSlug": "team-room-home"
+    },
+    {
+      "id": "260808-140955",
+      "slug": "the-home-is-the-team-room-not-a-report",
+      "title": "The home is the #team room, not a report",
+      "status": "draft",
+      "created": "2026-08-08",
+      "specSlug": "team-room-home"
+    },
+    {
+      "id": "260808-140956",
+      "slug": "read-state-is-one-broadcast-server-cursor",
+      "title": "Read state is one broadcast server-side cursor per user and thread",
+      "status": "draft",
+      "created": "2026-08-08",
+      "specSlug": "team-room-home"
     }
   ]
 }
