@@ -17,10 +17,17 @@ vi.mock('../../services/core/tunnel-manager.js', () => ({
 vi.mock('../../services/core/config-manager.js', () => ({
   configManager: { get: vi.fn().mockReturnValue(null), set: vi.fn() },
 }));
+// The one non-path-safety stub: reveal's side effect is opening a desktop file
+// manager, which a test must never do. Mocked so "did the boundary stop it?"
+// can be asked as "was the launcher reached at all?".
+vi.mock('../../lib/reveal-in-file-manager.js', () => ({
+  revealInFileManager: vi.fn().mockResolvedValue(undefined),
+}));
 
 import request from 'supertest';
 import { createApp } from '../../app.js';
 import { initBoundary } from '../../lib/boundary.js';
+import { revealInFileManager } from '../../lib/reveal-in-file-manager.js';
 
 const app = createApp();
 
@@ -38,6 +45,7 @@ describe('Workbench file routes — real boundary + symlink escapes', () => {
     await fs.mkdir(outside);
     // A symlink inside cwd that points at a directory outside cwd.
     await fs.symlink(outside, path.join(cwd, 'link'), 'dir');
+    vi.mocked(revealInFileManager).mockClear();
   });
   afterEach(async () => {
     await fs.rm(root, { recursive: true, force: true });
@@ -109,6 +117,44 @@ describe('Workbench file routes — real boundary + symlink escapes', () => {
     const res = await request(app).get(`/api/files/content?${qs}`);
     expect(res.status).toBe(400);
     expect(res.body.code).toBe('NULL_BYTE');
+  });
+
+  it('POST copy with a target through a symlinked parent cannot escape cwd (403)', async () => {
+    await fs.writeFile(path.join(cwd, 'src.txt'), 'x\n');
+    const res = await request(app)
+      .post('/api/files/copy')
+      .send({ cwd, from: 'src.txt', to: 'link/pwned.txt' });
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe('OUTSIDE_BOUNDARY');
+    // Nothing was written outside cwd, and the source is untouched.
+    await expect(fs.access(path.join(outside, 'pwned.txt'))).rejects.toThrow();
+    expect(await fs.readFile(path.join(cwd, 'src.txt'), 'utf8')).toBe('x\n');
+  });
+
+  it('POST copy with a ../ source cannot read outside cwd (403)', async () => {
+    await fs.writeFile(path.join(outside, 'secret.txt'), 'top secret\n');
+    const res = await request(app)
+      .post('/api/files/copy')
+      .send({ cwd, from: '../outside/secret.txt', to: 'stolen.txt' });
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe('OUTSIDE_BOUNDARY');
+    await expect(fs.access(path.join(cwd, 'stolen.txt'))).rejects.toThrow();
+  });
+
+  it('POST reveal through a symlinked parent never reaches the file manager (403)', async () => {
+    await fs.writeFile(path.join(outside, 'secret.txt'), 'top secret\n');
+    const res = await request(app).post('/api/files/reveal').send({ cwd, path: 'link/secret.txt' });
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe('OUTSIDE_BOUNDARY');
+    // The boundary is what stops it — the launcher is never handed a path.
+    expect(revealInFileManager).not.toHaveBeenCalled();
+  });
+
+  it('POST reveal with a ../ path never reaches the file manager (403)', async () => {
+    const res = await request(app).post('/api/files/reveal').send({ cwd, path: '../outside' });
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe('OUTSIDE_BOUNDARY');
+    expect(revealInFileManager).not.toHaveBeenCalled();
   });
 
   it('allows a legitimate create inside cwd (control: boundary is not over-eager)', async () => {

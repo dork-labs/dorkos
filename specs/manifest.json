@@ -6,7 +6,8 @@
       "slug": "file-explorer-actions",
       "title": "File explorer: context menu actions, copy/paste, and drag-and-drop",
       "created": "2026-08-08",
-      "status": "specified"
+      "status": "specified",
+      "linearIssue": "DOR-1032"
     },
     {
       "id": "260807-231654",

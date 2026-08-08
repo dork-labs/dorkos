@@ -49,7 +49,7 @@ import type { TemplateEntry } from '@dorkos/shared/template-catalog';
 import type { RuntimeCapabilities, SystemRequirements } from '@dorkos/shared/agent-runtime';
 import type { UnattendedAutonomyState } from '@dorkos/shared/permission-semantics';
 import type { TransportScanOptions, TransportScanEvent } from '@dorkos/shared/mesh-schemas';
-import { fetchJSON, buildQueryString } from './http-client';
+import { fetchJSON, fetchNoContent, buildQueryString } from './http-client';
 import { parseSSEStream } from './sse-parser';
 import { uploadFilesOverHttp } from './upload-methods';
 
@@ -259,9 +259,13 @@ export function createSystemMethods(baseUrl: string) {
     /** The server runs on a real desktop, so it can drive a file manager. */
     supportsReveal: true as const,
 
-    /** Show an entry in the server machine's file manager (204, no body). */
+    /**
+     * Show an entry in the server machine's file manager. The route answers
+     * `204 No Content`, so this goes through `fetchNoContent` — `fetchJSON`
+     * would try to parse an empty body and turn every success into an error.
+     */
     async revealEntry(cwd: string, filePath: string): Promise<void> {
-      await fetchJSON<void>(baseUrl, '/files/reveal', {
+      await fetchNoContent(baseUrl, '/files/reveal', {
         method: 'POST',
         body: JSON.stringify({ cwd, path: filePath }),
       });

@@ -20,8 +20,9 @@ const execFileAsync = promisify(execFile);
  * portable "select this file" exists, with its containing folder open.
  *
  * Rejects when the launcher cannot be started at all; on Windows a non-zero
- * exit is deliberately not treated as a failure, because Explorer exits
- * non-zero even when it opened the window.
+ * exit STATUS is deliberately not treated as a failure, because Explorer exits
+ * non-zero even when it opened the window. A spawn error there (a string
+ * `code`, e.g. `ENOENT`/`EACCES`) still rejects — nothing ran.
  *
  * @param target - Absolute, already boundary-validated path to reveal.
  */
@@ -39,7 +40,11 @@ export async function revealInFileManager(target: string): Promise<void> {
         windowsVerbatimArguments: true,
       });
     } catch (err) {
-      if ((err as NodeJS.ErrnoException).code === 'ENOENT') throw err;
+      // Explorer exits non-zero even when it opened the window, so a numeric
+      // exit status is not a failure here. A STRING `code` is a spawn error
+      // (ENOENT, EACCES, EPERM …) — the launcher never ran at all, and
+      // swallowing that would report success for a window nobody saw.
+      if (typeof (err as NodeJS.ErrnoException).code === 'string') throw err;
     }
     return;
   }

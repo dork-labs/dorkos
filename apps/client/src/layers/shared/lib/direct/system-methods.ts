@@ -520,11 +520,14 @@ export function createDirectSystemMethods(services: DirectTransportServices) {
       const sourceStat = await fs.stat(fromResolved).catch(() => {
         throw codedError('Source not found', 'NOT_FOUND');
       });
-      const targetExists = await fs
-        .access(toResolved)
-        .then(() => true)
-        .catch(() => false);
-      if (targetExists) throw codedError('Target already exists', 'CONFLICT');
+      // `lstat`, not `access`: `access` follows symlinks, so a DANGLING symlink
+      // at the destination reads as "free" — and the rollback below would then
+      // delete a link the user put there.
+      const targetWasFree = await fs
+        .lstat(toResolved)
+        .then(() => false)
+        .catch(() => true);
+      if (!targetWasFree) throw codedError('Target already exists', 'CONFLICT');
       if (
         sourceStat.isDirectory() &&
         (toResolved === fromResolved || toResolved.startsWith(fromResolved + pathMod.sep))
@@ -539,8 +542,23 @@ export function createDirectSystemMethods(services: DirectTransportServices) {
           force: false,
         });
       } catch (err) {
-        // Never leave a half-copied tree behind for the user to clean up.
-        await fs.rm(toResolved, { recursive: true, force: true }).catch(() => {});
+        const code = (err as NodeJS.ErrnoException).code;
+        // Someone took the name between the check and the copy: `errorOnExist`
+        // means nothing of ours was written, so there is nothing to undo — and
+        // removing THEIR file is the damage the rollback exists to prevent.
+        if (code === 'ERR_FS_CP_EEXIST') {
+          throw codedError('Target already exists', 'CONFLICT');
+        }
+        // The prefix check misses a case-insensitive filesystem, where
+        // `src` → `SRC/inner` is the same self-copy spelled differently.
+        if (code === 'ERR_FS_CP_EINVAL') {
+          throw codedError('Refusing to copy a folder into itself', 'COPY_INTO_SELF');
+        }
+        // Safe only now: the destination was free before we started, so what is
+        // there is ours. Never leave a half-copied tree for the user to clean up.
+        if (targetWasFree) {
+          await fs.rm(toResolved, { recursive: true, force: true }).catch(() => {});
+        }
         throw err;
       }
       return { ok: true };

@@ -59,32 +59,41 @@ describe('revealInFileManager', () => {
     expect(execFileMock.mock.calls[0][2]).toEqual({ windowsVerbatimArguments: true });
   });
 
-  it('ignores the non-zero exit Explorer reports even on success', async () => {
-    setPlatform('win32');
-    execFileMock.mockImplementationOnce((_file, _args, _options, callback) => {
-      const cb = typeof _options === 'function' ? _options : callback;
-      (cb as (err: Error | null, stdout: string, stderr: string) => void)(
-        Object.assign(new Error('Command failed'), { code: 1 }),
-        '',
-        ''
-      );
+  /** Make the next execFile call fail with `code` on its callback. */
+  function failNextWith(code: string | number, message: string): void {
+    execFileMock.mockImplementationOnce((_file, _args, options, callback) => {
+      const cb = (typeof options === 'function' ? options : callback) as (
+        err: Error | null,
+        stdout: string,
+        stderr: string
+      ) => void;
+      cb(Object.assign(new Error(message), { code }), '', '');
     });
+  }
+
+  it('ignores the non-zero EXIT STATUS Explorer reports even on success', async () => {
+    setPlatform('win32');
+    failNextWith(1, 'Command failed');
 
     await expect(revealInFileManager('C:\\work\\todo.md')).resolves.toBeUndefined();
   });
 
+  // The win32 branch used to swallow every error, so a launcher that never ran
+  // reported success and the user watched for a window that was never opened.
+  // Only a numeric exit status is Explorer's known lie; a string `code` is a
+  // spawn failure and must surface.
   it('surfaces a Windows failure to spawn Explorer at all', async () => {
     setPlatform('win32');
-    execFileMock.mockImplementationOnce((_file, _args, _options, callback) => {
-      const cb = typeof _options === 'function' ? _options : callback;
-      (cb as (err: Error | null, stdout: string, stderr: string) => void)(
-        Object.assign(new Error('spawn explorer.exe ENOENT'), { code: 'ENOENT' }),
-        '',
-        ''
-      );
-    });
+    failNextWith('ENOENT', 'spawn explorer.exe ENOENT');
 
     await expect(revealInFileManager('C:\\work\\todo.md')).rejects.toThrow('ENOENT');
+  });
+
+  it('surfaces a Windows permission failure rather than reporting success', async () => {
+    setPlatform('win32');
+    failNextWith('EACCES', 'spawn explorer.exe EACCES');
+
+    await expect(revealInFileManager('C:\\work\\todo.md')).rejects.toThrow('EACCES');
   });
 
   it('opens the containing folder on Linux, where nothing can be selected', async () => {

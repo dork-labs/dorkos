@@ -1,6 +1,7 @@
 ---
 covers:
-  - 'feat(client,server): file explorer context menu actions (reveal, copy path, add to chat)'
+  - 'feat(client,server): file explorer context menu actions'
+  - 'fix(client,server): reveal 204 handling and copy rollback safety'
 ---
 
 ### Added

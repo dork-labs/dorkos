@@ -1,7 +1,24 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import fs from 'fs/promises';
+import { mkdtempSync, mkdirSync, existsSync, rmSync } from 'fs';
 import os from 'os';
 import path from 'path';
+
+/**
+ * Does this machine's temp filesystem fold case? macOS and Windows do, Linux
+ * (and CI) usually does not — and the case-only self-copy below only exists as
+ * a hazard where it does. Probed rather than assumed from `process.platform`,
+ * because a case-sensitive volume on macOS is perfectly possible.
+ */
+const CASE_INSENSITIVE_FS = (() => {
+  const probe = mkdtempSync(path.join(os.tmpdir(), 'dork-case-probe-'));
+  try {
+    mkdirSync(path.join(probe, 'src'));
+    return existsSync(path.join(probe, 'SRC'));
+  } finally {
+    rmSync(probe, { recursive: true, force: true });
+  }
+})();
 
 // Boundary is mocked pass-through so `cwd` + `path` resolve to the real temp
 // files and the copy logic runs against a real filesystem. Escape rejection at
@@ -141,6 +158,76 @@ describe('File explorer copy + reveal routes', () => {
       expect(res.body.code).toBe('COPY_INTO_SELF');
       await expect(fs.access(path.join(dir, 'src', 'inner'))).rejects.toThrow();
     });
+
+    // The occupancy check used `fs.access`, which FOLLOWS symlinks: a dangling
+    // symlink read as "free", the copy then failed EEXIST (fs.cp refuses to
+    // clobber it), and the rollback deleted the user's link — destroying
+    // something the copy never created.
+    it('409s on a dangling symlink at the destination and leaves the link alone', async () => {
+      await fs.writeFile(path.join(dir, 'from.txt'), 'x\n');
+      await fs.symlink(path.join(dir, 'no-such-target'), path.join(dir, 'dangling'));
+
+      const res = await request(app)
+        .post('/api/files/copy')
+        .send({ cwd: dir, from: 'from.txt', to: 'dangling' });
+
+      expect(res.status).toBe(409);
+      expect(res.body.code).toBe('CONFLICT');
+      // The link still exists and still points where the user pointed it.
+      const stat = await fs.lstat(path.join(dir, 'dangling'));
+      expect(stat.isSymbolicLink()).toBe(true);
+      expect(await fs.readlink(path.join(dir, 'dangling'))).toBe(path.join(dir, 'no-such-target'));
+    });
+
+    it('409s on a symlink whose target exists, without following it', async () => {
+      await fs.writeFile(path.join(dir, 'from.txt'), 'x\n');
+      await fs.writeFile(path.join(dir, 'real.txt'), 'real\n');
+      await fs.symlink(path.join(dir, 'real.txt'), path.join(dir, 'alias'));
+
+      const res = await request(app)
+        .post('/api/files/copy')
+        .send({ cwd: dir, from: 'from.txt', to: 'alias' });
+
+      expect(res.status).toBe(409);
+      // The link and its target are both untouched.
+      expect((await fs.lstat(path.join(dir, 'alias'))).isSymbolicLink()).toBe(true);
+      expect(await fs.readFile(path.join(dir, 'real.txt'), 'utf8')).toBe('real\n');
+    });
+
+    // The string prefix check compares resolved paths, so any spelling of the
+    // destination that it cannot see through slips past it. Node's own check
+    // catches those; these pin that its refusal is reported as the honest
+    // reason (400 COPY_INTO_SELF) rather than an opaque 500.
+    it('400s when a symlinked destination spelling lands inside the source', async () => {
+      await fs.mkdir(path.join(dir, 'src'));
+      await fs.writeFile(path.join(dir, 'src', 'a.ts'), 'a\n');
+      await fs.symlink(path.join(dir, 'src'), path.join(dir, 'link'), 'dir');
+
+      const res = await request(app)
+        .post('/api/files/copy')
+        .send({ cwd: dir, from: 'src', to: 'link/inner' });
+
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe('COPY_INTO_SELF');
+      // The source is exactly as it was — no partial copy inside it.
+      expect(await fs.readdir(path.join(dir, 'src'))).toEqual(['a.ts']);
+    });
+
+    it.runIf(CASE_INSENSITIVE_FS)(
+      '400s when only the case differs on a case-folding filesystem',
+      async () => {
+        await fs.mkdir(path.join(dir, 'src'));
+        await fs.writeFile(path.join(dir, 'src', 'a.ts'), 'a\n');
+
+        const res = await request(app)
+          .post('/api/files/copy')
+          .send({ cwd: dir, from: 'src', to: 'SRC/inner' });
+
+        expect(res.status).toBe(400);
+        expect(res.body.code).toBe('COPY_INTO_SELF');
+        expect(await fs.readdir(path.join(dir, 'src'))).toEqual(['a.ts']);
+      }
+    );
 
     it('refuses to copy over the working-directory root', async () => {
       await fs.writeFile(path.join(dir, 'from.txt'), 'x\n');

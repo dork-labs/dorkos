@@ -573,11 +573,16 @@ router.post('/copy', async (req, res) => {
     return res.status(404).json({ error: 'Source not found', code: 'NOT_FOUND' });
   }
 
-  try {
-    await fs.access(toResolved);
+  // `lstat`, not `access`: `access` follows symlinks, so a DANGLING symlink at
+  // the destination reads as "free" — and the rollback below would then delete
+  // a link the user put there. `lstat` sees the link itself, so an occupied
+  // name is an occupied name whatever it points at.
+  const targetWasFree = await fs
+    .lstat(toResolved)
+    .then(() => false)
+    .catch(() => true);
+  if (!targetWasFree) {
     return res.status(409).json({ error: 'Target already exists', code: 'CONFLICT' });
-  } catch {
-    // Target free — proceed.
   }
 
   if (
@@ -593,10 +598,31 @@ router.post('/copy', async (req, res) => {
     await fs.mkdir(path.dirname(toResolved), { recursive: true });
     await fs.cp(fromResolved, toResolved, { recursive: true, errorOnExist: true, force: false });
   } catch (err) {
-    // A partially-written destination is worse than none: the tree would show a
-    // half-copied folder the user never asked for and would have to clean up.
-    await fs.rm(toResolved, { recursive: true, force: true }).catch(() => {});
-    if ((err as NodeJS.ErrnoException).code === 'EACCES') {
+    const code = (err as NodeJS.ErrnoException).code;
+
+    // Someone else took the name between the check above and the copy. `fs.cp`
+    // refused to clobber it (`errorOnExist`), so there is nothing of ours to
+    // undo — and deleting THEIR file is exactly the damage the rollback is
+    // supposed to prevent.
+    if (code === 'ERR_FS_CP_EEXIST') {
+      return res.status(409).json({ error: 'Target already exists', code: 'CONFLICT' });
+    }
+    // The prefix check above misses a case-insensitive filesystem, where
+    // `src` → `SRC/inner` is the same self-copy under a different spelling.
+    // Node catches it and says so; answer with the honest reason, not a 500.
+    if (code === 'ERR_FS_CP_EINVAL') {
+      return res
+        .status(400)
+        .json({ error: 'Refusing to copy a folder into itself', code: 'COPY_INTO_SELF' });
+    }
+
+    // Only now, having established the destination was free before we started
+    // and that we are the ones who wrote to it, is removing it safe. A
+    // partially-written destination is worse than none.
+    if (targetWasFree) {
+      await fs.rm(toResolved, { recursive: true, force: true }).catch(() => {});
+    }
+    if (code === 'EACCES') {
       return res.status(403).json({ error: 'Permission denied', code: 'EACCES' });
     }
     logger.error('[files] POST /copy failed', { err, fromResolved, toResolved });
