@@ -1,5 +1,10 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { useExtensionRegistry, createInitialSlots, SLOT_IDS } from '../extension-registry';
+import {
+  useExtensionRegistry,
+  createInitialSlots,
+  isExtensionContributionId,
+  SLOT_IDS,
+} from '../extension-registry';
 import type {
   SidebarFooterContribution,
   RightPanelContribution,
@@ -246,5 +251,24 @@ describe('extension-registry', () => {
       });
       expect(resolveBody([high, low], '/marketplace')?.id).toBe('low-but-matches');
     });
+  });
+});
+
+describe('isExtensionContributionId', () => {
+  it('is false for a built-in id', () => {
+    for (const builtIn of [
+      'composer',
+      'pending-approvals',
+      'needs-attention',
+      'recent-activity',
+      'marketplace-facets',
+    ]) {
+      expect(isExtensionContributionId(builtIn)).toBe(false);
+    }
+  });
+
+  it('is true for the namespaced id registerComponent produces', () => {
+    expect(isExtensionContributionId('linear-issues:linear-loop-dashboard')).toBe(true);
+    expect(isExtensionContributionId('hello-world:hello-section')).toBe(true);
   });
 });

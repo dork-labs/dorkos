@@ -128,13 +128,17 @@ export class RoomsPage {
   }
 
   /**
-   * One room's sidebar row, anywhere in the sidebar.
+   * One room's sidebar row, in the Channels or Direct messages section.
+   *
+   * Scoped to the two room sections rather than the whole sidebar because a
+   * room with activity also appears in "Jump back in" above them (team-room-home
+   * P1) — an unscoped match resolves to two elements and trips strict mode.
    *
    * @param spokenName - The room's spoken name: `#slug` for a channel, the title
    *   for a direct message.
    */
   row(spokenName: string): Locator {
-    return this.rowIn(this.page.locator('[data-slot="sidebar-group"]'), spokenName);
+    return this.rowIn(this.channels.or(this.directMessages), spokenName);
   }
 
   /**

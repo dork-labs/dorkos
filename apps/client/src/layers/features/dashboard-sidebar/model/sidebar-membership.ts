@@ -55,19 +55,6 @@ export function roomIdsOf(refs: readonly SidebarItemRef[]): string[] {
 }
 
 /**
- * Room ids muted individually (`ui.sidebar.muted`).
- *
- * There is no group-mute widening for rooms the way there is for agents: a
- * muted group dims its rows through the section's own filter, and a room row
- * carries no live activity emphasis to suppress on top of that.
- *
- * @param prefs - Current sidebar prefs.
- */
-export function individuallyMutedRoomIds(prefs: SidebarPrefs): Set<string> {
-  return new Set(roomIdsOf(prefs.muted));
-}
-
-/**
  * Agent paths that RENDER as muted: individually muted, or a member of a muted
  * group.
  *

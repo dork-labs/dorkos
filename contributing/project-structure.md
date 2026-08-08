@@ -86,7 +86,6 @@ src/
 │   │   ├── session-list/ # SessionSidebar (Obsidian shell), SessionsView, tabbed views
 │   │   ├── dashboard-sidebar/ # DashboardSidebar — navigation + recent agents list at /
 │   │   ├── dashboard-attention/ # NeedsAttentionSection — conditional zero-DOM attention zone
-│   │   ├── dashboard-status/ # SystemStatusRow — Tasks/Relay/Mesh health cards + activity sparkline
 │   │   ├── dashboard-activity/ # RecentActivityFeed — time-grouped event feed with last-visit tracking
 │   │   ├── settings/    # SettingsDialog (Appearance, Preferences, Server, Tools, Advanced)
 │   │   ├── agent-settings/ # AgentDialog (IdentityTab, PersonaTab, CapabilitiesTab, IntegrationsTab)
@@ -103,7 +102,16 @@ src/
 │       ├── app-layout/  # Header, Layout, main workspace
 │       │   ├── ui/
 │       │   └── index.ts
-│       ├── dashboard/   # DashboardPage — status overview at /
+│       ├── activity/    # ActivityPage (/activity) — feed, week summary, "From your extensions"
+│       │   ├── lib/
+│       │   ├── model/
+│       │   ├── ui/
+│       │   └── index.ts
+│       ├── dashboard/   # DashboardPage — composer + attention overview at /
+│       │   ├── ui/
+│       │   └── index.ts
+│       ├── home/        # HomeSurfaceLayout + HomeTabBar — the tab bar over /, /activity, /tasks, /workspaces
+│       │   ├── lib/     #   home-tabs.ts: the four tabs and the pathname → active-tab resolver
 │       │   ├── ui/
 │       │   └── index.ts
 │       ├── marketplace/ # MarketplacePage (/marketplace), MarketplaceSourcesPage (/marketplace/sources)

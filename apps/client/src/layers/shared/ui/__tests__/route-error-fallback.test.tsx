@@ -48,9 +48,9 @@ describe('RouteErrorFallback', () => {
     expect(screen.getByRole('button', { name: /retry/i })).toBeInTheDocument();
   });
 
-  it('renders "Go to Dashboard" button', () => {
+  it('renders "Back to Home" button', () => {
     render(<RouteErrorFallback {...makeErrorProps()} />);
-    expect(screen.getByRole('button', { name: /go to dashboard/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /back to home/i })).toBeInTheDocument();
   });
 
   it('calls router.invalidate() when Retry is clicked', async () => {
@@ -61,11 +61,11 @@ describe('RouteErrorFallback', () => {
     expect(mockInvalidate).toHaveBeenCalledOnce();
   });
 
-  it('calls router.navigate({ to: "/" }) when Go to Dashboard is clicked', async () => {
+  it('calls router.navigate({ to: "/" }) when Back to Home is clicked', async () => {
     const user = userEvent.setup();
     render(<RouteErrorFallback {...makeErrorProps()} />);
 
-    await user.click(screen.getByRole('button', { name: /go to dashboard/i }));
+    await user.click(screen.getByRole('button', { name: /back to home/i }));
     expect(mockNavigate).toHaveBeenCalledWith({ to: '/' });
   });
 

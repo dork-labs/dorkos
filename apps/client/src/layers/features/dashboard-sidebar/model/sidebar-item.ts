@@ -20,31 +20,28 @@ import type { ReactNode } from 'react';
 import type { SidebarItemRef } from '@dorkos/shared/config-schema';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import { agentAuthorRef, type RoomSummary } from '@dorkos/shared/room-schemas';
-import { resolveAgentVisual, type AgentVisual } from '@/layers/shared/lib';
-import { hasUnread, roomDisplayTitle } from '@/layers/entities/room';
+import { resolveAgentVisual } from '@/layers/shared/lib';
+import {
+  hasUnread,
+  identityMarkFaces,
+  roomDisplayTitle,
+  roomIdentityMark,
+  type IdentityMark,
+  type RoomIdentityMarkInput,
+} from '@/layers/entities/room';
 import type { AttentionState } from '@/layers/entities/session';
 
 /**
- * The mark a sidebar row draws for its item.
+ * The mark a sidebar row draws for its item — the sidebar's name for
+ * {@link IdentityMark}, which every surface that draws a room now shares.
  *
- * The three arms are the three answers, not three shapes of the same answer:
- *
- * - `identity` — one agent's face. An agent row, and a one-to-one direct
- *   message, which IS that agent as far as the reader is concerned.
- * - `stack` — several agents' faces, for a direct message with more than one
- *   agent in it. A group conversation's title already names everyone; the mark
- *   is what tells you it is a group at a glance.
- * - `sigil` — no face at all: the room's own mark, which is `#` for a channel.
- *   A channel is anchored to a topic rather than to a participant
- *   (`specs/rooms/02-specification.md` §14.4), so giving it a face would be the
- *   same category error as giving it a `cwd`. It is also the honest answer for a
- *   direct message whose agents this cockpit cannot resolve — the room's own
- *   letter disc is stable and true, where a guessed face is neither.
+ * The union and the room derivation moved to `entities/room` when the "Jump
+ * back in" popover needed the same mark: features may not import each other's
+ * models, so the alternative was a second derivation, and a second derivation
+ * is how a direct message ends up with a face in one list and a letter in the
+ * next (DOR-582, re-opened exactly that way).
  */
-export type SidebarItemVisual =
-  | { kind: 'identity'; visual: AgentVisual }
-  | { kind: 'stack'; visuals: AgentVisual[] }
-  | { kind: 'sigil' };
+export type SidebarItemVisual = IdentityMark;
 
 /**
  * One row in the sidebar, whatever it points at.
@@ -142,13 +139,7 @@ export function agentSidebarItem(input: AgentSidebarItemInput): SidebarItem {
 }
 
 /** What {@link roomSidebarItem} needs to describe one room. */
-export interface RoomSidebarItemInput {
-  /** The room, as the list query carries it. */
-  room: RoomSummary;
-  /** Resolved manifests by `projectPath`, for a direct message's faces. */
-  agentsByPath: Readonly<Record<string, AgentManifest | null | undefined>>;
-  /** `agentAuthorRef(projectPath)` → `projectPath`, so a participant can be matched to the fleet. */
-  pathByAgentRef: ReadonlyMap<string, string>;
+export interface RoomSidebarItemInput extends RoomIdentityMarkInput {
   /** Whether the room is individually muted. */
   muted: boolean;
 }
@@ -156,19 +147,9 @@ export interface RoomSidebarItemInput {
 /**
  * The view model for one room row.
  *
- * **This is where DOR-582 is fixed.** A direct message used to draw a letter
- * where its agent's face belongs, because the only emoji it had to work with was
- * `AuthorRef.emoji` — a render cache the server fills in only for an agent that
- * has an emoji explicitly stored on its manifest, which almost none do. Hashing
- * the `AuthorRef.id` instead would be worse than a letter: that id is a row in
- * the `authors` table, unrelated to the manifest ULID the agent's own row hashes
- * from, so it would draw a confidently WRONG face.
- *
- * So the participant is matched back to the fleet on its `agentRef` — the stable
- * handle derived from the agent's directory, never a display name — and the face
- * is resolved from the manifest, exactly as {@link agentSidebarItem} does. That
- * is the only way the DM and the agent row can agree, and it is why the visual
- * belongs to the view model rather than to either row.
+ * The mark comes from {@link roomIdentityMark} — the entity's derivation, which
+ * is what matches a participant back to the fleet so a direct message and its
+ * agent's own row draw the same face (DOR-582).
  *
  * `unreadCount` is read through `hasUnread`, which treats `null` ("you are not
  * in this room") as distinct from `0` ("you are, and you are caught up").
@@ -187,46 +168,16 @@ export function roomSidebarItem(input: RoomSidebarItemInput): SidebarItem {
     // would collapse it behind the "N inactive agents" reveal row.
     attention: hasUnread(room) ? 'needs-attention' : 'active',
     muted: input.muted,
-    visual: roomVisual(input),
+    visual: roomIdentityMark(input),
   };
 }
 
-/** The mark for a room: its participants' faces for a DM, its own sigil otherwise. */
-function roomVisual({
-  room,
-  agentsByPath,
-  pathByAgentRef,
-}: RoomSidebarItemInput): SidebarItemVisual {
-  if (room.kind !== 'dm') return { kind: 'sigil' };
-  const visuals: AgentVisual[] = [];
-  for (const author of room.participants ?? []) {
-    if (author.kind !== 'agent' || author.agentRef === undefined) continue;
-    const path = pathByAgentRef.get(author.agentRef);
-    // An agent this cockpit cannot see — removed, or on another machine — has no
-    // manifest to hash, and hashing anything else would invent a face. It drops
-    // out, and a DM left with none falls through to the room's own mark.
-    if (path === undefined) continue;
-    const agent = agentsByPath[path];
-    visuals.push(agent ? resolveAgentVisual(agent) : resolveAgentVisual({ id: path }));
-  }
-  if (visuals.length === 0) return { kind: 'sigil' };
-  if (visuals.length === 1) return { kind: 'identity', visual: visuals[0]! };
-  return { kind: 'stack', visuals };
-}
-
 /**
- * The faces a visual carries, flattened — one for an `identity`, several for a
- * `stack`, none for a `sigil`.
- *
- * Exists so a row can hand a component "the faces to draw" without re-deriving
- * the union, which is the split that let two avatar systems co-exist before.
- *
- * @param visual - The item's mark.
+ * The faces a mark carries, flattened — the entity's
+ * {@link identityMarkFaces}, re-exported under the name every sidebar row
+ * already calls it by.
  */
-export function sidebarItemFaces(visual: SidebarItemVisual): AgentVisual[] {
-  if (visual.kind === 'sigil') return [];
-  return visual.kind === 'identity' ? [visual.visual] : visual.visuals;
-}
+export const sidebarItemFaces = identityMarkFaces;
 
 /**
  * A React key for one row, unique within its section.

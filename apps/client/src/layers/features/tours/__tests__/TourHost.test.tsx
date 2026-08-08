@@ -183,10 +183,11 @@ describe('TourHost', () => {
     await waitFor(() => expect(harness.router.state.location.pathname).toBe('/connections'));
   });
 
-  it('does not navigate for a no-deep-link tour (mesh)', async () => {
-    mockRunningDefinition = TOUR_DEFINITIONS.mesh; // deepLink: none
+  it('takes the fleet tour to the Team page, where the roster it spotlights is', async () => {
+    mockRunningDefinition = TOUR_DEFINITIONS.mesh; // route: /team
     const harness = await renderHost();
-    expect(harness.actions).toEqual([]);
+    await waitFor(() => expect(harness.router.state.location.pathname).toBe('/team'));
+    // It opens no dialog on the way: the roster is the page, not a panel over it.
     expect(harness.readSettingsTab()).toBeUndefined();
   });
 });

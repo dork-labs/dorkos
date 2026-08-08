@@ -8,6 +8,8 @@ import {
 } from '@/layers/features/activity-feed-page';
 import { ActivityTimeline } from './ui/ActivityTimeline';
 import { ActivityLoadMore } from './ui/ActivityLoadMore';
+import { ActivityWeekSummary } from './ui/ActivityWeekSummary';
+import { ExtensionSections } from './ui/ExtensionSections';
 
 /**
  * Activity page — full-page, time-grouped, paginated activity feed at /activity.
@@ -16,6 +18,8 @@ import { ActivityLoadMore } from './ui/ActivityLoadMore';
  * (URL-synced filters), and useLastVisitedActivity (digest banner) into a
  * scrollable layout:
  *
+ *   ActivityWeekSummary     (week-at-a-glance line + sparkline)
+ *   ExtensionSections       (conditional "From your extensions" sections)
  *   ActivitySinceLastVisit  (conditional digest banner)
  *   ActivityTimeline        (time-grouped rows + skeleton/empty states)
  *   ActivityLoadMore        (load next page button)
@@ -33,6 +37,12 @@ export function ActivityPage() {
   return (
     <ScrollArea className="h-full">
       <div className="mx-auto max-w-4xl space-y-4 py-6 sm:py-8">
+        {/* How busy the week has been — zero DOM until the session list answers */}
+        <ActivityWeekSummary />
+
+        {/* Extension-contributed sections — zero DOM when no extension contributes */}
+        <ExtensionSections />
+
         {/* Digest banner — only visible when there is a prior visit with new events */}
         <ActivitySinceLastVisit lastVisitedAt={lastVisitedAt} items={allItems} className="mx-4" />
 

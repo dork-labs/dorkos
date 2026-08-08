@@ -41,9 +41,10 @@ import {
   rekeyProjector,
   triggerTurn,
   applyTaskOriginOverlay,
+  applyRoomOriginOverlay,
   overlayStoredSettings,
 } from '../services/session/index.js';
-import type { ResolveTaskOrigins } from '../services/session/index.js';
+import type { ResolveTaskOrigins, ResolveRoomOrigins } from '../services/session/index.js';
 import { sessionUiActionHandler } from './session-ui-action-handler.js';
 import { sessionEventsHandler } from './session-events-handler.js';
 import { sessionCommandIntentHandler } from './session-command-intent-handler.js';
@@ -86,6 +87,10 @@ router.get('/', async (req, res) => {
   overlayStoredSettings(page, runtimeRegistry);
   // Overlay Pulse task origin (session-origin-legibility) — runtime-agnostic,
   // catches direct-branch Pulse runs the transcript-head classifier can't see.
+  // Overlay room origin FIRST, so a scheduled task that posts into a room still
+  // reads as the task somebody scheduled (see room-origin-overlay's doc).
+  const resolveRoomOrigins = req.app.locals.resolveRoomOrigins as ResolveRoomOrigins | undefined;
+  applyRoomOriginOverlay(page, resolveRoomOrigins);
   const resolveTaskOrigins = req.app.locals.resolveTaskOrigins as ResolveTaskOrigins | undefined;
   applyTaskOriginOverlay(page, resolveTaskOrigins);
   res.json(warnings.length > 0 ? { sessions: page, warnings } : { sessions: page });
@@ -117,6 +122,11 @@ router.get('/recent', async (req, res) => {
   overlayStoredSettings(sessions, runtimeRegistry);
   // Overlay Pulse task origin (session-origin-legibility) — runtime-agnostic,
   // catches direct-branch Pulse runs the transcript-head classifier can't see.
+  // Overlay room origin (team-room-home §D2.3) BEFORE the Pulse overlay: a room
+  // turn is an engine run under a thread the reader can already see, and this is
+  // the only place that knows — the transcript head carries no room marker.
+  const resolveRoomOrigins = req.app.locals.resolveRoomOrigins as ResolveRoomOrigins | undefined;
+  applyRoomOriginOverlay(sessions, resolveRoomOrigins);
   const resolveTaskOrigins = req.app.locals.resolveTaskOrigins as ResolveTaskOrigins | undefined;
   applyTaskOriginOverlay(sessions, resolveTaskOrigins);
   res.json({ sessions, agentActivity, warnings });
@@ -157,6 +167,8 @@ router.get('/:id', async (req, res) => {
   // including when this route is reached by a retired id, since the resolver
   // keys off the session it actually resolved, not the id asked for.
   overlayStoredSettings([session], runtimeRegistry);
+  const resolveRoomOrigins = req.app.locals.resolveRoomOrigins as ResolveRoomOrigins | undefined;
+  applyRoomOriginOverlay([session], resolveRoomOrigins);
   const resolveTaskOrigins = req.app.locals.resolveTaskOrigins as ResolveTaskOrigins | undefined;
   applyTaskOriginOverlay([session], resolveTaskOrigins);
   res.json(session);

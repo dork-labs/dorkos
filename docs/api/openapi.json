@@ -229,6 +229,7 @@
           "user",
           "agent",
           "channel",
+          "room",
           "task",
           "external"
         ]

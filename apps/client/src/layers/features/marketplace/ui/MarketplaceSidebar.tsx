@@ -139,7 +139,7 @@ export function MarketplaceSidebar() {
           className="text-muted-foreground hover:bg-accent hover:text-foreground focus-ring -ml-1 flex w-fit items-center gap-1 rounded-md py-1 pr-2 pl-1 text-xs font-medium transition-colors"
         >
           <ChevronLeft className="size-4" aria-hidden />
-          Dashboard
+          Home
         </button>
         <h2 className="px-1 text-sm font-semibold">Marketplace</h2>
       </SidebarHeader>

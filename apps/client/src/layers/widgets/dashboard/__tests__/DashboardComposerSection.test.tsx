@@ -5,10 +5,46 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import { useAgentBirthStore } from '@/layers/shared/model';
 import { TOUR_ANCHORS } from '@/layers/shared/config';
+import type { UseJumpBackInPopover } from '@/layers/features/jump-back-in';
 import { DashboardComposerSection } from '../ui/DashboardComposerSection';
 
 const mockNavigate = vi.fn();
 vi.mock('@tanstack/react-router', () => ({ useNavigate: () => mockNavigate }));
+
+// The "Jump back in" popover is stubbed shut for the same reason the composer
+// is: this file is about the submit seam, and a live popover would drag the
+// recents queries and their providers in with it. Its own behaviour — focus,
+// keys, and where a row goes — is driven through the REAL composer in
+// `DashboardComposerSection.jump-back-in.test.tsx`.
+//
+// Typed against the module, so the stub cannot silently fall behind the hook:
+// a new handler the host wires would fail this file's typecheck rather than
+// arriving here as `undefined` at runtime.
+vi.mock('@/layers/features/jump-back-in', () => {
+  const closed: UseJumpBackInPopover = {
+    isOpen: false,
+    hasRows: false,
+    rows: [],
+    agents: {},
+    displayNames: {},
+    visualOf: () => ({ kind: 'sigil' }),
+    selectedIndex: 0,
+    activeDescendantId: undefined,
+    listboxId: undefined,
+    handleFocus: vi.fn(),
+    handleBlur: vi.fn(),
+    handlePointerDown: vi.fn(),
+    moveDown: vi.fn(),
+    moveUp: vi.fn(),
+    selectHighlighted: vi.fn(),
+    selectRow: vi.fn(),
+    dismiss: vi.fn(),
+  };
+  return {
+    JumpBackInPopover: () => null,
+    useJumpBackInPopover: () => closed,
+  };
+});
 
 // The registered ABSOLUTE path (never the literal tilde) — the client can stream it.
 const REGISTERED_DIR = '/home/kai/.dork/agents/dorkbot';

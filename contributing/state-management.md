@@ -374,6 +374,8 @@ Slots are type-safe — `SlotContributionMap` maps each slot ID to its contribut
 
 Available slots: `sidebar.footer`, `sidebar.body` (first-party only), `dashboard.sections`, `command-palette.items`, `dialog`, `settings.tabs`, `right-panel`.
 
+`dashboard.sections` has two consumers, split by who registered the contribution. `isExtensionContributionId` tells them apart — `api.registerComponent` namespaces every extension contribution as `${extensionId}:${localId}`, and built-in ids never contain a colon. `DashboardPage` renders the built-in half; `widgets/activity/ui/ExtensionSections.tsx` renders the extension half under "From your extensions" at the top of the Activity tab, so no contribution is drawn twice.
+
 **Key files:**
 
 | File                                        | Purpose                                            |

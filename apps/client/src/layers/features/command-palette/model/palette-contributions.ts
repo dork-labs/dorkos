@@ -52,11 +52,15 @@ export const PALETTE_FEATURES: CommandPaletteContribution[] = [
 export const PALETTE_QUICK_ACTIONS: CommandPaletteContribution[] = [
   {
     id: 'dashboard',
-    label: 'Go to Dashboard',
+    label: 'Go home',
     icon: 'Home',
     action: 'navigateDashboard',
     category: 'quick-action',
     priority: 1,
+    // `/` is called Home everywhere now (sidebar, window tabs, tab bar). The
+    // word it answered to before still finds it, so nobody's muscle memory
+    // comes up empty.
+    keywords: ['dashboard'],
   },
   {
     id: 'new-session',

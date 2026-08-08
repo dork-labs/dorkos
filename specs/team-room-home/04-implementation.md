@@ -8,7 +8,7 @@ last-updated: 2026-08-08
 # Implementation: The home is a room (#team)
 
 **Status:** In Progress
-**Tasks Completed:** 4 / 31
+**Tasks Completed:** 11 / 31
 
 ## Sessions
 
@@ -55,7 +55,14 @@ Tasks completed:
 - Task #0.2: thread-over-sessions ADR 260808-140954 draft→accepted — orchestrator, after the
   branch rebased onto post-#866 main.
 
-Phase 0 complete: 4/4 tasks. 31-task programme: 4 done.
+Phase 0 complete: 4/4. Phase 1 complete: 7/7 (tasks 1.1-1.7: tab shell, Jump back in + the
+room-origin overlay, sidebar 7→4 + viewport-safe tours, composer popover with shared identity
+marks, dashboard slimmed + extensions on Activity, 50 e2e tests incl. 375px + keyboard gates).
+Every task two-stage adversarially reviewed; criticals fixed red-then-green (hollow
+active-state tests, mobile tour death, room-turn double-listing, unreachable popover, DM
+letter-disc regression, dishonest week summary). Follow-ups: DOR-1036 (parallel branch),
+DOR-1039 (summary subject mismatch), promo dead-code on DOR-1031. Product-media cockpit shot
+stale — regen after merge. 31-task programme: 11 done; P3 running in parallel.
 
 ## Files Modified/Created
 

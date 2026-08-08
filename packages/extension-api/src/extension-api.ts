@@ -2,7 +2,14 @@ import type { ComponentType } from 'react';
 import type { UiCommand, UiCanvasContent } from '@dorkos/shared/types';
 import type { ExtensionEventsAPI } from './extension-events.js';
 
-/** Slot identifiers matching the Phase 2 registry. */
+/**
+ * Slot identifiers matching the Phase 2 registry.
+ *
+ * `dashboard.sections` keeps its id but no longer renders on the dashboard
+ * page: contributions appear in a "From your extensions" group at the top of
+ * the Activity tab, in priority order. Nothing about registration changed. A
+ * room-widget successor is deferred to a later phase.
+ */
 export type ExtensionPointId =
   | 'sidebar.footer'
   | 'dashboard.sections'
@@ -43,6 +50,9 @@ export interface ExtensionAPI {
    *   section the tab sits under in the Settings dialog. Omit it and the tab
    *   lands under "Add-ons", the section reserved for contributed tabs — so a
    *   tab written before this field existed still files itself somewhere honest.
+   *   `visibleWhen` applies only to the `dashboard.sections` slot: a predicate
+   *   the host re-evaluates on render, returning false to hide the section
+   *   without unregistering it. Omit it and the section is always visible.
    */
   registerComponent(
     slot: ExtensionPointId,
@@ -53,6 +63,7 @@ export interface ExtensionAPI {
       label?: string;
       icon?: ComponentType<{ className?: string }>;
       group?: string;
+      visibleWhen?: () => boolean;
     }
   ): () => void;
 

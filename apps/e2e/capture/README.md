@@ -213,7 +213,7 @@ the same webm + poster.
 
 | Surface           | Stills | Loop | Notes                                            |
 | ----------------- | ------ | ---- | ------------------------------------------------ |
-| `cockpit`         | light  | —    | Dashboard home: the fleet + recent activity      |
+| `cockpit`         | light  | —    | Home: the composer, its tabs, the sidebar roster |
 | `agents`          | light  | —    | Fleet list with identities/runtimes, Active rows |
 | `topology`        | light  | dark | Mesh graph, 6 agents across namespaces           |
 | `tasks`           | light  | —    | Schedules + expanded green run history           |

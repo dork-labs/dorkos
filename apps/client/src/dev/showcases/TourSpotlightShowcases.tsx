@@ -8,21 +8,21 @@ import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
 import { ShowcaseDemo } from '../ShowcaseDemo';
 
-/** The three-step spike tour over real anchors rendered in this showcase. */
+/** The three-step spike tour, over throwaway anchors this showcase stamps itself. */
 const SPIKE_STEPS: TourStep[] = [
   {
-    anchor: TOUR_ANCHORS.dashboardComposer,
+    anchor: TOUR_ANCHORS.playgroundStep1,
     caption: 'Step 1. This is the spotlight: a dimmed page, a cutout, and my caption beside it.',
     chipLabel: 'Next',
   },
   {
-    anchor: TOUR_ANCHORS.yourAgents,
+    anchor: TOUR_ANCHORS.playgroundStep2,
     caption:
       'Step 2. The cutout morphs to the next target. Press Esc or click outside to leave any time.',
     chipLabel: 'Next',
   },
   {
-    anchor: TOUR_ANCHORS.navTasks,
+    anchor: TOUR_ANCHORS.playgroundStep3,
     caption: 'Step 3. This target mounts a beat late to prove the anchor wait. Last step.',
     chipLabel: 'Got it',
   },
@@ -31,7 +31,7 @@ const SPIKE_STEPS: TourStep[] = [
 /** A tour whose anchor never mounts, to show the honest timeout-skip. */
 const MISSING_ANCHOR_STEPS: TourStep[] = [
   {
-    anchor: TOUR_ANCHORS.relayIntegrations,
+    anchor: TOUR_ANCHORS.playgroundMissing,
     caption:
       'You should never see this: the anchor is absent, so the step skips after four seconds.',
   },
@@ -70,7 +70,7 @@ export function TourSpotlightShowcases() {
       title="Tour Spotlight"
       description="The DorkBot spotlight primitive over @reactour/tour: async anchors, custom caption, full a11y bar, reduced-motion and mobile branches."
     >
-      <ShowcaseLabel>Run the three-step tour over real anchors</ShowcaseLabel>
+      <ShowcaseLabel>Run the three-step tour over the showcase&apos;s own anchors</ShowcaseLabel>
       <ShowcaseDemo>
         <div className="flex flex-col gap-4">
           <div className="flex flex-wrap gap-2">
@@ -82,20 +82,20 @@ export function TourSpotlightShowcases() {
 
           <div className="grid gap-3 sm:grid-cols-3">
             <div
-              data-testid={TOUR_ANCHORS.dashboardComposer}
+              data-testid={TOUR_ANCHORS.playgroundStep1}
               className="bg-card shadow-soft rounded-lg border p-4 text-sm"
             >
-              Composer target
+              First target
             </div>
             <div
-              data-testid={TOUR_ANCHORS.yourAgents}
+              data-testid={TOUR_ANCHORS.playgroundStep2}
               className="bg-card shadow-soft rounded-lg border p-4 text-sm"
             >
-              Your agents target
+              Second target
             </div>
             {lateTargetMounted ? (
               <div
-                data-testid={TOUR_ANCHORS.navTasks}
+                data-testid={TOUR_ANCHORS.playgroundStep3}
                 className="bg-card shadow-soft rounded-lg border p-4 text-sm"
               >
                 Late target (mounts after 800ms)

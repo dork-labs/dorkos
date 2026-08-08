@@ -6,13 +6,13 @@ import type { Session } from '@dorkos/shared/types';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
 import { ShowcaseDemo } from '../ShowcaseDemo';
-import { AgentActivityBadge } from '@/layers/features/dashboard-sidebar';
-import { AgentListItem } from '@/layers/features/dashboard-sidebar';
-import { AgentContextMenu } from '@/layers/features/dashboard-sidebar';
-import { AgentOnboardingCard } from '@/layers/features/dashboard-sidebar';
-import { GroupsHintCard } from '@/layers/features/dashboard-sidebar';
-import { GroupCreateInput } from '@/layers/features/dashboard-sidebar';
 import {
+  AgentActivityBadge,
+  AgentContextMenu,
+  AgentListItem,
+  AgentOnboardingCard,
+  GroupCreateInput,
+  GroupsHintCard,
   SidebarSectionHeader,
   buildAgentsHeaderMenuNodes,
   buildChannelsHeaderMenuNodes,

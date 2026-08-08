@@ -1979,6 +1979,14 @@ async function start() {
       taskStore!.resolveTaskOrigins(sessionIds);
   }
 
+  // Session-origin ROOM overlay (team-room-home §D2.3): the same narrow batched
+  // shape as the Pulse lookup above, over `room_sessions`. Its own read rather
+  // than a widening of any bag: a session list asks one question of the rooms
+  // domain ("is this id a room's turn?"), and answering it must not drag the
+  // rooms store into the session router's imports.
+  app.locals.resolveRoomOrigins = (sessionIds: string[]) =>
+    roomStore.resolveRoomOrigins(sessionIds);
+
   // Shape schedule service — file-first schedule creator + re-binder the Shape
   // apply flow and the agent-create seam share. Built here (not just inside the
   // marketplace block below) so the agent-create re-bind works even when the

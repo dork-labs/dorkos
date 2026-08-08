@@ -52,13 +52,11 @@ export function TourHost() {
 
   useEffect(() => {
     if (!runningDefinition) return;
-    const link = runningDefinition.deepLink;
-    if (link.kind === 'route') {
-      // Only navigate when we are not already on the target route: a redundant
-      // navigate to the current path can remount the dashboard mid-launch and
-      // yank the anchor out from under the spotlight while it is resolving.
-      if (pathname !== link.to) navigate({ to: link.to });
-    }
+    // Only navigate when we are not already on the target route: a redundant
+    // navigate to the current path can remount the dashboard mid-launch and
+    // yank the anchor out from under the spotlight while it is resolving.
+    const { to } = runningDefinition.deepLink;
+    if (pathname !== to) navigate({ to });
   }, [runningDefinition, pathname, navigate]);
 
   if (!runningDefinition) return null;

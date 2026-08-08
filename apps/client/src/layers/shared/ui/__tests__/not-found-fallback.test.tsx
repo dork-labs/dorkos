@@ -36,9 +36,9 @@ describe('NotFoundFallback', () => {
     expect(screen.getByText(/the page you're looking for/i)).toBeInTheDocument();
   });
 
-  it('renders "Go to Dashboard" link pointing to "/"', () => {
+  it('renders "Back to Home" link pointing to "/"', () => {
     render(<NotFoundFallback />);
-    const link = screen.getByRole('link', { name: /go to dashboard/i });
+    const link = screen.getByRole('link', { name: /back to home/i });
     expect(link).toBeInTheDocument();
     expect(link).toHaveAttribute('href', '/');
   });
