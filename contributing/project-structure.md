@@ -107,7 +107,11 @@ src/
 │       │   ├── model/
 │       │   ├── ui/
 │       │   └── index.ts
-│       ├── dashboard/   # DashboardPage — status overview at /
+│       ├── dashboard/   # DashboardPage — composer + attention overview at /
+│       │   ├── ui/
+│       │   └── index.ts
+│       ├── home/        # HomeSurfaceLayout + HomeTabBar — the tab bar over /, /activity, /tasks, /workspaces
+│       │   ├── lib/     #   home-tabs.ts: the four tabs and the pathname → active-tab resolver
 │       │   ├── ui/
 │       │   └── index.ts
 │       ├── marketplace/ # MarketplacePage (/marketplace), MarketplaceSourcesPage (/marketplace/sources)

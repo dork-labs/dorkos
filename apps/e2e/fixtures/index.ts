@@ -8,6 +8,7 @@ import { ConnectionsPage } from '../pages/ConnectionsPage';
 import { AuthPage } from '../pages/AuthPage';
 import { RightPanelPage } from '../pages/RightPanelPage';
 import { RoomsPage } from '../pages/RoomsPage';
+import { HomeSurfacePage } from '../pages/HomeSurfacePage';
 import { RoomsApi } from './rooms-api';
 import { TasksApi } from './tasks-api';
 
@@ -21,6 +22,7 @@ type DorkOSFixtures = {
   authPage: AuthPage;
   rightPanel: RightPanelPage;
   roomsPage: RoomsPage;
+  homeSurface: HomeSurfacePage;
   roomsApi: RoomsApi;
   tasksApi: TasksApi;
 };
@@ -54,6 +56,9 @@ export const test = base.extend<DorkOSFixtures>({
   },
   roomsPage: async ({ page }, use) => {
     await use(new RoomsPage(page));
+  },
+  homeSurface: async ({ page }, use) => {
+    await use(new HomeSurfacePage(page));
   },
   // Seeds this test's rooms and agents, and puts them away again — the suite
   // shares one server, so nothing may outlive the test that made it.
