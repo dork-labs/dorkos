@@ -24,19 +24,12 @@ import {
 import { MOCK_TEAM_ROSTER } from '@/dev/mock-samples';
 import { TeamPage } from '../ui/TeamPage';
 
-// AgentGhostRows animates in with `motion`; jsdom has no layout, so render the
-// markup and skip the animation rather than assert on frames that never run.
-vi.mock('motion/react', () => ({
-  motion: new Proxy(
-    {},
-    {
-      get:
-        () =>
-        ({ children, ...rest }: { children?: ReactNode }) => <div {...rest}>{children}</div>,
-    }
-  ),
-  AnimatePresence: ({ children }: { children?: ReactNode }) => <>{children}</>,
-}));
+// No local `motion/react` mock: `test-setup.ts` already mocks the whole module
+// for every client test, and its version is strictly better — it renders the
+// real tag rather than a `<div>`, strips motion props so they cannot leak to
+// the DOM as unknown attributes, and exports the hooks too. The local subset
+// that used to live here went red the moment this page's grid started reading
+// `useReducedMotion`, which is the failure mode a partial mock always has.
 
 /**
  * The router the page's own profile links write into.

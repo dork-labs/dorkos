@@ -160,7 +160,17 @@ export function ProfileDrawer({
         // can be drawn in it — the drawer is about exactly one identity, and
         // until now said so nowhere.
         style={{ '--identity-color': face.color } as CSSProperties}
-        className="flex flex-col gap-0 p-0"
+        // 300ms in, not the Sheet primitive's 500. At 500 this was the slowest
+        // transition in the identity flow and the most noticeable — you watch a
+        // panel arrive rather than find it already there, every time you open
+        // one, and people open this one to read a project path.
+        //
+        // Scoped HERE rather than in `Sheet` or `ResponsiveSheet`, deliberately:
+        // the primitive is shared with Settings' panels, and re-timing every
+        // sheet in the app is a decision about every sheet in the app, which
+        // this change is not. A caller's `className` is merged last, so this
+        // simply outranks the primitive's own duration for this one panel.
+        className="flex flex-col gap-0 p-0 data-[state=open]:duration-300"
       >
         {/* The rule under the header belongs to the body it separates — with no
             facts to draw, a hairline would fence off nothing.

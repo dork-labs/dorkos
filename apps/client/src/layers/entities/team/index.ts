@@ -11,6 +11,7 @@
 export { TEAM_ROSTER_KEY } from './api/query-keys';
 export { useTeamRoster, type UseTeamRosterOptions } from './model/use-team-roster';
 export {
+  countOwnedAgents,
   DEFAULT_TEAM_FILTERS,
   filterTeamMembers,
   findTeamOwner,

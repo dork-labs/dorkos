@@ -23,6 +23,27 @@ import type { IdentityOrigin } from '../lib/identity-origin';
 const TINT_STRENGTH = '18%';
 
 /**
+ * The class a disc wears so its kind badge **wakes** when a pointer arrives on
+ * the face — the Bot mark tilts a few degrees and grows a tenth.
+ *
+ * **Opt-in per call site, and that is the whole design.** The wake says "you
+ * are pointing at something that answers", so it belongs only where the disc is
+ * part of a target: the roster card, an identity lockup, an account button, a
+ * room's member discs. In the sidebar — twenty-plus rows whose discs are not
+ * targets — a badge that stirred under the cursor would promise an action that
+ * is not there. {@link identityMarkRing} carries this class already, because a
+ * disc wearing the Mark tier is a target by definition; a Surface-tier caller
+ * (the Team card, whose border is the card's own answer) adds it by hand.
+ *
+ * **Named, for the reason the Mark group is named.** A bare `group-hover:`
+ * compiles to `:where(.group):hover &` and matches ANY `.group` ancestor rather
+ * than the nearest — which is how the sidebar's pane-wide unnamed group left
+ * every face permanently ringed in slice 1. `group/avatar` matches the disc
+ * that opted in and nothing else.
+ */
+const IDENTITY_BADGE_WAKE = 'group/avatar';
+
+/**
  * The **Mark tier** of the identity interaction grammar: a disc that is itself
  * a target answers a pointer by ringing itself in its OWN colour, one step
  * quieter than full strength (`--identity-ring-mix`).
@@ -62,10 +83,9 @@ const TINT_STRENGTH = '18%';
  */
 const identityMarkRing = {
   /** The disc is the hover target itself and is not focusable. */
-  self: 'ring-0 ring-[color-mix(in_oklch,var(--identity-color)_var(--identity-ring-mix),transparent)] transition-[background-color,box-shadow] duration-(--identity-answer) ease-(--identity-ease-out) hover:ring-2',
+  self: `ring-0 ring-[color-mix(in_oklch,var(--identity-color)_var(--identity-ring-mix),transparent)] transition-[background-color,box-shadow] duration-(--identity-answer) ease-(--identity-ease-out) hover:ring-2 ${IDENTITY_BADGE_WAKE}`,
   /** The disc sits inside a control marked {@link IDENTITY_MARK_GROUP}. */
-  group:
-    'ring-0 ring-[color-mix(in_oklch,var(--identity-color)_var(--identity-ring-mix),transparent)] transition-[background-color,box-shadow] duration-(--identity-answer) ease-(--identity-ease-out) group-hover/identity:ring-2 group-focus-visible/identity:ring-2',
+  group: `ring-0 ring-[color-mix(in_oklch,var(--identity-color)_var(--identity-ring-mix),transparent)] transition-[background-color,box-shadow] duration-(--identity-answer) ease-(--identity-ease-out) group-hover/identity:ring-2 group-focus-visible/identity:ring-2 ${IDENTITY_BADGE_WAKE}`,
 } as const;
 
 /**
@@ -417,7 +437,29 @@ function IdentityAvatar({
         // would do the same job and cost 4px, which a 20px disc does not have.
         <span
           aria-hidden
-          className="bg-background text-muted-foreground pointer-events-none absolute -right-px -bottom-px inline-flex size-[1.35em] items-center justify-center rounded-full text-[0.62em] leading-none [&_svg:not([class*='size-'])]:size-[1em]"
+          data-slot="identity-badge"
+          className={cn(
+            "bg-background text-muted-foreground pointer-events-none absolute -right-px -bottom-px inline-flex size-[1.35em] items-center justify-center rounded-full text-[0.62em] leading-none [&_svg:not([class*='size-'])]:size-[1em]",
+            // The wake. Dormant unless an ancestor opted in with
+            // `IDENTITY_BADGE_WAKE`, so a disc that is not a target does
+            // nothing. It pivots about the corner it is pinned to, which is
+            // what keeps a rotating plate inside the disc's own bounds instead
+            // of swinging out past its edge.
+            //
+            // −6°, not more: at 8–12px the badge is a glyph on a plate, and
+            // past about 8° the tilt stops reading as a gesture and starts
+            // reading as a rendering fault.
+            //
+            // `motion-safe:` gates the END STATE, not just the travel — a
+            // deliberate departure from the spec's §2.6 table, which would have
+            // kept the tilt and dropped only the movement. The spec's own rule
+            // for reduced motion is "keep the fact, drop the motion", and this
+            // badge carries no fact: nothing about a 6° tilt tells you
+            // anything a still badge does not. With no fact to keep, an instant
+            // snap to a crooked badge is all cost, so the whole gesture goes.
+            'origin-bottom-right transition-transform duration-(--identity-answer) ease-(--identity-ease-out)',
+            'motion-safe:group-hover/avatar:scale-110 motion-safe:group-hover/avatar:-rotate-6'
+          )}
         >
           {drawnBadge}
         </span>
@@ -443,4 +485,10 @@ function IdentityAvatar({
   );
 }
 
-export { IdentityAvatar, identityAvatarVariants, identityMarkRing, IDENTITY_MARK_GROUP };
+export {
+  IdentityAvatar,
+  identityAvatarVariants,
+  identityMarkRing,
+  IDENTITY_MARK_GROUP,
+  IDENTITY_BADGE_WAKE,
+};

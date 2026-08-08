@@ -101,6 +101,7 @@ export {
   identityAvatarVariants,
   identityMarkRing,
   IDENTITY_MARK_GROUP,
+  IDENTITY_BADGE_WAKE,
 } from './identity-avatar';
 export type { IdentityAvatarProps } from './identity-avatar';
 export { IdentityHoverCard } from './identity-hover-card';

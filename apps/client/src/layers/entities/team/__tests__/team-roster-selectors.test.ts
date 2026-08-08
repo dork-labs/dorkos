@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { MOCK_TEAM_ROSTER } from '@/dev/mock-samples';
 import {
+  countOwnedAgents,
   DEFAULT_TEAM_FILTERS,
   filterTeamMembers,
   findTeamOwner,
@@ -145,6 +146,27 @@ describe('findTeamOwner', () => {
   it('resolves nothing for an identity nobody owns', () => {
     const dorkbot = roster.find((member) => member.id === 'agent-dorkbot')!;
     expect(findTeamOwner(dorkbot, roster)).toBeUndefined();
+  });
+});
+
+describe('countOwnedAgents', () => {
+  it('counts the agents a person owns', () => {
+    expect(countOwnedAgents('person-dorian', roster)).toBe(2);
+    // A second owner with a different count — one fixed number would pass for a
+    // function that ignored its `ownerId` entirely.
+    expect(countOwnedAgents('person-miguel', roster)).toBe(1);
+  });
+
+  it('does not count the owner themselves', () => {
+    // The person is not one of their own agents, and the suffix says "agents".
+    expect(countOwnedAgents('person-dorian', roster)).toBeLessThan(
+      roster.filter((member) => member.id === 'person-dorian' || member.ownerId === 'person-dorian')
+        .length
+    );
+  });
+
+  it('counts nothing for somebody who owns nothing', () => {
+    expect(countOwnedAgents('agent-dorkbot', roster)).toBe(0);
   });
 });
 
