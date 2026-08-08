@@ -74,10 +74,17 @@ test.describe('Mobile sidebar — 390×844 @smoke', () => {
     const sheet = await openSidebar(page);
     // By test id, not by name: a promo card in the same sheet is named "Use
     // DorkOS on the go Access", which the accessible-name match also picks up.
+    // The id still reads "agents" though the nav now says Team — it is a tour
+    // anchor, and renaming it would strand every tour already in progress
+    // (DOR-973, `tour-anchors.ts`).
     await sheet.getByTestId('nav-agents').click();
 
     await expect(sheet).toBeHidden({ timeout: SERVER_ROUND_TRIP_MS });
-    await expect(page).toHaveURL(/\/agents/, { timeout: SERVER_ROUND_TRIP_MS });
+    // `/team`, not `/agents`: DOR-973 made the Team page the destination and
+    // left `/agents` as a redirecting alias for addresses this repo does not
+    // own. The nav link points at the real route, so this asserts where a tap
+    // actually lands — matching `tests/team/team-page.spec.ts`.
+    await expect(page).toHaveURL(/\/team/, { timeout: SERVER_ROUND_TRIP_MS });
   });
 
   test('picking inside the New message sheet dismisses nothing until the conversation starts', async ({

@@ -78,21 +78,55 @@ export class DashboardSidebarPage {
   }
 
   /**
+   * Assert a drag endpoint's centre is on screen, naming it if it is not.
+   *
+   * `page.mouse` dispatches at viewport coordinates, so a press aimed below the
+   * fold lands on no element at all: dnd-kit's `PointerSensor` never arms and
+   * the drop silently does not happen. Playwright reports none of that — the
+   * gesture "succeeds" and only the assertion afterwards fails, pointing at the
+   * DOM rather than at the pointer. So the geometry is checked up front and
+   * fails with the measurement (DOR-1035).
+   *
+   * @param name - Which endpoint this is, for the error message.
+   * @param box - The endpoint's bounding box.
+   */
+  private assertOnScreen(name: string, box: { y: number; height: number }) {
+    const viewport = this.page.viewportSize();
+    if (!viewport) return;
+    const centerY = box.y + box.height / 2;
+    if (centerY >= 0 && centerY <= viewport.height) return;
+    throw new Error(
+      `Drag ${name} is off screen (centre y=${Math.round(centerY)}, viewport height ${viewport.height}). ` +
+        'A pointer drag needs both endpoints visible at once, and the sidebar is now taller than that allows.'
+    );
+  }
+
+  /**
    * Drag an agent row onto a group header via real pointer events. dnd-kit's
    * `PointerSensor` requires an 8px move past the start point before a drag
    * arms, so a single jump from start to end is not enough — step through
    * several intermediate points so the sensor sees the motion.
+   *
+   * The scroll order is load-bearing. The sidebar is a scroll container, and
+   * once an install carries a few rows it is taller than the viewport — so
+   * bringing one endpoint into view can push the other back out. The SOURCE is
+   * scrolled last because the press that arms the drag happens there. Scrolling
+   * it first (as this did until DOR-1035) left the agent row at y=763 in a
+   * 720px-tall viewport once the identity work grew the sidebar, and every drop
+   * silently did nothing.
    */
   async dragAgentIntoGroup(agentDisplayName: string, groupName: string) {
     const source = this.agentRow(agentDisplayName);
     const target = this.groupHeader(groupName);
-    await source.scrollIntoViewIfNeeded();
     await target.scrollIntoViewIfNeeded();
+    await source.scrollIntoViewIfNeeded();
     const sourceBox = await source.boundingBox();
     const targetBox = await target.boundingBox();
     if (!sourceBox || !targetBox) {
       throw new Error('Drag source or target is not visible');
     }
+    this.assertOnScreen('source', sourceBox);
+    this.assertOnScreen('target', targetBox);
 
     const startX = sourceBox.x + sourceBox.width / 2;
     const startY = sourceBox.y + sourceBox.height / 2;
