@@ -8,6 +8,13 @@
  * concern or a session concern: rooms, agent sessions and the inbox all address
  * it, and none of them owns it.
  *
+ * **Nothing serving a REQUEST writes through this class.** Every request-path
+ * write goes through {@link ReadCursorService}, which is the only thing that
+ * broadcasts `read_cursor` — a cursor moved silently here is a badge left lit on
+ * the reader's other device, and nothing about the call site would say so. The
+ * store is for the two callers that must NOT announce themselves: migrations and
+ * backfills. Reads are open to anyone.
+ *
  * **Not the agent cursor.** `RoomStore.setReadCursor` writes
  * `room_members.last_read_seq`, which is what an agent's ambient turn has been
  * SHOWN; this is what a person has LOOKED AT. Both survive, and neither is
@@ -71,6 +78,45 @@ export class ReadCursorStore {
         )
         .get() ?? null
     );
+  }
+
+  /**
+   * Every thread of one kind this person has read, keyed by thread id.
+   *
+   * One query for a whole sidebar: the room list draws an unread badge per row
+   * and would otherwise ask this table once per room. A thread the person has
+   * never opened is simply absent, which every caller reads as 0 — the same
+   * distinction {@link ReadCursorStore.get} keeps, kept the same way.
+   *
+   * @param userId - The person.
+   * @param threadKind - Which kind of thread.
+   */
+  listForUser(userId: string, threadKind: ReadCursorThreadKind): Map<string, number> {
+    const rows = this.db
+      .select()
+      .from(readCursors)
+      .where(and(eq(readCursors.userId, userId), eq(readCursors.threadKind, threadKind)))
+      .all();
+    return new Map(rows.map((row) => [row.threadId, row.lastReadSeq]));
+  }
+
+  /**
+   * Everybody who has read this one thread, keyed by person.
+   *
+   * The other axis of {@link ReadCursorStore.listForUser}, and one query for the
+   * same reason: a room's roster reports a cursor per member, and asking per
+   * member would make opening a room cost a query per person in it.
+   *
+   * @param threadKind - Which kind of thread.
+   * @param threadId - The thread.
+   */
+  listForThread(threadKind: ReadCursorThreadKind, threadId: string): Map<string, number> {
+    const rows = this.db
+      .select()
+      .from(readCursors)
+      .where(and(eq(readCursors.threadKind, threadKind), eq(readCursors.threadId, threadId)))
+      .all();
+    return new Map(rows.map((row) => [row.userId, row.lastReadSeq]));
   }
 
   /**

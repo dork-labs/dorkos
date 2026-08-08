@@ -7,12 +7,27 @@
  *
  * @module shared/lib/transport/read-cursor-methods
  */
-import type { ReadCursor, ReadCursorThreadKind } from '@dorkos/shared/read-cursor-schemas';
+import type {
+  ReadCursor,
+  ReadCursorResponse,
+  ReadCursorThreadKind,
+} from '@dorkos/shared/read-cursor-schemas';
 import { fetchJSON } from './http-client';
 
 /** Create the read-state methods bound to a base URL. */
 export function createReadCursorMethods(baseUrl: string) {
   return {
+    async getReadCursor(
+      threadKind: ReadCursorThreadKind,
+      threadId: string
+    ): Promise<ReadCursor | null> {
+      const { cursor } = await fetchJSON<ReadCursorResponse>(
+        baseUrl,
+        `/read-cursors/${threadKind}/${encodeURIComponent(threadId)}`
+      );
+      return cursor;
+    },
+
     setReadCursor(
       threadKind: ReadCursorThreadKind,
       threadId: string,

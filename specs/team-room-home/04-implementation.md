@@ -51,7 +51,11 @@ Tasks completed:
 - Task #0.3: read-cursor broadcast (room_read_cursor on eventFanOut, cancel-then-min client
   reconciliation) — worker: opus implementation agent; commit "read state follows you between
   devices". Review passed with 2 importants (route-level exactly-one-frame proof; list-badge
-  race vs in-flight refetch) — both fixed with red-then-green evidence.
+  race vs in-flight refetch) — both fixed with red-then-green evidence. **Superseded within the
+  same release train by task 3.3**: `room_read_cursor` was replaced by the unified `read_cursor`
+  event before it ever shipped, so there is no back-compat window and no second name to keep
+  alive. The client reconciliation (cancel-then-min list patch, Math.max detail patch) survives
+  unchanged on the new event.
 - Task #0.2: thread-over-sessions ADR 260808-140954 draft→accepted — orchestrator, after the
   branch rebased onto post-#866 main.
 

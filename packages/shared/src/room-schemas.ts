@@ -383,7 +383,13 @@ export const RoomMemberSchema = z
       .describe(
         "The room's highest seq when this membership was written — 0 for somebody who joined an empty room. The floor under everything the member may be shown: joining a channel does not retroactively read what was said before you were in it. Distinct from `lastReadSeq`, which starts at 0 for everybody and moves as they read."
       ),
-    lastReadSeq: z.number().int().min(0).describe('The (member, room) read cursor.'),
+    lastReadSeq: z
+      .number()
+      .int()
+      .min(0)
+      .describe(
+        'Where this member has read up to in this room. For a PERSON it is their own read state, shared with every other device they read on; for an AGENT it is what the room has shown it, which its next ambient turn reads from. One number either way — match yourself on `RoomWithRoster.viewerAuthorId` and this is your place in the room.'
+      ),
   })
   .openapi('RoomMember');
 

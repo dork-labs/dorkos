@@ -18,6 +18,7 @@ import request from 'supertest';
 import { openSseStream, type SseFrame } from '@dorkos/test-utils';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { readCursors, type Db } from '@dorkos/db';
+import { ReadCursorSchema } from '@dorkos/shared/read-cursor-schemas';
 
 vi.mock('../../lib/boundary.js', () => ({
   validateBoundary: vi.fn(async (p: string) => p),
@@ -117,18 +118,68 @@ describe('PUT /api/read-cursors/:kind/:id', () => {
 
   it('stores the cursor and answers with it', async () => {
     const res = await request(app)
-      .put('/api/read-cursors/room/room-1')
+      .put(`/api/read-cursors/room/${sentinelRoomId}`)
       .send({ lastReadSeq: 4 })
       .expect(200);
 
     expect(res.body).toEqual({
       userId: callerId(),
       threadKind: 'room',
-      threadId: 'room-1',
+      threadId: sentinelRoomId,
       lastReadSeq: 4,
       updatedAt: expect.any(String),
     });
-    expect(store.get(callerId(), 'room', 'room-1')?.lastReadSeq).toBe(4);
+    expect(store.get(callerId(), 'room', sentinelRoomId)?.lastReadSeq).toBe(4);
+  });
+
+  /**
+   * A room cursor is written by delegating into `RoomService.setReadCursor` —
+   * the same call `PUT /api/rooms/:id/read-cursor` makes (team-room-home §D4,
+   * task 3.3). Two things follow, and both are asserted here rather than argued:
+   * the event carries the unread count only that domain can compute, and a room
+   * this caller cannot see is refused instead of quietly storing a row.
+   */
+  describe('a room cursor goes through the room domain', () => {
+    it('carries the unread count the room list has to patch with', async () => {
+      await request(app).post(`/api/rooms/${sentinelRoomId}/entries`).send({ text: 'one' });
+      await request(app).post(`/api/rooms/${sentinelRoomId}/entries`).send({ text: 'two' });
+
+      const server = await listen();
+      const stream = openSseStream(server.port, '/api/events', { until: stopsOnRoomActivity });
+      await stream.ready;
+
+      await request(app)
+        .put(`/api/read-cursors/room/${sentinelRoomId}`)
+        .send({ lastReadSeq: 1 })
+        .expect(200);
+      await sentinel();
+
+      const frames = await stream.frames;
+      server.close();
+
+      // Without the count this event is one the room list cannot act on, so the
+      // client drops it — and the badge stays lit on the other device, which is
+      // the whole failure this route exists to avoid.
+      expect(frames.filter((f) => f.event === 'read_cursor').map((f) => f.data)).toEqual([
+        {
+          userId: callerId(),
+          threadKind: 'room',
+          threadId: sentinelRoomId,
+          lastReadSeq: 1,
+          unreadCount: 1,
+        },
+      ]);
+    });
+
+    it("refuses a room the caller cannot see, in the rooms domain's own words", async () => {
+      const res = await request(app)
+        .put('/api/read-cursors/room/01JQZZZZZZZZZZZZZZZZZZZZZZ')
+        .send({ lastReadSeq: 1 })
+        .expect(404);
+
+      expect(res.body.code).toBe('ROOM_NOT_FOUND');
+      expect(store.get(callerId(), 'room', '01JQZZZZZZZZZZZZZZZZZZZZZZ')).toBeNull();
+    });
   });
 
   it('announces the write once, and says nothing when the same value is written again', async () => {
@@ -136,11 +187,11 @@ describe('PUT /api/read-cursors/:kind/:id', () => {
     const stream = openSseStream(server.port, '/api/events', { until: stopsOnRoomActivity });
     await stream.ready;
 
-    await request(app).put('/api/read-cursors/room/room-1').send({ lastReadSeq: 4 }).expect(200);
+    await request(app).put('/api/read-cursors/session/s-4').send({ lastReadSeq: 4 }).expect(200);
     // The same seq again: monotonic, so it writes nothing and must therefore say
     // nothing. Re-opening a thread already read is the common case, and an event
     // per no-op would be the loudest name on this stream.
-    await request(app).put('/api/read-cursors/room/room-1').send({ lastReadSeq: 4 }).expect(200);
+    await request(app).put('/api/read-cursors/session/s-4').send({ lastReadSeq: 4 }).expect(200);
     await sentinel();
 
     const frames = await stream.frames;
@@ -148,12 +199,38 @@ describe('PUT /api/read-cursors/:kind/:id', () => {
 
     const cursors = frames.filter((f) => f.event === 'read_cursor');
     expect(cursors).toHaveLength(1);
+    // A session, so no unread count rides along: only the rooms domain can count
+    // what is above a cursor, and this route invents nothing on its behalf.
     expect(cursors[0].data).toEqual({
       userId: callerId(),
-      threadKind: 'room',
-      threadId: 'room-1',
+      threadKind: 'session',
+      threadId: 's-4',
       lastReadSeq: 4,
     });
+  });
+
+  it('says nothing when a thread is first read at position zero', async () => {
+    // "Never opened" and "opened, nothing in it" are the same fact to the only
+    // question a broadcast answers, which is whether the cursor MOVED. A first
+    // write of 0 that announced itself would repaint an already-clear badge on
+    // every screen this person has open.
+    const server = await listen();
+    const stream = openSseStream(server.port, '/api/events', { until: stopsOnRoomActivity });
+    await stream.ready;
+
+    const res = await request(app)
+      .put('/api/read-cursors/session/s-zero-write')
+      .send({ lastReadSeq: 0 })
+      .expect(200);
+    await sentinel();
+
+    const frames = await stream.frames;
+    server.close();
+
+    // Stored, and silent: the row exists so a reader can tell 0 from absent.
+    expect(res.body.lastReadSeq).toBe(0);
+    expect(store.get(callerId(), 'session', 's-zero-write')?.lastReadSeq).toBe(0);
+    expect(frames.filter((f) => f.event === 'read_cursor')).toHaveLength(0);
   });
 
   it('says nothing and stores nothing when a stale client writes a lower seq', async () => {
@@ -178,13 +255,21 @@ describe('PUT /api/read-cursors/:kind/:id', () => {
   });
 
   it('carries every kind of thread', async () => {
-    for (const kind of ['room', 'session', 'inbox']) {
+    // A room is addressed by its real id, because a room cursor is written
+    // through the rooms domain and that domain knows which rooms exist; the
+    // other two kinds name threads no table here can check.
+    for (const [kind, id] of [
+      ['room', sentinelRoomId],
+      ['session', 'thing-1'],
+      ['inbox', 'thing-1'],
+    ]) {
       await request(app)
-        .put(`/api/read-cursors/${kind}/thing-1`)
+        .put(`/api/read-cursors/${kind}/${id}`)
         .send({ lastReadSeq: 3 })
         .expect(200);
     }
 
+    expect(store.get(callerId(), 'room', sentinelRoomId)?.lastReadSeq).toBe(3);
     expect(store.get(callerId(), 'inbox', 'thing-1')?.lastReadSeq).toBe(3);
   });
 
@@ -267,10 +352,120 @@ describe('PUT /api/read-cursors/:kind/:id', () => {
 
     expect(path?.put).toBeDefined();
     expect(path.put.tags).toEqual(['Read state']);
-    expect(Object.keys(path.put.responses).sort()).toEqual(['200', '400', '403']);
+    // 404 is here because a `room` cursor is written through the rooms domain,
+    // which refuses a room the caller cannot see. A client that only knew about
+    // 400/403 would treat that as an unexpected failure.
+    expect(Object.keys(path.put.responses).sort()).toEqual(['200', '400', '403', '404']);
     expect(
       path.put.description,
       'the refusal a client will actually hit has to be documented, not only returned'
     ).toContain('PEOPLE_ONLY');
+    expect(path.put.description, 'and so does the one that only applies to rooms').toContain(
+      'ROOM_NOT_FOUND'
+    );
+  });
+});
+
+/**
+ * `GET /api/read-cursors/:kind/:id` — where a screen that has just opened finds
+ * out where the reader left off, before any event arrives (team-room-home §D4).
+ *
+ * The case that matters most here is the boring one: a thread nobody has read.
+ * It is the state every thread starts in, so it has to be an ordinary 200 with
+ * `null` and not an error a client would learn to ignore.
+ */
+describe('GET /api/read-cursors/:kind/:id', () => {
+  let db: Db;
+  let store: ReadCursorStore;
+  /** A room that actually exists — a room cursor is written through its domain. */
+  let roomId: string;
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    db = createTestDb();
+    setRoomService(createRoomSubsystem({ db }).service);
+    store = new ReadCursorStore(db);
+    setReadCursorService(new ReadCursorService(store));
+    const created = await request(app).post('/api/rooms').send({ kind: 'channel', title: 'Kinds' });
+    roomId = created.body.id;
+  });
+
+  it('answers null for a thread this person has never read', async () => {
+    const res = await request(app).get('/api/read-cursors/session/s-1').expect(200);
+
+    expect(res.body).toEqual({ cursor: null });
+  });
+
+  it('answers with the cursor a write left behind', async () => {
+    await request(app).put('/api/read-cursors/session/s-1').send({ lastReadSeq: 7 }).expect(200);
+
+    const res = await request(app).get('/api/read-cursors/session/s-1').expect(200);
+
+    // Parsed against the shared schema, not only shape-matched: this body is
+    // what the client's `getReadCursor` is typed as, and a field that drifted
+    // out of the wire contract would otherwise show up as a client-side
+    // `undefined` and nothing else.
+    expect(ReadCursorSchema.parse(res.body.cursor)).toEqual({
+      userId: callerId(),
+      threadKind: 'session',
+      threadId: 's-1',
+      lastReadSeq: 7,
+      updatedAt: expect.any(String),
+    });
+  });
+
+  it('keeps kinds apart under one thread id', async () => {
+    // The same id can name a room and a session at once — nothing coordinates
+    // those two id spaces — so a read must answer for the kind it was asked
+    // about and not for whichever row was written first. A room id is what a
+    // session would have to collide WITH, so it is the honest id to use.
+    await request(app).put(`/api/read-cursors/room/${roomId}`).send({ lastReadSeq: 5 }).expect(200);
+
+    const session = await request(app).get(`/api/read-cursors/session/${roomId}`).expect(200);
+    const room = await request(app).get(`/api/read-cursors/room/${roomId}`).expect(200);
+
+    expect(session.body.cursor).toBeNull();
+    expect(room.body.cursor?.lastReadSeq).toBe(5);
+  });
+
+  it('answers a stored zero as a cursor, not as never-read', async () => {
+    // Read up to the beginning and never opened at all are different answers,
+    // and the client draws a different thing for each.
+    store.set(callerId(), 'session', 's-zero', 0);
+
+    const res = await request(app).get('/api/read-cursors/session/s-zero').expect(200);
+
+    expect(res.body.cursor?.lastReadSeq).toBe(0);
+  });
+
+  it('refuses an agent presenting a real identity token', async () => {
+    // Reading is refused for the same reason writing is: an agent has no read
+    // state in this table, so answering `null` would invite it to write one.
+    const identity = initAgentIdentityService(db);
+    const token = await identity.mint({ agentPath: '/agents/ana', displayName: 'Ana' });
+
+    const res = await request(app)
+      .get('/api/read-cursors/session/s-1')
+      .set('X-DorkOS-Agent', token);
+
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe('PEOPLE_ONLY');
+
+    resetAgentIdentityService();
+  });
+
+  it('refuses an unknown kind rather than answering null for it', async () => {
+    const res = await request(app).get('/api/read-cursors/mailbox/thing-1').expect(400);
+
+    expect(res.body.error).toBe('Validation failed');
+  });
+
+  it('is in the OpenAPI export the app serves', async () => {
+    const spec = await request(app).get('/api/openapi.json');
+    const path = spec.body.paths['/api/read-cursors/{kind}/{id}'];
+
+    expect(path?.get).toBeDefined();
+    expect(path.get.tags).toEqual(['Read state']);
+    expect(Object.keys(path.get.responses).sort()).toEqual(['200', '400', '403']);
   });
 });

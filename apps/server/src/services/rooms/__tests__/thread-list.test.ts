@@ -149,8 +149,10 @@ describe('listThreads — every thread the reader is in, across every room', () 
 
     expect(service.listThreads(human, 50)[0]!.unreadCount).toBe(2);
 
-    // The room's single `(member, room)` cursor is the thread's cursor too, so
-    // reading the room reads its threads. That is the stated trade, not a bug.
+    // The room's one read cursor is the thread's cursor too, so reading the room
+    // reads its threads. That is the stated trade, not a bug. It also proves the
+    // count is measured against the PERSON's cursor, which no longer lives on
+    // the membership row (team-room-home §D4).
     service.setReadCursor(room.id, human, second.seq);
     expect(service.listThreads(human, 50)[0]!.unreadCount).toBe(0);
   });

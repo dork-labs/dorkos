@@ -174,6 +174,7 @@ describe('every @name in the room-context block reaches the member it names', ()
       store: new RoomStore(harness.db),
       authors: harness.authors,
       agents: AGENTS,
+      readCursors: harness.readCursors,
     });
     return roster.addressingCandidates(room.id).live;
   }

@@ -414,6 +414,13 @@
       "when": 1786218399244,
       "tag": "0058_lame_jimmy_woo",
       "breakpoints": true
+    },
+    {
+      "idx": 59,
+      "version": "6",
+      "when": 1786219426747,
+      "tag": "0059_burly_thanos",
+      "breakpoints": true
     }
   ]
 }

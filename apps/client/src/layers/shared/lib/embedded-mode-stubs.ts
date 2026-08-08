@@ -66,7 +66,6 @@ import type {
   UpdateMembershipRequest,
   UpdateRoomRequest,
 } from '@dorkos/shared/room-schemas';
-import type { ReadCursor, ReadCursorThreadKind } from '@dorkos/shared/read-cursor-schemas';
 import type {
   Workspace,
   WorkspaceWithSessions,
@@ -1095,21 +1094,11 @@ export const teamStubs = {
  *
  * @internal
  */
-/**
- * Read-state stubs — the `read_cursors` table is server-owned, and the embed
- * has no rooms and no inbox to read. It refuses rather than pretending to
- * store: a cursor silently dropped would leave an unread divider that never
- * clears, which reads as a bug in the divider.
- */
-export const readCursorStubs = {
-  async setReadCursor(
-    _threadKind: ReadCursorThreadKind,
-    _threadId: string,
-    _lastReadSeq: number
-  ): Promise<ReadCursor> {
-    throw new Error('Read state needs a DorkOS server');
-  },
-};
+// Read state is deliberately NOT stubbed here. The embed keeps its own cursors
+// in this browser (`direct/read-cursor-methods`), because a transcript with an
+// unread rule that never draws reads as a broken divider rather than as a
+// missing server — and where read state is stored is precisely what the
+// Transport seam is for.
 
 export const profileStubs = {
   async updateProfile(_displayName: string): Promise<never> {

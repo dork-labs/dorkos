@@ -13,6 +13,8 @@ import { createTestDb } from '@dorkos/test-utils/db';
 import type { RoomContextData } from '@dorkos/shared/additional-context';
 import type { Db } from '@dorkos/db';
 import { BridgeStore } from '../../relay/chat-bridge/bridge-store.js';
+import { ReadCursorService } from '../../core/read-cursor-service.js';
+import { ReadCursorStore } from '../../core/read-cursor-store.js';
 import { AuthorRegistry } from '../author-registry.js';
 import type { EngagedWindow } from '../engagement.js';
 import { ReactionStore } from '../reaction-store.js';
@@ -184,6 +186,12 @@ export interface RoomHarness {
   authors: AuthorRegistry;
   /** The bridge identity/ref store — what a bridged-room test reads back against. */
   bridges: BridgeStore;
+  /**
+   * Where the PEOPLE in these rooms have read up to — the user-side cursor a
+   * test reads back against, as distinct from `room_members.last_read_seq`,
+   * which is what the ambient loop has shown an agent.
+   */
+  readCursors: ReadCursorService;
   runner: ScriptedTurnRunner;
   /** The owner's human author id — the `'local'` sentinel, or the bound account. */
   human: string;
@@ -248,6 +256,7 @@ export function createRoomHarness(opts: {
   const store = new RoomStore(db);
   const reactions = new ReactionStore(db);
   const bridges = new BridgeStore(db);
+  const readCursors = new ReadCursorService(new ReadCursorStore(db));
   const service = new RoomService({
     store,
     reactions,
@@ -260,6 +269,7 @@ export function createRoomHarness(opts: {
     maxAgentDepth: () => maxAgentDepth,
     engagedWindow: () => engagedWindow,
     isOwnerAuthor: (authorId) => authors.isOwner(authorId, ownerUserId),
+    readCursors,
   });
   const human = ownerUserId === null ? authors.localHuman() : authors.bindOwner(ownerUserId);
   return {
@@ -269,6 +279,7 @@ export function createRoomHarness(opts: {
     reactions,
     authors,
     bridges,
+    readCursors,
     runner,
     human: human.id,
     setOwner(userId) {

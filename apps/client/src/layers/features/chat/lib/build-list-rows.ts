@@ -63,6 +63,12 @@ export interface BuildListRowsOptions {
    * message is no longer in the transcript — renders no rule.
    */
   lastSeenMessageId?: string | null;
+  /**
+   * Everything in the transcript is unread, so the rule goes above the first
+   * message. Distinct from an absent `lastSeenMessageId` ("draw nothing"), and
+   * the same distinction a room draws — see `unreadPlacement`.
+   */
+  unreadFromStart?: boolean;
 }
 
 /**
@@ -75,7 +81,7 @@ export function buildListRows(
   messages: readonly ChatMessage[],
   options: BuildListRowsOptions
 ): ListRow[] {
-  const { resolveAuthor, now, lastSeenMessageId } = options;
+  const { resolveAuthor, now, lastSeenMessageId, unreadFromStart } = options;
   // Authors are resolved once, up front: the layout pass needs an author id to
   // group on and the rows need the full view model, so resolving twice would
   // both cost more and risk the two passes disagreeing.
@@ -87,7 +93,7 @@ export function buildListRows(
       authorId: authors[index]!.id,
       timestamp: message.timestamp,
     })),
-    { now, lastSeenId: lastSeenMessageId }
+    { now, lastSeenId: lastSeenMessageId, unreadFromStart }
   ).map((row): ListRow => {
     if (row.kind !== 'item') return row;
     return {

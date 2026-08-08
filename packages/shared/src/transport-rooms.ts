@@ -59,10 +59,10 @@ export interface RoomTransport {
    * every read. A room the caller has been removed from contributes no threads
    * at all, so every summary here names a room they are currently in.
    *
-   * `unreadCount` shares that room's single `(member, room)` read cursor, which
-   * is why opening a room clears its threads' counts along with the room's own
-   * badge. Unlike `RoomSummary.unreadCount` it is never `null`: that field
-   * carries a non-member case this one cannot have.
+   * `unreadCount` is measured against that room's one read cursor, which is why
+   * opening a room clears its threads' counts along with the room's own badge.
+   * Unlike `RoomSummary.unreadCount` it is never `null`: that field carries a
+   * non-member case this one cannot have.
    *
    * @param query - Optional `limit`.
    */
@@ -227,10 +227,13 @@ export interface RoomTransport {
    */
   setAuthorHandle(authorId: string, handle: string): Promise<AuthorRef>;
   /**
-   * Advance the caller's `(member, room)` read cursor.
+   * Advance the caller's read cursor in one room.
    *
    * Monotonic server-side — a lower value is ignored — so a second client that
-   * is further behind can never un-read a room for the first.
+   * is further behind can never un-read a room for the first. A person's write
+   * lands in the same read state {@link Transport.setReadCursor} addresses and
+   * broadcasts the same `read_cursor` event, so the two are one fact reached two
+   * ways; an agent's stays on its membership row.
    *
    * @param id - The room id.
    * @param lastReadSeq - The `seq` the caller has read up to.

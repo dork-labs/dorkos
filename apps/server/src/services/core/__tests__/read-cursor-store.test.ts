@@ -108,6 +108,45 @@ describe('ReadCursorStore', () => {
    * not at all — a float in an `INTEGER` column is stored as a float, and `NaN`
    * silently becomes `NULL` for the `NOT NULL` to blame on the column.
    */
+  describe('reads a whole sidebar in one query', () => {
+    it("lists one person's cursors of one kind, keyed by thread", () => {
+      store.set(USER, 'room', ROOM, 4);
+      store.set(USER, 'room', 'room-two', 9);
+      // Neither of these belongs in the answer: a different kind under the same
+      // id space, and a different person in the same room.
+      store.set(USER, 'session', ROOM, 7);
+      store.set('user-robin', 'room', ROOM, 2);
+
+      expect(store.listForUser(USER, 'room')).toEqual(
+        new Map([
+          [ROOM, 4],
+          ['room-two', 9],
+        ])
+      );
+    });
+
+    it("lists one thread's cursors, keyed by person", () => {
+      store.set(USER, 'room', ROOM, 4);
+      store.set('user-robin', 'room', ROOM, 2);
+      store.set(USER, 'room', 'room-two', 9);
+      store.set(USER, 'session', ROOM, 7);
+
+      expect(store.listForThread('room', ROOM)).toEqual(
+        new Map([
+          [USER, 4],
+          ['user-robin', 2],
+        ])
+      );
+    });
+
+    it('answers an empty map for a person or a thread with no read state', () => {
+      // Absent, not zero — the caller decides what "never read" means, exactly
+      // as it does for a single `get`.
+      expect(store.listForUser(USER, 'room')).toEqual(new Map());
+      expect(store.listForThread('room', ROOM)).toEqual(new Map());
+    });
+  });
+
   describe('refuses a position that is not one', () => {
     it.each([
       ['a negative', -1],

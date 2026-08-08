@@ -21,13 +21,13 @@ import {
   shapeStubs,
   workspaceStubs,
   roomStubs,
-  readCursorStubs,
   cloudStubs,
   connectorStubs,
   mcpManagementStubs,
   teamStubs,
   profileStubs,
 } from '../embedded-mode-stubs';
+import { createLocalReadCursorMethods } from './read-cursor-methods';
 
 /** Create the stubbed Transport surface for server-only subsystems. */
 export function createEmbeddedStubMethods() {
@@ -44,7 +44,9 @@ export function createEmbeddedStubMethods() {
     ...shapeStubs,
     ...workspaceStubs,
     ...roomStubs,
-    ...readCursorStubs,
+    // Read state is NOT stubbed: the embed keeps its own cursors in this
+    // browser, so the unread rule works there too (see the module's TSDoc).
+    ...createLocalReadCursorMethods(),
     ...cloudStubs,
     ...connectorStubs,
     ...mcpManagementStubs,

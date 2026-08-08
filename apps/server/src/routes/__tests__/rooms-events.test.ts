@@ -48,6 +48,7 @@ vi.mock('../../services/core/config-manager.js', () => ({
 import { createApp, finalizeApp } from '../../app.js';
 import { STREAM_EPOCH } from '../../lib/stream-cursor.js';
 import { createRoomSubsystem, setRoomService } from '../../services/rooms/index.js';
+import { setReadCursorService } from '../../services/core/read-cursor-service.js';
 
 const app = createApp();
 finalizeApp(app);
@@ -356,7 +357,13 @@ describe('PUT /api/rooms/:id/read-cursor on the global stream', () => {
 
   beforeEach(async () => {
     vi.clearAllMocks();
-    setRoomService(createRoomSubsystem({ db: createTestDb() }).service);
+    // Both halves of the same subsystem: the rooms service the room route
+    // reaches, and the read-cursor service the generic route resolves. Built as
+    // one so the two routes provably write the same table — wiring them
+    // separately is how a test would "pass" against two databases.
+    const rooms = createRoomSubsystem({ db: createTestDb() });
+    setRoomService(rooms.service);
+    setReadCursorService(rooms.readCursors);
     const created = await request(app)
       .post('/api/rooms')
       .send({ kind: 'channel', title: 'Backend' });
@@ -393,14 +400,71 @@ describe('PUT /api/rooms/:id/read-cursor on the global stream', () => {
     const frames = await stream.frames;
     server.close();
 
-    const cursors = frames.filter((f) => f.event === 'room_read_cursor');
+    const cursors = frames.filter((f) => f.event === 'read_cursor');
     expect(cursors).toHaveLength(1);
+    // The same event name and the same shape the generic route emits — one
+    // read-state system, addressed two ways (team-room-home §D4). The unread
+    // count rides along because the sidebar cannot work it out from a cursor.
     expect(cursors[0].data).toEqual({
-      roomId,
-      authorId: getRoomService().authorRegistry.localHuman().id,
-      authorKind: 'human',
+      userId: getRoomService().authorRegistry.localHuman().id,
+      threadKind: 'room',
+      threadId: roomId,
       lastReadSeq: 3,
       unreadCount: 0,
     });
+  });
+
+  it('lands in the same place whichever route the person marks it read through', async () => {
+    // Two routes, one write path: the room route is the only one an AGENT may
+    // use, and the generic one is the one a session or the inbox will use, so
+    // they have to agree for a person or read state forks by URL.
+    const { getRoomService } = await import('../../services/rooms/index.js');
+    const me = getRoomService().authorRegistry.localHuman().id;
+    for (const text of ['one', 'two', 'three']) {
+      await request(app).post(`/api/rooms/${roomId}/entries`).send({ text });
+    }
+
+    const server = await listen();
+    const stream = openSseStream(server.port, '/api/events', {
+      until: (frames) => frames.some((f) => f.event === 'room_activity'),
+    });
+    await stream.ready;
+
+    await request(app).put(`/api/rooms/${roomId}/read-cursor`).send({ lastReadSeq: 1 }).expect(200);
+    await request(app).put(`/api/read-cursors/room/${roomId}`).send({ lastReadSeq: 2 }).expect(200);
+    await request(app).post(`/api/rooms/${roomId}/entries`).send({ text: 'sentinel' });
+
+    const frames = await stream.frames;
+    server.close();
+
+    const cursors = frames.filter((f) => f.event === 'read_cursor');
+    // The SAME frame shape from both, `unreadCount` included. The generic route
+    // delegates room writes into `RoomService`, so it cannot emit the countless
+    // variant the room list has nothing to patch with — which is exactly the bug
+    // that shape asymmetry would be: a room marked read through the generic
+    // route leaving the badge lit on the reader's other device.
+    expect(cursors.map((f) => f.data)).toEqual([
+      { userId: me, threadKind: 'room', threadId: roomId, lastReadSeq: 1, unreadCount: 2 },
+      { userId: me, threadKind: 'room', threadId: roomId, lastReadSeq: 2, unreadCount: 1 },
+    ]);
+    // One stored cursor, not two: the room route wrote where the generic one
+    // reads, which is the whole claim of this task.
+    const room = await request(app).get(`/api/rooms/${roomId}`).expect(200);
+    expect(room.body.members.find((m: { authorId: string }) => m.authorId === me).lastReadSeq).toBe(
+      2
+    );
+  });
+
+  it('refuses a room the caller is not in, through the generic route too', async () => {
+    // The delegation is what buys this: without it the generic route would
+    // happily store a cursor for a room this caller cannot see, and answer 200.
+    // 404 rather than 403 because it is the rooms domain answering, in the same
+    // words its own route uses.
+    const res = await request(app)
+      .put('/api/read-cursors/room/01JQZZZZZZZZZZZZZZZZZZZZZZ')
+      .send({ lastReadSeq: 1 })
+      .expect(404);
+
+    expect(res.body.code).toBe('ROOM_NOT_FOUND');
   });
 });

@@ -231,16 +231,12 @@ export const GENERIC_EVENTS = [
   // claim-time, where `room_activity` above is durable and entry-time — which is
   // exactly why it is a sixth name rather than a payload field on the fifth.
   'room_presence',
-  // Somebody moved their read cursor in a room — the same person on a second
-  // device, most of the time. It carries who moved it and the unread count the
-  // room list should now draw, so a badge cleared on one screen clears on the
-  // other without waiting for a poll.
-  'room_read_cursor',
-  // Somebody moved their UNIFIED read cursor — the one table that answers for
-  // rooms, agent sessions and the inbox alike (team-room-home D4). Distinct
-  // from `room_read_cursor` above, which is the room-membership cursor and
-  // carries a room unread count with it. No UI subscribes yet; listed here so
-  // the event reaches dispatch instead of being dropped once one does.
+  // Somebody moved their read cursor — the same person on a second device, most
+  // of the time. One event for every kind of thread a person reads (a room, an
+  // agent session, the inbox), so a subscriber filters on `threadKind` rather
+  // than listening for a name per surface. A cursor in a room carries the unread
+  // count the list should now draw, which is what lets a badge cleared on one
+  // screen clear on the other without waiting for a poll.
   'read_cursor',
   // The whole session list is stale — drop it and refetch (spec
   // `claude-code-accounts` D5). Emitted when the Claude accounts move: the

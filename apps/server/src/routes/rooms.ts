@@ -15,7 +15,7 @@
  *
  * @module routes/rooms
  */
-import { Router, type Response } from 'express';
+import { Router } from 'express';
 import {
   AddRoomMemberRequestSchema,
   CreateRoomRequestSchema,
@@ -30,64 +30,13 @@ import {
   UpdateMembershipRequestSchema,
   UpdateRoomRequestSchema,
 } from '@dorkos/shared/room-schemas';
-import {
-  getRoomService,
-  RoomError,
-  toAuthorRef,
-  type RoomErrorCode,
-} from '../services/rooms/index.js';
+import { getRoomService, RoomError, toAuthorRef } from '../services/rooms/index.js';
 import { parseBody } from '../lib/route-utils.js';
 import { roomEventsHandler } from './room-events-handler.js';
 import { resolveCaller } from './room-caller.js';
-import { logger } from '../lib/logger.js';
+import { sendRoomError } from './room-error-response.js';
 
 const router = Router();
-
-/** HTTP status for each way the room service can refuse. */
-const STATUS_BY_CODE: Record<RoomErrorCode, number> = {
-  ROOM_NOT_FOUND: 404,
-  ENTRY_NOT_FOUND: 404,
-  MEMBER_NOT_FOUND: 404,
-  AGENT_NOT_FOUND: 404,
-  SLUG_TAKEN: 409,
-  INVALID_SLUG: 400,
-  HANDLE_TAKEN: 409,
-  HANDLE_RESERVED: 409,
-  INVALID_HANDLE: 400,
-  NESTED_THREAD: 400,
-  ROOM_ARCHIVED: 409,
-  OPERATOR_ONLY: 403,
-  PEOPLE_ONLY: 403,
-  BROADCAST_NOT_BRIDGEABLE: 400,
-  CHAT_ALREADY_BRIDGED: 409,
-  BRIDGE_SECOND_AGENT_REFUSED: 409,
-  UNKNOWN_CHAT_TYPE: 400,
-  EXTERNAL_IDENTITY_INVALID: 400,
-  // A 500, and deliberately not a 4xx: no HTTP caller can name a natural key,
-  // so this code reaching a route means DorkOS built one wrong, not that a
-  // request was bad.
-  RESERVED_NATURAL_KEY: 500,
-  NOT_A_BRIDGED_ROOM: 409,
-  NO_SURVIVING_BRIDGE: 409,
-};
-
-/**
- * Map a thrown value onto a response. A {@link RoomError} carries its own code;
- * anything else is a bug and gets a generic 500 with the detail in the log, not
- * on the wire.
- *
- * @param res - The response to write to.
- * @param err - The caught value.
- * @param context - Route label for the log line.
- */
-function sendRoomError(res: Response, err: unknown, context: string): void {
-  if (err instanceof RoomError) {
-    res.status(STATUS_BY_CODE[err.code]).json({ error: err.message, code: err.code });
-    return;
-  }
-  logger.error(`[rooms] ${context} failed`, { err });
-  res.status(500).json({ error: 'Internal server error' });
-}
 
 /** GET / — rooms visible to the caller, each with their unread count. */
 router.get('/', (req, res) => {
@@ -326,7 +275,29 @@ router.delete('/:id/members/:authorId', (req, res) => {
   }
 });
 
-/** PUT /:id/read-cursor — advance the caller's `(member, room)` read cursor. */
+/**
+ * PUT /:id/read-cursor — advance the caller's read cursor in this room.
+ *
+ * **One write path, two cursors, and this route does not choose between them.**
+ * `RoomService.setReadCursor` does: a person's place goes to `read_cursors` and
+ * broadcasts `read_cursor`, an agent's stays on its membership row and says
+ * nothing (team-room-home spec §D4).
+ *
+ * **`PUT /api/read-cursors/room/:id` delegates into that same method**, so the
+ * two routes are one implementation reached by two URLs rather than two
+ * implementations that happen to agree today. They emit the same event with the
+ * same unread count, refuse with the same statuses, and leave the same single
+ * row behind — which is what makes it safe for the cockpit to use either.
+ *
+ * **What is left that is only here is the AGENT.** The generic route is
+ * people-only by contract — an agent is refused with `PEOPLE_ONLY` — so this is
+ * the only HTTP way an agent's own cursor moves. The removal condition is
+ * therefore not "the client migrates": it is an agent cursor reachable some
+ * other way, or agents no longer needing one at all. Until then, deleting this
+ * route silently takes a capability away from agents, while the cockpit may keep
+ * using it or move to the generic route without changing anything a person
+ * sees.
+ */
 router.put('/:id/read-cursor', (req, res) => {
   const body = parseBody(SetReadCursorRequestSchema, req.body, res);
   if (!body) return;

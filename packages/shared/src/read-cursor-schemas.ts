@@ -24,7 +24,15 @@ import { extendZodWithOpenApi } from '@asteasolutions/zod-to-openapi';
 
 extendZodWithOpenApi(z);
 
-/** The kinds of thread a person can have read state in. */
+/**
+ * The kinds of thread a person can have read state in.
+ *
+ * **A direct message is a `'room'`.** A DM is a room whose `kind` is `'dm'`
+ * (`rooms.kind`), not a store of its own, so its cursor is addressed exactly
+ * like a channel's. Never invent a `'dm'` kind here: the id would resolve
+ * through the same table either way, and the two spellings would split one
+ * person's place in one conversation into two rows that each look right.
+ */
 export const ReadCursorThreadKindSchema = z
   .enum(['room', 'session', 'inbox'])
   .openapi('ReadCursorThreadKind');
@@ -50,10 +58,20 @@ export type ReadCursorParams = z.infer<typeof ReadCursorParamsSchema>;
 /**
  * Where the caller has now read to.
  *
- * A position, not a time: rooms number their entries with a monotonic `seq` and
- * sessions number their durable SSE events the same way, so both sides compare
- * integers rather than timestamps whose ordering depends on whose clock wrote
- * them.
+ * A position, not a time: every kind of thread numbers its entries from one and
+ * counts up, so both sides compare integers rather than timestamps whose
+ * ordering depends on whose clock wrote them.
+ *
+ * **What the number counts is per kind, and each kind states it once:**
+ * - `room` — the entry's own `seq`, the column the room store already keeps.
+ * - `session` — how many messages of the transcript the reader has seen, so `4`
+ *   means "the fourth message and everything before it". NOT the session's SSE
+ *   `seq`: that number is stamped on stream EVENTS, and a session's completed
+ *   history is read back from the runtime's transcript (JSONL for claude-code),
+ *   whose messages carry no seq at all. A cursor in event space could therefore
+ *   never say WHICH message a reader who opens a session cold left off at —
+ *   which is the only thing the unread rule needs to know.
+ * - `inbox` — reserved; nothing writes this kind yet.
  */
 export const SetReadCursorPositionRequestSchema = z
   .object({ lastReadSeq: z.number().int().min(0) })
@@ -80,3 +98,20 @@ export const ReadCursorSchema = z
 
 /** One person's position in one thread. */
 export type ReadCursor = z.infer<typeof ReadCursorSchema>;
+
+/**
+ * What `GET /api/read-cursors/:kind/:id` answers: the caller's cursor in that
+ * thread, or `null` when they have never read it.
+ *
+ * An envelope around a nullable cursor rather than a 404, because "never read"
+ * is an ordinary answer and not a missing resource — every thread starts there.
+ * And `null` rather than a zero-valued cursor, because the two mean different
+ * things to a reader: nobody has read anything HERE draws no unread rule at all,
+ * while a stored `0` is a thread read up to its own beginning.
+ */
+export const ReadCursorResponseSchema = z
+  .object({ cursor: ReadCursorSchema.nullable() })
+  .openapi('ReadCursorResponse');
+
+/** The caller's cursor in one thread, or `null` when they have never read it. */
+export type ReadCursorResponse = z.infer<typeof ReadCursorResponseSchema>;

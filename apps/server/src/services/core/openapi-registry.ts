@@ -111,6 +111,7 @@ import {
 } from '@dorkos/shared/room-schemas';
 import {
   ReadCursorParamsSchema,
+  ReadCursorResponseSchema,
   ReadCursorSchema,
   SetReadCursorPositionRequestSchema,
 } from '@dorkos/shared/read-cursor-schemas';
@@ -3445,7 +3446,13 @@ registry.registerPath({
   tags: ['Rooms'],
   summary: "Advance the caller's read cursor",
   description:
-    'The `(member, room)` cursor the unread divider reads. Monotonic — a lower value is ignored, so a stale client cannot un-read a room for another client.',
+    'The cursor the unread divider and the room badge read. Monotonic — a lower value is ignored, ' +
+    'so a stale client cannot un-read a room for another client. **Two cursors answer through one ' +
+    "route, decided by who is calling**: a person's place lands in read state proper (the same " +
+    'store `PUT /api/read-cursors/room/{id}` writes, and it broadcasts `read_cursor` the same ' +
+    "way), while an agent's stays on its membership row, which is what its ambient turn reads. " +
+    'That is why this route survives beside the generic one — the generic one is people-only, so ' +
+    "this is the only way an agent's cursor moves.",
   request: {
     params: RoomIdParams,
     body: { content: { 'application/json': { schema: SetReadCursorRequestSchema } } },
@@ -3574,9 +3581,12 @@ registry.registerPath({
     "this request, and therefore no way to read or move anybody else's read state. **Only people " +
     'have read state here** — a caller the server resolves as an agent (one presenting ' +
     '`X-DorkOS-Agent`) is refused with 403 `PEOPLE_ONLY`, because what an agent has been shown is ' +
-    'the room-MEMBERSHIP cursor and not this one. Distinct from ' +
-    "`PUT /api/rooms/{id}/read-cursor`, which moves that membership cursor an agent's ambient " +
-    'turn also uses.',
+    'the room-MEMBERSHIP cursor and not this one. **A `room` cursor is written through the rooms ' +
+    'domain**, which is the same call `PUT /api/rooms/{id}/read-cursor` makes: the caller must be ' +
+    'able to see the room (404 `ROOM_NOT_FOUND` / `MEMBER_NOT_FOUND` otherwise), and the ' +
+    'broadcast carries the unread count the room list redraws from. A `session` or `inbox` cursor ' +
+    'names a thread this server cannot check and is stored as given. The room route additionally ' +
+    'remains the one route an agent may move its own membership cursor through.',
   request: {
     params: ReadCursorParamsSchema,
     body: {
@@ -3591,6 +3601,42 @@ registry.registerPath({
     400: {
       description:
         'Unknown `kind`, empty `id`, missing body, or a `lastReadSeq` that is not a non-negative integer',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    403: {
+      description: 'The caller resolved to an agent, which has no read state here (`PEOPLE_ONLY`)',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    404: {
+      description:
+        'Only for `kind: room` — no such room, or the caller is not a member of it. A `session` ' +
+        'or `inbox` thread is never checked for existence, so those kinds cannot answer 404',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/read-cursors/{kind}/{id}',
+  tags: ['Read state'],
+  summary: "Read the caller's own position in one thread",
+  description:
+    'Where this person left off in one thread — the read half of the PUT, and the way a screen ' +
+    'that has just opened knows where to draw the unread rule before any event arrives. A thread ' +
+    'the caller has never read answers `{ "cursor": null }` with a 200, because never-read is ' +
+    'the state every thread starts in rather than a missing resource; `null` is also distinct ' +
+    'from a stored `0`, which is a thread read up to its own beginning. As with the write, the ' +
+    "cursor is always the caller's own — there is no way to name a user — and an agent caller is " +
+    'refused with 403 `PEOPLE_ONLY`.',
+  request: { params: ReadCursorParamsSchema },
+  responses: {
+    200: {
+      description: "The caller's cursor, or null when they have never read this thread",
+      content: { 'application/json': { schema: ReadCursorResponseSchema } },
+    },
+    400: {
+      description: 'Unknown `kind` or empty `id`',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
     403: {

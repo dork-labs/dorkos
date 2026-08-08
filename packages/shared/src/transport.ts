@@ -1948,10 +1948,11 @@ export interface Transport extends RoomTransport {
    * session, or the inbox.
    *
    * One method for all three, because there is one table and one route behind
-   * it. Distinct from {@link setRoomReadCursor}, which moves the room's
-   * MEMBERSHIP cursor: that one is what an agent's ambient turn has been shown,
-   * this one is what a person has looked at, and neither is derived from the
-   * other.
+   * it. {@link setRoomReadCursor} reaches the SAME read state for a room — the
+   * room route delegates here for a person — and additionally moves the room
+   * MEMBERSHIP cursor when the caller is an agent. That one is what an agent's
+   * ambient turn has been shown; this one is what a person has looked at, and
+   * neither is derived from the other.
    *
    * **Monotonic, so this is safe to call on every scroll.** A position at or
    * below the stored one is ignored rather than refused, which is what stops a
@@ -1961,8 +1962,9 @@ export interface Transport extends RoomTransport {
    *
    * @param threadKind - Which kind of thread `threadId` names.
    * @param threadId - The thread.
-   * @param lastReadSeq - The position now read to: a room entry's `seq`, or a
-   *   session's durable SSE `seq`.
+   * @param lastReadSeq - The position now read to. What the number counts is per
+   *   kind — see `SetReadCursorPositionRequestSchema` — a room entry's `seq`, or
+   *   for a session how many transcript messages the reader has seen.
    * @returns The cursor as it now stands — the higher of the stored value and
    *   the requested one.
    */
@@ -1971,6 +1973,21 @@ export interface Transport extends RoomTransport {
     threadId: string,
     lastReadSeq: number
   ): Promise<ReadCursor>;
+
+  /**
+   * Read the caller's own cursor in one thread, or `null` when they have never
+   * read it.
+   *
+   * The read half of {@link setReadCursor}, and the same rule about whose state
+   * this is: there is no way to name a user, so a client can only ever ask about
+   * its own. A thread nobody has opened answers `null` rather than a zero
+   * cursor, because "never read" draws no unread rule while "read up to 0" does.
+   *
+   * @param threadKind - Which kind of thread `threadId` names.
+   * @param threadId - The thread.
+   * @returns The caller's cursor, or `null` when they have never read this thread.
+   */
+  getReadCursor(threadKind: ReadCursorThreadKind, threadId: string): Promise<ReadCursor | null>;
 
   // --- Shapes (DOR-355) ---
 
