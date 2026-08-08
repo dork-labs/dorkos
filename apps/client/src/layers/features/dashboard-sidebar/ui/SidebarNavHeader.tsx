@@ -1,14 +1,5 @@
 import { useNavigate, useRouterState } from '@tanstack/react-router';
-import {
-  Activity,
-  Cable,
-  FolderGit2,
-  LayoutDashboard,
-  Search,
-  Store,
-  Users,
-  Zap,
-} from 'lucide-react';
+import { Cable, LayoutDashboard, Search, Store, Users } from 'lucide-react';
 import {
   SidebarHeader,
   SidebarMenu,
@@ -17,13 +8,18 @@ import {
   Kbd,
 } from '@/layers/shared/ui';
 import { useAppStore } from '@/layers/shared/model';
-import { TOUR_ANCHORS } from '@/layers/shared/config';
+import { isHomeSurfacePath, TOUR_ANCHORS } from '@/layers/shared/config';
 import { cn, formatShortcutKey, SHORTCUTS } from '@/layers/shared/lib';
 
 /**
- * Top-level route navigation for the dashboard sidebar: Dashboard, Activity,
- * Agents, Tasks, Workspaces, Connections, Marketplace, and the command-palette
- * Search row.
+ * Top-level route navigation for the dashboard sidebar: Home, Team, Connections,
+ * Marketplace, and the command-palette Search row.
+ *
+ * Four places, not seven. Activity, scheduled work and workspaces are tabs of
+ * the home surface now, so the sidebar answers "which part of DorkOS" and the
+ * tab bar answers "which part of Home" — which is why Home reads active across
+ * all four of its routes.
+ *
  * Self-contained (reads its own router + app-store state) so the orchestrator
  * stays focused on the agent roster.
  */
@@ -36,40 +32,23 @@ export function SidebarNavHeader() {
     <SidebarHeader className="border-b p-3">
       <SidebarMenu>
         <NavButton
+          // The icon the window-tab strip already uses for `/`, so one place
+          // does not wear two faces.
           icon={LayoutDashboard}
-          label="Dashboard"
-          isActive={pathname === '/'}
+          label="Home"
+          isActive={isHomeSurfacePath(pathname)}
           onClick={() => navigate({ to: '/' })}
-        />
-        <NavButton
-          icon={Activity}
-          label="Activity"
-          isActive={pathname === '/activity'}
-          onClick={() => navigate({ to: '/activity' })}
         />
         <NavButton
           icon={Users}
           label="Team"
           isActive={pathname === '/team'}
           onClick={() => navigate({ to: '/team' })}
-          // The anchor key stays `navAgents` on purpose. A tour anchor is
-          // persisted alongside how far someone got, so renaming it would move
-          // every half-finished tour to a step that no longer exists — for a
-          // rename nobody can see.
+          // Named `nav-agents` for the page's old title, and staying that way:
+          // it is what the e2e specs click. No tour points here — a step
+          // anchored in the sidebar shows a phone nothing, because the sidebar
+          // is a sheet that is unmounted until you open it.
           testId={TOUR_ANCHORS.navAgents}
-        />
-        <NavButton
-          icon={Zap}
-          label="Tasks"
-          isActive={pathname === '/tasks'}
-          onClick={() => navigate({ to: '/tasks' })}
-          testId={TOUR_ANCHORS.navTasks}
-        />
-        <NavButton
-          icon={FolderGit2}
-          label="Workspaces"
-          isActive={pathname === '/workspaces'}
-          onClick={() => navigate({ to: '/workspaces' })}
         />
         <NavButton
           icon={Cable}

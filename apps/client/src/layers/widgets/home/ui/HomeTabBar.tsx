@@ -1,5 +1,6 @@
 import { Link } from '@tanstack/react-router';
 import { motion } from 'motion/react';
+import { TOUR_ANCHORS } from '@/layers/shared/config';
 import { cn } from '@/layers/shared/lib';
 import { HOME_TABS, type HomeTabId } from '../lib/home-tabs';
 
@@ -37,6 +38,10 @@ export function HomeTabBar({ activeTabId }: HomeTabBarProps) {
     <nav
       aria-label="Home sections"
       data-slot="home-tab-bar"
+      // The tour spotlights this bar, and it is one of the few things on screen
+      // at every width — the sidebar it replaced in the tour is a sheet on a
+      // phone, unmounted until you open it (see TOUR_ANCHORS.navAgents).
+      data-testid={TOUR_ANCHORS.homeTabs}
       className="flex shrink-0 items-stretch gap-1 overflow-x-auto border-b px-2"
     >
       {HOME_TABS.map((tab) => {

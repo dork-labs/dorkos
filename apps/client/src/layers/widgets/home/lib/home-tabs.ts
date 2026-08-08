@@ -1,3 +1,9 @@
+import {
+  HOME_SURFACE_PATHS,
+  normalizePathname,
+  type HomeSurfacePath,
+} from '@/layers/shared/config';
+
 /** Which tab of the home surface is showing. */
 export type HomeTabId = 'home' | 'activity' | 'scheduled' | 'workspaces';
 
@@ -8,11 +14,11 @@ export interface HomeTab {
   /** What the tab says. */
   label: string;
   /** The route the tab navigates to — an existing path, never a new one. */
-  path: '/' | '/activity' | '/tasks' | '/workspaces';
+  path: HomeSurfacePath;
 }
 
 /**
- * The four surfaces of the home tab bar, in bar order.
+ * What each home route is called, in the bar.
  *
  * **Label and path are allowed to disagree, and here they do.** "Scheduled"
  * addresses `/tasks`: the word people use for a run that happens later is not
@@ -20,28 +26,25 @@ export interface HomeTab {
  * would break every bookmark, tour deep link and release note pointing at the
  * old address for a rename nobody can see. The label is what changes.
  */
-export const HOME_TABS: readonly HomeTab[] = [
-  { id: 'home', label: 'Home', path: '/' },
-  { id: 'activity', label: 'Activity', path: '/activity' },
-  { id: 'scheduled', label: 'Scheduled', path: '/tasks' },
-  { id: 'workspaces', label: 'Workspaces', path: '/workspaces' },
-];
+const TAB_NAMES: Record<HomeSurfacePath, { id: HomeTabId; label: string }> = {
+  '/': { id: 'home', label: 'Home' },
+  '/activity': { id: 'activity', label: 'Activity' },
+  '/tasks': { id: 'scheduled', label: 'Scheduled' },
+  '/workspaces': { id: 'workspaces', label: 'Workspaces' },
+};
 
 /**
- * The spellings of one address that all mean the same page.
+ * The tabs of the home tab bar, in bar order.
  *
- * The router serves more addresses than it stores: it matches case-insensitively
- * and tolerates a trailing slash, but it hands back `location.pathname` exactly
- * as it was typed — `/Activity/` renders the Activity page and reports
- * `"/Activity/"`. Matching that raw string against the tab table found nothing,
- * so a hand-typed or copied link landed on the right page with no tab lit.
- *
- * Trailing slashes go (all of them: `//` is the same address), then case. The
- * root survives, because stripping its only slash would leave an empty string.
+ * Derived from `HOME_SURFACE_PATHS` rather than listed a second time, because
+ * the sidebar keeps Home lit from that same list. Adding a route to the home
+ * surface without naming it here is a compile error, so the bar can never be
+ * missing a tab for a page the sidebar already calls Home.
  */
-function normalizePathname(pathname: string): string {
-  return pathname.replace(/\/+$/, '').toLowerCase() || '/';
-}
+export const HOME_TABS: readonly HomeTab[] = HOME_SURFACE_PATHS.map((path) => ({
+  ...TAB_NAMES[path],
+  path,
+}));
 
 /**
  * Which tab a pathname belongs to, or `null` when it belongs to none.
