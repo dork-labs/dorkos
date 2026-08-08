@@ -52,7 +52,7 @@ function renderStrip(tabs: AppTab[], activeId: string | null = tabs[0]?.id ?? nu
 
 const DASHBOARD: AppTab = { id: 't1', href: '/' };
 const API_SESSION: AppTab = { id: 't2', href: '/session?session=abc&dir=%2FUsers%2Fkai%2Fapi' };
-const AGENTS: AppTab = { id: 't3', href: '/agents' };
+const AGENTS: AppTab = { id: 't3', href: '/team' };
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -80,7 +80,7 @@ describe('AppTabStrip', () => {
 
   it('marks the active tab and points it at the content region', () => {
     renderStrip([DASHBOARD, AGENTS], AGENTS.id);
-    const active = screen.getByRole('tab', { name: /Agents/ });
+    const active = screen.getByRole('tab', { name: /Team/ });
     expect(active).toHaveAttribute('aria-selected', 'true');
     expect(active).toHaveAttribute('aria-controls', APP_TAB_PANEL_ID);
     const other = screen.getByRole('tab', { name: /Dashboard/ });
@@ -90,7 +90,7 @@ describe('AppTabStrip', () => {
 
   it('activates a clicked tab', () => {
     renderStrip([DASHBOARD, AGENTS]);
-    fireEvent.click(screen.getByRole('tab', { name: /Agents/ }));
+    fireEvent.click(screen.getByRole('tab', { name: /Team/ }));
     expect(onActivate).toHaveBeenCalledWith(AGENTS.id, 'pointer');
   });
 
@@ -107,7 +107,7 @@ describe('AppTabStrip', () => {
 
   it('closes a tab from its close control once there is more than one', () => {
     renderStrip([DASHBOARD, AGENTS]);
-    fireEvent.click(screen.getByRole('button', { name: 'Close Agents' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Close Team' }));
     expect(onClose).toHaveBeenCalledWith(AGENTS.id, 'pointer');
   });
 
@@ -115,7 +115,7 @@ describe('AppTabStrip', () => {
     renderStrip([DASHBOARD, AGENTS]);
     const active = screen.getByRole('tab', { name: /Dashboard/ });
     expect(active).toHaveAttribute('tabindex', '0');
-    expect(screen.getByRole('tab', { name: /Agents/ })).toHaveAttribute('tabindex', '-1');
+    expect(screen.getByRole('tab', { name: /Team/ })).toHaveAttribute('tabindex', '-1');
 
     fireEvent.keyDown(active, { key: 'ArrowRight' });
     expect(onActivate).toHaveBeenCalledWith(AGENTS.id, 'keyboard');

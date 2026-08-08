@@ -88,7 +88,7 @@ export function SystemStatusRow() {
                 ? { count: status.mesh.offlineCount, label: 'offline', severity: 'error' }
                 : undefined
             }
-            onClick={() => navigate({ to: '/agents', search: { view: 'topology' } })}
+            onClick={() => navigate({ to: '/team', search: { view: 'topology' } })}
           />
         </motion.div>
         {/* Activity card with sparkline */}

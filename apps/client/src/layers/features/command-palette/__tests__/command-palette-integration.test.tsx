@@ -516,7 +516,7 @@ describe('Command Palette Integration', () => {
     const item = screen.getByText('Mesh Network').closest('[data-slot="command-item"]');
     fireEvent.click(item as Element);
 
-    expect(mockNavigate).toHaveBeenCalledWith({ to: '/agents' });
+    expect(mockNavigate).toHaveBeenCalledWith({ to: '/team' });
     expect(mockSetGlobalPaletteOpen).toHaveBeenCalledWith(false);
   });
 

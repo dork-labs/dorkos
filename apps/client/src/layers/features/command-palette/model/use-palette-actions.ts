@@ -121,7 +121,7 @@ export function usePaletteActions(closePalette: () => void): PaletteActions {
           openConnections('messaging');
           return;
         case 'openMesh':
-          navigate({ to: '/agents' });
+          navigate({ to: '/team' });
           return;
         case 'openSettings':
           openSettings();
@@ -196,7 +196,7 @@ export function usePaletteActions(closePalette: () => void): PaletteActions {
           openConnections('messaging');
           return;
         case 'openMesh':
-          navigate({ to: '/agents' });
+          navigate({ to: '/team' });
           return;
         case 'discoverAgents':
           useImportProjectsStore.getState().open();

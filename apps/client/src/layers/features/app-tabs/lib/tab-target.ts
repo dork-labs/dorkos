@@ -1,6 +1,5 @@
 import {
   Activity,
-  Bot,
   Cable,
   FolderGit2,
   Inbox,
@@ -9,6 +8,7 @@ import {
   MessageSquare,
   MessagesSquare,
   Store,
+  Users,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -48,7 +48,11 @@ export interface TabTarget {
 export const ROUTE_LABELS: Record<string, string> = {
   '/': 'Dashboard',
   '/activity': 'Activity',
-  '/agents': 'Agents',
+  '/team': 'Team',
+  // The alias, labelled for where it lands rather than for its own spelling: a
+  // tab persisted before the rename still restores as `/agents`, and reading
+  // "Agents" on a strip whose page says Team is a tab that looks stale.
+  '/agents': 'Team',
   '/channels': 'Channels',
   '/connections': 'Connections',
   '/feedback-requests': 'Feedback & requests',
@@ -68,7 +72,9 @@ export const ROUTE_LABELS: Record<string, string> = {
 export const ROUTE_ICONS: Record<string, LucideIcon> = {
   '/': LayoutDashboard,
   '/activity': Activity,
-  '/agents': Bot,
+  // Same icon the sidebar nav uses for Team, and the alias gets it too.
+  '/team': Users,
+  '/agents': Users,
   // Plural on purpose: /session's single-bubble icon is taken, and two tabs
   // that read alike should at least not look alike (DOR-587 review).
   '/channels': MessagesSquare,

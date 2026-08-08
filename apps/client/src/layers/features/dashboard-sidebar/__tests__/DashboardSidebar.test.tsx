@@ -387,10 +387,10 @@ describe('DashboardSidebar', () => {
     expect(screen.getAllByText('Dashboard').length).toBeGreaterThanOrEqual(1);
   });
 
-  it('navigates to /agents from the Agents nav item', () => {
+  it('navigates to /team from the Team nav item', () => {
     renderWithProviders(<DashboardSidebar />);
-    fireEvent.click(screen.getAllByText('Agents')[0]);
-    expect(mockNavigate).toHaveBeenCalledWith({ to: '/agents' });
+    fireEvent.click(screen.getAllByText('Team')[0]);
+    expect(mockNavigate).toHaveBeenCalledWith({ to: '/team' });
   });
 
   it('renders default agent (dorkbot) and navigates on click', async () => {
@@ -800,9 +800,11 @@ describe('DashboardSidebar', () => {
   it('renders a header-less flat list with no groups and no pins', () => {
     renderWithProviders(<DashboardSidebar />);
     expect(screen.queryByText('Pinned')).not.toBeInTheDocument();
-    // No "Agents" section label in flat mode (nav item "Agents" is a button, not a group label)
-    const agentsLabels = screen.getAllByText('Agents').filter((el) => el.closest('button'));
-    expect(agentsLabels.length).toBe(1); // only the nav button
+    // No "Agents" section label in flat mode — and now nothing else either:
+    // the nav button that used to be the one legitimate "Agents" in the tree
+    // says Team, so the word should be absent from a flat sidebar entirely.
+    expect(screen.queryByText('Agents')).not.toBeInTheDocument();
+    expect(screen.getAllByText('Team').length).toBe(1);
   });
 
   it('shows section headers in order Pinned → groups → Agents when organized', () => {

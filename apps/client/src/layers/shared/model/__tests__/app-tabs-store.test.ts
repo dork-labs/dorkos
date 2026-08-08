@@ -34,9 +34,9 @@ afterEach(() => {
 
 describe('openTab', () => {
   it('inserts to the right of the active tab and focuses it', () => {
-    setTabs(['/', '/agents'], 0);
+    setTabs(['/', '/team'], 0);
     useAppTabsStore.getState().openTab('/tasks');
-    expect(strip()).toEqual(['/', '[/tasks]', '/agents']);
+    expect(strip()).toEqual(['/', '[/tasks]', '/team']);
   });
 
   it('always creates, even when that location is already open', () => {
@@ -49,8 +49,8 @@ describe('openTab', () => {
 
   it('appends when nothing is active', () => {
     useAppTabsStore.setState({ tabs: [], activeTabId: null });
-    useAppTabsStore.getState().openTab('/agents');
-    expect(strip()).toEqual(['[/agents]']);
+    useAppTabsStore.getState().openTab('/team');
+    expect(strip()).toEqual(['[/team]']);
   });
 });
 
@@ -62,55 +62,55 @@ describe('closeTab', () => {
   });
 
   it('hands focus to the right-hand neighbour', () => {
-    const tabs = setTabs(['/', '/agents', '/tasks'], 1);
+    const tabs = setTabs(['/', '/team', '/tasks'], 1);
     useAppTabsStore.getState().closeTab(tabs[1].id);
     expect(strip()).toEqual(['/', '[/tasks]']);
   });
 
   it('falls back to the left when the last tab closes', () => {
-    const tabs = setTabs(['/', '/agents'], 1);
+    const tabs = setTabs(['/', '/team'], 1);
     useAppTabsStore.getState().closeTab(tabs[1].id);
     expect(strip()).toEqual(['[/]']);
   });
 
   it('leaves the active tab alone when a background tab closes', () => {
-    const tabs = setTabs(['/', '/agents', '/tasks'], 2);
+    const tabs = setTabs(['/', '/team', '/tasks'], 2);
     useAppTabsStore.getState().closeTab(tabs[0].id);
-    expect(strip()).toEqual(['/agents', '[/tasks]']);
+    expect(strip()).toEqual(['/team', '[/tasks]']);
   });
 
   it('ignores an id that names no tab', () => {
-    setTabs(['/', '/agents'], 0);
+    setTabs(['/', '/team'], 0);
     useAppTabsStore.getState().closeTab('nope');
-    expect(strip()).toEqual(['[/]', '/agents']);
+    expect(strip()).toEqual(['[/]', '/team']);
   });
 });
 
 describe('selectTab', () => {
   it('moves focus', () => {
-    const tabs = setTabs(['/', '/agents'], 0);
+    const tabs = setTabs(['/', '/team'], 0);
     useAppTabsStore.getState().selectTab(tabs[1].id);
-    expect(strip()).toEqual(['/', '[/agents]']);
+    expect(strip()).toEqual(['/', '[/team]']);
   });
 
   it('ignores an id that names no tab', () => {
-    setTabs(['/', '/agents'], 0);
+    setTabs(['/', '/team'], 0);
     useAppTabsStore.getState().selectTab('nope');
-    expect(strip()).toEqual(['[/]', '/agents']);
+    expect(strip()).toEqual(['[/]', '/team']);
   });
 });
 
 describe('syncLocation — the URL is the active tab', () => {
   it('does nothing when the active tab is already there', () => {
-    setTabs(['/', '/agents'], 1);
+    setTabs(['/', '/team'], 1);
     const before = useAppTabsStore.getState().tabs;
-    useAppTabsStore.getState().syncLocation('/agents');
+    useAppTabsStore.getState().syncLocation('/team');
     expect(useAppTabsStore.getState().tabs).toBe(before);
-    expect(strip()).toEqual(['/', '[/agents]']);
+    expect(strip()).toEqual(['/', '[/team]']);
   });
 
   it('lets the active tab adopt a location no tab holds (navigating inside a tab)', () => {
-    setTabs(['/', '/agents'], 1);
+    setTabs(['/', '/team'], 1);
     useAppTabsStore.getState().syncLocation('/tasks');
     expect(strip()).toEqual(['/', '[/tasks]']);
   });
@@ -186,10 +186,10 @@ describe('syncLocation — only a history traversal may move focus', () => {
 
 describe('persistence', () => {
   it('writes through on every change and reads back', () => {
-    setTabs(['/', '/agents'], 1);
+    setTabs(['/', '/team'], 1);
     useAppTabsStore.getState().openTab('/tasks');
     const restored = readPersistedTabs();
-    expect(restored?.tabs.map((tab) => tab.href)).toEqual(['/', '/agents', '/tasks']);
+    expect(restored?.tabs.map((tab) => tab.href)).toEqual(['/', '/team', '/tasks']);
     expect(restored?.activeTabId).toBe(useAppTabsStore.getState().activeTabId);
   });
 

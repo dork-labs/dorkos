@@ -22,7 +22,7 @@ import { DiscoveryView } from './DiscoveryView';
  * It wraps {@link DiscoveryView} (scan + approve) and gives the flow the ending
  * it used to lack: a live join count while scanning, and a completion summary
  * ("N projects joined") with a single **Done** that closes and lands the user
- * on the Agents page. Bringing in nothing is a sane no-op — Done just closes.
+ * on the Team page. Bringing in nothing is a sane no-op — Done just closes.
  *
  * Controlled entirely by `useImportProjectsStore`; mounted once in the app shell.
  */
@@ -56,7 +56,7 @@ export function ImportProjectsDialog() {
       return;
     }
     close();
-    if (joinedCount > 0) navigate({ to: '/agents' });
+    if (joinedCount > 0) navigate({ to: '/team' });
   }
 
   const joinedLabel = `${joinedCount} project${joinedCount === 1 ? '' : 's'} joined`;
@@ -84,7 +84,7 @@ export function ImportProjectsDialog() {
                 {joinedLabel}
               </p>
               <p className="text-muted-foreground text-sm">
-                Assign agents, schedule tasks, and connect Slack or Telegram from the Agents page.
+                Assign agents, schedule tasks, and connect Slack or Telegram from the Team page.
               </p>
             </div>
           </ResponsiveDialogBody>

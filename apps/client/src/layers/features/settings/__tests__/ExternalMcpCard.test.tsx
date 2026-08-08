@@ -79,7 +79,7 @@ describe('ExternalMcpCard', () => {
     expect(screen.getByText('Connect other apps to DorkOS')).toBeInTheDocument();
   });
 
-  it('cross-links to the Agents page for the outbound MCP direction, closing itself first', async () => {
+  it('cross-links to the Team page for the outbound MCP direction, closing itself first', async () => {
     const user = userEvent.setup();
     const { Wrapper } = createWrapper();
     render(<ExternalMcpCard mcp={DEFAULT_MCP} authEnabled={false} />, { wrapper: Wrapper });
@@ -87,9 +87,9 @@ describe('ExternalMcpCard', () => {
     expect(
       screen.getByText(/give one of your agents tools from another mcp server instead/i)
     ).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: /open the agents page/i }));
+    await user.click(screen.getByRole('button', { name: /open the team page/i }));
     expect(closeSpy).toHaveBeenCalledTimes(1);
-    expect(navigateSpy).toHaveBeenCalledWith({ to: '/agents' });
+    expect(navigateSpy).toHaveBeenCalledWith({ to: '/team' });
   });
 
   it('shows Enabled badge when enabled and auth configured', () => {

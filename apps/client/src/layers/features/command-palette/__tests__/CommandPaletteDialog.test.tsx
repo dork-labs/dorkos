@@ -606,7 +606,7 @@ describe('CommandPaletteDialog', () => {
     render(<CommandPaletteDialog />);
     const item = screen.getByText('Mesh Network').closest('[data-slot="command-item"]');
     if (item) fireEvent.click(item as Element);
-    expect(mockNavigate).toHaveBeenCalledWith({ to: '/agents' });
+    expect(mockNavigate).toHaveBeenCalledWith({ to: '/team' });
   });
 
   it('opens Settings dialog when Settings is selected', () => {

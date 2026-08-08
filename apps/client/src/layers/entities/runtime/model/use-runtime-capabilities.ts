@@ -12,7 +12,7 @@ export interface UseRuntimeCapabilitiesOptions {
    * on capabilities somebody else asked for can pass false: the query still
    * subscribes to the cache and re-renders when the map lands, it just never
    * issues a request of its own. The standing permission banner uses it so that
-   * appearing on `/agents` does not fetch a map that page has no use for.
+   * appearing on `/team` does not fetch a map that page has no use for.
    */
   enabled?: boolean;
 }

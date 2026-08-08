@@ -11,7 +11,7 @@ import { zodValidator } from '@tanstack/zod-adapter';
 import { AppShell } from './AppShell';
 import { DashboardPage } from '@/layers/widgets/dashboard';
 import { SessionPage } from '@/layers/widgets/session';
-import { AgentsPage } from '@/layers/widgets/agents';
+import { TeamRoute } from '@/layers/widgets/team';
 import { ActivityPage } from '@/layers/widgets/activity';
 import { TasksPage } from '@/layers/widgets/tasks';
 import { ChannelsPage } from '@/layers/widgets/room-view';
@@ -24,6 +24,7 @@ import { marketplaceSearchSchema } from '@/layers/features/marketplace';
 import { onboardingStageSearchSchema } from '@/layers/features/onboarding';
 import { mergeDialogSearch } from '@/layers/shared/model/dialog-search-schema';
 import { RouteErrorFallback, NotFoundFallback } from '@/layers/shared/ui';
+import { DEFAULT_TEAM_VIEW, LEGACY_TABLE_VIEW, TEAM_VIEWS } from '@/layers/shared/lib';
 import { resolveSessionForCwd, SESSION_LOOKUP_FAILED_MESSAGE } from '@/layers/entities/session';
 import type { Transport } from '@dorkos/shared/transport';
 
@@ -119,20 +120,56 @@ const dashboardSearchSchema = mergeDialogSearch(
 /** Search params available on the `/` (dashboard) route. */
 export type DashboardSearch = z.infer<typeof dashboardSearchSchema>;
 
-const agentsSearchSchema = mergeDialogSearch(
+/**
+ * Search params for `/team` — and, unchanged, for the `/agents` alias, so the
+ * redirect hands on an object the destination has already validated.
+ *
+ * `view` accepts `'list'` and answers `'table'`. That is not politeness toward
+ * an old spelling: `/agents?view=list` is an address this repo does not own —
+ * the media-capture pipeline opens it by hand, and so do bookmarks and old
+ * release notes — so it normalizes rather than 404s.
+ *
+ * `sort` and the `agentFilterSchema` params are retained from the route this
+ * replaces: the table view is the same fleet table, and its filter bar reads
+ * them straight out of the URL.
+ *
+ * **Every enum here `.catch()`es rather than throwing.** A URL is something a
+ * person can hand-edit, a bookmark can preserve past a rename, and an old
+ * release note can outlive. A value this route no longer knows is a stale
+ * address, not a broken app, so it falls back to the default and shows the
+ * roster — the same forgiving read `normalizeTeamView` documents. Without this
+ * the route threw, and `?view=bogus` rendered a "Something went wrong" page
+ * with a raw Zod dump on it.
+ *
+ * @internal Exported for testing only.
+ */
+export const teamSearchSchema = mergeDialogSearch(
   z
     .object({
-      view: z.enum(['list', 'topology', 'denied', 'access']).optional().default('list'),
-      // Attention order is the fleet page's default: the agents that need you
-      // lead, and the rows group by state. Any other field flattens the groups.
+      view: z.preprocess(
+        (value) => (value === LEGACY_TABLE_VIEW ? 'table' : value),
+        z.enum(TEAM_VIEWS).catch(DEFAULT_TEAM_VIEW)
+      ),
+      /** The filter chips: everyone, only people, only agents. */
+      kind: z.enum(['all', 'people', 'agents']).catch('all'),
+      /** A person's roster id — narrows to them and the agents they own. */
+      owner: z.string().optional(),
+      /** Whether agent cards cluster under the person they belong to. */
+      group: z.enum(['none', 'manager']).catch('none'),
+      /** The roster search box. */
+      q: z.string().optional(),
+      // No `member` param, despite spec §W2.1 listing one for the profile
+      // drawer: the drawer shipped on the app-wide `?profile=` param that
+      // `dialogSearchSchema` already merges in (§W3.2, DOR-977). A second
+      // address for the same subject is one that can disagree with the first.
+      //
+      // Attention order is the table's default: the agents that need you lead,
+      // and the rows group by state. Any other field flattens the groups.
       sort: z.string().optional().default(`${ATTENTION_SORT_FIELD}:asc`),
       agent: z.string().optional(), // selected agent ID for topology detail panel
     })
     .merge(agentFilterSchema.searchValidator)
 );
-
-/** Search params available on the `/agents` route. */
-export type AgentsSearch = z.infer<typeof agentsSearchSchema>;
 
 const marketplaceRouteSearchSchema = mergeDialogSearch(marketplaceSearchSchema);
 
@@ -248,12 +285,35 @@ const sessionRoute = createRoute({
   loader: sessionRouteLoader,
 });
 
-// ── Agents fleet management at /agents ──────────────────────
-const agentsRoute = createRoute({
+// ── Everyone on this install at /team ───────────────────────
+const teamRoute = createRoute({
+  getParentRoute: () => appShellRoute,
+  path: '/team',
+  validateSearch: zodValidator(teamSearchSchema),
+  component: TeamRoute,
+});
+
+/**
+ * `/agents` is an alias for `/team` and nothing else.
+ *
+ * AGENTS.md says a superseded thing is removed, and the page behind this path
+ * was: every in-repo caller moved to `/team` in the same change. What survives
+ * is for the addresses this repo does not control — a bookmark, a docs link,
+ * a `dorkos://agents` deep link, and the Electron shell's persisted tab list,
+ * which stores raw pathnames. A persisted tab pointing at a dead route is a
+ * blank window on next launch.
+ *
+ * It validates with the same schema as its destination, so the search object it
+ * hands on is already normalized (`?view=list` arrives at `/team` as
+ * `?view=table`) and nothing is dropped on the way.
+ */
+const agentsAliasRoute = createRoute({
   getParentRoute: () => appShellRoute,
   path: '/agents',
-  validateSearch: zodValidator(agentsSearchSchema),
-  component: AgentsPage,
+  validateSearch: zodValidator(teamSearchSchema),
+  beforeLoad: ({ search }) => {
+    throw redirect({ to: '/team', search, replace: true });
+  },
 });
 
 // ── Tasks at /tasks ──────────────────────────────────────────
@@ -373,7 +433,8 @@ const routeTree = rootRoute.addChildren([
   appShellRoute.addChildren([
     indexRoute,
     sessionRoute,
-    agentsRoute,
+    teamRoute,
+    agentsAliasRoute,
     tasksRoute,
     channelsRoute,
     workspacesRoute,

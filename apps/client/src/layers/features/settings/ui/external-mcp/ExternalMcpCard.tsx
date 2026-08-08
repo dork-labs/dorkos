@@ -182,7 +182,7 @@ export function ExternalMcpCard({ mcp, authEnabled }: ExternalMcpCardProps) {
  * tools FROM DorkOS; giving one of DorkOS's own agents tools FROM another MCP
  * server is the opposite direction, managed per agent in that agent's Toolkit
  * tab (Agent Hub → Toolkit), not here. Closes this dialog before navigating so
- * the Agents page renders clean.
+ * the Team page renders clean.
  */
 function OutboundToolsCrossLink() {
   const navigate = useNavigate();
@@ -198,10 +198,10 @@ function OutboundToolsCrossLink() {
         className="h-auto p-0 text-xs"
         onClick={() => {
           close();
-          void navigate({ to: '/agents' });
+          void navigate({ to: '/team' });
         }}
       >
-        Open the Agents page
+        Open the Team page
       </Button>
     </p>
   );

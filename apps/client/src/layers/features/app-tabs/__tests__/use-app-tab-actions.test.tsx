@@ -87,18 +87,18 @@ describe('useAppTabActions', () => {
   });
 
   it('a new tab lands on the dashboard and takes focus', () => {
-    setTabs(['/agents'], 0);
+    setTabs(['/team'], 0);
     const { result } = renderHook(() => useAppTabActions());
 
     result.current.create();
 
-    expect(useAppTabsStore.getState().tabs.map((t) => t.href)).toEqual(['/agents', NEW_TAB_HREF]);
+    expect(useAppTabsStore.getState().tabs.map((t) => t.href)).toEqual(['/team', NEW_TAB_HREF]);
     expect(activeHref()).toBe(NEW_TAB_HREF);
     expect(navigate).toHaveBeenCalledWith({ href: NEW_TAB_HREF });
   });
 
   it('closing the tab you are on shows the one that took over', () => {
-    const tabs = setTabs(['/', '/agents', '/tasks'], 1);
+    const tabs = setTabs(['/', '/team', '/tasks'], 1);
     const { result } = renderHook(() => useAppTabActions());
 
     result.current.close(tabs[1].id);
@@ -107,13 +107,13 @@ describe('useAppTabActions', () => {
   });
 
   it('closing a background tab does not move you', () => {
-    const tabs = setTabs(['/', '/agents'], 1);
+    const tabs = setTabs(['/', '/team'], 1);
     const { result } = renderHook(() => useAppTabActions());
 
     result.current.close(tabs[0].id);
 
-    expect(navigate).toHaveBeenCalledWith({ href: '/agents' });
-    expect(activeHref()).toBe('/agents');
+    expect(navigate).toHaveBeenCalledWith({ href: '/team' });
+    expect(activeHref()).toBe('/team');
   });
 
   it('closeActive is a no-op on the last tab, so the window can take Cmd+W', () => {
@@ -129,7 +129,7 @@ describe('useAppTabActions', () => {
     // `closeActive`'s answer decides whether the desktop shell keeps the
     // window. Reporting `false` here would close the window on top of the tab
     // that had already gone.
-    setTabs(['/', '/agents'], 1);
+    setTabs(['/', '/team'], 1);
     const { result } = renderHook(() => useAppTabActions());
     const warn = vi.spyOn(console, 'error').mockImplementation(() => {});
     navigate.mockImplementationOnce(() => {
@@ -143,7 +143,7 @@ describe('useAppTabActions', () => {
   });
 
   it('indexes tabs from the left, and jumps to the last one', () => {
-    setTabs(['/', '/agents', '/tasks'], 0);
+    setTabs(['/', '/team', '/tasks'], 0);
     const { result } = renderHook(() => useAppTabActions());
 
     result.current.activateIndex(2);
@@ -157,7 +157,7 @@ describe('useAppTabActions', () => {
   });
 
   it('steps between tabs and wraps at both ends', () => {
-    setTabs(['/', '/agents', '/tasks'], 0);
+    setTabs(['/', '/team', '/tasks'], 0);
     const { result } = renderHook(() => useAppTabActions());
 
     result.current.activateRelative(-1);
@@ -192,12 +192,12 @@ describe('useAppTabsSync — how the location changed decides who keeps focus', 
   }
 
   it('settles rather than ping-pongs after an action navigates', () => {
-    const tabs = setTabs(['/', '/agents'], 0);
+    const tabs = setTabs(['/', '/team'], 0);
     const { result } = renderHook(() => useAppTabActions());
     result.current.activate(tabs[1].id);
 
     const sync = renderHook(() => useAppTabsSync());
-    navigateTo('/agents', 'PUSH', sync.rerender);
+    navigateTo('/team', 'PUSH', sync.rerender);
 
     expect(useAppTabsStore.getState().activeTabId).toBe(tabs[1].id);
   });
@@ -223,8 +223,8 @@ describe('useAppTabsSync — how the location changed decides who keeps focus', 
   });
 
   it('lets the active tab adopt a location no tab holds', () => {
-    setTabs(['/', '/agents'], 1);
-    locationHref = '/agents';
+    setTabs(['/', '/team'], 1);
+    locationHref = '/team';
     const { rerender } = renderHook(() => useAppTabsSync());
 
     navigateTo('/tasks', 'PUSH', rerender);
@@ -296,22 +296,22 @@ describe('useAppTabsSync — how the location changed decides who keeps focus', 
     // `BACK`. Checking for BACK/FORWARD by name silently dropped these: the tab
     // you were in would overwrite itself with the old location while the tab
     // that legitimately held it sat there, leaving two tabs on one href.
-    const tabs = setTabs(['/', '/agents', '/tasks'], 2);
+    const tabs = setTabs(['/', '/team', '/tasks'], 2);
     locationHref = '/tasks';
     const { rerender } = renderHook(() => useAppTabsSync());
 
     navigateTo('/', 'GO', rerender);
 
     expect(useAppTabsStore.getState().activeTabId).toBe(tabs[0].id);
-    expect(useAppTabsStore.getState().tabs.map((t) => t.href)).toEqual(['/', '/agents', '/tasks']);
+    expect(useAppTabsStore.getState().tabs.map((t) => t.href)).toEqual(['/', '/team', '/tasks']);
   });
 
   it('treats every non-entry-creating action as a traversal', () => {
     // Defined as "not PUSH or REPLACE" so a future action type cannot quietly
     // fall through to the adopt branch.
     for (const type of ['BACK', 'FORWARD', 'GO'] as const) {
-      const tabs = setTabs(['/', '/agents'], 1);
-      locationHref = '/agents';
+      const tabs = setTabs(['/', '/team'], 1);
+      locationHref = '/team';
       const { rerender, unmount } = renderHook(() => useAppTabsSync());
       navigateTo('/', type, rerender);
       expect(useAppTabsStore.getState().activeTabId, type).toBe(tabs[0].id);
@@ -321,8 +321,8 @@ describe('useAppTabsSync — how the location changed decides who keeps focus', 
   });
 
   it('does not let a traversal onto an unchanged href leak into the next navigation', () => {
-    const tabs = setTabs(['/', '/agents'], 1);
-    locationHref = '/agents';
+    const tabs = setTabs(['/', '/team'], 1);
+    locationHref = '/team';
     const { rerender } = renderHook(() => useAppTabsSync());
 
     // A Back that lands where we already are commits no location change...
@@ -340,14 +340,14 @@ describe('useAppTabsSync — how the location changed decides who keeps focus', 
     // There is no strip in a browser (DOR-568), so there is nothing to keep in
     // step — and a store that never changes never persists.
     leaveDesktopShell();
-    const tabs = setTabs(['/', '/agents'], 1);
-    locationHref = '/agents';
+    const tabs = setTabs(['/', '/team'], 1);
+    locationHref = '/team';
     const { rerender } = renderHook(() => useAppTabsSync());
     sessionStorage.clear();
 
     navigateTo('/tasks', 'PUSH', rerender);
 
-    expect(useAppTabsStore.getState().tabs.map((t) => t.href)).toEqual(['/', '/agents']);
+    expect(useAppTabsStore.getState().tabs.map((t) => t.href)).toEqual(['/', '/team']);
     expect(useAppTabsStore.getState().activeTabId).toBe(tabs[1].id);
     expect(sessionStorage.length).toBe(0);
   });

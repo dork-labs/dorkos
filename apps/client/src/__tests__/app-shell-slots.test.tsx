@@ -64,7 +64,7 @@ vi.mock('@/layers/features/top-nav', () => ({
   ),
   MarketplaceHeader: () => <div data-testid="marketplace-header">Marketplace</div>,
   MarketplaceSourcesHeader: () => <div data-testid="marketplace-sources-header">Sources</div>,
-  AgentsHeader: () => <div data-testid="agents-header">Agents</div>,
+  TeamHeader: () => <div data-testid="team-header">Team</div>,
   ActivityHeader: () => <div data-testid="activity-header">Activity</div>,
   TasksHeader: () => <div data-testid="tasks-header">Tasks</div>,
   WorkspacesHeader: () => <div data-testid="workspaces-header">Workspaces</div>,
@@ -590,8 +590,16 @@ describe('AppShell slot integration', () => {
     // source app-route-paths.test.ts checks against — so a future route added
     // the same way fails here by name instead of waiting for a human to
     // notice "Dashboard" over the wrong page.
+    // `/agents` is the one route with no header of its own on purpose: it is a
+    // `beforeLoad` redirect to `/team` and renders no page at all, so the shell
+    // never draws a header for it. Excluded by name rather than by loosening
+    // the guard, so a route that genuinely forgets its header still fails.
+    const HEADERLESS_ROUTES: readonly string[] = ['/agents'];
+
     it('renders a non-dashboard header for every route except /', () => {
-      const nonRootRoutes = APP_ROUTE_PATHS.filter((path) => path !== '/');
+      const nonRootRoutes = APP_ROUTE_PATHS.filter(
+        (path) => path !== '/' && !HEADERLESS_ROUTES.includes(path)
+      );
       for (const path of nonRootRoutes) {
         mockPathname = path;
         renderAppShell();
@@ -681,10 +689,10 @@ describe('AppShell slot integration', () => {
 
     it('names the active tab after the route the router is on', () => {
       // Proves the shell feeds the strip the real location, not a placeholder.
-      mockPathname = '/agents';
+      mockPathname = '/team';
       renderAppShell();
 
-      expect(screen.getByRole('tab', { selected: true })).toHaveAccessibleName(/Agents/);
+      expect(screen.getByRole('tab', { selected: true })).toHaveAccessibleName(/Team/);
     });
 
     it('points the active tab at the routed content region', () => {
@@ -725,7 +733,7 @@ describe('AppShell slot integration', () => {
 
     it('writes nothing to the tab store — no sessionStorage either', () => {
       sessionStorage.clear();
-      mockPathname = '/agents';
+      mockPathname = '/team';
       renderAppShell();
 
       expect(sessionStorage.length).toBe(0);

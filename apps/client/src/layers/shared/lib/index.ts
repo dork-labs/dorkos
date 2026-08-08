@@ -25,6 +25,13 @@ export {
   type PlatformAdapter,
 } from './platform';
 export {
+  TEAM_VIEWS,
+  DEFAULT_TEAM_VIEW,
+  LEGACY_TABLE_VIEW,
+  normalizeTeamView,
+  type TeamViewMode,
+} from './team-view';
+export {
   APP_ROUTE_PATHS,
   classifyLink,
   openLink,

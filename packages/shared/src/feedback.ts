@@ -105,7 +105,7 @@ export interface FeedbackReport {
   platform: string;
   /** Runtimes configured on the host, e.g. `['claude-code', 'codex']`. */
   runtimes: string[];
-  /** Where the report came from, e.g. `web /agents` or `cli`. */
+  /** Where the report came from, e.g. `web /team` or `cli`. */
   surface: string;
   /** Sanitized config flags. Pass the output of {@link sanitizeFlags}. */
   flags: Record<string, string | number | boolean>;

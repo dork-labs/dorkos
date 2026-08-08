@@ -40,6 +40,18 @@ export interface AgentTableRow extends TopologyAgent {
   isPastOnboardingGrace: boolean;
   /** Whether this agent is the default agent. */
   isDefault: boolean;
+  /**
+   * How to name the person this agent belongs to — `@handle` when they have
+   * one, their display name when they do not — or `null` when nothing owns it.
+   *
+   * Already resolved by the caller, the same way the Team card's attribution
+   * is: the roster knows who owns what, and a table column that went looking
+   * for it would be a second answer to a question already answered.
+   *
+   * `null` is a real state, not a missing one. A system agent belongs to the
+   * install rather than to a person, so the cell says so.
+   */
+  managedBy: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -158,6 +170,27 @@ export function createAgentColumns(
       accessorKey: 'lastSeenEvent',
       header: 'Activity',
       cell: ({ row }) => <ActivityCell row={row.original} />,
+    },
+
+    // ── Owner attribution ── (hidden on mobile) ──────────────
+    // The table answers "whose is this" in a column because it is a columnar
+    // view; the cards answer it as a line under the name. Same fact, drawn the
+    // way each surface reads.
+    {
+      id: 'managedBy',
+      header: 'Managed by',
+      meta: { hideOnMobile: true, headClassName: 'w-[140px]', cellClassName: 'overflow-hidden' },
+      cell: ({ row }) => {
+        const owner = row.original.managedBy;
+        return (
+          <span
+            data-slot="agent-managed-by"
+            className="text-muted-foreground block truncate text-xs"
+          >
+            {owner ?? '—'}
+          </span>
+        );
+      },
     },
 
     // ── Scheduled tasks ── (hidden on mobile) ────────────────
