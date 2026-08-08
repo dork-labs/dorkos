@@ -221,8 +221,15 @@ updated_at`. `thread_kind ∈ {room, session, inbox}`. Rooms migrate off
   user-side).
 - Every cursor write broadcasts on `eventFanOut`; clients reconcile via TanStack Query cache
   updates (no poll dependency).
-- Chat sessions move off the localStorage watermark onto the same table keyed by the session's
-  monotonic SSE `seq`; the `UnreadDivider` becomes one mechanism everywhere.
+- Chat sessions move off the localStorage watermark onto the same table, keyed by the reader's
+  position in the transcript — how many server-confirmed messages have been seen, so `4` means
+  "the fourth message and everything before it". NOT the session's monotonic SSE `seq`, as this
+  line originally said: that number is stamped on stream EVENTS, while a session's completed
+  history is read back from the runtime's transcript (`HistoryMessage` carries no `seq`) and the
+  event log is trimmed — so an event-space cursor cannot say WHICH message a reader opening a
+  session cold left off at, which is the only thing the rule needs. A position is the same shape
+  a room cursor has, so both feed one `unreadPlacement`; the `UnreadDivider` becomes one
+  mechanism everywhere.
 - "New for you" in #team: unread divider + the sidebar unread dot both read the unified cursor.
 - The `CommunityAdapter` `getReadCursor`/`setReadCursor` seam wraps the new table for the local
   backend (community-server compatibility preserved).

@@ -12,6 +12,8 @@ import { agents, eq, type Db } from '@dorkos/db';
 import { AgentBehaviorSchema } from '@dorkos/shared/mesh-schemas';
 import { USER_CONFIG_DEFAULTS } from '@dorkos/shared/config-schema';
 import { configManager } from '../core/config-manager.js';
+import { ReadCursorService } from '../core/read-cursor-service.js';
+import { ReadCursorStore } from '../core/read-cursor-store.js';
 import { readOwnerAccount } from '../core/auth/index.js';
 import { BridgeStore } from '../relay/chat-bridge/bridge-store.js';
 import { AuthorRegistry } from './author-registry.js';
@@ -38,6 +40,17 @@ export interface RoomSubsystem {
   broadcaster: RoomBroadcaster;
   /** The bridge identity/ref store `createBridgedRoom` writes through. */
   bridges: BridgeStore;
+  /**
+   * The user-side read-state service these rooms read and write — whichever one
+   * the caller passed, or the default built over the same database.
+   *
+   * Handed back so a caller wiring a server can register THE SAME instance as
+   * the module singleton `PUT /api/read-cursors/:kind/:id` resolves. Two
+   * instances over one database behave identically, but two over DIFFERENT ones
+   * (which is what a test that builds a subsystem and forgets this gets) leave
+   * the two routes writing to two tables.
+   */
+  readCursors: ReadCursorService;
 }
 
 /**
@@ -186,12 +199,17 @@ function safeJson(raw: string): unknown {
  * @param opts.agents - Agent lookup override; defaults to the mesh-cache reader.
  * @param opts.turns - Turn runner override; defaults to the real session path.
  * @param opts.budget - Turn budget override; defaults to the configured hourly cap.
+ * @param opts.readCursors - The install's user-side read-state service. Pass the
+ *   one the rest of the server holds — a second instance over the same database
+ *   behaves identically, so the default exists for tests and for the embedded
+ *   transport, not as a second source of truth.
  */
 export function createRoomSubsystem(opts: {
   db: Db;
   agents?: RoomAgentLookup;
   turns?: RoomTurnRunner;
   budget?: RoomTurnBudget;
+  readCursors?: ReadCursorService;
 }): RoomSubsystem {
   const store = new RoomStore(opts.db);
   const reactions = new ReactionStore(opts.db);
@@ -200,6 +218,7 @@ export function createRoomSubsystem(opts: {
   const authors = new AuthorRegistry(opts.db, agentLookup);
   const broadcaster = new RoomBroadcaster();
   const bridges = new BridgeStore(opts.db);
+  const readCursors = opts.readCursors ?? new ReadCursorService(new ReadCursorStore(opts.db));
   const service = new RoomService({
     store,
     reactions,
@@ -229,6 +248,7 @@ export function createRoomSubsystem(opts: {
     // captured at boot would leave the rooms domain believing forever that the
     // unbound `'local'` author is still the operator.
     isOwnerAuthor: (authorId) => authors.isOwner(authorId, readOwnerAccount()?.id ?? null),
+    readCursors,
   });
   // **Here, not at a boot-time hook, and the difference is the ordering bug the
   // reservation exists to prevent.** `dorkos` has to be held before ANY author
@@ -239,7 +259,7 @@ export function createRoomSubsystem(opts: {
   // path there is, including the embedded one. The backfill rides along because
   // it wants the same guarantee — the reservations are taken before it derives.
   ensureHandles(opts.db, authors);
-  return { service, store, attachments, authors, broadcaster, bridges };
+  return { service, store, attachments, authors, broadcaster, bridges, readCursors };
 }
 
 let active: RoomService | null = null;

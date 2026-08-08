@@ -214,6 +214,8 @@ import {
   setRoomInternals,
   setRoomAttachmentStores,
 } from './services/rooms/index.js';
+import { ReadCursorStore } from './services/core/read-cursor-store.js';
+import { ReadCursorService, setReadCursorService } from './services/core/read-cursor-service.js';
 import {
   followSessionRekeys,
   repairRoomSessionBindings,
@@ -847,13 +849,22 @@ async function start() {
   // broadcaster, so an install with no rooms in it costs one object graph and
   // no background work. A post now triggers whoever it addresses, bounded by
   // the cascade guard (`rooms.maxAgentDepth`, ADR 260726-170127).
+  // Read state (team-room-home §D4). Unconditional and outside the rooms
+  // subsystem on purpose: the same table answers for rooms, agent sessions and
+  // the inbox, so wiring it from the rooms graph would have made two of the
+  // three depend on a domain they have nothing to do with. Built BEFORE the
+  // rooms graph because rooms read and write it — the room list's unread badge
+  // and every person's place in a room come from here.
+  const readCursorService = new ReadCursorService(new ReadCursorStore(db));
+  setReadCursorService(readCursorService);
+
   const {
     service: roomService,
     store: roomStore,
     attachments: roomAttachmentRows,
     authors: roomAuthors,
     bridges: roomBridges,
-  } = createRoomSubsystem({ db });
+  } = createRoomSubsystem({ db, readCursors: readCursorService });
   setRoomService(roomService);
   setRoomInternals(roomBridges, roomAuthors);
   // Where a room's files live is chosen HERE and nowhere else: the routes depend

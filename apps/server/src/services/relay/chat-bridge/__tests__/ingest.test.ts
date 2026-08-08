@@ -330,6 +330,7 @@ describe('ChatBridge.ingest (chats-as-channels §5)', () => {
       store: harness.store,
       authors: harness.authors,
       agents: agentLookup,
+      readCursors: harness.readCursors,
     });
     const agentAuthor = harness.authors.resolveAgent(AGENT_PATH, 'Ana');
     const candidates = roster.addressingCandidates(room.id, {

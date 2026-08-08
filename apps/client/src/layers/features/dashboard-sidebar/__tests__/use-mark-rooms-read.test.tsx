@@ -40,7 +40,7 @@ function pendingTransport() {
         releases.push(() => resolve([entry(roomId, 4)]));
       });
     }),
-    setRoomReadCursor: vi.fn().mockResolvedValue(undefined),
+    setReadCursor: vi.fn().mockResolvedValue(undefined),
   });
   return {
     transport,
@@ -69,7 +69,7 @@ describe('useMarkRoomsRead', () => {
   it('runs the per-room path once per room handed in', async () => {
     const transport = createMockTransport({
       listRoomEntries: vi.fn((roomId: string) => Promise.resolve([entry(roomId, 4)])),
-      setRoomReadCursor: vi.fn().mockResolvedValue(undefined),
+      setReadCursor: vi.fn().mockResolvedValue(undefined),
     });
     const { result } = renderHook(() => useMarkRoomsRead(), {
       wrapper: wrapperFor(transport),
@@ -79,11 +79,11 @@ describe('useMarkRoomsRead', () => {
       result.current(['room-a', 'room-b', 'room-c']);
     });
 
-    await waitFor(() => expect(transport.setRoomReadCursor).toHaveBeenCalledTimes(3));
+    await waitFor(() => expect(transport.setReadCursor).toHaveBeenCalledTimes(3));
     expect(transport.listRoomEntries).toHaveBeenCalledTimes(3);
-    expect(transport.setRoomReadCursor).toHaveBeenCalledWith('room-a', 4);
-    expect(transport.setRoomReadCursor).toHaveBeenCalledWith('room-b', 4);
-    expect(transport.setRoomReadCursor).toHaveBeenCalledWith('room-c', 4);
+    expect(transport.setReadCursor).toHaveBeenCalledWith('room', 'room-a', 4);
+    expect(transport.setReadCursor).toHaveBeenCalledWith('room', 'room-b', 4);
+    expect(transport.setReadCursor).toHaveBeenCalledWith('room', 'room-c', 4);
   });
 
   it('ignores a second click while the sweep is still running', async () => {
@@ -108,7 +108,7 @@ describe('useMarkRoomsRead', () => {
     expect(transport.listRoomEntries).toHaveBeenCalledTimes(3);
 
     await releaseAll();
-    await waitFor(() => expect(transport.setRoomReadCursor).toHaveBeenCalledTimes(3));
+    await waitFor(() => expect(transport.setReadCursor).toHaveBeenCalledTimes(3));
   });
 
   it('frees the gesture again once the sweep has settled', async () => {
@@ -121,7 +121,7 @@ describe('useMarkRoomsRead', () => {
       result.current(['room-a', 'room-b']);
     });
     await releaseAll();
-    await waitFor(() => expect(transport.setRoomReadCursor).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(transport.setReadCursor).toHaveBeenCalledTimes(2));
 
     await act(async () => {
       result.current(['room-a', 'room-b']);
@@ -132,7 +132,7 @@ describe('useMarkRoomsRead', () => {
   it('sends nothing when no room is behind', async () => {
     const transport = createMockTransport({
       listRoomEntries: vi.fn(),
-      setRoomReadCursor: vi.fn(),
+      setReadCursor: vi.fn(),
     });
     const { result } = renderHook(() => useMarkRoomsRead(), {
       wrapper: wrapperFor(transport),

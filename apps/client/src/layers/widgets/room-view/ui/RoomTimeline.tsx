@@ -1,18 +1,12 @@
 import { Fragment, useMemo } from 'react';
 import { MessagesSquare } from 'lucide-react';
-import { buildTimelineRows } from '@/layers/shared/lib';
+import { buildTimelineRows, unreadPlacement } from '@/layers/shared/lib';
 import { useNow } from '@/layers/shared/model';
 import { Button, Feed, Skeleton } from '@/layers/shared/ui';
 import type { RoomEntry, RoomRosterEntry } from '@/layers/entities/room';
 import { usePendingPosts } from '@/layers/entities/room';
 import { DayDivider, UnreadDivider } from '@/layers/features/chat';
-import {
-  authorsById,
-  entryRowId,
-  groupByThread,
-  toMessageAuthor,
-  unreadPlacement,
-} from '../lib/room-timeline';
+import { authorsById, entryRowId, groupByThread, toMessageAuthor } from '../lib/room-timeline';
 import { RoomAgentInfoProvider } from '../model/agent-info-context';
 import { RoomEntryRow } from './RoomEntryRow';
 import { RoomPendingList } from './RoomPendingRow';

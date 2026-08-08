@@ -3,7 +3,9 @@ import { eq, roomMembers, roomSessions, type Db } from '@dorkos/db';
 import { agentAuthorRef } from '@dorkos/shared/room-schemas';
 import { eventFanOut } from '../../core/event-fan-out.js';
 import type { AuthorRegistry } from '../author-registry.js';
+import type { ReadCursorService } from '../../core/read-cursor-service.js';
 import type { RoomService } from '../room-service.js';
+import type { RoomStore } from '../room-store.js';
 import { RoomError } from '../room-errors.js';
 import { agentLookupFor, createRoomHarness, scriptedRunner } from './room-test-harness.js';
 
@@ -62,11 +64,15 @@ function rosterReadsForListingDms(dmCount: number): number {
 describe('RoomService', () => {
   let db: Db;
   let service: RoomService;
+  let store: RoomStore;
   let authors: AuthorRegistry;
+  let readCursors: ReadCursorService;
   let human: string;
 
   beforeEach(() => {
-    ({ db, service, authors, human } = createRoomHarness({ agents: agentLookup }));
+    ({ db, service, store, authors, readCursors, human } = createRoomHarness({
+      agents: agentLookup,
+    }));
   });
 
   describe('creating rooms', () => {
@@ -409,7 +415,65 @@ describe('RoomService', () => {
       expect(service.setReadCursor(roomId, human, 1).lastReadSeq).toBe(3);
     });
 
-    it('keeps the cursor on the membership, so it is per (member, room)', () => {
+    it('keeps a person out of the membership column, which is the agent cursor now', () => {
+      // The split this phase exists for: where a PERSON has read is
+      // `read_cursors`; what an AGENT has been shown is `room_members`. A human
+      // write that still moved the column would leave the ambient loop believing
+      // an agent had seen messages nobody showed it.
+      service.setReadCursor(roomId, human, 2);
+
+      expect(store.getMember(roomId, human)?.lastReadSeq).toBe(0);
+      expect(readCursors.get(human, 'room', roomId)?.lastReadSeq).toBe(2);
+    });
+
+    it('leaves an agent on the membership column, where RP3 reads it', () => {
+      service.addMember(roomId, human, { agentPath: '/agents/bo' });
+      const bo = authors.resolveAgent('/agents/bo', 'Bo').id;
+
+      service.setReadCursor(roomId, bo, 3);
+
+      expect(store.getMember(roomId, bo)?.lastReadSeq).toBe(3);
+      expect(readCursors.get(bo, 'room', roomId)).toBeNull();
+    });
+
+    it("never lets a person's reading touch an agent's cursor", () => {
+      // The one way to break RP3 from the user side, asserted as its own case.
+      service.addMember(roomId, human, { agentPath: '/agents/bo' });
+      const bo = authors.resolveAgent('/agents/bo', 'Bo').id;
+      const before = store.getMember(roomId, bo)?.lastReadSeq;
+
+      service.setReadCursor(roomId, human, 3);
+
+      expect(store.getMember(roomId, bo)?.lastReadSeq).toBe(before);
+    });
+
+    it('gives two people in one room independent cursors', () => {
+      const second = authors.resolveExternal({
+        platformType: 'telegram',
+        instanceId: 'main',
+        platformUserId: '77',
+        displayName: 'Robin',
+      }).id;
+      service.addMember(roomId, human, { authorId: second });
+
+      service.setReadCursor(roomId, human, 3);
+      service.setReadCursor(roomId, second, 1);
+
+      expect(readCursors.get(human, 'room', roomId)?.lastReadSeq).toBe(3);
+      expect(readCursors.get(second, 'room', roomId)?.lastReadSeq).toBe(1);
+      expect(
+        service.getRoom(roomId, second)?.members.find((m) => m.authorId === second)?.lastReadSeq
+      ).toBe(1);
+    });
+
+    it('reports the reader their own cursor on the roster they open the room with', () => {
+      service.setReadCursor(roomId, human, 2);
+
+      const room = service.getRoom(roomId, human)!;
+      expect(room.members.find((m) => m.authorId === human)?.lastReadSeq).toBe(2);
+    });
+
+    it('keeps the cursor per (member, room)', () => {
       const other = service.createRoom(
         { kind: 'channel', title: 'Other', members: [], agentPaths: [] },
         human
@@ -431,10 +495,14 @@ describe('RoomService', () => {
       // summary carries no seq to measure the new cursor against, so a reader
       // holding only `lastReadSeq` could guess zero and be wrong about the third
       // message.
-      expect(broadcast).toHaveBeenCalledWith('room_read_cursor', {
-        roomId,
-        authorId: human,
-        authorKind: 'human',
+      //
+      // One event name for every kind of thread a person reads — a room, an
+      // agent session, the inbox — so a client subscribes once and filters on
+      // `threadKind`.
+      expect(broadcast).toHaveBeenCalledWith('read_cursor', {
+        userId: human,
+        threadKind: 'room',
+        threadId: roomId,
         lastReadSeq: 2,
         unreadCount: 1,
       });
@@ -448,11 +516,11 @@ describe('RoomService', () => {
       service.setReadCursor(roomId, human, 3);
       service.setReadCursor(roomId, human, 1);
 
-      expect(broadcast.mock.calls.map(([name]) => name)).not.toContain('room_read_cursor');
+      expect(broadcast.mock.calls.map(([name]) => name)).not.toContain('read_cursor');
       broadcast.mockRestore();
     });
 
-    it('says whose cursor moved, so a reader never repaints their badge from an agent', () => {
+    it('says nothing at all for an agent, whose cursor nothing on screen draws', () => {
       // Bo is `silent`, so joining and reading cannot trigger a turn and put a
       // fourth entry in the room underneath this measurement.
       service.addMember(roomId, human, { agentPath: '/agents/bo' });
@@ -461,10 +529,10 @@ describe('RoomService', () => {
 
       service.setReadCursor(roomId, bo, 3);
 
-      expect(broadcast).toHaveBeenCalledWith(
-        'room_read_cursor',
-        expect.objectContaining({ authorId: bo, authorKind: 'agent' })
-      );
+      // `read_cursor` is the PEOPLE stream by contract, and an agent advancing
+      // its own cursor at claim time would otherwise be the loudest event on the
+      // global fan-out for a fact no surface renders.
+      expect(broadcast.mock.calls.map(([name]) => name)).not.toContain('read_cursor');
       broadcast.mockRestore();
     });
   });

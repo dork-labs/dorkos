@@ -17,6 +17,7 @@ import {
   roomEntries,
   roomSessions,
   roomBridges,
+  readCursors,
   eq,
   and,
   inArray,
@@ -428,6 +429,14 @@ export class RoomStore {
   /**
    * Advance a member's read cursor. Monotonic: a lower value is ignored, so a
    * stale client cannot un-read a room for a second client.
+   *
+   * **This is the AGENT-side cursor** (team-room-home spec §D4): what the
+   * ambient participation loop has SHOWN a member, advanced when a turn is
+   * claimed and rewound when it refuses (room-participation spec §8.3). Where a
+   * PERSON has read is `read_cursors`, and `RoomService.setReadCursor` is what
+   * decides which of the two a caller is moving. A human's row here is
+   * historical residue from before the split: migration 0061 copied it forward,
+   * and nothing writes or reads it for a person now.
    *
    * @param roomId - The room.
    * @param authorId - The member.
@@ -1032,6 +1041,15 @@ export class RoomStore {
    * {@link RoomStore.countUnread} counts it for the room's badge — one rule,
    * measured in one place.
    *
+   * **Which cursor that is depends on who is reading, and the caller says which**
+   * (team-room-home spec §D4). A person's place in a room lives in
+   * `read_cursors`; an agent's — what the ambient loop has shown it — is
+   * `room_members.last_read_seq`. The `'user'` join is LEFT, and its `COALESCE`
+   * floor is 0 rather than the membership column: a person who has read nothing
+   * has no row, and falling back to the agent-side column would be reading one
+   * cursor to answer the other's question, which is the one thing the split
+   * forbids.
+   *
    * **The membership join is INNER, and that is the privacy boundary** — the
    * same one {@link RoomStore.listRoomsForMember} draws, drawn the same way.
    * Participation implies membership at WRITE time, never at read time:
@@ -1045,9 +1063,16 @@ export class RoomStore {
    *
    * @param viewerAuthorId - Whose threads to list, and whose cursor to measure.
    * @param limit - Most rows to return, newest activity first.
+   * @param cursor - Which read cursor answers for this reader: `'user'` for a
+   *   person's own, `'membership'` for the agent-side column.
    */
-  listThreadsForMember(viewerAuthorId: string, limit: number): ThreadAggregateRow[] {
+  listThreadsForMember(
+    viewerAuthorId: string,
+    limit: number,
+    cursor: 'user' | 'membership'
+  ): ThreadAggregateRow[] {
     const root = alias(roomEntries, 'thread_root');
+    const readCursor = sql`COALESCE(${readCursors.lastReadSeq}, 0)`;
     // MAX over the replies' timestamps: a thread's activity is its newest
     // reply. Named once and reused for the ORDER BY, so the sort and the value
     // the row reports can never be two different expressions.
@@ -1063,7 +1088,9 @@ export class RoomStore {
           rootAuthorId: root.authorId,
           rootBody: root.body,
           replyCount: count(),
-          unreadCount: sql<number>`SUM(CASE WHEN ${roomEntries.seq} > ${roomMembers.lastReadSeq} THEN 1 ELSE 0 END)`,
+          unreadCount: sql<number>`SUM(CASE WHEN ${roomEntries.seq} > ${
+            cursor === 'user' ? readCursor : roomMembers.lastReadSeq
+          } THEN 1 ELSE 0 END)`,
           lastActivityAt,
         })
         .from(roomEntries)
@@ -1072,9 +1099,20 @@ export class RoomStore {
           and(eq(root.roomId, roomEntries.roomId), eq(root.id, roomEntries.threadRootEntryId))
         )
         .innerJoin(rooms, eq(rooms.id, roomEntries.roomId))
+        // The membership join is the privacy boundary and stays INNER whichever
+        // cursor is measured; the cursor join below is LEFT, because having read
+        // nothing is not the same as not being here.
         .innerJoin(
           roomMembers,
           and(eq(roomMembers.roomId, roomEntries.roomId), eq(roomMembers.authorId, viewerAuthorId))
+        )
+        .leftJoin(
+          readCursors,
+          and(
+            eq(readCursors.userId, viewerAuthorId),
+            eq(readCursors.threadKind, 'room'),
+            eq(readCursors.threadId, roomEntries.roomId)
+          )
         )
         .where(
           and(

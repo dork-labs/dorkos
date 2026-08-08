@@ -193,8 +193,10 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
   // from here rather than from the card because answering the card unmounts it.
   const approvalAnnouncement = useApprovalAnnouncer(newest?.parts ?? EMPTY_PARTS, sessionId);
 
-  const newestMessageId = messages[messages.length - 1]?.id;
-  const { lastSeenMessageId, markSeen } = useUnreadCursor(sessionId, newestMessageId);
+  const { lastSeenMessageId, unreadFromStart, markSeen, isHydrated } = useUnreadCursor(
+    sessionId,
+    messages
+  );
 
   // Rows, not messages, are what the list virtualizes: dividers are real rows so
   // their heights participate in measurement. Memoized on the messages array,
@@ -209,8 +211,9 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
         resolveAuthor: (message) => resolveMessageAuthor(message, authorContext),
         now: Date.now(),
         lastSeenMessageId,
+        unreadFromStart,
       }),
-    [messages, authorContext, lastSeenMessageId]
+    [messages, authorContext, lastSeenMessageId, unreadFromStart]
   );
 
   useEffect(() => {
@@ -288,9 +291,15 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
   //
   // The ref holds the session already anchored, so streaming messages — which
   // change `rows` constantly — can never yank a reader who has scrolled away.
+  //
+  // And it waits for the cursor to come back from the server (`isHydrated`).
+  // The read is a round trip now, not a synchronous storage read: anchoring on
+  // the first render with rows would land every conversation at the end, and
+  // being at the end is what marks it read — so the rule would be consumed a
+  // frame before it could be drawn.
   const anchoredSessionRef = useRef<string | null>(null);
   useLayoutEffect(() => {
-    if (anchoredSessionRef.current === sessionId || rows.length === 0) return;
+    if (!isHydrated || anchoredSessionRef.current === sessionId || rows.length === 0) return;
     anchoredSessionRef.current = sessionId;
     const unreadIndex = rows.findIndex((row) => row.kind === 'unread-divider');
     if (unreadIndex === -1) {
@@ -301,7 +310,7 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
     // still on screen. Landing the rule flush at the viewport top loses the
     // "here is what you already read" edge that makes it legible.
     virtualizer.scrollToIndex(Math.max(0, unreadIndex - 1), { align: 'start' });
-  }, [sessionId, rows, virtualizer]);
+  }, [isHydrated, sessionId, rows, virtualizer]);
 
   // TRAP: `isAtEnd()` is vacuously TRUE on the first commit. It derives from
   // `getMaxScrollOffset()`, which returns 0 while `virtualizer.scrollElement`
@@ -373,8 +382,9 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
   }, [isAtBottom, onScrollStateChange]);
 
   // Reading at the bottom means everything on screen counts as seen. `markSeen`
-  // re-identifies whenever the newest message changes, so this also fires as new
-  // messages land while pinned.
+  // re-identifies whenever the transcript grows, so this also fires as new
+  // messages land while pinned — and once more when the stored cursor arrives,
+  // since it does nothing until it knows what is already recorded.
   //
   // `measured` skips the first commit, whose `isAtBottom` is the vacuous
   // first-render `true` documented above. Without it, opening a session with

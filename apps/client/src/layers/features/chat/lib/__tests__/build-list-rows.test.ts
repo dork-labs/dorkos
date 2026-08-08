@@ -156,6 +156,20 @@ describe('buildListRows', () => {
     expect(kinds(rows)).toEqual(['day-divider', 'message', 'message']);
   });
 
+  it('puts the rule above everything when the whole transcript is unread', () => {
+    // A reader who has read none of this session has a real cursor sitting at
+    // zero, and `unreadPlacement` answers `fromStart` for it — the same answer a
+    // room gives. This is the pass-through that makes the two draw the same line.
+    const rows = buildListRows([msg('m1', at(25, 10)), msg('m2', at(25, 10, 1))], {
+      resolveAuthor: authorsFrom(),
+      now: NOW,
+      lastSeenMessageId: null,
+      unreadFromStart: true,
+    });
+
+    expect(kinds(rows)).toEqual(['day-divider', 'unread-divider', 'message', 'message']);
+  });
+
   it('renders no unread rule when no cursor is supplied', () => {
     const rows = buildListRows([msg('m1', at(25, 10)), msg('m2', at(25, 10, 1))], {
       resolveAuthor: authorsFrom(),

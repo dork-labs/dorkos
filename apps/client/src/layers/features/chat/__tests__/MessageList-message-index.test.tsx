@@ -1,8 +1,30 @@
 // @vitest-environment jsdom
+import type React from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, cleanup } from '@testing-library/react';
+import { cleanup } from '@testing-library/react';
+
+/**
+ * The list holds its unread rule in server state now (team-room-home §D4), so
+ * it subscribes to the read-cursor broadcast. Nothing here is about read state
+ * — the subscription is stubbed out, and the cursor comes back empty from the
+ * harness transport below.
+ */
+vi.mock('@/layers/shared/model', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/layers/shared/model')>();
+  return { ...actual, useEventSubscription: () => {} };
+});
+
 import { MessageList } from '../ui/MessageList';
 import type { ChatMessage } from '../model/use-chat-session';
+import { createReadCursorHarness, renderWithTransport } from './message-list-test-helpers';
+
+/** The read-cursor route, which answers "never read" for every session here. */
+const readState = createReadCursorHarness();
+
+/** Render inside the transport the list's unread cursor reads through. */
+function render(ui: React.ReactElement) {
+  return renderWithTransport(ui, readState.transport);
+}
 
 /**
  * Regression pins for the two rules that must keep MESSAGE semantics after the

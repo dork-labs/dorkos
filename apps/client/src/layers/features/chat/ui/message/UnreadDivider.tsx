@@ -11,9 +11,12 @@ const UNREAD_LABEL = 'New messages';
  * The rule marking where the reader left off.
  *
  * At most one per list, placed before the first message that arrived after the
- * reader's last visit (the cursor lives in this browser — see
- * `use-unread-cursor`). Accent-colored and labelled on the right so it reads as
- * a live marker rather than another day boundary.
+ * reader's last visit. One component for every kind of thread there is: a
+ * session's transcript places it from the server-held cursor
+ * (`use-unread-cursor`), a room's from the same table's room cursor, so the same
+ * read state draws the same rule wherever it is read. Accent-colored and
+ * labelled on the right so it reads as a live marker rather than another day
+ * boundary.
  */
 export function UnreadDivider() {
   return (
