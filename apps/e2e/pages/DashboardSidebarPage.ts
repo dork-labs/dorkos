@@ -6,6 +6,8 @@ const DND_ACTIVATION_PX = 8;
 const SETTLE_POLL_MS = 150;
 /** How many times to re-read before giving up on the sidebar ever settling. */
 const SETTLE_ATTEMPTS = 15;
+/** How many times a held drag re-aims at a target that moved under it. */
+const REAIM_ATTEMPTS = 12;
 
 /**
  * Page Object for the web cockpit's left sidebar — the DashboardSidebar agent
@@ -85,19 +87,6 @@ export class DashboardSidebarPage {
   }
 
   /**
-   * Assert a drag endpoint's centre is on screen, naming it if it is not.
-   *
-   * `page.mouse` dispatches at viewport coordinates, so a press aimed below the
-   * fold lands on no element at all: dnd-kit's `PointerSensor` never arms and
-   * the drop silently does not happen. Playwright reports none of that — the
-   * gesture "succeeds" and only the assertion afterwards fails, pointing at the
-   * DOM rather than at the pointer. So the geometry is checked up front and
-   * fails with the measurement (DOR-1035).
-   *
-   * @param name - Which endpoint this is, for the error message.
-   * @param box - The endpoint's bounding box.
-   */
-  /**
    * Read a row's box only once it has stopped moving.
    *
    * `waitFor({ state: 'visible' })` returns while a row is still animating —
@@ -121,6 +110,19 @@ export class DashboardSidebarPage {
     throw new Error(`Drag ${name} never stopped moving — the sidebar is still laying out.`);
   }
 
+  /**
+   * Assert a drag endpoint's centre is on screen, naming it if it is not.
+   *
+   * `page.mouse` dispatches at viewport coordinates, so a press aimed below the
+   * fold lands on no element at all: dnd-kit's `PointerSensor` never arms and
+   * the drop silently does not happen. Playwright reports none of that — the
+   * gesture "succeeds" and only the assertion afterwards fails, pointing at the
+   * DOM rather than at the pointer. So the geometry is checked up front and
+   * fails with the measurement (DOR-1035).
+   *
+   * @param name - Which endpoint this is, for the error message.
+   * @param box - The endpoint's bounding box.
+   */
   private assertOnScreen(name: string, box: { y: number; height: number }) {
     const viewport = this.page.viewportSize();
     if (!viewport) return;
@@ -146,11 +148,12 @@ export class DashboardSidebarPage {
    * 720px-tall viewport once the identity work grew the sidebar, and every drop
    * silently did nothing.
    *
-   * Both endpoints are measured only once they stop moving, and the gesture
-   * asserts that the sensor actually armed. Every way this drag has failed so
-   * far — a press below the fold, a press aimed at a row mid-animation — looked
-   * identical afterwards: a group that stayed empty, with the spec blaming the
-   * DOM. A drag that never picked anything up now says so here instead.
+   * Both endpoints are measured only once they stop moving, and the release
+   * waits for the sidebar to say what the drag is over. Every way this gesture
+   * has failed — a press below the fold, a press aimed at a row mid-animation,
+   * a release that beat dnd-kit's collision pass — looked identical afterwards:
+   * a group that stayed empty, with the spec blaming the DOM. Each now fails
+   * here, saying which one it was.
    */
   async dragAgentIntoGroup(agentDisplayName: string, groupName: string) {
     const source = this.agentRow(agentDisplayName);
@@ -181,19 +184,34 @@ export class DashboardSidebarPage {
       );
     }
     await this.page.mouse.move(endX, endY);
-    // Release only once the sidebar says it is over the group.
+
+    // Re-aim at the group until the sidebar agrees the drag is over it, then
+    // release.
     //
-    // dnd-kit resolves `over` from its own collision pass, not from the move
-    // event, so a release that beats that pass classifies as a drop on nothing
-    // and does nothing — and on a loaded CI runner it does beat it. Waiting on
-    // the announcement makes the release ordered rather than hopeful, and it is
-    // the one signal that separates the three ways this has failed: silence
-    // means nothing was ever picked up, a different target means the gesture
-    // landed somewhere else (DOR-1035).
-    await expect(
-      this.page.locator('[id^="DndLiveRegion"]'),
-      `the drag never came to rest over ${groupName}`
-    ).toContainText(`Over group ${groupName}`);
+    // Two things make a single measured point unreliable, and both did on CI.
+    // dnd-kit resolves `over` on its own collision pass rather than on the move
+    // event, so a release can beat it and be classified as a drop on nothing.
+    // And the Channels and Direct-message sections arrive from their own query,
+    // so one can mount mid-gesture and move everything below it — CI reported
+    // "Over Channels." for a point measured on the group header before the
+    // press. Re-reading the target's CURRENT box and moving again converges on
+    // the row wherever it has gone, instead of trusting one stale guess.
+    const liveRegion = this.page.locator('[id^="DndLiveRegion"]');
+    const overGroup = `Over group ${groupName}`;
+    for (let attempt = 0; attempt < REAIM_ATTEMPTS; attempt++) {
+      if ((await liveRegion.textContent())?.includes(overGroup)) break;
+      const box = await target.boundingBox();
+      if (box) {
+        // Two moves a pixel apart: dnd-kit recomputes on pointer movement, and
+        // re-sending an identical coordinate is not movement.
+        await this.page.mouse.move(box.x + box.width / 2, box.y + box.height / 2 - 1);
+        await this.page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+      }
+      await this.page.waitForTimeout(SETTLE_POLL_MS);
+    }
+    await expect(liveRegion, `the drag never came to rest over ${groupName}`).toContainText(
+      overGroup
+    );
     await this.page.mouse.up();
   }
 }
