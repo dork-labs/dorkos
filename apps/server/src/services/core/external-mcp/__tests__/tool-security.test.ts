@@ -51,7 +51,7 @@ import { marketplaceDomain } from '../../../marketplace-mcp/marketplace-capabili
 import { connectorDomain } from '../../../connectors/connector-capabilities.js';
 import type { ConnectorCapabilityDeps } from '../../../connectors/connector-capabilities.js';
 import { mcpDomain } from '../../../mesh/mcp-capabilities.js';
-import type { McpCapabilityDeps } from '../../../mesh/mcp-capabilities.js';
+import type { McpCapabilityDeps } from '../../../mesh/mcp-capability-deps.js';
 import { capabilitiesDomain } from '../../self-description/capabilities-domain.js';
 import { composeDorkOsCapabilityRegistry } from '../../self-description/dorkos-registry.js';
 import type { McpToolDeps } from '../../../runtimes/claude-code/mcp-tools/types.js';

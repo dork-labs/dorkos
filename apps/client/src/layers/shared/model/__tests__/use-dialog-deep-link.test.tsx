@@ -20,6 +20,7 @@ import { useAppStore } from '../app-store';
 import {
   useSettingsDeepLink,
   useTasksDeepLink,
+  useProfileDeepLink,
   useOpenConnections,
   resolveDeepLinkTarget,
   type SettingsRouteTarget,
@@ -112,6 +113,7 @@ type RouterTestHarness = ReturnType<typeof buildHarness>;
 beforeEach(() => {
   useAppStore.getState().setSettingsOpen(false);
   useAppStore.getState().setTasksOpen(false);
+  useAppStore.getState().setProfileOpen(false);
 });
 
 // ─────────────────────────────────────────────────────────────
@@ -440,6 +442,133 @@ describe('useTasksDeepLink', () => {
       });
     });
   }
+});
+
+// ─────────────────────────────────────────────────────────────
+// useProfileDeepLink — the profile drawer's address
+// ─────────────────────────────────────────────────────────────
+//
+// The one deep link that carries a *subject* rather than a tab: `?profile=<id>`
+// names whose profile is open, which is what makes a profile shareable.
+describe('useProfileDeepLink', () => {
+  it('is closed, and names nobody, with no profile param', async () => {
+    const harness = buildHarness('/');
+    const { result } = renderHook(() => useProfileDeepLink(), { wrapper: harness.Wrapper });
+    await harness.waitForRouterReady();
+
+    expect(result.current.isOpen).toBe(false);
+    expect(result.current.memberId).toBeNull();
+  });
+
+  it('reads the member id straight off the URL', async () => {
+    const harness = buildHarness('/?profile=agent-warden');
+    const { result } = renderHook(() => useProfileDeepLink(), { wrapper: harness.Wrapper });
+    await harness.waitForRouterReady();
+
+    expect(result.current.isOpen).toBe(true);
+    expect(result.current.memberId).toBe('agent-warden');
+  });
+
+  it('open(id) writes that id to the URL', async () => {
+    const harness = buildHarness('/');
+    const { result } = renderHook(() => useProfileDeepLink(), { wrapper: harness.Wrapper });
+    await harness.waitForRouterReady();
+
+    await act(async () => {
+      result.current.open('person-dorian');
+    });
+
+    await waitFor(() => {
+      expect(harness.readSearch().profile).toBe('person-dorian');
+    });
+  });
+
+  it('open(id) pushes a history entry, so the phone’s back gesture dismisses it', async () => {
+    const harness = buildHarness('/');
+    const { result } = renderHook(() => useProfileDeepLink(), { wrapper: harness.Wrapper });
+    await harness.waitForRouterReady();
+    harness.actions.length = 0;
+
+    await act(async () => {
+      result.current.open('person-dorian');
+    });
+
+    await waitFor(() => {
+      expect(harness.readSearch().profile).toBe('person-dorian');
+    });
+    // A REPLACE here would leave nothing to go back to — the back gesture would
+    // leave the page instead of closing the drawer, which is the whole reason
+    // this state lives in the URL.
+    expect(harness.actions).toContain('PUSH');
+  });
+
+  it('switching subject keeps one entry per profile', async () => {
+    const harness = buildHarness('/?profile=person-dorian');
+    const { result } = renderHook(() => useProfileDeepLink(), { wrapper: harness.Wrapper });
+    await harness.waitForRouterReady();
+
+    await act(async () => {
+      result.current.open('agent-warden');
+    });
+
+    await waitFor(() => {
+      expect(harness.readSearch().profile).toBe('agent-warden');
+    });
+  });
+
+  it('close() clears the param', async () => {
+    const harness = buildHarness('/?profile=agent-warden');
+    const { result } = renderHook(() => useProfileDeepLink(), { wrapper: harness.Wrapper });
+    await harness.waitForRouterReady();
+
+    await act(async () => {
+      result.current.close();
+    });
+
+    await waitFor(() => {
+      expect(harness.readSearch().profile).toBeUndefined();
+    });
+    expect(result.current.isOpen).toBe(false);
+  });
+
+  // Same dual-signal rule as Settings and Tasks (DOR-839): `DialogHost` renders
+  // on `storeOpen || urlIsOpen`, so a close that owns one half is not a close.
+  it('close() clears the store half too, when both hold it open', async () => {
+    const harness = buildHarness('/?profile=agent-warden');
+    useAppStore.getState().openProfileForMember('agent-warden');
+    const { result } = renderHook(() => useProfileDeepLink(), { wrapper: harness.Wrapper });
+    await harness.waitForRouterReady();
+
+    await act(async () => {
+      result.current.close();
+    });
+
+    await waitFor(() => {
+      expect(harness.readSearch().profile).toBeUndefined();
+    });
+    expect(useAppStore.getState().profileOpen).toBe(false);
+    expect(useAppStore.getState().profileMemberId).toBeNull();
+  });
+
+  it('leaves every other dialog’s params alone', async () => {
+    const harness = buildHarness(
+      '/?settings=tools&settingsSection=external-mcp&profile=agent-warden'
+    );
+    const { result } = renderHook(() => useProfileDeepLink(), { wrapper: harness.Wrapper });
+    await harness.waitForRouterReady();
+
+    await act(async () => {
+      result.current.close();
+    });
+
+    await waitFor(() => {
+      expect(harness.readSearch().profile).toBeUndefined();
+    });
+    // Adding a param to the shared dialog schema must not turn every other
+    // deep link into collateral damage.
+    expect(harness.readSearch().settings).toBe('tools');
+    expect(harness.readSearch().settingsSection).toBe('external-mcp');
+  });
 });
 
 // ─────────────────────────────────────────────────────────────

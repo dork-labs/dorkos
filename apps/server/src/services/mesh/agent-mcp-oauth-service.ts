@@ -29,6 +29,8 @@ import { randomBytes } from 'node:crypto';
 import { auth } from '@modelcontextprotocol/sdk/client/auth.js';
 import { ExtensionSecretStore } from '@dorkos/shared/extension-secrets';
 import type { Logger } from '@dorkos/shared/logger';
+import type { McpClientOrigin } from '@dorkos/shared/mesh-schemas';
+import type { McpClientCredentials } from '@dorkos/shared/transport';
 
 import {
   McpAccessTokenCache,
@@ -38,10 +40,12 @@ import {
 import { McpOAuthFlowStore, type McpSigninStatus } from './agent-mcp-oauth-flow-store.js';
 import {
   McpOAuthClientProvider,
-  McpOAuthSecretStore,
-  type StoredMcpTokens,
+  newSigninProgress,
+  type McpSigninProgress,
   type McpOAuthProviderContext,
 } from './agent-mcp-oauth-provider.js';
+import { McpOAuthSecretStore, type StoredMcpTokens } from './agent-mcp-oauth-secret-store.js';
+import { classifySigninFailure, McpSigninStartError } from './mcp-signin-failure.js';
 import {
   McpTokenRefresher,
   attemptTokenRefresh,
@@ -230,7 +234,9 @@ export class AgentMcpOAuthService {
    * @param options - The session that asked for this sign-in, when one did
    *   (DOR-1004), and the directory it runs in (DOR-981) — both recorded on the
    *   flow so the resume can find them after a restart.
-   * @throws {Error} When `auth()` neither authorizes nor yields an authorize URL.
+   * @throws {McpSigninStartError} When the sign-in cannot be started at all,
+   *   carrying the plain family a person reads and the raw detail behind it
+   *   (DOR-982).
    */
   async startSignin(
     target: McpOAuthTarget,
@@ -243,8 +249,11 @@ export class AgentMcpOAuthService {
         ...(options?.originSessionId ? { originSessionId: options.originSessionId } : {}),
         ...(options?.originCwd ? { originCwd: options.originCwd } : {}),
       });
+      // The provider writes its progress here as `auth()` walks it, so a throw
+      // can be classified by the STAGE it died at rather than by its wording.
+      const progress = newSigninProgress();
       try {
-        const connected = await this.authorize(target, state);
+        const connected = await this.authorize(target, state, progress);
         if (connected) return connected;
 
         const authorizeUrl = this.flows.authorizeUrl(state);
@@ -255,9 +264,72 @@ export class AgentMcpOAuthService {
         // and a `state` left claimable is a `state` a stray callback could still
         // redeem. Drop it rather than leaving it parked as `pending` for its TTL.
         this.flows.drop(state);
-        throw err;
+        const failure = classifySigninFailure(err, progress);
+        this.logger.warn(
+          `[mcp-oauth] sign-in could not start for ${target.serverName} (${failure.code}): ${failure.detail}`
+        );
+        throw new McpSigninStartError(failure, err);
       }
     });
+  }
+
+  /**
+   * Store app credentials an operator got from a provider that will not let
+   * DorkOS register itself (DOR-982), so the next {@link startSignin} signs in as
+   * that app instead of trying to register a new one.
+   *
+   * Nothing else changes: the SDK's `auth()` skips registration entirely once a
+   * client identity is stored, so this is the whole of the fallback.
+   *
+   * **Saving replaces the identity, so it forgets the sign-in.** A token issued
+   * to the old client is not honoured for the new one, and a stored registration
+   * from a failed automatic attempt would shadow what the operator just typed.
+   * Both go, through the same seam a removal uses — under this target's lock, so
+   * a refresh already on the wire cannot land afterwards and resurrect either.
+   *
+   * The credential itself is never logged, never returned, and never reaches the
+   * manifest; it lives beside the token set in the encrypted store.
+   *
+   * @param target - The agent, server, and server URL the credentials are for.
+   * @param credentials - The client id, and the client secret when there is one.
+   */
+  async saveManualClientInfo(
+    target: McpOAuthTarget,
+    credentials: McpClientCredentials
+  ): Promise<void> {
+    await this.refresher.exclusive(targetKey(target), async () => {
+      await this.forgetServerUnlocked(target.agentId, target.serverName);
+      await this.secrets.saveClientInformation(
+        target.agentId,
+        target.serverName,
+        {
+          client_id: credentials.clientId,
+          ...(credentials.clientSecret ? { client_secret: credentials.clientSecret } : {}),
+          // The SDK needs the metadata half of the record to be well-formed even
+          // though the provider already knows this app's redirect URI: it is the
+          // same loopback callback every DorkOS sign-in uses.
+          redirect_uris: [this.redirectUri],
+        },
+        'manual'
+      );
+      // Any link already on screen for this server authorizes the OLD client, so
+      // it would fail at the provider. Retiring those flows makes the operator's
+      // next "Try again" the only live one — and doing it under the lock keeps a
+      // callback that is mid-exchange from redeeming one on the way past.
+      this.flows.dropFor(target.agentId, target.serverName);
+    });
+  }
+
+  /**
+   * Where the stored OAuth client identity for a server came from, or
+   * `undefined` when DorkOS holds none (DOR-982). Names the identity; never
+   * exposes it.
+   *
+   * @param agentId - The owning agent's id.
+   * @param serverName - The managed server's name.
+   */
+  clientOrigin(agentId: string, serverName: string): Promise<McpClientOrigin | undefined> {
+    return this.secrets.clientOrigin(agentId, serverName);
   }
 
   /**
@@ -276,19 +348,32 @@ export class AgentMcpOAuthService {
    * With no probe wired the proof step is skipped and `AUTHORIZED` is taken at
    * face value, exactly as before.
    *
+   * @param target - The agent, server, and server URL to authorize.
+   * @param state - The flow id this sign-in is registered under.
+   * @param progress - Where the provider records how far `auth()` got, so the
+   *   caller can classify a throw (DOR-982).
    * @returns The already-connected result, or `undefined` when a browser step is
    *   needed — by which point the authorize URL is captured on the flow.
    */
   private async authorize(
     target: McpOAuthTarget,
-    state: string
+    state: string,
+    progress: McpSigninProgress
   ): Promise<StartSigninResult | undefined> {
+    // Every OAuth request for this attempt goes through here, so "did anything
+    // answer at all" is known without asking the provider — which never sees the
+    // network, only what the SDK made of it.
+    const observedFetch: FetchFn = async (...args) => {
+      const response = await this.fetchImpl(...args);
+      progress.responded = true;
+      return response;
+    };
     // At most two rounds: the first may find a stored token, the second is the
     // fresh sign-in that replaces it once the first is shown to be dead.
     for (let round = 0; round < 2; round++) {
-      const result = await auth(this.providerFor(target, state), {
+      const result = await auth(this.providerFor(target, state, progress), {
         serverUrl: target.serverUrl,
-        fetchFn: this.fetchImpl,
+        fetchFn: observedFetch,
       });
       if (result !== 'AUTHORIZED') return undefined;
       await this.primeFromStore(target);
@@ -624,8 +709,19 @@ export class AgentMcpOAuthService {
     );
   }
 
-  /** Build a provider bound to one target + sign-in state. */
-  private providerFor(target: McpOAuthTarget, state: string): McpOAuthClientProvider {
+  /**
+   * Build a provider bound to one target + sign-in state.
+   *
+   * @param target - The agent, server, and server URL being authorized.
+   * @param state - The flow id, and the flow-store key for the transient half.
+   * @param progress - Where to record how far `auth()` got. Omitted by the
+   *   background refresh, which has no operator to classify a failure for.
+   */
+  private providerFor(
+    target: McpOAuthTarget,
+    state: string,
+    progress?: McpSigninProgress
+  ): McpOAuthClientProvider {
     const ctx: McpOAuthProviderContext = {
       agentId: target.agentId,
       serverName: target.serverName,
@@ -634,6 +730,7 @@ export class AgentMcpOAuthService {
       redirectUri: this.redirectUri,
       secrets: this.secrets,
       flows: this.flows,
+      ...(progress ? { progress } : {}),
     };
     return new McpOAuthClientProvider(ctx);
   }

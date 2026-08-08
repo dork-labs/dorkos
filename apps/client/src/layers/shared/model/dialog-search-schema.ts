@@ -24,6 +24,9 @@ export const dialogSearchSchema = z.object({
   // Shell-level right panel
   panel: z.string().optional(),
   hubTab: z.string().optional(),
+  // Profile drawer — the one param that names a subject rather than a tab:
+  // the roster id whose profile is open, so a profile is an address.
+  profile: z.string().optional(),
   // Other dialogs (parameterless — no tabs)
   tasks: z.string().optional(),
   relay: z.string().optional(),

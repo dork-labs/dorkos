@@ -103,7 +103,10 @@ vi.mock('@/layers/features/chat', () => ({
   resolveMessageAuthor: () => ({ kind: 'agent', id: 'dorkbot', displayName: 'DorkBot' }),
   TypingDots: () => <div data-testid="typing" />,
   FirstLight: () => <div data-testid="first-light" />,
-  ChatInput: () => <div data-testid="composer" />,
+}));
+
+vi.mock('@/layers/features/composer', () => ({
+  Composer: { Input: () => <div data-testid="composer" /> },
 }));
 
 vi.mock('@/layers/features/agent-hub', () => ({

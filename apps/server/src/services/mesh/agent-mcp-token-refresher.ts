@@ -26,7 +26,7 @@ import { OAuthError, ServerError } from '@modelcontextprotocol/sdk/server/auth/e
 import type { Logger } from '@dorkos/shared/logger';
 
 import type { CachedToken } from './agent-mcp-access-token-cache.js';
-import type { StoredMcpTokens } from './agent-mcp-oauth-provider.js';
+import type { StoredMcpTokens } from './agent-mcp-oauth-secret-store.js';
 
 /** How many times a transport-failed refresh is attempted before the token is dropped. */
 const MAX_REFRESH_ATTEMPTS = 3;

@@ -176,14 +176,23 @@ export function cardSentence(status: McpCardStatus, context: McpSentenceContext)
  *
  * @param args.connection - The managed server's connection.
  * @param args.authStatus - The listing's derived sign-in state, if any.
+ * @param args.clientOrigin - Which OAuth client identity DorkOS holds, when it
+ *   holds one (DOR-982). Only `'manual'` changes the sentence: automatic
+ *   registration is the ordinary case and naming it would be noise.
  */
 export function signInRowCopy(args: {
   connection: McpServerTransport;
   authStatus: ManagedMcpServerView['authStatus'];
+  clientOrigin?: ManagedMcpServerView['authClientOrigin'];
 }): string {
-  const { connection, authStatus } = args;
+  const { connection, authStatus, clientOrigin } = args;
   if (connection.transport === 'stdio') return 'None — this server doesn’t need one.';
   if (connection.authKind === 'oauth2') {
+    if (clientOrigin === 'manual') {
+      const held =
+        authStatus === 'connected' ? 'signed in, and it renews automatically' : 'not signed in yet';
+      return `OAuth — using your own app credentials, ${held}. DorkOS holds the key; the agent never sees it.`;
+    }
     if (authStatus === 'connected') {
       return 'OAuth — signed in, and it renews automatically. DorkOS holds the key; the agent never sees it.';
     }

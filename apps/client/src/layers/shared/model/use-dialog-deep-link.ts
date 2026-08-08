@@ -32,6 +32,7 @@ type AnySearchUpdater = (prev: Record<string, unknown>) => Record<string, unknow
 const DIALOG_SEARCH_PARAMS = {
   settings: ['settings', 'settingsSection'],
   tasks: ['tasks'],
+  profile: ['profile'],
 } as const satisfies Record<string, readonly string[]>;
 
 /** A dialog with both a store open flag and a URL open signal. */
@@ -237,6 +238,61 @@ export function useSettingsDeepLink(): DialogDeepLink<SettingsTab> {
 /** Tasks dialog deep-link state and actions. No tabs. */
 export function useTasksDeepLink(): DialogDeepLink<never> {
   return useSimpleDialogDeepLink('tasks');
+}
+
+/** The profile drawer's URL state: which identity is open, and how to change it. */
+export interface ProfileDeepLink {
+  /** True if the profile drawer should be open. */
+  isOpen: boolean;
+  /** Whose profile, in roster ids, or `null` when none is open. */
+  memberId: string | null;
+  /** Open the drawer on one identity. */
+  open: (memberId: string) => void;
+  /** Close the drawer. Clears both halves of the signal. */
+  close: () => void;
+}
+
+/**
+ * Profile drawer deep-link state and actions (spec `identity-consistency` §W3.2).
+ *
+ * The same dual-signal shape as {@link useSettingsDeepLink}, with one
+ * difference: the param carries a *subject* rather than a tab, so `?profile=<id>`
+ * is a shareable address for one identity and the phone's back gesture dismisses
+ * the drawer for free — `open` pushes a history entry rather than replacing one,
+ * which is what makes back mean "close this" instead of "leave the page".
+ *
+ * With no router (the Obsidian embed) the store carries both the open flag and
+ * the subject, so the drawer still opens on the right identity — the one thing a
+ * store fallback for Settings cannot do, since a tab has no equivalent.
+ */
+export function useProfileDeepLink(): ProfileDeepLink {
+  const search = useSafeSearch() as { profile?: string };
+  const navigate = useSafeNavigate();
+  const inPlaceNav = useInPlaceNavigate();
+  const storeMemberId = useAppStore((s) => s.profileMemberId);
+  const setProfileOpen = useAppStore((s) => s.setProfileOpen);
+  const openProfileForMember = useAppStore((s) => s.openProfileForMember);
+
+  const memberId = navigate ? (search.profile ?? null) : storeMemberId;
+
+  const open = useCallback(
+    (id: string) => {
+      if (!inPlaceNav) return openProfileForMember(id);
+      const updater: AnySearchUpdater = (prev) => ({ ...prev, profile: id });
+      inPlaceNav({ search: updater });
+    },
+    [inPlaceNav, openProfileForMember]
+  );
+
+  const close = useCallback(() => {
+    // Both halves, for the same reason the Settings close owns both (DOR-839).
+    setProfileOpen(false);
+    if (!inPlaceNav) return;
+    const updater: AnySearchUpdater = (prev) => ({ ...prev, ...clearedDialogSearch('profile') });
+    inPlaceNav({ search: updater });
+  }, [inPlaceNav, setProfileOpen]);
+
+  return { isOpen: memberId !== null, memberId, open, close };
 }
 
 /**

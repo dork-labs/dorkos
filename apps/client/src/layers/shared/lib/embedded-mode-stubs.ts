@@ -19,6 +19,7 @@ import type {
   AgentMcpMutationResult,
   AgentMcpTestResult,
   StartMcpSigninResult,
+  McpClientCredentials,
   McpSigninPollResult,
 } from '@dorkos/shared/transport';
 import type { RecentSessionsResponse } from '@dorkos/shared/types';
@@ -1032,6 +1033,14 @@ export const mcpManagementStubs = {
   },
 
   async pollMcpSignin(_flowId: string): Promise<McpSigninPollResult> {
+    throw new Error(EMBEDDED_MCP_NOTICE);
+  },
+
+  async setMcpClientCredentials(
+    _agentId: string,
+    _name: string,
+    _credentials: McpClientCredentials
+  ): Promise<void> {
     throw new Error(EMBEDDED_MCP_NOTICE);
   },
 };

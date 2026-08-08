@@ -49,6 +49,25 @@ export interface PanelsSlice {
   /** Open the Tasks dialog in edit mode for a specific schedule. */
   openTasksToEdit: (scheduleId: string) => void;
 
+  /**
+   * The profile drawer's store half. Its URL half is `?profile=<member id>`,
+   * and `DialogHost` opens the drawer on either — the same dual signal Settings
+   * and Tasks carry (DOR-839).
+   */
+  profileOpen: boolean;
+  setProfileOpen: (open: boolean) => void;
+  /**
+   * Whose profile the drawer is showing, in roster ids.
+   *
+   * The payload beside the open flag, the same shape `shapeSwitcherFocus` has —
+   * and the reason there is a store half at all: the Obsidian embed has no URL
+   * to carry the subject in, so without this the drawer would open on nobody.
+   * Cleared whenever the drawer closes.
+   */
+  profileMemberId: string | null;
+  /** Open the drawer on one identity — the only way it opens meaningfully. */
+  openProfileForMember: (memberId: string) => void;
+
   relayOpen: boolean;
   setRelayOpen: (open: boolean) => void;
   restartOverlayOpen: boolean;
@@ -119,6 +138,14 @@ export const createPanelsSlice: StateCreator<
     set({ tasksOpen: true, tasksAgentFilter: agentId, tasksEditScheduleId: null }),
   openTasksToEdit: (scheduleId) =>
     set({ tasksOpen: true, tasksEditScheduleId: scheduleId, tasksAgentFilter: null }),
+
+  profileOpen: false,
+  // Closing drops the subject with it: a drawer that reopened on whoever was in
+  // it last would be showing a stale answer to a question nobody asked.
+  setProfileOpen: (open) =>
+    set(open ? { profileOpen: true } : { profileOpen: false, profileMemberId: null }),
+  profileMemberId: null,
+  openProfileForMember: (memberId) => set({ profileOpen: true, profileMemberId: memberId }),
 
   relayOpen: false,
   setRelayOpen: (open) => set({ relayOpen: open }),

@@ -22,6 +22,7 @@ import {
   resolveMcpLocalToken,
   readOwnerAccount,
   getUserById,
+  setUserImage,
 } from './services/core/auth/index.js';
 import {
   canExpose,
@@ -88,7 +89,7 @@ import { AgentMcpOAuthService } from './services/mesh/agent-mcp-oauth-service.js
 import { resumeAfterMcpSignin } from './services/mesh/mcp-signin-resume.js';
 import { createMcpRevocationWatch } from './services/mesh/mcp-revocation.js';
 import { createMcpOAuthRouter } from './routes/mcp-oauth.js';
-import type { McpCapabilityDeps } from './services/mesh/mcp-capabilities.js';
+import type { McpCapabilityDeps } from './services/mesh/mcp-capability-deps.js';
 import { setRelayEnabled, setRelayInitError } from './services/relay/relay-state.js';
 import { AdapterManager } from './services/relay/adapter-manager.js';
 import {
@@ -105,6 +106,9 @@ import { createA2aRouter } from './routes/a2a.js';
 import { buildA2aRateLimiters } from './middleware/a2a-rate-limit.js';
 import { createAgentsRouter } from './routes/agents.js';
 import { createTeamRouter } from './routes/team.js';
+import { createProfileRouter } from './routes/profile.js';
+import { resolveCaller } from './routes/room-caller.js';
+import { LocalAvatarStore } from './services/identity/local-avatar-store.js';
 import { createDiscoveryRouter } from './routes/discovery.js';
 import { createTemplateRouter } from './routes/templates.js';
 import { createAdminRouter } from './routes/admin.js';
@@ -2044,6 +2048,21 @@ async function start() {
       // second rung of the operator-name precedence, under the account name.
       configDisplayName: () => configManager.getAll().profile.displayName,
       defaultAgentName: () => configManager.getAll().agents.defaultAgent,
+    })
+  );
+
+  // The operator's own profile — today, their photo (spec `identity-consistency`
+  // §W3.5). The store is chosen HERE and nowhere else: the router depends on the
+  // `AvatarStore` interface, so the day photos live somewhere other than this
+  // machine, this line is what changes.
+  app.use(
+    '/api/profile',
+    createProfileRouter({
+      avatars: new LocalAvatarStore(dorkHome),
+      caller: (res) => resolveCaller(res),
+      authors: roomAuthors,
+      ownerAccount: () => readOwnerAccount(),
+      setAccountImage: (userId, imageUrl) => setUserImage(userId, imageUrl),
     })
   );
 

@@ -3,16 +3,34 @@ import React from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, cleanup, act } from '@testing-library/react';
 // Mock child components to isolate ChatInputContainer behavior
-vi.mock('../ui/input/ChatInput', () => ({
-  ChatInput: vi.fn(() => <div data-testid="chat-input">ChatInput</div>),
-}));
+// The composer barrel is mocked as one object: `Composer.Input` and
+// `Composer.Attachments` are stand-ins so this file tests the container's
+// orchestration, while `Composer.ClearArmedHint` stays REAL — the armed-clear
+// assertions below read its own testid.
+vi.mock('@/layers/features/composer', async (importActual) => {
+  const actual = await importActual<typeof import('@/layers/features/composer')>();
+  return {
+    Composer: {
+      // Root is a pass-through: this file asserts what the container puts
+      // INSIDE the card, never the card's own chrome, and a real Root would
+      // mount react-dropzone's document listeners for no assertion's benefit.
+      // A stub that dropped `children` would render an empty composer, so it
+      // forwards them.
+      Root: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+      // OverlayLane stays REAL. The armed-clear test below finds the lane by
+      // its own positioning classes and asserts the hint is inside it — against
+      // a stub it would be asserting on a copy of the lane, which proves
+      // nothing about where the hint actually lands.
+      OverlayLane: actual.Composer.OverlayLane,
+      Input: vi.fn(() => <div data-testid="chat-input">Composer.Input</div>),
+      Attachments: vi.fn(() => <div data-testid="file-chips">Composer.Attachments</div>),
+      ClearArmedHint: actual.Composer.ClearArmedHint,
+    },
+  };
+});
 
 vi.mock('../ui/status/ChatStatusSection', () => ({
   ChatStatusSection: () => <div data-testid="chat-status">ChatStatusSection</div>,
-}));
-
-vi.mock('../ui/input/FileChipBar', () => ({
-  FileChipBar: vi.fn(() => <div data-testid="file-chips">FileChipBar</div>),
 }));
 
 vi.mock('../ui/input/QueuePanel', () => ({
@@ -88,15 +106,15 @@ vi.mock('@/layers/entities/session', async (importOriginal) => ({
 }));
 
 import { ChatInputContainer } from '../ui/input/ChatInputContainer';
-import { ChatInput } from '../ui/input/ChatInput';
+import { Composer } from '@/layers/features/composer';
 import { QueuePanel } from '../ui/input/QueuePanel';
 import { useSessionStreamStore } from '@/layers/entities/session';
 import type { ToolCallState } from '../model/chat-types';
 import { createRef } from 'react';
 
-/** Props the (mocked) ChatInput was last rendered with. */
+/** Props the (mocked) `Composer.Input` was last rendered with. */
 function lastChatInputProps() {
-  return vi.mocked(ChatInput).mock.calls.at(-1)![0];
+  return vi.mocked(Composer.Input).mock.calls.at(-1)![0];
 }
 
 const baseProps = {
@@ -285,7 +303,7 @@ describe('ChatInputContainer — a failed attachment blocks the send (DOR-480)',
   });
 
   it('withholds the send while an attachment failed to upload', () => {
-    // ChatInput.test.tsx pins what canSubmit={false} does: the send button reads
+    // ComposerInput.test.tsx pins what canSubmit={false} does: the send button reads
     // disabled, Enter does not submit, and the textarea stays typeable — so the
     // person keeps their words instead of watching them go out attachment-less.
     render(

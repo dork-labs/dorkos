@@ -16,7 +16,8 @@ import path from 'node:path';
 import { auth } from '@modelcontextprotocol/sdk/client/auth.js';
 import { ExtensionSecretStore, resetKeyCache } from '@dorkos/shared/extension-secrets';
 
-import { McpOAuthClientProvider, McpOAuthSecretStore } from '../agent-mcp-oauth-provider.js';
+import { McpOAuthClientProvider } from '../agent-mcp-oauth-provider.js';
+import { McpOAuthSecretStore } from '../agent-mcp-oauth-secret-store.js';
 import { McpOAuthFlowStore } from '../agent-mcp-oauth-flow-store.js';
 
 const AGENT_ID = '01HV7KJZZZ0000000000000000';
@@ -105,10 +106,15 @@ async function makeProvider(): Promise<{
 describe('McpOAuthClientProvider.invalidateCredentials — recovering from a revoked grant', () => {
   it('lets the SDK retry into a fresh authorize URL instead of throwing', async () => {
     const { provider, secrets, flows, state } = await makeProvider();
-    await secrets.saveClientInformation(AGENT_ID, SERVER, {
-      client_id: 'test-client-id',
-      redirect_uris: [CALLBACK],
-    });
+    await secrets.saveClientInformation(
+      AGENT_ID,
+      SERVER,
+      {
+        client_id: 'test-client-id',
+        redirect_uris: [CALLBACK],
+      },
+      'dcr'
+    );
     await secrets.saveTokens(
       AGENT_ID,
       SERVER,
@@ -136,10 +142,15 @@ describe('McpOAuthClientProvider.invalidateCredentials — recovering from a rev
 
   it('drops exactly the scope it is asked to drop', async () => {
     const { provider, secrets, flows, state } = await makeProvider();
-    await secrets.saveClientInformation(AGENT_ID, SERVER, {
-      client_id: 'test-client-id',
-      redirect_uris: [CALLBACK],
-    });
+    await secrets.saveClientInformation(
+      AGENT_ID,
+      SERVER,
+      {
+        client_id: 'test-client-id',
+        redirect_uris: [CALLBACK],
+      },
+      'dcr'
+    );
     await secrets.saveTokens(
       AGENT_ID,
       SERVER,
@@ -166,10 +177,15 @@ describe('McpOAuthClientProvider.invalidateCredentials — recovering from a rev
       { access_token: 'again', token_type: 'Bearer' },
       SERVER_URL
     );
-    await secrets.saveClientInformation(AGENT_ID, SERVER, {
-      client_id: 'test-client-id',
-      redirect_uris: [CALLBACK],
-    });
+    await secrets.saveClientInformation(
+      AGENT_ID,
+      SERVER,
+      {
+        client_id: 'test-client-id',
+        redirect_uris: [CALLBACK],
+      },
+      'dcr'
+    );
     flows.setVerifier(state, 'verifier-3');
     await provider.invalidateCredentials('all');
     expect(await secrets.tokens(AGENT_ID, SERVER)).toBeUndefined();
@@ -189,10 +205,15 @@ describe('McpOAuthSecretStore.serverNames', () => {
     );
     // Client info only, no token: still a server the deleted-agent cascade must
     // forget, so the name has to come back from either kind of key.
-    await secrets.saveClientInformation(AGENT_ID, 'other', {
-      client_id: 'c1',
-      redirect_uris: [CALLBACK],
-    });
+    await secrets.saveClientInformation(
+      AGENT_ID,
+      'other',
+      {
+        client_id: 'c1',
+        redirect_uris: [CALLBACK],
+      },
+      'dcr'
+    );
     await secrets.saveTokens(
       'agent-2',
       SERVER,

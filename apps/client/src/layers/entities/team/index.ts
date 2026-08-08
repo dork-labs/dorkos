@@ -9,7 +9,7 @@
  * @module entities/team
  */
 export { TEAM_ROSTER_KEY } from './api/query-keys';
-export { useTeamRoster } from './model/use-team-roster';
+export { useTeamRoster, type UseTeamRosterOptions } from './model/use-team-roster';
 export {
   DEFAULT_TEAM_FILTERS,
   filterTeamMembers,

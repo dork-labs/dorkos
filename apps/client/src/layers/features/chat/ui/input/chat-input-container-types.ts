@@ -1,7 +1,7 @@
 import type { ConnectionState } from '@dorkos/shared/types';
 import type { ToolCallState } from '../../model/chat-types';
 import type { InteractiveToolHandle } from '../message';
-import type { PendingFile } from '../../model/use-file-upload';
+import type { PendingFile } from '@/layers/features/composer';
 
 /** File upload state passed from the parent. */
 export interface FileUploadProps {
