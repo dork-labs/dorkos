@@ -15,7 +15,10 @@
  *
  * @module routes/rooms
  */
+import path from 'path';
 import { Router, type Response } from 'express';
+import multer from 'multer';
+import { ulid } from 'ulidx';
 import {
   AddRoomMemberRequestSchema,
   CreateRoomRequestSchema,
@@ -26,17 +29,24 @@ import {
   PostToRoomRequestSchema,
   SetAuthorHandleRequestSchema,
   SetReadCursorRequestSchema,
+  ROOM_ATTACHMENT_NAME_MAX,
   ToggleReactionRequestSchema,
   UpdateMembershipRequestSchema,
   UpdateRoomRequestSchema,
+  type RoomAttachment,
 } from '@dorkos/shared/room-schemas';
 import {
+  getAttachmentRowStore,
+  getRoomAttachmentStore,
   getRoomService,
   RoomError,
   toAuthorRef,
   type RoomErrorCode,
 } from '../services/rooms/index.js';
-import { parseBody } from '../lib/route-utils.js';
+import { InvalidRoomAttachmentIdError } from '../services/rooms/attachments/room-attachment-store.js';
+import { sniffImageContentType } from '../services/identity/image-sniff.js';
+import { configManager } from '../services/core/config-manager.js';
+import { parseBody, sendError } from '../lib/route-utils.js';
 import { roomEventsHandler } from './room-events-handler.js';
 import { resolveCaller } from './room-caller.js';
 import { logger } from '../lib/logger.js';
@@ -69,6 +79,9 @@ const STATUS_BY_CODE: Record<RoomErrorCode, number> = {
   RESERVED_NATURAL_KEY: 500,
   NOT_A_BRIDGED_ROOM: 409,
   NO_SURVIVING_BRIDGE: 409,
+  ATTACHMENT_NOT_FOUND: 404,
+  ATTACHMENT_ALREADY_POSTED: 409,
+  TOO_MANY_ATTACHMENTS: 400,
 };
 
 /**
@@ -199,10 +212,224 @@ router.post('/:id/entries', (req, res) => {
       authorId: caller.id,
       text: body.text,
       sessionId: body.sessionId,
+      attachmentIds: body.attachmentIds,
     });
     res.status(202).json({ accepted: true, entryId: entry.id, seq: entry.seq });
   } catch (err) {
     sendRoomError(res, err, 'POST /:id/entries');
+  }
+});
+
+/**
+ * The multipart field name both attachment halves agree on.
+ *
+ * The same name `POST /api/uploads` uses, because a person dragging files into
+ * a room and a person dragging them into a session are doing the same thing.
+ */
+const ATTACHMENT_FIELD = 'files';
+
+/**
+ * Turn an uploaded filename into one a room can store.
+ *
+ * `path.basename` first, then the same allowlist `upload-handler.ts` applies, so
+ * a name can carry no directory and no character that means anything to a shell
+ * or a filesystem. Truncated last, because truncating before sanitizing could
+ * leave a partial escape at the end.
+ *
+ * @param original - The filename the client sent.
+ */
+function sanitizeAttachmentName(original: string): string {
+  const base = path.basename(original).replace(/[^a-zA-Z0-9._-]/g, '_');
+  return base.slice(0, ROOM_ATTACHMENT_NAME_MAX) || 'file';
+}
+
+/**
+ * The suffix a sanitized name ends in, without its dot, or `''`.
+ *
+ * Read off the SANITIZED name so the extension inherits the allowlist rather
+ * than needing its own, and lowercased so `.PNG` and `.png` are one file shape
+ * on disk.
+ */
+function extensionOf(name: string): string {
+  const ext = path.extname(name).slice(1).toLowerCase();
+  return /^[A-Za-z0-9]*$/.test(ext) ? ext : '';
+}
+
+/**
+ * POST /:id/attachments — upload files into a room, before the message that
+ * carries them.
+ *
+ * **Two-step on purpose.** The bytes go up first and the message names them by
+ * id, which is what lets the composer show a chip while a large file is still
+ * moving, and what keeps every field on the stored record server-derived: a
+ * one-step multipart post would have to trust a declared size and type on the
+ * way back in.
+ *
+ * **Nothing here trusts the upload about what a file IS.** The bytes are sniffed
+ * ({@link sniffImageContentType}) and only a magic-byte match sets `preview`,
+ * which is the single field that decides whether the serve route will ever
+ * answer `inline`. A room accepts every type by default, so this is what keeps
+ * an uploaded `.html` from rendering as a document under the cockpit's own
+ * origin.
+ */
+router.post('/:id/attachments', (req, res) => {
+  let caller;
+  try {
+    caller = resolveCaller(res);
+    // Resolved BEFORE multer runs: an agent's upload is refused without its
+    // bytes ever being read. An agent shares files by writing them into its own
+    // working directory, which it already has.
+    if (caller.kind !== 'human') {
+      throw new RoomError('PEOPLE_ONLY', 'Only a person can attach a file.');
+    }
+    // Also before multer: a non-member gets the same 404 every room read gives,
+    // and an archived room refuses, both without reading a byte.
+    getRoomService().assertCanAttach(req.params.id, caller.id);
+  } catch (err) {
+    return sendRoomError(res, err, 'POST /:id/attachments');
+  }
+
+  // Built per request from the same config chat uses, so one setting governs
+  // every upload in the product.
+  const uploadConfig = configManager.get('uploads');
+  const upload = multer({
+    // Memory, not disk: the bytes must be sniffed before anything decides the
+    // extension, the mime type, or whether the file may ever be served inline.
+    storage: multer.memoryStorage(),
+    // `+ 1` because busboy refuses a file that REACHES `fileSize` rather than
+    // one that exceeds it, so the configured limit itself would be rejected.
+    limits: { fileSize: uploadConfig.maxFileSize + 1, files: uploadConfig.maxFiles },
+    fileFilter: (_req, file, cb) =>
+      uploadConfig.allowedTypes.includes('*/*') || uploadConfig.allowedTypes.includes(file.mimetype)
+        ? cb(null, true)
+        : cb(new Error(`File type not allowed: ${file.mimetype}`)),
+  }).array(ATTACHMENT_FIELD, uploadConfig.maxFiles);
+
+  upload(req, res, async (err: unknown) => {
+    if (err) {
+      if (err instanceof multer.MulterError) {
+        if (err.code === 'LIMIT_FILE_SIZE') {
+          const megabytes = uploadConfig.maxFileSize / 1024 / 1024;
+          return sendError(res, 413, `File too large (max ${megabytes}MB)`, err.code);
+        }
+        return sendError(res, 400, err.message, err.code);
+      }
+      // The only non-multer refusal this callback sees is the fileFilter's.
+      return sendError(res, 415, (err as Error).message, 'ATTACHMENT_TYPE_NOT_ALLOWED');
+    }
+
+    const files = (req.files as Express.Multer.File[] | undefined) ?? [];
+    if (files.length === 0) {
+      return sendError(
+        res,
+        400,
+        `Attach the files as the '${ATTACHMENT_FIELD}' field.`,
+        'ATTACHMENT_MISSING'
+      );
+    }
+
+    try {
+      const store = getRoomAttachmentStore();
+      const rows = getAttachmentRowStore();
+      const stored: RoomAttachment[] = [];
+      for (const file of files) {
+        const name = sanitizeAttachmentName(file.originalname);
+        const extension = extensionOf(name);
+        // THE safety line. `preview` is set from the BYTES and never from
+        // `file.mimetype`, which is whatever the uploader typed.
+        const sniffed = sniffImageContentType(file.buffer);
+        const id = ulid();
+        const { url } = await store.put(req.params.id, id, extension, file.buffer);
+        const row = {
+          roomId: req.params.id,
+          id,
+          authorId: caller.id,
+          name,
+          extension,
+          mimeType: sniffed ?? file.mimetype,
+          size: file.buffer.byteLength,
+          preview: sniffed ? ('image' as const) : null,
+          url,
+        };
+        rows.create(row, new Date().toISOString());
+        stored.push({
+          id,
+          name,
+          mimeType: row.mimeType,
+          size: row.size,
+          preview: row.preview,
+          url,
+        });
+      }
+      // In request order, so the composer's chips and the message's files agree.
+      return res.json({ attachments: stored });
+    } catch (storeErr) {
+      if (storeErr instanceof InvalidRoomAttachmentIdError) {
+        return sendError(res, 400, 'That file could not be stored.', 'ATTACHMENT_ID_INVALID');
+      }
+      return sendRoomError(res, storeErr, 'POST /:id/attachments');
+    }
+  });
+});
+
+/**
+ * GET /:id/attachments/:attachmentId — stream one back.
+ *
+ * **`Content-Type` and `Content-Disposition` are decided by the row's `preview`
+ * and by nothing else.** A verified image is served as what the bytes were
+ * sniffed to be, inline; everything else is `application/octet-stream` as an
+ * attachment, whatever it was uploaded as. Together with `nosniff` that is what
+ * keeps a file a person uploaded from executing as a document on the cockpit's
+ * own origin.
+ *
+ * Every refusal is a 404 — wrong room, no such id, somebody else's unposted
+ * file. Existence is never leaked by a 403.
+ */
+router.get('/:id/attachments/:attachmentId', async (req, res) => {
+  try {
+    const caller = resolveCaller(res);
+    const row = getAttachmentRowStore().get(req.params.id, req.params.attachmentId);
+    if (!row || !getRoomService().canReadAttachment(req.params.id, caller.id, row)) {
+      return sendError(res, 404, 'No such file.', 'ATTACHMENT_NOT_FOUND');
+    }
+
+    const inline = row.preview === 'image';
+    const stored = await getRoomAttachmentStore().get(
+      req.params.id,
+      row.id,
+      row.extension,
+      // Only a VERIFIED image is served as the type it claims to be.
+      inline ? row.mimeType : 'application/octet-stream'
+    );
+    if (!stored) return sendError(res, 404, 'No such file.', 'ATTACHMENT_NOT_FOUND');
+
+    res.setHeader('Content-Type', stored.contentType);
+    // A file served from a URL a person can influence is exactly where a
+    // sniffing browser turns an upload into a document.
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Content-Disposition', inline ? 'inline' : `attachment; filename="${row.name}"`);
+    res.setHeader('ETag', stored.etag);
+    res.setHeader('Cache-Control', 'private, max-age=0, must-revalidate');
+    res.setHeader('Content-Length', String(stored.size));
+
+    if (req.headers['if-none-match'] === stored.etag) {
+      // Destroyed rather than piped, so the file handle does not leak.
+      stored.stream.destroy();
+      return res.status(304).end();
+    }
+
+    stored.stream.on('error', (streamErr) => {
+      logger.error('[rooms] attachment stream failed', { err: streamErr });
+      if (!res.headersSent) {
+        sendError(res, 500, 'Could not read that file.', 'ATTACHMENT_READ_FAILED');
+      } else res.destroy(streamErr);
+    });
+    stored.stream.pipe(res);
+  } catch (err) {
+    if (err instanceof InvalidRoomAttachmentIdError) {
+      return sendError(res, 400, 'That is not a usable file id.', 'ATTACHMENT_ID_INVALID');
+    }
+    return sendRoomError(res, err, 'GET /:id/attachments/:attachmentId');
   }
 });
 
@@ -361,6 +588,7 @@ router.post('/:id/threads', (req, res) => {
       text: body.text,
       sessionId: body.sessionId,
       replyTo: body.rootEntryId,
+      attachmentIds: body.attachmentIds,
     });
     res.status(202).json({ accepted: true, entryId: entry.id, seq: entry.seq });
   } catch (err) {

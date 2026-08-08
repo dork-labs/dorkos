@@ -474,9 +474,24 @@ export class RoomStore {
    *   holding a message from a non-member is not a state any reader should
    *   have to handle. Ordered first so the membership exists for the whole
    *   life of the entry, never the other way round.
+   * @param bind - Extra writes to run inside the SAME transaction, AFTER the
+   *   entry row is inserted. The mirror of `within`, and both exist because the
+   *   two sides of the insert are not interchangeable: `within` runs first so a
+   *   membership row covers the whole life of the entry, and `bind` runs last so
+   *   a child row carrying a foreign key ONTO the entry has a parent to point
+   *   at. `room_attachments` is the first such child, and putting its UPDATE in
+   *   `within` fails immediately with `FOREIGN KEY constraint failed` —
+   *   `foreign_keys` is ON and drizzle emits no `DEFERRABLE` clause, so the key
+   *   is checked at statement time. All three writes are in one transaction, so
+   *   they land together or not at all. Handed the allocated `seq` for a child
+   *   row that wants to record it.
    * @returns The stored entry, with its allocated `seq`.
    */
-  appendEntry(entry: NewRoomEntry, within?: (tx: DbTransaction) => void): RoomEntry {
+  appendEntry(
+    entry: NewRoomEntry,
+    within?: (tx: DbTransaction) => void,
+    bind?: (tx: DbTransaction, seq: number) => void
+  ): RoomEntry {
     return this.db.transaction(
       (tx) => {
         within?.(tx);
@@ -511,6 +526,8 @@ export class RoomStore {
           .set({ lastActivityAt: entry.createdAt })
           .where(eq(rooms.id, entry.roomId))
           .run();
+
+        bind?.(tx, seq);
 
         return {
           roomId: entry.roomId,

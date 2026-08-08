@@ -92,6 +92,7 @@ import {
   HaltRoomResponseSchema,
   PostThreadReplyRequestSchema,
   PostToRoomRequestSchema,
+  RoomAttachmentUploadResponseSchema,
   PostToRoomResponseSchema,
   RoomEntryListResponseSchema,
   RoomEventSchema,
@@ -3134,6 +3135,8 @@ const RoomIdParams = z.object({ id: z.string().min(1) });
 const RoomMemberParams = RoomIdParams.extend({ authorId: z.string().min(1) });
 /** `:id` plus the `:entryId` a reaction attaches to — the entry's ULID, not its seq. */
 const RoomEntryParams = RoomIdParams.extend({ entryId: z.string().min(1) });
+/** `:id` plus the `:attachmentId` a stored file is served under. */
+const RoomAttachmentParams = RoomIdParams.extend({ attachmentId: z.string().min(1) });
 
 /** 404 body shared by every room path: an unknown room and one the caller may not see. */
 const roomNotFound = {
@@ -3291,6 +3294,76 @@ registry.registerPath({
     404: roomNotFound,
     409: {
       description: 'The room is archived',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/rooms/{id}/attachments',
+  tags: ['Rooms'],
+  summary: 'Upload files into a room, before the message that carries them',
+  description:
+    "Multipart, field name `files`. Only a person who is a member of the room may upload; an agent is refused BEFORE its bytes are read (403), because an agent shares files by writing them into its own working directory. Limits come from the `uploads` section of user config — the same limits chat uses. Every field on the stored record is server-derived: the filename is sanitized, the size is what landed, and `preview` is set ONLY when the MAGIC BYTES are PNG, JPEG or WebP — the filename and the `Content-Type` the client claims are not evidence, since both are written by whoever is uploading. That single field decides whether `GET` will ever serve the file inline, which is what keeps an uploaded `.html` or SVG from rendering as a document on the cockpit's own origin. The response carries one `RoomAttachment` per file, in request order; a following `POST /api/rooms/{id}/entries` names them by id in `attachmentIds`, and the server binds them to the entry inside the entry's own transaction, so the message and its files land together or not at all.",
+  request: {
+    params: RoomIdParams,
+    body: {
+      content: {
+        'multipart/form-data': {
+          schema: z.object({
+            files: z.array(z.string().openapi({ type: 'string', format: 'binary' })),
+          }),
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: 'Stored; ids to reference in the post that follows',
+      content: { 'application/json': { schema: RoomAttachmentUploadResponseSchema } },
+    },
+    400: roomValidationError,
+    403: {
+      description: 'Only a person can attach a file; an agent caller is refused',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    404: roomNotFound,
+    409: {
+      description: 'The room is archived',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    413: {
+      description: 'A file is larger than the configured limit, refused while still being read',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    415: {
+      description: "A file's type is not in the configured allowlist",
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/rooms/{id}/attachments/{attachmentId}',
+  tags: ['Rooms'],
+  summary: 'Download one of a room’s files',
+  description:
+    "A file that is already ON a message is readable by anyone who may read that message; a file that has been uploaded and not yet posted is readable only by whoever uploaded it, so nobody can enumerate a stranger's staging area. Every other case — wrong room, no such id, somebody else's unposted file — answers 404 rather than 403, so existence is never leaked. `Content-Type` and `Content-Disposition` are decided by the stored `preview` and by nothing else: a byte-verified image is served as what it is, `inline`; everything else is `application/octet-stream` as an `attachment`, whatever it was uploaded as. `X-Content-Type-Options: nosniff` rides along on both. The response carries a strong `ETag` derived from the content, so a conditional request with `If-None-Match` answers 304 with no body.",
+  request: { params: RoomAttachmentParams },
+  responses: {
+    200: {
+      description: 'The bytes, typed and dispositioned by what they were verified to be',
+      content: { '*/*': { schema: { type: 'string', format: 'binary' } } },
+    },
+    304: { description: 'Not modified — the `If-None-Match` ETag still matches' },
+    400: {
+      description: 'The id could never name a stored file',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    404: {
+      description: 'No such file, or not yours to read',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
   },

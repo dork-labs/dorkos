@@ -542,6 +542,21 @@ export const roomAttachments = sqliteTable(
     /** `'image'` when the bytes were VERIFIED previewable, else NULL. */
     preview: text('preview'),
 
+    /**
+     * Where to fetch the bytes — **whatever `RoomAttachmentStore.put` answered**,
+     * stored verbatim and never rebuilt.
+     *
+     * This column is what makes the store a real seam rather than a shape. The
+     * local store answers a server-relative `/api/rooms/…` that a reader could
+     * in principle reconstruct from the two ids; a bucket-backed one answers an
+     * absolute `https://…` that nothing could. Recomputing the URL on read would
+     * therefore work today and silently break the day the bytes move, which is
+     * precisely the day the seam exists for. Same reasoning, same shape as the
+     * identity render cache storing `imageUrl` from `AvatarStore.put`
+     * (ADR 260806-222546).
+     */
+    url: text('url').notNull(),
+
     createdAt: text('created_at').notNull(),
   },
   (table) => [

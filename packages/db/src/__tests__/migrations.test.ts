@@ -383,6 +383,10 @@ describe('Database Migrations', () => {
     // Nullable on purpose: a file exists before the message that carries it, and
     // SQLite skips the composite foreign-key check while `entry_id` is NULL.
     expect(columns.find((c) => c.name === 'entry_id')?.notnull).toBe(0);
+    // Whatever the store answered, stored rather than rebuilt (migration 0058).
+    // A bucket-backed store's absolute URL is not derivable from the ids, so a
+    // reader that recomputed it would work today and break the day it mattered.
+    expect(columns.find((c) => c.name === 'url')?.notnull).toBe(1);
 
     const index = db.$client
       .prepare("SELECT sql FROM sqlite_master WHERE type='index' AND name = ?")
