@@ -22,6 +22,7 @@
  *
  * @module server/services/identity/operator-profile
  */
+import { OPERATOR_FALLBACK_DISPLAY_NAME } from '@dorkos/shared/team-schemas';
 import { sanitizeIdentity } from '@dorkos/shared/untrusted-text';
 
 /**
@@ -31,8 +32,13 @@ import { sanitizeIdentity } from '@dorkos/shared/untrusted-text';
  * Deliberately the same word `author-registry.ts` stores, and deliberately NOT
  * imported from it: these are two independent decisions that happen to agree,
  * and coupling them would mean changing one changes the other silently.
+ *
+ * It IS shared with the client, which is a different relationship: Settings ›
+ * Profile has to recognise this value to avoid offering it as though the person
+ * had chosen it (DOR-979), and that is a dependency rather than a coincidence.
+ * Re-exported here so this module still reads as the owner of the ladder.
  */
-export const OPERATOR_FALLBACK_DISPLAY_NAME = 'You';
+export { OPERATOR_FALLBACK_DISPLAY_NAME };
 
 /** The operator, as a roster row renders them. */
 export interface OperatorProfile {

@@ -17,6 +17,7 @@ export {
   groupTeamByOwner,
   teamMemberLabel,
 } from './lib/team-roster-selectors';
+export { teamMemberFace } from './lib/team-member-face';
 export type {
   TeamGrouping,
   TeamKindFilter,

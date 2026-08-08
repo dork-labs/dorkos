@@ -9,9 +9,11 @@ import {
   ShieldCheck,
   Lock,
   Link2,
+  UserRound,
 } from 'lucide-react';
 import { TabbedDialog, type TabbedDialogTab } from '@/layers/shared/ui';
 import { useSettingsDeepLink, type SettingsTab } from '@/layers/shared/model';
+import { ProfileTab } from './ProfileTab';
 import { AppearanceResetAction, AppearanceTab } from './tabs/AppearanceTab';
 import { PreferencesTab } from './tabs/PreferencesTab';
 import { RuntimesTab } from './runtimes/RuntimesTab';
@@ -25,6 +27,11 @@ import { RemoteAccessAction } from './RemoteAccessAction';
 import { TunnelDialog } from './TunnelDialog';
 
 const SETTINGS_TABS: TabbedDialogTab<SettingsTab>[] = [
+  // First, and promotion needs nothing else: ungrouped tabs render above the
+  // first group header (`tabbed-dialog.tsx`), and `appearance`/`preferences`
+  // are the only other ungrouped ones. The id is exactly `profile` because
+  // that is what the profile drawer's Edit button deep-links to.
+  { id: 'profile', label: 'Profile', icon: UserRound, component: ProfileTab },
   {
     id: 'appearance',
     label: 'Appearance',

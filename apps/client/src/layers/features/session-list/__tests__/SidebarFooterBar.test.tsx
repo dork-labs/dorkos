@@ -121,6 +121,14 @@ vi.mock('@/layers/features/report-issue', () => ({
   HelpMenu: () => null,
 }));
 
+// The account menu reads the roster, the auth session and two deep links; this
+// suite is about the footer bar's own layout, so it stands in for the whole
+// container (the same treatment `HelpMenu` gets). Its own behaviour is pinned in
+// `features/profile/__tests__/AccountMenu.test.tsx`.
+vi.mock('@/layers/features/profile', () => ({
+  AccountMenuContainer: () => <button data-testid="account-menu">account</button>,
+}));
+
 import { SidebarFooterBar } from '../ui/SidebarFooterBar';
 
 describe('SidebarFooterBar', () => {
@@ -140,6 +148,17 @@ describe('SidebarFooterBar', () => {
   });
 
   // --- Existing icon bar tests ---
+
+  it('puts the account menu first in the right-hand icon cluster', () => {
+    render(<SidebarFooterBar />);
+    const account = screen.getByTestId('account-menu');
+    // First child of the cluster, left of the tunnel globe and every
+    // extension-contributed button (spec `identity-consistency` §W3.1). The
+    // brand link is a different affordance and keeps the left edge, so this
+    // deliberately reads the cluster rather than the row.
+    expect(account.parentElement?.firstElementChild).toBe(account);
+    expect(account.parentElement?.className).toContain('ml-auto');
+  });
 
   it('renders branding link with correct href, target, and rel', () => {
     render(<SidebarFooterBar />);

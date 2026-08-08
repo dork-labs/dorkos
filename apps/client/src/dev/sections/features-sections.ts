@@ -60,6 +60,21 @@ export const FEATURES_SECTIONS: PlaygroundSection[] = [
     category: 'Agent',
     keywords: ['team', 'card', 'member', 'identity', 'handle', 'owner', 'attribution', 'external'],
   },
+  // AccountShowcases
+  {
+    id: 'account-menu',
+    title: 'Account Menu',
+    page: 'features',
+    category: 'Agent',
+    keywords: ['account', 'menu', 'avatar', 'sidebar', 'sign out', 'profile', 'handle', 'chrome'],
+  },
+  {
+    id: 'profile-tab',
+    title: 'Profile Tab',
+    page: 'features',
+    category: 'Agent',
+    keywords: ['profile', 'settings', 'photo', 'avatar', 'handle', 'display name', 'email'],
+  },
   // ProfileShowcases
   {
     id: 'profile-drawer',

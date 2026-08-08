@@ -1,9 +1,9 @@
 import type { TeamMember } from '@dorkos/shared/team-schemas';
 import { Badge, IdentityAvatar } from '@/layers/shared/ui';
-import { cn, resolveIdentityFace } from '@/layers/shared/lib';
+import { cn } from '@/layers/shared/lib';
 import { getRuntimeDescriptor } from '@/layers/entities/runtime';
 import { platformLabel } from '@/layers/entities/room';
-import { teamMemberLabel } from '@/layers/entities/team';
+import { teamMemberFace, teamMemberLabel } from '@/layers/entities/team';
 
 /**
  * The second line under a name: what is true of this identity and nothing else.
@@ -70,16 +70,7 @@ export interface TeamMemberCardProps {
  * both arrive as more rows, not as another code path.
  */
 export function TeamMemberCard({ member, owner, onSelectOwner, className }: TeamMemberCardProps) {
-  const face = resolveIdentityFace({
-    record: {
-      id: member.id,
-      kind: member.kind,
-      displayName: member.displayName,
-      ...(member.emoji ? { emoji: member.emoji } : {}),
-      ...(member.color ? { color: member.color } : {}),
-    },
-    origin: member.origin,
-  });
+  const face = teamMemberFace(member);
 
   return (
     <article
@@ -92,6 +83,7 @@ export function TeamMemberCard({ member, owner, onSelectOwner, className }: Team
         kind={face.kind}
         color={face.color}
         emoji={face.emoji}
+        imageUrl={face.imageUrl}
         fallback={face.fallback}
         origin={face.origin}
       />

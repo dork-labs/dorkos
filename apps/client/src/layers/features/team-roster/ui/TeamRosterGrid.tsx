@@ -1,7 +1,12 @@
 import type { TeamMember } from '@dorkos/shared/team-schemas';
 import { IdentityAvatar } from '@/layers/shared/ui';
-import { cn, resolveIdentityFace } from '@/layers/shared/lib';
-import { findTeamOwner, groupTeamByOwner, teamMemberLabel } from '@/layers/entities/team';
+import { cn } from '@/layers/shared/lib';
+import {
+  findTeamOwner,
+  groupTeamByOwner,
+  teamMemberFace,
+  teamMemberLabel,
+} from '@/layers/entities/team';
 import { TeamMemberCard } from './TeamMemberCard';
 
 /** The one grid the roster is drawn in — one column on a phone, more as there is room. */
@@ -27,16 +32,7 @@ function ClusterHeader({
   owner: TeamMember;
   onSelectOwner?: (ownerId: string) => void;
 }) {
-  const face = resolveIdentityFace({
-    record: {
-      id: owner.id,
-      kind: owner.kind,
-      displayName: owner.displayName,
-      ...(owner.emoji ? { emoji: owner.emoji } : {}),
-      ...(owner.color ? { color: owner.color } : {}),
-    },
-    origin: owner.origin,
-  });
+  const face = teamMemberFace(owner);
 
   const lockup = (
     <>
@@ -45,6 +41,7 @@ function ClusterHeader({
         kind={face.kind}
         color={face.color}
         emoji={face.emoji}
+        imageUrl={face.imageUrl}
         fallback={face.fallback}
         origin={face.origin}
       />
