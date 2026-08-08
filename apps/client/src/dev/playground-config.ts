@@ -18,15 +18,18 @@ import {
   WandSparkles,
   MapPin,
   Hash,
+  Fingerprint,
 } from 'lucide-react';
 import type { PlaygroundSection } from './playground-registry';
 import {
+  PLAYGROUND_REGISTRY,
   TOKENS_SECTIONS,
   FORMS_SECTIONS,
   COMPONENTS_SECTIONS,
   CHAT_SECTIONS,
   ENTRY_ACTIONS_SECTIONS,
   FEATURES_SECTIONS,
+  IDENTITY_SECTIONS,
   PROMOS_SECTIONS,
   COMMAND_PALETTE_SECTIONS,
   SIMULATOR_SECTIONS,
@@ -61,6 +64,49 @@ export interface PageConfig {
   sections: PlaygroundSection[];
   /** URL path segment (e.g. `'tokens'` → `/dev/tokens`). */
   path: string;
+}
+
+/**
+ * Sections another page owns that the Identity page also renders, in the order
+ * it renders them (spec `identity-consistency` §W4.2).
+ *
+ * A title holds exactly one registry entry — the registry forbids duplicate ids
+ * and pins `id === slugify(title)` — so a section cannot be registered twice to
+ * appear on two pages. Cross-listing is done by RENDERING the same showcase
+ * component from both pages and borrowing its entry for this page's TOC. The
+ * accepted cost: these sections still group under their own page in ⌘K, and
+ * their canonical anchor stays where it was. That is the trade for not breaking
+ * a single existing `/dev/components#…`, `/dev/rooms#…` or `/dev/chat#…` link.
+ */
+export const IDENTITY_CROSS_LISTED: readonly string[] = [
+  'identityavatar',
+  'mentionpill',
+  'identityhovercard',
+  'a-mention-in-a-real-message',
+  'messageauthoravatar',
+  'agentidentitychip',
+  'roomavatar',
+  'roommemberrow',
+];
+
+/**
+ * Look up borrowed sections by id, in the order given.
+ *
+ * Throws rather than skipping a miss: a silently dropped id is a section that
+ * renders on the page with no way to reach it from the TOC, which is the exact
+ * drift the registry test exists to catch. The test imports this module, so a
+ * renamed section fails there rather than only in a browser nobody opened.
+ */
+function crossListed(ids: readonly string[]): PlaygroundSection[] {
+  return ids.map((id) => {
+    const section = PLAYGROUND_REGISTRY.find((entry) => entry.id === id);
+    if (section === undefined) {
+      throw new Error(
+        `Cross-listed playground section "${id}" is not in PLAYGROUND_REGISTRY — it was renamed or removed.`
+      );
+    }
+    return section;
+  });
 }
 
 /**
@@ -152,6 +198,18 @@ export const PAGE_CONFIGS: PageConfig[] = [
     path: 'simulator',
   },
   // ── Agents ──
+  {
+    id: 'identity',
+    label: 'Identity',
+    description:
+      'Every face DorkOS draws, in one place — the disc, the mention, the card, the roster, the profile — so the whole identity language can be reviewed at once.',
+    icon: Fingerprint,
+    group: 'agents',
+    // Owned sections first, then the ones this page renders but another page
+    // owns — see IDENTITY_CROSS_LISTED for why cross-listing works this way.
+    sections: [...IDENTITY_SECTIONS, ...crossListed(IDENTITY_CROSS_LISTED)],
+    path: 'identity',
+  },
   {
     id: 'features',
     label: 'Subsystems',

@@ -7,6 +7,7 @@ export type Page =
   | 'chat'
   | 'entry-actions'
   | 'features'
+  | 'identity'
   | 'promos'
   | 'command-palette'
   | 'simulator'
@@ -29,7 +30,15 @@ export interface PlaygroundSection {
   title: string;
   /** Which page this section lives on. */
   page: Page;
-  /** Showcase group for search grouping. */
+  /**
+   * In-file documentation only: the feature or subsystem this section belongs
+   * to, as a note to whoever reads the array next.
+   *
+   * **Nothing reads it.** ⌘K groups by `page` (`PlaygroundSearch`) and the TOC
+   * renders flat (`TocSidebar`), so this has never been a search grouping
+   * however it was written up. It is kept because it documents 241 entries and
+   * rewriting all of them buys nobody anything — but no code may branch on it.
+   */
   category: string;
   /** Alias keywords for fuzzy search matching. */
   keywords: string[];
@@ -41,6 +50,7 @@ export { COMPONENTS_SECTIONS } from './sections/components-sections';
 export { CHAT_SECTIONS } from './sections/chat-sections';
 export { ENTRY_ACTIONS_SECTIONS } from './sections/entry-actions-sections';
 export { FEATURES_SECTIONS } from './sections/features-sections';
+export { IDENTITY_SECTIONS } from './sections/identity-sections';
 export { PROMOS_SECTIONS } from './sections/promos-sections';
 export { COMMAND_PALETTE_SECTIONS } from './sections/command-palette-sections';
 export { SIMULATOR_SECTIONS } from './sections/simulator-sections';
@@ -62,6 +72,7 @@ import { COMPONENTS_SECTIONS as components } from './sections/components-section
 import { CHAT_SECTIONS as chat } from './sections/chat-sections';
 import { ENTRY_ACTIONS_SECTIONS as entryActions } from './sections/entry-actions-sections';
 import { FEATURES_SECTIONS as features } from './sections/features-sections';
+import { IDENTITY_SECTIONS as identity } from './sections/identity-sections';
 import { PROMOS_SECTIONS as promos } from './sections/promos-sections';
 import { COMMAND_PALETTE_SECTIONS as commandPalette } from './sections/command-palette-sections';
 import { SIMULATOR_SECTIONS as simulator } from './sections/simulator-sections';
@@ -88,6 +99,7 @@ export const PLAYGROUND_REGISTRY: PlaygroundSection[] = [
   ...chat,
   ...entryActions,
   ...features,
+  ...identity,
   ...promos,
   ...commandPalette,
   ...simulator,
