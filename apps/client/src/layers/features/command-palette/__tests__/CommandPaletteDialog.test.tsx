@@ -276,7 +276,25 @@ vi.mock('../model/use-palette-items', () => ({
       { id: 'browse', name: 'Browse Filesystem', type: 'quick-action', data: {} },
       { id: 'theme', name: 'Toggle Theme', type: 'quick-action', data: {} },
     ],
-    suggestions: [],
+    newActions: [{ id: 'new-session', label: 'New Session', icon: 'Plus', action: 'newSession' }],
+    sessions: [],
+    continueRows: [],
+    // The zero-query Recent list. Agent rows, so the sub-menu drill-in this
+    // file has always asserted still has a row to start from.
+    recent: [
+      {
+        kind: 'agent',
+        key: `agent:${mockAgents[2].projectPath}`,
+        lastActivityAt: '2026-08-09T10:00:00.000Z',
+        agent: mockAgents[2],
+      },
+      {
+        kind: 'agent',
+        key: `agent:${mockAgents[0].projectPath}`,
+        lastActivityAt: '2026-08-09T09:00:00.000Z',
+        agent: mockAgents[0],
+      },
+    ],
     isLoading: false,
   }),
 }));
@@ -326,34 +344,35 @@ describe('CommandPaletteDialog', () => {
     expect(screen.getByPlaceholderText('Search rooms, agents, commands...')).toBeInTheDocument();
   });
 
-  it('renders Recent Agents group heading', () => {
+  it('renders the Recent group heading', () => {
     render(<CommandPaletteDialog />);
-    expect(screen.getByText('Recent Agents')).toBeInTheDocument();
+    expect(screen.getByText('Recent')).toBeInTheDocument();
   });
 
-  it('renders agent names from recentAgents', () => {
+  it('renders agent names from the Recent mix', () => {
     render(<CommandPaletteDialog />);
     // getAllByText used because the selected agent name also appears in the preview panel
     expect(screen.getAllByText('Worker').length).toBeGreaterThan(0);
     expect(screen.getByText('Auth Service')).toBeInTheDocument();
   });
 
-  it('renders Features group with all feature items', () => {
+  /**
+   * The zero-query palette is a command center, not a menu of everything
+   * (§15). Features and Quick Actions used to be dumped here in full; they are
+   * still one keystroke away, and the search-mode cases further down assert
+   * that they come back the moment anything is typed.
+   */
+  it('does not dump Features and Quick Actions into the untyped palette', () => {
     render(<CommandPaletteDialog />);
-    expect(screen.getByText('Features')).toBeInTheDocument();
-    expect(screen.getByText('Tasks Scheduler')).toBeInTheDocument();
-    expect(screen.getByText('Connections')).toBeInTheDocument();
-    expect(screen.getByText('Mesh Network')).toBeInTheDocument();
-    expect(screen.getByText('Settings')).toBeInTheDocument();
+    expect(screen.queryByText('Features')).not.toBeInTheDocument();
+    expect(screen.queryByText('Quick Actions')).not.toBeInTheDocument();
+    expect(screen.queryByText('Toggle Theme')).not.toBeInTheDocument();
   });
 
-  it('renders Quick Actions group with all items', () => {
+  it("renders the New group with the cockpit's creation actions", () => {
     render(<CommandPaletteDialog />);
-    expect(screen.getByText('Quick Actions')).toBeInTheDocument();
+    expect(screen.getByText('New')).toBeInTheDocument();
     expect(screen.getByText('New Session')).toBeInTheDocument();
-    expect(screen.getByText('Bring in existing projects')).toBeInTheDocument();
-    expect(screen.getByText('Browse Filesystem')).toBeInTheDocument();
-    expect(screen.getByText('Toggle Theme')).toBeInTheDocument();
   });
 
   it('does not render Commands group when search query is empty', () => {
@@ -593,8 +612,20 @@ describe('CommandPaletteDialog', () => {
 
   // --- Feature action dispatching ---
 
-  it('opens Tasks dialog and closes palette when Tasks Scheduler is selected', () => {
+  /**
+   * Features and quick actions are reached by typing now, so every case below
+   * types first. The mocked search returns everything for a non-prefix query,
+   * which is what keeps these about DISPATCH rather than about matching.
+   */
+  function searchThen(text = 'a') {
     render(<CommandPaletteDialog />);
+    fireEvent.change(screen.getByPlaceholderText('Search rooms, agents, commands...'), {
+      target: { value: text },
+    });
+  }
+
+  it('opens Tasks dialog and closes palette when Tasks Scheduler is selected', () => {
+    searchThen();
     const item = screen.getByText('Tasks Scheduler').closest('[data-slot="command-item"]');
     if (item) fireEvent.click(item as Element);
     expect(mockSetTasksOpen).toHaveBeenCalledWith(true);
@@ -602,21 +633,21 @@ describe('CommandPaletteDialog', () => {
   });
 
   it('goes to the Connections page when Connections is selected', () => {
-    render(<CommandPaletteDialog />);
+    searchThen();
     const item = screen.getByText('Connections').closest('[data-slot="command-item"]');
     if (item) fireEvent.click(item as Element);
     expect(mockOpenConnections).toHaveBeenCalledWith('messaging');
   });
 
   it('navigates to /agents when Mesh Network is selected', () => {
-    render(<CommandPaletteDialog />);
+    searchThen();
     const item = screen.getByText('Mesh Network').closest('[data-slot="command-item"]');
     if (item) fireEvent.click(item as Element);
     expect(mockNavigate).toHaveBeenCalledWith({ to: '/team' });
   });
 
   it('opens Settings dialog when Settings is selected', () => {
-    render(<CommandPaletteDialog />);
+    searchThen();
     const item = screen.getByText('Settings').closest('[data-slot="command-item"]');
     if (item) fireEvent.click(item as Element);
     expect(mockSetSettingsOpen).toHaveBeenCalledWith(true);
@@ -625,7 +656,7 @@ describe('CommandPaletteDialog', () => {
   // --- Quick action dispatching ---
 
   it('opens the import dialog when Bring in existing projects quick action is selected', () => {
-    render(<CommandPaletteDialog />);
+    searchThen();
     const item = screen
       .getByText('Bring in existing projects')
       .closest('[data-slot="command-item"]');
@@ -634,7 +665,7 @@ describe('CommandPaletteDialog', () => {
   });
 
   it('opens directory picker when Browse Filesystem quick action is selected', () => {
-    render(<CommandPaletteDialog />);
+    searchThen();
     const item = screen.getByText('Browse Filesystem').closest('[data-slot="command-item"]');
     if (item) fireEvent.click(item as Element);
     expect(mockSetPickerOpen).toHaveBeenCalledWith(true);
@@ -642,14 +673,14 @@ describe('CommandPaletteDialog', () => {
 
   // --- @ prefix (agent-only) mode ---
 
-  it('shows All Agents group and hides Features/Quick Actions/Recent Agents in @ mode', () => {
+  it('shows All Agents group and hides Features/Quick Actions/Recent in @ mode', () => {
     render(<CommandPaletteDialog />);
     const input = screen.getByPlaceholderText('Search rooms, agents, commands...');
     fireEvent.change(input, { target: { value: '@' } });
     expect(screen.getByText('All Agents')).toBeInTheDocument();
     expect(screen.queryByText('Features')).not.toBeInTheDocument();
     expect(screen.queryByText('Quick Actions')).not.toBeInTheDocument();
-    expect(screen.queryByText('Recent Agents')).not.toBeInTheDocument();
+    expect(screen.queryByText('Recent')).not.toBeInTheDocument();
   });
 
   it('does not show Commands group in @ mode', () => {

@@ -77,7 +77,6 @@ export function CommandPaletteDialog() {
     handleSessionSelect,
     handleCommandSelect,
     recordUsage,
-    setDir,
     selectedCwd,
   } = usePaletteActions(closePalette);
 
@@ -158,9 +157,12 @@ export function CommandPaletteDialog() {
     features,
     commands,
     quickActions,
+    newActions,
     rooms,
+    sessions,
+    continueRows,
+    recent,
     searchableItems,
-    suggestions,
   } = usePaletteItems(selectedCwd);
 
   const { results, prefix } = usePaletteSearch(searchableItems, search);
@@ -213,6 +215,19 @@ export function CommandPaletteDialog() {
     return new Set(results.filter((r) => r.item.type === 'dm').map((r) => r.item.id));
   }, [results, search]);
 
+  // Conversations keep Fuse's own relevance order rather than the recency order
+  // they arrived in: a person who typed something is asking "which one is this",
+  // not "which one is newest".
+  const searchSessions = useMemo(() => {
+    if (!search) return [];
+    const byId = new Map(sessions.map((session) => [session.id, session]));
+    return results.flatMap((r) => {
+      if (r.item.type !== 'session') return [];
+      const session = byId.get(r.item.id);
+      return session ? [session] : [];
+    });
+  }, [results, search, sessions]);
+
   const isAtMode = prefix === '@';
   const isCommandMode = prefix === '>';
   const isRoomMode = prefix === '#';
@@ -226,6 +241,18 @@ export function CommandPaletteDialog() {
   }, [selectedValue, recentAgents, allAgents]);
 
   const hasAgentSelected = !isMobile && selectedAgent !== null;
+
+  // The conversation cmdk has highlighted, if the highlighted row is one. Both
+  // lists are searched because a live conversation can be in Continue before
+  // the recent-sessions query has refetched it into the window.
+  const selectedSession = useMemo(() => {
+    if (!selectedValue) return null;
+    return (
+      sessions.find((session) => session.id === selectedValue) ??
+      continueRows.find((row) => row.session.id === selectedValue)?.session ??
+      null
+    );
+  }, [selectedValue, sessions, continueRows]);
 
   // Preview data for the sub-menu (agent-actions page); always call hook but use subMenuAgent
   const previewData = usePreviewData(subMenuAgent?.id ?? '', subMenuAgent?.projectPath ?? '');
@@ -376,6 +403,21 @@ export function CommandPaletteDialog() {
               // First, so the highlight stops following the leading row the
               // moment this keystroke is one that moves it.
               leadingRowPin.onKeyDown(e);
+              // Cmd+Enter on a conversation starts a FRESH one with the same
+              // agent (§15's "search + act"). It is checked before the agent
+              // branch below because a session row is not an agent row and the
+              // two shortcuts mean different things on them.
+              if (
+                e.key === 'Enter' &&
+                (e.metaKey || e.ctrlKey) &&
+                !page &&
+                selectedSession?.cwd != null
+              ) {
+                e.preventDefault();
+                startNewSession(selectedSession.cwd);
+                closePalette();
+                return;
+              }
               // Cmd+Enter (or Ctrl+Enter) on root page opens selected agent in new tab
               if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && !page && selectedAgent) {
                 e.preventDefault();
@@ -480,10 +522,11 @@ export function CommandPaletteDialog() {
                         search={search}
                         selectedCwd={selectedCwd}
                         selectedValue={selectedValue}
-                        suggestions={suggestions}
-                        recentAgents={recentAgents}
-                        allAgents={allAgents}
+                        continueRows={continueRows}
+                        recent={recent}
+                        newActions={newActions}
                         searchAgents={searchAgents}
+                        searchSessions={searchSessions}
                         searchFeatures={searchFeatures}
                         searchCommands={searchCommands}
                         searchQuickActions={searchQuickActions}
@@ -492,16 +535,15 @@ export function CommandPaletteDialog() {
                         searchDms={searchDms}
                         agentMatchMap={agentMatchMap}
                         onFeatureAction={handleFeatureAction}
-                        onAgentSelect={handleAgentSelect}
                         onQuickAction={handleQuickAction}
                         onGoToAgentActions={goToAgentActions}
                         onRoomSelect={handleRoomSelect}
-                        // The suggestion names a session in the directory you
-                        // are already in — that is the rule that produced it
-                        // (`usePaletteItems`, rule 1) — so it opens there.
-                        onSessionSelect={(sessionId) => handleSessionSelect(sessionId, selectedCwd)}
+                        // The conversation's OWN directory, never the one on
+                        // screen: the durable stream resolves a session's
+                        // history from `?cwd=`, so opening it under the wrong
+                        // one reads another project's transcript (DOR-928).
+                        onSessionSelect={(session) => handleSessionSelect(session.id, session.cwd)}
                         onCommandSelect={handleCommandSelect}
-                        onClose={closePalette}
                       />
                     )}
 

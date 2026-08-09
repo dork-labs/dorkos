@@ -3,18 +3,18 @@ import { CommandGroup, CommandItem, CommandSeparator } from '@/layers/shared/ui'
 import { getAgentDisplayName } from '@/layers/shared/lib';
 import type { RoomSummary } from '@/layers/entities/room';
 import { AgentCommandItem } from './AgentCommandItem';
+import { PaletteCommandCenter } from './PaletteCommandCenter';
 import { RoomCommandItem } from './RoomCommandItem';
+import { SessionCommandItem } from './SessionCommandItem';
 import { PalettePrefixLegend } from './PalettePrefixLegend';
 import { ICON_MAP, EASE_OUT, listVariants, itemVariants } from './palette-constants';
 import type { PaletteRooms } from '../model/use-palette-rooms';
+import type { PaletteRecentEntry } from '../model/palette-recent';
+import type { PaletteSessionItem } from '../model/palette-sessions';
+import type { PaletteContinueRow } from '../model/use-palette-command-center';
 import type { AgentPathEntry } from '@dorkos/shared/mesh-schemas';
 import type { FuseResultMatch } from 'fuse.js';
-import type {
-  SuggestionItem,
-  FeatureItem,
-  QuickActionItem,
-  CommandItemData,
-} from '../model/use-palette-items';
+import type { FeatureItem, QuickActionItem, CommandItemData } from '../model/use-palette-items';
 
 interface PaletteRootPageProps {
   staggerKey: number;
@@ -26,10 +26,15 @@ interface PaletteRootPageProps {
   search: string;
   selectedCwd: string | null;
   selectedValue: string;
-  suggestions: SuggestionItem[];
-  recentAgents: AgentPathEntry[];
-  allAgents: AgentPathEntry[];
+  /** Live conversations, for the zero-query Continue group. */
+  continueRows: PaletteContinueRow[];
+  /** The last things this person was in, for the zero-query Recent group. */
+  recent: PaletteRecentEntry[];
+  /** The cockpit's own creation actions, for the zero-query New group. */
+  newActions: QuickActionItem[];
   searchAgents: AgentPathEntry[];
+  /** Conversations matching the current query. */
+  searchSessions: PaletteSessionItem[];
   searchFeatures: FeatureItem[];
   searchCommands: CommandItemData[];
   searchQuickActions: QuickActionItem[];
@@ -41,15 +46,13 @@ interface PaletteRootPageProps {
   searchDms: RoomSummary[];
   agentMatchMap: Map<string, readonly FuseResultMatch[] | undefined>;
   onFeatureAction: (action: string) => void;
-  onAgentSelect: (agent: AgentPathEntry) => void;
   onQuickAction: (action: string) => void;
   onGoToAgentActions: (agent: AgentPathEntry) => void;
   onRoomSelect: (room: RoomSummary) => void;
-  /** Open a conversation the suggestion names. */
-  onSessionSelect: (sessionId: string) => void;
+  /** Open a conversation. */
+  onSessionSelect: (session: PaletteSessionItem) => void;
   /** Put a slash command in the active conversation's composer and go there. */
   onCommandSelect: (command: string) => void;
-  onClose: () => void;
 }
 
 /** Root page content for the command palette — renders all groups with stagger animation. */
@@ -62,10 +65,11 @@ export function PaletteRootPage({
   search,
   selectedCwd,
   selectedValue,
-  suggestions,
-  recentAgents,
-  allAgents,
+  continueRows,
+  recent,
+  newActions,
   searchAgents,
+  searchSessions,
   searchFeatures,
   searchCommands,
   searchQuickActions,
@@ -74,13 +78,11 @@ export function PaletteRootPage({
   searchDms,
   agentMatchMap,
   onFeatureAction,
-  onAgentSelect,
   onQuickAction,
   onGoToAgentActions,
   onRoomSelect,
   onSessionSelect,
   onCommandSelect,
-  onClose,
 }: PaletteRootPageProps) {
   // What to say instead of a channel list when there is none to show. Only `#`
   // mode asks: everywhere else rooms are one group among several, and a palette
@@ -99,80 +101,41 @@ export function PaletteRootPage({
   return (
     <motion.div key={staggerKey} variants={listVariants} initial="hidden" animate="visible">
       {/*
-       * Unread rooms, before anything is typed — the first thing in the list, so
-       * Cmd+K then Enter goes to whatever needs reading (spec `rooms` §13.2).
-       * It sits above Suggestions deliberately: a suggestion is a guess about
-       * what you might want, and an unread room is a fact about what is waiting.
+       * Nothing typed: the command center, in its own order (§15). Everything
+       * that used to fill this space — Unread, Suggestions, Recent Agents,
+       * Features, Quick Actions — is either inside it now or one keystroke away.
        */}
-      {isZeroQuery && rooms.unread.length > 0 && (
-        <CommandGroup heading="Unread">
-          {rooms.unread.map((room, index) => (
-            <motion.div key={room.id} variants={index < 8 ? itemVariants : undefined}>
-              <RoomCommandItem room={room} onSelect={() => onRoomSelect(room)} />
+      {isZeroQuery && (
+        <PaletteCommandCenter
+          continueRows={continueRows}
+          recent={recent}
+          newActions={newActions}
+          selectedCwd={selectedCwd}
+          selectedValue={selectedValue}
+          onSessionSelect={onSessionSelect}
+          onRoomSelect={onRoomSelect}
+          onGoToAgentActions={onGoToAgentActions}
+          onQuickAction={onQuickAction}
+        />
+      )}
+
+      {/*
+       * Conversations lead the typed list. Recall is what ⌘K is for, and a
+       * conversation is the thing people go looking for most and could not find
+       * at all until this shipped. (Task 3.2 replaces this fixed order with one
+       * blended ranking — until then, first is the honest place for it.)
+       */}
+      {!isZeroQuery && searchSessions.length > 0 && (
+        <CommandGroup heading="Conversations">
+          {searchSessions.map((session, index) => (
+            <motion.div key={session.id} variants={index < 8 ? itemVariants : undefined}>
+              <SessionCommandItem
+                item={session}
+                isSelected={selectedValue === session.id}
+                onSelect={() => onSessionSelect(session)}
+              />
             </motion.div>
           ))}
-        </CommandGroup>
-      )}
-
-      {/* Contextual suggestions — shown at top of zero-query state */}
-      {isZeroQuery && suggestions.length > 0 && (
-        <CommandGroup heading="Suggestions">
-          {suggestions.map((s, index) => {
-            const Icon = ICON_MAP[s.icon];
-            return (
-              <motion.div key={s.id} variants={index < 8 ? itemVariants : undefined}>
-                <CommandItem
-                  value={s.id}
-                  onSelect={() => {
-                    if (s.action === 'openTasks') {
-                      onFeatureAction('openTasks');
-                    } else if (s.action.startsWith('switchAgent:')) {
-                      const agentId = s.action.split(':')[1];
-                      const agent = allAgents.find((a) => a.id === agentId);
-                      if (agent) onAgentSelect(agent);
-                    } else if (s.action.startsWith('continueSession:')) {
-                      // Everything after the first `:` — a session id never
-                      // contains one, but splitting on all of them would still
-                      // be a rule this row does not need.
-                      onSessionSelect(s.action.slice('continueSession:'.length));
-                    } else {
-                      onClose();
-                    }
-                  }}
-                >
-                  <motion.div
-                    whileHover={{ x: 2 }}
-                    transition={{ duration: 0.1, ease: EASE_OUT }}
-                    className="flex w-full items-center gap-2"
-                  >
-                    {Icon && <Icon className="size-4" />}
-                    <div className="min-w-0 flex-1">
-                      <span className="text-sm">{s.label}</span>
-                      <span className="text-muted-foreground ml-2 text-xs">{s.description}</span>
-                    </div>
-                  </motion.div>
-                </CommandItem>
-              </motion.div>
-            );
-          })}
-        </CommandGroup>
-      )}
-
-      {/* Zero-query state: Recent Agents group */}
-      {isZeroQuery && recentAgents.length > 0 && (
-        <CommandGroup heading="Recent Agents">
-          <LayoutGroup id="cmd-palette-recent">
-            {recentAgents.map((agent, index) => (
-              <motion.div key={agent.id} variants={index < 8 ? itemVariants : undefined}>
-                <AgentCommandItem
-                  agent={agent}
-                  isActive={agent.projectPath === selectedCwd}
-                  isSelected={selectedValue === getAgentDisplayName(agent)}
-                  onSelect={() => onGoToAgentActions(agent)}
-                />
-              </motion.div>
-            ))}
-          </LayoutGroup>
         </CommandGroup>
       )}
 
@@ -241,8 +204,8 @@ export function PaletteRootPage({
         </>
       )}
 
-      {/* Features — hidden in @ and > mode; shown in zero-query and non-prefix search */}
-      {!isAtMode && !isCommandMode && searchFeatures.length > 0 && (
+      {/* Features — hidden in @ and > mode; shown when searching */}
+      {!isZeroQuery && !isAtMode && !isCommandMode && searchFeatures.length > 0 && (
         <>
           <CommandSeparator />
           <CommandGroup heading="Features">
@@ -295,8 +258,8 @@ export function PaletteRootPage({
         </>
       )}
 
-      {/* Quick Actions — hidden in @ and > mode; shown in zero-query and non-prefix search */}
-      {!isAtMode && !isCommandMode && searchQuickActions.length > 0 && (
+      {/* Quick Actions — hidden in @ and > mode; shown when searching */}
+      {!isZeroQuery && !isAtMode && !isCommandMode && searchQuickActions.length > 0 && (
         <>
           <CommandSeparator />
           <CommandGroup heading="Quick Actions">

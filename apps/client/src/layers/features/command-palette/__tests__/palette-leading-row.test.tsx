@@ -41,8 +41,19 @@ function makeRoom(overrides: Partial<RoomSummary> = {}): RoomSummary {
   };
 }
 
-/** Caught up, so it stays out of the Unread group and off the top of the list. */
-const caughtUp = makeRoom({ id: 'room-quiet', slug: 'quiet', title: 'Quiet', unreadCount: 0 });
+/**
+ * Caught up, so nothing is waiting in it and it sits below the agent rather
+ * than on top. Its last activity is deliberately older than the agent's, and
+ * deliberately not its `createdAt` — a room nobody has ever spoken in has no
+ * "back" to jump to and is left out of Recent entirely.
+ */
+const caughtUp = makeRoom({
+  id: 'room-quiet',
+  slug: 'quiet',
+  title: 'Quiet',
+  unreadCount: 0,
+  lastActivityAt: '2026-07-26T08:00:00.000Z',
+});
 
 /** The same room a moment later, with a message waiting in it. */
 const nowUnread = { ...caughtUp, unreadCount: 1, lastActivityAt: '2026-07-26T11:00:00.000Z' };
@@ -86,6 +97,14 @@ beforeEach(() => {
     })),
   });
   vi.mocked(mockTransport.listRooms).mockResolvedValue([caughtUp]);
+  // The agent's own last-session time. Recent ranks an agent by it, and an
+  // agent with none has never run anything this window can see — so without
+  // this the untyped palette would have no agent row to lead with.
+  vi.mocked(mockTransport.listRecentSessions).mockResolvedValue({
+    sessions: [],
+    agentActivity: { '/projects/ana': '2026-07-26T09:00:00.000Z' },
+    warnings: [],
+  });
 });
 
 afterEach(cleanup);
@@ -168,8 +187,8 @@ vi.mock('@/layers/entities/tasks', () => ({
   useActiveTaskRunCount: () => ({ data: undefined }),
 }));
 
-// No sessions and no previous directory, so `usePaletteItems` emits no
-// suggestions and the leading row before the message is exactly the agent.
+// No sessions of its own, so the leading row before the message is exactly the
+// agent.
 vi.mock('@/layers/entities/session', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/layers/entities/session')>()),
   useDirectoryState: () => ['/projects/ana', vi.fn()],

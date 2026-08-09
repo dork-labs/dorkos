@@ -181,6 +181,23 @@ beforeEach(() => {
     })),
   });
   vi.mocked(mockTransport.listRooms).mockResolvedValue(ALL_ROOMS);
+  vi.mocked(mockTransport.listRecentSessions).mockResolvedValue({
+    sessions: [
+      {
+        id: '00000000-0000-4000-8000-00000000cafe',
+        title: 'Wiring the palette',
+        cwd: '/projects/ana',
+        createdAt: recentlyActive,
+        updatedAt: recentlyActive,
+        permissionMode: 'default',
+        runtime: 'claude-code',
+      },
+    ],
+    // No agent rows: the agent's own conversation is already in the list, and
+    // Recent never says one thing twice.
+    agentActivity: {},
+    warnings: [],
+  });
   mockNavigate.mockClear();
 });
 
@@ -270,9 +287,10 @@ vi.mock('@/layers/entities/tasks', () => ({
 }));
 
 /**
- * A session in the active directory, active five minutes ago — which is what
- * makes `usePaletteItems` emit a "Continue:" suggestion. The unread-first claim
- * is about outranking that suggestion, so it has to exist.
+ * A conversation in the active directory, active five minutes ago — months
+ * later than every room here. Recent is ordered by recency, so this row wins on
+ * time alone; only unread-first can put a July channel above it, which is what
+ * makes the ordering claim below discriminating.
  */
 const recentlyActive = new Date(Date.now() - 5 * 60 * 1000).toISOString();
 vi.mock('@/layers/entities/session', async (importOriginal) => ({
@@ -342,17 +360,16 @@ async function optionFor(text: string): Promise<HTMLElement> {
 
 describe('rooms in the command palette', () => {
   describe('before anything is typed', () => {
-    it('leads with the unread room, above the suggestion and everything else', async () => {
+    it('leads with the unread room, above a conversation from five minutes ago', async () => {
       render(<CommandPaletteDialog />);
       await screen.findByText('#urgent');
 
-      // `Urgent` spoke ELEVEN HOURS BEFORE `Quiet` and is still first, so this
-      // can only pass on unread-first — recency alone would invert it.
+      // `Urgent` last spoke in July; the conversation spoke five minutes ago.
+      // Recency alone would invert this, so it can only pass on unread-first.
       expect(rowNames()[0]).toContain('#urgent');
-      // The suggestion exists and is behind it.
-      expect(rowNames().some((n) => n?.includes('Continue: Wiring the palette'))).toBe(true);
+      expect(rowNames().some((n) => n?.includes('Wiring the palette'))).toBe(true);
       expect(rowNames().findIndex((n) => n?.includes('#urgent'))).toBeLessThan(
-        rowNames().findIndex((n) => n?.includes('Continue: Wiring the palette'))
+        rowNames().findIndex((n) => n?.includes('Wiring the palette'))
       );
     });
 
@@ -370,31 +387,32 @@ describe('rooms in the command palette', () => {
       expect(within(row).getByLabelText('2 unread')).toHaveTextContent('2');
     });
 
-    it('shows only what is unread, not the whole room list', async () => {
+    it('shows a caught-up room too, but underneath everything that is waiting', async () => {
+      // The untyped palette is a command center now, not a to-do list (§15):
+      // Recent is where you have BEEN, so a caught-up room belongs in it. What
+      // does not change is which one a person reaches first.
       render(<CommandPaletteDialog />);
       await screen.findByText('#urgent');
 
-      // `Quiet` is a member room with `unreadCount: 0`. It does not need the
-      // operator, so it is not in a list of what does.
-      expect(screen.queryByText('#quiet')).not.toBeInTheDocument();
+      expect(screen.getByText('#quiet')).toBeInTheDocument();
+      expect(rowNames().findIndex((n) => n?.includes('#urgent'))).toBeLessThan(
+        rowNames().findIndex((n) => n?.includes('#quiet'))
+      );
     });
 
-    it('badges an unread direct message here too, not only channels', async () => {
-      // The other half of the Unread group's derivation. It is built from the
-      // channel list AND the DM list, so the half that says DMs belong needs
-      // pinning as well, or dropping them silently passes.
-      //
-      // Zero-query is what makes this unambiguous: `searchDms` renders only
-      // once something is typed, so the ONLY way a DM reaches the screen here
-      // is through the Unread group.
+    it('badges an unread direct message here too, and ranks it above a caught-up one', async () => {
+      // Recent is built from the channel list AND the DM list, so the half that
+      // says DMs belong needs pinning as well, or dropping them silently
+      // passes. `Bo` spoke at 04:00 and `Ana` at 08:00, so recency alone would
+      // put Ana first — only "waiting leads" produces this order.
       render(<CommandPaletteDialog />);
       await screen.findByText('#urgent');
 
       const row = await optionFor('Message Bo');
       expect(within(row).getByLabelText('2 unread')).toHaveTextContent('2');
-      // ...and a caught-up DM is still absent, so this is the badge selecting
-      // it rather than every DM arriving.
-      expect(screen.queryByText('Message Ana')).not.toBeInTheDocument();
+      expect(rowNames().findIndex((n) => n?.includes('Message Bo'))).toBeLessThan(
+        rowNames().findIndex((n) => n?.includes('Message Ana'))
+      );
     });
 
     it('does not treat a room the reader is not in as unread', async () => {
@@ -581,8 +599,9 @@ describe('rooms in the command palette', () => {
         expect(screen.queryByText('Could not load your channels.')).not.toBeInTheDocument()
       );
       // The zero-query list is still drawn — this is a message that left, not a
-      // palette that emptied.
-      expect(screen.getByText('Settings')).toBeInTheDocument();
+      // palette that emptied. The prefix legend closes that list and is drawn
+      // whenever it exists at all.
+      expect(screen.getByText('agents and DMs')).toBeInTheDocument();
     });
 
     it('stays quiet about an empty channel list in @ mode', async () => {

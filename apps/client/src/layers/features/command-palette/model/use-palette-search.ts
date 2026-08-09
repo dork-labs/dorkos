@@ -2,6 +2,7 @@ import Fuse, { type IFuseOptions, type FuseResultMatch } from 'fuse.js';
 import { useMemo } from 'react';
 import type { RoomSummary } from '@/layers/entities/room';
 import type { AgentPathEntry } from '@dorkos/shared/mesh-schemas';
+import type { PaletteSessionItem } from './palette-sessions';
 import type { FeatureItem, CommandItemData, QuickActionItem } from './use-palette-items';
 
 export interface SearchableItem {
@@ -13,9 +14,15 @@ export interface SearchableItem {
    * channel, reached with `#` because a room is named; `dm` is a direct
    * message, reached with `@` because a DM is addressed by who is in it.
    */
-  type: 'agent' | 'feature' | 'command' | 'quick-action' | 'suggestion' | 'room' | 'dm';
+  type: 'agent' | 'session' | 'feature' | 'command' | 'quick-action' | 'room' | 'dm';
   keywords?: string[];
-  data: AgentPathEntry | FeatureItem | CommandItemData | QuickActionItem | RoomSummary;
+  data:
+    | AgentPathEntry
+    | PaletteSessionItem
+    | FeatureItem
+    | CommandItemData
+    | QuickActionItem
+    | RoomSummary;
 }
 
 export interface SearchResult {

@@ -7,7 +7,12 @@ import {
   AgentCommandItem,
   AgentSubMenu,
   HighlightedText,
+  PaletteCommandCenter,
   PaletteFooter,
+  PalettePrefixLegend,
+  SessionCommandItem,
+  type PaletteRecentEntry,
+  type PaletteSessionItem,
 } from '@/layers/features/command-palette';
 import type { AgentPathEntry } from '@dorkos/shared/mesh-schemas';
 import { UNTITLED_SESSION_LABEL } from '@/layers/entities/session';
@@ -401,6 +406,147 @@ function LivePaletteTrigger() {
 }
 
 // ---------------------------------------------------------------------------
+// Zero-query command center
+// ---------------------------------------------------------------------------
+
+/** Minutes ago, as an ISO string — so the rows read as "just now" rather than a date. */
+const minutesAgo = (minutes: number) => new Date(Date.now() - minutes * 60_000).toISOString();
+
+const SESSION_ROWS: PaletteSessionItem[] = [
+  {
+    id: 'sess-live',
+    who: 'Frontend App',
+    title: 'Sidebar zones rewrite',
+    cwd: '/Users/kai/projects/dork-os/apps/client',
+    agent: MOCK_AGENTS[0],
+    lastActivityAt: minutesAgo(1),
+  },
+  {
+    id: 'sess-recent',
+    who: 'API Server',
+    title: 'Rate limiting for the relay',
+    cwd: '/Users/kai/projects/dork-os/apps/server',
+    agent: MOCK_AGENTS[1],
+    lastActivityAt: minutesAgo(35),
+  },
+  {
+    id: 'sess-automated',
+    who: 'Documentation',
+    title: 'Nightly link check',
+    cwd: '/Users/kai/projects/dork-os/docs',
+    agent: MOCK_AGENTS[2],
+    origin: 'task',
+    originLabel: 'Scheduled task · nightly-links',
+    lastActivityAt: minutesAgo(600),
+  },
+];
+
+const RECENT_ROWS: PaletteRecentEntry[] = [
+  {
+    kind: 'session',
+    key: 'session:sess-recent',
+    lastActivityAt: SESSION_ROWS[1].lastActivityAt,
+    session: SESSION_ROWS[1],
+  },
+  {
+    kind: 'agent',
+    key: `agent:${MOCK_AGENTS[3].projectPath}`,
+    lastActivityAt: minutesAgo(180),
+    agent: MOCK_AGENTS[3],
+  },
+];
+
+const NEW_ACTIONS = [
+  { id: 'new-session', label: 'New Session', icon: 'Plus', action: 'newSession' },
+  { id: 'create-agent', label: 'Create Agent', icon: 'Plus', action: 'createAgent' },
+];
+
+/**
+ * The untyped palette: Continue → Recent → New → the prefix legend, and nothing
+ * else. Continue is absent entirely when nothing is live, which is the second
+ * demo — an empty box is never drawn.
+ */
+function CommandCenterStates() {
+  return (
+    <div className="space-y-4">
+      <ShowcaseLabel>Zero query — something is working</ShowcaseLabel>
+      <ShowcaseDemo>
+        <Command className="rounded-lg border" shouldFilter={false}>
+          <CommandInput placeholder="Jump to anything…" />
+          <CommandList>
+            <PaletteCommandCenter
+              continueRows={[
+                {
+                  session: SESSION_ROWS[0],
+                  verb: 'Editing SidebarRow.tsx…',
+                  signal: 'working',
+                },
+              ]}
+              recent={RECENT_ROWS}
+              newActions={NEW_ACTIONS}
+              selectedCwd={MOCK_AGENTS[0].projectPath}
+              selectedValue="sess-live"
+              onSessionSelect={() => {}}
+              onRoomSelect={() => {}}
+              onGoToAgentActions={() => {}}
+              onQuickAction={() => {}}
+            />
+            <PalettePrefixLegend />
+          </CommandList>
+        </Command>
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>Zero query — nothing live, so no Continue group at all</ShowcaseLabel>
+      <ShowcaseDemo>
+        <Command className="rounded-lg border" shouldFilter={false}>
+          <CommandInput placeholder="Jump to anything…" />
+          <CommandList>
+            <PaletteCommandCenter
+              continueRows={[]}
+              recent={RECENT_ROWS}
+              newActions={NEW_ACTIONS}
+              selectedCwd={null}
+              selectedValue="session:sess-recent"
+              onSessionSelect={() => {}}
+              onRoomSelect={() => {}}
+              onGoToAgentActions={() => {}}
+              onQuickAction={() => {}}
+            />
+            <PalettePrefixLegend />
+          </CommandList>
+        </Command>
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>
+        Waiting on you, and an automated run that says where it came from
+      </ShowcaseLabel>
+      <ShowcaseDemo>
+        <Command className="rounded-lg border" shouldFilter={false}>
+          <CommandList>
+            <CommandGroup heading="Continue">
+              <SessionCommandItem
+                item={SESSION_ROWS[0]}
+                live={{ verb: 'waiting on you', signal: 'needs-you' }}
+                isSelected
+                onSelect={() => {}}
+              />
+              <SessionCommandItem
+                item={SESSION_ROWS[1]}
+                live={{ verb: 'Working…', signal: 'working' }}
+                onSelect={() => {}}
+              />
+            </CommandGroup>
+            <CommandGroup heading="Conversations">
+              <SessionCommandItem item={SESSION_ROWS[2]} onSelect={() => {}} />
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </ShowcaseDemo>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Main export
 // ---------------------------------------------------------------------------
 
@@ -408,6 +554,13 @@ function LivePaletteTrigger() {
 export function CommandPaletteShowcases() {
   return (
     <>
+      <PlaygroundSection
+        title="Command center (zero query)"
+        description="Continue → Recent → New → prefix legend. Session rows use the sidebar's row grammar: avatar + Agent › title + origin mark + time, with the live verb on a second line."
+      >
+        <CommandCenterStates />
+      </PlaygroundSection>
+
       <PlaygroundSection
         title="AgentCommandItem"
         description="Agent rows in the palette with color dot, emoji, name, path, active checkmark, and sliding selection indicator."

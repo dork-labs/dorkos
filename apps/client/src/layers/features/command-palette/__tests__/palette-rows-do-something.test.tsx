@@ -143,14 +143,33 @@ vi.mock('../model/use-palette-items', () => ({
     searchableItems: [
       { id: 'cmd-/deploy', name: '/deploy', type: 'command', data: { name: '/deploy' } },
       { id: 'cmd-/compact', name: '/compact', type: 'command', data: { name: '/compact' } },
+      { id: 'ext:demo:ping', name: 'Ping the demo', type: 'quick-action', data: {} },
+      { id: 'ext:ghost:gone', name: 'Ghost action', type: 'quick-action', data: {} },
     ],
-    suggestions: [
+    newActions: [],
+    sessions: [],
+    // One live conversation, so the Continue group has a row to press.
+    continueRows: [
       {
-        id: 'suggestion-continue',
-        label: 'Continue: Wiring the palette',
-        description: 'Resume your most recent session',
-        icon: 'Clock',
-        action: 'continueSession:session-current',
+        session: {
+          id: 'session-current',
+          who: 'Current Project',
+          title: 'Wiring the palette',
+          cwd: ACTIVE_CWD,
+          agent: null,
+          lastActivityAt: '2026-08-09T10:05:00.000Z',
+        },
+        verb: 'Editing palette.ts…',
+        signal: 'working',
+      },
+    ],
+    // The agent row the sub-menu cases drill in from.
+    recent: [
+      {
+        kind: 'agent',
+        key: `agent:${agents[0].projectPath}`,
+        lastActivityAt: '2026-08-09T10:00:00.000Z',
+        agent: agents[0],
       },
     ],
     isLoading: false,
@@ -303,16 +322,22 @@ describe('a slash command row', () => {
   });
 });
 
-describe('the "Continue:" suggestion', () => {
-  it('opens the session it names', () => {
+describe('a Continue row', () => {
+  it('opens the conversation it names, in that conversation’s own directory', () => {
     render(<CommandPaletteDialog />);
 
-    fireEvent.click(rowFor('Continue: Wiring the palette'));
+    fireEvent.click(rowFor('Wiring the palette'));
 
     expect(mockNavigate).toHaveBeenCalledWith({
       to: '/session',
       search: { session: 'session-current', dir: ACTIVE_CWD },
     });
+  });
+
+  it('says what the conversation is doing, in the ladder’s words', () => {
+    render(<CommandPaletteDialog />);
+
+    expect(screen.getByText('Editing palette.ts…')).toBeInTheDocument();
   });
 });
 
@@ -338,6 +363,9 @@ describe('an action an extension contributed', () => {
     registerPaletteCommandHandler('ext:demo:ping', handler);
     try {
       render(<CommandPaletteDialog />);
+      // Quick actions are reached by typing now — the untyped palette is
+      // Continue / Recent / New and nothing else (§15).
+      type('ping');
 
       fireEvent.click(rowFor('Ping the demo'));
 
@@ -351,6 +379,7 @@ describe('an action an extension contributed', () => {
   it('says so when nobody claims the action, instead of failing mutely', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     render(<CommandPaletteDialog />);
+    type('ghost');
 
     fireEvent.click(rowFor('Ghost action'));
 
