@@ -75,10 +75,25 @@ const ONE_HOUR_MS = 60 * 60 * 1000;
  */
 export function usePaletteItems(activeCwd: string | null): PaletteItems {
   const { data: agentPathsData, isLoading: agentsLoading } = useMeshAgentPaths();
-  const { data: commandsData } = useCommands();
   const rooms = usePaletteRooms();
   const { getSortedAgentIds } = useAgentFrecency();
   const { sessions } = useSessions();
+
+  /**
+   * The conversation the active directory is on — newest first, by the
+   * canonical membership rule (DOR-203). Two groups need it: the slash commands
+   * below, which are the RUNTIME's, and the "Continue: …" suggestion.
+   */
+  const activeSession = useMemo(() => {
+    if (!sessions || !activeCwd) return null;
+    return selectAgentSessions(sessions, activeCwd)[0] ?? null;
+  }, [sessions, activeCwd]);
+
+  // Which runtime's commands, said out loud. Asking with no context at all left
+  // the server to cold-discover the DEFAULT runtime, so a Codex conversation on
+  // screen was offered claude-code's list (DOR-1051). Same three arguments the
+  // chat composer's own slash palette passes, for the same reason.
+  const { data: commandsData } = useCommands(activeCwd, activeSession?.id, activeSession?.runtime);
   const { data: activeRunCount } = useActiveTaskRunCount();
   const previousCwd = useAppStore((s) => s.previousCwd);
   const now = useNow();
@@ -194,21 +209,18 @@ export function usePaletteItems(activeCwd: string | null): PaletteItems {
     const items: SuggestionItem[] = [];
 
     // Rule 1: 'Continue session' if most recent session in current CWD was active < 1h ago
-    if (sessions && activeCwd) {
-      // Canonical membership rule (DOR-203), newest-first.
-      const cwdSessions = selectAgentSessions(sessions, activeCwd);
-      if (cwdSessions.length > 0) {
-        const mostRecent = cwdSessions[0];
-        const lastActive = new Date(mostRecent.updatedAt ?? mostRecent.createdAt ?? '').getTime();
-        if (lastActive > now - ONE_HOUR_MS) {
-          items.push({
-            id: 'suggestion-continue',
-            label: `Continue: ${sessionDisplayTitle(mostRecent.title)}`,
-            description: 'Resume your most recent session',
-            icon: 'Clock',
-            action: `continueSession:${mostRecent.id}`,
-          });
-        }
+    if (activeSession) {
+      const lastActive = new Date(
+        activeSession.updatedAt ?? activeSession.createdAt ?? ''
+      ).getTime();
+      if (lastActive > now - ONE_HOUR_MS) {
+        items.push({
+          id: 'suggestion-continue',
+          label: `Continue: ${sessionDisplayTitle(activeSession.title)}`,
+          description: 'Resume your most recent session',
+          icon: 'Clock',
+          action: `continueSession:${activeSession.id}`,
+        });
       }
     }
 
@@ -238,7 +250,7 @@ export function usePaletteItems(activeCwd: string | null): PaletteItems {
     }
 
     return items.slice(0, MAX_SUGGESTIONS);
-  }, [now, sessions, activeCwd, activeRunCount, previousCwd, allAgents]);
+  }, [now, activeSession, activeCwd, activeRunCount, previousCwd, allAgents]);
 
   return {
     recentAgents,
