@@ -258,6 +258,15 @@
   --msg-presence-handoff: 200ms;
   --msg-count-flip: 220ms;
 
+  /* === Page width tokens === */
+  /* The only two page-width knobs in the app. Every route states which one it
+     means through `PageContainer`'s `width` prop, so widening a whole class of
+     pages is a one-line change here rather than a hunt through wrappers.
+     `--msg-content-max-width` above is a different knob and stays that way: it
+     caps chat TEXT inside a full-width row, not the page. */
+  --page-width-wide: 80rem; /* dashboards, grids — Primer/Linear-class cap */
+  --page-width-reading: 56rem; /* forms, feeds, prose-leaning pages */
+
   /* === Shape tokens === */
   --msg-radius: 1.25rem;
   --msg-tool-radius: var(--radius);
@@ -464,23 +473,6 @@
     box-shadow:
       0 0 0 2px hsl(var(--background)),
       0 0 0 4px hsl(var(--ring));
-  }
-}
-
-/* Centered content column (56rem) with responsive gutters. */
-@utility container-default {
-  max-width: 56rem;
-  margin-left: auto;
-  margin-right: auto;
-  padding-left: 1rem;
-  padding-right: 1rem;
-  @media (min-width: 640px) {
-    padding-left: 1.5rem;
-    padding-right: 1.5rem;
-  }
-  @media (min-width: 1024px) {
-    padding-left: 2rem;
-    padding-right: 2rem;
   }
 }
 

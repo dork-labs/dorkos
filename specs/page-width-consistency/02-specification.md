@@ -102,6 +102,6 @@ Empty/error/loading states inside each page keep their current centered styling;
 3. `/session` message rows and composer span the pane exactly like `/channels`; message text still caps at 100ch.
 4. `/connections` and `/marketplace/sources` scroll when content exceeds the viewport.
 5. Home pinned/triage chrome left edge aligns with message-row left edge.
-6. `grep -r "container-default" apps/` returns nothing; `grep -rn "max-w-7xl\|max-w-4xl\|max-w-2xl" apps/client/src/layers --include=*.tsx` returns no page-level wrappers (component-internal uses like dialogs are exempt and must be individually justified).
+6. `grep -r "container-default" apps/client/src` returns nothing (`apps/site` has its own independent utility of the same name — separate app, out of scope); `grep -rn "max-w-7xl\|max-w-4xl\|max-w-2xl" apps/client/src/layers --include=*.tsx` returns no page-level wrappers (component-internal uses like dialogs are exempt and must be individually justified).
 7. `pnpm --filter @dorkos/client typecheck && pnpm --filter @dorkos/client lint` green; client test suite green; PageContainer unit tests pass.
 8. Changing `--page-width-reading` to e.g. `64rem` in devtools visibly widens all five reading pages at once (the one-knob property, verified once in the browser).

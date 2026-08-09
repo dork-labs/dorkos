@@ -1,5 +1,6 @@
 import { PlaygroundPageLayout } from '../PlaygroundPageLayout';
 import { COMPONENTS_SECTIONS } from '../playground-registry';
+import { LayoutShowcases } from '../showcases/LayoutShowcases';
 import { ButtonShowcases } from '../showcases/ButtonShowcases';
 import { BannerShowcases } from '../showcases/BannerShowcases';
 import { FeedbackShowcases } from '../showcases/FeedbackShowcases';
@@ -20,6 +21,7 @@ export function ComponentsPage() {
       description="Interactive gallery of shared UI components."
       sections={COMPONENTS_SECTIONS}
     >
+      <LayoutShowcases />
       <ButtonShowcases />
       <BannerShowcases />
       <FeedbackShowcases />
