@@ -898,6 +898,39 @@ test.describe('conversations in the command palette', () => {
   const TITLE_WORD = 'Zanzibar';
 
   /**
+   * The agent this suite talks to — registered with the MESH, not merely seeded
+   * on disk.
+   *
+   * That distinction is the whole reason this hook exists. `GET
+   * /api/sessions/recent` fans out over `meshCore.listWithPaths()`, so a
+   * directory the mesh has never heard of contributes no sessions however many
+   * it holds — and the palette's Recent list came up empty with a conversation
+   * plainly on screen. `POST /api/test/seed-agent` writes a manifest to disk and
+   * stops there; registration is a separate act.
+   *
+   * `runtime: 'codex'` for the same reason `seed-agent` declares it: a manifest
+   * runtime beats the server default whenever this process registers it, and
+   * this server never registers codex — so the session lands on `test-mode`,
+   * which is what makes it free.
+   */
+  let paletteAgentDir: string;
+
+  test.beforeAll(async () => {
+    const ctx = await apiRequest.newContext();
+    const seed = await ctx.post(`${API_URL}/api/test/seed-agent`);
+    const { agentDir: baseDir } = (await seed.json()) as { agentDir: string };
+    paletteAgentDir = `${baseDir}-palette`;
+    await fs.mkdir(paletteAgentDir, { recursive: true });
+    const res = await ctx.post(`${API_URL}/api/mesh/agents`, {
+      data: { path: paletteAgentDir, overrides: { name: 'Palette Test Agent', runtime: 'codex' } },
+    });
+    if (!res.ok()) {
+      throw new Error(`Failed to register the palette agent: ${res.status()}`);
+    }
+    await ctx.dispose();
+  });
+
+  /**
    * Start a conversation whose title contains {@link TITLE_WORD}, and answer
    * with the session id the server minted for it.
    *
@@ -907,7 +940,7 @@ test.describe('conversations in the command palette', () => {
    */
   async function startNamedSession(page: Page): Promise<string> {
     const chatPage = new ChatPage(page);
-    await chatPage.goto(undefined, { dir: agentDir });
+    await chatPage.goto(undefined, { dir: paletteAgentDir });
     await chatPage.sendMessage(`${TITLE_WORD} migration plan`);
     await expect(page.getByTestId('transcript-feed').getByText(/Echo:/)).toBeVisible({
       timeout: 15_000,
