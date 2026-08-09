@@ -39,7 +39,8 @@ export interface PageContainerProps extends React.ComponentPropsWithoutRef<'div'
  * one scroll treatment.
  *
  * `width` has no default — every page states its intent. `wide` (80rem) is for
- * dashboards and grids, `reading` (56rem) for forms and feeds, and `full` fills
+ * top-level pages (dashboards, directories, feeds), `reading` (56rem) for true
+ * forms and prose only, and `full` fills
  * the pane while still taking the responsive gutters. Both capped tiers read
  * their maximum from a CSS token, so widening a whole class of pages is one line
  * in `index.css`.
