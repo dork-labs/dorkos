@@ -300,6 +300,11 @@ export default defineConfig({
       testIgnore: [
         '**/chat-mock.spec.ts',
         '**/connections/**',
+        // Runs against the test-mode leg in `chromium-team-room` below. It must
+        // NEVER run here: posting in #team on this leg starts a real
+        // claude-code turn on DorkBot's `always` seat and bills the machine's
+        // own sign-in — see that spec's header.
+        '**/home-surface/team-room.spec.ts',
         // Runs against the test-mode leg in `chromium-streams` below.
         '**/streams/**',
         // Needs the test-mode server's `/api/test/seed-bridge` seam, so it runs
@@ -364,6 +369,29 @@ export default defineConfig({
         baseURL: `http://localhost:${MOCK_VITE_PORT}`,
       },
       testMatch: ['**/streams/*.spec.ts'],
+    },
+    {
+      // Home is the #team room (spec `team-room-home` Phase 2) — against the
+      // test-mode leg, and that is a safety property rather than a convenience.
+      // DorkBot holds #team's `always` seat and its manifest names
+      // `claude-code`; the cockpit leg registers the real Claude Code runtime,
+      // so one Enter in the home composer would start a real, billable turn
+      // against whatever `claude` sign-in the machine has. This leg registers a
+      // claude-code-typed TestModeRuntime alias
+      // (`DORKOS_TEST_RUNTIME_CLAUDE_ALIAS`), so the same seat answers for free.
+      //
+      // A separate project rather than a chat-mock suite because it shares none
+      // of chat-mock's scenario/reset choreography: it drives room turns, whose
+      // replies do not depend on the scenario the store happens to hold. It is
+      // internally serial (the file configures it) because one of its tests
+      // archives the shared #team, which changes what `/` renders for every
+      // page on this server until it is restored.
+      name: 'chromium-team-room',
+      use: {
+        ...devices['Desktop Chrome'],
+        baseURL: `http://localhost:${MOCK_VITE_PORT}`,
+      },
+      testMatch: ['**/home-surface/team-room.spec.ts'],
     },
     {
       // Chats-as-channels cockpit proof — also against the test-mode server,

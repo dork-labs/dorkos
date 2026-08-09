@@ -18,7 +18,7 @@ A DorkOS package is a folder with a manifest and some content: skills, hooks, co
 Every package is exactly one of four types:
 
 - **Agent** - a reusable agent identity: a persona, suggested traits, and starter skills or tasks.
-- **Plugin** - a Claude Code extension: slash commands, hooks, and DorkOS UI extensions (sidebar widgets, dashboard cards, and the like).
+- **Plugin** - a Claude Code extension: slash commands, hooks, and DorkOS UI extensions (sidebar widgets, sections on the Activity tab, and the like).
 - **Skill pack** - a bundle of `SKILL.md` files that teach an agent how to do something, with no commands or hooks attached.
 - **Adapter** - a bridge to an external system, like a relay transport for a chat platform or a mesh discovery backend.
 
@@ -67,7 +67,7 @@ Every package needs a `.dork/manifest.json`. This is the file DorkOS reads to kn
 
 Each type adds its own fields on top of the base manifest:
 
-- **`plugin`** adds `extensions`: an array of extension IDs your package registers with the DorkOS extension API (for sidebar widgets, dashboard cards, and similar UI slots).
+- **`plugin`** adds `extensions`: an array of extension IDs your package registers with the DorkOS extension API (for sidebar widgets, Activity tab sections, and similar UI slots).
 - **`agent`** adds `agentDefaults`: an optional `persona` string describing the agent, a `capabilities` list, and `traits` (each scored 1 to 5): `verbosity`, `autonomy`, `chaos`, `creativity`, `humor`, and `spice`.
 - **`adapter`** adds `adapterType`, required: a short identifier for what it bridges to, like `"discord"` or `"slack"`.
 - **`skill-pack`** adds nothing. The manifest is the whole story.
@@ -253,7 +253,7 @@ Before you open that PR, run through the install as a stranger would:
 2. Install it: `dorkos install my-package@test`.
 3. Confirm the permission preview shown before install matches what your package actually does. If it asks for less (or more) than expected, that's a manifest problem, not a DorkOS bug.
 4. Open a session and confirm your skills, commands, or hooks actually run.
-5. If you shipped a plugin with extensions, check that it shows up in the right sidebar or dashboard slot.
+5. If you shipped a plugin with extensions, check that it shows up in the slot it registered for, like the right-hand panel or the Activity tab.
 
 <Callout type="info">
   A package that only validates but was never actually installed and run is not a tested package.
