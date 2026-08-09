@@ -23,13 +23,13 @@ export function LayoutShowcases() {
   return (
     <PlaygroundSection
       title="PageContainer"
-      description="Every route's content box. Three width tiers and nothing else: wide (80rem) for dashboards and grids, reading (56rem) for forms and feeds, full for panes that should fill. Both caps read a CSS token, so widening a whole class of pages is one line in index.css. `width` has no default — every page states its intent."
+      description="Every route's content box. Three width tiers and nothing else: wide (80rem) for top-level pages — dashboards, directories, feeds; reading (56rem) for true forms and prose only; full for panes that should fill. Both caps read a CSS token, so widening a whole class of pages is one line in index.css. `width` has no default — every page states its intent."
     >
       <ShowcaseLabel>width=&quot;wide&quot; — 80rem cap</ShowcaseLabel>
       <ShowcaseDemo responsive>
         <div className="bg-background h-32 rounded-md border">
           <PageContainer width="wide">
-            <SampleContent label="max-w-[var(--page-width-wide)] · dashboards, grids, the marketplace" />
+            <SampleContent label="max-w-[var(--page-width-wide)] · top-level pages: marketplace, activity, workspaces, connections" />
           </PageContainer>
         </div>
       </ShowcaseDemo>
@@ -38,7 +38,7 @@ export function LayoutShowcases() {
       <ShowcaseDemo responsive>
         <div className="bg-background h-32 rounded-md border">
           <PageContainer width="reading">
-            <SampleContent label="max-w-[var(--page-width-reading)] · activity, workspaces, connections, settings-shaped pages" />
+            <SampleContent label="max-w-[var(--page-width-reading)] · true forms and prose: marketplace sources" />
           </PageContainer>
         </div>
       </ShowcaseDemo>

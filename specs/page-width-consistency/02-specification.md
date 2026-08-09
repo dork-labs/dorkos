@@ -2,6 +2,8 @@
 
 **Work item:** DOR-1047 · **Spec id:** 260809-150251 · **Status:** frozen 2026-08-09
 
+> **Superseded in part by DOR-1082 (2026-08-09):** Activity, Workspaces, Connections, and Feedback Requests moved from `reading` to `wide` after operator review on a large monitor. `reading` remains only for true forms/prose (Marketplace Sources). The tier definitions and everything else here still hold.
+
 ## 1. Tokens
 
 In `apps/client/src/index.css`, alongside the existing `--msg-*` tokens (~line 209-218), add two page-width tokens:

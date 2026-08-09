@@ -35,7 +35,7 @@ export function ActivityPage() {
   const allItems = useMemo(() => data?.pages.flatMap((page) => page.items) ?? [], [data]);
 
   return (
-    <PageContainer width="reading" className="space-y-4">
+    <PageContainer width="wide" className="space-y-4">
       {/* How busy the week has been — zero DOM until the session list answers */}
       <ActivityWeekSummary />
 
