@@ -6,6 +6,14 @@ The whole sidebar is one pure function: `buildSidebarModel(state) → SidebarMod
 
 This guide is how you change that model without breaking the thing it exists to protect. Read it before you add a rule, add a fixture, or review a PR that touches `features/dashboard-sidebar/model/`.
 
+Three phrases recur, so they are worth pinning down once:
+
+- **Leaf subscription** — a single row component watching one live value for itself, instead of that value living on the model and being handed down. One thing changes, one row redraws, and the rest of the panel does not.
+- **Table test** — a test that feeds a list of input/expected pairs to a plain function and checks each one. It is what a rule gets instead of a mounted component tree.
+- **Reason-shaped** — matching `<namespace>:<rule>`, the format described under [Reading a `reason`](#reading-a-reason). A string with an id interpolated into it is not reason-shaped.
+
+The sections below follow `writing-developer-guides`, with one deliberate insertion: the standing rule sits third, ahead of the decision matrix, because it is the guide's reason to exist and the line a reviewer quotes.
+
 ## Key Files
 
 | Concept                              | Location                                                                                                  |
@@ -36,9 +44,11 @@ The model also has no clock of its own. `state.now` is passed in — coarse on p
 
 Three tests enforce this, and they are written so they can actually fail:
 
-- The pure set — `build-sidebar-model.ts`, `sidebar-state.ts`, and every file in `rules/` — may only import values from a whitelist. A whitelist rather than a search for bad spellings, because `import { useInteractionStore } from '@/layers/entities/interactions'` drags in a clock without ever writing the word `Date`. (The older files beside them in `model/`, such as `use-sidebar-dnd.ts`, are hooks and are not in that set.)
+- The pure set may only import values from a whitelist. A whitelist rather than a search for bad spellings, because `import { useInteractionStore } from '@/layers/entities/interactions'` drags in a clock without ever writing the word `Date`.
 - The only two legal shapes of `Date` are `new Date(<argument>)` and `Date.parse(`. Bare `new Date`, `new Date()`, `Date.now()` and `const Clock = Date` are all caught.
 - No row's visible text may match `/\d+\s?(s|m|h|d)\s?ago/i` or a verb like `working…`.
+
+**The pure set is exactly three things: `build-sidebar-model.ts`, `sidebar-state.ts`, and every file in `rules/`.** Nothing else. The other files sitting beside them in `model/` — `sidebar-item.ts`, `sort-sidebar-items.ts`, `filter-sidebar-items.ts`, `sidebar-membership.ts`, `smart-group-presets.ts`, `evaluate-smart-group.ts` and the `use-*` hooks — predate this model and are **not** checked, however pure they look. Being a plain function is not what puts a file in the set; living at one of those three addresses is. A new rule therefore belongs in `rules/`, not loose in `model/`, or it ships unguarded.
 
 ## When to Use What
 
@@ -72,7 +82,7 @@ SidebarModel
             ├── glyph / primary / secondary
             ├── status                // an avatar dot, from lifecycle
             ├── reservesVerbLine      // whether a second line exists, not what it says
-            ├── unread                // 'none' | 'activity' | 'directed'
+            ├── unread                // { tier: 'none'|'activity'|'directed', count? }
             └── reason                // why this row is here
 ```
 
@@ -114,12 +124,17 @@ const eligible = applyMuteRules(selectTodayItems(state), muteIndex(state.prefs),
   ...(anchor === null ? {} : { exemptKey: anchor }),
 });
 const today = pinActiveAnchor(
-  orderToday(archiveOvernight(eligible, state /* anchor exempt */), state),
+  orderToday(
+    archiveOvernight(eligible, state, { ...(anchor === null ? {} : { anchorKey: anchor }) }),
+    state
+  ),
   state
 );
 ```
 
 Who is eligible → what mute removes → what the overnight boundary removes → what order the rest come in → and only then which one is pinned first. The anchor is exempted at every step before the last, so nothing can mute, archive or cap the conversation you have open out of first place.
+
+**Pass the exemption arguments or the promise silently stops being true.** `applyMuteRules`' `exemptKey` and `archiveOvernight`'s third argument are the only mechanisms that spare the anchor — `archive-overnight.ts` filters on `row.key === exemptions.anchorKey` and nothing else. Both parameters are optional (`exemptions: ArchiveExemptions = {}`), so a composition that omits them compiles, passes typecheck, and quietly archives the conversation the operator is looking at.
 
 `rules/targets.ts` is the exception to "one rule per file". It holds the spellings every rule shares — `rowKey`, `interactionKeyOf`, `anchorKey`, `basename`, `epochMs`. `anchorKey` lives there because three rules need the answer, and a rule importing another rule to ask one question is how a cycle starts.
 
@@ -200,7 +215,8 @@ reason: 'today:interaction-recency',
 
    ```typescript
    /**
-    * System agents sink to the bottom of a Library section (BC-99).
+    * System agents sink to the bottom of a Library section (BC-nn — put the
+    * real contract number here; the spec's run to BC-51).
     *
     * @module features/dashboard-sidebar/model/rules/demote-system-agents
     */
@@ -246,7 +262,7 @@ reason: 'today:interaction-recency',
 
 ## Adding a Fixture
 
-The four journey fixtures (`first-run`, `quiet`, `busy`, `power`) are a deliverable, not test scaffolding. The same four drive the model's table tests, the Dev Playground showcases and the browser tests, so what a reviewer looks at and what CI asserts are the same states.
+The four journey fixtures (`first-run`, `quiet`, `busy`, `power`) are a deliverable, not test scaffolding. Today they drive the model's table tests, and nothing else imports them. The intent is that the same four also drive the Dev Playground showcases and the browser tests, so that what a reviewer looks at and what CI asserts are the same states — build any new surface against these rather than seeding a fresh state beside them.
 
 **Most of the time you do not want a new fixture — you want a variant.** Build it locally with a spread (`{ ...busyFixture, attention: [] }`). The shared files are read by several tasks at once, and editing one turns your tweak into somebody else's failing expectation.
 
@@ -279,7 +295,7 @@ Add a fifth journey only when it is a genuinely different stage of the product, 
    pnpm vitest run apps/client/src/layers/features/dashboard-sidebar/model/__tests__/build-sidebar-model.contracts.test.ts
    ```
 
-4. **Show it in the Dev Playground** alongside the others, so a journey can be looked at and not only asserted on. The `maintaining-dev-playground` skill covers where the showcase lives and how to register one.
+4. **Once a sidebar-model showcase exists in the Dev Playground, add it there too**, so a journey can be looked at and not only asserted on. There is no such showcase yet; the `maintaining-dev-playground` skill covers where one lives and how to register it.
 
 Note that `FIXTURE_NOW` is a **local** instant (09:15 on 9 August 2026), not a fixed UTC epoch. Every time-dependent rule is stated in local terms — the 4am boundary, the calendar day the digest is once per — so a fixture pinned to UTC would archive different rows in Auckland than in California, and the same test would pass in one office and fail in the other.
 
