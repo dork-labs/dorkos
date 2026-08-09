@@ -382,27 +382,52 @@ describe('useRoomStream', () => {
     try {
       await waitFor(() => expect(subscribeCallCount(transport)).toBe(1));
 
-      act(() => {
-        window.dispatchEvent(new Event('online'));
-      });
-      // Real elapsed time, and less than the coalescing window. React's own
-      // batching already folds together anything raised in ONE tick, so two
-      // events in one tick would measure React rather than this hook — and a
-      // gap longer than the window is two genuine wake-ups that deserve two
-      // reconnects.
-      await act(async () => {
-        await new Promise((resolve) => setTimeout(resolve, 10));
-      });
-      act(() => {
-        window.dispatchEvent(new Event('online'));
-      });
+      // The burst runs on a hand-driven clock, so the gap between the two
+      // wake-ups is a number rather than a hope.
+      //
+      // The hook gathers wake-ups for a fixed window of REAL time, and this case
+      // is "two arrived inside it". Saying that with a real 10ms sleep made the
+      // test a race against its own runner: nothing bounds how long a 10ms sleep
+      // actually takes on a loaded machine, and one that overran the window let
+      // the first wake-up fire alone — after which the second armed a second
+      // reconnect and opened a THIRD stream. That is the hook behaving
+      // correctly, on a burst the test only meant to look like one, and it is
+      // the CI flake (DOR-1060). Virtual milliseconds cannot be stretched.
+      //
+      // Two events in one tick would not do instead: they would fold together in
+      // React's own batching, and measure that rather than this hook.
+      //
+      // `waitFor` is deliberately not used past this point — it polls on a timer
+      // this clock now owns, and would wait for a tick that never comes.
+      vi.useFakeTimers();
+      try {
+        act(() => {
+          window.dispatchEvent(new Event('online'));
+        });
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(10);
+        });
+        act(() => {
+          window.dispatchEvent(new Event('online'));
+        });
 
-      await waitFor(() => expect(subscribeCallCount(transport)).toBe(2));
-      // Long enough for an uncoalesced second wake to have opened a third.
-      await act(async () => {
-        await new Promise((resolve) => setTimeout(resolve, 150));
-      });
-      expect(subscribeCallCount(transport)).toBe(2);
+        // Past the window the FIRST wake-up opened: the one reconnect a burst is
+        // supposed to cost.
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(45);
+        });
+        // Then past where an uncoalesced SECOND wake-up would have fired, in its
+        // own `act`. One block covering both instants would not do: React folds
+        // every update raised inside one `act` into a single render, so two
+        // reconnects would commit as one and this assertion would hold whether
+        // or not the hook coalesced anything.
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(200);
+        });
+        expect(subscribeCallCount(transport)).toBe(2);
+      } finally {
+        vi.useRealTimers();
+      }
     } finally {
       unmount();
     }
