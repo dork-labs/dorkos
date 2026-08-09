@@ -79,7 +79,7 @@ import {
  * qualifying events produce ONE post. Raising it makes the room quieter and
  * loses milestones; lowering it lets a busy afternoon fill the feed with them.
  */
-export const MOMENT_QUIET_PERIOD_MS = 60 * 60 * 1000;
+const MOMENT_QUIET_PERIOD_MS = 60 * 60 * 1000;
 
 /**
  * How many of the room's newest entries the quiet check reads.

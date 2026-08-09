@@ -1,15 +1,15 @@
 ---
 slug: team-room-home
-status: In Progress
+status: Complete
 started: 2026-08-08
-last-updated: 2026-08-08
+last-updated: 2026-08-09
 ---
 
 # Implementation: The home is a room (#team)
 
-**Status:** In Progress
-**Tasks Completed:** 24 / 31 — P0 (4/4, merged #868), P1 (7/7, merged #874), P2 (7/7, this
-branch), P3 (6/6, merged into this branch). P4 has not started.
+**Status:** Complete
+**Tasks Completed:** 31 / 31 — P0 (4/4, merged #868), P1 (7/7, merged #874), P2 (7/7, merged
+#880), P3 (6/6, merged #879), P4 (7/7, this branch).
 
 ## Sessions
 
@@ -286,3 +286,178 @@ store rather than a throwing stub — verified by
   behaviour.** Reading a session to the end advances the cursor, so a reload correctly shows no
   rule. What ships is the in-view hold ("the line does not vanish under you while you are
   reading"), covered by `use-unread-cursor.test.tsx`.
+
+## Phase 4 — Moments + welcome-back (D5)
+
+Worktree `/Users/doriancollier/.dork/workspaces/dorkos/trh-p4` → branch
+`feat/team-room-home-p4-moments`. Linear DOR-1031. Six implementation commits plus this
+close-out; every task adversarially reviewed before its commit.
+
+- **Task #4.1 — the moment post type.** `RoomMomentSchema` rides the existing entry body, so a
+  moment is a POST and nothing but `body.moment` says so; there is no second table and no second
+  timeline. System-authored moments append without waking anyone (cascade-stamped at the ceiling);
+  an agent-minted one goes through the full guarded post path and may only name itself as subject,
+  which is the anti-spoof rule. The feed draws it as a calm banded row: the subject's face, one
+  shared sparkle glyph, identity colour only, no animation at all. Commit f3cfbbe5b.
+- **Task #4.2 — the detectors.** Eight detectors on two seams that already existed, the
+  agent-created seam and activity ingest, and **no timer anywhere**. Firsts, joins, overnight runs,
+  week and month anniversaries (clamped, with a 48h freshness grace) and an exact-count weekly
+  streak read once per local day rather than once per event. **The moment IS the durable marker** —
+  "has this been marked?" is a question about the room's own log (`RoomStore.hasMoment`), so a
+  restart, a second process or a double evaluation cannot repost one. One line per pass, and none
+  within an hour of the last. Commit c9785d019.
+- **Task #4.3 — the `welcomeBack` config block.** `{ enabled: true, absenceThresholdMinutes: 240,
+maxPosts: 3 }` on `UserConfigSchema` with argued bounds, a `0.59.0`-keyed additive migration that
+  correctness never depends on (the Zod defaults stand alone, because a dev tree resolves `0.0.0`
+  and runs no migration), and operator-only writes. A raised absence threshold now survives config
+  recovery: the carryover machinery learned the "higher is more protective" direction instead of
+  exempting the one leaf its type could not describe. Commit 67f695c95.
+- **Task #4.4 — welcome-back posting.** After a real absence, each agent that actually did
+  something posts one line to #team. The caps are code, not prompt: `planWelcomeBack` slices to
+  `maxPosts`, and **zero model turns are spent** — nothing in the module can reach a runtime.
+  "Away" is measured from the last thing the person demonstrably did here (a read cursor that
+  moved, a message they wrote), so a restart can only make an absence look longer, never shorter.
+  Commit c82d384b4.
+- **Task #4.5 — one quiet suggestion.** On a caught-up quiet morning DorkBot offers a single
+  earned suggestion under the forward look, sourced from the promo registry's own qualification
+  rules rather than a second eligibility system. Never to a blank install, never for something the
+  person already does, dismissed once and gone everywhere. The retired `dashboard-main` promo
+  placement and the wide card format only it used are deleted. Commit 60e8f678e.
+- **Task #4.6 — the toggle audit.** No defaults flip was needed. The Tools tab gained a Background
+  systems card (one switch each for scheduled runs and agent messaging) that follows the STORED
+  value, says plainly when a change waits for the next start, shows reality rather than the
+  overruled setting when an env variable decides, and never says "Saved." over a system that failed
+  to start. `resolveTasksFiring` untouched, confirmed by diff. Settings → Preferences gained the
+  welcome-back switch. Commit 9873c9ec3.
+
+### Task #4.7 — e2e, docs, and the programme close-out
+
+**E2E.** Three additions, all against legs that spend nothing.
+
+- `tests/home-surface/team-room.spec.ts` (`chromium-team-room`, test-mode leg) gained **the
+  moments block, deliberately first in the file**: registering an agent marks it once, the row
+  renders as a moment (`data-moment` carrying the kind the SERVER recorded, the sparkle mark, the
+  `Moment: …` accessible name, the subject's own face, and no control to press), the moment names
+  the record it was read off, and a second agent created in the same minute produces **no second
+  line**. First in the file because #team marks at most one moment an hour, so the first agent
+  created on that leg is the only one whose milestone can land in a run — the opening assertion
+  says so rather than leaving it to be rediscovered.
+- The same file gained **the quiet-suggestion block**: a caught-up room says "All quiet." with
+  exactly one suggestion under it, dismissing is one press, and it does not come back on reload.
+  It seeds its own agents (the registry's rules are what decide whether a suggestion is earned) and
+  reads the approval queue and the mesh's unreachable count first, skipping with a named reason on
+  the two arrangements where a missing quiet line is the CORRECT answer.
+- `tests/settings/settings-dialog.spec.ts` (cockpit leg) gained **the welcome-back round-trip**:
+  flip, full page reload, read it back, flip back, reload again. Everything else on that tab is a
+  browser preference that would survive a reload on `localStorage` alone, which is why this one is
+  worth driving. Self-restoring, so the run leaves the config as it found it.
+
+**Proved able to fail.** `MOMENT_QUIET_PERIOD_MS` set to `0` turned the moments spec red at exactly
+its burst assertion ("a burst of agent creations produced a burst of milestones", expected 1,
+received 2). Reverted; `git diff` over `apps/server` and `packages` is empty.
+
+**A P4 change had broken an existing spec, and the sweep found it.** `settings-dialog.spec.ts`
+asserted `toHaveCount(8)` on the Preferences switches; task 4.6 added a ninth (the welcome-back
+switch) to that tab. Corrected to 9 with the new switch named alongside the other three, so a
+future swap cannot pass on the count alone. Nothing else broke: the `dashboard-main` promo
+placement had no e2e references, and `tests/dashboard-sidebar`, `tests/home-surface/home-shell` and
+the rest of `tests/settings` all pass unchanged.
+
+**Docs.** `docs/concepts/rooms.mdx` gained two sections — "Moments: the things #team marks" (only
+from your own records, once each, one an hour, a message in the room rather than a separate feed)
+and "When you come back after being away" (the caps, what "away" measures, and that the switch is
+Settings → Preferences). `docs/getting-started/what-is-dorkos.mdx` gained the quiet morning and
+DorkBot's one suggestion. `docs/getting-started/configuration.mdx` now points at the in-app switch
+from the `welcomeBack` block. `docs/glossary.mdx` gained **Moment**.
+
+**Changelog.** The six P4 commits are covered by four fragments after folding three
+populator-generated stubs into the hand-written entries beside them (the stubs restated commit
+subjects as user copy and would have double-printed at release): background systems, moments (4.1 +
+4.2), the quiet suggestion, and welcome-back (4.3 + 4.4). `--validate` clean, every P4 commit
+claimed.
+
+## Programme close-out
+
+### The 31-task ledger
+
+| Phase                     | Tasks | Landed                    |
+| ------------------------- | ----- | ------------------------- |
+| P0 Foundations            | 4/4   | #868 (DOR-1027)           |
+| P1 Home surface shell     | 7/7   | #874 (DOR-1028)           |
+| P2 #team as home          | 7/7   | #880 (DOR-1029, DOR-1033) |
+| P3 Read-state unified     | 6/6   | #879 (DOR-1030)           |
+| P4 Moments + welcome-back | 7/7   | this branch (DOR-1031)    |
+
+Every task shipped. Three pieces of commissioned scope were **deliberately narrowed**, each in
+writing at the point of the decision rather than dropped quietly:
+
+- **The welcome-back offer half** (spec D5.2's "Want me to open the PR?"). v1 spends zero model
+  turns, structurally: this install has no honest signal that says an agent HAS a next-step offer,
+  and asking it would be exactly the speculative turn the rule forbids. The seam a later phase
+  needs is `WelcomeBackWorkSource`. Filed as **DOR-1046** ("Welcome-back offers: spend a turn only
+  when an agent has a genuine next step").
+- **Three of spec D5.1's listed detectors are declined**, each because rule 1 (real data only)
+  leaves nothing to read, and each argued in the module header rather than stubbed: **first PR
+  shipped** (this install keeps no record of a pull request — watching a git remote would be a
+  detector reading the world instead of its own log); **100th session / 1000th message** (session
+  storage is runtime-owned per ADR-0310, so a count is a per-runtime-degrading aggregate, and a
+  number that might be wrong is worse than no moment); **"busiest day yet"** (the activity log is
+  pruned on a retention window, so "yet" would silently mean "since whatever we still have"). The
+  moment kinds exist in `RoomMomentKindSchema`, so each is a small addition on the day a record
+  appears to read.
+- **Task 4.6 was an audit, not a defaults flip.** Tasks and Relay were already `enabled: true` by
+  default; what was actually missing was a way to turn them OFF from the UI, which is what shipped.
+
+### Review rounds
+
+Every one of the 31 tasks went through an independent adversarial review before its commit, and
+the reviews earned their place: they caught the inert presence gate and the "empty turn passed as
+shown" bug in P0, hollow active-state tests, a mobile tour that killed the page, room-turn double
+listing, an unreachable popover, a DM letter-disc regression and a dishonest week summary in P1,
+and in P4 the first-agent branch that silently swallowed a second agent's "joined your team" line.
+What this log can vouch for by name: P0's tasks 0.1 and 0.4 were two-stage (0.4 needed a second
+round after two criticals), 0.3 passed with two importants fixed red-then-green, and every P1 task
+was two-stage. P2, P3 and P4 tasks each record a review before their commit, with the findings
+folded in before the commit was written rather than tracked separately — so the per-task round
+count for those three phases is not recoverable from this log, only the fact of the review and its
+findings. Every seeded-defect proof in this programme was reverted and each revert verified by
+diff.
+
+### Follow-ups filed
+
+| Issue        | State | What                                                                               |
+| ------------ | ----- | ---------------------------------------------------------------------------------- |
+| **DOR-1036** | Done  | WorkspacesPage had no internal scroll container (fixed in a parallel branch)       |
+| **DOR-1039** | Todo  | The Activity tab week summary and the feed describe different subjects             |
+| **DOR-1040** | Todo  | Chat cross-device read state has no browser coverage                               |
+| **DOR-1042** | Todo  | Mesh-registered agents do not take their #team seat until the next boot            |
+| **DOR-1043** | Todo  | Header clips its overflow with no cue that more is below                           |
+| **DOR-1044** | Todo  | The operator-only refusal copy misdescribes settings that are not security-shaped  |
+| **DOR-1045** | Todo  | An agent may switch off the whole Relay bus and Tasks scheduler via `config_patch` |
+| **DOR-1046** | Todo  | Welcome-back offers: spend a turn only when an agent has a genuine next step       |
+
+### Non-goals, all held
+
+No RP6/RP7/RP8 room tools (the only mention of `post_to_room` in the tree is a prose comment); no
+community servers or `#company` rooms, and the `CommunityAdapter` seam is intact; no kanban; no
+generic widgets; no social "seen by" read receipts (a cursor is only ever read back by whoever
+wrote it, and the route has no way to name a user); no fork of the `Composer.*` family (it was
+extended in place — three pre-existing files, no new `Composer*` file, no shadow copy under the
+home widget); no Obsidian embedded-mode redesign (`apps/obsidian` is untouched; the only
+embedded-mode change is the deletion of a stub that followed a retired route).
+
+### Known gaps at close-out
+
+- **Welcome-back posting has no browser coverage, and honestly cannot have one yet.** An absence
+  needs a durable last-seen timestamp older than the threshold, and the only HTTP path that writes
+  one writes `now`; the floor is 15 minutes, which no e2e may wait for. Simulating it would mean
+  either a test-only time seam or writing the database behind the server's back, and both would
+  make the spec assert against a fixture rather than against the product. The behaviour is carried
+  by 35 unit tests across `welcome-back.test.ts` and `welcome-back-work.test.ts`, including the
+  gate arithmetic, the zero-turn proof against a runtime double, the `enabled: false` no-work path
+  and the two-returns-in-quick-succession case.
+- **Programme-wide changelog hygiene.** The P1–P3 fragments (already on `main`) carry the same
+  populator-stub duplication that P4's were cleaned of — roughly eight pairs where a hand-written
+  entry sits beside a stub restating the commit subject. They will double-print at release unless
+  folded. Left alone here because they belong to merged PRs; worth a pass before the next release
+  compiles `CHANGELOG.md`.

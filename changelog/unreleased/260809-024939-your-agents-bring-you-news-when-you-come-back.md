@@ -1,5 +1,6 @@
 ---
 covers:
+  - 'feat(config): the welcomeBack block — greeting caps a person owns (team-room-home 4.3)'
   - 'feat(rooms): your agents bring you news when you come back (team-room-home 4.4)'
 ---
 
@@ -13,5 +14,9 @@ covers:
   nothing more. No agent is woken up to write one, so coming back costs you
   nothing, and work an agent already posted in the room is left out because you
   have read it.
-- You decide whether this happens at all. The switch is in Settings, and turning
-  it off means no notes and no looking, not fewer notes.
+- You decide whether this happens at all. The switch is in Settings →
+  Preferences, and turning it off means no notes and no looking, not fewer notes.
+  It is stored on your server, so it follows you to every device you open DorkOS
+  on. Four hours is what counts as being away, and three is the most notes one
+  return can produce; both are settings in your config file if you want different
+  numbers: `dorkos config set welcomeBack.absenceThresholdMinutes 720`.

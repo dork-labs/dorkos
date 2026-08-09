@@ -39,6 +39,90 @@ import { publishSessionStreaming, tapGlobalStream } from '../rooms/room-signals'
  */
 test.describe.configure({ mode: 'serial', timeout: 90_000 });
 
+/**
+ * Milestones, and they must come FIRST in this file.
+ *
+ * #team marks at most one moment an hour (`MOMENT_QUIET_PERIOD_MS`), which is
+ * the etiquette rule that stops an afternoon of setting things up from filling
+ * the feed. It also means the first agent created on this leg is the only one
+ * whose milestone can land during a run — so this block runs before every other
+ * test here that registers an agent, and the first assertion says so out loud
+ * rather than letting a later reader wonder why the order matters.
+ *
+ * The suppression is not just a constraint to work around: the second half of
+ * the test below turns it into the claim it is.
+ */
+test.describe('The moments #team marks @smoke', () => {
+  test('an agent joining is marked once, as a moment rather than as a message', async ({
+    page,
+    basePage,
+    teamRoomApi,
+  }) => {
+    expect(
+      await teamRoomApi.moments(),
+      'this leg has already marked a moment, so the hour-long quiet period will swallow this one — ' +
+        'this block has to run before anything else in this file registers an agent'
+    ).toHaveLength(0);
+
+    const name = `Tangerines${teamRoomApi.runId}`;
+    const agent = await teamRoomApi.createAgent(name);
+    await teamRoomApi.waitForMember(name);
+
+    const entries = await teamRoomApi.waitForEntry(
+      (entry) => entry.body.moment !== undefined,
+      `a moment marking ${name} joining`
+    );
+    const marked = entries.filter((entry) => entry.body.moment !== undefined);
+    expect(marked).toHaveLength(1);
+    const moment = marked[0]!.body.moment!;
+
+    // The words a person reads, and the record they were read off. Asserting
+    // both is the point: a milestone that named the agent but pointed at
+    // nothing would be the invented moment this whole feature refuses to post.
+    expect(marked[0]!.body.text).toContain(name);
+    expect(marked[0]!.body.text).toContain('joined your team');
+    expect(moment.source).toMatchObject({ kind: 'agent', ref: agent.path });
+    expect(moment.mintedByAgentRef, 'the install observed this, no agent claimed it').toBeNull();
+
+    await basePage.goto();
+    await basePage.waitForAppReady();
+
+    // A moment is a POST — nothing but its body says so — so what proves the
+    // feed told them apart is that this row rendered as a moment at all.
+    const row = page.getByTestId('room-moment').filter({ hasText: name });
+    await expect(row).toBeVisible({ timeout: SERVER_ROUND_TRIP_MS });
+    // The kind the SERVER recorded, not one this test decided: an install whose
+    // first agent this is says `first_agent` and a later one says `joined_team`,
+    // and either way the row must carry what the record says.
+    await expect(row).toHaveAttribute('data-moment', moment.kind);
+    await expect(row.getByTestId('room-moment-mark')).toBeVisible();
+    // Named as a milestone before it is read out — the one piece of context a
+    // reader who cannot see the band would otherwise be missing.
+    await expect(row).toHaveAttribute('aria-label', new RegExp(`^Moment: .*${name}`));
+    // The face is the agent's, not the system's: the line is about them.
+    await expect(row.getByTestId('room-moment-identity')).toContainText(name);
+    // Nothing to press. A milestone states something that happened and there is
+    // nobody to answer, so a control on it would make it read as somebody
+    // talking.
+    await expect(row.getByRole('button')).toHaveCount(0);
+
+    // And the burst rule, stated positively: a second agent in the same minute
+    // is seated, is in the room, and does NOT get a line of its own.
+    const second = `Mangoes${teamRoomApi.runId}`;
+    await teamRoomApi.createAgent(second);
+    await teamRoomApi.waitForMember(second);
+    // A real settle rather than a poll, because the claim is an absence: the
+    // detector pass runs on the same seam that just seated this agent (the
+    // statement straight after it), so a second later is long past the moment
+    // it would have posted in.
+    await page.waitForTimeout(1000);
+    expect(
+      (await teamRoomApi.moments()).map((entry) => entry.body.text),
+      'a burst of agent creations produced a burst of milestones'
+    ).toHaveLength(1);
+  });
+});
+
 test.describe('Home is the #team room @smoke', () => {
   test('`/` opens the room: its masthead, its feed, its composer', async ({
     page,
@@ -277,6 +361,71 @@ test.describe('The presence strip @smoke', () => {
     await expect(page).toHaveURL(new RegExp(`session=${sessionId}`), {
       timeout: SERVER_ROUND_TRIP_MS,
     });
+  });
+});
+
+test.describe("DorkBot's one quiet suggestion @smoke", () => {
+  test('a caught-up quiet room says two words and offers one thing, once', async ({
+    page,
+    basePage,
+    teamRoomApi,
+  }) => {
+    // Two preconditions about state this test shares with the whole leg, read
+    // rather than assumed. Each one is a case where the quiet line is CORRECT to
+    // stand down, so failing on them would report a working product as broken.
+    const waiting = await teamRoomApi.pendingApprovalIds();
+    test.skip(waiting.length > 0, 'something else on this server is waiting on a person');
+    const unreachable = await teamRoomApi.meshUnreachableCount();
+    test.skip(unreachable > 0, 'an agent is unreachable, so the header has something to say');
+
+    // The suggestion has to be EARNED — the registry's own rules decide, and the
+    // one that can qualify here wants more than one agent in the mesh. Seeded
+    // rather than hoped for: every other test in this file puts its agents away
+    // at teardown.
+    for (const suffix of ['a', 'b']) {
+      await teamRoomApi.createAgent(`Quiet${suffix}${teamRoomApi.runId}`);
+    }
+    await expect
+      .poll(() => teamRoomApi.registeredAgentCount(), { timeout: SERVER_ROUND_TRIP_MS })
+      .toBeGreaterThanOrEqual(2);
+
+    // First visit reads the room to the end. "All quiet." is a claim about right
+    // now, measured against the cursor as it stood when the page opened, so the
+    // reader has to have caught up on a PREVIOUS visit for it to be true.
+    await basePage.goto();
+    await basePage.waitForAppReady();
+    await expect(page.getByTestId('room-timeline')).toBeVisible({ timeout: SERVER_ROUND_TRIP_MS });
+    const newest = (await teamRoomApi.entries()).at(-1)?.seq ?? 0;
+    await expect
+      .poll(() => teamRoomApi.readCursorSeq(), { timeout: SERVER_ROUND_TRIP_MS })
+      .toBeGreaterThanOrEqual(newest);
+
+    // Coming back to a room with nothing new in it — the one arrangement that
+    // draws the line at all.
+    await page.reload();
+    await basePage.waitForAppReady();
+    const quiet = page.locator('[data-slot="home-quiet-state"]');
+    await expect(quiet).toBeVisible({ timeout: SERVER_ROUND_TRIP_MS });
+    await expect(quiet).toContainText('All quiet.');
+
+    // ONE suggestion, never a list: a quiet morning that answers with a menu is
+    // not a quiet morning.
+    const suggestion = quiet.locator('[data-slot="quiet-suggestion"]');
+    await expect(suggestion).toHaveCount(1);
+    const dismiss = suggestion.getByRole('button', { name: /^Dismiss suggestion: / });
+    await expect(dismiss).toBeVisible();
+
+    // Waving it away is one press, and it is remembered: the same suggestion
+    // does not come back the next morning.
+    await dismiss.click();
+    await expect(suggestion).toHaveCount(0);
+    // The line above it stays — dismissing the offer is not dismissing the news.
+    await expect(quiet).toContainText('All quiet.');
+
+    await page.reload();
+    await basePage.waitForAppReady();
+    await expect(quiet).toBeVisible({ timeout: SERVER_ROUND_TRIP_MS });
+    await expect(quiet.locator('[data-slot="quiet-suggestion"]')).toHaveCount(0);
   });
 });
 
