@@ -1,6 +1,6 @@
 ---
 title: Workspaces
-description: DorkOS gives every task its own folder on disk, so agents never step on each other's files
+description: Give each task its own folder on disk, so agents never step on each other's files
 ---
 
 import { Callout } from 'fumadocs-ui/components/callout';
@@ -9,9 +9,9 @@ import { Cards, Card } from 'fumadocs-ui/components/card';
 
 # Workspaces
 
-DorkOS gives every task its own private copy of your repo, automatically. Start a session on issue `DOR-84` and a second one on `DOR-91`, and each gets its own folder, its own dev-server ports, and its own uncommitted changes. Neither can step on the other.
+DorkOS can give every task its own private copy of your repo. Ask for one workspace for issue `DOR-84` and another for `DOR-91`, and each gets its own folder, its own dev-server ports, and its own uncommitted changes. Neither can step on the other.
 
-That folder is called a **workspace**. Workspaces are on by default: the first time a session works on a specific issue or spec, DorkOS provisions one behind the scenes. If you never touch this feature, nothing changes, sessions run in whatever folder they always did.
+That folder is called a **workspace**. Today, workspaces are created on request: a tool or script asks the server for one (the [API](#api-reference) below), and DorkOS provisions it. Nothing in the DorkOS app creates them on its own yet. If you never ask for one, sessions run in whatever folder they always did.
 
 ## Quick look: what you'll see
 
@@ -39,7 +39,7 @@ Open the **Workspaces** tab on Home to see every managed checkout, grouped by pr
 
 Each card has two actions:
 
-- **Pin / Unpin**: protect the workspace from automatic cleanup.
+- **Pin / Unpin**: mark a workspace you want to keep. Retention cleanup never removes a pinned workspace.
 - **Remove**: delete the checkout. This is dirty-safe (see [Pinning and cleanup](#pinning-and-cleanup) below), so a stray click can't destroy work you haven't saved.
 
 <Callout type="info">
@@ -110,7 +110,7 @@ Every workspace has a stable identity and a provisioned checkout:
     },
     pinned: {
       type: 'boolean',
-      description: 'When true, the workspace is exempt from automatic cleanup.',
+      description: 'When true, the workspace is exempt from retention cleanup.',
       default: 'false',
     },
   }}
@@ -120,7 +120,7 @@ The `projectKey` + `key` pair is unique, so asking for the same unit of work twi
 
 ### Binding a session to a workspace
 
-Binding is opt-in, and most people never do it by hand, the DorkOS client sends this automatically when you start work on an issue or spec through the UI. It's shown here as the reference form, for anyone calling the API directly.
+Binding is opt-in. Nothing in the DorkOS app sends a `workspaceKey` yet, so today binding happens only when you (or a tool you run) call the API directly. Here is the reference form.
 
 When you send a message to a session, include a `workspaceKey` (and optionally a `workspaceProvider`) and the server will ensure the workspace exists, provisioning it on first use, then run the turn with the workspace's checkout as the working directory and its port block injected into the environment:
 
@@ -155,10 +155,10 @@ The server allocates the **lowest free block**, so two workspaces are guaranteed
 Removing a workspace deletes its checkout, so it's deliberately conservative:
 
 - **Dirty-safe removal.** Remove first checks the checkout for uncommitted, untracked, or unpushed work. If any exists, the request is refused and the UI re-prompts with an explicit force confirmation rather than silently destroying work, so you can't fat-finger delete on something you haven't saved. Forcing deletes it permanently.
-- **Pinning.** A pinned workspace is exempt from automatic cleanup. Pin a workspace you want to keep around regardless of retention policy; the pin persists and shows on the card and in the status-bar chip tooltip.
+- **Pinning.** Pin a workspace you want to keep. DorkOS does not reclaim old workspaces on a schedule yet; when retention cleanup does run, it never removes a pinned workspace. The pin persists and shows on the card and in the status-bar chip tooltip.
 
 <Callout type="warn">
-  Pinning protects against *automatic* cleanup, not against an explicit remove. The two guards are
+  Pinning protects against retention cleanup, not against an explicit remove. The two guards are
   independent: dirty-state protects unsaved work; pinning protects from reclamation policy.
 </Callout>
 
@@ -207,7 +207,8 @@ Workspaces are configured under `workspace` in `~/.dork/config.json`:
     },
     retentionCap: {
       type: 'number | null',
-      description: 'Optional cap on retained workspaces. null disables the age/cap sweep.',
+      description:
+        'How many workspaces the retention sweep keeps. null disables it. DorkOS does not yet run the sweep on its own.',
       default: 'null',
     },
   }}

@@ -54,8 +54,8 @@ export function WorkspaceActions({ workspace }: { workspace: Workspace }) {
         </TooltipTrigger>
         <TooltipContent side="top">
           {workspace.pinned
-            ? 'Unpin — allow automatic cleanup'
-            : 'Pin — exempt from automatic cleanup'}
+            ? 'Unpin — allow retention cleanup'
+            : 'Pin — exempt from retention cleanup'}
         </TooltipContent>
       </Tooltip>
 
