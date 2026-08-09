@@ -12,7 +12,7 @@ import type {
 import { parseTranscript, extractTextContent, stripSystemTags } from './transcript-parser.js';
 import type { TranscriptLine } from './transcript-parser.js';
 import { classifyOrigin } from './classify-origin.js';
-import { deriveSessionTitle } from './derive-title.js';
+import { deriveSessionTitle } from '../../shared/derive-title.js';
 import { projectSlug } from './project-slug.js';
 import { parseTasks } from './task-reader.js';
 import { SessionRootIndex, accountForTranscript } from './session-root-index.js';

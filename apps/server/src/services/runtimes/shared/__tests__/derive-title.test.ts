@@ -46,6 +46,29 @@ describe('deriveSessionTitle', () => {
     expect(derived.length).toBeLessThanOrEqual(81); // cap + ellipsis
   });
 
+  it('does not add an ellipsis for odd spacing alone (reviewer defect 1)', () => {
+    expect(deriveSessionTitle('fix  the  build')).toBe('Fix the build');
+  });
+
+  it('strips filler written with curly apostrophes (reviewer defect 2)', () => {
+    expect(deriveSessionTitle('I\u2019d like you to fix the build')).toBe('Fix the build');
+  });
+
+  it('skips a courtesy-only first line in favor of the content line (reviewer defect 3)', () => {
+    expect(deriveSessionTitle('Please\ncan you fix the build')).toBe('Fix the build');
+  });
+
+  it('handles emoji without splitting surrogate pairs', () => {
+    const emoji = '\u{1F680}'.repeat(90);
+    const derived = deriveSessionTitle(emoji);
+    expect(derived.includes('\uFFFD')).toBe(false);
+    expect([...derived].length).toBeLessThanOrEqual(81);
+  });
+
+  it('exactly at the word budget gets no ellipsis', () => {
+    expect(deriveSessionTitle('one two three four five six')).toBe('One two three four five six');
+  });
+
   it('marks first-line truncation of a longer message with an ellipsis', () => {
     const derived = deriveSessionTitle('one two three four five six seven');
     expect(derived).toBe('One two three four five six…');
