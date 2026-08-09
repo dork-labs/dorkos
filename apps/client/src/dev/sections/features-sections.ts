@@ -345,6 +345,25 @@ export const FEATURES_SECTIONS: PlaygroundSection[] = [
       'avatar',
     ],
   },
+  // HomeStatesShowcases
+  {
+    id: 'day-one-and-the-quiet-morning',
+    title: 'Day one and the quiet morning',
+    page: 'features',
+    category: 'Home',
+    keywords: [
+      'day one',
+      'quiet',
+      'all quiet',
+      'starter chips',
+      'openers',
+      'empty state',
+      'home',
+      'forward look',
+      'next run',
+      'onboarding',
+    ],
+  },
   // ConnectionsShowcases
   {
     id: 'servicetile',

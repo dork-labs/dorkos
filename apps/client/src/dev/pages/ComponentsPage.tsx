@@ -10,6 +10,7 @@ import { DataDisplayShowcases } from '../showcases/DataDisplayShowcases';
 import { DrawerShowcases } from '../showcases/DrawerShowcases';
 import { ChatPrimitivesShowcases } from '../showcases/ChatPrimitivesShowcases';
 import { IdentityShowcases } from '../showcases/IdentityShowcases';
+import { PromptSuggestionChipsShowcases } from '../showcases/PromptSuggestionChipsShowcases';
 
 /** UI component gallery page for the dev playground. */
 export function ComponentsPage() {
@@ -29,6 +30,7 @@ export function ComponentsPage() {
       <DataDisplayShowcases />
       <ChatPrimitivesShowcases />
       <IdentityShowcases />
+      <PromptSuggestionChipsShowcases />
     </PlaygroundPageLayout>
   );
 }

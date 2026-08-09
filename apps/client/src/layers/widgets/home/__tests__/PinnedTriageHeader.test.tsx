@@ -6,7 +6,8 @@
  * @vitest-environment jsdom
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, cleanup, waitFor } from '@testing-library/react';
+import { useEffect, useState } from 'react';
+import { act, render, screen, cleanup, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -22,9 +23,15 @@ import type { Transport } from '@dorkos/shared/transport';
 import type { PendingApproval } from '@dorkos/shared/approval-schemas';
 import { createMockTransport } from '@dorkos/test-utils';
 
+/**
+ * The viewport, as a box a test can set. jsdom has no media queries worth
+ * asking, and the condense rule turns on the answer.
+ */
+const { viewport } = vi.hoisted(() => ({ viewport: { mobile: false } }));
+
 vi.mock('@/layers/shared/model', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/layers/shared/model')>();
-  return { ...actual, useEventSubscription: vi.fn() };
+  return { ...actual, useEventSubscription: vi.fn(), useIsMobile: () => viewport.mobile };
 });
 
 import { TransportProvider, useEventSubscription } from '@/layers/shared/model';
@@ -34,6 +41,11 @@ import type { TriagePresenceSlot } from '../ui/PinnedTriageHeaderView';
 /** The header element itself, or `null` when it drew nothing at all. */
 function header(): HTMLElement | null {
   return document.querySelector('[data-slot="pinned-triage-header"]');
+}
+
+/** The condensed one-line bar, or `null` when the header is drawing in full. */
+function summaryBar(): HTMLElement | null {
+  return document.querySelector('[data-slot="pinned-triage-summary"]');
 }
 
 /** What the header is currently saying to a screen reader. */
@@ -80,7 +92,14 @@ function unreachable(count: number) {
  * permissive: this file pins the header's behaviour, and the real schema is the
  * app router's.
  */
-function renderHeader(overrides: Partial<Transport> = {}, presence?: TriagePresenceSlot) {
+function renderHeader(
+  overrides: Partial<Transport> = {},
+  props: {
+    presence?: TriagePresenceSlot;
+    composerFocused?: boolean;
+    onExpand?: () => void;
+  } = {}
+) {
   const transport = createMockTransport(overrides);
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false, gcTime: 0 } },
@@ -91,7 +110,7 @@ function renderHeader(overrides: Partial<Transport> = {}, presence?: TriagePrese
     getParentRoute: () => rootRoute,
     path: '/',
     validateSearch: (search: Record<string, unknown>) => search,
-    component: () => <PinnedTriageHeader presence={presence} />,
+    component: () => <PinnedTriageHeader {...props} />,
   });
   const router = createRouter({
     routeTree: rootRoute.addChildren([indexRoute]),
@@ -110,6 +129,176 @@ function renderHeader(overrides: Partial<Transport> = {}, presence?: TriagePrese
 
   return { transport, router };
 }
+
+/** The header's own props, as this file swaps them. */
+type HeaderProps = { composerFocused?: boolean; onExpand?: () => void };
+
+/**
+ * The same header with one approval waiting, and a way to change its props
+ * afterwards — because the state machine is about the TRANSITIONS: the caret
+ * arriving in the composer, and leaving it again.
+ *
+ * The route tree closes over its component, so the swap cannot come from
+ * re-rendering the provider; a host holding the props in state is what makes
+ * them movable.
+ */
+function renderHeaderRerenderable(initial: HeaderProps) {
+  const transport = createMockTransport({
+    listPendingApprovals: vi.fn().mockResolvedValue({ approvals: [buildApproval()] }),
+  });
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false, gcTime: 0 } },
+  });
+  let apply: ((next: HeaderProps) => void) | null = null;
+
+  function Host() {
+    const [props, setProps] = useState(initial);
+    // Published from an effect, never during render: assigning to an outer
+    // binding while rendering is exactly the impurity the lint rule is for.
+    useEffect(() => {
+      apply = setProps;
+      return () => {
+        apply = null;
+      };
+    }, []);
+    return <PinnedTriageHeader {...props} />;
+  }
+
+  const rootRoute = createRootRoute({ component: () => <Outlet /> });
+  const indexRoute = createRoute({
+    getParentRoute: () => rootRoute,
+    path: '/',
+    validateSearch: (search: Record<string, unknown>) => search,
+    component: Host,
+  });
+  const router = createRouter({
+    routeTree: rootRoute.addChildren([indexRoute]),
+    history: createMemoryHistory({ initialEntries: ['/'] }),
+  });
+
+  render(
+    <QueryClientProvider client={queryClient}>
+      <TransportProvider transport={transport}>
+        <RouterProvider router={router as never} />
+      </TransportProvider>
+    </QueryClientProvider>
+  );
+
+  return {
+    transport,
+    rerender: (next: HeaderProps) => act(() => apply?.(next)),
+  };
+}
+
+/**
+ * Getting out of the keyboard's way (spec task 2.7's browser gate).
+ *
+ * jsdom cannot measure a software keyboard, so what is pinned here is the STATE
+ * MACHINE — when the header condenses, what the line says, and what tapping it
+ * asks the host to do. The geometry that made this necessary (the composer 129px
+ * behind the keyboard at 375×812 with one approval showing) is the browser
+ * gate's to prove, and its recapture is where a regression would surface.
+ */
+describe('PinnedTriageHeader while the composer has the caret', () => {
+  beforeEach(() => {
+    vi.mocked(useEventSubscription).mockImplementation(() => {});
+    viewport.mobile = true;
+  });
+
+  afterEach(() => {
+    cleanup();
+    viewport.mobile = false;
+    vi.clearAllMocks();
+  });
+
+  it('condenses to one line of counts on a phone', async () => {
+    renderHeader(
+      {
+        listPendingApprovals: vi.fn().mockResolvedValue({
+          approvals: [
+            buildApproval({ approvalId: '01JZ0000000000000000000001' }),
+            buildApproval({ approvalId: '01JZ0000000000000000000002' }),
+          ],
+        }),
+        getMeshStatus: vi.fn().mockResolvedValue(unreachable(1)),
+      },
+      { composerFocused: true }
+    );
+
+    expect(await screen.findByText('2 waiting · 1 needs attention')).toBeInTheDocument();
+    expect(summaryBar()).not.toBeNull();
+    // The cards are gone, not merely shorter: that is the point — every pixel
+    // they were taking goes back to the box being typed in.
+    expect(header()).toBeNull();
+    expect(document.querySelector('[data-slot="approval-card"]')).toBeNull();
+  });
+
+  it('asks the host to give the caret back when the line is tapped', async () => {
+    // The header cannot dismiss the keyboard itself; the composer holding it is
+    // a sibling. So it asks, and the host blurs.
+    const onExpand = vi.fn();
+    renderHeader(
+      { listPendingApprovals: vi.fn().mockResolvedValue({ approvals: [buildApproval()] }) },
+      { composerFocused: true, onExpand }
+    );
+
+    await userEvent.click(await screen.findByRole('button', { name: /1 waiting/ }));
+
+    expect(onExpand).toHaveBeenCalledOnce();
+  });
+
+  it('draws the whole header again the moment the caret leaves', async () => {
+    // What the host's blur produces, one prop later: there is no second flag
+    // for "expanded", so the two can never disagree.
+    const { rerender } = renderHeaderRerenderable({ composerFocused: true });
+    await screen.findByText('1 waiting');
+
+    rerender({ composerFocused: false });
+
+    expect(await screen.findByText('Waiting On You')).toBeInTheDocument();
+    expect(summaryBar()).toBeNull();
+  });
+
+  it('leaves a wide screen alone: there is no keyboard eating the viewport', async () => {
+    viewport.mobile = false;
+    renderHeader(
+      { listPendingApprovals: vi.fn().mockResolvedValue({ approvals: [buildApproval()] }) },
+      { composerFocused: true }
+    );
+
+    expect(await screen.findByText('Waiting On You')).toBeInTheDocument();
+    expect(summaryBar()).toBeNull();
+  });
+
+  it('says the same thing to a screen reader, condensed or not', async () => {
+    // Condensing is a visual condensation, not a content change: announcing it
+    // again would report the header's shape as if it were news.
+    const { rerender } = renderHeaderRerenderable({ composerFocused: false });
+    await waitFor(() => expect(announcement()).toBe('1 approval is waiting on you.'));
+
+    rerender({ composerFocused: true });
+
+    await screen.findByText('1 waiting');
+    expect(announcement()).toBe('1 approval is waiting on you.');
+  });
+
+  it('condenses to nothing rather than to an empty bar', async () => {
+    // Held open by the presence strip alone, there are no counts to write. A
+    // bar saying nothing is worse than no bar.
+    const { transport } = renderHeader(
+      {},
+      {
+        composerFocused: true,
+        presence: { occupied: true, node: <p data-testid="presence-strip" /> },
+      }
+    );
+
+    await waitFor(() => expect(transport.listPendingApprovals).toHaveBeenCalled());
+
+    expect(summaryBar()).toBeNull();
+    expect(header()).toBeNull();
+  });
+});
 
 describe('PinnedTriageHeader', () => {
   beforeEach(() => {
@@ -139,7 +328,7 @@ describe('PinnedTriageHeader', () => {
   it('stays on screen for the presence slot alone, with neither group drawn', async () => {
     renderHeader(
       {},
-      { occupied: true, node: <p data-testid="presence-strip">Nobody is working</p> }
+      { presence: { occupied: true, node: <p data-testid="presence-strip">Nobody is working</p> } }
     );
 
     expect(await screen.findByTestId('presence-strip')).toBeInTheDocument();
@@ -153,7 +342,7 @@ describe('PinnedTriageHeader', () => {
     // cannot leave an empty bordered box pinned to the top of the screen.
     const { transport } = renderHeader(
       {},
-      { occupied: false, node: <p data-testid="presence-strip" /> }
+      { presence: { occupied: false, node: <p data-testid="presence-strip" /> } }
     );
 
     await waitFor(() => expect(transport.listPendingApprovals).toHaveBeenCalled());

@@ -2,7 +2,11 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react
 import { AnimatePresence } from 'motion/react';
 import { TOUR_ANCHORS } from '@/layers/shared/config';
 import { Composer, type ComposerInputHandle } from '@/layers/features/composer';
-import { JumpBackInPopover, useJumpBackInPopover } from '@/layers/features/jump-back-in';
+import {
+  JumpBackInPopover,
+  isComposerField,
+  useJumpBackInPopover,
+} from '@/layers/features/jump-back-in';
 import {
   MentionPalette,
   useMentionAutocomplete,
@@ -48,6 +52,20 @@ interface RoomComposerProps {
    * the same field; `useJumpBackInPopover`'s `yieldToPalette` owns that rule.
    */
   offerJumpBackIn?: boolean;
+  /**
+   * Tell the host when the caret enters and leaves this composer's text field.
+   *
+   * Only the FIELD counts — reaching for Send or the paperclip is not "typing"
+   * — and only the room's own composer is wired to it, never the thread
+   * panel's.
+   *
+   * The one host that listens is the home surface, and what it does with the
+   * answer is give the composer the screen back: on a phone the pinned triage
+   * header condenses to a one-line summary while the keyboard is up, because a
+   * full header plus a keyboard leaves the box you are typing in behind the
+   * keyboard (measured at 375×812 in spec task 2.7's browser gate).
+   */
+  onFocusChange?: (focused: boolean) => void;
 }
 
 /**
@@ -99,6 +117,7 @@ export function RoomComposer({
   threadRootId,
   focusOnMount,
   offerJumpBackIn,
+  onFocusChange,
 }: RoomComposerProps) {
   // The one key that decides everything about this composer: which draft it
   // holds, which caret requests are its own, and where refused words go back.
@@ -462,7 +481,7 @@ export function RoomComposer({
   // ships in every room. The wrapper below is not free — it is a second element
   // in the DOM parity baseline this composer is held to — so it exists only
   // where something actually listens.
-  if (!offersRecents) return card;
+  if (!offersRecents && onFocusChange === undefined) return card;
 
   return (
     // Focus and pointer-down are both watched, and both are needed: the
@@ -493,9 +512,21 @@ export function RoomComposer({
     // eslint-disable-next-line jsx-a11y/no-static-element-interactions -- container overhears its combobox's focus; see above
     <section
       className="flex flex-col"
+      // Stamped for either reason this wrapper exists, because both props say
+      // the same thing today: `offerJumpBackIn` and `onFocusChange` are set by
+      // one host, the home surface, and by the same call. The day either one is
+      // wanted somewhere else, the anchor needs the prop of its own the note
+      // above already describes — and it is a literal here on purpose, because
+      // `tour-anchors.test.tsx` reads this line as source.
       data-testid={TOUR_ANCHORS.homeComposer}
-      onFocus={jumpBackIn.handleFocus}
-      onBlur={jumpBackIn.handleBlur}
+      onFocus={(event) => {
+        jumpBackIn.handleFocus(event);
+        if (isComposerField(event.target)) onFocusChange?.(true);
+      }}
+      onBlur={(event) => {
+        jumpBackIn.handleBlur(event);
+        if (isComposerField(event.target)) onFocusChange?.(false);
+      }}
       onPointerDown={jumpBackIn.handlePointerDown}
     >
       {card}

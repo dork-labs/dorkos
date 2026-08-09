@@ -14,7 +14,7 @@
  */
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
 import type { ReactNode } from 'react';
-import { render, screen, cleanup, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, cleanup, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -23,6 +23,7 @@ import type { Transport } from '@dorkos/shared/transport';
 import {
   REACTION_FREQUENTS_DEFAULT,
   TEAM_ROOM_WELL_KNOWN,
+  type RoomEntry,
   type RoomEvent,
   type RoomSummary,
 } from '@dorkos/shared/room-schemas';
@@ -41,11 +42,19 @@ vi.mock('@tanstack/react-router', () => ({
 // checks is the ARGUMENT the home surface hands it — which room's work is
 // already being narrated elsewhere on the page — and that its node lands inside
 // the header rather than somewhere of its own.
-const { presenceStrip } = vi.hoisted(() => ({ presenceStrip: vi.fn() }));
+const { presenceStrip, presence } = vi.hoisted(() => ({
+  presenceStrip: vi.fn(),
+  // Mutable, because whether anybody is working decides whether the quiet state
+  // is allowed to say "All quiet." — see the quiet-state block below.
+  presence: { occupied: true },
+}));
 vi.mock('@/layers/features/presence-strip', () => ({
   usePresenceStrip: (excludeRoomIds: readonly string[]) => {
     presenceStrip(excludeRoomIds);
-    return { occupied: true, node: <p data-testid="presence-strip">tangerines is working</p> };
+    return {
+      occupied: presence.occupied,
+      node: <p data-testid="presence-strip">tangerines is working</p>,
+    };
   },
 }));
 
@@ -55,20 +64,50 @@ vi.mock('sonner', () => ({ toast: { error: vi.fn() } }));
 // which lives above the router. Nothing here is about that stream — the header
 // keeps its own queue honest and has its own suite — so it is stubbed rather
 // than dragged in, the way `tour-anchors.test.tsx` beside it does.
+/**
+ * The viewport, as a box a test can set. jsdom answers every media query the
+ * same way, and the header's condense rule turns on this one.
+ */
+const { viewport } = vi.hoisted(() => ({ viewport: { mobile: false } }));
+
 vi.mock('@/layers/shared/model', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/layers/shared/model')>();
   return {
     ...actual,
     useEventStream: () => ({ connectionState: 'connected', failedAttempts: 0 }),
     useEventSubscription: () => {},
+    useIsMobile: () => viewport.mobile,
   };
 });
 
 import { TransportProvider } from '@/layers/shared/model';
 import { TooltipProvider } from '@/layers/shared/ui';
+import { usePendingPostStore, useRoomDraftStore } from '@/layers/entities/room';
+import { HOME_STARTER_CHIPS } from '@/layers/widgets/home';
 import { HomeRoomPage } from '../HomeRoomPage';
 
 const TEAM_ID = 'team-room';
+const VIEWER_ID = 'author-you';
+
+/** One post in #team, so the room has a history behind it. */
+function post(seq: number): RoomEntry {
+  return {
+    roomId: TEAM_ID,
+    seq,
+    id: `entry-${seq}`,
+    authorId: 'author-you',
+    kind: 'post',
+    body: { text: `line ${seq}` },
+    mentions: [],
+    sessionId: null,
+    cascadeRoot: `entry-${seq}`,
+    cascadeDepth: 0,
+    parentEntryId: null,
+    threadRootEntryId: null,
+    signature: null,
+    createdAt: '2026-08-07T10:00:00.000Z',
+  };
+}
 
 /** #team as the room list carries it. */
 function teamSummary(overrides: Partial<RoomSummary> = {}): RoomSummary {
@@ -100,15 +139,39 @@ function staysOpen(signal: AbortSignal): AsyncIterable<RoomEvent> {
   })();
 }
 
+/**
+ * #team with the reader in it, caught up.
+ *
+ * The cursor matters: the quiet state measures "has anything happened since I
+ * got here?" against it, so a roster without the reader in it can never be
+ * quiet. The default is deliberately ahead of every seq these tests post, which
+ * makes "caught up" the baseline; a test that wants unread messages says so by
+ * seeding entries above this number.
+ */
+function teamRoster(lastReadSeq = 100) {
+  return {
+    ...teamSummary(),
+    viewerAuthorId: VIEWER_ID,
+    reactionFrequents: [...REACTION_FREQUENTS_DEFAULT],
+    members: [
+      {
+        roomId: TEAM_ID,
+        authorId: VIEWER_ID,
+        responseMode: 'always' as const,
+        joinedAt: '2026-08-01T09:00:00.000Z',
+        joinedSeq: 0,
+        lastReadSeq,
+        author: { id: VIEWER_ID, kind: 'human' as const, displayName: 'Dorian', handle: null },
+        origin: 'local' as const,
+      },
+    ],
+  };
+}
+
 function renderHome(overrides: Partial<Transport> = {}) {
   const transport = createMockTransport({
     listRooms: vi.fn().mockResolvedValue([teamSummary()]),
-    getRoom: vi.fn().mockResolvedValue({
-      ...teamSummary(),
-      members: [],
-      viewerAuthorId: 'author-you',
-      reactionFrequents: [...REACTION_FREQUENTS_DEFAULT],
-    }),
+    getRoom: vi.fn().mockResolvedValue(teamRoster()),
     listRoomEntries: vi.fn().mockResolvedValue([]),
     subscribeRoom: vi.fn((_id: string, _cursor: number, signal: AbortSignal) => staysOpen(signal)),
     ...overrides,
@@ -150,6 +213,13 @@ beforeAll(() => {
 beforeEach(() => {
   presenceStrip.mockClear();
   search = {};
+  presence.occupied = true;
+  viewport.mobile = false;
+  // Zustand stores outlive a render, and a draft left behind by one test would
+  // put words in the next one's composer.
+  useRoomDraftStore.setState({ drafts: {} });
+  usePendingPostStore.setState({ posts: [] });
+  localStorage.clear();
 });
 
 afterEach(() => {
@@ -202,6 +272,188 @@ describe('HomeRoomPage — the room', () => {
     // address; the field inside it is still the room's own composer.
     const host = await screen.findByTestId('home-composer');
     expect(host).toContainElement(field);
+  });
+});
+
+/**
+ * The composer and the header, agreeing about the keyboard (spec task 2.7).
+ *
+ * Typing is the primary action of this surface, and on a phone the header and a
+ * software keyboard cannot both have the screen — the browser gate measured the
+ * composer 129px behind the keyboard with a single approval showing. The two
+ * components that have to agree are siblings inside `RoomSurface`, so the state
+ * crosses through this page; what this block proves is that the wire is
+ * connected in both directions. jsdom cannot measure a keyboard, so the height
+ * itself stays the browser gate's to prove.
+ */
+describe('HomeRoomPage — getting out of the keyboard’s way', () => {
+  /** One approval waiting, so the header has something to condense. */
+  const waiting = {
+    listPendingApprovals: vi.fn().mockResolvedValue({
+      approvals: [
+        {
+          approvalId: '01JZ0000000000000000000001',
+          capabilityId: 'marketplace.uninstall',
+          capabilityTitle: 'Uninstall a marketplace package',
+          tier: 'destructive' as const,
+          summary: 'Uninstall "sentry-monitor"',
+          requestedBy: '/Users/dev/agents/dorkbot',
+          hasAgentPath: true,
+          requestedAt: '2026-08-08T10:00:00.000Z',
+          expiresAt: new Date(Date.now() + 30 * 60_000).toISOString(),
+        },
+      ],
+    }),
+  };
+
+  it('condenses the header while the caret is in the composer, and restores it when it leaves', async () => {
+    viewport.mobile = true;
+    renderHome(waiting);
+    const field = await screen.findByPlaceholderText('Message #team…');
+
+    // Blurred first, deliberately: a room composer takes the caret when it
+    // mounts, and jsdom has no touch to refuse it with, so the full header has
+    // to be established rather than assumed.
+    act(() => field.blur());
+    expect(await screen.findByText('Waiting On You')).toBeInTheDocument();
+
+    act(() => field.focus());
+
+    expect(await screen.findByText('1 waiting')).toBeInTheDocument();
+    expect(screen.queryByText('Waiting On You')).not.toBeInTheDocument();
+  });
+
+  it('gives the caret back — and the header — when the condensed line is tapped', async () => {
+    viewport.mobile = true;
+    renderHome(waiting);
+    const field = await screen.findByPlaceholderText('Message #team…');
+    act(() => field.focus());
+    const line = await screen.findByRole('button', { name: /1 waiting/ });
+
+    // `fireEvent`, not `userEvent`: a real tap on a phone does not necessarily
+    // move focus to the button, so the click must not be allowed to blur the
+    // field for us. Only the page's own blur can pass this.
+    act(() => {
+      fireEvent.click(line);
+    });
+
+    expect(await screen.findByText('Waiting On You')).toBeInTheDocument();
+    expect(document.activeElement).not.toBe(field);
+  });
+
+  it('leaves a wide screen alone when the composer is focused', async () => {
+    renderHome(waiting);
+    const field = await screen.findByPlaceholderText('Message #team…');
+    await screen.findByText('Waiting On You');
+
+    act(() => field.focus());
+
+    expect(screen.getByText('Waiting On You')).toBeInTheDocument();
+    expect(screen.queryByText('1 waiting')).not.toBeInTheDocument();
+  });
+});
+
+describe('HomeRoomPage — day one', () => {
+  it('offers the openers above the composer while the room has nothing in it', async () => {
+    renderHome();
+    await screen.findByPlaceholderText('Message #team…');
+
+    for (const line of HOME_STARTER_CHIPS) {
+      expect(screen.getByRole('button', { name: line })).toBeInTheDocument();
+    }
+  });
+
+  it('puts a pressed opener in the composer, and does not send it', async () => {
+    const { transport } = renderHome();
+    const field = await screen.findByPlaceholderText('Message #team…');
+    const line = HOME_STARTER_CHIPS[0]!;
+
+    await userEvent.click(screen.getByRole('button', { name: line }));
+
+    // In the box the person is looking at, whole, ready to be edited.
+    await waitFor(() => expect(field).toHaveValue(line));
+    // And nowhere else. The first message sent is still one somebody chose to
+    // send.
+    expect(transport.postToRoom).not.toHaveBeenCalled();
+  });
+
+  it('takes them away once there is a conversation to read instead', async () => {
+    renderHome({ listRoomEntries: vi.fn().mockResolvedValue([post(1)]) });
+    await screen.findByPlaceholderText('Message #team…');
+
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: HOME_STARTER_CHIPS[0]! })).toBeNull()
+    );
+  });
+
+  it('takes them away at the keystroke, not when the server echoes back', async () => {
+    // The history is still empty and stays empty: this asserts the openers go on
+    // the SEND, off the pending row the composer mints at the keystroke. Waiting
+    // for the stream echo left a row of "start a conversation" prompts sitting
+    // above the conversation you had just started, for a whole round trip.
+    renderHome();
+    const field = await screen.findByPlaceholderText('Message #team…');
+
+    await userEvent.click(screen.getByRole('button', { name: HOME_STARTER_CHIPS[0]! }));
+    await waitFor(() => expect(field).toHaveValue(HOME_STARTER_CHIPS[0]!));
+    fireEvent.keyDown(field, { key: 'Enter' });
+
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: HOME_STARTER_CHIPS[0]! })).toBeNull()
+    );
+  });
+});
+
+describe('HomeRoomPage — a quiet morning', () => {
+  /** A room with a history, nothing waiting, and nobody working. */
+  function renderQuietHome(overrides: Partial<Transport> = {}) {
+    presence.occupied = false;
+    return renderHome({ listRoomEntries: vi.fn().mockResolvedValue([post(1)]), ...overrides });
+  }
+
+  it('says so, once the room has a history and nothing needs answering', async () => {
+    renderQuietHome();
+
+    expect(await screen.findByText('All quiet.')).toBeInTheDocument();
+  });
+
+  it('stays away on day one — an empty room is not a quiet one', async () => {
+    presence.occupied = false;
+    renderHome();
+    await screen.findByPlaceholderText('Message #team…');
+
+    expect(screen.queryByText('All quiet.')).toBeNull();
+    // The openers speak for that case instead.
+    expect(screen.getByRole('button', { name: HOME_STARTER_CHIPS[0]! })).toBeInTheDocument();
+  });
+
+  it('stays away over a room that has been talking since the reader arrived', async () => {
+    presence.occupied = false;
+    // The roster says the reader had read up to seq 100; these landed after.
+    renderHome({ listRoomEntries: vi.fn().mockResolvedValue([post(101), post(102)]) });
+    await screen.findByPlaceholderText('Message #team…');
+
+    expect(screen.queryByText('All quiet.')).toBeNull();
+  });
+
+  it('stays away while the pinned header has something to say', async () => {
+    // The strip occupies the header, which is already telling the reader that
+    // somebody is working. Two statements about one morning is one too many.
+    presence.occupied = true;
+    renderHome({ listRoomEntries: vi.fn().mockResolvedValue([post(1)]) });
+    await screen.findByTestId('presence-strip');
+
+    expect(screen.queryByText('All quiet.')).toBeNull();
+  });
+
+  it('sits above the feed, not inside it', async () => {
+    const { container } = renderQuietHome();
+    await screen.findByText('All quiet.');
+
+    const line = container.querySelector('[data-slot="home-quiet-state"]');
+    const scroller = container.querySelector('.overflow-y-auto');
+    expect(line).not.toBeNull();
+    expect(scroller!.contains(line!)).toBe(false);
   });
 });
 

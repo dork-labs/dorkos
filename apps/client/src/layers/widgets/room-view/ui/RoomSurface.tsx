@@ -46,6 +46,20 @@ export interface RoomSurfaceProps {
    */
   aboveTimeline?: ReactNode;
   /**
+   * Chrome this host puts between the feed and the composer.
+   *
+   * The other end of {@link RoomSurfaceProps.aboveTimeline}, for things that
+   * belong to the BOX rather than to the room: the home surface's day-one
+   * starter chips, which are lines waiting to be typed and would mean nothing
+   * floating above a feed. Outside the scroller for the same reason as the other
+   * slot — it takes its own space and leaves the feed's scroll alone.
+   *
+   * It sits above the stalled notice, which keeps its place directly over the
+   * composer: a warning about what happens when you press Enter has to be the
+   * last thing between you and Enter.
+   */
+  aboveComposer?: ReactNode;
+  /**
    * Float "Jump back in" over this room's composer while the box is empty.
    *
    * Opt-in, and on for the home surface only (spec D2.3): the panel is an
@@ -53,6 +67,20 @@ export interface RoomSurfaceProps {
    * only the page you land on is asking.
    */
   offerJumpBackIn?: boolean;
+  /**
+   * Told when the caret enters and leaves the ROOM composer's text field.
+   *
+   * A pass-through to `RoomComposer.onFocusChange`, and deliberately nothing
+   * more: this component does not act on it. It exists because the two things
+   * that have to agree — the composer down here and a host's chrome up in
+   * {@link RoomSurfaceProps.aboveTimeline} — are siblings with no way to reach
+   * each other, so the state is lifted to whoever composes them. The home
+   * surface uses it to condense its pinned header while a phone keyboard is up.
+   *
+   * The thread panel's composer is NOT wired to it. A reply is typed into the
+   * panel, which covers the chrome anyway.
+   */
+  onComposerFocusChange?: (focused: boolean) => void;
 }
 
 /**
@@ -82,7 +110,9 @@ export function RoomSurface({
   threadId,
   threadRoute,
   aboveTimeline,
+  aboveComposer,
   offerJumpBackIn,
+  onComposerFocusChange,
 }: RoomSurfaceProps) {
   const isMobile = useIsMobile();
   // How much of the screen a software keyboard is currently eating. `0`
@@ -247,6 +277,8 @@ export function RoomSurface({
           onOpenThread={onOpenThread}
         />
       </div>
+      {/* The host's chrome for the composer — see `RoomSurfaceProps.aboveComposer`. */}
+      {aboveComposer}
       {/* Directly above the composer, because the state it describes is about
           what happens after you press Enter. `RoomStalledNotice` explains why
           the composer beside it stays open. */}
@@ -261,7 +293,12 @@ export function RoomSurface({
           this React reuses the instance and the input's own internals — focus,
           height, a part-typed IME composition — carry across. The DRAFT is safe
           either way; it belongs to the room, not to this element. */}
-      <RoomComposer key={room.id} room={room} offerJumpBackIn={offerJumpBackIn} />
+      <RoomComposer
+        key={room.id}
+        room={room}
+        offerJumpBackIn={offerJumpBackIn}
+        onFocusChange={onComposerFocusChange}
+      />
 
       {/* Under the composer, where a line about the wait belongs: it is about
           what happens after you press Enter, and putting it above would push

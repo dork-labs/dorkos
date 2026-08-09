@@ -53,8 +53,20 @@ export function jumpBackInRowId(index: number): string {
  */
 const COMPOSER_FIELD_SELECTOR = '[role="combobox"]';
 
-/** Whether an event target is the composer's own text field. */
-function isComposerField(target: EventTarget | null): boolean {
+/**
+ * Whether an event target is the composer's own text field.
+ *
+ * Exported because a second listener needs the same answer: the home surface
+ * watches the composer's focus to condense its pinned header while a phone
+ * keyboard is up, and it must ignore the send button for exactly the reason
+ * this popover does. One definition, so the two can never disagree about what
+ * "the composer is focused" means. (Its eventual home is the `Composer` family
+ * that publishes the role; it lives here until a second composer feature needs
+ * it too.)
+ *
+ * @param target - The event target to test.
+ */
+export function isComposerField(target: EventTarget | null): boolean {
   return target instanceof Element && target.matches(COMPOSER_FIELD_SELECTOR);
 }
 

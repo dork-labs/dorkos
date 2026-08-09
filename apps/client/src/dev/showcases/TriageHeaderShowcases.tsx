@@ -102,7 +102,7 @@ export function TriageHeaderShowcases() {
   return (
     <PlaygroundSection
       title="Pinned triage header"
-      description="What sits above the home feed and stays there while it scrolls — a band of its own between the room's masthead and the conversation, never inside it: the approvals waiting on a decision, and what broke. Nothing waiting and nothing wrong draws no header at all — no border, no 'all clear' card, nothing. Answers happen where the card is; the feed underneath never moves."
+      description="What sits above the home feed and stays there while it scrolls — a band of its own between the room's masthead and the conversation, never inside it: the approvals waiting on a decision, and what broke. Nothing waiting and nothing wrong draws no header at all — no border, no 'all clear' card, nothing. Answers happen where the card is; the feed underneath never moves. On a phone it condenses to one line of counts while the composer holds the caret, because a software keyboard and this header cannot both have the screen."
     >
       <ShowcaseLabel>
         Quiet: zero DOM, not an empty box (the frame below is the demo&rsquo;s)
@@ -152,6 +152,22 @@ export function TriageHeaderShowcases() {
             onRetryApprovals={() => {}}
             attentionItems={ATTENTION}
             presence={{ occupied: true, node: <PresenceSlotStandIn /> }}
+          />
+        </div>
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>
+        Condensed: what a phone shows while the keyboard is up (tap to re-expand)
+      </ShowcaseLabel>
+      <ShowcaseDemo>
+        <div className="w-full">
+          <PinnedTriageHeaderView
+            approvals={APPROVALS}
+            approvalsUnavailable={false}
+            onRetryApprovals={() => {}}
+            attentionItems={ATTENTION}
+            condensed
+            onExpand={() => {}}
           />
         </div>
       </ShowcaseDemo>

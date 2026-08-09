@@ -1,5 +1,6 @@
 import { useCallback } from 'react';
 import { useNavigate, useSearch } from '@tanstack/react-router';
+import { useIsMobile } from '@/layers/shared/model';
 import { usePendingApprovals } from '@/layers/features/approvals';
 import {
   useAttentionItems,
@@ -20,6 +21,23 @@ export interface PinnedTriageHeaderProps {
    * header at all.
    */
   presence?: TriagePresenceSlot;
+  /**
+   * Whether the room composer below currently holds the caret.
+   *
+   * On a phone that means a keyboard is up, and a keyboard plus this header is
+   * more than the screen has: the header condenses to one line of counts until
+   * the caret leaves. On a wide screen it changes nothing — there is no
+   * keyboard eating the viewport, and the room has room for both.
+   */
+  composerFocused?: boolean;
+  /**
+   * Give the composer up so the header can open again.
+   *
+   * Called when somebody taps the condensed line. The header cannot do this for
+   * itself: the caret is held by a sibling it has no reach into, so the host
+   * that composes the two takes the caret back — see `HomeRoomPage`.
+   */
+  onExpand?: () => void;
   /** Extra classes for the sticky element, so a host can match its own measure. */
   className?: string;
 }
@@ -44,13 +62,25 @@ export interface PinnedTriageHeaderProps {
  * unconditionally because a closed sheet draws nothing — the header's
  * zero-DOM-when-empty rule survives them.
  *
+ * **Where the condense decision is made, and why here.** The view draws what it
+ * is told; this half decides, because deciding needs the viewport
+ * (`useIsMobile`) and the composer's focus, and a presentational component
+ * should have neither. The rule is the whole of it: a phone, and the caret in
+ * the composer.
+ *
  * @param props - The {@link PinnedTriageHeaderProps.presence} slot and optional classes.
  */
-export function PinnedTriageHeader({ presence, className }: PinnedTriageHeaderProps) {
+export function PinnedTriageHeader({
+  presence,
+  composerFocused,
+  onExpand,
+  className,
+}: PinnedTriageHeaderProps) {
   const { approvals, isError, retry } = usePendingApprovals();
   const { items } = useAttentionItems();
   const search = useSearch({ strict: false }) as Partial<HomeSearch>;
   const navigate = useNavigate();
+  const isMobile = useIsMobile();
 
   const closeDetail = useCallback(() => {
     void navigate({ to: '/', search: {} });
@@ -66,6 +96,8 @@ export function PinnedTriageHeader({ presence, className }: PinnedTriageHeaderPr
         onRetryApprovals={retry}
         attentionItems={items}
         presence={presence}
+        condensed={isMobile && composerFocused === true}
+        onExpand={onExpand}
         className={className}
       />
 

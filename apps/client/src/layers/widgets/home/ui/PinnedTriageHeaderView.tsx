@@ -1,9 +1,11 @@
 import { useId, type ReactNode } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
+import { ChevronDown } from 'lucide-react';
 import type { PendingApproval } from '@dorkos/shared/approval-schemas';
 import { cn } from '@/layers/shared/lib';
 import { ApprovalList, ApprovalsUnavailable } from '@/layers/features/approvals';
 import { AttentionItemRow, type AttentionItem } from '@/layers/features/dashboard-attention';
+import { triageSummary } from '../lib/triage-summary';
 
 /**
  * How tall the header may grow before it scrolls inside itself.
@@ -71,32 +73,16 @@ const staggerContainer = {
 } as const;
 
 /**
- * What the header says out loud when it changes.
+ * How long the header takes to change shape, in seconds.
  *
- * Counts, not contents: a queue of six read aloud card by card is a wall, and
- * the thing a reader needs from a live region is that something arrived and
- * roughly how much. The cards themselves are a heading away.
+ * Extracted so the reduced-motion path is a value a test can read: the animation
+ * itself is browser territory, but "reduced motion means no animation" is a rule,
+ * and a rule with no test is a preference.
  *
- * @returns The sentence to announce, or an empty string when there is nothing
- * to say — silence is the point of an empty live region.
+ * @param reducedMotion - True when the reader asked for less motion.
  */
-function announce({
-  approvals,
-  approvalsUnavailable,
-  attentionItems,
-}: Pick<
-  PinnedTriageHeaderViewProps,
-  'approvals' | 'approvalsUnavailable' | 'attentionItems'
->): string {
-  const said: string[] = [];
-  if (approvals.length === 1) said.push('1 approval is waiting on you.');
-  else if (approvals.length > 1) said.push(`${approvals.length} approvals are waiting on you.`);
-  // Worth saying on its own: an unreadable list is the case where silence would
-  // be mistaken for "nothing is waiting".
-  else if (approvalsUnavailable) said.push('Approvals could not be read.');
-  if (attentionItems.length === 1) said.push('1 thing needs attention.');
-  else if (attentionItems.length > 1) said.push(`${attentionItems.length} things need attention.`);
-  return said.join(' ');
+export function triageSwapDuration(reducedMotion: boolean): number {
+  return reducedMotion ? 0 : 0.18;
 }
 
 /**
@@ -148,6 +134,22 @@ export interface PinnedTriageHeaderViewProps {
    * than being a bare node.
    */
   presence?: TriagePresenceSlot;
+  /**
+   * Draw one line of counts instead of the whole header.
+   *
+   * The state a phone enters the moment somebody taps the composer. See
+   * {@link PinnedTriageHeaderView} for the measurement that made it necessary;
+   * the decision of WHEN belongs to the wired half, which knows the viewport.
+   */
+  condensed?: boolean;
+  /**
+   * Open the header back up from its condensed line.
+   *
+   * The host's job rather than this component's, because opening it is only
+   * useful if the keyboard goes away with it — and the composer that holds the
+   * keyboard is this header's sibling, not its child.
+   */
+  onExpand?: () => void;
   /** Extra classes for the sticky element, so a host can match its own measure. */
   className?: string;
 }
@@ -170,6 +172,17 @@ export interface PinnedTriageHeaderViewProps {
  * unreliably announced, so an approval arriving over the event stream while
  * somebody is reading the feed would go unsaid.
  *
+ * **It gets out of the way of the keyboard.** Typing is the primary action of
+ * the home surface, and on a phone this header and a software keyboard cannot
+ * both have the screen: measured at 375×812 in spec task 2.7's browser gate,
+ * one approval put the composer 129px behind the keyboard, and a header at its
+ * cap put it 227px behind with the feed gone entirely. So while the composer
+ * holds the caret on a phone, `condensed` draws one line of counts instead —
+ * enough to know something is waiting, one tap from all of it. The tap is
+ * `onExpand`, whose host drops the keyboard on the way. Desktop never
+ * condenses. jsdom cannot measure a keyboard, so the tests here pin the state
+ * machine and the geometry stays the browser gate's to prove.
+ *
  * Presentational on purpose: it holds no queries, so the playground can draw
  * every state and `PinnedTriageHeader` is the only thing that has to know where
  * the data comes from.
@@ -182,6 +195,8 @@ export function PinnedTriageHeaderView({
   onRetryApprovals,
   attentionItems,
   presence,
+  condensed,
+  onExpand,
   className,
 }: PinnedTriageHeaderViewProps) {
   const reducedMotion = useReducedMotion();
@@ -189,6 +204,15 @@ export function PinnedTriageHeaderView({
   const showsWaiting = approvals.length > 0 || approvalsUnavailable;
   const showsAttention = attentionItems.length > 0;
   const occupied = showsWaiting || showsAttention || presence?.occupied === true;
+  const summary = triageSummary({
+    approvals: approvals.length,
+    approvalsUnavailable,
+    attention: attentionItems.length,
+  });
+  // Only where there is something to name. A header held open by the presence
+  // strip alone has no counts to condense to, so it stays out of the way by
+  // going entirely rather than by drawing a bar that says nothing.
+  const showsSummary = condensed === true && summary.compact !== '';
 
   return (
     <>
@@ -198,13 +222,43 @@ export function PinnedTriageHeaderView({
         words is read out whole by most screen readers, and one that arrives at
         all is often not read at all; only one that was already there reliably
         speaks when its text changes.
+
+        Untouched by condensing: the header changing shape is not news, and the
+        same counts said a second time in a different register would be.
       */}
       <div role="status" aria-live="polite" aria-atomic="true" className="sr-only">
-        {announce({ approvals, approvalsUnavailable, attentionItems })}
+        {summary.spoken}
       </div>
 
       <AnimatePresence initial={false}>
-        {occupied && (
+        {showsSummary && (
+          <motion.div
+            key="triage-summary"
+            data-slot="pinned-triage-summary"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: triageSwapDuration(reducedMotion === true) }}
+            className={cn(
+              'bg-background/95 border-border/60 shrink-0 border-b backdrop-blur-sm',
+              className
+            )}
+          >
+            <button
+              type="button"
+              onClick={onExpand}
+              // A real button, full width and 44px tall: it is the only way
+              // back to the cards while the keyboard is up, and a phone is
+              // exactly where it is pressed.
+              className="text-muted-foreground hover:text-foreground mx-auto flex min-h-11 w-full max-w-4xl min-w-0 items-center gap-2 px-4 text-left text-xs sm:px-6"
+            >
+              <span className="bg-status-warning size-1.5 shrink-0 rounded-full" aria-hidden />
+              <span className="min-w-0 flex-1 truncate">{summary.compact}</span>
+              <ChevronDown className="size-3.5 shrink-0" aria-hidden />
+            </button>
+          </motion.div>
+        )}
+        {occupied && condensed !== true && (
           <motion.div
             key="triage-header"
             data-slot="pinned-triage-header"
