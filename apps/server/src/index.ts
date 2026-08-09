@@ -209,6 +209,7 @@ import {
   createRoomSubsystem,
   setRoomService,
   setRoomInternals,
+  setWelcomeBackGreeter,
   setRoomAttachmentStores,
 } from './services/rooms/index.js';
 import { ReadCursorStore } from './services/core/read-cursor-store.js';
@@ -223,6 +224,7 @@ import {
   watchDefaultAgent,
   type TeamRoomDeps,
 } from './services/rooms/ensure-team-room.js';
+import { createMomentDetectors } from './services/rooms/moments/index.js';
 import { registerLocalCommunity } from './services/communities/index.js';
 import { SearchIndexer } from './services/search/index.js';
 import { TerminalManager, terminalUpgradeRoute } from './services/terminal/index.js';
@@ -867,8 +869,13 @@ async function start() {
     attachments: roomAttachmentRows,
     authors: roomAuthors,
     bridges: roomBridges,
+    welcomeBack: welcomeBackGreeter,
   } = createRoomSubsystem({ db, readCursors: readCursorService });
   setRoomService(roomService);
+  // What your agents may say when you come back (team-room-home §D5.2). The
+  // read-state route is what tells it somebody is here, so it is registered
+  // beside the service that route already reaches for.
+  setWelcomeBackGreeter(welcomeBackGreeter);
   setRoomInternals(roomBridges, roomAuthors);
   // Where a room's files live is chosen HERE and nowhere else: the routes depend
   // on the `RoomAttachmentStore` interface and never build a path, so the day
@@ -1166,6 +1173,19 @@ async function start() {
   // change the default agent in Settings and the next thing you type in #team
   // goes to the new one, without a restart.
   watchDefaultAgent(teamRoomDeps, { onChange: (listener) => configManager.onChange(listener) });
+
+  // The milestones #team marks (team-room-home spec D5.1). Two seams feed them
+  // and NEITHER is a timer: the agent-created seam below, and the activity log
+  // as it is written. Schedules, runs and connections all already emit there, so
+  // the detectors learn what happened from the record that happened rather than
+  // from a poller keeping a second copy of it. A quiet install stays quiet.
+  const momentDetectors = createMomentDetectors({
+    service: roomService,
+    store: roomStore,
+    authors: roomAuthors,
+    db,
+  });
+  activityService.observe((event) => momentDetectors.activityObserved(event));
 
   // Phase C: adapter manager — now meshCore is available for CWD resolution.
   // Must run after meshCore init so buildContext() can call meshCore.getProjectPath().
@@ -2070,9 +2090,13 @@ async function start() {
   // because it is the one a person sees: a new agent is in your team room by
   // the time the creation response lands, without a restart (team-room-home
   // spec D3.1). It swallows its own failures, so a room that could not seat the
-  // agent never costs the Shape re-bind below.
+  // agent never costs the Shape re-bind below. Marking the moment comes straight
+  // after the seat and in that order deliberately: "tangerines joined your team"
+  // is a line about a member of the room, so the roster is settled before the
+  // room says so (team-room-home spec D5.1).
   setOnAgentCreated(async (agent: CreatedAgentInfo) => {
     joinTeamRoom(teamRoomDeps, agent.path);
+    momentDetectors.agentCreated(agent);
     const rebound = await rebindShapeSchedulesForAgent(agent, {
       listShapes: () => listInstalledShapeManifests(dorkHome),
       scheduleService: shapeScheduleService,
