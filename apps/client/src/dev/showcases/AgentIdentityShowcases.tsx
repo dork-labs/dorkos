@@ -10,7 +10,7 @@ import {
   AvatarEmojiGrid,
 } from '@/layers/entities/agent';
 import { Badge } from '@/layers/shared/ui/badge';
-import { MOCK_IDENTITIES, type MockIdentity } from '../mock-samples';
+import { IDENTITY_STATUSES, MOCK_IDENTITIES, type MockIdentity } from '../mock-samples';
 
 const AUTO_COLOR = 'hsl(255, 70%, 55%)';
 const AUTO_EMOJI = '🤖';
@@ -119,19 +119,22 @@ export function AgentIdentityShowcases() {
           </div>
         </ShowcaseDemo>
 
-        <ShowcaseLabel>Health status</ShowcaseLabel>
+        <ShowcaseLabel>
+          Status — the top-right corner, and the only thing that goes there
+        </ShowcaseLabel>
         <ShowcaseDemo>
+          {/* Mesh health is NOT here, and that is the point: the disc used to
+              wear a coloured ring keyed on "seen within the last hour" and a
+              pulsing dot lit from the same fact. The corner reports what the
+              agent is doing right now; health is said in words, on the two
+              surfaces that need it (the Agent Hub hero, the topology page). */}
           <div className="flex items-center gap-6">
-            {(['active', 'inactive', 'stale', 'unreachable'] as const).map((status) => (
+            {IDENTITY_STATUSES.map(({ status, label }) => (
               <div key={status} className="flex flex-col items-center gap-2">
-                <AgentAvatar {...WARDEN} size="md" healthStatus={status} />
-                <span className="text-muted-foreground text-[10px]">{status}</span>
+                <AgentAvatar {...WARDEN} size="md" status={status} />
+                <span className="text-muted-foreground text-[10px]">{label}</span>
               </div>
             ))}
-            <div className="flex flex-col items-center gap-2">
-              <AgentAvatar {...WARDEN} size="md" />
-              <span className="text-muted-foreground text-[10px]">none</span>
-            </div>
           </div>
         </ShowcaseDemo>
       </PlaygroundSection>
@@ -175,23 +178,13 @@ export function AgentIdentityShowcases() {
           </div>
         </ShowcaseDemo>
 
-        <ShowcaseLabel>With health status</ShowcaseLabel>
+        <ShowcaseLabel>With live status</ShowcaseLabel>
         <ShowcaseDemo>
           <div className="flex flex-col gap-3">
-            <AgentIdentity
-              {...CAST[0]}
-              size="sm"
-              healthStatus="active"
-              detail="3 active sessions"
-            />
-            <AgentIdentity {...CAST[1]} size="sm" healthStatus="inactive" detail="idle 2h" />
-            <AgentIdentity {...CAST[2]} size="sm" healthStatus="stale" detail="last seen 3d ago" />
-            <AgentIdentity
-              {...CAST[3]}
-              size="sm"
-              healthStatus="unreachable"
-              detail="lost contact"
-            />
+            <AgentIdentity {...CAST[0]} size="sm" status="working" detail="mid-turn, 2m 14s" />
+            <AgentIdentity {...CAST[1]} size="sm" status="needs-you" detail="waiting on approval" />
+            <AgentIdentity {...CAST[2]} size="sm" status="error" detail="last turn failed" />
+            <AgentIdentity {...CAST[3]} size="sm" detail="nothing to report" />
           </div>
         </ShowcaseDemo>
 

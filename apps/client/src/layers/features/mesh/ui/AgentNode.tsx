@@ -9,6 +9,7 @@ import { cn, formatRelativeTime } from '@/layers/shared/lib';
 import { Badge } from '@/layers/shared/ui/badge';
 import { Button } from '@/layers/shared/ui/button';
 import { AgentAvatar } from '@/layers/entities/agent';
+import { HEALTH_DISPLAY } from '../lib/health-display';
 
 /**
  * Data shape stored in each agent node for React Flow rendering.
@@ -57,8 +58,29 @@ const AGENT_BAND_WIDTHS: Record<string, number> = {
 };
 
 /**
+ * The agent's mesh health, said where mesh health is the subject.
+ *
+ * It used to be a coloured ring around the disc, drawn by `AgentAvatar` — which
+ * meant every list row in the cockpit carried it, and this page, the one that
+ * actually needs it, carried it no more loudly than a table cell did. The ring
+ * is gone; this dot is the topology's own answer, and it holds still, because
+ * "seen within the last hour" is not a thing happening right now.
+ *
+ * `aria-hidden`: the node's own `aria-label` already ends in "status active".
+ */
+function HealthDot({ status }: { status: AgentNodeData['healthStatus'] }) {
+  return (
+    <span
+      aria-hidden
+      title={HEALTH_DISPLAY[status].label}
+      className={cn('size-1.5 shrink-0 rounded-full', HEALTH_DISPLAY[status].dot)}
+    />
+  );
+}
+
+/**
  * Shared card header used by both DefaultCard and ExpandedCard.
- * Renders the AgentAvatar (with health ring), agent name, and the
+ * Renders the AgentAvatar, the agent name with its health dot, and the
  * runtime + capability badge row.
  */
 function CardHeader({ d }: { d: AgentNodeData }) {
@@ -68,13 +90,9 @@ function CardHeader({ d }: { d: AgentNodeData }) {
     <>
       {/* Header row: avatar + name */}
       <div className="flex items-center gap-2">
-        <AgentAvatar
-          color={d.avatarColor}
-          emoji={d.emoji}
-          healthStatus={d.healthStatus}
-          size="sm"
-        />
+        <AgentAvatar color={d.avatarColor} emoji={d.emoji} size="sm" />
         <span className="text-foreground truncate text-sm font-medium">{d.label}</span>
+        <HealthDot status={d.healthStatus} />
       </div>
 
       {/* Runtime + capability badges */}
@@ -110,8 +128,9 @@ function CompactPill({ d, selected }: { d: AgentNodeData; selected?: boolean }) 
       style={borderColor ? { borderLeft: `3px solid ${borderColor}` } : undefined}
     >
       <Handle type="target" position={Position.Left} className="bg-muted-foreground!" />
-      <AgentAvatar color={d.avatarColor} emoji={d.emoji} healthStatus={d.healthStatus} size="xs" />
+      <AgentAvatar color={d.avatarColor} emoji={d.emoji} size="xs" />
       <span className="text-foreground truncate text-xs font-medium">{d.label}</span>
+      <HealthDot status={d.healthStatus} />
       <Handle type="source" position={Position.Right} className="bg-muted-foreground!" />
     </div>
   );

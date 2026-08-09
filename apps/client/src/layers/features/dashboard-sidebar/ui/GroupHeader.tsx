@@ -48,6 +48,7 @@ import {
   DropdownMenuSubContent,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
+  statusDotClass,
 } from '@/layers/shared/ui';
 import {
   useUpdateSidebarPrefs,
@@ -347,7 +348,13 @@ export function GroupHeader({
                 {showActivityDot && (
                   <span
                     aria-label="Active work in this group"
-                    className="bg-primary ml-1 size-1.5 shrink-0 rounded-full"
+                    // The success token, and not `bg-primary`. Brand orange
+                    // means interaction in this cockpit, so a group header
+                    // reporting live work in it was wearing the colour of a
+                    // control — and saying the same thing the agent rows
+                    // underneath say in green. One fact, one colour, and the
+                    // pulse because the fact is about right now.
+                    className={cn('ml-1 size-1.5 shrink-0 rounded-full', statusDotClass('working'))}
                   />
                 )}
               </button>

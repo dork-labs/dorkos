@@ -175,6 +175,13 @@ function IdentityHoverCard({
   // disc background at all.
   const avatarColor = color ?? 'hsl(var(--muted-foreground))';
   const isExternal = typeof origin === 'object' && origin !== null;
+  // **Asked once, answered once.** The disc used to test `working !== undefined`
+  // and the chip below tested the same field for truth, so anything
+  // present-but-empty — a resolver filling the field with `null` when there is
+  // no turn — lit a pulsing "working right now" dot beside no chip at all. The
+  // turn itself is the value both read, so there is no second predicate left to
+  // disagree with the first.
+  const working = kind === 'agent' && agent?.working != null ? agent.working : null;
 
   // Controlled rather than left to Radix's own internal state: hover and
   // focus still drive it exactly as before (their handlers call `onOpenChange`,
@@ -226,11 +233,11 @@ function IdentityHoverCard({
             imageUrl={imageUrl}
             fallback={initialOf(displayName)}
             // Shape, fill and mark all come from the kind now, and the pulsing
-            // dot from `working` — this card used to hand-roll all four, and
+            // dot from `status` — this card used to hand-roll all four, and
             // its own dot was a third copy of the same eight lines.
             kind={kind}
             origin={origin}
-            working={kind === 'agent' && agent?.working !== undefined}
+            status={working ? 'working' : 'idle'}
             size="md"
           />
           <div className="min-w-0">
@@ -245,12 +252,12 @@ function IdentityHoverCard({
           {kind === 'agent' && (agent?.runtime || agent?.model) && (
             <InfoChip>{[agent.runtime, agent.model].filter(Boolean).join(' · ')}</InfoChip>
           )}
-          {kind === 'agent' && agent?.working && (
+          {working && (
             // The chip says how long; the avatar's own dot says "right now".
             // The dot used to be drawn twice — once here and once on the disc —
             // which read as two separate signals for one fact.
             <InfoChip className="bg-status-success-bg text-status-success-fg">
-              Working · {formatDuration(agent.working.forMs)}
+              Working · {formatDuration(working.forMs)}
             </InfoChip>
           )}
           {kind === 'human' && (

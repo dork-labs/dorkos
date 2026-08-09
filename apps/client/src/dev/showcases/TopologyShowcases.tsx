@@ -1,8 +1,11 @@
-import { Zap, Clock } from 'lucide-react';
+import { ReactFlow, ReactFlowProvider } from '@xyflow/react';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
 import { ShowcaseDemo } from '../ShowcaseDemo';
+import { cn } from '@/layers/shared/lib';
 import { AgentAvatar } from '@/layers/entities/agent';
+import { HEALTH_DISPLAY } from '@/layers/features/mesh';
+import { TopologyLegend } from '@/layers/features/mesh/ui/TopologyLegend';
 import {
   AgentCompactPill,
   AgentDefaultCard,
@@ -17,6 +20,14 @@ import {
 } from './topology-adapter-node';
 import { NamespaceGroupDemo, NAMESPACE_PALETTE } from './topology-namespace-group';
 import { RelayFlowPulseDemo } from './topology-relay-flow-pulse';
+
+/**
+ * The namespaces the legend showcase names — enough of them that the legend
+ * draws its namespace block at all (it hides below two).
+ */
+const LEGEND_NAMESPACES = (['production', 'staging', 'dev', 'testing'] as const).map(
+  (namespace, i) => ({ namespace, color: NAMESPACE_PALETTE[i] })
+);
 
 /** Topology graph component showcases: AgentNode, AdapterNode, NamespaceGroupNode, edges, legend. */
 export function TopologyShowcases() {
@@ -50,13 +61,23 @@ export function TopologyShowcases() {
           <AgentExpandedCard d={AGENTS[0]} />
         </ShowcaseDemo>
 
-        <ShowcaseLabel>Health statuses (via AgentAvatar ring)</ShowcaseLabel>
+        <ShowcaseLabel>Health statuses — the node's own dot, never the disc</ShowcaseLabel>
         <ShowcaseDemo>
+          {/* The disc used to wear health as a coloured 2px ring, on this page
+              and on every list row in the product. Health is a diagnostic about
+              the last hour, so it belongs to the surface that is about health,
+              beside a word that says which one it is. */}
           <div className="flex flex-wrap items-center gap-4">
             {(['active', 'inactive', 'stale', 'unreachable'] as const).map((status) => (
               <div key={status} className="flex items-center gap-2">
-                <AgentAvatar color="#6366f1" emoji="🤖" healthStatus={status} size="sm" />
-                <span className="text-muted-foreground text-xs capitalize">{status}</span>
+                <AgentAvatar color="#6366f1" emoji="🤖" size="sm" />
+                <span
+                  aria-hidden
+                  className={cn('size-1.5 shrink-0 rounded-full', HEALTH_DISPLAY[status].dot)}
+                />
+                <span className="text-muted-foreground text-xs">
+                  {HEALTH_DISPLAY[status].label}
+                </span>
               </div>
             ))}
           </div>
@@ -204,80 +225,38 @@ export function TopologyShowcases() {
         description="Positioned panel at the bottom-left of the React Flow canvas showing edge types, health statuses, feature indicators, and namespace colors."
       >
         <ShowcaseDemo>
-          <div className="bg-card/90 text-muted-foreground inline-flex flex-col gap-1.5 rounded-md border px-3 py-2 text-[11px] shadow-sm">
-            <div className="flex items-center gap-2">
-              <svg width="24" height="4" className="shrink-0 overflow-visible">
-                <line
-                  x1="0"
-                  y1="2"
-                  x2="24"
-                  y2="2"
-                  stroke="var(--color-primary)"
-                  strokeWidth="1.5"
-                />
-                <circle cx="8" cy="2" r="2.5" fill="var(--color-primary)" opacity="0.9" />
-              </svg>
-              <span>Allow rule (data flow)</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <svg width="24" height="4" className="shrink-0 overflow-visible">
-                <line
-                  x1="0"
-                  y1="2"
-                  x2="24"
-                  y2="2"
-                  stroke="var(--color-destructive)"
-                  strokeWidth="1.5"
-                  strokeDasharray="4 2"
-                />
-              </svg>
-              <span>Deny rule</span>
-            </div>
-            <div className="border-t" />
-            <div className="flex items-center gap-2">
-              <span className="relative flex h-2.5 w-6 items-center justify-center">
-                <span className="absolute h-2.5 w-2.5 animate-ping rounded-full bg-green-500/40" />
-                <span className="relative h-2 w-2 rounded-full bg-green-500" />
-              </span>
-              <span>Active</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="flex h-2.5 w-6 items-center justify-center">
-                <span className="h-2 w-2 rounded-full bg-amber-500" />
-              </span>
-              <span>Inactive</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="flex h-2.5 w-6 items-center justify-center">
-                <span className="bg-muted-foreground/50 h-2 w-2 rounded-full" />
-              </span>
-              <span>Stale</span>
-            </div>
-            <div className="border-t" />
-            <div className="flex items-center gap-2">
-              <span className="flex h-2.5 w-6 items-center justify-center">
-                <Zap className="h-3 w-3 text-yellow-500" />
-              </span>
-              <span>Relay-enabled</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="flex h-2.5 w-6 items-center justify-center">
-                <Clock className="h-3 w-3 text-blue-500" />
-              </span>
-              <span>Tasks schedules</span>
-            </div>
-            <div className="border-t" />
-            {NAMESPACE_PALETTE.map((color, i) => (
-              <div key={color} className="flex items-center gap-2">
-                <span
-                  className="inline-block h-2.5 w-2.5 rounded-full"
-                  style={{ backgroundColor: color }}
-                />
-                <span>{(['production', 'staging', 'dev', 'testing'] as const)[i]}</span>
-              </div>
-            ))}
-            <div className="border-t" />
-            <span className="text-[10px] italic opacity-60">Zoom in for more detail</span>
+          {/* The REAL legend, inside a real (empty, inert) canvas — not a
+              hand-copied replica of it.
+
+              It was a replica, and the replica is exactly what went wrong: when
+              the health vocabulary moved to one map (DOR-1052), this page kept
+              drawing the retired design — a pinging green swatch, raw
+              `bg-green-500`/`bg-amber-500`, and no entry for Unreachable at all.
+              A playground that shows a design the product no longer has is worse
+              than no playground, because it is believed.
+
+              The canvas is here because `TopologyLegend` renders inside React
+              Flow's `<Panel>`, which needs the provider to position itself. It
+              carries no nodes and no interaction: this section is about the
+              legend, and a demo graph would just be a second thing to keep in
+              sync. Same shape as `RelayFlowPulseDemo`'s shell. */}
+          <div className="bg-muted/20 h-[280px] w-full overflow-hidden rounded-md border">
+            <ReactFlowProvider>
+              <ReactFlow
+                nodes={[]}
+                edges={[]}
+                nodesDraggable={false}
+                nodesConnectable={false}
+                elementsSelectable={false}
+                panOnDrag={false}
+                zoomOnScroll={false}
+                zoomOnPinch={false}
+                zoomOnDoubleClick={false}
+                proOptions={{ hideAttribution: true }}
+              >
+                <TopologyLegend namespaces={LEGEND_NAMESPACES} />
+              </ReactFlow>
+            </ReactFlowProvider>
           </div>
         </ShowcaseDemo>
       </PlaygroundSection>
