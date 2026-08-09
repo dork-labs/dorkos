@@ -19,6 +19,7 @@ const MOCK_CTX = {
   isRelayEnabled: true,
   sessionCount: 5,
   agentCount: 3,
+  taskCount: 0,
   daysSinceFirstUse: 7,
 };
 
@@ -234,15 +235,6 @@ export function PromoShowcases() {
       >
         <ShowcaseDemo>
           <RegistryTable />
-        </ShowcaseDemo>
-      </PlaygroundSection>
-
-      <PlaygroundSection
-        title="PromoSlot — dashboard-main"
-        description="Responsive 2-col grid layout with section header. Dismiss a card to see it disappear with animation."
-      >
-        <ShowcaseDemo responsive>
-          <LiveSlotPreview placement="dashboard-main" maxUnits={4} />
         </ShowcaseDemo>
       </PlaygroundSection>
 

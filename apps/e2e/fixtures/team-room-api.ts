@@ -61,12 +61,30 @@ export interface TeamRoomSummary {
   fallbackSeatAuthorId: string | null;
 }
 
+/**
+ * The milestone marking on an entry that is one (spec `team-room-home` D5.1).
+ *
+ * `source` is the half worth asserting on: a moment names the record it was read
+ * off, so a test can check the line against the thing that really happened
+ * rather than against its own wording.
+ */
+export interface TeamRoomMoment {
+  kind: string;
+  source: { kind: string; ref: string; observedAt: string };
+  mintedByAgentRef: string | null;
+}
+
 /** One entry of the room, as the history route returns it. */
 export interface TeamRoomEntry {
   id: string;
   seq: number;
   authorId: string;
-  body: { text?: string };
+  /**
+   * `moment` is what makes an entry a milestone — a moment is a POST, so
+   * nothing but the body says so, which is exactly how the cockpit tells them
+   * apart too (`RoomEntryRow`).
+   */
+  body: { text?: string; moment?: TeamRoomMoment; subjectAuthorId?: string };
   mentions: string[];
 }
 
@@ -139,6 +157,57 @@ export class TeamRoomApi {
     if (!res.ok()) throw new Error(`Could not read #team: ${await res.text()}`);
     const { entries } = (await res.json()) as { entries: TeamRoomEntry[] };
     return entries;
+  }
+
+  /**
+   * The entries of #team that are milestones, oldest first.
+   *
+   * The filter is `body.moment`, which is the server's own tell and the
+   * cockpit's: a moment is an ordinary post whose body says what it marks, so
+   * there is no separate feed to read and no `kind` to match on.
+   */
+  async moments(): Promise<TeamRoomEntry[]> {
+    return (await this.entries()).filter((entry) => entry.body.moment !== undefined);
+  }
+
+  /**
+   * How far this person has read #team, or `null` when they never have.
+   *
+   * The barrier the quiet-state test waits on. "Caught up" is measured against
+   * the cursor as it stood when the page opened, so a test that reloaded before
+   * the first visit's cursor had been written would be asserting on a page that
+   * is correctly still showing a conversation.
+   */
+  async readCursorSeq(): Promise<number | null> {
+    const { id } = await this.teamRoom();
+    const res = await this.request.get(`/api/read-cursors/room/${id}`);
+    if (!res.ok()) throw new Error(`Could not read the #team cursor: ${await res.text()}`);
+    const { cursor } = (await res.json()) as { cursor: { lastReadSeq: number } | null };
+    return cursor?.lastReadSeq ?? null;
+  }
+
+  /** How many agents this install has registered, as the cockpit counts them. */
+  async registeredAgentCount(): Promise<number> {
+    const res = await this.request.get('/api/mesh/agents');
+    if (!res.ok()) throw new Error(`Could not read the agent list: ${await res.text()}`);
+    const { agents } = (await res.json()) as { agents: unknown[] };
+    return agents.length;
+  }
+
+  /**
+   * How many agents the mesh cannot reach.
+   *
+   * Read by the quiet-state test as a precondition rather than asserted on: an
+   * unreachable agent puts a row in the pinned triage header, and the header
+   * having something to say is precisely when the quiet line stands down. A
+   * test that did not check this first would fail with "no quiet line" on a
+   * server that was correctly refusing to draw one.
+   */
+  async meshUnreachableCount(): Promise<number> {
+    const res = await this.request.get('/api/mesh/status');
+    if (!res.ok()) throw new Error(`Could not read mesh status: ${await res.text()}`);
+    const { unreachableCount } = (await res.json()) as { unreachableCount?: number };
+    return unreachableCount ?? 0;
   }
 
   /**

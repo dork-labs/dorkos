@@ -36,6 +36,7 @@ import { RoomEntryActions } from './RoomEntryActions';
 import { RoomEntryAttachments, attachmentsSummary } from './RoomEntryAttachments';
 import { RoomEntryBody } from './RoomEntryBody';
 import { RoomEntryAuthorLine, RoomEntryGutter } from './RoomEntryHeader';
+import { RoomMomentRow } from './RoomMomentRow';
 import { RoomNoticeRow } from './RoomNoticeRow';
 
 interface RoomEntryRowProps {
@@ -115,7 +116,8 @@ interface RoomEntryRowProps {
  * the content column — so a room reads as the same surface with more people in
  * it. A `notice` is the room speaking about itself and renders as
  * {@link RoomNoticeRow}: a quiet full-width line with no author beside it and
- * no actions on it.
+ * no actions on it. A post carrying `body.moment` is a milestone and renders as
+ * {@link RoomMomentRow} — a moment is a post, so nothing but the body says so.
  *
  * `orphanedReply` adds one quiet line saying the row is answering something
  * out of view. Without it a reply whose thread head has scrolled out of the
@@ -205,6 +207,24 @@ export function RoomEntryRow({
 
   if (entry.kind === 'notice') {
     return <RoomNoticeRow entry={entry} feedPosition={feedPosition} rowId={rowId} />;
+  }
+
+  // A moment is a POST that marks something that really happened, so `kind`
+  // cannot tell it apart from an ordinary message — `body.moment` is the tell,
+  // and a client that only read `kind` would draw a milestone as somebody
+  // talking. Everything else about the row still applies: it is on the same
+  // log, at the same seq, in the same feed.
+  if (entry.body.moment) {
+    return (
+      <RoomMomentRow
+        entry={entry}
+        moment={entry.body.moment}
+        author={author}
+        authors={authors}
+        feedPosition={feedPosition}
+        rowId={rowId}
+      />
+    );
   }
 
   // A group start renders the avatar, the name and the time; a continuation

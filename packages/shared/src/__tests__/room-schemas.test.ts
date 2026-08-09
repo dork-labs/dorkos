@@ -8,14 +8,19 @@ import {
   REACTION_EMOJI_MAX_CODE_POINTS,
   REACTION_FREQUENTS_COUNT,
   REACTION_FREQUENTS_DEFAULT,
+  RoomEntryBodySchema,
   RoomEntrySchema,
   RoomEventSchema,
   RoomMemberSchema,
+  RoomMomentSchema,
   RoomNoticeCodeSchema,
   ToggleReactionRequestSchema,
   type SignableRoomEntry,
 } from '../room-schemas.js';
 import { AgentBehaviorSchema, ResponseModeSchema } from '../mesh-schemas.js';
+
+/** One timestamp, reused wherever a fixture needs a moment in time. */
+const WHEN = '2026-07-26T12:00:00.000Z';
 
 const baseEntry: SignableRoomEntry = {
   roomId: '01JZROOM',
@@ -125,6 +130,72 @@ describe('responseMode reuse', () => {
         lastReadSeq: 0,
       }).success
     ).toBe(false);
+  });
+});
+
+describe('RoomMomentSchema', () => {
+  /** The canonical moment: an agent joined the team, read off that agent's own record. */
+  const joined = {
+    kind: 'joined_team',
+    source: { kind: 'agent', ref: '/Users/dorian/agents/tangerines', observedAt: WHEN },
+    mintedByAgentRef: null,
+  };
+
+  it('round-trips a moment on an entry body, alongside the words a reader sees', () => {
+    const parsed = RoomEntrySchema.parse({
+      ...baseEntry,
+      seq: 4,
+      body: { text: 'tangerines joined your team', moment: joined },
+      mentions: [],
+      sessionId: null,
+      cascadeRoot: baseEntry.id,
+      cascadeDepth: 0,
+      parentEntryId: null,
+      threadRootEntryId: null,
+      signature: null,
+    });
+    // A moment is a POST — the entry kind is untouched, which is what keeps
+    // every path that already handles a post handling this one.
+    expect(parsed.kind).toBe('post');
+    expect(parsed.body.moment).toEqual(joined);
+  });
+
+  it('refuses a moment with no data source — the rule that keeps moments honest', () => {
+    // D5.1: derived from real data only. A moment that cannot name what it was
+    // read from is a moment somebody invented, so the type must not permit one.
+    const { source: _dropped, ...sourceless } = joined;
+    expect(RoomMomentSchema.safeParse(sourceless).success).toBe(false);
+    expect(
+      RoomEntryBodySchema.safeParse({ text: 'tangerines joined your team', moment: sourceless })
+        .success
+    ).toBe(false);
+  });
+
+  it('refuses a source that names nothing, and a source kind it has no record for', () => {
+    expect(
+      RoomMomentSchema.safeParse({ ...joined, source: { ...joined.source, ref: '' } }).success
+    ).toBe(false);
+    expect(
+      RoomMomentSchema.safeParse({ ...joined, source: { ...joined.source, kind: 'vibes' } }).success
+    ).toBe(false);
+  });
+
+  it('records which agent minted an agent-minted moment, and refuses one that does not', () => {
+    const minted = {
+      kind: 'agent_minted',
+      source: { kind: 'session', ref: '01JZSESSION', observedAt: WHEN },
+      mintedByAgentRef: agentAuthorRef('/Users/dorian/agents/ana'),
+    };
+    expect(RoomMomentSchema.parse(minted).mintedByAgentRef).toBe(minted.mintedByAgentRef);
+    expect(RoomMomentSchema.safeParse({ ...minted, mintedByAgentRef: null }).success).toBe(false);
+  });
+
+  it('says DorkOS minted a system moment with an explicit null, never by omission', () => {
+    // Required-and-nullable rather than optional: every moment states who
+    // minted it, so "nobody filled this in" cannot read as "the system did".
+    const { mintedByAgentRef: _dropped, ...silent } = joined;
+    expect(RoomMomentSchema.safeParse(silent).success).toBe(false);
+    expect(RoomMomentSchema.parse(joined).mintedByAgentRef).toBeNull();
   });
 });
 

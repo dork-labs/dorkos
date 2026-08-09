@@ -35,10 +35,17 @@ import {
   type DbTransaction,
 } from '@dorkos/db';
 import type { ResponseMode } from '@dorkos/shared/mesh-schemas';
-import type { Room, RoomEntry, RoomKind, RoomMember } from '@dorkos/shared/room-schemas';
+import type {
+  Room,
+  RoomEntry,
+  RoomKind,
+  RoomMember,
+  RoomMomentKind,
+} from '@dorkos/shared/room-schemas';
 import { logger } from '../../lib/logger.js';
 import { RoomSessionLedger } from './room-session-ledger.js';
 import {
+  parseEntryBody,
   toEntry,
   toMember,
   toRoom,
@@ -1002,6 +1009,93 @@ export class RoomStore {
       .where(and(eq(roomEntries.roomId, roomId), eq(roomEntries.id, entryId)))
       .get();
     return row ? toEntry(row) : null;
+  }
+
+  /**
+   * Has a moment matching this key already landed in this room?
+   *
+   * **This is the moment detectors' whole idempotency mechanism** (team-room-home
+   * spec D5.1). A moment that was posted IS the marker that it was posted: it is
+   * a row in this table carrying `body.moment`, so a restart, a second process,
+   * or a detector that evaluates the same event twice all read the same answer.
+   * Nothing here is remembered in memory, which is the point — a flag would
+   * re-post every first-of-its-kind moment on the next boot.
+   *
+   * Which parts of the key are supplied is how a detector says what "already"
+   * means for it: `kind` alone is once-ever-per-install (your first agent),
+   * `+ ref` is once per record (each agent joining), `+ observedAt` is once per
+   * occasion (this agent's one-week mark, as distinct from its one-month mark).
+   *
+   * Unbounded on purpose, unlike {@link RoomStore.latestMomentAt}: this is the
+   * question a moment must never get wrong, and it only runs when a detector has
+   * already decided it has something to post — rarely, and never in a loop.
+   *
+   * `kind` is the schema's own union rather than a string, and that is load
+   * bearing: the value is compared against JSON already written into the log, so
+   * renaming a moment kind without noticing this call site would leave every
+   * first-of-its-kind moment matching nothing and re-posting forever. Typed, that
+   * rename is a compile error.
+   *
+   * @param roomId - The room to look in.
+   * @param key.kind - The moment kind.
+   * @param key.ref - The source record, when the kind may fire for several.
+   * @param key.observedAt - The occasion, when a record has several.
+   */
+  hasMoment(
+    roomId: string,
+    key: { kind: RoomMomentKind; ref?: string; observedAt?: string }
+  ): boolean {
+    const conditions = [
+      eq(roomEntries.roomId, roomId),
+      sql`json_extract(${roomEntries.body}, '$.moment.kind') = ${key.kind}`,
+    ];
+    if (key.ref !== undefined) {
+      conditions.push(sql`json_extract(${roomEntries.body}, '$.moment.source.ref') = ${key.ref}`);
+    }
+    if (key.observedAt !== undefined) {
+      conditions.push(
+        sql`json_extract(${roomEntries.body}, '$.moment.source.observedAt') = ${key.observedAt}`
+      );
+    }
+    return (
+      this.db
+        .select({ seq: roomEntries.seq })
+        .from(roomEntries)
+        .where(and(...conditions))
+        .limit(1)
+        .get() !== undefined
+    );
+  }
+
+  /**
+   * When this room last marked a moment, looking no further back than the
+   * newest `scan` entries.
+   *
+   * The bound is deliberate and is what makes this safe to call on every
+   * activity event: it walks the `(room_id, seq)` primary key backwards and
+   * stops, rather than scanning a whole channel for a JSON field no index
+   * covers. Its one caller is the quiet period that keeps a burst of milestones
+   * from filling the feed, and a room that has moved `scan` entries since its
+   * last moment is not in a burst — so reading further could only confirm what
+   * the bound already decided.
+   *
+   * @param roomId - The room.
+   * @param scan - How many of the newest entries to read.
+   * @returns The newest moment's `createdAt` within that window, or `null`.
+   */
+  latestMomentAt(roomId: string, scan: number): string | null {
+    if (scan <= 0) return null;
+    const rows = this.db
+      .select({ createdAt: roomEntries.createdAt, body: roomEntries.body })
+      .from(roomEntries)
+      .where(eq(roomEntries.roomId, roomId))
+      .orderBy(desc(roomEntries.seq))
+      .limit(scan)
+      .all();
+    for (const row of rows) {
+      if (parseEntryBody(row.body).moment) return row.createdAt;
+    }
+    return null;
   }
 
   /**

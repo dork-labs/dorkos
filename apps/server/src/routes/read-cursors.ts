@@ -30,7 +30,7 @@ import {
 } from '@dorkos/shared/read-cursor-schemas';
 import { parseBody, sendError } from '../lib/route-utils.js';
 import { getReadCursorService } from '../services/core/read-cursor-service.js';
-import { getRoomService } from '../services/rooms/index.js';
+import { getRoomService, getWelcomeBackGreeter } from '../services/rooms/index.js';
 import { resolveCaller } from './room-caller.js';
 import { sendRoomError } from './room-error-response.js';
 
@@ -84,6 +84,13 @@ router.put('/:kind/:id', (req, res) => {
     sendError(res, 403, 'Only people have read state', 'PEOPLE_ONLY');
     return;
   }
+
+  // Somebody is at the keyboard, and this request is the proof: a client only
+  // marks a thread read because a person is looking at it. Told BEFORE the
+  // write, because coming back is measured from the last thing this person did
+  // and the line below is about to become that thing (team-room-home §D5.2).
+  // Never throws and never waits — a greeting must not be able to fail a read.
+  getWelcomeBackGreeter()?.personSeen(caller.id);
 
   if (params.kind === 'room') {
     try {

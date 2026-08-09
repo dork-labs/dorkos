@@ -15,6 +15,7 @@ import {
 import { ToolCountBadge } from './tools/ToolCountBadge';
 import { ToolGroupRow } from './tools/ToolGroupRow';
 import { SchedulerSettings } from './tools/SchedulerSettings';
+import { BackgroundSystemsCard } from './tools/BackgroundSystemsCard';
 import { ExternalMcpCard } from './external-mcp/ExternalMcpCard';
 import { ResetToDefaultsButton } from './ResetToDefaultsButton';
 
@@ -113,6 +114,26 @@ export function ToolsTab() {
     [transport, queryClient, scheduler]
   );
 
+  // The background-system switches send the ONE key they change. `PATCH
+  // /api/config` deep-merges, so the rest of each block is left alone — which
+  // matters here because the cockpit is not sent every field of these blocks and
+  // could not round-trip them faithfully if it tried.
+  const setTasksEnabled = useCallback(
+    async (enabled: boolean) => {
+      await transport.updateConfig({ scheduler: { enabled } });
+      await queryClient.invalidateQueries({ queryKey: ['config'] });
+    },
+    [transport, queryClient]
+  );
+
+  const setRelaySubsystemEnabled = useCallback(
+    async (enabled: boolean) => {
+      await transport.updateConfig({ relay: { enabled } });
+      await queryClient.invalidateQueries({ queryKey: ['config'] });
+    },
+    [transport, queryClient]
+  );
+
   return (
     <div className="space-y-4">
       <p className="text-muted-foreground text-sm">
@@ -150,6 +171,22 @@ export function ToolsTab() {
           ))}
         </FieldCardContent>
       </FieldCard>
+      <BackgroundSystemsCard
+        tasks={{
+          running: tasksEnabled,
+          enabledInConfig: serverConfig?.tasks?.enabledInConfig,
+          lockedByEnv: serverConfig?.tasks?.lockedByEnv,
+          initError: serverConfig?.tasks?.initError,
+        }}
+        relay={{
+          running: relayEnabled,
+          enabledInConfig: serverConfig?.relay?.enabledInConfig,
+          lockedByEnv: serverConfig?.relay?.lockedByEnv,
+          initError: serverConfig?.relay?.initError,
+        }}
+        onTasksChange={(v) => void setTasksEnabled(v)}
+        onRelayChange={(v) => void setRelaySubsystemEnabled(v)}
+      />
       {serverConfig?.mcp && (
         <div data-section="external-mcp">
           <ExternalMcpCard

@@ -182,6 +182,14 @@ export const CONFIG_DISCLOSURE = {
   'rooms.engagedWindowMinutes': 'expose',
   'rooms.engagedWindowPosts': 'expose',
 
+  // What agents may say when the person comes back after being away. Three
+  // plain numbers about the person's own rooms: nothing here is a credential or
+  // names where one lives, and an agent that can read them is an agent that can
+  // tell whether it is allowed to greet at all.
+  'welcomeBack.enabled': 'expose',
+  'welcomeBack.absenceThresholdMinutes': 'expose',
+  'welcomeBack.maxPosts': 'expose',
+
   'onboarding.completedSteps': 'expose',
   'onboarding.skippedSteps': 'expose',
   'onboarding.startedAt': 'expose',

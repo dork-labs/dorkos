@@ -154,10 +154,17 @@ describe('config default verdicts cover the whole schema', () => {
 /**
  * Permissive leaves this deliberately does not carry across a wipe, and why.
  *
- * The carryover rules only speak `boolean` / `lower` / `later`, so a permissive
- * enum, array, or free string cannot be expressed as one today. Naming them here
- * rather than letting the assertion below skip them silently is the point: the
- * gap is recorded, not hidden.
+ * The carryover rules speak `boolean` / `lower` / `higher` / `later`, so a
+ * permissive enum, array, or free string cannot be expressed as one today.
+ * Naming them here rather than letting the assertion below skip them silently is
+ * the point: the gap is recorded, not hidden.
+ *
+ * An exemption is for a leaf where no direction is more protective — never for
+ * one whose direction the union happens not to speak yet.
+ * `welcomeBack.absenceThresholdMinutes` was listed here on first writing and was
+ * wrong for it: someone who set a week and lands back on four hours loses a real
+ * protection, so the union grew `higher` and the leaf moved to
+ * PROTECTIVE_CARRYOVERS where it belonged.
  */
 const CARRYOVER_EXEMPT: Readonly<Record<string, string>> = {
   'uploads.allowedTypes':
@@ -230,8 +237,9 @@ describe('verdicts and wipe-carryover agree', () => {
       unprotected,
       `Numeric bound(s) with no carryover rule. A "safe" default is a real limit, but a person ` +
         `can set a tighter one, and a config wipe would silently loosen it back. Add a ` +
-        `'lower'-direction rule to PROTECTIVE_CARRYOVERS, or record in CARRYOVER_EXEMPT why ` +
-        `lower is not more protective for this field:\n  ${unprotected.join('\n  ')}`
+        `'lower'- or 'higher'-direction rule to PROTECTIVE_CARRYOVERS (a cap tightens by going ` +
+        `down, a threshold by going up), or record in CARRYOVER_EXEMPT why neither direction is ` +
+        `more protective for this field:\n  ${unprotected.join('\n  ')}`
     ).toEqual([]);
   });
 

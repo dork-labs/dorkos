@@ -6416,6 +6416,9 @@
           },
           "subjectAuthorId": {
             "type": "string"
+          },
+          "moment": {
+            "$ref": "#/components/schemas/RoomMoment"
           }
         },
         "required": [
@@ -6440,6 +6443,78 @@
           "bridge_disconnected",
           "bridge_agent_swapped",
           "bridge_history_note"
+        ]
+      },
+      "RoomMoment": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/RoomMomentKind"
+          },
+          "source": {
+            "$ref": "#/components/schemas/RoomMomentSource"
+          },
+          "mintedByAgentRef": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1,
+            "description": "The `agentAuthorRef` of the agent that minted this moment, or null when DorkOS itself did."
+          }
+        },
+        "required": [
+          "kind",
+          "source",
+          "mintedByAgentRef"
+        ]
+      },
+      "RoomMomentKind": {
+        "type": "string",
+        "enum": [
+          "first_agent",
+          "joined_team",
+          "first_pr",
+          "first_schedule",
+          "first_overnight_run",
+          "first_connection",
+          "volume_mark",
+          "anniversary",
+          "agent_minted"
+        ]
+      },
+      "RoomMomentSource": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/RoomMomentSourceKind"
+          },
+          "ref": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The record's own identifier — an agent path, a session id, a pull request URL. Never a sentence, and never empty: a source that names nothing is not a source."
+          },
+          "observedAt": {
+            "type": "string",
+            "minLength": 1,
+            "description": "When the thing actually happened, from the record. Not when this was posted."
+          }
+        },
+        "required": [
+          "kind",
+          "ref",
+          "observedAt"
+        ]
+      },
+      "RoomMomentSourceKind": {
+        "type": "string",
+        "enum": [
+          "agent",
+          "pull_request",
+          "schedule",
+          "session",
+          "connection",
+          "activity"
         ]
       },
       "MentionSpan": {

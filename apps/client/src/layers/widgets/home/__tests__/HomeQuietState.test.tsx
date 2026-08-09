@@ -34,6 +34,20 @@ vi.mock('@/layers/shared/model', async (importOriginal) => {
   return { ...actual, useEventSubscription: vi.fn() };
 });
 
+// DorkBot's suggestion has its own suite, where the registry can be controlled.
+// What matters here is the one thing only this file can answer: WHEN the quiet
+// state lets it speak at all. The rest of the barrel is kept (DOR-902) — a
+// factory that returns only the one override deletes every other export for
+// anything else in the tree that imports from it.
+let suggestionQualifies = true;
+vi.mock('@/layers/features/feature-promos', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/layers/features/feature-promos')>();
+  return {
+    ...actual,
+    QuietSuggestion: () => (suggestionQualifies ? <p data-testid="quiet-suggestion" /> : null),
+  };
+});
+
 import { TransportProvider } from '@/layers/shared/model';
 import { roomKeys } from '@/layers/entities/room';
 import { HomeQuietState } from '../ui/HomeQuietState';
@@ -207,6 +221,7 @@ afterEach(() => {
 
 beforeEach(() => {
   vi.useRealTimers();
+  suggestionQualifies = true;
 });
 
 describe('HomeQuietState — when it speaks', () => {
@@ -365,6 +380,76 @@ describe('HomeQuietState — "quiet" is a claim about right now', () => {
     });
 
     await waitFor(() => expect(quietLine()).toBeNull());
+  });
+});
+
+describe('HomeQuietState — DorkBot may say one thing (spec D5.3)', () => {
+  /** The suggestion stub, or `null` when the quiet state never mounted it. */
+  const suggestion = () => screen.queryByTestId('quiet-suggestion');
+
+  it('offers the suggestion when there is nothing ahead', async () => {
+    renderQuiet();
+
+    expect(await screen.findByText('All quiet.')).toBeInTheDocument();
+    await waitFor(() => expect(suggestion()).toBeInTheDocument());
+    // Inside the quiet state's own strip, so it fades and retires with it.
+    expect(quietLine()!.contains(suggestion())).toBe(true);
+  });
+
+  it('still speaks under a real run, below it — discovery is not only for the idle', async () => {
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    tomorrow.setHours(9, 0, 0, 0);
+    renderQuiet({
+      transport: {
+        listTasks: vi.fn().mockResolvedValue([buildTask({ nextRun: tomorrow.toISOString() })]),
+      },
+    });
+
+    // Somebody who runs schedules ALWAYS has a forward look, so a rule that hid
+    // the suggestion whenever one existed would hide it from the people using
+    // the product most. What keeps the pair honest is qualification — a promo
+    // offering what this install already has does not qualify — not silence.
+    await waitFor(() => expect(quietLine()!.textContent).toContain('Morning standup'));
+    const forwardLookLine = quietLine()!.querySelector('p')!;
+    expect(suggestion()).toBeInTheDocument();
+
+    // Under it, not woven into it.
+    expect(forwardLookLine.contains(suggestion())).toBe(false);
+    expect(
+      forwardLookLine.compareDocumentPosition(suggestion()!) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
+  });
+
+  it('says nothing at all when an approval is waiting — the whole line stands down', async () => {
+    const { transport } = renderQuiet({
+      transport: {
+        listPendingApprovals: vi.fn().mockResolvedValue({ approvals: [buildApproval()] }),
+      },
+    });
+
+    await waitFor(() => expect(transport.listPendingApprovals).toHaveBeenCalled());
+    await waitFor(() => expect(quietLine()).toBeNull());
+    // The gate is inherited, not restated: no line, so no suggestion either.
+    expect(suggestion()).toBeNull();
+  });
+
+  it('leaves the line at two words when nothing qualifies — no empty container', async () => {
+    suggestionQualifies = false;
+    const { transport } = renderQuiet();
+
+    expect(await screen.findByText('All quiet.')).toBeInTheDocument();
+    await waitFor(() => expect(transport.listTasks).toHaveBeenCalled());
+    expect(quietLine()!.textContent).toBe('All quiet.');
+  });
+
+  it('says nothing over a room that has been talking, suggestion and all', async () => {
+    const { transport } = renderQuiet({ entries: [post(1), post(2)], lastReadSeq: 1 });
+
+    await waitFor(() => expect(transport.getRoom).toHaveBeenCalledWith(ROOM_ID));
+    await waitFor(() => expect(transport.listPendingApprovals).toHaveBeenCalled());
+    expect(quietLine()).toBeNull();
+    expect(suggestion()).toBeNull();
   });
 });
 

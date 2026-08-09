@@ -5,13 +5,6 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import type { PromoDefinition } from '../model/promo-types';
 
-const mockDismissPromo = vi.fn();
-vi.mock('@/layers/shared/model', () => ({
-  useAppStore: (selector: (s: Record<string, unknown>) => unknown) =>
-    selector({ dismissPromo: mockDismissPromo }),
-  useIsMobile: () => false,
-}));
-
 // Mock PromoDialog to avoid ResponsiveDialog complexity in unit tests
 vi.mock('../ui/PromoDialog', () => ({
   PromoDialog: () => null,
@@ -22,7 +15,7 @@ import { PromoCard } from '../ui/PromoCard';
 function makePromo(overrides?: Partial<PromoDefinition>): PromoDefinition {
   return {
     id: 'test-promo',
-    placements: ['dashboard-main'],
+    placements: ['dashboard-sidebar'],
     priority: 50,
     shouldShow: () => true,
     content: {
@@ -47,37 +40,10 @@ describe('PromoCard', () => {
     cleanup();
   });
 
-  it('renders title, short description, and CTA label in standard format', () => {
-    render(<PromoCard promo={makePromo()} placement="dashboard-main" />);
+  it('renders title and short description in the compact row', () => {
+    render(<PromoCard promo={makePromo()} />);
     expect(screen.getByText('Test Title')).toBeInTheDocument();
     expect(screen.getByText('Test description')).toBeInTheDocument();
-    expect(screen.getByText('Learn more')).toBeInTheDocument();
-  });
-
-  it('standard format shows dismiss X button', () => {
-    render(<PromoCard promo={makePromo()} placement="dashboard-main" />);
-    expect(screen.getByLabelText('Dismiss suggestion')).toBeInTheDocument();
-  });
-
-  it('compact format does not show dismiss X button', () => {
-    render(<PromoCard promo={makePromo()} placement="dashboard-sidebar" />);
-    expect(screen.queryByLabelText('Dismiss suggestion')).not.toBeInTheDocument();
-  });
-
-  it('clicking dismiss calls dismissPromo with correct ID', () => {
-    render(<PromoCard promo={makePromo({ id: 'my-promo' })} placement="dashboard-main" />);
-    fireEvent.click(screen.getByLabelText('Dismiss suggestion'));
-    expect(mockDismissPromo).toHaveBeenCalledWith('my-promo');
-  });
-
-  it('renders in compact format for dashboard-sidebar placement', () => {
-    render(<PromoCard promo={makePromo()} placement="dashboard-sidebar" />);
-    expect(screen.getByText('Test Title')).toBeInTheDocument();
-    expect(screen.getByRole('button')).toHaveAttribute('data-slot', 'promo-card-compact');
-  });
-
-  it('renders in compact format for agent-sidebar placement', () => {
-    render(<PromoCard promo={makePromo()} placement="agent-sidebar" />);
     expect(screen.getByRole('button')).toHaveAttribute('data-slot', 'promo-card-compact');
   });
 
@@ -88,7 +54,7 @@ describe('PromoCard', () => {
     const promo = makePromo({
       action: { type: 'open-dialog', component: MockDialog },
     });
-    render(<PromoCard promo={promo} placement="dashboard-main" />);
+    render(<PromoCard promo={promo} />);
 
     // Initially mounted with open=false (standard dialog contract)
     const calls = vi.mocked(MockDialog).mock.calls;

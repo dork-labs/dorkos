@@ -174,6 +174,42 @@ describe('RoomTimeline', () => {
     expect(screen.queryByTestId('room-entry')).not.toBeInTheDocument();
   });
 
+  it('renders a moment as its own line, and lets the next message start fresh', () => {
+    // A moment draws its own band rather than the message grid, so it must not
+    // become the head of an author group: the message under it would inherit
+    // the continuation layout and arrive with no name and no avatar beneath a
+    // row that never showed either.
+    renderTimeline({
+      entries: [
+        entry(1, {
+          body: {
+            text: 'Ana opened your first pull request.',
+            moment: {
+              kind: 'first_pr',
+              source: {
+                kind: 'pull_request',
+                ref: 'https://example.test/pull/1',
+                observedAt: '2026-07-26T10:00:00.000Z',
+              },
+              mintedByAgentRef: null,
+            },
+          },
+        }),
+        entry(2),
+      ],
+    });
+
+    expect(screen.getByTestId('room-moment')).toHaveTextContent(
+      'Ana opened your first pull request.'
+    );
+    // The message below it is a group START: its own author line is on screen.
+    // Scoped to the message row, because the moment above it names the identity
+    // it is about too — an unscoped query would pass on the moment's label
+    // while the message under it stayed anonymous.
+    const message = screen.getByTestId('room-entry');
+    expect(within(message).getByText('Ana')).toBeInTheDocument();
+  });
+
   it('draws a day boundary between calendar days', () => {
     renderTimeline({
       entries: [

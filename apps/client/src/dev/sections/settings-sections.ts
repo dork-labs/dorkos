@@ -131,6 +131,26 @@ export const SETTINGS_SECTIONS: PlaygroundSection[] = [
       'runtime',
     ],
   },
+  {
+    id: 'background-systems',
+    title: 'Background Systems',
+    page: 'settings',
+    category: 'Tools',
+    keywords: [
+      'background',
+      'system',
+      'systems',
+      'scheduled runs',
+      'scheduler',
+      'agent messaging',
+      'relay',
+      'restart',
+      'pending',
+      'environment variable',
+      'locked',
+      'failed to start',
+    ],
+  },
   // Responsive
   {
     id: 'mobile-drill-in',

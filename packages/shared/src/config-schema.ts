@@ -940,6 +940,51 @@ export const UserConfigSchema = z.object({
       engagedWindowMinutes: 10,
       engagedWindowPosts: 5,
     })),
+  /**
+   * What your agents may say when you come back after being away (spec
+   * `team-room-home`, D5.2).
+   *
+   * The iron rule the numbers here enforce is **news, not noise**: coming back
+   * to three useful lines is a welcome; coming back to twelve is a reason to
+   * turn the feature off. Every leaf is a ceiling on the noise, never a target
+   * to fill, so an install where nothing happened while you were gone stays
+   * silent whatever these say.
+   */
+  welcomeBack: z
+    .object({
+      /**
+       * Whether agents may post at all when you return. Off means no post, and
+       * no work done to decide there was nothing to post.
+       */
+      enabled: z.boolean().default(true),
+      /**
+       * How long you have to be away before coming back counts as a return.
+       *
+       * Four hours by default — long enough that something real has happened
+       * since, short enough to catch a morning. The floor is a quarter of an
+       * hour because anything shorter is a coffee, not an absence, and would
+       * turn the feature into the thing it exists to avoid. The ceiling is a
+       * week, past which "what changed" is a question the feed answers better
+       * than a greeting does.
+       */
+      absenceThresholdMinutes: z.number().int().min(15).max(10_080).default(240),
+      /**
+       * The most posts one return may produce, however many agents qualify.
+       *
+       * Three, because a welcome is read at a glance. When more agents have
+       * news than this allows, the most useful ones post and the rest stay
+       * quiet — the cap is never spent for its own sake. `0` silences the posts
+       * while leaving the feature on; turning it off with `enabled` is the
+       * cheaper way to get the same silence, since that also skips the work of
+       * deciding who had news.
+       */
+      maxPosts: z.number().int().min(0).max(10).default(3),
+    })
+    .default(() => ({
+      enabled: true,
+      absenceThresholdMinutes: 240,
+      maxPosts: 3,
+    })),
   onboarding: OnboardingStateSchema.default(() => ({
     completedSteps: [],
     skippedSteps: [],

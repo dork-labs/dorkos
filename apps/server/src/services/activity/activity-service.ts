@@ -37,11 +37,47 @@ interface EmitEvent {
 }
 
 /**
+ * Something that wants to know an event landed, as it landed.
+ *
+ * Called with the event exactly as it was written, AFTER the write succeeded —
+ * so an observer never reacts to something that failed to persist.
+ */
+export type ActivityObserver = (event: ActivityItem) => void;
+
+/**
  * Manages the activity_events table — append-only event log with
  * cursor-based pagination and time-based pruning.
  */
 export class ActivityService {
+  /**
+   * Who is watching the log. A set rather than a single slot: a second observer
+   * must never silently replace the first, which is the trap a `setOnX` seam
+   * sets for the next caller.
+   */
+  private readonly observers = new Set<ActivityObserver>();
+
   constructor(private db: Db) {}
+
+  /**
+   * Watch events as they land — the seam the moment detectors ride
+   * (team-room-home spec D5.1).
+   *
+   * **This is what lets a detector run without a timer.** Schedules, runs and
+   * connections all already write here, so "something happened" is a question
+   * this log answers as it happens; a poller would be a second, worse copy of
+   * the same knowledge.
+   *
+   * An observer is called synchronously and must be cheap. It may throw —
+   * {@link ActivityService.emit} swallows it — but nothing it does can undo the
+   * write it is reacting to.
+   *
+   * @param observer - What to call with each event.
+   * @returns An unsubscribe function.
+   */
+  observe(observer: ActivityObserver): () => void {
+    this.observers.add(observer);
+    return () => this.observers.delete(observer);
+  }
 
   /**
    * Fire-and-forget event emission. Never throws.
@@ -52,7 +88,7 @@ export class ActivityService {
   async emit(event: EmitEvent): Promise<void> {
     try {
       const now = new Date().toISOString();
-      await this.db.insert(activityEvents).values({
+      const row = {
         id: ulid(),
         occurredAt: event.occurredAt ?? now,
         actorType: event.actorType,
@@ -67,9 +103,29 @@ export class ActivityService {
         linkPath: event.linkPath ?? null,
         metadata: event.metadata ? JSON.stringify(event.metadata) : null,
         createdAt: now,
-      });
+      };
+      await this.db.insert(activityEvents).values(row);
+      this.notify({ ...row, metadata: event.metadata ?? null });
     } catch (err) {
       logger.warn('[Activity] Failed to emit activity event', { err, event: event.eventType });
+    }
+  }
+
+  /**
+   * Hand an event to every observer, one failure at a time.
+   *
+   * Each observer is guarded on its own: a reaction that throws must cost
+   * neither the write that already happened nor the other observers.
+   *
+   * @param item - The event as it was written.
+   */
+  private notify(item: ActivityItem): void {
+    for (const observer of this.observers) {
+      try {
+        observer(item);
+      } catch (err) {
+        logger.warn('[Activity] An activity observer failed', { err, event: item.eventType });
+      }
     }
   }
 

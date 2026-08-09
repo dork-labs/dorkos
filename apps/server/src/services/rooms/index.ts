@@ -10,8 +10,10 @@
  */
 import { agents, eq, type Db } from '@dorkos/db';
 import { AgentBehaviorSchema } from '@dorkos/shared/mesh-schemas';
-import { USER_CONFIG_DEFAULTS } from '@dorkos/shared/config-schema';
+import { USER_CONFIG_DEFAULTS, type UserConfig } from '@dorkos/shared/config-schema';
+import { TEAM_ROOM_WELL_KNOWN } from '@dorkos/shared/room-schemas';
 import { configManager } from '../core/config-manager.js';
+import { runtimeRegistry } from '../core/runtime-registry.js';
 import { ReadCursorService } from '../core/read-cursor-service.js';
 import { ReadCursorStore } from '../core/read-cursor-store.js';
 import { readOwnerAccount } from '../core/auth/index.js';
@@ -29,6 +31,8 @@ import { RoomBroadcaster } from './room-stream.js';
 import type { RoomTurnRunner } from './room-trigger.js';
 import { RoomTurnBudget, type TurnBudgetLimits } from './turn-budget.js';
 import { createSessionRoomTurnRunner } from './room-turn-runner.js';
+import { lastPersonSignalAt, WelcomeBackGreeter } from './welcome-back.js';
+import { createSessionWorkSource } from './welcome-back-work.js';
 
 /** The wired rooms subsystem. */
 export interface RoomSubsystem {
@@ -51,6 +55,15 @@ export interface RoomSubsystem {
    * the two routes writing to two tables.
    */
   readCursors: ReadCursorService;
+  /**
+   * What your agents may say when you come back after being away
+   * (spec `team-room-home` D5.2).
+   *
+   * Handed back so the read-state route can tell it a person is here — the one
+   * signal on this server that a REQUEST the person's own client made, rather
+   * than a tab that happens to be open, says somebody is at the keyboard.
+   */
+  welcomeBack: WelcomeBackGreeter;
 }
 
 /**
@@ -183,6 +196,23 @@ function readMaxAttachmentsPerEntry(): number {
   }
 }
 
+/**
+ * The live `welcomeBack` block, degrading to the shipped defaults the same way
+ * {@link readMaxAgentDepth} does — and for one extra reason of its own.
+ *
+ * A config manager that is not up yet must never decide, by accident, that this
+ * install has the feature ON or OFF. Falling back to the schema's own defaults
+ * keeps the answer the one a person would get if they had never touched the
+ * setting, which is the only honest reading of an unreadable config here.
+ */
+function readWelcomeBack(): UserConfig['welcomeBack'] {
+  try {
+    return configManager.get('welcomeBack') ?? USER_CONFIG_DEFAULTS.welcomeBack;
+  } catch {
+    return USER_CONFIG_DEFAULTS.welcomeBack;
+  }
+}
+
 /** Parse a JSON column, degrading to an empty object rather than throwing. */
 function safeJson(raw: string): unknown {
   try {
@@ -259,7 +289,27 @@ export function createRoomSubsystem(opts: {
   // path there is, including the embedded one. The backfill rides along because
   // it wants the same guarantee — the reservations are taken before it derives.
   ensureHandles(opts.db, authors);
-  return { service, store, attachments, authors, broadcaster, bridges, readCursors };
+  const welcomeBack = new WelcomeBackGreeter({
+    settings: readWelcomeBack,
+    // Resolved per return rather than captured: #team is seeded during boot and
+    // an install can be greeted before this factory has ever seen it.
+    teamRoomId: () => store.findByWellKnown(TEAM_ROOM_WELL_KNOWN)?.id ?? null,
+    work: createSessionWorkSource({
+      store,
+      authors,
+      // Read per call: a runtime registered after boot (an OpenCode sidecar
+      // that came up late) has sessions that count too.
+      runtimes: () => runtimeRegistry.listRuntimes(),
+    }),
+    // The ordinary guarded path, deliberately — a welcome-back line is a post
+    // like any other, so membership, the cascade stamp and the turn budget
+    // bind it without this module restating any of them.
+    post: (roomId, input) => {
+      service.post(roomId, input);
+    },
+    lastSeenAt: (userId) => lastPersonSignalAt(opts.db, userId),
+  });
+  return { service, store, attachments, authors, broadcaster, bridges, readCursors, welcomeBack };
 }
 
 let active: RoomService | null = null;
@@ -277,6 +327,31 @@ export function setRoomService(service: RoomService): void {
 export function getRoomService(): RoomService {
   if (!active) throw new Error('RoomService not initialized');
   return active;
+}
+
+let activeWelcomeBack: WelcomeBackGreeter | null = null;
+
+/**
+ * Register the active welcome-back greeter at bootstrap, beside
+ * {@link setRoomService}.
+ *
+ * @param greeter - The wired greeter.
+ */
+export function setWelcomeBackGreeter(greeter: WelcomeBackGreeter): void {
+  activeWelcomeBack = greeter;
+}
+
+/**
+ * The active welcome-back greeter, or `null` when this process has none.
+ *
+ * **`null` rather than a throw**, unlike every other getter here, because its
+ * one caller is a person's read-state write: a surface that runs without the
+ * rooms graph (the embedded transport, a test that wired only what it needed)
+ * must still be able to record what somebody has read. A greeting is the
+ * feature that goes missing, and nothing else.
+ */
+export function getWelcomeBackGreeter(): WelcomeBackGreeter | null {
+  return activeWelcomeBack;
 }
 
 let activeAttachmentStore: RoomAttachmentStore | null = null;

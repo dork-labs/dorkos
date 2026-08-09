@@ -105,6 +105,77 @@ describe('ActivityService', () => {
     });
   });
 
+  // === observe() ===
+
+  describe('observe()', () => {
+    it('hands each event to its observers, as it was written', async () => {
+      const seen: string[] = [];
+      service.observe((event) => seen.push(`${event.eventType}:${event.resourceLabel}`));
+
+      await service.emit({
+        actorType: 'tasks',
+        actorLabel: 'Tasks',
+        category: 'tasks',
+        eventType: 'tasks.task_created',
+        resourceType: 'schedule',
+        resourceId: 'sched-1',
+        resourceLabel: 'nightly digest',
+        summary: 'Created nightly digest',
+      });
+
+      expect(seen).toEqual(['tasks.task_created:nightly digest']);
+    });
+
+    it('tells nobody about an event that failed to persist', async () => {
+      const seen: string[] = [];
+      // The whole reason observers fire after the insert: a moment detector that
+      // reacted to a write that never landed would mark a milestone this install
+      // has no record of.
+      vi.spyOn(db, 'insert').mockImplementation(() => {
+        throw new Error('DB write failed');
+      });
+      service.observe((event) => seen.push(event.eventType));
+
+      await service.emit({
+        actorType: 'system',
+        actorLabel: 'System',
+        category: 'system',
+        eventType: 'system.started',
+        summary: 'Server started',
+      });
+
+      expect(seen).toEqual([]);
+    });
+
+    it('keeps going when one observer throws, and stops when one unsubscribes', async () => {
+      const seen: string[] = [];
+      service.observe(() => {
+        throw new Error('reaction failed');
+      });
+      const stop = service.observe((event) => seen.push(event.eventType));
+
+      await service.emit({
+        actorType: 'user',
+        actorLabel: 'You',
+        category: 'agent',
+        eventType: 'agent.created',
+        summary: 'Created tangerines',
+      });
+      stop();
+      await service.emit({
+        actorType: 'user',
+        actorLabel: 'You',
+        category: 'agent',
+        eventType: 'agent.removed',
+        summary: 'Removed tangerines',
+      });
+
+      expect(seen).toEqual(['agent.created']);
+      // And the throwing observer never cost the write either.
+      expect(db.select().from(activityEvents).all()).toHaveLength(2);
+    });
+  });
+
   // === list() ===
 
   describe('list()', () => {

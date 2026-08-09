@@ -3,6 +3,7 @@ import { useLoadedRoomEntries } from '@/layers/entities/room';
 import { useTasks, useTasksEnabled } from '@/layers/entities/tasks';
 import { usePendingApprovals } from '@/layers/features/approvals';
 import { useAttentionItems } from '@/layers/features/dashboard-attention';
+import { QuietSuggestion } from '@/layers/features/feature-promos';
 import { useNow } from '@/layers/shared/model';
 import { useFrozenRoomCursor } from '../model/use-frozen-room-cursor';
 import { forwardLookSentence, nextScheduledRun } from '../lib/forward-look';
@@ -73,6 +74,12 @@ export interface HomeQuietStateProps {
  * keeps this component's rule in one place instead of split across a prop the
  * host would have to compute.
  *
+ * **DorkBot's one suggestion rides inside this state** (spec D5.3), on a second
+ * line under the first, which is how it inherits every gate above without
+ * restating any of them: it is mounted only on the arrangement that draws the
+ * line at all, so a frozen cursor that says "somebody has been talking", a
+ * retired line, or a header with something waiting each silence it too.
+ *
  * @param props - The room, and whether the presence strip is occupied.
  */
 export function HomeQuietState({ roomId, presenceOccupied }: HomeQuietStateProps) {
@@ -114,5 +121,17 @@ export function HomeQuietState({ roomId, presenceOccupied }: HomeQuietStateProps
 
   if (!shows) return null;
 
-  return <QuietStateLine forwardLook={forwardLookSentence(nextScheduledRun(tasks, now), now)} />;
+  return (
+    <QuietStateLine
+      forwardLook={forwardLookSentence(nextScheduledRun(tasks, now), now)}
+      // Offered whether or not there is a run ahead. Anybody who schedules
+      // anything always has a forward look, so making the suggestion wait for an
+      // empty one would hide discovery from exactly the people running the most.
+      // The pairing stays honest at the other end — a promo that offers what
+      // this install already has does not qualify (see the registry's
+      // `taskCount` condition), so "want your agents working while you sleep?"
+      // cannot print under a run already scheduled for 6am.
+      suggestion={<QuietSuggestion />}
+    />
+  );
 }

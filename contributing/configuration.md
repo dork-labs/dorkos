@@ -101,6 +101,9 @@ Adapter-to-agent bindings are persisted to `~/.dork/relay/bindings.json`. The fi
 | `rooms.lateReplyCeilingMinutes`         | integer (1--1440)                                                        | `60`               | When a room gives up on a turn that never finishes and reports it as failed                                                                                                                                                                                                                                                                         |
 | `rooms.engagedWindowMinutes`            | integer (0--1440)                                                        | `10`               | How long an agent keeps answering in a room after somebody talks to it, before it goes back to needing an @mention. Talking to it again starts the clock over; `0` means an @mention every time                                                                                                                                                     |
 | `rooms.engagedWindowPosts`              | integer (0--100)                                                         | `5`                | How many messages from other members end that window, whichever runs out first                                                                                                                                                                                                                                                                      |
+| `welcomeBack.enabled`                   | boolean                                                                  | `true`             | Whether agents may post to your team channel when you come back after being away. Off means no post, and no work done to decide there was nothing to post                                                                                                                                                                                           |
+| `welcomeBack.absenceThresholdMinutes`   | integer (15--10080)                                                      | `240`              | How long you have to be away before coming back counts as a return                                                                                                                                                                                                                                                                                  |
+| `welcomeBack.maxPosts`                  | integer (0--10)                                                          | `3`                | The most posts one return may produce, however many agents qualify. `0` silences them while leaving the feature on                                                                                                                                                                                                                                  |
 | `uploads.maxFileSize`                   | integer                                                                  | `10485760` (10 MB) | Maximum file size in bytes per uploaded file                                                                                                                                                                                                                                                                                                        |
 | `uploads.maxFiles`                      | integer (1--50)                                                          | `10`               | Maximum number of files per upload request                                                                                                                                                                                                                                                                                                          |
 | `uploads.allowedTypes`                  | string[]                                                                 | `["*/*"]`          | Allowed MIME types (e.g., `["image/*", "text/plain"]`)                                                                                                                                                                                                                                                                                              |
@@ -715,6 +718,24 @@ Both are **ceilings, not settings**: a room can hold an agent to a shorter windo
 ```bash
 dorkos config set rooms.engagedWindowMinutes 3
 dorkos config set rooms.engagedWindowPosts 2
+```
+
+### welcomeBack
+
+What your agents may say when you come back after being away (spec `team-room-home`, D5.2).
+
+The iron rule these numbers enforce is **news, not noise**. Coming back to three useful lines is a welcome; coming back to twelve is a reason to turn the feature off. Every leaf is a ceiling on the noise, never a target to fill — an install where nothing happened while you were gone stays silent whatever these say.
+
+`absenceThresholdMinutes` is four hours by default: long enough that something real has happened since, short enough to catch a morning. Its floor is a quarter of an hour because anything shorter is a coffee, not an absence; its ceiling is a week, past which "what changed" is a question the feed answers better than a greeting does. `maxPosts` is three, because a welcome is read at a glance; `0` silences the posts while leaving the feature on, and `enabled: false` is the cheaper way to the same silence because it also skips the work of deciding who had news.
+
+All three are operator-only, on the same side of the line as `rooms.engagedWindow*`: they decide whether a turn **runs**, not how long a room waits for one that was already going to. Posts ride the ordinary room path, so the cascade guard and both automatic-turn spend caps hold them like any other turn.
+
+**Only `enabled` has a switch in the cockpit** (Settings → Preferences). The two numbers stay file-only for v1 and go out over `GET /api/config` read-only, so the switch can name the threshold actually in force instead of the shipped default. They are judgement calls somebody tunes once; a second and third control earn their place after the first one has been lived with, not before.
+
+```bash
+dorkos config set welcomeBack.enabled false
+dorkos config set welcomeBack.absenceThresholdMinutes 720
+dorkos config set welcomeBack.maxPosts 1
 ```
 
 ### uploads

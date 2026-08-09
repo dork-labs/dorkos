@@ -27,6 +27,10 @@ export const STATUS_BY_CODE: Record<RoomErrorCode, number> = {
   HANDLE_RESERVED: 409,
   INVALID_HANDLE: 400,
   NESTED_THREAD: 400,
+  // A 500 for the same reason `RESERVED_NATURAL_KEY` is one: no request can
+  // carry a moment, so this code reaching a route means a detector built one
+  // wrong rather than that somebody asked for something impossible.
+  INVALID_MOMENT: 500,
   ROOM_ARCHIVED: 409,
   SYSTEM_ROOM: 403,
   OPERATOR_ONLY: 403,

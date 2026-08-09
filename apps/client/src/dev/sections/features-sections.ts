@@ -362,6 +362,11 @@ export const FEATURES_SECTIONS: PlaygroundSection[] = [
       'forward look',
       'next run',
       'onboarding',
+      'suggestion',
+      'dorkbot',
+      'promo',
+      'discovery',
+      'dismiss',
     ],
   },
   // ConnectionsShowcases
