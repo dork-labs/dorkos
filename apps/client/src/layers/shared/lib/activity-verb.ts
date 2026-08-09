@@ -10,6 +10,12 @@
  * verb that outlives its turn is a lie, and a lying verb is worse than none —
  * which is why an idle session gets `null` rather than a stale phrase.
  *
+ * **No sidebar row calls this yet, and that is on purpose.** Live verbs need
+ * the fleet-wide session stream to start carrying an `activity` label, which is
+ * P2.7's one server task; P1's job is to land the ladder and its rules so every
+ * surface adopts the same one at once (spec BC-37). It is a sanctioned shell,
+ * not dead code — `SidebarRow.reservesVerbLine` is the other half of it.
+ *
  * @module shared/lib/activity-verb
  */
 import type { SessionActivity, SessionLifecycle } from '@dorkos/shared/session-stream';

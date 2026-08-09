@@ -284,8 +284,9 @@ export interface AgentsHeaderMenuModel {
 /**
  * Build the Agents (ungrouped) header's items, in order.
  *
- * **Show comes before Sort by**, matching {@link GroupHeader} — the menu this
- * whole family was aligned to. A group section and the ungrouped section are
+ * **Show comes before Sort by**, matching {@link buildGroupHeaderMenuNodes} —
+ * the menu this whole family was aligned to. A group section and the ungrouped
+ * section are
  * the same kind of list with the same two settings, so the settings sit in the
  * same order in both; the spec's table lists them the other way round and the
  * audit rule ("where a verb exists, reuse its exact label and position") wins.

@@ -12,6 +12,7 @@
  */
 import type { CSSProperties, HTMLAttributes, ReactNode, Ref } from 'react';
 import { cn } from '@/layers/shared/lib';
+import { useIsMobile } from '@/layers/shared/model';
 import {
   ROW_TITLE_CLASS,
   ROW_TRAILING_CLASS,
@@ -20,12 +21,56 @@ import {
   composeRowLabel,
   hasSecondLine,
 } from '@/layers/shared/lib/row-grammar';
-import { SIDEBAR_ROW_ATTRIBUTE } from '@/layers/shared/model/use-roving-focus';
+import {
+  SIDEBAR_GLYPH_ACTION_ATTRIBUTE,
+  SIDEBAR_ROW_ATTRIBUTE,
+} from '@/layers/shared/model/use-roving-focus';
+import { IDENTITY_MARK_GROUP } from './identity-avatar';
 import { SidebarMenuItem } from './sidebar';
 import { SidebarMenuSurface, type SidebarMenuNode } from './sidebar-menu-node';
 
 /** The horizontal inset every sidebar row pays, and the only place it is paid. */
 export const SIDEBAR_ROW_INSET = 'px-2';
+
+/**
+ * What a drag layer hands a row it has made a drag source.
+ *
+ * Declared here rather than imported, because `shared/` may not reach into
+ * `features/`: this is structurally the sidebar drag layer's own
+ * `SortableBindings`, so a caller passes its bindings straight through and the
+ * compiler checks the shape rather than the provenance.
+ */
+export interface RowDragBindings {
+  /** Ref for the measured/draggable node. */
+  setNodeRef: (element: HTMLElement | null) => void;
+  /** Spread onto the drag root (pointer/keyboard activators + a11y). */
+  handleProps: HTMLAttributes<HTMLElement>;
+  /** Live drag transform. */
+  style: CSSProperties;
+  /** Whether this row is the one being dragged. */
+  isDragging: boolean;
+  /** Whether a drag is currently hovering this row as a drop target. */
+  isOver: boolean;
+}
+
+/**
+ * The row's menu, and the name its "⋮" answers to.
+ *
+ * One or the other is not a state this component can render honestly — a menu
+ * with no label ships a button a screen reader cannot name — so the pair is a
+ * union rather than two optional props, and the compiler refuses the half of it
+ * that used to fall through to an empty string.
+ */
+export type SidebarRowMenu =
+  | {
+      /** The row's menu, as data. */
+      menuNodes: SidebarMenuNode[];
+      /** Accessible name for the "⋮" trigger, e.g. `"#general actions"`. */
+      actionsLabel: string;
+      /** Width class for the menus. */
+      menuWidth?: string;
+    }
+  | { menuNodes?: never; actionsLabel?: never; menuWidth?: never };
 
 /** Props for {@link SidebarRow}. */
 export interface SidebarRowProps {
@@ -35,6 +80,18 @@ export interface SidebarRowProps {
    * descriptor so `shared/` never has to know what an agent or a room is.
    */
   glyph?: ReactNode;
+  /**
+   * Makes the glyph its own control — a face that opens a profile, over a row
+   * that opens a conversation.
+   *
+   * **Rendered as a SIBLING of the row button, not inside it.** The row is a
+   * real `<button>`, and a `<button>` inside a `<button>` is invalid HTML that
+   * assistive tech announces unpredictably. So the control is an overlay on the
+   * glyph's own 18px square: same target, same look, one level out. It is a
+   * satellite like the "⋮" — `ArrowLeft` from the row reaches it, and it is
+   * never a Tab stop of its own.
+   */
+  glyphAction?: { onClick: () => void; label: string };
   /**
    * The agent a session belongs to. Rendered before the title with a `›`
    * between them, capped at 42% of the line. Omit for a row that is a place
@@ -59,18 +116,18 @@ export interface SidebarRowProps {
    * ({@link reservesVerbLine}) or a {@link preview} worth showing (BC-24).
    */
   secondLine?: ReactNode;
-  /** The row carries a live verb, so it keeps its second line even while the verb is empty. */
+  /**
+   * The row carries a live verb, so it keeps its second line even while the
+   * verb is empty.
+   *
+   * **Unconsumed on purpose.** Live verbs reach rows in P2.7, when the fleet
+   * stream starts carrying an `activity` label; this is the shell the spec asks
+   * P1 to land alongside `activityVerb` (BC-24, BC-37), and the two are tested
+   * together. It is not dead code awaiting deletion.
+   */
   reservesVerbLine?: boolean;
   /** One line about the last thing that happened here, or `null` for none. */
   preview?: string | null;
-  /** The row's menu, as data. An empty list means no right-click menu and no "⋮". */
-  menuNodes?: SidebarMenuNode[];
-  /** Accessible name for the "⋮" trigger, e.g. `"#general actions"`. Required once `menuNodes` is non-empty. */
-  actionsLabel?: string;
-  /** Width class for the menus. */
-  menuWidth?: string;
-  /** Show the "⋮" at rest rather than on hover — touch, where there is no hover. */
-  alwaysShowActions?: boolean;
   /** This row is the thing currently on screen. */
   isActive?: boolean;
   /** The row is asking to be read — unread, in the two-tier sense (bold, no badge). */
@@ -97,8 +154,6 @@ export interface SidebarRowProps {
   dataSlot?: string;
   /** Extra classes on the row button. */
   className?: string;
-  /** Extra classes on the list item. */
-  itemClassName?: string;
   /** Ref to the row button, for focus restoration after an inline editor closes. */
   buttonRef?: Ref<HTMLButtonElement>;
   /**
@@ -111,15 +166,7 @@ export interface SidebarRowProps {
    * inline editor inside keep their own keyboard behaviour. A row with no
    * bindings renders the same wrapper with nothing on it.
    */
-  dragRef?: (element: HTMLElement | null) => void;
-  /** Listeners and ARIA the drag layer puts on the drag root. */
-  dragProps?: HTMLAttributes<HTMLElement>;
-  /** Transform/transition the drag layer applies while the row moves. */
-  dragStyle?: CSSProperties;
-  /** The row is currently being dragged. */
-  isDragging?: boolean;
-  /** Something is hovering over this row as a drop target. */
-  isOver?: boolean;
+  drag?: RowDragBindings;
 }
 
 /**
@@ -139,6 +186,7 @@ export interface SidebarRowProps {
  */
 export function SidebarRow({
   glyph,
+  glyphAction,
   who,
   title,
   titleText,
@@ -149,7 +197,6 @@ export function SidebarRow({
   menuNodes = [],
   actionsLabel,
   menuWidth,
-  alwaysShowActions = false,
   isActive = false,
   emphasized = false,
   muted = false,
@@ -159,14 +206,14 @@ export function SidebarRow({
   expansion,
   dataSlot,
   className,
-  itemClassName,
   buttonRef,
-  dragRef,
-  dragProps,
-  dragStyle,
-  isDragging = false,
-  isOver = false,
-}: SidebarRowProps) {
+  drag,
+}: SidebarRowProps & SidebarRowMenu) {
+  // Read here rather than taken as a prop: "is there a hover to reveal on" is a
+  // fact about the device, and every caller was answering it with the same
+  // `useIsMobile()` call one layer up (design-system §Hover Pattern Mobile
+  // Alternatives).
+  const isMobile = useIsMobile();
   const plainTitle = titleText ?? (typeof title === 'string' ? title : '');
   const showSecondLine = hasSecondLine({ reservesVerbLine, preview });
   const second = secondLine ?? (preview?.trim() ? preview : null);
@@ -243,16 +290,16 @@ export function SidebarRow({
     );
 
   return (
-    <SidebarMenuItem className={itemClassName}>
+    <SidebarMenuItem>
       <div
-        ref={dragRef}
-        style={dragStyle}
-        {...dragProps}
+        ref={drag?.setNodeRef}
+        style={drag?.style}
+        {...drag?.handleProps}
         className={cn(
-          dragRef !== undefined &&
+          drag !== undefined &&
             'focus-visible:ring-sidebar-ring rounded-md outline-hidden focus-visible:ring-2',
-          isDragging && 'opacity-40',
-          isOver && 'ring-sidebar-ring ring-2',
+          drag?.isDragging && 'opacity-40',
+          drag?.isOver && 'ring-sidebar-ring ring-2',
           // Muted dims the whole row and drops the unread emphasis above: still
           // there, still clickable, just no longer asking for anything (DOR-339).
           muted && 'opacity-60'
@@ -263,9 +310,29 @@ export function SidebarRow({
           actionsLabel={actionsLabel ?? ''}
           menuWidth={menuWidth}
           hideActionsTrigger={editor !== undefined}
-          alwaysShowActions={alwaysShowActions}
+          alwaysShowActions={isMobile}
         >
           {row}
+          {glyphAction !== undefined && editor === undefined && (
+            <button
+              type="button"
+              aria-label={glyphAction.label}
+              // The row underneath opens the conversation; this opens the
+              // profile. The stop is what keeps one press from doing both.
+              onClick={(event) => {
+                event.stopPropagation();
+                glyphAction.onClick();
+              }}
+              {...{ [SIDEBAR_GLYPH_ACTION_ATTRIBUTE]: '' }}
+              // Exactly the glyph's square: `left-2` is {@link SIDEBAR_ROW_INSET}
+              // spelled as a position, so the two cannot drift apart.
+              className={cn(
+                IDENTITY_MARK_GROUP,
+                'focus-ring absolute left-2 size-[18px] cursor-pointer rounded-md transition-[scale] active:scale-[0.94]',
+                showSecondLine ? 'top-1.5' : 'top-1/2 -translate-y-1/2'
+              )}
+            />
+          )}
         </SidebarMenuSurface>
       </div>
       {expansion}

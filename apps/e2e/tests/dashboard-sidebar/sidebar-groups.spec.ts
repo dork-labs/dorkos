@@ -128,51 +128,100 @@ test.describe('Dashboard Sidebar — Groups @smoke', () => {
     const panelBox = await panel.boundingBox();
     expect(panelBox?.width).toBe(272);
 
-    // Every row, not a sampled one: the inset is a property of the shared row
-    // primitive, so a section that opted out of it is exactly the regression
-    // this catches.
-    const rows = dashboardSidebar.rows;
-    const rowCount = await rows.count();
-    expect(rowCount).toBeGreaterThan(0);
-    for (let i = 0; i < rowCount; i++) {
-      expect(await dashboardSidebar.rowInset(rows.nth(i))).toBe(16);
+    // **Measured on a CALLER-INDEPENDENT selector.** `[data-sidebar-row]` is
+    // stamped by `SidebarRow` itself, so a section that opted out of the
+    // primitive contributes no matches at all — the loop would iterate over
+    // nothing and the bar would pass on whatever was left. Asking the DOM for
+    // "every row control in a sidebar list", however it was built, is what
+    // actually catches the opt-out this test claims to catch.
+    //
+    // The two exclusions are structural, not convenient: a "⋮" is a satellite
+    // in the row's own gutter rather than a row, and an `aria-expanded` button
+    // in a list is a reveal affordance ("+ 2 automated") rather than a
+    // destination.
+    const rowControls = dashboardSidebar.rowControls;
+    const controlCount = await rowControls.count();
+
+    // Seeded by `beforeEach`, so the floor is a fact rather than a hope: this
+    // install has at least the registered agent's row plus the seeded #team
+    // channel. A `> 0` floor would have passed on an empty sidebar.
+    expect(controlCount).toBeGreaterThanOrEqual(2);
+    await expect(dashboardSidebar.agentRow(agentName)).toBeVisible();
+
+    // Not one of them opted out of the shared primitive. This is the comparison
+    // the caller-independent selector makes possible: a hand-rolled row raises
+    // `controlCount` and leaves `primitiveCount` behind. Named rather than
+    // counted, so a failure says which section did it.
+    expect(await dashboardSidebar.optedOutRowControls()).toEqual([]);
+    expect(await dashboardSidebar.rows.count()).toBe(controlCount);
+
+    // …and every one of them starts exactly 16px from the panel's edge.
+    for (let i = 0; i < controlCount; i++) {
+      expect(await dashboardSidebar.rowInset(rowControls.nth(i))).toBe(16);
     }
 
     // No `border-b` / `border-t` anywhere in the sidebar tree. The header's
     // underline and the footer's overline are the two that went; the assertion
     // is over the whole panel so a new one cannot creep back in either.
     //
-    // Matched on whole class TOKENS rather than as a substring: `border-border`
-    // contains the letters "border-b" and is a colour, not an edge — a substring
-    // selector would fail on the onboarding card's dashed frame, which is a
-    // shape rather than a separator.
-    const hairlines = await panel.evaluateAll((roots) =>
-      roots.flatMap((root) =>
-        Array.from(root.querySelectorAll('*'))
-          .filter((el) =>
-            Array.from(el.classList).some((token) => /^border-[bt](-|$)/.test(token))
-          )
-          .map((el) => el.className)
-      )
+    // **Read from COMPUTED STYLE, not from class names.** A class-name regex
+    // has to enumerate every spelling an edge can arrive in — `border-b`,
+    // `border-y`, a variant prefix like `data-[state=open]:border-b`, an
+    // arbitrary value — and it is blind to a border applied from a stylesheet
+    // rather than a utility. The browser has already resolved all of that.
+    //
+    // What counts is a HAIRLINE, not a border: an element with a visible top or
+    // bottom edge and no matching side edges is a rule drawn between two things.
+    // One with all four is a frame around one thing — the onboarding card's
+    // dashed box, a rename field — which is a shape rather than a separator and
+    // was never what R1 retired.
+    const hairlines = await panel.evaluate((root) =>
+      Array.from(root.querySelectorAll('*'))
+        .map((el) => {
+          const style = getComputedStyle(el);
+          const visible = (side: string) => {
+            const width = parseFloat(style.getPropertyValue(`border-${side}-width`));
+            const alpha = style.getPropertyValue(`border-${side}-color`).match(/[\d.]+\)$/);
+            if (style.getPropertyValue(`border-${side}-style`) === 'none') return false;
+            if (!Number.isFinite(width) || width === 0) return false;
+            return alpha === null || parseFloat(alpha[0]) > 0;
+          };
+          const horizontal = ['top', 'bottom'].filter(visible);
+          const framed = visible('left') && visible('right');
+          return horizontal.length > 0 && !framed
+            ? `${el.tagName.toLowerCase()}.${String(el.className).slice(0, 60)} [${horizontal.join(',')}]`
+            : null;
+        })
+        .filter((entry): entry is string => entry !== null)
     );
     expect(hairlines).toEqual([]);
   });
 
-  test('reveals a row’s ⋮ to the keyboard, not only to the pointer', async ({
+  test('reaches a row’s ⋮ from the keyboard, and reveals it on arrival', async ({
     page,
     dashboardSidebar,
   }) => {
     // WCAG (spec R2): hover-revealed chrome always has a non-pointer path.
-    // Focus the trigger directly — `focus-visible` answers a programmatic focus
-    // that follows keyboard input, which is what a Tab into the row is.
+    //
+    // The path is ArrowRight from the row, not Tab. The "⋮" is a satellite of
+    // its row — `useRovingFocus` keeps it out of the tab order so a 60-agent
+    // Library is one Tab stop rather than 121 — so Tab is precisely the key
+    // that must NOT reach it, and the arrow is the one that must.
     const row = dashboardSidebar.agentRow(agentName);
     await expect(row).toBeVisible();
     const kebab = row.locator('..').getByRole('button', { name: 'Agent actions' });
 
     await expect(kebab).toHaveCSS('opacity', '0');
-    await kebab.evaluate((element: HTMLElement) => element.focus());
-    await page.keyboard.press('Tab');
-    await page.keyboard.press('Shift+Tab');
+    await expect(kebab).toHaveAttribute('tabindex', '-1');
+
+    await row.focus();
+    await page.keyboard.press('ArrowRight');
+
+    await expect(kebab).toBeFocused();
     await expect(kebab).toHaveCSS('opacity', '1');
+
+    // And back, so a reader who stepped out to a control steps back in.
+    await page.keyboard.press('ArrowLeft');
+    await expect(row).toBeFocused();
   });
 });

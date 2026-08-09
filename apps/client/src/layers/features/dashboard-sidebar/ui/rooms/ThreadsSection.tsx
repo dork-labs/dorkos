@@ -67,7 +67,7 @@ export function ThreadsSection({
   const toggleCollapsed = () => update((prev) => setThreadsCollapsed(prev, !prev.threadsCollapsed));
 
   return (
-    <SidebarGroup className="px-0">
+    <SidebarGroup className="px-0" {...roving}>
       <SectionHeader
         label="Threads"
         icon={MessagesSquare}
@@ -81,7 +81,7 @@ export function ThreadsSection({
       />
 
       {!threadsCollapsed && (
-        <SidebarMenu id="sidebar-section-threads" {...roving}>
+        <SidebarMenu id="sidebar-section-threads">
           {error ? (
             <SidebarMenuItem>
               <p className="text-sidebar-foreground/60 px-2 py-1.5 text-xs">

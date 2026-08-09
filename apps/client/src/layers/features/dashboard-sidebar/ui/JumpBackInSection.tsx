@@ -147,7 +147,7 @@ export function JumpBackInSection({
   if (!isLoading && items.length === 0 && automated.length === 0) return null;
 
   return (
-    <SidebarGroup className="px-0">
+    <SidebarGroup className="px-0" {...roving}>
       <SectionHeader
         label="Jump back in"
         collapsed={recentsCollapsed}
@@ -161,7 +161,7 @@ export function JumpBackInSection({
       />
 
       {!recentsCollapsed && (
-        <SidebarMenu id="sidebar-section-jump-back-in" {...roving}>
+        <SidebarMenu id="sidebar-section-jump-back-in">
           {isLoading && items.length === 0 ? (
             Array.from({ length: SKELETON_ROWS }, (_, i) => (
               <SidebarMenuSkeleton key={`jump-back-in-skeleton-${i}`} showIcon />

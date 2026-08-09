@@ -108,7 +108,7 @@ export function ChannelsSection({
   });
 
   return (
-    <SidebarGroup className="px-0">
+    <SidebarGroup className="px-0" {...roving}>
       <SectionHeader
         label="Channels"
         icon={Hash}
@@ -150,7 +150,7 @@ export function ChannelsSection({
           id="container::channels"
           data={{ type: 'container', container: { kind: 'ungrouped', section: SECTION_LABEL } }}
         >
-          <SidebarMenu id="sidebar-section-channels" {...roving}>
+          <SidebarMenu id="sidebar-section-channels">
             {isLoading && channels.length === 0 ? (
               Array.from({ length: SKELETON_ROWS }, (_, i) => (
                 <SidebarMenuSkeleton key={`channel-skeleton-${i}`} showIcon />

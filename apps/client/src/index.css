@@ -344,6 +344,11 @@
   --sidebar-accent-foreground: 0 0% 9%;
   --sidebar-border: 0 0% 83%;
   --sidebar-ring: 24 90% 44%;
+  /* The scroll-edge shadow under the sidebar's header and footer. Theme-split
+     for the same reason --elevation-* is: a shadow is light falling on a
+     surface, and the same black that reads as a soft edge on a light panel
+     disappears entirely on a dark one. */
+  --sidebar-scroll-edge: 0 0% 0% / 0.16;
 
   /* Categorical chart palette (gen-ui widgets) — brand orange + calm hues */
   --chart-1: 24 90% 44%;
@@ -432,6 +437,7 @@
   --sidebar-accent-foreground: 0 0% 93%;
   --sidebar-border: 0 0% 25%;
   --sidebar-ring: 24 88% 55%;
+  --sidebar-scroll-edge: 0 0% 0% / 0.45;
 
   /* Categorical chart palette (gen-ui widgets) — brighter for dark surfaces */
   --chart-1: 24 88% 55%;
@@ -469,10 +475,10 @@
   background:
     linear-gradient(var(--color-sidebar) 40%, transparent) top / 100% 14px local no-repeat,
     linear-gradient(transparent, var(--color-sidebar) 60%) bottom / 100% 14px local no-repeat,
-    radial-gradient(farthest-side at 50% 0, rgb(0 0 0 / 0.16), transparent) top / 100% 7px scroll
-      no-repeat,
-    radial-gradient(farthest-side at 50% 100%, rgb(0 0 0 / 0.16), transparent) bottom / 100% 7px
-      scroll no-repeat;
+    radial-gradient(farthest-side at 50% 0, hsl(var(--sidebar-scroll-edge)), transparent) top /
+      100% 7px scroll no-repeat,
+    radial-gradient(farthest-side at 50% 100%, hsl(var(--sidebar-scroll-edge)), transparent) bottom /
+      100% 7px scroll no-repeat;
 }
 
 @utility shadow-elevated {

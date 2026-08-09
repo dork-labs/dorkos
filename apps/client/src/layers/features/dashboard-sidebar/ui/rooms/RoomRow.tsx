@@ -5,7 +5,6 @@ import { agentAuthorRef, type RoomSummary } from '@dorkos/shared/room-schemas';
 import type { SidebarItemRef } from '@dorkos/shared/config-schema';
 import { sameSidebarItem } from '@dorkos/shared/config-schema';
 import { cn } from '@/layers/shared/lib';
-import { useIsMobile } from '@/layers/shared/model';
 import {
   useSidebarPrefs,
   useUpdateSidebarPrefs,
@@ -100,17 +99,6 @@ export function RoomRow({
   onRequestNewGroup,
   sortable = DISABLED_SORTABLE_BINDINGS,
 }: RoomRowProps) {
-  // Destructured rather than read through `sortable.*` at each use: dnd-kit's
-  // `setNodeRef` is a callback ref, and reading it off an object during render
-  // trips the lint rule that guards against reading a real ref's `.current`.
-  const {
-    setNodeRef: setDragNodeRef,
-    handleProps: dragHandleProps,
-    style: dragStyle,
-    isDragging,
-    isOver,
-  } = sortable;
-  const isMobile = useIsMobile();
   const meshAgents = useMeshAgentPaths().data?.agents ?? [];
   const unread = hasUnread(room);
   const working = useRoomWorking(room.id, room.working);
@@ -294,12 +282,7 @@ export function RoomRow({
         menuNodes={buildRoomRowMenuNodes(menuModel)}
         actionsLabel={`${title} actions`}
         menuWidth="w-52"
-        alwaysShowActions={isMobile}
-        dragRef={setDragNodeRef}
-        dragProps={dragHandleProps}
-        dragStyle={dragStyle}
-        isDragging={isDragging}
-        isOver={isOver}
+        drag={sortable}
         editor={
           isRenaming ? (
             <input

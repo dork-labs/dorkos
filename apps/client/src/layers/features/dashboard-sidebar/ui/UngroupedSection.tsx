@@ -93,7 +93,7 @@ export function UngroupedSection({
   );
 
   return (
-    <SidebarGroup className="px-0">
+    <SidebarGroup className="px-0" {...roving}>
       {organized ? (
         <SectionHeader
           label="Agents"
@@ -124,9 +124,7 @@ export function UngroupedSection({
         data={{ type: 'container', container: { kind: 'ungrouped' } }}
       >
         <SortableList items={sortedVisible.map((item) => sidebarRowDndId('ungrouped', item.ref))}>
-          <SidebarMenu {...roving}>
-            {sortedVisible.map((item) => renderItem(item, 'ungrouped'))}
-          </SidebarMenu>
+          <SidebarMenu>{sortedVisible.map((item) => renderItem(item, 'ungrouped'))}</SidebarMenu>
         </SortableList>
         {allAgentsGrouped && (
           <p className="text-sidebar-foreground/60 px-2 py-1.5 text-xs">

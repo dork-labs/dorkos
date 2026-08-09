@@ -24,14 +24,14 @@ interface PinnedSectionProps {
 export function PinnedSection({ items, renderItem }: PinnedSectionProps) {
   const roving = useRovingFocus();
   return (
-    <SidebarGroup className="px-0">
+    <SidebarGroup className="px-0" {...roving}>
       {/* No collapse and no menu: Pins is the one section that appears purely
           because you put something in it, and folding away the shortcuts you
           hand-made is a control nobody reaches for. */}
       <SectionHeader label="Pinned" icon={Pin} />
       <Droppable id="container::pinned" data={{ type: 'container', container: { kind: 'pinned' } }}>
         <SortableList items={items.map((item) => sidebarRowDndId('pinned', item.ref))}>
-          <SidebarMenu {...roving}>
+          <SidebarMenu>
             {items.map((item) =>
               // A pinned ROOM stays undraggable: dragging it out would unpin
               // it, and the room menu offers no Pin to undo that (rooms sort by

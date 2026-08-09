@@ -244,7 +244,7 @@ export function SidebarGroupSection({
   });
 
   return (
-    <SidebarGroupWrapper className="px-0">
+    <SidebarGroupWrapper className="px-0" {...roving}>
       <Sortable id={`group-header::${group.id}`} data={{ type: 'group', groupId: group.id }}>
         {(b) => (
           <div
@@ -332,12 +332,12 @@ export function SidebarGroupSection({
                   // Smart-group member rows are rule-owned, not draggable-out —
                   // no SortableList registration (order comes from `sortMode`,
                   // never a drag gesture).
-                  <SidebarMenu id={`sidebar-group-${group.id}`} {...roving}>
+                  <SidebarMenu id={`sidebar-group-${group.id}`}>
                     {sortedVisible.map((item) => renderItem(item, group.id, { draggable: false }))}
                   </SidebarMenu>
                 ) : (
                   <SortableList items={sortableIds}>
-                    <SidebarMenu id={`sidebar-group-${group.id}`} {...roving}>
+                    <SidebarMenu id={`sidebar-group-${group.id}`}>
                       {sortedVisible.map((item) => renderItem(item, group.id))}
                     </SidebarMenu>
                   </SortableList>

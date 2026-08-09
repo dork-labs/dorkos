@@ -284,7 +284,7 @@ describe('AgentRowMenuItems variant parity', () => {
 });
 
 // ---------------------------------------------------------------------------
-// End-to-end wiring through the real AgentContextMenu
+// End-to-end wiring through the real shared menu surface
 // ---------------------------------------------------------------------------
 
 /**

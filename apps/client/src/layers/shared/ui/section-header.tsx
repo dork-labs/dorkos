@@ -23,10 +23,12 @@ export interface SectionHeaderProps {
    */
   label: string;
   /**
-   * The section's identity icon. It MORPHS into the collapse chevron on hover
-   * and on `focus-visible`: at rest the header says what the section is, and
-   * the moment you reach for it, it says what pressing it will do. One slot,
-   * two jobs, nothing extra drawn at rest (design-decisions §11).
+   * The section's identity icon. On a collapsible header it MORPHS into the
+   * collapse chevron on hover and on `focus-visible`: at rest the header says
+   * what the section is, and the moment you reach for it, it says what pressing
+   * it will do. One slot, two jobs, nothing extra drawn at rest
+   * (design-decisions §11). On a header that cannot collapse there is nothing
+   * to morph into, so it simply stays put.
    */
   icon?: LucideIcon;
   /**
@@ -123,7 +125,12 @@ export function SectionHeader({
           onToggle({ all: false });
         }}
         aria-expanded={!collapsed}
-        aria-controls={controlsId}
+        // **Only while the target exists.** Every section unmounts its list
+        // behind a `{!collapsed && …}` guard, and `aria-controls` pointing at an
+        // id that is not in the document is an invalid reference — in exactly
+        // the state (`aria-expanded={false}`) where assistive tech is most
+        // likely to follow it.
+        aria-controls={collapsed ? undefined : controlsId}
         {...{ [SIDEBAR_SECTION_TOGGLE_ATTRIBUTE]: '' }}
         className={cn(
           'text-sidebar-foreground/70 hover:text-sidebar-foreground focus-visible:ring-sidebar-ring',
@@ -151,6 +158,10 @@ export function SectionHeader({
       </button>
     ) : (
       <span className="text-sidebar-foreground/70 flex h-8 min-w-0 flex-1 items-center gap-1.5 px-2 text-xs font-medium">
+        {/* The icon draws here too. A section that cannot collapse has no
+            chevron to morph into, so the mark simply stays put — but it still
+            has to be DRAWN, or `Pinned` asks for a pin and gets a bare word. */}
+        {Icon && <Icon aria-hidden className="size-3.5 shrink-0" />}
         <span className="truncate">{label}</span>
         {adornment}
       </span>

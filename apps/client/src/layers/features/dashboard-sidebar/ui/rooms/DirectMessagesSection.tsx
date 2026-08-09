@@ -128,7 +128,7 @@ export function DirectMessagesSection({
   });
 
   return (
-    <SidebarGroup className="px-0">
+    <SidebarGroup className="px-0" {...roving}>
       <SectionHeader
         label="Direct messages"
         icon={MessageSquare}
@@ -153,7 +153,7 @@ export function DirectMessagesSection({
           id="container::dms"
           data={{ type: 'container', container: { kind: 'ungrouped', section: SECTION_LABEL } }}
         >
-          <SidebarMenu id="sidebar-section-dms" {...roving}>
+          <SidebarMenu id="sidebar-section-dms">
             {isLoading && dms.length === 0 ? (
               Array.from({ length: SKELETON_ROWS }, (_, i) => (
                 <SidebarMenuSkeleton key={`dm-skeleton-${i}`} showIcon />

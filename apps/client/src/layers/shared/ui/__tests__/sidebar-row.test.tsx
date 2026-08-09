@@ -146,6 +146,54 @@ describe('SidebarRow — state and chrome', () => {
     expect(screen.queryByLabelText('#general actions')).not.toBeInTheDocument();
   });
 
+  it('makes an interactive glyph a SIBLING of the row, never a button inside it', () => {
+    // A `<button>` inside a `<button>` is invalid HTML that assistive tech
+    // announces unpredictably — and it is exactly what happens if a face that
+    // opens a profile is handed to the row as glyph content. The control is an
+    // overlay on the glyph's square instead: same target, one level out.
+    const onGlyph = vi.fn();
+    const { container } = render(
+      <SidebarRow
+        glyph={<span>face</span>}
+        glyphAction={{ onClick: onGlyph, label: 'Open Scout’s profile' }}
+        title="Scout"
+      />
+    );
+    expect(container.querySelector('button button')).toBeNull();
+
+    const face = screen.getByRole('button', { name: 'Open Scout’s profile' });
+    fireEvent.click(face);
+    expect(onGlyph).toHaveBeenCalledOnce();
+  });
+
+  it('does not let the glyph control also fire the row', () => {
+    const onGlyph = vi.fn();
+    const onSelect = vi.fn();
+    render(
+      <SidebarRow
+        glyph={<span>face</span>}
+        glyphAction={{ onClick: onGlyph, label: 'Open Scout’s profile' }}
+        title="Scout"
+        onSelect={onSelect}
+      />
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Open Scout’s profile' }));
+    expect(onGlyph).toHaveBeenCalledOnce();
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  it('withdraws the glyph control while an inline editor is up', () => {
+    render(
+      <SidebarRow
+        glyph={<span>face</span>}
+        glyphAction={{ onClick: vi.fn(), label: 'Open Scout’s profile' }}
+        title="Scout"
+        editor={<input aria-label="Rename Scout" />}
+      />
+    );
+    expect(screen.queryByRole('button', { name: 'Open Scout’s profile' })).not.toBeInTheDocument();
+  });
+
   it('opens what it points at', () => {
     const onSelect = vi.fn();
     render(<SidebarRow title="#general" onSelect={onSelect} />);

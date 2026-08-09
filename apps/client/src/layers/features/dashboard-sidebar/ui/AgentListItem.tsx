@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState, type MouseEvent } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { motion, AnimatePresence, type Variants } from 'motion/react';
 import { Plus, BellOff } from 'lucide-react';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
@@ -6,7 +6,6 @@ import type { Session } from '@dorkos/shared/types';
 import type { SidebarItemRef } from '@dorkos/shared/config-schema';
 import { cn, getAgentDisplayName } from '@/layers/shared/lib';
 import { SidebarRow } from '@/layers/shared/ui';
-import { useIsMobile } from '@/layers/shared/model';
 import { AgentIdentity, type AgentVisual } from '@/layers/entities/agent';
 import {
   useAgentHottestStatus,
@@ -132,7 +131,6 @@ export function AgentListItem({
   onRenameSession,
   sortable,
 }: AgentListItemProps) {
-  const isMobile = useIsMobile();
   const displayName =
     displayNameProp ?? getAgentDisplayName(agent, path.split('/').pop() ?? 'Agent');
   // Conversations preview first, capped: automated sessions (agent/channel/task/
@@ -176,15 +174,17 @@ export function AgentListItem({
   // The handler and its accessible name as ONE value, because they are one
   // decision: an agent the roster cannot name gets neither, and the face is
   // plain art rather than a control that opens an empty drawer.
-  const faceControl = onViewProfile
-    ? {
-        onAvatarClick: (event: MouseEvent) => {
-          event.stopPropagation();
-          onViewProfile();
-        },
-        avatarLabel: `Open ${displayName}’s profile`,
-      }
-    : {};
+  //
+  // It reaches the ROW rather than the lockup. `AgentIdentity` would happily
+  // make the face its own `<button>`, but the row around it is a `<button>` too
+  // now, and a button inside a button is invalid HTML that assistive tech
+  // announces unpredictably — so `SidebarRow` draws the control as an overlay
+  // on the glyph's square, one level out, with the same target and the same
+  // label (DOR-957's behaviour, kept exactly).
+  const faceControl =
+    onViewProfile !== undefined
+      ? { onClick: onViewProfile, label: `Open ${displayName}’s profile` }
+      : undefined;
 
   // "New group…" mounts an inline editor and carries `opensInput: true`, which
   // is what arms the shared surface's close-focus guard (DOR-329) — for both
@@ -211,31 +211,17 @@ export function AgentListItem({
       // grammar's own opening, drawn by the entity that owns how an agent
       // looks. Splitting it would mean drawing the face here and the name
       // there, and the two would drift the first time either moved.
-      title={
-        <AgentIdentity
-          {...visual}
-          name={displayName}
-          size="xs"
-          // The FACE opens the profile; the row keeps its own click, which
-          // selects the agent and opens its last session. The stop is what keeps
-          // one press from doing both. Both halves travel together or not at all
-          // — a face control with no label is a button a screen reader cannot
-          // name, which the type refuses.
-          {...faceControl}
-        />
-      }
+      title={<AgentIdentity {...visual} name={displayName} size="xs" />}
       titleText={displayName}
+      // The FACE opens the profile; the row keeps its own click, which selects
+      // the agent and opens its last session.
+      glyphAction={faceControl}
       isActive={isActive}
       muted={isMuted}
       onSelect={handleRowClick}
       menuNodes={menuNodes}
       actionsLabel="Agent actions"
-      alwaysShowActions={isMobile}
-      dragRef={sortable?.setNodeRef}
-      dragProps={sortable?.handleProps}
-      dragStyle={sortable?.style}
-      isDragging={sortable?.isDragging}
-      isOver={sortable?.isOver}
+      drag={sortable}
       className="font-medium"
       trailing={
         <>

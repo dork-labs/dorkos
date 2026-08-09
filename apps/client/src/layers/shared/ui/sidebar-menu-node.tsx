@@ -17,7 +17,7 @@
 import type { ElementType, ReactNode } from 'react';
 import { MoreVertical, type LucideIcon } from 'lucide-react';
 import { cn } from '@/layers/shared/lib';
-import { useMenuCloseFocusGuard } from '@/layers/shared/model';
+import { SIDEBAR_ACTIONS_ATTRIBUTE, useMenuCloseFocusGuard } from '@/layers/shared/model';
 import {
   ContextMenu,
   ContextMenuCheckboxItem,
@@ -363,6 +363,11 @@ export function SidebarMenuSurface({
                   type="button"
                   aria-label={actionsLabel}
                   onClick={(e) => e.stopPropagation()}
+                  // A satellite of its row, never a Tab stop of its own: the
+                  // roving-focus hook stamps this `-1` and hands it the keyboard
+                  // via ArrowRight from the row. Left in the tab order, a
+                  // 60-agent Library would be 121 Tab presses rather than one.
+                  {...{ [SIDEBAR_ACTIONS_ATTRIBUTE]: '' }}
                   className={cn(
                     'text-sidebar-foreground/60 hover:text-sidebar-foreground hover:bg-sidebar-accent focus-visible:ring-sidebar-ring',
                     'absolute top-1/2 right-1 flex size-5 -translate-y-1/2 items-center justify-center rounded-md outline-hidden transition-opacity',

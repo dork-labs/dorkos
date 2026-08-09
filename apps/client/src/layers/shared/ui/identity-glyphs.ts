@@ -10,6 +10,7 @@
  * @module shared/ui/identity-glyphs
  */
 import type { ComponentType } from 'react';
+import type { SessionOrigin } from '@dorkos/shared/types';
 import { ADAPTER_LOGO_MAP, type AdapterLogoProps } from '@dorkos/icons/adapter-logos';
 import { ArrowLeftRight, Bot, CalendarClock, Hash, Send } from 'lucide-react';
 
@@ -39,6 +40,12 @@ export const AGENT_GLYPH: IdentityGlyph = Bot;
  * elsewhere has to read as not-from-here even when the brand mark is missing,
  * because the alternative is a bridged person drawn exactly like a local one.
  *
+ * It is the same Send that {@link ORIGIN_GLYPH} spends on `channel` and
+ * `external`, and that is a deliberate collapse rather than a collision: all
+ * three say "this came from outside this cockpit", which is the whole of what a
+ * reader needs from a 12px mark. The platform's real logo is what distinguishes
+ * them whenever the build has one.
+ *
  * @param platform - The platform id carried on the identity's origin.
  */
 export function platformGlyph(platform: string): IdentityGlyph {
@@ -63,7 +70,7 @@ export function platformGlyph(platform: string): IdentityGlyph {
  * The mark rides in the row's TRAILING slot and never on the avatar — the
  * avatar's corners belong to identity (design-decisions §6).
  */
-export const ORIGIN_GLYPH: Record<string, IdentityGlyph> = {
+export const ORIGIN_GLYPH: Record<Exclude<SessionOrigin, 'user'>, IdentityGlyph> = {
   /** Arrows: one agent calling another. */
   agent: ArrowLeftRight,
   /** Paper plane: a bridged conversation — Telegram, Slack, anything that wrote in from elsewhere. */
