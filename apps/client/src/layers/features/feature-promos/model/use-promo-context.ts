@@ -1,5 +1,5 @@
 import { useCallback } from 'react';
-import { useTasksEnabled } from '@/layers/entities/tasks';
+import { useTasks, useTasksEnabled } from '@/layers/entities/tasks';
 import { useRelayAdapters, useRelayEnabled } from '@/layers/entities/relay';
 import { useSessions } from '@/layers/entities/session';
 import { useRegisteredAgents } from '@/layers/entities/mesh';
@@ -25,6 +25,10 @@ export function usePromoContext(): PromoContext {
   // The query is gated on isRelayEnabled so it only runs when Relay is active.
   const { data: adapters } = useRelayAdapters(isRelayEnabled);
 
+  // Gated the same way: a scheduler nobody has switched on has no schedules to
+  // count, and a promo that offers to create one has nothing to offer either.
+  const { data: tasks } = useTasks(isTasksEnabled);
+
   // Stable function reference — promo predicates call this synchronously.
   const hasAdapter = useCallback(
     (name: string): boolean => {
@@ -43,6 +47,7 @@ export function usePromoContext(): PromoContext {
     isRelayEnabled,
     sessionCount: sessions.length,
     agentCount: agentsData?.agents.length ?? 0,
+    taskCount: tasks?.length ?? 0,
     daysSinceFirstUse,
   };
 }

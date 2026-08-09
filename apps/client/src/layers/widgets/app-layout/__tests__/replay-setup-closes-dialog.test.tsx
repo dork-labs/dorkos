@@ -22,6 +22,7 @@ import { describe, it, expect, vi, beforeEach, beforeAll, afterEach } from 'vite
 import { render, screen, cleanup, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
+import { createMockTransport } from '@dorkos/test-utils';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import {
   createMemoryHistory,
@@ -34,7 +35,7 @@ import {
 import { zodValidator } from '@tanstack/zod-adapter';
 import { z } from 'zod';
 
-import { mergeDialogSearch, useAppStore, useExtensionRegistry } from '@/layers/shared/model';
+import { mergeDialogSearch, useAppStore, useExtensionRegistry, TransportProvider } from '@/layers/shared/model';
 import { NavigationLayout, NavigationLayoutPanel } from '@/layers/shared/ui';
 import { DialogHost } from '../ui/DialogHost';
 import { PreferencesTab } from '@/layers/features/settings';
@@ -110,9 +111,14 @@ function buildHarness(initialUrl: string) {
   function Wrapper({ children }: { children: ReactNode }) {
     return (
       <QueryClientProvider client={new QueryClient()}>
-        <HookSlotContext.Provider value={children}>
-          <RouterProvider router={router} />
-        </HookSlotContext.Provider>
+        {/* WelcomeBackCard (Settings → Preferences) reads config through the
+            transport, so the dialog tree needs a provider even though this
+            suite never asserts on it. */}
+        <TransportProvider transport={createMockTransport()}>
+          <HookSlotContext.Provider value={children}>
+            <RouterProvider router={router} />
+          </HookSlotContext.Provider>
+        </TransportProvider>
       </QueryClientProvider>
     );
   }
