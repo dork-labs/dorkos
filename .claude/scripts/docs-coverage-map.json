@@ -276,6 +276,11 @@
         "smoke:integration",
         "smoke:npm"
       ]
+    },
+    {
+      "guide": "sidebar-model.md",
+      "description": "The sidebar's pure model: zone/section/row shape, the named rules and how they compose, reading a `reason`, adding a rule or a fixture, and the standing no-verbs-in-the-model rule",
+      "patterns": ["features/dashboard-sidebar/model/", "entities/interactions/"]
     }
   ],
   "externalDocs": [
