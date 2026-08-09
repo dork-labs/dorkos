@@ -27,7 +27,7 @@
       "phaseName": "Verification",
       "subject": "[page-width-consistency] [P2] Adversarial review per REVIEW.md, then browser verification at 1280/1720/2560 + 390px",
       "description": "Independent reviewer on the diff; then live cockpit measurement of every route incl. both marketplace views; capture evidence for PR + DOR-1047.",
-      "status": "in_progress"
+      "status": "done"
     }
   ]
 }
