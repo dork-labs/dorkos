@@ -30,6 +30,8 @@ We follow three principles inherited from Dieter Rams and Jony Ive:
 - Dramatic animations (bounces, spins, elastic effects)
 - Custom display fonts for UI elements
 - Decorative borders or dividers
+- Hairline rules under panel headers or above footers (separate with whitespace, then tint, then a scroll-edge shadow)
+- Chrome that renders at rest — row and section actions appear on hover and focus-visible
 
 ---
 
@@ -127,6 +129,20 @@ Messages are constrained to `max-width: 65ch` (~1040px in characters, roughly 52
 ## Spacing
 
 We use an **8-point grid**. All spacing values are multiples of 4px, with 8px as the base unit.
+
+### Two Spatial Modes
+
+The scale below is a **content**-surface scale. Control surfaces — sidebars, toolbars, list panes, menus, table rows — run dense instead, because the user operates them many times an hour rather than reading them.
+
+|             | Content surface                                    | Control surface                                    |
+| ----------- | -------------------------------------------------- | -------------------------------------------------- |
+| Examples    | Message area, settings panels, cards, empty states | Sidebar, status strip, command palette, table rows |
+| Body text   | `text-sm` / `text-base`                            | 13px label, `text-2xs` (11px) metadata             |
+| Row height  | —                                                  | 28–32px (`h-7` / `h-8`)                            |
+| Inset       | 16px and up (`p-4`, `p-6`)                         | **16px total**, panel edge to first glyph          |
+| Panel width | —                                                  | 240–280px for nav panels                           |
+
+**Budget the inset once.** Container, section and row padding must not compound — 12 + 8 + 10 is how a 30px sidebar gutter happens. Design decisions behind this live in the `designing-frontend` skill; Tailwind recipes live in `styling-with-tailwind-shadcn` → Control Surfaces.
 
 ### Scale (Tailwind mapping)
 
@@ -278,6 +294,17 @@ Built on **Shadcn Sidebar** (`layers/shared/ui/sidebar.tsx`) with `collapsible="
 - **Footer**: `SidebarFooter` contains `ProgressCard` (onboarding), `SidebarFooterBar` (branding, settings, theme toggle)
 - **Empty state**: Centered "No conversations yet" message
 - **Dialogs**: All 6 dialogs (Settings, DirectoryPicker, Tasks, Relay, ServerRestartOverlay, ShapeSwitcher) registered in `DialogHost` at the app root level, outside `SidebarProvider` (`layers/widgets/app-layout/model/dialog-contributions.ts`). `OnboardingFlow` renders directly from `AppShell.tsx`, not via `DialogHost`.
+
+The 320px width above is what ships today; the control-surface guidance in [Two Spatial Modes](#two-spatial-modes) puts nav panels at 240-280px. The two disagree, and the sidebar redesign owns closing the gap — do not split the difference in a one-off component.
+
+### Zones and Sections
+
+A nav panel has two levels of grouping, and they behave differently:
+
+- **Zone** — a landmark heading (Now, Today, Library). It orients; it is **not** a collapse control.
+- **Section** — a collapsible group inside a zone (Channels, Agents, DMs). Only sections collapse.
+
+Never nest accordions, and keep nav trees to **one indent level** — depth past two stops helping wayfinding. Section labels are sentence case, 12px medium, muted; ALL-CAPS with letterspacing reads dated at small sizes.
 
 ### Sidebar Tabs
 
@@ -649,13 +676,17 @@ For rows that have a label but no description (e.g., simple toggles), use `<Fiel
 
 ### Hover
 
-Subtle. 150ms transition. Background opacity shift of 2-3%.
+Subtle. 150ms transition. A background tint step of 5-10% — the same mechanism that groups a zone, one step stronger.
 
 ```css
 .interactive:hover {
   background-color: hsl(var(--muted) / 0.5);
 }
 ```
+
+Hover and grouping share one tool on purpose: if a zone is separated by tint rather than a rule, a hover tint is already the vocabulary the surface speaks. Reach for a border only after whitespace and tint have both failed.
+
+**Nothing renders at rest.** Row and section actions — `+`, kebab, drag handles — are invisible until hover or `focus-visible`. Every one needs a keyboard twin (`focus-visible` reveals it) and a touch path (visible under `[@media(hover:hover)]: none`, or long-press / context menu); anything draggable needs a non-drag alternative per WCAG 2.2 §2.5.7. Row overflow uses the vertical kebab (⋮); the horizontal one (⋯) belongs in toolbars and tables. See [Hover Pattern Mobile Alternatives](#hover-pattern-mobile-alternatives) for the shipped touch equivalents.
 
 ### Focus
 
@@ -681,6 +712,21 @@ Opacity 0.5. No cursor change beyond `not-allowed`.
 - Streaming: blinking cursor after last character
 - Tool running: spinning icon (Loader2 from lucide)
 - History loading: three pulsing dots in message area
+
+### Unread — Two Tiers
+
+Unread carries two different facts, and they get two different marks. Collapsing them into one badge spends the scarce signal on the common case.
+
+| Tier                | Means                                                        | Renders as                                 |
+| ------------------- | ------------------------------------------------------------ | ------------------------------------------ |
+| **Activity**        | Something happened here                                      | Bold label + a dot                         |
+| **Directed at you** | A mention, a permission prompt, a reply that needs an answer | A numbered badge (`bg-primary` count pill) |
+
+Rules that come with it:
+
+- **Numbers are for you, not for volume.** A busy channel nobody addressed you in stays at bold + dot however many messages it holds.
+- **A collapsed container keeps its signal.** Collapsing a section rolls its unread state up onto the collapsed row — never hides it.
+- **Only "happening right now" pulses.** An agent mid-turn pulses (see [Identity](#identity)); an unread count does not.
 
 ### 3-State Status Pattern
 
@@ -770,7 +816,7 @@ Three standard sizes, use `size-[--size-icon-*]` for all icon sizing:
 Usage:
 
 ```tsx
-<Check className="size-[--size-icon-xs] text-green-500" />
+<Check className="size-[--size-icon-xs] text-status-success" />
 <FolderOpen className="size-[--size-icon-sm] text-muted-foreground" />
 <PanelLeft className="size-[--size-icon-md]" />
 ```
