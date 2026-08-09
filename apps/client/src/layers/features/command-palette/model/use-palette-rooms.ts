@@ -41,7 +41,16 @@ export interface PaletteRooms {
  * one.
  */
 export function usePaletteRooms(): PaletteRooms {
-  const { data, isLoading, isError } = useRooms();
+  // The one caller anywhere that asks for archived rooms. A channel somebody
+  // closed used to disappear from the product entirely — the route could always
+  // list them, nothing ever asked (DOR-1051) — and search is the honest place
+  // to bring it back: you go looking for it by name, rather than being shown it.
+  //
+  // It buys its own cache entry (`roomKeys.listWithArchived`), so the sidebar,
+  // the room view and the presence strip keep reading a list with no archived
+  // rooms in it. One shared key would mean whichever of us fetched last decided
+  // what all of them showed.
+  const { data, isLoading, isError } = useRooms({ includeArchived: true });
 
   return useMemo(() => {
     const rooms = data ?? [];
@@ -59,7 +68,14 @@ export function usePaletteRooms(): PaletteRooms {
       // find it. Filtering `rooms` directly would be a second, parallel
       // predicate — the shape that once let a row the `#` list had excluded
       // back in through the Unread group.
-      unread: sortRoomsForPalette([...channels, ...dms].filter(hasUnread)),
+      //
+      // Archived rooms are left out of it. They are in the two lists above so
+      // they can be SEARCHED for; the unread group is what Cmd+K then Enter
+      // opens, and a channel somebody closed is not work waiting on you —
+      // however many entries it ended on.
+      unread: sortRoomsForPalette(
+        [...channels, ...dms].filter((room) => !room.archived && hasUnread(room))
+      ),
       isLoading,
       isError,
     };

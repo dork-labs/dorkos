@@ -10,8 +10,23 @@ import type { RoomKind } from '@dorkos/shared/room-schemas';
 export const roomKeys = {
   /** Root key — invalidating this refreshes every room query. */
   all: ['rooms'] as const,
-  /** The room list, optionally filtered to one kind. */
+  /** The room list, optionally filtered to one kind. Archived rooms are out. */
   list: (kind?: RoomKind) => ['rooms', 'list', kind ?? null] as const,
+  /**
+   * The same list with archived rooms in it — a different question, so a
+   * different cache entry.
+   *
+   * **The separate key is the whole safety of the feature.** Only the command
+   * palette asks this, so an operator can still find a channel they closed; the
+   * sidebar, the room view and the presence strip ask {@link roomKeys.list} and
+   * must keep getting an answer with no archived rooms in it. One shared key
+   * would mean whichever of them fetched last decided what the others saw.
+   *
+   * It stays UNDER the `lists()` prefix on purpose: its value is a
+   * `RoomSummary[]` like every other entry there, so the read-cursor patch and
+   * the room-list stream's invalidations reach it without knowing it exists.
+   */
+  listWithArchived: (kind?: RoomKind) => ['rooms', 'list', 'with-archived', kind ?? null] as const,
   /** Every room list, whatever its filter. */
   lists: () => ['rooms', 'list'] as const,
   /**
