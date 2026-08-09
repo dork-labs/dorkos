@@ -52,7 +52,13 @@ vi.mock('../../services/core/config-manager.js', () => ({
 }));
 
 import { createApp, finalizeApp } from '../../app.js';
-import { createRoomSubsystem, setRoomService, getRoomService } from '../../services/rooms/index.js';
+import {
+  createRoomSubsystem,
+  setRoomService,
+  getRoomService,
+  setWelcomeBackGreeter,
+} from '../../services/rooms/index.js';
+import { WelcomeBackGreeter } from '../../services/rooms/welcome-back.js';
 import { ReadCursorStore } from '../../services/core/read-cursor-store.js';
 import {
   ReadCursorService,
@@ -81,10 +87,18 @@ function callerId(): string {
   return getRoomService().authorRegistry.localHuman().id;
 }
 
+/** One `personSeen` call, with what the table looked like at the moment of it. */
+interface SeenCall {
+  userId: string;
+  /** Every read cursor stored when the greeter was told. */
+  rowsAtCallTime: number;
+}
+
 describe('PUT /api/read-cursors/:kind/:id', () => {
   let db: Db;
   let store: ReadCursorStore;
   let sentinelRoomId: string;
+  let seen: SeenCall[];
 
   beforeEach(async () => {
     vi.clearAllMocks();
@@ -95,6 +109,21 @@ describe('PUT /api/read-cursors/:kind/:id', () => {
     setRoomService(createRoomSubsystem({ db }).service);
     store = new ReadCursorStore(db);
     setReadCursorService(new ReadCursorService(store));
+    // A real greeter with its own `personSeen` recorded, because the claim
+    // under test is about WHEN the route calls it and with what — not about
+    // what a greeting then does (team-room-home §D5.2).
+    seen = [];
+    const greeter = new WelcomeBackGreeter({
+      settings: () => ({ enabled: true, absenceThresholdMinutes: 240, maxPosts: 3 }),
+      teamRoomId: () => null,
+      work: { since: () => Promise.resolve([]) },
+      post: () => {},
+      lastSeenAt: () => null,
+    });
+    vi.spyOn(greeter, 'personSeen').mockImplementation((userId: string) => {
+      seen.push({ userId, rowsAtCallTime: db.select().from(readCursors).all().length });
+    });
+    setWelcomeBackGreeter(greeter);
     const created = await request(app)
       .post('/api/rooms')
       .send({ kind: 'channel', title: 'Sentinel' });
@@ -320,6 +349,57 @@ describe('PUT /api/read-cursors/:kind/:id', () => {
 
     expect(res.status).toBe(200);
     resetAgentIdentityService();
+  });
+
+  /**
+   * The one signal this server has that a person is at the keyboard
+   * (team-room-home §D5.2). A client only marks a thread read because somebody
+   * is looking at it, so this route is where welcome-back learns somebody is
+   * back — and the ORDER is the whole of it: an absence is measured from the
+   * last thing this person did, and the cursor write below is about to become
+   * that thing. Told afterwards, every first return following a restart would
+   * measure zero and nobody would ever be greeted.
+   */
+  describe('it tells welcome-back that somebody is here', () => {
+    it('names the caller the route resolved, and tells it exactly once', async () => {
+      await request(app)
+        .put('/api/read-cursors/session/s-order')
+        .send({ lastReadSeq: 4 })
+        .expect(200);
+
+      expect(seen.map((call) => call.userId)).toEqual([callerId()]);
+    });
+
+    it('tells it BEFORE the cursor row exists', async () => {
+      await request(app)
+        .put('/api/read-cursors/session/s-order')
+        .send({ lastReadSeq: 4 })
+        .expect(200);
+
+      // Read from the table by the spy at the moment it was called: the write
+      // this request makes must not have landed yet.
+      expect(seen[0]?.rowsAtCallTime).toBe(0);
+      // And it did land — otherwise the assertion above passes for a route that
+      // stopped writing at all.
+      expect(store.get(callerId(), 'session', 's-order')?.lastReadSeq).toBe(4);
+    });
+
+    it('says nothing about an agent, which is not somebody coming back', async () => {
+      const identity = initAgentIdentityService(db);
+      const token = await identity.mint({ agentPath: '/agents/ana', displayName: 'Ana' });
+
+      const res = await request(app)
+        .put('/api/read-cursors/session/s-agent')
+        .set('X-DorkOS-Agent', token)
+        .send({ lastReadSeq: 4 });
+
+      expect(res.status).toBe(403);
+      // An agent resuming its own work is not a person returning to the room,
+      // and a greeting triggered by one would be the room talking to itself.
+      expect(seen).toEqual([]);
+
+      resetAgentIdentityService();
+    });
   });
 
   it('refuses an unknown kind rather than accepting it silently', async () => {
