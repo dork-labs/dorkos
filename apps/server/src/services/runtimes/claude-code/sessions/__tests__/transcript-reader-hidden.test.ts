@@ -122,7 +122,7 @@ describe('TranscriptReader hidden-session filtering (DOR-410)', () => {
     const sessions = await reader.listSessionsInDir(dir);
     const session = sessions.find((s) => s.id === 'sess-normal');
     expect(session).toBeDefined();
-    expect(session?.title).toBe('what is the plan?');
+    expect(session?.title).toBe('What is the plan?');
   });
 
   it('still lists an oversized transcript with no user message inside the head buffer (provable-emptiness size guard)', async () => {
@@ -197,6 +197,6 @@ describe('TranscriptReader hidden-session filtering (DOR-410)', () => {
     const thirdList = await reader.listSessionsInDir(dir);
     const session = thirdList.find((s) => s.id === 'sess-fills-in');
     expect(session).toBeDefined();
-    expect(session?.title).toBe('now there is a real message');
+    expect(session?.title).toBe('Now there is a real message');
   });
 });
