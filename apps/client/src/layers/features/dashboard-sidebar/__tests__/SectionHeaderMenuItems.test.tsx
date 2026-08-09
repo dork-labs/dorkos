@@ -14,7 +14,7 @@ import {
   type JumpBackInHeaderMenuModel,
   type SectionHeaderMenuNode,
 } from '../ui/SectionHeaderMenuItems';
-import { SidebarSectionHeader } from '../ui/SidebarSectionHeader';
+import { SectionHeader } from '@/layers/shared/ui';
 
 beforeAll(() => {
   global.ResizeObserver = class {
@@ -84,15 +84,15 @@ function ids(nodes: SectionHeaderMenuNode[]): string[] {
 
 /** Find one action node, or fail loudly. */
 function action(nodes: SectionHeaderMenuNode[], id: string) {
-  const node = nodes.find((n) => n.id === id);
+  const node = nodes.find((n) => n.kind !== 'separator' && n.id === id);
   if (node?.kind !== 'action') throw new Error(`no action node "${id}"`);
   return node;
 }
 
-/** Find one submenu node, or fail loudly. */
+/** Find one radio submenu node, or fail loudly. */
 function submenu(nodes: SectionHeaderMenuNode[], id: string) {
-  const node = nodes.find((n) => n.id === id);
-  if (node?.kind !== 'submenu') throw new Error(`no submenu node "${id}"`);
+  const node = nodes.find((n) => n.kind !== 'separator' && n.id === id);
+  if (node?.kind !== 'radio') throw new Error(`no submenu node "${id}"`);
   return node;
 }
 
@@ -177,7 +177,7 @@ describe('section header item lists', () => {
       ...buildJumpBackInHeaderMenuNodes(jumpBackIn()),
       ...buildAgentsHeaderMenuNodes(agents()),
     ]
-      .filter((node) => node.kind !== 'separator')
+      .filter((node) => node.kind === 'action' || node.kind === 'radio')
       .map((node) => node.label);
     expect(labels.some((label) => label.endsWith('…'))).toBe(false);
   });
@@ -342,12 +342,10 @@ function fullMenuTree(subLabels: string[] = []): string[][] {
 }
 
 function header(nodes: SectionHeaderMenuNode[]) {
-  return (
-    <SidebarSectionHeader label="Agents" nodes={nodes} collapsed={false} onToggle={() => {}} />
-  );
+  return <SectionHeader label="Agents" nodes={nodes} collapsed={false} onToggle={() => {}} />;
 }
 
-describe('SidebarSectionHeader variant parity', () => {
+describe('SectionHeader variant parity', () => {
   it('renders the identical item tree from the right-click menu and the "…" menu', () => {
     const nodes = buildAgentsHeaderMenuNodes(agents({ sortMode: 'recent' }));
 
@@ -390,16 +388,12 @@ describe('SidebarSectionHeader variant parity', () => {
   it('renders the same items for a room section from either menu', () => {
     const nodes = buildChannelsHeaderMenuNodes(channels({ hasUnread: true }));
 
-    render(
-      <SidebarSectionHeader label="Channels" nodes={nodes} collapsed={false} onToggle={() => {}} />
-    );
+    render(<SectionHeader label="Channels" nodes={nodes} collapsed={false} onToggle={() => {}} />);
     fireEvent.contextMenu(screen.getByRole('button', { name: 'Channels' }));
     const contextTree = collectSurfaces();
     cleanup();
 
-    render(
-      <SidebarSectionHeader label="Channels" nodes={nodes} collapsed={false} onToggle={() => {}} />
-    );
+    render(<SectionHeader label="Channels" nodes={nodes} collapsed={false} onToggle={() => {}} />);
     fireEvent.pointerDown(screen.getByRole('button', { name: 'Channels section actions' }));
     const dropdownTree = collectSurfaces();
 
@@ -422,7 +416,7 @@ describe('SidebarSectionHeader variant parity', () => {
 // Reachability and wiring through the header itself
 // ---------------------------------------------------------------------------
 
-describe('SidebarSectionHeader', () => {
+describe('SectionHeader', () => {
   it('gives the "…" a name and keyboard focus, so the menu opens without a pointer', () => {
     render(header(buildAgentsHeaderMenuNodes(agents())));
 
@@ -456,7 +450,7 @@ describe('SidebarSectionHeader', () => {
     const onToggle = vi.fn();
     const onToggleCollapsed = vi.fn();
     render(
-      <SidebarSectionHeader
+      <SectionHeader
         label="Channels"
         collapsed={false}
         onToggle={onToggle}
@@ -475,7 +469,7 @@ describe('SidebarSectionHeader', () => {
   });
 
   it('renders a section that cannot collapse as a plain label with the same menus', () => {
-    render(<SidebarSectionHeader label="Agents" nodes={buildAgentsHeaderMenuNodes(agents())} />);
+    render(<SectionHeader label="Agents" nodes={buildAgentsHeaderMenuNodes(agents())} />);
 
     expect(screen.queryByRole('button', { name: 'Agents' })).not.toBeInTheDocument();
     fireEvent.pointerDown(screen.getByRole('button', { name: 'Agents section actions' }));

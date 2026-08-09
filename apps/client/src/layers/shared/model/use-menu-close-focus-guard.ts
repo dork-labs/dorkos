@@ -13,7 +13,7 @@
  * inline editor (armed via {@link MenuCloseFocusGuard.arm}), so normal menu
  * dismissal still returns focus to the trigger for keyboard users.
  *
- * @module features/dashboard-sidebar/model/use-menu-close-focus-guard
+ * @module shared/model/use-menu-close-focus-guard
  */
 import { useCallback, useRef } from 'react';
 

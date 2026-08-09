@@ -1,14 +1,14 @@
 import { useMemo } from 'react';
+import { Bot } from 'lucide-react';
 import type { SidebarDisplayFilter } from '@dorkos/shared/config-schema';
-import { SidebarGroup, SidebarMenu } from '@/layers/shared/ui';
-import { useAgentCreationStore } from '@/layers/shared/model';
+import { SectionHeader, SidebarGroup, SidebarMenu } from '@/layers/shared/ui';
+import { useAgentCreationStore, useRovingFocus } from '@/layers/shared/model';
 import {
   useUpdateSidebarPrefs,
   setUngroupedSortMode,
   setUngroupedDisplayFilter,
 } from '@/layers/entities/config';
 import { AddAgentMenu } from './AddAgentMenu';
-import { SidebarSectionHeader } from './SidebarSectionHeader';
 import { buildAgentsHeaderMenuNodes } from './SectionHeaderMenuItems';
 import { RevealRow } from './RevealRow';
 import { Droppable, SortableList, sidebarRowDndId } from './dnd/SidebarDndPrimitives';
@@ -82,6 +82,7 @@ export function UngroupedSection({
   onOpenSmartGroupDialog,
 }: UngroupedSectionProps) {
   const { update } = useUpdateSidebarPrefs();
+  const roving = useRovingFocus();
   const filtered = useMemo(
     () => filterSidebarItems(items, { filter, groupMuted: false }),
     [items, filter]
@@ -92,10 +93,11 @@ export function UngroupedSection({
   );
 
   return (
-    <SidebarGroup>
+    <SidebarGroup className="px-0" {...roving}>
       {organized ? (
-        <SidebarSectionHeader
+        <SectionHeader
           label="Agents"
+          icon={Bot}
           hasSectionAction
           nodes={buildAgentsHeaderMenuNodes({
             sortMode,
@@ -125,7 +127,7 @@ export function UngroupedSection({
           <SidebarMenu>{sortedVisible.map((item) => renderItem(item, 'ungrouped'))}</SidebarMenu>
         </SortableList>
         {allAgentsGrouped && (
-          <p className="text-muted-foreground px-2.5 py-1.5 text-xs">
+          <p className="text-sidebar-foreground/60 px-2 py-1.5 text-xs">
             Your agents are all in groups above.
           </p>
         )}

@@ -125,3 +125,12 @@ export {
   type InPlaceNavigationState,
   type InPlaceBaseDestination,
 } from './use-in-place-navigate';
+
+export { useMenuCloseFocusGuard } from './use-menu-close-focus-guard';
+export type { MenuCloseFocusGuard } from './use-menu-close-focus-guard';
+export {
+  useRovingFocus,
+  SIDEBAR_ACTIONS_ATTRIBUTE,
+  SIDEBAR_ROW_ATTRIBUTE,
+  SIDEBAR_SECTION_TOGGLE_ATTRIBUTE,
+} from './use-roving-focus';

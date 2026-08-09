@@ -57,9 +57,67 @@ export class DashboardSidebarPage {
     await this.newSessionButton.first().click();
   }
 
+  /** The sidebar panel itself — the surface the density is measured against. */
+  get panel(): Locator {
+    return this.page.locator('[data-slot="sidebar-inner"]');
+  }
+
   /** One agent row in the roster, matched by its rendered display name. */
   agentRow(displayName: string): Locator {
     return this.page.locator('[data-slot="agent-list-item"]').filter({ hasText: displayName });
+  }
+
+  /**
+   * Any sidebar row as the shared `SidebarRow` primitive stamps them.
+   *
+   * **Deliberately caller-DEPENDENT**, and only useful alongside
+   * {@link rowControls}: this counts rows built from the primitive, so on its
+   * own it can only ever say "the rows that adopted it are fine". Comparing the
+   * two counts is what catches a section that opted out.
+   */
+  get rows(): Locator {
+    return this.page.locator('[data-sidebar-row]');
+  }
+
+  /**
+   * Every row control the sidebar's lists actually render, however they were
+   * built.
+   *
+   * Asks the DOM what a row IS — an interactive control sitting in a sidebar
+   * menu item — rather than asking which component built it, so a hand-rolled
+   * row that skipped the primitive still shows up here and still has to meet
+   * the density bar.
+   *
+   * The exclusions are structural, not convenient. A row's two SATELLITES — the
+   * "⋮" in its right gutter and the face that opens a profile over its glyph —
+   * sit beside the row rather than being rows, and an `aria-expanded` button in
+   * a list is a reveal affordance ("+ 2 automated") rather than a destination.
+   */
+  get rowControls(): Locator {
+    // Scoped to the scroll BODY, not the whole panel. The nav header's
+    // destinations and the footer strip are chrome — shadcn `SidebarMenuButton`s
+    // that answer "which part of DorkOS", not "which conversation" — and the
+    // redesign rebuilds them in its own phase (BC-43, BC-47). The roster is
+    // what `SidebarRow` owns, and the roster is what this measures.
+    return this.page.locator(
+      '[data-slot="sidebar-content"] [data-slot="sidebar-menu-item"] ' +
+        'button:not([data-sidebar-actions]):not([data-sidebar-glyph-action]):not([aria-expanded])'
+    );
+  }
+
+  /**
+   * The row controls that did NOT come from the shared primitive — the
+   * regression the density bar exists to catch, named rather than counted so a
+   * failure says which section opted out.
+   */
+  async optedOutRowControls(): Promise<string[]> {
+    return this.rowControls.evaluateAll((elements) =>
+      elements
+        .filter((el) => !el.hasAttribute('data-sidebar-row'))
+        .map(
+          (el) => `${el.className.slice(0, 40)} :: ${(el.textContent ?? '').trim().slice(0, 40)}`
+        )
+    );
   }
 
   /** A group's header toggle button — shows the group name, expands/collapses. */
@@ -70,6 +128,27 @@ export class DashboardSidebarPage {
   /** The `SidebarGroup` wrapper (header + member rows) for one user-defined group. */
   groupContainer(name: string): Locator {
     return this.page.locator('[data-slot="sidebar-group"]').filter({ has: this.groupHeader(name) });
+  }
+
+  /**
+   * How far a row's own content sits from the panel's left edge, in CSS pixels.
+   *
+   * Measured from the row BUTTON's content box — its border box minus its own
+   * left padding — because the inset is what a reader sees, not where the
+   * clickable area starts. The redesign pays it in exactly two places (the
+   * panel's 8px and the row's 8px) and nowhere else; before it, three levels
+   * each added their own and the total was 30px.
+   *
+   * @param row - The row to measure.
+   */
+  async rowInset(row: Locator): Promise<number> {
+    const panelBox = await this.panel.boundingBox();
+    if (!panelBox) throw new Error('the sidebar panel is not visible');
+    return row.evaluate((element, panelLeft) => {
+      const box = element.getBoundingClientRect();
+      const padding = parseFloat(getComputedStyle(element).paddingLeft);
+      return Math.round(box.left + padding - panelLeft);
+    }, panelBox.x);
   }
 
   /**

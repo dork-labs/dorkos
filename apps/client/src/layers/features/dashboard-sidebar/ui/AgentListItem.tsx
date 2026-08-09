@@ -1,29 +1,19 @@
-import { useCallback, useMemo, useState, type MouseEvent } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { motion, AnimatePresence, type Variants } from 'motion/react';
-import { Plus, MoreHorizontal, BellOff } from 'lucide-react';
+import { Plus, BellOff } from 'lucide-react';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import type { Session } from '@dorkos/shared/types';
 import type { SidebarItemRef } from '@dorkos/shared/config-schema';
 import { cn, getAgentDisplayName } from '@/layers/shared/lib';
-import {
-  SidebarMenuItem,
-  SidebarMenuAction,
-  DropdownMenu,
-  DropdownMenuTrigger,
-  DropdownMenuContent,
-} from '@/layers/shared/ui';
-import { useIsMobile } from '@/layers/shared/model';
+import { SidebarRow } from '@/layers/shared/ui';
 import { AgentIdentity, type AgentVisual } from '@/layers/entities/agent';
 import {
   useAgentHottestStatus,
-  usePulseMotion,
   SessionRow,
   partitionSessionsByOrigin,
 } from '@/layers/entities/session';
-import { AgentContextMenu } from './AgentContextMenu';
-import { AgentRowMenuItems } from './AgentRowMenuItems';
+import { useAgentRowMenuNodes } from './AgentRowMenuItems';
 import { AgentActivityBadge } from './AgentActivityBadge';
-import { useMenuCloseFocusGuard } from '../model/use-menu-close-focus-guard';
 import type { SortableBindings } from './dnd/SidebarDndPrimitives';
 
 /** Maximum sessions shown in the expanded agent preview. */
@@ -49,14 +39,6 @@ const panelVariants: Variants = {
 const ROW_INITIAL_DELAY = 0.06;
 /** Stagger between consecutive rows (seconds). */
 const ROW_STAGGER = 0.04;
-
-/**
- * Barely-visible resting border color, matching the idle state's own
- * constant (`use-agent-hottest-status.ts`, `use-session-border-state.ts`) —
- * a muted row renders as if idle regardless of live session activity
- * (DOR-339 decision 4: mute owns ALL attention signals at once).
- */
-const MUTED_BORDER_COLOR = 'rgba(128, 128, 128, 0.08)';
 
 interface AgentListItemProps {
   path: string;
@@ -112,13 +94,20 @@ interface AgentListItemProps {
 }
 
 /**
- * Expandable agent row in the unified dashboard sidebar.
+ * One agent in the roster — a {@link SidebarRow} call site, with the live-work
+ * border and the session preview panel it owns on top of it.
  *
  * - Click inactive agent: selects it and opens most recent session
  * - Click active agent: toggles expand/collapse
  * - Expanded view: recent sessions and new session action
- * - Right-click / long-press: context menu (AgentContextMenu)
- * - `...` button: DropdownMenu with agent actions (hover-reveal on desktop)
+ * - Right-click / long-press / "⋮": the same menu, from one node list
+ *
+ * **The preview panel stays until the session switcher lands.** The redesign
+ * retires it (BC-34/BC-35 — an agent is a teammate, not a folder, and depth
+ * moves to the switcher), but the switcher is a later phase and the sidebar's
+ * rule is that a deletion happens in the phase that lands its replacement. This
+ * phase lands the row's CHROME; the panel rides along, unchanged, as the row's
+ * expansion slot.
  */
 export function AgentListItem({
   path,
@@ -142,7 +131,6 @@ export function AgentListItem({
   onRenameSession,
   sortable,
 }: AgentListItemProps) {
-  const isMobile = useIsMobile();
   const displayName =
     displayNameProp ?? getAgentDisplayName(agent, path.split('/').pop() ?? 'Agent');
   // Conversations preview first, capped: automated sessions (agent/channel/task/
@@ -160,29 +148,20 @@ export function AgentListItem({
   // the parent, but session_status fan-outs carry each live session's cwd.
   const sessionIds = useMemo(() => sessions.map((s) => s.id), [sessions]);
   const rawAgentStatus = useAgentHottestStatus(sessionIds, path);
-  // Mute suppresses every attention-driven emphasis at once: force the
-  // status this row renders from to idle-shaped, regardless of the agent's
-  // real live work, so the badge (which returns null for 'idle') and the
-  // pulsing/colored border both drop together (DOR-339 decision 4).
+  // Mute suppresses every attention-driven emphasis at once: force the status
+  // this row renders from to idle-shaped, regardless of the agent's real live
+  // work, so the activity badge (which returns null for 'idle') drops with it
+  // (DOR-339 decision 4).
+  //
+  // **The pulsing left border is gone, and its removal is the point.** "Working"
+  // used to render five different ways in three colour spellings across this
+  // cockpit, and this row carried two of them at once — an animated border AND a
+  // badge, saying the same thing twice in two vocabularies. Live state now rides
+  // the shared status tokens: the badge here, the dot on the face
+  // (design-decisions §6, cleanups 1 and 3).
   const agentStatus = isMuted
-    ? {
-        kind: 'idle' as const,
-        color: MUTED_BORDER_COLOR,
-        pulse: false,
-        label: rawAgentStatus.label,
-      }
+    ? { kind: 'idle' as const, label: rawAgentStatus.label }
     : rawAgentStatus;
-  // Use the agent's identity color as the left border when active + idle,
-  // giving a strong "you are here" signal that matches the agent's visual.
-  // Selection is orthogonal to mute, so this still applies to a muted row.
-  const effectiveBorderColor =
-    agentStatus.kind === 'idle' && isActive ? visual.color : agentStatus.color;
-
-  const { animate: borderAnimate, transition: borderTransition } = usePulseMotion(
-    agentStatus.pulse,
-    agentStatus.color,
-    agentStatus.dimColor
-  );
 
   const handleRowClick = useCallback(() => {
     if (isActive) {
@@ -195,110 +174,62 @@ export function AgentListItem({
   // The handler and its accessible name as ONE value, because they are one
   // decision: an agent the roster cannot name gets neither, and the face is
   // plain art rather than a control that opens an empty drawer.
-  const faceControl = onViewProfile
-    ? {
-        onAvatarClick: (event: MouseEvent) => {
-          event.stopPropagation();
-          onViewProfile();
-        },
-        avatarLabel: `Open ${displayName}’s profile`,
-      }
-    : {};
+  //
+  // It reaches the ROW rather than the lockup. `AgentIdentity` would happily
+  // make the face its own `<button>`, but the row around it is a `<button>` too
+  // now, and a button inside a button is invalid HTML that assistive tech
+  // announces unpredictably — so `SidebarRow` draws the control as an overlay
+  // on the glyph's square, one level out, with the same target and the same
+  // label (DOR-957's behaviour, kept exactly).
+  const faceControl =
+    onViewProfile !== undefined
+      ? { onClick: onViewProfile, label: `Open ${displayName}’s profile` }
+      : undefined;
 
-  // "New group…" mounts an inline editor; the dropdown's close-time focus
-  // restore would blur (and blur-cancel) it, so that item arms this guard
-  // (DOR-329). The context-menu variant guards itself inside AgentContextMenu.
-  const { arm: armCloseFocusGuard, onCloseAutoFocus } = useMenuCloseFocusGuard();
+  // "New group…" mounts an inline editor and carries `opensInput: true`, which
+  // is what arms the shared surface's close-focus guard (DOR-329) — for both
+  // menus at once, rather than once per Radix family as it used to be.
+  const menuNodes = useAgentRowMenuNodes({
+    path,
+    onOpenProfile,
+    onNewSession,
+    onRequestNewGroup,
+  });
 
   return (
-    <SidebarMenuItem
-      ref={sortable?.setNodeRef}
-      style={sortable?.style}
-      {...(sortable?.handleProps ?? {})}
-      className={cn(
-        sortable &&
-          'focus-visible:ring-sidebar-ring rounded-md outline-hidden focus-visible:ring-2',
-        sortable?.isDragging && 'opacity-40',
-        sortable?.isOver && 'ring-sidebar-ring ring-2'
-      )}
-    >
-      <motion.div
-        animate={borderAnimate}
-        transition={borderTransition}
-        style={agentStatus.pulse ? undefined : { borderLeftColor: effectiveBorderColor }}
-        className={cn('rounded-md border-l-2', isMuted && 'opacity-60')}
-      >
-        <AgentContextMenu
-          path={path}
-          onOpenProfile={onOpenProfile}
-          onNewSession={onNewSession}
-          onRequestNewGroup={onRequestNewGroup}
-        >
-          <div
-            data-slot="agent-list-item"
-            onClick={handleRowClick}
-            className={cn(
-              'flex w-full cursor-pointer items-center gap-2 rounded-md px-2.5 py-1.5 text-xs font-medium transition-all duration-100 active:scale-[0.98]',
-              isActive
-                ? 'bg-accent text-foreground'
-                : 'text-muted-foreground hover:bg-accent hover:text-foreground'
-            )}
-          >
-            {/* The row's OWN verb, first — and it has to be spelled out because
-                the row has no text of its own. The drag layer makes this row a
-                button, which takes its accessible name from its contents in DOM
-                order; with nothing here it opened with the FACE's label and
-                announced as "Open Scout's profile", which is the one thing
-                pressing the row does not do. */}
-            <span className="sr-only">Switch to {displayName}</span>
-            <span className="flex min-w-0 flex-1 items-center gap-1">
-              <AgentIdentity
-                {...visual}
-                name={displayName}
-                size="xs"
-                // The FACE opens the profile; the row keeps its own click,
-                // which selects the agent and opens its last session. The stop
-                // is what keeps one press from doing both. Both halves travel
-                // together or not at all — a face control with no label is a
-                // button a screen reader cannot name, which the type refuses.
-                {...faceControl}
-              />
-              {isMuted && (
-                <BellOff className="text-muted-foreground/60 size-3 shrink-0" aria-label="Muted" />
-              )}
-            </span>
-            <AgentActivityBadge status={agentStatus.kind} label={agentStatus.label} />
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <SidebarMenuAction
-                  showOnHover={!isMobile}
-                  aria-label="Agent actions"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <MoreHorizontal className="size-4" />
-                </SidebarMenuAction>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent
-                side="right"
-                align="start"
-                className="w-48"
-                onCloseAutoFocus={onCloseAutoFocus}
-              >
-                <AgentRowMenuItems
-                  variant="dropdown"
-                  path={path}
-                  onOpenProfile={onOpenProfile}
-                  onNewSession={onNewSession}
-                  onRequestNewGroup={(ref) => {
-                    armCloseFocusGuard();
-                    onRequestNewGroup(ref);
-                  }}
-                />
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
-        </AgentContextMenu>
-
+    <SidebarRow
+      dataSlot="agent-list-item"
+      // The row's OWN verb, first — and it has to be spelled out because the
+      // row's visible content is a face and a badge. The drag layer makes the
+      // wrapper a button too, which takes its accessible name from its contents
+      // in DOM order; with nothing here it opened with the FACE's label and
+      // announced as "Open Scout's profile", which is the one thing pressing the
+      // row does not do.
+      srLabel={`Switch to ${displayName}`}
+      // The lockup fills the TITLE slot rather than the glyph slot, and that is
+      // deliberate: `AgentIdentity` is already `[face] [name]` — the row
+      // grammar's own opening, drawn by the entity that owns how an agent
+      // looks. Splitting it would mean drawing the face here and the name
+      // there, and the two would drift the first time either moved.
+      title={<AgentIdentity {...visual} name={displayName} size="xs" />}
+      titleText={displayName}
+      // The FACE opens the profile; the row keeps its own click, which selects
+      // the agent and opens its last session.
+      glyphAction={faceControl}
+      isActive={isActive}
+      muted={isMuted}
+      onSelect={handleRowClick}
+      menuNodes={menuNodes}
+      actionsLabel="Agent actions"
+      drag={sortable}
+      className="font-medium"
+      trailing={
+        <>
+          {isMuted && <BellOff className="text-sidebar-foreground/50 size-3" aria-label="Muted" />}
+          <AgentActivityBadge status={agentStatus.kind} label={agentStatus.label} />
+        </>
+      }
+      expansion={
         <motion.div
           animate={showExpanded ? 'expanded' : 'collapsed'}
           initial={false}
@@ -306,7 +237,7 @@ export function AgentListItem({
           className={cn('overflow-hidden', !showExpanded && 'pointer-events-none')}
           aria-hidden={!showExpanded}
         >
-          <div className="bg-accent/30 space-y-0.5 py-1 pl-3">
+          <div className="bg-sidebar-accent/40 space-y-0.5 py-1 pl-3">
             <AnimatePresence>
               {showExpanded && isLoadingSessions && previewSessions.length === 0 && (
                 <motion.div
@@ -315,7 +246,7 @@ export function AgentListItem({
                   animate={{ opacity: 1, transition: { duration: 0.2, delay: ROW_INITIAL_DELAY } }}
                   exit={{ opacity: 0, transition: { duration: 0.1 } }}
                 >
-                  <div className="text-muted-foreground/30 px-2.5 py-1.5 text-[11px]">
+                  <div className="text-sidebar-foreground/40 px-2 py-1.5 text-[11px]">
                     <span className="animate-pulse">Loading&hellip;</span>
                   </div>
                 </motion.div>
@@ -339,11 +270,11 @@ export function AgentListItem({
                     }}
                     exit={{ opacity: 0, y: -6, transition: { duration: 0.1 } }}
                   >
-                    <div className="flex items-center gap-2 px-2.5 py-1.5">
+                    <div className="flex items-center gap-2 px-2 py-1.5">
                       <span className="bg-primary/10 text-primary rounded px-1.5 py-0.5 text-[10px] font-semibold tabular-nums">
                         #1
                       </span>
-                      <span className="text-muted-foreground/50 text-[11px]">First session</span>
+                      <span className="text-sidebar-foreground/50 text-[11px]">First session</span>
                     </div>
                   </motion.div>
                 )}
@@ -403,7 +334,7 @@ export function AgentListItem({
                       e.stopPropagation();
                       onNewSession();
                     }}
-                    className="text-muted-foreground hover:bg-accent hover:text-foreground flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-xs transition-colors duration-100"
+                    className="text-sidebar-foreground/70 hover:bg-sidebar-accent/70 hover:text-sidebar-foreground flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-[13px] transition-colors duration-100"
                   >
                     <Plus className="size-(--size-icon-xs)" />
                     New session
@@ -433,7 +364,7 @@ export function AgentListItem({
                       setAutomatedExpanded((prev) => !prev);
                     }}
                     aria-expanded={automatedExpanded}
-                    className="text-muted-foreground hover:bg-accent hover:text-foreground flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-xs transition-colors duration-100"
+                    className="text-sidebar-foreground/70 hover:bg-sidebar-accent/70 hover:text-sidebar-foreground flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-[13px] transition-colors duration-100"
                   >
                     {automatedExpanded ? 'Hide' : `+ ${automated.length} automated`}
                   </button>
@@ -474,7 +405,7 @@ export function AgentListItem({
             </AnimatePresence>
           </div>
         </motion.div>
-      </motion.div>
-    </SidebarMenuItem>
+      }
+    />
   );
 }

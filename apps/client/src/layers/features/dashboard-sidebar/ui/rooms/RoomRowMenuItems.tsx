@@ -1,4 +1,3 @@
-import type { ElementType, ReactNode } from 'react';
 import {
   Archive,
   Bell,
@@ -15,23 +14,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import type { RoomKind } from '@dorkos/shared/room-schemas';
-import {
-  ContextMenuCheckboxItem,
-  ContextMenuItem,
-  ContextMenuSeparator,
-  ContextMenuSub,
-  ContextMenuSubContent,
-  ContextMenuSubTrigger,
-  DropdownMenuCheckboxItem,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuSub,
-  DropdownMenuSubContent,
-  DropdownMenuSubTrigger,
-} from '@/layers/shared/ui';
-
-/** Which Radix menu the shared item list renders into. */
-type RoomRowMenuVariant = 'context' | 'dropdown';
+import type { SidebarMenuActionNode, SidebarMenuNode } from '@/layers/shared/ui';
 
 /**
  * Stable identity of one room action.
@@ -64,7 +47,10 @@ export type RoomMenuActionId =
   | 'topic'
   | 'archive';
 
-/** One thing you can do to a room. */
+/**
+ * One thing you can do to a room — the shared sidebar action node, narrowed to
+ * this menu's own id vocabulary.
+ */
 export interface RoomMenuAction {
   kind: 'action';
   id: RoomMenuActionId;
@@ -89,41 +75,22 @@ export interface RoomMenuAction {
 }
 
 /**
- * The room row's menu as data.
+ * The room row's menu as data — the shared sidebar node type, with this menu's
+ * own action vocabulary substituted for the generic one.
  *
  * Deliberately carries nothing Radix-shaped: an id, a label, an icon and the
  * two flags a renderer needs to decide how to present it. That is what lets the
- * ContextMenu, the "…" DropdownMenu and (later) the palette and the slash-command
- * table all consume ONE list, which is the invariant spec §15.3 states — every
- * room command has a menu equivalent and every menu item has a command.
+ * ContextMenu, the "⋮" DropdownMenu and (later) the palette and the
+ * slash-command table all consume ONE list, which is the invariant spec §15.3
+ * states — every room command has a menu equivalent and every menu item has a
+ * command.
  *
- * S3 (DOR-581) added the two variants the note above anticipated: Mute/Unmute is
- * one more `action`, and "Move to group ▸" is a `submenu` holding one `choice`
- * per group. The walk below switches on `kind`, so each was a new case rather
- * than a change to the existing ones.
+ * The narrowing is what keeps {@link RoomMenuActionId} honest: a builder that
+ * invents an id outside the vocabulary fails to compile rather than shipping an
+ * action no command can resolve. Every node here is still assignable to
+ * `SidebarMenuNode`, so the shared renderer takes the list unchanged.
  */
-export type RoomRowMenuNode =
-  | RoomMenuAction
-  | { kind: 'separator'; id: string }
-  /**
-   * A nested menu. Its children are the same node type, so the walk that renders
-   * the top level renders the submenu unchanged — and a flat consumer (the
-   * palette, the slash-command table) can walk into `items` for the same
-   * actions rather than being handed a shape it cannot read.
-   */
-  | {
-      kind: 'submenu';
-      id: RoomMenuActionId;
-      label: string;
-      icon: LucideIcon;
-      items: RoomRowMenuNode[];
-    }
-  /**
-   * One of a set of mutually-exclusive targets, drawn with a tick when it is the
-   * current one. A group is a place the room IS rather than a verb, which is why
-   * it carries `checked` instead of {@link RoomMenuAction}'s two flags.
-   */
-  | { kind: 'choice'; id: string; label: string; checked: boolean; run: () => void };
+export type RoomRowMenuNode = RoomMenuAction | Exclude<SidebarMenuNode, SidebarMenuActionNode>;
 
 /** Inputs the pure item list is built from (fabricated directly in unit tests). */
 export interface RoomRowMenuModel {
@@ -376,92 +343,4 @@ export function buildRoomRowMenuNodes(model: RoomRowMenuModel): RoomRowMenuNode[
   );
 
   return nodes;
-}
-
-/**
- * Slot primitives one menu family provides. Both variants render through the
- * SAME {@link renderNodes} walk — only the primitives differ — so the two menus
- * cannot structurally drift.
- */
-interface RoomMenuSlots {
-  Item: ElementType;
-  CheckboxItem: ElementType;
-  Separator: ElementType;
-  Sub: ElementType;
-  SubTrigger: ElementType;
-  SubContent: ElementType;
-}
-
-const VARIANT_SLOTS: Record<RoomRowMenuVariant, RoomMenuSlots> = {
-  context: {
-    Item: ContextMenuItem,
-    CheckboxItem: ContextMenuCheckboxItem,
-    Separator: ContextMenuSeparator,
-    Sub: ContextMenuSub,
-    SubTrigger: ContextMenuSubTrigger,
-    SubContent: ContextMenuSubContent,
-  },
-  dropdown: {
-    Item: DropdownMenuItem,
-    CheckboxItem: DropdownMenuCheckboxItem,
-    Separator: DropdownMenuSeparator,
-    Sub: DropdownMenuSub,
-    SubTrigger: DropdownMenuSubTrigger,
-    SubContent: DropdownMenuSubContent,
-  },
-};
-
-/** Render the shared nodes through one generic walk using the given slots. */
-function renderNodes(nodes: RoomRowMenuNode[], slots: RoomMenuSlots): ReactNode {
-  const { Item, CheckboxItem, Separator, Sub, SubTrigger, SubContent } = slots;
-  return nodes.map((node) => {
-    switch (node.kind) {
-      case 'separator':
-        return <Separator key={node.id} />;
-      case 'choice':
-        return (
-          <CheckboxItem key={node.id} checked={node.checked} onClick={node.run}>
-            {node.label}
-          </CheckboxItem>
-        );
-      case 'submenu': {
-        const Icon = node.icon;
-        return (
-          <Sub key={node.id}>
-            <SubTrigger>
-              <Icon className="mr-2 size-4" />
-              {node.label}
-            </SubTrigger>
-            <SubContent className="w-48">{renderNodes(node.items, slots)}</SubContent>
-          </Sub>
-        );
-      }
-      case 'action': {
-        const Icon = node.icon;
-        return (
-          <Item
-            key={node.id}
-            variant={node.destructive ? 'destructive' : undefined}
-            onClick={node.run}
-          >
-            <Icon className="mr-2 size-4" />
-            {node.opensInput ? `${node.label}…` : node.label}
-          </Item>
-        );
-      }
-    }
-  });
-}
-
-interface RoomRowMenuItemsProps extends RoomRowMenuModel {
-  /** Which Radix menu family to render into. */
-  variant: RoomRowMenuVariant;
-}
-
-/**
- * The room-row menu, rendered from ONE item definition into both the right-click
- * ContextMenu and the "…" DropdownMenu.
- */
-export function RoomRowMenuItems({ variant, ...model }: RoomRowMenuItemsProps) {
-  return <>{renderNodes(buildRoomRowMenuNodes(model), VARIANT_SLOTS[variant])}</>;
 }
