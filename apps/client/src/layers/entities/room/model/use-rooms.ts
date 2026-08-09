@@ -65,13 +65,28 @@ function compareDirectMessages(a: RoomSummary, b: RoomSummary): number {
  *   here: the recents panel is mounted on every room composer and offered on
  *   one. It cannot suppress a fetch somebody else wants — TanStack runs a query
  *   while ANY of its observers is enabled — so the sidebar's copy is untouched.
+ * @param options.includeArchived - Take archived rooms too. Off by default, and
+ *   opt-in for one caller only: the command palette, so a channel somebody
+ *   closed can still be searched for. It buys its own cache entry
+ *   ({@link roomKeys.listWithArchived}) rather than widening this one, because
+ *   every other reader — the sidebar, the room view, the presence strip — draws
+ *   from `roomKeys.list()` and must never be handed an archived room by a
+ *   consumer it has never heard of.
  */
-export function useRooms(options: { enabled?: boolean } = {}): UseQueryResult<RoomSummary[]> {
+export function useRooms(
+  options: { enabled?: boolean; includeArchived?: boolean } = {}
+): UseQueryResult<RoomSummary[]> {
   const transport = useTransport();
+  const includeArchived = options.includeArchived ?? false;
   return useQuery({
     enabled: options.enabled ?? true,
-    queryKey: roomKeys.list(),
-    queryFn: () => transport.listRooms(),
+    queryKey: includeArchived ? roomKeys.listWithArchived() : roomKeys.list(),
+    // The flag is OMITTED when off, never sent as `false`. `GET /api/rooms`
+    // parses it with `z.coerce.boolean()`, and a query string carries `false` as
+    // the four-character string `"false"` — which coerces to `true`. Spelling
+    // out the negative would switch archived rooms on for every caller.
+    queryFn: () =>
+      includeArchived ? transport.listRooms({ includeArchived: true }) : transport.listRooms(),
     staleTime: ROOMS_STALE_TIME_MS,
   });
 }

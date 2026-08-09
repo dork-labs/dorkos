@@ -70,6 +70,55 @@ describe('useRooms', () => {
     await waitFor(() => expect(result.current.data).toHaveLength(1));
     expect(transport.listRooms).toHaveBeenCalled();
   });
+
+  it('leaves archived rooms out unless a caller asks for them', async () => {
+    const transport = createMockTransport({ listRooms: vi.fn().mockResolvedValue([]) });
+    const { result } = renderHook(() => useRooms(), { wrapper: wrapperFor(transport) });
+    await waitFor(() => expect(result.current.data).toBeDefined());
+
+    // The sidebar, the room view, the presence strip and everything else read
+    // this hook. Asking for archived rooms by default would put a closed
+    // channel back in every one of those lists.
+    //
+    // And the flag is OMITTED rather than sent as `false`. The route parses it
+    // with `z.coerce.boolean()`, and a query string carries `false` as the
+    // four-character string `"false"` — which coerces to `true`. Spelling out
+    // the negative here would turn archived rooms on everywhere.
+    expect(transport.listRooms).toHaveBeenCalledWith();
+  });
+
+  it('asks for them when one does', async () => {
+    const transport = createMockTransport({ listRooms: vi.fn().mockResolvedValue([]) });
+    const { result } = renderHook(() => useRooms({ includeArchived: true }), {
+      wrapper: wrapperFor(transport),
+    });
+    await waitFor(() => expect(result.current.data).toBeDefined());
+
+    expect(transport.listRooms).toHaveBeenCalledWith({ includeArchived: true });
+  });
+
+  it('keeps the two answers in separate cache entries', async () => {
+    // The whole risk in making archived rooms findable: one cache key for both
+    // questions means whichever consumer fetched last decides what the SIDEBAR
+    // shows. Two readers, one client, two fetches, two different lists.
+    const live = room({ id: 'live', slug: 'live' });
+    const closed = room({ id: 'closed', slug: 'closed', archived: true });
+    const transport = createMockTransport({
+      listRooms: vi.fn(async (query?: { includeArchived?: boolean }) =>
+        query?.includeArchived ? [live, closed] : [live]
+      ),
+    });
+    const wrapper = wrapperFor(transport);
+
+    const plain = renderHook(() => useRooms(), { wrapper });
+    const withArchived = renderHook(() => useRooms({ includeArchived: true }), { wrapper });
+
+    await waitFor(() => expect(plain.result.current.data).toBeDefined());
+    await waitFor(() => expect(withArchived.result.current.data).toBeDefined());
+
+    expect(plain.result.current.data?.map((r) => r.id)).toEqual(['live']);
+    expect(withArchived.result.current.data?.map((r) => r.id)).toEqual(['live', 'closed']);
+  });
 });
 
 describe('useRoomsByKind', () => {

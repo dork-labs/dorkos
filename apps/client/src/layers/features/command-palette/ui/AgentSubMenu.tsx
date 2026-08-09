@@ -36,6 +36,8 @@ interface AgentSubMenuProps {
   onEditSettings: () => void;
   /** Recent sessions for this agent (max 3) */
   recentSessions: SessionMetadata[];
+  /** Open one of those sessions. */
+  onSelectSession: (sessionId: string) => void;
 }
 
 /**
@@ -62,6 +64,7 @@ export function AgentSubMenu({
   onNewSession,
   onEditSettings,
   recentSessions,
+  onSelectSession,
 }: AgentSubMenuProps) {
   const modKey = isMac ? '\u2318' : 'Ctrl+';
 
@@ -96,7 +99,11 @@ export function AgentSubMenu({
       {recentSessions.length > 0 && (
         <CommandGroup heading="Recent Sessions">
           {recentSessions.map((session) => (
-            <CommandItem key={session.id} value={session.id}>
+            <CommandItem
+              key={session.id}
+              value={session.id}
+              onSelect={() => onSelectSession(session.id)}
+            >
               <MessageSquare className="size-4" />
               <span className="truncate">{session.title}</span>
               <span className="text-muted-foreground ml-auto text-xs">

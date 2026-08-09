@@ -39,6 +39,13 @@ export {
 export { usePaletteSearch, parsePrefix } from './model/use-palette-search';
 export type { SearchableItem, SearchResult } from './model/use-palette-search';
 export { usePaletteActions } from './model/use-palette-actions';
+// The writer half of the extension-contributed action dispatch. `main.tsx`
+// hands these to the extension API; the reader (`runPaletteCommandHandler`)
+// stays inside the slice, where `usePaletteActions` is the only caller.
+export {
+  registerPaletteCommandHandler,
+  unregisterPaletteCommandHandler,
+} from './model/palette-command-handlers';
 
 // --- Contribution data ---
 export {

@@ -38,6 +38,41 @@ describe('sortRoomsForPalette', () => {
     expect(sortRoomsForPalette([read, unread]).map((r) => r.id)).toEqual(['unread', 'read']);
   });
 
+  it('puts an archived room below a live one, whatever either of them is owed', () => {
+    // Archived rooms are in this list so a channel somebody closed can still be
+    // FOUND (DOR-1051) — not so one can outrank a conversation that is still
+    // going. The archived room here is both unread and the most recent thing
+    // that spoke, so it wins on every other key.
+    const archived = makeRoom({
+      id: 'archived',
+      archived: true,
+      lastActivityAt: '2026-07-26T20:00:00.000Z',
+      unreadCount: 3,
+    });
+    const live = makeRoom({
+      id: 'live',
+      lastActivityAt: '2026-07-26T09:00:00.000Z',
+      unreadCount: 0,
+    });
+
+    expect(sortRoomsForPalette([archived, live]).map((r) => r.id)).toEqual(['live', 'archived']);
+  });
+
+  it('still ranks archived rooms against each other', () => {
+    const older = makeRoom({
+      id: 'older',
+      archived: true,
+      lastActivityAt: '2026-07-26T09:00:00.000Z',
+    });
+    const newer = makeRoom({
+      id: 'newer',
+      archived: true,
+      lastActivityAt: '2026-07-26T18:00:00.000Z',
+    });
+
+    expect(sortRoomsForPalette([older, newer]).map((r) => r.id)).toEqual(['newer', 'older']);
+  });
+
   it('treats a room the reader is not in as read, not as unread', () => {
     // `unreadCount: null` means "you are not a member", which is not zero.
     // Collapsing the two would float every room the operator has ever seen to

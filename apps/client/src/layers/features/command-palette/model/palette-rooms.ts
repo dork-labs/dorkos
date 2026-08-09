@@ -11,8 +11,8 @@
 import { hasUnread, type RoomSummary } from '@/layers/entities/room';
 
 /**
- * How two rooms compare in the palette: anything unread first, then whichever
- * spoke last.
+ * How two rooms compare in the palette: live rooms before archived ones,
+ * anything unread first within each, then whichever spoke last.
  *
  * This is deliberately not the sidebar's order. The sidebar sorts channels by
  * name so the list stops moving and you learn where rows are
@@ -20,7 +20,13 @@ import { hasUnread, type RoomSummary } from '@/layers/entities/room';
  * a stable position buys nothing and burying the unread room under an
  * alphabetically luckier one costs the whole feature.
  *
- * `hasUnread` decides the first key rather than `unreadCount` directly, because
+ * **Archived outranks even unread, downwards.** The palette is the one place an
+ * archived room appears at all (DOR-1051) — so that a channel somebody closed
+ * can still be FOUND, not so it can compete with a conversation still going. A
+ * closed channel can easily be both the last thing that spoke and owed a read,
+ * which is exactly how it would otherwise reach the top of the list.
+ *
+ * `hasUnread` decides the next key rather than `unreadCount` directly, because
  * `null` means "you are not in this room" and is not zero — see its own doc.
  *
  * `lastActivityAt` is always a UTC ISO-8601 timestamp, so comparing the strings
@@ -28,6 +34,8 @@ import { hasUnread, type RoomSummary } from '@/layers/entities/room';
  * direction, so rooms that tie never swap places between renders.
  */
 export function compareRoomsForPalette(a: RoomSummary, b: RoomSummary): number {
+  const liveFirst = Number(a.archived) - Number(b.archived);
+  if (liveFirst !== 0) return liveFirst;
   const unreadFirst = Number(hasUnread(b)) - Number(hasUnread(a));
   if (unreadFirst !== 0) return unreadFirst;
   return b.lastActivityAt.localeCompare(a.lastActivityAt) || b.id.localeCompare(a.id);

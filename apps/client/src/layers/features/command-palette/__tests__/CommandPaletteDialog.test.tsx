@@ -8,6 +8,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { sessionKeys } from '@/layers/entities/session';
 import type { Session } from '@dorkos/shared/types';
 import '@testing-library/jest-dom/vitest';
+import { createMockTransport } from '@dorkos/test-utils';
 import { CommandPaletteDialog } from '../ui/CommandPaletteDialog';
 import { registerTabOpener } from '@/layers/shared/lib';
 import { enterDesktopShell, leaveDesktopShell } from '@/test-helpers/desktop-shell';
@@ -75,6 +76,8 @@ afterEach(() => {
 });
 
 // --- Router mock ---
+const mockTransport = createMockTransport();
+
 const mockNavigate = vi.fn();
 vi.mock('@tanstack/react-router', () => ({
   useNavigate: () => mockNavigate,
@@ -111,6 +114,9 @@ vi.mock('@/layers/shared/model', () => ({
     return selector ? selector(state) : state;
   },
   useTheme: () => ({ theme: 'light', setTheme: vi.fn() }),
+  // `usePaletteActions` resolves which conversation a slash command runs in,
+  // and that resolver asks the server when nothing is cached.
+  useTransport: () => mockTransport,
   useReportIssue: () => vi.fn(),
   // `usePaletteActions` reads the feedback dialog's store, so the palette does
   // not render at all without it (DOR-902).
