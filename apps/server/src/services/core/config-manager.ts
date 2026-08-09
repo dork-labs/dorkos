@@ -80,6 +80,7 @@ import {
   ONBOARDING_STEPS,
   SidebarItemRefSchema,
   SidebarGroupSchema,
+  ComposerPrefsSchema,
   toSidebarItemRef,
   normalizeSidebarPrefs,
 } from '@dorkos/shared/config-schema';
@@ -1393,8 +1394,21 @@ export function backfillComposerPrefs(store: {
   const ui = store.get('ui');
   if (!ui || typeof ui !== 'object') return;
 
+  // The SCHEMA decides whether what is on disk is a `ComposerPrefs`, not
+  // `typeof`. `typeof [] === 'object'`, so an on-disk `ui.composer: []` — or a
+  // half-written object — would otherwise be left exactly where it is, and
+  // conf's Ajv would condemn the whole config file on the next boot rather than
+  // just this section (the DOR-584 lesson). Anything the schema rejects is
+  // replaced with the shipped default; anything it accepts is left untouched,
+  // which is what keeps this idempotent and keeps a person's `true` safe.
+  //
+  // `.strict()` because the generated JSON Schema for this object is
+  // `additionalProperties: false` (verified, not assumed). A plain `safeParse`
+  // would ACCEPT `{ rich: 'yes' }` — Zod strips unknown keys and fills the
+  // default — and leave on disk exactly the shape Ajv is about to reject. The
+  // check has to agree with the validator it is protecting against.
   const composer = (ui as { composer?: unknown }).composer;
-  if (composer !== null && typeof composer === 'object') return;
+  if (ComposerPrefsSchema.strict().safeParse(composer).success) return;
 
   store.set('ui', { ...(ui as Record<string, unknown>), composer: { richText: false } });
 }

@@ -1308,6 +1308,21 @@ describe('backfillComposerPrefs migration (composer-rich-text, DOR-948)', () => 
     expect(store.data.ui).toBeUndefined();
   });
 
+  it.each([
+    ['an array', []],
+    ['a string', 'true'],
+    ['a number', 1],
+    ['an object of the wrong shape', { rich: 'yes' }],
+  ])('replaces a stored ui.composer that is %s', (_label, stored) => {
+    // `typeof [] === 'object'`, so a shape check that only asks "is it an
+    // object?" leaves an array in place and conf's Ajv then condemns the whole
+    // file on the next boot — the DOR-584 lesson. The schema is the only honest
+    // judge of whether what is on disk is a ComposerPrefs.
+    const store = createMockStore({ ui: { theme: 'dark', composer: stored } });
+    backfillComposerPrefs(store);
+    expect(store.data.ui).toEqual({ theme: 'dark', composer: { richText: false } });
+  });
+
   it('leaves a shape the schema accepts', () => {
     // conf validates the WHOLE store once migrations finish, and `ui.composer`
     // is a closed object. Parsing the post-migration `ui` through the schema is

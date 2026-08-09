@@ -80,8 +80,26 @@ const INLINE_FORMAT_TAGS: Readonly<Record<string, 'bold' | 'italic' | 'code'>> =
   CODE: 'code',
 };
 
-/** Tags whose entire subtree contributes nothing at all, not even text. */
-const DROPPED_SUBTREES = new Set(['SCRIPT', 'STYLE', 'IFRAME', 'OBJECT', 'EMBED', 'TEMPLATE']);
+/**
+ * Tags whose entire subtree contributes nothing at all, not even text.
+ *
+ * `SVG` and `MATH` are here for two reasons, and the second is the one that
+ * bites. An inline SVG contributes no text a markdown composer wants — a copied
+ * paragraph with an accessible icon in it would otherwise splice the icon's
+ * `<title>` and `<desc>` into the message. And their descendants cannot be
+ * matched by name reliably: see {@link $nodesFromPastedHtml} on why `tagName`
+ * is not uppercase inside them. Dropping the subtree at its root settles both.
+ */
+const DROPPED_SUBTREES = new Set([
+  'SCRIPT',
+  'STYLE',
+  'IFRAME',
+  'OBJECT',
+  'EMBED',
+  'TEMPLATE',
+  'SVG',
+  'MATH',
+]);
 
 /** Block-level tags that start a new paragraph in the composer. */
 const BLOCK_TAGS = new Set(['P', 'DIV', 'BR', 'LI', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6']);
@@ -119,11 +137,18 @@ function $nodesFromPastedHtml(html: string): LexicalNode[] {
     if (node.nodeType !== Node.ELEMENT_NODE) return;
 
     const element = node as Element;
-    if (DROPPED_SUBTREES.has(element.tagName)) return;
+    // `tagName` is upper-cased only for HTML-namespace elements. Inside `<svg>`
+    // or `<math>` the parser keeps the literal case, so a `<script>` there
+    // reports `script` and missed all three sets below — its text spliced
+    // straight into the message. Normalizing is the guard; dropping SVG and
+    // MathML whole (above) is what makes it complete, because `title` and
+    // `desc` are innocuous names that no allowlist would think to exclude.
+    const tag = element.tagName.toUpperCase();
+    if (DROPPED_SUBTREES.has(tag)) return;
 
-    const format = INLINE_FORMAT_TAGS[element.tagName];
+    const format = INLINE_FORMAT_TAGS[tag];
     const nextFormats = format ? new Set([...formats, format]) : formats;
-    const isBlock = BLOCK_TAGS.has(element.tagName);
+    const isBlock = BLOCK_TAGS.has(tag);
 
     if (isBlock) flush();
     for (const child of Array.from(element.childNodes)) walk(child, nextFormats);

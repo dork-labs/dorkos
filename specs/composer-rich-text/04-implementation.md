@@ -40,7 +40,7 @@ untouched and stay plain.
 - 2.2 `MentionNode` as a token text node drawing the real identity pill.
 - 2.3 `COMPOSER_TRANSFORMERS`, built by naming eight transformers rather than spreading.
 - 2.4 `markdown-offsets.ts` — serializer and position map in one walk.
-- 2.5 46-entry round-trip corpus + the offset-map table, both mutation-checked.
+- 2.5 47-entry round-trip corpus + the offset-map table, both mutation-checked.
 - 2.6 Phase gate.
 
 ### Phase 3 — the field (`3e1c368c4`, `c96c80eca`, `203b644fe`, `fd06c3c66`, `4aff7fc0e`, `197c75424`)
@@ -449,7 +449,7 @@ onboarding pass `richText`.
 | #   | Criterion                                                          | Status                                                                                                               |
 | --- | ------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------- |
 | 1   | The whole ladder scenario table passes against the Lexical surface | **Met** — one `LADDER_SCENARIOS` array, two adapters (task 3.8)                                                      |
-| 2   | Round-trip stability over the corpus, every mention shape          | **Met** — 46 entries, every one a fixed point (task 2.5)                                                             |
+| 2   | Round-trip stability over the corpus, every mention shape          | **Met** — 47 entries, every one a fixed point (task 2.5)                                                             |
 | 3   | Typing latency p95 within budget on a 4 000-char document          | **Met on p95** (13.80 / 13.30 ms). Median is 0.7–1.0 ms worse than the textarea — a known miss on the secondary half |
 | 4   | An IME composes and commits with no send and no dropped characters | **Not done** — needs a person and a real browser                                                                     |
 | 5   | VoiceOver or NVDA announces the field and the palette equivalently | **Not done** — needs a person                                                                                        |
@@ -458,6 +458,40 @@ onboarding pass `richText`.
 Two follow-ups to capture when this closes: the surface graduation (rooms, dashboard, onboarding),
 and the nested-list flattening that the empty-bullet Enter fix surfaced, which should land before
 rooms graduate.
+
+## What the adversarial review found
+
+APPROVE WITH FIXES — one Important, two minors, all applied in `fix(client): the paste allowlist
+holds inside svg and math (DOR-948)`.
+
+**Important — the paste allowlist leaked inside `<svg>` and `<math>`.** `use-paste-precedence.ts`
+matched `element.tagName` against UPPERCASE sets, but `tagName` is upper-cased only for
+HTML-namespace elements. Inside SVG or MathML the parser keeps the literal case, so `script`,
+`style`, `title` and `desc` matched none of the three sets and their text spliced straight into the
+message. The reviewer proved it through the real mounted field: copying a paragraph containing an
+ordinary accessible icon produced `External linkAn arrow.i{fill:red}` in the composer.
+
+Fixed by normalizing once (`const tag = element.tagName.toUpperCase()`) and by adding `SVG` and
+`MATH` to `DROPPED_SUBTREES` — the normalization alone is not enough, because `title` and `desc`
+are innocuous names no allowlist would exclude, and an SVG contributes no text a markdown composer
+wants anyway. Red-before/green-after: both new cases in `lexical-paste.test.tsx` failed with the
+reviewer's exact junk string (`'Read the **docs** External linkAn arr…'` and `'alert(1)safe'`) and
+pass after; 9/9.
+
+**Minor 1 — the corpus count was wrong.** Recorded as 46 in two places; the array holds **47** at
+HEAD, read off `ROUND_TRIP_CORPUS.length` rather than counted by eye. Both corrected.
+
+**Minor 2 — the migration admitted arrays.** `backfillComposerPrefs` asked
+`typeof composer === 'object'`, which is true for `[]`, so an on-disk `ui.composer: []` was left in
+place for Ajv to condemn the whole file over (the DOR-584 lesson). Now
+`ComposerPrefsSchema.strict().safeParse(composer).success`.
+
+`.strict()` rather than a plain `safeParse`, and that is a deliberate extension of the reviewer's
+fix: the generated JSON Schema for this object is `additionalProperties: false` — verified by
+emitting it, not assumed — so a plain `safeParse` would ACCEPT `{ rich: 'yes' }` (Zod strips
+unknown keys and fills the default) and leave on disk exactly the shape Ajv is about to reject. The
+guard has to agree with the validator it protects against. Red-before/green-after: the array and
+wrong-shape cases both failed first; 10/10 after.
 
 ## What the adversarial reviewer should doubt
 

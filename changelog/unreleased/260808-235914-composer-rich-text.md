@@ -12,6 +12,7 @@ covers:
   - 'feat(client): a switch in Settings, in words that say what it does (DOR-948)'
   - 'feat(client): rich text in the chat composer, behind a setting (DOR-948)'
   - 'fix(client): Enter on an empty list item exits the list (DOR-948)'
+  - 'fix(client): the paste allowlist holds inside svg and math (DOR-948)'
   - "perf(e2e): measure the composer's two costs instead of estimating them (DOR-948)"
 ---
 

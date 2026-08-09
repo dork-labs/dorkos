@@ -162,6 +162,43 @@ describe('a file-free HTML paste is converted through an inert document', () => 
     expect(seen.at(-1)).not.toContain('https://x.test');
   });
 
+  // The allowlist is keyed on `tagName`, and `tagName` is only uppercase for
+  // HTML-namespace elements. Inside `<svg>` (and `<math>`) the parser keeps the
+  // literal case, so `script`, `style`, `title` and `desc` used to miss every
+  // set and splice their text straight into the message. Copying a paragraph
+  // that contained an ordinary accessible icon was enough to do it.
+  it('drops an inline SVG whole, including its title, desc and style text', async () => {
+    const seen: string[] = [];
+    const field = await renderField({ onValue: (v) => seen.push(v) });
+
+    paste(
+      field,
+      makeClipboard({
+        html:
+          '<p>Read the <b>docs</b> <svg><title>External link</title>' +
+          '<desc>An arrow</desc><style>.i{fill:red}</style><path/></svg> here.</p>',
+      })
+    );
+
+    await waitFor(() => expect(seen.at(-1)).toContain('Read the'));
+    expect(seen.at(-1)).toBe('Read the **docs**  here.');
+    expect(seen.at(-1)).not.toContain('External link');
+    expect(seen.at(-1)).not.toContain('An arrow');
+    expect(seen.at(-1)).not.toContain('fill:red');
+  });
+
+  it('drops a script inside an SVG, which the uppercase set never matched', async () => {
+    const seen: string[] = [];
+    const field = await renderField({ onValue: (v) => seen.push(v) });
+
+    paste(field, makeClipboard({ html: '<svg><script>alert(1)</script></svg>safe' }));
+
+    await waitFor(() => expect(seen.at(-1)).toContain('safe'));
+    expect(seen.at(-1)).not.toContain('alert(1)');
+    expect(field.querySelector('script')).toBeNull();
+    expect(document.querySelector('script')).toBeNull();
+  });
+
   // ⌘⇧V and any clipboard with no text/html: our converter declines and
   // Lexical inserts the plain text itself. The requirement is that no
   // conversion ran, not that nobody consumed the event — Lexical consuming it
