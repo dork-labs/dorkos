@@ -5,6 +5,28 @@ import { render, screen, fireEvent, cleanup, act } from '@testing-library/react'
 import { ComposerInput, type ComposerInputHandle } from '../ui/ComposerInput';
 
 /**
+ * Whether the field's editing surface claims a composition is in progress.
+ *
+ * A `<textarea>` has no editor-level composition state — its adapter answers a
+ * constant `false`, and the keydown's own flags are the whole IME story there.
+ * A rich-text editor does, and can report one on a keydown whose flags are
+ * clear. Stubbing the real adapter's one method is how the textarea path proves
+ * the ladder consults the surface at all.
+ */
+const surfaceComposing = vi.hoisted(() => ({ current: false }));
+
+vi.mock('../ui/textarea-surface', async () => {
+  const actual =
+    await vi.importActual<typeof import('../ui/textarea-surface')>('../ui/textarea-surface');
+  return {
+    createTextareaSurface: (ref: Parameters<typeof actual.createTextareaSurface>[0]) => ({
+      ...actual.createTextareaSurface(ref),
+      isComposing: () => surfaceComposing.current,
+    }),
+  };
+});
+
+/**
  * The emulated device, read per query by the `matchMedia` mock below.
  *
  * Deliberately three independent facts rather than one "is mobile" boolean.
@@ -197,6 +219,7 @@ function renderWithCaret(props: Parameters<typeof ComposerInput>[0], caret?: num
 
 beforeEach(() => {
   device = DESKTOP;
+  surfaceComposing.current = false;
 });
 
 afterEach(() => {
@@ -1100,6 +1123,18 @@ describe('ComposerInput', () => {
       fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Escape', isComposing: true });
       expect(onStop).not.toHaveBeenCalled();
       expect(onEscape).not.toHaveBeenCalled();
+    });
+
+    // The event's flags are not the only signal. A rich-text editor keeps its own
+    // composition state and can be mid-candidate on a keydown that looks clear,
+    // so the ladder asks the surface too — and a send on that keystroke would be
+    // a half-typed message.
+    it('does not submit when the surface reports a composition the event did not', () => {
+      surfaceComposing.current = true;
+      const onSubmit = vi.fn();
+      render(<ComposerInput {...defaultProps} value="こん" onSubmit={onSubmit} />);
+      fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Enter' });
+      expect(onSubmit).not.toHaveBeenCalled();
     });
 
     it('submits once the composition has ended', () => {

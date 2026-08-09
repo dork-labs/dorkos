@@ -14,7 +14,12 @@ import { extendZodWithOpenApi } from '@asteasolutions/zod-to-openapi';
 // resolved at validation time, not module-load time — no initialization hazard.
 import { ClientContextSchema } from './additional-context.js';
 import { PendingApprovalSchema, CapabilityApprovalOutcomeSchema } from './approval-schemas.js';
-import { SidebarPrefsSchema, ShapeUserPrefsSchema, StatusBarPrefsSchema } from './config-schema.js';
+import {
+  SidebarPrefsSchema,
+  ShapeUserPrefsSchema,
+  StatusBarPrefsSchema,
+  ComposerPrefsSchema,
+} from './config-schema.js';
 // The effort ladder itself lives in the dependency-free constants module so this
 // file and `config-schema.ts` (which this file already imports) can both build
 // their enums from ONE list — see `EFFORT_LEVELS` for why it cannot live in either.
@@ -3053,6 +3058,10 @@ export const ServerConfigSchema = z
         // config-schema.ts; promoted from client localStorage so agents/devices
         // can read and flip status-bar item visibility.
         statusBar: StatusBarPrefsSchema,
+        // Whether the message box shows formatting as you type (DOR-948). Also
+        // defined in config-schema.ts; on the wire because `ChatInputContainer`
+        // picks its field from it and Settings shows it back as a switch.
+        composer: ComposerPrefsSchema,
         autonomyAcknowledgedAt: z.string().nullable().openapi({
           description:
             'When this person last acknowledged what Full autonomy means and asked not to be shown the dialog again (ISO 8601), or null. The cockpit sends the standing acknowledgement on every autonomy PATCH from here',

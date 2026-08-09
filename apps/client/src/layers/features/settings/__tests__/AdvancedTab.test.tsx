@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent, cleanup } from '@testing-library/react';
+import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
@@ -31,6 +31,32 @@ function createWrapper() {
       <TransportProvider transport={transport}>{children}</TransportProvider>
     </QueryClientProvider>
   );
+}
+
+/**
+ * A wrapper whose transport is reachable, for the rows that WRITE. The
+ * `createWrapper` above builds its transport privately, which is all the
+ * read-only rows need.
+ *
+ * @param config - What `getConfig` resolves to, including the `ui` block.
+ */
+function createConfigHarness(config: Record<string, unknown>) {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  });
+  const transport = createMockTransport({
+    getConfig: vi.fn().mockResolvedValue({
+      logging: { level: 'info', maxLogSizeKb: 500, maxLogFiles: 14 },
+      ...config,
+    }),
+    updateConfig: vi.fn().mockResolvedValue(undefined),
+  });
+  const wrapper = ({ children }: { children: React.ReactNode }) => (
+    <QueryClientProvider client={queryClient}>
+      <TransportProvider transport={transport}>{children}</TransportProvider>
+    </QueryClientProvider>
+  );
+  return { wrapper, transport, queryClient };
 }
 
 describe('AdvancedTab', () => {
@@ -78,6 +104,58 @@ describe('AdvancedTab', () => {
   it('no longer renders the Multi-window sync toggle', () => {
     render(<AdvancedTab />, { wrapper: createWrapper() });
     expect(screen.queryByText('Multi-window sync')).not.toBeInTheDocument();
+  });
+
+  it('renders the message-box formatting row in plain words', () => {
+    render(<AdvancedTab />, { wrapper: createWrapper() });
+    // The exact copy is the deliverable: no "Lexical", no "WYSIWYG", no "rich
+    // text editor", no "experimental" in the label. A smart 9th grader who does
+    // not code has to understand what turning it on does.
+    expect(screen.getByText('Format text as you type')).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'See bold, headings, and lists take shape in the message box while you write.'
+      )
+    ).toBeInTheDocument();
+    // It says WHERE rather than implying everywhere — chat only, at ship time.
+    expect(screen.getByText(/This applies to chat for now/i)).toBeInTheDocument();
+  });
+
+  it('the formatting row is off when nobody has turned it on', () => {
+    render(<AdvancedTab />, { wrapper: createWrapper() });
+    expect(screen.getByRole('switch', { name: /Format text as you type/i })).not.toBeChecked();
+  });
+
+  it('reflects the stored value when the preference is on', async () => {
+    const { wrapper } = createConfigHarness({ ui: { composer: { richText: true } } });
+    render(<AdvancedTab />, { wrapper });
+    await waitFor(() =>
+      expect(screen.getByRole('switch', { name: /Format text as you type/i })).toBeChecked()
+    );
+  });
+
+  it('toggling it on writes exactly the composer subtree', async () => {
+    const { wrapper, transport } = createConfigHarness({ ui: { composer: { richText: false } } });
+    render(<AdvancedTab />, { wrapper });
+
+    fireEvent.click(screen.getByRole('switch', { name: /Format text as you type/i }));
+
+    await waitFor(() => expect(transport.updateConfig).toHaveBeenCalledTimes(1));
+    expect(transport.updateConfig).toHaveBeenCalledWith({ ui: { composer: { richText: true } } });
+  });
+
+  it('toggling it back off writes false, so the switch is a real exit', async () => {
+    const { wrapper, transport } = createConfigHarness({ ui: { composer: { richText: true } } });
+    render(<AdvancedTab />, { wrapper });
+
+    await waitFor(() =>
+      expect(screen.getByRole('switch', { name: /Format text as you type/i })).toBeChecked()
+    );
+    fireEvent.click(screen.getByRole('switch', { name: /Format text as you type/i }));
+
+    await waitFor(() =>
+      expect(transport.updateConfig).toHaveBeenCalledWith({ ui: { composer: { richText: false } } })
+    );
   });
 
   it('opens ResetDialog when Reset button is clicked', () => {

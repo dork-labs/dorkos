@@ -2,6 +2,7 @@ import type { Locator, Page } from '@playwright/test';
 import { test, expect } from '../../fixtures';
 import { SERVER_ROUND_TRIP_MS } from '../../fixtures/rooms-api';
 import { openCockpit } from './open-cockpit';
+import { expectCaretAt, expectComposerText } from '../../pages/composer-probe';
 
 // Same reasoning as the other rooms specs: these share one server and one room
 // list, so they run one at a time with a ceiling sized for a machine that is
@@ -127,7 +128,7 @@ test.describe('Rooms — the @ mention picker @smoke', () => {
     await expect(await announced(page, composer)).toHaveAccessibleName(`${opened} @${opened}`);
     await composer.press('Enter');
 
-    await expect(composer).toHaveValue(`please look @${opened} `);
+    await expectComposerText(composer, `please look @${opened} `);
     await expect(listbox).toBeHidden();
     await expect(composer).toHaveAttribute('aria-expanded', 'false');
 
@@ -174,17 +175,15 @@ test.describe('Rooms — the @ mention picker @smoke', () => {
 
     await row.click();
 
-    await expect(composer).toHaveValue(`@${ana.name} `);
+    await expectComposerText(composer, `@${ana.name} `);
     // And the composer has the keyboard back, with the caret past the mention,
     // so the sentence can just be continued. Both halves matter: focus without
     // the caret leaves the next word landing in the wrong place.
     await expect(composer).toBeFocused();
-    expect(await composer.evaluate((el: HTMLTextAreaElement) => el.selectionStart)).toBe(
-      `@${ana.name} `.length
-    );
+    await expectCaretAt(composer, `@${ana.name} `.length);
 
     await composer.pressSequentially('please look');
-    await expect(composer).toHaveValue(`@${ana.name} please look`);
+    await expectComposerText(composer, `@${ana.name} please look`);
   });
 
   test('re-taking a mention already written leaves the caret past it', async ({
@@ -219,28 +218,22 @@ test.describe('Rooms — the @ mention picker @smoke', () => {
     });
 
     const caretInsideMention = `hey @${ana.name}`.length;
-    expect(await composer.evaluate((el: HTMLTextAreaElement) => el.selectionStart)).toBe(
-      caretInsideMention
-    );
+    await expectCaretAt(composer, caretInsideMention);
 
     await composer.press('Enter');
 
     // Taking the row rewrites the text to exactly what it already said, so the
     // value never changes — and the caret contract still applies. Left where it
     // was, the next word lands against the handle.
-    await expect(composer).toHaveValue(`hey @${ana.name} there`);
-    expect(await composer.evaluate((el: HTMLTextAreaElement) => el.selectionStart)).toBe(
-      caretInsideMention + 1
-    );
+    await expectComposerText(composer, `hey @${ana.name} there`);
+    await expectCaretAt(composer, caretInsideMention + 1);
 
     // And the caret request does not survive to fire on the next edit, dragging
     // the caret back into the middle of the sentence a keystroke later.
     await composer.press('End');
     await composer.pressSequentially('!');
-    await expect(composer).toHaveValue(`hey @${ana.name} there!`);
-    expect(await composer.evaluate((el: HTMLTextAreaElement) => el.selectionStart)).toBe(
-      `hey @${ana.name} there!`.length
-    );
+    await expectComposerText(composer, `hey @${ana.name} there!`);
+    await expectCaretAt(composer, `hey @${ana.name} there!`.length);
   });
 
   test('a name nobody has leaves Enter alone, so the message still sends', async ({
@@ -270,7 +263,7 @@ test.describe('Rooms — the @ mention picker @smoke', () => {
     // Enter must reach the send path rather than being swallowed by a panel
     // with no rows in it.
     await composer.press('Enter');
-    await expect(composer).toHaveValue('');
+    await expectComposerText(composer, '');
 
     await expect
       .poll(async () => (await roomsApi.listEntries(room.id)).map((e) => e.body.text), {

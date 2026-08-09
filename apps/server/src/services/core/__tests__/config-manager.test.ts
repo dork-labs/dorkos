@@ -13,6 +13,7 @@ import {
   backfillSidebarDefaults,
   backfillShapesDefaults,
   migrateStatusBarToPins,
+  backfillComposerPrefs,
   backfillAutonomyAcknowledgement,
   backfillSidebarSettingsDefaults,
   backfillSidebarRoomSections,
@@ -1268,6 +1269,84 @@ describe('migrateStatusBarToPins migration (DOR-431, DOR-452)', () => {
         defaultTrustStop: null,
       },
     });
+  });
+});
+
+describe('backfillComposerPrefs migration (composer-rich-text, DOR-948)', () => {
+  it('fresh install: the schema default seeds ui.composer with rich text off', () => {
+    // A brand-new config comes from the schema, not a migration — and it lands
+    // on the plain markdown box everyone already has.
+    expect(USER_CONFIG_DEFAULTS.ui.composer).toEqual({ richText: false });
+  });
+
+  it('upgraded install: adds ui.composer to an existing ui block, preserving other ui fields', () => {
+    // The case the migration exists for: conf's defaults-merge is SHALLOW, so a
+    // `ui` object already on disk never grows a newly-added nested section.
+    const store = createMockStore({
+      ui: {
+        theme: 'dark',
+        dismissedUpgradeVersions: ['1.0.0'],
+        statusBar: { pins: ['git'] },
+      },
+    });
+    backfillComposerPrefs(store);
+    expect(store.data.ui).toEqual({
+      theme: 'dark',
+      dismissedUpgradeVersions: ['1.0.0'],
+      statusBar: { pins: ['git'] },
+      composer: { richText: false },
+    });
+  });
+
+  it('is idempotent — never flips a preference someone already turned on', () => {
+    const existing = { theme: 'system', composer: { richText: true } };
+    const store = createMockStore({ ui: structuredClone(existing) });
+    backfillComposerPrefs(store);
+    backfillComposerPrefs(store);
+    expect(store.data.ui).toEqual(existing);
+  });
+
+  it('is a no-op when the ui section is absent (the defaults merge owns that case)', () => {
+    const store = createMockStore({ server: { port: 4242 } });
+    backfillComposerPrefs(store);
+    expect(store.data.ui).toBeUndefined();
+  });
+
+  it.each([
+    ['an array', []],
+    ['a string', 'true'],
+    ['a number', 1],
+    ['an object of the wrong shape', { rich: 'yes' }],
+  ])('replaces a stored ui.composer that is %s', (_label, stored) => {
+    // `typeof [] === 'object'`, so a shape check that only asks "is it an
+    // object?" leaves an array in place and conf's Ajv then condemns the whole
+    // file on the next boot — the DOR-584 lesson. The schema is the only honest
+    // judge of whether what is on disk is a ComposerPrefs.
+    const store = createMockStore({ ui: { theme: 'dark', composer: stored } });
+    backfillComposerPrefs(store);
+    expect(store.data.ui).toEqual({ theme: 'dark', composer: { richText: false } });
+  });
+
+  it('leaves a shape the schema accepts', () => {
+    // conf validates the WHOLE store once migrations finish, and `ui.composer`
+    // is a closed object. Parsing the post-migration `ui` through the schema is
+    // the guard that this backfill can never hard-fail startup.
+    const store = createMockStore({ ui: { theme: 'dark', dismissedUpgradeVersions: [] } });
+    backfillComposerPrefs(store);
+    const parsed = UserConfigSchema.parse({ version: 1, ui: store.data.ui });
+    expect(parsed.ui.composer).toEqual({ richText: false });
+  });
+
+  it('is registered in CONFIG_MIGRATIONS under a key above the newest tag', () => {
+    // v0.58.0 is tagged and package.json reads 0.58.0, so 0.59.0 is the newest
+    // key that can still run for everybody. The migration-safety guard below
+    // enforces the rule; this pins the effect.
+    const keys = Object.keys(CONFIG_MIGRATIONS);
+    expect(keys[keys.length - 1]).toBe('0.59.0');
+
+    const store = createMockStore({ ui: { theme: 'dark' } });
+    CONFIG_MIGRATIONS['0.59.0'](store);
+    expect(store.data.ui).toMatchObject({ composer: { richText: false } });
   });
 });
 

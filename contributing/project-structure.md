@@ -80,7 +80,8 @@ src/
 │   │   │   │   └── stream/   # StreamManager, stream-event-handler, classify-transport-error
 │   │   │   ├── api/
 │   │   │   └── index.ts
-│   │   ├── composer/    # The one message box — Composer.Root/.Input/.OverlayLane/.Attachments/.ClearArmedHint, composed by chat and rooms
+│   │   ├── composer/    # The one message box — Composer.Root/.Input/.OverlayLane/.Attachments/.ClearArmedHint, composed by chat, rooms, and the dashboard
+│   │   │   └── ui/field/ # The two fields behind one ComposerFieldProps (DOR-948) — see below
 │   │   ├── command-palette/ # Global Cmd+K palette (Fuse.js search, agent preview, sub-menus)
 │   │   ├── commands/    # Inline slash command palette (chat input)
 │   │   ├── session-list/ # SessionSidebar (Obsidian shell), SessionsView, tabbed views
@@ -119,6 +120,29 @@ src/
 │           └── index.ts
 └── contexts/            # React Context (TransportProvider)
 ```
+
+### `features/composer/ui/field/` — the two fields
+
+The composer renders one of two fields behind a single `ComposerFieldProps`, chosen by the
+`richText` prop (`ui.composer.richText`, DOR-948). Everything here is INTERNAL to the slice —
+none of it is in `features/composer/index.ts`, which exports components and types only.
+
+| Module                    | Owns                                                                                                                                       |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `ComposerFieldProps.ts`   | The one interface both fields satisfy — value, handlers, the palette a11y quartet, and `onSurfaceChange`                                   |
+| `TextareaField.tsx`       | The plain `<textarea>`, exactly as it shipped, plus `useTextareaResize`                                                                    |
+| `LexicalField.tsx`        | The rich field and the lazy chunk root — editor config, plugins, and the a11y attributes the e2e page objects and the feed navigation read |
+| `lexical-nodes.ts`        | `MentionNode` (a token `TextNode` drawing the real identity pill) and `COMPOSER_NODES`, the closed registered set                          |
+| `lexical-transformers.ts` | `COMPOSER_TRANSFORMERS` — the closed markdown set, built by naming transformers rather than spreading, plus ⌘B / ⌘I                        |
+| `markdown-offsets.ts`     | Serialization and the offset map in ONE walk; the fixed-point invariant the controlled loop depends on                                     |
+| `use-lexical-value.ts`    | The controlled-value boundary: the emitted-value latch, the selection-only fast path, and the text-then-cursor emission order              |
+| `lexical-surface.ts`      | The `EditingSurface` adapter for Lexical — the second implementation of the port the ladder talks to                                       |
+| `use-ladder-commands.ts`  | The keyboard ladder registered at `COMMAND_PRIORITY_CRITICAL`, including the list rows                                                     |
+| `use-mention-nodes.ts`    | Promoting typed `@handle` text to `MentionNode`s when the handle is in the roster                                                          |
+| `use-paste-precedence.ts` | Who owns a paste or a drop, so file attach and file-tree path drops still reach the host                                                   |
+
+The port itself (`editing-surface.ts`) and the textarea adapter (`textarea-surface.ts`) sit one
+level up in `features/composer/ui/`, because the ladder uses them whichever field is mounted.
 
 ## FSD Layer Hierarchy
 
