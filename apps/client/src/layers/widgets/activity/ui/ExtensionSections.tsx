@@ -31,7 +31,7 @@ export function ExtensionSections() {
   if (visible.length === 0) return null;
 
   return (
-    <section className="space-y-3 px-4" aria-labelledby={headingId}>
+    <section className="space-y-3" aria-labelledby={headingId}>
       <h2
         id={headingId}
         className="text-muted-foreground text-xs font-medium tracking-widest uppercase"

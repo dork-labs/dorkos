@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { useSearch } from '@tanstack/react-router';
+import { PageContainer } from '@/layers/shared/ui';
 import { MessagingRegion } from './MessagingRegion';
 import { AccountsRegion } from './AccountsRegion';
 
@@ -26,7 +27,7 @@ export function ConnectionsPage() {
   }, [region]);
 
   return (
-    <div className="container-default mx-auto px-4 py-6">
+    <PageContainer width="reading">
       <header className="mb-8">
         <h1 className="text-xl font-semibold">Connections</h1>
         <p className="text-muted-foreground mt-1 max-w-prose text-sm">
@@ -43,6 +44,6 @@ export function ConnectionsPage() {
           <AccountsRegion />
         </div>
       </div>
-    </div>
+    </PageContainer>
   );
 }

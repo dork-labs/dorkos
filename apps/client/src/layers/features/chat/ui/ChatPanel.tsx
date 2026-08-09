@@ -330,7 +330,7 @@ export function ChatPanel({
   );
 
   return (
-    <div data-testid="chat-panel" className="mx-auto flex h-full w-full max-w-7xl flex-col">
+    <div data-testid="chat-panel" className="flex h-full w-full flex-col">
       <BirthCertificate sessionId={sessionId} />
 
       <ChatMessageArea

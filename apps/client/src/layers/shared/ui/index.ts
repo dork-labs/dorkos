@@ -257,6 +257,8 @@ export type {
 } from './use-roving-tab-list';
 export type { TabsListProps } from './tabs';
 export { DirectoryPicker } from './DirectoryPicker';
+export { PageContainer } from './page-container';
+export type { PageContainerProps } from './page-container';
 export { PathInput } from './path-input';
 export type { PathInputProps } from './path-input';
 export { Skeleton } from './skeleton';

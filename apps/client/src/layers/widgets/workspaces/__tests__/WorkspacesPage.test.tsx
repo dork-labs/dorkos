@@ -7,7 +7,8 @@
  * Also pins the page's own scroll container (DOR-1036). The route panel clips its
  * overflow, so a page that renders its content outside a scroller loses everything
  * past the first screenful. jsdom cannot measure that clipping, so the tests assert
- * the structure instead: the content must be inside the ScrollArea viewport.
+ * the structure instead: the content must be inside the scroller `PageContainer`
+ * wraps it in.
  */
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
@@ -62,9 +63,15 @@ function renderWith(transport: Transport) {
   );
 }
 
-/** The ScrollArea viewport — the element that actually scrolls. */
+/**
+ * The element that actually scrolls: the wrapper `PageContainer` puts around its
+ * content box when it owns the page's scrolling. Null when the page renders no
+ * container, or one that declined the scroller.
+ */
 function scrollViewport(container: HTMLElement) {
-  return container.querySelector<HTMLElement>('[data-slot="scroll-area-viewport"]');
+  const content = container.querySelector<HTMLElement>('[data-slot="page-container"]');
+  const scroller = content?.parentElement ?? null;
+  return scroller?.classList.contains('overflow-y-auto') ? scroller : null;
 }
 
 describe('WorkspacesPage', () => {

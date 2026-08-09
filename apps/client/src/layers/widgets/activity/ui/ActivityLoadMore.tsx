@@ -33,7 +33,7 @@ export function ActivityLoadMore({
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       transition={{ duration: 0.2, delay: 0.1 }}
-      className={cn('flex justify-center px-4 py-4', className)}
+      className={cn('flex justify-center py-4', className)}
     >
       <Button
         variant="outline"
