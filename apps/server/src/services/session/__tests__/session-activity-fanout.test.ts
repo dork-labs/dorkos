@@ -199,6 +199,54 @@ describe('projector activity fan-out', () => {
     disposeProjector('act-7');
   });
 
+  it('refuses an activity injected through a status_change — the projector owns this field', () => {
+    // Purpose: `status_change` carries a PARTIAL SessionStatus, which the
+    // projector merges field-wise onto the held one. That partial is derived
+    // from the same schema, so the moment `activity` joined SessionStatus it
+    // became a key any runtime's status delta could set — and the fold would
+    // have accepted it, fanned it out, and let a runtime name a tool the
+    // session never started. Nothing legitimate produces it (the normalizer
+    // maps no source field to it), so the honest shape is that the delta
+    // cannot express it at all.
+    const p = getOrCreateProjector('act-9');
+    const updates: ProjectorStatusUpdate[] = [];
+    listen((u) => updates.push(u));
+
+    p.ingest({ type: 'turn_start' });
+    p.ingest(toolCall('Read', { file_path: '/repo/real.ts' }));
+    const before = updates.length;
+
+    p.ingest({
+      type: 'status_change',
+      status: { activity: { toolName: 'InjectedTool', target: 'not-a-real-thing' } },
+    } as unknown as RawSessionEvent);
+
+    expect(p.getStatus().activity).toEqual({ toolName: 'Read', target: 'real.ts' });
+    expect(updates).toHaveLength(before);
+
+    disposeProjector('act-9');
+  });
+
+  it('leaves no timer behind when a projector with an armed flush is disposed', () => {
+    // Purpose: the trailing flush is a real timer on a long-lived object. A
+    // disposed projector is off the registry and unreachable, so a surviving
+    // timer would fire into nothing — announcing a session that no longer
+    // exists to every connected client, and holding a reference to it until
+    // it did.
+    vi.useFakeTimers();
+    const p = getOrCreateProjector('act-10');
+    listen(() => {});
+
+    p.ingest({ type: 'turn_start' });
+    p.ingest(toolCall('Read', { file_path: '/repo/a.ts' }));
+    // The second tool inside the window is what arms the trailing flush.
+    p.ingest(toolCall('Read', { file_path: '/repo/b.ts' }));
+    expect(vi.getTimerCount()).toBe(1);
+
+    disposeProjector('act-10');
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
   it('ignores a tool_result: the reading is what the session started, not what it finished', () => {
     vi.useFakeTimers();
     const p = getOrCreateProjector('act-8');

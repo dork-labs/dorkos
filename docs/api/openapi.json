@@ -1588,9 +1588,6 @@
                   },
                   "lastError": {
                     "$ref": "#/components/schemas/ErrorEvent"
-                  },
-                  "activity": {
-                    "$ref": "#/components/schemas/SessionActivity"
                   }
                 }
               }
@@ -2319,20 +2316,6 @@
         "default": null,
         "required": [
           "message"
-        ]
-      },
-      "SessionActivity": {
-        "type": "object",
-        "properties": {
-          "toolName": {
-            "type": "string"
-          },
-          "target": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "toolName"
         ]
       },
       "TaskItem": {
@@ -3267,6 +3250,20 @@
           "outputTokens",
           "cacheReadTokens",
           "cacheCreationTokens"
+        ]
+      },
+      "SessionActivity": {
+        "type": "object",
+        "properties": {
+          "toolName": {
+            "type": "string"
+          },
+          "target": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "toolName"
         ]
       },
       "PendingInteractionDTO": {
@@ -8146,9 +8143,6 @@
                             },
                             "lastError": {
                               "$ref": "#/components/schemas/ErrorEvent"
-                            },
-                            "activity": {
-                              "$ref": "#/components/schemas/SessionActivity"
                             }
                           }
                         }

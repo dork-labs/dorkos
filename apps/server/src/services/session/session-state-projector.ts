@@ -804,9 +804,25 @@ export class SessionStateProjector {
    * streaming one carries only `outputTokens` — a wholesale replace would let
    * each delta zero the fields it does not carry (e.g. reset the running
    * output-token count at turn end). Absent fields keep their prior value.
+   *
+   * `activity` is DISCARDED here rather than merged, and the discard has to
+   * live in this fold rather than only in the schema. `SessionEventSchema`
+   * omits the key from the `status_change` payload, but the projector ingests
+   * what an adapter hands it — `ingest` never parses — so the schema constrains
+   * the WIRE while this line constrains the STATE. The field is derived by this
+   * projector from the `tool_call` events it has seen and cleared by it at
+   * every turn boundary; a status delta that could set it would let a runtime
+   * name a tool the session never started, and that claim would fan out
+   * fleet-wide indistinguishable from a real one.
    */
   private applyStatusChange(partial: StatusChangePayload): void {
-    const { contextUsage, ...rest } = partial;
+    const {
+      contextUsage,
+      activity: _notTheirs,
+      ...rest
+    } = partial as StatusChangePayload & {
+      activity?: unknown;
+    };
     this.status = { ...this.status, ...rest };
     if (contextUsage !== undefined) {
       this.status.contextUsage =

@@ -89,7 +89,7 @@ export {
   useSessionListStore,
   useSessionListSessions,
   useSessionListStatus,
-  useSessionActivity,
+  useSessionToolActivity,
   selectSessionActivity,
   useSessionContextReading,
   useSessionRekeyTarget,

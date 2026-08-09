@@ -366,10 +366,20 @@ export const SessionEventSchema = z
     // merges these partials field-wise, so a delta must be able to omit any
     // field it does not carry rather than zeroing it. The snapshot's resolved
     // `SessionStatus.contextUsage` stays the full (non-partial) shape.
+    //
+    // `activity` is OMITTED, and that omission is the whole of its ownership
+    // rule. Every other field here is something a runtime reports about
+    // itself; `activity` is something the PROJECTOR derives, from the
+    // `tool_call` events it has actually seen, and clears at every turn
+    // boundary it controls. Left in the partial it would be a key any runtime's
+    // status delta could set — merged straight into the held status and fanned
+    // out fleet-wide — which is a runtime naming a tool the session never
+    // started. Nothing produces it (the normalizer maps no source field to it),
+    // so the delta simply cannot express it.
     z.object({
       ...seqShape,
       type: z.literal('status_change'),
-      status: SessionStatusSchema.partial().extend({
+      status: SessionStatusSchema.omit({ activity: true }).partial().extend({
         contextUsage: SessionContextUsageSchema.partial().nullable().optional(),
       }),
     }),

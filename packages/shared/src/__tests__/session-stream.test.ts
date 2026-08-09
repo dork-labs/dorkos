@@ -9,6 +9,7 @@ import {
   isBlockingInteractionEvent,
   approvalOutcomeOf,
   type ToolApprovalOutcome,
+  type SessionEvent,
 } from '../session-stream.js';
 
 const coldStatus = {
@@ -136,6 +137,30 @@ describe('SessionEventSchema', () => {
     };
     const parsed = SessionEventSchema.parse(event);
     expect(parsed).toMatchObject({ startedAt: 1_700_000_000_000, remainingMs: 25_000 });
+  });
+
+  it('drops an activity smuggled onto a status_change — the projector owns that field', () => {
+    // Purpose: `status_change` carries a PARTIAL SessionStatus, so every field
+    // added to the status becomes a field a runtime's delta could set. Every
+    // other one is something a runtime reports about itself; `activity` is
+    // derived by the projector from the tool calls it has actually seen. Left
+    // in the partial, a runtime could name a tool the session never started and
+    // it would fan out fleet-wide looking exactly like a real reading. The
+    // member omits it, so the key cannot survive the parse.
+    const smuggled = {
+      seq: 7,
+      type: 'status_change',
+      status: { model: 'claude-opus-4-6', activity: { toolName: 'InjectedTool' } },
+    };
+    const parsed = SessionEventSchema.parse(smuggled) as Extract<
+      SessionEvent,
+      { type: 'status_change' }
+    >;
+    // The delta it legitimately carried survives; the one it may not, does not.
+    // (`.partial()` still applies the defaulted keys, so this is a subset match
+    // rather than an equality one.)
+    expect(parsed.status).toMatchObject({ model: 'claude-opus-4-6' });
+    expect('activity' in parsed.status).toBe(false);
   });
 
   it('parses the compaction fidelity members (DOR-110)', () => {

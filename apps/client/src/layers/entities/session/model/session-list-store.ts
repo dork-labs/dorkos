@@ -312,9 +312,14 @@ export function selectSessionActivity(
  * Selector: what a single session is doing right now, or `null`. Subscribes to
  * the same store the sidebar reads, so every surface names one tool at a time.
  *
+ * `ToolActivity`, not `Activity`: `widgets/activity` already exports a
+ * `useSessionActivity()` that returns this week's per-day session COUNTS. Two
+ * hooks a letter apart, one taking a session id and one taking nothing, is an
+ * autocomplete trap — and the two answer completely different questions.
+ *
  * @param sessionId - The session to watch.
  */
-export function useSessionActivity(sessionId: string): SessionActivity | null {
+export function useSessionToolActivity(sessionId: string): SessionActivity | null {
   return useSessionListStore(useCallback((s) => selectSessionActivity(s, sessionId), [sessionId]));
 }
 

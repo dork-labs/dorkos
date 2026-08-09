@@ -39,10 +39,13 @@ describe('deriveSessionActivity', () => {
   });
 
   it('truncates a long target instead of putting a wall of text on the wire', () => {
+    // The EXACT length, not a bound: an upper bound is satisfied by a truncate
+    // that cuts far too much (12 characters would pass it just as well as 40),
+    // so it cannot tell a correct cut from a destructive one.
     const command = 'x'.repeat(200);
     const activity = deriveSessionActivity('Bash', JSON.stringify({ command }));
-    expect(activity?.target?.length).toBeLessThanOrEqual(ACTIVITY_TARGET_MAX_LENGTH + 1);
-    expect(activity?.target?.endsWith('…')).toBe(true);
+    expect(activity?.target).toBe(`${'x'.repeat(ACTIVITY_TARGET_MAX_LENGTH)}\u2026`);
+    expect(activity?.target).toHaveLength(ACTIVITY_TARGET_MAX_LENGTH + 1);
   });
 
   it('collapses a multi-line command to its first line', () => {

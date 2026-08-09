@@ -7,9 +7,10 @@ import type { StripState } from './strip-state';
  * What the strip draws for one state.
  *
  * The strip announces itself politely, which puts an extra rule on everything in
- * here: anything that ticks — the rotating verb, the elapsed clock, the token
- * count — is `aria-hidden`, and each state carries one stable sentence instead. A
- * live region that re-reads "2m 15s" every second is worse than silence.
+ * here: anything that changes on its own — the activity label, the elapsed
+ * clock, the token count — is `aria-hidden`, and each state carries one stable
+ * sentence instead. A live region that re-reads "2m 15s" every second is worse
+ * than silence.
  *
  * @param state - The active strip state.
  */

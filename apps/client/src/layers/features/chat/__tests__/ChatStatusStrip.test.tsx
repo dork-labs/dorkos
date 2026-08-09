@@ -362,7 +362,7 @@ describe('ChatStatusStrip component', () => {
 
   it('renders a session hook message in the strip (DOR-125)', () => {
     // Hooks are the real non-operation state the strip surfaces. ('requesting'
-    // is never forwarded — the rotating verb owns the thinking phase.)
+    // is never forwarded — the activity label owns the thinking phase.)
     render(
       <ChatStatusStrip
         status="streaming"
@@ -398,7 +398,7 @@ describe('ChatStatusStrip announcements', () => {
   });
 
   it('hides everything that ticks, so the churn is not announced with it', () => {
-    // A live region that re-reads the rotating verb every few seconds — or the
+    // A live region that re-reads the activity label every few seconds — or the
     // elapsed clock every second — is worse than silence. One stable sentence
     // announces the state instead.
     render(
