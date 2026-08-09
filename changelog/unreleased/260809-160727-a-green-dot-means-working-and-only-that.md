@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(ui): one rendering for agent working state (DOR-1052)'
+  - 'fix(ui): review fixes — real legend, keyboard rename, contrast-safe amber (DOR-1052)'
 ---
 
 ### Fixed
