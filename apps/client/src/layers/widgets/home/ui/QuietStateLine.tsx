@@ -60,7 +60,7 @@ export function QuietStateLine({ forwardLook, suggestion }: QuietStateLineProps)
       transition={{ duration: 0.2 }}
       className="border-border/60 shrink-0 border-b"
     >
-      <div className="mx-auto w-full max-w-4xl px-4 py-2 sm:px-6">
+      <div className="w-full px-[var(--msg-padding-x)] py-2">
         <p className="text-muted-foreground text-xs">
           <span className="text-foreground/80 font-medium">All quiet.</span>
           {forwardLook !== null && <> {forwardLook}</>}

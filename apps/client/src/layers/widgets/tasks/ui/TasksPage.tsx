@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { TriangleAlert } from 'lucide-react';
 import { motion } from 'motion/react';
 import { Button } from '@/layers/shared/ui/button';
-import { FeatureDisabledState } from '@/layers/shared/ui';
+import { FeatureDisabledState, PageContainer } from '@/layers/shared/ui';
 import { icons } from '@dorkos/icons/registry';
 import { useTasksEnabled, useTasks, useTaskTemplateDialog } from '@/layers/entities/tasks';
 import type { TaskTemplate } from '@/layers/entities/tasks';
@@ -119,14 +119,16 @@ export function TasksPage() {
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ duration: 0.15 }}
-          className="flex h-full flex-col"
+          className="h-full min-h-0"
         >
-          <TasksList
-            tasks={allTasks}
-            isLoading={isLoading}
-            agentMap={agentMap}
-            onEditTask={handleEditTask}
-          />
+          <PageContainer width="full" scroll={false}>
+            <TasksList
+              tasks={allTasks}
+              isLoading={isLoading}
+              agentMap={agentMap}
+              onEditTask={handleEditTask}
+            />
+          </PageContainer>
         </motion.div>
       )}
 

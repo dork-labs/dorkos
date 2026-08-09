@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Loader2, TriangleAlert } from 'lucide-react';
-import { Button } from '@/layers/shared/ui';
+import { Button, PageContainer } from '@/layers/shared/ui';
 import {
   DEFAULT_TEAM_FILTERS,
   filterTeamMembers,
@@ -118,7 +118,7 @@ export function TeamPage({ filters, onFiltersChange }: TeamPageProps) {
   }
 
   return (
-    <div data-slot="team-page" className="flex h-full flex-col gap-4 overflow-y-auto p-4 md:p-6">
+    <PageContainer width="full" className="flex flex-col gap-4">
       <TeamRosterWarnings warnings={data?.warnings} />
       <TeamRosterToolbar filters={activeFilters} onFiltersChange={patchFilters} people={people} />
       {visible.length > 0 ? (
@@ -144,6 +144,6 @@ export function TeamPage({ filters, onFiltersChange }: TeamPageProps) {
           <AgentGhostRows />
         </div>
       )}
-    </div>
+    </PageContainer>
   );
 }

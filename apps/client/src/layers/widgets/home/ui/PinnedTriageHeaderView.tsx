@@ -250,7 +250,7 @@ export function PinnedTriageHeaderView({
               // A real button, full width and 44px tall: it is the only way
               // back to the cards while the keyboard is up, and a phone is
               // exactly where it is pressed.
-              className="text-muted-foreground hover:text-foreground mx-auto flex min-h-11 w-full max-w-4xl min-w-0 items-center gap-2 px-4 text-left text-xs sm:px-6"
+              className="text-muted-foreground hover:text-foreground flex min-h-11 w-full min-w-0 items-center gap-2 px-[var(--msg-padding-x)] text-left text-xs"
             >
               <span className="bg-status-warning size-1.5 shrink-0 rounded-full" aria-hidden />
               <span className="min-w-0 flex-1 truncate">{summary.compact}</span>
@@ -280,7 +280,7 @@ export function PinnedTriageHeaderView({
           >
             <div
               className={cn(
-                'mx-auto flex w-full max-w-4xl min-w-0 flex-col gap-3 overflow-y-auto overscroll-contain px-4 py-3 sm:px-6',
+                'flex w-full min-w-0 flex-col gap-3 overflow-y-auto overscroll-contain px-[var(--msg-padding-x)] py-3',
                 MAX_HEIGHT
               )}
             >

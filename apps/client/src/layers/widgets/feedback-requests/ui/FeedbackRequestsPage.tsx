@@ -1,3 +1,4 @@
+import { PageContainer } from '@/layers/shared/ui';
 import { FeedbackRequestsPanel } from '@/layers/features/feedback-requests';
 
 /**
@@ -7,7 +8,7 @@ import { FeedbackRequestsPanel } from '@/layers/features/feedback-requests';
  */
 export function FeedbackRequestsPage() {
   return (
-    <div className="container-default mx-auto flex h-full flex-col px-4 py-6">
+    <PageContainer width="reading" scroll={false}>
       <header className="mb-6 shrink-0">
         <h1 className="text-xl font-semibold">Feedback &amp; requests</h1>
         <p className="text-muted-foreground mt-1 text-sm">
@@ -17,6 +18,6 @@ export function FeedbackRequestsPage() {
       <div className="min-h-0 flex-1">
         <FeedbackRequestsPanel />
       </div>
-    </div>
+    </PageContainer>
   );
 }
