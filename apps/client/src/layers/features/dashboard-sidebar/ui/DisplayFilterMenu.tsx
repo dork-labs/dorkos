@@ -3,7 +3,7 @@ import type { SidebarDisplayFilter } from '@dorkos/shared/config-schema';
 import type { SidebarMenuRadioSubmenu } from '@/layers/shared/ui';
 
 /** Selectable per-section display filters, in menu order (spec agent-list-settings §5). */
-export const DISPLAY_FILTER_OPTIONS: { value: SidebarDisplayFilter; label: string }[] = [
+const DISPLAY_FILTER_OPTIONS: { value: SidebarDisplayFilter; label: string }[] = [
   { value: 'all', label: 'All' },
   { value: 'active', label: 'Active' },
   { value: 'attention', label: 'Needs attention' },
@@ -15,10 +15,10 @@ export const DISPLAY_FILTER_OPTIONS: { value: SidebarDisplayFilter; label: strin
  * constant because §14.1's whole point is that the same verb reads the same
  * everywhere.
  */
-export const DISPLAY_FILTER_MENU_LABEL = 'Show';
+const DISPLAY_FILTER_MENU_LABEL = 'Show';
 
 /** The mark beside {@link DISPLAY_FILTER_MENU_LABEL}, shared for the same reason. */
-export const DISPLAY_FILTER_MENU_ICON = SlidersHorizontal;
+const DISPLAY_FILTER_MENU_ICON = SlidersHorizontal;
 
 /**
  * The "Show" radio submenu (All / Active / Needs attention) as a menu node —

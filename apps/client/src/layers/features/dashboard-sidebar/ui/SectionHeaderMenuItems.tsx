@@ -52,18 +52,23 @@ export type SectionHeaderActionId =
   | 'convert-to-manual'
   | 'delete';
 
-/** Identity of one radio submenu. */
-export type SectionHeaderSubmenuId = 'display' | 'sort';
+/** One thing you can do to a whole section — the shared action node, with this family's ids. */
+export type SectionHeaderAction = Omit<SidebarMenuActionNode, 'id'> & { id: SectionHeaderActionId };
 
 /**
- * A section header's menu as data — the shared sidebar node type.
+ * A section header's menu as data — the shared sidebar node type, with this
+ * family's action vocabulary substituted for the generic one.
  *
- * Kept as a named alias rather than replaced outright: every builder below
- * returns it, and the name says which family of menus these are. The type
- * itself is `shared/ui`'s, so a header menu and a row menu are the same kind of
- * thing with the same walk over them (spec `rooms` §14.1).
+ * The narrowing is what keeps {@link SectionHeaderActionId} honest: a builder
+ * that invents an id outside the vocabulary fails to compile rather than
+ * shipping an action nothing can resolve. Every node here is still assignable
+ * to `SidebarMenuNode`, so the shared renderer takes the list unchanged — a
+ * header menu and a row menu are the same kind of thing with the same walk over
+ * them (spec `rooms` §14.1).
  */
-export type SectionHeaderMenuNode = SidebarMenuNode;
+export type SectionHeaderMenuNode =
+  | SectionHeaderAction
+  | Exclude<SidebarMenuNode, SidebarMenuActionNode>;
 
 /**
  * Every header below follows one order: what you can make, then what you can
@@ -77,7 +82,7 @@ export type SectionHeaderMenuNode = SidebarMenuNode;
 const SEP_CREATE = { kind: 'separator', id: 'sep-create' } as const;
 
 /** Collapse or expand, named for what choosing it will do. */
-function collapseNode(collapsed: boolean, onToggle: () => void): SidebarMenuActionNode {
+function collapseNode(collapsed: boolean, onToggle: () => void): SectionHeaderAction {
   return {
     kind: 'action',
     id: 'collapse',

@@ -189,9 +189,13 @@ export function SidebarRow({
         data-slot={dataSlot}
         {...{ [SIDEBAR_ROW_ATTRIBUTE]: '' }}
         className={cn(
-          'focus-visible:ring-sidebar-ring flex w-full rounded-md py-1.5 pr-7 text-left text-[13px] outline-hidden transition-colors duration-100 focus-visible:ring-2 active:scale-[0.98]',
+          // 13px on a 28px line, the density §11 asks for: `min-h-7` is the
+          // line and `py-1` is what keeps a one-line row on it exactly. A row
+          // that earned a second line grows past it, which is the point —
+          // height carries meaning here.
+          'focus-visible:ring-sidebar-ring flex min-h-7 w-full rounded-md py-1 pr-7 text-left text-[13px] outline-hidden transition-colors duration-100 focus-visible:ring-2 active:scale-[0.98]',
           SIDEBAR_ROW_INSET,
-          showSecondLine ? 'items-start' : 'min-h-7 items-center',
+          showSecondLine ? 'items-start py-1.5' : 'items-center',
           isActive
             ? 'bg-sidebar-accent text-sidebar-accent-foreground'
             : 'text-sidebar-foreground/70 hover:bg-sidebar-accent/70 hover:text-sidebar-foreground',

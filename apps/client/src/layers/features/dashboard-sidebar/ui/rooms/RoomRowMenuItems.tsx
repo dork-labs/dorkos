@@ -14,7 +14,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import type { RoomKind } from '@dorkos/shared/room-schemas';
-import type { SidebarMenuNode } from '@/layers/shared/ui';
+import type { SidebarMenuActionNode, SidebarMenuNode } from '@/layers/shared/ui';
 
 /**
  * Stable identity of one room action.
@@ -75,7 +75,8 @@ export interface RoomMenuAction {
 }
 
 /**
- * The room row's menu as data — the shared sidebar node type.
+ * The room row's menu as data — the shared sidebar node type, with this menu's
+ * own action vocabulary substituted for the generic one.
  *
  * Deliberately carries nothing Radix-shaped: an id, a label, an icon and the
  * two flags a renderer needs to decide how to present it. That is what lets the
@@ -83,8 +84,13 @@ export interface RoomMenuAction {
  * slash-command table all consume ONE list, which is the invariant spec §15.3
  * states — every room command has a menu equivalent and every menu item has a
  * command.
+ *
+ * The narrowing is what keeps {@link RoomMenuActionId} honest: a builder that
+ * invents an id outside the vocabulary fails to compile rather than shipping an
+ * action no command can resolve. Every node here is still assignable to
+ * `SidebarMenuNode`, so the shared renderer takes the list unchanged.
  */
-export type RoomRowMenuNode = SidebarMenuNode;
+export type RoomRowMenuNode = RoomMenuAction | Exclude<SidebarMenuNode, SidebarMenuActionNode>;
 
 /** Inputs the pure item list is built from (fabricated directly in unit tests). */
 export interface RoomRowMenuModel {
