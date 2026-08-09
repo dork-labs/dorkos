@@ -150,6 +150,22 @@ export const ROOMS_SECTIONS: PlaygroundSection[] = [
     ],
   },
   {
+    id: 'room-moments',
+    title: 'Room moments',
+    page: 'rooms',
+    category: 'Rooms',
+    keywords: [
+      'moment',
+      'milestone',
+      'joined your team',
+      'first agent',
+      'anniversary',
+      'volume mark',
+      'celebration',
+      'team room',
+    ],
+  },
+  {
     id: 'room-notices',
     title: 'Room notices',
     page: 'rooms',

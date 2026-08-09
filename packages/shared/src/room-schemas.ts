@@ -465,6 +465,116 @@ export const RoomWithRosterSchema = RoomSchema.extend({
 
 export type RoomWithRoster = z.infer<typeof RoomWithRosterSchema>;
 
+// === Moments ===
+
+/**
+ * What a moment marks — the milestone the room is pointing at.
+ *
+ * Every one of these is something that either happened or did not: an agent was
+ * created, a pull request shipped, a week's work added up to a number. There is
+ * no code here for "encouragement" or "tip", and there must never be one — a
+ * moment a person cannot trace back to a real record is the thing this whole
+ * feature is designed not to be (team-room-home spec D5.1).
+ *
+ * `agent_minted` is the one an AGENT noticed rather than a detector. It is not
+ * a looser bar: it carries the same source, it rides the same guarded post path
+ * as any other agent post, and it additionally has to name the agent that
+ * minted it.
+ */
+export const RoomMomentKindSchema = z
+  .enum([
+    'first_agent',
+    'joined_team',
+    'first_pr',
+    'first_schedule',
+    'first_overnight_run',
+    'first_connection',
+    'volume_mark',
+    'anniversary',
+    'agent_minted',
+  ])
+  .openapi('RoomMomentKind');
+
+export type RoomMomentKind = z.infer<typeof RoomMomentKindSchema>;
+
+/**
+ * The kind of real record a moment was read from.
+ *
+ * Deliberately a closed list of the things this install actually keeps, so a
+ * detector cannot invent a provenance: an agent's own record, a pull request,
+ * a schedule, a session, a connection, or the activity log that already counts
+ * what happened.
+ */
+export const RoomMomentSourceKindSchema = z
+  .enum(['agent', 'pull_request', 'schedule', 'session', 'connection', 'activity'])
+  .openapi('RoomMomentSourceKind');
+
+export type RoomMomentSourceKind = z.infer<typeof RoomMomentSourceKindSchema>;
+
+/**
+ * What a moment was derived FROM — the record, and when it happened.
+ *
+ * Required, and required to name something: `ref` is the id or path of the one
+ * record a reader could go and look at, and `observedAt` is when that record
+ * says the thing occurred, never when the moment was written. A moment posted
+ * an hour late is still about the hour it is about.
+ */
+export const RoomMomentSourceSchema = z
+  .object({
+    kind: RoomMomentSourceKindSchema,
+    ref: z
+      .string()
+      .min(1)
+      .describe(
+        "The record's own identifier — an agent path, a session id, a pull request URL. Never a sentence, and never empty: a source that names nothing is not a source."
+      ),
+    observedAt: z
+      .string()
+      .min(1)
+      .describe('When the thing actually happened, from the record. Not when this was posted.'),
+  })
+  .openapi('RoomMomentSource');
+
+export type RoomMomentSource = z.infer<typeof RoomMomentSourceSchema>;
+
+/**
+ * A milestone worth marking, carried on the entry that says it.
+ *
+ * **A moment is a post, not a fourth kind of entry.** It rides
+ * {@link RoomEntryBodySchema} beside the words a person reads, so every path
+ * that already carries a post carries this one — the history page, the stream,
+ * a bridge, a thread reply — and nothing had to learn a new entry kind. What
+ * changes is how the feed DRAWS it (`RoomMomentRow`).
+ *
+ * **`source` is what makes the type honest.** It is required, so the schema
+ * itself refuses a moment nobody can trace; a detector with nothing to point at
+ * has nothing to post.
+ *
+ * **`mintedByAgentRef` is required and nullable rather than optional**, so
+ * every moment states who minted it and "nobody filled this in" can never be
+ * read as "DorkOS did". `null` is DorkOS itself; an `agentAuthorRef` is the
+ * agent that noticed, and an `agent_minted` moment must carry one.
+ */
+export const RoomMomentSchema = z
+  .object({
+    kind: RoomMomentKindSchema,
+    source: RoomMomentSourceSchema,
+    mintedByAgentRef: z
+      .string()
+      .min(1)
+      .nullable()
+      .describe(
+        'The `agentAuthorRef` of the agent that minted this moment, or null when DorkOS itself did.'
+      ),
+  })
+  .refine((moment) => moment.kind !== 'agent_minted' || moment.mintedByAgentRef !== null, {
+    message: 'An agent-minted moment has to name the agent that minted it',
+    path: ['mintedByAgentRef'],
+  })
+  .openapi('RoomMoment');
+
+export type RoomMoment = z.infer<typeof RoomMomentSchema>;
+
 // === Entries ===
 
 /**
@@ -475,12 +585,18 @@ export type RoomWithRoster = z.infer<typeof RoomWithRosterSchema>;
  * exactly when `kind === 'notice'`, and `subjectAuthorId` names who the notice
  * is about when that is not the entry's own author (a refused trigger is
  * written by the system but is about the agent that did not reply).
+ *
+ * `moment` is the third field and the newest: set on a post that marks a
+ * milestone (spec D5.1), never on a notice. `subjectAuthorId` does the same job
+ * for it as it does for a notice — "tangerines joined your team" is written by
+ * the system and is ABOUT tangerines, and that is the identity the feed draws.
  */
 export const RoomEntryBodySchema = z
   .object({
     text: z.string(),
     notice: RoomNoticeCodeSchema.optional(),
     subjectAuthorId: z.string().optional(),
+    moment: RoomMomentSchema.optional(),
   })
   .openapi('RoomEntryBody');
 

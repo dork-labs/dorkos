@@ -84,6 +84,7 @@ import type {
   RoomKind,
   RoomBridgeInfo,
   RoomMember,
+  RoomMoment,
   RoomPresencePayload,
   RoomReactionEvent,
   RoomRosterEntry,
@@ -92,7 +93,7 @@ import type {
   ThreadSummary,
   UpdateRoomRequest,
 } from '@dorkos/shared/room-schemas';
-import { THREAD_PREVIEW_MAX_CHARS } from '@dorkos/shared/room-schemas';
+import { RoomMomentSchema, THREAD_PREVIEW_MAX_CHARS } from '@dorkos/shared/room-schemas';
 import { sanitizeIdentity } from '@dorkos/shared/untrusted-text';
 import { logger } from '../../lib/logger.js';
 import { eventFanOut } from '../core/event-fan-out.js';
@@ -1665,6 +1666,12 @@ export class RoomService {
    * @param input.attachmentIds - Files already uploaded into this room, in the
    *   order they should render. Resolved and refused BEFORE anything is
    *   written, then bound inside the entry's own transaction.
+   * @param input.moment - The milestone this post marks, for an agent-minted
+   *   moment (spec D5.1). Set by {@link RoomService.postMoment} and by nothing
+   *   else: no request body carries one, which is what keeps a moment something
+   *   this install observed rather than something a caller claimed. Minting one
+   *   buys no extra permission — the post is written by the same path, with the
+   *   same membership check, cascade stamp and turn budget behind it.
    * @returns The committed entry.
    */
   post(
@@ -1676,6 +1683,7 @@ export class RoomService {
       trigger?: PostTrigger;
       replyTo?: string;
       attachmentIds?: readonly string[];
+      moment?: RoomMoment;
     }
   ): RoomEntry {
     const room = this.requireVisibleRoom(roomId, input.authorId);
@@ -1945,6 +1953,7 @@ export class RoomService {
       sessionId?: string;
       trigger?: PostTrigger;
       replyTo?: string;
+      moment?: RoomMoment;
     },
     within?: (tx: DbTransaction) => void,
     opts?: {
@@ -2001,7 +2010,9 @@ export class RoomService {
         id,
         authorId: input.authorId,
         kind: 'post',
-        body: { text: input.text },
+        // The milestone rides beside the words, never instead of them: a moment
+        // a client cannot read is a blank line in the feed.
+        body: { text: input.text, ...(input.moment && { moment: input.moment }) },
         mentions: addressed.mentions,
         // The per-occurrence positions of those mentions, resolved in the SAME
         // pass and stored beside them so the client draws pills without ever
@@ -2046,6 +2057,111 @@ export class RoomService {
         error: err instanceof Error ? err.message : String(err),
       });
     }
+    return entry;
+  }
+
+  /**
+   * Mark a milestone in a room — a **moment** (team-room-home spec D5.1).
+   *
+   * **A moment is a post.** It is written into the same log, carries the same
+   * fields, and reaches readers on the same stream; what makes it one is
+   * `body.moment`, which says what it marks and — the rule the whole feature
+   * stands on — what real record it was read from. The feed draws it
+   * differently (`RoomMomentRow`); nothing else has to know.
+   *
+   * **Two ways in, and they are not the same permission.**
+   * - *DorkOS itself* (no `authorId`): written by the system author, and
+   *   deliberately NOT dispatched. A room where the milestone "tangerines
+   *   joined your team" set two agents talking would be the over-participation
+   *   `meta/agent-etiquette.md` exists to damp. It is stamped the way an
+   *   un-provenanced write is stamped — at the ceiling — so nothing that ever
+   *   dispatches from it can open a fresh reply budget either.
+   * - *An agent* (`authorId`): straight through {@link RoomService.post}, the
+   *   guarded path, unchanged. The membership check, the cascade stamp, the
+   *   ancestry rule and the turn budget all apply exactly as they do to
+   *   anything else that agent says. There is no second write surface and no
+   *   tool: minting a moment is not a way around any of it.
+   *
+   * **`subjectAuthorId` is refused on the agent path**, and that is the one
+   * refusal here that is about safety rather than shape. The field decides
+   * whose face the feed draws beside the words; letting an agent set it would
+   * let one agent publish its own sentence under another identity. DorkOS
+   * writing "tangerines joined your team" is the case the field exists for, and
+   * an agent that has something to say about tangerines says it as itself.
+   *
+   * @param roomId - The room to mark it in.
+   * @param input.text - What a person reads. Written by the caller, because the
+   *   detector is the only thing that knows the real numbers.
+   * @param input.moment - What it marks and what it was derived from. Validated
+   *   here rather than trusted: detectors build this from live data, so a
+   *   sourceless moment has to fail at the seam instead of landing in the log.
+   * @param input.authorId - The agent minting it, when an agent is. Omit for a
+   *   moment DorkOS itself observed.
+   * @param input.subjectAuthorId - Who the moment is ABOUT, when the room is
+   *   speaking about somebody other than itself. System path only.
+   * @returns The committed entry.
+   */
+  postMoment(
+    roomId: string,
+    input: {
+      text: string;
+      moment: RoomMoment;
+      authorId?: string;
+      subjectAuthorId?: string;
+    }
+  ): RoomEntry {
+    const moment = RoomMomentSchema.safeParse(input.moment);
+    if (!moment.success) {
+      throw new RoomError(
+        'INVALID_MOMENT',
+        'A moment has to say what it marks and what it was derived from'
+      );
+    }
+    if (input.text.trim().length === 0) {
+      throw new RoomError('INVALID_MOMENT', 'A moment has to say something a person can read');
+    }
+    if (input.authorId !== undefined) {
+      if (input.subjectAuthorId !== undefined) {
+        throw new RoomError(
+          'INVALID_MOMENT',
+          'A moment an agent mints is about its author, and may not name another'
+        );
+      }
+      return this.post(roomId, {
+        authorId: input.authorId,
+        text: input.text,
+        moment: moment.data,
+      });
+    }
+
+    const room = this.requireRoom(roomId);
+    // Archived means archived for the room's own voice too — the same rule
+    // `postNotice` holds, for the same reason: archiving promises a room stops
+    // gaining entries.
+    if (room.archived) throw new RoomError('ROOM_ARCHIVED', 'This room is archived');
+    const id = ulid();
+    const entry = this.store.appendEntry({
+      roomId,
+      id,
+      authorId: this.authors.system().id,
+      kind: 'post',
+      body: {
+        text: input.text,
+        moment: moment.data,
+        ...(input.subjectAuthorId && { subjectAuthorId: input.subjectAuthorId }),
+      },
+      // A milestone addresses nobody. Nothing is parsed out of its words,
+      // because nothing wrote them to reach anyone.
+      mentions: [],
+      mentionSpans: [],
+      sessionId: null,
+      ...this.threadPointers(roomId, undefined),
+      // The shipped rule rather than a hand-stamped number: a non-human write
+      // with no trigger behind it starts a cascade that is already spent.
+      ...deriveCascade(id, { authorKind: 'system', maxAgentDepth: this.maxAgentDepth() }),
+      createdAt: new Date().toISOString(),
+    });
+    this.publishEntry(entry);
     return entry;
   }
 

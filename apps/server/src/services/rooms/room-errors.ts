@@ -39,6 +39,17 @@ export type RoomErrorCode =
   /** A handle somebody asked for fails the grammar in `@dorkos/shared/handle`. */
   | 'INVALID_HANDLE'
   | 'NESTED_THREAD'
+  /**
+   * A moment was offered with no source, with nothing a person could read, or —
+   * on the agent path — naming somebody other than its author
+   * (team-room-home spec D5.1, `RoomService.postMoment`).
+   *
+   * **Never reachable from a request.** No route and no tool accepts a moment;
+   * they are minted by detectors inside this process, so this code means a
+   * detector built one wrong, the same way `RESERVED_NATURAL_KEY` means DorkOS
+   * built a key wrong.
+   */
+  | 'INVALID_MOMENT'
   | 'ROOM_ARCHIVED'
   /**
    * Somebody who is not the owner tried to rename or archive a SYSTEM room —
