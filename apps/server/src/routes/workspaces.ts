@@ -49,8 +49,8 @@ router.get('/resolve', async (req, res) => {
 });
 
 /**
- * Return the allocated port block for the managed workspace containing `path`.
- * `worktree-setup.sh` calls this; a 404 tells it to fall back to hash derivation.
+ * Return the allocated port block for the managed workspace containing `path`;
+ * 404 when the path is not inside a managed workspace.
  */
 router.post('/ports', async (req, res) => {
   const parsed = PortsBodySchema.safeParse(req.body);

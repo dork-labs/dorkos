@@ -122,7 +122,8 @@ export function WorkspacesPage() {
             <FolderGit2 className="text-muted-foreground/60 mx-auto size-8" />
             <p className="mt-3 font-medium">No workspaces yet</p>
             <p className="text-muted-foreground mt-1 text-sm">
-              A workspace is provisioned the first time an agent session is bound to a unit of work.
+              DorkOS doesn&apos;t create workspaces on its own yet. Today one appears only when a
+              tool or script asks the server for it through the API.
             </p>
           </div>
         ) : (

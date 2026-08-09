@@ -230,6 +230,10 @@ export interface WorkspaceManager {
   /** Pin or unpin a workspace (pinned workspaces are exempt from `sweep`). */
   setPinned(id: string, pinned: boolean): Promise<Workspace>;
 
-  /** Reclaim eligible workspaces (terminal-state + cap/age), all dirty-gated. */
+  /**
+   * Reclaim ready workspaces beyond the retention cap, oldest `lastUsedAt`
+   * first. Pinned, session-attached, and dirty workspaces are kept (reported
+   * in `skipped`); a `null` cap disables reclamation entirely.
+   */
   sweep(): Promise<SweepResult>;
 }
