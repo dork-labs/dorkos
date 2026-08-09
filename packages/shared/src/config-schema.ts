@@ -413,6 +413,50 @@ export const SidebarSectionPrefsSchema = z.object({
 /** One section's remembered state (see {@link SidebarSectionPrefsSchema}). */
 export type SidebarSectionPrefs = z.infer<typeof SidebarSectionPrefsSchema>;
 
+/** The section ids as a lookup, for the read-time filter below. */
+const SIDEBAR_SECTION_IDS = new Set<string>(SidebarSectionIdSchema.options);
+
+/**
+ * Drop `sections` entries naming a section this build does not know about.
+ *
+ * **This is what makes narrowing {@link SidebarSectionIdSchema} a non-event**,
+ * and it is not a nicety — without it, retiring a section id later would leave
+ * every config that stored one PERMANENTLY UNWRITABLE. Ajv is the only validator
+ * on the config read path and the generated schema carries no `propertyNames`,
+ * so an unknown key loads fine; Zod then refuses it, and `applyConfigPatch`
+ * re-validates the WHOLE config on every write. The result is a config that
+ * boots, is never condemned, and rejects every subsequent settings change with
+ * `Invalid key in record`. Proven end to end before this filter existed.
+ *
+ * `threads` and `recents` are the ids this will actually catch: they exist only
+ * while the pre-redesign sections still render, and P2 removes them. Anyone who
+ * had those sections folded simply loses two collapse states that no longer
+ * address anything — which is the correct outcome, and it needs no second
+ * migration to bring about.
+ *
+ * Preserves identity when there is nothing to drop, and passes a non-object
+ * through untouched so the record schema below reports the real type error
+ * rather than this filter swallowing it.
+ *
+ * @param value - The stored `sections` value, in whatever shape it is on disk.
+ * @returns The same value, minus any key that is not a known section id.
+ */
+function dropUnknownSectionIds(value: unknown): unknown {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return value;
+  const entries = Object.entries(value as Record<string, unknown>);
+  const known = entries.filter(([id]) => SIDEBAR_SECTION_IDS.has(id));
+  return known.length === entries.length ? value : Object.fromEntries(known);
+}
+
+/**
+ * Per-section state, keyed by section id, tolerant of ids it has never heard of
+ * (see {@link dropUnknownSectionIds}).
+ */
+const SidebarSectionsSchema = z.preprocess(
+  dropUnknownSectionIds,
+  z.partialRecord(SidebarSectionIdSchema, SidebarSectionPrefsSchema)
+);
+
 export const SidebarPrefsSchema = z.object({
   /** Ordered pinned item references. Multi-presence references - membership in groups is unaffected. */
   pinned: z.array(SidebarItemRefSchema).default(() => []),
@@ -421,14 +465,15 @@ export const SidebarPrefsSchema = z.object({
    * Per-section state, keyed by section id. A section with nothing to remember
    * is simply absent, so a fresh install stores `{}` rather than a row of
    * `false`s — which is also why this is a partial record: adding a section id
-   * must never invalidate a config written before it existed.
+   * must never invalidate a config written before it existed, and
+   * {@link dropUnknownSectionIds} makes REMOVING one equally harmless.
    *
    * Replaced the seven per-section booleans and enums this schema used to carry
    * (`ungroupedCollapsed`, `channelsCollapsed`, `dmsCollapsed`,
    * `threadsCollapsed`, `recentsCollapsed`, `ungroupedSortMode`,
    * `ungroupedDisplayFilter`); the conf migration keyed `0.59.0` moves them.
    */
-  sections: z.partialRecord(SidebarSectionIdSchema, SidebarSectionPrefsSchema).default(() => ({})),
+  sections: SidebarSectionsSchema.default(() => ({})),
   /**
    * Muted item references (DOR-339). Mute owns ALL attention signals for an
    * item at once (badge, rollup-dot contribution, filter/reveal emphasis); no
@@ -451,7 +496,9 @@ export const SidebarPrefsSchema = z.object({
   /**
    * The welcome-back digest's memory: the local date (`YYYY-MM-DD`) it was last
    * shown on, so it appears at most once a day (BC-22). Absent until the first
-   * digest is shown.
+   * digest is shown, and nothing writes it yet — the digest row itself lands in
+   * P2, and the field is here so it lands on a schema that already has room for
+   * it rather than needing a second migration.
    */
   digest: z.object({ lastShownDate: z.string().optional() }).default(() => ({})),
 });

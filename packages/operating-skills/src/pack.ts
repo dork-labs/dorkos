@@ -90,7 +90,7 @@ export interface OperatingSkill {
  *
  * - 9: the `config_patch` example named a setting that no longer exists. Versions
  *   3 to 8 taught the patch shape with `ui.sidebar.recentsCollapsed`, one of the
- *   eight per-section keys the sidebar redesign retired
+ *   seven per-section keys the sidebar redesign folded into `ui.sidebar.sections`
  *   (`specs/sidebar-now-today-library` §D). Zod strips an unknown key rather than
  *   refusing it, so an agent copying that example would send a patch, be told it
  *   succeeded, and change nothing — the worst kind of wrong example. It now names

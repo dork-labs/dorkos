@@ -140,13 +140,14 @@ export const CONFIG_DISCLOSURE = {
   'ui.sidebar.groups[].rules.lastActiveWithinMs': 'expose',
   'ui.sidebar.groups[].rules.pathPrefix': 'expose',
   // Which sidebar sections are folded, and how the ones with options are sorted
-  // and filtered. Withheld for a shape reason, not a safety one: this is a
-  // record whose VALUES are objects, and the path language above has no way to
-  // name `sections.<any id>.collapsed`, so `classifySchemaLeaves` reduces it to
-  // `unsupported` and the guard rejects `expose` on anything unsupported. There
-  // is nothing sensitive in it — teaching the walker record-of-object paths
-  // would make exposing it correct, and until then fail-closed is the rule this
-  // module holds.
+  // and filtered. Withheld for a shape reason, not a safety one: an open record
+  // classifies as `record` only when its VALUES are scalars, and these are
+  // objects, so `classifySchemaLeaves` returns `unsupported` and the guard
+  // rejects `expose` on anything unsupported. The same enum keying a record of
+  // scalars would be exposable today — it is the value shape that stops here,
+  // not the key. There is nothing sensitive in it; teaching the walker to
+  // descend into a record's values would make exposing it correct, and until
+  // then fail-closed is the rule this module holds.
   'ui.sidebar.sections': 'withhold',
   'ui.sidebar.muted[].kind': 'expose',
   'ui.sidebar.muted[].path': 'expose',

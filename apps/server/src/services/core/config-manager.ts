@@ -2432,8 +2432,18 @@ export const CONFIG_MIGRATIONS = {
     // Composed into this still-unreleased key rather than a fresh one above it
     // BECAUSE the schema that removes those keys ships in this same release: a
     // key of its own would leave everyone upgrading into 0.59.0 with a config
-    // the new schema no longer describes. Independent of the backfill above —
-    // disjoint sections, order-immaterial — and idempotent.
+    // the new schema no longer describes.
+    //
+    // THAT ARGUMENT HAS A CONDITION, so state it rather than leaving the next
+    // person cutting a release to infer it: this must land BEFORE anything tags
+    // `v0.59.0`. If 0.59.0 ships first, this body is inside a key that has
+    // shipped, everyone who upgraded past it will never run it, and the schema
+    // removal goes out with nothing moving the data — DOR-988 verbatim. Reopen
+    // at `'0.60.0'` in that case; the body itself needs no change, because it
+    // is idempotent and reads the retired keys rather than a version.
+    //
+    // Independent of the backfill above — disjoint sections,
+    // order-immaterial — and idempotent.
     migrateSidebarSectionPrefs(store);
   },
 } as const;

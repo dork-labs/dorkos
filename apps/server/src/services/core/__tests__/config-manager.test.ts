@@ -3371,19 +3371,69 @@ describe('a populated pre-redesign sidebar through the real conf load path', () 
     expect(fs.existsSync(configPath + '.bak')).toBe(true);
   });
 
-  it('refuses a WRITE naming a section that does not exist', () => {
-    // The section id is enforced by Zod on the write path rather than by Ajv on
-    // the read path: `z.toJSONSchema` does not emit `propertyNames` on its
-    // 2019-09 target, so conf's Ajv accepts any key. That asymmetry is the safer
-    // way round and is deliberate — a config carrying a section id from a NEWER
-    // release is read rather than condemned, while nothing running here can
-    // write one.
-    const { dir } = seedPreRedesign();
+  // ── A section id this build has never heard of ──
+  //
+  // THE most expensive failure this schema can have, and it is not a read
+  // failure. conf's Ajv accepts an unknown `sections` key (`z.toJSONSchema`
+  // emits no `propertyNames` on its 2019-09 target), so the config boots and is
+  // never condemned — and then Zod refuses that key on the write path, where
+  // `applyConfigPatch` re-validates the WHOLE config. The result is an install
+  // that looks completely healthy and rejects every settings change forever.
+  //
+  // It is a live hazard rather than a hypothetical: `threads` and `recents` are
+  // in the enum only while the pre-redesign sections still render, and P2
+  // removes them. Every config THIS migration wrote them into would be the
+  // casualty. `dropUnknownSectionIds` is what makes that narrowing a non-event.
+
+  /** A config carrying a section id outside the enum, plus a real one. */
+  function seedWithUnknownSection(): string {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dorkos-unknown-section-'));
+    dirs.push(dir);
+    fs.writeFileSync(
+      path.join(dir, 'config.json'),
+      JSON.stringify({
+        version: 1,
+        ui: {
+          theme: 'dark',
+          sidebar: {
+            pinned: [],
+            groups: [],
+            muted: [],
+            sections: { channels: { collapsed: true }, bogus: { collapsed: true } },
+          },
+        },
+      })
+    );
+    return dir;
+  }
+
+  it('keeps accepting WRITES when the stored sections name a section it does not know', () => {
+    // The deliverable assertion. Without the read-time filter this is
+    // `ok: false, "ui.sidebar.sections.bogus: Invalid key in record"`, and the
+    // person can never change a setting again.
+    const dir = seedWithUnknownSection();
+    const manager = initConfigManager(dir);
+    const result = applyConfigPatch({ ui: { theme: 'light' } });
+    expect(result.ok, JSON.stringify('details' in result ? result.details : result)).toBe(true);
+    expect(manager.getAll().ui.theme).toBe('light');
+  });
+
+  it('drops the unknown section on that write and keeps the known one', () => {
+    // `ok: true` alone would still pass if the known section had gone with it.
+    const dir = seedWithUnknownSection();
+    const configPath = path.join(dir, 'config.json');
     initConfigManager(dir);
-    const result = applyConfigPatch({
-      ui: { sidebar: { sections: { nowhere: { collapsed: true } } } },
-    } as never);
-    expect(result.ok).toBe(false);
+    expect(applyConfigPatch({ ui: { theme: 'light' } }).ok).toBe(true);
+    const onDisk = JSON.parse(fs.readFileSync(configPath, 'utf-8')) as {
+      ui: { sidebar: { sections: Record<string, unknown> } };
+    };
+    expect(onDisk.ui.sidebar.sections).toEqual({ channels: { collapsed: true } });
+  });
+
+  it('is not condemned by the unknown section either', () => {
+    const dir = seedWithUnknownSection();
+    new ConfigManager(dir);
+    expect(fs.existsSync(path.join(dir, 'config.json') + '.bak')).toBe(false);
   });
 
   it('accepts a config already in the new shape', () => {

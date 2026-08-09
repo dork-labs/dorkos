@@ -1325,10 +1325,28 @@ describe('UserConfigSchema ui.sidebar (DOR-329)', () => {
     expect(prefs.sections.pins).toEqual({ collapsed: false });
   });
 
-  it('rejects a section id that is not a sidebar section', () => {
-    expect(() =>
-      SidebarPrefsSchema.parse({ sections: { nowhere: { collapsed: true } } })
-    ).toThrow();
+  it('DROPS a section id it has never heard of, rather than refusing the config', () => {
+    // The whole forward-compatibility story. An unknown key must not be an
+    // error, because `applyConfigPatch` re-validates the WHOLE config on every
+    // write: refusing here would make a config that merely LOADS unwritable
+    // forever. This is what lets P2 retire `threads`/`recents` from the enum
+    // with no second migration and no user-visible failure.
+    const prefs = SidebarPrefsSchema.parse({
+      sections: { channels: { collapsed: true }, nowhere: { collapsed: true } },
+    });
+    expect(prefs.sections).toEqual({ channels: { collapsed: true } });
+  });
+
+  it('keeps what it was given when there is nothing to drop', () => {
+    const stored = { channels: { collapsed: true } };
+    expect(SidebarPrefsSchema.parse({ sections: stored }).sections).toEqual(stored);
+  });
+
+  it('still refuses a `sections` that is not an object at all', () => {
+    // The filter passes a non-object straight through, so the record schema
+    // reports the real type error instead of the filter swallowing it.
+    expect(() => SidebarPrefsSchema.parse({ sections: [] })).toThrow();
+    expect(() => SidebarPrefsSchema.parse({ sections: 'nope' })).toThrow();
   });
 
   it('rejects a sort mode a section cannot offer', () => {

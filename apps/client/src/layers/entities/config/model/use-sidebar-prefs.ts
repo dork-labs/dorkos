@@ -518,18 +518,6 @@ export function retireSuggestion(prev: SidebarPrefs, suggestionId: string): Side
   };
 }
 
-/**
- * Record that the welcome-back digest has been shown today, so it appears at
- * most once per local day.
- *
- * @param prev - Current prefs.
- * @param localDate - The local date, as `YYYY-MM-DD`.
- */
-export function setDigestShown(prev: SidebarPrefs, localDate: string): SidebarPrefs {
-  if (prev.digest.lastShownDate === localDate) return prev;
-  return { ...prev, digest: { ...prev.digest, lastShownDate: localDate } };
-}
-
 // ---------------------------------------------------------------------------
 // Display filter + mute (DOR-339) — additive on the DOR-329 shape above.
 // ---------------------------------------------------------------------------

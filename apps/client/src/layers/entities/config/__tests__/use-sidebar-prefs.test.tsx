@@ -38,7 +38,6 @@ import {
   GROUPS_HINT_SUGGESTION_ID,
   isSuggestionRetired,
   retireSuggestion,
-  setDigestShown,
   setGroupDisplayFilter,
   setGroupMuted,
   muteItem,
@@ -471,7 +470,7 @@ describe('sidebar prefs pure helpers', () => {
     });
   });
 
-  describe('Getting started retirement + the digest date', () => {
+  describe('Getting started retirement', () => {
     it('retires a suggestion once and stays retired', () => {
       const once = retireSuggestion(prefs(), GROUPS_HINT_SUGGESTION_ID);
       expect(once.gettingStarted.retired).toEqual([GROUPS_HINT_SUGGESTION_ID]);
@@ -489,13 +488,6 @@ describe('sidebar prefs pure helpers', () => {
         'suggestion:ask-dorkbot',
         GROUPS_HINT_SUGGESTION_ID,
       ]);
-    });
-
-    it('records the digest date once per day', () => {
-      const shown = setDigestShown(prefs(), '2026-08-09');
-      expect(shown.digest.lastShownDate).toBe('2026-08-09');
-      expect(setDigestShown(shown, '2026-08-09')).toBe(shown);
-      expect(setDigestShown(shown, '2026-08-10').digest.lastShownDate).toBe('2026-08-10');
     });
   });
 

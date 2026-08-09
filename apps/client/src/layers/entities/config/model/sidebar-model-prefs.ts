@@ -8,12 +8,17 @@
  * against a fixture. {@link SidebarModelPrefs} is the narrower thing the model
  * actually consults, and this module is the only place the two meet.
  *
- * It also does the one job a straight structural copy could not: it makes the
- * nested blocks total. Zod's defaults guarantee `sections`, `gettingStarted` and
- * `digest` on anything it has parsed, but the client reads config over the wire
- * and an install whose conf migration has not run yet (a dev tree resolves
- * `SERVER_VERSION` to `0.0.0` and runs none at all) can hand back an object with
- * those keys simply absent. The model gets a complete view either way.
+ * It also normalizes the membership lists, so the model never meets the
+ * pre-DOR-579 encoding where `pinned` holds bare agent paths.
+ *
+ * The `??` fallbacks below are belt-and-braces, not a described hazard. Both
+ * validators on the read path supply these blocks — conf's Ajv writes the
+ * declared defaults in (`useDefaults`), and Zod fills them on any parsed config
+ * — and `config-manager.test.ts` proves an unmigrated install still reads back
+ * `sections: {}` / `gettingStarted: { retired: [] }` / `digest: {}`. The sibling
+ * `isSectionCollapsed` and `isSuggestionRetired` rely on exactly that and would
+ * throw if it were ever untrue. The fallbacks cost nothing and keep this the one
+ * place a hand-edited or half-written config cannot reach the model through.
  *
  * @module entities/config/model/sidebar-model-prefs
  */
@@ -58,10 +63,9 @@ export interface SidebarModelPrefs {
  * @returns The model's view of them.
  */
 export function toSidebarModelPrefs(prefs: SidebarPrefs): SidebarModelPrefs {
-  // Every `?? …` here is load-bearing: the declared type says these are present,
-  // and a config read from an install whose migration has not run says otherwise.
   // The lists are filled BEFORE normalizing, not after — `normalizeSidebarPrefs`
-  // reads each one and would throw on an absent `pinned`.
+  // reads each one and would throw on an absent `pinned`. See the module note on
+  // why every `??` here is a floor rather than a case that actually occurs.
   const canonical = normalizeSidebarPrefs({
     ...prefs,
     pinned: prefs.pinned ?? [],
