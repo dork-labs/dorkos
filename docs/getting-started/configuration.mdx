@@ -207,6 +207,33 @@ A room is a conversation more than one agent can be in. When you post, every age
   **Require login** to close the gap.
 </Callout>
 
+### Welcome back
+
+When you come back after a few hours away, the agents that got something done while you were gone can post a line about it in your team channel. The rule is news, not noise: an agent with nothing new to say says nothing, and only a few post at all.
+
+<TypeTable
+  type={{
+    'welcomeBack.enabled': {
+      description:
+        'Whether your agents may greet you when you come back. Turn it off and nothing is posted, and no work is done to decide there was nothing to post. Only you can change this.',
+      type: 'boolean',
+      default: 'true',
+    },
+    'welcomeBack.absenceThresholdMinutes': {
+      description:
+        'How long you have to be away before coming back counts as a return. Four hours by default: long enough that something real has happened, short enough to catch a morning. Only you can change this.',
+      type: 'integer (15--10080)',
+      default: '240',
+    },
+    'welcomeBack.maxPosts': {
+      description:
+        'The most posts one return may produce, however many agents have news. When more qualify than this allows, the most useful ones post and the rest stay quiet. Set it to 0 to silence them without turning the feature off. Only you can change this.',
+      type: 'integer (0--10)',
+      default: '3',
+    },
+  }}
+/>
+
 ### Connectors
 
 Connectors let your agents reach outside services (Gmail, Slack, and so on). Most of that is set up in the app, not here. The one piece that lives in the config file is the list of remote MCP servers you want DorkOS to offer as connectable services.

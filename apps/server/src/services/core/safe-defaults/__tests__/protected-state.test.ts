@@ -190,6 +190,31 @@ describe('salvageProtectedState', () => {
     expect(salvaged.leaves['rooms.maxAutomaticTurnsTotalPerHour']).toBeUndefined();
   });
 
+  it('carries a raised threshold, where UP is the tightening', () => {
+    // The mirror case, and the one a cap-shaped assumption gets backwards.
+    // `welcomeBack.absenceThresholdMinutes` is crossed rather than capped: a
+    // week means fewer returns qualify, so the person who set 10080 and lands
+    // back on 240 is greeted several times as often as they chose.
+    const salvaged = salvageProtectedState(
+      { welcomeBack: { absenceThresholdMinutes: 10_080 } },
+      fresh
+    );
+    expect(salvaged.leaves['welcomeBack.absenceThresholdMinutes']).toBe(10_080);
+  });
+
+  it('does not carry a lowered threshold, which is the permissive side of it', () => {
+    const salvaged = salvageProtectedState({ welcomeBack: { absenceThresholdMinutes: 15 } }, fresh);
+    expect(salvaged.leaves['welcomeBack.absenceThresholdMinutes']).toBeUndefined();
+  });
+
+  it('leaves a fresh install alone — an untouched threshold carries nothing', () => {
+    const salvaged = salvageProtectedState(
+      { welcomeBack: { enabled: true, absenceThresholdMinutes: 240, maxPosts: 3 } },
+      fresh
+    );
+    expect(salvaged.leaves).toEqual({});
+  });
+
   it('carries the standing-grant void floor, which outlives the config file', () => {
     const floor = '2026-07-20T10:00:00.000Z';
     const salvaged = salvageProtectedState(
@@ -426,6 +451,39 @@ describe('ConfigManager recovery keeps protections (real conf + Ajv)', () => {
       expect(manager.get('mcp').rateLimit.maxPerWindow).toBe(5);
       expect(manager.get('rooms').maxAgentDepth).toBe(1);
       // A loosened bound is never carried — recovery only ever tightens.
+      expect(manager.validate()).toEqual({ valid: true });
+    });
+
+    it('keeps a raised welcome-back threshold across a real recovery', () => {
+      // The defect a `'lower'`-only union shipped: this leaf tightens UPWARD, so
+      // every recovery reset a week back to four hours and greeted the person
+      // four times as often as they chose, without asking. The lowered cap
+      // beside it proves the two directions coexist on one section.
+      const { dir } = seedInvalidConfig({
+        welcomeBack: { absenceThresholdMinutes: 10_080, maxPosts: 1 },
+      });
+      const manager = new ConfigManager(dir);
+      expect(manager.get('welcomeBack').absenceThresholdMinutes).toBe(10_080);
+      expect(manager.get('welcomeBack').maxPosts).toBe(1);
+      expect(manager.validate()).toEqual({ valid: true });
+    });
+
+    it('does not carry a shortened welcome-back threshold — recovery only tightens', () => {
+      const { dir } = seedInvalidConfig({ welcomeBack: { absenceThresholdMinutes: 15 } });
+      const manager = new ConfigManager(dir);
+      expect(manager.get('welcomeBack').absenceThresholdMinutes).toBe(240);
+      expect(manager.validate()).toEqual({ valid: true });
+    });
+
+    it('boots past a threshold past the schema ceiling, and does not carry it', () => {
+      // The hazard `higher` newly opens, and the reason the direction alone is
+      // not the last word: this value IS on the protective side, so the
+      // direction says carry it, and it is schema-INVALID (`.max(10080)`), so
+      // writing it back would throw on `set()` inside the recovery catch and
+      // take down the boot this code exists to rescue. Dropped, not clamped.
+      const { dir } = seedInvalidConfig({ welcomeBack: { absenceThresholdMinutes: 20_000 } });
+      const manager = new ConfigManager(dir);
+      expect(manager.get('welcomeBack').absenceThresholdMinutes).toBe(240);
       expect(manager.validate()).toEqual({ valid: true });
     });
 

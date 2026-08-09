@@ -223,6 +223,14 @@ export const SAFE_DEFAULTS: Readonly<Record<string, unknown>> = {
   // lower.
   'rooms.engagedWindowMinutes': 10,
   'rooms.engagedWindowPosts': 5,
+  // The two welcome-back bounds (spec `team-room-home`, D5.2). Both bound the
+  // noise a return can produce: four hours before an absence counts at all, and
+  // at most three posts when it does. Both carry across a wipe, in opposite
+  // directions — `maxPosts` is a cap, so tightening it means lowering it, while
+  // `absenceThresholdMinutes` is a threshold something has to cross, so
+  // tightening it means RAISING it (`direction: 'higher'`).
+  'welcomeBack.absenceThresholdMinutes': 240,
+  'welcomeBack.maxPosts': 3,
   // Upload size and count caps are real limits at their defaults.
   'uploads.maxFileSize': 10485760,
   'uploads.maxFiles': 10,
@@ -329,6 +337,11 @@ export const PERMISSIVE_DEFAULTS: Readonly<Record<string, PermissiveDefault>> = 
     value: ['*/*'],
     reason:
       'Accepts every MIME type, because an agent working on a real codebase receives arbitrary file types and a curated allowlist would reject legitimate work. The size and count caps stay on and are the real bound.',
+  },
+  'welcomeBack.enabled': {
+    value: true,
+    reason:
+      'Agents may greet you on your return by default, because a coordination layer whose agents worked all night and said nothing about it has not coordinated anything. The permissive side is bounded rather than open: only agents with a real change to report qualify, at most `maxPosts` of them speak, an absence has to pass `absenceThresholdMinutes` to count, and the posts ride the ordinary room path, so the cascade guard and both automatic-turn spend caps hold them like any other turn.',
   },
   'harness.autoSync': {
     value: true,

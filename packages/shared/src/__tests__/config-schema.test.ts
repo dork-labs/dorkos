@@ -68,6 +68,11 @@ describe('UserConfigSchema', () => {
         engagedWindowMinutes: 10,
         engagedWindowPosts: 5,
       },
+      welcomeBack: {
+        enabled: true,
+        absenceThresholdMinutes: 240,
+        maxPosts: 3,
+      },
       onboarding: {
         completedSteps: [],
         skippedSteps: [],
@@ -403,6 +408,11 @@ describe('USER_CONFIG_DEFAULTS', () => {
         lateReplyCeilingMinutes: 60,
         engagedWindowMinutes: 10,
         engagedWindowPosts: 5,
+      },
+      welcomeBack: {
+        enabled: true,
+        absenceThresholdMinutes: 240,
+        maxPosts: 3,
       },
       onboarding: {
         completedSteps: [],
