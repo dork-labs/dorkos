@@ -88,6 +88,14 @@ export interface OperatingSkill {
  *   names the new sibling, and an already-seeded file is only rewritten on a
  *   strictly higher stamp.
  *
+ * - 9: the `config_patch` example named a setting that no longer exists. Versions
+ *   3 to 8 taught the patch shape with `ui.sidebar.recentsCollapsed`, one of the
+ *   eight per-section keys the sidebar redesign retired
+ *   (`specs/sidebar-now-today-library` §D). Zod strips an unknown key rather than
+ *   refusing it, so an agent copying that example would send a patch, be told it
+ *   succeeded, and change nothing — the worst kind of wrong example. It now names
+ *   `ui.theme`, which is the least likely field in the whole schema to move.
+ *
  *   Be precise about who a bump reaches, because it is narrower than the History
  *   above makes it sound. Until DOR-671 it was DorkBot and nobody else:
  *   `seedOperatingSkills` ran from `ensureDorkBot` on every boot and from
@@ -101,7 +109,7 @@ export interface OperatingSkill {
  *   boot is not permission to write into somebody's repository, and a user-initiated
  *   repair for those is DOR-664.
  */
-export const OPERATING_SKILLS_VERSION = 8;
+export const OPERATING_SKILLS_VERSION = 9;
 
 /**
  * The canonical pack, umbrella skill first. Every entry is validated against the

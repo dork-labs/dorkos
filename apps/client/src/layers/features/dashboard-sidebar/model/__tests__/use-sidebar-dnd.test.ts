@@ -40,15 +40,10 @@ function prefs(overrides: Partial<SidebarPrefs> = {}): SidebarPrefs {
   return {
     pinned: [],
     groups: [],
-    ungroupedSortMode: 'name',
-    ungroupedCollapsed: false,
-    recentsCollapsed: false,
-    channelsCollapsed: false,
-    dmsCollapsed: false,
-    threadsCollapsed: false,
-    groupsHintDismissed: false,
+    sections: {},
     muted: [],
-    ungroupedDisplayFilter: 'all',
+    gettingStarted: { retired: [] },
+    digest: {},
     ...overrides,
   };
 }

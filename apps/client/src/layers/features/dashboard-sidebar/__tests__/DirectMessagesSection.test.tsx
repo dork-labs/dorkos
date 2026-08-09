@@ -7,6 +7,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createMockTransport } from '@dorkos/test-utils';
 import type { AuthorRef, RoomSummary } from '@dorkos/shared/room-schemas';
 import { SIDEBAR_PREFS_DEFAULTS } from '@dorkos/shared/config-schema';
+import type { SidebarPrefs } from '@dorkos/shared/config-schema';
 import { TooltipProvider } from '@/layers/shared/ui';
 import { TransportProvider } from '@/layers/shared/model';
 import { agentAuthorRef } from '@dorkos/shared/room-schemas';
@@ -78,7 +79,7 @@ beforeAll(() => {
   });
 });
 
-const mockUpdate = vi.fn<(updater: (prev: { dmsCollapsed: boolean }) => unknown) => void>();
+const mockUpdate = vi.fn<(updater: (prev: SidebarPrefs) => unknown) => void>();
 let mockCollapsed = false;
 
 // Partial-over-actual — see the note on the same mock in ChannelsSection.test.
@@ -88,7 +89,10 @@ vi.mock('@/layers/entities/config', async () => {
   );
   return {
     ...actual,
-    useSidebarPrefs: () => ({ ...SIDEBAR_PREFS_DEFAULTS, dmsCollapsed: mockCollapsed }),
+    useSidebarPrefs: () => ({
+      ...SIDEBAR_PREFS_DEFAULTS,
+      sections: { dms: { collapsed: mockCollapsed } },
+    }),
     useUpdateSidebarPrefs: () => ({
       update: mockUpdate,
       updateAsync: vi.fn(),
@@ -285,7 +289,10 @@ describe('DirectMessagesSection', () => {
   it('persists the collapse toggle', () => {
     renderSection({ dms: [dm()] });
     fireEvent.click(screen.getByRole('button', { name: 'Direct messages' }));
-    expect(mockUpdate.mock.calls[0]![0]({ dmsCollapsed: false })).toEqual({ dmsCollapsed: true });
+    expect(mockUpdate.mock.calls[0]![0](SIDEBAR_PREFS_DEFAULTS)).toEqual({
+      ...SIDEBAR_PREFS_DEFAULTS,
+      sections: { dms: { collapsed: true } },
+    });
   });
 
   it('tells the person to add an agent first when the roster is empty', () => {

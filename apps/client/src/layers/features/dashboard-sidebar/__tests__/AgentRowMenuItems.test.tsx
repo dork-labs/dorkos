@@ -52,7 +52,7 @@ const muteItemCalls: unknown[][] = [];
 const unmuteItemCalls: unknown[][] = [];
 let mockMuted: SidebarItemRef[] = [];
 vi.mock('@/layers/entities/config', () => ({
-  useSidebarPrefs: () => ({ pinned: [], groups, ungroupedSortMode: 'name', muted: mockMuted }),
+  useSidebarPrefs: () => ({ pinned: [], groups, sections: {}, muted: mockMuted }),
   useUpdateSidebarPrefs: () => ({
     update: mockUpdate,
     updateAsync: vi.fn(),

@@ -29,13 +29,18 @@ import {
   reorderPinned,
   setGroupSortMode,
   setGroupCollapsed,
-  setUngroupedCollapsed,
-  setRecentsCollapsed,
-  setUngroupedSortMode,
-  setGroupsHintDismissed,
+  isSectionCollapsed,
+  sectionSortMode,
+  sectionDisplayFilter,
+  setSectionCollapsed,
+  setSectionSortMode,
+  setSectionDisplayFilter,
+  GROUPS_HINT_SUGGESTION_ID,
+  isSuggestionRetired,
+  retireSuggestion,
+  setDigestShown,
   setGroupDisplayFilter,
   setGroupMuted,
-  setUngroupedDisplayFilter,
   muteItem,
   unmuteItem,
   mutedRoomIds,
@@ -416,14 +421,82 @@ describe('sidebar prefs pure helpers', () => {
     });
   });
 
-  it('section-level setters update only their own field', () => {
-    const base = prefs();
-    expect(setUngroupedCollapsed(base, true).ungroupedCollapsed).toBe(true);
-    expect(setRecentsCollapsed(base, true).recentsCollapsed).toBe(true);
-    expect(setUngroupedSortMode(base, 'recent').ungroupedSortMode).toBe('recent');
-    expect(setGroupsHintDismissed(base, true).groupsHintDismissed).toBe(true);
-    // Inputs are never mutated.
-    expect(base.ungroupedCollapsed).toBe(false);
+  describe('per-section state (`sections`)', () => {
+    it('a section with nothing stored is open and answers with the caller’s defaults', () => {
+      const base = prefs();
+      expect(base.sections).toEqual({});
+      expect(isSectionCollapsed(base, 'channels')).toBe(false);
+      expect(sectionSortMode(base, 'agents', ['name', 'recent'])).toBe('name');
+      expect(sectionDisplayFilter(base, 'agents', 'all')).toBe('all');
+    });
+
+    it('each setter writes its own section and leaves the others alone', () => {
+      const collapsed = setSectionCollapsed(prefs(), 'channels', true);
+      expect(isSectionCollapsed(collapsed, 'channels')).toBe(true);
+      expect(isSectionCollapsed(collapsed, 'dms')).toBe(false);
+
+      const sorted = setSectionSortMode(collapsed, 'agents', 'recent');
+      expect(sectionSortMode(sorted, 'agents', ['name', 'recent'])).toBe('recent');
+      // …and the earlier write survives, because a section is patched, not replaced.
+      expect(isSectionCollapsed(sorted, 'channels')).toBe(true);
+
+      const filtered = setSectionDisplayFilter(sorted, 'agents', 'attention');
+      expect(sectionDisplayFilter(filtered, 'agents', 'all')).toBe('attention');
+      expect(sectionSortMode(filtered, 'agents', ['name', 'recent'])).toBe('recent');
+    });
+
+    it('patching one field of a section keeps the rest of that section', () => {
+      const seeded = setSectionSortMode(
+        setSectionCollapsed(prefs(), 'agents', true),
+        'agents',
+        'recent'
+      );
+      expect(seeded.sections.agents).toEqual({ collapsed: true, sortMode: 'recent' });
+    });
+
+    it('reads a stored sort the section does not offer as the section’s default', () => {
+      // A `manual` left behind on a section that stopped sorting by hand must
+      // never reach a menu that has no such item in it.
+      const stale = {
+        ...prefs(),
+        sections: { agents: { collapsed: false, sortMode: 'manual' as const } },
+      };
+      expect(sectionSortMode(stale, 'agents', ['name', 'recent'])).toBe('name');
+    });
+
+    it('never mutates its input', () => {
+      const base = prefs();
+      setSectionCollapsed(base, 'channels', true);
+      expect(base.sections).toEqual({});
+    });
+  });
+
+  describe('Getting started retirement + the digest date', () => {
+    it('retires a suggestion once and stays retired', () => {
+      const once = retireSuggestion(prefs(), GROUPS_HINT_SUGGESTION_ID);
+      expect(once.gettingStarted.retired).toEqual([GROUPS_HINT_SUGGESTION_ID]);
+      expect(isSuggestionRetired(once, GROUPS_HINT_SUGGESTION_ID)).toBe(true);
+      // Idempotent, and the same reference back so a write is not queued twice.
+      expect(retireSuggestion(once, GROUPS_HINT_SUGGESTION_ID)).toBe(once);
+    });
+
+    it('keeps earlier retirements when a second suggestion is answered', () => {
+      const two = retireSuggestion(
+        retireSuggestion(prefs(), 'suggestion:ask-dorkbot'),
+        GROUPS_HINT_SUGGESTION_ID
+      );
+      expect(two.gettingStarted.retired).toEqual([
+        'suggestion:ask-dorkbot',
+        GROUPS_HINT_SUGGESTION_ID,
+      ]);
+    });
+
+    it('records the digest date once per day', () => {
+      const shown = setDigestShown(prefs(), '2026-08-09');
+      expect(shown.digest.lastShownDate).toBe('2026-08-09');
+      expect(setDigestShown(shown, '2026-08-09')).toBe(shown);
+      expect(setDigestShown(shown, '2026-08-10').digest.lastShownDate).toBe('2026-08-10');
+    });
   });
 
   it('setGroupCollapsed toggles only the targeted group', () => {
@@ -458,7 +531,7 @@ describe('sidebar prefs pure helpers', () => {
 
   // --- Display filter + mute (DOR-339) ---
 
-  describe('setGroupDisplayFilter / setUngroupedDisplayFilter', () => {
+  describe('setGroupDisplayFilter', () => {
     it('sets only the targeted group’s filter', () => {
       const seeded = prefs({
         groups: [
@@ -487,11 +560,6 @@ describe('sidebar prefs pure helpers', () => {
       const next = setGroupDisplayFilter(seeded, 'A', 'attention');
       expect(next.groups.find((g) => g.id === 'A')!.displayFilter).toBe('attention');
       expect(next.groups.find((g) => g.id === 'B')!.displayFilter).toBe('all');
-    });
-
-    it('sets the ungrouped section filter', () => {
-      const next = setUngroupedDisplayFilter(prefs(), 'active');
-      expect(next.ungroupedDisplayFilter).toBe('active');
     });
   });
 

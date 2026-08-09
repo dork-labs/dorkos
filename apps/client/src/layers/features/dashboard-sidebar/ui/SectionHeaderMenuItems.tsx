@@ -267,9 +267,9 @@ export function buildJumpBackInHeaderMenuNodes(
 
 /** Inputs the Agents header's item list is built from. */
 export interface AgentsHeaderMenuModel {
-  /** The ungrouped section's sort mode (`ui.sidebar.ungroupedSortMode`). */
+  /** The ungrouped section's sort mode (`ui.sidebar.sections.agents.sortMode`). */
   sortMode: 'name' | 'recent';
-  /** The ungrouped section's display filter (`ui.sidebar.ungroupedDisplayFilter`). */
+  /** The ungrouped section's display filter (`ui.sidebar.sections.agents.displayFilter`). */
   displayFilter: SidebarDisplayFilter;
   /** Open the create-agent dialog. */
   onNewAgent: () => void;

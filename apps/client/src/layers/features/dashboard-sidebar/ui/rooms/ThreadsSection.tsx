@@ -5,7 +5,8 @@ import { useRovingFocus } from '@/layers/shared/model';
 import {
   useSidebarPrefs,
   useUpdateSidebarPrefs,
-  setThreadsCollapsed,
+  isSectionCollapsed,
+  setSectionCollapsed,
 } from '@/layers/entities/config';
 import { buildThreadsHeaderMenuNodes } from '../SectionHeaderMenuItems';
 import { ThreadRow } from './ThreadRow';
@@ -37,7 +38,7 @@ interface ThreadsSectionProps {
  * left behind is that it is the escape valve for when threads get noisy enough
  * to need one (spec `room-messaging-design` §3).
  *
- * Collapsible and persisted via `ui.sidebar.threadsCollapsed`, matching Channels
+ * Collapsible and persisted via `ui.sidebar.sections.threads`, matching Channels
  * and Direct messages. Unlike those two the section is HIDDEN when it is empty:
  * they are places you can make and so are worth advertising, while a thread is
  * something that happens to you — an empty Threads header is an instruction
@@ -50,11 +51,12 @@ export function ThreadsSection({
   activeThreadId,
   onSelectThread,
 }: ThreadsSectionProps) {
-  const { threadsCollapsed } = useSidebarPrefs();
+  const threadsCollapsed = isSectionCollapsed(useSidebarPrefs(), 'threads');
   const { update } = useUpdateSidebarPrefs();
   const roving = useRovingFocus({
-    onCollapse: () => !threadsCollapsed && update((prev) => setThreadsCollapsed(prev, true)),
-    onExpand: () => threadsCollapsed && update((prev) => setThreadsCollapsed(prev, false)),
+    onCollapse: () =>
+      !threadsCollapsed && update((prev) => setSectionCollapsed(prev, 'threads', true)),
+    onExpand: () => threadsCollapsed && update((prev) => setSectionCollapsed(prev, 'threads', false)),
   });
 
   // Nothing to say, so nothing is drawn — and that includes the first load,
@@ -64,7 +66,8 @@ export function ThreadsSection({
   // every install that has no threads, which is most of them at first.
   if (!error && threads.length === 0) return null;
 
-  const toggleCollapsed = () => update((prev) => setThreadsCollapsed(prev, !prev.threadsCollapsed));
+  const toggleCollapsed = () =>
+    update((prev) => setSectionCollapsed(prev, 'threads', !isSectionCollapsed(prev, 'threads')));
 
   return (
     <SidebarGroup className="px-0" {...roving}>

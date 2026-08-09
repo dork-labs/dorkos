@@ -139,17 +139,24 @@ export const CONFIG_DISCLOSURE = {
   'ui.sidebar.groups[].rules.statuses': 'expose',
   'ui.sidebar.groups[].rules.lastActiveWithinMs': 'expose',
   'ui.sidebar.groups[].rules.pathPrefix': 'expose',
-  'ui.sidebar.ungroupedSortMode': 'expose',
-  'ui.sidebar.ungroupedCollapsed': 'expose',
-  'ui.sidebar.recentsCollapsed': 'expose',
-  'ui.sidebar.channelsCollapsed': 'expose',
-  'ui.sidebar.threadsCollapsed': 'expose',
-  'ui.sidebar.dmsCollapsed': 'expose',
-  'ui.sidebar.groupsHintDismissed': 'expose',
+  // Which sidebar sections are folded, and how the ones with options are sorted
+  // and filtered. Withheld for a shape reason, not a safety one: this is a
+  // record whose VALUES are objects, and the path language above has no way to
+  // name `sections.<any id>.collapsed`, so `classifySchemaLeaves` reduces it to
+  // `unsupported` and the guard rejects `expose` on anything unsupported. There
+  // is nothing sensitive in it — teaching the walker record-of-object paths
+  // would make exposing it correct, and until then fail-closed is the rule this
+  // module holds.
+  'ui.sidebar.sections': 'withhold',
   'ui.sidebar.muted[].kind': 'expose',
   'ui.sidebar.muted[].path': 'expose',
   'ui.sidebar.muted[].roomId': 'expose',
-  'ui.sidebar.ungroupedDisplayFilter': 'expose',
+  // Which Getting-started suggestions this person has finished with, and the
+  // local date the welcome-back digest last appeared. Two plain facts about the
+  // person's own cockpit; an agent that reads them can tell whether there is
+  // still a first-run card on screen.
+  'ui.sidebar.gettingStarted.retired': 'expose',
+  'ui.sidebar.digest.lastShownDate': 'expose',
   'ui.shapes.active': 'expose',
   // An open record (see EXPOSED_RECORD_PATHS): agent projectPath -> Shape name.
   'ui.shapes.agentDefaults': 'expose',

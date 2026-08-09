@@ -126,18 +126,13 @@ function fullyPopulatedConfig(): Record<string, unknown> {
             },
           },
         ],
-        ungroupedSortMode: 'name',
-        ungroupedCollapsed: false,
-        recentsCollapsed: false,
-        channelsCollapsed: false,
-        dmsCollapsed: false,
-        threadsCollapsed: false,
-        groupsHintDismissed: false,
+        sections: { agents: { collapsed: true, sortMode: 'recent', displayFilter: 'active' } },
         muted: [
           { kind: 'agent', path: '/Users/me/noisy' },
           { kind: 'room', roomId: '01JMUTEDROOM' },
         ],
-        ungroupedDisplayFilter: 'all',
+        gettingStarted: { retired: ['suggestion:ask-dorkbot'] },
+        digest: { lastShownDate: '2026-08-09' },
       },
       shapes: {
         active: 'focus',
@@ -248,6 +243,10 @@ describe('CONFIG_DISCLOSURE drift guard', () => {
       'runtimes.codex.credentialRef',
       'tunnel.auth',
       'tunnel.authtoken',
+      // The one entry here that is not a secret: `ui.sidebar.sections` is a
+      // record of objects, a shape `classifySchemaLeaves` cannot name a path
+      // inside, so fail-closed applies. See its comment in CONFIG_DISCLOSURE.
+      'ui.sidebar.sections',
     ]);
   });
 

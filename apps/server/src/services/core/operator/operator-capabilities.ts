@@ -233,10 +233,12 @@ export const operatorDomain: CapabilityDomain = {
       tier: 'act',
       input: z.object({
         patch: z.record(z.string(), z.unknown()).describe(
-          // Keep this example a field that actually exists: `ui.sidebar` has no
-          // `collapsed` (the earlier example's key), and `ui.statusBar` is a
-          // `pins` list rather than per-item booleans (DOR-452).
-          'Partial config to deep-merge, e.g. { "ui": { "sidebar": { "recentsCollapsed": true } } }'
+          // Keep this example a field that actually exists. It has drifted twice
+          // already: `ui.sidebar` never had a `collapsed` key, `ui.statusBar` is
+          // a `pins` list rather than per-item booleans (DOR-452), and the
+          // per-section collapse flags this used to name were retired by the
+          // sidebar redesign. `ui.theme` is the least likely to move.
+          'Partial config to deep-merge, e.g. { "ui": { "theme": "dark" } }'
         ),
       }),
       output: z.unknown(),

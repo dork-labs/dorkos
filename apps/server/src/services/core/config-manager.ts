@@ -81,6 +81,7 @@ import {
   SidebarItemRefSchema,
   SidebarGroupSchema,
   ComposerPrefsSchema,
+  SidebarPrefsSchema,
   toSidebarItemRef,
   normalizeSidebarPrefs,
 } from '@dorkos/shared/config-schema';
@@ -1788,6 +1789,136 @@ export function migrateSidebarMembersToItemRefs(store: {
 }
 
 /**
+ * The suggestion id the "group your agents" hint card became when Getting
+ * started absorbed it (`specs/sidebar-now-today-library` §B). A person who
+ * dismissed the card has already answered that suggestion, so the migration
+ * records the dismissal as a retirement rather than asking again.
+ */
+export const GROUPS_HINT_SUGGESTION_ID = 'suggestion:groups-hint';
+
+/**
+ * The eight `ui.sidebar` keys the sidebar redesign retired, paired with the
+ * section id each collapse flag becomes. Named once so the migration, the Ajv
+ * tolerance below and the tests all read the same list.
+ */
+const RETIRED_SIDEBAR_COLLAPSE_KEYS = {
+  ungroupedCollapsed: 'agents',
+  channelsCollapsed: 'channels',
+  dmsCollapsed: 'dms',
+  threadsCollapsed: 'threads',
+  recentsCollapsed: 'recents',
+} as const;
+
+/** Every key {@link migrateSidebarSectionPrefs} removes, collapse flags included. */
+const RETIRED_SIDEBAR_KEYS = [
+  ...Object.keys(RETIRED_SIDEBAR_COLLAPSE_KEYS),
+  'ungroupedSortMode',
+  'ungroupedDisplayFilter',
+  'groupsHintDismissed',
+] as const;
+
+/**
+ * Migration body: move the sidebar's seven per-section flags into the
+ * `ui.sidebar.sections` record, translate the groups-hint dismissal into a
+ * retired Getting-started suggestion, and delete all eight retired keys
+ * (`specs/sidebar-now-today-library` §D, the table there is authoritative).
+ *
+ * | Retired key                | Becomes                                       |
+ * | -------------------------- | --------------------------------------------- |
+ * | `ungroupedCollapsed`       | `sections.agents.collapsed`                   |
+ * | `channelsCollapsed`        | `sections.channels.collapsed`                 |
+ * | `dmsCollapsed`             | `sections.dms.collapsed`                      |
+ * | `threadsCollapsed`         | `sections.threads.collapsed`                  |
+ * | `recentsCollapsed`         | `sections.recents.collapsed`                  |
+ * | `ungroupedSortMode`        | `sections.agents.sortMode`                    |
+ * | `ungroupedDisplayFilter`   | `sections.agents.displayFilter`               |
+ * | `groupsHintDismissed: true`| `gettingStarted.retired += 'suggestion:…'`    |
+ *
+ * `pinned`, `groups` and `muted` are not touched at all. They are the person's
+ * own manual structure, and the programme's promise is that it never moves.
+ *
+ * **A stored value equal to its old default is not carried across**, because on
+ * both sides of this migration an absent key and the default mean the same
+ * thing: `collapsed` reads `false` when the section is absent, and the Agents
+ * section's sort and filter fall back to `name` / `all`. Copying them would
+ * write a block of defaults into every config on earth to say nothing. What a
+ * person actually changed is what moves.
+ *
+ * **Anything already in `sections` wins.** Someone who ran this, downgraded and
+ * upgraded again has a `sections` record built from choices made SINCE the
+ * retired flags were last written, so a stale flag must not overwrite it.
+ *
+ * Idempotent by construction: the whole body is gated on at least one retired
+ * key still being present, and the run that carries them across is also the run
+ * that deletes them — so a second run finds nothing and writes nothing.
+ *
+ * @internal Exported for testing only.
+ * @param store - The `conf` store instance (provides `get`/`set`).
+ */
+export function migrateSidebarSectionPrefs(store: {
+  get: (key: string) => unknown;
+  set: (key: string, value: unknown) => void;
+}): void {
+  const ui = store.get('ui');
+  if (!ui || typeof ui !== 'object') return;
+  const sidebar = (ui as { sidebar?: unknown }).sidebar;
+  if (!sidebar || typeof sidebar !== 'object') return;
+
+  const s = sidebar as Record<string, unknown>;
+  if (!RETIRED_SIDEBAR_KEYS.some((key) => key in s)) return;
+
+  const storedSections = s.sections;
+  const sections: Record<string, Record<string, unknown>> = storedSections &&
+  typeof storedSections === 'object' &&
+  !Array.isArray(storedSections)
+    ? Object.fromEntries(
+        Object.entries(storedSections as Record<string, unknown>).map(([id, value]) => [
+          id,
+          value && typeof value === 'object' && !Array.isArray(value)
+            ? { ...(value as Record<string, unknown>) }
+            : {},
+        ])
+      )
+    : {};
+
+  /** Write one section field, unless the section already answers for it. */
+  const carry = (id: string, field: string, value: unknown): void => {
+    const section = (sections[id] ??= {});
+    if (field in section) return;
+    section[field] = value;
+  };
+
+  for (const [flag, id] of Object.entries(RETIRED_SIDEBAR_COLLAPSE_KEYS)) {
+    if (s[flag] === true) carry(id, 'collapsed', true);
+  }
+  if (s.ungroupedSortMode === 'recent') carry('agents', 'sortMode', 'recent');
+  if (s.ungroupedDisplayFilter === 'active' || s.ungroupedDisplayFilter === 'attention') {
+    carry('agents', 'displayFilter', s.ungroupedDisplayFilter);
+  }
+  // `carry` seeds an empty object for a section it is asked about; drop any that
+  // ended up with nothing to say rather than persisting `{}`.
+  for (const [id, section] of Object.entries(sections)) {
+    if (Object.keys(section).length === 0) delete sections[id];
+  }
+
+  const storedGettingStarted = s.gettingStarted;
+  const retired =
+    storedGettingStarted &&
+    typeof storedGettingStarted === 'object' &&
+    Array.isArray((storedGettingStarted as { retired?: unknown }).retired)
+      ? [...((storedGettingStarted as { retired: unknown[] }).retired as unknown[])]
+      : [];
+  if (s.groupsHintDismissed === true && !retired.includes(GROUPS_HINT_SUGGESTION_ID)) {
+    retired.push(GROUPS_HINT_SUGGESTION_ID);
+  }
+
+  const next: Record<string, unknown> = { ...s, sections, gettingStarted: { retired } };
+  for (const key of RETIRED_SIDEBAR_KEYS) delete next[key];
+
+  store.set('ui', { ...(ui as Record<string, unknown>), sidebar: next });
+}
+
+/**
  * Migration body: scrub retired onboarding step ids from a persisted
  * `onboarding` block. The first-run flow was shortened, narrowing
  * `ONBOARDING_STEPS` from four values to two — `'tasks'` and `'adapters'` no
@@ -2295,6 +2426,15 @@ export const CONFIG_MIGRATIONS = {
     // where it lands, which keeps the intent — seeded OFF — reviewable in the
     // table rather than implicit in a schema default. Additive + idempotent.
     backfillComposerPrefs(store);
+    // Move the sidebar's seven per-section flags into `ui.sidebar.sections`,
+    // record a dismissed groups hint as a retired Getting-started suggestion,
+    // and delete all eight retired keys (spec `sidebar-now-today-library` §D).
+    // Composed into this still-unreleased key rather than a fresh one above it
+    // BECAUSE the schema that removes those keys ships in this same release: a
+    // key of its own would leave everyone upgrading into 0.59.0 with a config
+    // the new schema no longer describes. Independent of the backfill above —
+    // disjoint sections, order-immaterial — and idempotent.
+    migrateSidebarSectionPrefs(store);
   },
 } as const;
 
@@ -2351,6 +2491,23 @@ export const CONFIG_MIGRATIONS = {
  * stopped sharing the node, or a regression widening only one site, goes red
  * rather than silently leaving two paths condemning the file.
  *
+ * ## The eight keys the sidebar redesign retired
+ *
+ * The same hazard, one release later and in the other direction. The redesign
+ * (`specs/sidebar-now-today-library` §D) REMOVES `ungroupedCollapsed`,
+ * `channelsCollapsed`, `dmsCollapsed`, `threadsCollapsed`, `recentsCollapsed`,
+ * `ungroupedSortMode`, `ungroupedDisplayFilter` and `groupsHintDismissed` from
+ * `SidebarPrefsSchema`, and Zod closes the object it generates
+ * (`additionalProperties: false`). So a config written by yesterday's release —
+ * which is every config there is — becomes schema-INVALID the moment the
+ * migration is skipped, and the whole file gets condemned and replaced.
+ *
+ * Naming them here keeps Ajv from condemning the file while the migration has
+ * not run, which is precisely the dev-tree case (`SERVER_VERSION` resolves to
+ * `0.0.0`, so no migration runs at all). It is tolerance, not a read path:
+ * nothing reads these keys, the exported TypeScript types do not carry them, and
+ * Zod strips them on the first write that goes through `applyConfigPatch`.
+ *
  * ## Removing it
  *
  * This is back-compat for ONE release: delete this function and its `override`
@@ -2364,6 +2521,22 @@ function tolerateLegacySidebarEncoding(ctx: {
   zodSchema: unknown;
   jsonSchema: Record<string, unknown>;
 }): void {
+  // The eight keys the redesign retired. Declared with their real types rather
+  // than as an open catchall: "tolerate what yesterday wrote" must not quietly
+  // become "validate nothing".
+  if (ctx.zodSchema === SidebarPrefsSchema) {
+    const properties = ctx.jsonSchema.properties as
+      | Record<string, Record<string, unknown>>
+      | undefined;
+    if (!properties) return;
+    for (const key of Object.keys(RETIRED_SIDEBAR_COLLAPSE_KEYS)) {
+      properties[key] = { type: 'boolean' };
+    }
+    properties.groupsHintDismissed = { type: 'boolean' };
+    properties.ungroupedSortMode = { type: 'string', enum: ['name', 'recent'] };
+    properties.ungroupedDisplayFilter = { type: 'string', enum: ['all', 'active', 'attention'] };
+    return;
+  }
   // `pinned`, `muted` and `groups[].items` all held a bare agent projectPath.
   if (ctx.zodSchema === SidebarItemRefSchema) {
     ctx.jsonSchema.anyOf = [{ type: 'string', minLength: 1 }, { oneOf: ctx.jsonSchema.oneOf }];
@@ -2399,11 +2572,22 @@ const jsonSchemaFull = z.toJSONSchema(UserConfigSchema, {
   target: 'jsonSchema2019-09',
   override: tolerateLegacySidebarEncoding,
 }) as { properties?: Record<string, unknown> };
-const jsonSchemaProperties = jsonSchemaFull.properties ?? {};
+/**
+ * The per-top-level-key JSON Schema conf validates against, tolerances included.
+ *
+ * Exported so a test that builds its own `Conf` — the only way to pin a
+ * `projectVersion` and exercise one migration boundary — validates against the
+ * SAME schema production does. A test that rebuilt it from `UserConfigSchema`
+ * would silently drop every `override` above, and then fail on a config shape
+ * the shipped code accepts. That has already happened once.
+ *
+ * @internal Exported for testing only.
+ */
+export const CONF_JSON_SCHEMA: Record<string, unknown> = jsonSchemaFull.properties ?? {};
 
 // Cast the runtime JSON schema to conf's Schema type. The Zod-generated schema
 // is structurally compatible at runtime but TypeScript cannot verify it statically.
-const confSchema = jsonSchemaProperties as unknown as Schema<UserConfig>;
+const confSchema = CONF_JSON_SCHEMA as unknown as Schema<UserConfig>;
 
 /** Construction-time overrides for {@link ConfigManager}. */
 export interface ConfigManagerOptions {

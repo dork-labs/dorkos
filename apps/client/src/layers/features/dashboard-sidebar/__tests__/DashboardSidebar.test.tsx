@@ -121,15 +121,10 @@ function makePrefs(overrides: Partial<SidebarPrefs> = {}): SidebarPrefs {
   return {
     pinned: [],
     groups: [],
-    ungroupedSortMode: 'name',
-    ungroupedCollapsed: false,
-    recentsCollapsed: false,
-    channelsCollapsed: false,
-    dmsCollapsed: false,
-    threadsCollapsed: false,
-    groupsHintDismissed: false,
+    sections: {},
     muted: [],
-    ungroupedDisplayFilter: 'all',
+    gettingStarted: { retired: [] },
+    digest: {},
     ...overrides,
   };
 }
@@ -197,10 +192,23 @@ vi.mock('@/layers/entities/config', () => {
     deleteGroup: passthrough,
     setGroupSortMode: passthrough,
     setGroupCollapsed: passthrough,
-    setRecentsCollapsed: passthrough,
-    setUngroupedCollapsed: passthrough,
-    setUngroupedSortMode: passthrough,
-    setGroupsHintDismissed: passthrough,
+    setSectionCollapsed: passthrough,
+    setSectionSortMode: passthrough,
+    setSectionDisplayFilter: passthrough,
+    // The real readers, not stubs: they decide what the sidebar renders, and a
+    // passthrough here would make every collapse and retirement assertion vacuous.
+    isSectionCollapsed: (prev: SidebarPrefs, id: string) =>
+      prev.sections[id as keyof SidebarPrefs['sections']]?.collapsed === true,
+    sectionSortMode: (prev: SidebarPrefs, id: string, offered: readonly string[]) => {
+      const stored = prev.sections[id as keyof SidebarPrefs['sections']]?.sortMode;
+      return stored !== undefined && offered.includes(stored) ? stored : offered[0];
+    },
+    sectionDisplayFilter: (prev: SidebarPrefs, id: string, fallback: string) =>
+      prev.sections[id as keyof SidebarPrefs['sections']]?.displayFilter ?? fallback,
+    GROUPS_HINT_SUGGESTION_ID: 'suggestion:groups-hint',
+    isSuggestionRetired: (prev: SidebarPrefs, suggestionId: string) =>
+      prev.gettingStarted.retired.includes(suggestionId),
+    retireSuggestion: passthrough,
     // The real derivation, not a stub: it is the one reader the sidebar and the
     // "Jump back in" popover share, and a fake here would let the two disagree
     // about muted rooms with every test still green.
@@ -1125,7 +1133,9 @@ describe('DashboardSidebar', () => {
 
     it('hides the hint when previously dismissed', () => {
       mockMeshPaths.mockReturnValue(eightPaths);
-      mockSidebarPrefs.mockReturnValue(makePrefs({ groupsHintDismissed: true }));
+      mockSidebarPrefs.mockReturnValue(
+        makePrefs({ gettingStarted: { retired: ['suggestion:groups-hint'] } })
+      );
       renderWithProviders(<DashboardSidebar />);
       expect(screen.queryByText('Group your agents')).not.toBeInTheDocument();
     });

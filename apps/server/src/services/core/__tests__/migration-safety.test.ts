@@ -76,6 +76,29 @@ describe('checkMigrationSafety', () => {
     expect(res).toMatchObject({ ok: true, latestReleased: '0.58.0', problems: [] });
   });
 
+  it('passes a body APPENDED to a key that is above the latest release', () => {
+    // The case the sidebar-redesign migration is in, and the one a reader most
+    // often gets wrong: composing into an existing key is unsafe only once that
+    // key has SHIPPED. `0.59.0` is not in v0.58.0, so it is still new work and
+    // its whole body runs for everybody — a second entry inside it is fine, and
+    // is what a change whose SCHEMA also ships in 0.59.0 must do rather than
+    // opening 0.60.0 and leaving the two a release apart.
+    const res = checkMigrationSafety({
+      workingSource: sourceWith([
+        SHIPPED,
+        [
+          "  '0.59.0': (store) => {",
+          '    backfillNewThing(store);',
+          '    migrateSidebarSectionPrefs(store);',
+          '  },',
+        ].join('\n'),
+      ]),
+      tags: TAGS,
+      readAtTag,
+    });
+    expect(res).toMatchObject({ ok: true, problems: [] });
+  });
+
   it('passes when every shipped key is byte-identical to the release', () => {
     const res = checkMigrationSafety({
       workingSource: RELEASED_SOURCE,

@@ -3,24 +3,31 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import type { ThreadSummary } from '@dorkos/shared/room-schemas';
+import { SIDEBAR_PREFS_DEFAULTS } from '@dorkos/shared/config-schema';
+import type { SidebarPrefs } from '@dorkos/shared/config-schema';
 import { ThreadsSection } from '../ui/rooms/ThreadsSection';
 
-const mockUpdate = vi.fn<(updater: (prev: { threadsCollapsed: boolean }) => unknown) => void>();
+const mockUpdate = vi.fn<(updater: (prev: SidebarPrefs) => unknown) => void>();
 let mockCollapsed = false;
 
-vi.mock('@/layers/entities/config', () => ({
-  useSidebarPrefs: () => ({ threadsCollapsed: mockCollapsed }),
-  useUpdateSidebarPrefs: () => ({
-    update: mockUpdate,
-    updateAsync: vi.fn(),
-    isPending: false,
-    isError: false,
-  }),
-  setThreadsCollapsed: (prev: object, collapsed: boolean) => ({
-    ...prev,
-    threadsCollapsed: collapsed,
-  }),
-}));
+vi.mock('@/layers/entities/config', async () => {
+  const actual = await vi.importActual<typeof import('@/layers/entities/config')>(
+    '@/layers/entities/config'
+  );
+  return {
+    ...actual,
+    useSidebarPrefs: () => ({
+      ...SIDEBAR_PREFS_DEFAULTS,
+      sections: { threads: { collapsed: mockCollapsed } },
+    }),
+    useUpdateSidebarPrefs: () => ({
+      update: mockUpdate,
+      updateAsync: vi.fn(),
+      isPending: false,
+      isError: false,
+    }),
+  };
+});
 
 function thread(overrides: Partial<ThreadSummary> = {}): ThreadSummary {
   return {
@@ -127,8 +134,9 @@ describe('ThreadsSection', () => {
     renderSection();
     fireEvent.click(screen.getByRole('button', { name: 'Threads' }));
     expect(mockUpdate).toHaveBeenCalledTimes(1);
-    expect(mockUpdate.mock.calls[0]![0]({ threadsCollapsed: false })).toEqual({
-      threadsCollapsed: true,
+    expect(mockUpdate.mock.calls[0]![0](SIDEBAR_PREFS_DEFAULTS)).toEqual({
+      ...SIDEBAR_PREFS_DEFAULTS,
+      sections: { threads: { collapsed: true } },
     });
   });
 

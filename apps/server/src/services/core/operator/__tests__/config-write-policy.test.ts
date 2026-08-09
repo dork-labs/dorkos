@@ -227,7 +227,7 @@ describe('findOperatorOnlyPaths', () => {
   it('lets ordinary preferences through', () => {
     expect(
       findOperatorOnlyPaths({
-        ui: { theme: 'dark', sidebar: { recentsCollapsed: true } },
+        ui: { theme: 'dark', sidebar: { sections: { channels: { collapsed: true } } } },
         logging: { level: 'debug' },
         runtimes: { default: 'codex', opencode: { enabled: true, port: 0 } },
         server: { cwd: '/Users/me/code', port: 4300 },
