@@ -242,13 +242,6 @@ export function createRoomMethods(baseUrl: string) {
       });
     },
 
-    setRoomReadCursor(id: string, lastReadSeq: number): Promise<RoomMember> {
-      return fetchJSON<RoomMember>(baseUrl, `/rooms/${id}/read-cursor`, {
-        method: 'PUT',
-        body: JSON.stringify({ lastReadSeq }),
-      });
-    },
-
     /**
      * Subscribe to a room's durable event stream, over a WebSocket.
      *

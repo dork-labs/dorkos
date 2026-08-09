@@ -1,14 +1,55 @@
 // @vitest-environment jsdom
 import React from 'react';
-import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, screen, cleanup } from '@testing-library/react';
+import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
+import { screen, cleanup, act, waitFor } from '@testing-library/react';
+
+/**
+ * Read-state broadcast handlers the list's cursor hook registered, keyed by
+ * event name. Mocked at `useEventSubscription` rather than by standing a real
+ * stream up: this suite is about what the list DRAWS when a cursor moves, and
+ * the connection that carries the event has its own tests.
+ */
+const eventHandlers = new Map<string, (payload?: unknown) => void>();
+
+vi.mock('@/layers/shared/model', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/layers/shared/model')>();
+  return {
+    ...actual,
+    useEventSubscription: (event: string, handler: (payload?: unknown) => void) => {
+      eventHandlers.set(event, handler);
+    },
+  };
+});
+
 import { MessageList, findLastWidgetFenceIndex, type MessageListHandle } from '../ui/MessageList';
 import type { ChatMessage } from '../model/use-chat-session';
 import { useAppStore } from '@/layers/shared/model';
+import {
+  createReadCursorHarness,
+  renderWithTransport,
+  sessionCursor as cursor,
+} from './message-list-test-helpers';
+
+/** The read-cursor route, as this suite answers for it. */
+const readState = createReadCursorHarness();
+
+/**
+ * Render inside the transport the unread cursor reads through.
+ *
+ * Shadows RTL's `render` so every case in this suite gets the provider without
+ * 25 call sites having to say so — the cursor is not what most of them are
+ * about, but the list does not mount without it.
+ */
+function render(ui: React.ReactElement, options?: Parameters<typeof renderWithTransport>[2]) {
+  return renderWithTransport(ui, readState.transport, options);
+}
+
+beforeEach(() => {
+  readState.reset();
+  eventHandlers.clear();
+});
 
 afterEach(() => {
-  // Pinned-to-the-bottom rendering marks the newest message seen, so clear
-  // storage before the next test reads it back as "where I left off".
   cleanup();
   window.localStorage.clear();
   mockIsAtEnd.mockImplementation(() => true);
@@ -153,35 +194,63 @@ describe('MessageList rows', () => {
     expect(screen.queryByTestId('day-divider')).toBeNull();
   });
 
-  it('renders the unread rule after the stored cursor', () => {
-    window.localStorage.setItem('dorkos:chat:last-seen:test-session', '1');
+  it('renders the unread rule after the stored cursor', async () => {
+    readState.storedCursor = cursor('test-session', 1);
     const messages = [messageOnDay('1', 0, 'Seen'), messageOnDay('2', 0, 'Unseen')];
     render(<MessageList sessionId="test-session" messages={messages} />);
-    expect(screen.getByTestId('unread-divider')).toBeDefined();
+    expect(await screen.findByTestId('unread-divider')).toBeDefined();
     expect(screen.getByText('New messages')).toBeDefined();
   });
 
-  it('renders no unread rule for a session with no stored cursor', () => {
+  it('renders no unread rule for a session with no stored cursor', async () => {
     const messages = [messageOnDay('1', 0, 'A'), messageOnDay('2', 0, 'B')];
     render(<MessageList sessionId="test-session" messages={messages} />);
+    // Waited out through the write the pinned list makes, so the absence is
+    // observed after the cursor has landed rather than before it arrives.
+    await waitFor(() => expect(readState.written).toEqual([2]));
     expect(screen.queryByTestId('unread-divider')).toBeNull();
   });
 
-  it('renders no unread rule when the cursor is already the newest message', () => {
-    window.localStorage.setItem('dorkos:chat:last-seen:test-session', '2');
+  it('renders no unread rule when the cursor already counts every message', async () => {
+    readState.storedCursor = cursor('test-session', 2);
     const messages = [messageOnDay('1', 0, 'A'), messageOnDay('2', 0, 'B')];
     render(<MessageList sessionId="test-session" messages={messages} />);
+    await waitFor(() => expect(mockScrollToEnd).toHaveBeenCalled());
     expect(screen.queryByTestId('unread-divider')).toBeNull();
   });
 
-  it('marks the newest message seen while pinned to the bottom', () => {
-    const messages = [messageOnDay('1', 0, 'A'), messageOnDay('2', 0, 'B')];
-    render(<MessageList sessionId="test-session" messages={messages} />);
-    expect(window.localStorage.getItem('dorkos:chat:last-seen:test-session')).toBe('2');
+  it('clears the rule when the same person reads the session on another device', async () => {
+    readState.storedCursor = cursor('cross-device-session', 1);
+    isAtEndTrueOnlyOnFirstCommit();
+    const messages = [messageOnDay('1', 0, 'Seen'), messageOnDay('2', 0, 'Unseen')];
+    render(<MessageList sessionId="cross-device-session" messages={messages} />);
+    expect(await screen.findByTestId('unread-divider')).toBeDefined();
+
+    // The other screen read to the end. The cursor rides the broadcast, so this
+    // one clears on the event — with no second read of the cursor behind it.
+    act(() =>
+      eventHandlers.get('read_cursor')?.({
+        userId: 'author-me',
+        threadKind: 'session',
+        threadId: 'cross-device-session',
+        lastReadSeq: 2,
+      })
+    );
+
+    await waitFor(() => expect(screen.queryByTestId('unread-divider')).toBeNull());
   });
 
-  it('opens one row above the unread rule, keeping the last seen message on screen', () => {
-    window.localStorage.setItem('dorkos:chat:last-seen:anchor-session', '1');
+  it('records the whole transcript as seen while pinned to the bottom', async () => {
+    const messages = [messageOnDay('1', 0, 'A'), messageOnDay('2', 0, 'B')];
+    render(<MessageList sessionId="test-session" messages={messages} />);
+    // Through the API, and nothing left in this browser: the watermark that
+    // used to live here is what made two devices disagree.
+    await waitFor(() => expect(readState.written).toEqual([2]));
+    expect(window.localStorage.length).toBe(0);
+  });
+
+  it('opens one row above the unread rule, keeping the last seen message on screen', async () => {
+    readState.storedCursor = cursor('anchor-session', 1);
     mockScrollToEnd.mockClear();
     mockScrollToIndex.mockClear();
     isAtEndTrueOnlyOnFirstCommit();
@@ -189,26 +258,27 @@ describe('MessageList rows', () => {
     render(<MessageList sessionId="anchor-session" messages={messages} />);
     // Rows: day-divider, message, unread-divider, message — the rule is row 2,
     // so the list lands on row 1 and the seen message stays visible above it.
-    expect(mockScrollToIndex).toHaveBeenCalledWith(1, { align: 'start' });
+    await waitFor(() => expect(mockScrollToIndex).toHaveBeenCalledWith(1, { align: 'start' }));
     expect(mockScrollToEnd).not.toHaveBeenCalled();
     // Regression pin: mounting must NOT consume the rule it just drew. The
     // first commit reports pinned only because the virtualizer has no scroll
-    // element yet; marking seen on it overwrites the cursor with '2'.
-    expect(window.localStorage.getItem('dorkos:chat:last-seen:anchor-session')).toBe('1');
+    // element yet; marking seen on it would move the cursor to 2.
+    expect(readState.written).toEqual([]);
   });
 
-  it('lands on the newest message when there is no unread rule', () => {
+  it('lands on the newest message when there is no unread rule', async () => {
     mockScrollToEnd.mockClear();
     mockScrollToIndex.mockClear();
     const messages = [messageOnDay('1', 0, 'A'), messageOnDay('2', 0, 'B')];
     render(<MessageList sessionId="test-session" messages={messages} />);
-    expect(mockScrollToEnd).toHaveBeenCalled();
+    await waitFor(() => expect(mockScrollToEnd).toHaveBeenCalled());
     expect(mockScrollToIndex).not.toHaveBeenCalled();
   });
 
-  it('anchors once per session, not again as messages stream in', () => {
+  it('anchors once per session, not again as messages stream in', async () => {
     const messages = [messageOnDay('1', 0, 'A')];
     const { rerender } = render(<MessageList sessionId="test-session" messages={messages} />);
+    await waitFor(() => expect(mockScrollToEnd).toHaveBeenCalled());
     mockScrollToEnd.mockClear();
     mockScrollToIndex.mockClear();
     rerender(
@@ -218,12 +288,13 @@ describe('MessageList rows', () => {
     expect(mockScrollToIndex).not.toHaveBeenCalled();
   });
 
-  it('does not mark messages seen from the first commit, before the list has geometry', () => {
-    window.localStorage.setItem('dorkos:chat:last-seen:unmeasured-session', '1');
+  it('does not mark messages seen from the first commit, before the list has geometry', async () => {
+    readState.storedCursor = cursor('unmeasured-session', 1);
     isAtEndTrueOnlyOnFirstCommit();
     const messages = [messageOnDay('1', 0, 'Seen'), messageOnDay('2', 0, 'Unseen')];
     render(<MessageList sessionId="unmeasured-session" messages={messages} />);
-    expect(window.localStorage.getItem('dorkos:chat:last-seen:unmeasured-session')).toBe('1');
+    expect(await screen.findByTestId('unread-divider')).toBeDefined();
+    expect(readState.written).toEqual([]);
     expect(screen.getByTestId('unread-divider')).toBeDefined();
   });
 });

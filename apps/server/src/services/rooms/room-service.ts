@@ -96,6 +96,7 @@ import { THREAD_PREVIEW_MAX_CHARS } from '@dorkos/shared/room-schemas';
 import { sanitizeIdentity } from '@dorkos/shared/untrusted-text';
 import { logger } from '../../lib/logger.js';
 import { eventFanOut } from '../core/event-fan-out.js';
+import type { ReadCursorService } from '../core/read-cursor-service.js';
 import type {
   Bridge,
   BridgeStore,
@@ -170,6 +171,16 @@ export interface RoomServiceDeps {
    * its roster.
    */
   bridges: BridgeStore;
+  /**
+   * Where the PEOPLE in a room have read up to (team-room-home spec §D4).
+   *
+   * The one user-side read-state store, shared with agent sessions and the
+   * inbox, so a person's place in a conversation is one fact wherever they are
+   * reading it. **Not the agent cursor**: what the ambient participation loop
+   * has SHOWN an agent stays on `room_members.last_read_seq`, which this domain
+   * still owns and still writes (room-participation spec §8.3).
+   */
+  readCursors: ReadCursorService;
 }
 
 /**
@@ -293,6 +304,8 @@ export class RoomService {
   /** Whether an author is the install's owner. Read per check, never captured. */
   private readonly isOwnerAuthor: (authorId: string) => boolean;
   private readonly bridges: BridgeStore;
+  /** Where the PEOPLE in a room have read up to. Never an agent's cursor. */
+  private readonly readCursors: ReadCursorService;
   /**
    * Called synchronously after every committed entry — the chat bridge's
    * inline-delivery fast path (chats-as-channels §6.1). Registered after
@@ -327,10 +340,12 @@ export class RoomService {
     this.maxAttachmentsPerEntry = deps.maxAttachmentsPerEntry;
     this.isOwnerAuthor = deps.isOwnerAuthor;
     this.bridges = deps.bridges;
+    this.readCursors = deps.readCursors;
     this.roster = new RoomRoster({
       store: deps.store,
       authors: deps.authors,
       agents: deps.agents,
+      readCursors: deps.readCursors,
     });
     // The dispatcher writes back through this service (a reply is a post like
     // any other, mentions and provenance included), so it takes bound methods
@@ -1219,6 +1234,12 @@ export class RoomService {
    * room's whole entry count instead would render every room the operator has
    * not joined as an alarming unread badge.
    *
+   * **Which cursor the count is measured against depends on who is asking**
+   * (team-room-home spec §D4): a person's is in `read_cursors`, an agent's is
+   * the membership column. Both are read in bulk — one query for the
+   * memberships, one for the person's cursors — so a sidebar holding fifty rooms
+   * still costs two.
+   *
    * `participants` is carried for direct messages and is `null` for everything
    * else, per {@link RoomSummary}. A DM's mark is whoever it is with, so the
    * sidebar cannot draw one without the roster; resolving it here is two
@@ -1232,9 +1253,7 @@ export class RoomService {
     viewerAuthorId: string,
     filter: { kind?: RoomKind; includeArchived?: boolean } = {}
   ): RoomSummary[] {
-    const cursors = new Map(
-      this.store.listMembershipsFor(viewerAuthorId).map((m) => [m.roomId, m.lastReadSeq])
-    );
+    const cursors = this.cursorsFor(viewerAuthorId);
     const visible = this.seesEveryRoom(viewerAuthorId)
       ? this.store.listRooms(filter)
       : this.store.listRoomsForMember(viewerAuthorId, filter);
@@ -1261,6 +1280,26 @@ export class RoomService {
   }
 
   /**
+   * Every room this member belongs to, with the cursor that answers for them —
+   * the bulk form of {@link RoomService.readCursorFor}.
+   *
+   * A room the member belongs to is always a key, cursor or no cursor, because
+   * the caller distinguishes "not a member" (no unread count exists) from "has
+   * read nothing" (everything is unread) and only membership can say which.
+   *
+   * @param authorId - The member.
+   * @returns Room id to cursor, for every room they are in.
+   */
+  private cursorsFor(authorId: string): Map<string, number> {
+    const memberships = this.store.listMembershipsFor(authorId);
+    if (this.authors.getById(authorId)?.kind !== 'human') {
+      return new Map(memberships.map((m) => [m.roomId, m.lastReadSeq]));
+    }
+    const read = this.readCursors.listForUser(authorId, 'room');
+    return new Map(memberships.map((m) => [m.roomId, read.get(m.roomId) ?? 0]));
+  }
+
+  /**
    * Every thread this reader takes part in, across every room, newest first.
    *
    * The sidebar's Threads section (spec `room-messaging-design` §3), and the
@@ -1281,11 +1320,21 @@ export class RoomService {
    * buys nothing extra here: a thread you never spoke in is not yours to see in
    * this list.
    *
+   * **Unread is measured against the cursor that answers for this reader** — a
+   * person's own, an agent's membership column — which is why the store is told
+   * which one to join (team-room-home spec §D4). A thread's count is the room's
+   * cursor narrowed to the thread, so it is the same number the room badge is
+   * measured from and it clears when the room does.
+   *
    * @param viewerAuthorId - Whose threads to list.
    * @param limit - Most threads to return.
    */
   listThreads(viewerAuthorId: string, limit: number): ThreadSummary[] {
-    return this.store.listThreadsForMember(viewerAuthorId, limit).map((row) => ({
+    // Anyone this install cannot name is measured against the membership
+    // column: it is the one cursor that certainly exists for a member, and a
+    // caller with no author row has no rows to list anyway.
+    const cursor = this.authors.getById(viewerAuthorId)?.kind === 'human' ? 'user' : 'membership';
+    return this.store.listThreadsForMember(viewerAuthorId, limit, cursor).map((row) => ({
       roomId: row.roomId,
       roomKind: row.roomKind as RoomKind,
       roomSlug: row.roomSlug,
@@ -1488,60 +1537,90 @@ export class RoomService {
   /**
    * Advance a member's read cursor. Monotonic — a lower value is ignored.
    *
-   * A cursor that actually moves is announced on the global fan-out, so a second
-   * browser or device clears the badge on push instead of on its next poll. The
-   * event carries the count the room list would now draw, because a reader
-   * holding only the new cursor cannot work it out: a room summary has no seq to
-   * measure against, so it could only guess zero — and zero is wrong the moment
-   * something arrived after the other device stopped reading.
+   * **Two cursors live behind this one method, and which one moves is decided by
+   * WHO is reading** (team-room-home spec §D4). A person's place in a room is a
+   * row in `read_cursors`, the same store their agent sessions and their inbox
+   * use, so one person reading on two devices is one fact. An agent's is
+   * `room_members.last_read_seq` — what the ambient participation loop has SHOWN
+   * it (room-participation spec §8.3) — and it stays exactly where it was. They
+   * are different questions about the same-looking number, and nothing here
+   * reads one to answer the other.
+   *
+   * A person's cursor that actually moves is announced as `read_cursor` on the
+   * global fan-out, so a second browser or device clears the badge on push
+   * instead of on its next poll. The event carries the count the room list would
+   * now draw, because a reader holding only the new cursor cannot work it out: a
+   * room summary has no seq to measure against, so it could only guess zero —
+   * and zero is wrong the moment something arrived after the other device
+   * stopped reading.
    *
    * **A write that changes nothing says nothing.** Opening a room already read
    * is the common case, and an event per no-op would put the loudest name on the
    * stream on a fact nobody could act on.
    *
-   * **The agent cursor RP3 advances at claim time is deliberately not here.**
-   * That path writes through {@link RoomStore.setReadCursor} directly, once per
-   * agent per turn, which would make it the most frequent event on the global
-   * stream — and nothing in the cockpit draws an agent's read cursor. An agent
-   * that moves its own cursor through THIS method (the REST route, with its own
-   * identity) is announced like anyone else; `authorKind` is what lets a reader
-   * tell whose cursor moved, since only their own may repaint their badge.
+   * **An agent's cursor is announced not at all.** RP3 advances it once per
+   * agent per turn through {@link RoomStore.setReadCursor} directly, which would
+   * make it the most frequent event on the global stream — and nothing in the
+   * cockpit draws it. `read_cursor` is the people's stream by contract, which is
+   * also why `PUT /api/read-cursors/:kind/:id` refuses an agent outright.
    *
    * @param roomId - The room.
    * @param authorId - The member.
    * @param lastReadSeq - The seq they have read up to.
+   * @returns The membership, reporting the cursor that answers for this
+   *   member — see {@link RoomRoster.list}.
    */
   setReadCursor(roomId: string, authorId: string, lastReadSeq: number): RoomMember {
     this.requireVisibleRoom(roomId, authorId);
-    // Read before the write, so "did it move" is answered by the two values and
-    // not by re-deriving the monotonic rule here. A missing membership makes the
-    // line below throw, so by the comparison `before` is always a number.
-    const before = this.store.getMember(roomId, authorId)?.lastReadSeq;
-    const member = this.roster.setReadCursor(roomId, authorId, lastReadSeq);
-    if (member.lastReadSeq === before) return member;
-
     // A membership references its author by foreign key, so a member without an
-    // author row cannot happen — which is exactly why it is said out loud rather
-    // than swallowed by an `if`. If it ever does, the write above still stands
-    // and only the announcement is lost, and this line is the only thing that
-    // would tell anybody why one device stopped keeping up with the other.
+    // author row cannot happen. Resolved BEFORE the write because it is what
+    // decides which cursor is being written, not a decoration on the
+    // announcement: with no author row there is nobody to call a person, and the
+    // membership column is the safe answer — it is where this cursor lived
+    // before the split, and it is what RP3 would read back.
     const author = this.authors.getById(authorId);
     if (!author) {
       logger.warn('[rooms] a read cursor moved for a member with no author row', {
         roomId,
         authorId,
       });
-      return member;
+      return this.roster.setReadCursor(roomId, authorId, lastReadSeq);
     }
+    if (author.kind !== 'human') return this.roster.setReadCursor(roomId, authorId, lastReadSeq);
 
-    eventFanOut.broadcast('room_read_cursor', {
-      roomId,
-      authorId,
-      authorKind: author.kind,
-      lastReadSeq: member.lastReadSeq,
-      unreadCount: this.store.countUnread(roomId, member.lastReadSeq),
+    // Membership is what makes a cursor meaningful, and the check is the same
+    // one the agent path gets from `RoomRoster.setReadCursor` — stated here
+    // because the person's cursor is not stored on the membership row and so
+    // cannot be refused by its absence.
+    const member = this.store.getMember(roomId, authorId);
+    if (!member) throw new RoomError('MEMBER_NOT_FOUND', 'Not a member of this room');
+
+    // The broadcast, the monotonic guard and the "did it move" comparison all
+    // live in `ReadCursorService.advance` — one write path for every kind of
+    // thread a person reads, so a room cannot drift from a session.
+    const cursor = this.readCursors.advance(authorId, 'room', roomId, lastReadSeq, {
+      unreadCount: (seq) => this.store.countUnread(roomId, seq),
     });
-    return member;
+    return { ...member, lastReadSeq: cursor.lastReadSeq };
+  }
+
+  /**
+   * Where one member has read up to in one room: a person's own cursor, an
+   * agent's membership column.
+   *
+   * The read half of {@link RoomService.setReadCursor}, and the one place the
+   * "which cursor answers for whom" rule is stated for a single member — the
+   * list paths resolve it in bulk instead, for the query count.
+   *
+   * @param roomId - The room.
+   * @param authorId - The member.
+   * @returns The cursor, or `null` when this author is not a member.
+   */
+  readCursorFor(roomId: string, authorId: string): number | null {
+    const member = this.store.getMember(roomId, authorId);
+    if (!member) return null;
+    if (this.authors.getById(authorId)?.kind !== 'human') return member.lastReadSeq;
+    return this.readCursors.get(authorId, 'room', roomId)?.lastReadSeq ?? 0;
   }
 
   // === Entries ===

@@ -882,10 +882,6 @@ export const roomStubs = {
     throw new Error('Rooms are not supported in embedded mode');
   },
 
-  async setRoomReadCursor(_id: string, _lastReadSeq: number): Promise<RoomMember> {
-    throw new Error('Rooms are not supported in embedded mode');
-  },
-
   subscribeRoom(
     _roomId: string,
     _sinceCursor?: number,
@@ -1099,6 +1095,12 @@ export const teamStubs = {
  *
  * @internal
  */
+// Read state is deliberately NOT stubbed here. The embed keeps its own cursors
+// in this browser (`direct/read-cursor-methods`), because a transcript with an
+// unread rule that never draws reads as a broken divider rather than as a
+// missing server — and where read state is stored is precisely what the
+// Transport seam is for.
+
 export const profileStubs = {
   async updateProfile(_displayName: string): Promise<never> {
     throw new Error('Editing your profile needs a DorkOS server');

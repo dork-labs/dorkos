@@ -94,6 +94,7 @@ function context(overrides: Partial<RoomContextData> = {}): RoomContextData {
       },
     ],
     acknowledgments: [],
+    triggerAttachments: [],
     addressing: {
       responseMode: 'mention-only',
       engagedUntil: null,

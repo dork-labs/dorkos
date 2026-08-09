@@ -3,15 +3,14 @@
  * connect, gap-free replay from `Last-Event-ID`, then live.
  *
  * `collectDurableEvents` from `@dorkos/test-utils` is hardcoded to the session
- * path, so the collector here is the room-shaped sibling — same `parseFrames`,
- * same `until` loop, plus a `ready` promise so a test can post INTO an open
- * stream without sleeping on a timer.
+ * path, so these drive `openSseStream` beside it — same `parseFrames`, same
+ * `until` loop, plus a `ready` promise so a test can post INTO an open stream
+ * without sleeping on a timer.
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import request from 'supertest';
-import { parseFrames, type SseFrame } from '@dorkos/test-utils';
+import { openSseStream, type OpenSseStream, type SseFrame } from '@dorkos/test-utils';
 import { createTestDb } from '@dorkos/test-utils/db';
 import type { Db } from '@dorkos/db';
 
@@ -49,85 +48,10 @@ vi.mock('../../services/core/config-manager.js', () => ({
 import { createApp, finalizeApp } from '../../app.js';
 import { STREAM_EPOCH } from '../../lib/stream-cursor.js';
 import { createRoomSubsystem, setRoomService } from '../../services/rooms/index.js';
+import { setReadCursorService } from '../../services/core/read-cursor-service.js';
 
 const app = createApp();
 finalizeApp(app);
-
-/** One open room stream: a readiness signal, the collected frames, and a stop. */
-interface OpenStream {
-  /** Resolves once the first frame lands, so a test can post into a live stream. */
-  ready: Promise<void>;
-  /** Resolves with every frame collected when `until` is satisfied. */
-  frames: Promise<SseFrame[]>;
-  status: Promise<number>;
-}
-
-/**
- * Open any SSE path against a listening server and collect frames until `until`
- * is satisfied.
- *
- * Shared by the room stream below and the global `/api/events` stream, which is
- * a different route with the same wire format — one collector rather than two
- * that drift.
- *
- * @param port - Port the app is listening on.
- * @param path - The stream path, query included.
- * @param opts.until - Stop predicate over the frames so far.
- * @param opts.lastEventId - Sent as the `Last-Event-ID` resume header.
- */
-function openSseStream(
-  port: number,
-  path: string,
-  opts: { until: (frames: SseFrame[]) => boolean; lastEventId?: string }
-): OpenStream {
-  let signalReady = (): void => {};
-  let resolveFrames: (frames: SseFrame[]) => void = () => {};
-  let resolveStatus: (status: number) => void = () => {};
-  let rejectFrames: (err: unknown) => void = () => {};
-
-  const ready = new Promise<void>((resolve) => {
-    signalReady = resolve;
-  });
-  const frames = new Promise<SseFrame[]>((resolve, reject) => {
-    resolveFrames = resolve;
-    rejectFrames = reject;
-  });
-  const status = new Promise<number>((resolve) => {
-    resolveStatus = resolve;
-  });
-
-  const req = http.request(
-    {
-      host: '127.0.0.1',
-      port,
-      path,
-      method: 'GET',
-      headers: opts.lastEventId !== undefined ? { 'Last-Event-ID': opts.lastEventId } : {},
-    },
-    (res) => {
-      resolveStatus(res.statusCode ?? 0);
-      let raw = '';
-      let settled = false;
-      res.setEncoding('utf8');
-      const finish = (): void => {
-        if (settled) return;
-        settled = true;
-        req.destroy();
-        resolveFrames(parseFrames(raw));
-      };
-      res.on('data', (chunk: string) => {
-        raw += chunk;
-        signalReady();
-        if (opts.until(parseFrames(raw))) finish();
-      });
-      res.on('end', finish);
-    }
-  );
-  req.on('error', rejectFrames);
-  req.end();
-
-  return { ready, frames, status };
-}
 
 /**
  * Open one room's durable stream.
@@ -142,7 +66,7 @@ function openRoomStream(
   port: number,
   roomId: string,
   opts: { until: (frames: SseFrame[]) => boolean; lastEventId?: string; after?: number }
-): OpenStream {
+): OpenSseStream {
   const query = opts.after !== undefined ? `?after=${opts.after}` : '';
   return openSseStream(port, `/api/rooms/${roomId}/events${query}`, opts);
 }
@@ -428,12 +352,19 @@ describe('GET /api/rooms/:id/events', () => {
   });
 });
 
-describe('PUT /api/rooms/:id/read-cursor on the global stream', () => {
+describe('PUT /api/read-cursors/room/:id on the global stream', () => {
   let roomId: string;
 
   beforeEach(async () => {
     vi.clearAllMocks();
-    setRoomService(createRoomSubsystem({ db: createTestDb() }).service);
+    // Both halves of the same subsystem: the rooms service the generic route
+    // delegates a room write into, and the read-cursor service it reads the
+    // stored cursor back from. Built as one so the route provably writes the
+    // table the room list reads — wiring them separately is how a test would
+    // "pass" against two databases.
+    const rooms = createRoomSubsystem({ db: createTestDb() });
+    setRoomService(rooms.service);
+    setReadCursorService(rooms.readCursors);
     const created = await request(app)
       .post('/api/rooms')
       .send({ kind: 'channel', title: 'Backend' });
@@ -460,24 +391,83 @@ describe('PUT /api/rooms/:id/read-cursor on the global stream', () => {
     });
     await stream.ready;
 
-    await request(app).put(`/api/rooms/${roomId}/read-cursor`).send({ lastReadSeq: 3 }).expect(200);
+    await request(app).put(`/api/read-cursors/room/${roomId}`).send({ lastReadSeq: 3 }).expect(200);
     // The same cursor again: monotonic, so it writes nothing and must therefore
     // say nothing. Opening a room already read is the common case, and an event
     // per no-op would be the loudest name on this stream.
-    await request(app).put(`/api/rooms/${roomId}/read-cursor`).send({ lastReadSeq: 3 }).expect(200);
+    await request(app).put(`/api/read-cursors/room/${roomId}`).send({ lastReadSeq: 3 }).expect(200);
     await request(app).post(`/api/rooms/${roomId}/entries`).send({ text: 'sentinel' });
 
     const frames = await stream.frames;
     server.close();
 
-    const cursors = frames.filter((f) => f.event === 'room_read_cursor');
+    const cursors = frames.filter((f) => f.event === 'read_cursor');
     expect(cursors).toHaveLength(1);
+    // One read-state system with one write path (team-room-home §D4): a room is
+    // `threadKind: 'room'` and not an endpoint of its own. The unread count
+    // rides along because the sidebar cannot work it out from a cursor.
     expect(cursors[0].data).toEqual({
-      roomId,
-      authorId: getRoomService().authorRegistry.localHuman().id,
-      authorKind: 'human',
+      userId: getRoomService().authorRegistry.localHuman().id,
+      threadKind: 'room',
+      threadId: roomId,
       lastReadSeq: 3,
       unreadCount: 0,
     });
+  });
+
+  it('leaves one cursor behind, with the room-shaped URL gone', async () => {
+    // The migration's closing condition. There used to be a second URL
+    // (`PUT /api/rooms/:id/read-cursor`) onto this same write, kept while
+    // clients moved; it is removed, and the proof has to be both halves — the
+    // old URL 404s AND the surviving one still lands where the room list reads.
+    // Asserting only the 404 would pass against a route that stopped working.
+    const { getRoomService } = await import('../../services/rooms/index.js');
+    const me = getRoomService().authorRegistry.localHuman().id;
+    for (const text of ['one', 'two', 'three']) {
+      await request(app).post(`/api/rooms/${roomId}/entries`).send({ text });
+    }
+
+    await request(app).put(`/api/rooms/${roomId}/read-cursor`).send({ lastReadSeq: 1 }).expect(404);
+
+    const server = await listen();
+    const stream = openSseStream(server.port, '/api/events', {
+      until: (frames) => frames.some((f) => f.event === 'room_activity'),
+    });
+    await stream.ready;
+
+    await request(app).put(`/api/read-cursors/room/${roomId}`).send({ lastReadSeq: 2 }).expect(200);
+    await request(app).post(`/api/rooms/${roomId}/entries`).send({ text: 'sentinel' });
+
+    const frames = await stream.frames;
+    server.close();
+
+    // `unreadCount` included, because the generic route delegates room writes
+    // into `RoomService` rather than dropping a bare number on the table. The
+    // countless variant would be exactly the bug: an event the room list has
+    // nothing to patch with, leaving the badge lit on the reader's other device.
+    const cursors = frames.filter((f) => f.event === 'read_cursor');
+    expect(cursors.map((f) => f.data)).toEqual([
+      { userId: me, threadKind: 'room', threadId: roomId, lastReadSeq: 2, unreadCount: 1 },
+    ]);
+
+    // One stored cursor, read back through the ROOM's own vocabulary: the
+    // membership the room detail reports carries what the cursor table holds.
+    const room = await request(app).get(`/api/rooms/${roomId}`).expect(200);
+    expect(room.body.members.find((m: { authorId: string }) => m.authorId === me).lastReadSeq).toBe(
+      2
+    );
+  });
+
+  it('refuses a room the caller is not in', async () => {
+    // The delegation is what buys this: without it the generic route would
+    // happily store a cursor for a room this caller cannot see, and answer 200.
+    // 404 rather than 403 because it is the rooms domain answering, in the words
+    // the rest of the room surface uses.
+    const res = await request(app)
+      .put('/api/read-cursors/room/01JQZZZZZZZZZZZZZZZZZZZZZZ')
+      .send({ lastReadSeq: 1 })
+      .expect(404);
+
+    expect(res.body.code).toBe('ROOM_NOT_FOUND');
   });
 });

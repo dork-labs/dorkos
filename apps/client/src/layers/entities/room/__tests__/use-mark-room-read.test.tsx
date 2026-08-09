@@ -94,7 +94,7 @@ describe('useMarkRoomRead', () => {
     renderHook(() => useMarkRoomRead(roomWith([human(1), agent()]), [entry(1), entry(4)]), {
       wrapper: wrapperFor(transport),
     });
-    await waitFor(() => expect(transport.setRoomReadCursor).toHaveBeenCalledWith('room-1', 4));
+    await waitFor(() => expect(transport.setReadCursor).toHaveBeenCalledWith('room', 'room-1', 4));
   });
 
   it('reads the viewer’s own cursor when two people are in the room', async () => {
@@ -111,7 +111,7 @@ describe('useMarkRoomRead', () => {
         ),
       { wrapper: wrapperFor(transport) }
     );
-    await waitFor(() => expect(transport.setRoomReadCursor).toHaveBeenCalledWith('room-1', 4));
+    await waitFor(() => expect(transport.setReadCursor).toHaveBeenCalledWith('room', 'room-1', 4));
   });
 
   it('stays quiet when the viewer is caught up and the OTHER person is behind', async () => {
@@ -127,7 +127,7 @@ describe('useMarkRoomRead', () => {
       { wrapper: wrapperFor(transport) }
     );
     await act(async () => {});
-    expect(transport.setRoomReadCursor).not.toHaveBeenCalled();
+    expect(transport.setReadCursor).not.toHaveBeenCalled();
   });
 
   it('says nothing when the reader is already caught up', async () => {
@@ -136,7 +136,7 @@ describe('useMarkRoomRead', () => {
       wrapper: wrapperFor(transport),
     });
     await act(async () => {});
-    expect(transport.setRoomReadCursor).not.toHaveBeenCalled();
+    expect(transport.setReadCursor).not.toHaveBeenCalled();
   });
 
   it('says nothing for a reader who is not a member — they have no cursor', async () => {
@@ -145,14 +145,14 @@ describe('useMarkRoomRead', () => {
       wrapper: wrapperFor(transport),
     });
     await act(async () => {});
-    expect(transport.setRoomReadCursor).not.toHaveBeenCalled();
+    expect(transport.setReadCursor).not.toHaveBeenCalled();
   });
 
   it('says nothing while the room is still loading', async () => {
     const transport = createMockTransport();
     renderHook(() => useMarkRoomRead(undefined, []), { wrapper: wrapperFor(transport) });
     await act(async () => {});
-    expect(transport.setRoomReadCursor).not.toHaveBeenCalled();
+    expect(transport.setReadCursor).not.toHaveBeenCalled();
   });
 
   it('never invalidates the history the stream owns', async () => {
@@ -193,19 +193,19 @@ describe('useMarkRoomRead', () => {
 
   it('retries a failed write rather than writing that (room, seq) off', async () => {
     const transport = createMockTransport({
-      setRoomReadCursor: vi.fn().mockRejectedValue(new Error('offline')),
+      setReadCursor: vi.fn().mockRejectedValue(new Error('offline')),
     });
     const { rerender } = renderHook(
       ({ cursor }: { cursor: number }) => useMarkRoomRead(roomWith([human(cursor)]), [entry(4)]),
       { wrapper: wrapperFor(transport), initialProps: { cursor: 1 } }
     );
-    await waitFor(() => expect(transport.setRoomReadCursor).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(transport.setReadCursor).toHaveBeenCalledTimes(1));
     // The failure released the marker, so the next thing that moves in the room
     // — here a refetch showing another client had read up to 2 — retries the
     // write instead of treating seq 4 as already sent.
     rerender({ cursor: 2 });
-    await waitFor(() => expect(transport.setRoomReadCursor).toHaveBeenCalledTimes(2));
-    expect(transport.setRoomReadCursor).toHaveBeenLastCalledWith('room-1', 4);
+    await waitFor(() => expect(transport.setReadCursor).toHaveBeenCalledTimes(2));
+    expect(transport.setReadCursor).toHaveBeenLastCalledWith('room', 'room-1', 4);
   });
 
   it('does not re-send when a refetch returns the same facts in new objects', async () => {
@@ -218,11 +218,11 @@ describe('useMarkRoomRead', () => {
         useMarkRoomRead(roomWith([human(1), agent()]), [entry(4), entry(4 + tick * 0)]),
       { wrapper: wrapperFor(transport), initialProps: { tick: 0 } }
     );
-    await waitFor(() => expect(transport.setRoomReadCursor).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(transport.setReadCursor).toHaveBeenCalledTimes(1));
     rerender({ tick: 1 });
     rerender({ tick: 2 });
     await act(async () => {});
-    expect(transport.setRoomReadCursor).toHaveBeenCalledTimes(1);
+    expect(transport.setReadCursor).toHaveBeenCalledTimes(1);
   });
 
   it('sends one write per (room, seq), so a stale refetch cannot start a loop', async () => {
@@ -231,11 +231,11 @@ describe('useMarkRoomRead', () => {
       ({ room }: { room: RoomWithRoster }) => useMarkRoomRead(room, [entry(4)]),
       { wrapper: wrapperFor(transport), initialProps: { room: roomWith([human(1)]) } }
     );
-    await waitFor(() => expect(transport.setRoomReadCursor).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(transport.setReadCursor).toHaveBeenCalledTimes(1));
     // A refetch that has not yet reflected the write re-renders with the old cursor.
     rerender({ room: roomWith([human(1)]) });
     await act(async () => {});
-    expect(transport.setRoomReadCursor).toHaveBeenCalledTimes(1);
+    expect(transport.setReadCursor).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -274,7 +274,7 @@ describe('useMarkRoomReadNow', () => {
       result.current.mutate('room-1');
     });
 
-    await waitFor(() => expect(transport.setRoomReadCursor).toHaveBeenCalledWith('room-1', 7));
+    await waitFor(() => expect(transport.setReadCursor).toHaveBeenCalledWith('room', 'room-1', 7));
     await waitFor(() => expect(invalidated).toContainEqual(['rooms', 'threads']));
     expect(invalidated).toContainEqual(['rooms', 'list']);
     expect(invalidated).toContainEqual(['rooms', 'detail', 'room-1']);

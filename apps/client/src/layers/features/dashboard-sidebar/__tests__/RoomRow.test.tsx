@@ -243,7 +243,7 @@ describe('RoomRow menus', () => {
 
     fireEvent.click(within(openDropdown()).getByText('Mark as read'));
 
-    await waitFor(() => expect(transport.setRoomReadCursor).toHaveBeenCalledWith('room-1', 42));
+    await waitFor(() => expect(transport.setReadCursor).toHaveBeenCalledWith('room', 'room-1', 42));
   });
 
   it('jumps to the agent a one-to-one is with, matched on its directory handle', async () => {

@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "bb31abfb-780d-4657-b5e8-d47f9956fa8e",
+  "id": "f33729c9-dffa-4a6c-9d31-f005f63a1ab3",
   "prevId": "70435245-2746-42e2-a493-44cd0452cf60",
   "tables": {
     "a2a_tasks": {
@@ -3161,13 +3161,6 @@
           "autoincrement": false,
           "default": 30
         },
-        "well_known": {
-          "name": "well_known",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
         "created_at": {
           "name": "created_at",
           "type": "text",
@@ -3191,19 +3184,75 @@
           ],
           "isUnique": true,
           "where": "\"kind\" = 'channel' AND \"archived\" = 0"
-        },
-        "rooms_well_known_unique": {
-          "name": "rooms_well_known_unique",
-          "columns": [
-            "well_known"
-          ],
-          "isUnique": true
         }
       },
       "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "checkConstraints": {}
+    },
+    "read_cursors": {
+      "name": "read_cursors",
+      "columns": {
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "thread_kind": {
+          "name": "thread_kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "thread_id": {
+          "name": "thread_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "last_read_seq": {
+          "name": "last_read_seq",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "read_cursors_user_id_thread_kind_thread_id_pk": {
+          "columns": [
+            "user_id",
+            "thread_kind",
+            "thread_id"
+          ],
+          "name": "read_cursors_user_id_thread_kind_thread_id_pk"
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "read_cursors_thread_kind": {
+          "name": "read_cursors_thread_kind",
+          "value": "\"read_cursors\".\"thread_kind\" IN ('room', 'session', 'inbox')"
+        },
+        "read_cursors_last_read_seq": {
+          "name": "read_cursors_last_read_seq",
+          "value": "\"read_cursors\".\"last_read_seq\" >= 0"
+        }
+      }
     },
     "room_bridge_messages": {
       "name": "room_bridge_messages",

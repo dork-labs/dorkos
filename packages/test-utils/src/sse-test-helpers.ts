@@ -64,6 +64,87 @@ export function parseFrames(raw: string): SseFrame[] {
   return frames;
 }
 
+/** One SSE connection held open: a readiness signal, the collected frames, and the status. */
+export interface OpenSseStream {
+  /** Resolves once the first frame lands, so a test can write into a live stream. */
+  ready: Promise<void>;
+  /** Resolves with every frame collected once `until` is satisfied. */
+  frames: Promise<SseFrame[]>;
+  /** Resolves with the response status as soon as headers arrive. */
+  status: Promise<number>;
+}
+
+/**
+ * Open ANY SSE path against an already-listening server and collect frames
+ * until `until` is satisfied.
+ *
+ * The difference from {@link collectDurableEventsAt}, and the reason both
+ * exist: this one hands back a `ready` promise BEFORE the frames resolve, so a
+ * test can attach a reader and then perform the write it wants to observe.
+ * Without it the only way to write "into" an open stream is to sleep on a
+ * timer, which proves patience rather than delivery. It also takes a raw path,
+ * so it serves the global `/api/events` stream and a room's own stream with one
+ * collector rather than two that drift.
+ *
+ * @param port - Port the server is listening on (loopback).
+ * @param path - The stream path, query string included.
+ * @param opts.until - Stop predicate over the frames collected so far.
+ * @param opts.lastEventId - Sent as the `Last-Event-ID` resume header.
+ */
+export function openSseStream(
+  port: number,
+  path: string,
+  opts: { until: (frames: SseFrame[]) => boolean; lastEventId?: string }
+): OpenSseStream {
+  let signalReady = (): void => {};
+  let resolveFrames: (frames: SseFrame[]) => void = () => {};
+  let resolveStatus: (status: number) => void = () => {};
+  let rejectFrames: (err: unknown) => void = () => {};
+
+  const ready = new Promise<void>((resolve) => {
+    signalReady = resolve;
+  });
+  const frames = new Promise<SseFrame[]>((resolve, reject) => {
+    resolveFrames = resolve;
+    rejectFrames = reject;
+  });
+  const status = new Promise<number>((resolve) => {
+    resolveStatus = resolve;
+  });
+
+  const req = http.request(
+    {
+      host: '127.0.0.1',
+      port,
+      path,
+      method: 'GET',
+      headers: opts.lastEventId !== undefined ? { 'Last-Event-ID': opts.lastEventId } : {},
+    },
+    (res) => {
+      resolveStatus(res.statusCode ?? 0);
+      let raw = '';
+      let settled = false;
+      res.setEncoding('utf8');
+      const finish = (): void => {
+        if (settled) return;
+        settled = true;
+        req.destroy();
+        resolveFrames(parseFrames(raw));
+      };
+      res.on('data', (chunk: string) => {
+        raw += chunk;
+        signalReady();
+        if (opts.until(parseFrames(raw))) finish();
+      });
+      res.on('end', finish);
+    }
+  );
+  req.on('error', rejectFrames);
+  req.end();
+
+  return { ready, frames, status };
+}
+
 /** Build the `/events` request path for a session, with the optional resume cursor and cwd. */
 function eventsPath(sessionId: string, opts: { after?: number; cwd?: string }): string {
   const params = new URLSearchParams();

@@ -10,7 +10,8 @@ import { TransportProvider } from '@/layers/shared/model';
 import { TooltipProvider } from '@/layers/shared/ui';
 import { authorColor } from '@/layers/entities/room';
 import { RoomTimeline } from '../ui/RoomTimeline';
-import { unreadPlacement, toMessageAuthor, authorsById, groupByThread } from '../lib/room-timeline';
+import { unreadPlacement } from '@/layers/shared/lib';
+import { toMessageAuthor, authorsById, groupByThread } from '../lib/room-timeline';
 
 beforeAll(() => {
   Object.defineProperty(window, 'matchMedia', {

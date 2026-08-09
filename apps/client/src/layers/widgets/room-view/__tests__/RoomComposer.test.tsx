@@ -529,6 +529,40 @@ describe('RoomComposer — attaching a file', () => {
     expect(held!.attachmentIds).toEqual(['att-1', 'att-2']);
   });
 
+  it('keeps a file attached DURING a send, instead of clearing it with the batch', async () => {
+    // The window: `clearFiles()` ran after the upload resolved and emptied
+    // whatever was in the bar AT THAT MOMENT — not the batch that was sent. A
+    // file dropped in while the first send's bytes were still going up was
+    // wiped without ever being uploaded, posted, or reported.
+    const transport = createMockTransport();
+    let release!: (value: RoomAttachment[]) => void;
+    vi.mocked(transport.uploadRoomAttachments).mockReturnValue(
+      new Promise<RoomAttachment[]>((resolve) => {
+        release = resolve;
+      })
+    );
+    const field = renderComposer(transport);
+
+    choose(fileInputs()[1]!, [NOTES]);
+    await waitFor(() => expect(screen.getByText('notes.txt')).toBeInTheDocument());
+
+    type(field, 'here is the first');
+    fireEvent.keyDown(field, { key: 'Enter' });
+    await waitFor(() => expect(transport.uploadRoomAttachments).toHaveBeenCalledTimes(1));
+
+    // Dropped in while the first send is still in flight.
+    choose(fileInputs()[0]!, [LOG]);
+    await waitFor(() => expect(screen.getByText('server.log')).toBeInTheDocument());
+
+    release([attachment('att-1', 'notes.txt')]);
+    await waitFor(() => expect(transport.postToRoom).toHaveBeenCalledTimes(1));
+
+    // The sent file is gone from the bar…
+    await waitFor(() => expect(screen.queryByText('notes.txt')).toBeNull());
+    // …and the one added mid-flight is still there, ready for the next send.
+    expect(screen.getByText('server.log')).toBeInTheDocument();
+  });
+
   it('refuses a second Enter while the files are still going up', async () => {
     // The window: `pendingFiles` is cleared only once the ids are in a message,
     // so a second Enter during the upload would read the SAME files and send
