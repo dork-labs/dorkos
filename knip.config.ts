@@ -79,6 +79,13 @@ const config: KnipConfig = {
       // shadcn/ui add-on-demand registry in the marketing app.
       entry: ['src/components/ui/**/*.{ts,tsx}'],
     },
+    'apps/e2e': {
+      // Measurement scripts run by hand against a cockpit the operator started
+      // (see each file's header for the command). They are entry points with no
+      // importer by design — a spec that ran them would turn a benchmark into a
+      // gate, which is the opposite of what they are for.
+      entry: ['perf/*.ts'],
+    },
     'packages/cli': {
       // Bundled into the CLI through `@dorkos/server` (esbuild), or required by
       // the bundled server at runtime; the CLI's own source never imports these

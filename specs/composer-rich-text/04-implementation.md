@@ -8,8 +8,9 @@
 
 ## Progress
 
-**Status:** Phases 1-4 complete. Phase 5 (docs, changelog, e2e, full gate) outstanding.
-**Tasks completed:** 4.1-4.5 this session; 1.1-3.8 in earlier sessions.
+**Status:** Complete. Phases 1-5, 26 / 26 tasks. Awaiting the independent adversarial review that
+task 5.5 requires before a PR opens.
+**Tasks completed:** 5.1-5.5 this session; 4.1-4.5 and 1.1-3.8 in earlier ones.
 
 ## What shipped, in one paragraph
 
@@ -63,6 +64,21 @@ untouched and stay plain.
 | 4.3  | `2a7f95d8f` | Settings → Advanced switch, the exit-path test, playground variant      |
 | 4.4  | `e2922126e` | Chat passes `richText`; four flag-on baselines recorded                 |
 | 4.5  | —           | Phase gate (below)                                                      |
+
+### Phase 5 — closing the loop (this session)
+
+| Task | Commit      | What landed                                                                          |
+| ---- | ----------- | ------------------------------------------------------------------------------------ |
+| 5.1  | `926b7d5c2` | `composer-probe.ts`; twelve textarea-only e2e assertions replaced                    |
+| 5.2  | `926b7d5c2` | The flag-on chat suite and its manifest entry — **and the `/` palette bug it found** |
+| 5.3  | `b653e4a25` | The latency harness + fixture; both numbers measured and recorded                    |
+| 5.4  | `24a62b0c9` | Docs (3 internal guides + the user guide), one consolidated changelog fragment       |
+| 5.5  | —           | Final gate (below)                                                                   |
+
+**The list-exit fix (`7618e21de`) landed between phases 4 and 5**, from the phase-3 worker, closing
+the empty-bullet gap phase 4's browser check found: the anchor IS the `ListItemNode` when the item
+is empty, and `getParents` excludes self, so the exit rung was unreachable. The nested-list
+flattening that fix surfaced is a filed follow-up, to land before rooms graduate.
 
 ## Files created or changed in phase 4
 
@@ -149,6 +165,78 @@ the tree and recorded in the relevant commit body.
     which is the right instrument for a doctrine about what is visible in the JSX.
 12. **No fifth flag-on baseline.** The `interactive` state renders no composer, so its twin would
     photograph the same tree under a second name.
+
+### New in phase 5
+
+13. **Twelve e2e break sites, not eleven.** The task enumerates four `selectionStart` probes (all
+    exactly where it says) and seven `toHaveValue` assertions. There are EIGHT of the latter:
+    DOR-947's `room-attachments.spec.ts:104` landed after the task was written and asserts
+    `toHaveValue('')` on the composer. The task's own acceptance grep covers all of `tests/rooms`,
+    so it had to go too.
+14. **`use-input-autocomplete` IS modified, contradicting Decision 1** — see the bug below. The
+    spec said neither autocomplete hook would change; the hook turned out to carry a latent
+    ordering bug that only a field emitting one cursor report could expose.
+15. **The latency budget is judged on synchronous work, not on paint.** The spec says
+    "keystroke-to-paint". Paint is quantized to the display's frame interval, so it can only take
+    values near 8, 17 and 33 ms — a 16 ms budget read off it measures the display. Both numbers are
+    reported; the budget is read off work, with the reasoning in the script's header.
+16. **`knip.config.ts` gains an `apps/e2e` entry** for the hand-run perf script, which has no
+    importer by design. Net effect on knip: three fewer findings, no new ones.
+17. **`UpdateComposerPrefs` is not exported from the `entities/config` barrel.** Phase 4 exported
+    it; knip flagged it as unused, and the closest precedent (`use-status-bar-prefs`) does not
+    export its equivalent either. Removed.
+18. **The flag-on suite lives inside `chat-mock.spec.ts`, not in its own spec file and project.**
+    It was built the other way first, and only the FULL e2e run showed why that was wrong — see
+    below. `playwright.config.ts` already carried the instruction ("Add new mock-server suites to
+    chat-mock.spec.ts"); this now follows it. `apps/e2e/manifest.json` keeps its one
+    `composer-rich-text` entry, pointing at the shared spec file.
+
+## The second thing phase 5 got wrong, and how it surfaced
+
+The flag-on tests were first written as `tests/chat/composer-rich-text.spec.ts` with a dedicated
+`chromium-composer` project, on the reasoning that `chromium-streams` and `chromium-bridge` are
+separate projects against the same test-mode leg. Run alone it was 5/5, and `chromium-mock` alone
+was 15/15.
+
+**The full suite was 5 failed / 159 passed** — one of mine and three of `chat-mock`'s, plus an
+unrelated dashboard flake. Projects run concurrently (7 workers), and both suites call
+`POST /api/test/reset`, which `chat-mock.spec.ts`'s own header documents as wiping the default
+scenario, tracked sessions and projectors GLOBALLY. The precedent projects were safe precisely
+because they share none of that choreography; mine used all of it.
+
+Moving the five tests into `chat-mock.spec.ts` — which is `mode: 'default'`, sequential on one
+worker — removes both hazards at once: no reset race, and a server-global preference is only
+flipped while nothing else is running. `chromium-mock` is 20/20, and the full suite is green.
+
+Worth stating plainly for the reviewer: **a suite that passes alone and fails in the full run is
+the failure mode this class of change has**, and only the full run can show it.
+
+## The bug phase 5 found, and fixed
+
+**`/` did not open the command palette on the rich field.** Reproduced in a browser on one server,
+one keystroke, both flag states: the palette opened on the textarea and not on the contenteditable.
+
+It was not the field. `use-input-autocomplete` needs a `(value, cursor)` PAIR to detect a trigger,
+and each handler carried only one half — `handleInputChange` had the new value and read the cursor
+from state, `handleCursorChange` had the new cursor and read the value from its closure. When a
+field reports BOTH in one tick — which `TextareaField.handleChange` and Lexical's update listener
+both do — the second call detected against a half-stale pair and closed the palette the first had
+just opened.
+
+The textarea hid this for as long as it existed: typing also fires `select`, so a third detection
+ran after the re-render with both halves fresh and quietly repaired it. A contenteditable fires no
+such event, so nothing did.
+
+The fix keeps the freshest pair in a ref, so each handler contributes its half and detection no
+longer depends on how many events a field happens to fire; an effect syncs the ref when the HOST
+sets the value (emptying the box on send, writing a dropped path), neither of which goes through
+`handleInputChange`. Regression net:
+`apps/client/src/layers/features/chat/model/__tests__/use-input-autocomplete.test.tsx`.
+
+**Discriminating evidence:** restoring the stale-closure line turns 3 of its 5 tests RED — both
+one-tick cases and the closes-again case — while "still opens when the field reports the two halves
+in separate ticks" stays GREEN. That asymmetry is the bug itself: the old code worked for the
+textarea's shape and only for it.
 
 ## Phase 4 gate (task 4.5)
 
@@ -303,25 +391,87 @@ and the fast path is present and correct regardless: `use-lexical-value.ts` skip
 entirely when `dirtyElements.size === 0 && dirtyLeaves.size === 0` and emits only `onCursorChange`,
 which its own unit test pins.
 
-## What phase 5 needs to know
+## Phase 5 gate (task 5.5)
 
-1. **Changelog fragments are NOT minted.** Phase 5 consolidates. One user-facing change to
-   describe: the message box can format as you type, off by default, switch in Settings → Advanced.
-2. **Browser verification of both flag states is NOT done** and is part of 4.5's acceptance. The
-   checklist is in task 4.5: flag off behaves as today; flag on formats and keeps every ladder rung;
-   `> ` and ` ``` ` visibly do nothing; flipping the switch off with a formatted draft restores the
-   markdown source. A screenshot of the flag-on composer showing bold, a heading and a two-item
-   list is still owed to the work item.
-3. **Docs.** `contributing/configuration.md` is updated. User-facing docs under `docs/` are not —
-   phase 5 owns whether a Fumadocs page mentions this. `docs/getting-started/configuration.mdx` was
-   deliberately left alone: it carries no `ui` preference table at all (neither `ui.theme` nor
-   `ui.statusBar` appear in it), so a row there would be the only one of its kind.
-4. **The playground entry exists** (`/dev`, Chat → Input, `composer-input`) with a flag-on variant.
-5. **The graduation criteria are unmet by design.** Criterion 6's number is recorded (93,598 B
-   gzip). Criteria 4 (IME) and 5 (screen reader) need a person and a real browser and are not
-   automatable. Rooms, dashboard and onboarding graduate in a follow-up work item, which should be
-   captured when this one closes.
-6. **e2e:** no Playwright test drives the rich field yet. The page objects
-   (`apps/e2e/pages/ChatPage.ts`, `RoomsPage.ts`) locate the composer by
-   `getByRole('combobox')`, which the rich field preserves, so they keep working with the flag off
-   and should keep working with it on.
+| Check                                                                       | Result                                                                      |
+| --------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| `pnpm --filter @dorkos/client typecheck` · `lint`                           | 0 errors                                                                    |
+| `pnpm --filter @dorkos/server typecheck` · `lint`                           | 0 errors                                                                    |
+| `pnpm --filter @dorkos/e2e typecheck` · `lint`                              | 0 errors                                                                    |
+| `pnpm --filter @dorkos/shared build`                                        | green (run first; the config field touched that package)                    |
+| `pnpm --filter @dorkos/site build`                                          | green — the MDX change compiles                                             |
+| `pnpm test -- --run`                                                        | green                                                                       |
+| `cd apps/client && pnpm vitest run src/layers/widgets/room-view/__tests__/` | green, run separately per the false-red gotcha                              |
+| `pnpm knip` (after dists)                                                   | no Lexical or `field/` finding; three fewer findings than before this phase |
+| `pnpm verify`                                                               | green                                                                       |
+| e2e — the three edited rooms specs, flag OFF                                | 12/12                                                                       |
+| e2e — `chromium-mock` (now carrying the flag-on suite)                      | 20/20                                                                       |
+| e2e — full suite, all projects                                              | 163 passed / 5 failed — every failure pre-existing, see below               |
+
+### Dead-path sweep — every one empty
+
+```sh
+grep -rn "from 'lexical'\|from '@lexical" apps/client/src | grep -v "features/composer/ui/field/"
+grep -n  "textareaRef" apps/client/src/layers/features/composer/ui/use-input-keyboard.ts
+grep -rn "HTMLTextAreaElement\|toHaveValue" apps/e2e/tests/rooms
+grep -n  "lexical" apps/client/src/layers/features/composer/index.ts
+grep -rn "TODO\|FIXME" apps/client/src/layers/features/composer/
+```
+
+No `richText={false}` on any surface. (Two matches exist in the composer's own TESTS: the exit-path
+test renders with the flag off deliberately, and `surface-enablement.test.ts` names the string in a
+comment explaining the rule. Neither is a surface.)
+
+### Baseline integrity
+
+```sh
+git diff --name-status origin/main -- 'apps/client/src/**/__baselines__/*.json'
+```
+
+Four `A`, zero `M`, zero `D`. The original ten are byte-identical to `origin/main`; only the four
+`chat-input-container.rich-text.*` files are added. This is the spec's central proof and it holds.
+
+### Two flakes, both ruled out rather than waved away
+
+A first full run reddened `@dorkos/client` on `CanvasFileContentMarkdown.test.tsx` and
+`app-store.test.ts`, both at ~5 s (timeouts), while knip and the site build were running
+concurrently. Both pass in isolation, and neither imports anything this branch touched
+(`grep -c "use-input-autocomplete\|composer"` on both files: 0). A clean re-run is green.
+
+Earlier, `packages/relay`'s `watcher-manager.test.ts` timed out on two phase-4 runs — a DIFFERENT
+case each time, 17/17 in isolation, no relay file changed by this branch. Green on the phase-5 runs.
+
+## Graduation criteria — where each one stands
+
+The flag ships OFF. These are what it takes to flip it and to let rooms, the dashboard and
+onboarding pass `richText`.
+
+| #   | Criterion                                                          | Status                                                                                                               |
+| --- | ------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------- |
+| 1   | The whole ladder scenario table passes against the Lexical surface | **Met** — one `LADDER_SCENARIOS` array, two adapters (task 3.8)                                                      |
+| 2   | Round-trip stability over the corpus, every mention shape          | **Met** — 46 entries, every one a fixed point (task 2.5)                                                             |
+| 3   | Typing latency p95 within budget on a 4 000-char document          | **Met on p95** (13.80 / 13.30 ms). Median is 0.7–1.0 ms worse than the textarea — a known miss on the secondary half |
+| 4   | An IME composes and commits with no send and no dropped characters | **Not done** — needs a person and a real browser                                                                     |
+| 5   | VoiceOver or NVDA announces the field and the palette equivalently | **Not done** — needs a person                                                                                        |
+| 6   | The measured gzipped chunk is recorded and accepted                | **Met** — 93,861 B gzip, recorded above with its argument                                                            |
+
+Two follow-ups to capture when this closes: the surface graduation (rooms, dashboard, onboarding),
+and the nested-list flattening that the empty-bullet Enter fix surfaced, which should land before
+rooms graduate.
+
+## What the adversarial reviewer should doubt
+
+Task 5.5 names four claims to attack, and this phase adds two more.
+
+1. **The flag-off path is byte-identical** — check the baselines were not re-recorded. The
+   `DORKOS_RECORD_DOM_BASELINE=1` run in phase 4 DID re-record the five flag-off chat baselines and
+   they were restored from `HEAD`; verify the restore rather than trusting it.
+2. **One scenario table really runs against two adapters** and is not sharing a mock between them.
+3. **The emitted-value latch is present and its test fails without it.**
+4. **Paste and drop decline files and file-tree paths**, so DOR-947 attach and DOR-1032 path drops
+   still work.
+5. **The `use-input-autocomplete` fix does not change the textarea path.** It is the one shared
+   chat hook this spec modified, against the spec's own Decision 1.
+6. **The orchestrator's own counts.** The drift notes in these tasks were wrong more than once —
+   ten baselines not eleven, no `use-input-keyboard.test.ts`, seven ladder methods not five, and
+   twelve e2e sites not eleven. Check the claims in this document, not only the code.

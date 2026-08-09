@@ -488,9 +488,9 @@
       "lastModified": ""
     },
     "composer-rich-text": {
-      "specFile": "tests/chat/composer-rich-text.spec.ts",
+      "specFile": "tests/chat-mock.spec.ts",
       "feature": "chat",
-      "description": "the chat composer with formatting on: Enter builds a list before it sends, and the wire still carries markdown",
+      "description": "the chat composer with formatting on: Enter builds a list before it sends, and the wire still carries markdown (a describe inside the mock spec, which is the only sequential place a server-global preference can be flipped)",
       "lastRun": "",
       "lastStatus": "",
       "runCount": 0,

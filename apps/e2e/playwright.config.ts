@@ -305,10 +305,6 @@ export default defineConfig({
         // Needs the test-mode server's `/api/test/seed-bridge` seam, so it runs
         // in `chromium-bridge` below, never against the real cockpit leg.
         '**/relay/bridged-channel.spec.ts',
-        // Turns `ui.composer.richText` ON, which is server-global — so it runs
-        // in `chromium-composer` below, against the disposable test-mode leg
-        // rather than the real cockpit whose config is a person's own.
-        '**/chat/composer-rich-text.spec.ts',
         ...(INCLUDE_SITE ? [] : SITE_SPECS),
       ],
       // Skips the specs that need real model credentials — see INCLUDE_INTEGRATION.
@@ -382,25 +378,6 @@ export default defineConfig({
         baseURL: `http://localhost:${MOCK_VITE_PORT}`,
       },
       testMatch: ['**/relay/bridged-channel.spec.ts'],
-    },
-    {
-      // The composer's rich-text field (DOR-948) — the only place in the suite
-      // where `ui.composer.richText` is ON. Every other spec runs with it off,
-      // which is the fallback gate.
-      //
-      // Its own project for the same reason as the three above: it shares none
-      // of chat-mock's scenario/reset choreography. And it runs against the
-      // TEST-MODE leg specifically because the preference is server-global and
-      // this spec writes it — the real cockpit leg's config belongs to whoever
-      // is running the suite, and flipping their composer would be a side
-      // effect no test should have. The spec restores the previous value in
-      // `afterAll`, including when it fails.
-      name: 'chromium-composer',
-      use: {
-        ...devices['Desktop Chrome'],
-        baseURL: `http://localhost:${MOCK_VITE_PORT}`,
-      },
-      testMatch: ['**/chat/composer-rich-text.spec.ts'],
     },
   ],
 });

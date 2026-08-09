@@ -70,7 +70,7 @@
       "slug": "composer-rich-text",
       "title": "Rich text via markdown in the composer (Lexical)",
       "created": "2026-08-06",
-      "status": "specified"
+      "status": "implemented"
     },
     {
       "id": "260806-215028",

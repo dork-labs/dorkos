@@ -16,7 +16,6 @@ export { useUpdateConfig } from './model/use-update-config';
 export { useAutonomyAcknowledgement } from './model/use-autonomy-acknowledgement';
 export { useStatusBarPrefs, useUpdateStatusBarPrefs } from './model/use-status-bar-prefs';
 export { useComposerRichText, useUpdateComposerPrefs } from './model/use-composer-prefs';
-export type { UpdateComposerPrefs } from './model/use-composer-prefs';
 export { TelemetryPayloadBlock } from './ui/TelemetryPayloadBlock';
 export { TelemetryPayloadDisclosure } from './ui/TelemetryPayloadDisclosure';
 export { TelemetryPayloadToggle } from './ui/TelemetryPayloadToggle';
