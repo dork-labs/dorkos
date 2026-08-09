@@ -30,6 +30,7 @@ import type {
   SessionContextUsage,
   SessionLifecycle,
 } from '@dorkos/shared/session-stream';
+import { deriveSessionActivity } from './activity/derive-activity.js';
 import type {
   HistoryMessage,
   PendingInteractionDTO,
@@ -70,6 +71,21 @@ export type RawSessionEvent = Omit<SessionEvent, 'seq'>;
  * while keeping the bound finite, which is the whole point of bounding it.
  */
 export const CAPABILITY_HOLD_PAUSE_GRACE_MS = 30_000;
+
+/**
+ * Shortest gap between two fan-outs that exist only to report a NEW tool
+ * ({@link SessionStatus.activity}).
+ *
+ * A busy turn starts tools several times a second, and every fan-out here
+ * becomes an SSE frame on every connected client, for every session in the
+ * fleet. Two seconds is slow enough that the wire cost is a rounding error and
+ * fast enough that a person watching a sidebar sees the row change while the
+ * tool is still running.
+ *
+ * It throttles NEW activity only. Clearing one is never delayed — see
+ * {@link SessionStateProjector.ingest}.
+ */
+export const ACTIVITY_FANOUT_THROTTLE_MS = 2_000;
 
 /**
  * A sign-in card the projector is carrying past its own turn (DOR-1004), plus
@@ -320,6 +336,16 @@ export class SessionStateProjector {
   /** Running subagents by taskId; size feeds `runningSubagentCount`. */
   private readonly runningSubagents = new Set<string>();
 
+  /**
+   * Epoch ms of the last ACTIVITY-driven fan-out — the floor the throttle
+   * measures from. Lifecycle fan-outs deliberately do not move it; see
+   * {@link SessionStateProjector.announceNow}.
+   */
+  private lastActivityFanOutAt = 0;
+
+  /** Armed trailing flush for a throttled activity, or `undefined` when none is. */
+  private activityFlushTimer: ReturnType<typeof setTimeout> | undefined;
+
   /** Live subscribers awaiting the next event (resolved on each ingest). */
   private waiters: Waiter[] = [];
 
@@ -369,6 +395,7 @@ export class SessionStateProjector {
     const event = { ...raw, seq: ++this.counter } as SessionEvent;
     // Capture before project(): applyStatusChange replaces the status object.
     const lifecycleBefore = this.status.lifecycle;
+    const activityBefore = this.status.activity;
     // Capture the completing turn BEFORE project() clears inProgressTurn, so a
     // persistence-enabled projector can flush the whole turn (turn_start … the
     // captured deltas … this turn_end) after the event has streamed. A turn_end
@@ -387,8 +414,89 @@ export class SessionStateProjector {
     // persistence failure only forfeits cross-restart durability, never live
     // streaming.
     if (turnToFlush !== null) this.flushTurn(turnToFlush);
-    if (this.status.lifecycle !== lifecycleBefore) notifyStatusChange(this);
+    // Three ways this event can be worth telling the fleet about, in the order
+    // they take precedence:
+    //
+    // 1. The lifecycle moved — the transition the sidebar has always drawn. It
+    //    carries whatever activity is current, so a `blocked` still says what
+    //    the session is blocked ON.
+    // 2. The activity was CLEARED without the lifecycle moving. Only a typed
+    //    `error` does this (a turn can carry one and recover), and it must not
+    //    wait on the throttle: the alternative is up to two seconds of a verb
+    //    for something that already failed.
+    // 3. A NEW activity — throttled, because a chatty turn starts tools far
+    //    faster than anybody can read them.
+    if (this.status.lifecycle !== lifecycleBefore) {
+      this.announceNow();
+    } else if (activityBefore !== undefined && this.status.activity === undefined) {
+      this.announceActivityNow();
+    } else if (this.status.activity !== activityBefore) {
+      this.scheduleActivityFanOut();
+    }
     return event;
+  }
+
+  /**
+   * Announce the current status immediately, dropping any armed trailing flush —
+   * whatever that flush was going to say is either in this update already or has
+   * been superseded by it.
+   *
+   * Deliberately does NOT re-arm the activity throttle. The throttle exists to
+   * rate-limit tool churn, and a lifecycle transition is not tool churn: charging
+   * it against the same budget delayed the FIRST tool of every turn by the full
+   * window, because `turn_start` had just spent it.
+   */
+  private announceNow(): void {
+    this.cancelActivityFlush();
+    notifyStatusChange(this);
+  }
+
+  /** Announce an activity change now, and re-arm the throttle from this moment. */
+  private announceActivityNow(): void {
+    this.lastActivityFanOutAt = Date.now();
+    this.announceNow();
+  }
+
+  /**
+   * Report a newly-started tool, or — inside the throttle window — arm a single
+   * trailing flush that will report whatever the LATEST tool is when it fires.
+   *
+   * Trailing rather than dropping, because dropping loses the end of a burst:
+   * the last tool of a run of quick ones is exactly the one that then runs for
+   * a minute, and the fleet would spend that minute naming a tool that finished
+   * immediately.
+   */
+  private scheduleActivityFanOut(): void {
+    const waited = Date.now() - this.lastActivityFanOutAt;
+    if (waited >= ACTIVITY_FANOUT_THROTTLE_MS) {
+      this.announceActivityNow();
+      return;
+    }
+    if (this.activityFlushTimer !== undefined) return;
+    this.activityFlushTimer = setTimeout(() => {
+      this.activityFlushTimer = undefined;
+      // Re-read at fire time rather than closing over a value: the point of the
+      // trailing flush is to report the latest tool, not the one that armed it.
+      this.announceActivityNow();
+    }, ACTIVITY_FANOUT_THROTTLE_MS - waited);
+    // A pending status update must never hold the process open — this timer is
+    // pure liveness reporting, and there is nothing to report to on the way out.
+    this.activityFlushTimer.unref?.();
+  }
+
+  /**
+   * Drop any armed trailing activity flush.
+   *
+   * Also called from outside a fan-out — by {@link terminate} and by
+   * {@link disposeProjector} — because an armed timer on a retired projector
+   * would announce a session that no longer exists to every connected client.
+   *
+   * @internal
+   */
+  cancelActivityFlush(): void {
+    if (this.activityFlushTimer === undefined) return;
+    clearTimeout(this.activityFlushTimer);
+    this.activityFlushTimer = undefined;
   }
 
   /**
@@ -489,10 +597,16 @@ export class SessionStateProjector {
         this.status.lifecycle = 'streaming';
         // A new turn clears the previous failure surface.
         this.status.lastError = null;
+        // …and the previous turn's tool. The new turn has not reached one yet,
+        // and carrying the old one over would name the last thing the session
+        // did as the thing it is doing.
+        delete this.status.activity;
         break;
       case 'turn_end':
         this.inProgressTurn = null;
         this.ring.markTurnEnded();
+        // Nothing is running any more, so nothing may be reported as running.
+        delete this.status.activity;
         // A hold cannot outlive the turn that opened it: the held tool call died
         // with the turn, so any entry still here is stranded (DOR-987). Dropping
         // them bounds the map across a long session and keeps the lifecycle
@@ -506,7 +620,19 @@ export class SessionStateProjector {
       case 'status_change':
         this.applyStatusChange(event.status);
         break;
+      // A tool the session just started: the fleet-wide answer to "what is it
+      // doing right now". Only `tool_call` — `tool_result` is the tool
+      // FINISHING, and clearing on it would blank the row for the whole gap
+      // between tools, which is most of a turn.
+      case 'tool_call':
+        this.status.activity = deriveSessionActivity(event.toolName, event.input);
+        break;
       case 'error':
+        // Whatever it was doing, it is not doing it now. Held separately from
+        // the lifecycle on purpose: this event does not settle the turn, so
+        // without this clear a recovered error would leave the failed tool
+        // named until the next one started.
+        delete this.status.activity;
         // Latch the failure details for the status projection. Deliberately
         // does NOT touch lifecycle: non-terminal errors exist (e.g. a Codex
         // item_error the turn recovers from), so terminal settling stays owned
@@ -786,8 +912,12 @@ export class SessionStateProjector {
       this.inProgressTurn = null;
       this.ring.markTurnEnded();
       this.status.lifecycle = 'interrupted';
-      // This path mutates lifecycle WITHOUT an ingest, so fan out here.
-      notifyStatusChange(this);
+      // The turn is over, so whatever tool it was in is over with it.
+      delete this.status.activity;
+      // This path mutates lifecycle WITHOUT an ingest, so fan out here — and
+      // through the activity path, so an armed trailing flush cannot land after
+      // it and re-assert the tool this just cleared.
+      this.announceNow();
     }
   }
 
@@ -1166,6 +1296,7 @@ export class SessionStateProjector {
   terminate(): number {
     if (this.terminated) return 0;
     this.terminated = true;
+    this.cancelActivityFlush();
     const waiters = this.waiters;
     this.waiters = [];
     for (const wake of waiters) wake(TERMINATED);
@@ -1318,6 +1449,9 @@ export function peekProjector(sessionId: string): SessionStateProjector | undefi
  * @param sessionId - DorkOS session id.
  */
 export function disposeProjector(sessionId: string): void {
+  // Before the entry goes: an armed activity flush would otherwise fire on an
+  // instance nothing can reach and announce a session that is gone.
+  projectors.get(sessionId)?.cancelActivityFlush();
   projectors.delete(sessionId);
   // Drop the session's DevTools capture buffer alongside its projector — the
   // preview is gone, and the buffer must not outlive the session (DOR-213).

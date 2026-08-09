@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { getToolLabel, getMcpServerBadge, parseMcpToolName } from '../tool-labels';
+import {
+  getToolLabel,
+  getMcpServerBadge,
+  parseMcpToolName,
+  formatActivityLabel,
+} from '../tool-labels';
 
 describe('getToolLabel', () => {
   it('returns raw tool name for non-JSON input', () => {
@@ -247,5 +252,66 @@ describe('getMcpServerBadge', () => {
 
   it('returns null for malformed mcp__ names', () => {
     expect(getMcpServerBadge('mcp__slack')).toBeNull();
+  });
+});
+
+describe('formatActivityLabel — the honesty ladder', () => {
+  // Rung 1: a tool this client knows, with the argument a person would recognize.
+  it('names the file, the command, or the query when it has one', () => {
+    expect(formatActivityLabel({ toolName: 'Edit', target: 'strip-state.ts' })).toBe(
+      'Editing strip-state.ts…'
+    );
+    expect(formatActivityLabel({ toolName: 'Read', target: 'README.md' })).toBe(
+      'Reading README.md…'
+    );
+    expect(formatActivityLabel({ toolName: 'Bash', target: 'pnpm verify' })).toBe(
+      'Running pnpm verify…'
+    );
+    expect(formatActivityLabel({ toolName: 'Grep', target: 'deriveStripState' })).toBe(
+      'Searching for deriveStripState…'
+    );
+  });
+
+  // Rung 1, other runtimes: the same act, spelled three ways on the wire.
+  it('reads codex and opencode tool names as what they are', () => {
+    expect(formatActivityLabel({ toolName: 'Shell', target: 'git status' })).toBe(
+      'Running git status…'
+    );
+    expect(formatActivityLabel({ toolName: 'ApplyPatch', target: 'index.ts' })).toBe(
+      'Editing index.ts…'
+    );
+    expect(formatActivityLabel({ toolName: 'bash', target: 'ls -la' })).toBe('Running ls -la…');
+    expect(formatActivityLabel({ toolName: 'webfetch', target: 'dorkos.ai' })).toBe(
+      'Reading dorkos.ai…'
+    );
+  });
+
+  // Rung 2: the tool is known, the argument is not. Say the less specific true
+  // thing rather than the more specific invented one.
+  it('degrades to a generic phrase when the tool has no target', () => {
+    expect(formatActivityLabel({ toolName: 'Bash' })).toBe('Running a command…');
+    expect(formatActivityLabel({ toolName: 'Edit' })).toBe('Editing a file…');
+    expect(formatActivityLabel({ toolName: 'WebSearch' })).toBe('Searching the web…');
+    expect(formatActivityLabel({ toolName: 'TodoWrite' })).toBe('Updating its task list…');
+  });
+
+  // Rung 3: an MCP tool — the server is the honest unit, not the method name.
+  it('names the MCP server it is talking to', () => {
+    expect(formatActivityLabel({ toolName: 'mcp__slack__send_message' })).toBe('Using Slack…');
+    expect(formatActivityLabel({ toolName: 'mcp__my_custom__do_thing' })).toBe('Using My Custom…');
+    expect(formatActivityLabel({ toolName: 'mcp__dorkos__relay_send' })).toBe('Using DorkOS…');
+  });
+
+  // Rung 4: a name nothing here has ever seen. Say the name.
+  it('falls back to the tool name itself, never a guess', () => {
+    expect(formatActivityLabel({ toolName: 'some_future_tool' })).toBe('Using some_future_tool…');
+    // A malformed MCP name is not an MCP name — it is just a name.
+    expect(formatActivityLabel({ toolName: 'mcp__slack' })).toBe('Using mcp__slack…');
+  });
+
+  // Rung 5: nothing is known at all.
+  it('says only that it is working when there is no activity', () => {
+    expect(formatActivityLabel(null)).toBe('Working…');
+    expect(formatActivityLabel(undefined)).toBe('Working…');
   });
 });

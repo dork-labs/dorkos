@@ -20,6 +20,7 @@ import type {
   SessionStatus,
   SessionListEvent,
   SessionContextUsage,
+  SessionActivity,
 } from '@dorkos/shared/session-stream';
 
 /**
@@ -285,6 +286,36 @@ export function useSessionListSessions(): Session[] {
 /** Selector: the status projection for a single session, or `null`. */
 export function useSessionListStatus(sessionId: string): SessionStatus | null {
   return useSessionListStore(useCallback((s) => s.statuses[sessionId] ?? null, [sessionId]));
+}
+
+/**
+ * What a session is doing right now, off the held status — or `null` when
+ * nothing is known.
+ *
+ * Deliberately NOT a map of its own beside {@link SessionListStoreState.statuses}.
+ * The reading is only ever true while a session is live, and the status map is
+ * already pruned the instant one settles: a second map would have to be pruned
+ * in step with it, and the first time the two disagreed a settled session would
+ * keep a verb. Reading through the status makes that disagreement impossible.
+ *
+ * @param state - The session-list store state.
+ * @param sessionId - The session to read.
+ */
+export function selectSessionActivity(
+  state: SessionListStoreState,
+  sessionId: string
+): SessionActivity | null {
+  return state.statuses[sessionId]?.activity ?? null;
+}
+
+/**
+ * Selector: what a single session is doing right now, or `null`. Subscribes to
+ * the same store the sidebar reads, so every surface names one tool at a time.
+ *
+ * @param sessionId - The session to watch.
+ */
+export function useSessionActivity(sessionId: string): SessionActivity | null {
+  return useSessionListStore(useCallback((s) => selectSessionActivity(s, sessionId), [sessionId]));
 }
 
 /**

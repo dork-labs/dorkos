@@ -89,6 +89,8 @@ export {
   useSessionListStore,
   useSessionListSessions,
   useSessionListStatus,
+  useSessionActivity,
+  selectSessionActivity,
   useSessionContextReading,
   useSessionRekeyTarget,
 } from './model/session-list-store';

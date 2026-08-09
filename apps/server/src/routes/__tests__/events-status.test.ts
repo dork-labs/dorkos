@@ -162,6 +162,23 @@ function parseEventData(body: string, eventName: string): unknown {
   return dataLine ? JSON.parse(dataLine.replace('data: ', '')) : undefined;
 }
 
+/**
+ * Parse the LAST frame of a named event out of an SSE body.
+ *
+ * A turn that reaches a tool produces two `session_status` frames — the
+ * lifecycle transition, then the tool — and it is the second one that carries
+ * what the session is doing. Reading the first (what {@link parseEventData}
+ * does) would assert the absence of a field that arrives in the next frame.
+ */
+function parseLastEventData(body: string, eventName: string): unknown {
+  const frames = body.split('\n\n').filter((f) => f.includes(`event: ${eventName}`));
+  const dataLine = frames
+    .at(-1)
+    ?.split('\n')
+    .find((l) => l.startsWith('data: '));
+  return dataLine ? JSON.parse(dataLine.replace('data: ', '')) : undefined;
+}
+
 describe('GET /api/events — global session-list broadcaster', () => {
   let broadcaster: SessionListBroadcaster;
   let runtime: FakeAgentRuntime;
@@ -255,6 +272,42 @@ describe('GET /api/events — global session-list broadcaster', () => {
       sessionId: SESSION_ID,
       cwd: '/work/alpha',
       status: { lifecycle: 'streaming' },
+    });
+  });
+
+  // The other half of the same question: the sidebar knows a session is
+  // WORKING, and this is what lets it say what the session is working ON
+  // without opening it. The activity has to survive the schema gate in the
+  // broadcaster (an unknown key would be stripped, an invalid one dropped)
+  // and reach the wire whole.
+  it('the tool a session just started reaches /api/events on its status', async () => {
+    runtime.subscribeSessionList.mockReturnValue(controllableSessionList().iterable);
+
+    const stream = openEventStream();
+    await stream.waitFor((body) => body.includes('event: connected'));
+    broadcaster.start([runtime]);
+
+    const projector = getOrCreateProjector(SESSION_ID, '/work/alpha');
+    projector.ingest({ type: 'turn_start' });
+    projector.ingest({
+      type: 'tool_call',
+      toolCallId: 'tc-1',
+      toolName: 'Edit',
+      status: 'running',
+      input: JSON.stringify({ file_path: '/work/alpha/session-stream.ts' }),
+    } as Parameters<typeof projector.ingest>[0]);
+
+    const body = await stream.waitFor((b) => b.includes('"activity"'));
+    stream.close();
+    disposeProjector(SESSION_ID);
+    const payload = parseLastEventData(body, 'session_status') as SessionListEvent;
+    expect(payload).toMatchObject({
+      type: 'session_status',
+      sessionId: SESSION_ID,
+      status: {
+        lifecycle: 'streaming',
+        activity: { toolName: 'Edit', target: 'session-stream.ts' },
+      },
     });
   });
 

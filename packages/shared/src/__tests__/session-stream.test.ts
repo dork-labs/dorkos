@@ -75,6 +75,31 @@ describe('SessionStatusSchema', () => {
     expect(SessionStatusSchema.parse(failed).lastError).toEqual(failed.lastError);
   });
 
+  it('parses a status carrying what the session is doing right now', () => {
+    // Purpose: the fleet-wide activity reading rides the status projection, so a
+    // sidebar can say "Editing strip-state.ts" without opening the session.
+    const working = {
+      ...coldStatus,
+      lifecycle: 'streaming' as const,
+      activity: { toolName: 'Edit', target: 'strip-state.ts' },
+    };
+    expect(SessionStatusSchema.parse(working).activity).toEqual(working.activity);
+  });
+
+  it('parses a status whose activity carries only a tool name', () => {
+    // Purpose: `target` is the one human-relevant argument and plenty of tools
+    // have none. The wire must not require one to be invented.
+    const working = { ...coldStatus, activity: { toolName: 'TodoWrite' } };
+    expect(SessionStatusSchema.parse(working).activity).toEqual({ toolName: 'TodoWrite' });
+  });
+
+  it('parses a status with no activity at all (an older server, or an idle session)', () => {
+    // Purpose: the field is additive. A `session_status` minted before it
+    // existed must still parse, and absent must read as "nothing known" rather
+    // than as a value.
+    expect(SessionStatusSchema.parse(coldStatus).activity).toBeUndefined();
+  });
+
   it('accepts a permission-mode id outside the shared enum (DOR-851)', () => {
     // Purpose: `permissionMode` here is the id the session's OWN runtime
     // reports. `always-allow` is the real default `test-mode` declares
