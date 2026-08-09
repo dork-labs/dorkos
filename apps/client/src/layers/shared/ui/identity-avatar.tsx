@@ -5,12 +5,12 @@
  */
 import * as React from 'react';
 import { cva, type VariantProps } from 'class-variance-authority';
-import { ADAPTER_LOGO_MAP } from '@dorkos/icons/adapter-logos';
-import { Bot, Send } from 'lucide-react';
 import type { AuthorKind } from '@dorkos/shared/room-schemas';
 import { readableForeground } from '../lib/readable-foreground';
 import { cn } from '../lib/utils';
 import type { IdentityOrigin } from '../lib/identity-origin';
+import { AGENT_GLYPH, platformGlyph } from './identity-glyphs';
+import { STATUS_DOT_COLOR, type IdentityStatus } from './status-dot';
 
 /**
  * How much of the identity's own colour tints the disc in the default
@@ -176,13 +176,16 @@ function defaultsForKind(
   kind: AuthorKind | undefined,
   origin: IdentityOrigin | undefined
 ): KindDefaults {
-  if (kind === 'agent') return { shape: 'square', variant: 'fill', badge: <Bot /> };
+  // Both marks come from the shared registry (`identity-glyphs.ts`), not from
+  // `lucide-react` directly: the trailing session mark draws the same Bot for
+  // the same reason, and two independent imports of one product decision drift
+  // the first time either moves.
+  const Agent = AGENT_GLYPH;
+  if (kind === 'agent') return { shape: 'square', variant: 'fill', badge: <Agent /> };
   if (kind !== 'human' || typeof origin !== 'object' || origin === null) return UNDECLARED;
 
-  // A platform this build has no logo for still has to read as "not from
-  // here" rather than render nothing at all.
-  const Logo = ADAPTER_LOGO_MAP[origin.platform];
-  return { ...UNDECLARED, badge: Logo ? <Logo /> : <Send /> };
+  const Logo = platformGlyph(origin.platform);
+  return { ...UNDECLARED, badge: <Logo /> };
 }
 
 export interface IdentityAvatarProps
@@ -262,15 +265,24 @@ export interface IdentityAvatarProps
    */
   origin?: IdentityOrigin;
   /**
-   * Whether this identity is doing something right now — a pulsing dot in the
-   * disc's top-right corner, opposite the badge.
+   * What this identity is doing right now — the dot in the disc's **top-right**
+   * corner, opposite the badge.
+   *
+   * The corner has exactly one job, and this is it. Green and pulsing means a
+   * turn is streaming as you look at it; amber means something is waiting on
+   * you; red means something broke; `idle` (the default) draws nothing, because
+   * a cockpit where every face wears a dot is a cockpit with no signal in it.
+   * See {@link IdentityStatus}.
+   *
+   * **Only `working` moves.** Motion is what says "right now" — an amber dot
+   * that pulsed would claim a blocked turn is still running. The pulse, not the
+   * dot, is what `motion-reduce` drops, so the fact survives the preference.
    *
    * Kind-agnostic on purpose: an agent mid-turn and a person mid-task are the
    * same fact to a roster, and both read it at a glance rather than from a
-   * hover. The pulse is what says "right now", so it is the motion, not the
-   * dot, that `motion-reduce` drops.
+   * hover.
    */
-  working?: boolean;
+  status?: IdentityStatus;
 }
 
 /**
@@ -322,7 +334,7 @@ function IdentityAvatar({
   badge,
   kind,
   origin,
-  working,
+  status = 'idle',
   size,
   shape,
   variant,
@@ -464,20 +476,32 @@ function IdentityAvatar({
           {drawnBadge}
         </span>
       )}
-      {working && (
+      {status !== 'idle' && (
         // Opposite the badge, so an agent can wear both. The ring is the page
         // background rather than a border, for the same reason the badge's
         // plate is: it reads as separate from the disc over any tint, and a
         // 20px disc has no 4px to spare.
+        //
+        // The colour is the shared token map, not a green written here — the
+        // sidebar, the tab strip and the group headers all spell the same three
+        // states, and they used to spell them four different ways.
         <span
           aria-hidden
-          className="bg-status-success ring-background absolute -top-px -right-px size-2 rounded-full ring-2"
+          data-slot="identity-status-dot"
+          data-status={status}
+          className={cn(
+            'ring-background absolute -top-px -right-px size-2 rounded-full ring-2',
+            STATUS_DOT_COLOR[status]
+          )}
         >
-          {/* It pulses because the thing it reports is happening RIGHT NOW,
-              and a still dot says the same about a state that ended an hour
-              ago. `motion-reduce:hidden` leaves the dot itself, so the fact
-              survives the preference and only the motion goes. */}
-          <span className="bg-status-success absolute inset-0 animate-ping rounded-full opacity-60 motion-reduce:hidden" />
+          {/* Only `working` gets the halo, because only `working` is happening
+              RIGHT NOW — a still dot says the same thing about a state that
+              began an hour ago, and "needs you" and "error" are states.
+              `motion-reduce:hidden` leaves the dot itself, so the fact survives
+              the preference and only the motion goes. */}
+          {status === 'working' && (
+            <span className="bg-status-success absolute inset-0 animate-ping rounded-full opacity-60 motion-reduce:hidden" />
+          )}
         </span>
       )}
       {children}

@@ -1,7 +1,6 @@
 import { cva, type VariantProps } from 'class-variance-authority';
 import { cn } from '@/layers/shared/lib';
-import { identityMarkRing, IDENTITY_MARK_GROUP } from '@/layers/shared/ui';
-import type { AgentHealthStatus } from '@dorkos/shared/mesh-schemas';
+import { identityMarkRing, IDENTITY_MARK_GROUP, type IdentityStatus } from '@/layers/shared/ui';
 import { AgentAvatar } from './AgentAvatar';
 
 // ---------------------------------------------------------------------------
@@ -91,8 +90,12 @@ interface AgentIdentityBaseProps extends VariantProps<typeof identityVariants> {
   name: string;
   /** Optional secondary content — badges, path, timestamp, etc. */
   detail?: React.ReactNode;
-  /** Optional health status (forwarded to AgentAvatar). */
-  healthStatus?: AgentHealthStatus;
+  /**
+   * What this agent is doing right now — forwarded to the disc's corner dot.
+   * Pass it only where the surface observes turn-level state; see
+   * {@link AgentAvatar}.
+   */
+  status?: IdentityStatus;
   /**
    * Show the avatar alone. The name stays in the accessibility tree rather than
    * moving to an `aria-label`, so the identity still announces (and still names an
@@ -124,7 +127,7 @@ export function AgentIdentity({
   name,
   detail,
   size,
-  healthStatus,
+  status,
   nameHidden,
   className,
   onClick,
@@ -142,15 +145,10 @@ export function AgentIdentity({
   );
 
   // Mark tier: when this lockup (or its face alone) is a control, the disc
-  // answers the pointer by ringing itself in the agent's own colour.
-  //
-  // **Health wins.** A disc already spending its 2px ring on mesh health takes
-  // no hover ring at all — a ring that changed colour under the pointer would
-  // make a diagnostic signal look like a hover state. Suppressed here, at the
-  // caller, rather than inside `AgentAvatar`: the disc does not know whether
-  // anything around it is pressable.
-  const marksIdentity =
-    (onClick !== undefined || onAvatarClick !== undefined) && healthStatus === undefined;
+  // answers the pointer by ringing itself in the agent's own colour. Nothing
+  // competes for that ring any more — mesh health used to spend it, and the
+  // lockup fell back to a neutral row hover whenever it did.
+  const marksIdentity = onClick !== undefined || onAvatarClick !== undefined;
 
   const avatar = (
     <AgentAvatar
@@ -158,7 +156,7 @@ export function AgentIdentity({
       emoji={emoji}
       imageUrl={imageUrl}
       size={size}
-      healthStatus={healthStatus}
+      status={status}
       className={cn(marksIdentity && identityMarkRing.group)}
     />
   );
@@ -211,12 +209,6 @@ export function AgentIdentity({
           // a mouse user. `rounded-md` gives that ring a shape to follow.
           IDENTITY_MARK_GROUP,
           'focus-ring cursor-pointer rounded-md transition-[scale] duration-(--identity-press) ease-(--identity-ease-out) active:scale-[0.98]',
-          // When health owns the ring, the identity has no way to answer — so
-          // the lockup falls back to the repo's neutral row hover rather than
-          // to nothing at all. Latent today (no caller passes `healthStatus`
-          // alongside `onClick`), and cheap enough to be worth having before
-          // one does.
-          !marksIdentity && 'hover:bg-accent',
           className
         )}
       >

@@ -10,6 +10,7 @@ import type {
 } from '@dorkos/shared/types';
 import type { SessionDiagnostics } from '@/layers/features/status';
 import type { TeamMember } from '@dorkos/shared/team-schemas';
+import type { IdentityStatus } from '@/layers/shared/ui';
 import {
   createAssistantMessage,
   createUserMessage,
@@ -782,6 +783,21 @@ export const SESSION_DIAGNOSTICS: Record<'healthy' | 'degraded' | 'cold', Sessio
 // ---------------------------------------------------------------------------
 // Identity surfaces — MentionPill, IdentityHoverCard, IdentityAvatar
 // ---------------------------------------------------------------------------
+
+/**
+ * The whole live-state vocabulary an identity's corner dot can say, with the
+ * words a showcase captions each one with.
+ *
+ * One list, imported by every showcase that draws the states, so the playground
+ * cannot end up showing three different state systems for the fact this repo
+ * spent a release drawing five different ways (DOR-1052).
+ */
+export const IDENTITY_STATUSES: readonly { status: IdentityStatus; label: string }[] = [
+  { status: 'idle', label: 'idle — no dot' },
+  { status: 'working', label: 'working — pulses' },
+  { status: 'needs-you', label: 'needs you — still' },
+  { status: 'error', label: 'error — still' },
+];
 
 /**
  * One identity as the phase-1 identity surfaces need it. Deliberately not

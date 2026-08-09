@@ -1,23 +1,18 @@
 import { Settings, User, X } from 'lucide-react';
+import type { AgentHealthStatus } from '@dorkos/shared/mesh-schemas';
 import { Badge } from '@/layers/shared/ui/badge';
 import { useMeshAgentHealth } from '@/layers/entities/mesh';
 import { useProfileDeepLink } from '@/layers/shared/model';
-import { formatRelativeTime } from '@/layers/shared/lib';
+import { cn, formatRelativeTime } from '@/layers/shared/lib';
+import { HEALTH_DISPLAY } from '../lib/health-display';
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-const STATUS_INFO = {
-  active: { label: 'Active', color: 'bg-green-500' },
-  inactive: { label: 'Inactive', color: 'bg-amber-500' },
-  stale: { label: 'Stale', color: 'bg-zinc-400' },
-} as const;
-
-type AgentStatus = keyof typeof STATUS_INFO;
-
-function isAgentStatus(value: string): value is AgentStatus {
-  return value in STATUS_INFO;
+/** Whether a health string off the wire is one this build knows how to draw. */
+function isAgentStatus(value: string): value is AgentHealthStatus {
+  return value in HEALTH_DISPLAY;
 }
 
 // ---------------------------------------------------------------------------
@@ -92,7 +87,7 @@ export function AgentHealthDetail({ agentId, onClose, onOpenSettings }: AgentHea
   }
 
   const statusKey = isAgentStatus(health.status) ? health.status : 'stale';
-  const statusInfo = STATUS_INFO[statusKey];
+  const statusInfo = HEALTH_DISPLAY[statusKey];
 
   return (
     <div className="w-64 overflow-y-auto border-l p-4">
@@ -103,7 +98,7 @@ export function AgentHealthDetail({ agentId, onClose, onOpenSettings }: AgentHea
 
       <div className="space-y-3 text-xs">
         <div className="flex items-center gap-2">
-          <span className={`h-2.5 w-2.5 rounded-full ${statusInfo.color}`} aria-hidden="true" />
+          <span className={cn('h-2.5 w-2.5 rounded-full', statusInfo.dot)} aria-hidden="true" />
           <span>{statusInfo.label}</span>
         </div>
 

@@ -2,7 +2,12 @@ import { useEffect, useMemo, useRef } from 'react';
 import { MessageSquare, X } from 'lucide-react';
 import { cn, getAgentDisplayName } from '@/layers/shared/lib';
 import type { AppTab } from '@/layers/shared/model';
-import type { RovingTabProps, TabActivationSource } from '@/layers/shared/ui';
+import {
+  statusDotClass,
+  type RovingTabProps,
+  type StatusSignal,
+  type TabActivationSource,
+} from '@/layers/shared/ui';
 import { useCurrentAgent, useAgentVisual } from '@/layers/entities/agent';
 import { useSessionBorderState, type SessionBorderKind } from '@/layers/entities/session';
 import { fallbackTabLabel, parseTabHref, ROUTE_ICONS } from '../lib/tab-target';
@@ -11,14 +16,19 @@ import { fallbackTabLabel, parseTabHref, ROUTE_ICONS } from '../lib/tab-target';
 export const APP_TAB_PANEL_ID = 'app-tab-panel';
 
 /**
- * Dot colour per live state. Idle is absent on purpose — a tab that needs
+ * Dot signal per live state. Idle is absent on purpose — a tab that needs
  * nothing from you shows nothing, so the dots that do appear mean something.
+ *
+ * The colours and the motion both come from the shared token map, so this strip
+ * cannot drift from the sidebar row saying the same thing one pane away. Waiting
+ * for approval no longer pulses: motion is what says "right now", and a tab
+ * blocked on you is not going anywhere until you answer it.
  */
-const STATUS_DOT: Partial<Record<SessionBorderKind, string>> = {
-  streaming: 'bg-green-500 animate-pulse motion-reduce:animate-none',
-  pendingApproval: 'bg-amber-500 animate-pulse motion-reduce:animate-none',
-  error: 'bg-destructive',
-  unseen: 'bg-blue-500',
+const DOT_SIGNAL: Partial<Record<SessionBorderKind, StatusSignal>> = {
+  streaming: 'working',
+  pendingApproval: 'needs-you',
+  error: 'error',
+  unseen: 'unseen',
 };
 
 interface AppTabItemProps {
@@ -54,7 +64,7 @@ export function AppTabItem({ tab, isActive, canClose, tabProps, onClose }: AppTa
 
   const label = agent ? getAgentDisplayName(agent) : fallbackTabLabel(target);
   const Icon = ROUTE_ICONS[target.pathname] ?? MessageSquare;
-  const dot = isSession ? STATUS_DOT[status.kind] : undefined;
+  const signal = isSession ? DOT_SIGNAL[status.kind] : undefined;
 
   // Keep the tab you switched to on screen once the strip overflows. Arrow-key
   // traversal gets this free from the browser (it moves focus), but Cmd+9 and
@@ -94,9 +104,12 @@ export function AppTabItem({ tab, isActive, canClose, tabProps, onClose }: AppTa
           <Icon className="size-3.5 shrink-0" />
         )}
         <span className="truncate font-medium">{label}</span>
-        {dot && (
+        {signal && (
           <>
-            <span aria-hidden="true" className={cn('size-1.5 shrink-0 rounded-full', dot)} />
+            <span
+              aria-hidden="true"
+              className={cn('size-1.5 shrink-0 rounded-full', statusDotClass(signal))}
+            />
             {/* Folded into the tab's accessible name ("api, Working") rather
                 than announced as a live region — a strip of live regions would
                 talk over whatever the operator is actually reading. */}

@@ -11,8 +11,9 @@
  * demoted into the identity cell. Sessions went away entirely: the count behind
  * it was a lifetime transcript count for one selected folder, so it was neither
  * "open" nor fleet-wide. Chat state now reaches the page through the attention
- * group a row sits in. Health is carried the same way, plus the avatar's health
- * ring, which is a stronger read than the word "Stale" in a cell.
+ * group a row sits in, and health through that same grouping plus the Activity
+ * cell's own words — the avatar's health ring is gone (DOR-1052), because a
+ * coloured ring 2px outside a coloured dot read as one signal drawn twice.
  *
  * @module features/agents-list/lib/agent-columns
  */
@@ -94,7 +95,12 @@ function IdentityCell({ row, onOpen }: { row: AgentTableRow; onOpen: () => void 
       className="flex w-full min-w-0 items-center gap-2 text-left"
       onClick={onOpen}
     >
-      <AgentAvatar color={color} emoji={emoji} size="xs" healthStatus={row.healthStatus} />
+      {/* No dot and no ring. This table never observes a turn, so it cannot
+          honestly say "working right now" — and health, which it does know,
+          the Activity cell beside this one already says in words ("Unreachable",
+          "Stale", "Never active"). The disc used to draw both, sourced from the
+          same hour-old heartbeat. */}
+      <AgentAvatar color={color} emoji={emoji} size="xs" />
       <span className="min-w-0 flex-1">
         <span className="block truncate text-sm font-medium hover:underline">
           {getAgentDisplayName(row)}

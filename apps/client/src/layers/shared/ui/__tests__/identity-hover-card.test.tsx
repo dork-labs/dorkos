@@ -172,6 +172,23 @@ describe('IdentityHoverCard', () => {
     expect(document.querySelector('.animate-ping')).toBeNull();
   });
 
+  it('asks one question about working, so the dot and the chip can never disagree', () => {
+    // The disc tested `working !== undefined` and the chip tested it for truth.
+    // Anything present-but-falsy — a resolver that fills the field with `null`
+    // when there is no turn — lit a pulsing "working right now" dot beside no
+    // chip at all, which is a claim the card itself does not repeat.
+    const withNullWorking = {
+      kind: 'agent',
+      displayName: 'Warden',
+      agent: { working: null },
+    } as unknown as IdentityHoverCardDescriptor;
+
+    return openOn(withNullWorking).then(() => {
+      expect(document.querySelector('[data-slot="identity-avatar"] .animate-ping')).toBeNull();
+      expect(screen.queryByText(/^Working ·/)).not.toBeInTheDocument();
+    });
+  });
+
   it("draws the identity's photo on the card's disc, and the emoji when there is none", async () => {
     // The descriptor field the one production caller (`MentionPillRenderer`)
     // fills. Red if the card stops passing it down: the message gutter reads

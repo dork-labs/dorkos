@@ -15,7 +15,12 @@ import { teamMemberFace } from '@/layers/entities/team';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
 import { ShowcaseDemo } from '../ShowcaseDemo';
-import { MOCK_IDENTITIES, MOCK_TEAM_ROSTER, type MockIdentity } from '../mock-samples';
+import {
+  IDENTITY_STATUSES,
+  MOCK_IDENTITIES,
+  MOCK_TEAM_ROSTER,
+  type MockIdentity,
+} from '../mock-samples';
 
 /** The three things a disc can have on it, in the order the disc prefers them. */
 type Face = 'photo' | 'emoji' | 'letter';
@@ -98,8 +103,30 @@ function Cell({ children }: { children: React.ReactNode }) {
 
 /** Whether this mock says its agent is mid-turn right now. */
 function isWorking(identity: MockIdentity): boolean {
-  return identity.agent?.working !== undefined;
+  return identity.agent?.working != null;
 }
+
+/**
+ * The two kinds the state matrix is drawn for: an agent, and a person bridged
+ * in from somewhere else.
+ *
+ * The bridged person is the load-bearing half. It is the one identity that
+ * wears something in BOTH corners at once — the platform's mark bottom-right,
+ * the state dot top-right — so it is the row that proves the two corners have
+ * separate jobs and neither has quietly taken the other's.
+ */
+const STATE_ROWS = [
+  { label: 'agent', props: { kind: 'agent', color: '#6366f1', emoji: '🔍' } },
+  {
+    label: 'person · bridged',
+    props: {
+      kind: 'human',
+      origin: { platform: 'telegram' },
+      color: '#0ea5e9',
+      fallback: 'M',
+    },
+  },
+] as const satisfies readonly { label: string; props: ComponentProps<typeof IdentityAvatar> }[];
 
 /** The kind × face grid, the mention cast, and the roster — all from `kind`. */
 export function IdentityShapeMatrixShowcase() {
@@ -138,6 +165,40 @@ export function IdentityShapeMatrixShowcase() {
       </ShowcaseDemo>
 
       <ShowcaseLabel>
+        Kind × state — the top-right corner, and everything it is allowed to say
+      </ShowcaseLabel>
+      <ShowcaseDemo>
+        {/* Three layers, three homes, and this is the top one. The corner
+            top-right is live state; the corner bottom-right is identity (the
+            Bot mark, a platform's logo); the row's trailing marks say where a
+            session came from. Nothing here is mesh health — an agent seen
+            within the last hour is not an agent doing something, and the disc
+            spent a release saying it was.
+
+            Only `working` moves. Motion is what the word "now" is made of, so a
+            still amber dot is how "waiting on you" reads as a state rather than
+            as a turn still running. */}
+        <div className="grid grid-cols-[8rem_repeat(4,5rem)] items-center gap-x-4 gap-y-3">
+          <span />
+          {IDENTITY_STATUSES.map(({ status, label }) => (
+            <span key={status} className="text-muted-foreground text-center text-[10px]">
+              {label}
+            </span>
+          ))}
+          {STATE_ROWS.map((row) => (
+            <Fragment key={row.label}>
+              <span className="text-muted-foreground text-xs">{row.label}</span>
+              {IDENTITY_STATUSES.map(({ status }) => (
+                <Cell key={status}>
+                  <IdentityAvatar {...row.props} status={status} size="md" />
+                </Cell>
+              ))}
+            </Fragment>
+          ))}
+        </div>
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>
         The whole cast — every state the mocks hold, as a disc and as the mention that points at it
       </ShowcaseLabel>
       <ShowcaseDemo>
@@ -151,7 +212,7 @@ export function IdentityShapeMatrixShowcase() {
                 emoji={identity.emoji}
                 imageUrl={identity.imageUrl}
                 fallback={identity.displayName[0]}
-                working={isWorking(identity)}
+                status={isWorking(identity) ? 'working' : 'idle'}
                 size="md"
               />
               <div className="min-w-0">

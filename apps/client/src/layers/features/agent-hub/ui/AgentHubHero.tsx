@@ -2,7 +2,7 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import { motion, AnimatePresence, useAnimate } from 'motion/react';
 import { Pencil } from 'lucide-react';
 import { cn } from '@/layers/shared/lib';
-import { Input } from '@/layers/shared/ui';
+import { Input, identityMarkRing, IDENTITY_MARK_GROUP } from '@/layers/shared/ui';
 import {
   AgentAvatar,
   resolveAgentVisual,
@@ -46,9 +46,20 @@ const BREATHING_TRANSITION = { duration: 2, repeat: Infinity, ease: 'easeInOut' 
 
 type AgentWithHealth = { healthStatus?: AgentHealthStatus };
 
+/**
+ * The hero's own reading of mesh health — two words, because a hero is a place
+ * to know whether the agent is reachable, not to diagnose how long ago.
+ *
+ * **This is where health lives now, and it is deliberate.** The disc above it
+ * used to carry a coloured ring keyed on the same fact, and the same fact again
+ * as a pulsing "working" dot — one signal drawn three times on one 48px circle.
+ * The disc says identity; this line says health, in words, with the token green
+ * the rest of the cockpit spends on "live" (never a raw `emerald`, which was a
+ * second green two pixels from the first).
+ */
 function deriveStatus(agent: AgentWithHealth): { label: string; dotClass: string } {
   if (agent.healthStatus === 'active') {
-    return { label: 'Online', dotClass: 'bg-emerald-500' };
+    return { label: 'Online', dotClass: 'bg-status-success' };
   }
   return { label: 'Offline', dotClass: 'bg-muted-foreground/40' };
 }
@@ -201,28 +212,34 @@ export function AgentHubHero({ onAvatarClick, onPersonalityClick }: AgentHubHero
         <motion.button
           ref={avatarScope}
           type="button"
-          className="group relative cursor-pointer"
+          // The NAMED identity group, not a bare `group`: the disc inside
+          // answers this button's hover and its keyboard focus by ringing
+          // itself in the agent's own colour, which is the grammar every other
+          // pressable face in the cockpit already uses.
+          className={cn(IDENTITY_MARK_GROUP, 'focus-ring relative cursor-pointer rounded-2xl')}
           onClick={onAvatarClick}
           aria-label="Change agent color and icon"
           data-testid="avatar-picker-trigger"
           animate={isPickerOpen ? BREATHING_ANIMATE : undefined}
           transition={isPickerOpen ? BREATHING_TRANSITION : undefined}
         >
+          {/* The corner belongs to identity. A hover pencil used to sit in the
+              bottom-right, stacked directly on top of the Bot badge that says
+              what this face IS — so pointing at the agent replaced its identity
+              with a tool icon. The pencil moved next to the name, where the
+              thing it edits is; the disc answers the pointer with a ring
+              instead, which costs no corner. */}
           <AgentAvatar
             color={displayColor}
             emoji={visual.emoji}
             size="lg"
-            healthStatus={agentWithHealth.healthStatus}
+            className={identityMarkRing.group}
           />
 
           {/* Color ripple burst */}
           <AnimatePresence>
             {rippleKey > 0 && <ColorRipple key={rippleKey} color={visual.color} />}
           </AnimatePresence>
-
-          <span className="bg-background border-background absolute -right-0.5 -bottom-0.5 flex size-6 items-center justify-center rounded-full border-2 opacity-0 shadow-sm transition-opacity group-hover:opacity-100">
-            <Pencil className="text-muted-foreground size-3" />
-          </span>
         </motion.button>
       </motion.div>
 
@@ -246,12 +263,19 @@ export function AgentHubHero({ onAvatarClick, onPersonalityClick }: AgentHubHero
             type="button"
             onClick={startNameEdit}
             className={cn(
-              'text-[15px] font-semibold transition-colors',
+              'group/rename flex items-center gap-1.5 text-[15px] font-semibold transition-colors',
               'hover:text-muted-foreground cursor-text'
             )}
             data-testid="agent-name"
           >
             {displayName}
+            {/* The rename affordance, beside the thing it renames. It was a
+                corner plate on the avatar, marking the wrong control — clicking
+                the disc opens the appearance picker, not the name field. */}
+            <Pencil
+              aria-hidden
+              className="text-muted-foreground size-3 shrink-0 opacity-0 transition-opacity group-hover/rename:opacity-100"
+            />
           </button>
         )}
       </motion.div>

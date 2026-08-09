@@ -2,7 +2,9 @@ import { Zap, Clock } from 'lucide-react';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
 import { ShowcaseDemo } from '../ShowcaseDemo';
+import { cn } from '@/layers/shared/lib';
 import { AgentAvatar } from '@/layers/entities/agent';
+import { HEALTH_DISPLAY } from '@/layers/features/mesh';
 import {
   AgentCompactPill,
   AgentDefaultCard,
@@ -50,13 +52,23 @@ export function TopologyShowcases() {
           <AgentExpandedCard d={AGENTS[0]} />
         </ShowcaseDemo>
 
-        <ShowcaseLabel>Health statuses (via AgentAvatar ring)</ShowcaseLabel>
+        <ShowcaseLabel>Health statuses — the node's own dot, never the disc</ShowcaseLabel>
         <ShowcaseDemo>
+          {/* The disc used to wear health as a coloured 2px ring, on this page
+              and on every list row in the product. Health is a diagnostic about
+              the last hour, so it belongs to the surface that is about health,
+              beside a word that says which one it is. */}
           <div className="flex flex-wrap items-center gap-4">
             {(['active', 'inactive', 'stale', 'unreachable'] as const).map((status) => (
               <div key={status} className="flex items-center gap-2">
-                <AgentAvatar color="#6366f1" emoji="🤖" healthStatus={status} size="sm" />
-                <span className="text-muted-foreground text-xs capitalize">{status}</span>
+                <AgentAvatar color="#6366f1" emoji="🤖" size="sm" />
+                <span
+                  aria-hidden
+                  className={cn('size-1.5 shrink-0 rounded-full', HEALTH_DISPLAY[status].dot)}
+                />
+                <span className="text-muted-foreground text-xs">
+                  {HEALTH_DISPLAY[status].label}
+                </span>
               </div>
             ))}
           </div>

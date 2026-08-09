@@ -1,6 +1,8 @@
 import { Panel } from '@xyflow/react';
 import { Zap, Clock } from 'lucide-react';
-import { usePrefersReducedMotion } from '../lib/use-reduced-motion';
+import type { AgentHealthStatus } from '@dorkos/shared/mesh-schemas';
+import { cn } from '@/layers/shared/lib';
+import { HEALTH_DISPLAY } from '../lib/health-display';
 
 interface NamespaceEntry {
   namespace: string;
@@ -11,10 +13,19 @@ interface TopologyLegendProps {
   namespaces: NamespaceEntry[];
 }
 
-/** Graph legend showing edge types, health statuses, indicators, and namespace colors. Positioned at bottom-left of the React Flow canvas. */
-export function TopologyLegend({ namespaces }: TopologyLegendProps) {
-  const prefersReducedMotion = usePrefersReducedMotion();
+/** The health statuses the legend explains, in the order a reader wants them. */
+const LEGEND_HEALTH: readonly AgentHealthStatus[] = ['active', 'inactive', 'stale', 'unreachable'];
 
+/**
+ * Graph legend showing edge types, health statuses, indicators, and namespace
+ * colors. Positioned at bottom-left of the React Flow canvas.
+ *
+ * The health swatches are the SAME map the nodes draw from
+ * ({@link HEALTH_DISPLAY}), so a legend cannot describe a colour no node wears
+ * — which it did: it explained a pulsing green dot for "Active" and offered no
+ * entry at all for "Unreachable".
+ */
+export function TopologyLegend({ namespaces }: TopologyLegendProps) {
   return (
     <Panel position="bottom-left">
       <div className="bg-card/90 text-muted-foreground flex flex-col gap-1.5 rounded-md border px-3 py-2 text-[11px] shadow-sm backdrop-blur-sm">
@@ -46,28 +57,17 @@ export function TopologyLegend({ namespaces }: TopologyLegendProps) {
         {/* Divider */}
         <div className="border-t" />
 
-        {/* Health statuses */}
-        <div className="flex items-center gap-2">
-          <span className="relative flex h-2.5 w-6 items-center justify-center">
-            {!prefersReducedMotion && (
-              <span className="absolute h-2.5 w-2.5 animate-ping rounded-full bg-green-500/40" />
-            )}
-            <span className="relative h-2 w-2 rounded-full bg-green-500" />
-          </span>
-          <span>Active</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="flex h-2.5 w-6 items-center justify-center">
-            <span className="h-2 w-2 rounded-full bg-amber-500" />
-          </span>
-          <span>Inactive</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="flex h-2.5 w-6 items-center justify-center">
-            <span className="bg-muted-foreground/50 h-2 w-2 rounded-full" />
-          </span>
-          <span>Stale</span>
-        </div>
+        {/* Health statuses — still, every one of them. Health is a state, and
+            the animated "Active" swatch this used to draw claimed liveness for
+            an agent that may not have been heard from in fifty-nine minutes. */}
+        {LEGEND_HEALTH.map((status) => (
+          <div key={status} className="flex items-center gap-2">
+            <span className="flex h-2.5 w-6 items-center justify-center">
+              <span className={cn('h-2 w-2 rounded-full', HEALTH_DISPLAY[status].dot)} />
+            </span>
+            <span>{HEALTH_DISPLAY[status].label}</span>
+          </div>
+        ))}
 
         {/* Divider */}
         <div className="border-t" />

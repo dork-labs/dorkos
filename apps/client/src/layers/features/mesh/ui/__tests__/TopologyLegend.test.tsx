@@ -14,13 +14,8 @@ vi.mock('@xyflow/react', () => ({
   ),
 }));
 
-// Mock the reduced-motion hook
-const mockUsePrefersReducedMotion = vi.fn(() => false);
-vi.mock('../../lib/use-reduced-motion', () => ({
-  usePrefersReducedMotion: () => mockUsePrefersReducedMotion(),
-}));
-
 import { TopologyLegend } from '../TopologyLegend';
+import { HEALTH_DISPLAY } from '../../lib/health-display';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -50,7 +45,6 @@ beforeAll(() => {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mockUsePrefersReducedMotion.mockReturnValue(false);
 });
 
 afterEach(cleanup);
@@ -76,11 +70,15 @@ describe('TopologyLegend', () => {
       expect(screen.getByText('Deny rule')).toBeInTheDocument();
     });
 
-    it('renders health status entries', () => {
+    it('renders every health status entry, unreachable included', () => {
+      // Unreachable was missing: the legend explained three colours while the
+      // nodes drew four, so the one status that means "this is broken" had no
+      // entry telling you what it was.
       render(<TopologyLegend namespaces={SINGLE_NAMESPACE} />);
       expect(screen.getByText('Active')).toBeInTheDocument();
       expect(screen.getByText('Inactive')).toBeInTheDocument();
       expect(screen.getByText('Stale')).toBeInTheDocument();
+      expect(screen.getByText('Unreachable')).toBeInTheDocument();
     });
 
     it('renders Relay and Tasks indicator entries', () => {
@@ -108,18 +106,31 @@ describe('TopologyLegend', () => {
     });
   });
 
-  describe('reduced motion', () => {
-    it('shows animate-ping on active agent legend entry when reduced motion is not preferred', () => {
+  describe('motion', () => {
+    it('animates nothing at all, whatever the reader prefers', () => {
+      // The "Active" swatch used to ping. Mesh health is "seen within the last
+      // hour", so an animated swatch promised a liveness the colour does not
+      // carry — and the legend was the only place in the cockpit teaching that
+      // green-and-moving meant health rather than a turn in flight.
       const { container } = render(<TopologyLegend namespaces={SINGLE_NAMESPACE} />);
-      const pingElement = container.querySelector('.animate-ping');
-      expect(pingElement).toBeInTheDocument();
+      expect(container.querySelector('.animate-ping')).not.toBeInTheDocument();
+      expect(container.querySelector('[class*="animate-"]')).not.toBeInTheDocument();
     });
+  });
 
-    it('hides animate-ping on active agent legend entry when reduced motion is preferred', () => {
-      mockUsePrefersReducedMotion.mockReturnValue(true);
+  describe('design tokens for health', () => {
+    it('draws each swatch from the same map the nodes draw from', () => {
+      // A legend with its own colour list is a legend that can describe a
+      // colour no node wears — which is exactly what `bg-green-500` here
+      // beside a `ring-status-success` there had become.
       const { container } = render(<TopologyLegend namespaces={SINGLE_NAMESPACE} />);
-      const pingElement = container.querySelector('.animate-ping');
-      expect(pingElement).not.toBeInTheDocument();
+      const classes = container.innerHTML;
+
+      expect(classes).toContain(HEALTH_DISPLAY.active.dot);
+      expect(classes).toContain(HEALTH_DISPLAY.inactive.dot);
+      expect(classes).toContain(HEALTH_DISPLAY.unreachable.dot);
+      expect(classes).not.toContain('bg-green-500');
+      expect(classes).not.toContain('bg-amber-500');
     });
   });
 

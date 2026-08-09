@@ -167,8 +167,10 @@ function PresenceRowButton({
           fallback={row.face.fallback}
           // The pulsing dot IS the claim: every row on this strip is live by
           // construction, and a still disc beside the word "working" would be
-          // the one thing on screen not saying "right now".
-          working
+          // the one thing on screen not saying "right now". Hardcoded rather
+          // than threaded, because the strip's own query is what decides who
+          // appears on it — a row that is not working is not drawn at all.
+          status="working"
         />
         <span className="text-foreground shrink-0 font-medium">{row.name}</span>
         {row.detail !== null && (
