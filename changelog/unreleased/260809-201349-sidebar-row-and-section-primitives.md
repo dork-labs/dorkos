@@ -1,6 +1,9 @@
 ---
 covers:
-  - 'feat(client): one row and one section header for the whole sidebar, at the new density (DOR-1062)'
+  - 'feat(client): one row and one section header for the whole sidebar (DOR-1062)'
+  - 'fix(client): the visible sidebar panel is 272px, and the row line is 28px'
+  - 'test(e2e): the sidebar-groups specs share one ui.sidebar, so they run serially'
+  - 'fix(client): make the roving focus, the density bar and the menu guard honest'
 ---
 
 ### Changed
