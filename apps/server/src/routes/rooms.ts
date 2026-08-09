@@ -16,7 +16,7 @@
  * @module routes/rooms
  */
 import path from 'path';
-import { Router, type Response } from 'express';
+import { Router } from 'express';
 import multer from 'multer';
 import { ulid } from 'ulidx';
 import {
@@ -28,7 +28,6 @@ import {
   PostThreadReplyRequestSchema,
   PostToRoomRequestSchema,
   SetAuthorHandleRequestSchema,
-  SetReadCursorRequestSchema,
   ROOM_ATTACHMENT_NAME_MAX,
   ToggleReactionRequestSchema,
   UpdateMembershipRequestSchema,
@@ -41,7 +40,6 @@ import {
   getRoomService,
   RoomError,
   toAuthorRef,
-  type RoomErrorCode,
 } from '../services/rooms/index.js';
 import { InvalidRoomAttachmentIdError } from '../services/rooms/attachments/room-attachment-store.js';
 import { sniffImageContentType } from '../services/identity/image-sniff.js';
@@ -51,58 +49,10 @@ import { configManager } from '../services/core/config-manager.js';
 import { parseBody, sendError } from '../lib/route-utils.js';
 import { roomEventsHandler } from './room-events-handler.js';
 import { resolveCaller } from './room-caller.js';
+import { sendRoomError } from './room-error-response.js';
 import { logger } from '../lib/logger.js';
 
 const router = Router();
-
-/** HTTP status for each way the room service can refuse. */
-const STATUS_BY_CODE: Record<RoomErrorCode, number> = {
-  ROOM_NOT_FOUND: 404,
-  ENTRY_NOT_FOUND: 404,
-  MEMBER_NOT_FOUND: 404,
-  AGENT_NOT_FOUND: 404,
-  SLUG_TAKEN: 409,
-  INVALID_SLUG: 400,
-  HANDLE_TAKEN: 409,
-  HANDLE_RESERVED: 409,
-  INVALID_HANDLE: 400,
-  NESTED_THREAD: 400,
-  ROOM_ARCHIVED: 409,
-  OPERATOR_ONLY: 403,
-  PEOPLE_ONLY: 403,
-  BROADCAST_NOT_BRIDGEABLE: 400,
-  CHAT_ALREADY_BRIDGED: 409,
-  BRIDGE_SECOND_AGENT_REFUSED: 409,
-  UNKNOWN_CHAT_TYPE: 400,
-  EXTERNAL_IDENTITY_INVALID: 400,
-  // A 500, and deliberately not a 4xx: no HTTP caller can name a natural key,
-  // so this code reaching a route means DorkOS built one wrong, not that a
-  // request was bad.
-  RESERVED_NATURAL_KEY: 500,
-  NOT_A_BRIDGED_ROOM: 409,
-  NO_SURVIVING_BRIDGE: 409,
-  ATTACHMENT_NOT_FOUND: 404,
-  ATTACHMENT_ALREADY_POSTED: 409,
-  TOO_MANY_ATTACHMENTS: 400,
-};
-
-/**
- * Map a thrown value onto a response. A {@link RoomError} carries its own code;
- * anything else is a bug and gets a generic 500 with the detail in the log, not
- * on the wire.
- *
- * @param res - The response to write to.
- * @param err - The caught value.
- * @param context - Route label for the log line.
- */
-function sendRoomError(res: Response, err: unknown, context: string): void {
-  if (err instanceof RoomError) {
-    res.status(STATUS_BY_CODE[err.code]).json({ error: err.message, code: err.code });
-    return;
-  }
-  logger.error(`[rooms] ${context} failed`, { err });
-  res.status(500).json({ error: 'Internal server error' });
-}
 
 /** GET / — rooms visible to the caller, each with their unread count. */
 router.get('/', (req, res) => {
@@ -458,7 +408,7 @@ router.get('/:id/attachments/:attachmentId', async (req, res) => {
  *
  * **POST rather than PUT, and the verb is the honest one.** The default body is
  * a toggle, and a toggle is not idempotent: sending it twice is not sending it
- * once, which is what PUT promises. `PUT /:id/read-cursor` next door IS
+ * once, which is what PUT promises. `PUT /api/read-cursors/room/:id` IS
  * idempotent — it sets a cursor to a value — and the two must not be spelled
  * alike. What IS idempotent here whatever the body says is the KEY:
  * `(you, this entry, this emoji)` holds at most one reaction however many times
@@ -572,17 +522,23 @@ router.delete('/:id/members/:authorId', (req, res) => {
   }
 });
 
-/** PUT /:id/read-cursor — advance the caller's `(member, room)` read cursor. */
-router.put('/:id/read-cursor', (req, res) => {
-  const body = parseBody(SetReadCursorRequestSchema, req.body, res);
-  if (!body) return;
-  try {
-    const caller = resolveCaller(res);
-    res.json(getRoomService().setReadCursor(req.params.id, caller.id, body.lastReadSeq));
-  } catch (err) {
-    sendRoomError(res, err, 'PUT /:id/read-cursor');
-  }
-});
+/*
+ * There is deliberately no `PUT /:id/read-cursor` here. A read cursor is not a
+ * room concept — the same table answers for rooms, agent sessions and the inbox
+ * — so the one write path is `PUT /api/read-cursors/room/:id`, which delegates
+ * into `RoomService.setReadCursor` for exactly the checks this route would have
+ * made (team-room-home spec §D4, ADR 260808-140956). The room-shaped URL that
+ * stood here through the migration is gone now that every client writes through
+ * the generic one: a second URL onto one implementation is still a second thing
+ * to keep true.
+ *
+ * It is not missed by AGENTS either, which is the objection worth answering.
+ * What an agent has been shown is `room_members.last_read_seq`, and that is
+ * advanced by the ambient participation loop as entries are actually delivered
+ * to it — never by the agent asking. The route removed here was the one way an
+ * agent could have claimed to have read entries it was never handed, so its
+ * removal closes that door rather than taking a capability away.
+ */
 
 /**
  * POST /:id/threads — reply inside a thread off an entry in this room.

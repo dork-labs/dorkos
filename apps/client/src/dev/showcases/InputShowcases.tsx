@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { Composer } from '@/layers/features/composer';
 import { QueuePanel } from '@/layers/features/chat/ui/input/QueuePanel';
-import { PromptSuggestionChips } from '@/layers/features/chat/ui/input/PromptSuggestionChips';
 import { QuestionPrompt } from '@/layers/features/chat/ui/tools/QuestionPrompt';
 import { CommandPalette } from '@/layers/features/commands';
 import { FilePalette } from '@/layers/features/files';
@@ -184,7 +183,7 @@ function PaletteAnchor({
   );
 }
 
-/** Input-related component showcases: Composer.Input, Composer.Attachments, QueuePanel, CommandPalette, FilePalette, PromptSuggestionChips, QuestionPrompt. */
+/** Input-related component showcases: Composer.Input, Composer.Attachments, QueuePanel, CommandPalette, FilePalette, QuestionPrompt. */
 export function InputShowcases() {
   const [files, setFiles] = useState(SAMPLE_FILES);
   const [cmdIndex, setCmdIndex] = useState(0);
@@ -194,7 +193,7 @@ export function InputShowcases() {
     <>
       <PlaygroundSection
         title="Composer.Root"
-        description="The card chrome every composer sits in — chat, rooms, and the dashboard. A surface accepts files because it wired onFilesDropped, and for no other reason: drag one onto the second card and the drop overlay appears, drag it onto the first and nothing is listening."
+        description="The card chrome every composer sits in — chat and rooms alike. A surface accepts files because it wired onFilesDropped, and for no other reason: drag one onto the second card and the drop overlay appears, drag it onto the first and nothing is listening."
       >
         <ComposerRootDemo label="Card only — no attach wiring (rooms today)" />
         <ComposerRootDemo label="Card with attach wiring (chat)" onFilesDropped />
@@ -411,37 +410,6 @@ export function InputShowcases() {
               onSelect={() => {}}
             />
           </PaletteAnchor>
-        </ShowcaseDemo>
-      </PlaygroundSection>
-
-      <PlaygroundSection
-        title="PromptSuggestionChips"
-        description="SDK-provided follow-up suggestions shown after assistant responses."
-      >
-        <ShowcaseLabel>With suggestions</ShowcaseLabel>
-        <ShowcaseDemo>
-          <PromptSuggestionChips
-            suggestions={['Run the tests', 'Review the changes', 'Commit this work']}
-            onChipClick={() => {}}
-          />
-        </ShowcaseDemo>
-
-        <ShowcaseLabel>Long suggestions (truncated)</ShowcaseLabel>
-        <ShowcaseDemo>
-          <PromptSuggestionChips
-            suggestions={[
-              'Can you refactor the authentication module to use JWT tokens instead?',
-              'Show me the test coverage report for the shared package',
-              'Deploy to staging',
-              'Fix the TypeScript errors in the relay package',
-            ]}
-            onChipClick={() => {}}
-          />
-        </ShowcaseDemo>
-
-        <ShowcaseLabel>Single suggestion</ShowcaseLabel>
-        <ShowcaseDemo>
-          <PromptSuggestionChips suggestions={['Run the tests']} onChipClick={() => {}} />
         </ShowcaseDemo>
       </PlaygroundSection>
 

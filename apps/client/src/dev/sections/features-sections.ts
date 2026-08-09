@@ -10,7 +10,8 @@ import type { PlaygroundSection } from '../playground-registry';
  *
  * Sources: PersonalityPickerShowcases, AgentSidebarShowcases, AgentFleetShowcases,
  * RelayShowcases, AdapterWizardShowcases, MeshShowcases, TasksShowcases,
- * PipPanelShowcases, ApprovalsShowcases, ConnectionsShowcases, McpServerCardShowcases.
+ * PipPanelShowcases, ApprovalsShowcases, TriageHeaderShowcases, PresenceStripShowcases,
+ * ConnectionsShowcases, McpServerCardShowcases.
  */
 export const FEATURES_SECTIONS: PlaygroundSection[] = [
   // PersonalityPickerShowcases
@@ -136,6 +137,39 @@ export const FEATURES_SECTIONS: PlaygroundSection[] = [
     keywords: ['adapter', 'binding', 'row', 'agent', 'permission', 'strategy', 'relay'],
   },
   // AgentSidebarShowcases
+  {
+    id: 'jump-back-in-rows',
+    title: 'Jump back in rows',
+    page: 'features',
+    category: 'Agent',
+    keywords: [
+      'jump back in',
+      'recents',
+      'sidebar',
+      'session',
+      'room',
+      'channel',
+      'direct message',
+      'dm',
+      'shortcut',
+    ],
+  },
+  {
+    id: 'jump-back-in-popover',
+    title: 'Jump back in popover',
+    page: 'features',
+    category: 'Agent',
+    keywords: [
+      'jump back in',
+      'popover',
+      'composer',
+      'recents',
+      'home',
+      'listbox',
+      'palette',
+      'shortcut',
+    ],
+  },
   {
     id: 'sidebarsectionheader',
     title: 'SidebarSectionHeader',
@@ -273,6 +307,67 @@ export const FEATURES_SECTIONS: PlaygroundSection[] = [
     page: 'features',
     category: 'Approvals',
     keywords: ['approval', 'error', 'offline', 'retry', 'unavailable', 'failed read'],
+  },
+  // TriageHeaderShowcases
+  {
+    id: 'pinned-triage-header',
+    title: 'Pinned triage header',
+    page: 'features',
+    category: 'Home',
+    keywords: [
+      'triage',
+      'pinned',
+      'header',
+      'home',
+      'waiting on you',
+      'needs attention',
+      'approval',
+      'sticky',
+      'presence',
+    ],
+  },
+  // PresenceStripShowcases
+  {
+    id: 'presence-strip',
+    title: 'Presence strip',
+    page: 'features',
+    category: 'Home',
+    keywords: [
+      'presence',
+      'working',
+      'strip',
+      'home',
+      'header',
+      'who is working',
+      'follow',
+      'viewer',
+      'watch',
+      'avatar',
+    ],
+  },
+  // HomeStatesShowcases
+  {
+    id: 'day-one-and-the-quiet-morning',
+    title: 'Day one and the quiet morning',
+    page: 'features',
+    category: 'Home',
+    keywords: [
+      'day one',
+      'quiet',
+      'all quiet',
+      'starter chips',
+      'openers',
+      'empty state',
+      'home',
+      'forward look',
+      'next run',
+      'onboarding',
+      'suggestion',
+      'dorkbot',
+      'promo',
+      'discovery',
+      'dismiss',
+    ],
   },
   // ConnectionsShowcases
   {

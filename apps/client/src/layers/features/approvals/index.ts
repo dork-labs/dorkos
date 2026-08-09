@@ -2,11 +2,11 @@
  * Approvals — the cockpit's answer to "an agent wants to do something
  * consequential" (spec `agent-trust` §3.3).
  *
- * Two surfaces show the same queue: the dashboard mounts
- * {@link PendingApprovalsSection}, and the app header carries it on every route
- * through the approvals-indicator widget, which composes the pieces below. Both
- * render the same {@link ApprovalList}, so the card a person answers is identical
- * wherever they happen to be standing.
+ * Two surfaces show the same queue: the home tab's pinned triage header, and
+ * the app header, which carries it on every route through the
+ * approvals-indicator widget. Both compose the pieces below and render the same
+ * {@link ApprovalList}, so the card a person answers is identical wherever they
+ * happen to be standing.
  *
  * The same two surfaces carry standing permissions — the operator's answer to
  * "stop asking about this agent doing this thing" (spec
@@ -17,11 +17,10 @@
  *
  * @module features/approvals
  */
-export { PendingApprovalsSection } from './ui/PendingApprovalsSection';
 export { ApprovalList } from './ui/ApprovalList';
 // The single approval card, exported so the chat transcript can render an
 // agent's held destructive capability call inline (DOR-939) — the same card a
-// person answers on the dashboard, resolving the same approval.
+// person answers on the home tab, resolving the same approval.
 export { ApprovalCard } from './ui/ApprovalCard';
 export { ApprovalsUnavailable } from './ui/ApprovalsUnavailable';
 export { usePendingApprovals } from './model/use-pending-approvals';

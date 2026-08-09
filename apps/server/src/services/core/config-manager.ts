@@ -1622,6 +1622,50 @@ export function backfillRoomsDefaults(store: {
 }
 
 /**
+ * Migration body: backfill the `welcomeBack` section (what agents may say when
+ * you come back after being away; spec `team-room-home`, D5.2) for configs
+ * persisted before it existed.
+ *
+ * Additive + idempotent: writes the whole section when it is absent, and fills
+ * only the individual keys that are missing when it is present. conf merges
+ * top-level defaults SHALLOWLY, so a `welcomeBack` block already on disk — from
+ * an unreleased build, or from a later key being added to it — never inherits a
+ * new nested field on its own. Filling here is what stops a return running with
+ * no post cap at all.
+ *
+ * Nothing depends on this having run: every leaf carries a Zod default, so an
+ * install that skips the migration (a dev tree resolves `SERVER_VERSION` to
+ * `0.0.0` and runs none of them) still reads the same shipped values.
+ *
+ * @internal Exported for testing only.
+ * @param store - The `conf` store instance (provides `get`/`set`).
+ */
+export function backfillWelcomeBackDefaults(store: {
+  get: (key: string) => unknown;
+  set: (key: string, value: unknown) => void;
+}): void {
+  const seeded = {
+    enabled: true,
+    absenceThresholdMinutes: 240,
+    maxPosts: 3,
+  };
+  const stored = store.get('welcomeBack');
+  if (stored == null || typeof stored !== 'object') {
+    store.set('welcomeBack', seeded);
+    return;
+  }
+  const current = { ...(stored as Record<string, unknown>) };
+  let changed = false;
+  for (const [key, value] of Object.entries(seeded)) {
+    if (current[key] === undefined) {
+      current[key] = value;
+      changed = true;
+    }
+  }
+  if (changed) store.set('welcomeBack', current);
+}
+
+/**
  * Migration body: backfill `kind: 'manual'` onto every EXISTING stored group
  * (smart-agent-groups, DOR-338). conf merges top-level defaults SHALLOWLY and
  * never reaches inside array elements, so a `ui.sidebar.groups` array already
@@ -2233,11 +2277,16 @@ export const CONFIG_MIGRATIONS = {
   // still run for everybody is 0.59.0 — strictly above the newest `v*` tag, and
   // not the current version (`conf` runs a key only in
   // `(storedVersion, projectVersion]`). Enforced by
-  // `__tests__/migration-safety.ts`.
+  // `__tests__/migration-safety.ts`. Two changes landed in the same release
+  // window and share this key; both are additive + idempotent.
   '0.59.0': (store: {
     get: (key: string) => unknown;
     set: (key: string, value: unknown) => void;
   }) => {
+    // The `welcomeBack` section (what agents may say when you come back after
+    // being away; spec `team-room-home`, D5.2). Seeds the shipped defaults, so
+    // an upgraded install gets the same caps a fresh one does.
+    backfillWelcomeBackDefaults(store);
     // `ui.composer` (whether the message box shows formatting as you type,
     // DOR-948). Added-with-defaults, so this is a no-op anchor in the same sense
     // `backfillProfileDefaults` is: conf builds Ajv with `useDefaults`, so the

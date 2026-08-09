@@ -18,6 +18,7 @@ import {
   backfillSidebarSettingsDefaults,
   backfillSidebarRoomSections,
   backfillRoomsDefaults,
+  backfillWelcomeBackDefaults,
   backfillConnectorsDefaults,
   backfillClaudeCodeRuntimeDefaults,
   backfillSmartGroupKindDefaults,
@@ -1211,9 +1212,12 @@ describe('migrateStatusBarToPins migration (DOR-431, DOR-452)', () => {
   it('is registered in CONFIG_MIGRATIONS under the 0.57.0 composite', () => {
     // The key is shared with the DOR-501 `approvals` backfill (an object literal
     // cannot repeat a key), so this asserts the EFFECT rather than the identity
-    // of the function: composing must not drop either body. The key is no longer
-    // the newest one in the table — 0.57.0 has SHIPPED, so newer work opens its
-    // own key above the newest tag rather than appending here.
+    // of the function: composing must not drop either body.
+    //
+    // It used to assert that 0.57.0 was the LAST key in the table, which stopped
+    // meaning anything the moment v0.57.0 shipped: every migration after it is
+    // authored under a newer key by the rule on CONFIG_MIGRATIONS, so "newest"
+    // now goes stale on every release rather than catching anything.
     expect(Object.keys(CONFIG_MIGRATIONS)).toContain('0.57.0');
 
     const store = createMockStore({ ui: { theme: 'dark' } });
@@ -1832,6 +1836,182 @@ describe('backfillRoomsDefaults migration (room cascade ceiling, DOR-526)', () =
       engagedWindowMinutes: 10,
       engagedWindowPosts: 5,
     });
+  });
+});
+
+describe('backfillWelcomeBackDefaults migration (team-room-home D5.2)', () => {
+  it('seeds the section on a config persisted before it existed', () => {
+    const store = createMockStore({ server: { port: 4242 } });
+    backfillWelcomeBackDefaults(store);
+    // Pinned to the literals the release ships. Reading them out of the schema
+    // would only prove the migration and the schema agree, never that they
+    // agree on numbers that bound anything.
+    expect(store.data.welcomeBack).toEqual({
+      enabled: true,
+      absenceThresholdMinutes: 240,
+      maxPosts: 3,
+    });
+  });
+
+  it('is idempotent — a second run keeps what the first wrote', () => {
+    const store = createMockStore({});
+    backfillWelcomeBackDefaults(store);
+    backfillWelcomeBackDefaults(store);
+    expect(store.data.welcomeBack).toEqual({
+      enabled: true,
+      absenceThresholdMinutes: 240,
+      maxPosts: 3,
+    });
+  });
+
+  it('never clobbers a value the person chose', () => {
+    const store = createMockStore({
+      welcomeBack: { enabled: false, absenceThresholdMinutes: 720, maxPosts: 1 },
+    });
+    backfillWelcomeBackDefaults(store);
+    backfillWelcomeBackDefaults(store);
+    expect(store.data.welcomeBack).toEqual({
+      enabled: false,
+      absenceThresholdMinutes: 720,
+      maxPosts: 1,
+    });
+  });
+
+  it('keeps an explicit off, which is a real choice and not an absent section', () => {
+    // The failure that would matter most: someone turned the greetings off, and
+    // a `!has` guard on the SECTION would leave that alone, while a truthiness
+    // check on the VALUE would hand them back a greeting they refused.
+    const store = createMockStore({ welcomeBack: { enabled: false } });
+    backfillWelcomeBackDefaults(store);
+    expect(store.data.welcomeBack).toEqual({
+      enabled: false,
+      absenceThresholdMinutes: 240,
+      maxPosts: 3,
+    });
+  });
+
+  it('keeps an explicit zero cap for the same reason', () => {
+    const store = createMockStore({ welcomeBack: { maxPosts: 0 } });
+    backfillWelcomeBackDefaults(store);
+    expect(store.data.welcomeBack).toEqual({
+      enabled: true,
+      absenceThresholdMinutes: 240,
+      maxPosts: 0,
+    });
+  });
+
+  it('fills only the missing keys of a block written by an earlier build', () => {
+    // conf merges top-level defaults SHALLOWLY, so a `welcomeBack` block already
+    // on disk never gains a new nested key on its own. Without this, an install
+    // upgraded mid-feature would run returns with no post cap at all.
+    const store = createMockStore({ welcomeBack: { enabled: true } });
+    backfillWelcomeBackDefaults(store);
+    expect(store.data.welcomeBack).toEqual({
+      enabled: true,
+      absenceThresholdMinutes: 240,
+      maxPosts: 3,
+    });
+  });
+});
+
+describe('welcomeBack on a config written before it existed (real conf + Ajv)', () => {
+  // The half of the surface the mock store cannot answer: correctness must NOT
+  // depend on the migration having run. A dev tree resolves SERVER_VERSION to
+  // 0.0.0 and runs no migrations at all, and a release below the migration key
+  // would skip it for everybody — so the Zod defaults have to produce a valid,
+  // fully-populated section on their own.
+  const dirs: string[] = [];
+
+  afterEach(() => {
+    for (const dir of dirs.splice(0)) fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  /** A config file holding a realistic pre-welcomeBack blob. */
+  function seedPreWelcomeBack(): string {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dorkos-welcome-back-'));
+    dirs.push(dir);
+    fs.writeFileSync(
+      path.join(dir, 'config.json'),
+      JSON.stringify({
+        version: 1,
+        server: { port: 4242, cwd: null, boundary: null, open: true },
+        rooms: {
+          maxAgentDepth: 3,
+          maxAutomaticTurnsPerRoomPerHour: 60,
+          maxAutomaticTurnsTotalPerHour: 240,
+          replyWaitMinutes: 10,
+          lateReplyCeilingMinutes: 60,
+          engagedWindowMinutes: 10,
+          engagedWindowPosts: 5,
+        },
+        __internal__: { migrations: { version: '0.57.0' } },
+      })
+    );
+    return dir;
+  }
+
+  it('reads back the shipped defaults with no migration having run', () => {
+    const manager = new ConfigManager(seedPreWelcomeBack());
+    expect(manager.get('welcomeBack')).toEqual({
+      enabled: true,
+      absenceThresholdMinutes: 240,
+      maxPosts: 3,
+    });
+    expect(manager.validate()).toEqual({ valid: true });
+  });
+
+  it('is written through explicitly once the migration applies to the same file', () => {
+    const dir = seedPreWelcomeBack();
+    const configPath = path.join(dir, 'config.json');
+    const store = {
+      get: (key: string) =>
+        (JSON.parse(fs.readFileSync(configPath, 'utf-8')) as Record<string, unknown>)[key],
+      set: (key: string, value: unknown) => {
+        const raw = JSON.parse(fs.readFileSync(configPath, 'utf-8')) as Record<string, unknown>;
+        raw[key] = value;
+        fs.writeFileSync(configPath, JSON.stringify(raw));
+      },
+    };
+    CONFIG_MIGRATIONS['0.59.0'](store);
+
+    const onDisk = JSON.parse(fs.readFileSync(configPath, 'utf-8')) as Record<string, unknown>;
+    expect(onDisk.welcomeBack).toEqual({
+      enabled: true,
+      absenceThresholdMinutes: 240,
+      maxPosts: 3,
+    });
+    expect(new ConfigManager(dir).validate()).toEqual({ valid: true });
+  });
+
+  it('refuses an absence shorter than the floor and a cap past the ceiling', () => {
+    // The bounds are the honest part of the schema: below a quarter of an hour
+    // is a coffee, not an absence, and a return that could post eleven times is
+    // the noise the whole feature exists to avoid.
+    expect(
+      UserConfigSchema.safeParse({ version: 1, welcomeBack: { absenceThresholdMinutes: 14 } })
+        .success
+    ).toBe(false);
+    expect(
+      UserConfigSchema.safeParse({ version: 1, welcomeBack: { absenceThresholdMinutes: 10_081 } })
+        .success
+    ).toBe(false);
+    expect(UserConfigSchema.safeParse({ version: 1, welcomeBack: { maxPosts: 11 } }).success).toBe(
+      false
+    );
+    expect(UserConfigSchema.safeParse({ version: 1, welcomeBack: { maxPosts: -1 } }).success).toBe(
+      false
+    );
+    expect(
+      UserConfigSchema.safeParse({ version: 1, welcomeBack: { absenceThresholdMinutes: 90.5 } })
+        .success
+    ).toBe(false);
+    // The edges themselves are legal.
+    expect(
+      UserConfigSchema.safeParse({
+        version: 1,
+        welcomeBack: { absenceThresholdMinutes: 15, maxPosts: 0 },
+      }).success
+    ).toBe(true);
   });
 });
 

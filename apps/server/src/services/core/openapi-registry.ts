@@ -104,12 +104,17 @@ import {
   RoomSnapshotSchema,
   RoomWithRosterSchema,
   SetAuthorHandleRequestSchema,
-  SetReadCursorRequestSchema,
   ToggleReactionRequestSchema,
   ToggleReactionResponseSchema,
   UpdateMembershipRequestSchema,
   UpdateRoomRequestSchema,
 } from '@dorkos/shared/room-schemas';
+import {
+  ReadCursorParamsSchema,
+  ReadCursorResponseSchema,
+  ReadCursorSchema,
+  SetReadCursorPositionRequestSchema,
+} from '@dorkos/shared/read-cursor-schemas';
 import {
   ProfileAvatarResponseSchema,
   ProfileUpdateRequestSchema,
@@ -3350,7 +3355,7 @@ registry.registerPath({
   tags: ['Rooms'],
   summary: 'Download one of a room’s files',
   description:
-    "A file that is already ON a message is readable by anyone who may read that message; a file that has been uploaded and not yet posted is readable only by whoever uploaded it, so nobody can enumerate a stranger's staging area. Every other case — wrong room, no such id, somebody else's unposted file — answers 404 rather than 403, so existence is never leaked. `Content-Type` and `Content-Disposition` are decided by the stored `preview` and by nothing else: a byte-verified image is served as what it is, `inline`; everything else is `application/octet-stream` as an `attachment`, whatever it was uploaded as. `X-Content-Type-Options: nosniff` rides along on both. The response carries a strong `ETag` derived from the content, so a conditional request with `If-None-Match` answers 304 with no body.",
+    'A file that is already ON a message is readable by anyone who may read that message; a file that has been uploaded and not yet posted is readable only by whoever uploaded it, so nobody can enumerate a stranger\'s staging area. Every other case — wrong room, no such id, somebody else\'s unposted file — answers 404 rather than 403, so existence is never leaked. `Content-Type` and `Content-Disposition` are decided by the stored `preview` and by nothing else: a byte-verified image is served as what it is, `inline`; everything else is `application/octet-stream` as an `attachment`, whatever it was uploaded as. `X-Content-Type-Options: nosniff` rides along on both. The response carries a WEAK `ETag` — `W/"<size>-<mtime>"`, from one `stat` — so a conditional request with `If-None-Match` answers 304 without the server reading a single byte. Weak because it is honest: size plus modification time cannot promise byte equality the way a content hash can. In practice it is stronger than the label suggests, because an attachment is written once under a freshly minted id and never rewritten. Hashing the content instead would have meant reading the whole file into memory to decide whether to send it, which is the opposite of what a conditional request is for.',
   request: { params: RoomAttachmentParams },
   responses: {
     200: {
@@ -3508,30 +3513,6 @@ registry.registerPath({
 });
 
 registry.registerPath({
-  method: 'put',
-  path: '/api/rooms/{id}/read-cursor',
-  tags: ['Rooms'],
-  summary: "Advance the caller's read cursor",
-  description:
-    'The `(member, room)` cursor the unread divider reads. Monotonic — a lower value is ignored, so a stale client cannot un-read a room for another client.',
-  request: {
-    params: RoomIdParams,
-    body: { content: { 'application/json': { schema: SetReadCursorRequestSchema } } },
-  },
-  responses: {
-    200: {
-      description: 'The updated membership',
-      content: { 'application/json': { schema: RoomMemberSchema } },
-    },
-    400: roomValidationError,
-    404: {
-      description: 'No such room, or not a member of it',
-      content: { 'application/json': { schema: ErrorResponseSchema } },
-    },
-  },
-});
-
-registry.registerPath({
   method: 'post',
   path: '/api/rooms/{id}/threads',
   tags: ['Rooms'],
@@ -3620,6 +3601,90 @@ registry.registerPath({
       },
     },
     404: roomNotFound,
+  },
+});
+
+// --- Read state (spec `team-room-home` §D4, ADR 260808-140956) ---
+
+registry.registerPath({
+  method: 'put',
+  path: '/api/read-cursors/{kind}/{id}',
+  tags: ['Read state'],
+  summary: "Advance the caller's read cursor in one thread",
+  description:
+    'The one write path onto read state, for every kind of thread there is: a room, an agent ' +
+    'session, or the inbox. Monotonic — a value at or below the stored one is ignored, so a stale ' +
+    'client on a second device cannot un-read a thread for the first one. The response is always ' +
+    'the cursor as it now stands, which is the higher of the stored value and the requested one, ' +
+    'so a refused write answers with what still holds rather than with an error. **Every write ' +
+    'that actually moves the cursor broadcasts `read_cursor` on `GET /api/events`**, carrying the ' +
+    'user, the kind, the thread and the new position; a write that changes nothing broadcasts ' +
+    "nothing. The cursor written is always the caller's own — there is no way to name a user in " +
+    "this request, and therefore no way to read or move anybody else's read state. **Only people " +
+    'have read state here** — a caller the server resolves as an agent (one presenting ' +
+    '`X-DorkOS-Agent`) is refused with 403 `PEOPLE_ONLY`, because what an agent has been shown is ' +
+    'the room-MEMBERSHIP cursor and not this one — advanced by the ambient participation loop as ' +
+    'entries are delivered to it, and reachable through no route at all. **A `room` cursor is ' +
+    'written through the rooms domain**, so the caller must be able to see the room (404 ' +
+    '`ROOM_NOT_FOUND` / `MEMBER_NOT_FOUND` otherwise), and the broadcast carries the unread count ' +
+    'the room list redraws from. A `session` or `inbox` cursor names a thread this server cannot ' +
+    'check and is stored as given.',
+  request: {
+    params: ReadCursorParamsSchema,
+    body: {
+      content: { 'application/json': { schema: SetReadCursorPositionRequestSchema } },
+    },
+  },
+  responses: {
+    200: {
+      description: 'The cursor as it now stands',
+      content: { 'application/json': { schema: ReadCursorSchema } },
+    },
+    400: {
+      description:
+        'Unknown `kind`, empty `id`, missing body, or a `lastReadSeq` that is not a non-negative integer',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    403: {
+      description: 'The caller resolved to an agent, which has no read state here (`PEOPLE_ONLY`)',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    404: {
+      description:
+        'Only for `kind: room` — no such room, or the caller is not a member of it. A `session` ' +
+        'or `inbox` thread is never checked for existence, so those kinds cannot answer 404',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/read-cursors/{kind}/{id}',
+  tags: ['Read state'],
+  summary: "Read the caller's own position in one thread",
+  description:
+    'Where this person left off in one thread — the read half of the PUT, and the way a screen ' +
+    'that has just opened knows where to draw the unread rule before any event arrives. A thread ' +
+    'the caller has never read answers `{ "cursor": null }` with a 200, because never-read is ' +
+    'the state every thread starts in rather than a missing resource; `null` is also distinct ' +
+    'from a stored `0`, which is a thread read up to its own beginning. As with the write, the ' +
+    "cursor is always the caller's own — there is no way to name a user — and an agent caller is " +
+    'refused with 403 `PEOPLE_ONLY`.',
+  request: { params: ReadCursorParamsSchema },
+  responses: {
+    200: {
+      description: "The caller's cursor, or null when they have never read this thread",
+      content: { 'application/json': { schema: ReadCursorResponseSchema } },
+    },
+    400: {
+      description: 'Unknown `kind` or empty `id`',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    403: {
+      description: 'The caller resolved to an agent, which has no read state here (`PEOPLE_ONLY`)',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
   },
 });
 

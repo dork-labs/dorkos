@@ -46,7 +46,7 @@ export interface TabTarget {
  * @internal Exported for the route-map drift guard only.
  */
 export const ROUTE_LABELS: Record<string, string> = {
-  '/': 'Dashboard',
+  '/': 'Home',
   '/activity': 'Activity',
   '/team': 'Team',
   // The alias, labelled for where it lands rather than for its own spelling: a

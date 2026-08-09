@@ -328,8 +328,13 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     addRoomMember: vi.fn(),
     updateRoomMember: vi.fn(),
     removeRoomMember: vi.fn().mockResolvedValue(undefined),
-    setRoomReadCursor: vi.fn().mockResolvedValue({}),
     subscribeRoom: vi.fn(emptyAsyncIterable),
+    // Read state (team-room-home D4) — one cursor for every kind of thread a
+    // person reads, rooms included. The default read is `null`: a test that says
+    // nothing about read state gets a thread nobody has read, which draws no
+    // unread rule.
+    getReadCursor: vi.fn().mockResolvedValue(null),
+    setReadCursor: vi.fn().mockResolvedValue({}),
     // Models
     getModels: vi.fn().mockResolvedValue([
       { value: 'claude-sonnet-4-5-20250929', displayName: 'Sonnet 4.5', description: 'Fast model' },

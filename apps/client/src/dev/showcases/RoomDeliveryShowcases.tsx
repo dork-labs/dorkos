@@ -1,10 +1,12 @@
 /**
- * The two things a room says about DELIVERY — DOR-783.
+ * The room rows nobody can produce on demand — DOR-783, and the moments that
+ * joined them (team-room-home D5.1).
  *
- * Both benched here because both are states nobody can produce on demand in a
- * real cockpit. A notice needs an agent to actually fail, be busy, or run a room
- * out of budget; a pending row needs a slow link or a dead stream. They are also
- * exactly the states that regress unseen: they are rare, so nobody looks.
+ * Every state here needs the world to cooperate. A notice needs an agent to
+ * actually fail, be busy, or run a room out of budget; a pending row needs a
+ * slow link or a dead stream; a moment needs a first pull request or a
+ * hundredth session. They are also exactly the states that regress unseen: they
+ * are rare, so nobody looks.
  *
  * The REAL components, never a copy of their markup — the notice's tone and mark
  * are chosen inside `RoomNoticeRow`, and the pending row's two states are chosen
@@ -15,13 +17,13 @@
  */
 import { useMemo } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import type { RoomAttachment, RoomNoticeCode } from '@dorkos/shared/room-schemas';
+import type { RoomAttachment, RoomMoment, RoomNoticeCode } from '@dorkos/shared/room-schemas';
 import type { PendingPost, RoomEntry } from '@/layers/entities/room';
 import { RoomEntryAttachments, RoomEntryRow, RoomPendingRow } from '@/layers/widgets/room-view';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseDemo } from '../ShowcaseDemo';
 import { ShowcaseLabel } from '../ShowcaseLabel';
-import { THREAD_AGENT_KAI, THREAD_ROOM_ID } from './room-thread-showcase-data';
+import { THREAD_AGENT_ANA, THREAD_AGENT_KAI, THREAD_ROOM_ID } from './room-thread-showcase-data';
 
 /**
  * Every notice the room can write, with the SERVER's own words.
@@ -68,6 +70,112 @@ const NOTICES: ReadonlyArray<{ code: RoomNoticeCode; text: string; label: string
   },
 ];
 
+/**
+ * Every kind of moment, with the shape of sentence each one really writes.
+ *
+ * The words are the point of the bench. A moment is only ever derived from
+ * something that happened (spec D5.1), so the lines here are the plain ones a
+ * detector can honestly write — "tangerines joined your team", never
+ * "🎉 New team member onboarded!". Read them together and check that a column of
+ * them still reads as a calm feed rather than a wall of celebration.
+ */
+const MOMENTS: ReadonlyArray<{
+  moment: RoomMoment;
+  text: string;
+  label: string;
+  /** Who it is about, when the room is speaking about somebody. */
+  subjectAuthorId?: string;
+  /** Who WROTE it — the system voice unless an agent minted it. */
+  authorId?: string;
+}> = [
+  {
+    label: 'joined_team — the canonical one, written by DorkOS about an agent',
+    moment: {
+      kind: 'joined_team',
+      source: { kind: 'agent', ref: '/agents/kai', observedAt: '2026-08-08T09:12:00.000Z' },
+      mintedByAgentRef: null,
+    },
+    subjectAuthorId: THREAD_AGENT_KAI.id,
+    text: 'Kai joined your team.',
+  },
+  {
+    label: 'first_pr — a first, and it only ever fires once',
+    moment: {
+      kind: 'first_pr',
+      source: {
+        kind: 'pull_request',
+        ref: 'https://github.com/dork-labs/example/pull/1',
+        observedAt: '2026-08-08T11:40:00.000Z',
+      },
+      mintedByAgentRef: null,
+    },
+    subjectAuthorId: THREAD_AGENT_KAI.id,
+    text: 'Kai opened your first pull request.',
+  },
+  {
+    label: 'volume_mark — a real number, counted, never rounded up',
+    moment: {
+      kind: 'volume_mark',
+      source: { kind: 'activity', ref: 'week-2026-W32', observedAt: '2026-08-08T18:00:00.000Z' },
+      mintedByAgentRef: null,
+    },
+    text: 'Your agents shipped something every day this week.',
+  },
+  {
+    label: 'anniversary — a long line, to check the band wraps',
+    moment: {
+      kind: 'anniversary',
+      source: { kind: 'session', ref: 'session-100', observedAt: '2026-08-08T20:05:00.000Z' },
+      mintedByAgentRef: null,
+    },
+    subjectAuthorId: THREAD_AGENT_ANA.id,
+    text: 'That was your hundredth session with Ana, one month to the day after the first one.',
+  },
+  {
+    label: 'agent_minted — an agent noticed it, so the agent is the one speaking',
+    moment: {
+      kind: 'agent_minted',
+      source: { kind: 'schedule', ref: 'schedule-nightly', observedAt: '2026-08-09T04:00:00.000Z' },
+      mintedByAgentRef: 'ref-kai',
+    },
+    authorId: THREAD_AGENT_KAI.id,
+    text: 'I finished the nightly run — the backlog is empty for the first time.',
+  },
+];
+
+let momentSeq = 0;
+
+/** One seeded moment, written the way `RoomService.postMoment` writes one. */
+function momentEntry(
+  moment: RoomMoment,
+  text: string,
+  subjectAuthorId: string | undefined,
+  authorId: string | undefined
+): RoomEntry {
+  momentSeq += 1;
+  const id = `bench-moment-${momentSeq}`;
+  return {
+    roomId: THREAD_ROOM_ID,
+    seq: momentSeq,
+    id,
+    // A moment DorkOS writes is authored by the system voice; one an agent
+    // mints is authored by that agent.
+    authorId: authorId ?? 'system',
+    // A POST, which is the whole design: nothing downstream had to learn a
+    // fourth entry kind.
+    kind: 'post',
+    body: { text, moment, ...(subjectAuthorId && { subjectAuthorId }) },
+    mentions: [],
+    sessionId: null,
+    cascadeRoot: id,
+    cascadeDepth: 3,
+    parentEntryId: null,
+    threadRootEntryId: null,
+    signature: null,
+    createdAt: '2026-08-08T09:12:00.000Z',
+  };
+}
+
 let noticeSeq = 0;
 
 /** One seeded notice, written by the system author the way a real one is. */
@@ -113,6 +221,52 @@ function pending(status: PendingPost['status'], text: string, at = Date.now()): 
     entryId: null,
     at,
   };
+}
+
+/** The room's roster, so a moment can draw the identity it is about. */
+const MOMENT_AUTHORS = new Map(
+  [THREAD_AGENT_KAI, THREAD_AGENT_ANA].map((author) => [
+    author.id,
+    { ...author, origin: 'local' as const },
+  ])
+);
+
+/** Every kind of moment, side by side — the one axis to review the tone on. */
+function MomentsSection() {
+  return (
+    <PlaygroundSection
+      title="Room moments"
+      description="A milestone the room marks, drawn through the same row as everything else in the feed — because a moment IS a post, carrying `body.moment`. Warm without being loud: the only colour is the identity's own, there is one mark for the whole family rather than one per kind, and nothing moves. Read them together and check that (a) a moment is tellable from a message at a glance, (b) five of them in a column still read as a calm feed and not a party, and (c) the identity beside each one is who the milestone is ABOUT."
+    >
+      {MOMENTS.map(({ moment, text, label, subjectAuthorId, authorId }) => {
+        const entry = momentEntry(moment, text, subjectAuthorId, authorId);
+        const subject = MOMENT_AUTHORS.get(subjectAuthorId ?? entry.authorId);
+        return (
+          <div key={label}>
+            <ShowcaseLabel>{label}</ShowcaseLabel>
+            <ShowcaseDemo>
+              <RoomEntryRow
+                roomId={THREAD_ROOM_ID}
+                entry={entry}
+                author={{
+                  id: entry.authorId,
+                  kind: authorId ? 'agent' : 'system',
+                  displayName: subject?.displayName ?? 'DorkOS',
+                  ...(subject?.color && { color: subject.color }),
+                }}
+                authorRef={MOMENT_AUTHORS.get(entry.authorId)}
+                authors={MOMENT_AUTHORS}
+                viewerAuthorId="author-you"
+                authorNames={new Map()}
+                reactionFrequents={[]}
+                grouping={{ position: 'only' }}
+              />
+            </ShowcaseDemo>
+          </div>
+        );
+      })}
+    </PlaygroundSection>
+  );
 }
 
 /** Every notice a room writes, side by side — the one axis to review them on. */
@@ -265,9 +419,9 @@ function AttachmentsSection() {
 }
 
 /**
- * Notices and pending sends — everything a room says about delivery.
+ * Moments, notices and pending sends — the rows a real room only rarely shows.
  *
- * Both components read the query cache (the row's own retry is a mutation, and
+ * Every component here reads the query cache (the row's own retry is a mutation, and
  * every `RoomEntryRow` resolves its actions through one), so the bench brings a
  * throwaway client of its own rather than borrowing the app's. Same shape as
  * `ThreadPanelDemo`, and for the same reason: a showcase that only renders
@@ -283,6 +437,7 @@ export function RoomDeliveryShowcases() {
   );
   return (
     <QueryClientProvider client={client}>
+      <MomentsSection />
       <NoticesSection />
       <PendingSection />
       <AttachmentsSection />

@@ -168,60 +168,6 @@ export function groupByThread(entries: readonly RoomEntry[]): ThreadedEntries {
   return { topLevel, repliesByRoot, orphaned };
 }
 
-/** Where the "New messages" rule goes, if anywhere. */
-export interface UnreadPlacement {
-  /** Id of the newest entry already read; the rule goes just after it. */
-  lastSeenId: string | null;
-  /** Everything on screen is unread, so the rule goes above the first entry. */
-  fromStart: boolean;
-}
-
-/** No rule at all: caught up, or not a member. */
-const NO_RULE: UnreadPlacement = { lastSeenId: null, fromStart: false };
-
-/**
- * Translate a membership's read cursor into a rule position.
- *
- * The rule is placed relative to an entry id while a membership stores a `seq`,
- * so this is the translation between the two — and it has to distinguish three
- * things the old `seq → id` shape collapsed into one `null`: not a member (no
- * rule), caught up (no rule), and a member who has read nothing (rule at the
- * top, because the sidebar is badging that room and the two must agree).
- *
- * Fed the room's own flow rather than its whole log, so the rule lands between
- * two rows the reader can actually see. A thread reply is above the cursor and
- * off the flow, which is the same thing {@link groupByThread} accepts when it
- * says opening a room marks its threads read.
- *
- * @param entries - The rendered history, oldest first.
- * @param lastReadSeq - The reader's `(member, room)` cursor, or null when they
- *   are not a member of this room.
- */
-export function unreadPlacement(
-  entries: readonly RoomEntry[],
-  lastReadSeq: number | null
-): UnreadPlacement {
-  // Not a member: no cursor, so no rule. `hasUnread` badges nothing here either,
-  // so the two agree.
-  if (lastReadSeq === null) return NO_RULE;
-
-  const newest = entries[entries.length - 1];
-  // Nothing to read, or nothing unread — the newest entry is at or below the cursor.
-  if (!newest || newest.seq <= lastReadSeq) return NO_RULE;
-
-  // A member who has read nothing has a real cursor sitting at zero, and every
-  // entry is above it. The rule belongs above the first one — not absent, which
-  // is what the sidebar badge would be contradicting.
-  if (lastReadSeq <= 0) return { lastSeenId: null, fromStart: true };
-
-  for (let i = entries.length - 1; i >= 0; i--) {
-    if (entries[i]!.seq <= lastReadSeq) return { lastSeenId: entries[i]!.id, fromStart: false };
-  }
-  // The cursor is above every entry this page holds (history was paged past it),
-  // so everything on screen is unread.
-  return { lastSeenId: null, fromStart: true };
-}
-
 /**
  * The DOM id of the reply row that opens one thread.
  *

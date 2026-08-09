@@ -65,8 +65,8 @@ If a folder keeps showing up as a candidate and you never want it, you can add i
 The network map shows you your agents grouped by namespace, with the rules that connect them. It respects your messaging rules as walls: an agent only sees the agents it is allowed to reach, so agents cannot even tell that off-limits agents exist.
 
 <Callout type="info">
-  The DorkOS dashboard uses an admin view that sees past those walls, so it can draw the full map
-  for you.
+  The DorkOS cockpit uses an admin view that sees past those walls, so it can draw the full map for
+  you.
 </Callout>
 
 ## Knowing which agents are alive
@@ -77,7 +77,7 @@ Mesh watches each agent through a heartbeat: a quick "still here" signal an agen
 - **Inactive**: quiet for a while, but probably fine
 - **Stale**: quiet for a long time, and may be offline
 
-When an agent's state changes, the dashboard updates the network map on the spot. You also get a running count of how many agents are active, inactive, and stale.
+When an agent's state changes, the cockpit updates the network map on the spot. You also get a running count of how many agents are active, inactive, and stale.
 
 ## Where Mesh keeps its data
 
@@ -147,7 +147,7 @@ When both Mesh and Relay are enabled, registering an agent in Mesh creates a Rel
 
 - **Registration** creates the endpoint and sets up intra-namespace access rules, so same-namespace agents can communicate immediately.
 - **Unregistration** removes the endpoint. If it was the last agent in its namespace, the namespace-specific access rules are removed too.
-- **Lifecycle signals** broadcast health-status changes on the `mesh.agent.lifecycle.*` subject pattern, which the dashboard subscribes to for real-time map updates.
+- **Lifecycle signals** broadcast health-status changes on the `mesh.agent.lifecycle.*` subject pattern, which the cockpit subscribes to for real-time map updates.
 
 ## Next Steps
 

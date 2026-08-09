@@ -20,6 +20,29 @@ export const SLOT_IDS = {
 
 export type SlotId = (typeof SLOT_IDS)[keyof typeof SLOT_IDS];
 
+/**
+ * The separator `api.registerComponent` puts between an extension's id and its
+ * slot-local id when it namespaces a contribution as `${extensionId}:${localId}`.
+ */
+const EXTENSION_ID_SEPARATOR = ':';
+
+/**
+ * True when a contribution id came from an extension rather than from a
+ * built-in registration in `app/init-extensions.ts`.
+ *
+ * The extension API namespaces every contribution it registers as
+ * `${extensionId}:${slotLocalId}` (see `extension-api-factory.ts`), and no
+ * built-in id contains a colon — the guard test on
+ * `isExtensionContributionId` pins that. Testing the separator rather
+ * than an allowlist of built-in ids means a new built-in section can never leak
+ * into a surface meant for extensions just because someone forgot a list.
+ *
+ * @param id - A contribution id from any slot.
+ */
+export function isExtensionContributionId(id: string): boolean {
+  return id.includes(EXTENSION_ID_SEPARATOR);
+}
+
 // --- Contribution Base ---
 
 /** Base interface for all contributions. */

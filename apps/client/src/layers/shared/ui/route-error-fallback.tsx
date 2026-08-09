@@ -73,7 +73,7 @@ export function RouteErrorFallback({ error }: ErrorComponentProps) {
               Retry
             </Button>
             <Button variant="ghost" size="sm" onClick={() => router.navigate({ to: '/' })}>
-              Go to Dashboard
+              Back to Home
             </Button>
           </>
         )}

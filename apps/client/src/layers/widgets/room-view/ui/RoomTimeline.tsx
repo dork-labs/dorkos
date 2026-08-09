@@ -1,18 +1,12 @@
 import { Fragment, useMemo } from 'react';
 import { MessagesSquare } from 'lucide-react';
-import { buildTimelineRows } from '@/layers/shared/lib';
+import { buildTimelineRows, unreadPlacement } from '@/layers/shared/lib';
 import { useNow } from '@/layers/shared/model';
 import { Button, Feed, Skeleton } from '@/layers/shared/ui';
 import type { RoomEntry, RoomRosterEntry } from '@/layers/entities/room';
 import { usePendingPosts } from '@/layers/entities/room';
 import { DayDivider, UnreadDivider } from '@/layers/features/chat';
-import {
-  authorsById,
-  entryRowId,
-  groupByThread,
-  toMessageAuthor,
-  unreadPlacement,
-} from '../lib/room-timeline';
+import { authorsById, entryRowId, groupByThread, toMessageAuthor } from '../lib/room-timeline';
 import { RoomAgentInfoProvider } from '../model/agent-info-context';
 import { RoomEntryRow } from './RoomEntryRow';
 import { RoomPendingList } from './RoomPendingRow';
@@ -173,7 +167,12 @@ export function RoomTimeline({
     return buildTimelineRows(
       topLevel.map((entry) => ({
         id: entry.id,
-        authorId: entry.authorId,
+        // A moment groups with nothing, and that is the whole reason it carries
+        // an id of its own here. It draws its own band rather than the message
+        // grid (`RoomMomentRow`), so an agent's next message — same author,
+        // same minute — would have been laid out as a CONTINUATION of it and
+        // arrive with no avatar and no name under a row that never showed one.
+        authorId: entry.body.moment ? `moment:${entry.id}` : entry.authorId,
         timestamp: entry.createdAt,
       })),
       { now, lastSeenId: unread.lastSeenId, unreadFromStart: unread.fromStart }

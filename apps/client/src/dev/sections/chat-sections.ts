@@ -297,13 +297,6 @@ export const CHAT_SECTIONS: PlaygroundSection[] = [
     keywords: ['file', 'palette', 'mention', 'autocomplete', 'dropdown', 'fuzzy', 'at'],
   },
   {
-    id: 'promptsuggestionchips',
-    title: 'PromptSuggestionChips',
-    page: 'chat',
-    category: 'Input',
-    keywords: ['prompt', 'suggestion', 'chip', 'follow-up', 'sdk', 'autocomplete'],
-  },
-  {
     id: 'questionprompt',
     title: 'QuestionPrompt',
     page: 'chat',

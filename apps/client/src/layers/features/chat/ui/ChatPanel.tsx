@@ -36,7 +36,7 @@ import { ErrorMessageBlock } from './message/ErrorMessageBlock';
 import { ChatStatusStrip } from './status/ChatStatusStrip';
 import { TerminalReasonChip, TurnFailedNotice } from './status';
 import { shouldShowTurnFailedNotice } from '../model/stream/turn-failure';
-import { PromptSuggestionChips } from './input/PromptSuggestionChips';
+import { PromptSuggestionChips } from '@/layers/shared/ui';
 import type { TaskUpdateEvent } from '@dorkos/shared/types';
 
 interface ChatPanelProps {

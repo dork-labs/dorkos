@@ -22,11 +22,12 @@ interface PromoSlotProps {
 }
 
 /**
- * Renders promo cards for a given placement slot.
- * Zero DOM when no promos qualify. Layout varies by placement.
+ * Renders promo cards for a given placement slot — a compact vertical stack.
+ * Zero DOM when no promos qualify.
  *
- * - `dashboard-main`: section header + responsive 1/2-col grid
- * - `dashboard-sidebar`, `agent-sidebar`: vertical stack, no header
+ * Both surviving placements are sidebars, so there is one layout. The
+ * "Discover" grid went with the dashboard it lived on (team-room-home task 1.5);
+ * its successor on home is the quiet-state suggestion, not another slot.
  */
 export function PromoSlot({ placement, maxUnits }: PromoSlotProps) {
   const promos = usePromoSlot(placement, maxUnits);
@@ -43,24 +44,14 @@ export function PromoSlot({ placement, maxUnits }: PromoSlotProps) {
           {...motionProps}
           className="overflow-hidden"
         >
-          {placement === 'dashboard-main' && (
-            <h2 className="text-muted-foreground mb-3 text-xs font-medium tracking-widest uppercase">
-              Discover
-            </h2>
-          )}
-
           <motion.div
             variants={shouldReduceMotion ? undefined : staggerContainer}
             initial="initial"
             animate="animate"
-            className={
-              placement === 'dashboard-main'
-                ? 'grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3'
-                : 'space-y-2'
-            }
+            className="space-y-2"
           >
             {promos.map((promo) => (
-              <PromoCard key={promo.id} promo={promo} placement={placement} />
+              <PromoCard key={promo.id} promo={promo} />
             ))}
           </motion.div>
         </motion.section>

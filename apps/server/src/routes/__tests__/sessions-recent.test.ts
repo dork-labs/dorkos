@@ -86,6 +86,7 @@ describe('GET /api/sessions/recent', () => {
     vi.clearAllMocks();
     delete app.locals.meshCore;
     delete app.locals.resolveTaskOrigins;
+    delete app.locals.resolveRoomOrigins;
   });
 
   it('returns the { sessions, agentActivity, warnings } envelope', async () => {
@@ -170,5 +171,52 @@ describe('GET /api/sessions/recent', () => {
     const session = res.body.sessions.find((s: Session) => s.id === 's1');
     expect(session.origin).toBe('task');
     expect(session.originLabel).toBe('Scheduled task · daily-digest');
+  });
+
+  // The other overlay, and the one nothing else can do: a room turn leaves no
+  // marker in its transcript, so without this the recents list draws the room
+  // AND the run underneath it as two rows for one conversation.
+  it('tags a room-bound session `room` and names the room it answers in', async () => {
+    setAgentPaths(['/p1']);
+    runtime.listSessions.mockImplementation((dir: string) =>
+      Promise.resolve(
+        dir === '/p1'
+          ? [
+              makeSession('s1', '2026-03-01T00:00:00.000Z', '/p1'),
+              makeSession('s2', '2026-03-02T00:00:00.000Z', '/p1'),
+            ]
+          : []
+      )
+    );
+    app.locals.resolveRoomOrigins = (sessionIds: string[]) =>
+      sessionIds.includes('s1')
+        ? new Map([['s1', { roomLabel: '#general', roomId: 'room-1' }]])
+        : new Map();
+
+    const res = await request(app).get('/api/sessions/recent');
+
+    expect(res.status).toBe(200);
+    const bound = res.body.sessions.find((s: Session) => s.id === 's1');
+    expect(bound.origin).toBe('room');
+    expect(bound.originLabel).toBe('#general');
+    // …and the session no room is answering with is untouched, which is what
+    // keeps ordinary conversations in the list.
+    const loose = res.body.sessions.find((s: Session) => s.id === 's2');
+    expect(loose.origin).toBeUndefined();
+  });
+
+  it('lets a scheduled task that posts into a room still read as the task', async () => {
+    setAgentPaths(['/p1']);
+    runtime.listSessions.mockImplementation((dir: string) =>
+      Promise.resolve(dir === '/p1' ? [makeSession('s1', '2026-03-01T00:00:00.000Z', '/p1')] : [])
+    );
+    app.locals.resolveRoomOrigins = () =>
+      new Map([['s1', { roomLabel: '#general', roomId: 'room-1' }]]);
+    app.locals.resolveTaskOrigins = () => new Map([['s1', { taskName: 'daily-digest' }]]);
+
+    const res = await request(app).get('/api/sessions/recent');
+
+    expect(res.body.sessions[0].origin).toBe('task');
+    expect(res.body.sessions[0].originLabel).toBe('Scheduled task · daily-digest');
   });
 });

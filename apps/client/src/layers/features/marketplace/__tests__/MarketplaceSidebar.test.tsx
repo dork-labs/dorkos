@@ -140,18 +140,18 @@ describe('MarketplaceSidebar', () => {
   // Header + back affordance
   // -------------------------------------------------------------------------
 
-  it('renders the Marketplace heading and a back affordance to the dashboard', () => {
+  it('renders the Marketplace heading and a back affordance to Home', () => {
     render(<MarketplaceSidebar />);
 
     expect(screen.getByRole('heading', { name: 'Marketplace' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Dashboard' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Home' })).toBeInTheDocument();
   });
 
   it('navigates to "/" when the back affordance is clicked', async () => {
     const user = userEvent.setup();
     render(<MarketplaceSidebar />);
 
-    await user.click(screen.getByRole('button', { name: 'Dashboard' }));
+    await user.click(screen.getByRole('button', { name: 'Home' }));
 
     expect(mockNavigate).toHaveBeenCalledWith({ to: '/' });
   });

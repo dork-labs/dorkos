@@ -110,6 +110,14 @@ export interface ComposerInputProps {
    * through and sends. Defaults to `false`.
    */
   paletteHasResults?: boolean;
+  /**
+   * Whether Tab picks the highlighted palette row alongside Enter. Defaults to
+   * `true`, which is right for a palette the person asked for by typing `/` or
+   * `@`. A host whose palette opens on its own — the home composer's "Jump back
+   * in" panel, which floats up when the caret lands in an empty box — passes
+   * `false`, so tabbing on moves focus instead of opening whatever was lit.
+   */
+  tabPicks?: boolean;
   onArrowUp?: () => void;
   onArrowDown?: () => void;
   onCommandSelect?: () => void;
@@ -234,6 +242,7 @@ export const ComposerInput = forwardRef<ComposerInputHandle, ComposerInputProps>
       onClear,
       isPaletteOpen,
       paletteHasResults,
+      tabPicks,
       onArrowUp,
       onArrowDown,
       onCommandSelect,
@@ -297,6 +306,7 @@ export const ComposerInput = forwardRef<ComposerInputHandle, ComposerInputProps>
       editingQueueItem,
       isPaletteOpen,
       paletteHasResults,
+      tabPicks,
       queueHasItems,
       onSubmit,
       onStop,

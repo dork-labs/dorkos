@@ -17,6 +17,7 @@ import {
   roomEntries,
   roomSessions,
   roomBridges,
+  readCursors,
   eq,
   and,
   inArray,
@@ -34,10 +35,17 @@ import {
   type DbTransaction,
 } from '@dorkos/db';
 import type { ResponseMode } from '@dorkos/shared/mesh-schemas';
-import type { Room, RoomEntry, RoomKind, RoomMember } from '@dorkos/shared/room-schemas';
+import type {
+  Room,
+  RoomEntry,
+  RoomKind,
+  RoomMember,
+  RoomMomentKind,
+} from '@dorkos/shared/room-schemas';
 import { logger } from '../../lib/logger.js';
 import { RoomSessionLedger } from './room-session-ledger.js';
 import {
+  parseEntryBody,
   toEntry,
   toMember,
   toRoom,
@@ -98,6 +106,10 @@ export class RoomStore {
   ): Room {
     const row = {
       ...room,
+      wellKnown: room.wellKnown ?? null,
+      // Empty at creation always: the seat is assigned by the boot hook that
+      // resolves the default agent, never by whoever opened the room.
+      fallbackSeatAuthorId: null,
       archived: false,
       ambientMaxEntries: DEFAULT_AMBIENT_MAX_ENTRIES,
       lastActivityAt: room.createdAt,
@@ -278,6 +290,49 @@ export class RoomStore {
   }
 
   /**
+   * Whether ANY channel holds this slug — archived ones included.
+   *
+   * The counterpart to {@link RoomStore.findLiveChannelBySlug}, and the two
+   * answer different questions on purpose. "May I take this name?" is the live
+   * one, because archiving releases a slug. "Is this name somebody's to come
+   * back to?" is this one: an archived channel's way back is the slug it left
+   * behind, so a path that hands that slug to a new room strands it for good
+   * (`updateRoom` refuses the un-archive with `SLUG_TAKEN`). Only the paths
+   * that MINT a name nobody typed ask this — a person naming a channel is told
+   * about a collision and can choose.
+   *
+   * A boolean rather than a row: the partial unique index leaves archived
+   * channels free to share a slug, so "which one" has no single honest answer
+   * and nothing here needs one.
+   *
+   * @param slug - The channel slug.
+   */
+  anyChannelHoldsSlug(slug: string): boolean {
+    return (
+      this.db
+        .select({ id: rooms.id })
+        .from(rooms)
+        .where(and(eq(rooms.slug, slug), eq(rooms.kind, 'channel')))
+        .get() !== undefined
+    );
+  }
+
+  /**
+   * The room holding a well-known key, archived or not.
+   *
+   * **Archived rooms are included, deliberately.** This is the lookup
+   * `ensureTeamRoom` is idempotent by, and skipping an archived match would let
+   * a boot open a second #team beside the one somebody put away — which is the
+   * one outcome a well-known key exists to prevent.
+   *
+   * @param key - The well-known key (`'team'`).
+   */
+  findByWellKnown(key: string): Room | null {
+    const row = this.db.select().from(rooms).where(eq(rooms.wellKnown, key)).get();
+    return row ? toRoom(row) : null;
+  }
+
+  /**
    * Patch a room's mutable fields.
    *
    * @param id - The room id.
@@ -426,8 +481,35 @@ export class RoomStore {
   }
 
   /**
+   * Record which member holds this room's fallback seat — the one that answers
+   * a post nobody addressed.
+   *
+   * A column rather than a sweep for `response_mode = 'always'`: the mode is
+   * also what a person picks from the member menu, and the two must not be
+   * confused (see the column's own doc in `@dorkos/db`). Not validated against
+   * the roster here, because the only caller resolves the member first and a
+   * second read would just be the same question asked twice.
+   *
+   * @param roomId - The room.
+   * @param authorId - The member holding the seat, or `null` to leave it empty.
+   * @returns The updated room, or `null` when there is no such room.
+   */
+  setFallbackSeat(roomId: string, authorId: string | null): Room | null {
+    this.db.update(rooms).set({ fallbackSeatAuthorId: authorId }).where(eq(rooms.id, roomId)).run();
+    return this.getRoom(roomId);
+  }
+
+  /**
    * Advance a member's read cursor. Monotonic: a lower value is ignored, so a
    * stale client cannot un-read a room for a second client.
+   *
+   * **This is the AGENT-side cursor** (team-room-home spec §D4): what the
+   * ambient participation loop has SHOWN a member, advanced when a turn is
+   * claimed and rewound when it refuses (room-participation spec §8.3). Where a
+   * PERSON has read is `read_cursors`, and `RoomService.setReadCursor` is what
+   * decides which of the two a caller is moving. A human's row here is
+   * historical residue from before the split: migration 0061 copied it forward,
+   * and nothing writes or reads it for a person now.
    *
    * @param roomId - The room.
    * @param authorId - The member.
@@ -930,6 +1012,93 @@ export class RoomStore {
   }
 
   /**
+   * Has a moment matching this key already landed in this room?
+   *
+   * **This is the moment detectors' whole idempotency mechanism** (team-room-home
+   * spec D5.1). A moment that was posted IS the marker that it was posted: it is
+   * a row in this table carrying `body.moment`, so a restart, a second process,
+   * or a detector that evaluates the same event twice all read the same answer.
+   * Nothing here is remembered in memory, which is the point — a flag would
+   * re-post every first-of-its-kind moment on the next boot.
+   *
+   * Which parts of the key are supplied is how a detector says what "already"
+   * means for it: `kind` alone is once-ever-per-install (your first agent),
+   * `+ ref` is once per record (each agent joining), `+ observedAt` is once per
+   * occasion (this agent's one-week mark, as distinct from its one-month mark).
+   *
+   * Unbounded on purpose, unlike {@link RoomStore.latestMomentAt}: this is the
+   * question a moment must never get wrong, and it only runs when a detector has
+   * already decided it has something to post — rarely, and never in a loop.
+   *
+   * `kind` is the schema's own union rather than a string, and that is load
+   * bearing: the value is compared against JSON already written into the log, so
+   * renaming a moment kind without noticing this call site would leave every
+   * first-of-its-kind moment matching nothing and re-posting forever. Typed, that
+   * rename is a compile error.
+   *
+   * @param roomId - The room to look in.
+   * @param key.kind - The moment kind.
+   * @param key.ref - The source record, when the kind may fire for several.
+   * @param key.observedAt - The occasion, when a record has several.
+   */
+  hasMoment(
+    roomId: string,
+    key: { kind: RoomMomentKind; ref?: string; observedAt?: string }
+  ): boolean {
+    const conditions = [
+      eq(roomEntries.roomId, roomId),
+      sql`json_extract(${roomEntries.body}, '$.moment.kind') = ${key.kind}`,
+    ];
+    if (key.ref !== undefined) {
+      conditions.push(sql`json_extract(${roomEntries.body}, '$.moment.source.ref') = ${key.ref}`);
+    }
+    if (key.observedAt !== undefined) {
+      conditions.push(
+        sql`json_extract(${roomEntries.body}, '$.moment.source.observedAt') = ${key.observedAt}`
+      );
+    }
+    return (
+      this.db
+        .select({ seq: roomEntries.seq })
+        .from(roomEntries)
+        .where(and(...conditions))
+        .limit(1)
+        .get() !== undefined
+    );
+  }
+
+  /**
+   * When this room last marked a moment, looking no further back than the
+   * newest `scan` entries.
+   *
+   * The bound is deliberate and is what makes this safe to call on every
+   * activity event: it walks the `(room_id, seq)` primary key backwards and
+   * stops, rather than scanning a whole channel for a JSON field no index
+   * covers. Its one caller is the quiet period that keeps a burst of milestones
+   * from filling the feed, and a room that has moved `scan` entries since its
+   * last moment is not in a burst — so reading further could only confirm what
+   * the bound already decided.
+   *
+   * @param roomId - The room.
+   * @param scan - How many of the newest entries to read.
+   * @returns The newest moment's `createdAt` within that window, or `null`.
+   */
+  latestMomentAt(roomId: string, scan: number): string | null {
+    if (scan <= 0) return null;
+    const rows = this.db
+      .select({ createdAt: roomEntries.createdAt, body: roomEntries.body })
+      .from(roomEntries)
+      .where(eq(roomEntries.roomId, roomId))
+      .orderBy(desc(roomEntries.seq))
+      .limit(scan)
+      .all();
+    for (const row of rows) {
+      if (parseEntryBody(row.body).moment) return row.createdAt;
+    }
+    return null;
+  }
+
+  /**
    * The highest `seq` in a room, or 0 when it is empty.
    *
    * @param roomId - The room.
@@ -1032,6 +1201,15 @@ export class RoomStore {
    * {@link RoomStore.countUnread} counts it for the room's badge — one rule,
    * measured in one place.
    *
+   * **Which cursor that is depends on who is reading, and the caller says which**
+   * (team-room-home spec §D4). A person's place in a room lives in
+   * `read_cursors`; an agent's — what the ambient loop has shown it — is
+   * `room_members.last_read_seq`. The `'user'` join is LEFT, and its `COALESCE`
+   * floor is 0 rather than the membership column: a person who has read nothing
+   * has no row, and falling back to the agent-side column would be reading one
+   * cursor to answer the other's question, which is the one thing the split
+   * forbids.
+   *
    * **The membership join is INNER, and that is the privacy boundary** — the
    * same one {@link RoomStore.listRoomsForMember} draws, drawn the same way.
    * Participation implies membership at WRITE time, never at read time:
@@ -1045,9 +1223,16 @@ export class RoomStore {
    *
    * @param viewerAuthorId - Whose threads to list, and whose cursor to measure.
    * @param limit - Most rows to return, newest activity first.
+   * @param cursor - Which read cursor answers for this reader: `'user'` for a
+   *   person's own, `'membership'` for the agent-side column.
    */
-  listThreadsForMember(viewerAuthorId: string, limit: number): ThreadAggregateRow[] {
+  listThreadsForMember(
+    viewerAuthorId: string,
+    limit: number,
+    cursor: 'user' | 'membership'
+  ): ThreadAggregateRow[] {
     const root = alias(roomEntries, 'thread_root');
+    const readCursor = sql`COALESCE(${readCursors.lastReadSeq}, 0)`;
     // MAX over the replies' timestamps: a thread's activity is its newest
     // reply. Named once and reused for the ORDER BY, so the sort and the value
     // the row reports can never be two different expressions.
@@ -1063,7 +1248,9 @@ export class RoomStore {
           rootAuthorId: root.authorId,
           rootBody: root.body,
           replyCount: count(),
-          unreadCount: sql<number>`SUM(CASE WHEN ${roomEntries.seq} > ${roomMembers.lastReadSeq} THEN 1 ELSE 0 END)`,
+          unreadCount: sql<number>`SUM(CASE WHEN ${roomEntries.seq} > ${
+            cursor === 'user' ? readCursor : roomMembers.lastReadSeq
+          } THEN 1 ELSE 0 END)`,
           lastActivityAt,
         })
         .from(roomEntries)
@@ -1072,9 +1259,20 @@ export class RoomStore {
           and(eq(root.roomId, roomEntries.roomId), eq(root.id, roomEntries.threadRootEntryId))
         )
         .innerJoin(rooms, eq(rooms.id, roomEntries.roomId))
+        // The membership join is the privacy boundary and stays INNER whichever
+        // cursor is measured; the cursor join below is LEFT, because having read
+        // nothing is not the same as not being here.
         .innerJoin(
           roomMembers,
           and(eq(roomMembers.roomId, roomEntries.roomId), eq(roomMembers.authorId, viewerAuthorId))
+        )
+        .leftJoin(
+          readCursors,
+          and(
+            eq(readCursors.userId, viewerAuthorId),
+            eq(readCursors.threadKind, 'room'),
+            eq(readCursors.threadId, roomEntries.roomId)
+          )
         )
         .where(
           and(
@@ -1157,6 +1355,55 @@ export class RoomStore {
       })
       .from(roomSessions)
       .all();
+  }
+
+  /**
+   * Which of these session ids are room turns, and what to call the room.
+   *
+   * The read behind the session-origin room overlay
+   * (`services/session/room-origin-overlay.ts`). Scoped to the ids asked about —
+   * unlike {@link RoomStore.listRoomSessions}, which is the unscoped whole-table
+   * read a hand-run health check can afford — because this one runs on every
+   * session list a person loads.
+   *
+   * **Bindings are keyed by the CURRENT session id.** A runtime renames a
+   * session mid-turn and `RoomSessionLedger.rebindBySessionId` moves the binding
+   * with it (DOR-784), so matching on `room_sessions.session_id` matches the
+   * live id and a retired one correctly answers nothing.
+   *
+   * The label is what a person calls the room — `#slug` for a channel, the title
+   * for a direct message — the same rule the client's `roomDisplayTitle`
+   * follows. Archived rooms are included deliberately: the session still came
+   * from that room, and a run whose room was archived is exactly the one a
+   * reader would otherwise be unable to place.
+   *
+   * @param sessionIds - The sessions to ask about.
+   * @returns One entry per bound session; absent means "not a room turn".
+   */
+  resolveRoomOrigins(sessionIds: string[]): Map<string, { roomLabel: string; roomId: string }> {
+    const result = new Map<string, { roomLabel: string; roomId: string }>();
+    if (sessionIds.length === 0) return result;
+    const rows = this.db
+      .select({
+        sessionId: roomSessions.sessionId,
+        roomId: rooms.id,
+        kind: rooms.kind,
+        slug: rooms.slug,
+        title: rooms.title,
+      })
+      .from(roomSessions)
+      .innerJoin(rooms, eq(rooms.id, roomSessions.roomId))
+      .where(inArray(roomSessions.sessionId, sessionIds))
+      .all();
+    for (const row of rows) {
+      // Several agents in one room answer with several sessions, so many ids can
+      // map to the same room — but one id is bound in at most one place, and the
+      // first row for it wins if that ever stops being true.
+      if (result.has(row.sessionId)) continue;
+      const label = row.kind === 'channel' && row.slug ? `#${row.slug}` : row.title;
+      result.set(row.sessionId, { roomLabel: label, roomId: row.roomId });
+    }
+    return result;
   }
 
   /**

@@ -24,7 +24,7 @@ Two name collisions worth flagging:
 
 1. Open DorkOS Settings > Extensions
 2. Under **Core extensions**, enable "Hello World" and reload the page
-3. The dashboard shows a new section; the command palette has a "Hello World: Show Greeting" command
+3. The Activity tab shows a new section under "From your extensions"; the command palette has a "Hello World: Show Greeting" command
 
 Hello World is the canonical authoring skeleton — read its `extension.json`, `index.ts`, and `server.ts` to see the smallest working extension.
 
@@ -107,7 +107,7 @@ Cleanup is automatic: any registrations made through `api.registerComponent`, `a
 
 ```typescript
 // Add a React component to a UI slot
-api.registerComponent(slot, id, Component, { priority?, label?, icon? }): () => void
+api.registerComponent(slot, id, Component, { priority?, label?, icon?, visibleWhen? }): () => void
 
 // Add a command palette item
 api.registerCommand(id, label, callback, { icon?, shortcut? }): () => void
@@ -124,6 +124,7 @@ api.registerSettingsTab(id, label, Component, { group? }): () => void
 - **`priority?`** — orders the contribution within its slot; lower sorts earlier (leftward in a tab strip). Defaults to a mid value.
 - **`label?`** — the human name shown where the slot has a label or tab (the `right-panel` tab strip, `settings.tabs`, `sidebar.footer`). Defaults to the namespaced id, so set it for any tabbed or labelled slot.
 - **`icon?`** — the tab-strip glyph for slots that render one (today, `right-panel`). It is any component the host renders with a `className` (a `{ className?: string }` component). Omit it and the strip falls back to a default puzzle-piece. Note: extensions can only import `react`, `react-dom`, and `@dorkos/extension-api` at runtime, so you cannot import a `lucide-react` icon here — supply your own inline-SVG component instead.
+- **`visibleWhen?`** — `dashboard.sections` only: a predicate the host re-evaluates on every render. Return false to hide your section without unregistering it (useful when it has nothing to say). Omit it and the section is always visible.
 - **`group?`** — `settings.tabs` only: names the sidebar section the tab sits under in the Settings dialog (e.g. `'Agents & sessions'`, `'Access & privacy'`). Omit it and the tab lands under "Add-ons", the section reserved for contributed tabs, so a tab written before this field existed still files itself somewhere honest. Same option on `registerSettingsTab`.
 
 ### UI Control
@@ -228,18 +229,32 @@ api.id: string
 
 ## UI Slots
 
-| Slot ID                 | Where it renders                                    |
-| ----------------------- | --------------------------------------------------- |
-| `sidebar.footer`        | Bottom of the sidebar                               |
-| `dashboard.sections`    | Dashboard main content area                         |
-| `command-palette.items` | Command palette entries                             |
-| `dialog`                | Modal dialog layer                                  |
-| `settings.tabs`         | Settings dialog tabs                                |
-| `right-panel`           | Shell-level right panel (contextual inspector) tabs |
+| Slot ID                 | Where it renders                                       |
+| ----------------------- | ------------------------------------------------------ |
+| `sidebar.footer`        | Bottom of the sidebar                                  |
+| `dashboard.sections`    | "From your extensions", at the top of the Activity tab |
+| `command-palette.items` | Command palette entries                                |
+| `dialog`                | Modal dialog layer                                     |
+| `settings.tabs`         | Settings dialog tabs                                   |
+| `right-panel`           | Shell-level right panel (contextual inspector) tabs    |
 
 > The `sidebar.tabs` and `header.actions` slots were removed when the web cockpit
 > retired the sidebar tab strip. Contribute a contextual inspector tab via
-> `right-panel`, or a dashboard card via `dashboard.sections`, instead.
+> `right-panel`, or a card via `dashboard.sections`, instead.
+
+### `dashboard.sections` moved to the Activity tab
+
+The home surface IS the #team room now, and the dashboard page that
+`dashboard.sections` used to fill is gone. **The slot id has not changed**
+— your manifest and your `registerComponent('dashboard.sections', ...)` call
+work exactly as before. Your section now renders in a **"From your extensions"**
+group at the top of the Activity tab (`/activity`), in the same priority order,
+with `visibleWhen` honoured the same way. When no extension has contributed, the
+group renders nothing at all.
+
+A purpose-built room-widget surface — sections that live inside a room rather
+than above a feed — is designed but deliberately deferred; until it exists,
+`dashboard.sections` is the place to put a card.
 
 ### Right-panel tabs
 
@@ -275,7 +290,7 @@ export function activate(api: ExtensionAPI): void {
 }
 ```
 
-**When the tab appears.** Your tab is added to the right panel's tab strip and stays available wherever the panel shows: the public `registerComponent` API does not expose the internal `visibleWhen` predicate that built-in tabs use to scope themselves to a route, transport, or agent, so an **extension tab is always visible**. It registers as a _contextual_ tab (never the global fallback). That has a real consequence — the panel auto-selects the first contextual tab when the active one isn't showing, so on routes where no built-in contextual tab is visible (the dashboard, activity, tasks), **your tab can become the default and open on its own**, ahead of the global Pulse tab. Because it can auto-open in any context, always render a useful empty state when there is nothing relevant to show.
+**When the tab appears.** Your tab is added to the right panel's tab strip and stays available wherever the panel shows: the public `registerComponent` API accepts `visibleWhen` only for `dashboard.sections`, not for the route/transport/agent predicate built-in right-panel tabs use to scope themselves, so an **extension tab is always visible**. It registers as a _contextual_ tab (never the global fallback). That has a real consequence — the panel auto-selects the first contextual tab when the active one isn't showing, so on routes where no built-in contextual tab is visible (home, activity, tasks), **your tab can become the default and open on its own**, ahead of the global Pulse tab. Because it can auto-open in any context, always render a useful empty state when there is nothing relevant to show.
 
 ## TypeScript vs JavaScript
 

@@ -127,15 +127,19 @@ HttpTransport({ baseUrl: '/api' })
   -> TransportProvider
     -> RouterProvider (TanStack Router)
       -> AppShell (layout route with <Outlet>)
-        -> DashboardPage (/) or SessionPage (/session)
+        -> HomeRoomPage (/) or SessionPage (/session)
 ```
 
 **Client routing** (`router.tsx`): TanStack Router with code-based routes. A pathless `_shell` layout route renders `AppShell` (sidebar, header, dialogs). Child routes render into `<Outlet>`:
 
-| Path       | Component                   | Search Params                        |
-| ---------- | --------------------------- | ------------------------------------ |
-| `/`        | `DashboardPage`             | —                                    |
-| `/session` | `SessionPage` → `ChatPanel` | `?session=`, `?dir=` (Zod-validated) |
+| Path       | Component                      | Search Params                        |
+| ---------- | ------------------------------ | ------------------------------------ |
+| `/`        | `HomeRoomPage` → `RoomSurface` | `?detail=`, `?itemId=`, `?thread=`   |
+| `/session` | `SessionPage` → `ChatPanel`    | `?session=`, `?dir=` (Zod-validated) |
+
+**Home is the #team room.** `/` renders the room every install is opened with (spec `team-room-home` D3.2), through the same `RoomSurface` `/channels?id=` renders — one room widget, two addresses, no fork. `app/HomeRoomPage.tsx` is the composition: it finds the room by the `wellKnown: 'team'` key on `GET /api/rooms` (never by slug, which a person may rename), draws four honest states before there is a room to draw, and mounts the pinned triage header above the room's scroller. It sits at the app layer because it composes two widgets, and a widget may not import another widget.
+
+**The home surface is a layout, not a route.** `/`, `/activity`, `/tasks` and `/workspaces` are one tabbed place, and the tab bar is a second pathless layout route (`_home`, `widgets/home/ui/HomeSurfaceLayout.tsx`) nested inside `_shell`. Because it uses `id` rather than `path` and declares no `validateSearch`, the four pages keep their exact addresses, their own search schemas and their own loaders, so `/activity?categories=agent` still arrives with its filter applied. The active tab is derived from `location.pathname` on every render — there is no tab state to keep in sync with the URL. `shared/config/home-surface.ts` owns the list of those four paths; the tab bar reads it to name the tabs and `features/dashboard-sidebar` reads it to keep the sidebar's single **Home** entry lit across all four.
 
 Each route provides its own sidebar and header content via private slot hooks in `AppShell` (`useSidebarSlot` / `useHeaderSlot`). The sidebar body and header cross-fade on route change via `AnimatePresence`. `/` renders `DashboardSidebar` + `DashboardHeader`; `/session` keeps the same `DashboardSidebar` roster (the old session drill-in was retired — per-session context now lives in the right-panel inspector) with the `SessionHeader`. A registered `sidebar.body` contribution can take over the body wholesale for its route (the marketplace facet panel does this on `/marketplace`). `SessionSidebar` still exists but only as the Obsidian plugin's chrome (`apps/client/src/App.tsx`), not the web shell.
 
@@ -263,7 +267,7 @@ DorkOS dialogs (Settings, Agent, Tasks, Relay, Mesh) are URL-addressable via sea
 
 Example URLs:
 
-- `/?settings=tools` — Settings on Dashboard, Tools tab
+- `/?settings=tools` — Settings on Home, Tools tab
 - `/team?settings=tools&settingsSection=external-mcp` — Settings on the Team page, Tools tab, scrolled to External MCP
 - `/?agent=identity&agentPath=/abs/path/to/repo` — Agent dialog → Identity for that project
 
@@ -502,6 +506,59 @@ The agent iteration loop: `create_extension` -> `test_extension` (smoke) -> `rel
 `CommunityAdapter` (`packages/shared/src/community-adapter.ts`) is the fourth swappable seam beside `AgentRuntime`, `Transport` and `ConnectorProvider`. It lets one local server read and write rooms in more than one place — this machine's SQLite rooms, a foreign relay, a hosted community — without the cockpit, the router or the session spine learning that more than one place exists. **The client's `Transport` is unchanged**: the seam is entirely server-side, so keys never touch the browser and there is one render path and one streaming model.
 
 One instance serves one community, so every address on the port is the pair `(community, roomId)`. `CommunityRegistry` (`apps/server/src/services/communities/registry.ts`) dispatches on the community and holds the human-readable label; `aggregateCommunityRooms` lists across communities with per-community degradation and `warnings[]` — ADR-0310's shape with the nouns changed. Backend differences are **declared capabilities with branched conformance assertions**, never softened shared ones, and `communityConformance` in `@dorkos/test-utils` is the gate. The first backend behind it is this machine's own rooms: `LocalCommunityAdapter` (`apps/server/src/services/communities/local/`) wraps the shipped `RoomService` rather than replacing it, and is registered as `LOCAL_COMMUNITY` at startup so the registry always holds the one community that certainly exists. Author guide: [adding-a-community-adapter.md](adding-a-community-adapter.md).
+
+## Read State (ADR 260808-140956)
+
+**`read_cursors` is the single user-side read-state store.** One table in `@dorkos/db` (`packages/db/src/schema/read-cursors.ts`) answers "how far has this person read" for every kind of thread: `(user_id, thread_kind, thread_id) → last_read_seq, updated_at`, with `thread_kind` constrained to `room | session | inbox`. `last_read_seq` is a position, not a time, so both sides compare integers on a key. `thread_id` is opaque and carries no foreign key: the three kinds live in three stores, one of them (sessions) not in this database at all because session storage is runtime-owned (ADR-0310), and a cursor stays meaningful for a thread that has been deleted.
+
+`user_id` is an `authors.id` (what `resolveCaller(res).id` returns, the same namespace as `room_members.author_id`) and **never the Better Auth `user.id`**. The two are indistinguishable strings for the same human, so the mistake lands silently: the person gets a second row per thread and their divider resets the moment login is toggled.
+
+### Two cursors, two questions
+
+| Column                       | Whose        | Answers                                 | Written by                                                                       |
+| ---------------------------- | ------------ | --------------------------------------- | -------------------------------------------------------------------------------- |
+| `read_cursors.last_read_seq` | a **person** | which entries this human has looked at  | that person's client, through the HTTP route below                               |
+| `room_members.last_read_seq` | an **agent** | which entries have been **shown** to it | the ambient participation loop (`services/rooms/room-trigger.ts`), never a route |
+
+The membership column survives Phase 3 unchanged as the RP3 delivery cursor (room-participation spec §8.3): it advances as entries are handed to an agent and is rewound when a claimed turn refuses. The two read the same-looking integer and are never substituted for each other, and no migration collapses them.
+
+### One write path
+
+`PUT /api/read-cursors/:kind/:id` (`apps/server/src/routes/read-cursors.ts`), plus `GET` of the same address, is the only way a cursor moves. Its own router rather than more surface on `rooms.ts`, because two of the three kinds are not rooms.
+
+- **People only.** The check is on the resolved caller's `kind`, not on the presence of an `X-DorkOS-Agent` header, so a fourth `resolveCaller` branch keeps the boundary rather than quietly widening it. An agent gets `403 PEOPLE_ONLY`.
+- **The cursor written is always the caller's.** No request names a user, so no client can move (and therefore read back) anyone else's read state.
+- **`kind: 'room'` delegates into `RoomService.setReadCursor`**, so a room cursor gets the room's `requireVisibleRoom` check, the monotonic guard, and the recomputed unread count in one call. Writing it straight to the table would emit an event the room list has nothing to patch with, leaving the badge lit on the second device.
+- Monotonicity is a write-path invariant, deliberately not a `CHECK`: SQLite cannot express a constraint about a value's own previous state. `ReadCursorStore.set` and `RoomStore.setReadCursor` share the same `lt()` predicate.
+
+`ReadCursorService.advance` broadcasts `read_cursor` on the global `GET /api/events` fan-out **only when the cursor actually moved**, carrying the unread count where one can be computed. A no-op write (opening an already-read thread, the common case) says nothing. An agent's cursor is never announced: RP3 advances it once per agent per turn, which would make it the loudest event on the stream, and nothing in the cockpit draws it.
+
+### Client
+
+Rooms and chats share one placement rule (`unreadPlacement` in `apps/client/src/layers/shared/lib/group-timeline.ts`) and one `UnreadDivider` (`apps/client/src/layers/features/chat/ui/message/UnreadDivider.tsx`), drawn by both `MessageList` and `RoomTimeline`. Chat sessions moved off the per-browser `dorkos:chat:last-seen:*` watermark onto the table, keyed by **transcript position** (server-confirmed message count), not by SSE `seq`. `purgeLegacyWatermarks` in `use-unread-cursor.ts` sweeps the retired prefix on every session open and deliberately does **not** carry the value over: a number one browser wrote about itself, republished as this person's position everywhere, is how one stale tab un-reads a conversation on every device.
+
+`DirectTransport` (Obsidian, no server) satisfies the same contract from `localStorage` (`apps/client/src/layers/shared/lib/direct/read-cursor-methods.ts`), monotonic like the server's. The seam is the right place for that choice: refusing there would leave the embed with a rule that never draws and never clears, which reads as a broken divider rather than as a missing server. What the embed gives up is sharing across devices, not the feature.
+
+### Anti-Patterns
+
+```ts
+// ❌ Reading the membership column to answer a person's question
+const seq = store.getMember(roomId, personId)?.lastReadSeq; // that is the AGENT delivery cursor
+
+// ✅ Ask the user-side store
+const cursor = getReadCursorService().get(callerId, 'room', roomId);
+
+// ❌ Writing a room cursor straight to the table
+getReadCursorService().advance(userId, 'room', roomId, seq); // skips visibility + unread count
+
+// ❌ Keying on the Better Auth account id
+store.set(session.user.id, 'room', roomId, seq); // silently splits one person into two rows
+
+// ✅ Key on the resolved author id
+store.set(resolveCaller(res).id, 'room', roomId, seq);
+```
+
+There is no `PUT /api/rooms/:id/read-cursor`. It was removed once every client wrote through the generic route; a test in `rooms.test.ts` keeps it gone.
 
 ## Per-Session Tool Groups
 

@@ -55,6 +55,11 @@
  * Some are listed anyway because a person can move PAST the default: a room
  * spend cap ships at a real bound and can still be tightened further.
  *
+ * "Tightened" is about exposure, not about the number going down. A cap tightens
+ * by falling and a threshold tightens by rising, which is why
+ * {@link CarryoverDirection} carries both `lower` and `higher` — reading that
+ * shape off each field is what keeps the invariant above true for all of them.
+ *
  * ## Everything carried is proved against the real schema
  *
  * The source is a file that just FAILED validation, and all of this runs inside
@@ -107,9 +112,19 @@ export function latestInstant(a: string | null, b: string | null): string | null
  *
  * - `boolean` — one of the two values is the protective one, named outright.
  * - `lower` — a bound, where a smaller number is a tighter limit.
+ * - `higher` — a threshold, where a LARGER number is the quieter setting.
  * - `later` — a monotonic floor, where a later instant voids more.
+ *
+ * `higher` is not the odd one out it looks like. Most numbers here are caps, so
+ * tightening means lowering; a few are thresholds something has to CROSS before
+ * anything happens, and tightening those means raising them. Both are the same
+ * question — "which of these two numbers lets less happen" — asked of a
+ * differently-shaped bound, and a person who set one has protected themselves
+ * either way. Reading the shape off the field rather than assuming every number
+ * is a cap is what stops `welcomeBack.absenceThresholdMinutes` at a week being
+ * silently reset to four hours by a recovery.
  */
-export type CarryoverDirection = 'boolean' | 'lower' | 'later';
+export type CarryoverDirection = 'boolean' | 'lower' | 'higher' | 'later';
 
 /** One config leaf whose default is permissive, and the direction that protects. */
 export interface ProtectiveCarryover {
@@ -249,6 +264,25 @@ export const PROTECTIVE_CARRYOVERS: readonly ProtectiveCarryover[] = [
     path: 'rooms.engagedWindowPosts',
     direction: 'lower',
     reason: 'The same window, counted in messages from other members instead of minutes.',
+  },
+  {
+    path: 'welcomeBack.enabled',
+    direction: 'boolean',
+    protectiveValue: false,
+    reason:
+      'Welcome-back posts default ON. Someone who stopped their agents greeting them should not be greeted again by a wipe — and a greeting that carries a next-step offer spends a model turn.',
+  },
+  {
+    path: 'welcomeBack.maxPosts',
+    direction: 'lower',
+    reason:
+      'How many agents may speak on one return. The default is a real cap, but a person can set a smaller one and a wipe must not raise it back.',
+  },
+  {
+    path: 'welcomeBack.absenceThresholdMinutes',
+    direction: 'higher',
+    reason:
+      'How long you have to be away before coming back counts as a return. The protective direction is HIGHER here — a longer threshold means fewer returns qualify — so someone who set a week and lands back on four hours is greeted several times as often as they chose, without ever being asked.',
   },
 ] as const;
 
@@ -479,6 +513,14 @@ function moreProtective(
       if (typeof stored !== 'number' || !Number.isFinite(stored)) return undefined;
       if (typeof fresh !== 'number') return undefined;
       return stored < fresh ? stored : undefined;
+    }
+    case 'higher': {
+      // The mirror of `lower`, down to the guards: a stored `NaN`/`Infinity` or a
+      // non-numeric fresh value is unusable in either direction, and a stored
+      // value on the permissive side is left alone rather than written back.
+      if (typeof stored !== 'number' || !Number.isFinite(stored)) return undefined;
+      if (typeof fresh !== 'number') return undefined;
+      return stored > fresh ? stored : undefined;
     }
     case 'later': {
       // Validated as a strict ISO instant BEFORE comparing, not merely parsed as

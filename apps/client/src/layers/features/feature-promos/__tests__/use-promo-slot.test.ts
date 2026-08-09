@@ -23,6 +23,7 @@ let mockContext: PromoContext = {
   isRelayEnabled: false,
   sessionCount: 0,
   agentCount: 0,
+  taskCount: 0,
   daysSinceFirstUse: 0,
 };
 vi.mock('../model/use-promo-context', () => ({
@@ -44,7 +45,7 @@ import { usePromoSlot } from '../model/use-promo-slot';
 
 function makePromo(overrides: Partial<PromoDefinition> & { id: string }): PromoDefinition {
   return {
-    placements: ['dashboard-main'],
+    placements: ['dashboard-sidebar'],
     priority: 50,
     shouldShow: () => true,
     content: {
@@ -70,24 +71,25 @@ describe('usePromoSlot', () => {
       isRelayEnabled: false,
       sessionCount: 0,
       agentCount: 0,
+      taskCount: 0,
       daysSinceFirstUse: 0,
     };
   });
 
   it('filters promos by placement correctly', () => {
     mockRegistry.push(
-      makePromo({ id: 'a', placements: ['dashboard-main'] }),
-      makePromo({ id: 'b', placements: ['dashboard-sidebar'] }),
-      makePromo({ id: 'c', placements: ['dashboard-main', 'agent-sidebar'] })
+      makePromo({ id: 'a', placements: ['dashboard-sidebar'] }),
+      makePromo({ id: 'b', placements: ['agent-sidebar'] }),
+      makePromo({ id: 'c', placements: ['dashboard-sidebar', 'agent-sidebar'] })
     );
-    const { result } = renderHook(() => usePromoSlot('dashboard-main', 10));
+    const { result } = renderHook(() => usePromoSlot('dashboard-sidebar', 10));
     expect(result.current.map((p) => p.id)).toEqual(['a', 'c']);
   });
 
   it('excludes dismissed promos from results', () => {
     mockRegistry.push(makePromo({ id: 'a' }), makePromo({ id: 'b' }));
     mockDismissedIds = ['a'];
-    const { result } = renderHook(() => usePromoSlot('dashboard-main', 10));
+    const { result } = renderHook(() => usePromoSlot('dashboard-sidebar', 10));
     expect(result.current.map((p) => p.id)).toEqual(['b']);
   });
 
@@ -97,7 +99,7 @@ describe('usePromoSlot', () => {
       makePromo({ id: 'b', shouldShow: () => true })
     );
     mockContext.isTasksEnabled = false;
-    const { result } = renderHook(() => usePromoSlot('dashboard-main', 10));
+    const { result } = renderHook(() => usePromoSlot('dashboard-sidebar', 10));
     expect(result.current.map((p) => p.id)).toEqual(['b']);
   });
 
@@ -107,7 +109,7 @@ describe('usePromoSlot', () => {
       makePromo({ id: 'high', priority: 90 }),
       makePromo({ id: 'mid', priority: 50 })
     );
-    const { result } = renderHook(() => usePromoSlot('dashboard-main', 10));
+    const { result } = renderHook(() => usePromoSlot('dashboard-sidebar', 10));
     expect(result.current.map((p) => p.id)).toEqual(['high', 'mid', 'low']);
   });
 
@@ -117,7 +119,7 @@ describe('usePromoSlot', () => {
       makePromo({ id: 'b', priority: 80 }),
       makePromo({ id: 'c', priority: 70 })
     );
-    const { result } = renderHook(() => usePromoSlot('dashboard-main', 2));
+    const { result } = renderHook(() => usePromoSlot('dashboard-sidebar', 2));
     expect(result.current).toHaveLength(2);
     expect(result.current.map((p) => p.id)).toEqual(['a', 'b']);
   });
@@ -125,7 +127,7 @@ describe('usePromoSlot', () => {
   it('returns empty array when promoEnabled is false', () => {
     mockRegistry.push(makePromo({ id: 'a' }));
     mockPromoEnabled = false;
-    const { result } = renderHook(() => usePromoSlot('dashboard-main', 10));
+    const { result } = renderHook(() => usePromoSlot('dashboard-sidebar', 10));
     expect(result.current).toEqual([]);
   });
 

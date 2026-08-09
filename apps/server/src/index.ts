@@ -139,11 +139,8 @@ import {
   type ShapeScheduleServiceLike,
 } from './services/shapes/apply-shape.js';
 import { ShapeScheduleService } from './services/shapes/shape-schedule-service.js';
-import {
-  rebindShapeSchedulesForAgent,
-  type RebindAgent,
-} from './services/shapes/rebind-schedules.js';
-import { setOnAgentCreated } from './services/core/agent-created-hook.js';
+import { rebindShapeSchedulesForAgent } from './services/shapes/rebind-schedules.js';
+import { setOnAgentCreated, type CreatedAgentInfo } from './services/core/agent-created-hook.js';
 import {
   clearActiveShape,
   createFsShapeManifestResolver,
@@ -212,12 +209,22 @@ import {
   createRoomSubsystem,
   setRoomService,
   setRoomInternals,
+  setWelcomeBackGreeter,
   setRoomAttachmentStores,
 } from './services/rooms/index.js';
+import { ReadCursorStore } from './services/core/read-cursor-store.js';
+import { ReadCursorService, setReadCursorService } from './services/core/read-cursor-service.js';
 import {
   followSessionRekeys,
   repairRoomSessionBindings,
 } from './services/rooms/room-session-convergence.js';
+import {
+  ensureTeamRoom,
+  joinTeamRoom,
+  watchDefaultAgent,
+  type TeamRoomDeps,
+} from './services/rooms/ensure-team-room.js';
+import { createMomentDetectors } from './services/rooms/moments/index.js';
 import { registerLocalCommunity } from './services/communities/index.js';
 import { SearchIndexer } from './services/search/index.js';
 import { TerminalManager, terminalUpgradeRoute } from './services/terminal/index.js';
@@ -847,14 +854,28 @@ async function start() {
   // broadcaster, so an install with no rooms in it costs one object graph and
   // no background work. A post now triggers whoever it addresses, bounded by
   // the cascade guard (`rooms.maxAgentDepth`, ADR 260726-170127).
+  // Read state (team-room-home §D4). Unconditional and outside the rooms
+  // subsystem on purpose: the same table answers for rooms, agent sessions and
+  // the inbox, so wiring it from the rooms graph would have made two of the
+  // three depend on a domain they have nothing to do with. Built BEFORE the
+  // rooms graph because rooms read and write it — the room list's unread badge
+  // and every person's place in a room come from here.
+  const readCursorService = new ReadCursorService(new ReadCursorStore(db));
+  setReadCursorService(readCursorService);
+
   const {
     service: roomService,
     store: roomStore,
     attachments: roomAttachmentRows,
     authors: roomAuthors,
     bridges: roomBridges,
-  } = createRoomSubsystem({ db });
+    welcomeBack: welcomeBackGreeter,
+  } = createRoomSubsystem({ db, readCursors: readCursorService });
   setRoomService(roomService);
+  // What your agents may say when you come back (team-room-home §D5.2). The
+  // read-state route is what tells it somebody is here, so it is registered
+  // beside the service that route already reaches for.
+  setWelcomeBackGreeter(welcomeBackGreeter);
   setRoomInternals(roomBridges, roomAuthors);
   // Where a room's files live is chosen HERE and nowhere else: the routes depend
   // on the `RoomAttachmentStore` interface and never build a path, so the day
@@ -1117,6 +1138,54 @@ async function start() {
     setMeshInitError(errInfo.error);
     // Mesh failure is non-fatal: server continues without mesh routes.
   }
+
+  // Open #team, the room the home tab renders, and seat every registered agent
+  // in it (team-room-home spec D3.1).
+  //
+  // AFTER the mesh block for the ordering, OUTSIDE it for the degradation. The
+  // ordering: `ensureDorkBot` and startup reconciliation are what put agents in
+  // the registry this reads, and on a fresh install DorkBot is the only one — a
+  // day-one #team with nobody in it would be an empty room where the product
+  // promises a conversation. The degradation: a room needs the room service and
+  // nothing else, so an install whose mesh failed to start still gets its home
+  // room, with whatever roster it can name (none) rather than none at all.
+  //
+  // Idempotent on a well-known key, so every boot after the first only backfills
+  // a roster, and it never throws.
+  //
+  // Built once and shared with the `agent-created` seam below and with the
+  // settings watcher: all three ask the same three questions of the same
+  // install, and a second copy is how one of them would come to read a
+  // different registry or a different setting.
+  const teamRoomDeps: TeamRoomDeps = {
+    service: roomService,
+    operatorAuthorId: resolveOperatorAuthorId,
+    agents: () =>
+      meshCore?.listWithPaths().map((agent) => ({ name: agent.name, path: agent.projectPath })) ??
+      [],
+    defaultAgentName: () => configManager.getAll().agents.defaultAgent,
+  };
+  ensureTeamRoom(teamRoomDeps);
+
+  // Typing in #team without addressing anybody reaches your DEFAULT agent, and
+  // that is an `always` membership on an ordinary room rather than a routing
+  // layer (team-room-home spec D3.4). So the setting has to move the membership:
+  // change the default agent in Settings and the next thing you type in #team
+  // goes to the new one, without a restart.
+  watchDefaultAgent(teamRoomDeps, { onChange: (listener) => configManager.onChange(listener) });
+
+  // The milestones #team marks (team-room-home spec D5.1). Two seams feed them
+  // and NEITHER is a timer: the agent-created seam below, and the activity log
+  // as it is written. Schedules, runs and connections all already emit there, so
+  // the detectors learn what happened from the record that happened rather than
+  // from a poller keeping a second copy of it. A quiet install stays quiet.
+  const momentDetectors = createMomentDetectors({
+    service: roomService,
+    store: roomStore,
+    authors: roomAuthors,
+    db,
+  });
+  activityService.observe((event) => momentDetectors.activityObserved(event));
 
   // Phase C: adapter manager — now meshCore is available for CWD resolution.
   // Must run after meshCore init so buildContext() can call meshCore.getProjectPath().
@@ -1979,6 +2048,14 @@ async function start() {
       taskStore!.resolveTaskOrigins(sessionIds);
   }
 
+  // Session-origin ROOM overlay (team-room-home §D2.3): the same narrow batched
+  // shape as the Pulse lookup above, over `room_sessions`. Its own read rather
+  // than a widening of any bag: a session list asks one question of the rooms
+  // domain ("is this id a room's turn?"), and answering it must not drag the
+  // rooms store into the session router's imports.
+  app.locals.resolveRoomOrigins = (sessionIds: string[]) =>
+    roomStore.resolveRoomOrigins(sessionIds);
+
   // Shape schedule service — file-first schedule creator + re-binder the Shape
   // apply flow and the agent-create seam share. Built here (not just inside the
   // marketplace block below) so the agent-create re-bind works even when the
@@ -2009,7 +2086,17 @@ async function start() {
   // re-bind) but failures are swallowed at the seam; creation never fails
   // because this reaction threw. A schedule silently starting to run is
   // consequential, so a successful re-bind also lands in the activity feed.
-  setOnAgentCreated(async (agent: RebindAgent) => {
+  // Two independent reactions ride this one seam, and the room join goes first
+  // because it is the one a person sees: a new agent is in your team room by
+  // the time the creation response lands, without a restart (team-room-home
+  // spec D3.1). It swallows its own failures, so a room that could not seat the
+  // agent never costs the Shape re-bind below. Marking the moment comes straight
+  // after the seat and in that order deliberately: "tangerines joined your team"
+  // is a line about a member of the room, so the roster is settled before the
+  // room says so (team-room-home spec D5.1).
+  setOnAgentCreated(async (agent: CreatedAgentInfo) => {
+    joinTeamRoom(teamRoomDeps, agent.path);
+    momentDetectors.agentCreated(agent);
     const rebound = await rebindShapeSchedulesForAgent(agent, {
       listShapes: () => listInstalledShapeManifests(dorkHome),
       scheduleService: shapeScheduleService,

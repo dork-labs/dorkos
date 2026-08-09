@@ -9,7 +9,8 @@ import { QueryClient } from '@tanstack/react-query';
 import { z } from 'zod';
 import { zodValidator } from '@tanstack/zod-adapter';
 import { AppShell } from './AppShell';
-import { DashboardPage } from '@/layers/widgets/dashboard';
+import { HomeRoomPage } from './app/HomeRoomPage';
+import { HomeSurfaceLayout } from '@/layers/widgets/home';
 import { SessionPage } from '@/layers/widgets/session';
 import { TeamRoute } from '@/layers/widgets/team';
 import { ActivityPage } from '@/layers/widgets/activity';
@@ -110,15 +111,41 @@ export const sessionSearchSchema = mergeDialogSearch(
 /** Search params available on the `/session` route. */
 export type SessionSearch = z.infer<typeof sessionSearchSchema>;
 
-const dashboardSearchSchema = mergeDialogSearch(
+/**
+ * Search params for `/` — the home tab, which renders the #team room.
+ *
+ * `detail` + `itemId` are the attention deep links: a row in the pinned triage
+ * header addresses `/?detail=failed-run&itemId=…`, and that URL opens the same
+ * sheet for whoever it is pasted to.
+ *
+ * `thread` is the room's own param, spelled exactly as `/channels` spells it
+ * (`channelsSearchSchema`) and meaning exactly the same thing — the entry a
+ * thread hangs off. Home IS a room, so a thread opened here needs an address
+ * for the same reason one opened there does: a refresh, or a link handed to
+ * somebody, has to land on it.
+ *
+ * There is deliberately no room `id`: home is #team and nothing else. The room
+ * is found by its well-known key, so a renamed channel — or a URL somebody
+ * edited — cannot point Home at a different conversation.
+ *
+ * `detail` `.catch()`es rather than throwing, for the reason `teamSearchSchema`
+ * gives below and one more: this is the address the app OPENS on. A stale
+ * bookmark naming a sheet that no longer exists must show the room with no
+ * sheet over it, not a "Something went wrong" page with a raw Zod dump where
+ * the cockpit should be.
+ *
+ * @internal Exported for testing only.
+ */
+export const homeSearchSchema = mergeDialogSearch(
   z.object({
-    detail: z.enum(['dead-letter', 'failed-run', 'offline-agent']).optional(),
+    detail: z.enum(['dead-letter', 'failed-run', 'offline-agent']).optional().catch(undefined),
     itemId: z.string().optional(),
+    thread: z.string().optional(),
   })
 );
 
-/** Search params available on the `/` (dashboard) route. */
-export type DashboardSearch = z.infer<typeof dashboardSearchSchema>;
+/** Search params available on the `/` (home) route. */
+export type HomeSearch = z.infer<typeof homeSearchSchema>;
 
 /**
  * Search params for `/team` — and, unchanged, for the `/agents` alias, so the
@@ -176,12 +203,25 @@ const marketplaceRouteSearchSchema = mergeDialogSearch(marketplaceSearchSchema);
 /** Search params available on the `/marketplace` route. */
 export type MarketplaceSearch = z.infer<typeof marketplaceRouteSearchSchema>;
 
-// ── Dashboard at / ──────────────────────────────────────────
-const indexRoute = createRoute({
+// ── Pathless layout route (home surface) ────────────────────
+// Uses `id` not `path` — no URL segment added, so `/`, `/activity`, `/tasks`
+// and `/workspaces` keep the exact addresses they have always had. All this
+// route contributes is the tab bar above them and the fact that they are now
+// one surface rather than four sidebar destinations. It declares no
+// `validateSearch`, so each child keeps its own search schema untouched and a
+// deep link like `/activity?categories=session` arrives with its filter intact.
+const homeSurfaceRoute = createRoute({
   getParentRoute: () => appShellRoute,
+  id: '_home',
+  component: HomeSurfaceLayout,
+});
+
+// ── The #team room at / ─────────────────────────────────────
+const indexRoute = createRoute({
+  getParentRoute: () => homeSurfaceRoute,
   path: '/',
-  validateSearch: zodValidator(dashboardSearchSchema),
-  component: DashboardPage,
+  validateSearch: zodValidator(homeSearchSchema),
+  component: HomeRoomPage,
   // Redirect to /session if ?session= param is present (backward compat for old bookmarks)
   beforeLoad: ({ location }) => {
     const params = new URLSearchParams(location.searchStr);
@@ -316,9 +356,9 @@ const agentsAliasRoute = createRoute({
   },
 });
 
-// ── Tasks at /tasks ──────────────────────────────────────────
+// ── Tasks at /tasks — the "Scheduled" tab ────────────────────
 const tasksRoute = createRoute({
-  getParentRoute: () => appShellRoute,
+  getParentRoute: () => homeSurfaceRoute,
   path: '/tasks',
   component: TasksPage,
 });
@@ -365,7 +405,7 @@ const channelsRoute = createRoute({
 
 // ── Workspaces at /workspaces ────────────────────────────────
 const workspacesRoute = createRoute({
-  getParentRoute: () => appShellRoute,
+  getParentRoute: () => homeSurfaceRoute,
   path: '/workspaces',
   component: WorkspacesPage,
 });
@@ -415,7 +455,7 @@ const activitySearchSchema = mergeDialogSearch(
 export type ActivitySearch = z.infer<typeof activitySearchSchema>;
 
 const activityRoute = createRoute({
-  getParentRoute: () => appShellRoute,
+  getParentRoute: () => homeSurfaceRoute,
   path: '/activity',
   validateSearch: zodValidator(activitySearchSchema),
   component: ActivityPage,
@@ -431,15 +471,12 @@ const feedbackRequestsRoute = createRoute({
 // ── Route tree ──────────────────────────────────────────────
 const routeTree = rootRoute.addChildren([
   appShellRoute.addChildren([
-    indexRoute,
+    homeSurfaceRoute.addChildren([indexRoute, activityRoute, tasksRoute, workspacesRoute]),
     sessionRoute,
     teamRoute,
     agentsAliasRoute,
-    tasksRoute,
     channelsRoute,
-    workspacesRoute,
     connectionsRoute,
-    activityRoute,
     marketplaceRoute,
     marketplaceSourcesRoute,
     feedbackRequestsRoute,

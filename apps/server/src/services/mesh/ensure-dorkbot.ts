@@ -42,6 +42,17 @@ async function provisionDorkbotSkills(dorkbotDir: string): Promise<void> {
 const DORKBOT_DISPLAY_NAME = 'DorkBot';
 
 /**
+ * DorkBot's agent name — its directory under `<dorkHome>/agents/` and the value
+ * `config.agents.defaultAgent` ships with.
+ *
+ * Exported because the fallback for "the default-agent setting names nobody"
+ * has to name the same agent this file creates
+ * (`services/rooms/ensure-team-room.ts`), and a second literal is how the two
+ * would come to disagree.
+ */
+export const DORKBOT_AGENT_NAME = 'dorkbot';
+
+/**
  * Ensure DorkBot exists as the system agent.
  *
  * Four paths:
@@ -58,7 +69,7 @@ const DORKBOT_DISPLAY_NAME = 'DorkBot';
  * @param dorkHome - Resolved data directory path (`~/.dork/` in prod)
  */
 export async function ensureDorkBot(meshCore: MeshCore, dorkHome: string): Promise<void> {
-  const dorkbotDir = path.join(dorkHome, 'agents', 'dorkbot');
+  const dorkbotDir = path.join(dorkHome, 'agents', DORKBOT_AGENT_NAME);
   const existing = await readManifest(dorkbotDir);
 
   if (existing) {
@@ -101,7 +112,7 @@ export async function ensureDorkBot(meshCore: MeshCore, dorkHome: string): Promi
 
   const manifest: AgentManifest = {
     id: ulid(),
-    name: 'dorkbot',
+    name: DORKBOT_AGENT_NAME,
     displayName: DORKBOT_DISPLAY_NAME,
     description: 'Your guide to DorkOS — helps you learn the platform and handles background jobs',
     runtime: 'claude-code',

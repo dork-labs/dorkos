@@ -1,6 +1,7 @@
 import { PlaygroundPageLayout } from '../PlaygroundPageLayout';
 import { FEATURES_SECTIONS } from '../playground-registry';
 import { AgentSidebarShowcases } from '../showcases/AgentSidebarShowcases';
+import { JumpBackInShowcases } from '../showcases/JumpBackInShowcases';
 import { AgentFleetShowcases } from '../showcases/AgentFleetShowcases';
 import { RelayShowcases } from '../showcases/RelayShowcases';
 import { AdapterWizardShowcases } from '../showcases/AdapterWizardShowcases';
@@ -9,6 +10,9 @@ import { TasksShowcases } from '../showcases/TasksShowcases';
 import { PersonalityPickerShowcases } from '../showcases/PersonalityPickerShowcases';
 import { PipPanelShowcases } from '../showcases/PipPanelShowcases';
 import { ApprovalsShowcases } from '../showcases/ApprovalsShowcases';
+import { TriageHeaderShowcases } from '../showcases/TriageHeaderShowcases';
+import { PresenceStripShowcases } from '../showcases/PresenceStripShowcases';
+import { HomeStatesShowcases } from '../showcases/HomeStatesShowcases';
 import { ConnectionsShowcases } from '../showcases/ConnectionsShowcases';
 import { McpServerCardShowcases } from '../showcases/McpServerCardShowcases';
 
@@ -22,6 +26,7 @@ export function FeaturesPage() {
     >
       <PersonalityPickerShowcases />
       <AgentSidebarShowcases />
+      <JumpBackInShowcases />
       <AgentFleetShowcases />
       <RelayShowcases />
       <AdapterWizardShowcases />
@@ -29,6 +34,9 @@ export function FeaturesPage() {
       <TasksShowcases />
       <PipPanelShowcases />
       <ApprovalsShowcases />
+      <TriageHeaderShowcases />
+      <PresenceStripShowcases />
+      <HomeStatesShowcases />
       <ConnectionsShowcases />
       <McpServerCardShowcases />
     </PlaygroundPageLayout>

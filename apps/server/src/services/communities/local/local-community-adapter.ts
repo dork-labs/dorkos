@@ -27,7 +27,7 @@
  * | `admission` | `'open'` | You are never not-admitted to your own machine. |
  * | `invite` | `'none'` | There is no invite primitive locally; it arrives with the community server. |
  * | `agentAdmission` | `'none'` | Agent admission means minting an agent's identity in somebody else's community. Locally an agent is already an author. |
- * | `readCursor` | `'server'` | `room_members.last_read_seq` is a server-visible integer, and `RoomStore.countUnread` computes a real unread count from it. |
+ * | `readCursor` | `'server'` | A read cursor is a server-visible integer here — `read_cursors` for a person, `room_members.last_read_seq` for an agent — and `RoomStore.countUnread` computes a real unread count from it. |
  * | `responseMode` | `true` | `room_members.response_mode` is the per-room addressing override. |
  * | `threadDepth` | `1` | `RoomService.post` refuses a reply whose parent is already a reply (`NESTED_THREAD`). |
  * | `signals` | `'both'` | The room signal channel now carries a presence payload, which is what `'both'` means. See below. |
@@ -584,21 +584,31 @@ export class LocalCommunityAdapter implements CommunityAdapter {
    * The connected identity's own read cursor, or `null` when it has not read
    * anything here.
    *
+   * **Read through `RoomService`, which is what makes this the same cursor the
+   * cockpit draws** (team-room-home spec §D4). A person's place in a room lives
+   * in `read_cursors` and an agent's on the membership row; which one answers
+   * for the connected identity is that domain's rule, and asking the membership
+   * column directly is how this seam would quietly start reporting a number
+   * nothing else in the product agrees with.
+   *
    * @param roomId - The room whose cursor to read.
    */
   async getReadCursor(roomId: string): Promise<CommunityCursor | null> {
-    const member = this.deps.store.getMember(roomId, this.identity());
-    if (!member || member.lastReadSeq === 0) return null;
-    return mintLocalCursor(this.community, roomId, member.lastReadSeq);
+    const seq = this.deps.service.readCursorFor(roomId, this.identity());
+    if (seq === null || seq === 0) return null;
+    return mintLocalCursor(this.community, roomId, seq);
   }
 
   /**
    * Advance the connected identity's read cursor.
    *
-   * **Monotonic**, which is the shipped `(member, room)` semantic and not a
-   * detail of this wrapper: a cursor behind the stored one is ignored, so a
-   * stale client cannot un-read a room for a second client holding the same
-   * membership.
+   * **Monotonic**, which is the shipped semantic and not a detail of this
+   * wrapper: a cursor behind the stored one is ignored, so a stale client
+   * cannot un-read a room for a second client reading as the same person.
+   *
+   * One write path with the cockpit's, through `RoomService` — so a cursor
+   * moved here broadcasts `read_cursor` exactly as one moved in a room does,
+   * and a community backend cannot become a way to change read state silently.
    *
    * @param roomId - The room whose cursor to set.
    * @param cursor - Where this identity has read to.
@@ -691,10 +701,14 @@ export class LocalCommunityAdapter implements CommunityAdapter {
 
   /** Project a room, computing the unread count this identity is owed. */
   private projectRoom(room: Room): CommunityRoom {
-    const member = this.deps.store.getMember(room.id, this.identity());
+    // The cursor comes from `RoomService` for the same reason `getReadCursor`
+    // reads it there: which of the two cursors answers for this identity is the
+    // room domain's rule, and a count measured against the other one would
+    // disagree with the badge the cockpit draws for the same room.
+    const cursor = this.deps.service.readCursorFor(room.id, this.identity());
     // `null` means "not a member here", never "nothing unread": a room the
     // operator can see but has not joined has no cursor to count against.
-    const unread = member ? this.deps.store.countUnread(room.id, member.lastReadSeq) : null;
+    const unread = cursor === null ? null : this.deps.store.countUnread(room.id, cursor);
     return toCommunityRoom(this.community, room, unread);
   }
 

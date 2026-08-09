@@ -5,6 +5,7 @@ covers:
   - 'feat(server): room attachments reach the agent as files in its own working directory (DOR-947)'
   - 'feat(client): attach files in rooms — composer, timeline, pending rows (DOR-947)'
   - 'fix(server): close the review findings — projection length, read gate, orphan sweep (DOR-947)'
+  - "fix(rooms): review round — deliver the triggering message's files, guard mid-upload adds, honest ETag docs (DOR-947)"
 ---
 
 ### Added

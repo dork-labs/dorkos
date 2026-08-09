@@ -9,10 +9,15 @@ export type TourOccasion = 'tasks' | 'relay' | 'mesh';
 
 /**
  * Where a tour sends the user before its first step resolves. Pure data: the
- * engine ({@link TourHost}) executes it with the router / app store, so the
- * definitions stay side-effect free.
+ * engine ({@link TourHost}) executes it with the router, so the definitions stay
+ * side-effect free.
+ *
+ * **Every tour goes somewhere.** There used to be a `none` variant, for a tour
+ * of the chrome that needed no navigation. It is gone with the step that used
+ * it: the sidebar it pointed at is a sheet on a phone, unmounted while closed,
+ * so a tour of the chrome shows a phone nothing. Tours open a page.
  */
-export type TourDeepLink = { kind: 'route'; to: string } | { kind: 'none' };
+export type TourDeepLink = { kind: 'route'; to: string };
 
 /** A tour as data: its steps, where it opens, and (for occasions) its offer. */
 export interface TourDefinition {
@@ -39,18 +44,13 @@ export const TOUR_DEFINITIONS: Record<TourId, TourDefinition> = {
     deepLink: { kind: 'route', to: '/' },
     steps: [
       {
-        anchor: TOUR_ANCHORS.dashboardComposer,
+        anchor: TOUR_ANCHORS.homeComposer,
         caption: DORKBOT_TOUR_LINES.general.composer,
         chipLabel: 'Next',
       },
       {
-        anchor: TOUR_ANCHORS.yourAgents,
-        caption: DORKBOT_TOUR_LINES.general.yourAgents,
-        chipLabel: 'Next',
-      },
-      {
-        anchor: TOUR_ANCHORS.navTasks,
-        caption: DORKBOT_TOUR_LINES.general.navTasks,
+        anchor: TOUR_ANCHORS.homeTabs,
+        caption: DORKBOT_TOUR_LINES.general.homeTabs,
         chipLabel: 'Got it',
       },
     ],
@@ -85,12 +85,15 @@ export const TOUR_DEFINITIONS: Record<TourId, TourDefinition> = {
     id: 'mesh',
     occasion: 'mesh',
     offerLine: DORKBOT_TOUR_LINES.offers.mesh,
-    // The Agents nav lives in the always-visible sidebar, so no navigation is needed.
-    deepLink: { kind: 'none' },
+    // Onto the Team page, rather than spotlighting the sidebar button that opens
+    // it. The offer promises to show the fleet, and the sidebar is a sheet on a
+    // phone: unmounted while closed, so a step anchored in it would have shown a
+    // phone nothing at all.
+    deepLink: { kind: 'route', to: '/team' },
     steps: [
       {
-        anchor: TOUR_ANCHORS.navAgents,
-        caption: DORKBOT_TOUR_LINES.mesh.navAgents,
+        anchor: TOUR_ANCHORS.teamRoster,
+        caption: DORKBOT_TOUR_LINES.mesh.teamRoster,
         chipLabel: 'Got it',
       },
     ],

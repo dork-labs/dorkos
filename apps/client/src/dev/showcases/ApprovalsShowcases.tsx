@@ -16,7 +16,7 @@ import {
  */
 const POPOVER_CONTENT_PX = 424;
 
-/** Roughly what the dashboard section gets on a normal window. */
+/** Roughly what the home tab's triage header gets on a normal window. */
 const DASHBOARD_CONTENT_PX = 848;
 
 /**
@@ -120,7 +120,7 @@ function WidthColumn({
  * to survive.
  *
  * Exists because the decision surface moved. Approvals used to appear only in a
- * full-width dashboard section; they now also open in a ~424px popover from the
+ * full-width page section; they now also open in a ~424px popover from the
  * app header, which is the primary place a person answers them. Rendering both
  * widths side by side is the cheapest way to see whether a destructive-tier card
  * still reads at the narrow one, with no dev server and no agent asking for

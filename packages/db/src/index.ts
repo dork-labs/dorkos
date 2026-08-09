@@ -125,6 +125,7 @@ export {
   ne,
   and,
   gt,
+  gte,
   lt,
   lte,
   asc,

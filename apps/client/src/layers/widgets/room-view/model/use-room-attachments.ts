@@ -65,10 +65,27 @@ export function useRoomAttachments(roomId: string) {
     setPendingFiles((prev) => prev.filter((f) => f.id !== id));
   }, []);
 
-  /** Clear all pending files. */
-  const clearFiles = useCallback(() => {
-    attachmentIdsByFile.current.clear();
-    setPendingFiles([]);
+  /**
+   * Drop the files a send has finished with.
+   *
+   * **Takes the batch it is clearing, and that is the whole point.** A send
+   * awaits its upload before clearing, and a person can drop another file into
+   * the bar during that await — so clearing "everything" clears something that
+   * was never sent, never uploaded, and never reported. Naming the batch keeps
+   * the removal to exactly what went out.
+   *
+   * @param fileIds - The pending-file ids the send consumed. Omit to clear the
+   *   bar entirely, which is what leaving a room should do.
+   */
+  const clearFiles = useCallback((fileIds?: readonly string[]) => {
+    if (!fileIds) {
+      attachmentIdsByFile.current.clear();
+      setPendingFiles([]);
+      return;
+    }
+    const sent = new Set(fileIds);
+    for (const id of sent) attachmentIdsByFile.current.delete(id);
+    setPendingFiles((prev) => prev.filter((f) => !sent.has(f.id)));
   }, []);
 
   /**

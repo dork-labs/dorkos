@@ -271,6 +271,9 @@ describe('Agents Routes', () => {
         id: 'MOCK_ULID_001',
         name: 'my-project',
         displayName: undefined,
+        // The directory rides along because the rooms domain keys on it: a
+        // reaction that had to look it back up could silently do nothing.
+        path: '/home/user/my-project',
       });
     });
 

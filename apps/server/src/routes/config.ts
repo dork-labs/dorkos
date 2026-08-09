@@ -65,6 +65,22 @@ const router = Router();
 export { deepMerge };
 
 /**
+ * Whether an environment variable, rather than the user's setting, decides
+ * whether the Tasks scheduler runs.
+ *
+ * `index.ts` gates the subsystem on `DORKOS_TASKS_ENABLED` when that variable is
+ * PRESENT and falls back to `scheduler.enabled` when it is not, so presence — not
+ * value — is the question. Read once at module load: the server's environment
+ * does not change while it runs, and a per-request read would just repeat it.
+ */
+// eslint-disable-next-line no-restricted-syntax -- Checking presence, not value: env.ts can't distinguish "unset" from "set to false"
+const TASKS_LOCKED_BY_ENV = 'DORKOS_TASKS_ENABLED' in process.env;
+
+/** The same question for the Relay message bus and `DORKOS_RELAY_ENABLED`. */
+// eslint-disable-next-line no-restricted-syntax -- Checking presence, not value: env.ts can't distinguish "unset" from "set to false"
+const RELAY_LOCKED_BY_ENV = 'DORKOS_RELAY_ENABLED' in process.env;
+
+/**
  * List the agent runtimes configured on this host.
  *
  * claude-code is always available; codex and opencode are included unless a user
@@ -123,12 +139,22 @@ router.get('/', async (_req, res) => {
       tokenConfigured:
         tunnel.tokenConfigured || !!(env.NGROK_AUTHTOKEN || configManager.get('tunnel')?.authtoken),
     },
+    // `enabled` is what is RUNNING; `enabledInConfig` is what the setting says.
+    // They are two different facts because `index.ts` reads these flags once, at
+    // boot, so a setting changed while the server is up does not move `enabled`
+    // until the next start. A settings screen that showed only `enabled` would
+    // appear to discard the change; one that showed only the setting would claim
+    // an effect it has not had. Both go out, and the cockpit says which is which.
     tasks: {
       enabled: isTasksEnabled(),
+      enabledInConfig: configManager.get('scheduler')?.enabled ?? true,
+      lockedByEnv: TASKS_LOCKED_BY_ENV,
       ...(getTasksInitError() && { initError: getTasksInitError() }),
     },
     relay: {
       enabled: isRelayEnabled(),
+      enabledInConfig: configManager.get('relay')?.enabled ?? true,
+      lockedByEnv: RELAY_LOCKED_BY_ENV,
       ...(getRelayInitError() && { initError: getRelayInitError() }),
     },
     scheduler: configManager.get('scheduler') ?? {
@@ -243,6 +269,19 @@ router.get('/', async (_req, res) => {
       return {
         engagedWindowMinutes: rooms.engagedWindowMinutes,
         engagedWindowPosts: rooms.engagedWindowPosts,
+      };
+    })(),
+    // Whether agents may greet you when you come back, and the two numbers that
+    // bound it. Settings offers the switch; the numbers ride along READ-ONLY for
+    // the same reason the `rooms` ceilings do — the switch's own sentence names
+    // the threshold in force, and stating the shipped default at somebody who
+    // changed it would be a sentence that is false about their install.
+    welcomeBack: (() => {
+      const welcomeBack = configManager.get('welcomeBack') ?? USER_CONFIG_DEFAULTS.welcomeBack;
+      return {
+        enabled: welcomeBack.enabled,
+        absenceThresholdMinutes: welcomeBack.absenceThresholdMinutes,
+        maxPosts: welcomeBack.maxPosts,
       };
     })(),
     workbench: configManager.get('workbench') ?? { defaultViewers: {} },

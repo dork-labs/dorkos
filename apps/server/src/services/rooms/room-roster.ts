@@ -2,6 +2,13 @@
  * The membership half of the room domain: who is in a room, how they behave in
  * it, and where they have read up to.
  *
+ * **"Where they have read up to" is two facts on one field** (team-room-home
+ * spec §D4). A membership row stores the AGENT-side cursor — what the ambient
+ * participation loop has shown that member; a person's own place in the room is
+ * a row in `read_cursors`. Every projection here reports whichever answers for
+ * the member it is describing, so a reader finds one number on the wire and
+ * never has to know which table it came from.
+ *
  * Split from `room-service.ts` on a real boundary rather than a line count.
  * Everything here answers "who is in this room and how do they behave"; the
  * service answers "what does the room do". The roster is also where the two
@@ -11,7 +18,13 @@
  * @module server/services/rooms/room-roster
  */
 import type { ResponseMode } from '@dorkos/shared/mesh-schemas';
-import type { AuthorRef, Room, RoomMember, RoomRosterEntry } from '@dorkos/shared/room-schemas';
+import type {
+  AuthorKind,
+  AuthorRef,
+  Room,
+  RoomMember,
+  RoomRosterEntry,
+} from '@dorkos/shared/room-schemas';
 import {
   addressableHandles,
   isLiveAuthor,
@@ -24,6 +37,7 @@ import {
   type AuthorRecord,
   type AuthorRegistry,
 } from './author-registry.js';
+import type { ReadCursorService } from '../core/read-cursor-service.js';
 import { RoomError, type RoomAgentLookup } from './room-errors.js';
 import type { RoomStore } from './room-store.js';
 
@@ -39,8 +53,13 @@ import type { RoomStore } from './room-store.js';
  * Changing this constant changes NEW joins only. The value is written explicitly
  * at join time and stays written, so migration 0039 is what moved the
  * memberships that already existed.
+ *
+ * Exported for the one caller that has to move a membership BACK to it:
+ * `ensure-team-room.ts` demotes the previous default agent when the
+ * default-agent setting moves. A literal there would be a second copy of this
+ * decision, free to drift from the seed every other channel join uses.
  */
-const CHANNEL_RESPONSE_MODE: ResponseMode = 'engaged';
+export const CHANNEL_RESPONSE_MODE: ResponseMode = 'engaged';
 
 /**
  * What a non-agent membership stores. The column is NOT NULL and the value is
@@ -63,11 +82,19 @@ export class RoomRoster {
   private readonly store: RoomStore;
   private readonly authors: AuthorRegistry;
   private readonly agents: RoomAgentLookup;
+  /** Where the PEOPLE on a roster have read up to. Never an agent's cursor. */
+  private readonly readCursors: ReadCursorService;
 
-  constructor(deps: { store: RoomStore; authors: AuthorRegistry; agents: RoomAgentLookup }) {
+  constructor(deps: {
+    store: RoomStore;
+    authors: AuthorRegistry;
+    agents: RoomAgentLookup;
+    readCursors: ReadCursorService;
+  }) {
     this.store = deps.store;
     this.authors = deps.authors;
     this.agents = deps.agents;
+    this.readCursors = deps.readCursors;
   }
 
   /**
@@ -134,8 +161,13 @@ export class RoomRoster {
   }
 
   /**
-   * Advance a member's read cursor. Monotonic — a lower value is ignored, so a
-   * stale client cannot un-read a room for a second client.
+   * Advance the AGENT-side read cursor on a membership. Monotonic — a lower
+   * value is ignored, so a stale caller cannot un-read a room for a second one.
+   *
+   * **A person's cursor does not come through here** (team-room-home spec §D4).
+   * This column is what the ambient participation loop has shown a member;
+   * where a PERSON has read is `read_cursors`, and `RoomService.setReadCursor`
+   * is the one place that decides which of the two a caller is moving.
    *
    * @param roomId - The room.
    * @param authorId - The member.
@@ -168,11 +200,19 @@ export class RoomRoster {
    * carries a handle on its row and no longer answers to it, and offering that
    * in a picker would insert a mention that reaches nobody.
    *
+   * **`lastReadSeq` is the cursor that answers for each member, not the column
+   * it happens to be stored in** (team-room-home spec §D4): a person's own,
+   * from `read_cursors`, and an agent's membership column. One extra query for
+   * the whole roster, on the read every room open already makes — this is what
+   * puts the reader's own place in the room on the wire, which is what the
+   * "New messages" rule is drawn from.
+   *
    * @param roomId - The room.
    */
   list(roomId: string): RoomRosterEntry[] {
     const members = this.store.listMembers(roomId);
     const authors = this.authors.getMany(members.map((m) => m.authorId));
+    const read = this.readCursors.listForThread('room', roomId);
     // The addressable set comes from `author-handles.ts`, over the SAME candidate
     // sequence `addressingCandidates` hands `resolveMentions` — so a handle is
     // offered only when it would actually reach the member it is offered for,
@@ -184,6 +224,7 @@ export class RoomRoster {
       if (!author) return { ...member, ...unknownMember(member.authorId) };
       return {
         ...member,
+        lastReadSeq: cursorFor(member, author.kind, read),
         author: toAuthorRef(author, handles.get(member.authorId) ?? null),
         origin: authorOrigin(author.naturalKey),
       };
@@ -343,13 +384,42 @@ export class RoomRoster {
     throw new RoomError('MEMBER_NOT_FOUND', 'No such author');
   }
 
-  /** Attach one resolved author to one membership. */
+  /**
+   * Attach one resolved author to one membership, reporting the cursor that
+   * answers for them — the single-member form of what {@link RoomRoster.list}
+   * does in bulk, so one entry never disagrees with the roster it came from.
+   */
   private withAuthor(member: RoomMember): RoomRosterEntry {
     const author = this.authors.getById(member.authorId);
-    return author
-      ? { ...member, author: toAuthorRef(author), origin: authorOrigin(author.naturalKey) }
-      : { ...member, ...unknownMember(member.authorId) };
+    if (!author) return { ...member, ...unknownMember(member.authorId) };
+    return {
+      ...member,
+      lastReadSeq:
+        author.kind === 'human'
+          ? (this.readCursors.get(member.authorId, 'room', member.roomId)?.lastReadSeq ?? 0)
+          : member.lastReadSeq,
+      author: toAuthorRef(author),
+      origin: authorOrigin(author.naturalKey),
+    };
   }
+}
+
+/**
+ * The read cursor that answers for one member: a person's own, from
+ * `read_cursors`, or an agent's membership column (team-room-home spec §D4).
+ *
+ * A person with no row has read nothing, which is 0 — never the membership
+ * column standing in for it. Reading one cursor to answer the other's question
+ * is precisely what the split forbids, and the membership column of a person who
+ * predates it is frozen historical residue (migration 0061).
+ *
+ * @param member - The membership row.
+ * @param kind - What the member is.
+ * @param read - Every person's cursor in this room, from one query.
+ */
+function cursorFor(member: RoomMember, kind: AuthorKind, read: Map<string, number>): number {
+  if (kind !== 'human') return member.lastReadSeq;
+  return read.get(member.authorId) ?? 0;
 }
 
 /**

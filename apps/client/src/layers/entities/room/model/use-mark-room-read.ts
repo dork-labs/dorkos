@@ -1,11 +1,17 @@
 /**
- * Keep the reader's `(member, room)` cursor level with what they are looking at.
+ * Keep the reader's `(person, room)` cursor level with what they are looking at.
  *
  * The unread badge and the "New messages" rule both read this cursor, so
  * whatever draws them has to be able to clear them — a badge on the room
  * currently open, with nothing in the product able to move it, is a lie the
  * reader cannot correct. The advance is monotonic server-side, so a second
  * client further behind can never un-read the room for this one.
+ *
+ * Both writes go through `Transport.setReadCursor('room', …)` — the one route
+ * for every kind of thread a person reads. A room is not a special case with its
+ * own endpoint: it is `thread_kind: 'room'`, and it lands in the same
+ * `read_cursors` row a session or the inbox would, which is what makes the
+ * cursor follow the reader between devices.
  *
  * @module entities/room/model/use-mark-room-read
  */
@@ -37,7 +43,7 @@ export function useMarkRoomRead(
 
   const mutation = useMutation({
     mutationFn: ({ roomId, seq }: { roomId: string; seq: number }) =>
-      transport.setRoomReadCursor(roomId, seq),
+      transport.setReadCursor('room', roomId, seq),
     onSuccess: (_result, { roomId }) => {
       // Deliberately NOT `roomKeys.all`. That is `['rooms']`, which prefix-matches
       // `['rooms','entries',roomId]` — so every cursor write would refetch the open
@@ -111,7 +117,7 @@ export function useMarkRoomReadNow(): UseMutationResult<void, Error, string> {
     mutationFn: async (roomId: string) => {
       const [newest] = await transport.listRoomEntries(roomId, { limit: 1 });
       if (!newest) return;
-      await transport.setRoomReadCursor(roomId, newest.seq);
+      await transport.setReadCursor('room', roomId, newest.seq);
     },
     onSuccess: (_result, roomId) => {
       void queryClient.invalidateQueries({ queryKey: roomKeys.lists() });

@@ -405,6 +405,30 @@ describe('ComposerInput', () => {
       expect(onCommandSelect).toHaveBeenCalledOnce();
     });
 
+    // A palette the person did NOT ask for — the home composer's "Jump back in"
+    // panel floats up merely because the caret landed in an empty box. Tab there
+    // means "move to the next control", and swallowing it opened whatever row
+    // happened to be lit instead: a keyboard trap on the primary surface.
+    it('leaves Tab alone when the host says it is not a pick key', () => {
+      const onCommandSelect = vi.fn();
+      render(
+        <ComposerInput
+          {...defaultProps}
+          {...openPalette}
+          tabPicks={false}
+          onCommandSelect={onCommandSelect}
+        />
+      );
+      const field = screen.getByRole('combobox');
+
+      fireEvent.keyDown(field, { key: 'Tab' });
+      expect(onCommandSelect).not.toHaveBeenCalled();
+
+      // Enter is still the pick key — only Tab was handed back.
+      fireEvent.keyDown(field, { key: 'Enter' });
+      expect(onCommandSelect).toHaveBeenCalledOnce();
+    });
+
     it('calls onEscape on Escape when palette open', () => {
       const onEscape = vi.fn();
       render(<ComposerInput {...defaultProps} {...openPalette} onEscape={onEscape} />);

@@ -2,6 +2,7 @@ import type { Ref } from 'react';
 import { AnimatePresence, useReducedMotion } from 'motion/react';
 import type { TeamMember } from '@dorkos/shared/team-schemas';
 import { IdentityAvatar } from '@/layers/shared/ui';
+import { TOUR_ANCHORS } from '@/layers/shared/config';
 import { cn } from '@/layers/shared/lib';
 import {
   countOwnedAgents,
@@ -207,6 +208,10 @@ export function TeamRosterGrid({
   return (
     <div
       data-slot={grouped ? 'team-roster-groups' : 'team-roster-grid'}
+      // What the fleet tour spotlights. Stamped on the grid rather than on the
+      // sidebar's Team button: the roster is the fleet the tour promised to
+      // show, and it is on screen at every width.
+      data-testid={TOUR_ANCHORS.teamRoster}
       data-layout-animated={String(animated)}
       className={cn(GRID, className)}
     >

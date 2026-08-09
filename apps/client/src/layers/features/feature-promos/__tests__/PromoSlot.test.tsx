@@ -23,7 +23,7 @@ import { PromoSlot } from '../ui/PromoSlot';
 function makePromo(id: string): PromoDefinition {
   return {
     id,
-    placements: ['dashboard-main'],
+    placements: ['dashboard-sidebar'],
     priority: 50,
     shouldShow: () => true,
     content: {
@@ -46,33 +46,15 @@ describe('PromoSlot', () => {
   });
 
   it('renders zero DOM when no promos qualify', () => {
-    const { container } = render(<PromoSlot placement="dashboard-main" maxUnits={4} />);
+    const { container } = render(<PromoSlot placement="dashboard-sidebar" maxUnits={4} />);
     expect(container.querySelector('[data-slot="promo-slot"]')).not.toBeInTheDocument();
   });
 
   it('renders correct number of PromoCard children', () => {
     mockPromos = [makePromo('a'), makePromo('b'), makePromo('c')];
-    render(<PromoSlot placement="dashboard-main" maxUnits={4} />);
+    render(<PromoSlot placement="dashboard-sidebar" maxUnits={4} />);
     expect(screen.getByTestId('promo-card-a')).toBeInTheDocument();
     expect(screen.getByTestId('promo-card-b')).toBeInTheDocument();
     expect(screen.getByTestId('promo-card-c')).toBeInTheDocument();
-  });
-
-  it('renders section header for dashboard-main placement', () => {
-    mockPromos = [makePromo('a')];
-    render(<PromoSlot placement="dashboard-main" maxUnits={4} />);
-    expect(screen.getByText('Discover')).toBeInTheDocument();
-  });
-
-  it('does not render section header for dashboard-sidebar placement', () => {
-    mockPromos = [makePromo('a')];
-    render(<PromoSlot placement="dashboard-sidebar" maxUnits={4} />);
-    expect(screen.queryByText('Discover')).not.toBeInTheDocument();
-  });
-
-  it('does not render section header for agent-sidebar placement', () => {
-    mockPromos = [makePromo('a')];
-    render(<PromoSlot placement="agent-sidebar" maxUnits={4} />);
-    expect(screen.queryByText('Discover')).not.toBeInTheDocument();
   });
 });

@@ -14,6 +14,8 @@ export { useDefaultAgentSession, resolveDefaultAgentDir } from './model/use-defa
 export type { DefaultAgentSession, DefaultAgentIdentity } from './model/use-default-agent-session';
 export { useUpdateConfig } from './model/use-update-config';
 export { useAutonomyAcknowledgement } from './model/use-autonomy-acknowledgement';
+export { useWelcomeBack } from './model/use-welcome-back';
+export type { WelcomeBackSetting } from './model/use-welcome-back';
 export { useStatusBarPrefs, useUpdateStatusBarPrefs } from './model/use-status-bar-prefs';
 export { useComposerRichText, useUpdateComposerPrefs } from './model/use-composer-prefs';
 export { TelemetryPayloadBlock } from './ui/TelemetryPayloadBlock';
@@ -48,5 +50,6 @@ export {
   setUngroupedDisplayFilter,
   muteItem,
   unmuteItem,
+  mutedRoomIds,
 } from './model/use-sidebar-prefs';
 export type { UpdateSidebarPrefs } from './model/use-sidebar-prefs';

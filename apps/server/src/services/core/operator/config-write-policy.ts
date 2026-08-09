@@ -235,6 +235,18 @@ export const CONFIG_WRITE_POLICY = {
   'rooms.engagedWindowMinutes': 'operator-only',
   'rooms.engagedWindowPosts': 'operator-only',
 
+  // Whether agents may speak when the person comes back, how long an absence
+  // has to be to count, and how many may speak. All three sit on the far side
+  // of the line the two room WAITS above sit on, for the reason the engaged
+  // window does: they decide whether a turn RUNS and how many run, not how long
+  // a room waits for one that was already going to. An agent that could lower
+  // the threshold, raise the cap, or switch the feature on for itself would be
+  // voting itself a greeting the person never asked for — and a greeting with a
+  // next-step offer costs a model turn.
+  'welcomeBack.enabled': 'operator-only',
+  'welcomeBack.absenceThresholdMinutes': 'operator-only',
+  'welcomeBack.maxPosts': 'operator-only',
+
   'onboarding.completedSteps': 'agent-writable',
   'onboarding.skippedSteps': 'agent-writable',
   'onboarding.startedAt': 'agent-writable',

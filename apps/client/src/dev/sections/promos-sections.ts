@@ -10,13 +10,6 @@ export const PROMOS_SECTIONS: PlaygroundSection[] = [
     keywords: ['promo', 'registry', 'feature', 'discovery', 'shouldshow', 'placement', 'priority'],
   },
   {
-    id: 'promoslot-dashboard-main',
-    title: 'PromoSlot — dashboard-main',
-    page: 'promos',
-    category: 'Promos',
-    keywords: ['promo', 'slot', 'dashboard', 'main', 'grid', 'card', 'discover'],
-  },
-  {
     id: 'promoslot-dashboard-sidebar',
     title: 'PromoSlot — dashboard-sidebar',
     page: 'promos',

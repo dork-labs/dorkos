@@ -165,6 +165,7 @@ function request(
     workspaceId: null,
     archived: false,
     ambientMaxEntries: 30,
+    wellKnown: null,
     createdAt: '2026-07-26T10:00:00.000Z',
     lastActivityAt: '2026-07-26T10:00:00.000Z',
     members: [],
@@ -205,6 +206,7 @@ function request(
       pendingTruncated: false,
       ownRecent: [],
       acknowledgments: [],
+      triggerAttachments: [],
       addressing: {
         responseMode: 'always',
         engagedUntil: null,

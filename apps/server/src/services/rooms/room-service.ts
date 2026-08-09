@@ -24,6 +24,15 @@
  * be that agent. Closing it properly means splitting the re-open out first.
  * Tracked as DOR-608; do not add the gate without that split.
  *
+ * **One narrow exception now exists: a SYSTEM room** — a room carrying a
+ * well-known key, which today means the #team channel `ensureTeamRoom` opens at
+ * boot (team-room-home spec D3.1). Renaming or archiving one is refused for
+ * anyone but the owner. It is not the blanket gate above and cannot become it:
+ * the refusal reads `wellKnown`, a DM never has one, so the un-archive path
+ * DOR-608 protects is untouched by construction. The product renders its home
+ * tab from that room, so an agent that could rename or put it away could take
+ * the cockpit's front door with it.
+ *
  * **The gates ask who the OWNER is, never whether the author is a human**
  * (DOR-598). Those were the same question only while this table held exactly one
  * human author. It will not: joining a community fills it with other humans —
@@ -75,6 +84,7 @@ import type {
   RoomKind,
   RoomBridgeInfo,
   RoomMember,
+  RoomMoment,
   RoomPresencePayload,
   RoomReactionEvent,
   RoomRosterEntry,
@@ -83,10 +93,11 @@ import type {
   ThreadSummary,
   UpdateRoomRequest,
 } from '@dorkos/shared/room-schemas';
-import { THREAD_PREVIEW_MAX_CHARS } from '@dorkos/shared/room-schemas';
+import { RoomMomentSchema, THREAD_PREVIEW_MAX_CHARS } from '@dorkos/shared/room-schemas';
 import { sanitizeIdentity } from '@dorkos/shared/untrusted-text';
 import { logger } from '../../lib/logger.js';
 import { eventFanOut } from '../core/event-fan-out.js';
+import type { ReadCursorService } from '../core/read-cursor-service.js';
 import type {
   Bridge,
   BridgeStore,
@@ -161,6 +172,16 @@ export interface RoomServiceDeps {
    * its roster.
    */
   bridges: BridgeStore;
+  /**
+   * Where the PEOPLE in a room have read up to (team-room-home spec §D4).
+   *
+   * The one user-side read-state store, shared with agent sessions and the
+   * inbox, so a person's place in a conversation is one fact wherever they are
+   * reading it. **Not the agent cursor**: what the ambient participation loop
+   * has SHOWN an agent stays on `room_members.last_read_seq`, which this domain
+   * still owns and still writes (room-participation spec §8.3).
+   */
+  readCursors: ReadCursorService;
 }
 
 /**
@@ -284,6 +305,8 @@ export class RoomService {
   /** Whether an author is the install's owner. Read per check, never captured. */
   private readonly isOwnerAuthor: (authorId: string) => boolean;
   private readonly bridges: BridgeStore;
+  /** Where the PEOPLE in a room have read up to. Never an agent's cursor. */
+  private readonly readCursors: ReadCursorService;
   /**
    * Called synchronously after every committed entry — the chat bridge's
    * inline-delivery fast path (chats-as-channels §6.1). Registered after
@@ -318,10 +341,12 @@ export class RoomService {
     this.maxAttachmentsPerEntry = deps.maxAttachmentsPerEntry;
     this.isOwnerAuthor = deps.isOwnerAuthor;
     this.bridges = deps.bridges;
+    this.readCursors = deps.readCursors;
     this.roster = new RoomRoster({
       store: deps.store,
       authors: deps.authors,
       agents: deps.agents,
+      readCursors: deps.readCursors,
     });
     // The dispatcher writes back through this service (a reply is a post like
     // any other, mentions and provenance included), so it takes bound methods
@@ -564,6 +589,118 @@ export class RoomService {
 
     eventFanOut.broadcast('room_created', { roomId: room.id, kind: room.kind, title: room.title });
     return { ...this.withRoster(room, creatorAuthorId), created: true };
+  }
+
+  /**
+   * Get — or open, once — the channel holding a well-known key. The write half
+   * of `ensureTeamRoom` (team-room-home spec D3.1). **Operator-only.**
+   *
+   * **Idempotent on the key, not on the name.** A room already carrying the key
+   * is returned untouched, whatever it has since been renamed to, archived to,
+   * or given as a topic: this runs on every boot, and a hook that re-asserted
+   * the seed values would quietly undo the person's own edits every restart.
+   * The key is the identity precisely so the name is free to change.
+   *
+   * **Separate from {@link RoomService.createRoom} because the key must not be
+   * requestable.** `CreateRoomRequest` deliberately has no `wellKnown` field —
+   * a well-known key is what makes a room a system room, so an API that let a
+   * caller name one would let an agent mint a room the owner alone may rename.
+   * This method is reachable only from the boot hook.
+   *
+   * **The slug is de-collided, never stolen — and it steps over archived
+   * channels too.** An install may already have an ordinary `#team` somebody
+   * made; adopting it would hand a person's own channel system-room semantics
+   * and a roster of every agent, so the system room takes the next free name
+   * (`#team-2`) instead. An ARCHIVED `#team` is stepped over for a second
+   * reason: archiving releases a slug, so a system room that took it would
+   * leave that channel permanently un-un-archivable — the way back is the name
+   * it left behind. See {@link RoomService.uniqueChannelSlug}.
+   *
+   * **The find-then-insert is not atomic across processes, and the insert is
+   * what settles it.** Two boots — a cockpit and a CLI started together — can
+   * both read "no team room" and both try to write one; the unique key on
+   * `rooms.well_known` makes exactly one of them win. The loser ADOPTS the
+   * winner's row rather than failing, because a loser that gave up would leave
+   * that boot with no home room and no agents seated in the one that exists.
+   * The re-read decides it rather than an errno test: any insert failure is
+   * re-checked against the key, and one that did not leave the key held is
+   * rethrown untouched, so nothing real is swallowed.
+   *
+   * @internal Reachable only from the `ensureTeamRoom` boot hook. Not a route,
+   *   not a tool, and deliberately not part of `CreateRoomRequest`.
+   * @param wellKnown - The key this room answers to forever (`'team'`).
+   * @param seed - The name and topic to open it with, used only on creation.
+   * @param operatorAuthorId - The install owner, who is seeded as its first member.
+   * @returns The room, and whether this call is what created it.
+   */
+  /**
+   * Record which member holds this room's **fallback seat** — the one that
+   * answers a post nobody addressed (team-room-home spec D3.4).
+   * **Operator-only**, for the same reason `updateMembership` is: the seat is
+   * what makes an agent answer without being addressed, so an agent able to
+   * claim it could manufacture a conversation.
+   *
+   * Paired with, and never a substitute for, the `always` mode on that same
+   * membership: the mode is what ADDRESSING selects the seat with, and this is
+   * what tells the dispatcher and the boot reconcile WHICH member the seat is —
+   * a question `always` cannot answer, because a person may set any agent to
+   * "Everything" themselves.
+   *
+   * @internal Reachable only from the `ensureTeamRoom` boot hook and the
+   *   default-agent watcher beside it. Not a route and not a tool.
+   * @param roomId - The room.
+   * @param operatorAuthorId - The install owner.
+   * @param authorId - The member taking the seat, or `null` to empty it.
+   * @returns The updated room.
+   */
+  setFallbackSeat(roomId: string, operatorAuthorId: string, authorId: string | null): Room {
+    this.requireVisibleRoom(roomId, operatorAuthorId);
+    this.requireOperator(operatorAuthorId, 'which agent answers what nobody addressed');
+    const room = this.store.setFallbackSeat(roomId, authorId);
+    if (!room) throw new RoomError('ROOM_NOT_FOUND', 'No such room');
+    return room;
+  }
+
+  ensureSystemChannel(
+    wellKnown: string,
+    seed: { slug: string; topic?: string },
+    operatorAuthorId: string
+  ): { room: Room; created: boolean } {
+    this.requireOperator(operatorAuthorId, 'the rooms DorkOS itself depends on');
+    const existing = this.store.findByWellKnown(wellKnown);
+    if (existing) return { room: existing, created: false };
+
+    const slug = this.uniqueChannelSlug(seed.slug, { includeArchived: true });
+    const createdAt = new Date().toISOString();
+    const operator = this.roster.requireAuthor(operatorAuthorId);
+    let room: Room;
+    try {
+      room = this.store.createRoom(
+        {
+          id: ulid(),
+          kind: 'channel',
+          slug,
+          title: `#${slug}`,
+          topic: seed.topic ?? null,
+          workspaceId: null,
+          wellKnown,
+          createdAt,
+        },
+        [
+          {
+            authorId: operator.id,
+            responseMode: this.roster.seedResponseMode({ kind: 'channel' }, operator),
+            joinedAt: createdAt,
+          },
+        ]
+      );
+    } catch (err) {
+      const won = this.store.findByWellKnown(wellKnown);
+      if (!won) throw err;
+      return { room: won, created: false };
+    }
+    eventFanOut.broadcast('room_created', { roomId: room.id, kind: room.kind, title: room.title });
+    return { room, created: true };
   }
 
   /**
@@ -1048,15 +1185,31 @@ export class RoomService {
   }
 
   /**
-   * A live channel slug, appending `-2`, `-3`, … until one is free (spec
-   * §3.4, A3.4). Never throws `SLUG_TAKEN`: a platform title has no person
-   * behind it who could rename it to fix a collision.
+   * A free channel slug, appending `-2`, `-3`, … until one is (spec §3.4,
+   * A3.4). Never throws `SLUG_TAKEN` — this is the path for names DorkOS mints
+   * rather than names a person typed, and there is nobody behind a platform
+   * title or a boot hook who could rename anything to resolve a collision.
+   *
+   * **`includeArchived` decides which question is being asked**, and both
+   * callers are right about their own. A bridged room asks "may I take this
+   * name?", so it steps over LIVE channels only: an archived channel has
+   * released its slug and holding it in reserve forever would make every
+   * bridged `#standup` a `#standup-2`. A system room asks the stronger
+   * question, "is this name somebody's to come back to?", because it opens once
+   * and keeps its name for the life of the install — taking an archived
+   * channel's slug would leave that channel unable to un-archive at all, its
+   * only way back being the name that had been quietly given away.
    *
    * @param base - The slugified title to start from.
+   * @param opts.includeArchived - Step over archived channels too. Defaults to
+   *   false, which is "a live channel is the only thing in my way".
    */
-  private uniqueChannelSlug(base: string): string {
+  private uniqueChannelSlug(base: string, opts: { includeArchived?: boolean } = {}): string {
+    const taken = opts.includeArchived
+      ? (slug: string) => this.store.anyChannelHoldsSlug(slug)
+      : (slug: string) => this.store.findLiveChannelBySlug(slug) !== null;
     let candidate = base;
-    for (let suffix = 2; this.store.findLiveChannelBySlug(candidate); suffix += 1) {
+    for (let suffix = 2; taken(candidate); suffix += 1) {
       candidate = `${base}-${suffix}`;
     }
     return candidate;
@@ -1082,6 +1235,12 @@ export class RoomService {
    * room's whole entry count instead would render every room the operator has
    * not joined as an alarming unread badge.
    *
+   * **Which cursor the count is measured against depends on who is asking**
+   * (team-room-home spec §D4): a person's is in `read_cursors`, an agent's is
+   * the membership column. Both are read in bulk — one query for the
+   * memberships, one for the person's cursors — so a sidebar holding fifty rooms
+   * still costs two.
+   *
    * `participants` is carried for direct messages and is `null` for everything
    * else, per {@link RoomSummary}. A DM's mark is whoever it is with, so the
    * sidebar cannot draw one without the roster; resolving it here is two
@@ -1095,9 +1254,7 @@ export class RoomService {
     viewerAuthorId: string,
     filter: { kind?: RoomKind; includeArchived?: boolean } = {}
   ): RoomSummary[] {
-    const cursors = new Map(
-      this.store.listMembershipsFor(viewerAuthorId).map((m) => [m.roomId, m.lastReadSeq])
-    );
+    const cursors = this.cursorsFor(viewerAuthorId);
     const visible = this.seesEveryRoom(viewerAuthorId)
       ? this.store.listRooms(filter)
       : this.store.listRoomsForMember(viewerAuthorId, filter);
@@ -1124,6 +1281,26 @@ export class RoomService {
   }
 
   /**
+   * Every room this member belongs to, with the cursor that answers for them —
+   * the bulk form of {@link RoomService.readCursorFor}.
+   *
+   * A room the member belongs to is always a key, cursor or no cursor, because
+   * the caller distinguishes "not a member" (no unread count exists) from "has
+   * read nothing" (everything is unread) and only membership can say which.
+   *
+   * @param authorId - The member.
+   * @returns Room id to cursor, for every room they are in.
+   */
+  private cursorsFor(authorId: string): Map<string, number> {
+    const memberships = this.store.listMembershipsFor(authorId);
+    if (this.authors.getById(authorId)?.kind !== 'human') {
+      return new Map(memberships.map((m) => [m.roomId, m.lastReadSeq]));
+    }
+    const read = this.readCursors.listForUser(authorId, 'room');
+    return new Map(memberships.map((m) => [m.roomId, read.get(m.roomId) ?? 0]));
+  }
+
+  /**
    * Every thread this reader takes part in, across every room, newest first.
    *
    * The sidebar's Threads section (spec `room-messaging-design` §3), and the
@@ -1144,11 +1321,21 @@ export class RoomService {
    * buys nothing extra here: a thread you never spoke in is not yours to see in
    * this list.
    *
+   * **Unread is measured against the cursor that answers for this reader** — a
+   * person's own, an agent's membership column — which is why the store is told
+   * which one to join (team-room-home spec §D4). A thread's count is the room's
+   * cursor narrowed to the thread, so it is the same number the room badge is
+   * measured from and it clears when the room does.
+   *
    * @param viewerAuthorId - Whose threads to list.
    * @param limit - Most threads to return.
    */
   listThreads(viewerAuthorId: string, limit: number): ThreadSummary[] {
-    return this.store.listThreadsForMember(viewerAuthorId, limit).map((row) => ({
+    // Anyone this install cannot name is measured against the membership
+    // column: it is the one cursor that certainly exists for a member, and a
+    // caller with no author row has no rows to list anyway.
+    const cursor = this.authors.getById(viewerAuthorId)?.kind === 'human' ? 'user' : 'membership';
+    return this.store.listThreadsForMember(viewerAuthorId, limit, cursor).map((row) => ({
       roomId: row.roomId,
       roomKind: row.roomKind as RoomKind,
       roomSlug: row.roomSlug,
@@ -1206,6 +1393,12 @@ export class RoomService {
    * means a caller who sent `{ title, deliverNotices }` for an unbridged room
    * never sees a half-applied rename.
    *
+   * **A system room refuses a rename or an archive from anyone but the owner**
+   * (team-room-home spec D3.1). See {@link RoomService.requireSystemRoomWritable}
+   * for why that is a field check here rather than the blanket `requireOperator`
+   * DOR-608 forbids. The topic is deliberately NOT covered: describing what a
+   * room is for is ordinary participation, and #team is a room agents live in.
+   *
    * @param roomId - The room id.
    * @param viewerAuthorId - The caller; must be on the roster.
    * @param patch - The validated update request.
@@ -1214,6 +1407,7 @@ export class RoomService {
   updateRoom(roomId: string, viewerAuthorId: string, patch: UpdateRoomRequest): RoomWithRoster {
     const room = this.requireVisibleRoom(roomId, viewerAuthorId);
     const { deliverNotices, ...roomPatch } = patch;
+    this.requireSystemRoomWritable(room, viewerAuthorId, roomPatch);
     if (deliverNotices !== undefined && !this.bridges.findBridgeByRoom(roomId)) {
       throw new RoomError('NOT_A_BRIDGED_ROOM', 'This room is not bridged to an external chat');
     }
@@ -1344,60 +1538,90 @@ export class RoomService {
   /**
    * Advance a member's read cursor. Monotonic — a lower value is ignored.
    *
-   * A cursor that actually moves is announced on the global fan-out, so a second
-   * browser or device clears the badge on push instead of on its next poll. The
-   * event carries the count the room list would now draw, because a reader
-   * holding only the new cursor cannot work it out: a room summary has no seq to
-   * measure against, so it could only guess zero — and zero is wrong the moment
-   * something arrived after the other device stopped reading.
+   * **Two cursors live behind this one method, and which one moves is decided by
+   * WHO is reading** (team-room-home spec §D4). A person's place in a room is a
+   * row in `read_cursors`, the same store their agent sessions and their inbox
+   * use, so one person reading on two devices is one fact. An agent's is
+   * `room_members.last_read_seq` — what the ambient participation loop has SHOWN
+   * it (room-participation spec §8.3) — and it stays exactly where it was. They
+   * are different questions about the same-looking number, and nothing here
+   * reads one to answer the other.
+   *
+   * A person's cursor that actually moves is announced as `read_cursor` on the
+   * global fan-out, so a second browser or device clears the badge on push
+   * instead of on its next poll. The event carries the count the room list would
+   * now draw, because a reader holding only the new cursor cannot work it out: a
+   * room summary has no seq to measure against, so it could only guess zero —
+   * and zero is wrong the moment something arrived after the other device
+   * stopped reading.
    *
    * **A write that changes nothing says nothing.** Opening a room already read
    * is the common case, and an event per no-op would put the loudest name on the
    * stream on a fact nobody could act on.
    *
-   * **The agent cursor RP3 advances at claim time is deliberately not here.**
-   * That path writes through {@link RoomStore.setReadCursor} directly, once per
-   * agent per turn, which would make it the most frequent event on the global
-   * stream — and nothing in the cockpit draws an agent's read cursor. An agent
-   * that moves its own cursor through THIS method (the REST route, with its own
-   * identity) is announced like anyone else; `authorKind` is what lets a reader
-   * tell whose cursor moved, since only their own may repaint their badge.
+   * **An agent's cursor is announced not at all.** RP3 advances it once per
+   * agent per turn through {@link RoomStore.setReadCursor} directly, which would
+   * make it the most frequent event on the global stream — and nothing in the
+   * cockpit draws it. `read_cursor` is the people's stream by contract, which is
+   * also why `PUT /api/read-cursors/:kind/:id` refuses an agent outright.
    *
    * @param roomId - The room.
    * @param authorId - The member.
    * @param lastReadSeq - The seq they have read up to.
+   * @returns The membership, reporting the cursor that answers for this
+   *   member — see {@link RoomRoster.list}.
    */
   setReadCursor(roomId: string, authorId: string, lastReadSeq: number): RoomMember {
     this.requireVisibleRoom(roomId, authorId);
-    // Read before the write, so "did it move" is answered by the two values and
-    // not by re-deriving the monotonic rule here. A missing membership makes the
-    // line below throw, so by the comparison `before` is always a number.
-    const before = this.store.getMember(roomId, authorId)?.lastReadSeq;
-    const member = this.roster.setReadCursor(roomId, authorId, lastReadSeq);
-    if (member.lastReadSeq === before) return member;
-
     // A membership references its author by foreign key, so a member without an
-    // author row cannot happen — which is exactly why it is said out loud rather
-    // than swallowed by an `if`. If it ever does, the write above still stands
-    // and only the announcement is lost, and this line is the only thing that
-    // would tell anybody why one device stopped keeping up with the other.
+    // author row cannot happen. Resolved BEFORE the write because it is what
+    // decides which cursor is being written, not a decoration on the
+    // announcement: with no author row there is nobody to call a person, and the
+    // membership column is the safe answer — it is where this cursor lived
+    // before the split, and it is what RP3 would read back.
     const author = this.authors.getById(authorId);
     if (!author) {
       logger.warn('[rooms] a read cursor moved for a member with no author row', {
         roomId,
         authorId,
       });
-      return member;
+      return this.roster.setReadCursor(roomId, authorId, lastReadSeq);
     }
+    if (author.kind !== 'human') return this.roster.setReadCursor(roomId, authorId, lastReadSeq);
 
-    eventFanOut.broadcast('room_read_cursor', {
-      roomId,
-      authorId,
-      authorKind: author.kind,
-      lastReadSeq: member.lastReadSeq,
-      unreadCount: this.store.countUnread(roomId, member.lastReadSeq),
+    // Membership is what makes a cursor meaningful, and the check is the same
+    // one the agent path gets from `RoomRoster.setReadCursor` — stated here
+    // because the person's cursor is not stored on the membership row and so
+    // cannot be refused by its absence.
+    const member = this.store.getMember(roomId, authorId);
+    if (!member) throw new RoomError('MEMBER_NOT_FOUND', 'Not a member of this room');
+
+    // The broadcast, the monotonic guard and the "did it move" comparison all
+    // live in `ReadCursorService.advance` — one write path for every kind of
+    // thread a person reads, so a room cannot drift from a session.
+    const cursor = this.readCursors.advance(authorId, 'room', roomId, lastReadSeq, {
+      unreadCount: (seq) => this.store.countUnread(roomId, seq),
     });
-    return member;
+    return { ...member, lastReadSeq: cursor.lastReadSeq };
+  }
+
+  /**
+   * Where one member has read up to in one room: a person's own cursor, an
+   * agent's membership column.
+   *
+   * The read half of {@link RoomService.setReadCursor}, and the one place the
+   * "which cursor answers for whom" rule is stated for a single member — the
+   * list paths resolve it in bulk instead, for the query count.
+   *
+   * @param roomId - The room.
+   * @param authorId - The member.
+   * @returns The cursor, or `null` when this author is not a member.
+   */
+  readCursorFor(roomId: string, authorId: string): number | null {
+    const member = this.store.getMember(roomId, authorId);
+    if (!member) return null;
+    if (this.authors.getById(authorId)?.kind !== 'human') return member.lastReadSeq;
+    return this.readCursors.get(authorId, 'room', roomId)?.lastReadSeq ?? 0;
   }
 
   // === Entries ===
@@ -1442,6 +1666,12 @@ export class RoomService {
    * @param input.attachmentIds - Files already uploaded into this room, in the
    *   order they should render. Resolved and refused BEFORE anything is
    *   written, then bound inside the entry's own transaction.
+   * @param input.moment - The milestone this post marks, for an agent-minted
+   *   moment (spec D5.1). Set by {@link RoomService.postMoment} and by nothing
+   *   else: no request body carries one, which is what keeps a moment something
+   *   this install observed rather than something a caller claimed. Minting one
+   *   buys no extra permission — the post is written by the same path, with the
+   *   same membership check, cascade stamp and turn budget behind it.
    * @returns The committed entry.
    */
   post(
@@ -1453,6 +1683,7 @@ export class RoomService {
       trigger?: PostTrigger;
       replyTo?: string;
       attachmentIds?: readonly string[];
+      moment?: RoomMoment;
     }
   ): RoomEntry {
     const room = this.requireVisibleRoom(roomId, input.authorId);
@@ -1722,6 +1953,7 @@ export class RoomService {
       sessionId?: string;
       trigger?: PostTrigger;
       replyTo?: string;
+      moment?: RoomMoment;
     },
     within?: (tx: DbTransaction) => void,
     opts?: {
@@ -1778,7 +2010,9 @@ export class RoomService {
         id,
         authorId: input.authorId,
         kind: 'post',
-        body: { text: input.text },
+        // The milestone rides beside the words, never instead of them: a moment
+        // a client cannot read is a blank line in the feed.
+        body: { text: input.text, ...(input.moment && { moment: input.moment }) },
         mentions: addressed.mentions,
         // The per-occurrence positions of those mentions, resolved in the SAME
         // pass and stored beside them so the client draws pills without ever
@@ -1823,6 +2057,111 @@ export class RoomService {
         error: err instanceof Error ? err.message : String(err),
       });
     }
+    return entry;
+  }
+
+  /**
+   * Mark a milestone in a room — a **moment** (team-room-home spec D5.1).
+   *
+   * **A moment is a post.** It is written into the same log, carries the same
+   * fields, and reaches readers on the same stream; what makes it one is
+   * `body.moment`, which says what it marks and — the rule the whole feature
+   * stands on — what real record it was read from. The feed draws it
+   * differently (`RoomMomentRow`); nothing else has to know.
+   *
+   * **Two ways in, and they are not the same permission.**
+   * - *DorkOS itself* (no `authorId`): written by the system author, and
+   *   deliberately NOT dispatched. A room where the milestone "tangerines
+   *   joined your team" set two agents talking would be the over-participation
+   *   `meta/agent-etiquette.md` exists to damp. It is stamped the way an
+   *   un-provenanced write is stamped — at the ceiling — so nothing that ever
+   *   dispatches from it can open a fresh reply budget either.
+   * - *An agent* (`authorId`): straight through {@link RoomService.post}, the
+   *   guarded path, unchanged. The membership check, the cascade stamp, the
+   *   ancestry rule and the turn budget all apply exactly as they do to
+   *   anything else that agent says. There is no second write surface and no
+   *   tool: minting a moment is not a way around any of it.
+   *
+   * **`subjectAuthorId` is refused on the agent path**, and that is the one
+   * refusal here that is about safety rather than shape. The field decides
+   * whose face the feed draws beside the words; letting an agent set it would
+   * let one agent publish its own sentence under another identity. DorkOS
+   * writing "tangerines joined your team" is the case the field exists for, and
+   * an agent that has something to say about tangerines says it as itself.
+   *
+   * @param roomId - The room to mark it in.
+   * @param input.text - What a person reads. Written by the caller, because the
+   *   detector is the only thing that knows the real numbers.
+   * @param input.moment - What it marks and what it was derived from. Validated
+   *   here rather than trusted: detectors build this from live data, so a
+   *   sourceless moment has to fail at the seam instead of landing in the log.
+   * @param input.authorId - The agent minting it, when an agent is. Omit for a
+   *   moment DorkOS itself observed.
+   * @param input.subjectAuthorId - Who the moment is ABOUT, when the room is
+   *   speaking about somebody other than itself. System path only.
+   * @returns The committed entry.
+   */
+  postMoment(
+    roomId: string,
+    input: {
+      text: string;
+      moment: RoomMoment;
+      authorId?: string;
+      subjectAuthorId?: string;
+    }
+  ): RoomEntry {
+    const moment = RoomMomentSchema.safeParse(input.moment);
+    if (!moment.success) {
+      throw new RoomError(
+        'INVALID_MOMENT',
+        'A moment has to say what it marks and what it was derived from'
+      );
+    }
+    if (input.text.trim().length === 0) {
+      throw new RoomError('INVALID_MOMENT', 'A moment has to say something a person can read');
+    }
+    if (input.authorId !== undefined) {
+      if (input.subjectAuthorId !== undefined) {
+        throw new RoomError(
+          'INVALID_MOMENT',
+          'A moment an agent mints is about its author, and may not name another'
+        );
+      }
+      return this.post(roomId, {
+        authorId: input.authorId,
+        text: input.text,
+        moment: moment.data,
+      });
+    }
+
+    const room = this.requireRoom(roomId);
+    // Archived means archived for the room's own voice too — the same rule
+    // `postNotice` holds, for the same reason: archiving promises a room stops
+    // gaining entries.
+    if (room.archived) throw new RoomError('ROOM_ARCHIVED', 'This room is archived');
+    const id = ulid();
+    const entry = this.store.appendEntry({
+      roomId,
+      id,
+      authorId: this.authors.system().id,
+      kind: 'post',
+      body: {
+        text: input.text,
+        moment: moment.data,
+        ...(input.subjectAuthorId && { subjectAuthorId: input.subjectAuthorId }),
+      },
+      // A milestone addresses nobody. Nothing is parsed out of its words,
+      // because nothing wrote them to reach anyone.
+      mentions: [],
+      mentionSpans: [],
+      sessionId: null,
+      ...this.threadPointers(roomId, undefined),
+      // The shipped rule rather than a hand-stamped number: a non-human write
+      // with no trigger behind it starts a cascade that is already spent.
+      ...deriveCascade(id, { authorKind: 'system', maxAgentDepth: this.maxAgentDepth() }),
+      createdAt: new Date().toISOString(),
+    });
+    this.publishEntry(entry);
     return entry;
   }
 
@@ -2228,6 +2567,47 @@ export class RoomService {
   private requireOperator(viewerAuthorId: string, what: string): void {
     if (this.isOwnerAuthor(viewerAuthorId)) return;
     throw new RoomError('OPERATOR_ONLY', `Only you can change ${what}`);
+  }
+
+  /**
+   * Refuse a rename or an archive of a SYSTEM room from anyone but the owner
+   * (team-room-home spec D3.1).
+   *
+   * **A field check, not a caller check, and that is what makes it safe to add
+   * here at all.** DOR-608's open hole is that `updateRoom` has no operator
+   * gate, and the reason it stays open is that adding one breaks
+   * `createRoom`'s DM un-archive path — an agent legitimately re-opening its
+   * own archived direct message. This refusal cannot reach that path: it fires
+   * only on `wellKnown`, which no DM and no caller-created room ever carries.
+   * So the hole is closed for the rooms the product cannot work without, and
+   * every ordinary room behaves exactly as it did.
+   *
+   * **Rename and archive, not topic, and not delete.** The title is a channel's
+   * address (renaming it moves the `#slug`), and archiving takes the room off
+   * every list — both would break the home tab that renders #team for anybody
+   * who did not ask for it. A topic is a description, and describing a shared
+   * room is ordinary participation. There is no delete verb on a room at all
+   * (archive is this product's reversible "put it away", spec §12.4), so
+   * "nobody may delete #team" needs no code — and muting is a sidebar
+   * preference in the person's own config, which never reaches this domain,
+   * so the owner can still quiet the room without leaving it.
+   *
+   * @param room - The room being patched.
+   * @param viewerAuthorId - The caller.
+   * @param patch - The room-table half of the requested patch.
+   */
+  private requireSystemRoomWritable(
+    room: Room,
+    viewerAuthorId: string,
+    patch: { title?: string; archived?: boolean }
+  ): void {
+    if (!room.wellKnown) return;
+    if (patch.title === undefined && patch.archived === undefined) return;
+    if (this.isOwnerAuthor(viewerAuthorId)) return;
+    throw new RoomError(
+      'SYSTEM_ROOM',
+      `Only you can rename or archive ${room.slug ? `#${room.slug}` : room.title}`
+    );
   }
 
   /**

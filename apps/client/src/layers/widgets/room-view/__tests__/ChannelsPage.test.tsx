@@ -697,7 +697,7 @@ describe('ChannelsPage — a thread reply still clears the badge', () => {
   it("moves the cursor to the reply's seq, not to the newest entry on screen", async () => {
     const transport = renderRoom();
 
-    await waitFor(() => expect(transport.setRoomReadCursor).toHaveBeenCalledWith('room-1', 2));
+    await waitFor(() => expect(transport.setReadCursor).toHaveBeenCalledWith('room', 'room-1', 2));
   });
 
   it('keeps the reply out of the room’s flow and offers it as a row', async () => {

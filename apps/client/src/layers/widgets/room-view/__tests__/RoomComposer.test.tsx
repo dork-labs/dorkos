@@ -66,7 +66,11 @@ function roomWith(overrides: Partial<RoomWithRoster> = {}): RoomWithRoster {
   };
 }
 
-function renderComposer(transport: Transport, room: RoomWithRoster = roomWith()) {
+function renderComposer(
+  transport: Transport,
+  room: RoomWithRoster = roomWith(),
+  props: { offerJumpBackIn?: boolean } = {}
+) {
   // The app's real cache configuration, retries off. A bare `new QueryClient()`
   // has no MutationCache — and the MutationCache is where a failed post's toast
   // now comes from, so a re-declared config would leave these assertions with
@@ -85,7 +89,7 @@ function renderComposer(transport: Transport, room: RoomWithRoster = roomWith())
       <TransportProvider transport={transport}>{children}</TransportProvider>
     </QueryClientProvider>
   );
-  render(<RoomComposer room={room} />, { wrapper });
+  render(<RoomComposer room={room} {...props} />, { wrapper });
   // The shared composer names its textarea a combobox — it hosts the slash and
   // mention palettes in session chat, and the role does not vary by host.
   return screen.getByRole('combobox') as HTMLTextAreaElement;
@@ -525,6 +529,40 @@ describe('RoomComposer — attaching a file', () => {
     expect(held!.attachmentIds).toEqual(['att-1', 'att-2']);
   });
 
+  it('keeps a file attached DURING a send, instead of clearing it with the batch', async () => {
+    // The window: `clearFiles()` ran after the upload resolved and emptied
+    // whatever was in the bar AT THAT MOMENT — not the batch that was sent. A
+    // file dropped in while the first send's bytes were still going up was
+    // wiped without ever being uploaded, posted, or reported.
+    const transport = createMockTransport();
+    let release!: (value: RoomAttachment[]) => void;
+    vi.mocked(transport.uploadRoomAttachments).mockReturnValue(
+      new Promise<RoomAttachment[]>((resolve) => {
+        release = resolve;
+      })
+    );
+    const field = renderComposer(transport);
+
+    choose(fileInputs()[1]!, [NOTES]);
+    await waitFor(() => expect(screen.getByText('notes.txt')).toBeInTheDocument());
+
+    type(field, 'here is the first');
+    fireEvent.keyDown(field, { key: 'Enter' });
+    await waitFor(() => expect(transport.uploadRoomAttachments).toHaveBeenCalledTimes(1));
+
+    // Dropped in while the first send is still in flight.
+    choose(fileInputs()[0]!, [LOG]);
+    await waitFor(() => expect(screen.getByText('server.log')).toBeInTheDocument());
+
+    release([attachment('att-1', 'notes.txt')]);
+    await waitFor(() => expect(transport.postToRoom).toHaveBeenCalledTimes(1));
+
+    // The sent file is gone from the bar…
+    await waitFor(() => expect(screen.queryByText('notes.txt')).toBeNull());
+    // …and the one added mid-flight is still there, ready for the next send.
+    expect(screen.getByText('server.log')).toBeInTheDocument();
+  });
+
   it('refuses a second Enter while the files are still going up', async () => {
     // The window: `pendingFiles` is cleared only once the ids are in a message,
     // so a second Enter during the upload would read the SAME files and send
@@ -585,5 +623,56 @@ describe('RoomComposer — attaching a file', () => {
     // And the words came back, because no pending row was ever created to hold
     // them.
     await waitFor(() => expect(field.value).toBe('here it is'));
+  });
+});
+
+describe('RoomComposer — "Jump back in" is offered on one surface and read on one', () => {
+  /**
+   * Every read the recents panel is built out of.
+   *
+   * Named individually rather than counted: the defect was not "one extra
+   * request", it was four fan-outs subscribed from a component mounted in every
+   * room and every thread panel, re-read on every session lifecycle event — for
+   * a panel no gesture in those rooms could raise.
+   */
+  function recentsReads(transport: Transport) {
+    return {
+      recentSessions: vi.mocked(transport.listRecentSessions).mock.calls.length,
+      rooms: vi.mocked(transport.listRooms).mock.calls.length,
+      meshPaths: vi.mocked(transport.listMeshAgentPaths).mock.calls.length,
+      resolveAgents: vi.mocked(transport.resolveAgents).mock.calls.length,
+    };
+  }
+
+  it('asks the server nothing at all in an ordinary room', async () => {
+    const transport = createMockTransport();
+    const field = renderComposer(transport);
+
+    // Reaching for the box is the gesture that would open the panel where it is
+    // offered. Here it must not even warm a cache.
+    fireEvent.pointerDown(field);
+    fireEvent.focus(field);
+
+    await waitFor(() => expect(field).toBeInTheDocument());
+    expect(recentsReads(transport)).toEqual({
+      recentSessions: 0,
+      rooms: 0,
+      meshPaths: 0,
+      resolveAgents: 0,
+    });
+    expect(screen.queryByRole('listbox', { name: 'Jump back in' })).toBeNull();
+  });
+
+  it('reads them on the home surface, which is the one that offers the panel', async () => {
+    const transport = createMockTransport();
+    renderComposer(transport, roomWith(), { offerJumpBackIn: true });
+
+    // The two that need nothing else to run. (`resolveAgents` waits on the
+    // fleet, which this mock answers empty, and is not the claim here.)
+    await waitFor(() => {
+      const reads = recentsReads(transport);
+      expect(reads.recentSessions).toBeGreaterThan(0);
+      expect(reads.meshPaths).toBeGreaterThan(0);
+    });
   });
 });

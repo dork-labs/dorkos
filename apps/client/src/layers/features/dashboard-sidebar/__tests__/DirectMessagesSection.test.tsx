@@ -166,7 +166,7 @@ function roomsWrapper() {
     listRoomEntries: vi
       .fn()
       .mockImplementation((roomId: string) => Promise.resolve([{ roomId, seq: 7 }])),
-    setRoomReadCursor: mockSetReadCursor,
+    setReadCursor: mockSetReadCursor,
   });
   return ({ children }: { children: ReactNode }) => (
     <QueryClientProvider client={queryClient}>
@@ -625,8 +625,8 @@ describe('DirectMessagesSection on a phone', () => {
 
     fireEvent.click(within(openHeaderMenu()).getByText('Mark all read'));
 
-    await waitFor(() => expect(mockSetReadCursor).toHaveBeenCalledWith('dm-1', 7));
-    expect(mockSetReadCursor).toHaveBeenCalledWith('dm-9', 7);
+    await waitFor(() => expect(mockSetReadCursor).toHaveBeenCalledWith('room', 'dm-1', 7));
+    expect(mockSetReadCursor).toHaveBeenCalledWith('room', 'dm-9', 7);
   });
 
   it('withholds Mark all read when nothing is behind', () => {

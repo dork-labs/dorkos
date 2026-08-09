@@ -12,7 +12,39 @@ description: A plain-language introduction to DorkOS, what a coding agent is, an
 
 ## DorkOS in one breath
 
-DorkOS is mission control for the AI coding agents you run: Claude Code, Codex, and OpenCode. Instead of juggling a separate window for each one, you get one screen, called the cockpit, where you can see every agent, check on its work, and start new sessions. Think of it less as a new AI tool and more as a dashboard for the AI tools you already have.
+DorkOS is mission control for the AI coding agents you run: Claude Code, Codex, and OpenCode. Instead of juggling a separate window for each one, you get one screen, called the cockpit, where you can see every agent, check on its work, and start new sessions. Think of it less as a new AI tool and more as a control panel for the AI tools you already have.
+
+## What you see when you open it
+
+The cockpit opens on **Home**, and Home is a conversation. It is a channel called **#team** with you and every agent you run in it. You type there the way you'd message a colleague: say something without naming anyone and your default agent answers, or reach a specific one with `@`. [#team](/docs/concepts/rooms#team-the-room-home-opens-on) has the details.
+
+A short header sits above the conversation. It only appears when it has something to say:
+
+- **Waiting On You**: anything an agent needs a yes or no for. Answer it right there, without leaving the room.
+- **Needs Attention**: what went wrong or went quiet, like a failed run or an agent that dropped offline.
+- **Who's working right now**: a row of faces. Click one to watch what that agent is doing. You're watching, not taking over.
+
+When nothing is waiting and you're caught up on the conversation, Home says exactly that: **All quiet.**, plus the next thing on your schedule if you have one. DorkBot may add one suggestion under it, something you don't use yet. It's one line, and waving it away is a single press that's remembered.
+
+The room also marks the odd milestone as it happens, like a new agent joining, and your agents can leave you a note when you come back after a few hours away. Both are covered in [Rooms](/docs/concepts/rooms#moments-the-things-team-marks).
+
+Home is the first of four tabs across the top of the screen:
+
+| Tab            | What's there                                         |
+| -------------- | ---------------------------------------------------- |
+| **Home**       | Your #team conversation.                             |
+| **Activity**   | Everything your agents have done, most recent first. |
+| **Scheduled**  | Work you've put on a timer.                          |
+| **Workspaces** | The project checkouts your sessions run in.          |
+
+Down the left is the sidebar: the four places you can go, then your agents, your channels, and your direct messages. Click into the empty message box and **Jump back in** appears over it, listing whatever you had open last. Your full roster, people and agents together, lives on the [Team](/docs/guides/team) page.
+
+<Callout type="info">
+  Used DorkOS before Home became a room? Nothing was dropped, it just moved. Approvals and anything
+  needing attention are in the header above the conversation. The activity feed is the **Activity**
+  tab. The agent cards became the row of faces in that header, plus your sidebar and the
+  [Team](/docs/guides/team) page.
+</Callout>
 
 ## What is a "coding agent"?
 

@@ -5,19 +5,27 @@
  * `create_agent` tool (internal + external server), and the marketplace
  * agent-package install flow all funnel through here.
  *
+ * TWO CALL SITES NOTIFY IT, and between them they cover every creation path:
+ *
+ * - `services/core/agent-creator.ts` (`createAgentWorkspace`) — the full
+ *   pipeline, which `POST /api/agents/create`, the MCP `create_agent` tool and
+ *   the marketplace agent install all funnel through;
+ * - `routes/agents.ts` (`POST /api/agents`) — the register path, which writes
+ *   the manifest itself rather than going through `createAgentWorkspace`, and
+ *   so must notify directly.
+ *
  * WHY MODULE-LEVEL, NOT INJECTED: `createAgentWorkspace` is a free function
- * with four independent call sites (two routes, MCP tools, marketplace flow).
- * Threading a shapes-flavored callback through every caller's dependency
- * surface would tangle the agent-creator pipeline (and the marketplace
- * installer's constructor chain) with the Shapes domain for the sake of one
- * bootstrap-time wire. A single registration, set once in `index.ts` before
- * routes mount, keeps the coupling in exactly one place — the same trade the
- * config manager singleton makes.
+ * with several independent callers. Threading a reaction-flavoured callback
+ * through every one of their dependency surfaces would tangle the agent-creator
+ * pipeline (and the marketplace installer's constructor chain) with the Shapes
+ * and rooms domains for the sake of one bootstrap-time wire. A single
+ * registration, set once in `index.ts` before routes mount, keeps the coupling
+ * in exactly one place — the same trade the config manager singleton makes.
  *
  * The listener is AWAITED (deliberately — callers respond after downstream
- * reactions like the Shape schedule re-bind have settled), but failures are
- * swallowed and logged: a created agent must never fail its creation response
- * because a reaction threw.
+ * reactions like the #team seat and the Shape schedule re-bind have settled),
+ * but failures are swallowed and logged: a created agent must never fail its
+ * creation response because a reaction threw.
  *
  * @module services/core/agent-created-hook
  */
@@ -31,11 +39,20 @@ export interface CreatedAgentInfo {
   name: string;
   /** The agent's display name, when set. */
   displayName?: string;
+  /**
+   * The agent's directory — required, not optional, because it is the identity
+   * the rooms domain keys on (ADR 260726-170126) and a reaction that had to
+   * look it back up could silently do nothing on the one path that forgot to
+   * sync first. Every caller has it in hand; making it required is what stops a
+   * fifth creation path from omitting it.
+   */
+  path: string;
 }
 
 /**
- * A reaction to a newly created/registered agent. Today: re-binding Shape
- * schedules that were created global/disabled because this agent was missing.
+ * A reaction to a newly created/registered agent. Today: seating it in #team
+ * (team-room-home spec D3.1) and re-binding Shape schedules that were created
+ * global/disabled because this agent was missing.
  */
 export type AgentCreatedListener = (agent: CreatedAgentInfo) => Promise<void> | void;
 

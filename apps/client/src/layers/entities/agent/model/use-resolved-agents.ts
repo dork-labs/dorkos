@@ -8,13 +8,17 @@ import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
  * Used by DirectoryPicker to show agent names in the recents list.
  *
  * @param paths - Array of directory paths to resolve
+ * @param options.enabled - Ask the server at all. `false` holds the query idle
+ *   for a caller that is mounted but not drawing anything.
  */
-export function useResolvedAgents(paths: string[]) {
+export function useResolvedAgents(paths: string[], options: { enabled?: boolean } = {}) {
   const transport = useTransport();
   return useQuery<Record<string, AgentManifest | null>>({
     queryKey: agentKeys.resolved(paths),
     queryFn: () => transport.resolveAgents(paths),
-    enabled: paths.length > 0,
+    // Nothing to ask about, or a caller that is mounted but not drawing
+    // anything (see `useMeshAgentPaths`' own `enabled`).
+    enabled: paths.length > 0 && (options.enabled ?? true),
     staleTime: 60_000,
   });
 }

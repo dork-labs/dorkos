@@ -17,10 +17,16 @@ const ResponsiveContextMenuContext = React.createContext<{
   isDesktop: boolean;
   close: () => void;
   open: () => void;
+  /**
+   * Set by a `movesFocus` item: its action is placing focus itself, so the menu
+   * must not take focus back on its way out. Cleared by the content.
+   */
+  keepsFocus: React.RefObject<boolean>;
 }>({
   isDesktop: true,
   close: () => {},
   open: () => {},
+  keepsFocus: { current: false },
 });
 
 // ── Root ──
@@ -33,20 +39,21 @@ interface ResponsiveContextMenuProps {
 function ResponsiveContextMenu({ children }: ResponsiveContextMenuProps) {
   const isDesktop = !useIsMobile();
   const [drawerOpen, setDrawerOpen] = React.useState(false);
+  const keepsFocus = React.useRef(false);
 
   const close = React.useCallback(() => setDrawerOpen(false), []);
   const open = React.useCallback(() => setDrawerOpen(true), []);
 
   if (isDesktop) {
     return (
-      <ResponsiveContextMenuContext.Provider value={{ isDesktop, close, open }}>
+      <ResponsiveContextMenuContext.Provider value={{ isDesktop, close, open, keepsFocus }}>
         <ContextMenu>{children}</ContextMenu>
       </ResponsiveContextMenuContext.Provider>
     );
   }
 
   return (
-    <ResponsiveContextMenuContext.Provider value={{ isDesktop, close, open }}>
+    <ResponsiveContextMenuContext.Provider value={{ isDesktop, close, open, keepsFocus }}>
       <Drawer open={drawerOpen} onOpenChange={setDrawerOpen}>
         {children}
       </Drawer>
@@ -147,26 +154,59 @@ function MobileTrigger({
 function ResponsiveContextMenuContent({
   className,
   children,
+  onCloseAutoFocus,
   ...props
 }: React.ComponentPropsWithoutRef<typeof ContextMenuContent>) {
-  const { isDesktop } = React.useContext(ResponsiveContextMenuContext);
+  const { isDesktop, keepsFocus } = React.useContext(ResponsiveContextMenuContext);
+
+  // The second half of what a `movesFocus` item asked for: as the surface
+  // finally goes, it hands focus back to whatever was focused when it opened —
+  // from a timer that fires after the closing animation, so it always lands
+  // last. When the action placed the caret itself, that restore would undo it
+  // (DOR-1038), so it is skipped for this one close. Escape, and every other
+  // item, still hand focus back to the row a keyboard user came from.
+  const handleCloseAutoFocus = (event: Event) => {
+    onCloseAutoFocus?.(event);
+    if (!keepsFocus.current) return;
+    keepsFocus.current = false;
+    event.preventDefault();
+  };
 
   if (isDesktop) {
     return (
-      <ContextMenuContent className={className} {...props}>
+      <ContextMenuContent className={className} onCloseAutoFocus={handleCloseAutoFocus} {...props}>
         {children}
       </ContextMenuContent>
     );
   }
 
   return (
-    <DrawerContent>
+    <DrawerContent onCloseAutoFocus={handleCloseAutoFocus}>
       <div className="pb-6">{children}</div>
     </DrawerContent>
   );
 }
 
 // ── Item ──
+
+interface ResponsiveContextMenuItemProps extends React.ComponentPropsWithoutRef<
+  typeof ContextMenuItem
+> {
+  /**
+   * This item's action puts the caret somewhere on purpose — in the chat
+   * composer, say — rather than leaving it on the row the menu opened from.
+   *
+   * Such an action runs a beat later than the others, once the menu has begun
+   * closing, and the menu then leaves focus where the action put it. Both halves
+   * are needed: while a menu is open it traps focus, so an action that focuses
+   * anything outside is undone on the spot, and as the menu goes it hands focus
+   * back to the row (DOR-1038).
+   *
+   * An action that ends up moving no focus — because it could not do the thing —
+   * gets the ordinary restore, and every other item is untouched.
+   */
+  movesFocus?: boolean;
+}
 
 /** Menu item for the responsive context menu or drawer. */
 function ResponsiveContextMenuItem({
@@ -175,16 +215,40 @@ function ResponsiveContextMenuItem({
   onClick,
   variant = 'default',
   disabled,
+  movesFocus = false,
   ...props
-}: React.ComponentPropsWithoutRef<typeof ContextMenuItem>) {
-  const { isDesktop, close } = React.useContext(ResponsiveContextMenuContext);
+}: ResponsiveContextMenuItemProps) {
+  const { isDesktop, close, keepsFocus } = React.useContext(ResponsiveContextMenuContext);
+
+  const runAction = (event: React.MouseEvent<HTMLDivElement>) => {
+    if (!movesFocus) {
+      onClick?.(event);
+      return;
+    }
+    // A menu stops trapping focus the moment it starts closing, which is one
+    // turn of the event loop from here — so this is the first instant an action
+    // can put the caret somewhere else and have it stay. `keepsFocus` covers the
+    // other end: the menu's own focus restore, which lands later still.
+    keepsFocus.current = true;
+    setTimeout(() => {
+      const before = document.activeElement;
+      onClick?.(event);
+      // An action can decline to move focus after all — "Add to Chat" with no
+      // chat open only says so — and then the row should get focus back like it
+      // does from every other item. Cheaper to ask than to promise.
+      const after = document.activeElement;
+      if (after === before || after === null || after === document.body) {
+        keepsFocus.current = false;
+      }
+    }, 0);
+  };
 
   if (isDesktop) {
     return (
       <ContextMenuItem
         data-slot="context-menu-item"
         className={className}
-        onClick={onClick}
+        onClick={runAction}
         variant={variant}
         disabled={disabled}
         {...props}
@@ -212,7 +276,7 @@ function ResponsiveContextMenuItem({
         className
       )}
       onClick={(e) => {
-        onClick?.(e as unknown as React.MouseEvent<HTMLDivElement>);
+        runAction(e as unknown as React.MouseEvent<HTMLDivElement>);
         close();
       }}
     >

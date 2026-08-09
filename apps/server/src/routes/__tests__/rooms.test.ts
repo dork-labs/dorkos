@@ -60,6 +60,7 @@ vi.mock('../../services/core/config-manager.js', () => ({
 
 import { createApp, finalizeApp } from '../../app.js';
 import { createRoomSubsystem, getRoomService, setRoomService } from '../../services/rooms/index.js';
+import { setReadCursorService } from '../../services/core/read-cursor-service.js';
 import {
   initAgentIdentityService,
   resetAgentIdentityService,
@@ -105,7 +106,12 @@ describe('/api/rooms', () => {
     db = createTestDb();
     registerAgent(db, 'ana', ANA_PATH);
     registerAgent(db, 'bo', BO_PATH);
-    setRoomService(createRoomSubsystem({ db }).service);
+    // Both halves of one subsystem: the rooms service and the read-cursor
+    // service it writes a person's place into. Built together so the room list
+    // and `/api/read-cursors` provably read the same table.
+    const rooms = createRoomSubsystem({ db });
+    setRoomService(rooms.service);
+    setReadCursorService(rooms.readCursors);
   });
 
   afterEach(() => {
@@ -600,13 +606,25 @@ describe('/api/rooms', () => {
     });
   });
 
-  describe('PUT /:id/read-cursor', () => {
-    it('advances the caller cursor and clears the unread count', async () => {
+  describe('the retired PUT /:id/read-cursor', () => {
+    it('is gone, and the generic route does its job', async () => {
+      // The migration's closing condition (team-room-home §D4): read state has
+      // exactly one write path, so the room-shaped URL must be absent rather
+      // than quietly still working. Asserting the 404 is what keeps a later
+      // "restore the old endpoint for compatibility" honest — a second URL onto
+      // one implementation is still a second thing to keep true.
       const room = await createChannel();
       await request(app).post(`/api/rooms/${room.id}/entries`).send({ text: 'hello' });
 
-      const res = await request(app)
+      const gone = await request(app)
         .put(`/api/rooms/${room.id}/read-cursor`)
+        .send({ lastReadSeq: 1 });
+      expect(gone.status).toBe(404);
+
+      // And the room's unread count still clears, through the one route there
+      // is — so the 404 above is a removal and not a regression.
+      const res = await request(app)
+        .put(`/api/read-cursors/room/${room.id}`)
         .send({ lastReadSeq: 1 });
       expect(res.status).toBe(200);
       expect(res.body.lastReadSeq).toBe(1);

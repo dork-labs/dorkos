@@ -86,9 +86,8 @@ src/
 │   │   ├── commands/    # Inline slash command palette (chat input)
 │   │   ├── session-list/ # SessionSidebar (Obsidian shell), SessionsView, tabbed views
 │   │   ├── dashboard-sidebar/ # DashboardSidebar — navigation + recent agents list at /
-│   │   ├── dashboard-attention/ # NeedsAttentionSection — conditional zero-DOM attention zone
-│   │   ├── dashboard-status/ # SystemStatusRow — Tasks/Relay/Mesh health cards + activity sparkline
-│   │   ├── dashboard-activity/ # RecentActivityFeed — time-grouped event feed with last-visit tracking
+│   │   ├── dashboard-attention/ # Attention rows + detail sheets — what the triage header composes
+│   │   ├── dashboard-activity/ # useDashboardActivity — time-grouped recent activity, read by Pulse
 │   │   ├── settings/    # SettingsDialog (Appearance, Preferences, Server, Tools, Advanced)
 │   │   ├── agent-settings/ # AgentDialog (IdentityTab, PersonaTab, CapabilitiesTab, IntegrationsTab)
 │   │   ├── files/       # FileBrowser
@@ -104,7 +103,13 @@ src/
 │       ├── app-layout/  # Header, Layout, main workspace
 │       │   ├── ui/
 │       │   └── index.ts
-│       ├── dashboard/   # DashboardPage — status overview at /
+│       ├── activity/    # ActivityPage (/activity) — feed, week summary, "From your extensions"
+│       │   ├── lib/
+│       │   ├── model/
+│       │   ├── ui/
+│       │   └── index.ts
+│       ├── home/        # HomeSurfaceLayout + HomeTabBar + PinnedTriageHeader — the chrome over /, /activity, /tasks, /workspaces
+│       │   ├── lib/     #   home-tabs.ts: the four tabs and the pathname → active-tab resolver
 │       │   ├── ui/
 │       │   └── index.ts
 │       ├── marketplace/ # MarketplacePage (/marketplace), MarketplaceSourcesPage (/marketplace/sources)

@@ -53,11 +53,20 @@ function RichComposer({
 
 /** Wait for the lazy chunk to swap the textarea out. */
 async function findRichField() {
-  return waitFor(() => {
-    const field = document.querySelector('[contenteditable="true"]');
-    expect(field).not.toBeNull();
-    return field as HTMLElement;
-  });
+  return waitFor(
+    () => {
+      const field = document.querySelector('[contenteditable="true"]');
+      expect(field).not.toBeNull();
+      return field as HTMLElement;
+    },
+    // Generous, and for the same reason its siblings are: this may be the first
+    // load of the lazy Lexical chunk in the run, which pulls the whole editor
+    // through the transform pipeline. Testing Library's default is 1s, which is
+    // enough on an idle machine and not enough on a busy one — the failure then
+    // reads `expected null not to be null` and looks like the palette broke,
+    // when in truth the field never mounted and no palette assertion ever ran.
+    { timeout: 10_000 }
+  );
 }
 
 describe('the palettes still get what they need from the rich-text field', () => {

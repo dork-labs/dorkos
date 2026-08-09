@@ -28,6 +28,7 @@ import { PreferencesTab } from '@/layers/features/settings/ui/tabs/PreferencesTa
 import { ServerTab } from '@/layers/features/settings/ui/ServerTab';
 import { ToolsResetAction, ToolsTab } from '@/layers/features/settings/ui/ToolsTab';
 import { AdvancedTab } from '@/layers/features/settings/ui/AdvancedTab';
+import { BackgroundSystemsCard } from '@/layers/features/settings/ui/tools/BackgroundSystemsCard';
 import { ClaudeAccountsSection, ExecutionExceptionsStrip } from '@/layers/features/settings';
 import {
   LiveRuntimeCard,
@@ -49,6 +50,7 @@ export function SettingsShowcases() {
       <IndividualTabsSection />
       <ClaudeAccountsShowcaseSection />
       <ExecutionExceptionsSection />
+      <BackgroundSystemsSection />
       <MobileDrillInSection />
       <LoadingEmptyStatesSection />
       <PrimitivesSection />
@@ -163,6 +165,70 @@ function FullSettingsDialogSection() {
       <ShowcaseDemo responsive>
         <Button onClick={() => setOpen(true)}>Open Settings</Button>
         <SettingsDialog open={open} onOpenChange={setOpen} />
+      </ShowcaseDemo>
+    </PlaygroundSection>
+  );
+}
+
+/**
+ * Section 2d — the Tools tab's background-system switches in every state their
+ * copy branches on (spec `team-room-home` D6).
+ *
+ * Three of these four are invisible on the playground's default data, and each
+ * one is a different sentence under the same switch. They are the states where
+ * getting the wording wrong tells a person something untrue about their own
+ * machine, so they are shown side by side where that is easy to see.
+ */
+function BackgroundSystemsSection() {
+  const noop = () => undefined;
+  return (
+    <PlaygroundSection
+      title="Background Systems"
+      description="Turning a background system off is saved immediately but only takes effect at the next start, and two other states look identical from the switch's point of view. Each row states which one it is in."
+    >
+      <ShowcaseLabel>Both running, settings agree</ShowcaseLabel>
+      <ShowcaseDemo>
+        <BackgroundSystemsCard
+          tasks={{ running: true, enabledInConfig: true, lockedByEnv: false }}
+          relay={{ running: true, enabledInConfig: true, lockedByEnv: false }}
+          onTasksChange={noop}
+          onRelayChange={noop}
+        />
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>Restart pending — turned off, still running</ShowcaseLabel>
+      <ShowcaseDemo>
+        <BackgroundSystemsCard
+          tasks={{ running: true, enabledInConfig: false, lockedByEnv: false }}
+          relay={{ running: true, enabledInConfig: false, lockedByEnv: false }}
+          onTasksChange={noop}
+          onRelayChange={noop}
+        />
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>Locked by an environment variable</ShowcaseLabel>
+      <ShowcaseDemo>
+        <BackgroundSystemsCard
+          tasks={{ running: false, enabledInConfig: true, lockedByEnv: true }}
+          relay={{ running: true, enabledInConfig: false, lockedByEnv: true }}
+          onTasksChange={noop}
+          onRelayChange={noop}
+        />
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>Failed to start — on, but crashed at boot</ShowcaseLabel>
+      <ShowcaseDemo>
+        <BackgroundSystemsCard
+          tasks={{ running: true, enabledInConfig: true, lockedByEnv: false }}
+          relay={{
+            running: false,
+            enabledInConfig: true,
+            lockedByEnv: false,
+            initError: "EACCES: permission denied, open '/Users/dev/.dork/relay/adapters.json'",
+          }}
+          onTasksChange={noop}
+          onRelayChange={noop}
+        />
       </ShowcaseDemo>
     </PlaygroundSection>
   );

@@ -50,6 +50,74 @@ export interface TimelineItemRow {
   grouping: MessageGrouping;
 }
 
+/** What {@link unreadPlacement} needs of an entry: an id and its position. */
+export interface PositionedItem {
+  /** Stable id. The rule is placed relative to it. */
+  id: string;
+  /** Monotonic position within the thread, counting up from one. */
+  seq: number;
+}
+
+/** Where the "New messages" rule goes, if anywhere. */
+export interface UnreadPlacement {
+  /** Id of the newest entry already read; the rule goes just after it. */
+  lastSeenId: string | null;
+  /** Everything on screen is unread, so the rule goes above the first entry. */
+  fromStart: boolean;
+}
+
+/** No rule at all: caught up, or no cursor to place. */
+const NO_RULE: UnreadPlacement = { lastSeenId: null, fromStart: false };
+
+/**
+ * Translate a read cursor into a rule position — the ONE set of rules, for every
+ * kind of thread there is.
+ *
+ * A cursor stores a position while the rule is placed relative to an id, so this
+ * is the translation between the two — and it has to distinguish three things a
+ * plain `seq → id` lookup collapses into one `null`: no cursor at all (no rule),
+ * caught up (no rule), and a reader who has read NOTHING (rule at the top,
+ * because the sidebar is badging that thread and the two must agree).
+ *
+ * Rooms feed it their entries' own `seq`; a session's transcript feeds it the
+ * position of each message, which is what a session cursor counts
+ * (`features/chat/model/view/use-unread-cursor`). Same input shape, same rule,
+ * so the same read state draws the same line on both surfaces — which is the
+ * point of there being one cursor table behind them.
+ *
+ * A cursor ABOVE everything on screen means the two surfaces want different
+ * things — a room has paged past it (everything loaded is unread), a session has
+ * been trimmed below it (everything left was seen) — so neither is decided here:
+ * the caller says which it is by clamping, or not, before it asks.
+ *
+ * @param entries - The rendered history, oldest first, in position order.
+ * @param lastReadSeq - The reader's cursor, or null when they have none here.
+ */
+export function unreadPlacement(
+  entries: readonly PositionedItem[],
+  lastReadSeq: number | null
+): UnreadPlacement {
+  // No cursor: nothing to place. Whatever badges this thread badges nothing
+  // either, so the two agree.
+  if (lastReadSeq === null) return NO_RULE;
+
+  const newest = entries[entries.length - 1];
+  // Nothing to read, or nothing unread — the newest entry is at or below the cursor.
+  if (!newest || newest.seq <= lastReadSeq) return NO_RULE;
+
+  // A reader who has read nothing has a real cursor sitting at zero, and every
+  // entry is above it. The rule belongs above the first one — not absent, which
+  // is what the sidebar badge would be contradicting.
+  if (lastReadSeq <= 0) return { lastSeenId: null, fromStart: true };
+
+  for (let i = entries.length - 1; i >= 0; i--) {
+    if (entries[i]!.seq <= lastReadSeq) return { lastSeenId: entries[i]!.id, fromStart: false };
+  }
+  // The cursor is above every entry this page holds, so everything on screen is
+  // unread.
+  return { lastSeenId: null, fromStart: true };
+}
+
 /** A full-bleed rule marking the start of a calendar day. */
 export interface DayDividerRow {
   kind: 'day-divider';

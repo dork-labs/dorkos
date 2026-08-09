@@ -307,8 +307,8 @@ describe('ChannelsSection', () => {
 
     fireEvent.click(within(openHeaderMenu()).getByText('Mark all channels read'));
 
-    await waitFor(() => expect(transport.setRoomReadCursor).toHaveBeenCalledWith('room-1', 7));
-    expect(transport.setRoomReadCursor).toHaveBeenCalledWith('room-9', 7);
+    await waitFor(() => expect(transport.setReadCursor).toHaveBeenCalledWith('room', 'room-1', 7));
+    expect(transport.setReadCursor).toHaveBeenCalledWith('room', 'room-9', 7);
   });
 
   it('withholds Mark all channels read when nothing is behind', () => {

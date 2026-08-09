@@ -35,11 +35,27 @@ import {
  * @module capture/surfaces-desktop
  */
 
-/** Capture the cockpit/dashboard home. */
+/**
+ * Capture the cockpit home — the #team room.
+ *
+ * **This shot currently ships an EMPTY room** ("Nothing said here yet"), and
+ * that is a known gap, not the intended frame. Nothing in `seed.ts` puts
+ * entries in #team, and nothing can directly: `POST /api/rooms/:id/entries`
+ * forces `authorId` to the calling person, so an agent-authored entry only
+ * exists as the output of a real turn `RoomTriggerDispatcher` ran.
+ * Inhabiting this room therefore means DRIVING it — post as the person and let
+ * the default agent's fallback seat answer (`team-room-home` 2.2) — the same
+ * shape as `openLiveTurn`, and it needs the test-mode runtime's room-turn
+ * behavior confirmed first. Until then the shot is honest but unflattering, and
+ * it violates the README's "inhabited app" art direction.
+ */
 async function shootCockpit(page: Page, theme: Theme, rec: RunRecorder): Promise<void> {
   await page.goto(url('/'));
   await page.waitForSelector('[data-testid="app-shell"]', { timeout: WAIT_MS });
-  await page.getByText('Atlas', { exact: false }).first().waitFor({ timeout: WAIT_MS });
+  // The composer, not a seeded agent's name: Home is a room now
+  // (`team-room-home` D3.2), so the money state is "the room has drawn" rather
+  // than "the activity feed has an agent in it".
+  await page.waitForSelector('[data-testid="home-composer"]', { timeout: WAIT_MS });
   await shoot(page, 'cockpit', theme, rec);
 }
 

@@ -298,6 +298,17 @@ export const RoomBridgeInfoSchema = z
 
 export type RoomBridgeInfo = z.infer<typeof RoomBridgeInfoSchema>;
 
+/**
+ * The `wellKnown` key of #team — the one room every install is opened with and
+ * the room the cockpit's home tab renders (team-room-home spec D3.1).
+ *
+ * It lives on the wire contract rather than in the server, because both ends
+ * read it: the boot hook opens the room under this key, and the client finds it
+ * again by the same key rather than by a slug a person may have renamed. One
+ * spelling, one place.
+ */
+export const TEAM_ROOM_WELL_KNOWN = 'team';
+
 export const RoomSchema = z
   .object({
     id: z.string().min(1),
@@ -316,6 +327,20 @@ export const RoomSchema = z
       .min(0)
       .describe(
         'How many entries of ambient history a turn in this room replays at most, oldest dropped first (room-participation spec §8.3). A bound on what one turn reads, never on the log — a room never forgets what was said, and a turn whose window was trimmed is told so.'
+      ),
+    wellKnown: z
+      .string()
+      .nullable()
+      .optional()
+      .describe(
+        "The stable name a room DorkOS itself depends on is found by — `'team'` for the #team channel every install gets at boot — and `null` for every room a person or an agent opened (team-room-home spec D3.1). It is also the tell that this is a SYSTEM room: only the owner may rename or archive one, so a client draws those controls off this field rather than guessing. It never changes, which is what makes it findable after a rename. The server always sends it, `null` included; it is optional only so that the thirty client fixtures that assemble a room by hand need not each carry a field none of them reads. Absent and `null` mean the same thing — an ordinary room."
+      ),
+    fallbackSeatAuthorId: z
+      .string()
+      .nullable()
+      .optional()
+      .describe(
+        'The one member that answers a message somebody typed in this room without addressing anybody — #team\'s default agent (team-room-home spec D3.4) — and `null` in every room a person opened. Held on the room rather than read off a member\'s `always` mode, because a person may set any agent to "Everything" themselves and that choice must not be mistaken for this one. Optional for the same reason `wellKnown` is: client fixtures that assemble a room by hand do not carry a field they never read, and absent means the same as `null`.'
       ),
     createdAt: z.string(),
     lastActivityAt: z.string(),
@@ -383,7 +408,13 @@ export const RoomMemberSchema = z
       .describe(
         "The room's highest seq when this membership was written — 0 for somebody who joined an empty room. The floor under everything the member may be shown: joining a channel does not retroactively read what was said before you were in it. Distinct from `lastReadSeq`, which starts at 0 for everybody and moves as they read."
       ),
-    lastReadSeq: z.number().int().min(0).describe('The (member, room) read cursor.'),
+    lastReadSeq: z
+      .number()
+      .int()
+      .min(0)
+      .describe(
+        'Where this member has read up to in this room. For a PERSON it is their own read state, shared with every other device they read on; for an AGENT it is what the room has shown it, which its next ambient turn reads from. One number either way — match yourself on `RoomWithRoster.viewerAuthorId` and this is your place in the room.'
+      ),
   })
   .openapi('RoomMember');
 
@@ -434,6 +465,116 @@ export const RoomWithRosterSchema = RoomSchema.extend({
 
 export type RoomWithRoster = z.infer<typeof RoomWithRosterSchema>;
 
+// === Moments ===
+
+/**
+ * What a moment marks — the milestone the room is pointing at.
+ *
+ * Every one of these is something that either happened or did not: an agent was
+ * created, a pull request shipped, a week's work added up to a number. There is
+ * no code here for "encouragement" or "tip", and there must never be one — a
+ * moment a person cannot trace back to a real record is the thing this whole
+ * feature is designed not to be (team-room-home spec D5.1).
+ *
+ * `agent_minted` is the one an AGENT noticed rather than a detector. It is not
+ * a looser bar: it carries the same source, it rides the same guarded post path
+ * as any other agent post, and it additionally has to name the agent that
+ * minted it.
+ */
+export const RoomMomentKindSchema = z
+  .enum([
+    'first_agent',
+    'joined_team',
+    'first_pr',
+    'first_schedule',
+    'first_overnight_run',
+    'first_connection',
+    'volume_mark',
+    'anniversary',
+    'agent_minted',
+  ])
+  .openapi('RoomMomentKind');
+
+export type RoomMomentKind = z.infer<typeof RoomMomentKindSchema>;
+
+/**
+ * The kind of real record a moment was read from.
+ *
+ * Deliberately a closed list of the things this install actually keeps, so a
+ * detector cannot invent a provenance: an agent's own record, a pull request,
+ * a schedule, a session, a connection, or the activity log that already counts
+ * what happened.
+ */
+export const RoomMomentSourceKindSchema = z
+  .enum(['agent', 'pull_request', 'schedule', 'session', 'connection', 'activity'])
+  .openapi('RoomMomentSourceKind');
+
+export type RoomMomentSourceKind = z.infer<typeof RoomMomentSourceKindSchema>;
+
+/**
+ * What a moment was derived FROM — the record, and when it happened.
+ *
+ * Required, and required to name something: `ref` is the id or path of the one
+ * record a reader could go and look at, and `observedAt` is when that record
+ * says the thing occurred, never when the moment was written. A moment posted
+ * an hour late is still about the hour it is about.
+ */
+export const RoomMomentSourceSchema = z
+  .object({
+    kind: RoomMomentSourceKindSchema,
+    ref: z
+      .string()
+      .min(1)
+      .describe(
+        "The record's own identifier — an agent path, a session id, a pull request URL. Never a sentence, and never empty: a source that names nothing is not a source."
+      ),
+    observedAt: z
+      .string()
+      .min(1)
+      .describe('When the thing actually happened, from the record. Not when this was posted.'),
+  })
+  .openapi('RoomMomentSource');
+
+export type RoomMomentSource = z.infer<typeof RoomMomentSourceSchema>;
+
+/**
+ * A milestone worth marking, carried on the entry that says it.
+ *
+ * **A moment is a post, not a fourth kind of entry.** It rides
+ * {@link RoomEntryBodySchema} beside the words a person reads, so every path
+ * that already carries a post carries this one — the history page, the stream,
+ * a bridge, a thread reply — and nothing had to learn a new entry kind. What
+ * changes is how the feed DRAWS it (`RoomMomentRow`).
+ *
+ * **`source` is what makes the type honest.** It is required, so the schema
+ * itself refuses a moment nobody can trace; a detector with nothing to point at
+ * has nothing to post.
+ *
+ * **`mintedByAgentRef` is required and nullable rather than optional**, so
+ * every moment states who minted it and "nobody filled this in" can never be
+ * read as "DorkOS did". `null` is DorkOS itself; an `agentAuthorRef` is the
+ * agent that noticed, and an `agent_minted` moment must carry one.
+ */
+export const RoomMomentSchema = z
+  .object({
+    kind: RoomMomentKindSchema,
+    source: RoomMomentSourceSchema,
+    mintedByAgentRef: z
+      .string()
+      .min(1)
+      .nullable()
+      .describe(
+        'The `agentAuthorRef` of the agent that minted this moment, or null when DorkOS itself did.'
+      ),
+  })
+  .refine((moment) => moment.kind !== 'agent_minted' || moment.mintedByAgentRef !== null, {
+    message: 'An agent-minted moment has to name the agent that minted it',
+    path: ['mintedByAgentRef'],
+  })
+  .openapi('RoomMoment');
+
+export type RoomMoment = z.infer<typeof RoomMomentSchema>;
+
 // === Entries ===
 
 /**
@@ -444,12 +585,18 @@ export type RoomWithRoster = z.infer<typeof RoomWithRosterSchema>;
  * exactly when `kind === 'notice'`, and `subjectAuthorId` names who the notice
  * is about when that is not the entry's own author (a refused trigger is
  * written by the system but is about the agent that did not reply).
+ *
+ * `moment` is the third field and the newest: set on a post that marks a
+ * milestone (spec D5.1), never on a notice. `subjectAuthorId` does the same job
+ * for it as it does for a notice — "tangerines joined your team" is written by
+ * the system and is ABOUT tangerines, and that is the identity the feed draws.
  */
 export const RoomEntryBodySchema = z
   .object({
     text: z.string(),
     notice: RoomNoticeCodeSchema.optional(),
     subjectAuthorId: z.string().optional(),
+    moment: RoomMomentSchema.optional(),
   })
   .openapi('RoomEntryBody');
 
@@ -854,12 +1001,6 @@ export const SetAuthorHandleRequestSchema = z
   .openapi('SetAuthorHandleRequest');
 
 export type SetAuthorHandleRequest = z.infer<typeof SetAuthorHandleRequestSchema>;
-
-export const SetReadCursorRequestSchema = z
-  .object({ lastReadSeq: z.number().int().min(0) })
-  .openapi('SetReadCursorRequest');
-
-export type SetReadCursorRequest = z.infer<typeof SetReadCursorRequestSchema>;
 
 /**
  * Post a reply inside a thread.

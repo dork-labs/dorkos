@@ -130,6 +130,7 @@ import type {
   ForkShapeResult,
 } from './marketplace-schemas.js';
 import type { RoomTransport } from './transport-rooms.js';
+import type { ReadCursor, ReadCursorThreadKind } from './read-cursor-schemas.js';
 import type {
   ProfileAvatarResponse,
   ProfileUpdateResponse,
@@ -1939,6 +1940,54 @@ export interface Transport extends RoomTransport {
    * then to their initial. Idempotent.
    */
   deleteProfileAvatar(): Promise<void>;
+
+  // --- Read state (spec `team-room-home` §D4, ADR 260808-140956) ---
+
+  /**
+   * Move the caller's read cursor forward in one thread — a room, an agent
+   * session, or the inbox.
+   *
+   * One method for all three, because there is one table and one route behind
+   * it — a room has no read-cursor method of its own, it is `threadKind:
+   * 'room'`. What an AGENT has been shown is a different fact living on its
+   * `room_members` row, advanced by the ambient participation loop as entries
+   * are delivered to it; this cursor is what a PERSON has looked at, and neither
+   * is derived from the other.
+   *
+   * **Monotonic, so this is safe to call on every scroll.** A position at or
+   * below the stored one is ignored rather than refused, which is what stops a
+   * stale second device from un-reading a thread. It also means a call that
+   * changes nothing broadcasts nothing, so a caller cannot make the cursor
+   * announce itself by re-sending the same number.
+   *
+   * @param threadKind - Which kind of thread `threadId` names.
+   * @param threadId - The thread.
+   * @param lastReadSeq - The position now read to. What the number counts is per
+   *   kind — see `SetReadCursorPositionRequestSchema` — a room entry's `seq`, or
+   *   for a session how many transcript messages the reader has seen.
+   * @returns The cursor as it now stands — the higher of the stored value and
+   *   the requested one.
+   */
+  setReadCursor(
+    threadKind: ReadCursorThreadKind,
+    threadId: string,
+    lastReadSeq: number
+  ): Promise<ReadCursor>;
+
+  /**
+   * Read the caller's own cursor in one thread, or `null` when they have never
+   * read it.
+   *
+   * The read half of {@link setReadCursor}, and the same rule about whose state
+   * this is: there is no way to name a user, so a client can only ever ask about
+   * its own. A thread nobody has opened answers `null` rather than a zero
+   * cursor, because "never read" draws no unread rule while "read up to 0" does.
+   *
+   * @param threadKind - Which kind of thread `threadId` names.
+   * @param threadId - The thread.
+   * @returns The caller's cursor, or `null` when they have never read this thread.
+   */
+  getReadCursor(threadKind: ReadCursorThreadKind, threadId: string): Promise<ReadCursor | null>;
 
   // --- Shapes (DOR-355) ---
 

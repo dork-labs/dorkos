@@ -270,6 +270,51 @@ export const rooms = sqliteTable(
       .notNull()
       .default(DEFAULT_AMBIENT_MAX_ENTRIES),
 
+    /**
+     * The stable name a room the PRODUCT depends on is found by — `'team'` for
+     * the #team channel every install gets at boot — and `null` for every room
+     * a person or an agent opened (team-room-home spec D3.1).
+     *
+     * **A second key, because the first one moves.** A channel's slug is its
+     * name, and renaming one rewrites the slug with the title; a boot hook that
+     * re-derived #team from `slug = 'team'` would therefore mint a second one
+     * the first time somebody renamed it. This column never changes, so
+     * `ensureTeamRoom` is idempotent across a rename, an archive, and a restart.
+     *
+     * **It is also the system-room flag**, and one column rather than two on
+     * purpose: "DorkOS created this room and the product needs it" and "nothing
+     * else may take its key" are the same fact. A non-null value is what makes
+     * `RoomService.updateRoom` refuse a rename or an archive from anyone but
+     * the owner (DOR-608's hole, closed for exactly the rooms it matters for).
+     *
+     * Unique, and NULL is distinct from NULL in a SQLite unique index, so every
+     * ordinary room sits under it for free.
+     */
+    wellKnown: text('well_known'),
+
+    /**
+     * The author id holding this room's **fallback seat** — the one member that
+     * answers a message a person typed without addressing anybody (#team's
+     * default agent, team-room-home spec D3.4). `null` in every ordinary room.
+     *
+     * **Stored, rather than inferred from `response_mode = 'always'`, because
+     * the mode cannot tell two different facts apart.** A person may set any
+     * agent to "Everything" from the room's own member menu, and that is their
+     * deliberate choice; the seat is DorkOS's, moved by the default-agent
+     * setting. Reading the mode as the marker made a person's `always` stand
+     * down when somebody else was named, and made the boot reconcile silently
+     * revert it. One column, on the ROOM rather than the membership, so "at most
+     * one seat" is true by construction instead of by a sweep — and so the
+     * dispatcher gets it for free from a room it already holds, with no extra
+     * query per post.
+     *
+     * Not a foreign key, and not cleaned up when the agent goes: an author row
+     * is retired rather than deleted (`author-registry.ts`), so a stale id names
+     * a member that is still on the roster and simply no longer answers. The
+     * next reconcile moves it.
+     */
+    fallbackSeatAuthorId: text('fallback_seat_author_id'),
+
     createdAt: text('created_at').notNull(),
     lastActivityAt: text('last_activity_at').notNull(),
   },
@@ -280,6 +325,11 @@ export const rooms = sqliteTable(
     uniqueIndex('rooms_channel_slug_unique')
       .on(table.slug)
       .where(sql`"kind" = 'channel' AND "archived" = 0`),
+    // One room per well-known key, forever — an archive does NOT release it the
+    // way it releases a slug, because the key is what a restart finds the room
+    // by and a released one would let the next boot open a second #team beside
+    // the archived first.
+    uniqueIndex('rooms_well_known_unique').on(table.wellKnown),
   ]
 );
 

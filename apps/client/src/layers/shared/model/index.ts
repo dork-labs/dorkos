@@ -90,6 +90,7 @@ export {
   useExtensionRegistry,
   useSlotContributions,
   createInitialSlots,
+  isExtensionContributionId,
   SLOT_IDS,
   type SlotId,
   type SlotContributionMap,

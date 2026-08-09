@@ -469,3 +469,23 @@ export function unmuteItem(prev: SidebarPrefs, ref: SidebarItemRef): SidebarPref
   if (!prev.muted.some((m) => sameSidebarItem(m, ref))) return prev;
   return { ...prev, muted: prev.muted.filter((m) => !sameSidebarItem(m, ref)) };
 }
+
+/**
+ * The rooms the operator has muted individually (`ui.sidebar.muted`).
+ *
+ * Lives beside the prefs rather than in any one feature because more than one
+ * surface has to agree about it: the sidebar dims a muted room's row, and "Jump
+ * back in" drops it from both of its lists — mute means "stop pulling me back
+ * into this", and a shortcut whose whole job is to pull you back in has no
+ * quieter way to honour that. Two readers deriving it separately is how one
+ * surface starts offering what the other was told to stop offering.
+ *
+ * There is no group-mute widening for rooms the way there is for agents: a
+ * muted group dims its rows through the section's own filter, and a room row
+ * carries no live activity emphasis to suppress on top of that.
+ *
+ * @param prefs - Current sidebar prefs.
+ */
+export function mutedRoomIds(prefs: SidebarPrefs): Set<string> {
+  return new Set(prefs.muted.flatMap((ref) => (ref.kind === 'room' ? [ref.roomId] : [])));
+}

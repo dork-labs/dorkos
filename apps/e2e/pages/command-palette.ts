@@ -19,8 +19,8 @@ import type { Page } from '@playwright/test';
  * The palette is the one opener all of them share. Settings also has a sidebar
  * footer button, but it is only reachable while the sidebar is expanded, and
  * Tasks and Relay have no in-DOM button at all — their other entry points are
- * the dashboard's status cards, whose accessible names change with the state
- * they are reporting.
+ * attention rows on Home, whose accessible names change with the state they are
+ * reporting.
  *
  * @param page - The page to drive.
  * @param item - Exact palette entry to pick, e.g. `Tasks Scheduler`.
