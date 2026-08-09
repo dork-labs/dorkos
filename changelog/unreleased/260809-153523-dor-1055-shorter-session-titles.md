@@ -1,6 +1,8 @@
 ---
 covers:
   - 'feat(server): derived session titles get short and readable — courtesy words stripped, six-word budget (DOR-1055)'
+  - 'fix(server): keep greetings out of the courtesy-strip list; align title tests with the derivation'
+  - 'fix(server): one title derivation for every runtime — reviewer defects fixed, shared module (DOR-1055)'
 ---
 
 ### Improved
