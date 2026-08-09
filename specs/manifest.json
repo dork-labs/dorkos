@@ -2,6 +2,13 @@
   "version": 1,
   "specs": [
     {
+      "id": "260809-143358",
+      "slug": "sidebar-now-today-library",
+      "title": "Sidebar redesign: Now / Today / Library",
+      "created": "2026-08-09",
+      "status": "ideation"
+    },
+    {
       "id": "260808-144053",
       "slug": "file-explorer-actions",
       "title": "File explorer: context menu actions, copy/paste, and drag-and-drop",
