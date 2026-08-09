@@ -92,8 +92,9 @@ export function TasksList({ tasks, isLoading, agentMap, onEditTask, agentId }: T
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
-      {/* Horizontal padding comes from the page container this list sits in;
-          the bar keeps only its vertical rhythm so nothing double-pads. */}
+      {/* Both hosts already provide horizontal gutters — TasksPage via
+          PageContainer, TasksDialog via DialogContent's own padding — so the
+          bar keeps only its vertical rhythm and nothing double-pads. */}
       <FilterBar state={filterState} className="px-0">
         <FilterBar.Search placeholder="Filter tasks..." />
         <FilterBar.Primary name="status" />
