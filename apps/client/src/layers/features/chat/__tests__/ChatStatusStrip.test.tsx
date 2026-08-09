@@ -16,10 +16,6 @@ vi.mock('@/layers/shared/model', () => ({
   useElapsedTime: vi.fn(() => ({ formatted: '2m 14s', ms: 134000 })),
 }));
 
-vi.mock('../model/use-rotating-verb', () => ({
-  useRotatingVerb: vi.fn(() => ({ verb: "Droppin' Science", key: 'verb-0' })),
-}));
-
 // ---------------------------------------------------------------------------
 // Group 1: deriveStripState() pure function tests
 // ---------------------------------------------------------------------------
@@ -32,11 +28,10 @@ describe('deriveStripState', () => {
     operationProgress: null,
     systemStatus: null,
     elapsed: '0m 00s',
-    verb: 'Thinking',
-    verbKey: 'verb-0',
+    activity: null,
     tokens: '~0 tokens',
     theme: DEFAULT_THEME,
-    isBypassVerb: false,
+    isBypass: false,
     showComplete: false,
     lastElapsed: '0m 32s',
     lastTokens: '~12.3k tokens',
@@ -51,20 +46,68 @@ describe('deriveStripState', () => {
     expect(state.type).toBe('streaming');
   });
 
-  it('returns streaming state with correct verb and tokens', () => {
-    const state = deriveStripState({ ...baseInput, status: 'streaming' });
+  it('says what the session is doing when the fleet reading names a tool', () => {
+    // Purpose: the strip's whole point after DOR-1053 — the verb is the tool
+    // the session actually started, not a phrase drawn from a hat.
+    const state = deriveStripState({
+      ...baseInput,
+      status: 'streaming',
+      activity: { toolName: 'Bash', target: 'pnpm verify' },
+    });
     if (state.type === 'streaming') {
-      expect(state.verb).toBe('Thinking');
+      expect(state.verb).toBe('Running pnpm verify…');
       expect(state.tokens).toBe('~0 tokens');
       expect(state.elapsed).toBe('0m 00s');
       expect(state.icon).toBe(DEFAULT_THEME.icon);
       expect(state.iconAnimation).toBe(DEFAULT_THEME.iconAnimation);
-      expect(state.isBypassVerb).toBe(false);
+      expect(state.isBypass).toBe(false);
     }
   });
 
-  it('uses skull icon and no animation for bypass verbs', () => {
-    const state = deriveStripState({ ...baseInput, status: 'streaming', isBypassVerb: true });
+  it('says only "Working…" when no tool is known', () => {
+    // Purpose: a streaming lifecycle on its own supports nothing more specific
+    // — before the first tool of a turn, between tools, or on a runtime that
+    // reports none. The strip must not fill that gap with something invented.
+    const state = deriveStripState({ ...baseInput, status: 'streaming', activity: null });
+    if (state.type === 'streaming') expect(state.verb).toBe('Working…');
+  });
+
+  it('degrades to the server it is talking to for an unrecognized MCP tool', () => {
+    const state = deriveStripState({
+      ...baseInput,
+      status: 'streaming',
+      activity: { toolName: 'mcp__slack__post_message' },
+    });
+    if (state.type === 'streaming') expect(state.verb).toBe('Using Slack…');
+  });
+
+  it('keys the crossfade on the label, so it animates only when the label changes', () => {
+    // Purpose: the strip crossfades on `verbKey`. Keyed on anything that moves
+    // per render, a settled label would flicker on every token delta.
+    const activity = { toolName: 'Edit', target: 'router.tsx' };
+    const first = deriveStripState({ ...baseInput, status: 'streaming', activity });
+    const again = deriveStripState({
+      ...baseInput,
+      status: 'streaming',
+      activity: { ...activity },
+      elapsed: '0m 04s',
+    });
+    const other = deriveStripState({
+      ...baseInput,
+      status: 'streaming',
+      activity: { toolName: 'Edit', target: 'index.ts' },
+    });
+    if (first.type === 'streaming' && again.type === 'streaming' && other.type === 'streaming') {
+      expect(again.verbKey).toBe(first.verbKey);
+      expect(other.verbKey).not.toBe(first.verbKey);
+    }
+  });
+
+  it('uses the skull icon for as long as permissions are bypassed', () => {
+    // Purpose: the bypass warning used to ride the joke verb pool, so it
+    // appeared only when the rotation happened to land on one. It is a standing
+    // fact about the session, and now shows for the whole of it.
+    const state = deriveStripState({ ...baseInput, status: 'streaming', isBypass: true });
     if (state.type === 'streaming') {
       expect(state.icon).toBe('☠');
       expect(state.iconAnimation).toBeNull();
@@ -220,19 +263,32 @@ describe('ChatStatusStrip component', () => {
     expect(screen.queryByTestId('chat-status-strip-streaming')).not.toBeInTheDocument();
   });
 
-  it('renders streaming content with verb, elapsed, and tokens', () => {
+  it('renders streaming content with the live activity, elapsed, and tokens', () => {
     render(
       <ChatStatusStrip
         status="streaming"
         streamStartTime={Date.now()}
         estimatedTokens={3200}
+        activity={{ toolName: 'Edit', target: 'router.tsx' }}
         systemStatus={null}
       />
     );
     expect(screen.getByTestId('chat-status-strip-streaming')).toBeInTheDocument();
-    expect(screen.getByText("Droppin' Science")).toBeInTheDocument();
+    expect(screen.getByText('Editing router.tsx…')).toBeInTheDocument();
     expect(screen.getByText('2m 14s')).toBeInTheDocument();
     expect(screen.getByText('~3.2k tokens')).toBeInTheDocument();
+  });
+
+  it('falls back to "Working…" with no activity to show', () => {
+    render(
+      <ChatStatusStrip
+        status="streaming"
+        streamStartTime={Date.now()}
+        estimatedTokens={0}
+        systemStatus={null}
+      />
+    );
+    expect(screen.getByTestId('chat-status-strip-streaming')).toHaveTextContent('Working…');
   });
 
   it('renders waiting state with Shield icon for approval', () => {
@@ -306,7 +362,7 @@ describe('ChatStatusStrip component', () => {
 
   it('renders a session hook message in the strip (DOR-125)', () => {
     // Hooks are the real non-operation state the strip surfaces. ('requesting'
-    // is never forwarded — the rotating verb owns the thinking phase.)
+    // is never forwarded — the activity label owns the thinking phase.)
     render(
       <ChatStatusStrip
         status="streaming"
@@ -342,7 +398,7 @@ describe('ChatStatusStrip announcements', () => {
   });
 
   it('hides everything that ticks, so the churn is not announced with it', () => {
-    // A live region that re-reads the rotating verb every few seconds — or the
+    // A live region that re-reads the activity label every few seconds — or the
     // elapsed clock every second — is worse than silence. One stable sentence
     // announces the state instead.
     render(
@@ -355,7 +411,7 @@ describe('ChatStatusStrip announcements', () => {
     );
     const row = screen.getByTestId('chat-status-strip-streaming');
     expect(row).toHaveTextContent('Working');
-    for (const churning of ["Droppin' Science", '2m 14s', '~3.2k tokens']) {
+    for (const churning of ['2m 14s', '~3.2k tokens']) {
       expect(screen.getByText(churning).closest('[aria-hidden="true"]')).not.toBeNull();
     }
   });

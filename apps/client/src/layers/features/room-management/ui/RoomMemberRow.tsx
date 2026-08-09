@@ -205,7 +205,7 @@ export function RoomMemberRow({
           imageUrl={face.imageUrl}
           fallback={face.fallback}
           origin={face.origin}
-          working={working}
+          status={working ? 'working' : 'idle'}
           // 32px under a thumb, 28px under a pointer — the disc is not a
           // control, but it is the thing a finger lands on when aiming at the
           // row, and a roster of 28px discs on a phone reads as a list of dots.

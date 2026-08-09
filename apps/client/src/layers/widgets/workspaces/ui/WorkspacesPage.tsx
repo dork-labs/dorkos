@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { GitBranch, Pin, FolderGit2 } from 'lucide-react';
 import { cn } from '@/layers/shared/lib';
-import { Badge, ScrollArea } from '@/layers/shared/ui';
+import { Badge, PageContainer } from '@/layers/shared/ui';
 import {
   useWorkspaces,
   derivePorts,
@@ -104,46 +104,44 @@ export function WorkspacesPage() {
   }, [workspaces]);
 
   return (
-    // The route panel clips its overflow, so the page owns its own scroller —
-    // without one, everything past the first screenful is unreachable.
-    <ScrollArea className="h-full">
-      <div className="container-default mx-auto px-4 py-6">
-        <header className="mb-6">
-          <h1 className="text-xl font-semibold">Workspaces</h1>
-          <p className="text-muted-foreground mt-1 text-sm">
-            Isolated, server-managed checkouts — one per unit of work, bound to sessions via cwd.
-          </p>
-        </header>
+    // The route panel clips its overflow, so the page needs its own scroller —
+    // PageContainer owns it.
+    <PageContainer width="wide">
+      <header className="mb-6">
+        <h1 className="text-xl font-semibold">Workspaces</h1>
+        <p className="text-muted-foreground mt-1 text-sm">
+          Isolated, server-managed checkouts — one per unit of work, bound to sessions via cwd.
+        </p>
+      </header>
 
-        {isLoading ? (
-          <p className="text-muted-foreground text-sm">Loading workspaces…</p>
-        ) : byProject.length === 0 ? (
-          <div className="bg-card rounded-xl border p-10 text-center">
-            <FolderGit2 className="text-muted-foreground/60 mx-auto size-8" />
-            <p className="mt-3 font-medium">No workspaces yet</p>
-            <p className="text-muted-foreground mt-1 text-sm">
-              DorkOS doesn&apos;t create workspaces on its own yet. Today one appears only when a
-              tool or script asks the server for it through the API.
-            </p>
-          </div>
-        ) : (
-          <div className="flex flex-col gap-8">
-            {byProject.map(([projectKey, items]) => (
-              <section key={projectKey}>
-                <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold">
-                  {projectKey}
-                  <Badge variant="secondary">{items.length}</Badge>
-                </h2>
-                <div className="flex flex-col gap-2">
-                  {items.map((ws) => (
-                    <WorkspaceCard key={ws.id} workspace={ws} />
-                  ))}
-                </div>
-              </section>
-            ))}
-          </div>
-        )}
-      </div>
-    </ScrollArea>
+      {isLoading ? (
+        <p className="text-muted-foreground text-sm">Loading workspaces…</p>
+      ) : byProject.length === 0 ? (
+        <div className="bg-card rounded-xl border p-10 text-center">
+          <FolderGit2 className="text-muted-foreground/60 mx-auto size-8" />
+          <p className="mt-3 font-medium">No workspaces yet</p>
+          <p className="text-muted-foreground mt-1 text-sm">
+            DorkOS doesn&apos;t create workspaces on its own yet. Today one appears only when a tool
+            or script asks the server for it through the API.
+          </p>
+        </div>
+      ) : (
+        <div className="flex flex-col gap-8">
+          {byProject.map(([projectKey, items]) => (
+            <section key={projectKey}>
+              <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold">
+                {projectKey}
+                <Badge variant="secondary">{items.length}</Badge>
+              </h2>
+              <div className="flex flex-col gap-2">
+                {items.map((ws) => (
+                  <WorkspaceCard key={ws.id} workspace={ws} />
+                ))}
+              </div>
+            </section>
+          ))}
+        </div>
+      )}
+    </PageContainer>
   );
 }

@@ -70,28 +70,6 @@ describe('AgentAvatar', () => {
     expect(xsClasses).not.toEqual(lgClasses);
   });
 
-  it('shows active health tasks indicator', () => {
-    // The dot is the shared `working` slot now, in the theme's own green —
-    // `bg-emerald-500` was a hardcoded colour this component had no business
-    // owning, and the room roster drew the same fact a different way.
-    const { container } = render(<AgentAvatar color="#fff" emoji="🤖" healthStatus="active" />);
-    const avatar = avatarOf(container);
-
-    expect(avatar.className).toContain('ring-2');
-    expect(avatar.querySelector('.animate-ping')).toBeInTheDocument();
-    expect(avatar.querySelector('.bg-status-success')).toBeInTheDocument();
-    expect(avatar.querySelector('.bg-emerald-500')).not.toBeInTheDocument();
-  });
-
-  it('rings the disc in the theme status tokens, not raw palette greens', () => {
-    // The ring sits ~2px from the working dot. Two greens that disagree by a
-    // shade read as a rendering bug, not as two facts.
-    const { container } = render(<AgentAvatar color="#fff" emoji="🤖" healthStatus="active" />);
-
-    expect(avatarOf(container).className).toContain('ring-status-success/60');
-    expect(avatarOf(container).className).not.toContain('ring-emerald-500');
-  });
-
   it('lets a caller drop the badge without being able to touch the silhouette', () => {
     // The sanctioned opt-out for an agent-only list: keep the square, lose a
     // column of identical glyphs. `shape` stays unreachable either way.
@@ -101,36 +79,55 @@ describe('AgentAvatar', () => {
     expect(avatarOf(container)).toHaveClass('rounded-lg');
   });
 
-  it('shows health ring without tasks for non-active statuses', () => {
-    const { container } = render(<AgentAvatar color="#fff" emoji="🤖" healthStatus="inactive" />);
-    const avatar = avatarOf(container);
-    expect(avatar.className).toContain('ring-2');
-    expect(avatar.querySelector('.animate-ping')).not.toBeInTheDocument();
-  });
+  it('never draws a health ring, whatever the mesh thinks', () => {
+    // The ring was a second green 2px from the dot, on every list row in the
+    // cockpit. Health is a diagnostic, not an identity, and the two surfaces
+    // that genuinely need it (the Agent Hub hero, the mesh topology) now say
+    // it in their own words.
+    const { container } = render(
+      // @ts-expect-error — `healthStatus` is no longer part of AgentAvatarProps.
+      <AgentAvatar color="#fff" emoji="🤖" healthStatus="inactive" />
+    );
 
-  it('has no health ring when healthStatus is omitted', () => {
-    const { container } = render(<AgentAvatar color="#fff" emoji="🤖" />);
     expect(avatarOf(container).className).not.toContain('ring-2');
+    expect(avatarOf(container).className).not.toContain('ring-status-warning');
   });
 
-  it('pulses for an agent that is working, whatever the mesh thinks of its health', () => {
-    // Health is "when did we last hear from it" (`active` = within the hour);
-    // working is "is it doing something right now". The default maps the first
-    // onto the second because the pre-refactor dot did, but a caller that
-    // actually knows can say so without inventing a health status.
-    const { container } = render(<AgentAvatar color="#fff" emoji="🤖" working />);
+  it('pulses only for an agent a caller says is working right now', () => {
+    const { container } = render(<AgentAvatar color="#fff" emoji="🤖" status="working" />);
     const avatar = avatarOf(container);
 
     expect(avatar.querySelector('.bg-status-success')).toBeInTheDocument();
+    expect(avatar.querySelector('.animate-ping')).toBeInTheDocument();
+  });
+
+  it('draws nothing at all for an agent that is merely alive', () => {
+    // The dot used to light from `healthStatus === 'active'` — the mesh's
+    // "seen within the last hour". An hour-old heartbeat drawn as a pulse is a
+    // lie about right now, and mesh health no longer reaches this disc at all.
+    const { container } = render(
+      // @ts-expect-error — `healthStatus` is no longer part of AgentAvatarProps.
+      <AgentAvatar color="#fff" emoji="🤖" healthStatus="active" />
+    );
+    const avatar = avatarOf(container);
+
+    expect(avatar.querySelector('.bg-status-success')).not.toBeInTheDocument();
+    expect(avatar.querySelector('.animate-ping')).not.toBeInTheDocument();
     expect(avatar.className).not.toContain('ring-2');
   });
 
-  it('lets an explicit working={false} silence the dot a live health status implies', () => {
-    const { container } = render(
-      <AgentAvatar color="#fff" emoji="🤖" healthStatus="active" working={false} />
-    );
+  it('says "needs you" in amber and "error" in red, and neither of them moves', () => {
+    // Only working ever animates: motion is what the word "now" is made of, and
+    // an amber dot that pulsed would say a blocked turn is still going.
+    const { container: amber } = render(<AgentAvatar color="#fff" emoji="🤖" status="needs-you" />);
+    // `bg-status-warning-dot`, the contrast-safe variant — a 6px mark meaning
+    // something by colour alone owes 3:1, which the fill-tuned amber misses.
+    expect(avatarOf(amber).querySelector('.bg-status-warning-dot')).toBeInTheDocument();
+    expect(avatarOf(amber).querySelector('.animate-ping')).not.toBeInTheDocument();
 
-    expect(avatarOf(container).querySelector('.bg-status-success')).not.toBeInTheDocument();
+    const { container: red } = render(<AgentAvatar color="#fff" emoji="🤖" status="error" />);
+    expect(avatarOf(red).querySelector('.bg-status-error')).toBeInTheDocument();
+    expect(avatarOf(red).querySelector('.animate-ping')).not.toBeInTheDocument();
   });
 });
 
@@ -184,11 +181,18 @@ describe('AgentIdentity', () => {
     expect(screen.getByText('code-reviewer').className).toContain('sr-only');
   });
 
-  it('forwards healthStatus to AgentAvatar', () => {
-    const { container } = render(<AgentIdentity {...baseProps} healthStatus="active" />);
+  it('no longer carries mesh health at all', () => {
+    // The lockup forwarded `healthStatus` for one reason: the ring the disc
+    // drew from it. With the ring gone the prop had nothing left to do, and a
+    // pass-through to nowhere is the kind of thing that grows a second meaning.
+    const { container } = render(
+      // @ts-expect-error — `healthStatus` is no longer part of AgentIdentityProps.
+      <AgentIdentity {...baseProps} healthStatus="active" />
+    );
     const avatar = container.querySelector('[data-slot="agent-avatar"]')!;
-    expect(avatar.className).toContain('ring-2');
-    expect(avatar.querySelector('.animate-ping')).toBeInTheDocument();
+
+    expect(avatar.className).not.toContain('ring-2');
+    expect(avatar.querySelector('.animate-ping')).not.toBeInTheDocument();
   });
 
   it('applies custom className to root', () => {
@@ -278,24 +282,11 @@ describe('AgentIdentity', () => {
       expect(avatar.className).not.toMatch(/(^|\s)group-focus-visible:/);
     });
 
-    it('stands the hover ring down when mesh health already owns the ring', () => {
-      // Health wins. A diagnostic signal that changed colour under the pointer
-      // would read as a hover state, so the disc takes no second ring at all.
-      const { container } = render(
-        <AgentIdentity {...baseProps} onClick={vi.fn()} healthStatus="inactive" />
-      );
-      const avatar = container.querySelector('[data-slot="agent-avatar"]')!;
-
-      expect(avatar.className).toContain('ring-status-warning/60');
-      expect(avatar.className).not.toContain('group-hover/identity:ring-2');
-      expect(avatar.className).not.toContain('ring-0');
-      // And it still answers, neutrally. Suppressing the identity ring must not
-      // leave a live control with no hover state at all.
-      expect(screen.getByRole('button').className).toContain('hover:bg-accent');
-    });
-
-    it('keeps the neutral fallback off a lockup whose identity can answer', () => {
-      // Two answers to one hover is the noise this grammar exists to remove.
+    it('always rings the disc when the lockup is a control — nothing competes for it now', () => {
+      // The disc used to spend its 2px ring on mesh health, so a pressable
+      // lockup carrying health took no identity ring and fell back to a neutral
+      // row hover instead. The health ring is gone, so the identity's own
+      // colour is the only answer there is, and it is never stood down.
       const { container } = render(<AgentIdentity {...baseProps} onClick={vi.fn()} />);
 
       expect(screen.getByRole('button').className).not.toContain('hover:bg-accent');

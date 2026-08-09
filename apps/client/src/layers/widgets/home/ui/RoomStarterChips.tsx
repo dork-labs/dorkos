@@ -49,7 +49,7 @@ export function RoomStarterChips({ roomId }: RoomStarterChipsProps) {
   );
 
   return (
-    <div className="mx-auto w-full max-w-4xl px-4 pb-1 sm:px-6">
+    <div className="w-full px-[var(--msg-padding-x)] pb-1">
       {/* `comfortable`, because on this screen these ARE the call to action —
           the only thing worth pressing on a room with nothing in it, and on a
           phone they have to be a real target rather than an afterthought under

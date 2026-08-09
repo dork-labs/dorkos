@@ -121,6 +121,39 @@ export const SessionLifecycleSchema = z
 export type SessionLifecycle = z.infer<typeof SessionLifecycleSchema>;
 
 /**
+ * What a session is doing RIGHT NOW, structured rather than phrased.
+ *
+ * Only the two facts the server can actually know: which tool the session most
+ * recently started, and the one argument of it a person would recognize (a file
+ * name, a command excerpt). No prose rides the wire — the client owns the
+ * wording, so a reading minted by an older server never puts stale copy on a
+ * newer screen, and a consumer that is not a cockpit (a menu bar, a bot) can
+ * phrase it its own way.
+ *
+ * The `toolName` is whatever the session's own runtime calls it, verbatim:
+ * claude-code's `Bash`, codex's synthesized `Shell`/`ApplyPatch`, opencode's
+ * lowercase `bash`, an MCP server's `mcp__slack__send_message`. Normalizing it
+ * here would throw away the only thing a client can honestly fall back on when
+ * it does not recognize the tool.
+ */
+export const SessionActivitySchema = z
+  .object({
+    /** The tool the session most recently started, named as its runtime names it. */
+    toolName: z.string(),
+    /**
+     * The one human-relevant argument, when the input carried one a reader
+     * would recognize — a file's basename, a command's first line, a search
+     * pattern, a host. Absent when the tool takes no such argument, or when the
+     * input could not be read: a client says less rather than inventing it.
+     */
+    target: z.string().optional(),
+  })
+  .openapi('SessionActivity');
+
+/** Inferred type for {@link SessionActivitySchema}. */
+export type SessionActivity = z.infer<typeof SessionActivitySchema>;
+
+/**
  * Server-held status projection for a single session. Carried whole on a cold
  * snapshot (where the numeric/usage fields are `null` before the first turn)
  * and as a partial on each `status_change` event. Runtime-neutral: every
@@ -164,6 +197,19 @@ export const SessionStatusSchema = z
      * lifecycle. The `.default(null)` keeps old snapshots parsing (version skew).
      */
     lastError: ErrorEventSchema.nullable().default(null),
+    /**
+     * What this session is doing right now ({@link SessionActivitySchema}), or
+     * ABSENT when nothing is known — an idle session, a turn that has not
+     * reached a tool yet, or a status minted by a server that predates the
+     * field. Optional rather than nullable-with-a-default precisely so absent is
+     * the only "nothing" there is: one shape for "we don't know", which is what
+     * every consumer degrades on.
+     *
+     * Set by the projector on each `tool_call` and cleared by it at every turn
+     * boundary. It is the one field here that is deliberately EPHEMERAL: a verb
+     * that outlives its turn is a lie, and a lying verb is worse than none.
+     */
+    activity: SessionActivitySchema.optional(),
   })
   .openapi('SessionStatus');
 
@@ -320,10 +366,20 @@ export const SessionEventSchema = z
     // merges these partials field-wise, so a delta must be able to omit any
     // field it does not carry rather than zeroing it. The snapshot's resolved
     // `SessionStatus.contextUsage` stays the full (non-partial) shape.
+    //
+    // `activity` is OMITTED, and that omission is the whole of its ownership
+    // rule. Every other field here is something a runtime reports about
+    // itself; `activity` is something the PROJECTOR derives, from the
+    // `tool_call` events it has actually seen, and clears at every turn
+    // boundary it controls. Left in the partial it would be a key any runtime's
+    // status delta could set — merged straight into the held status and fanned
+    // out fleet-wide — which is a runtime naming a tool the session never
+    // started. Nothing produces it (the normalizer maps no source field to it),
+    // so the delta simply cannot express it.
     z.object({
       ...seqShape,
       type: z.literal('status_change'),
-      status: SessionStatusSchema.partial().extend({
+      status: SessionStatusSchema.omit({ activity: true }).partial().extend({
         contextUsage: SessionContextUsageSchema.partial().nullable().optional(),
       }),
     }),

@@ -259,34 +259,30 @@ Custom utilities are defined with Tailwind v4's `@utility` at-rule (not the v3-s
     border-color: hsl(var(--border) / 0.8);
   }
 }
-
-/* Centered content column (56rem) with responsive gutters. */
-@utility container-default {
-  max-width: 56rem;
-  margin-left: auto;
-  margin-right: auto;
-  padding-left: 1rem;
-  padding-right: 1rem;
-  @media (min-width: 640px) {
-    padding-left: 1.5rem;
-    padding-right: 1.5rem;
-  }
-  @media (min-width: 1024px) {
-    padding-left: 2rem;
-    padding-right: 2rem;
-  }
-}
 ```
 
-There is no `.glass`, `.container-narrow`, or `.container-wide` utility in the client — those exist only in the marketing site's separate stylesheet (`apps/site`), which is out of scope for this guide.
+There is no `.glass`, `.container-narrow`, `.container-wide`, or `.container-default` utility in the client — those exist only in the marketing site's separate stylesheet (`apps/site`), which is out of scope for this guide.
 
 Usage:
 
 ```tsx
 <div className="shadow-soft rounded-xl p-6">Soft shadow</div>
-<div className="container-default">Default-width content</div>
 <div className="card-interactive">Hover lifts card</div>
 ```
+
+## Page Width
+
+Page-level content width is a component, not a utility (DOR-1047). Routes wrap their content in `PageContainer` (`layers/shared/ui/page-container.tsx`):
+
+```tsx
+<PageContainer width="reading">…</PageContainer>
+```
+
+- `width="wide"` caps at `--page-width-wide` (80rem) — dashboards, directories, and feeds (Marketplace, Activity, Workspaces, Connections). The default for top-level pages.
+- `width="reading"` caps at `--page-width-reading` (56rem) — true forms and prose (Marketplace Sources). Not for directories or feeds — 896px reads as "broken" next to wide siblings on a large monitor (DOR-1082).
+- `width="full"` fills the pane with the shared gutters (Team, Tasks).
+
+Both cap tokens live in `index.css` next to the `--msg-*` family — widening a whole class of pages is a one-line token edit. The component owns the page scroller by default (pass `scroll={false}` when an inner list scrolls instead), and bakes in `w-full` so a flex parent can never shrink-wrap it. Never hand-roll `mx-auto max-w-*` page wrappers. Chat and room surfaces don't use it — their width system is the `--msg-*` token family (`--msg-content-max-width` caps message text).
 
 ## FilterBar Styling
 

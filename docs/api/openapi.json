@@ -3207,6 +3207,9 @@
           },
           "lastError": {
             "$ref": "#/components/schemas/ErrorEvent"
+          },
+          "activity": {
+            "$ref": "#/components/schemas/SessionActivity"
           }
         },
         "required": [
@@ -3247,6 +3250,20 @@
           "outputTokens",
           "cacheReadTokens",
           "cacheCreationTokens"
+        ]
+      },
+      "SessionActivity": {
+        "type": "object",
+        "properties": {
+          "toolName": {
+            "type": "string"
+          },
+          "target": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "toolName"
         ]
       },
       "PendingInteractionDTO": {
@@ -3469,6 +3486,11 @@
               "worktree",
               "clone"
             ]
+          },
+          "seedContext": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 10000
           }
         },
         "required": [

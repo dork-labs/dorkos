@@ -11,4 +11,3 @@ export type { StripState } from './strip-state';
 export { TerminalReasonChip } from './TerminalReasonChip';
 export { TurnFailedNotice } from './TurnFailedNotice';
 export { DEFAULT_THEME, type IndicatorTheme } from './inference-themes';
-export { BYPASS_INFERENCE_VERBS, DEFAULT_INFERENCE_VERBS } from './inference-verbs';

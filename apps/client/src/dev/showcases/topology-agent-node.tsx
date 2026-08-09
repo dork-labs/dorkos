@@ -1,6 +1,8 @@
 import { Zap, Clock } from 'lucide-react';
 import { Badge } from '@/layers/shared/ui/badge';
+import { cn } from '@/layers/shared/lib';
 import { AgentAvatar } from '@/layers/entities/agent';
+import { HEALTH_DISPLAY } from '@/layers/features/mesh';
 
 /* ---------------------------------------------------------------------------
  * Types
@@ -25,6 +27,24 @@ export interface AgentDemoData {
  * Visual components — three level-of-detail bands
  * --------------------------------------------------------------------------- */
 
+/**
+ * The node's health dot — mirroring `AgentNode`'s own, off the same map.
+ *
+ * Health used to be a ring the shared `AgentAvatar` drew, which meant every
+ * list row in the cockpit carried it. It lives here now, on the page whose
+ * subject is health, and it holds still: "seen within the last hour" is a
+ * state, not something happening as you look at it.
+ */
+function HealthDot({ status }: { status: AgentDemoData['healthStatus'] }) {
+  return (
+    <span
+      aria-hidden
+      title={HEALTH_DISPLAY[status].label}
+      className={cn('size-1.5 shrink-0 rounded-full', HEALTH_DISPLAY[status].dot)}
+    />
+  );
+}
+
 /** Compact pill rendered at zoom < 0.6 (~120px wide). */
 export function AgentCompactPill({ d }: { d: AgentDemoData }) {
   return (
@@ -32,8 +52,9 @@ export function AgentCompactPill({ d }: { d: AgentDemoData }) {
       className="bg-card flex w-[120px] items-center gap-1.5 rounded-full border px-2 py-0.5 shadow-sm"
       style={d.borderColor ? { borderLeft: `3px solid ${d.borderColor}` } : undefined}
     >
-      <AgentAvatar color={d.avatarColor} emoji={d.emoji} healthStatus={d.healthStatus} size="xs" />
+      <AgentAvatar color={d.avatarColor} emoji={d.emoji} size="xs" />
       <span className="text-foreground truncate text-xs font-medium">{d.label}</span>
+      <HealthDot status={d.healthStatus} />
     </div>
   );
 }
@@ -49,13 +70,9 @@ export function AgentDefaultCard({ d }: { d: AgentDemoData }) {
       style={d.borderColor ? { borderLeft: `3px solid ${d.borderColor}` } : undefined}
     >
       <div className="flex items-center gap-2">
-        <AgentAvatar
-          color={d.avatarColor}
-          emoji={d.emoji}
-          healthStatus={d.healthStatus}
-          size="sm"
-        />
+        <AgentAvatar color={d.avatarColor} emoji={d.emoji} size="sm" />
         <span className="text-foreground truncate text-sm font-medium">{d.label}</span>
+        <HealthDot status={d.healthStatus} />
       </div>
       <div className="mt-1 flex flex-wrap gap-1">
         <Badge variant="secondary" className="text-[10px]">
@@ -93,13 +110,9 @@ export function AgentExpandedCard({ d }: { d: AgentDemoData }) {
       style={d.borderColor ? { borderLeft: `3px solid ${d.borderColor}` } : undefined}
     >
       <div className="flex items-center gap-2">
-        <AgentAvatar
-          color={d.avatarColor}
-          emoji={d.emoji}
-          healthStatus={d.healthStatus}
-          size="sm"
-        />
+        <AgentAvatar color={d.avatarColor} emoji={d.emoji} size="sm" />
         <span className="text-foreground truncate text-sm font-medium">{d.label}</span>
+        <HealthDot status={d.healthStatus} />
       </div>
       <div className="mt-1 flex flex-wrap gap-1">
         <Badge variant="secondary" className="text-[10px]">

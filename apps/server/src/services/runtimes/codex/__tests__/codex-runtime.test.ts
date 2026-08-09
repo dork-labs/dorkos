@@ -426,14 +426,14 @@ describe('CodexRuntime', () => {
       await drain(runtime.sendMessage(sessionId, 'first question', { cwd: '/projects/demo' }));
       const afterFirst = threadMap.get(sessionId)!;
       expect(afterFirst).toMatchObject({
-        title: 'first question',
+        title: 'First question',
         lastMessagePreview: 'first question',
       });
 
       await drain(runtime.sendMessage(sessionId, 'second question', { cwd: '/projects/demo' }));
       const afterSecond = threadMap.get(sessionId)!;
       // Title is first-turn-derived and sticky; the preview tracks the latest turn.
-      expect(afterSecond.title).toBe('first question');
+      expect(afterSecond.title).toBe('First question');
       expect(afterSecond.lastMessagePreview).toBe('second question');
       expect(afterSecond.updatedAt! >= afterFirst.updatedAt!).toBe(true);
     });
@@ -696,7 +696,7 @@ describe('CodexRuntime', () => {
         threadId: THREAD_ID,
         cwd: '/projects/demo',
         // The first turn's registry metadata rides along with the bind.
-        title: 'hi',
+        title: 'Hi',
         lastMessagePreview: 'hi',
       });
       expect(new Date(binding.updatedAt!).toISOString()).toBe(binding.updatedAt);

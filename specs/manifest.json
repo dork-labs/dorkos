@@ -2,6 +2,14 @@
   "version": 1,
   "specs": [
     {
+      "id": "260809-150251",
+      "slug": "page-width-consistency",
+      "title": "Page width consistency: PageContainer primitive + route migration",
+      "created": "2026-08-09",
+      "status": "implemented",
+      "linearIssue": "DOR-1047"
+    },
+    {
       "id": "260808-144053",
       "slug": "file-explorer-actions",
       "title": "File explorer: context menu actions, copy/paste, and drag-and-drop",
@@ -2567,6 +2575,13 @@
       "title": "Messaging observability & DX — one id across the dispatch chain, and the surfaces to read it",
       "status": "specified",
       "created": "2026-07-31"
+    },
+    {
+      "id": "260809-143358",
+      "slug": "sidebar-now-today-library",
+      "title": "Sidebar redesign: Now / Today / Library",
+      "created": "2026-08-09",
+      "status": "specified"
     }
   ]
 }

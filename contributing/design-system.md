@@ -30,6 +30,8 @@ We follow three principles inherited from Dieter Rams and Jony Ive:
 - Dramatic animations (bounces, spins, elastic effects)
 - Custom display fonts for UI elements
 - Decorative borders or dividers
+- Hairline rules under panel headers or above footers (separate with whitespace, then tint, then a scroll-edge shadow)
+- Chrome that renders at rest — row and section actions appear on hover and focus-visible
 
 ---
 
@@ -127,6 +129,20 @@ Messages are constrained to `max-width: 65ch` (~1040px in characters, roughly 52
 ## Spacing
 
 We use an **8-point grid**. All spacing values are multiples of 4px, with 8px as the base unit.
+
+### Two Spatial Modes
+
+The scale below is a **content**-surface scale. Control surfaces — sidebars, toolbars, list panes, menus, table rows — run dense instead, because the user operates them many times an hour rather than reading them.
+
+|             | Content surface                                    | Control surface                                    |
+| ----------- | -------------------------------------------------- | -------------------------------------------------- |
+| Examples    | Message area, settings panels, cards, empty states | Sidebar, status strip, command palette, table rows |
+| Body text   | `text-sm` / `text-base`                            | 13px label, `text-2xs` (11px) metadata             |
+| Row height  | —                                                  | 28–32px (`h-7` / `h-8`)                            |
+| Inset       | 16px and up (`p-4`, `p-6`)                         | **16px total**, panel edge to first glyph          |
+| Panel width | —                                                  | 240–280px for nav panels                           |
+
+**Budget the inset once.** Container, section and row padding must not compound — 12 + 8 + 10 is how a 30px sidebar gutter happens. Design decisions behind this live in the `designing-frontend` skill; Tailwind recipes live in `styling-with-tailwind-shadcn` → Control Surfaces.
 
 ### Scale (Tailwind mapping)
 
@@ -279,6 +295,17 @@ Built on **Shadcn Sidebar** (`layers/shared/ui/sidebar.tsx`) with `collapsible="
 - **Empty state**: Centered "No conversations yet" message
 - **Dialogs**: All 6 dialogs (Settings, DirectoryPicker, Tasks, Relay, ServerRestartOverlay, ShapeSwitcher) registered in `DialogHost` at the app root level, outside `SidebarProvider` (`layers/widgets/app-layout/model/dialog-contributions.ts`). `OnboardingFlow` renders directly from `AppShell.tsx`, not via `DialogHost`.
 
+The 320px width above is what ships today; the control-surface guidance in [Two Spatial Modes](#two-spatial-modes) puts nav panels at 240-280px. The two disagree, and the sidebar redesign owns closing the gap — do not split the difference in a one-off component.
+
+### Zones and Sections
+
+A nav panel has two levels of grouping, and they behave differently:
+
+- **Zone** — a landmark heading (Now, Today, Library). It orients; it is **not** a collapse control.
+- **Section** — a collapsible group inside a zone (Channels, Agents, DMs). Only sections collapse.
+
+Never nest accordions, and keep nav trees to **one indent level** — depth past two stops helping wayfinding. Section labels are sentence case, 12px medium, muted; ALL-CAPS with letterspacing reads dated at small sizes.
+
 ### Sidebar Tabs
 
 Retired. The four-tab `SessionSidebar` strip this section used to document (Overview / Sessions / Schedules / Connections, switched via a CSS `hidden`-toggle so all three stayed mounted) no longer exists. DOR-401 retired it: the Obsidian embed's chrome is now the single-view `EmbedSidebar` roster (see [Sidebar](#sidebar) above), and the Overview/Schedules/Connections context it carried moved to the right-panel Inspector (Pulse, Agent Profile) or was dropped. ADR-0107, which decided the CSS `hidden`-toggle mechanism, is deprecated as of the 2026-08-06 audit — kept as the archival record of a component that no longer ships.
@@ -381,9 +408,13 @@ Two things make this the shape it is:
 
 **Explicit props win, one axis at a time.** Pass `shape`, `variant` or `badge` and the derivation steps aside for that axis only — an agent drawn round keeps its fill and its badge. `badge={null}` is the explicit "no badge here", which is what an agent-only list wants: keep the shape, drop the redundant glyph. Omitting `kind` reproduces the pre-`kind` defaults exactly, so the prop is additive.
 
-**`working` is the pulse, and it is kind-agnostic.** A top-right dot in `bg-status-success`, ringed in the page background, opposite the badge. It says the thing is happening _right now_, which is why it pulses; under `prefers-reduced-motion` the dot stays and only the animation goes. An agent mid-turn and a person mid-task are the same fact to a roster, so nothing about the slot is agent-specific.
+**`status` is the top-right corner, and it is kind-agnostic.** One slot, four states, from `IdentityStatus` (`shared/ui/status-dot.ts`): `idle` draws nothing at all, `working` is a `bg-status-success` dot that pulses, `needs-you` a still `bg-status-warning`, `error` a still `bg-status-error`. Ringed in the page background, opposite the badge. **Only `working` moves** — motion is what the word "now" is made of, so a state that pulsed would claim to still be running; under `prefers-reduced-motion` the dot stays and only the animation goes. An agent mid-turn and a person mid-task are the same fact to a roster, so nothing about the slot is agent-specific.
 
-**Reaching the disc.** `AgentAvatar` (`entities/agent/ui/AgentAvatar.tsx`) is the agent-side wrapper: it hard-passes `kind="agent"` and deliberately accepts no `shape` or `variant`, so the convention cannot be skipped through it. What it adds is what `shared/` must not learn — a ring keyed on mesh health. Room and roster surfaces pass `kind` to `IdentityAvatar` directly; a room must never import the agent entity to draw an agent square.
+`working` means a turn is streaming as you look at it, and nothing weaker. It used to default to `healthStatus === 'active'` — the mesh's "seen within the last hour" — so every list row in the cockpit pulsed a right-now claim sourced from an hour-old heartbeat. A caller with no turn-level signal passes nothing.
+
+**One dot vocabulary, everywhere.** The colours live in `STATUS_DOT_COLOR` and reach a dot through `statusDotClass(signal)`, which adds the pulse for `working` and for nothing else. Row-level dots take the same route and add `unseen` (`bg-status-info`) — a fact about a conversation you have not read, which a face never carries. The sidebar's `AgentActivityBadge`, the tab strip's `AppTabItem`, the sidebar `GroupHeader` and the disc's own corner all read that one map; before it they spelled the same green four ways (`bg-green-500`, `bg-emerald-500`, `bg-primary`, `bg-status-success`), each free to drift when either theme moved.
+
+**Reaching the disc.** `AgentAvatar` (`entities/agent/ui/AgentAvatar.tsx`) is the agent-side wrapper: it hard-passes `kind="agent"` and deliberately accepts no `shape` or `variant`, so the convention cannot be skipped through it. It carries **no mesh health** — it used to draw a coloured ring keyed on when the agent was last seen, ~2px outside a working dot lit from the same fact, on every list row in the product. Health is a diagnostic about the last hour and the corner dot is a claim about this second; the two surfaces that genuinely need health (the Agent Hub hero, the mesh topology page) now say it in their own words, where there is room to say _which_ health it is. Room and roster surfaces pass `kind` to `IdentityAvatar` directly; a room must never import the agent entity to draw an agent square.
 
 **Deciding what to draw: `resolveIdentityFace` (`shared/lib/identity-face.ts`).** One pure function turns the fragments a caller happens to hold into the props the disc takes — colour, emoji, fallback letter, kind, origin. Precedence, highest first: an explicit `override` (an agent's own manifest face, which only a feature-layer caller can reach), then the record's own render cache, then a colour hashed from the opaque id with the first letter of the name. It hashes a colour but never an emoji: a letter admits the face is unknown where an invented emoji would look chosen. It takes no agent types on purpose — that is what lets `entities/room` use the same ladder a feature does, and two roster surfaces hand-rolling their own is what made an agent read as two different identities in one room.
 
@@ -415,9 +446,8 @@ Plus two colour steps: `--identity-border-mix` (35%) and `--identity-ring-mix` (
 
 The Mark tier ships as `identityMarkRing` from `shared/ui` — `.self` for a disc that is the hover target itself, `.group` for a disc inside a control marked `IDENTITY_MARK_GROUP`. Apply it **at the call site, never inside `AgentAvatar`**: the disc does not know whether anything around it is pressable. Shipped Mark surfaces today are the sidebar agent face, the account face, and `MemberList`'s list form (no live caller yet — `RoomHeader` renders the button form, which takes no per-disc response).
 
-**Two collisions the grammar resolves, rather than ignores:**
+**One collision the grammar resolves, rather than ignores** (there were two — mesh health used to spend the same 2px ring, so a pressable disc carrying health took no hover ring and fell back to a neutral `hover:bg-accent`. The health ring is gone, and nothing competes for the slot now):
 
-- **Health wins.** `AgentAvatar` already spends the 2px ring slot on mesh health. When `healthStatus` is present the disc takes no hover ring at all — a diagnostic signal that changed colour under the pointer would read as a hover state. A control whose identity is silenced this way falls back to the neutral `hover:bg-accent` rather than to nothing: suppressing one answer must not leave a live control with none.
 - **Per-area stand-down.** When a card holds more than one action, hovering an inner control calms the card, so one pointer never lights two affordances at once. Scope the `has-[…]` rule to that control **by name** (`has-[[data-slot=team-member-owner]:hover]`), never `has-[button:hover]`: a stretched-link overlay hit-tests as part of the button that generated it, so the generic form is true everywhere on the card and the lift never fires.
 
 **Where the colour may answer, and where it must not.** The line is not the row — it is the **control**. An identity's colour answers where that identity is a target you can address on its own, and stays out of a container's own hover.
@@ -649,13 +679,17 @@ For rows that have a label but no description (e.g., simple toggles), use `<Fiel
 
 ### Hover
 
-Subtle. 150ms transition. Background opacity shift of 2-3%.
+Subtle. 150ms transition. A background tint step of 5-10% — the same mechanism that groups a zone, one step stronger.
 
 ```css
 .interactive:hover {
   background-color: hsl(var(--muted) / 0.5);
 }
 ```
+
+Hover and grouping share one tool on purpose: if a zone is separated by tint rather than a rule, a hover tint is already the vocabulary the surface speaks. Reach for a border only after whitespace and tint have both failed.
+
+**Nothing renders at rest.** Row and section actions — `+`, kebab, drag handles — are invisible until hover or `focus-visible`. Every one needs a keyboard twin (`focus-visible` reveals it) and a touch path (visible under `[@media(hover:hover)]: none`, or long-press / context menu); anything draggable needs a non-drag alternative per WCAG 2.2 §2.5.7. Row overflow uses the vertical kebab (⋮); the horizontal one (⋯) belongs in toolbars and tables. See [Hover Pattern Mobile Alternatives](#hover-pattern-mobile-alternatives) for the shipped touch equivalents.
 
 ### Focus
 
@@ -681,6 +715,21 @@ Opacity 0.5. No cursor change beyond `not-allowed`.
 - Streaming: blinking cursor after last character
 - Tool running: spinning icon (Loader2 from lucide)
 - History loading: three pulsing dots in message area
+
+### Unread — Two Tiers
+
+Unread carries two different facts, and they get two different marks. Collapsing them into one badge spends the scarce signal on the common case.
+
+| Tier                | Means                                                        | Renders as                                 |
+| ------------------- | ------------------------------------------------------------ | ------------------------------------------ |
+| **Activity**        | Something happened here                                      | Bold label + a dot                         |
+| **Directed at you** | A mention, a permission prompt, a reply that needs an answer | A numbered badge (`bg-primary` count pill) |
+
+Rules that come with it:
+
+- **Numbers are for you, not for volume.** A busy channel nobody addressed you in stays at bold + dot however many messages it holds.
+- **A collapsed container keeps its signal.** Collapsing a section rolls its unread state up onto the collapsed row — never hides it.
+- **Only "happening right now" pulses.** An agent mid-turn pulses (see [Identity](#identity)); an unread count does not.
 
 ### 3-State Status Pattern
 
@@ -770,7 +819,7 @@ Three standard sizes, use `size-[--size-icon-*]` for all icon sizing:
 Usage:
 
 ```tsx
-<Check className="size-[--size-icon-xs] text-green-500" />
+<Check className="size-[--size-icon-xs] text-status-success" />
 <FolderOpen className="size-[--size-icon-sm] text-muted-foreground" />
 <PanelLeft className="size-[--size-icon-md]" />
 ```

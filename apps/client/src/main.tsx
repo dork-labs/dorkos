@@ -38,6 +38,10 @@ import { applyShapeAction } from '@/layers/entities/shapes';
 import { useAutoOpenDiff } from '@/layers/features/diff-review';
 import { ExtensionProvider, createExtensionEventBridge } from '@/layers/features/extensions';
 import type { ExtensionAPIDeps } from '@/layers/features/extensions';
+import {
+  registerPaletteCommandHandler,
+  unregisterPaletteCommandHandler,
+} from '@/layers/features/command-palette';
 import { initializeExtensions } from './app/init-extensions';
 import { ErrorBoundary } from 'react-error-boundary';
 import { AppCrashFallback } from '@/layers/shared/ui/app-crash-fallback';
@@ -272,10 +276,6 @@ if (isDesktopShell()) {
   registerTabOpener((href) => openTabAt(router, href));
 }
 
-// Module-level map for extension command handlers registered via registerCommand().
-// Keyed by actionId (`ext:<extId>:<id>`). The command palette dispatches into this map.
-const commandHandlers = new Map<string, () => void>();
-
 const extensionDeps: ExtensionAPIDeps = {
   // The registry's `register` generic signature is narrower than the `any`-based
   // ExtensionAPIDeps contract — cast to satisfy the looser interface.
@@ -366,12 +366,12 @@ const extensionDeps: ExtensionAPIDeps = {
     'settings.tabs',
     'right-panel',
   ] as const) as ExtensionAPIDeps['availableSlots'],
-  registerCommandHandler: (actionId: string, callback: () => void) => {
-    commandHandlers.set(actionId, callback);
-  },
-  unregisterCommandHandler: (actionId: string) => {
-    commandHandlers.delete(actionId);
-  },
+  // What an extension's `registerCommand()` contributes, other than the row:
+  // the code the row runs, kept where the palette can reach it. This used to be
+  // a local map nothing read, so every extension-contributed row closed the
+  // dialog and did nothing (DOR-1051).
+  registerCommandHandler: registerPaletteCommandHandler,
+  unregisterCommandHandler: unregisterPaletteCommandHandler,
   // Curated, privacy-safe event bridge powering `api.events.subscribe`. It taps
   // the shared StreamManager (session/list/attach streams + relay broadcasts)
   // and translates them into the `ExtensionEvent` union. App-lifetime singleton

@@ -5,7 +5,7 @@ import {
   AdditionalContextEntrySchema,
   type ContextKind,
 } from '../additional-context.js';
-import { SendMessageRequestSchema } from '../schemas.js';
+import { SendMessageRequestSchema, SEED_CONTEXT_MAX_LENGTH } from '../schemas.js';
 
 const ALL_KINDS: ContextKind[] = [
   'git_status',
@@ -14,6 +14,7 @@ const ALL_KINDS: ContextKind[] = [
   'env',
   'relay_context',
   'room_context',
+  'seed_context',
 ];
 
 /** A minimal but complete room context — every field the union requires. */
@@ -158,5 +159,37 @@ describe('SendMessageRequestSchema context wiring (DOR migration)', () => {
   it('accepts a bare content message with no context', () => {
     const result = SendMessageRequestSchema.safeParse({ content: 'hi' });
     expect(result.success).toBe(true);
+  });
+
+  it('carries seedContext as its own top-level field, not inside context', () => {
+    // Two different things: `context` is structured signals the server renders,
+    // `seedContext` is prose a caller wrote for the model. Keeping them apart is
+    // what lets the client bag keep its "never pre-formatted prose" rule.
+    const result = SendMessageRequestSchema.safeParse({
+      content: 'hi',
+      seedContext: 'they came from the marketplace page',
+    });
+    expect(result.success).toBe(true);
+    expect(result.success && result.data.seedContext).toBe('they came from the marketplace page');
+  });
+
+  it('refuses an empty seedContext', () => {
+    // Not "inject nothing": the block would still render and still cost the
+    // model attention, so a blank one is a caller bug worth naming.
+    expect(SendMessageRequestSchema.safeParse({ content: 'hi', seedContext: '' }).success).toBe(
+      false
+    );
+  });
+
+  it('refuses a seedContext past the length bound', () => {
+    // The person cannot see this text, so a runaway one is a cost nobody can
+    // spot from the UI — the bound is the only thing that notices.
+    const tooLong = 'x'.repeat(SEED_CONTEXT_MAX_LENGTH + 1);
+    expect(
+      SendMessageRequestSchema.safeParse({ content: 'hi', seedContext: tooLong }).success
+    ).toBe(false);
+    expect(
+      SendMessageRequestSchema.safeParse({ content: 'hi', seedContext: tooLong.slice(1) }).success
+    ).toBe(true);
   });
 });

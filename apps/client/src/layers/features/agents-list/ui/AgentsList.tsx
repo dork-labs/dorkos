@@ -223,7 +223,7 @@ export function AgentsList({ agents, isLoading, rosterFilters }: AgentsListProps
 
   if (isLoading) {
     return (
-      <div className="space-y-3 p-4">
+      <div className="space-y-3 p-4 sm:px-6">
         {Array.from({ length: 3 }).map((_, i) => (
           <Skeleton key={i} className="h-14 w-full rounded-xl" />
         ))}
@@ -233,7 +233,7 @@ export function AgentsList({ agents, isLoading, rosterFilters }: AgentsListProps
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
-      <FilterBar state={filterState}>
+      <FilterBar state={filterState} className="sm:px-6">
         <FilterBar.Search placeholder="Filter agents..." />
         <FilterBar.Primary name="status" />
         <FilterBar.AddFilter dynamicOptions={{ namespace: namespaceOptions }} />
@@ -249,7 +249,7 @@ export function AgentsList({ agents, isLoading, rosterFilters }: AgentsListProps
         <FilterBar.ActiveFilters />
       </FilterBar>
       <ScrollArea className="min-h-0 flex-1">
-        <div className="px-4 pb-4">{renderBody()}</div>
+        <div className="px-4 pb-4 sm:px-6">{renderBody()}</div>
       </ScrollArea>
     </div>
   );

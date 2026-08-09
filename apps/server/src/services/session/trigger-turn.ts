@@ -180,6 +180,12 @@ export interface TriggerTurnOpts {
    */
   roomContext?: RoomContextData;
   /**
+   * Background the caller attached to this turn — the agent reads it, the person
+   * never sees it. Passed straight to the assembler, which renders it into the
+   * neutral bag as a `seed_context` entry; `content` is untouched.
+   */
+  seedContext?: string;
+  /**
    * Execution settings for THIS turn, when the caller has resolved them itself.
    *
    * The normal path leaves this unset: settings live in `session_metadata` and
@@ -259,8 +265,18 @@ export interface TriggerTurnResult {
  *   otherwise `{ accepted: true, canonicalId }`.
  */
 export async function triggerTurn(opts: TriggerTurnOpts): Promise<TriggerTurnResult> {
-  const { sessionId, clientId, content, cwd, context, roomContext, settings, projector, deps } =
-    opts;
+  const {
+    sessionId,
+    clientId,
+    content,
+    cwd,
+    context,
+    roomContext,
+    seedContext,
+    settings,
+    projector,
+    deps,
+  } = opts;
 
   // Acquire against a detached lifecycle so the lock is bound to the turn, not
   // to the soon-to-be-closed POST response. The per-turn token (I1) makes this
@@ -332,6 +348,7 @@ export async function triggerTurn(opts: TriggerTurnOpts): Promise<TriggerTurnRes
     cwd: cwd ?? '',
     clientContext: context,
     ...(roomContext ? { roomContext } : {}),
+    ...(seedContext ? { seedContext } : {}),
     nativeContext: deps.getCapabilities().nativeContext,
   });
   const tapped = tapEachEvent(

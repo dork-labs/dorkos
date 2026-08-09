@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { ScrollArea } from '@/layers/shared/ui';
+import { PageContainer } from '@/layers/shared/ui';
 import {
   useFullActivityFeed,
   useActivityFilters,
@@ -35,27 +35,25 @@ export function ActivityPage() {
   const allItems = useMemo(() => data?.pages.flatMap((page) => page.items) ?? [], [data]);
 
   return (
-    <ScrollArea className="h-full">
-      <div className="mx-auto max-w-4xl space-y-4 py-6 sm:py-8">
-        {/* How busy the week has been — zero DOM until the session list answers */}
-        <ActivityWeekSummary />
+    <PageContainer width="wide" className="space-y-4">
+      {/* How busy the week has been — zero DOM until the session list answers */}
+      <ActivityWeekSummary />
 
-        {/* Extension-contributed sections — zero DOM when no extension contributes */}
-        <ExtensionSections />
+      {/* Extension-contributed sections — zero DOM when no extension contributes */}
+      <ExtensionSections />
 
-        {/* Digest banner — only visible when there is a prior visit with new events */}
-        <ActivitySinceLastVisit lastVisitedAt={lastVisitedAt} items={allItems} className="mx-4" />
+      {/* Digest banner — only visible when there is a prior visit with new events */}
+      <ActivitySinceLastVisit lastVisitedAt={lastVisitedAt} items={allItems} />
 
-        {/* Time-grouped event rows */}
-        <ActivityTimeline items={allItems} isLoading={isLoading} isFiltered={isFiltered} />
+      {/* Time-grouped event rows */}
+      <ActivityTimeline items={allItems} isLoading={isLoading} isFiltered={isFiltered} />
 
-        {/* Cursor-based pagination trigger */}
-        <ActivityLoadMore
-          onLoadMore={() => void fetchNextPage()}
-          isFetching={isFetchingNextPage}
-          hasNextPage={!!hasNextPage}
-        />
-      </div>
-    </ScrollArea>
+      {/* Cursor-based pagination trigger */}
+      <ActivityLoadMore
+        onLoadMore={() => void fetchNextPage()}
+        isFetching={isFetchingNextPage}
+        hasNextPage={!!hasNextPage}
+      />
+    </PageContainer>
   );
 }

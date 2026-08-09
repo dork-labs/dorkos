@@ -3,10 +3,30 @@ import type { PlaygroundSection } from '../playground-registry';
 /**
  * Component sections from ComponentsPage.
  *
- * Sources: ButtonShowcases, FeedbackShowcases, NavigationShowcases,
- * SidebarShowcases, OverlayShowcases, DataDisplayShowcases.
+ * Sources: LayoutShowcases, ButtonShowcases, FeedbackShowcases,
+ * NavigationShowcases, SidebarShowcases, OverlayShowcases, DataDisplayShowcases.
  */
 export const COMPONENTS_SECTIONS: PlaygroundSection[] = [
+  // LayoutShowcases
+  {
+    id: 'pagecontainer',
+    title: 'PageContainer',
+    page: 'components',
+    category: 'Layout',
+    keywords: [
+      'page',
+      'container',
+      'width',
+      'max-width',
+      'wide',
+      'reading',
+      'full',
+      'gutter',
+      'scroll',
+      'layout',
+      'centered',
+    ],
+  },
   // ButtonShowcases
   {
     id: 'button',

@@ -1029,8 +1029,8 @@ describe('TranscriptReader', () => {
 
       const sessions = await transcriptReader.listSessions('/vault');
 
-      expect(sessions[0].title.length).toBeLessThanOrEqual(83); // 80 + '...'
-      expect(sessions[0].title.endsWith('...')).toBe(true);
+      expect(sessions[0].title.length).toBeLessThanOrEqual(81); // 80 + '…'
+      expect(sessions[0].title.endsWith('…')).toBe(true);
     });
   });
 

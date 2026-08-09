@@ -167,7 +167,7 @@ export function MarketplaceSourcesView() {
   const isEmpty = !isLoading && (!sources || sources.length === 0);
 
   return (
-    <div className="mx-auto max-w-2xl space-y-6 px-4 py-8">
+    <div className="space-y-6">
       {/* Header */}
       <div className="flex items-start justify-between gap-4">
         <div>

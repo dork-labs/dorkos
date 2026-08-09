@@ -1,6 +1,14 @@
 import { useState } from 'react';
 import { AlertTriangle } from 'lucide-react';
-import { Button, TooltipProvider } from '@/layers/shared/ui';
+import {
+  Button,
+  IdentityAvatar,
+  TooltipProvider,
+  statusDotClass,
+  type StatusSignal,
+} from '@/layers/shared/ui';
+import { cn } from '@/layers/shared/lib';
+import { AgentActivityBadge } from '@/layers/features/dashboard-sidebar';
 import { StreamingText } from '@/layers/features/chat/ui/message/StreamingText';
 import { ChatStatusStrip } from '@/layers/features/chat/ui/status/ChatStatusStrip';
 import { UsageStatusItem } from '@/layers/features/status';
@@ -10,6 +18,15 @@ import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
 import { ShowcaseDemo } from '../ShowcaseDemo';
 import { SAMPLE_TASKS } from '../mock-chat-data';
+import { IDENTITY_STATUSES } from '../mock-samples';
+
+/** What each dot signal means, in the words the cockpit uses for it. */
+const SIGNALS: readonly { signal: StatusSignal; means: string }[] = [
+  { signal: 'working', means: 'working — a turn is streaming right now' },
+  { signal: 'needs-you', means: 'needs you — approval or a question' },
+  { signal: 'error', means: 'error — the last turn failed' },
+  { signal: 'unseen', means: 'unseen — output you have not read' },
+];
 
 /** Replica of the inline transport error banner from ChatPanel for showcase purposes. */
 function TransportErrorBanner({
@@ -67,6 +84,52 @@ export function StatusShowcases() {
   return (
     <>
       <PlaygroundSection
+        title="Live status dots"
+        description="One dot vocabulary, four surfaces. Green means a turn is streaming as you look at it and is the only signal that ever moves; amber means something is waiting on you; red means something broke; blue means output you have not read. Idle draws nothing at all — a cockpit where every row wears a dot has no signal left in it. Every colour here is a theme token from one map, which is what stopped the same green being bg-green-500 in the sidebar, bg-emerald-500 in the Agent Hub and bg-primary in a group header."
+      >
+        <ShowcaseLabel>The vocabulary — colour, and which one moves</ShowcaseLabel>
+        <ShowcaseDemo>
+          <div className="flex flex-wrap items-center gap-6">
+            {SIGNALS.map(({ signal, means }) => (
+              <div key={signal} className="flex items-center gap-2">
+                <span className={cn('size-1.5 shrink-0 rounded-full', statusDotClass(signal))} />
+                <span className="text-muted-foreground text-[11px]">{means}</span>
+              </div>
+            ))}
+          </div>
+        </ShowcaseDemo>
+
+        <ShowcaseLabel>On an identity — the disc’s top-right corner</ShowcaseLabel>
+        <ShowcaseDemo>
+          {/* The same three states the row dots say, said on a face. The
+              bottom-right corner is identity (the Bot mark) and never moves out
+              of the way for them — that separation is the whole design. */}
+          <div className="flex items-end gap-6">
+            {IDENTITY_STATUSES.map(({ status, label }) => (
+              <div key={status} className="flex flex-col items-center gap-2">
+                <IdentityAvatar color="#6366f1" emoji="🔍" kind="agent" status={status} size="md" />
+                <span className="text-muted-foreground text-[10px]">{label}</span>
+              </div>
+            ))}
+          </div>
+        </ShowcaseDemo>
+
+        <ShowcaseLabel>On a row — the sidebar’s aggregate agent badge</ShowcaseLabel>
+        <ShowcaseDemo>
+          {/* The same map, reached through the same helper. A row dot and a
+              corner dot for one fact used to be two different greens. */}
+          <div className="flex flex-wrap items-center gap-6">
+            {(['streaming', 'pendingApproval', 'error', 'unseen', 'idle'] as const).map((kind) => (
+              <div key={kind} className="flex items-center gap-2">
+                <AgentActivityBadge status={kind} label={kind} />
+                <span className="text-muted-foreground text-[11px]">{kind}</span>
+              </div>
+            ))}
+          </div>
+        </ShowcaseDemo>
+      </PlaygroundSection>
+
+      <PlaygroundSection
         title="StreamingText"
         description="Markdown rendering with streaming cursor."
       >
@@ -93,14 +156,36 @@ export function StatusShowcases() {
 
       <PlaygroundSection
         title="ChatStatusStrip"
-        description="Unified status strip — one morphing container showing agent activity, system status, and completion summaries."
+        description="Unified status strip — one morphing container showing what the session is doing, system status, and completion summaries."
       >
-        <ShowcaseLabel>Streaming (live timer + rotating verb)</ShowcaseLabel>
+        <ShowcaseLabel>Streaming — naming the tool the session is running</ShowcaseLabel>
         <ShowcaseDemo>
           <ChatStatusStrip
             status="streaming"
             streamStartTime={streamStart}
             estimatedTokens={1250}
+            systemStatus={null}
+            activity={{ toolName: 'Bash', target: 'pnpm verify' }}
+          />
+        </ShowcaseDemo>
+
+        <ShowcaseLabel>Streaming — an MCP tool, named by its server</ShowcaseLabel>
+        <ShowcaseDemo>
+          <ChatStatusStrip
+            status="streaming"
+            streamStartTime={streamStart}
+            estimatedTokens={900}
+            systemStatus={null}
+            activity={{ toolName: 'mcp__slack__send_message' }}
+          />
+        </ShowcaseDemo>
+
+        <ShowcaseLabel>Streaming — nothing known yet, so it says only that</ShowcaseLabel>
+        <ShowcaseDemo>
+          <ChatStatusStrip
+            status="streaming"
+            streamStartTime={streamStart}
+            estimatedTokens={120}
             systemStatus={null}
           />
         </ShowcaseDemo>
@@ -160,7 +245,7 @@ export function StatusShowcases() {
           />
         </ShowcaseDemo>
 
-        <ShowcaseLabel>System message: session hook (preempts the verb mid-turn)</ShowcaseLabel>
+        <ShowcaseLabel>System message: session hook (preempts the activity mid-turn)</ShowcaseLabel>
         <ShowcaseDemo>
           <ChatStatusStrip
             status="streaming"

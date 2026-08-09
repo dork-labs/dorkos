@@ -22,6 +22,7 @@ import type {
   GitStatusData,
   RoomContextData,
 } from '@dorkos/shared/additional-context';
+import { SEED_CONTEXT_MAX_LENGTH } from '@dorkos/shared/schemas';
 import { getGitStatus } from '../core/git-status.js';
 
 /** Inputs for {@link assembleAdditionalContext}. */
@@ -36,6 +37,23 @@ export interface AssembleContextOpts {
    * wire, and a roster a caller could supply is a roster a caller could forge.
    */
   roomContext?: RoomContextData;
+  /**
+   * Background the CALLER attached to this turn (`SendMessageRequest.seedContext`)
+   * — the agent reads it, the person never sees it.
+   *
+   * A sibling of `roomContext` rather than part of {@link ClientContext}, and for
+   * the opposite reason: that bag holds structured signals the server renders,
+   * this holds prose a caller wrote. It is parsed off the wire, so it carries no
+   * more authority than `content` does — the rendered block says so out loud
+   * (`runtimes/shared/seed-context-block.ts`).
+   *
+   * Clamped to {@link SEED_CONTEXT_MAX_LENGTH} HERE rather than only at the HTTP
+   * route, because this is the one place both transports pass through: the
+   * embedded (Obsidian / `DirectTransport`) path never meets
+   * `SendMessageRequestSchema`, so the route's refusal is not a bound on the
+   * feature — it is a bound on one of its two doors.
+   */
+  seedContext?: string;
   /**
    * Kinds the target runtime injects itself (from `getCapabilities().nativeContext`)
    * — omitted from the bag to avoid double-injection.
@@ -71,6 +89,28 @@ async function deriveGitStatus(cwd: string): Promise<GitStatusData> {
   }
 }
 
+/** What a clamped seed ends with, so the agent knows it is reading a fragment. */
+const SEED_TRUNCATION_NOTE = '\n\n[…truncated: this background was longer than DorkOS carries.]';
+
+/**
+ * Bound a caller's seed, telling the reader when it was cut.
+ *
+ * Clamped rather than refused, because of where this runs. The HTTP route has a
+ * response to refuse WITH — an over-length seed there is a `400` the caller can
+ * read and fix. By the time the assembler runs, the turn is starting and the
+ * only ways to "refuse" are to throw (killing a turn over advisory background,
+ * which is the same posture `git_status` explicitly rejects) or to drop the
+ * entry silently (the failure this feature must not have). So the seed is cut
+ * and SAYS it was cut: an agent reading a fragment must not mistake it for the
+ * whole of what it was told.
+ *
+ * @param text - The caller's seed, of any length.
+ */
+function clampSeed(text: string): string {
+  if (text.length <= SEED_CONTEXT_MAX_LENGTH) return text;
+  return text.slice(0, SEED_CONTEXT_MAX_LENGTH) + SEED_TRUNCATION_NOTE;
+}
+
 /**
  * Merge client signals with server-derived context into the canonical per-turn
  * {@link AdditionalContext} bag. Omits any kind in `nativeContext`.
@@ -87,14 +127,19 @@ async function deriveGitStatus(cwd: string): Promise<GitStatusData> {
  * - `room_context`: added when the caller supplies one, which only a
  *   room-triggered turn does. It is the fourth kind that actually flows through
  *   this bag, and the first genuine extension of it since ADR-0273 landed.
+ * - `seed_context`: added when the caller supplies one — a surface that opened
+ *   this conversation already knowing something the person would otherwise have
+ *   had to type. The fifth kind that flows, and the only one this function
+ *   BOUNDS rather than merely passes through ({@link clampSeed}).
  *
  * @param opts - Effective cwd, optional client signals, optional room context,
- *   and the runtime's native-context omission list.
+ *   optional caller-supplied seed, and the runtime's native-context omission
+ *   list.
  */
 export async function assembleAdditionalContext(
   opts: AssembleContextOpts
 ): Promise<AdditionalContext> {
-  const { cwd, clientContext, roomContext, nativeContext } = opts;
+  const { cwd, clientContext, roomContext, seedContext, nativeContext } = opts;
   const bag: AdditionalContext = [];
   const omits = (kind: ContextKind): boolean => nativeContext.includes(kind);
 
@@ -117,6 +162,10 @@ export async function assembleAdditionalContext(
 
   if (roomContext && !omits('room_context')) {
     bag.push({ kind: 'room_context', scope: 'per-turn', data: roomContext });
+  }
+
+  if (seedContext && !omits('seed_context')) {
+    bag.push({ kind: 'seed_context', scope: 'per-turn', data: { text: clampSeed(seedContext) } });
   }
 
   return bag;

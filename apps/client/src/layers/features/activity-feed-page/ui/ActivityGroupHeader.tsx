@@ -18,7 +18,7 @@ export function ActivityGroupHeader({ label, className }: ActivityGroupHeaderPro
     <div
       data-slot="activity-group-header"
       className={cn(
-        'sticky top-0 z-10 -mx-4 px-4 py-2',
+        'sticky top-0 z-10 -mx-4 px-4 py-2 sm:-mx-6 sm:px-6',
         'bg-background/95 backdrop-blur-sm',
         className
       )}

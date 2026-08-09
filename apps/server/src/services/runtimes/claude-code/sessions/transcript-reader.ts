@@ -12,6 +12,7 @@ import type {
 import { parseTranscript, extractTextContent, stripSystemTags } from './transcript-parser.js';
 import type { TranscriptLine } from './transcript-parser.js';
 import { classifyOrigin } from './classify-origin.js';
+import { deriveSessionTitle } from '../../shared/derive-title.js';
 import { projectSlug } from './project-slug.js';
 import { parseTasks } from './task-reader.js';
 import { SessionRootIndex, accountForTranscript } from './session-root-index.js';
@@ -577,10 +578,9 @@ export class TranscriptReader {
       if (firstUserMessage && firstTimestamp && model && cwd) break;
     }
 
-    const derivedTitle = firstUserMessage
-      ? firstUserMessage.slice(0, TRANSCRIPT.TITLE_MAX_LENGTH) +
-        (firstUserMessage.length > TRANSCRIPT.TITLE_MAX_LENGTH ? '...' : '')
-      : `Session ${sessionId.slice(0, TRANSCRIPT.SESSION_ID_PREVIEW_LENGTH)}`;
+    const derivedTitle =
+      deriveSessionTitle(firstUserMessage) ||
+      `Session ${sessionId.slice(0, TRANSCRIPT.SESSION_ID_PREVIEW_LENGTH)}`;
     // Which Claude account this session belongs to: the root the file was found
     // under, read straight off the path — no syscall, no config read. Resolved
     // here rather than at the assignment below because the SDK title lookup is

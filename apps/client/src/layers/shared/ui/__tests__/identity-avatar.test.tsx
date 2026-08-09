@@ -366,14 +366,14 @@ describe('IdentityAvatar', () => {
     });
   });
 
-  describe('the working dot', () => {
-    /** The pulsing mark, when the disc drew one. */
+  describe('the status dot', () => {
+    /** The corner mark, when the disc drew one. */
     function dotOf(container: HTMLElement): HTMLElement | null {
-      return container.querySelector('[data-slot="identity-avatar"] > span.bg-status-success');
+      return container.querySelector('[data-slot="identity-status-dot"]');
     }
 
     it('marks an identity that is working right now, in the theme green', () => {
-      const { container } = render(<IdentityAvatar color="#7c3aed" emoji="🐙" working />);
+      const { container } = render(<IdentityAvatar color="#7c3aed" emoji="🐙" status="working" />);
 
       expect(dotOf(container)).not.toBeNull();
       expect(dotOf(container)).toHaveClass('bg-status-success', 'ring-background');
@@ -384,13 +384,47 @@ describe('IdentityAvatar', () => {
       const { container } = render(<IdentityAvatar color="#7c3aed" emoji="🐙" />);
 
       expect(dotOf(container)).toBeNull();
+      expect(
+        render(<IdentityAvatar color="#7c3aed" emoji="🐙" status="idle" />).container.querySelector(
+          '[data-slot="identity-status-dot"]'
+        )
+      ).toBeNull();
+    });
+
+    it('says needs-you in amber and error in red, from the one token map', () => {
+      const { container: amber } = render(
+        <IdentityAvatar color="#7c3aed" emoji="🐙" status="needs-you" />
+      );
+      // The DOT token, not the general-purpose `bg-status-warning`. A dot
+      // carries its meaning by colour, so it owes 3:1 against the surface
+      // (WCAG 1.4.11) and the fill-tuned amber is 2.15:1 on a light one.
+      expect(dotOf(amber)).toHaveClass('bg-status-warning-dot');
+      expect(dotOf(amber)).not.toHaveClass('bg-status-warning');
+
+      const { container: red } = render(
+        <IdentityAvatar color="#7c3aed" emoji="🐙" status="error" />
+      );
+      expect(dotOf(red)).toHaveClass('bg-status-error');
+    });
+
+    it('moves for working and for nothing else', () => {
+      // Motion is what the word "now" is made of. A state that pulsed — an
+      // approval waiting on you, a turn that already failed — would claim to
+      // still be running.
+      for (const status of ['needs-you', 'error'] as const) {
+        const { container } = render(<IdentityAvatar color="#7c3aed" emoji="🐙" status={status} />);
+        expect(dotOf(container)?.querySelector('.animate-ping')).toBeNull();
+      }
+
+      const { container } = render(<IdentityAvatar color="#7c3aed" emoji="🐙" status="working" />);
+      expect(dotOf(container)?.querySelector('.animate-ping')).not.toBeNull();
     });
 
     it('keeps the fact and drops the motion when motion is reduced', () => {
       // The ping is what says "right now"; a still dot says the same thing
       // about a state that ended an hour ago. Under `motion-reduce` the dot
       // survives and only the animation goes.
-      const { container } = render(<IdentityAvatar color="#7c3aed" emoji="🐙" working />);
+      const { container } = render(<IdentityAvatar color="#7c3aed" emoji="🐙" status="working" />);
       const ping = dotOf(container)?.querySelector('.animate-ping');
 
       expect(ping).not.toBeNull();
@@ -400,7 +434,7 @@ describe('IdentityAvatar', () => {
 
     it('is kind-agnostic — a person in a roster can be working too', () => {
       const { container } = render(
-        <IdentityAvatar color="#7c3aed" fallback="P" kind="human" working />
+        <IdentityAvatar color="#7c3aed" fallback="P" kind="human" status="working" />
       );
 
       expect(dotOf(container)).not.toBeNull();
@@ -409,7 +443,7 @@ describe('IdentityAvatar', () => {
 
     it('sits opposite the badge, so an agent can wear both', () => {
       const { container } = render(
-        <IdentityAvatar color="#7c3aed" emoji="🐙" kind="agent" working />
+        <IdentityAvatar color="#7c3aed" emoji="🐙" kind="agent" status="working" />
       );
 
       expect(badgeOf(container)?.querySelector('.lucide-bot')).not.toBeNull();
@@ -507,13 +541,11 @@ describe('IdentityAvatar', () => {
       // The photo is the face, not the whole disc: an agent still wears its
       // mark and a working identity still pulses.
       const { container } = render(
-        <IdentityAvatar color="#7c3aed" kind="agent" imageUrl={PHOTO} working />
+        <IdentityAvatar color="#7c3aed" kind="agent" imageUrl={PHOTO} status="working" />
       );
 
       expect(container.querySelector('.lucide-bot')).not.toBeNull();
-      expect(
-        container.querySelector('[data-slot="identity-avatar"] > span.bg-status-success')
-      ).not.toBeNull();
+      expect(container.querySelector('[data-slot="identity-status-dot"]')).not.toBeNull();
     });
   });
 

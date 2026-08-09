@@ -8,6 +8,7 @@ import { assembleAdditionalContext } from '../context-assembler.js';
 import { getGitStatus } from '../../core/git-status.js';
 import type { RoomContextData } from '@dorkos/shared/additional-context';
 import { ClientContextSchema } from '@dorkos/shared/additional-context';
+import { SEED_CONTEXT_MAX_LENGTH } from '@dorkos/shared/schemas';
 import type { GitStatusResponse } from '@dorkos/shared/types';
 import type { UiState } from '@dorkos/shared/types';
 
@@ -162,6 +163,76 @@ describe('assembleAdditionalContext', () => {
       roomContext: SAMPLE_ROOM_CONTEXT,
     });
     expect(parsed).toEqual({ queued: true });
+  });
+
+  describe('seed_context', () => {
+    it('carries a caller-supplied seed as its own entry', async () => {
+      mockedGetGitStatus.mockResolvedValue(makeGitStatus());
+      const bag = await assembleAdditionalContext({
+        cwd: '/proj',
+        seedContext: 'they came from the marketplace page',
+        nativeContext: [],
+      });
+      expect(bag.find((e) => e.kind === 'seed_context')).toEqual({
+        kind: 'seed_context',
+        scope: 'per-turn',
+        data: { text: 'they came from the marketplace page' },
+      });
+    });
+
+    it('emits nothing when no seed was supplied', async () => {
+      mockedGetGitStatus.mockResolvedValue(makeGitStatus());
+      const bag = await assembleAdditionalContext({ cwd: '/proj', nativeContext: [] });
+      expect(bag.find((e) => e.kind === 'seed_context')).toBeUndefined();
+    });
+
+    it('bounds an over-length seed HERE, not only at the HTTP route', async () => {
+      // The route's `400` is a bound on one of two doors. The embedded
+      // (Obsidian / DirectTransport) path never meets `SendMessageRequestSchema`,
+      // so before this the same 10 MB seed that a `fetch` could not get past the
+      // route went straight into the prompt in-process. This is the choke point
+      // both doors share.
+      mockedGetGitStatus.mockResolvedValue(makeGitStatus());
+      const huge = 'x'.repeat(SEED_CONTEXT_MAX_LENGTH * 3);
+      const bag = await assembleAdditionalContext({
+        cwd: '/proj',
+        seedContext: huge,
+        nativeContext: [],
+      });
+
+      const entry = bag.find((e) => e.kind === 'seed_context');
+      expect(entry).toBeDefined();
+      const text = (entry as { data: { text: string } }).data.text;
+      expect(text.length).toBeLessThan(huge.length);
+      expect(text.startsWith('x'.repeat(SEED_CONTEXT_MAX_LENGTH))).toBe(true);
+      // Cut, and SAYS it was cut — an agent reading a fragment must not take it
+      // for the whole of what it was told. Dropping the entry silently is the
+      // one outcome this feature must never have.
+      expect(text).toContain('truncated');
+    });
+
+    it('leaves a seed at exactly the bound untouched', async () => {
+      mockedGetGitStatus.mockResolvedValue(makeGitStatus());
+      const exact = 'y'.repeat(SEED_CONTEXT_MAX_LENGTH);
+      const bag = await assembleAdditionalContext({
+        cwd: '/proj',
+        seedContext: exact,
+        nativeContext: [],
+      });
+      expect(
+        (bag.find((e) => e.kind === 'seed_context') as { data: { text: string } }).data.text
+      ).toBe(exact);
+    });
+
+    it('omits the seed when the runtime injects the kind natively', async () => {
+      mockedGetGitStatus.mockResolvedValue(makeGitStatus());
+      const bag = await assembleAdditionalContext({
+        cwd: '/proj',
+        seedContext: 'background',
+        nativeContext: ['seed_context'],
+      });
+      expect(bag.find((e) => e.kind === 'seed_context')).toBeUndefined();
+    });
   });
 
   it('never emits an env entry (env flows via systemPrompt.append, G2)', async () => {

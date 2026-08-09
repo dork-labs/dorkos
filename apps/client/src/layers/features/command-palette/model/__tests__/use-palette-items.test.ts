@@ -108,7 +108,9 @@ vi.mock('@/layers/entities/mesh', () => ({
 }));
 
 vi.mock('@/layers/entities/command', () => ({
-  useCommands: () => mockUseCommands(),
+  // Arguments forwarded, not dropped: WHICH runtime's commands the palette
+  // lists is decided by what it passes here.
+  useCommands: (...args: unknown[]) => mockUseCommands(...args),
 }));
 
 vi.mock('@/layers/entities/session', async (importOriginal) => ({
@@ -471,6 +473,57 @@ describe('usePaletteItems', () => {
     expect(result.current).toHaveProperty('quickActions');
     expect(result.current).toHaveProperty('suggestions');
     expect(result.current).toHaveProperty('isLoading');
+  });
+
+  // --- Which runtime's commands ---
+
+  /**
+   * The palette used to ask for commands with no context at all, so the server
+   * cold-discovered the DEFAULT runtime and the list was whatever
+   * claude-code offers — even with a Codex conversation on screen (DOR-1051).
+   * The context it needs is the one the chat composer's own slash palette
+   * passes: directory, session, runtime.
+   */
+  describe('the command list it asks for', () => {
+    const activeSession = {
+      id: 'session-codex',
+      title: 'On Codex',
+      cwd: '/projects/a',
+      runtime: 'codex',
+      updatedAt: '2026-08-09T10:00:00.000Z',
+      createdAt: '2026-08-09T09:00:00.000Z',
+    };
+
+    it('names the directory, the conversation on screen, and the runtime that owns it', () => {
+      mockUseSessions.mockReturnValue({ sessions: [activeSession] });
+
+      renderHook(() => usePaletteItems('/projects/a'));
+
+      expect(mockUseCommands).toHaveBeenCalledWith('/projects/a', 'session-codex', 'codex');
+    });
+
+    it('names the directory alone when no conversation is open there yet', () => {
+      // A directory with no sessions still narrows the answer — project skills
+      // live under it — so the cwd goes even when there is nothing else to say.
+      mockUseSessions.mockReturnValue({ sessions: [] });
+
+      renderHook(() => usePaletteItems('/projects/a'));
+
+      expect(mockUseCommands).toHaveBeenCalledWith('/projects/a', undefined, undefined);
+    });
+
+    it('ignores sessions belonging to another directory', () => {
+      // `selectAgentSessions` is the canonical membership rule (DOR-203);
+      // reading `sessions[0]` blindly would hand the palette a session from
+      // whichever project happened to be listed first.
+      mockUseSessions.mockReturnValue({
+        sessions: [{ ...activeSession, cwd: '/projects/elsewhere' }],
+      });
+
+      renderHook(() => usePaletteItems('/projects/a'));
+
+      expect(mockUseCommands).toHaveBeenCalledWith('/projects/a', undefined, undefined);
+    });
   });
 
   // --- Suggestions ---

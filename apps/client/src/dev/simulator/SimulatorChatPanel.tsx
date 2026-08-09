@@ -11,7 +11,7 @@ interface SimulatorChatPanelProps {
 /** Mirrors ChatPanel layout with real MessageList, powered by simulator state instead of useChatSession. */
 export function SimulatorChatPanel({ sim, textEffect }: SimulatorChatPanelProps) {
   return (
-    <div className="mx-auto flex h-full w-full max-w-7xl flex-col">
+    <div className="flex h-full w-full flex-col">
       <div className="relative min-h-0 flex-1">
         {sim.messages.length === 0 ? (
           <div className="flex h-full items-center justify-center">

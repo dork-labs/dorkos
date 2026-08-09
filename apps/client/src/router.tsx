@@ -90,7 +90,19 @@ const appShellRoute = createRoute({
  * `prompt` seeds the composer of a freshly-launched session — the "Run this
  * with…" re-run carries the original prompt into a new session bound to another
  * runtime (ADR-0255: a switch is always a fresh session, never a history
- * transplant). It is consumed once on mount, then the send takes over.
+ * transplant), and any link (docs, CLI, a marketplace page) can open DorkOS with
+ * the question already written. It applies to a conversation with no messages
+ * and to nothing else: a prompt aimed at a session that already has history is
+ * ignored, by the loader below AND by `useLaunchPrompt` (which is the guard that
+ * still holds for a URL somebody typed with a `session` id already in it).
+ *
+ * `send=1` turns that seed into a turn: the composer is filled and then
+ * submitted through the composer's own handler, exactly once. Spelled as the
+ * single literal `'1'` and `.catch()`ed, so `?send=0` or `?send=please` is
+ * ignored rather than throwing the route — and so nothing that is not an
+ * explicit opt-in can ever start a turn on somebody's behalf. Both params are
+ * dropped from the URL the moment they are consumed, so a refresh or a Back does
+ * not re-issue them.
  *
  * `continuedFrom` is the `/clear` intent's "linked back" reference (DOR-109) —
  * the id of the session this fresh one continues from. A lightweight client-side
@@ -104,6 +116,7 @@ export const sessionSearchSchema = mergeDialogSearch(
     dir: z.string().optional(),
     runtime: z.string().optional(),
     prompt: z.string().optional(),
+    send: z.literal('1').optional().catch(undefined),
     continuedFrom: z.string().optional(),
   })
 );
@@ -254,6 +267,7 @@ export function sessionLoaderDeps({ search }: { search: SessionSearch }) {
     dir: search.dir,
     runtime: search.runtime,
     prompt: search.prompt,
+    send: search.send,
   };
 }
 
@@ -290,10 +304,12 @@ export async function sessionRouteLoader({
   // redirects below so the first message can carry it as the session's runtime
   // hint.
   //
-  // `prompt` is the launch-time seed ("Run this with…"), carried ONLY when the
-  // session is brand-new so its composer is pre-filled. It is deliberately NOT
-  // propagated onto a resumed session: a seed must never ride an existing
-  // conversation (defense-in-depth atop ChatPanel's empty-only guard).
+  // `prompt` is the launch-time seed ("Run this with…", a docs try-it link),
+  // carried ONLY when the session is brand-new so its composer is pre-filled —
+  // and `send` with it, since a seed that must not ride an existing conversation
+  // must certainly not START a turn on one. Both are deliberately dropped when
+  // this resolves to a session that already exists (defense-in-depth atop
+  // `useLaunchPrompt`'s empty-conversation guard).
   const resolved = await resolveSessionForCwd(context, dir ?? null);
   // The lookup failed. There is no "stay put" for a loader — this URL IS where
   // the person asked to be — so the honest move is the route's error boundary,
@@ -311,6 +327,7 @@ export async function sessionRouteLoader({
       dir,
       runtime,
       prompt: resolved.isNew ? deps.prompt : undefined,
+      send: resolved.isNew ? deps.send : undefined,
     },
     replace: true,
   });

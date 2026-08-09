@@ -106,6 +106,10 @@ export {
   IDENTITY_BADGE_WAKE,
 } from './identity-avatar';
 export type { IdentityAvatarProps } from './identity-avatar';
+export { AGENT_GLYPH, platformGlyph } from './identity-glyphs';
+export type { IdentityGlyph } from './identity-glyphs';
+export { STATUS_DOT_COLOR, STATUS_DOT_PULSE, statusDotClass } from './status-dot';
+export type { IdentityStatus, StatusSignal } from './status-dot';
 export { IdentityHoverCard } from './identity-hover-card';
 export type {
   IdentityHoverCardProps,
@@ -257,6 +261,8 @@ export type {
 } from './use-roving-tab-list';
 export type { TabsListProps } from './tabs';
 export { DirectoryPicker } from './DirectoryPicker';
+export { PageContainer } from './page-container';
+export type { PageContainerProps } from './page-container';
 export { PathInput } from './path-input';
 export type { PathInputProps } from './path-input';
 export { Skeleton } from './skeleton';

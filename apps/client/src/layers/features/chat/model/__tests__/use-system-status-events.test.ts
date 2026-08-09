@@ -42,7 +42,7 @@ function textDelta(seq: number, text = 'Hi'): SessionEvent {
   return { seq, type: 'text_delta', text };
 }
 
-/** The thinking-phase status the strip must NOT surface (the rotating verb owns it). */
+/** The thinking-phase status the strip must NOT surface (the activity label owns it). */
 function requesting(seq: number): SessionEvent {
   return { seq, type: 'system_status', message: 'Status: requesting', status: 'requesting' };
 }
@@ -172,7 +172,7 @@ describe('useSystemStatusEvents — session hooks', () => {
     expect(setStatus).toHaveBeenLastCalledWith(null);
   });
 
-  it('does not surface "requesting" — the rotating verb owns the thinking phase (DOR-125)', () => {
+  it('does not surface "requesting" — the activity label owns the thinking phase (DOR-125)', () => {
     const setOp = vi.fn();
     const setStatus = vi.fn();
     renderHook(() =>

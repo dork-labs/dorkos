@@ -301,6 +301,24 @@ export const CHAT_SECTIONS: PlaygroundSection[] = [
   },
   // StatusShowcases
   {
+    id: 'live-status-dots',
+    title: 'Live status dots',
+    page: 'chat',
+    category: 'Status',
+    keywords: [
+      'status',
+      'dot',
+      'working',
+      'streaming',
+      'needs you',
+      'error',
+      'unseen',
+      'pulse',
+      'token',
+      'signal',
+    ],
+  },
+  {
     id: 'streamingtext',
     title: 'StreamingText',
     page: 'chat',

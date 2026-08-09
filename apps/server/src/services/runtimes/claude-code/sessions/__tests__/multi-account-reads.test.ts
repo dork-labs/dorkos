@@ -165,9 +165,9 @@ describe('TranscriptReader across Claude accounts', () => {
     const cached = await reader.listSessions(vaultRoot);
     const session = await reader.getSession(vaultRoot, shared);
 
-    expect(first).toMatchObject([{ account: accountA, title: 'the active account copy' }]);
-    expect(cached).toMatchObject([{ account: accountA, title: 'the active account copy' }]);
-    expect(session).toMatchObject({ account: accountA, title: 'the active account copy' });
+    expect(first).toMatchObject([{ account: accountA, title: 'The active account copy' }]);
+    expect(cached).toMatchObject([{ account: accountA, title: 'The active account copy' }]);
+    expect(session).toMatchObject({ account: accountA, title: 'The active account copy' });
   });
 
   it('reads a single session and its messages from the account that holds it', async () => {
@@ -317,7 +317,7 @@ describe('TranscriptReader across Claude accounts', () => {
     expect(titles.get(accountA)).toBe('Renamed in the app');
     // The honest consequence: a title set on accountB does not display while
     // accountA is active — that row shows its first message instead.
-    expect(titles.get(accountB)).toBe('work for Beta');
+    expect(titles.get(accountB)).toBe('Work for Beta');
     // Asserted on the CALL too, because that is the cost being controlled: one
     // in-process SDK read per listing at most, never one per account.
     expect(vi.mocked(getSessionInfo)).toHaveBeenCalledTimes(1);

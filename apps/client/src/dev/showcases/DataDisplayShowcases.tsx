@@ -412,21 +412,30 @@ export function IdentityAvatarShowcase() {
         </div>
       </ShowcaseDemo>
 
-      <ShowcaseLabel>Working — the pulse says it is happening right now</ShowcaseLabel>
+      <ShowcaseLabel>Status — one corner, four states, and only one of them moves</ShowcaseLabel>
       <ShowcaseDemo>
         {/* Kind-agnostic on purpose: an agent mid-turn and a person mid-task
-              are the same fact to a roster. */}
+              are the same fact to a roster. The full state matrix lives on the
+              Identity page; this row is the primitive's own corner. */}
         <div className="flex items-end gap-4">
           <div className="flex flex-col items-center gap-2">
-            <IdentityAvatar color="#6366f1" emoji="🔍" kind="agent" working size="md" />
+            <IdentityAvatar color="#6366f1" emoji="🔍" kind="agent" status="working" size="md" />
             <span className="text-muted-foreground text-[10px]">agent, working</span>
           </div>
           <div className="flex flex-col items-center gap-2">
-            <IdentityAvatar color="#10b981" fallback="P" kind="human" working size="md" />
+            <IdentityAvatar color="#10b981" fallback="P" kind="human" status="working" size="md" />
             <span className="text-muted-foreground text-[10px]">person, working</span>
           </div>
           <div className="flex flex-col items-center gap-2">
-            <IdentityAvatar color="#6366f1" emoji="🔍" kind="agent" working size="xs" />
+            <IdentityAvatar color="#6366f1" emoji="🔍" kind="agent" status="needs-you" size="md" />
+            <span className="text-muted-foreground text-[10px]">needs you</span>
+          </div>
+          <div className="flex flex-col items-center gap-2">
+            <IdentityAvatar color="#6366f1" emoji="🔍" kind="agent" status="error" size="md" />
+            <span className="text-muted-foreground text-[10px]">error</span>
+          </div>
+          <div className="flex flex-col items-center gap-2">
+            <IdentityAvatar color="#6366f1" emoji="🔍" kind="agent" status="working" size="xs" />
             <span className="text-muted-foreground text-[10px]">xs</span>
           </div>
         </div>

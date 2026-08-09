@@ -1,7 +1,9 @@
+import { useCallback } from 'react';
 import { ChatPanel } from '@/layers/features/chat';
 import { useCanvasPersistence } from '@/layers/features/canvas';
 import { useRightPanelLayoutPersistence } from '@/layers/features/right-panel';
 import { useSessionId, useSessionSearch } from '@/layers/entities/session';
+import { useInPlaceNavigate } from '@/layers/shared/model';
 
 /**
  * Session route page — wraps ChatPanel with route-derived session ID.
@@ -16,14 +18,41 @@ import { useSessionId, useSessionSearch } from '@/layers/entities/session';
  *
  * The `?runtime=` search param (launch-time runtime selection) is forwarded so
  * the session-creating first message carries it as the runtime hint. The
- * `?prompt=` seed ("Run this with…") is forwarded so a freshly-launched
- * session's composer is pre-filled with the re-run prompt.
+ * `?prompt=` seed and its `?send=1` opt-in are forwarded so a launch link can
+ * pre-fill — and optionally start — a freshly-launched session's first turn.
+ * This page owns the other half of that contract: dropping both params from the
+ * URL once they are spent.
  */
 export function SessionPage() {
   const [activeSessionId] = useSessionId();
-  const { runtime, prompt } = useSessionSearch();
+  const { runtime, prompt, send } = useSessionSearch();
+  const inPlaceNavigate = useInPlaceNavigate();
   useCanvasPersistence(activeSessionId);
   useRightPanelLayoutPersistence();
 
-  return <ChatPanel sessionId={activeSessionId} launchRuntime={runtime} launchPrompt={prompt} />;
+  /**
+   * Drop the spent launch params, in place and without a history entry.
+   *
+   * In-place rather than a plain `navigate`: the cockpit is not going anywhere,
+   * and the session-navigation guard must not read this rewrite as a departure
+   * that abandons a lookup in flight (DOR-928/931). `replace`, because the URL
+   * with the launch params in it is not a place anyone should be able to go
+   * Back to — that is precisely the re-send this clears.
+   */
+  const handleLaunchConsumed = useCallback(() => {
+    inPlaceNavigate?.({
+      search: (prev) => ({ ...prev, prompt: undefined, send: undefined }),
+      replace: true,
+    });
+  }, [inPlaceNavigate]);
+
+  return (
+    <ChatPanel
+      sessionId={activeSessionId}
+      launchRuntime={runtime}
+      launchPrompt={prompt}
+      launchSend={send === '1'}
+      onLaunchConsumed={handleLaunchConsumed}
+    />
+  );
 }
