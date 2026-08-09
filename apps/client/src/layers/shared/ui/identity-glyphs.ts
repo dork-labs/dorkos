@@ -10,8 +10,9 @@
  * @module shared/ui/identity-glyphs
  */
 import type { ComponentType } from 'react';
+import type { SessionOrigin } from '@dorkos/shared/types';
 import { ADAPTER_LOGO_MAP, type AdapterLogoProps } from '@dorkos/icons/adapter-logos';
-import { Bot, Send } from 'lucide-react';
+import { ArrowLeftRight, Bot, CalendarClock, Hash, Send } from 'lucide-react';
 
 /**
  * What every glyph in this registry accepts — a pixel size and a class string.
@@ -39,8 +40,45 @@ export const AGENT_GLYPH: IdentityGlyph = Bot;
  * elsewhere has to read as not-from-here even when the brand mark is missing,
  * because the alternative is a bridged person drawn exactly like a local one.
  *
+ * It is the same Send that {@link ORIGIN_GLYPH} spends on `channel` and
+ * `external`, and that is a deliberate collapse rather than a collision: all
+ * three say "this came from outside this cockpit", which is the whole of what a
+ * reader needs from a 12px mark. The platform's real logo is what distinguishes
+ * them whenever the build has one.
+ *
  * @param platform - The platform id carried on the identity's origin.
  */
 export function platformGlyph(platform: string): IdentityGlyph {
   return ADAPTER_LOGO_MAP[platform] ?? Send;
 }
+
+/**
+ * Where a session came from, as one small mark.
+ *
+ * **`user` is deliberately absent, and its absence is the signal.** A
+ * conversation you had with an agent is the ordinary case, and marking the
+ * ordinary case would leave nothing for the marks to mean. Unmarked is you;
+ * marked is something that happened without you.
+ *
+ * One registry so Today, the session switcher, "+N automated", ⌘K and Activity
+ * cannot drift apart about what a scheduled run looks like (BC-26). It is the
+ * key set of `ORIGIN_DESCRIPTORS` in `entities/session`, which pairs each glyph
+ * with its label and is what the row-level `SessionOriginMark` renders; this is
+ * the glyph half on its own, in `shared/`, for surfaces that have an origin
+ * string and no session entity to hand.
+ *
+ * The mark rides in the row's TRAILING slot and never on the avatar — the
+ * avatar's corners belong to identity (design-decisions §6).
+ */
+export const ORIGIN_GLYPH: Record<Exclude<SessionOrigin, 'user'>, IdentityGlyph> = {
+  /** Arrows: one agent calling another. */
+  agent: ArrowLeftRight,
+  /** Paper plane: a bridged conversation — Telegram, Slack, anything that wrote in from elsewhere. */
+  channel: Send,
+  /** Paper plane again: `external` is the same fact — it started outside this cockpit. */
+  external: Send,
+  /** `#`: a turn an agent took in one of this machine's own rooms, wearing the room's own mark. */
+  room: Hash,
+  /** Timer: a scheduled task that ran on its own clock. */
+  task: CalendarClock,
+};

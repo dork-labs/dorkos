@@ -37,6 +37,26 @@ The chat UI has four focus states. At any given time, exactly one is active.
 | **WAITING_FOR_APPROVAL** | Disabled               | `Enter` = approve, `Esc` = deny             | SSE `approval_required` event received                                |
 | **WAITING_FOR_ANSWER**   | Disabled               | `1`-`9`, arrows, `Space`, `Enter`, `[`, `]` | SSE `question_prompt` event received                                  |
 
+### What `Enter` does in the composer
+
+`Enter` has one meaning — send — and exactly one authorized exception, which exists only when
+`ui.composer.richText` is on (DOR-948). Both fields run the same keyboard ladder through the
+`EditingSurface` port, so everything not in this table is identical on either field.
+
+| Where the caret is                | Rich text OFF (textarea) | Rich text ON (Lexical)                     |
+| --------------------------------- | ------------------------ | ------------------------------------------ |
+| Not in a list                     | Sends                    | Sends                                      |
+| In a list item with text in it    | Sends                    | Starts the next bullet — **does not send** |
+| In an EMPTY list item             | Sends                    | Leaves the list — **does not send**        |
+| With a palette open that has rows | Palette takes it         | Palette takes it                           |
+| With a palette open and NO rows   | Falls through and sends  | Falls through and sends                    |
+
+The zero-result fall-through is DOR-946's rung and is not a rich-text behaviour; it is listed
+because it is the one case where an open palette does not swallow `Enter`.
+
+`Shift+Enter` is a newline on both fields, and a trailing `\` plus `Enter` is a newline on both.
+Neither is affected by the setting.
+
 ### Why Global Shortcuts Work
 
 The chat textarea is `disabled={isLoading}` during streaming. Interactive tools only appear while the SSE connection is open (i.e., during streaming). Because the textarea is disabled, it cannot receive focus or keystrokes, so `document.addEventListener('keydown', ...)` handlers fire without conflicting with text input.

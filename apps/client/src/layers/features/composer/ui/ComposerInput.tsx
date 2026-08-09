@@ -1,10 +1,30 @@
-import { useRef, useCallback, useState, useEffect, forwardRef, useImperativeHandle } from 'react';
+import {
+  useRef,
+  useCallback,
+  useState,
+  useEffect,
+  forwardRef,
+  useImperativeHandle,
+  lazy,
+  Suspense,
+} from 'react';
 import { motion } from 'motion/react';
 import { X, Paperclip } from 'lucide-react';
 import { cn } from '@/layers/shared/lib';
 import { useIsTouchOnly } from '@/layers/shared/model';
 import { useInputKeyboard } from './use-input-keyboard';
-import { useTextareaResize } from './use-textarea-resize';
+import { INERT_SURFACE } from './editing-surface';
+import type { EditingSurface } from './editing-surface';
+import { TextareaField } from './field/TextareaField';
+import type { ComposerFieldHandle, ComposerFieldProps } from './field/ComposerFieldProps';
+
+/**
+ * The rich-text field, in its own chunk.
+ *
+ * Reached only through this `lazy`, which is what keeps every Lexical byte out
+ * of the entry chunk when the flag is off.
+ */
+const LexicalField = lazy(() => import('./field/LexicalField'));
 import { InputActionButton } from './InputActionButton';
 
 export interface ComposerInputHandle {
@@ -159,16 +179,35 @@ export interface ComposerInputProps {
    * missing or disabled — see {@link ComposerInputProps.onClear}.
    */
   onClearArmedChange?: (armed: boolean) => void;
+  /**
+   * Handles this composer may draw as identity pills. Purely presentational —
+   * the server still resolves who a mention addresses. Omitted by surfaces with
+   * no roster.
+   */
+  mentionSubjects?: ComposerFieldProps['mentionSubjects'];
+  /**
+   * Show formatting as you type — bold, headings and lists take shape in the
+   * box instead of staying as markdown characters.
+   *
+   * Additive and optional, so every existing call site compiles untouched and
+   * never reads it. Off means the plain field, byte for byte what shipped.
+   */
+  richText?: boolean;
 }
 
 /**
  * The composer's text field — the part every surface actually types into.
  *
- * Owns the textarea, its growth, the send/stop/queue action button, and the
- * whole keyboard ladder: Enter and Shift+Enter by device, the double-Escape
- * clear and its 500ms arming window, palette fall-through, queue navigation,
- * and upload cancel. That ladder lives in `use-input-keyboard.ts`, and its
- * tests are its only regression net — read them before changing a key.
+ * Owns the card's contents, the send/stop/queue action button, and the whole
+ * keyboard ladder: Enter and Shift+Enter by device, the double-Escape clear and
+ * its 500ms arming window, palette fall-through, queue navigation, and upload
+ * cancel. That ladder lives in `use-input-keyboard.ts`, and its tests are its
+ * only regression net — read them before changing a key.
+ *
+ * The field itself — the element holding the caret and its growth — is
+ * `field/TextareaField`. The ladder never touches it: the field hands up an
+ * `EditingSurface` and the ladder asks that seven questions, which is what lets
+ * a different kind of field slot in without the keyboard rules moving.
  *
  * Deliberately controlled and deliberately ignorant of its surroundings. It
  * takes `value`/`onChange` and reports intent through callbacks; it does not
@@ -220,12 +259,18 @@ export const ComposerInput = forwardRef<ComposerInputHandle, ComposerInputProps>
       queueHasItems = false,
       canSubmit = true,
       canSubmitReason,
+      richText = false,
+      mentionSubjects,
     },
     ref
   ) {
-    const textareaRef = useRef<HTMLTextAreaElement>(null);
+    const fieldRef = useRef<ComposerFieldHandle>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [isFocused, setIsFocused] = useState(false);
+    // The field reports its editing surface once it has one; until then the
+    // ladder talks to the inert one, which answers exactly as it did when there
+    // was no textarea in the ref yet.
+    const [surface, setSurface] = useState<EditingSurface>(INERT_SURFACE);
     // One signal for both questions this component asks about the device, because
     // they are the same question: is there a software keyboard here? Enter's
     // meaning and whether an unbidden focus is welcome both follow from it, and
@@ -233,17 +278,9 @@ export const ComposerInput = forwardRef<ComposerInputHandle, ComposerInputProps>
     const isTouchOnly = useIsTouchOnly();
 
     useImperativeHandle(ref, () => ({
-      focus: () => textareaRef.current?.focus(),
-      focusUnlessTouch: () => {
-        if (isTouchOnly) return;
-        textareaRef.current?.focus();
-      },
-      focusAt: (pos: number) => {
-        const el = textareaRef.current;
-        if (!el) return;
-        el.focus();
-        el.setSelectionRange(pos, pos);
-      },
+      focus: () => fieldRef.current?.focus(),
+      focusUnlessTouch: () => fieldRef.current?.focusUnlessTouch(),
+      focusAt: (pos: number) => fieldRef.current?.focusAt(pos),
     }));
 
     // Auto-focus on mount (e.g. returning from interactive tool-approval mode),
@@ -253,11 +290,11 @@ export const ComposerInput = forwardRef<ComposerInputHandle, ComposerInputProps>
     const isTouchOnlyOnMountRef = useRef(isTouchOnly);
     useEffect(() => {
       if (isTouchOnlyOnMountRef.current) return;
-      textareaRef.current?.focus();
+      fieldRef.current?.focus();
     }, []);
 
     const { handleKeyDown, clearArmed } = useInputKeyboard({
-      textareaRef,
+      surface,
       value,
       isStreaming,
       isTouchOnly,
@@ -286,28 +323,31 @@ export const ComposerInput = forwardRef<ComposerInputHandle, ComposerInputProps>
       contextKey,
     });
 
-    // Sizing is driven by `value` alone, so a programmatic change (a queued item
-    // opened for edit, a restored draft, a seeded prompt) grows the box exactly
-    // the way typing does.
-    useTextareaResize(textareaRef, value);
-
     const handleFocus = useCallback(() => setIsFocused(true), []);
     const handleBlur = useCallback(() => {
       setIsFocused(false);
       if (isPaletteOpen) onEscape?.();
     }, [isPaletteOpen, onEscape]);
 
-    const handleChange = useCallback(
-      (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-        onChange(e.target.value);
-        onCursorChange?.(e.target.selectionStart);
-      },
-      [onChange, onCursorChange]
-    );
-
-    const handleSelect = useCallback(() => {
-      if (textareaRef.current) onCursorChange?.(textareaRef.current.selectionStart);
-    }, [onCursorChange]);
+    // One narrowed object, so both fields are given exactly the same props and
+    // the swap cannot drift.
+    const fieldProps: ComposerFieldProps & { ref: typeof fieldRef } = {
+      ref: fieldRef,
+      value,
+      onChange,
+      onCursorChange,
+      onKeyDown: handleKeyDown,
+      onFocus: handleFocus,
+      onBlur: handleBlur,
+      placeholder,
+      placeholderOverlay,
+      isPaletteOpen,
+      paletteHasResults,
+      paletteListboxId,
+      activeDescendantId,
+      onSurfaceChange: setSurface,
+      mentionSubjects,
+    };
 
     const hasText = value.trim().length > 0;
     const showClear = hasText && !sessionBusy;
@@ -376,30 +416,17 @@ export const ComposerInput = forwardRef<ComposerInputHandle, ComposerInputProps>
               </button>
             </>
           )}
-          <div className="relative min-h-[24px] flex-1">
-            {!hasText && placeholderOverlay}
-            <textarea
-              ref={textareaRef}
-              value={value}
-              onChange={handleChange}
-              onKeyDown={handleKeyDown}
-              onFocus={handleFocus}
-              onBlur={handleBlur}
-              onSelect={handleSelect}
-              role="combobox"
-              aria-autocomplete="list"
-              aria-controls={isPaletteOpen ? paletteListboxId : undefined}
-              aria-expanded={isPaletteOpen ?? false}
-              aria-activedescendant={isPaletteOpen ? activeDescendantId : undefined}
-              // The visual placeholder may render as an overlay (AnimatedPlaceholder),
-              // which empties the native placeholder attr — the aria-label keeps the
-              // combobox's accessible name stable in both modes.
-              aria-label={placeholder}
-              placeholder={placeholderOverlay ? '' : placeholder}
-              className="block max-h-[200px] min-h-[24px] w-full resize-none bg-transparent py-0.5 text-sm focus:outline-none"
-              rows={1}
-            />
-          </div>
+          {richText ? (
+            // The fallback is the TEXTAREA, not a spinner: a composer that is
+            // briefly un-typeable is worse than one that is briefly plain, and
+            // the two share `value`/`onChange`, so nothing is lost when the
+            // chunk arrives.
+            <Suspense fallback={<TextareaField {...fieldProps} />}>
+              <LexicalField {...fieldProps} />
+            </Suspense>
+          ) : (
+            <TextareaField {...fieldProps} />
+          )}
           {/* Only rendered when there is something to clear TO. Hosts that pass no
             `onClear` (the dashboard and onboarding composers) used to show this
             X at half opacity, enabled and tab-reachable, wired to nothing. */}

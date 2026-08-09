@@ -19,6 +19,7 @@ import { CommandPalette } from '@/layers/features/commands';
 import { FilePalette } from '@/layers/features/files';
 import { ScanLine } from '@/layers/shared/ui';
 import { useAppStore, useTransport } from '@/layers/shared/model';
+import { useComposerRichText } from '@/layers/entities/config';
 import {
   composerFileReference,
   getAgentDisplayName,
@@ -208,6 +209,11 @@ export function ChatInputContainer({
   // here.
   const [clearArmed, setClearArmed] = useState(false);
 
+  // Whether the message box formats as you type (`ui.composer.richText`,
+  // DOR-948). `false` until config loads, so the box is briefly plain rather
+  // than briefly the wrong field.
+  const richText = useComposerRichText();
+
   // Sending closes the palettes. It used to happen by accident: an open palette
   // swallowed Enter, and `onCommandSelect` found no row and closed the panel on
   // its way out. Now that Enter falls through to the send when there is nothing
@@ -358,6 +364,13 @@ export function ChatInputContainer({
               activeDescendantId={autocomplete.activeDescendantId}
               paletteListboxId={autocomplete.paletteListboxId}
               onCursorChange={autocomplete.handleCursorChange}
+              // Chat is the only surface that reads this, and passing it HERE
+              // rather than defaulting it inside `Composer.Input` is what keeps
+              // that true: rooms, the dashboard and onboarding pass nothing, so
+              // they stay plain until they graduate. Which surface has
+              // formatting is visible in the JSX, exactly as
+              // `features/composer`'s barrel doctrine asks.
+              richText={richText}
               onAttach={onFilesSelected}
               // A failed attachment blocks the send outright. Sending anyway
               // delivered a message with no attachment and then wiped the error

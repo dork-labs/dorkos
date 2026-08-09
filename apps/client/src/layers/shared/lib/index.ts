@@ -245,3 +245,5 @@ export type {
   ExecutionBreakageKind,
   ExecutionDeviation,
 } from './execution-config';
+
+export { activityVerb, WAITING_ON_YOU_VERB } from './activity-verb';

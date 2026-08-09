@@ -155,6 +155,7 @@ export const CONFIG_DISCLOSURE = {
   'ui.shapes.agentDefaults': 'expose',
   'ui.shapes.autoFollowAgent': 'expose',
   'ui.statusBar.pins': 'expose',
+  'ui.composer.richText': 'expose',
   // A timestamp saying the person read what Full autonomy means. Names nothing
   // and unlocks nothing on being read — an agent that learns the date is no
   // closer to anything than one that does not.

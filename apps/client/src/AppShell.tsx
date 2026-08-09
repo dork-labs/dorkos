@@ -430,7 +430,17 @@ export function AppShell() {
                   open={sidebarOpen}
                   onOpenChange={setSidebarOpen}
                   className="flex-1 overflow-hidden"
-                  style={{ '--sidebar-width': '20rem' } as React.CSSProperties}
+                  // **The visible panel is 272px** (design-decisions §11;
+                  // 20rem was 320, which the design-system guide's own
+                  // "240–280px" line had already contradicted).
+                  //
+                  // Written as the sum rather than as a round number because
+                  // this variable sizes the SLOT, and the `inset` variant spends
+                  // 8px of it as padding on each side before the tinted surface
+                  // starts. 272 is the number the design states and the number a
+                  // browser test measures on `sidebar-inner`; the `+ 1rem` is
+                  // the gutter it floats in.
+                  style={{ '--sidebar-width': 'calc(272px + 1rem)' } as React.CSSProperties}
                 >
                   {/* On a phone the sidebar is a sheet over the whole screen,
                       so it has to get out of the way once a row has taken you
@@ -476,7 +486,10 @@ export function AppShell() {
                     </div>
 
                     {/* ── Static footer — never animates ── */}
-                    <SidebarFooter className="border-t p-3">
+                    {/* No hairline above the footer either — the footer is one
+                        slim tinted strip, and the scroll-edge shadow on the body
+                        above is what says content continues under it (spec R1). */}
+                    <SidebarFooter className="px-2 py-3">
                       {shouldShowGettingStarted && (
                         <div className="mb-2">
                           <ProgressCard onDismiss={dismissOnboarding} />

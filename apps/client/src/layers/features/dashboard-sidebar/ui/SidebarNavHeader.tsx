@@ -29,7 +29,10 @@ export function SidebarNavHeader() {
   const setGlobalPaletteOpen = useAppStore((s) => s.setGlobalPaletteOpen);
 
   return (
-    <SidebarHeader className="border-b p-3">
+    // No hairline under the header. Separation in this panel is tint and a
+    // scroll-edge shadow, never a border: a 1px line reads as a seam between two
+    // surfaces, and the header and the roster are one surface (spec R1).
+    <SidebarHeader className="px-2 py-3">
       <SidebarMenu>
         <NavButton
           // The icon the window-tab strip already uses for `/`, so one place
@@ -65,7 +68,7 @@ export function SidebarNavHeader() {
         <SidebarMenuItem>
           <SidebarMenuButton
             onClick={() => setGlobalPaletteOpen(true)}
-            className="group text-muted-foreground hover:bg-accent hover:text-foreground flex w-full items-center justify-between gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium"
+            className="group text-sidebar-foreground/70 hover:bg-sidebar-accent/70 hover:text-sidebar-foreground flex w-full items-center justify-between gap-1.5 rounded-md px-2 py-1.5 text-[13px] font-medium"
           >
             <span className="flex items-center gap-1.5">
               <Search className="size-(--size-icon-sm)" />
@@ -102,7 +105,7 @@ function NavButton({
         onClick={onClick}
         data-testid={testId}
         className={cn(
-          'relative flex w-full items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium',
+          'relative flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-[13px] font-medium',
           isActive &&
             'before:bg-primary before:absolute before:inset-y-1 before:left-0 before:w-0.5 before:rounded-full'
         )}
@@ -111,7 +114,7 @@ function NavButton({
           className={cn(
             'size-(--size-icon-sm) transition-colors duration-150',
             !isActive &&
-              'text-muted-foreground group-hover/menu-item:text-sidebar-accent-foreground'
+              'text-sidebar-foreground/70 group-hover/menu-item:text-sidebar-accent-foreground'
           )}
         />
         {label}

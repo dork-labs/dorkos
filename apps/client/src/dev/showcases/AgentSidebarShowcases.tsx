@@ -1,5 +1,13 @@
 import { useState, useCallback } from 'react';
-import { SidebarProvider, Sidebar, SidebarContent, SidebarMenu } from '@/layers/shared/ui';
+import {
+  SectionHeader,
+  SidebarProvider,
+  Sidebar,
+  SidebarContent,
+  SidebarMenu,
+  SidebarMenuSurface,
+} from '@/layers/shared/ui';
+import { Bot, Hash } from 'lucide-react';
 import { SessionRow, type SessionBorderKind } from '@/layers/entities/session';
 import { resolveAgentVisual } from '@/layers/entities/agent';
 import type { Session } from '@dorkos/shared/types';
@@ -8,14 +16,13 @@ import { ShowcaseLabel } from '../ShowcaseLabel';
 import { ShowcaseDemo } from '../ShowcaseDemo';
 import {
   AgentActivityBadge,
-  AgentContextMenu,
   AgentListItem,
   AgentOnboardingCard,
   GroupCreateInput,
   GroupsHintCard,
-  SidebarSectionHeader,
   buildAgentsHeaderMenuNodes,
   buildChannelsHeaderMenuNodes,
+  useAgentRowMenuNodes,
 } from '@/layers/features/dashboard-sidebar';
 
 // ── Mock data ──
@@ -102,8 +109,8 @@ export function AgentSidebarShowcases() {
       <AgentActivityBadgeShowcase />
       <SessionRowCompactShowcase />
       <AgentListItemShowcase />
-      <AgentContextMenuShowcase />
-      <SidebarSectionHeaderShowcase />
+      <RowMenuSurfaceShowcase />
+      <SectionHeaderShowcase />
       <GroupCreateInputShowcase />
       <GroupsHintCardShowcase />
       <AgentOnboardingCardShowcase />
@@ -373,47 +380,50 @@ function AgentListItemShowcase() {
   );
 }
 
-// ── AgentContextMenu ──
+// ── SidebarMenuSurface ──
 
-function AgentContextMenuShowcase() {
+function RowMenuSurfaceShowcase() {
+  const nodes = useAgentRowMenuNodes({
+    path: MOCK_AGENTS[0].path,
+    onOpenProfile: () => {},
+    onNewSession: () => {},
+    onRequestNewGroup: () => {},
+  });
+
   return (
     <PlaygroundSection
-      title="AgentContextMenu"
-      description="Right-click / long-press context menu for agent rows. Renders the shared AgentRowMenuItems (pin, move-to-group, profile, new session). Try right-clicking the target below."
+      title="SidebarMenuSurface"
+      description="The sidebar's ONE menu surface: right-click anywhere on the target, or press the vertical kebab that appears on hover and on keyboard focus. Both render the same node list, so they can never drift."
     >
-      <ShowcaseLabel>Right-click target</ShowcaseLabel>
+      <ShowcaseLabel>Right-click target, with its hover-revealed ⋮</ShowcaseLabel>
       <ShowcaseDemo>
-        <AgentContextMenu
-          path={MOCK_AGENTS[0].path}
-          onOpenProfile={() => {}}
-          onNewSession={() => {}}
-          onRequestNewGroup={() => {}}
-        >
-          <div className="bg-muted text-muted-foreground hover:bg-accent hover:text-foreground flex w-64 cursor-context-menu items-center justify-center rounded-lg border border-dashed px-4 py-3 text-xs transition-colors">
-            Right-click me
+        <SidebarMenuSurface nodes={nodes} actionsLabel="Agent actions" className="w-64">
+          <div className="border-sidebar-border text-sidebar-foreground/70 hover:bg-sidebar-accent/70 hover:text-sidebar-foreground flex w-full cursor-context-menu items-center justify-center rounded-lg border border-dashed px-4 py-3 text-xs transition-colors">
+            Right-click me, or hover for the ⋮
           </div>
-        </AgentContextMenu>
+        </SidebarMenuSurface>
       </ShowcaseDemo>
     </PlaygroundSection>
   );
 }
 
-// ── SidebarSectionHeader ──
+// ── SectionHeader ──
 
-function SidebarSectionHeaderShowcase() {
+function SectionHeaderShowcase() {
   const [collapsed, setCollapsed] = useState(false);
   const [sortMode, setSortMode] = useState<'name' | 'recent'>('name');
 
   return (
     <PlaygroundSection
-      title="SidebarSectionHeader"
-      description="Every sidebar section header carries its own menu — right-click the header, or use the “…” that appears on hover and on focus. Both render ONE node list, so they can never drift. Channels collapses and can clear its unread; Agents has no collapse and exposes the section's own Show and Sort by settings."
+      title="SectionHeader"
+      description="Every sidebar section header carries its own menu — right-click the header, or use the ⋮ that appears on hover and on focus. Both render ONE node list, so they can never drift. The section's identity icon morphs into the collapse chevron the moment you reach for it. Channels collapses and can clear its unread; Agents has no collapse and exposes the section's own Show and Sort by settings."
     >
       <ShowcaseLabel>Channels — collapsible, with unread to clear</ShowcaseLabel>
       <ShowcaseDemo>
         <div className="w-64">
-          <SidebarSectionHeader
+          <SectionHeader
             label="Channels"
+            icon={Hash}
             collapsed={collapsed}
             onToggle={() => setCollapsed((prev) => !prev)}
             nodes={buildChannelsHeaderMenuNodes({
@@ -432,8 +442,9 @@ function SidebarSectionHeaderShowcase() {
       </ShowcaseLabel>
       <ShowcaseDemo>
         <div className="w-64">
-          <SidebarSectionHeader
+          <SectionHeader
             label="Agents"
+            icon={Bot}
             nodes={buildAgentsHeaderMenuNodes({
               sortMode,
               displayFilter: 'all',

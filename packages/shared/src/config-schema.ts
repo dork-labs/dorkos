@@ -567,6 +567,37 @@ export type StatusBarPrefs = z.infer<typeof StatusBarPrefsSchema>;
 export const STATUS_BAR_PREFS_DEFAULTS: StatusBarPrefs = StatusBarPrefsSchema.parse({});
 
 /**
+ * Person-scoped message-box preferences (`ui.composer`, DOR-948).
+ *
+ * Lives in server config rather than client `localStorage` so the choice follows
+ * the person to every client on this machine, the same reasoning
+ * {@link StatusBarPrefsSchema} gives for pins.
+ */
+export const ComposerPrefsSchema = z.object({
+  /**
+   * Whether the message box shows formatting as you type — bold, headings, and
+   * lists take shape while you write, instead of staying as markdown characters.
+   *
+   * Ships `false`. Turning this default on is gated on the graduation criteria
+   * in `specs/composer-rich-text/02-specification.md` (the whole keyboard ladder
+   * passing on the rich surface, round-trip stability, typing latency, IME,
+   * screen readers, and an accepted bundle cost) — it is not a cleanup someone
+   * flips while tidying.
+   */
+  richText: z.boolean().default(false),
+});
+
+/** Person-scoped message-box preferences (`ui.composer`). */
+export type ComposerPrefs = z.infer<typeof ComposerPrefsSchema>;
+
+/**
+ * Fully-defaulted {@link ComposerPrefs} (plain markdown box). Parsed once so the
+ * config route, the client selector, and the conf migration share one canonical
+ * default.
+ */
+export const COMPOSER_PREFS_DEFAULTS: ComposerPrefs = ComposerPrefsSchema.parse({});
+
+/**
  * The shipped default for `agents.defaultDirectory`.
  *
  * **A portable spelling of `{dorkHome}/agents`, not a literal filesystem path.**
@@ -760,6 +791,8 @@ export const UserConfigSchema = z.object({
       })),
       /** Person-scoped status-line pins (DOR-431, DOR-452). */
       statusBar: StatusBarPrefsSchema.default(() => ({ pins: [] })),
+      /** Person-scoped message-box preferences (DOR-948). */
+      composer: ComposerPrefsSchema.default(() => ({ richText: false })),
       /**
        * When this person last read what Full autonomy means and said "don't ask
        * me again", as an ISO 8601 UTC string. `null` until they do, which is the
@@ -814,6 +847,7 @@ export const UserConfigSchema = z.object({
         autoFollowAgent: false,
       },
       statusBar: { pins: [] },
+      composer: { richText: false },
       autonomyAcknowledgedAt: null,
     })),
   logging: LoggingConfigSchema.default(() => ({

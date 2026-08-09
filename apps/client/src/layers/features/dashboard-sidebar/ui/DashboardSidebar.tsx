@@ -721,7 +721,14 @@ export function DashboardSidebar() {
     <>
       <SidebarNavHeader />
 
-      <SidebarContent className="p-3">
+      {/* **The sidebar's whole horizontal inset, paid here and at the row.**
+          Eight pixels of panel padding plus eight on every row is the 16px total
+          left inset the density calls for (design-decisions §11) — replacing the
+          30px that used to stack up from three levels each adding its own
+          (`p-3` here, `p-2` on every group, `px-2.5` on every row). Groups now
+          pass `px-0`, so nothing between the panel edge and the row's own
+          padding adds anything. */}
+      <SidebarContent className="sidebar-scroll-edges px-2 py-3">
         <SidebarDnd displayNames={displayNamesRecord} roomTitles={roomTitles}>
           <JumpBackInSection
             items={jumpBackIn.items}
@@ -809,7 +816,7 @@ export function DashboardSidebar() {
                 animate={{ opacity: 1, y: 0, transition: { duration: 0.2, ease: [0, 0, 0.2, 1] } }}
                 exit={{ opacity: 0, y: -6, transition: { duration: 0.15 } }}
               >
-                <SidebarGroup>
+                <SidebarGroup className="px-0">
                   <SidebarMenu>
                     <GroupCreateInput
                       onCommit={handleCommitNewGroup}
@@ -861,7 +868,7 @@ export function DashboardSidebar() {
           <button
             type="button"
             onClick={() => useAgentCreationStore.getState().open()}
-            className="text-muted-foreground hover:text-foreground mt-1 flex items-center gap-1.5 px-2 text-xs font-medium transition-colors"
+            className="text-sidebar-foreground/70 hover:text-sidebar-foreground mt-1 flex items-center gap-1.5 px-2 text-xs font-medium transition-colors"
           >
             <Plus className="size-3.5" />
             Add agent

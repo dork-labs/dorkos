@@ -4,6 +4,7 @@ import { SERVER_ROUND_TRIP_MS } from '../../fixtures/rooms-api';
 import { BasePage } from '../../pages/BasePage';
 import { RoomsPage } from '../../pages/RoomsPage';
 import { openCockpit } from './open-cockpit';
+import { expectComposerText } from '../../pages/composer-probe';
 
 // Same budget and same scheduling as `room-conversation.spec.ts`, for the same
 // reason: these tests seed a room, load a whole cockpit, and — here — a second
@@ -101,7 +102,7 @@ test.describe('Rooms — attaching files @smoke', () => {
     // the box is free for the next sentence. `Composer.Attachments` unmounts
     // entirely at zero, so the count is the honest question to ask it.
     await expect(roomsPage.composerChips(`#${slug}`)).toHaveCount(0);
-    await expect(composer).toHaveValue('');
+    await expectComposerText(composer, '');
 
     // The URL the timeline is pointing at. Read off the rendered element rather
     // than rebuilt from ids, because "the URL the server wrote" is exactly what

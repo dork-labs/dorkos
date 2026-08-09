@@ -119,6 +119,7 @@ export const NO_RISK_DEFAULTS: readonly string[] = [
   'ui.shapes.agentDefaults',
   'ui.shapes.autoFollowAgent',
   'ui.statusBar.pins',
+  'ui.composer.richText',
   'logging.level',
   'logging.maxLogSizeKb',
   'logging.maxLogFiles',

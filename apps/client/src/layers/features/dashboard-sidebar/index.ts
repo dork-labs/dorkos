@@ -12,18 +12,15 @@ export { DashboardSidebar } from './ui/DashboardSidebar';
 // the sidebar chrome at both widths without the roster's data behind it.
 export { SidebarNavHeader } from './ui/SidebarNavHeader';
 export { AgentListItem } from './ui/AgentListItem';
-export { AgentContextMenu } from './ui/AgentContextMenu';
 export { AgentActivityBadge } from './ui/AgentActivityBadge';
 export { AgentOnboardingCard } from './ui/AgentOnboardingCard';
 export { GroupsHintCard } from './ui/GroupsHintCard';
 export { GroupCreateInput } from './ui/GroupCreateInput';
-// The section header and the item lists it renders — exported for the Dev
-// Playground, which showcases the sibling agent-row menu the same way.
-export { SidebarSectionHeader } from './ui/SidebarSectionHeader';
+// The section-header menu builders — exported for the Dev Playground, which
+// shows the shared `SectionHeader` primitive wearing a real section's items.
+// The header itself is `shared/ui`'s now, and so is the row.
 export {
   buildAgentsHeaderMenuNodes,
   buildChannelsHeaderMenuNodes,
 } from './ui/SectionHeaderMenuItems';
-// The two "Jump back in" rows — exported for the Dev Playground, which is where
-// the three kinds of row can be seen side by side without a real fleet.
-export { JumpBackInRoomRow, JumpBackInSessionRow } from './ui/JumpBackInRow';
+export { useAgentRowMenuNodes } from './ui/AgentRowMenuItems';

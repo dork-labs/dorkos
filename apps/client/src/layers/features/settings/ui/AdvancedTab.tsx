@@ -16,6 +16,7 @@ import {
   SwitchSettingRow,
 } from '@/layers/shared/ui';
 import { useAppStore, useTransport } from '@/layers/shared/model';
+import { useComposerRichText, useUpdateComposerPrefs } from '@/layers/entities/config';
 import { ResetDialog } from './ResetDialog';
 import { RestartDialog } from './RestartDialog';
 
@@ -31,6 +32,9 @@ export function AdvancedTab() {
 
   const transport = useTransport();
   const queryClient = useQueryClient();
+
+  const richText = useComposerRichText();
+  const { setRichText } = useUpdateComposerPrefs();
 
   const { data: config } = useQuery({
     queryKey: ['config'],
@@ -63,6 +67,39 @@ export function AdvancedTab() {
             description="Poll for updates to sessions running outside DorkOS (e.g. the Claude Code CLI). Enable only if external activity isn't appearing promptly."
             checked={enableMessagePolling}
             onCheckedChange={setEnableMessagePolling}
+          />
+        </FieldCardContent>
+      </FieldCard>
+
+      <h3 className="text-sm font-semibold">Message Box</h3>
+      <p className="text-muted-foreground text-xs">
+        How the box you type messages into behaves. This applies to chat for now.
+      </p>
+      <FieldCard>
+        <FieldCardContent>
+          {/*
+           * The switch is visible, and a reviewer will ask why a rollout
+           * mechanism belongs in Settings at all.
+           *
+           * Two reasons. Someone whose message box misbehaves can put it back
+           * without finding and hand-editing `~/.dork/config.json` — a
+           * kill-switch has to be reachable when the thing it gates is what
+           * broke. And an opt-in nobody can find returns no signal, so nothing
+           * would ever be learned about whether it earned its keep.
+           *
+           * The fair counter-argument is that a switch here is a promise to
+           * carry both fields forever. The exit plan answers it: when the flag
+           * graduates to default-on (the criteria are in
+           * `specs/composer-rich-text/02-specification.md`), this row, the
+           * `richText` prop, `TextareaField` and the whole plain path come out
+           * together. Removing this row is the obvious first move of that
+           * change, not a discovery someone has to make.
+           */}
+          <SwitchSettingRow
+            label="Format text as you type"
+            description="See bold, headings, and lists take shape in the message box while you write."
+            checked={richText}
+            onCheckedChange={setRichText}
           />
         </FieldCardContent>
       </FieldCard>

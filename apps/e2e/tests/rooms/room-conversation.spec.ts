@@ -1,6 +1,7 @@
 import { test, expect } from '../../fixtures';
 import { SERVER_ROUND_TRIP_MS } from '../../fixtures/rooms-api';
 import { openCockpit } from './open-cockpit';
+import { expectComposerText } from '../../pages/composer-probe';
 
 // Opted out of the project-wide `fullyParallel`, and given a longer budget than
 // the 30s the lighter specs run under.
@@ -82,7 +83,7 @@ test.describe('Rooms — posting, switching and staying live @smoke', () => {
     await expect(entry).toContainText('The first thing anyone said here.');
     await expect(entry).toContainText('You');
     // The box empties on Enter so the next sentence can be typed straight away.
-    await expect(composer).toHaveValue('');
+    await expectComposerText(composer, '');
 
     // And it is durable: it came from the room's own log, not the page's memory.
     const posted = await roomsApi.getRoom(roomId);

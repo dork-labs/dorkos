@@ -82,6 +82,15 @@ vi.mock('@/layers/shared/model', () => ({
   }),
 }));
 
+// The composer preference (DOR-948). Stubbed rather than driven through a real
+// config query because this file mocks the transport down to `stopTask`; what
+// is under test is that the container PASSES what the hook answers, not how the
+// hook reads config (that is `use-composer-prefs.test.tsx`).
+const mockComposerRichText = vi.fn(() => false);
+vi.mock('@/layers/entities/config', () => ({
+  useComposerRichText: () => mockComposerRichText(),
+}));
+
 vi.mock('@/layers/entities/agent', () => ({
   useCurrentAgent: () => ({ data: null }),
   useAgentVisual: () => ({ color: '#3b82f6', emoji: '' }),
@@ -183,6 +192,15 @@ describe('ChatInputContainer mode switching', () => {
     expect(screen.getByTestId('chat-status')).toBeInTheDocument();
     expect(screen.queryByTestId('tool-approval')).not.toBeInTheDocument();
     expect(screen.queryByTestId('question-prompt')).not.toBeInTheDocument();
+  });
+
+  it.each([
+    ['off', false],
+    ['on', true],
+  ])('passes richText through from the preference when it is %s', (_label, stored) => {
+    mockComposerRichText.mockReturnValue(stored);
+    render(<ChatInputContainer {...baseProps} />);
+    expect(lastChatInputProps().richText).toBe(stored);
   });
 
   it('renders ToolApproval in interactive mode for approval type', () => {

@@ -117,9 +117,9 @@ export class RoomsPage {
   /**
    * One sidebar section, found by its collapse header.
    *
-   * @param label - The header's label, exactly as `SidebarSectionHeader` is given
-   *   it. Matched exactly, so it resolves to the collapse button and never to
-   *   the header's "… section actions" trigger beside it.
+   * @param label - The header's label, exactly as `SectionHeader` is given it.
+   *   Matched exactly, so it resolves to the collapse button and never to the
+   *   header's "… section actions" trigger beside it.
    */
   section(label: string): Locator {
     return this.page

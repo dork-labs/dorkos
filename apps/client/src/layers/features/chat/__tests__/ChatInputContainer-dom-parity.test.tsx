@@ -35,7 +35,8 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import React, { createRef } from 'react';
-import { render, screen, cleanup, fireEvent, act } from '@testing-library/react';
+import { render, screen, cleanup, fireEvent, act, waitFor } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createMockTransport } from '@dorkos/test-utils';
 import {
   serializeDom,
@@ -181,13 +182,31 @@ function pendingFile(id: string, status: PendingFile['status'], error?: string):
 
 type Props = ReturnType<typeof baseProps>;
 
-/** Mount the container under the app's provider, returning the RTL container. */
-function mount(props: Props) {
-  const transport = createMockTransport();
+/**
+ * Mount the container under the app's providers, returning the RTL container.
+ *
+ * The `QueryClientProvider` is here because the container now reads
+ * `ui.composer.richText` through `useConfig` (DOR-948). It renders NO DOM of its
+ * own, so the baselines are untouched by its arrival — which the flag-off five
+ * diffing empty against files recorded long before it is the proof of.
+ *
+ * @param props - The container's props for this state.
+ * @param richText - Whether the composer formats as you type. `false` is the
+ *   flag-off path the original five baselines pin.
+ */
+function mount(props: Props, richText = false) {
+  const transport = createMockTransport({
+    getConfig: vi.fn().mockResolvedValue({ ui: { composer: { richText } } }),
+  });
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  });
   return render(
-    <TransportProvider transport={transport}>
-      <ChatInputContainer {...props} />
-    </TransportProvider>
+    <QueryClientProvider client={queryClient}>
+      <TransportProvider transport={transport}>
+        <ChatInputContainer {...props} />
+      </TransportProvider>
+    </QueryClientProvider>
   );
 }
 
@@ -309,6 +328,166 @@ describe('ChatInputContainer — serialized-DOM parity against the pre-migration
     );
     expect(beyondTheComposerCardAttr(diff)).toBe('');
   });
+});
+
+/**
+ * Mount with the preference ON and wait for the editor chunk to land.
+ *
+ * The field is lazy, and the preference arrives from an async `getConfig`, so
+ * the composer is briefly the plain textarea twice over. Serializing before
+ * both settle would record a flag-OFF tree under a flag-on name.
+ *
+ * @param props - The container's props for this state.
+ */
+async function mountRich(props: Props) {
+  const rendered = mount(props, true);
+  await waitFor(
+    () => expect(rendered.container.querySelector('[contenteditable="true"]')).not.toBeNull(),
+    { timeout: 10_000 }
+  );
+  return rendered;
+}
+
+/**
+ * The flag-ON reference tree, and the ONE place in this spec where recording a
+ * baseline is legitimate.
+ *
+ * Every other baseline in this repo predates the change it guards, which is
+ * what gives it its weight. These four have no such ancestor: before DOR-948
+ * there was no rich field to photograph. So they were recorded deliberately
+ * with `DORKOS_RECORD_DOM_BASELINE=1`, once, and reviewed as the reference —
+ * and from here they are as frozen as any other. If one of them starts
+ * diffing, the field moved; fix the field, not the file.
+ *
+ * ## The intended deltas from the flag-off tree, enumerated
+ *
+ * These are asserted POSITIVELY below rather than accepted as whatever
+ * rendered:
+ *
+ * 1. `<textarea>` becomes `<div contenteditable="true">`, still
+ *    `role="combobox"`, and gains `aria-multiline="true"` — a textarea is
+ *    multiline by definition, a div has to say so.
+ * 2. The placeholder moves from a native `placeholder` attribute to
+ *    `aria-placeholder` plus a rendered element. The TEXT is identical; only
+ *    the spelling changes.
+ * 3. Inside the field, the document's own nodes (a paragraph, and whatever the
+ *    markdown parsed into) instead of a value string on a form control.
+ * 4. No inline `height` style: `use-textarea-resize` does not run on this path,
+ *    a contenteditable grows on its own, and the 200 ms ease-down on empty was
+ *    an artifact of setting that height imperatively. A recorded, intended
+ *    delta from task 3.1.
+ *
+ * ## What is NOT allowed to differ
+ *
+ * Every other `aria-*` attribute on the field, value for value. That is not
+ * checked here — it is checked exhaustively, across four prop shapes, by
+ * `features/composer/__tests__/ComposerInput-aria-parity.test.tsx`, which
+ * compares the two fields' attribute maps directly rather than hunting a
+ * difference inside a large serialized diff. This file would be the worse
+ * instrument for it, so it defers rather than duplicating.
+ */
+describe('ChatInputContainer — the flag-on reference tree', () => {
+  it('1. idle, formatting on', async () => {
+    const { container } = await mountRich(baseProps());
+
+    const field = container.querySelector('[contenteditable="true"]')!;
+    // Deltas 1 and 2, positively: the control changed shape but not identity.
+    expect(field.getAttribute('role')).toBe('combobox');
+    expect(field.getAttribute('aria-multiline')).toBe('true');
+    // Chat idle draws an ANIMATED placeholder overlay, so the field's own
+    // placeholder is empty on both paths and the name comes from `aria-label` —
+    // exactly as the flag-off idle baseline records it (`placeholder: ""`,
+    // `aria-label: "Send a message..."`). Delta 2 is visible in case 2 below,
+    // where the queue-aware placeholder is real text.
+    expect(field.getAttribute('aria-label')).toBe('Send a message...');
+    expect(container.querySelector('textarea')).toBeNull();
+    // Delta 4: nothing imperatively sizes this field.
+    expect(field.getAttribute('style') ?? '').not.toContain('height');
+
+    const diff = matchDomBaseline(
+      import.meta.url,
+      'chat-input-container.rich-text.idle',
+      serializeDom(container)
+    );
+    expect(formatDomDiff(diff)).toBe('');
+  });
+
+  it('2. streaming with two queued messages, formatting on', async () => {
+    act(() => {
+      useSessionStreamStore.getState().enqueueMessage(SESSION_ID, 'first queued');
+      useSessionStreamStore.getState().enqueueMessage(SESSION_ID, 'second queued');
+    });
+
+    const { container } = await mountRich({ ...baseProps(), status: 'streaming' });
+
+    // The same guard the flag-off case carries: the queue-aware placeholder has
+    // to be there, or this is an idle composer under a streaming name. It now
+    // rides `aria-placeholder`, which IS delta 2 shown working.
+    expect(screen.getByRole('combobox')).toHaveAttribute(
+      'aria-placeholder',
+      'Compose another — 2 queued'
+    );
+
+    const diff = matchDomBaseline(
+      import.meta.url,
+      'chat-input-container.rich-text.streaming-queue',
+      serializeDom(container)
+    );
+    expect(formatDomDiff(diff)).toBe('');
+  });
+
+  it('3. two pending attachments, one failed, formatting on', async () => {
+    const props = baseProps();
+    const { container } = await mountRich({
+      ...props,
+      input: 'have a look at this',
+      fileUpload: {
+        ...props.fileUpload,
+        pendingFiles: [
+          pendingFile('file-ok', 'uploaded'),
+          pendingFile('file-bad', 'error', 'Upload failed'),
+        ],
+        hasFailedUpload: true,
+      },
+    });
+
+    // The attachment chrome is outside the field, so the `canSubmit` gate must
+    // behave identically with the field swapped — that is the point of the case.
+    expect(screen.getByRole('button', { name: /send/i })).toBeDisabled();
+    // Delta 3: the draft is document nodes now, not a form-control value.
+    expect(container.querySelector('[contenteditable="true"]')!.textContent).toBe(
+      'have a look at this'
+    );
+
+    const diff = matchDomBaseline(
+      import.meta.url,
+      'chat-input-container.rich-text.failed-attachment',
+      serializeDom(container)
+    );
+    expect(formatDomDiff(diff)).toBe('');
+  });
+
+  it('4. clear armed, formatting on', async () => {
+    const { container } = await mountRich({
+      ...baseProps(),
+      input: 'a draft worth keeping',
+    });
+
+    // Raised the way a person raises it, on the rich field this time.
+    fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Escape' });
+    expect(screen.getByTestId('clear-armed-hint')).toBeInTheDocument();
+
+    const diff = matchDomBaseline(
+      import.meta.url,
+      'chat-input-container.rich-text.clear-armed',
+      serializeDom(container)
+    );
+    expect(formatDomDiff(diff)).toBe('');
+  });
+
+  // There is deliberately no flag-on twin of the flag-off "interactive" case:
+  // that branch renders the InteractiveInputPanel and no composer at all, so a
+  // rich-text baseline of it would photograph the same tree under a second name.
 });
 
 describe('ChatInputContainer — the keyboard ladder, against the live component', () => {

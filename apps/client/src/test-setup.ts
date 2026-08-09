@@ -77,6 +77,36 @@ if (!('ResizeObserver' in globalThis)) {
   } as unknown as typeof ResizeObserver;
 }
 
+// jsdom implements neither `DragEvent` nor `ClipboardEvent`, and unlike a
+// missing method these are missing GLOBALS: code that reaches for one gets a
+// `ReferenceError`, not `undefined`. Lexical's `eventFiles` asks
+// `objectKlassEquals(event, DragEvent)` on every paste and drop it sees, so a
+// single pasted character in a rich-text field throws inside an event listener
+// — where it surfaces as an unhandled exception at the END of the run rather
+// than as a failing assertion, and the run goes red with every test green.
+//
+// Both are real browser globals; this is purely an environment gap, so the
+// polyfill is a plain subclass that carries the one property each is asked for.
+if (!('DragEvent' in globalThis)) {
+  globalThis.DragEvent = class DragEvent extends Event {
+    readonly dataTransfer: DataTransfer | null;
+    constructor(type: string, init: EventInit & { dataTransfer?: DataTransfer | null } = {}) {
+      super(type, init);
+      this.dataTransfer = init.dataTransfer ?? null;
+    }
+  } as unknown as typeof DragEvent;
+}
+
+if (!('ClipboardEvent' in globalThis)) {
+  globalThis.ClipboardEvent = class ClipboardEvent extends Event {
+    readonly clipboardData: DataTransfer | null;
+    constructor(type: string, init: EventInit & { clipboardData?: DataTransfer | null } = {}) {
+      super(type, init);
+      this.clipboardData = init.clipboardData ?? null;
+    }
+  } as unknown as typeof ClipboardEvent;
+}
+
 // jsdom declares `window.matchMedia` and leaves it undefined — `'matchMedia' in
 // window` is true and calling it throws — so anything that asks the viewport a
 // question (`useIsMobile`, reduced motion) dies on mount. The check is therefore

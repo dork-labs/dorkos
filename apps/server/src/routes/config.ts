@@ -16,6 +16,7 @@ import {
   SIDEBAR_PREFS_DEFAULTS,
   SHAPE_USER_PREFS_DEFAULTS,
   STATUS_BAR_PREFS_DEFAULTS,
+  COMPOSER_PREFS_DEFAULTS,
   USER_CONFIG_DEFAULTS,
   USER_PROFILE_DEFAULTS,
 } from '@dorkos/shared/config-schema';
@@ -292,6 +293,10 @@ router.get('/', async (_req, res) => {
       sidebar: configManager.get('ui')?.sidebar ?? SIDEBAR_PREFS_DEFAULTS,
       shapes: configManager.get('ui')?.shapes ?? SHAPE_USER_PREFS_DEFAULTS,
       statusBar: configManager.get('ui')?.statusBar ?? STATUS_BAR_PREFS_DEFAULTS,
+      // Whether the message box shows formatting as you type (DOR-948). On the
+      // wire because two surfaces read it: the chat composer picks its field
+      // from it, and Settings → Advanced shows it back as a switch.
+      composer: configManager.get('ui')?.composer ?? COMPOSER_PREFS_DEFAULTS,
       // The standing Full-autonomy acknowledgement (spec `trust-dial`,
       // decision 5). On the wire because the cockpit needs it on two surfaces:
       // it sends the standing ack with every autonomy PATCH so the server's door

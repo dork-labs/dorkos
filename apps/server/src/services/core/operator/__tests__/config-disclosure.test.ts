@@ -145,6 +145,7 @@ function fullyPopulatedConfig(): Record<string, unknown> {
         autoFollowAgent: false,
       },
       statusBar: { pins: ['cwd'] },
+      composer: { richText: true },
       autonomyAcknowledgedAt: '2026-08-01T09:30:00.000Z',
     },
     workbench: { defaultViewers: { csv: 'file' }, terminalGraceTtlMinutes: 10, autoOpenDiff: true },

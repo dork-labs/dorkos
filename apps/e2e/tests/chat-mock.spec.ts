@@ -4,6 +4,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import { BasePage } from '../pages/BasePage.js';
 import { ChatPage } from '../pages/ChatPage.js';
+import { caretOffset, composerText, expectComposerText } from '../pages/composer-probe.js';
 
 /**
  * Browser simulation tests using TestModeRuntime.
@@ -686,5 +687,185 @@ test.describe('Extensions — live remount on agent/cwd switch (DOR-363)', () =>
       .toBe(dirA);
 
     await expectNoReload(page);
+  });
+});
+
+/**
+ * The chat composer with formatting-as-you-type ON (`ui.composer.richText`,
+ * DOR-948).
+ *
+ * ## Why this lives in THIS file
+ *
+ * It was written as its own spec file with its own Playwright project, and that
+ * was wrong in a way only the full suite showed. Projects run concurrently, and
+ * `POST /api/test/reset` — which this file's own header documents as wiping the
+ * default scenario, tracked sessions and projectors GLOBALLY — is called by
+ * every test on both sides. Run alone, both suites were green (15/15 and 5/5);
+ * run together, five tests failed across them.
+ *
+ * So this follows the instruction `playwright.config.ts` already carried: add
+ * new mock-server suites HERE. The file is `mode: 'default'`, sequential on one
+ * worker, which is the only thing that makes a server-global preference safe to
+ * flip at all.
+ *
+ * `ui.composer.richText` is exactly such a preference — there is no per-tab
+ * override, so it is on for every page against this leg while these tests run.
+ * `afterAll` restores whatever it found, including when a test fails; without
+ * that, every later spec would quietly run against a different composer.
+ */
+test.describe('the chat composer with formatting on', () => {
+  /** Whatever the preference was before this describe touched it. */
+  let previousRichText = false;
+
+  test.beforeAll(async () => {
+    const context = await apiRequest.newContext({ baseURL: API_URL });
+    try {
+      const current = await context.get('/api/config');
+      const config = (await current.json()) as { ui?: { composer?: { richText?: boolean } } };
+      previousRichText = config.ui?.composer?.richText ?? false;
+      const res = await context.patch('/api/config', {
+        data: { ui: { composer: { richText: true } } },
+      });
+      if (!res.ok()) throw new Error(`could not turn rich text on: ${res.status()}`);
+    } finally {
+      await context.dispose();
+    }
+  });
+
+  test.afterAll(async () => {
+    const context = await apiRequest.newContext({ baseURL: API_URL });
+    try {
+      await context.patch('/api/config', {
+        data: { ui: { composer: { richText: previousRichText } } },
+      });
+    } finally {
+      await context.dispose();
+    }
+  });
+
+  /**
+   * Open chat and wait for the RICH field, not merely for a composer.
+   *
+   * The editor is lazy and the preference arrives from an async config read, so
+   * the composer is briefly the plain textarea. Waiting for the contenteditable
+   * is what makes every test below about the field it claims to be about.
+   *
+   * @param page - The page to drive.
+   */
+  async function openRichChat(page: Page): Promise<ChatPage> {
+    const chatPage = new ChatPage(page);
+    await chatPage.goto(undefined, { dir: agentDir });
+    await expect(page.locator('[contenteditable="true"]')).toBeVisible({ timeout: 20_000 });
+    // The same locator every page object uses, resolving to the rich field: the
+    // swap kept one control's identity rather than adding a second one, which
+    // is what every existing spec depends on.
+    await expect(chatPage.input).toHaveAttribute('contenteditable', 'true');
+    return chatPage;
+  }
+
+  /** Messages the person has sent, as the transcript renders them. */
+  function userMessages(page: Page) {
+    return page.locator('[data-testid="message-item"][data-role="user"]');
+  }
+
+  test('Enter builds a list and only sends once the list is done', async ({ page }) => {
+    const chatPage = await openRichChat(page);
+    const composer = chatPage.input;
+    await composer.click();
+
+    await composer.pressSequentially('- a');
+    await expect(composer.locator('li')).toHaveCount(1);
+    await composer.press('Enter');
+    await composer.pressSequentially('b');
+    await expect(composer.locator('li')).toHaveCount(2);
+
+    // Enter on the empty third item leaves the list rather than sending.
+    await composer.press('Enter');
+    await composer.press('Enter');
+    await expect(composer.locator('li')).toHaveCount(2);
+    await expect(composer.locator('p')).toHaveCount(1);
+
+    // THE ASSERTION THIS SUITE EXISTS FOR. Four Enters have been pressed inside
+    // a list and NOTHING has been sent — locked decision 2, and the one rung
+    // with no textarea equivalent to fall back on.
+    await expect(userMessages(page)).toHaveCount(0);
+
+    await composer.pressSequentially('and a sentence');
+    await composer.press('Enter');
+
+    // Exactly one, not "at least one": the claim is that the four earlier
+    // Enters were absorbed by the list, and only `toHaveCount(1)` can fail if
+    // any of them sent.
+    await expect(userMessages(page)).toHaveCount(1, { timeout: 20_000 });
+    await expectComposerText(composer, '');
+  });
+
+  test('bold renders in the field and the sent message still carries markdown', async ({
+    page,
+  }) => {
+    const chatPage = await openRichChat(page);
+    const composer = chatPage.input;
+    await composer.click();
+
+    await composer.pressSequentially('**bold** please');
+
+    // On screen: a real <strong>, and the asterisks are gone.
+    await expect(composer.locator('strong')).toHaveText('bold');
+    expect(await composerText(composer)).toBe('bold please');
+
+    await composer.press('Enter');
+
+    // On the wire: the markdown source, unchanged. The editor is a view over
+    // markdown, not a new message format.
+    const sent = userMessages(page).first();
+    await expect(sent).toBeVisible({ timeout: 20_000 });
+    await expect(sent).toContainText('**bold** please');
+  });
+
+  test('syntax the box does not preview stays literal', async ({ page }) => {
+    const chatPage = await openRichChat(page);
+    const composer = chatPage.input;
+    await composer.click();
+
+    // Backticks at the start of a line are the strongest case: recognizing a
+    // fenced block would give Enter a THIRD meaning, and the locked decision
+    // authorized exactly one exception.
+    await composer.pressSequentially('```');
+    expect(await composerText(composer)).toBe('```');
+    await expect(composer.locator('pre, code')).toHaveCount(0);
+
+    await composer.pressSequentially(' and > quote and ~~strike~~');
+    expect(await composerText(composer)).toBe('``` and > quote and ~~strike~~');
+    await expect(composer.locator('blockquote, s, del')).toHaveCount(0);
+  });
+
+  test('Shift+Enter is a newline and sends nothing', async ({ page }) => {
+    const chatPage = await openRichChat(page);
+    const composer = chatPage.input;
+    await composer.click();
+
+    await composer.pressSequentially('first');
+    await composer.press('Shift+Enter');
+    await composer.pressSequentially('second');
+
+    await expect(composer.locator('br')).toHaveCount(1);
+    await expect(userMessages(page)).toHaveCount(0);
+    // The caret is past both words, so the break is inside the document rather
+    // than something the browser painted around it.
+    expect(await caretOffset(composer)).toBe('firstsecond'.length);
+  });
+
+  test('the command palette opens over the rich field and Enter picks a row', async ({ page }) => {
+    const chatPage = await openRichChat(page);
+
+    await chatPage.openCommandPalette('/');
+    await expect(chatPage.paletteOptions.first()).toBeVisible({ timeout: 10_000 });
+
+    // Enter belongs to the palette while it has rows — it must not send, and it
+    // must not reach the list handler either.
+    await chatPage.input.press('Enter');
+
+    await expect(chatPage.commandPalette).toBeHidden({ timeout: 10_000 });
+    await expect(userMessages(page)).toHaveCount(0);
   });
 });
