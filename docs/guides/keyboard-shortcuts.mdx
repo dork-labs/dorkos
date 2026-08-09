@@ -153,6 +153,29 @@ While you are typing a message to your agent.
 
 One Escape does the first thing in that list that applies, top to bottom: close a list if one is open, otherwise leave an edit, otherwise stop your agent. Clearing the box is last, and only when nothing above it applies.
 
+## Formatting as You Type
+
+There is an optional setting that makes the message box show formatting while you write, instead of leaving the markdown characters on screen. It is **off unless you turn it on**, and it applies to chat for now.
+
+Turn it on in **Settings → Advanced → Format text as you type**.
+
+With it on:
+
+- `**bold**` turns bold as soon as you close the second pair of asterisks
+- `# ` at the start of a line makes a heading
+- `- ` starts a bullet list
+- `` `code` `` becomes code
+- `⌘B` / `Ctrl+B` and `⌘I` / `Ctrl+I` work on whatever you have selected
+
+`Enter` still sends your message, with one exception: inside a bullet list it starts the next
+bullet, and pressing it on an empty bullet ends the list. Everything else on this page behaves the
+same either way — `Shift+Enter` is still a new line, Escape still stops your agent, and two
+Escapes still clear the box.
+
+**Anything the box does not preview still works.** Quotes, code blocks, links, strikethrough and
+tables stay exactly as you typed them in the box, and they still render properly in the message
+your agent receives. You just do not watch them change shape while you type.
+
 ## Command Palette
 
 Press `⌘K` / `Ctrl+K` from anywhere to jump to an agent, a command, or a quick action, no clicking required.
