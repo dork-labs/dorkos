@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(session): open a chat with the question already written (DOR-1054)'
+  - 'fix(session): a seed cannot forge a block, and a launch cannot outlive itself (DOR-1054 review)'
 ---
 
 ### Added
