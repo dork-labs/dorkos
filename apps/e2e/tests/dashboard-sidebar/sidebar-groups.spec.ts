@@ -27,6 +27,14 @@ const EMPTY_GROUP_PLACEHOLDER = /Drag .*here/;
  * config plus mesh registration, so this stays a fast `@smoke` test.
  */
 test.describe('Dashboard Sidebar — Groups @smoke', () => {
+  // **Serial, because these tests share one `ui.sidebar`.** The config is a
+  // single file on a single server, and `fullyParallel` would otherwise put the
+  // drag test and the density measurements on concurrent workers writing to it
+  // — one test's group create landing in the middle of another's read. Every
+  // way that failed looked like a product bug (an agent that never joined its
+  // group, a row that vanished mid-measurement) and was neither.
+  test.describe.configure({ mode: 'serial' });
+
   const runId = randomUUID().slice(0, 8);
   const agentName = `E2E Sidebar Agent ${runId}`;
   const groupName = `E2E Group ${runId}`;
