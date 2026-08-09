@@ -7,9 +7,10 @@ import type { StripState } from './strip-state';
  * What the strip draws for one state.
  *
  * The strip announces itself politely, which puts an extra rule on everything in
- * here: anything that ticks — the rotating verb, the elapsed clock, the token
- * count — is `aria-hidden`, and each state carries one stable sentence instead. A
- * live region that re-reads "2m 15s" every second is worse than silence.
+ * here: anything that changes on its own — the activity label, the elapsed
+ * clock, the token count — is `aria-hidden`, and each state carries one stable
+ * sentence instead. A live region that re-reads "2m 15s" every second is worse
+ * than silence.
  *
  * @param state - The active strip state.
  */
@@ -30,13 +31,13 @@ export function StripContent({ state }: { state: StripState }): ReactNode {
   }
 }
 
-/** A turn in flight: the animated glyph, the rotating verb, elapsed, and tokens.
+/** A turn in flight: the animated glyph, what it is doing, elapsed, and tokens.
  *
  * @internal
  */
 function StreamingContent({ state }: { state: Extract<StripState, { type: 'streaming' }> }) {
-  const verbColorClass = state.isBypassVerb ? 'text-amber-500/60' : 'text-muted-foreground';
-  const iconColorClass = state.isBypassVerb
+  const verbColorClass = state.isBypass ? 'text-amber-500/60' : 'text-muted-foreground';
+  const iconColorClass = state.isBypass
     ? 'text-amber-500/70 font-bold'
     : 'text-muted-foreground font-bold';
 
@@ -53,7 +54,10 @@ function StreamingContent({ state }: { state: Extract<StripState, { type: 'strea
       className="flex items-center gap-1.5 px-4 py-2 text-xs"
       data-testid="chat-status-strip-streaming"
     >
-      {/* The one thing worth announcing about this state; the verbs are flavour. */}
+      {/* The one thing worth announcing about this state. The activity label
+          below is deliberately NOT announced: it changes every couple of
+          seconds while a turn works, and a live region that re-reads it is the
+          same churn the elapsed clock was hidden for. */}
       <span className="sr-only">Working</span>
 
       <span
@@ -68,7 +72,8 @@ function StreamingContent({ state }: { state: Extract<StripState, { type: 'strea
         {state.icon}
       </span>
 
-      {/* Layer 3: Verb sub-animation — container width animates for smooth repositioning */}
+      {/* Layer 3: Activity sub-animation — container width animates so the
+          elapsed clock slides smoothly when the label's length changes */}
       <motion.span
         aria-hidden="true"
         className={`relative inline-block h-4 ${verbColorClass}`}

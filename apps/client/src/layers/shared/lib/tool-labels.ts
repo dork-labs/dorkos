@@ -2,6 +2,7 @@
  * Contextual tool call labels for ToolCallCard headers.
  * Extracts the most relevant detail from each tool's JSON input.
  */
+import type { SessionActivity } from '@dorkos/shared/session-stream';
 
 /** Known MCP server display name overrides. */
 const MCP_SERVER_LABELS: Record<string, string> = {
@@ -152,4 +153,73 @@ export function getToolLabel(toolName: string, input: string): string {
       return toolName;
     }
   }
+}
+
+/**
+ * How one tool is phrased, with and without its target.
+ *
+ * Both forms are written out rather than derived, because the honest generic is
+ * rarely the specific sentence with the noun removed: "Editing a file" is not
+ * "Editing" and "Searching the web" is not "Searching the web for".
+ */
+interface ActivityPhrase {
+  /** Phrasing when the reading carries a target. */
+  withTarget: (target: string) => string;
+  /** Phrasing when it does not — never a guess, only a less specific truth. */
+  bare: string;
+}
+
+/**
+ * Phrasings keyed by LOWERCASED tool name, so one entry covers every runtime's
+ * spelling of the same act: claude-code's `Bash`, codex's `Shell`, opencode's
+ * `bash`. Anything absent here falls through to the fallback rungs below.
+ */
+const ACTIVITY_PHRASES: Record<string, ActivityPhrase> = {
+  bash: { withTarget: (t) => `Running ${t}…`, bare: 'Running a command…' },
+  shell: { withTarget: (t) => `Running ${t}…`, bare: 'Running a command…' },
+  read: { withTarget: (t) => `Reading ${t}…`, bare: 'Reading a file…' },
+  write: { withTarget: (t) => `Writing ${t}…`, bare: 'Writing a file…' },
+  edit: { withTarget: (t) => `Editing ${t}…`, bare: 'Editing a file…' },
+  applypatch: { withTarget: (t) => `Editing ${t}…`, bare: 'Editing a file…' },
+  notebookedit: { withTarget: (t) => `Editing ${t}…`, bare: 'Editing a notebook…' },
+  glob: { withTarget: (t) => `Looking for ${t}…`, bare: 'Looking through files…' },
+  grep: { withTarget: (t) => `Searching for ${t}…`, bare: 'Searching the code…' },
+  websearch: { withTarget: (t) => `Searching the web for ${t}…`, bare: 'Searching the web…' },
+  webfetch: { withTarget: (t) => `Reading ${t}…`, bare: 'Reading a web page…' },
+  task: { withTarget: (t) => `Running an agent — ${t}…`, bare: 'Running an agent…' },
+  skill: { withTarget: (t) => `Using the ${t} skill…`, bare: 'Using a skill…' },
+  todowrite: { withTarget: () => 'Updating its task list…', bare: 'Updating its task list…' },
+};
+
+/**
+ * Say what a session is doing right now, in as much detail as is actually
+ * known — and no more.
+ *
+ * The ladder, in order, each rung reached only when the one above it cannot be
+ * answered honestly:
+ *
+ * 1. A tool this client recognizes, with its target — "Editing strip-state.ts…"
+ * 2. The same tool without one — "Editing a file…"
+ * 3. An MCP tool — the server it is talking to, "Using Slack…", because the
+ *    method name is an implementation detail nobody outside that server reads.
+ * 4. A name nothing here has seen (a new runtime, a custom tool) — the name
+ *    itself, "Using some_future_tool…". Verbatim, never guessed at.
+ * 5. No reading at all — "Working…", which is all a `streaming` lifecycle on its
+ *    own can honestly support.
+ *
+ * @param activity - The session's current activity, or `null`/`undefined` when
+ *   the server has not said (an idle session, a turn before its first tool, or a
+ *   server that predates the field).
+ */
+export function formatActivityLabel(activity: SessionActivity | null | undefined): string {
+  if (!activity || activity.toolName.trim() === '') return 'Working…';
+  const { toolName, target } = activity;
+
+  const phrase = ACTIVITY_PHRASES[toolName.toLowerCase()];
+  if (phrase) return target ? phrase.withTarget(target) : phrase.bare;
+
+  const mcp = parseMcpToolName(toolName);
+  if (mcp) return `Using ${mcp.serverLabel}…`;
+
+  return `Using ${toolName}…`;
 }

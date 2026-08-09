@@ -9,6 +9,7 @@ import {
   isBlockingInteractionEvent,
   approvalOutcomeOf,
   type ToolApprovalOutcome,
+  type SessionEvent,
 } from '../session-stream.js';
 
 const coldStatus = {
@@ -75,6 +76,31 @@ describe('SessionStatusSchema', () => {
     expect(SessionStatusSchema.parse(failed).lastError).toEqual(failed.lastError);
   });
 
+  it('parses a status carrying what the session is doing right now', () => {
+    // Purpose: the fleet-wide activity reading rides the status projection, so a
+    // sidebar can say "Editing strip-state.ts" without opening the session.
+    const working = {
+      ...coldStatus,
+      lifecycle: 'streaming' as const,
+      activity: { toolName: 'Edit', target: 'strip-state.ts' },
+    };
+    expect(SessionStatusSchema.parse(working).activity).toEqual(working.activity);
+  });
+
+  it('parses a status whose activity carries only a tool name', () => {
+    // Purpose: `target` is the one human-relevant argument and plenty of tools
+    // have none. The wire must not require one to be invented.
+    const working = { ...coldStatus, activity: { toolName: 'TodoWrite' } };
+    expect(SessionStatusSchema.parse(working).activity).toEqual({ toolName: 'TodoWrite' });
+  });
+
+  it('parses a status with no activity at all (an older server, or an idle session)', () => {
+    // Purpose: the field is additive. A `session_status` minted before it
+    // existed must still parse, and absent must read as "nothing known" rather
+    // than as a value.
+    expect(SessionStatusSchema.parse(coldStatus).activity).toBeUndefined();
+  });
+
   it('accepts a permission-mode id outside the shared enum (DOR-851)', () => {
     // Purpose: `permissionMode` here is the id the session's OWN runtime
     // reports. `always-allow` is the real default `test-mode` declares
@@ -111,6 +137,30 @@ describe('SessionEventSchema', () => {
     };
     const parsed = SessionEventSchema.parse(event);
     expect(parsed).toMatchObject({ startedAt: 1_700_000_000_000, remainingMs: 25_000 });
+  });
+
+  it('drops an activity smuggled onto a status_change — the projector owns that field', () => {
+    // Purpose: `status_change` carries a PARTIAL SessionStatus, so every field
+    // added to the status becomes a field a runtime's delta could set. Every
+    // other one is something a runtime reports about itself; `activity` is
+    // derived by the projector from the tool calls it has actually seen. Left
+    // in the partial, a runtime could name a tool the session never started and
+    // it would fan out fleet-wide looking exactly like a real reading. The
+    // member omits it, so the key cannot survive the parse.
+    const smuggled = {
+      seq: 7,
+      type: 'status_change',
+      status: { model: 'claude-opus-4-6', activity: { toolName: 'InjectedTool' } },
+    };
+    const parsed = SessionEventSchema.parse(smuggled) as Extract<
+      SessionEvent,
+      { type: 'status_change' }
+    >;
+    // The delta it legitimately carried survives; the one it may not, does not.
+    // (`.partial()` still applies the defaulted keys, so this is a subset match
+    // rather than an equality one.)
+    expect(parsed.status).toMatchObject({ model: 'claude-opus-4-6' });
+    expect('activity' in parsed.status).toBe(false);
   });
 
   it('parses the compaction fidelity members (DOR-110)', () => {

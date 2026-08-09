@@ -3207,6 +3207,9 @@
           },
           "lastError": {
             "$ref": "#/components/schemas/ErrorEvent"
+          },
+          "activity": {
+            "$ref": "#/components/schemas/SessionActivity"
           }
         },
         "required": [
@@ -3247,6 +3250,20 @@
           "outputTokens",
           "cacheReadTokens",
           "cacheCreationTokens"
+        ]
+      },
+      "SessionActivity": {
+        "type": "object",
+        "properties": {
+          "toolName": {
+            "type": "string"
+          },
+          "target": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "toolName"
         ]
       },
       "PendingInteractionDTO": {

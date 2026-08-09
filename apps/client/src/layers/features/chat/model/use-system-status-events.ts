@@ -67,7 +67,7 @@ function deriveStripFromTurn(turn: SessionEvent[]): StripSignals {
     if (event.type === 'system_status') {
       // A non-tool hook flash ("Running hook \"X\"…") is a message with no raw
       // `status`. A generic status token (e.g. `'requesting'`, whose thinking
-      // phase the rotating verb already owns) is deliberately NOT surfaced —
+      // phase the activity label already owns) is deliberately NOT surfaced —
       // skip it so it neither shows nor clears a running hook flash.
       if (!event.status) systemStatus = { message: event.message };
       continue;

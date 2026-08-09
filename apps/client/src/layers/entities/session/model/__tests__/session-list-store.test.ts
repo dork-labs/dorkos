@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import type { SessionStatus, SessionContextUsage } from '@dorkos/shared/session-stream';
-import { useSessionListStore } from '../session-list-store';
+import { useSessionListStore, selectSessionActivity } from '../session-list-store';
 
 const CONTEXT: SessionContextUsage = {
   totalTokens: 120_000,
@@ -108,5 +108,84 @@ describe('session-list-store contextReadings retention (fleet-context-health)', 
     store.resetStatuses();
 
     expect(useSessionListStore.getState().contextReadings).toEqual({});
+  });
+});
+
+describe('session-list-store activity (DOR-1053)', () => {
+  beforeEach(resetStore);
+
+  it('holds what each session is doing, keyed by session', () => {
+    // Purpose: the fleet reading has to be readable per session by anything on
+    // the page — the chat strip today, a sidebar row next — off the one store
+    // the global stream already feeds.
+    const store = useSessionListStore.getState();
+    store.applyListEvent({
+      type: 'session_status',
+      sessionId: 's1',
+      status: status({ activity: { toolName: 'Edit', target: 'router.tsx' } }),
+    });
+    store.applyListEvent({
+      type: 'session_status',
+      sessionId: 's2',
+      status: status({ activity: { toolName: 'Bash', target: 'pnpm verify' } }),
+    });
+
+    expect(selectSessionActivity(useSessionListStore.getState(), 's1')).toEqual({
+      toolName: 'Edit',
+      target: 'router.tsx',
+    });
+    expect(selectSessionActivity(useSessionListStore.getState(), 's2')).toEqual({
+      toolName: 'Bash',
+      target: 'pnpm verify',
+    });
+  });
+
+  it('forgets it the moment the session settles', () => {
+    // Purpose: an idle session is not doing anything, and a label that outlives
+    // its turn is the failure this exists to prevent. The settle prunes the
+    // whole status, so the reading cannot survive it.
+    const store = useSessionListStore.getState();
+    store.applyListEvent({
+      type: 'session_status',
+      sessionId: 's1',
+      status: status({ activity: { toolName: 'Bash', target: 'pnpm verify' } }),
+    });
+    expect(selectSessionActivity(useSessionListStore.getState(), 's1')).not.toBeNull();
+
+    store.applyListEvent({
+      type: 'session_status',
+      sessionId: 's1',
+      status: status({ lifecycle: 'idle', contextUsage: null }),
+    });
+    expect(selectSessionActivity(useSessionListStore.getState(), 's1')).toBeNull();
+  });
+
+  it('reads null for a session that is streaming but has reached no tool', () => {
+    // Purpose: absent must read as "nothing known", which is the input the
+    // client ladder degrades to "Working…" on.
+    useSessionListStore.getState().applyListEvent({
+      type: 'session_status',
+      sessionId: 's1',
+      status: status(),
+    });
+    expect(selectSessionActivity(useSessionListStore.getState(), 's1')).toBeNull();
+    expect(selectSessionActivity(useSessionListStore.getState(), 'never-seen')).toBeNull();
+  });
+
+  it('drops it with the session it belonged to, and on a stream reconnect', () => {
+    const store = useSessionListStore.getState();
+    const streaming = {
+      type: 'session_status' as const,
+      sessionId: 's1',
+      status: status({ activity: { toolName: 'Bash', target: 'pnpm verify' } }),
+    };
+
+    store.applyListEvent(streaming);
+    store.applyListEvent({ type: 'session_removed', sessionId: 's1' });
+    expect(selectSessionActivity(useSessionListStore.getState(), 's1')).toBeNull();
+
+    store.applyListEvent(streaming);
+    store.resetStatuses();
+    expect(selectSessionActivity(useSessionListStore.getState(), 's1')).toBeNull();
   });
 });

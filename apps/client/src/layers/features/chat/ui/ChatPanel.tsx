@@ -17,6 +17,7 @@ import { runtimeDisplayName } from '@dorkos/shared/agent-runtime';
 import {
   useSessionId,
   useSessionStatus,
+  useSessionToolActivity,
   useDirectoryState,
   sessionKeys,
 } from '@/layers/entities/session';
@@ -83,6 +84,10 @@ export function ChatPanel({
   const messageListRef = useRef<MessageListHandle>(null);
   const chatInputRef = useRef<ComposerInputHandle>(null);
   const taskState = useTaskState(sessionId);
+  // What this session is doing right now, from the same fleet-wide status
+  // stream the sidebar reads — one derivation, so the strip and the roster can
+  // never name two different tools for one session.
+  const activity = useSessionToolActivity(sessionId ?? '');
   const celebrations = useCelebrations();
   const enableNotificationSound = useAppStore((s) => s.enableNotificationSound);
   const [cwd] = useDirectoryState();
@@ -385,6 +390,7 @@ export function ChatPanel({
         waitingType={waitingType ?? 'approval'}
         systemStatus={systemStatus}
         operationProgress={operationProgress}
+        activity={activity}
       />
 
       <AnimatePresence>

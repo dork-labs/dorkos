@@ -1,13 +1,12 @@
-import { useMemo, useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import type { PermissionMode } from '@dorkos/shared/types';
+import type { SessionActivity } from '@dorkos/shared/session-stream';
 import { useElapsedTime } from '@/layers/shared/model';
 import { isBypassPermissionMode, TIMING } from '@/layers/shared/lib';
 import { DEFAULT_THEME, type IndicatorTheme } from './inference-themes';
-import { BYPASS_INFERENCE_VERBS } from './inference-verbs';
 import { StripContent } from './StripContent';
 import { deriveStripState, formatTokens, type StripState } from './strip-state';
-import { useRotatingVerb } from '../../model/use-rotating-verb';
 import type { SystemStatusState, OperationProgressState } from '../../model/chat-types';
 
 interface UseStripStateInput {
@@ -19,30 +18,22 @@ interface UseStripStateInput {
   waitingType: 'approval' | 'question';
   operationProgress: OperationProgressState | null;
   systemStatus: SystemStatusState | null;
+  activity: SessionActivity | null;
   theme: IndicatorTheme;
 }
 
 /** Manage status strip lifecycle and derive the active strip state. */
 function useStripState(input: UseStripStateInput): StripState {
-  const verbs = useMemo(() => {
-    // `isBypassPermissionMode` (not a literal `'bypassPermissions'` compare):
-    // `input.permissionMode` carries whatever id the session's own runtime
-    // reports (DOR-851), and `always-allow` — test-mode's bypass mode — is a
-    // different literal with the same meaning. A literal compare here missed
-    // it and never added the bypass verb pool for that runtime.
-    if (isBypassPermissionMode(input.permissionMode)) {
-      return [...input.theme.verbs, ...BYPASS_INFERENCE_VERBS];
-    }
-    return input.theme.verbs;
-  }, [input.theme.verbs, input.permissionMode]);
-
   const { formatted: elapsed } = useElapsedTime(
     input.status === 'streaming' ? input.streamStartTime : null
   );
 
-  const { verb, key: verbKey } = useRotatingVerb(verbs, input.theme.verbInterval);
-
-  const isBypassVerb = (BYPASS_INFERENCE_VERBS as readonly string[]).includes(verb);
+  // `isBypassPermissionMode` (not a literal `'bypassPermissions'` compare):
+  // `input.permissionMode` carries whatever id the session's own runtime
+  // reports (DOR-851), and `always-allow` — test-mode's bypass mode — is a
+  // different literal with the same meaning. A literal compare here missed it
+  // and never warned at all on that runtime.
+  const isBypass = isBypassPermissionMode(input.permissionMode);
 
   // Snapshot final values when streaming ends so the complete state can display them
   const lastElapsedRef = useRef(elapsed);
@@ -84,11 +75,10 @@ function useStripState(input: UseStripStateInput): StripState {
     operationProgress: input.operationProgress,
     systemStatus: input.systemStatus,
     elapsed,
-    verb,
-    verbKey,
+    activity: input.activity,
     tokens: formatTokens(input.estimatedTokens),
     theme: input.theme,
-    isBypassVerb,
+    isBypass,
     showComplete,
     // eslint-disable-next-line react-hooks/refs -- Intentional: snapshot refs read during render for post-stream display
     lastElapsed: lastElapsedRef.current,
@@ -106,6 +96,11 @@ interface ChatStatusStripProps {
   waitingType?: 'approval' | 'question';
   operationProgress?: OperationProgressState | null;
   systemStatus: SystemStatusState | null;
+  /**
+   * What this session is doing right now, from the fleet-wide status stream.
+   * Absent while nothing is known — the strip then says only "Working…".
+   */
+  activity?: SessionActivity | null;
   theme?: IndicatorTheme;
 }
 
@@ -115,6 +110,10 @@ interface ChatStatusStripProps {
  * Consolidates InferenceIndicator and SystemStatusZone into a single morphing
  * container using a prioritized state machine. Always visible regardless of
  * scroll position. Collapses to height 0 when idle.
+ *
+ * While a turn is in flight it names the tool the session is actually running,
+ * from the same fleet-wide reading the rest of the cockpit reads — and says
+ * plainly that it is working when it does not know.
  *
  * It is also a polite live region, so "Waiting for your approval" reaches someone
  * who cannot see it — the same courtesy the message area, the background task bar,
@@ -130,6 +129,7 @@ export function ChatStatusStrip({
   waitingType = 'approval',
   operationProgress = null,
   systemStatus,
+  activity = null,
   theme = DEFAULT_THEME,
 }: ChatStatusStripProps) {
   const state = useStripState({
@@ -141,6 +141,7 @@ export function ChatStatusStrip({
     waitingType,
     operationProgress,
     systemStatus,
+    activity,
     theme,
   });
 

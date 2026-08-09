@@ -94,7 +94,12 @@ export {
   takePendingFeedback,
   type PendingFeedback,
 } from './pending-feedback';
-export { getToolLabel, getMcpServerBadge, parseMcpToolName } from './tool-labels';
+export {
+  getToolLabel,
+  getMcpServerBadge,
+  parseMcpToolName,
+  formatActivityLabel,
+} from './tool-labels';
 export { ToolArgumentsDisplay } from './tool-arguments-formatter';
 export {
   EMOJI_SET,

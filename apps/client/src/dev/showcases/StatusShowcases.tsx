@@ -93,14 +93,36 @@ export function StatusShowcases() {
 
       <PlaygroundSection
         title="ChatStatusStrip"
-        description="Unified status strip — one morphing container showing agent activity, system status, and completion summaries."
+        description="Unified status strip — one morphing container showing what the session is doing, system status, and completion summaries."
       >
-        <ShowcaseLabel>Streaming (live timer + rotating verb)</ShowcaseLabel>
+        <ShowcaseLabel>Streaming — naming the tool the session is running</ShowcaseLabel>
         <ShowcaseDemo>
           <ChatStatusStrip
             status="streaming"
             streamStartTime={streamStart}
             estimatedTokens={1250}
+            systemStatus={null}
+            activity={{ toolName: 'Bash', target: 'pnpm verify' }}
+          />
+        </ShowcaseDemo>
+
+        <ShowcaseLabel>Streaming — an MCP tool, named by its server</ShowcaseLabel>
+        <ShowcaseDemo>
+          <ChatStatusStrip
+            status="streaming"
+            streamStartTime={streamStart}
+            estimatedTokens={900}
+            systemStatus={null}
+            activity={{ toolName: 'mcp__slack__send_message' }}
+          />
+        </ShowcaseDemo>
+
+        <ShowcaseLabel>Streaming — nothing known yet, so it says only that</ShowcaseLabel>
+        <ShowcaseDemo>
+          <ChatStatusStrip
+            status="streaming"
+            streamStartTime={streamStart}
+            estimatedTokens={120}
             systemStatus={null}
           />
         </ShowcaseDemo>
@@ -160,7 +182,7 @@ export function StatusShowcases() {
           />
         </ShowcaseDemo>
 
-        <ShowcaseLabel>System message: session hook (preempts the verb mid-turn)</ShowcaseLabel>
+        <ShowcaseLabel>System message: session hook (preempts the activity mid-turn)</ShowcaseLabel>
         <ShowcaseDemo>
           <ChatStatusStrip
             status="streaming"

@@ -8,6 +8,8 @@
  */
 import { Info } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
+import type { SessionActivity } from '@dorkos/shared/session-stream';
+import { formatActivityLabel } from '@/layers/shared/lib';
 import type { IndicatorTheme } from './inference-themes';
 import type { SystemStatusState, OperationProgressState } from '../../model/chat-types';
 
@@ -23,13 +25,16 @@ export type StripState =
   | { type: 'system-message'; message: string; icon: LucideIcon }
   | {
       type: 'streaming';
+      /** What the session is doing, phrased by the honesty ladder. */
       verb: string;
+      /** Crossfade key — the label itself, so it animates only on a real change. */
       verbKey: string;
       elapsed: string;
       tokens: string;
       icon: string;
       iconAnimation: string | null;
-      isBypassVerb: boolean;
+      /** Whether this session is running with its permission stops off. */
+      isBypass: boolean;
     }
   | { type: 'complete'; elapsed: string; tokens: string }
   | { type: 'idle' };
@@ -42,11 +47,15 @@ export interface StripStateInput {
   operationProgress: OperationProgressState | null;
   systemStatus: SystemStatusState | null;
   elapsed: string;
-  verb: string;
-  verbKey: string;
+  /**
+   * What the session is doing right now, from the fleet-wide reading, or `null`
+   * when nothing is known. The strip PHRASES this; it never invents it.
+   */
+  activity: SessionActivity | null;
   tokens: string;
   theme: IndicatorTheme;
-  isBypassVerb: boolean;
+  /** Whether the session's permission stops are off (a standing warning). */
+  isBypass: boolean;
   showComplete: boolean;
   lastElapsed: string;
   lastTokens: string;
@@ -67,7 +76,7 @@ export function formatTokens(count: number): string {
  * 1. waiting-for-user — user action required to continue
  * 2. operation-progress — a long-running operation (e.g. compaction) is running
  * 3. system-message — runtime operational event (e.g. a hook), informational
- * 4. streaming — normal inference in progress
+ * 4. streaming — a turn in flight, labelled with what it is actually doing
  * 5. complete — post-stream summary, auto-dismisses
  * 6. idle — nothing to show
  *
@@ -103,15 +112,20 @@ export function deriveStripState(input: StripStateInput): StripState {
 
   // Priority 4: Streaming
   if (input.status === 'streaming') {
+    // The label is derived here, not passed in, so the strip and every other
+    // consumer of the fleet reading phrase one tool exactly one way.
+    const verb = formatActivityLabel(input.activity);
     return {
       type: 'streaming',
-      verb: input.verb,
-      verbKey: input.verbKey,
+      verb,
+      // The label IS the key: the crossfade should play when what the session is
+      // doing changes, and stay still while it does not.
+      verbKey: verb,
       elapsed: input.elapsed,
       tokens: input.tokens,
-      icon: input.isBypassVerb ? '\u2620' : input.theme.icon,
-      iconAnimation: input.isBypassVerb ? null : input.theme.iconAnimation,
-      isBypassVerb: input.isBypassVerb,
+      icon: input.isBypass ? '☠' : input.theme.icon,
+      iconAnimation: input.isBypass ? null : input.theme.iconAnimation,
+      isBypass: input.isBypass,
     };
   }
 
