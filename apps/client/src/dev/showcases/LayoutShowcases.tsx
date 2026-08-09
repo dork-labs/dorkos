@@ -29,7 +29,7 @@ export function LayoutShowcases() {
       <ShowcaseDemo responsive>
         <div className="bg-background h-32 rounded-md border">
           <PageContainer width="wide">
-            <SampleContent label="max-w-[var(--page-width-wide)] · dashboards, grids, the marketplace" />
+            <SampleContent label="max-w-[var(--page-width-wide)] · top-level pages: marketplace, activity, workspaces, connections" />
           </PageContainer>
         </div>
       </ShowcaseDemo>
@@ -38,7 +38,7 @@ export function LayoutShowcases() {
       <ShowcaseDemo responsive>
         <div className="bg-background h-32 rounded-md border">
           <PageContainer width="reading">
-            <SampleContent label="max-w-[var(--page-width-reading)] · activity, workspaces, connections, settings-shaped pages" />
+            <SampleContent label="max-w-[var(--page-width-reading)] · true forms and prose: marketplace sources" />
           </PageContainer>
         </div>
       </ShowcaseDemo>
