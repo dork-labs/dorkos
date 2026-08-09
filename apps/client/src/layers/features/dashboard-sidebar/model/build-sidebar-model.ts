@@ -56,13 +56,20 @@ import type { SidebarState } from './sidebar-state';
 export type SidebarZoneId = 'getting-started' | 'now' | 'today' | 'library';
 
 /**
- * The sections that persist preferences, in Library's render order.
+ * Library's sections, in the order they render.
  *
- * Exported as a tuple so P2.8's `SidebarSectionIdSchema` has exactly one source
- * to enumerate — a second list is how a stored collapse flag ends up keyed to
- * a section that no longer exists.
+ * The tuple IS the order — {@link buildLibrarySections} emits them exactly like
+ * this, so changing Library's shape is an edit here rather than a hunt through
+ * a function.
+ *
+ * It is deliberately NOT the persisted section vocabulary, which is a longer
+ * list living in `packages/shared`: that package cannot import the client, and
+ * the stored set carries ids this render order has no use for (the sections P2
+ * retires still have collapse flags in existing config until the migration runs).
+ * Task 2.8 owns making shared the one source of that vocabulary and typing this
+ * tuple as a compile-checked subset of it.
  */
-export const SIDEBAR_PERSISTED_SECTION_IDS = ['pins', 'channels', 'dms', 'agents'] as const;
+export const SIDEBAR_LIBRARY_SECTION_IDS = ['pins', 'channels', 'dms', 'agents'] as const;
 
 /**
  * A section's id.
@@ -74,7 +81,7 @@ export const SIDEBAR_PERSISTED_SECTION_IDS = ['pins', 'channels', 'dms', 'agents
  * zones.
  */
 export type SidebarSectionId =
-  | (typeof SIDEBAR_PERSISTED_SECTION_IDS)[number]
+  | (typeof SIDEBAR_LIBRARY_SECTION_IDS)[number]
   | 'now'
   | 'today'
   | 'getting-started'
@@ -126,7 +133,9 @@ export type SidebarIconId =
   | 'add-agent'
   | 'first-session'
   | 'team'
-  | 'dorkbot';
+  | 'dorkbot'
+  /** A session that belongs to no agent — no `cwd`, so no face to draw (DOR-203). */
+  | 'session';
 
 /**
  * The trailing mark that says where a conversation came from (BC-26).
@@ -134,13 +143,18 @@ export type SidebarIconId =
  * Absent means the ordinary case — a human talking to an agent — which is why
  * there is no `'chat'` member: the commonest thing draws nothing.
  *
+ * **Named `Sidebar…`, not `SessionOrigin…`.** `entities/session` already
+ * exports a React component called `SessionOriginMark`, and a P2 row component
+ * needs both it and this type in one file — where two identical names cannot
+ * both be bound.
+ *
  * **Integration note.** P1.2 lands the `ORIGIN_GLYPH` registry in
  * `shared/ui/identity-glyphs.ts`, and `shared/` may not import a feature. When
  * the two meet, this union moves down beside that registry and this becomes a
  * re-export, so the glyph table and the model cannot disagree about what marks
  * exist.
  */
-export type SessionOriginMark = 'timer' | 'bridged' | 'room' | 'agent' | 'thread';
+export type SidebarOriginMark = 'timer' | 'bridged' | 'room' | 'agent' | 'thread';
 
 /** The menu actions a row can offer, dual-rendered into kebab and context menu. */
 export type SidebarActionId =
@@ -202,7 +216,7 @@ export interface SidebarRowModel {
   /** One-line preview when there is one worth showing and no verb line. */
   preview?: string;
   /** Trailing origin mark; absent = human↔agent chat. */
-  origin?: SessionOriginMark;
+  origin?: SidebarOriginMark;
   /** The row's unread state (design-decisions §18, BC-40). */
   unread: SidebarUnread;
   /** "N live" chip on an agent row with concurrent sessions. */

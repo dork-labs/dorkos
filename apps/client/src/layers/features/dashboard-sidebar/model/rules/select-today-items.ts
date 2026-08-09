@@ -5,23 +5,56 @@
  * @module features/dashboard-sidebar/model/rules/select-today-items
  */
 import type { RoomSummary, ThreadSummary } from '@dorkos/shared/room-schemas';
-import type { Session } from '@dorkos/shared/types';
+import type { Session, SessionOrigin } from '@dorkos/shared/types';
 import { partitionSessionsByOrigin } from '@/layers/entities/session';
-import type { SessionOriginMark, SidebarRowModel } from '../build-sidebar-model';
+import type { SidebarOriginMark, SidebarRowModel } from '../build-sidebar-model';
 import type { SidebarState } from '../sidebar-state';
+import { muteIndex, type MuteIndex } from './apply-mute-rules';
 import { deriveProjectLabel } from './derive-project-label';
 import { deriveRowStatus } from './derive-row-status';
 import { deriveUnreadSignal } from './derive-unread-signal';
 import { anchorKey, basename, rowKey } from './targets';
 
-/** Which trailing mark a non-user session origin draws (BC-26). */
-const ORIGIN_MARK: Record<string, SessionOriginMark> = {
+/**
+ * Which trailing mark a non-user session origin draws (BC-26).
+ *
+ * **`channel` and `room` are one word apart and must not be one picture
+ * apart.** `channel` is a BRIDGED chat — Telegram, Slack, a webhook — and
+ * `room` is one of this machine's own rooms; `SessionOriginSchema` says so in
+ * as many words, and `origin-descriptors.ts` already keeps them visually
+ * distinct on the other surfaces that draw them. Folding `channel` onto the
+ * room mark would tell the operator a message from Telegram came from a
+ * cockpit channel.
+ */
+const ORIGIN_MARK: Partial<Record<SessionOrigin, SidebarOriginMark>> = {
   task: 'timer',
   external: 'bridged',
-  channel: 'room',
+  channel: 'bridged',
   room: 'room',
   agent: 'agent',
 };
+
+/**
+ * The trailing mark one session's origin draws, or `undefined` for the
+ * unmarked default — a human talking to an agent.
+ *
+ * **Exported because it is not reachable through this module's own rows yet,
+ * and that is a fact worth being honest about rather than hiding.** Every
+ * origin in the table above is one `partitionSessionsByOrigin` classes as
+ * automated, and BC-19 keeps automated sessions off Today's top level — so the
+ * only session rows Today builds today are user-origin ones, which draw no
+ * mark. The consumer that will exercise this is P2.3's "+ N automated"
+ * expansion. Testing it at its own boundary now is what keeps it correct until
+ * then; testing it through a path that cannot reach it would only look like
+ * coverage.
+ *
+ * @param origin - The session's origin, absent for a session nobody marked.
+ */
+export function sessionOriginMark(
+  origin: SessionOrigin | undefined
+): SidebarOriginMark | undefined {
+  return origin === undefined ? undefined : ORIGIN_MARK[origin];
+}
 
 /**
  * The one-line summaries "Jump back in" already computed, by row key.
@@ -50,13 +83,20 @@ function previewIndex(state: SidebarState): Map<string, string> {
  * repeated, on purpose: a repeated name is a stable scan anchor, and clustering
  * would make Today's shape churn as sessions come and go.
  *
+ * A session with no `cwd` belongs to NO agent (DOR-203) — so it draws no agent
+ * face. Hashing an empty path would produce a perfectly stable, perfectly
+ * confident avatar that matches nothing, which is the mistake DOR-582 fixed in
+ * a direct message's mark: the one place that guessed looked the most certain.
+ *
  * @param session - The session.
  * @param state - The snapshot.
+ * @param mutes - The resolved mute sets.
  * @param preview - Its one-line summary, when there is one.
  */
 function sessionRow(
   session: Session,
   state: SidebarState,
+  mutes: MuteIndex,
   preview: string | undefined
 ): SidebarRowModel {
   const agentPath = session.cwd ?? '';
@@ -69,11 +109,14 @@ function sessionRow(
   const lifecycle = state.sessionStatuses[session.id];
   const streaming = state.workingSessionIds.includes(session.id);
   const projectLabel = deriveProjectLabel(session.cwd, state.projects);
-  const origin = session.origin ? ORIGIN_MARK[session.origin] : undefined;
+  const origin = sessionOriginMark(session.origin);
+  const muted = agentPath !== '' && mutes.agents.has(agentPath);
   return {
     key: rowKey(target),
     target,
-    glyph: { kind: 'agent-avatar', agentPath },
+    glyph: agentPath
+      ? { kind: 'agent-avatar', agentPath }
+      : { kind: 'icon', icon: 'session' as const },
     primary: state.displayNames[agentPath] ?? (agentPath ? basename(agentPath) : 'Session'),
     secondary: session.title,
     status: deriveRowStatus({ lifecycle: streaming ? 'streaming' : lifecycle }),
@@ -82,9 +125,9 @@ function sessionRow(
     ...(origin ? { origin } : {}),
     unread: { tier: 'none' },
     ...(projectLabel ? { projectLabel } : {}),
-    muted: false,
+    muted,
     draggable: false,
-    actions: ['open', 'pin', 'mute'],
+    actions: ['open', 'pin', muted ? 'unmute' : 'mute'],
     reason: 'today:interaction-recency',
   };
 }
@@ -94,13 +137,16 @@ function sessionRow(
  *
  * @param room - The room.
  * @param state - The snapshot.
+ * @param mutes - The resolved mute sets.
  * @param preview - Its one-line summary, when there is one.
  */
 function roomRow(
   room: RoomSummary,
   state: SidebarState,
+  mutes: MuteIndex,
   preview: string | undefined
 ): SidebarRowModel {
+  const muted = mutes.rooms.has(room.id);
   const target = {
     kind: 'room',
     roomId: room.id,
@@ -124,11 +170,11 @@ function roomRow(
       unreadCount: room.unreadCount,
       directed: room.kind === 'dm',
       mentionCount: state.mentions[room.id],
-      muted: false,
+      muted,
     }),
-    muted: false,
+    muted,
     draggable: false,
-    actions: ['open', 'pin', 'mute', 'mark-read'],
+    actions: ['open', 'pin', muted ? 'unmute' : 'mute', 'mark-read'],
     reason: 'today:interaction-recency',
   };
 }
@@ -142,9 +188,11 @@ function roomRow(
  *
  * @param thread - The thread.
  * @param state - The snapshot.
+ * @param mutes - The resolved mute sets.
  */
-function threadRow(thread: ThreadSummary, state: SidebarState): SidebarRowModel {
+function threadRow(thread: ThreadSummary, state: SidebarState, mutes: MuteIndex): SidebarRowModel {
   const target = { kind: 'room', roomId: thread.roomId, roomKind: 'thread' } as const;
+  const muted = mutes.rooms.has(thread.roomId);
   return {
     // Keyed on the thread's root entry rather than through `rowKey`, which
     // would answer with the ROOM's key: a room and a thread inside it are two
@@ -161,9 +209,9 @@ function threadRow(thread: ThreadSummary, state: SidebarState): SidebarRowModel 
       unreadCount: thread.unreadCount,
       directed: false,
       mentionCount: state.mentions[thread.roomId],
-      muted: false,
+      muted,
     }),
-    muted: false,
+    muted,
     draggable: false,
     actions: ['open', 'mark-read'],
     reason: 'today:interaction-recency',
@@ -212,6 +260,7 @@ function automatedRow(count: number): SidebarRowModel {
  */
 export function selectTodayItems(state: SidebarState): SidebarRowModel[] {
   const previews = previewIndex(state);
+  const mutes = muteIndex(state.prefs);
   const anchor = anchorKey(state);
   // The anchor is eligible whatever else is true: the conversation the operator
   // has open is by definition one they are interacting with, even on the first
@@ -227,17 +276,17 @@ export function selectTodayItems(state: SidebarState): SidebarRowModel[] {
   for (const session of conversations) {
     const key = `session:${session.id}`;
     if (!touched(key)) continue;
-    rows.push(sessionRow(session, state, previews.get(key)));
+    rows.push(sessionRow(session, state, mutes, previews.get(key)));
   }
   for (const room of state.rooms) {
     if (room.archived) continue;
     const key = `room:${room.id}`;
     if (!touched(key)) continue;
-    rows.push(roomRow(room, state, previews.get(key)));
+    rows.push(roomRow(room, state, mutes, previews.get(key)));
   }
   for (const thread of state.threads) {
     if (!touched(`room:${thread.roomId}`)) continue;
-    rows.push(threadRow(thread, state));
+    rows.push(threadRow(thread, state, mutes));
   }
   if (automated.length > 0) rows.push(automatedRow(automated.length));
   return rows;

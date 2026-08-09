@@ -26,6 +26,7 @@ import type {
 import type { RoomSummary, ThreadSummary } from '@dorkos/shared/room-schemas';
 import type { SessionLifecycle } from '@dorkos/shared/session-stream';
 import type { Session } from '@dorkos/shared/types';
+import type { InteractionTimestamps } from '@/layers/entities/interactions';
 import type { JumpBackInModel } from '@/layers/entities/recents';
 import type { AttentionState } from '@/layers/entities/session';
 import type { NowKind, SidebarSectionId, SidebarTarget } from './build-sidebar-model';
@@ -216,10 +217,18 @@ export interface SidebarState {
   /** The operator's stored sidebar preferences. */
   prefs: SidebarModelPrefs;
   /**
-   * `<kind>:<id>` → when the operator last OPENED it, ISO-8601, from
+   * `<kind>:<id>` → when the operator last OPENED it, ISO-8601, straight from
    * `entities/interactions`. Half of Today's order key (BC-16).
+   *
+   * Typed as the store's own {@link InteractionTimestamps} rather than as a
+   * structurally identical `Record<string, string>` written out here. Both
+   * spellings compile; only one of them breaks the build if the store ever
+   * changes what it puts in the value. Epoch milliseconds would satisfy
+   * `Record<string, string>` and then parse to `NaN`, which this model reads as
+   * "never interacted with" — Today would quietly fall back to alphabetical
+   * order with nothing thrown.
    */
-  interactions: Readonly<Record<string, string>>;
+  interactions: InteractionTimestamps;
   /**
    * `<kind>:<id>` → when the operator last WROTE in it, ISO-8601. The other
    * half of Today's order key.

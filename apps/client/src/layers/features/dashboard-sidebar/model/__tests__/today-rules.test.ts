@@ -9,12 +9,12 @@ import type { SessionLifecycle } from '@dorkos/shared/session-stream';
 import type { Session } from '@dorkos/shared/types';
 import { describe, expect, it } from 'vitest';
 import { buildSidebarModel, type SidebarRowModel } from '../build-sidebar-model';
-import { HOUR, busyFixture, hoursAgo, prefs, quietFixture, room } from '../fixtures';
+import { HOUR, busyFixture, hoursAgo, prefs, quietFixture, room, session } from '../fixtures';
 import { archiveOvernight, overnightBoundary } from '../rules/archive-overnight';
 import { buildDigestRow, localDateKey } from '../rules/build-digest-row';
 import { deriveProjectLabel } from '../rules/derive-project-label';
 import { TODAY_SOFT_CAP, lastInteractionAt, orderToday } from '../rules/order-today';
-import { selectTodayItems } from '../rules/select-today-items';
+import { selectTodayItems, sessionOriginMark } from '../rules/select-today-items';
 import type { SidebarState } from '../sidebar-state';
 
 /** Today's rows, as the model finally emits them. */
@@ -31,7 +31,10 @@ function todayKeys(state: SidebarState): string[] {
 describe('BC-16 — order is the operator’s attention, never the agent’s', () => {
   it('survives 100 activity and session_status events unchanged', () => {
     const before = todayKeys(busyFixture);
-    expect(before.length).toBeGreaterThan(5);
+    // The anchor, eight capped rows, the exempt directed-unread DM, and the
+    // automated reveal. Asserted exactly, because a churn test over a list that
+    // silently shrank to two rows would still pass.
+    expect(before).toHaveLength(11);
 
     const lifecycles: SessionLifecycle[] = ['streaming', 'idle', 'blocked', 'error', 'interrupted'];
     let state: SidebarState = busyFixture;
@@ -354,6 +357,70 @@ describe('BC-40 — mute, and the one thing that pierces it', () => {
     };
     expect(todayKeys(state)[0]).toBe('room:room-noise');
   });
+
+  it('kills the badge on a muted conversation you have open', () => {
+    // The anchor is the ONE muted row Today still shows, so it is the one place
+    // mute's quietening half can leak. Priya has two unread DMs and no mention
+    // of the operator, so BC-40's @mention exception does not apply: a muted DM
+    // you are standing in shows no badge at all.
+    const state: SidebarState = {
+      ...busyFixture,
+      prefs: prefs({
+        ...busyFixture.prefs,
+        muted: [...busyFixture.prefs.muted, { kind: 'room', roomId: 'dm-priya' }],
+      }),
+      activeTarget: { kind: 'room', roomId: 'dm-priya', roomKind: 'dm' },
+    };
+    const anchor = todayRows(state)[0];
+    expect(anchor?.key).toBe('room:dm-priya');
+    expect(anchor?.muted).toBe(true);
+    expect(anchor?.unread).toEqual({ tier: 'none' });
+  });
+
+  it('still lets an @mention pierce mute on the conversation you have open', () => {
+    const state: SidebarState = {
+      ...busyFixture,
+      mentions: { ...busyFixture.mentions, 'dm-priya': 1 },
+      prefs: prefs({
+        ...busyFixture.prefs,
+        muted: [...busyFixture.prefs.muted, { kind: 'room', roomId: 'dm-priya' }],
+      }),
+      activeTarget: { kind: 'room', roomId: 'dm-priya', roomKind: 'dm' },
+    };
+    expect(todayRows(state)[0]?.unread).toEqual({ tier: 'directed', count: 1 });
+  });
+
+  it('kills the badge on a muted room row that survives on a directed unread', () => {
+    // The second leak path: a muted room stays in Today when it carries a
+    // directed unread (BC-18 exempts it from archival), so the quietening has
+    // to have happened before the row was ever considered.
+    const state: SidebarState = {
+      ...busyFixture,
+      prefs: prefs({
+        ...busyFixture.prefs,
+        muted: [...busyFixture.prefs.muted, { kind: 'room', roomId: 'dm-priya' }],
+      }),
+    };
+    expect(todayKeys(state)).not.toContain('room:dm-priya');
+  });
+
+  it('mutes a session through the agent it belongs to', () => {
+    const state: SidebarState = {
+      ...busyFixture,
+      prefs: prefs({
+        ...busyFixture.prefs,
+        muted: [{ kind: 'agent', path: '/Users/dev/code/tangerine' }],
+      }),
+    };
+    // ses-1 is the anchor and stays; it renders muted, and its menu offers
+    // unmute rather than mute.
+    const anchor = todayRows(state)[0];
+    expect(anchor?.key).toBe('session:ses-1');
+    expect(anchor?.muted).toBe(true);
+    expect(anchor?.actions).toContain('unmute');
+    // Its non-anchor sibling on the same agent is gone.
+    expect(todayKeys(state)).not.toContain('session:ses-2');
+  });
 });
 
 describe('selectTodayItems — membership', () => {
@@ -370,6 +437,24 @@ describe('selectTodayItems — membership', () => {
     expect(thread?.target).toEqual({ kind: 'room', roomId: 'room-design', roomKind: 'thread' });
   });
 
+  it('BC-15 — that thread actually reaches Today, not just the selection rule', () => {
+    const thread = todayRows(busyFixture).find((row) => row.key.startsWith('thread:'));
+    expect(thread).toBeDefined();
+    expect(thread?.origin).toBe('thread');
+  });
+
+  it('draws no agent face for a session that belongs to no agent (DOR-203)', () => {
+    const state: SidebarState = {
+      ...busyFixture,
+      sessions: [session({ id: 'ses-orphan', title: 'No cwd', cwd: undefined })],
+      interactions: { 'session:ses-orphan': hoursAgo(0.1) },
+      activeTarget: null,
+    };
+    const row = selectTodayItems(state).find((entry) => entry.key === 'session:ses-orphan');
+    expect(row?.glyph).toEqual({ kind: 'icon', icon: 'session' });
+    expect(row?.primary).toBe('Session');
+  });
+
   it('reserves a verb line for a streaming session and nothing else', () => {
     const rows = selectTodayItems(busyFixture);
     expect(rows.find((row) => row.key === 'session:ses-1')?.reservesVerbLine).toBe(true);
@@ -384,6 +469,45 @@ describe('selectTodayItems — membership', () => {
       ),
     };
     expect(selectTodayItems(state).map((row) => row.key)).not.toContain('room:room-design');
+  });
+});
+
+describe('BC-26 — origin marks', () => {
+  it('gives a bridged chat the paper plane, never the room mark', () => {
+    // `channel` is a BRIDGED chat — Telegram, Slack, a webhook — and `room` is
+    // one of this machine's own rooms. `SessionOriginSchema` says so in as many
+    // words. Drawing them alike tells the operator Telegram was a cockpit
+    // channel, which is the exact collapse the schema exists to prevent.
+    expect(sessionOriginMark('channel')).toBe('bridged');
+    expect(sessionOriginMark('external')).toBe('bridged');
+  });
+
+  it('keeps the room mark for this machine’s own rooms', () => {
+    expect(sessionOriginMark('room')).toBe('room');
+  });
+
+  it('marks the remaining origins per the table', () => {
+    expect(sessionOriginMark('task')).toBe('timer');
+    expect(sessionOriginMark('agent')).toBe('agent');
+  });
+
+  it('draws nothing for the unmarked default — a human talking to an agent', () => {
+    expect(sessionOriginMark(undefined)).toBeUndefined();
+    expect(sessionOriginMark('user')).toBeUndefined();
+  });
+
+  it('is not reachable through Today’s own session rows, and that is why it is tested here', () => {
+    // Every origin the table maps is one `partitionSessionsByOrigin` classes as
+    // automated, and BC-19 keeps those off Today's top level. If this ever
+    // stops being true, delete this test and assert through the rows instead.
+    const state: SidebarState = {
+      ...busyFixture,
+      sessions: [session({ id: 'ses-tg', title: 'From Telegram', origin: 'channel' })],
+      interactions: { 'session:ses-tg': hoursAgo(0.05) },
+      userLastMessageAt: {},
+      activeTarget: null,
+    };
+    expect(selectTodayItems(state).map((row) => row.key)).toEqual(['rollup:automated']);
   });
 });
 

@@ -76,18 +76,23 @@ export interface ApplyMuteOptions {
 }
 
 /**
- * Mark, quieten, and (in Today) remove muted rows.
+ * Remove the muted rows a zone may not show, and normalize the flag on the
+ * rest.
  *
- * Mute kills bold and the badge and takes the row out of Today. The one
- * exception is an @mention of the operator, which still renders its numbered
- * badge — {@link deriveUnreadSignal} has already applied that, so this rule
- * only has to set the flag and decide about Today.
+ * **This rule decides membership, not appearance.** Mute's other half — killing
+ * bold and the badge, and the @mention that pierces both — is applied where a
+ * row is built, by handing `deriveUnreadSignal` the same {@link MuteIndex} this
+ * rule reads. That split matters because Library rows never pass through here
+ * at all: if the quietening lived in this function, every muted row the
+ * operator can still see would keep its badge. It did, and only the anchor
+ * exemption made it visible, because every other muted Today row was dropped
+ * before anybody could look at it.
  *
- * The anchor is exempt from the drop. Being inside a conversation you muted is
+ * The anchor IS exempt from the drop. Being inside a conversation you muted is
  * an ordinary thing to do, and a sidebar that refuses to show you where you are
  * standing has confused a preference for a rule.
  *
- * @param rows - Rows to filter, already carrying their unread state.
+ * @param rows - Rows to filter, already carrying their resolved unread state.
  * @param index - The resolved mute sets.
  * @param options - Whether muted rows are dropped, and what is exempt.
  */

@@ -32,11 +32,81 @@ function stripComments(source: string): string {
 function pureModuleSources(): { file: string; source: string }[] {
   const files = [
     join(MODEL_DIR, 'build-sidebar-model.ts'),
+    join(MODEL_DIR, 'sidebar-state.ts'),
     ...readdirSync(RULES_DIR)
       .filter((name) => name.endsWith('.ts'))
       .map((name) => join(RULES_DIR, name)),
   ];
   return files.map((file) => ({ file, source: stripComments(readFileSync(file, 'utf8')) }));
+}
+
+/**
+ * The only modules a pure model file may import VALUES from.
+ *
+ * A whitelist rather than a search for bad spellings, because the bad spellings
+ * are unbounded: a grep for `Date.now()` is walked straight past by
+ * `import { useInteractionStore } from '@/layers/entities/interactions'`, which
+ * drags in zustand, React and a clock without ever writing the words down. What
+ * is bounded is the set of things these files are allowed to reach for.
+ *
+ * `import type` is exempt and unlisted: a type import is erased before the
+ * bundle exists, so it can pull from anywhere without putting a single byte —
+ * or a single side effect — into the module.
+ *
+ * `@/layers/entities/session` is here on purpose and with an honest caveat. The
+ * model needs `partitionSessionsByOrigin`, and FSD says cross-module imports go
+ * through the barrel, which re-exports React components. So "this module cannot
+ * see React" is false transitively and always was; what these tests actually
+ * hold is the thing that matters — no module HERE reads a clock, holds state,
+ * or renders.
+ */
+const ALLOWED_VALUE_IMPORTS = [
+  '@dorkos/shared/smart-groups',
+  '@/layers/entities/session',
+  // Relative siblings inside the model itself.
+  /^\.{1,2}\//,
+];
+
+/** Every `import ... from '<specifier>'` in a source, with its type-only flag. */
+function importsOf(source: string): { specifier: string; typeOnly: boolean }[] {
+  const out: { specifier: string; typeOnly: boolean }[] = [];
+  const pattern = /import\s+(type\s+)?[^'";]*?from\s+['"]([^'"]+)['"]/g;
+  let match: RegExpExecArray | null = pattern.exec(source);
+  while (match !== null) {
+    out.push({ specifier: match[2] ?? '', typeOnly: match[1] !== undefined });
+    match = pattern.exec(source);
+  }
+  return out;
+}
+
+/** Whether one specifier is on the whitelist. */
+function allowedValueImport(specifier: string): boolean {
+  return ALLOWED_VALUE_IMPORTS.some((entry) =>
+    typeof entry === 'string' ? entry === specifier : entry.test(specifier)
+  );
+}
+
+/**
+ * Every use of `Date` in a source that is NOT one of the two shapes a pure
+ * module may use: `new Date(<argument>)` and `Date.parse(`.
+ *
+ * Catches what a spelling grep does not: `new Date` with no parentheses at all
+ * (valid JS, and a clock), and `const Clock = Date` followed by `Clock.now()`,
+ * which never writes `Date.now` anywhere.
+ */
+function illegalDateUses(source: string): string[] {
+  const out: string[] = [];
+  const pattern = /\bDate\b(.{0,12})/gs;
+  let match: RegExpExecArray | null = pattern.exec(source);
+  while (match !== null) {
+    const before = source.slice(Math.max(0, match.index - 4), match.index);
+    const after = match[1] ?? '';
+    const isConstructedWithArgument = before.endsWith('new ') && /^\(\s*[^)\s]/.test(after);
+    const isParse = after.startsWith('.parse(');
+    if (!isConstructedWithArgument && !isParse) out.push(`Date${after.split('\n')[0] ?? ''}`);
+    match = pattern.exec(source);
+  }
+  return out;
 }
 
 /** Walk every node the model emits, so an assertion cannot miss a branch. */
@@ -71,30 +141,49 @@ function rowsOf(state: (typeof SIDEBAR_FIXTURES)[number]['state']) {
 describe('P1 AC-1 — purity, asserted over the module source', () => {
   // A runtime spy is not enough: the offending call may sit on a branch this
   // fixture never takes. The source is the only place every branch is visible.
-  it.each(pureModuleSources())('$file imports no React', ({ source }) => {
-    expect(source).not.toMatch(/from ['"]react['"]/);
+  it.each(pureModuleSources())('$file value-imports only whitelisted modules', ({ source }) => {
+    const offenders = importsOf(source)
+      .filter((entry) => !entry.typeOnly)
+      .map((entry) => entry.specifier)
+      .filter((specifier) => !allowedValueImport(specifier));
+    expect(offenders).toEqual([]);
   });
 
-  it.each(pureModuleSources())('$file calls no Date.now()', ({ source }) => {
-    expect(source).not.toMatch(/Date\.now\(\)/);
-  });
-
-  it.each(pureModuleSources())('$file constructs no argument-less Date', ({ source }) => {
-    expect(source).not.toMatch(/new Date\(\s*\)/);
-  });
-
-  it.each(pureModuleSources())('$file reaches for no implicit-timezone Intl', ({ source }) => {
+  it.each(pureModuleSources())('$file reads no clock it was not given', ({ source }) => {
+    expect(illegalDateUses(source)).toEqual([]);
+    expect(source).not.toMatch(/\bperformance\b/);
+    expect(source).not.toMatch(/Math\.random/);
     expect(source).not.toMatch(/\bIntl\./);
   });
 
-  it('proves the source check can fail — and that stripping keeps the code', () => {
+  it('proves the import whitelist can fail', () => {
     const offending = stripComments(
-      '/** Never call Date.now(). */\nconst at = Date.now();\n// nor new Date()\nconst d = new Date();\n'
+      "import { useInteractionStore } from '@/layers/entities/interactions';\n" +
+        "import type { Whatever } from '@/layers/widgets/anything';\n"
     );
+    const entries = importsOf(offending);
+    expect(entries).toHaveLength(2);
+    // The value import is caught…
+    expect(allowedValueImport('@/layers/entities/interactions')).toBe(false);
+    // …and the type-only one is exempt by design, not by accident.
+    expect(entries[1]?.typeOnly).toBe(true);
+  });
+
+  it('proves the clock check catches what a spelling grep does not', () => {
+    // Each of these walked straight past the previous textual assertion.
+    expect(illegalDateUses('const d = new Date;').length).toBeGreaterThan(0);
+    expect(illegalDateUses('const Clock = Date;\nClock.now();').length).toBeGreaterThan(0);
+    expect(illegalDateUses('const d = new Date();').length).toBeGreaterThan(0);
+    expect(illegalDateUses('const at = Date.now();').length).toBeGreaterThan(0);
+    // And that it still permits the two shapes a pure rule legitimately uses.
+    expect(illegalDateUses('const d = new Date(now);')).toEqual([]);
+    expect(illegalDateUses('const ms = Date.parse(iso);')).toEqual([]);
+  });
+
+  it('proves comment stripping keeps the code it is checking', () => {
+    const offending = stripComments('/** Never call Date.now(). */\nconst at = Date.now();\n');
     expect(offending).toMatch(/Date\.now\(\)/);
-    expect(offending).toMatch(/new Date\(\s*\)/);
     expect(offending).not.toMatch(/Never call/);
-    // The check would be worthless if stripping ate the module's code too.
     for (const { source } of pureModuleSources()) {
       expect(source).toMatch(/export (function|const|type|interface)/);
     }

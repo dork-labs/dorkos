@@ -126,7 +126,10 @@ export const busyFixture: SidebarState = emptyState({
     'session:ses-8': hoursAgo(4.9),
     'room:room-team': hoursAgo(0.4),
     'room:room-releases': hoursAgo(2.8),
-    'room:room-design': hoursAgo(3.9),
+    // Recent enough that #design AND the thread hanging off it both clear the
+    // soft cap: a thread that only ever survives at the unit level would leave
+    // BC-15's "threads are Today rows" untested end to end.
+    'room:room-design': hoursAgo(1.0),
     'room:room-noise': hoursAgo(1.5),
     'room:dm-priya': hoursAgo(4.6),
     'room:dm-kai': hoursAgo(5.0),
