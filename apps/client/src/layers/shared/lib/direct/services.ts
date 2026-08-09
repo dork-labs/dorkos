@@ -89,6 +89,8 @@ export interface DirectTransportServices {
       content: string;
       cwd?: string;
       context?: ClientContext;
+      /** Background the caller attached to the turn — read by the agent, never rendered. */
+      seedContext?: string;
     }): Promise<{ accepted: boolean; canonicalId?: string }>;
   };
   /**

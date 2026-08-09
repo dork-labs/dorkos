@@ -571,6 +571,7 @@ router.post('/:id/messages', async (req, res) => {
     agentPath,
     workspaceKey,
     workspaceProvider,
+    seedContext,
   } = parsed.data;
 
   // Opt-in workspace binding (DOR-84). When a workspaceKey is supplied, the
@@ -681,6 +682,10 @@ router.post('/:id/messages', async (req, res) => {
       content,
       cwd: effectiveCwd,
       context,
+      // Background this turn's opener attached to it. It rides the neutral
+      // context bag, never `content`: the prompt stays the person's message
+      // byte for byte, and the seed is stripped from every rendered transcript.
+      ...(seedContext ? { seedContext } : {}),
       projector,
       deps: {
         acquireLock: (sid, cid, lifecycle, token) =>

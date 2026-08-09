@@ -18,6 +18,7 @@ import { CONTEXT_TAG } from '@dorkos/shared/additional-context';
 import type { EffortLevel, SessionSettings } from '@dorkos/shared/types';
 import { GEN_UI_CONTEXT } from '../shared/gen-ui-context.js';
 import { formatRoomContext } from '../shared/room-context-block.js';
+import { formatSeedContext } from '../shared/seed-context-block.js';
 
 /**
  * DorkOS permission mode → Codex sandbox level (NOTES.md Verdict 2).
@@ -90,19 +91,35 @@ export function projectThreadOptions(settings: SessionSettings, cwd?: string): T
  * body is the structured data as JSON: honest, machine-readable, and free of
  * the Claude adapter's heavyweight formatting dependencies.
  *
- * `room_context` is the one exception, and it is not a style preference. Its
- * body carries text other people wrote, wrapped in an untrusted-input fence
- * that a JSON dump would not carry — so all three adapters render it through
- * the same shared writer (`runtimes/shared/room-context-block.ts`). A room can
- * hold agents on three runtimes at once and each of them must see that fence.
+ * Two kinds are exceptions, and neither is a style preference — see
+ * {@link renderContextBody}.
  */
 function renderContextEntry(entry: AdditionalContextEntry): string {
   const tag = CONTEXT_TAG[entry.kind];
-  const body =
-    entry.kind === 'room_context'
-      ? formatRoomContext(entry.data)
-      : JSON.stringify(entry.data, null, 2);
-  return `<${tag}>\n${body}\n</${tag}>`;
+  return `<${tag}>\n${renderContextBody(entry)}\n</${tag}>`;
+}
+
+/**
+ * The body of one rendered block: structured data as JSON, except for the two
+ * kinds whose body is PROSE and must read identically on every runtime.
+ *
+ * `room_context` carries text other people wrote, wrapped in an untrusted-input
+ * fence that a JSON dump would not carry. `seed_context` carries a paragraph
+ * somebody wrote for a model to read, plus the sentence telling the reader the
+ * person cannot see the block — JSON would deliver both as one quoted line with
+ * `\n` spelled out in it. Both go through the shared writers in
+ * `runtimes/shared/`, so a room holding agents on three runtimes, and a seeded
+ * turn on any of them, read the same words.
+ */
+function renderContextBody(entry: AdditionalContextEntry): string {
+  switch (entry.kind) {
+    case 'room_context':
+      return formatRoomContext(entry.data);
+    case 'seed_context':
+      return formatSeedContext(entry.data);
+    default:
+      return JSON.stringify(entry.data, null, 2);
+  }
 }
 
 /**

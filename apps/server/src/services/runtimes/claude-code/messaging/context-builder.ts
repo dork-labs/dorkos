@@ -12,6 +12,7 @@ import type { ResolvedToolConfig } from '../tooling/tool-filter.js';
 import { GEN_UI_CONTEXT } from '../../shared/gen-ui-context.js';
 import { buildAgentContextAppend } from '../../shared/agent-context.js';
 import { formatRoomContext } from '../../shared/room-context-block.js';
+import { formatSeedContext } from '../../shared/seed-context-block.js';
 import type { AgentRegistryPort } from '@dorkos/shared/agent-runtime';
 import type { BindingRouter } from '../../../relay/binding-router.js';
 import type { BindingStore } from '../../../relay/binding-store.js';
@@ -513,6 +514,11 @@ export function renderContextEntry(entry: AdditionalContextEntry): string {
       // an untrusted-input fence, and a security surface written three times is
       // one that holds in one place and leaks in the other two.
       return wrapTag(tag, formatRoomContext(entry.data));
+    case 'seed_context':
+      // Shared for the same reason, one step milder: the body carries the
+      // sentence that tells the reader the person cannot see this block, and
+      // that sentence must read identically on every runtime.
+      return wrapTag(tag, formatSeedContext(entry.data));
   }
 }
 

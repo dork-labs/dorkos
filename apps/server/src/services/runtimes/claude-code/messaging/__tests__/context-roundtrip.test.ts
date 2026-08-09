@@ -90,6 +90,13 @@ const SAMPLES: Record<ContextKind, AdditionalContextEntry> = {
       sent: '2026-06-16T00:00:00.000Z',
     },
   },
+  seed_context: {
+    kind: 'seed_context',
+    scope: 'per-turn',
+    data: {
+      text: 'The person opened this from the Marketplace page.\n\nNothing has synced today.',
+    },
+  },
   room_context: {
     kind: 'room_context',
     scope: 'per-turn',

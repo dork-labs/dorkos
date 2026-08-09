@@ -37,6 +37,17 @@ export interface AssembleContextOpts {
    */
   roomContext?: RoomContextData;
   /**
+   * Background the CALLER attached to this turn (`SendMessageRequest.seedContext`)
+   * — the agent reads it, the person never sees it.
+   *
+   * A sibling of `roomContext` rather than part of {@link ClientContext}, and for
+   * the opposite reason: that bag holds structured signals the server renders,
+   * this holds prose a caller wrote. It is parsed off the wire, so it carries no
+   * more authority than `content` does — the rendered block says so out loud
+   * (`runtimes/shared/seed-context-block.ts`).
+   */
+  seedContext?: string;
+  /**
    * Kinds the target runtime injects itself (from `getCapabilities().nativeContext`)
    * — omitted from the bag to avoid double-injection.
    */
@@ -87,14 +98,18 @@ async function deriveGitStatus(cwd: string): Promise<GitStatusData> {
  * - `room_context`: added when the caller supplies one, which only a
  *   room-triggered turn does. It is the fourth kind that actually flows through
  *   this bag, and the first genuine extension of it since ADR-0273 landed.
+ * - `seed_context`: added when the caller supplies one — a surface that opened
+ *   this conversation already knowing something the person would otherwise have
+ *   had to type. The fifth kind that flows.
  *
  * @param opts - Effective cwd, optional client signals, optional room context,
- *   and the runtime's native-context omission list.
+ *   optional caller-supplied seed, and the runtime's native-context omission
+ *   list.
  */
 export async function assembleAdditionalContext(
   opts: AssembleContextOpts
 ): Promise<AdditionalContext> {
-  const { cwd, clientContext, roomContext, nativeContext } = opts;
+  const { cwd, clientContext, roomContext, seedContext, nativeContext } = opts;
   const bag: AdditionalContext = [];
   const omits = (kind: ContextKind): boolean => nativeContext.includes(kind);
 
@@ -117,6 +132,10 @@ export async function assembleAdditionalContext(
 
   if (roomContext && !omits('room_context')) {
     bag.push({ kind: 'room_context', scope: 'per-turn', data: roomContext });
+  }
+
+  if (seedContext && !omits('seed_context')) {
+    bag.push({ kind: 'seed_context', scope: 'per-turn', data: { text: seedContext } });
   }
 
   return bag;

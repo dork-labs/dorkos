@@ -107,6 +107,48 @@ describe('parseTranscript relay context handling', () => {
   });
 });
 
+describe('parseTranscript keeps a seeded context out of the rendered user message', () => {
+  // The transcript is the record a person reads back. `seedContext` is
+  // background a CALLER attached to the turn — the model reads it, the person
+  // never wrote it — so a transcript that shows it as the person's own words is
+  // the failure this whole feature has to avoid. Shaped exactly as the JSONL
+  // holds it: the adapter prepends the rendered block to the user content, and
+  // the SDK persists the concatenation verbatim.
+  const SEED = 'They arrived from the docs page for marketplace sources.';
+  const TYPED = 'how do I add a source?';
+
+  it('renders only the words the person typed', () => {
+    const lines = [
+      JSON.stringify({
+        type: 'user',
+        message: { content: `<seed_context>\n${SEED}\n</seed_context>\n\n${TYPED}` },
+        uuid: 'seeded-1',
+      }),
+    ];
+    const result = parseTranscript(lines);
+    expect(result).toHaveLength(1);
+    expect(result[0].role).toBe('user');
+    expect(result[0].content).toBe(TYPED);
+    expect(result[0].content).not.toContain(SEED);
+    expect(result[0].content).not.toContain('seed_context');
+  });
+
+  it('strips the seed when it rides alongside the other injected blocks', () => {
+    const lines = [
+      JSON.stringify({
+        type: 'user',
+        message: {
+          content:
+            `<git_status>\nIs git repo: false\n</git_status>\n\n` +
+            `<seed_context>\n${SEED}\n</seed_context>\n\n${TYPED}`,
+        },
+        uuid: 'seeded-2',
+      }),
+    ];
+    expect(parseTranscript(lines)[0].content).toBe(TYPED);
+  });
+});
+
 // NOTE: the auto-first-turn kickoff (M4) is deliberately NOT suppressed here.
 // The parser preserves it as an ordinary user record; the ONE runtime-agnostic
 // suppression seam is `filterKickoffHistory` (@dorkos/shared/kickoff), applied

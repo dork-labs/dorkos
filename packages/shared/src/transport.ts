@@ -605,13 +605,18 @@ export interface Transport extends RoomTransport {
    * @param sessionId - Target session id (a client UUID for a brand-new session)
    * @param content - User message text
    * @param cwd - Optional working directory override
-   * @param options - Optional additional parameters (clientMessageId for server-echo ID, context for neutral client signals: uiState, queued, runtime as the first-turn runtime hint resolved hint > agent manifest > default and persisted first-write-wins per ADR-0255)
+   * @param options - Optional additional parameters (clientMessageId for server-echo ID, context for neutral client signals: uiState, queued, runtime as the first-turn runtime hint resolved hint > agent manifest > default and persisted first-write-wins per ADR-0255, seedContext for background the agent reads and the person never sees — see `SeedContextData`)
    */
   postMessage(
     sessionId: string,
     content: string,
     cwd?: string,
-    options?: { clientMessageId?: string; context?: ClientContext; runtime?: string }
+    options?: {
+      clientMessageId?: string;
+      context?: ClientContext;
+      runtime?: string;
+      seedContext?: string;
+    }
   ): Promise<{ sessionId: string }>;
   /**
    * Trigger a RUNTIME-fulfilled command intent (currently `compact`) for a

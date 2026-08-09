@@ -32,6 +32,13 @@ export interface EmbeddedTriggerOpts {
   cwd?: string;
   /** Neutral client-sourced context signals (ui_state, queued) for this turn. */
   context?: ClientContext;
+  /**
+   * Background the caller attached to this turn — the agent reads it, the person
+   * never sees it. Mirrors the HTTP route's `seedContext`, so an embedded
+   * surface (the Obsidian plugin) can open a conversation the same way the
+   * cockpit can rather than being quietly a capability short.
+   */
+  seedContext?: string;
 }
 
 /** The in-process trigger bridge `DirectTransport.postMessage` calls. */
@@ -47,7 +54,7 @@ export interface EmbeddedTurnTrigger {
  */
 export function createEmbeddedTurnTrigger(runtime: AgentRuntime): EmbeddedTurnTrigger {
   return {
-    async trigger({ sessionId, clientId, content, cwd, context }) {
+    async trigger({ sessionId, clientId, content, cwd, context, seedContext }) {
       // Mirror the HTTP route: the caller-chosen cwd is authoritative —
       // overwrite any earlier first-writer-wins stamp from a subscribe-path
       // default so liveness aggregates under the correct project.
@@ -63,6 +70,7 @@ export function createEmbeddedTurnTrigger(runtime: AgentRuntime): EmbeddedTurnTr
         content,
         cwd,
         context,
+        ...(seedContext ? { seedContext } : {}),
         projector,
         deps: {
           acquireLock: (sid, cid, lifecycle, token) =>

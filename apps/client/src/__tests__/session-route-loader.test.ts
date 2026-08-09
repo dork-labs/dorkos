@@ -44,6 +44,7 @@ describe('sessionLoaderDeps', () => {
       'dir',
       'prompt',
       'runtime',
+      'send',
       'session',
     ]);
   });
@@ -251,7 +252,13 @@ describe('sessionRouteLoader', () => {
     await expect(
       sessionRouteLoader({
         context: { queryClient, transport },
-        deps: { dir: '/my/project', session: undefined, runtime: undefined, prompt: undefined },
+        deps: {
+          dir: '/my/project',
+          session: undefined,
+          runtime: undefined,
+          prompt: undefined,
+          send: undefined,
+        },
       })
     ).rejects.toThrow(/could ?n[o']t reach the server/i);
   });
@@ -342,5 +349,46 @@ describe('sessionRouteLoader', () => {
     expect(search.session).toBe('cached-s1');
     expect(search.runtime).toBe('codex');
     expect(search.prompt).toBeUndefined(); // dropped on auto-select
+  });
+
+  it('carries the send opt-in onto a genuinely fresh session', async () => {
+    const result = await callLoader('?dir=/my/project&prompt=hello&send=1');
+    const search = (result.redirect as Record<string, unknown>).search as Record<string, string>;
+    expect(search.prompt).toBe('hello');
+    expect(search.send).toBe('1');
+  });
+
+  it('drops the send opt-in when auto-selecting an existing session', async () => {
+    // The strictest version of the seed rule. A seed that must not RIDE an
+    // existing conversation must certainly not start a turn on one, so the
+    // opt-in is dropped by the same branch and for the same reason.
+    queryClient.setQueryData(sessionKeys.list(null), [
+      {
+        id: 'cached-s1',
+        title: 'Existing',
+        createdAt: '2026-01-01T00:00:00Z',
+        updatedAt: '2026-01-01T12:00:00Z',
+        permissionMode: 'default',
+        runtime: 'claude-code',
+      } satisfies Session,
+    ]);
+
+    const result = await callLoader('?prompt=hello&send=1');
+    const search = (result.redirect as Record<string, unknown>).search as Record<string, string>;
+    expect(search.session).toBe('cached-s1');
+    expect(search.prompt).toBeUndefined();
+    expect(search.send).toBeUndefined();
+  });
+
+  it('ignores a send value that is not the exact opt-in', async () => {
+    // `.catch(undefined)` on the literal: `?send=0` reads as "no", not as a
+    // parse error that would blank the route — and nothing but `1` can ever
+    // start a turn on somebody's behalf.
+    for (const raw of ['0', 'true', 'yes', '']) {
+      const result = await callLoader(`?dir=/my/project&prompt=hello&send=${raw}`);
+      const search = (result.redirect as Record<string, unknown>).search as Record<string, string>;
+      expect(search.prompt).toBe('hello');
+      expect(search.send).toBeUndefined();
+    }
   });
 });
