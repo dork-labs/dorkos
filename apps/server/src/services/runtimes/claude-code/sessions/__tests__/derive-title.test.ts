@@ -16,7 +16,12 @@ describe('deriveSessionTitle', () => {
   });
 
   it('strips stacked courtesy prefixes', () => {
-    expect(deriveSessionTitle('Hey, please can you fix the build')).toBe('Fix the build');
+    expect(deriveSessionTitle('Please, can you fix the build')).toBe('Fix the build');
+  });
+
+  it('never strips greetings — they can be real content', () => {
+    expect(deriveSessionTitle('Hello world')).toBe('Hello world');
+    expect(deriveSessionTitle('hello world program in rust')).toBe('Hello world program in rust');
   });
 
   it('does not strip a message that is only a courtesy phrase', () => {

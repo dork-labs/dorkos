@@ -1,12 +1,15 @@
 import { TRANSCRIPT } from '../../../../config/constants.js';
 
 /**
- * Leading courtesy phrases that carry no information in a session title.
+ * Leading request-filler phrases that carry no information in a session title.
  * Matched case-insensitively, repeatedly, at the start of the message only —
  * "Please can you fix the build" derives to "Fix the build".
+ *
+ * Deliberately excludes greetings (hey/hi/hello): stripping them mangles real
+ * content like "Hello world program in Rust".
  */
 const COURTESY_PREFIXES =
-  /^(?:please|hey|hi|hello|ok(?:ay)?|so|can you|could you|would you|will you|i want you to|i need you to|i'd like you to|let's|lets|help me)[,!.\s]+/i;
+  /^(?:please|can you|could you|would you|will you|i want you to|i need you to|i'd like you to|let's|lets|help me)[,!.\s]+/i;
 
 /** Word budget for a derived title — matches the sidebar row grammar's target. */
 const MAX_WORDS = 6;
