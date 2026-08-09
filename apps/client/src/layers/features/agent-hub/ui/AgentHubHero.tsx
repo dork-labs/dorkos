@@ -262,19 +262,30 @@ export function AgentHubHero({ onAvatarClick, onPersonalityClick }: AgentHubHero
           <button
             type="button"
             onClick={startNameEdit}
+            // The name reads as its own text, so the control has to say what
+            // pressing it DOES — otherwise a screen reader announces the agent's
+            // name and nothing about renaming it, which is the same gap the
+            // hover-only pencil left a sighted keyboard user.
+            aria-label={`Rename ${displayName}`}
             className={cn(
               'group/rename flex items-center gap-1.5 text-[15px] font-semibold transition-colors',
-              'hover:text-muted-foreground cursor-text'
+              'focus-ring hover:text-muted-foreground cursor-text rounded-sm'
             )}
             data-testid="agent-name"
           >
             {displayName}
             {/* The rename affordance, beside the thing it renames. It was a
                 corner plate on the avatar, marking the wrong control — clicking
-                the disc opens the appearance picker, not the name field. */}
+                the disc opens the appearance picker, not the name field.
+
+                It answers focus as well as hover, which the corner plate never
+                did: an affordance that only a pointer can discover is one a
+                keyboard user is told nothing about. Same pairing the avatar
+                button above uses — `focus-ring` on the control, and the mark
+                inside it waking for `group-focus-visible` too. */}
             <Pencil
               aria-hidden
-              className="text-muted-foreground size-3 shrink-0 opacity-0 transition-opacity group-hover/rename:opacity-100"
+              className="text-muted-foreground size-3 shrink-0 opacity-0 transition-opacity group-hover/rename:opacity-100 group-focus-visible/rename:opacity-100"
             />
           </button>
         )}

@@ -10,7 +10,7 @@ import { readableForeground } from '../lib/readable-foreground';
 import { cn } from '../lib/utils';
 import type { IdentityOrigin } from '../lib/identity-origin';
 import { AGENT_GLYPH, platformGlyph } from './identity-glyphs';
-import { STATUS_DOT_COLOR, type IdentityStatus } from './status-dot';
+import { STATUS_DOT_COLOR, STATUS_DOT_HALO, type IdentityStatus } from './status-dot';
 
 /**
  * How much of the identity's own colour tints the disc in the default
@@ -72,10 +72,11 @@ const IDENTITY_BADGE_WAKE = 'group/avatar';
  * Caught in a browser; jsdom cannot see it. `group/identity` matches only the
  * control that opted in.
  *
- * **Health wins.** A disc already spending its 2px ring on mesh health
- * ({@link AgentAvatar}) must NOT take this one — a diagnostic signal that
- * changed colour under the pointer would read as a hover state. Callers gate
- * it; this recipe does not know about health and never applies itself.
+ * **Nothing competes for the ring any more.** `AgentAvatar` used to spend the
+ * same 2px on a mesh-health ring, so a pressable disc carrying health took no
+ * hover ring at all and its lockup fell back to a neutral row hover. That ring
+ * is gone (DOR-1052) — health is drawn where health is the subject — and the
+ * identity's own colour is now the only thing this slot ever holds.
  *
  * The transition names `background-color` alongside `box-shadow` so the disc's
  * own colour crossfade is not silently dropped by class merging; on a Mark disc
@@ -496,11 +497,13 @@ function IdentityAvatar({
         >
           {/* Only `working` gets the halo, because only `working` is happening
               RIGHT NOW — a still dot says the same thing about a state that
-              began an hour ago, and "needs you" and "error" are states.
-              `motion-reduce:hidden` leaves the dot itself, so the fact survives
-              the preference and only the motion goes. */}
+              began an hour ago, and "needs you" and "error" are states. The
+              recipe is the shared one, so the corner and the row dots cannot
+              end up disagreeing about which states move; `motion-reduce`
+              removes the halo and leaves the dot beneath it, so the fact
+              survives the preference and only the motion goes. */}
           {status === 'working' && (
-            <span className="bg-status-success absolute inset-0 animate-ping rounded-full opacity-60 motion-reduce:hidden" />
+            <span className={cn(STATUS_DOT_COLOR.working, STATUS_DOT_HALO)} />
           )}
         </span>
       )}

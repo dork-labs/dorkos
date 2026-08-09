@@ -122,6 +122,7 @@
   --color-status-error-border: hsl(var(--status-error-border));
   --color-status-error-fg: hsl(var(--status-error-fg));
   --color-status-warning: hsl(var(--status-warning));
+  --color-status-warning-dot: hsl(var(--status-warning-dot));
   --color-status-warning-bg: hsl(var(--status-warning-bg));
   --color-status-warning-border: hsl(var(--status-warning-border));
   --color-status-warning-fg: hsl(var(--status-warning-fg));
@@ -179,6 +180,13 @@
   --status-error-fg: 0 72% 41%;
 
   --status-warning: 38 92% 50%;
+  /* Amber, dark enough to be a NON-TEXT CONTRAST (WCAG 1.4.11) at dot size.
+     `--status-warning` is 2.15:1 on a light surface — fine behind text, not
+     fine as a 6px mark that carries a meaning by colour alone. This is 3.3:1.
+     Deliberately a separate token, not a change to `--status-warning`: the
+     global amber is tuned for fills and borders where a darker value would
+     read as a different colour. */
+  --status-warning-dot: 38 92% 40%;
   --status-warning-bg: 38 92% 96%;
   --status-warning-border: 38 92% 80%;
   --status-warning-fg: 38 92% 40%;
@@ -370,6 +378,10 @@
   --status-error-fg: 0 72% 60%;
 
   --status-warning: 38 92% 60%;
+  /* Unchanged from `--status-warning` here, and that is the answer rather than
+     an omission: on a dark surface the bright amber already clears the bar by a
+     wide margin (~10:1). Darkening it would move it TOWARD the background. */
+  --status-warning-dot: 38 92% 60%;
   --status-warning-bg: 38 92% 12%;
   --status-warning-border: 38 92% 25%;
   --status-warning-fg: 38 92% 50%;

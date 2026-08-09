@@ -120,7 +120,9 @@ describe('AgentAvatar', () => {
     // Only working ever animates: motion is what the word "now" is made of, and
     // an amber dot that pulsed would say a blocked turn is still going.
     const { container: amber } = render(<AgentAvatar color="#fff" emoji="🤖" status="needs-you" />);
-    expect(avatarOf(amber).querySelector('.bg-status-warning')).toBeInTheDocument();
+    // `bg-status-warning-dot`, the contrast-safe variant — a 6px mark meaning
+    // something by colour alone owes 3:1, which the fill-tuned amber misses.
+    expect(avatarOf(amber).querySelector('.bg-status-warning-dot')).toBeInTheDocument();
     expect(avatarOf(amber).querySelector('.animate-ping')).not.toBeInTheDocument();
 
     const { container: red } = render(<AgentAvatar color="#fff" emoji="🤖" status="error" />);

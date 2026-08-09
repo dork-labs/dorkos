@@ -22,10 +22,14 @@ describe('AgentActivityBadge', () => {
     expect(dot).toHaveAttribute('aria-label', 'Working');
   });
 
-  it('renders the warning token for pendingApproval status', () => {
+  it('renders the contrast-safe warning token for pendingApproval status', () => {
+    // `bg-status-warning-dot`, not the fill-tuned `bg-status-warning`: a 6px
+    // mark that means something by colour alone owes 3:1 against the surface
+    // (WCAG 1.4.11), and the general amber is 2.15:1 on a light one.
     render(<AgentActivityBadge status="pendingApproval" label="Awaiting your approval" />);
     const dot = screen.getByRole('status');
-    expect(dot.className).toContain('bg-status-warning');
+    expect(dot.className.split(' ')).toContain('bg-status-warning-dot');
+    expect(dot.className.split(' ')).not.toContain('bg-status-warning');
     expect(dot.className).not.toContain('bg-amber-500');
   });
 

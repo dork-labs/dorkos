@@ -395,7 +395,11 @@ describe('IdentityAvatar', () => {
       const { container: amber } = render(
         <IdentityAvatar color="#7c3aed" emoji="🐙" status="needs-you" />
       );
-      expect(dotOf(amber)).toHaveClass('bg-status-warning');
+      // The DOT token, not the general-purpose `bg-status-warning`. A dot
+      // carries its meaning by colour, so it owes 3:1 against the surface
+      // (WCAG 1.4.11) and the fill-tuned amber is 2.15:1 on a light one.
+      expect(dotOf(amber)).toHaveClass('bg-status-warning-dot');
+      expect(dotOf(amber)).not.toHaveClass('bg-status-warning');
 
       const { container: red } = render(
         <IdentityAvatar color="#7c3aed" emoji="🐙" status="error" />
