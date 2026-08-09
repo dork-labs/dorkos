@@ -4,7 +4,6 @@
  * The "Switch Shape" command-palette entry (DOR-355 §5): the contribution is
  * registered, and selecting it opens the Shape switcher.
  */
-import React from 'react';
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
