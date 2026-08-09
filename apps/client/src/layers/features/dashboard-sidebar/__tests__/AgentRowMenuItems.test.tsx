@@ -9,11 +9,29 @@ import {
   DropdownMenu,
   DropdownMenuTrigger,
   DropdownMenuContent,
+  SidebarMenuNodes,
+  SidebarMenuSurface,
 } from '@/layers/shared/ui';
 import type { SidebarItemRef } from '@dorkos/shared/config-schema';
-import { AgentRowMenuItems, buildRowMenuNodes, type RowMenuModel } from '../ui/AgentRowMenuItems';
-import { AgentContextMenu } from '../ui/AgentContextMenu';
+import {
+  buildRowMenuNodes,
+  useAgentRowMenuNodes,
+  type RowMenuModel,
+} from '../ui/AgentRowMenuItems';
 import { GroupCreateInput } from '../ui/GroupCreateInput';
+
+/**
+ * The agent row's menu in one Radix family, for the parity test below. The
+ * production row hands the same node list to {@link SidebarMenuSurface}, which
+ * renders BOTH families from it — this splits them apart so the two trees can
+ * be compared.
+ */
+function AgentRowMenuItems({
+  variant,
+  ...params
+}: Parameters<typeof useAgentRowMenuNodes>[0] & { variant: 'context' | 'dropdown' }) {
+  return <SidebarMenuNodes variant={variant} nodes={useAgentRowMenuNodes(params)} />;
+}
 
 // Mock the config surface so rendering needs no transport/QueryClient. Two
 // groups with the agent in g1 makes the Move-to-group submenu fully populated:
@@ -106,8 +124,8 @@ function model(overrides: Partial<RowMenuModel> = {}): RowMenuModel {
 
 /** Find the "Move to group" submenu node. */
 function moveSub(nodes: ReturnType<typeof buildRowMenuNodes>) {
-  const sub = nodes.find((n) => n.type === 'sub');
-  if (sub?.type !== 'sub') throw new Error('no move-to-group submenu');
+  const sub = nodes.find((n) => n.kind === 'submenu');
+  if (sub?.kind !== 'submenu') throw new Error('no move-to-group submenu');
   return sub;
 }
 
@@ -124,25 +142,30 @@ describe('buildRowMenuNodes', () => {
 
   it('checks the current group in the Move-to-group submenu', () => {
     const sub = moveSub(buildRowMenuNodes(model({ currentGroupId: 'g2' })));
-    const checks = sub.items.filter((n) => n.type === 'checkItem');
-    expect(checks.map((c) => (c.type === 'checkItem' ? c.checked : null))).toEqual([false, true]);
+    const checks = sub.items.filter((n) => n.kind === 'choice');
+    expect(checks.map((c) => (c.kind === 'choice' ? c.checked : null))).toEqual([false, true]);
   });
 
   it('shows "Remove from group" only when the agent is grouped', () => {
     const grouped = moveSub(buildRowMenuNodes(model({ currentGroupId: 'g1' })));
-    expect(grouped.items.some((n) => n.type === 'item' && n.label === 'Remove from group')).toBe(
+    expect(grouped.items.some((n) => n.kind === 'action' && n.label === 'Remove from group')).toBe(
       true
     );
 
     const ungrouped = moveSub(buildRowMenuNodes(model({ currentGroupId: null })));
-    expect(ungrouped.items.some((n) => n.type === 'item' && n.label === 'Remove from group')).toBe(
-      false
-    );
+    expect(
+      ungrouped.items.some((n) => n.kind === 'action' && n.label === 'Remove from group')
+    ).toBe(false);
   });
 
   it('always offers "New group…" in the submenu', () => {
     const sub = moveSub(buildRowMenuNodes(model()));
-    expect(sub.items.some((n) => n.type === 'item' && n.label === 'New group…')).toBe(true);
+    // The label carries no ellipsis — `opensInput` is what earns it, and the
+    // renderer is the one place that appends it (asserted end-to-end below,
+    // where "New group…" is what a person actually reads).
+    expect(
+      sub.items.some((n) => n.kind === 'action' && n.label === 'New group' && n.opensInput === true)
+    ).toBe(true);
   });
 
   it('wires the item callbacks to the model', () => {
@@ -150,13 +173,13 @@ describe('buildRowMenuNodes', () => {
     const nodes = buildRowMenuNodes(m);
     // Pin
     const pin = nodes[0];
-    if (pin.type === 'item') pin.onSelect();
+    if (pin?.kind === 'action') pin.run();
     expect(m.onTogglePin).toHaveBeenCalledOnce();
     // Remove from group → moveToGroup(null)
     const remove = moveSub(nodes).items.find(
-      (n) => n.type === 'item' && n.label === 'Remove from group'
+      (n) => n.kind === 'action' && n.label === 'Remove from group'
     );
-    if (remove?.type === 'item') remove.onSelect();
+    if (remove?.kind === 'action') remove.run();
     expect(m.onMoveToGroup).toHaveBeenCalledWith(null);
   });
 });
@@ -272,14 +295,7 @@ function InlineCreateHarness() {
   const [creating, setCreating] = useState(false);
   return (
     <div>
-      <AgentContextMenu
-        path="/agents/api-server"
-        onOpenProfile={() => {}}
-        onNewSession={() => {}}
-        onRequestNewGroup={() => setCreating(true)}
-      >
-        <div data-testid="row-trigger">row</div>
-      </AgentContextMenu>
+      <AgentRowMenuSurface onRequestNewGroup={() => setCreating(true)} />
       {creating && (
         <ul>
           <GroupCreateInput
@@ -292,6 +308,25 @@ function InlineCreateHarness() {
   );
 }
 
+/**
+ * The real production wiring: one node list handed to the one shared surface,
+ * which renders the right-click menu and the "⋮" from it. This is what
+ * `AgentListItem` does, minus the row.
+ */
+function AgentRowMenuSurface({ onRequestNewGroup }: { onRequestNewGroup: () => void }) {
+  const nodes = useAgentRowMenuNodes({
+    path: '/agents/api-server',
+    onOpenProfile: () => {},
+    onNewSession: () => {},
+    onRequestNewGroup,
+  });
+  return (
+    <SidebarMenuSurface nodes={nodes} actionsLabel="Agent actions">
+      <div data-testid="row-trigger">row</div>
+    </SidebarMenuSurface>
+  );
+}
+
 function openRowMenu() {
   fireEvent.contextMenu(screen.getByTestId('row-trigger'));
 }
@@ -300,7 +335,7 @@ function openMoveToGroupSubmenu() {
   fireEvent.keyDown(screen.getByText('Move to group'), { key: 'ArrowRight' });
 }
 
-describe('AgentContextMenu end-to-end wiring', () => {
+describe('agent row menu end-to-end wiring', () => {
   // Regression test for the live-browser bug (DOR-329): Radix closes the menu
   // in a second commit AFTER the inline editor mounts and focuses; the close's
   // focus restore refocused the trigger, blurring the editor, whose blur-cancel

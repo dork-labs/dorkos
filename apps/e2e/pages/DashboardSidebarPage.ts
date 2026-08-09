@@ -57,9 +57,23 @@ export class DashboardSidebarPage {
     await this.newSessionButton.first().click();
   }
 
+  /** The sidebar panel itself — the surface the density is measured against. */
+  get panel(): Locator {
+    return this.page.locator('[data-slot="sidebar-inner"]');
+  }
+
   /** One agent row in the roster, matched by its rendered display name. */
   agentRow(displayName: string): Locator {
     return this.page.locator('[data-slot="agent-list-item"]').filter({ hasText: displayName });
+  }
+
+  /**
+   * Any sidebar row — session, room, thread, agent — as the shared `SidebarRow`
+   * primitive stamps them. This is the mark the roving-focus hook finds its rows
+   * by, so it is also the honest answer to "what is a row".
+   */
+  get rows(): Locator {
+    return this.page.locator('[data-sidebar-row]');
   }
 
   /** A group's header toggle button — shows the group name, expands/collapses. */
@@ -70,6 +84,27 @@ export class DashboardSidebarPage {
   /** The `SidebarGroup` wrapper (header + member rows) for one user-defined group. */
   groupContainer(name: string): Locator {
     return this.page.locator('[data-slot="sidebar-group"]').filter({ has: this.groupHeader(name) });
+  }
+
+  /**
+   * How far a row's own content sits from the panel's left edge, in CSS pixels.
+   *
+   * Measured from the row BUTTON's content box — its border box minus its own
+   * left padding — because the inset is what a reader sees, not where the
+   * clickable area starts. The redesign pays it in exactly two places (the
+   * panel's 8px and the row's 8px) and nowhere else; before it, three levels
+   * each added their own and the total was 30px.
+   *
+   * @param row - The row to measure.
+   */
+  async rowInset(row: Locator): Promise<number> {
+    const panelBox = await this.panel.boundingBox();
+    if (!panelBox) throw new Error('the sidebar panel is not visible');
+    return row.evaluate((element, panelLeft) => {
+      const box = element.getBoundingClientRect();
+      const padding = parseFloat(getComputedStyle(element).paddingLeft);
+      return Math.round(box.left + padding - panelLeft);
+    }, panelBox.x);
   }
 
   /**

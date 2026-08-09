@@ -2,10 +2,21 @@ import { useMemo } from 'react';
 import type { RoomSummary } from '@dorkos/shared/room-schemas';
 import type { Session } from '@dorkos/shared/types';
 import { useNow } from '@/layers/shared/model';
-import { SidebarProvider, Sidebar, SidebarContent, SidebarMenu } from '@/layers/shared/ui';
-import { mergeJumpBackIn, type JumpBackInRoomItem } from '@/layers/entities/recents';
-import { JumpBackInRoomRow, JumpBackInSessionRow } from '@/layers/features/dashboard-sidebar';
-import type { IdentityMark } from '@/layers/entities/room';
+import {
+  SidebarProvider,
+  Sidebar,
+  SidebarContent,
+  SidebarMenu,
+  SidebarRow,
+} from '@/layers/shared/ui';
+import { formatRelativeTime } from '@/layers/shared/lib';
+import {
+  mergeJumpBackIn,
+  type JumpBackInRoomItem,
+  type JumpBackInSessionItem,
+} from '@/layers/entities/recents';
+import { AgentAvatar } from '@/layers/entities/agent';
+import { RoomAvatar, RoomTitle, type IdentityMark } from '@/layers/entities/room';
 import { JumpBackInPopover } from '@/layers/features/jump-back-in';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
@@ -180,26 +191,14 @@ export function JumpBackInShowcases() {
           <SidebarShell>
             {items.map((item, index) =>
               item.kind === 'session' ? (
-                <JumpBackInSessionRow
+                <SessionRowDemo
                   key={item.id}
                   item={item}
-                  agent={null}
                   displayName="code-reviewer"
                   isActive={index === 1}
-                  onClick={() => {}}
                 />
               ) : (
-                <JumpBackInRoomRow
-                  key={item.id}
-                  item={item}
-                  visual={
-                    item.room.kind === 'dm'
-                      ? { kind: 'identity', visual: { color: '#6366f1', emoji: '🔍' } }
-                      : { kind: 'sigil' }
-                  }
-                  isActive={index === 1}
-                  onClick={() => {}}
-                />
+                <RoomRowDemo key={item.id} item={item} isActive={index === 1} />
               )
             )}
           </SidebarShell>
@@ -209,14 +208,12 @@ export function JumpBackInShowcases() {
         <ShowcaseDemo>
           <SidebarShell>
             {firstChannel && (
-              <JumpBackInRoomRow
+              <RoomRowDemo
                 item={{
                   ...firstChannel,
                   summary:
                     'A summary long enough that it has to be cut off rather than wrapping onto a third line',
                 }}
-                visual={{ kind: 'sigil' }}
-                onClick={() => {}}
               />
             )}
           </SidebarShell>
@@ -225,5 +222,61 @@ export function JumpBackInShowcases() {
 
       <JumpBackInPopoverShowcase />
     </>
+  );
+}
+
+
+/**
+ * One session row, as the sidebar draws it: `Agent › title` with the origin
+ * mark and the relative time in the meta slot.
+ */
+function SessionRowDemo({
+  item,
+  displayName,
+  isActive = false,
+}: {
+  item: JumpBackInSessionItem;
+  displayName: string;
+  isActive?: boolean;
+}) {
+  return (
+    <SidebarRow
+      glyph={<AgentAvatar color="#6366f1" emoji="🔍" size="xs" />}
+      who={displayName}
+      title={item.name}
+      isActive={isActive}
+      preview={item.summary}
+      onSelect={() => {}}
+      trailing={
+        <span className="text-sidebar-foreground/50 text-[11px]">
+          {formatRelativeTime(item.lastActivityAt)}
+        </span>
+      }
+    />
+  );
+}
+
+/** One room row: the place, so no attribution and no `›`. */
+function RoomRowDemo({ item, isActive = false }: { item: JumpBackInRoomItem; isActive?: boolean }) {
+  return (
+    <SidebarRow
+      glyph={
+        <RoomAvatar
+          room={item.room}
+          participants={item.room.participants}
+          visuals={item.room.kind === 'dm' ? [{ color: '#6366f1', emoji: '🔍' }] : []}
+        />
+      }
+      title={<RoomTitle room={item.room} />}
+      titleText={item.name}
+      isActive={isActive}
+      preview={item.summary}
+      onSelect={() => {}}
+      trailing={
+        <span className="text-sidebar-foreground/50 text-[11px]">
+          {formatRelativeTime(item.lastActivityAt)}
+        </span>
+      }
+    />
   );
 }

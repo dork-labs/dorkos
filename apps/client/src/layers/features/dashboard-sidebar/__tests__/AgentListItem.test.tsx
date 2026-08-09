@@ -93,8 +93,13 @@ vi.mock('@/layers/entities/session', async (importOriginal) => {
   };
 });
 
-vi.mock('../ui/AgentContextMenu', () => ({
-  AgentContextMenu: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+vi.mock('../ui/AgentRowMenuItems', () => ({
+  // The row's menu reads `ui.sidebar` through the config entity, which needs a
+  // transport this file deliberately does not stand up. The menu's own contents
+  // are `AgentRowMenuItems.test.tsx`'s subject; here it is just "there is a
+  // menu", so an empty list keeps the row's chrome honest (no ⋮ with nothing
+  // behind it) without dragging a query client into every case.
+  useAgentRowMenuNodes: () => [],
 }));
 
 vi.mock('../ui/AgentActivityBadge', () => ({
@@ -434,15 +439,19 @@ describe('AgentListItem', () => {
   describe('muted rendering', () => {
     it('is not dimmed and shows no mute glyph by default', () => {
       const { container } = renderItem();
-      const bordered = container.querySelector('[data-slot="agent-list-item"]')!.parentElement!;
-      expect(bordered.className).not.toContain('opacity-60');
+      // The dimming rides the row's outer wrapper — the same element the drag
+      // layer binds to — so the row and its menu chrome dim together.
+      const dimmed = container.querySelector('[data-slot="agent-list-item"]')!.closest('li')!
+        .firstElementChild!;
+      expect(dimmed.className).not.toContain('opacity-60');
       expect(screen.queryByLabelText('Muted')).not.toBeInTheDocument();
     });
 
     it('dims the row and shows a mute glyph when muted', () => {
       const { container } = renderItem({ isMuted: true });
-      const bordered = container.querySelector('[data-slot="agent-list-item"]')!.parentElement!;
-      expect(bordered.className).toContain('opacity-60');
+      const dimmed = container.querySelector('[data-slot="agent-list-item"]')!.closest('li')!
+        .firstElementChild!;
+      expect(dimmed.className).toContain('opacity-60');
       expect(screen.getByLabelText('Muted')).toBeInTheDocument();
     });
 

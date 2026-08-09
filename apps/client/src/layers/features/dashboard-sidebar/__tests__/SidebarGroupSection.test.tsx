@@ -3,7 +3,15 @@ import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vite
 import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import type { SidebarGroup, SidebarPrefs } from '@dorkos/shared/config-schema';
-import { GroupHeader } from '../ui/GroupHeader';
+import { SidebarGroupSection } from '../ui/SidebarGroupSection';
+import type { SidebarItem } from '../model/sidebar-item';
+
+// The collapsed-group activity dot subscribes to live agent status; the header
+// under test only cares whether the answer is yes.
+let mockHasActivity = false;
+vi.mock('@/layers/entities/session', () => ({
+  useAgentsAggregateStatus: () => mockHasActivity,
+}));
 
 // ---------------------------------------------------------------------------
 // Mocks — capture which pure helper each committed updater invokes.
@@ -85,6 +93,26 @@ function makeGroup(overrides: Partial<SidebarGroup> = {}): SidebarGroup {
   };
 }
 
+/** One member row's view model — only the fields the section itself reads. */
+function makeMember(path: string): SidebarItem {
+  return {
+    ref: { kind: 'agent', path },
+    name: path.split('/').pop() ?? path,
+    lastActiveAt: null,
+    attention: 'active',
+    muted: false,
+    visual: { kind: 'identity', visual: { color: '#000', emoji: '🤖' } },
+  };
+}
+
+/**
+ * Mount the group's header through the section that owns it.
+ *
+ * The header IS the shared `SectionHeader` now, and what makes a group's header
+ * a group's header — its menu, its inline rename editor, its delete
+ * confirmation and its rule dialog — belongs to this section. So the section is
+ * what these tests drive; `memberCount` is simply how many members it is given.
+ */
 function renderHeader({
   group = makeGroup(),
   memberCount = 0,
@@ -100,14 +128,18 @@ function renderHeader({
   runtimeOptions?: { value: string; label: string }[];
   namespaceOptions?: string[];
 } = {}) {
+  mockHasActivity = showActivityDot;
+  const items =
+    derivedMemberPaths?.map(makeMember) ??
+    Array.from({ length: memberCount }, (_, i) => makeMember(`/agent-${i}`));
   render(
-    <GroupHeader
-      group={group}
-      memberCount={memberCount}
-      showActivityDot={showActivityDot}
-      derivedMemberPaths={derivedMemberPaths}
-      runtimeOptions={runtimeOptions}
-      namespaceOptions={namespaceOptions}
+    <SidebarGroupSection
+      group={showActivityDot ? { ...group, collapsed: true } : group}
+      items={items}
+      mutedPaths={new Set()}
+      renderItem={() => null}
+      runtimeOptions={runtimeOptions ?? []}
+      namespaceOptions={namespaceOptions ?? []}
     />
   );
   return { group };
@@ -127,7 +159,7 @@ function openContextMenu() {
   fireEvent.contextMenu(screen.getByText('Clients'));
 }
 
-describe('GroupHeader', () => {
+describe('a group\u2019s section header', () => {
   beforeEach(() => {
     mockUpdate.mockReset();
     helperCalls.length = 0;

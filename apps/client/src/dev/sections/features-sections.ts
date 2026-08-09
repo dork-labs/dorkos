@@ -171,8 +171,8 @@ export const FEATURES_SECTIONS: PlaygroundSection[] = [
     ],
   },
   {
-    id: 'sidebarsectionheader',
-    title: 'SidebarSectionHeader',
+    id: 'sectionheader',
+    title: 'SectionHeader',
     page: 'features',
     category: 'Agent',
     keywords: [
@@ -183,6 +183,8 @@ export const FEATURES_SECTIONS: PlaygroundSection[] = [
       'context menu',
       'right-click',
       'collapse',
+      'chevron',
+      'morph',
       'sort',
       'show',
       'channels',
@@ -225,11 +227,11 @@ export const FEATURES_SECTIONS: PlaygroundSection[] = [
     keywords: ['agent', 'list', 'item', 'sidebar', 'expandable', 'row', 'pin', 'select'],
   },
   {
-    id: 'agentcontextmenu',
-    title: 'AgentContextMenu',
+    id: 'sidebarmenusurface',
+    title: 'SidebarMenuSurface',
     page: 'features',
     category: 'Agent',
-    keywords: ['agent', 'context', 'menu', 'right-click', 'pin', 'profile', 'sidebar'],
+    keywords: ['sidebar', 'menu', 'context', 'right-click', 'kebab', 'pin', 'profile', 'overflow'],
   },
   {
     id: 'agentonboardingcard',

@@ -1,4 +1,12 @@
-import type { ElementType, ReactNode } from 'react';
+/**
+ * An agent row's menu, built as data.
+ *
+ * The rendering half of this file moved to `shared/ui/sidebar-menu-node`, which
+ * is the sidebar's ONLY ContextMenu + DropdownMenu implementation. What is left
+ * is the model: what an agent row offers, and what each item does.
+ *
+ * @module features/dashboard-sidebar/ui/AgentRowMenuItems
+ */
 import {
   Pin,
   PinOff,
@@ -9,22 +17,8 @@ import {
   FolderMinus,
   BellOff,
   Bell,
-  type LucideIcon,
 } from 'lucide-react';
-import {
-  ContextMenuItem,
-  ContextMenuCheckboxItem,
-  ContextMenuSeparator,
-  ContextMenuSub,
-  ContextMenuSubTrigger,
-  ContextMenuSubContent,
-  DropdownMenuItem,
-  DropdownMenuCheckboxItem,
-  DropdownMenuSeparator,
-  DropdownMenuSub,
-  DropdownMenuSubTrigger,
-  DropdownMenuSubContent,
-} from '@/layers/shared/ui';
+import type { SidebarMenuNode } from '@/layers/shared/ui';
 import type { SidebarItemRef } from '@dorkos/shared/config-schema';
 import { sameSidebarItem } from '@dorkos/shared/config-schema';
 import {
@@ -37,19 +31,12 @@ import {
   unmuteItem,
 } from '@/layers/entities/config';
 
-/** Which Radix menu the shared item list renders into. */
-type AgentRowMenuVariant = 'context' | 'dropdown';
-
 /**
  * Single source of truth for an agent row's menu, expressed as data so the
- * ContextMenu (right-click) and DropdownMenu ("…") variants render the exact
- * same items — no hand-copied second list to drift.
+ * right-click ContextMenu and the "⋮" DropdownMenu render the exact same items
+ * — no hand-copied second list to drift.
  */
-type RowMenuNode =
-  | { type: 'item'; key: string; label: string; icon: LucideIcon; onSelect: () => void }
-  | { type: 'checkItem'; key: string; label: string; checked: boolean; onSelect: () => void }
-  | { type: 'separator'; key: string }
-  | { type: 'sub'; key: string; label: string; icon: LucideIcon; items: RowMenuNode[] };
+export type RowMenuNode = SidebarMenuNode;
 
 /** Inputs the pure item list is built from (fabricated directly in unit tests). */
 export interface RowMenuModel {
@@ -78,18 +65,18 @@ export interface RowMenuModel {
 
 /**
  * Build the ordered agent-row menu items from a model. Pure — exported so the
- * item definitions can be asserted directly and shared by both menu variants.
+ * item definitions can be asserted directly and shared by every renderer.
  *
  * @param model - Pin/group state plus the action callbacks.
  * @internal Exported for testing and cross-variant rendering.
  */
 export function buildRowMenuNodes(model: RowMenuModel): RowMenuNode[] {
   const groupTargets: RowMenuNode[] = model.groups.map((g) => ({
-    type: 'checkItem',
-    key: `group-${g.id}`,
+    kind: 'choice',
+    id: `group-${g.id}`,
     label: g.name,
     checked: g.id === model.currentGroupId,
-    onSelect: () => model.onMoveToGroup(g.id),
+    run: () => model.onMoveToGroup(g.id),
   }));
 
   const moveItems: RowMenuNode[] = [
@@ -97,145 +84,82 @@ export function buildRowMenuNodes(model: RowMenuModel): RowMenuNode[] {
     ...(model.currentGroupId !== null
       ? [
           {
-            type: 'item' as const,
-            key: 'remove-from-group',
+            kind: 'action' as const,
+            id: 'remove-from-group',
             label: 'Remove from group',
             icon: FolderMinus,
-            onSelect: () => model.onMoveToGroup(null),
+            opensInput: false,
+            run: () => model.onMoveToGroup(null),
           },
         ]
       : []),
-    { type: 'separator', key: 'move-sep' },
+    { kind: 'separator', id: 'move-sep' },
     {
-      type: 'item',
-      key: 'new-group',
-      label: 'New group…',
+      kind: 'action',
+      id: 'new-group',
+      label: 'New group',
       icon: FolderPlus,
-      onSelect: model.onNewGroup,
+      // Earns the ellipsis the renderer appends: it mounts the inline name
+      // editor rather than creating anything on the spot — and that is also what
+      // arms the menu's close-focus guard (DOR-329).
+      opensInput: true,
+      run: model.onNewGroup,
     },
   ];
 
   return [
     {
-      type: 'item',
-      key: 'pin',
+      kind: 'action',
+      id: 'pin',
       label: model.isPinned ? 'Unpin agent' : 'Pin agent',
       icon: model.isPinned ? PinOff : Pin,
-      onSelect: model.onTogglePin,
+      opensInput: false,
+      run: model.onTogglePin,
     },
     {
-      type: 'item',
-      key: 'mute',
+      kind: 'action',
+      id: 'mute',
       label: model.isMuted ? 'Unmute agent' : 'Mute agent',
       icon: model.isMuted ? Bell : BellOff,
-      onSelect: model.onToggleMute,
+      opensInput: false,
+      run: model.onToggleMute,
     },
     {
-      type: 'sub',
-      key: 'move-to-group',
+      kind: 'submenu',
+      id: 'move-to-group',
       label: 'Move to group',
       icon: FolderInput,
       items: moveItems,
     },
-    { type: 'separator', key: 'sep-1' },
+    { kind: 'separator', id: 'sep-1' },
     {
-      type: 'item',
-      key: 'profile',
+      kind: 'action',
+      id: 'profile',
       // Named for what it opens, not for what it used to be called: the row's
       // own face opens the profile DRAWER now (DOR-957), and two controls that
       // close together cannot both claim the word "profile". Same destination
       // as before — the Agent Hub in the right panel.
       label: 'Agent hub',
       icon: PanelRight,
-      onSelect: model.onOpenProfile,
+      opensInput: false,
+      run: model.onOpenProfile,
     },
-    { type: 'separator', key: 'sep-2' },
+    { kind: 'separator', id: 'sep-2' },
     {
-      type: 'item',
-      key: 'new-session',
+      kind: 'action',
+      id: 'new-session',
       label: 'New session',
       icon: Plus,
-      onSelect: model.onNewSession,
+      opensInput: false,
+      run: model.onNewSession,
     },
   ];
 }
 
-/**
- * Slot primitives one menu family provides. Both variants render through the
- * SAME {@link renderNodes} walk — only the primitives differ — so the two menus
- * cannot structurally drift.
- */
-interface RowMenuSlots {
-  Item: ElementType;
-  CheckboxItem: ElementType;
-  Separator: ElementType;
-  Sub: ElementType;
-  SubTrigger: ElementType;
-  SubContent: ElementType;
-}
-
-const VARIANT_SLOTS: Record<AgentRowMenuVariant, RowMenuSlots> = {
-  context: {
-    Item: ContextMenuItem,
-    CheckboxItem: ContextMenuCheckboxItem,
-    Separator: ContextMenuSeparator,
-    Sub: ContextMenuSub,
-    SubTrigger: ContextMenuSubTrigger,
-    SubContent: ContextMenuSubContent,
-  },
-  dropdown: {
-    Item: DropdownMenuItem,
-    CheckboxItem: DropdownMenuCheckboxItem,
-    Separator: DropdownMenuSeparator,
-    Sub: DropdownMenuSub,
-    SubTrigger: DropdownMenuSubTrigger,
-    SubContent: DropdownMenuSubContent,
-  },
-};
-
-/** Render the shared nodes through one generic walk using the given slots. */
-function renderNodes(nodes: RowMenuNode[], slots: RowMenuSlots): ReactNode {
-  const { Item, CheckboxItem, Separator, Sub, SubTrigger, SubContent } = slots;
-  return nodes.map((node) => {
-    switch (node.type) {
-      case 'separator':
-        return <Separator key={node.key} />;
-      case 'item': {
-        const Icon = node.icon;
-        return (
-          <Item key={node.key} onClick={node.onSelect}>
-            <Icon className="mr-2 size-4" />
-            {node.label}
-          </Item>
-        );
-      }
-      case 'checkItem':
-        return (
-          <CheckboxItem key={node.key} checked={node.checked} onClick={node.onSelect}>
-            {node.label}
-          </CheckboxItem>
-        );
-      case 'sub': {
-        const Icon = node.icon;
-        return (
-          <Sub key={node.key}>
-            <SubTrigger>
-              <Icon className="mr-2 size-4" />
-              {node.label}
-            </SubTrigger>
-            <SubContent className="w-48">{renderNodes(node.items, slots)}</SubContent>
-          </Sub>
-        );
-      }
-    }
-  });
-}
-
-interface AgentRowMenuItemsProps {
+/** What an agent row's menu needs from its caller — everything the sidebar does not own itself. */
+export interface AgentRowMenuParams {
   /** Agent projectPath the menu acts on. */
   path: string;
-  /** Which Radix menu family to render into. */
-  variant: AgentRowMenuVariant;
   /** Open the agent's profile in the right-panel hub. */
   onOpenProfile: () => void;
   /** Start a new session for this agent. */
@@ -245,18 +169,23 @@ interface AgentRowMenuItemsProps {
 }
 
 /**
- * The agent-row menu, rendered from ONE item definition into both the right-click
- * ContextMenu and the "…" DropdownMenu. Pin/Unpin, Mute/Unmute, and
- * Move-to-group read and mutate `ui.sidebar` directly (optimistic), so
- * callers only supply the row actions the sidebar owns.
+ * The agent row's menu, wired to `ui.sidebar`.
+ *
+ * Pin/Unpin, Mute/Unmute and Move-to-group read and mutate the stored sidebar
+ * prefs directly (optimistically), so callers only supply the row actions the
+ * sidebar does not own.
+ *
+ * A hook rather than a component: the row primitive takes its menu as a node
+ * list, and reading prefs is the only reason this needed a React tree at all.
+ *
+ * @param params - The agent and the actions its row cannot perform itself.
  */
-export function AgentRowMenuItems({
+export function useAgentRowMenuNodes({
   path,
-  variant,
   onOpenProfile,
   onNewSession,
   onRequestNewGroup,
-}: AgentRowMenuItemsProps) {
+}: AgentRowMenuParams): RowMenuNode[] {
   const prefs = useSidebarPrefs();
   const { update } = useUpdateSidebarPrefs();
 
@@ -266,7 +195,7 @@ export function AgentRowMenuItems({
   const currentGroupId =
     prefs.groups.find((g) => g.items.some((m) => sameSidebarItem(m, ref)))?.id ?? null;
 
-  const nodes = buildRowMenuNodes({
+  return buildRowMenuNodes({
     isPinned,
     isMuted,
     currentGroupId,
@@ -278,6 +207,4 @@ export function AgentRowMenuItems({
     onMoveToGroup: (groupId) => update((prev) => moveToGroup(prev, ref, groupId)),
     onNewGroup: () => onRequestNewGroup(ref),
   });
-
-  return <>{renderNodes(nodes, VARIANT_SLOTS[variant])}</>;
 }

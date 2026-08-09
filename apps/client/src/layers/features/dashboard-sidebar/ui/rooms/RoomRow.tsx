@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
-import { BellOff, MoreHorizontal } from 'lucide-react';
+import { BellOff } from 'lucide-react';
 import { toast } from 'sonner';
 import { agentAuthorRef, type RoomSummary } from '@dorkos/shared/room-schemas';
 import type { SidebarItemRef } from '@dorkos/shared/config-schema';
@@ -23,14 +23,8 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  ContextMenu,
-  ContextMenuContent,
-  ContextMenuTrigger,
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuTrigger,
-  SidebarMenuAction,
-  SidebarMenuItem,
+  SidebarRow,
+  statusDotClass,
 } from '@/layers/shared/ui';
 import {
   RoomAvatar,
@@ -43,10 +37,9 @@ import {
   useRoomWorking,
   useUnarchiveRoom,
 } from '@/layers/entities/room';
-import { useMenuCloseFocusGuard } from '../../model/use-menu-close-focus-guard';
 import { sidebarItemFaces, type SidebarItemVisual } from '../../model/sidebar-item';
 import { DISABLED_SORTABLE_BINDINGS, type SortableBindings } from '../dnd/SidebarDndPrimitives';
-import { RoomRowMenuItems } from './RoomRowMenuItems';
+import { buildRoomRowMenuNodes } from './RoomRowMenuItems';
 import { RoomDetailsDialog, type RoomDetailsFocus } from '@/layers/features/room-management';
 
 /** Longest room name the server accepts (`UpdateRoomRequestSchema.title`). */
@@ -137,16 +130,11 @@ export function RoomRow({
   const archiveRoom = useArchiveRoom();
   const unarchiveRoom = useUnarchiveRoom();
 
-  // "Rename…" mounts an inline editor, and the launching menu closes in a SECOND
-  // commit whose focus restore would blur it — blur-cancelling the editor before
-  // anyone sees it (DOR-329). Armed by startRename, wired onto BOTH contents.
-  //
-  // "Edit topic…" needs the same guard for the same reason, one layer further
-  // out: it opens the room sheet with the topic already in its editor, and that
-  // editor blur-commits. Without arming, the menu's restore closed it in the
-  // commit after it appeared and the reader was left looking at a topic line
-  // they had just asked to type in.
-  const { arm: armCloseFocusGuard, onCloseAutoFocus } = useMenuCloseFocusGuard();
+  // "Rename…" and "Edit topic…" both mount an editor that blur-commits, and the
+  // launching menu closes in a SECOND commit whose focus restore would blur it
+  // (DOR-329). Both nodes carry `opensInput: true`, which is what arms the
+  // shared surface's close-focus guard — the arming lives there now, once,
+  // instead of at every call site.
 
   useEffect(() => {
     if (isRenaming) {
@@ -159,7 +147,6 @@ export function RoomRow({
   }, [isRenaming]);
 
   const startRename = () => {
-    armCloseFocusGuard();
     // Seeded from `title`, not from what the row draws: a channel row reads
     // `#general` and the thing being edited is the name behind it.
     setRenameValue(room.title);
@@ -284,168 +271,106 @@ export function RoomRow({
       updateSidebarPrefs((prev) => (isMuted ? unmuteItem(prev, roomRef) : muteItem(prev, roomRef))),
     onMoveToGroup: (groupId: string | null) =>
       updateSidebarPrefs((prev) => moveToGroup(prev, roomRef, groupId)),
-    onNewGroup: () => {
-      // The inline name editor mounts elsewhere in the sidebar and the menu
-      // closes in a second commit whose focus restore would blur it — the same
-      // race "Rename…" arms this guard for.
-      armCloseFocusGuard();
-      onRequestNewGroup(roomRef);
-    },
+    onNewGroup: () => onRequestNewGroup(roomRef),
     onAddAgents: () => setDetailsFocus('add'),
     onOpenMembers: () => setDetailsFocus('members'),
     onOpenAgentProfile,
     onRename: startRename,
-    onEditTopic: () => {
-      armCloseFocusGuard();
-      setDetailsFocus('topic');
-    },
+    onEditTopic: () => setDetailsFocus('topic'),
     onArchive: () => setArchiveOpen(true),
   };
 
   return (
-    <SidebarMenuItem>
-      {/* The drag root. Separate from the context-menu trigger below because
-          dnd-kit registers this node as its own activator: a keydown has to
-          land on the row itself to pick it up, so the "…" trigger and the
-          rename editor inside keep their own keyboard behaviour. */}
-      <div
-        ref={setDragNodeRef}
-        style={dragStyle}
-        {...dragHandleProps}
-        className={cn(
-          'focus-visible:ring-sidebar-ring rounded-md outline-hidden focus-visible:ring-2',
-          isDragging && 'opacity-40',
-          isOver && 'ring-sidebar-ring ring-2',
-          // Muted dims the whole row and drops the unread emphasis below, the
-          // same way a muted agent row reads (DOR-339): still there, still
-          // clickable, just no longer asking for anything.
-          isMuted && 'opacity-60'
-        )}
-      >
-        <ContextMenu>
-          <ContextMenuTrigger asChild>
-            <div className="group/room relative">
-              {isRenaming ? (
-                <div className="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5">
-                  <RoomAvatar room={room} participants={room.participants} visuals={faces} />
-                  <input
-                    ref={renameRef}
-                    value={renameValue}
-                    maxLength={MAX_NAME}
-                    aria-label={`Rename ${title}`}
-                    onChange={(e) => setRenameValue(e.target.value)}
-                    onKeyDown={handleRenameKeyDown}
-                    onBlur={commitRename}
-                    // The row is a context-menu trigger, and this field sits
-                    // inside it. Without this, right-clicking to paste opened the
-                    // ROOM menu, which blurred the editor and blur-committed a
-                    // half-typed name nobody confirmed. Propagation stops here so
-                    // the browser's own edit menu appears instead; the event is
-                    // deliberately not prevented, because that menu is the whole
-                    // point of right-clicking a text field.
-                    onContextMenu={(e) => e.stopPropagation()}
-                    className={cn(
-                      'bg-background text-foreground',
-                      'focus-visible:ring-ring min-w-0 flex-1 rounded border px-1.5 py-0.5 text-xs outline-none focus-visible:ring-1'
-                    )}
-                  />
-                </div>
-              ) : (
-                <button
-                  ref={rowRef}
-                  type="button"
-                  onClick={onSelect}
-                  aria-current={isActive ? 'page' : undefined}
-                  className={cn(
-                    'focus-visible:ring-sidebar-ring flex w-full items-center gap-2 rounded-md py-1.5 pr-7 pl-2.5 text-left text-xs outline-hidden transition-colors duration-100 focus-visible:ring-2 active:scale-[0.98]',
-                    isActive
-                      ? 'bg-sidebar-accent text-sidebar-accent-foreground'
-                      : 'text-muted-foreground hover:bg-accent hover:text-foreground',
-                    unread && !isActive && !isMuted && 'text-foreground font-medium'
-                  )}
-                >
-                  <RoomAvatar room={room} participants={room.participants} visuals={faces} />
-                  <RoomTitle room={room} className="min-w-0 flex-1" />
-                  {isMuted && (
-                    <BellOff
-                      className="text-muted-foreground/60 size-3 shrink-0"
-                      aria-label="Muted"
-                    />
-                  )}
-                  {working > 0 && (
-                    <span
-                      // `img` because the dot has no text of its own: a bare
-                      // `aria-label` on a generic element is not reliably read
-                      // out, and a role is what turns this from decoration into
-                      // something with a name.
-                      role="img"
-                      // The success token, which is this cockpit's colour for
-                      // "live" — deliberately NOT the brand tint of the unread
-                      // badge it sits beside. Two facts about one row have to be
-                      // tellable apart at a glance, and a second orange mark next
-                      // to an orange pill reads as part of it.
-                      //
-                      // The TOKEN and not the raw palette value it happens to
-                      // resolve to: `RoomMemberRow` draws the identical fact with
-                      // `bg-status-success`, and one fact wearing two spellings is
-                      // one that drifts the first time either theme moves.
-                      className="bg-status-success size-1.5 shrink-0 rounded-full motion-safe:animate-pulse"
-                      // A dot, and nothing else. The unread badge beside it counts
-                      // messages waiting to be read; this counts work in flight,
-                      // which is a fact about right now that will be gone shortly
-                      // and needs no number on screen to be useful. A reader who
-                      // cannot see it gets the count in the label, where a number
-                      // costs no room.
-                      //
-                      // Like the unread badge, it does not name the room again —
-                      // the row's own name is already the first half of what a
-                      // screen reader reads out.
-                      aria-label={working === 1 ? '1 agent working' : `${working} agents working`}
-                    />
-                  )}
-                  {unread && (
-                    <span
-                      className="bg-brand/15 text-brand shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium tabular-nums"
-                      // The room is NOT named again here. This label joins the row's own
-                      // name to make it, so repeating the room turned every unread row
-                      // into "#general 3 unread in #general" — the same name twice, which
-                      // is the defect this row was just fixed for.
-                      aria-label={`${room.unreadCount} unread`}
-                    >
-                      {room.unreadCount}
-                    </span>
-                  )}
-                </button>
+    <>
+      <SidebarRow
+        glyph={<RoomAvatar room={room} participants={room.participants} visuals={faces} />}
+        title={<RoomTitle room={room} />}
+        titleText={title}
+        isActive={isActive}
+        emphasized={unread}
+        muted={isMuted}
+        onSelect={onSelect}
+        buttonRef={rowRef}
+        menuNodes={buildRoomRowMenuNodes(menuModel)}
+        actionsLabel={`${title} actions`}
+        menuWidth="w-52"
+        alwaysShowActions={isMobile}
+        dragRef={setDragNodeRef}
+        dragProps={dragHandleProps}
+        dragStyle={dragStyle}
+        isDragging={isDragging}
+        isOver={isOver}
+        editor={
+          isRenaming ? (
+            <input
+              ref={renameRef}
+              value={renameValue}
+              maxLength={MAX_NAME}
+              aria-label={`Rename ${title}`}
+              onChange={(e) => setRenameValue(e.target.value)}
+              onKeyDown={handleRenameKeyDown}
+              onBlur={commitRename}
+              // The row is a context-menu trigger, and this field sits inside
+              // it. Without this, right-clicking to paste opened the ROOM menu,
+              // which blurred the editor and blur-committed a half-typed name
+              // nobody confirmed. Propagation stops here so the browser's own
+              // edit menu appears instead; the event is deliberately not
+              // prevented, because that menu is the whole point of
+              // right-clicking a text field.
+              onContextMenu={(e) => e.stopPropagation()}
+              className={cn(
+                'bg-background text-foreground',
+                'focus-visible:ring-ring min-w-0 flex-1 rounded border px-1.5 py-0.5 text-xs outline-none focus-visible:ring-1'
               )}
-
-              {!isRenaming && (
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <SidebarMenuAction
-                      showOnHover={!isMobile}
-                      aria-label={`${title} actions`}
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <MoreHorizontal className="size-4" />
-                    </SidebarMenuAction>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent
-                    side="right"
-                    align="start"
-                    className="w-52"
-                    onCloseAutoFocus={onCloseAutoFocus}
-                  >
-                    <RoomRowMenuItems variant="dropdown" {...menuModel} />
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              )}
-            </div>
-          </ContextMenuTrigger>
-          <ContextMenuContent className="w-52" onCloseAutoFocus={onCloseAutoFocus}>
-            <RoomRowMenuItems variant="context" {...menuModel} />
-          </ContextMenuContent>
-        </ContextMenu>
-      </div>
+            />
+          ) : undefined
+        }
+        trailing={
+          <>
+            {isMuted && (
+              <BellOff className="text-sidebar-foreground/50 size-3" aria-label="Muted" />
+            )}
+            {working > 0 && (
+              <span
+                // `img` because the dot has no text of its own: a bare
+                // `aria-label` on a generic element is not reliably read out,
+                // and a role is what turns this from decoration into something
+                // with a name.
+                role="img"
+                // The shared dot vocabulary — `statusDotClass('working')` is the
+                // success token plus the one pulse this cockpit spends on "right
+                // now". Deliberately NOT the brand tint of the unread badge it
+                // sits beside: two facts about one row have to be tellable apart
+                // at a glance, and a second orange mark next to an orange pill
+                // reads as part of it.
+                className={cn('size-1.5 rounded-full', statusDotClass('working'))}
+                // A dot, and nothing else. The unread badge beside it counts
+                // messages waiting to be read; this counts work in flight, which
+                // is a fact about right now that will be gone shortly and needs
+                // no number on screen to be useful. A reader who cannot see it
+                // gets the count in the label, where a number costs no room.
+                //
+                // Like the unread badge, it does not name the room again — the
+                // row's own name is already the first half of what a screen
+                // reader reads out.
+                aria-label={working === 1 ? '1 agent working' : `${working} agents working`}
+              />
+            )}
+            {unread && (
+              <span
+                className="bg-brand/15 text-brand rounded-full px-1.5 py-0.5 text-[10px] font-medium tabular-nums"
+                // The room is NOT named again here. This label joins the row's own
+                // name to make it, so repeating the room turned every unread row
+                // into "#general 3 unread in #general" — the same name twice, which
+                // is the defect this row was just fixed for.
+                aria-label={`${room.unreadCount} unread`}
+              >
+                {room.unreadCount}
+              </span>
+            )}
+          </>
+        }
+      />
 
       <AlertDialog open={archiveOpen} onOpenChange={setArchiveOpen}>
         <AlertDialogContent>
@@ -474,6 +399,6 @@ export function RoomRow({
           focus={detailsFocus}
         />
       )}
-    </SidebarMenuItem>
+    </>
   );
 }

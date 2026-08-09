@@ -1,13 +1,15 @@
 import { useState } from 'react';
-import { Plus } from 'lucide-react';
+import { Hash, Plus } from 'lucide-react';
 import type { RoomSummary } from '@dorkos/shared/room-schemas';
 import {
+  SectionHeader,
   SidebarGroup,
   SidebarGroupAction,
   SidebarMenu,
   SidebarMenuItem,
   SidebarMenuSkeleton,
 } from '@/layers/shared/ui';
+import { useRovingFocus } from '@/layers/shared/model';
 import {
   useSidebarPrefs,
   useUpdateSidebarPrefs,
@@ -17,7 +19,6 @@ import { ChannelCreateDialog } from '@/layers/features/room-management';
 import type { SidebarItemRef } from '@dorkos/shared/config-schema';
 import type { SidebarItemVisual } from '../../model/sidebar-item';
 import { useMarkRoomsRead } from '../../model/use-mark-rooms-read';
-import { SidebarSectionHeader } from '../SidebarSectionHeader';
 import { buildChannelsHeaderMenuNodes } from '../SectionHeaderMenuItems';
 import {
   Droppable,
@@ -101,13 +102,19 @@ export function ChannelsSection({
 
   const toggleCollapsed = () =>
     update((prev) => setChannelsCollapsed(prev, !prev.channelsCollapsed));
+  const roving = useRovingFocus({
+    onCollapse: () => !channelsCollapsed && toggleCollapsed(),
+    onExpand: () => channelsCollapsed && toggleCollapsed(),
+  });
 
   return (
-    <SidebarGroup>
-      <SidebarSectionHeader
+    <SidebarGroup className="px-0">
+      <SectionHeader
         label="Channels"
+        icon={Hash}
         collapsed={channelsCollapsed}
         onToggle={toggleCollapsed}
+        controlsId="sidebar-section-channels"
         hasSectionAction
         nodes={buildChannelsHeaderMenuNodes({
           collapsed: channelsCollapsed,
@@ -117,7 +124,11 @@ export function ChannelsSection({
           onToggleCollapsed: toggleCollapsed,
         })}
       />
-      <SidebarGroupAction aria-label="New channel" onClick={() => setCreating(true)}>
+      <SidebarGroupAction
+        className="right-2"
+        aria-label="New channel"
+        onClick={() => setCreating(true)}
+      >
         <Plus />
       </SidebarGroupAction>
 
@@ -139,14 +150,14 @@ export function ChannelsSection({
           id="container::channels"
           data={{ type: 'container', container: { kind: 'ungrouped', section: SECTION_LABEL } }}
         >
-          <SidebarMenu>
+          <SidebarMenu id="sidebar-section-channels" {...roving}>
             {isLoading && channels.length === 0 ? (
               Array.from({ length: SKELETON_ROWS }, (_, i) => (
                 <SidebarMenuSkeleton key={`channel-skeleton-${i}`} showIcon />
               ))
             ) : error ? (
               <SidebarMenuItem>
-                <p className="text-muted-foreground px-2.5 py-1.5 text-xs">
+                <p className="text-sidebar-foreground/60 px-2 py-1.5 text-xs">
                   Couldn&apos;t load your channels. They&apos;re still there — reload to try again.
                 </p>
               </SidebarMenuItem>
@@ -183,7 +194,7 @@ export function ChannelsSection({
 
                 {channels.length === 0 && (
                   <SidebarMenuItem>
-                    <p className="text-muted-foreground px-2.5 py-1.5 text-xs">
+                    <p className="text-sidebar-foreground/60 px-2 py-1.5 text-xs">
                       {hasGroupedChannels
                         ? 'Your channels are all in groups above.'
                         : 'No channels yet — create one to get a few agents talking in the same place.'}

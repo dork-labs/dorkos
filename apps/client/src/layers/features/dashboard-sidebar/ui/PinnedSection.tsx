@@ -1,4 +1,6 @@
-import { SidebarGroup, SidebarGroupLabel, SidebarMenu } from '@/layers/shared/ui';
+import { Pin } from 'lucide-react';
+import { SectionHeader, SidebarGroup, SidebarMenu } from '@/layers/shared/ui';
+import { useRovingFocus } from '@/layers/shared/model';
 import { Droppable, SortableList, sidebarRowDndId } from './dnd/SidebarDndPrimitives';
 import type { RenderSidebarItem, SidebarItem } from '../model/sidebar-item';
 
@@ -20,14 +22,16 @@ interface PinnedSectionProps {
  * sidebar that no sort mode overrides.
  */
 export function PinnedSection({ items, renderItem }: PinnedSectionProps) {
+  const roving = useRovingFocus();
   return (
-    <SidebarGroup>
-      <SidebarGroupLabel className="text-sidebar-foreground/70 text-xs font-medium tracking-wider uppercase">
-        Pinned
-      </SidebarGroupLabel>
+    <SidebarGroup className="px-0">
+      {/* No collapse and no menu: Pins is the one section that appears purely
+          because you put something in it, and folding away the shortcuts you
+          hand-made is a control nobody reaches for. */}
+      <SectionHeader label="Pinned" icon={Pin} />
       <Droppable id="container::pinned" data={{ type: 'container', container: { kind: 'pinned' } }}>
         <SortableList items={items.map((item) => sidebarRowDndId('pinned', item.ref))}>
-          <SidebarMenu>
+          <SidebarMenu {...roving}>
             {items.map((item) =>
               // A pinned ROOM stays undraggable: dragging it out would unpin
               // it, and the room menu offers no Pin to undo that (rooms sort by

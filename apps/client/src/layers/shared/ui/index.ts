@@ -106,9 +106,9 @@ export {
   IDENTITY_BADGE_WAKE,
 } from './identity-avatar';
 export type { IdentityAvatarProps } from './identity-avatar';
-export { AGENT_GLYPH, platformGlyph } from './identity-glyphs';
+export { AGENT_GLYPH, ORIGIN_GLYPH, platformGlyph } from './identity-glyphs';
 export type { IdentityGlyph } from './identity-glyphs';
-export { STATUS_DOT_COLOR, STATUS_DOT_PULSE, statusDotClass } from './status-dot';
+export { STATUS_DOT_COLOR, STATUS_DOT_HALO, STATUS_DOT_PULSE, statusDotClass } from './status-dot';
 export type { IdentityStatus, StatusSignal } from './status-dot';
 export { IdentityHoverCard } from './identity-hover-card';
 export type {
@@ -339,3 +339,19 @@ export {
   type AnchorStatus,
   type AnchorResolution,
 } from './tour-spotlight';
+
+// ── The sidebar's two shared primitives, and the menu-as-data they both render ──
+export { SidebarMenuNodes, SidebarMenuSurface } from './sidebar-menu-node';
+export type {
+  SidebarMenuActionNode,
+  SidebarMenuChoice,
+  SidebarMenuNode,
+  SidebarMenuNote,
+  SidebarMenuRadioSubmenu,
+  SidebarMenuSubmenu,
+  SidebarMenuVariant,
+} from './sidebar-menu-node';
+export { SidebarRow, SIDEBAR_ROW_INSET } from './sidebar-row';
+export type { SidebarRowProps } from './sidebar-row';
+export { SectionHeader } from './section-header';
+export type { SectionHeaderProps } from './section-header';

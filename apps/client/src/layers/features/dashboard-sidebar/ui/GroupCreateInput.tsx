@@ -54,7 +54,7 @@ export function GroupCreateInput({ onCommit, onCancel }: GroupCreateInputProps) 
 
   return (
     <SidebarMenuItem>
-      <div className="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5">
+      <div className="flex w-full items-center gap-2 rounded-md px-2 py-1.5">
         <FolderPlus className="text-muted-foreground size-3.5 shrink-0" />
         <input
           ref={inputRef}

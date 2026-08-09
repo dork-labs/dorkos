@@ -105,4 +105,66 @@ test.describe('Dashboard Sidebar — Groups @smoke', () => {
     await expect(groupAfterReload).toBeVisible();
     await expect(groupAfterReload).toContainText(agentName);
   });
+
+  test('measures 272px wide, insets every row by 16px, and draws no hairlines', async ({
+    page,
+    dashboardSidebar,
+  }) => {
+    // **P1 AC-5, measured in a real browser rather than asserted from classes.**
+    // The density is the visible half of this redesign: 272px of panel, one
+    // 16px inset paid in two places instead of 30px stacked up in three, and
+    // separation by tint rather than by a 1px line (spec R1).
+    const panel = dashboardSidebar.panel;
+    await expect(panel).toBeVisible();
+
+    const panelBox = await panel.boundingBox();
+    expect(panelBox?.width).toBe(272);
+
+    // Every row, not a sampled one: the inset is a property of the shared row
+    // primitive, so a section that opted out of it is exactly the regression
+    // this catches.
+    const rows = dashboardSidebar.rows;
+    const rowCount = await rows.count();
+    expect(rowCount).toBeGreaterThan(0);
+    for (let i = 0; i < rowCount; i++) {
+      expect(await dashboardSidebar.rowInset(rows.nth(i))).toBe(16);
+    }
+
+    // No `border-b` / `border-t` anywhere in the sidebar tree. The header's
+    // underline and the footer's overline are the two that went; the assertion
+    // is over the whole panel so a new one cannot creep back in either.
+    //
+    // Matched on whole class TOKENS rather than as a substring: `border-border`
+    // contains the letters "border-b" and is a colour, not an edge — a substring
+    // selector would fail on the onboarding card's dashed frame, which is a
+    // shape rather than a separator.
+    const hairlines = await panel.evaluateAll((roots) =>
+      roots.flatMap((root) =>
+        Array.from(root.querySelectorAll('*'))
+          .filter((el) =>
+            Array.from(el.classList).some((token) => /^border-[bt](-|$)/.test(token))
+          )
+          .map((el) => el.className)
+      )
+    );
+    expect(hairlines).toEqual([]);
+  });
+
+  test('reveals a row’s ⋮ to the keyboard, not only to the pointer', async ({
+    page,
+    dashboardSidebar,
+  }) => {
+    // WCAG (spec R2): hover-revealed chrome always has a non-pointer path.
+    // Focus the trigger directly — `focus-visible` answers a programmatic focus
+    // that follows keyboard input, which is what a Tab into the row is.
+    const row = dashboardSidebar.agentRow(agentName);
+    await expect(row).toBeVisible();
+    const kebab = row.locator('..').getByRole('button', { name: 'Agent actions' });
+
+    await expect(kebab).toHaveCSS('opacity', '0');
+    await kebab.evaluate((element: HTMLElement) => element.focus());
+    await page.keyboard.press('Tab');
+    await page.keyboard.press('Shift+Tab');
+    await expect(kebab).toHaveCSS('opacity', '1');
+  });
 });

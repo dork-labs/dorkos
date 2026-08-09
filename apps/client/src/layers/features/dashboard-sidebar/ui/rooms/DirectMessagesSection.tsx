@@ -1,19 +1,21 @@
 import { useState } from 'react';
 import { toast } from 'sonner';
 import type { RoomSummary } from '@dorkos/shared/room-schemas';
+import { MessageSquare } from 'lucide-react';
 import {
+  SectionHeader,
   SidebarGroup,
   SidebarMenu,
   SidebarMenuItem,
   SidebarMenuSkeleton,
 } from '@/layers/shared/ui';
+import { useRovingFocus } from '@/layers/shared/model';
 import type { AgentPickerCandidate } from '@/layers/entities/agent';
 import { useSidebarPrefs, useUpdateSidebarPrefs, setDmsCollapsed } from '@/layers/entities/config';
 import { directMessageTitle, useStartDirectMessage } from '@/layers/entities/room';
 import type { SidebarItemRef } from '@dorkos/shared/config-schema';
 import type { SidebarItemVisual } from '../../model/sidebar-item';
 import { useMarkRoomsRead } from '../../model/use-mark-rooms-read';
-import { SidebarSectionHeader } from '../SidebarSectionHeader';
 import { buildDirectMessagesHeaderMenuNodes } from '../SectionHeaderMenuItems';
 import {
   Droppable,
@@ -120,13 +122,19 @@ export function DirectMessagesSection({
   };
 
   const toggleCollapsed = () => update((prev) => setDmsCollapsed(prev, !prev.dmsCollapsed));
+  const roving = useRovingFocus({
+    onCollapse: () => !dmsCollapsed && toggleCollapsed(),
+    onExpand: () => dmsCollapsed && toggleCollapsed(),
+  });
 
   return (
-    <SidebarGroup>
-      <SidebarSectionHeader
+    <SidebarGroup className="px-0">
+      <SectionHeader
         label="Direct messages"
+        icon={MessageSquare}
         collapsed={dmsCollapsed}
         onToggle={toggleCollapsed}
+        controlsId="sidebar-section-dms"
         hasSectionAction
         nodes={buildDirectMessagesHeaderMenuNodes({
           collapsed: dmsCollapsed,
@@ -145,14 +153,14 @@ export function DirectMessagesSection({
           id="container::dms"
           data={{ type: 'container', container: { kind: 'ungrouped', section: SECTION_LABEL } }}
         >
-          <SidebarMenu>
+          <SidebarMenu id="sidebar-section-dms" {...roving}>
             {isLoading && dms.length === 0 ? (
               Array.from({ length: SKELETON_ROWS }, (_, i) => (
                 <SidebarMenuSkeleton key={`dm-skeleton-${i}`} showIcon />
               ))
             ) : error ? (
               <SidebarMenuItem>
-                <p className="text-muted-foreground px-2.5 py-1.5 text-xs">
+                <p className="text-sidebar-foreground/60 px-2 py-1.5 text-xs">
                   Couldn&apos;t load your messages. They&apos;re still there — reload to try again.
                 </p>
               </SidebarMenuItem>
@@ -189,7 +197,7 @@ export function DirectMessagesSection({
 
                 {dms.length === 0 && (
                   <SidebarMenuItem>
-                    <p className="text-muted-foreground px-2.5 py-1.5 text-xs">
+                    <p className="text-sidebar-foreground/60 px-2 py-1.5 text-xs">
                       {hasGroupedDms
                         ? 'Your conversations are all in groups above.'
                         : 'No messages yet — start one to talk to an agent on its own, or to a few at once.'}

@@ -245,3 +245,13 @@ export type {
   ExecutionBreakageKind,
   ExecutionDeviation,
 } from './execution-config';
+
+export {
+  ROW_SESSION_MARKER,
+  ROW_TITLE_CLASS,
+  ROW_TRAILING_CLASS,
+  ROW_WHO_CLASS,
+  composeRowLabel,
+  hasSecondLine,
+} from './row-grammar';
+export { activityVerb, WAITING_ON_YOU_VERB } from './activity-verb';

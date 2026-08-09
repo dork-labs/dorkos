@@ -1,39 +1,34 @@
-import type { ElementType, ReactNode } from 'react';
+/**
+ * Every sidebar section header's menu, built as data.
+ *
+ * The builders are pure and the nodes are Radix-free, so one list feeds the
+ * right-click menu, the "⋮" menu and — when they land — the command palette
+ * and the slash-command table. The rendering half of this file moved to
+ * `shared/ui/sidebar-menu-node`, which is now the sidebar's ONLY
+ * ContextMenu + DropdownMenu implementation.
+ *
+ * @module features/dashboard-sidebar/ui/SectionHeaderMenuItems
+ */
 import {
   ArrowUpDown,
+  Bell,
+  BellOff,
   CheckCheck,
   ChevronsDownUp,
   ChevronsUpDown,
   FolderPlus,
+  ListFilter,
+  Pencil,
   Plus,
-  type LucideIcon,
+  Trash2,
+  Users,
+  Wand2,
 } from 'lucide-react';
-import type { SidebarDisplayFilter } from '@dorkos/shared/config-schema';
-import {
-  ContextMenuItem,
-  ContextMenuSeparator,
-  ContextMenuSub,
-  ContextMenuSubTrigger,
-  ContextMenuSubContent,
-  ContextMenuRadioGroup,
-  ContextMenuRadioItem,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuSub,
-  DropdownMenuSubTrigger,
-  DropdownMenuSubContent,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
-} from '@/layers/shared/ui';
+import type { SidebarDisplayFilter, SidebarGroup } from '@dorkos/shared/config-schema';
+import type { SidebarMenuActionNode, SidebarMenuNode } from '@/layers/shared/ui';
 import { SECTION_SORT_OPTIONS, SORT_MENU_LABEL } from '../model/sort-sidebar-items';
-import {
-  DISPLAY_FILTER_OPTIONS,
-  DISPLAY_FILTER_MENU_LABEL,
-  DISPLAY_FILTER_MENU_ICON,
-} from './DisplayFilterMenu';
-
-/** Which Radix menu the shared item list renders into. */
-export type SectionHeaderMenuVariant = 'context' | 'dropdown';
+import { describeRules } from '../model/evaluate-smart-group';
+import { displayFilterNode } from './DisplayFilterMenu';
 
 /**
  * Stable identity of one section-header action.
@@ -50,59 +45,25 @@ export type SectionHeaderActionId =
   | 'new-group'
   | 'new-session'
   | 'mark-all-read'
-  | 'collapse';
+  | 'collapse'
+  | 'rename'
+  | 'mute'
+  | 'edit-rules'
+  | 'convert-to-manual'
+  | 'delete';
 
 /** Identity of one radio submenu. */
 export type SectionHeaderSubmenuId = 'display' | 'sort';
 
-/** One thing you can do to a whole section. */
-export interface SectionHeaderAction {
-  kind: 'action';
-  id: SectionHeaderActionId;
-  /**
-   * The bare verb phrase, with NO trailing ellipsis. The renderer appends it
-   * from {@link opensInput}, so the `…` convention is applied in one place
-   * rather than hand-typed per item — and a renderer with no such convention (a
-   * palette row, a slash command) gets a clean label.
-   */
-  label: string;
-  icon: LucideIcon;
-  /**
-   * The action needs more from the person before it can complete — it opens a
-   * dialog, a picker or an inline editor. That is what earns the `…`, and it is
-   * also what arms the menu's close-focus guard (DOR-329).
-   */
-  opensInput: boolean;
-  /** Perform it. */
-  run: () => void;
-}
-
-/** A radio submenu over one of the section's own settings. */
-export interface SectionHeaderSubmenu {
-  kind: 'submenu';
-  id: SectionHeaderSubmenuId;
-  label: string;
-  icon: LucideIcon;
-  /** The setting's current value — exactly one option carries the dot. */
-  value: string;
-  options: { value: string; label: string }[];
-  /** Write the newly-chosen value back to the section's own state. */
-  onChange: (value: string) => void;
-}
-
 /**
- * A section header's menu as data.
+ * A section header's menu as data — the shared sidebar node type.
  *
- * Carries nothing Radix-shaped, which is what lets the right-click
- * `ContextMenu` and the "…" `DropdownMenu` consume ONE list — the invariant
- * spec `rooms` §14.1 states, and the reason a header's two menus cannot drift
- * apart. Modelled on {@link RoomRowMenuNode}, so a row menu and a header menu
- * are the same kind of thing with the same walk over them.
+ * Kept as a named alias rather than replaced outright: every builder below
+ * returns it, and the name says which family of menus these are. The type
+ * itself is `shared/ui`'s, so a header menu and a row menu are the same kind of
+ * thing with the same walk over them (spec `rooms` §14.1).
  */
-export type SectionHeaderMenuNode =
-  | SectionHeaderAction
-  | SectionHeaderSubmenu
-  | { kind: 'separator'; id: string };
+export type SectionHeaderMenuNode = SidebarMenuNode;
 
 /**
  * Every header below follows one order: what you can make, then what you can
@@ -116,7 +77,7 @@ export type SectionHeaderMenuNode =
 const SEP_CREATE = { kind: 'separator', id: 'sep-create' } as const;
 
 /** Collapse or expand, named for what choosing it will do. */
-function collapseNode(collapsed: boolean, onToggle: () => void): SectionHeaderAction {
+function collapseNode(collapsed: boolean, onToggle: () => void): SidebarMenuActionNode {
   return {
     kind: 'action',
     id: 'collapse',
@@ -349,17 +310,11 @@ export function buildAgentsHeaderMenuNodes(model: AgentsHeaderMenuModel): Sectio
       run: model.onNewGroup,
     },
     SEP_CREATE,
+    displayFilterNode(model.displayFilter, (value) =>
+      model.onDisplayFilterChange(value as SidebarDisplayFilter)
+    ),
     {
-      kind: 'submenu',
-      id: 'display',
-      label: DISPLAY_FILTER_MENU_LABEL,
-      icon: DISPLAY_FILTER_MENU_ICON,
-      value: model.displayFilter,
-      options: [...DISPLAY_FILTER_OPTIONS],
-      onChange: (value) => model.onDisplayFilterChange(value as SidebarDisplayFilter),
-    },
-    {
-      kind: 'submenu',
+      kind: 'radio',
       id: 'sort',
       label: SORT_MENU_LABEL,
       icon: ArrowUpDown,
@@ -375,87 +330,125 @@ export function buildAgentsHeaderMenuNodes(model: AgentsHeaderMenuModel): Sectio
   ];
 }
 
-/**
- * Slot primitives one menu family provides. Both variants render through the
- * SAME {@link renderNodes} walk — only the primitives differ — so the two menus
- * cannot structurally drift.
- */
-interface SectionHeaderMenuSlots {
-  Item: ElementType;
-  Separator: ElementType;
-  Sub: ElementType;
-  SubTrigger: ElementType;
-  SubContent: ElementType;
-  RadioGroup: ElementType;
-  RadioItem: ElementType;
-}
 
-const VARIANT_SLOTS: Record<SectionHeaderMenuVariant, SectionHeaderMenuSlots> = {
-  context: {
-    Item: ContextMenuItem,
-    Separator: ContextMenuSeparator,
-    Sub: ContextMenuSub,
-    SubTrigger: ContextMenuSubTrigger,
-    SubContent: ContextMenuSubContent,
-    RadioGroup: ContextMenuRadioGroup,
-    RadioItem: ContextMenuRadioItem,
-  },
-  dropdown: {
-    Item: DropdownMenuItem,
-    Separator: DropdownMenuSeparator,
-    Sub: DropdownMenuSub,
-    SubTrigger: DropdownMenuSubTrigger,
-    SubContent: DropdownMenuSubContent,
-    RadioGroup: DropdownMenuRadioGroup,
-    RadioItem: DropdownMenuRadioItem,
-  },
-};
-
-/** Render the shared nodes through one generic walk using the given slots. */
-function renderNodes(nodes: SectionHeaderMenuNode[], slots: SectionHeaderMenuSlots): ReactNode {
-  const { Item, Separator, Sub, SubTrigger, SubContent, RadioGroup, RadioItem } = slots;
-  return nodes.map((node) => {
-    if (node.kind === 'separator') return <Separator key={node.id} />;
-    const Icon = node.icon;
-    if (node.kind === 'submenu') {
-      return (
-        <Sub key={node.id}>
-          <SubTrigger>
-            <Icon className="mr-2 size-4" />
-            {node.label}
-          </SubTrigger>
-          <SubContent className="w-44">
-            <RadioGroup value={node.value} onValueChange={node.onChange}>
-              {node.options.map((option) => (
-                <RadioItem key={option.value} value={option.value}>
-                  {option.label}
-                </RadioItem>
-              ))}
-            </RadioGroup>
-          </SubContent>
-        </Sub>
-      );
-    }
-    return (
-      <Item key={node.id} onClick={node.run}>
-        <Icon className="mr-2 size-4" />
-        {node.opensInput ? `${node.label}…` : node.label}
-      </Item>
-    );
-  });
-}
-
-interface SectionHeaderMenuItemsProps {
-  /** The section's item list, from one of the builders above. */
-  nodes: SectionHeaderMenuNode[];
-  /** Which Radix menu family to render into. */
-  variant: SectionHeaderMenuVariant;
+/** Inputs a group header's item list is built from. */
+export interface GroupHeaderMenuModel {
+  /** The group this header belongs to. */
+  group: SidebarGroup;
+  /** Start the inline rename editor on the header. */
+  onRename: () => void;
+  /** Flip the group's collapse state. */
+  onToggleCollapsed: () => void;
+  /** Write the chosen display filter back to the group. */
+  onDisplayFilterChange: (filter: string) => void;
+  /** Write the chosen sort mode back to the group. */
+  onSortModeChange: (mode: string) => void;
+  /** Flip the group's mute lens. */
+  onToggleMuted: () => void;
+  /** Open the rule form, prefilled (smart groups only). */
+  onEditRules: () => void;
+  /** Freeze the currently-matching members into a hand-tunable manual group. */
+  onConvertToManual: () => void;
+  /** Ask to delete — which confirms first for a group that has members. */
+  onDelete: () => void;
 }
 
 /**
- * A section header's menu, rendered from ONE item definition into both the
- * right-click ContextMenu and the "…" DropdownMenu.
+ * Build a group header's items, in order.
+ *
+ * A group is a section, so this list is the section-header list with the nouns
+ * changed: what you can make (nothing — a group is already made), then what you
+ * can clear, then how this section looks, then the destructive one on its own
+ * at the bottom. **Show comes before Sort by**, and the built-in Agents header
+ * matches it rather than the other way round.
+ *
+ * Muting a group is a lens over its members (DOR-339): it never writes member
+ * references into `ui.sidebar.muted`, so unmuting restores whatever individual
+ * mute state each member already had.
+ *
+ * Smart groups (DOR-338) add a plain-language rule summary at the top — the
+ * honesty contract, since their membership is not something you can hand-edit —
+ * plus "Edit rules" and "Convert to manual group", the escape hatch that freezes
+ * the currently-matching members.
+ *
+ * @param model - The group plus the action callbacks.
  */
-export function SectionHeaderMenuItems({ nodes, variant }: SectionHeaderMenuItemsProps) {
-  return <>{renderNodes(nodes, VARIANT_SLOTS[variant])}</>;
+export function buildGroupHeaderMenuNodes(model: GroupHeaderMenuModel): SectionHeaderMenuNode[] {
+  const { group } = model;
+  const isSmart = group.kind === 'smart';
+  // Smart groups reject 'manual' sort at the schema level — derived membership
+  // has no hand-orderable sequence, so the option never appears.
+  const sortOptions = isSmart
+    ? SECTION_SORT_OPTIONS.filter((o) => o.value !== 'manual')
+    : SECTION_SORT_OPTIONS;
+
+  return [
+    ...(isSmart
+      ? [
+          {
+            kind: 'note' as const,
+            id: 'rules',
+            icon: ListFilter,
+            text: describeRules(group.rules ?? {}),
+          },
+        ]
+      : []),
+    {
+      kind: 'action',
+      id: 'rename',
+      label: 'Rename',
+      icon: Pencil,
+      opensInput: true,
+      run: model.onRename,
+    },
+    collapseNode(group.collapsed, model.onToggleCollapsed),
+    displayFilterNode(group.displayFilter, model.onDisplayFilterChange),
+    {
+      kind: 'radio',
+      id: 'sort',
+      label: SORT_MENU_LABEL,
+      icon: ArrowUpDown,
+      value: group.sortMode,
+      options: sortOptions,
+      onChange: model.onSortModeChange,
+    },
+    {
+      kind: 'action',
+      id: 'mute',
+      label: group.muted ? 'Unmute group' : 'Mute group',
+      icon: group.muted ? Bell : BellOff,
+      opensInput: false,
+      run: model.onToggleMuted,
+    },
+    ...(isSmart
+      ? ([
+          {
+            kind: 'action',
+            id: 'edit-rules',
+            label: 'Edit rules',
+            icon: Wand2,
+            opensInput: false,
+            run: model.onEditRules,
+          },
+          {
+            kind: 'action',
+            id: 'convert-to-manual',
+            label: 'Convert to manual group',
+            icon: Users,
+            opensInput: false,
+            run: model.onConvertToManual,
+          },
+        ] satisfies SectionHeaderMenuNode[])
+      : []),
+    { kind: 'separator', id: 'sep-delete' },
+    {
+      kind: 'action',
+      id: 'delete',
+      label: 'Delete group',
+      icon: Trash2,
+      opensInput: false,
+      destructive: true,
+      run: model.onDelete,
+    },
+  ];
 }

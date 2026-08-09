@@ -1,11 +1,12 @@
+import { MessagesSquare } from 'lucide-react';
 import type { ThreadSummary } from '@dorkos/shared/room-schemas';
-import { SidebarGroup, SidebarMenu, SidebarMenuItem } from '@/layers/shared/ui';
+import { SectionHeader, SidebarGroup, SidebarMenu, SidebarMenuItem } from '@/layers/shared/ui';
+import { useRovingFocus } from '@/layers/shared/model';
 import {
   useSidebarPrefs,
   useUpdateSidebarPrefs,
   setThreadsCollapsed,
 } from '@/layers/entities/config';
-import { SidebarSectionHeader } from '../SidebarSectionHeader';
 import { buildThreadsHeaderMenuNodes } from '../SectionHeaderMenuItems';
 import { ThreadRow } from './ThreadRow';
 
@@ -51,6 +52,10 @@ export function ThreadsSection({
 }: ThreadsSectionProps) {
   const { threadsCollapsed } = useSidebarPrefs();
   const { update } = useUpdateSidebarPrefs();
+  const roving = useRovingFocus({
+    onCollapse: () => !threadsCollapsed && update((prev) => setThreadsCollapsed(prev, true)),
+    onExpand: () => threadsCollapsed && update((prev) => setThreadsCollapsed(prev, false)),
+  });
 
   // Nothing to say, so nothing is drawn — and that includes the first load,
   // which is why there are no skeletons here. Channels and Direct messages can
@@ -62,11 +67,13 @@ export function ThreadsSection({
   const toggleCollapsed = () => update((prev) => setThreadsCollapsed(prev, !prev.threadsCollapsed));
 
   return (
-    <SidebarGroup>
-      <SidebarSectionHeader
+    <SidebarGroup className="px-0">
+      <SectionHeader
         label="Threads"
+        icon={MessagesSquare}
         collapsed={threadsCollapsed}
         onToggle={toggleCollapsed}
+        controlsId="sidebar-section-threads"
         nodes={buildThreadsHeaderMenuNodes({
           collapsed: threadsCollapsed,
           onToggleCollapsed: toggleCollapsed,
@@ -74,10 +81,10 @@ export function ThreadsSection({
       />
 
       {!threadsCollapsed && (
-        <SidebarMenu>
+        <SidebarMenu id="sidebar-section-threads" {...roving}>
           {error ? (
             <SidebarMenuItem>
-              <p className="text-muted-foreground px-2.5 py-1.5 text-xs">
+              <p className="text-sidebar-foreground/60 px-2 py-1.5 text-xs">
                 Couldn&apos;t load your threads. They&apos;re still there — reload to try again.
               </p>
             </SidebarMenuItem>
