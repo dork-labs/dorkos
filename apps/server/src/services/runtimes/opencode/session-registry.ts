@@ -19,6 +19,7 @@
  * @module services/runtimes/opencode/session-registry
  */
 import type { Session, PermissionMode } from '@dorkos/shared/types';
+import { deriveSessionTitle } from '../shared/derive-title.js';
 import type { SessionListEvent } from '@dorkos/shared/session-stream';
 
 /** Max characters of a first message used as the derived session title/preview. */
@@ -97,7 +98,7 @@ export class OpenCodeSessionRegistry {
     const session = this.upsert(sessionId, settings);
     const preview = toPreview(content);
     // MessageOpts.title is only honored on the first turn (see AgentRuntime).
-    if (session.title === '') session.title = title ?? preview;
+    if (session.title === '') session.title = title ?? (deriveSessionTitle(content) || preview);
     session.lastMessagePreview = preview;
     session.updatedAt = new Date().toISOString();
     this.emit({ type: 'session_upserted', session: { ...session } });

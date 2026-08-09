@@ -15,6 +15,7 @@
  * @module services/runtimes/test-mode/session-registry
  */
 import type { Session, PermissionMode } from '@dorkos/shared/types';
+import { deriveSessionTitle } from '../shared/derive-title.js';
 import type { SessionListEvent } from '@dorkos/shared/session-stream';
 import { TEST_MODE_CAPABILITIES } from './runtime-constants.js';
 
@@ -104,7 +105,7 @@ export class TestModeSessionRegistry {
   recordMessage(sessionId: string, content: string, patch: TrackedSessionPatch = {}): void {
     const session = this.upsert(sessionId, patch);
     const preview = toPreview(content);
-    if (session.title === '') session.title = preview;
+    if (session.title === '') session.title = deriveSessionTitle(content) || preview;
     session.lastMessagePreview = preview;
     session.updatedAt = new Date().toISOString();
     this.emit({ type: 'session_upserted', session: { ...session } });
