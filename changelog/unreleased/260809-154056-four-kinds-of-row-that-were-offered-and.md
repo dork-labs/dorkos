@@ -3,6 +3,7 @@ covers:
   - 'fix(palette): four kinds of row that were offered and did nothing (DOR-1051)'
   - 'fix(palette): list the commands of the runtime you are actually on (DOR-1051)'
   - 'fix(palette): a channel you archived can be found again (DOR-1051)'
+  - 'refactor(palette): keep the handler reader inside its slice'
 ---
 
 ### Fixed
