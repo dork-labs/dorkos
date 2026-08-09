@@ -74,6 +74,8 @@ export function CommandPaletteDialog() {
     handleFeatureAction,
     handleQuickAction,
     handleRoomSelect,
+    handleSessionSelect,
+    handleCommandSelect,
     recordUsage,
     setDir,
     selectedCwd,
@@ -494,6 +496,11 @@ export function CommandPaletteDialog() {
                         onQuickAction={handleQuickAction}
                         onGoToAgentActions={goToAgentActions}
                         onRoomSelect={handleRoomSelect}
+                        // The suggestion names a session in the directory you
+                        // are already in — that is the rule that produced it
+                        // (`usePaletteItems`, rule 1) — so it opens there.
+                        onSessionSelect={(sessionId) => handleSessionSelect(sessionId, selectedCwd)}
+                        onCommandSelect={handleCommandSelect}
                         onClose={closePalette}
                       />
                     )}
@@ -524,6 +531,14 @@ export function CommandPaletteDialog() {
                           closePalette();
                         }}
                         recentSessions={previewData.recentSessions}
+                        // The AGENT's directory, not the one on screen: the
+                        // durable stream resolves a session's history from
+                        // `?cwd=`, so inheriting the current one would read
+                        // another project's transcript.
+                        onSelectSession={(sessionId) => {
+                          handleSessionSelect(sessionId, subMenuAgent.projectPath);
+                          recordUsage(subMenuAgent.id);
+                        }}
                       />
                     )}
                   </motion.div>

@@ -6,8 +6,11 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render as rtlRender, screen, fireEvent, cleanup, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import '@testing-library/jest-dom/vitest';
+import { createMockTransport } from '@dorkos/test-utils';
 import { CommandPaletteDialog } from '../ui/CommandPaletteDialog';
 import type { AgentPathEntry } from '@dorkos/shared/mesh-schemas';
+
+const mockTransport = createMockTransport();
 
 /**
  * The palette resolves which session an agent should open on from the query
@@ -122,6 +125,9 @@ vi.mock('@/layers/shared/model', () => ({
     return selector ? selector(state) : state;
   },
   useTheme: () => ({ theme: mockTheme, setTheme: mockSetTheme }),
+  // `usePaletteActions` resolves which conversation a slash command runs in,
+  // and that resolver asks the server when nothing is cached.
+  useTransport: () => mockTransport,
   useReportIssue: () => vi.fn(),
   // `usePaletteActions` reads the feedback dialog's store, so the palette does
   // not render at all without it (DOR-902).

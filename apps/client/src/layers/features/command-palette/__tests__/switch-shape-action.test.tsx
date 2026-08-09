@@ -4,13 +4,21 @@
  * The "Switch Shape" command-palette entry (DOR-355 §5): the contribution is
  * registered, and selecting it opens the Shape switcher.
  */
+import React from 'react';
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { createMockTransport } from '@dorkos/test-utils';
 import { PALETTE_QUICK_ACTIONS } from '../model/palette-contributions';
 import { usePaletteActions } from '../model/use-palette-actions';
 
+const mockTransport = createMockTransport();
+
 vi.mock('@tanstack/react-router', () => ({ useNavigate: () => vi.fn() }));
-vi.mock('@/layers/entities/session', () => ({
+vi.mock('@/layers/entities/session', async (importOriginal) => ({
+  // The session resolver and the chat store come along for the slash-command
+  // path; only the directory hooks are stubbed.
+  ...(await importOriginal<typeof import('@/layers/entities/session')>()),
   useDirectoryState: () => ['/projects/current', vi.fn()],
   useStartNewSession: () => vi.fn(),
 }));
@@ -34,6 +42,7 @@ vi.mock('@/layers/shared/model', async (importOriginal) => {
     useTasksDeepLink: () => inertDeepLink,
     useOpenConnections: () => vi.fn(),
     useReportIssue: () => vi.fn(),
+    useTransport: () => mockTransport,
   };
 });
 
@@ -56,7 +65,12 @@ describe('Switch Shape palette entry', () => {
 
   it('opens the Shape switcher when the action fires', () => {
     expect(useAppStore.getState().shapeSwitcherOpen).toBe(false);
-    const { result } = renderHook(() => usePaletteActions(vi.fn()));
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const { result } = renderHook(() => usePaletteActions(vi.fn()), {
+      wrapper: ({ children }) => (
+        <QueryClientProvider client={client}>{children}</QueryClientProvider>
+      ),
+    });
     act(() => result.current.handleQuickAction('switchShape'));
     expect(useAppStore.getState().shapeSwitcherOpen).toBe(true);
   });

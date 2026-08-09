@@ -39,6 +39,13 @@ export {
 export { usePaletteSearch, parsePrefix } from './model/use-palette-search';
 export type { SearchableItem, SearchResult } from './model/use-palette-search';
 export { usePaletteActions } from './model/use-palette-actions';
+// The extension-contributed half of the palette's action dispatch. `main.tsx`
+// owns the writers (extension load/teardown); `usePaletteActions` is the reader.
+export {
+  registerPaletteCommandHandler,
+  unregisterPaletteCommandHandler,
+  runPaletteCommandHandler,
+} from './model/palette-command-handlers';
 
 // --- Contribution data ---
 export {

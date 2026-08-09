@@ -45,6 +45,10 @@ interface PaletteRootPageProps {
   onQuickAction: (action: string) => void;
   onGoToAgentActions: (agent: AgentPathEntry) => void;
   onRoomSelect: (room: RoomSummary) => void;
+  /** Open a conversation the suggestion names. */
+  onSessionSelect: (sessionId: string) => void;
+  /** Put a slash command in the active conversation's composer and go there. */
+  onCommandSelect: (command: string) => void;
   onClose: () => void;
 }
 
@@ -74,6 +78,8 @@ export function PaletteRootPage({
   onQuickAction,
   onGoToAgentActions,
   onRoomSelect,
+  onSessionSelect,
+  onCommandSelect,
   onClose,
 }: PaletteRootPageProps) {
   // What to say instead of a channel list when there is none to show. Only `#`
@@ -125,6 +131,11 @@ export function PaletteRootPage({
                       const agent = allAgents.find((a) => a.id === agentId);
                       if (agent) onAgentSelect(agent);
                     } else if (s.action.startsWith('continueSession:')) {
+                      // Everything after the first `:` — a session id never
+                      // contains one, but splitting on all of them would still
+                      // be a rule this row does not need.
+                      onSessionSelect(s.action.slice('continueSession:'.length));
+                    } else {
                       onClose();
                     }
                   }}
@@ -266,7 +277,7 @@ export function PaletteRootPage({
           <CommandGroup heading="Commands">
             {searchCommands.map((cmd, index) => (
               <motion.div key={cmd.name} variants={index < 8 ? itemVariants : undefined}>
-                <CommandItem value={cmd.name}>
+                <CommandItem value={cmd.name} onSelect={() => onCommandSelect(cmd.name)}>
                   <motion.div
                     whileHover={{ x: 2 }}
                     transition={{ duration: 0.1, ease: EASE_OUT }}
