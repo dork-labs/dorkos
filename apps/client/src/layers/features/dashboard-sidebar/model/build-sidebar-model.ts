@@ -184,11 +184,17 @@ export type SidebarTarget =
 /** How much of the operator's attention a row's unread state is asking for. */
 export interface SidebarUnread {
   /**
-   * `'activity'` = bold label and a dot; `'directed'` = a numbered badge;
-   * `'none'` = nothing. Two tiers and no more (design-decisions §18).
+   * `'activity'` = bold label and nothing else; `'directed'` = a numbered amber
+   * badge; `'none'` = nothing. Two tiers and no more (design-decisions §18).
+   *
+   * **`'activity'` draws no dot.** §18 reads "Bold label only. No badge, no
+   * dot." The spec's table restated it with a dot while claiming to quote §18
+   * verbatim, and this comment followed the spec. The decision record wins: a
+   * dot would be a third weight in a system that deliberately has two, and the
+   * avatar corner already owns dots for agent lifecycle.
    */
   tier: 'none' | 'activity' | 'directed';
-  /** How many. Carried by `'directed'` only — a badge is a number or it is a dot. */
+  /** How many. Carried by `'directed'` only — the only tier that renders a mark. */
   count?: number;
 }
 

@@ -521,11 +521,17 @@ Each contract is stated so a test can fail. Fixture names refer to the four jour
   muted trailing chip in the meta slot, never inside the 42% name budget. Rooms and agents never
   carry it. It changes no grouping and no ordering. The word "workspace" appears nowhere. (§16)
 
-#### Notifications (§18, verbatim, made testable)
+#### Notifications (§18, made testable)
+
+> Corrected 2026-08-09. This table previously said "verbatim" and then restated
+> the first row with a dot, which §18 explicitly rules out ("Bold label only. No
+> badge, no dot."). The decision record wins. Nothing rendered the dot — the
+> model only emits the tier — so the correction is a doc and comment fix, made
+> before P2 built a renderer against the wrong contract.
 
 | Signal                                      | Model output                                                         |
 | ------------------------------------------- | -------------------------------------------------------------------- |
-| Channel has new messages                    | `unread: { tier: 'activity' }` — bold label + dot. No badge.         |
+| Channel has new messages                    | `unread: { tier: 'activity' }` — bold label only. No badge, no dot.  |
 | Unread DM to you                            | `unread: { tier: 'directed', count }` — numbered amber badge.        |
 | @mention of you (any room)                  | `unread: { tier: 'directed', count }` on that row.                   |
 | Agent working                               | `status: 'working'` + verb line. `unread` untouched.                 |
@@ -649,8 +655,8 @@ showcase page, which fails on contrast violations rather than being eyeballed.
   returned to its place.") are preserved verbatim. A test asserts that for every draggable row,
   the menu node list contains a move action.
 - **Color is never the sole indicator.** Every status dot is paired with a verb line, a tooltip
-  or an `aria-label`; the unread tiers differ in weight (bold) and shape (dot vs numbered
-  badge), not only hue.
+  or an `aria-label`; the unread tiers differ in weight (bold) and in whether a mark is present
+  at all (nothing vs a numbered badge), not only hue.
 
 #### R3 — Drag-and-drop scope
 
