@@ -784,7 +784,7 @@ apps/client/src/layers/entities/recents/lib/jump-back-in.ts                 inte
 apps/client/src/AppShell.tsx                                                header/footer stay outside the slot swap
 packages/shared/src/config-schema.ts                                        SidebarPrefsSchema (§D)
 apps/server/src/services/core/config-manager.ts                             CONFIG_MIGRATIONS entry
-apps/client/src/layers/features/chat/...StatusStrip                         joke verbs → activityVerb (§14.4)
+apps/client/src/layers/features/chat/...StatusStrip                         align to the shared ladder fn (verbs already real since DOR-1053)
 apps/client/src/dev/showcases/{Sidebar,JumpBackIn,IdentityMatrix,Status,Navigation}Showcases.tsx
 ```
 
@@ -970,8 +970,8 @@ Now (BC-5→11), Getting started (BC-12→14), Today (BC-15→22), Library (BC-2
 active-conversation anchor and scroll-to-active (BC-21, BC-36); the session switcher (BC-35) and
 removal of `AgentListItem`'s inline panel (BC-34); header block + New menu + ⌘K pill
 (BC-43→46); footer strip + version relocation + update pill + Ask DorkBot (BC-44, BC-47, BC-48);
-moments (BC-49, BC-50); the verb ladder wired to `SessionActivity` and the chat status strip's
-joke verbs deleted (BC-37); `entities/attention` extraction; the R3 dnd rejection; the §D prefs
+moments (BC-49, BC-50); the verb ladder wired to `SessionActivity` for sidebar rows, switcher and
+⌘K Continue (the strip already ships it since DOR-1053) (BC-37); `entities/attention` extraction; the R3 dnd rejection; the §D prefs
 migration.
 
 **Dependencies:** P1; `feat/activity-label` merged (verbs); `feat/session-seed-prompt` merged
