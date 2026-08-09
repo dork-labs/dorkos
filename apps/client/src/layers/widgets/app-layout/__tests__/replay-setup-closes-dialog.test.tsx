@@ -35,7 +35,12 @@ import {
 import { zodValidator } from '@tanstack/zod-adapter';
 import { z } from 'zod';
 
-import { mergeDialogSearch, useAppStore, useExtensionRegistry, TransportProvider } from '@/layers/shared/model';
+import {
+  mergeDialogSearch,
+  useAppStore,
+  useExtensionRegistry,
+  TransportProvider,
+} from '@/layers/shared/model';
 import { NavigationLayout, NavigationLayoutPanel } from '@/layers/shared/ui';
 import { DialogHost } from '../ui/DialogHost';
 import { PreferencesTab } from '@/layers/features/settings';
