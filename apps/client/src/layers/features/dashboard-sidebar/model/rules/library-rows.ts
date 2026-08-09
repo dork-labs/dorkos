@@ -1,0 +1,112 @@
+/**
+ * The two row shapes Library holds — an agent and a room — built once so a
+ * pinned copy and a home-section copy can never disagree about one thing.
+ *
+ * Not a rule: the rule is {@link buildLibrarySections}, which decides who is in
+ * which section. This is how a member is drawn once it is.
+ *
+ * @module features/dashboard-sidebar/model/rules/library-rows
+ */
+import type { RoomSummary } from '@dorkos/shared/room-schemas';
+import type { SidebarRowModel } from '../build-sidebar-model';
+import type { AgentRosterEntry, SidebarState } from '../sidebar-state';
+import type { MuteIndex } from './apply-mute-rules';
+import { deriveRowStatus } from './derive-row-status';
+import { deriveUnreadSignal } from './derive-unread-signal';
+import { basename, rowKey } from './targets';
+
+/**
+ * How many concurrent sessions an agent needs before its row says so.
+ *
+ * Two, because "1 live" is a chip that tells the operator what the dot beside
+ * it already said.
+ */
+const LIVE_CHIP_MIN = 2;
+
+/**
+ * One agent's Library row.
+ *
+ * Clicking it opens that agent's most recent human conversation — an agent is
+ * a teammate, not a folder (design-decisions §4) — which is why the row carries
+ * no expansion affordance and the depth lives in the session switcher.
+ *
+ * @param agent - The roster entry.
+ * @param state - The snapshot.
+ * @param mutes - The resolved mute sets.
+ * @param reason - Which section this copy of the row belongs to.
+ */
+export function agentRow(
+  agent: AgentRosterEntry,
+  state: SidebarState,
+  mutes: MuteIndex,
+  reason: string
+): SidebarRowModel {
+  const target = { kind: 'agent', path: agent.path } as const;
+  const live = state.workingSessionIds.filter(
+    (id) => state.sessions.find((session) => session.id === id)?.cwd === agent.path
+  ).length;
+  const muted = mutes.agents.has(agent.path);
+  return {
+    key: rowKey(target),
+    target,
+    glyph: { kind: 'agent-avatar', agentPath: agent.path },
+    primary: state.displayNames[agent.path] ?? basename(agent.path),
+    status: deriveRowStatus({
+      lifecycle: live > 0 ? 'streaming' : undefined,
+      needsYou: !muted && agent.attention === 'needs-attention',
+    }),
+    reservesVerbLine: live > 0,
+    unread: { tier: 'none' },
+    ...(live >= LIVE_CHIP_MIN ? { liveCount: live } : {}),
+    muted,
+    draggable: true,
+    actions: ['open', 'new-session', 'pin', muted ? 'unmute' : 'mute', 'move'],
+    reason,
+  };
+}
+
+/**
+ * One room's Library row.
+ *
+ * @param room - The room.
+ * @param state - The snapshot.
+ * @param mutes - The resolved mute sets.
+ * @param reason - Which section this copy of the row belongs to.
+ */
+export function roomLibraryRow(
+  room: RoomSummary,
+  state: SidebarState,
+  mutes: MuteIndex,
+  reason: string
+): SidebarRowModel {
+  const target = {
+    kind: 'room',
+    roomId: room.id,
+    roomKind: room.kind === 'dm' ? 'dm' : 'channel',
+  } as const;
+  const memberIds = (room.participants ?? []).map((participant) => participant.id);
+  const muted = mutes.rooms.has(room.id);
+  return {
+    key: rowKey(target),
+    target,
+    glyph:
+      room.kind === 'dm'
+        ? memberIds.length > 1
+          ? ({ kind: 'face-stack', memberIds } as const)
+          : ({ kind: 'person-avatar', memberId: memberIds[0] ?? room.id } as const)
+        : ({ kind: 'hash' } as const),
+    primary: room.kind === 'dm' ? room.title : (room.slug ?? room.title),
+    status: deriveRowStatus({ workingCount: room.working }),
+    reservesVerbLine: (room.working ?? 0) > 0,
+    unread: deriveUnreadSignal({
+      unreadCount: room.unreadCount,
+      directed: room.kind === 'dm',
+      mentionCount: state.mentions[room.id],
+      muted,
+    }),
+    muted,
+    draggable: true,
+    actions: ['open', 'pin', muted ? 'unmute' : 'mute', 'mark-read', 'move'],
+    reason,
+  };
+}
