@@ -8,7 +8,7 @@ import { FeedbackRequestsPanel } from '@/layers/features/feedback-requests';
  */
 export function FeedbackRequestsPage() {
   return (
-    <PageContainer width="reading" scroll={false}>
+    <PageContainer width="wide" scroll={false}>
       <header className="mb-6 shrink-0">
         <h1 className="text-xl font-semibold">Feedback &amp; requests</h1>
         <p className="text-muted-foreground mt-1 text-sm">

@@ -27,7 +27,7 @@ export function ConnectionsPage() {
   }, [region]);
 
   return (
-    <PageContainer width="reading">
+    <PageContainer width="wide">
       <header className="mb-8">
         <h1 className="text-xl font-semibold">Connections</h1>
         <p className="text-muted-foreground mt-1 max-w-prose text-sm">

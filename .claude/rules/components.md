@@ -67,7 +67,7 @@ Still **site-only** (not ported; port the `@utility` into `apps/client/src/index
 
 ### Page width
 
-Page-level width is not a utility class: wrap the route's content in `<PageContainer width="full | wide | reading">` from `layers/shared/ui` (DOR-1047). `wide` caps at `--page-width-wide` (80rem, dashboards/grids), `reading` at `--page-width-reading` (56rem, forms/feeds); `full` fills the pane. It owns the page scroller by default (`scroll={false}` for pages whose list scrolls internally) and always includes `w-full`, so it cannot shrink-wrap inside a flex parent. Never hand-roll `mx-auto max-w-*` page wrappers. Chat/room surfaces are the exception — their width system is the `--msg-*` token family.
+Page-level width is not a utility class: wrap the route's content in `<PageContainer width="full | wide | reading">` from `layers/shared/ui` (DOR-1047). `wide` caps at `--page-width-wide` (80rem) — the default for top-level pages (dashboards, directories, feeds); `reading` at `--page-width-reading` (56rem) — true forms and prose only, never directories (DOR-1082); `full` fills the pane. It owns the page scroller by default (`scroll={false}` for pages whose list scrolls internally) and always includes `w-full`, so it cannot shrink-wrap inside a flex parent. Never hand-roll `mx-auto max-w-*` page wrappers. Chat/room surfaces are the exception — their width system is the `--msg-*` token family.
 
 ## Data Tables
 

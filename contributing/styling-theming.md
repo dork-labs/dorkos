@@ -278,8 +278,8 @@ Page-level content width is a component, not a utility (DOR-1047). Routes wrap t
 <PageContainer width="reading">…</PageContainer>
 ```
 
-- `width="wide"` caps at `--page-width-wide` (80rem) — dashboards and grids (Marketplace).
-- `width="reading"` caps at `--page-width-reading` (56rem) — forms and feeds (Activity, Workspaces, Connections).
+- `width="wide"` caps at `--page-width-wide` (80rem) — dashboards, directories, and feeds (Marketplace, Activity, Workspaces, Connections). The default for top-level pages.
+- `width="reading"` caps at `--page-width-reading` (56rem) — true forms and prose (Marketplace Sources). Not for directories or feeds — 896px reads as "broken" next to wide siblings on a large monitor (DOR-1082).
 - `width="full"` fills the pane with the shared gutters (Team, Tasks).
 
 Both cap tokens live in `index.css` next to the `--msg-*` family — widening a whole class of pages is a one-line token edit. The component owns the page scroller by default (pass `scroll={false}` when an inner list scrolls instead), and bakes in `w-full` so a flex parent can never shrink-wrap it. Never hand-roll `mx-auto max-w-*` page wrappers. Chat and room surfaces don't use it — their width system is the `--msg-*` token family (`--msg-content-max-width` caps message text).
