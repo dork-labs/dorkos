@@ -1,0 +1,157 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Sidebar mockup — Signals</title><style>
+body{font-family:-apple-system,'Segoe UI',sans-serif;max-width:1280px;margin:0 auto;padding:32px;background:#faf9f7;color:#26251f;line-height:1.5} h2{font-size:24px;margin:0 0 6px} h3{font-size:17px;margin:22px 0 8px} .subtitle{color:#75736a;font-size:14px;margin:0 0 18px} .section{margin-bottom:40px} .label{font-size:11px;font-weight:650;text-transform:uppercase;letter-spacing:.05em;color:#8a887d;margin-bottom:6px}
+</style></head><body>
+<div style="background:rgba(229,148,11,.12);border-radius:10px;padding:12px 16px;margin-bottom:24px;font-size:14px;line-height:1.5"><b>⚠ Mockup, not a final design.</b> Built during the 2026-08-09 design session to communicate direction — spacing, copy, and colors are approximate. The authoritative rules live in <code>specs/sidebar-now-today-library/design-decisions.md</code>; where this file and that doc disagree, the doc wins. Decision-option blocks were removed from this copy; the outcomes are recorded in the doc.</div>
+<svg style="display:none" xmlns="http://www.w3.org/2000/svg">
+  <symbol id="i-bot" viewBox="0 0 24 24"><path d="M12 8V4H8"/><rect x="4" y="8" width="16" height="12" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/></symbol>
+  <symbol id="i-send" viewBox="0 0 24 24"><path d="m22 2-7 20-4-9-9-4z"/><path d="M22 2 11 13"/></symbol>
+  <symbol id="i-timer" viewBox="0 0 24 24"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2 2"/><path d="M10 2h4"/></symbol>
+  <symbol id="i-hash" viewBox="0 0 24 24"><path d="M4 9h16"/><path d="M4 15h16"/><path d="M10 3 8 21"/><path d="M16 3l-2 18"/></symbol>
+</svg>
+
+<style>
+  .sg * { box-sizing: border-box; }
+  .s-stage { padding: 18px 16px; background: #e9e7e2; border-radius: 12px; }
+  .strip { width: 290px; background: #f8f7f5; border: 1px solid #e6e4df; border-radius: 12px; padding: 8px; color: #26251f; font-family: -apple-system, 'Segoe UI', sans-serif; font-size: 13px; }
+  .s-i { width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex-shrink: 0; }
+  .r { display: flex; align-items: flex-start; gap: 8px; padding: 5px 8px; border-radius: 7px; min-width: 0; }
+  .r:hover { background: #eceae5; }
+  .t1 { display: flex; align-items: baseline; gap: 6px; min-width: 0; flex: 1; }
+  .t2 { font-size: 11px; color: #a09e94; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .vb { color: #2c7a56; display: flex; align-items: center; gap: 5px; }
+  .who { font-weight: 550; color: #26251f; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex-shrink: 1; max-width: 42%; min-width: 0; }
+  .ti { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex-shrink: 1; min-width: 40px; flex: 1; }
+  .sep { color: #b5b3a8; flex-shrink: 0; }
+  .mt { margin-left: auto; font-size: 11px; color: #a5a39a; flex-shrink: 0; }
+  .avw { position: relative; display: inline-flex; flex-shrink: 0; }
+  .av { border-radius: 6px; display: inline-flex; align-items: center; justify-content: center; }
+  .av.a18 { width: 18px; height: 18px; font-size: 11px; margin-top: 1px; }
+  .av.a28 { width: 28px; height: 28px; font-size: 16px; border-radius: 8px; }
+  .av.circ { border-radius: 50%; }
+  .bd { position: absolute; right: -2px; bottom: -2px; background: #f8f7f5; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; color: #55534b; }
+  .bd.b12 { width: 12px; height: 12px; }
+  .bd.b12 .s-i { width: 8px; height: 8px; }
+  .bd.b10 { width: 10px; height: 10px; }
+  .bd.b10 .s-i { width: 7px; height: 7px; }
+  .dt { position: absolute; top: -2px; right: -2px; border-radius: 50%; box-shadow: 0 0 0 2px #f8f7f5; }
+  .dt.d8 { width: 8px; height: 8px; }
+  .dt.d7 { width: 7px; height: 7px; }
+  .dt.ok { background: #3fa374; }
+  .dt.warn { background: #e5940b; }
+  .dt.err { background: #d64f4f; }
+  .dt.pulse { animation: sg-pulse 2s ease-in-out infinite; }
+  @keyframes sg-pulse { 0%,100% { opacity: 1; } 50% { opacity: .35; } }
+  .grid { display: flex; gap: 24px; flex-wrap: wrap; align-items: flex-start; }
+  .col { width: 330px; }
+  .cap { font-size: 13.5px; line-height: 1.5; margin-top: 10px; }
+  .cap b { display: block; margin-bottom: 2px; }
+  .rule-ul { font-size: 14px; line-height: 1.55; padding-left: 20px; }
+  .rule-ul li { margin-bottom: 8px; }
+  .statesrow { display: flex; gap: 26px; padding: 16px 8px 6px; flex-wrap: wrap; }
+  .st { display: flex; flex-direction: column; align-items: center; gap: 8px; font-size: 11.5px; color: #55534b; width: 74px; text-align: center; font-family: -apple-system, sans-serif; }
+  .anat { display: flex; align-items: center; gap: 22px; padding: 10px 8px; font-family: -apple-system, sans-serif; }
+  .anat-notes { font-size: 12px; line-height: 1.6; color: #55534b; }
+  .anat-notes b { color: #26251f; }
+  .tbl { border-collapse: collapse; font-size: 13px; margin-top: 8px; }
+  .tbl th, .tbl td { border-bottom: 1px solid rgba(128,128,128,.2); padding: 7px 12px 7px 0; text-align: left; vertical-align: top; }
+  .tbl th { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; opacity: .65; }
+  .ok-t { color: #2c7a56; font-weight: 600; }
+  .warn-t { color: #b06e08; font-weight: 600; }
+  .bad { border-left: 3px solid #d64f4f; padding-left: 12px; margin-bottom: 10px; font-size: 13.5px; line-height: 1.45; }
+</style>
+
+<div class="sg">
+<h2>Names, verbs, and the avatar signal system</h2>
+<p class="subtitle">Answers to your three questions, with the code audit behind them.</p>
+
+<!-- ============ Q1 TRUNCATION ============ -->
+<div class="section">
+<h3>1 · Does "Agent › title" fit on one line?</h3>
+<div class="grid">
+  <div class="col">
+    <div class="s-stage">
+      <div class="strip">
+        <div class="r"><span class="avw"><span class="av a18" style="background:#f9d8ea">🐙</span></span><span class="t1"><span class="who">DorkOS</span><span class="sep">›</span><span class="ti">Dashboard overhaul</span><span class="mt">7m</span></span></div>
+        <div class="r"><span class="avw"><span class="av a18" style="background:#d9e4f6">📚</span></span><span class="t1"><span class="who">Documentation Writer Pro</span><span class="sep">›</span><span class="ti">Rework quickstart guide</span><span class="mt">1h</span></span></div>
+        <div class="r"><span class="avw"><span class="av a18" style="background:#efe0d2">🧭</span></span><span class="t1"><span class="who">Marketplace Compatibility Auditor</span><span class="sep">›</span><span class="ti">Verify Claude Code superset compliance for all plugins</span><span class="mt">2h</span></span></div>
+      </div>
+    </div>
+    <div class="cap">Real flexbox, not a drawing — resize your window and the same rules hold. Row 3 is the worst case: both names absurd, both ellipsized, row intact.</div>
+  </div>
+  <div class="col" style="width:380px">
+    <ul class="rule-ul" style="margin-top:0">
+      <li><b>Yes, it fits — with a budget.</b> ~175px of text space per row at our density. The agent name is capped at <b>42% of the line</b> and ellipsizes past that; the title flexes into the rest with a guaranteed minimum (~6 chars) so it never vanishes entirely. Time/status never gets pushed off.</li>
+      <li><b>The name wins the tie</b> — attribution is the anchor you scan by. The title is recoverable from hover (full "Agent › Title" tooltip — already our row pattern) and from the open conversation itself.</li>
+      <li><b>Two system-level assists:</b> session titles are auto-generated today — we bias the generator toward ≤4 words. And agent display names already run through <code>disambiguateDisplayNames</code>, so we lean on that instead of long names.</li>
+      <li>Working rows put the verb on line 2, so line 1 never competes with status text.</li>
+    </ul>
+  </div>
+</div>
+</div>
+
+<!-- ============ Q2 VERBS ============ -->
+<div class="section">
+<h3>2 · Can we really know what an agent is doing?</h3>
+<div class="grid">
+  <div class="col" style="width:430px">
+    <table class="tbl">
+      <tr><th>Ladder</th><th>Shows</th><th>When</th><th>Reliability</th></tr>
+      <tr><td>1</td><td>"editing RoomRow.tsx", "running pnpm test"</td><td>Live tool event with a recognizable name + input</td><td><span class="ok-t">Claude Code: always</span> · <span class="warn-t">Codex/OpenCode: generic form</span> ("running a command…", "editing files…")</td></tr>
+      <tr><td>2</td><td>"working…"</td><td>Turn is streaming, tool unknown</td><td><span class="ok-t">All runtimes, guaranteed</span> — lifecycle is part of the runtime contract</td></tr>
+      <tr><td>3</td><td>"waiting on you"</td><td>Blocked on approval/question</td><td><span class="ok-t">All runtimes</span> (that's a Now item anyway)</td></tr>
+      <tr><td>4</td><td><i>nothing</i></td><td>Idle</td><td>Absence = calm</td></tr>
+    </table>
+    <div class="cap"><b>The honesty rule</b>Degrade down the ladder, never guess. If we can't name the tool, we say "working" — the verb is an upgrade, not a promise.</div>
+  </div>
+  <div class="col" style="width:380px">
+    <ul class="rule-ul" style="margin-top:0">
+      <li><b>The data already exists.</b> Every session streams live <code>tool_call</code> events carrying the tool name and its input (the file path is on the wire), and <code>getToolLabel</code> already turns those into exactly these labels — the chat transcript uses it today. Nothing new to invent.</li>
+      <li><b>One gap to close:</b> the sidebar listens to the <i>fleet-wide</i> stream, which today carries only idle/streaming/blocked — no tool info. Fix: the server piggybacks a throttled <code>activity</code> label onto that stream's status events. Small, contained server change; this is the one real engineering task behind the feature.</li>
+      <li><b>A found absurdity:</b> the chat status strip currently shows <i>randomized joke verbs</i> ("Droppin' Science") while the real tool name sits unused in the same stream. Same ladder fixes chat too — one verb system everywhere.</li>
+    </ul>
+  </div>
+</div>
+</div>
+
+<!-- ============ Q3 AVATAR SIGNALS ============ -->
+<div class="section">
+<h3>3 · The avatar signal system</h3>
+<p class="subtitle">You were right: the lower-right corner is already claimed. The audit found the full picture — and five inconsistencies to fix.</p>
+
+<div class="grid">
+  <div class="col" style="width:400px">
+    <div class="s-stage">
+      <div class="anat" style="background:#f8f7f5;border-radius:12px;padding:16px 14px">
+        <span class="avw"><span class="av a28" style="background:#f9d8ea">🐙</span><span class="dt d8 ok pulse"></span><span class="bd b12"><svg class="s-i"><use href="#i-bot"/></svg></span></span>
+        <div class="anat-notes">
+          <div><b>Top-right = status.</b> What's happening <i>right now</i>. Dot only.</div>
+          <div style="margin-top:6px"><b>Bottom-right = identity.</b> What this <i>is</i> — bot mark, Telegram logo. Static, permanent.</div>
+          <div style="margin-top:6px"><b>Trailing in the row = origin.</b> How a <i>session</i> started (timer, paper plane, #). Never on the avatar.</div>
+        </div>
+      </div>
+      <div class="statesrow" style="background:#f8f7f5;border-radius:12px;margin-top:10px">
+        <span class="st"><span class="avw"><span class="av a28" style="background:#f9d8ea">🐙</span><span class="bd b12"><svg class="s-i"><use href="#i-bot"/></svg></span></span>idle — no dot</span>
+        <span class="st"><span class="avw"><span class="av a28" style="background:#f9d8ea">🐙</span><span class="dt d8 ok pulse"></span><span class="bd b12"><svg class="s-i"><use href="#i-bot"/></svg></span></span>working — green, pulsing</span>
+        <span class="st"><span class="avw"><span class="av a28" style="background:#f9d8ea">🐙</span><span class="dt d8 warn"></span><span class="bd b12"><svg class="s-i"><use href="#i-bot"/></svg></span></span>needs you — amber, still</span>
+        <span class="st"><span class="avw"><span class="av a28" style="background:#f9d8ea">🐙</span><span class="dt d8 err"></span><span class="bd b12"><svg class="s-i"><use href="#i-bot"/></svg></span></span>error / wedged — red, still</span>
+        <span class="st"><span class="avw"><span class="av a28 circ" style="background:#e8ddd2">👤</span><span class="bd b12"><svg class="s-i"><use href="#i-send"/></svg></span></span>bridged human — logo, circle</span>
+      </div>
+    </div>
+    <div class="cap"><b>Three layers, three homes, no collisions</b>Status never touches the identity corner; origin never touches the avatar at all. Only working pulses — urgency is shown by color + the Now zone, not by more motion. Square = agent, circle = person (already our system — keep).</div>
+  </div>
+
+  <div class="col" style="width:420px">
+    <b style="font-size:14px">What the audit found (to fix during the overhaul)</b>
+    <div style="margin-top:10px">
+      <div class="bad"><b>"Working" renders 5 different ways today</b> — static dot, pulsing dot, a different color token on group headers, dot + words, and an avatar ping. One fact, one rendering: the avatar-corner dot (+ verb text where there's room).</div>
+      <div class="bad"><b>Most avatar pulses are lying.</b> The dot lights when the agent was heard from within ~an hour — a liveness proxy, not "working now." New rule: the dot means <i>a turn is streaming right now</i>, full stop. Heartbeat-freshness moves to the hover card.</div>
+      <div class="bad"><b>Two greens for one fact</b> (health ring at 60% + status dot at 100%, 2px apart), plus raw <code>green-500</code>/<code>amber-500</code> spellings alongside the proper status tokens. One token set; the health ring retires from list rows.</div>
+      <div class="bad"><b>The Bot glyph lives in two unrelated systems</b> (avatar corner badge + inline origin mark) with no shared registry — they can drift. One glyph registry feeds both.</div>
+      <div class="bad"><b>The corner is triple-booked in one spot:</b> the Agent Hub hero stacks a hover pencil on top of the identity badge. Edit affordances move off the avatar.</div>
+    </div>
+  </div>
+</div>
+</div>
+</div>
+
+</body></html>

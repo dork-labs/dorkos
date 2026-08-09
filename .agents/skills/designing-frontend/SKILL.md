@@ -18,18 +18,55 @@ Our design system embraces **"Calm Tech"** — interfaces that feel sophisticate
 
 1. **Clarity over decoration** — Every element earns its place
 2. **Soft depth over flat** — Subtle shadows and layers create hierarchy without noise
-3. **Generous space** — Breathing room makes content shine
+3. **Generous space _on content surfaces_** — Breathing room makes content shine; control surfaces run dense (see below)
 4. **Micro-delight** — Thoughtful animations that feel tactile and responsive
+
+### Two Spatial Modes
+
+"Generous space" is a **content** rule. Control surfaces follow density instead.
+
+|             | Content surface                           | Control surface                                   |
+| ----------- | ----------------------------------------- | ------------------------------------------------- |
+| Examples    | Pages, cards, empty states, reading views | Sidebars, toolbars, list panes, menus, table rows |
+| Body text   | 15–16px                                   | 13px, metadata 11px                               |
+| Row height  | —                                         | 28–32px (4px-grid multiples)                      |
+| Inset       | 16–24px and up                            | **16px total**, panel edge to first glyph         |
+| Panel width | —                                         | 240–280px for nav sidebars                        |
+
+**The test:** does the user _operate_ this surface many times an hour, or _read_ it? Operating wants density; reading wants air.
+
+Density is not noise — a compact nav fits about 1.5x more items in the same space and reads calmer, because the eye travels less. The failure this rule prevents is real: "generous space" read without the nuance produced a sidebar with a 30px left inset (12px container + 8px section + 10px row). **Budget the inset once. Never stack container + section + row padding.**
 
 ### Design Rules
 
-| Rule                       | Reasoning                                                    |
-| -------------------------- | ------------------------------------------------------------ |
-| **No pure black or white** | Rich, tinted neutrals feel warmer and more sophisticated     |
-| **Desaturated accents**    | Vibrant but not harsh — easier on the eyes                   |
-| **WCAG AA contrast**       | Accessibility is non-negotiable (4.5:1 text, 3:1 large text) |
-| **Generous radius**        | Soft corners feel friendly and modern                        |
-| **Soft shadows**           | Diffused shadows create depth without visual noise           |
+| Rule                        | Reasoning                                                                       |
+| --------------------------- | ------------------------------------------------------------------------------- |
+| **No pure black or white**  | Rich, tinted neutrals feel warmer and more sophisticated                        |
+| **Desaturated accents**     | Vibrant but not harsh — easier on the eyes                                      |
+| **WCAG AA contrast**        | Accessibility is non-negotiable (4.5:1 text, 3:1 large text)                    |
+| **Generous radius**         | Soft corners feel friendly and modern                                           |
+| **Soft shadows**            | Diffused shadows create depth without visual noise                              |
+| **Tint, not lines**         | Whitespace separates, tint groups, elevation floats — hairline rules read dated |
+| **Nothing renders at rest** | Row and section actions appear on hover and focus; idle chrome is noise         |
+
+#### Tint, not lines
+
+Separate two regions with, in order of preference:
+
+1. **Whitespace** — a gap is the cheapest separator
+2. **Background tint** — a 5–10% shift (a zone rendered on `muted/40`)
+3. **Elevation** — scarce, only for things that genuinely float (popovers, drag previews)
+
+No `border-b` under a panel header, no `border-t` above a footer. Where a header needs to detach from scrolled content, use a **scroll-edge shadow** that appears only once content scrolls under it. Hover uses the same 5–10% tint step, so grouping and hover share one mechanism.
+
+#### Nothing renders at rest
+
+Row and section actions (`+`, kebab, drag handles) are invisible until hover or focus-visible. Two obligations come with that:
+
+- **A keyboard path** — `focus-visible` reveals the same action a pointer reveals.
+- **A touch path** — visible on touch pointers, or reachable by long-press / context menu. For anything draggable, WCAG 2.2 §2.5.7 requires a non-drag alternative.
+
+Keep reserved gutters minimal; a vertical kebab (⋮) needs less width than a horizontal one (⋯).
 
 ## Design Thinking Process
 
@@ -111,10 +148,12 @@ Before writing any code, work through these questions:
 | Separated       | 24-32px — distinct groups             |
 | Major sections  | 48-64px — page-level divisions        |
 
+This ladder is for **content** surfaces. On a control surface, the whole budget is 16px of inset and a 4px rhythm inside the row.
+
 **Spacing decisions:**
 
 - Are related elements grouped together?
-- Is there enough breathing room?
+- Is there enough breathing room — or, on a control surface, is the inset paid exactly once?
 - Does spacing communicate relationships?
 
 ## Component Design Decisions
@@ -145,6 +184,28 @@ When designing a component, consider:
 - **When to use**: Structured data comparison, many rows
 - **When not to use**: Simple lists, mobile-first contexts
 - **Key decision**: Is table format the clearest way to present this?
+
+### Lists and Navigation
+
+- **One row grammar for mixed types** — fixed leading-glyph slot + label + trailing meta/badge slot + hover kebab. The glyph carries the type (avatar = agent or person, `#` = channel); the row chrome never changes between types. Attribution lives in the label (`Agent › thing`) — never show a session without whose it is.
+- **One glyph, two jobs** — overload existing chrome before adding chrome. A section header's identity icon _becomes_ its collapse chevron on hover. A collapsed section keeps its signal: unread and activity counts roll up onto the collapsed row.
+- **Prediction is additive, never a reorder** — recency and frequency may rank a _dedicated_ layer (Today, Jump back in). Manual structure — pins, groups, channel order — stays exactly where the user put it, and manual overrides are stored separately, never silently discarded. Auto-reordering navigation breaks spatial memory and erodes trust.
+- **Chrome appears when the data earns it** — grouping UI at roughly 8+ items or 2+ runtimes; below that it does not render. Never a settings toggle for "advanced mode".
+- **Empty is not empty-looking** — a section with nothing to say disappears rather than rendering an empty box. Absence is the calm signal.
+- **Personal scope floats above structure** — "where am I needed?" (mentions, permission prompts, wedged sessions) sits above all browsing structure, badge-counted, never collapsible into oblivion.
+
+## Agent Status Vocabulary
+
+Agent state is not human presence. Borrowing presence design — a green dot, a "typing…" line — makes a fleet look like a chat roster and hides the thing an operator actually needs: what is happening, and whether it is stuck.
+
+- **Agent "working" is not human "typing".** Different facts; they never share a UI slot.
+- **Parallel activity aggregates.** Ten working agents are one calm line — "10 agents working" — not ten pulsing rows.
+- **Status is composed:** process state × heartbeat × activity. "Running but silent past a grace period" reads as _starting_ or _wedged_ (a warning), never _offline_.
+- **Only "working" pulses.** Idle, done and error are static. A pulse means _right now_; if everything pulses, nothing does.
+- **Live activity verbs are the best glanceable signal** a fleet UI can show — "reviewing PR…" beats a status word.
+- **Unread is two-tier.** Bold label + dot means _there is activity here_. A numbered badge is reserved for _this is directed at you_ — a mention, a permission prompt, a needs-you. Numbering everything spends the scarce signal.
+
+Tokens and recipes: `styling-with-tailwind-shadcn` → Control Surfaces. The identity disc's `working` pulse is specified in `contributing/design-system.md` → Identity.
 
 ## Animation Design Decisions
 
@@ -182,20 +243,26 @@ Always respect `prefers-reduced-motion`. Users who enable this setting should se
 Before implementation, verify:
 
 - [ ] **Purpose is clear** — User knows what to do
+- [ ] **Spatial mode is right** — Content surface or control surface, spaced accordingly
 - [ ] **Hierarchy is established** — Eye path is intentional
 - [ ] **Typography is consistent** — Using type scale correctly
 - [ ] **Colors are semantic** — Not hardcoded, using design tokens
-- [ ] **Spacing is systematic** — Using spacing scale
+- [ ] **Spacing is systematic** — Using spacing scale; inset paid once, not stacked
+- [ ] **Separation is earned** — Gap or tint before a border
 - [ ] **Edge cases are designed** — Empty, error, loading states
 - [ ] **Accessibility is considered** — Contrast, focus states, screen readers
+- [ ] **Hover-only affordances have twins** — A keyboard path and a touch path
 - [ ] **Animation is intentional** — Adding value, not decoration
 
 ## What NOT to Do
 
 - **Over-design** — Every element should earn its place
 - **Inconsistent patterns** — Reuse existing patterns first
+- **Stack padding** — Container + section + row insets compound into a gutter nobody chose
+- **Draw a line where a gap would do** — A border is the last separator, not the first
 - **Skip edge cases** — Design for empty/error/loading states
 - **Ignore hierarchy** — Every element needs a clear level
+- **Reorder the user's structure** — Prediction adds a layer; it never rearranges one
 - **Animate everything** — Restraint is sophistication
 - **Forget accessibility** — It's not optional
 
@@ -205,3 +272,4 @@ Before implementation, verify:
 - `styling-with-tailwind-shadcn` skill — Implementation patterns
 - `contributing/styling-theming.md` — Styling patterns
 - `contributing/animations.md` — Animation patterns
+- `research/20260809_design-meta-2026-learnings.md` — The 2026 design meta these rules are drawn from

@@ -1,0 +1,317 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Sidebar mockup — Zones and States</title><style>
+body{font-family:-apple-system,'Segoe UI',sans-serif;max-width:1280px;margin:0 auto;padding:32px;background:#faf9f7;color:#26251f;line-height:1.5} h2{font-size:24px;margin:0 0 6px} h3{font-size:17px;margin:22px 0 8px} .subtitle{color:#75736a;font-size:14px;margin:0 0 18px} .section{margin-bottom:40px} .label{font-size:11px;font-weight:650;text-transform:uppercase;letter-spacing:.05em;color:#8a887d;margin-bottom:6px}
+</style></head><body>
+<div style="background:rgba(229,148,11,.12);border-radius:10px;padding:12px 16px;margin-bottom:24px;font-size:14px;line-height:1.5"><b>⚠ Mockup, not a final design.</b> Built during the 2026-08-09 design session to communicate direction — spacing, copy, and colors are approximate. The authoritative rules live in <code>specs/sidebar-now-today-library/design-decisions.md</code>; where this file and that doc disagree, the doc wins. Decision-option blocks were removed from this copy; the outcomes are recorded in the doc. Resolved here: the Now zone disappears entirely when empty; Library section rows toggle on whole-row click.</div>
+<svg style="display:none" xmlns="http://www.w3.org/2000/svg">
+  <symbol id="i-home" viewBox="0 0 24 24"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M9 22V12h6v10"/></symbol>
+  <symbol id="i-users" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></symbol>
+  <symbol id="i-plug" viewBox="0 0 24 24"><path d="M12 22v-5"/><path d="M9 8V2"/><path d="M15 8V2"/><path d="M18 8v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V8z"/></symbol>
+  <symbol id="i-store" viewBox="0 0 24 24"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 0 1-8 0"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/></symbol>
+  <symbol id="i-hash" viewBox="0 0 24 24"><path d="M4 9h16"/><path d="M4 15h16"/><path d="M10 3 8 21"/><path d="M16 3l-2 18"/></symbol>
+  <symbol id="i-at" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-4 8"/></symbol>
+  <symbol id="i-bot" viewBox="0 0 24 24"><path d="M12 8V4H8"/><rect x="4" y="8" width="16" height="12" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="M12 5v14"/></symbol>
+  <symbol id="i-kebab" viewBox="0 0 24 24"><circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/></symbol>
+  <symbol id="i-chev-d" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+  <symbol id="i-chev-r" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></symbol>
+  <symbol id="i-spark" viewBox="0 0 24 24"><path d="M12 3v3"/><path d="M12 18v3"/><path d="M3 12h3"/><path d="M18 12h3"/><path d="m5.6 5.6 2.1 2.1"/><path d="m16.3 16.3 2.1 2.1"/><path d="m5.6 18.4 2.1-2.1"/><path d="m16.3 7.7 2.1-2.1"/></symbol>
+  <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.9 4.9 1.4 1.4"/><path d="m17.7 17.7 1.4 1.4"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m4.9 19.1 1.4-1.4"/><path d="m17.7 6.3 1.4-1.4"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
+</svg>
+
+<style>
+  .s-stage { padding: 18px 14px; display: flex; justify-content: center; background: #e9e7e2; border-radius: 12px; }
+  .s-sb { width: 280px; background: #f8f7f5; border: 1px solid #e6e4df; border-radius: 14px; padding: 10px 8px; color: #26251f; font-family: -apple-system, 'Segoe UI', sans-serif; font-size: 13px; line-height: 1.35; text-align: left; box-shadow: 0 1px 3px rgba(30,28,20,.06); }
+  .s-sb * { box-sizing: border-box; }
+  .s-i { width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex-shrink: 0; }
+  .s-r { display: flex; align-items: center; gap: 8px; min-height: 28px; padding: 0 8px; border-radius: 7px; color: #3d3c36; cursor: default; }
+  .s-r:hover { background: #eceae5; }
+  .s-lbl { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .s-meta { margin-left: auto; font-size: 11px; color: #a5a39a; flex-shrink: 0; }
+  .s-kb { opacity: 0; color: #8a887d; display: inline-flex; margin-left: 4px; }
+  .s-r:hover .s-kb { opacity: 1; }
+  .s-sh { display: flex; align-items: center; gap: 6px; height: 28px; padding: 0 8px; color: #55534b; font-size: 12.5px; font-weight: 550; border-radius: 7px; margin-top: 2px; cursor: default; }
+  .s-sh:hover { background: #efede8; }
+  .s-g { width: 14px; height: 14px; position: relative; flex-shrink: 0; }
+  .s-g .ga { position: absolute; inset: 0; display: block; }
+  .s-g .gb { position: absolute; inset: 0; display: none; }
+  .s-sh:hover .s-g .ga { display: none; }
+  .s-sh:hover .s-g .gb { display: block; }
+  .s-acts { margin-left: auto; display: flex; gap: 2px; opacity: 0; }
+  .s-sh:hover .s-acts { opacity: 1; }
+  .s-ab { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border-radius: 5px; color: #8a887d; }
+  .s-ab:hover { background: #e3e1da; color: #4d4b43; }
+  .s-ch { margin-left: 14px; }
+  .s-av { width: 18px; height: 18px; border-radius: 5px; display: inline-flex; align-items: center; justify-content: center; font-size: 11px; flex-shrink: 0; }
+  .s-r2 { align-items: flex-start; padding: 5px 8px; min-height: 0; }
+  .s-r2 .s-av { margin-top: 1px; }
+  .s-t1 { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
+  .s-t2 { font-size: 11px; color: #a09e94; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .s-t2.hot { color: #6b6963; font-weight: 500; }
+  .s-who { font-weight: 550; color: #26251f; flex-shrink: 0; }
+  .s-sep { color: #b5b3a8; }
+  .s-bdg { background: rgba(229,148,11,.16); color: #a8690a; border-radius: 9px; font-size: 10px; font-weight: 650; padding: 1px 6px; margin-left: auto; flex-shrink: 0; }
+  .s-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+  .s-dot.on { background: #3fa374; }
+  .s-dot.off { background: #c9c7bd; }
+  .s-dot.warn { background: #e5940b; }
+  .s-pulse { animation: s-pulse 2s ease-in-out infinite; }
+  @keyframes s-pulse { 0%,100% { opacity: 1; } 50% { opacity: .3; } }
+  .s-new { display: inline-flex; align-items: center; gap: 4px; background: #26251f; color: #f8f7f5; border-radius: 8px; padding: 3px 9px; font-size: 11.5px; font-weight: 600; margin-left: 6px; }
+  .s-pill { display: flex; align-items: center; gap: 6px; background: #efede8; border-radius: 8px; padding: 5px 8px; color: #8a887d; font-size: 12px; margin: 8px 0 2px; }
+  .s-kbd { margin-left: auto; font-size: 10px; background: #f8f7f5; border: 1px solid #dfddd6; border-radius: 4px; padding: 0 4px; color: #8a887d; }
+  .s-zone { background: #f1efe9; border-radius: 10px; padding: 4px; margin-top: 8px; }
+  .s-zlbl { display: flex; align-items: center; gap: 6px; padding: 4px 6px; font-size: 11px; font-weight: 650; color: #75736a; letter-spacing: .02em; }
+  .s-card { background: #f8f7f5; border-radius: 8px; margin-bottom: 3px; }
+  .s-ftr { display: flex; align-items: center; gap: 10px; margin-top: 10px; background: #f1efe9; border-radius: 9px; padding: 6px 10px; color: #8a887d; }
+  .s-ghost { color: #a5a39a; font-size: 12px; }
+  .s-hd { display: flex; align-items: center; gap: 7px; padding: 2px 8px 6px; }
+  .s-logo { width: 20px; height: 20px; border-radius: 6px; background: #26251f; color: #f8f7f5; display: inline-flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; }
+  .s-uav { width: 20px; height: 20px; border-radius: 50%; background: #6d5a4e; margin-left: auto; display: inline-flex; align-items: center; justify-content: center; color: #f3ece6; font-size: 10px; }
+  .s-note { font-size: 10.5px; color: #a5a39a; padding: 4px 8px 0; line-height: 1.4; }
+  .s-glow { animation: s-glow 5s ease-in-out infinite; border-radius: 7px; }
+  @keyframes s-glow { 0% { background: rgba(229,148,11,.22); } 22% { background: rgba(229,148,11,.22); } 45%, 100% { background: transparent; } }
+  .s-done { color: #a5a39a; text-decoration: line-through; }
+  .s-menu { width: 210px; background: #fdfcfb; border: 1px solid #e2e0da; border-radius: 10px; box-shadow: 0 8px 24px rgba(30,28,20,.14); padding: 4px; font-family: -apple-system, sans-serif; font-size: 12.5px; color: #3d3c36; text-align: left; }
+  .s-mi { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 6px; }
+  .s-mi:hover { background: #f0eee9; }
+  .s-mi .s-kbd { border-color: #e6e4df; background: #f6f5f2; }
+  .s-msep { height: 1px; background: #eeece6; margin: 4px 6px; }
+  .journey { display: flex; gap: 20px; flex-wrap: wrap; align-items: flex-start; }
+  .j-col { width: 300px; }
+  .j-cap { font-size: 13px; line-height: 1.5; margin-top: 10px; }
+  .j-cap b { display: block; margin-bottom: 2px; }
+  .ph { width: 270px; height: 560px; border: 8px solid #26251f; border-radius: 36px; background: #f8f7f5; overflow: hidden; display: flex; flex-direction: column; font-family: -apple-system, sans-serif; font-size: 13px; color: #26251f; flex-shrink: 0; }
+  .ph * { box-sizing: border-box; }
+  .ph-hd { display: flex; align-items: center; gap: 8px; padding: 14px 14px 8px; }
+  .ph-body { flex: 1; overflow: hidden; padding: 0 8px; }
+  .ph-tabs { display: flex; border-top: 1px solid #eceae4; padding: 8px 10px 14px; justify-content: space-around; align-items: center; color: #8a887d; }
+  .ph-tab { display: flex; flex-direction: column; align-items: center; gap: 3px; font-size: 10px; position: relative; }
+  .ph-tab.act { color: #26251f; font-weight: 600; }
+  .ph-tab .s-i { width: 20px; height: 20px; }
+  .ph-b { position: absolute; top: -2px; right: -6px; min-width: 14px; height: 14px; border-radius: 7px; background: #e5940b; color: #fff; font-size: 9px; font-weight: 700; display: flex; align-items: center; justify-content: center; padding: 0 3px; }
+  .rule-ul { font-size: 14px; line-height: 1.55; padding-left: 20px; }
+  .rule-ul li { margin-bottom: 7px; }
+</style>
+
+<h2>Direction C, in depth</h2>
+<p class="subtitle">Locked in: <b>C · Now / Today / Library</b>, plus B's "New" button up top and a permanent "Ask DorkBot" help path. This screen answers your two questions (new users, Library mechanics), then covers mobile and the moments. Mockups are live — hover around. Two small decisions for you at the bottom.</p>
+
+<!-- ================= THE JOURNEY / EMPTY STATES ================= -->
+<div class="section">
+<h3>1 · What users see, from day one to power user</h3>
+<p class="subtitle">The answer to "what if nothing is happening": <b>a zone with nothing to say disappears.</b> An empty box is never rendered. And the sidebar is never truly empty — DorkBot and #team are seeded on install, so the Library always has life in it.</p>
+
+<div class="journey">
+
+  <!-- FIRST RUN -->
+  <div class="j-col">
+    <div class="s-stage">
+      <div class="s-sb">
+        <div class="s-hd"><span class="s-logo">D</span><span style="font-weight:650">DorkOS</span><span class="s-uav">D</span><span class="s-new"><svg class="s-i" style="width:11px;height:11px;stroke-width:2.5"><use href="#i-plus"/></svg>New</span></div>
+        <div class="s-pill"><svg class="s-i"><use href="#i-search"/></svg>Jump to anything…<span class="s-kbd">⌘K</span></div>
+        <div class="s-zone">
+          <div class="s-zlbl"><svg class="s-i" style="width:12px;height:12px;color:#e5940b"><use href="#i-spark"/></svg>Getting started<span class="s-meta">1 of 3</span></div>
+          <div class="s-r s-card"><svg class="s-i" style="color:#3fa374"><use href="#i-check"/></svg><span class="s-lbl s-done">Ask DorkBot anything</span></div>
+          <div class="s-r s-card"><svg class="s-i" style="color:#8a887d"><use href="#i-hash"/></svg><span class="s-lbl">Say hi in #team</span></div>
+          <div class="s-r s-card"><svg class="s-i" style="color:#8a887d"><use href="#i-plus"/></svg><span class="s-lbl">Add your first agent</span></div>
+        </div>
+        <div class="s-sh" style="margin-top:8px"><span class="s-g"><svg class="s-i ga"><use href="#i-hash"/></svg><svg class="s-i gb"><use href="#i-chev-d"/></svg></span><span class="s-lbl">Channels</span></div>
+        <div class="s-ch"><div class="s-r"><svg class="s-i" style="color:#8a887d"><use href="#i-hash"/></svg><span class="s-lbl">team</span></div></div>
+        <div class="s-sh"><span class="s-g"><svg class="s-i ga"><use href="#i-bot"/></svg><svg class="s-i gb"><use href="#i-chev-d"/></svg></span><span class="s-lbl">Agents</span></div>
+        <div class="s-ch"><div class="s-r"><span class="s-av" style="background:#d8e6f6">🤖</span><span class="s-lbl">DorkBot</span><span class="s-meta">ready</span></div></div>
+        <div class="s-ftr"><svg class="s-i"><use href="#i-home"/></svg><svg class="s-i"><use href="#i-users"/></svg><svg class="s-i"><use href="#i-store"/></svg><svg class="s-i"><use href="#i-plug"/></svg><span style="margin-left:auto;display:inline-flex;align-items:center;gap:5px;color:#55534b;font-size:11.5px;font-weight:550"><svg class="s-i" style="width:12px;height:12px"><use href="#i-spark"/></svg>Ask DorkBot</span></div>
+      </div>
+    </div>
+    <div class="j-cap"><b>Day one</b>No Now, no Today — instead a <i>Getting started</i> zone with three suggested actions that check off and retire themselves. Library already has #team and DorkBot. No Direct messages section yet — it appears when the first DM exists (disclosure by data, not settings).</div>
+  </div>
+
+  <!-- QUIET MORNING -->
+  <div class="j-col">
+    <div class="s-stage">
+      <div class="s-sb">
+        <div class="s-hd"><span class="s-logo">D</span><span style="font-weight:650">DorkOS</span><span class="s-uav">D</span><span class="s-new"><svg class="s-i" style="width:11px;height:11px;stroke-width:2.5"><use href="#i-plus"/></svg>New</span></div>
+        <div class="s-pill"><svg class="s-i"><use href="#i-search"/></svg>Jump to anything…<span class="s-kbd">⌘K</span></div>
+        <div class="s-sh" style="margin-top:8px"><span class="s-g"><svg class="s-i ga"><use href="#i-clock"/></svg><svg class="s-i gb"><use href="#i-chev-d"/></svg></span><span class="s-lbl">Today</span></div>
+        <div class="s-ch">
+          <div class="s-r s-r2 s-glow"><svg class="s-i" style="color:#b08a3e;margin-top:2px"><use href="#i-sun"/></svg><div style="flex:1;min-width:0"><div class="s-t1"><span class="s-lbl"><b>While you were away</b></span></div><div class="s-t2">2 sessions finished · #team +5 → </div></div></div>
+          <div class="s-r"><span class="s-av" style="background:#f9d8ea">🐙</span><span class="s-lbl">Dashboard overhaul</span><span class="s-meta">done ✓</span></div>
+          <div class="s-r"><span class="s-av" style="background:#eceae5;color:#75736a">#</span><span class="s-lbl" style="font-weight:600;color:#141310">team</span><span class="s-bdg">5</span></div>
+        </div>
+        <div class="s-sh"><span class="s-g"><svg class="s-i ga"><use href="#i-hash"/></svg><svg class="s-i gb"><use href="#i-chev-d"/></svg></span><span class="s-lbl">Channels</span><span class="s-meta">3</span></div>
+        <div class="s-sh"><span class="s-g"><svg class="s-i ga"><use href="#i-at"/></svg><svg class="s-i gb"><use href="#i-chev-d"/></svg></span><span class="s-lbl">Direct messages</span><span class="s-meta">2</span></div>
+        <div class="s-sh"><span class="s-g"><svg class="s-i ga"><use href="#i-bot"/></svg><svg class="s-i gb"><use href="#i-chev-d"/></svg></span><span class="s-lbl">Agents</span><span class="s-meta">3 · all idle</span></div>
+        <div class="s-ftr"><svg class="s-i"><use href="#i-home"/></svg><svg class="s-i"><use href="#i-users"/></svg><svg class="s-i"><use href="#i-store"/></svg><svg class="s-i"><use href="#i-plug"/></svg><span style="margin-left:auto;display:inline-flex;align-items:center;gap:5px;color:#55534b;font-size:11.5px;font-weight:550"><svg class="s-i" style="width:12px;height:12px"><use href="#i-spark"/></svg>Ask DorkBot</span></div>
+      </div>
+    </div>
+    <div class="j-cap"><b>Quiet morning</b>Nothing needs you → <b>the Now zone is simply gone.</b> Its absence <i>is</i> the calm signal. Today opens with the welcome-back digest (glowing softly, once). If today were empty too, Today would vanish as well and the sidebar would just be the Library — perfectly still.</div>
+  </div>
+
+  <!-- POWER USER -->
+  <div class="j-col">
+    <div class="s-stage">
+      <div class="s-sb">
+        <div class="s-hd"><span class="s-logo">D</span><span style="font-weight:650">DorkOS</span><span class="s-uav">D</span><span class="s-new"><svg class="s-i" style="width:11px;height:11px;stroke-width:2.5"><use href="#i-plus"/></svg>New</span></div>
+        <div class="s-pill"><svg class="s-i"><use href="#i-search"/></svg>Jump to anything…<span class="s-kbd">⌘K</span></div>
+        <div class="s-zone">
+          <div class="s-zlbl"><span class="s-dot warn"></span>Now<span class="s-meta">4 need you</span></div>
+          <div class="s-r s-r2 s-card"><span class="s-av" style="background:#f9d8ea">🐙</span><div style="flex:1;min-width:0"><div class="s-t1"><span class="s-lbl"><b>Approve file write</b></span><span class="s-meta">2m</span></div><div class="s-t2">DorkOS · Dashboard overhaul</div></div></div>
+          <div class="s-r s-r2 s-card"><span class="s-av" style="background:#e2def6">🔮</span><div style="flex:1;min-width:0"><div class="s-t1"><span class="s-lbl"><b>Question for you</b></span><span class="s-meta">9m</span></div><div class="s-t2">oracle · API migration plan</div></div></div>
+          <div class="s-r s-ghost" style="min-height:24px">+ 2 more</div>
+          <div class="s-r" style="min-height:24px"><span class="s-dot on s-pulse"></span><span class="s-lbl" style="font-size:12px;color:#75736a">6 working</span><span class="s-meta">tests, PR review…</span></div>
+        </div>
+        <div class="s-sh"><span class="s-g"><svg class="s-i ga"><use href="#i-clock"/></svg><svg class="s-i gb"><use href="#i-chev-d"/></svg></span><span class="s-lbl">Today</span></div>
+        <div class="s-ch">
+          <div class="s-r"><span class="s-av" style="background:#f9d8ea">🐙</span><span class="s-lbl">Dashboard overhaul</span><span class="s-meta">7m</span></div>
+          <div class="s-r"><span class="s-av" style="background:#eceae5;color:#75736a">#</span><span class="s-lbl" style="font-weight:600;color:#141310">deploys</span><span class="s-bdg">12</span></div>
+          <div class="s-r"><span class="s-av" style="background:#fdeacc">🍊</span><span class="s-lbl">Design airtight box</span><span class="s-meta">1h</span></div>
+        </div>
+        <div class="s-sh"><span class="s-g"><svg class="s-i ga"><use href="#i-hash"/></svg><svg class="s-i gb"><use href="#i-chev-d"/></svg></span><span class="s-lbl">Channels</span><span class="s-bdg">2</span></div>
+        <div class="s-sh"><span class="s-g"><svg class="s-i ga"><use href="#i-at"/></svg><svg class="s-i gb"><use href="#i-chev-d"/></svg></span><span class="s-lbl">Direct messages</span><span class="s-meta">6</span></div>
+        <div class="s-sh"><span class="s-g"><svg class="s-i ga"><use href="#i-bot"/></svg><svg class="s-i gb"><use href="#i-chev-d"/></svg></span><span class="s-lbl">Agents</span><span class="s-meta">32 · 6 working</span></div>
+        <div class="s-ftr"><svg class="s-i"><use href="#i-home"/></svg><svg class="s-i"><use href="#i-users"/></svg><svg class="s-i"><use href="#i-store"/></svg><svg class="s-i"><use href="#i-plug"/></svg><span style="margin-left:auto;display:inline-flex;align-items:center;gap:5px;color:#55534b;font-size:11.5px;font-weight:550"><svg class="s-i" style="width:12px;height:12px"><use href="#i-spark"/></svg>Ask DorkBot</span></div>
+      </div>
+    </div>
+    <div class="j-cap"><b>Power user, busy day</b>Now caps at 3 visible + "N more" — it prioritizes (permission prompts first, then questions, then wedged/idle), never scrolls. Working sessions stay one aggregate line. The Library holds 32 agents behind one calm collapsed row with a rollup. Density scales; chrome doesn't.</div>
+  </div>
+</div>
+</div>
+
+<!-- ================= LIBRARY MECHANICS ================= -->
+<div class="section">
+<h3>2 · How the Library actually works</h3>
+<p class="subtitle">Your nesting worry is solved by one rule: <b>zone labels are landmarks, sections are accordions.</b> "Library" (like "Now" and "Today") never collapses — it's a heading, not a control. Only the sections inside it fold.</p>
+
+<div class="journey">
+  <div class="j-col">
+    <div class="s-stage">
+      <div class="s-sb" style="width:270px">
+        <div class="s-zlbl" style="padding-left:8px;text-transform:uppercase;letter-spacing:.05em;font-size:10px">Library</div>
+        <div class="s-sh"><span class="s-g"><svg class="s-i ga"><use href="#i-hash"/></svg><svg class="s-i gb"><use href="#i-chev-r"/></svg></span><span class="s-lbl">Channels</span><span class="s-bdg">2</span><span class="s-acts"><span class="s-ab"><svg class="s-i" style="width:12px;height:12px"><use href="#i-plus"/></svg></span><span class="s-ab"><svg class="s-i" style="width:12px;height:12px"><use href="#i-kebab"/></svg></span></span></div>
+        <div class="s-sh"><span class="s-g"><svg class="s-i ga"><use href="#i-at"/></svg><svg class="s-i gb"><use href="#i-chev-r"/></svg></span><span class="s-lbl">Direct messages</span><span class="s-meta">2</span></div>
+        <div class="s-sh"><span class="s-g"><svg class="s-i ga"><use href="#i-bot"/></svg><svg class="s-i gb"><use href="#i-chev-r"/></svg></span><span class="s-lbl">Agents</span><span class="s-meta">12 · 3 working</span></div>
+      </div>
+    </div>
+    <div class="j-cap"><b>Collapsed</b>Nothing is lost when folded: unread badges and "N working" roll up onto the section row (Discord-folder rule). Hover shows the chevron (pointing right = closed) plus ＋ and ⋮.</div>
+  </div>
+
+  <div class="j-col">
+    <div class="s-stage">
+      <div class="s-sb" style="width:270px">
+        <div class="s-zlbl" style="padding-left:8px;text-transform:uppercase;letter-spacing:.05em;font-size:10px">Library</div>
+        <div class="s-sh"><span class="s-g"><svg class="s-i ga"><use href="#i-hash"/></svg><svg class="s-i gb"><use href="#i-chev-d"/></svg></span><span class="s-lbl">Channels</span><span class="s-acts"><span class="s-ab"><svg class="s-i" style="width:12px;height:12px"><use href="#i-plus"/></svg></span><span class="s-ab"><svg class="s-i" style="width:12px;height:12px"><use href="#i-kebab"/></svg></span></span></div>
+        <div class="s-ch">
+          <div class="s-r"><svg class="s-i" style="color:#8a887d"><use href="#i-hash"/></svg><span class="s-lbl" style="font-weight:600;color:#141310">team</span><span class="s-bdg">2</span></div>
+          <div class="s-r"><svg class="s-i" style="color:#8a887d"><use href="#i-hash"/></svg><span class="s-lbl">mio</span><span class="s-kb"><svg class="s-i" style="width:12px;height:12px"><use href="#i-kebab"/></svg></span></div>
+        </div>
+        <div class="s-sh"><span class="s-g"><svg class="s-i ga"><use href="#i-bot"/></svg><svg class="s-i gb"><use href="#i-chev-d"/></svg></span><span class="s-lbl">Agents</span><span class="s-meta">3 working</span></div>
+        <div class="s-ch">
+          <div class="s-r"><span class="s-av" style="background:#f9d8ea">🐙</span><span class="s-lbl">DorkOS</span><span class="s-meta">reviewing PR…</span></div>
+          <div class="s-r"><span class="s-av" style="background:#fdeacc">🍊</span><span class="s-lbl">tangerines</span><span class="s-meta">writing tests…</span></div>
+          <div class="s-sh" style="height:24px;font-size:11.5px;margin-top:0"><span class="s-g"><svg class="s-i ga" style="width:12px;height:12px"><use href="#i-chev-r"/></svg><svg class="s-i gb" style="width:12px;height:12px"><use href="#i-chev-r"/></svg></span><span class="s-lbl">By runtime</span><span class="s-meta">3 groups</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="j-cap"><b>Expanded</b>One click on the section row toggles it. Children indent one level — exactly one; groups ("By runtime") sit inside Agents as a sub-header with short names. Expansion state is per-user and already server-persisted, so it follows you across devices.</div>
+  </div>
+
+  <div class="j-col" style="width:340px">
+    <b style="font-size:14px">The rules, stated once</b>
+    <ul class="rule-ul" style="margin-top:8px">
+      <li><b>Now / Today / Library never collapse.</b> They're landmarks. They appear and disappear based on whether they have content.</li>
+      <li><b>Channels / DMs / Agents are the accordions.</b> Click anywhere on the row to toggle. No nested accordions below except agent groups (one level, inside Agents).</li>
+      <li><b>Selecting vs expanding is never ambiguous</b> because section rows only expand — real destinations (a channel, an agent, a session) are always leaf rows.</li>
+      <li><b>Collapsed ≠ silent.</b> Badges and working-counts roll up.</li>
+      <li><b>Small fleets default to expanded</b>; sections you fold stay folded.</li>
+      <li>Alt-click any chevron: collapse/expand everything (Slack/Linear convention).</li>
+    </ul>
+  </div>
+</div>
+</div>
+
+<!-- ================= NEW BUTTON + DORKBOT ================= -->
+<div class="section">
+<h3>3 · The New button, and Ask DorkBot</h3>
+<div class="journey">
+  <div class="j-col" style="width:260px">
+    <div class="s-stage" style="align-items:flex-start">
+      <div>
+        <span class="s-new" style="font-size:12px;padding:4px 10px;margin-left:0"><svg class="s-i" style="width:12px;height:12px;stroke-width:2.5"><use href="#i-plus"/></svg>New</span>
+        <div class="s-menu" style="margin-top:6px">
+          <div class="s-mi" style="background:#f0eee9"><svg class="s-i"><use href="#i-bot"/></svg>Session<span class="s-kbd">⌘N</span></div>
+          <div class="s-note" style="padding:0 8px 4px;margin-top:-2px">↵ starts with DorkOS (last used)</div>
+          <div class="s-msep"></div>
+          <div class="s-mi"><svg class="s-i"><use href="#i-hash"/></svg>Channel</div>
+          <div class="s-mi"><svg class="s-i"><use href="#i-at"/></svg>Direct message</div>
+          <div class="s-msep"></div>
+          <div class="s-mi"><svg class="s-i"><use href="#i-plus"/></svg>Agent…</div>
+          <div class="s-mi"><svg class="s-i"><use href="#i-users"/></svg>Agent group</div>
+        </div>
+      </div>
+    </div>
+    <div class="j-cap"><b>One door for every "make a thing"</b>Your issue 7 dies here: this menu is the <i>only</i> create surface. The hover ＋ on each section is just a shortcut into the same menu, pre-selected. ⌘N and Enter give the fast path: a new session with your last-used agent, instantly.</div>
+  </div>
+  <div class="j-col" style="width:340px">
+    <div class="j-cap" style="margin-top:0"><b>Ask DorkBot — help that answers back</b>The ✦ Ask DorkBot button lives permanently in the footer strip (and as the first Getting-started suggestion). Clicking it doesn't open docs — it opens a <b>fresh DorkBot session pre-seeded with context</b>: what page you were on, your fleet size, recent errors from the session you were viewing. DorkBot greets you already knowing the situation ("Looks like your Codex runtime disconnected — want me to walk through reconnecting?"). A help menu item can't do that; an agent can. It's also the product's own thesis — the system explains itself through an agent.</div>
+    <div class="j-cap"><b>Implementation note</b>Seeding = a hidden context preamble on session start (server-side), not visible chat text. DorkBot already exists as the auto-created system agent, so this is wiring, not new machinery.</div>
+  </div>
+</div>
+</div>
+
+<!-- ================= MOBILE ================= -->
+<div class="section">
+<h3>4 · Mobile — a different app, same brain</h3>
+<div class="journey">
+  <div class="j-col" style="width:290px">
+    <div class="s-stage">
+      <div class="ph">
+        <div class="ph-hd"><span class="s-logo">D</span><span style="font-weight:650">Home</span><span class="s-uav" style="margin-left:auto">D</span><span class="s-new"><svg class="s-i" style="width:11px;height:11px;stroke-width:2.5"><use href="#i-plus"/></svg>New</span></div>
+        <div class="ph-body">
+          <div class="s-zone">
+            <div class="s-zlbl"><span class="s-dot warn"></span>Now<span class="s-meta">2 need you</span></div>
+            <div class="s-r s-r2 s-card"><span class="s-av" style="background:#f9d8ea">🐙</span><div style="flex:1;min-width:0"><div class="s-t1"><span class="s-lbl"><b>Approve file write</b></span><span class="s-meta">2m</span></div><div class="s-t2">DorkOS · Dashboard overhaul</div></div></div>
+            <div class="s-r s-r2 s-card"><span class="s-av" style="background:#fdeacc">🍊</span><div style="flex:1;min-width:0"><div class="s-t1"><span class="s-lbl"><b>Idle 20h</b> — wrap up?</span><span class="s-meta">20h</span></div><div class="s-t2">tangerines · Reply with exactly…</div></div></div>
+            <div class="s-r" style="min-height:24px"><span class="s-dot on s-pulse"></span><span class="s-lbl" style="font-size:12px;color:#75736a">2 working</span></div>
+          </div>
+          <div class="s-sh" style="margin-top:6px"><span class="s-g"><svg class="s-i ga"><use href="#i-clock"/></svg><svg class="s-i gb"><use href="#i-chev-d"/></svg></span><span class="s-lbl">Today</span></div>
+          <div class="s-r" style="min-height:40px"><span class="s-av" style="background:#f9d8ea">🐙</span><span class="s-lbl">Dashboard overhaul</span><span class="s-meta">7m</span></div>
+          <div class="s-r" style="min-height:40px"><span class="s-av" style="background:#eceae5;color:#75736a">#</span><span class="s-lbl" style="font-weight:600;color:#141310">team</span><span class="s-bdg">2</span></div>
+          <div class="s-r" style="min-height:40px"><span class="s-av" style="background:#fdeacc">🍊</span><span class="s-lbl">Design airtight box</span><span class="s-meta">1d</span></div>
+        </div>
+        <div class="ph-tabs">
+          <div class="ph-tab act"><svg class="s-i"><use href="#i-home"/></svg>Home<span class="ph-b">2</span></div>
+          <div class="ph-tab"><svg class="s-i"><use href="#i-hash"/></svg>Library</div>
+          <div class="ph-tab"><svg class="s-i"><use href="#i-spark"/></svg>DorkBot</div>
+          <div class="ph-tab"><svg class="s-i"><use href="#i-users"/></svg>You</div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="j-col" style="width:360px">
+    <ul class="rule-ul" style="margin-top:0">
+      <li><b>The drawer dies.</b> No hamburger-sidebar on mobile. Now + Today <i>become</i> the Home tab — the sidebar's brain, promoted to the whole screen.</li>
+      <li><b>Four tabs:</b> Home (badged with needs-you count) · Library · DorkBot · You. Slack cut to 3 tabs; Discord runs 3. We spend our fourth on help-that-answers.</li>
+      <li><b>No FAB</b> (nobody in this category uses one) — "New" stays in the header.</li>
+      <li><b>Hover doesn't exist:</b> row actions move to long-press (context menu already exists and is identical to ⋯ by construction — the dual-render menu system pays off here). Rows grow to 40–44px touch height.</li>
+      <li><b>Bulk first:</b> a "Catch up" action at the top of Today marks everything read — per-item triage is a desktop behavior.</li>
+      <li><b>Approvals are the killer mobile feature:</b> permission prompts land in Now with approve/deny right there. Your agents keep moving while you're in line for coffee.</li>
+    </ul>
+  </div>
+</div>
+</div>
+
+<!-- ================= MOMENTS ================= -->
+<div class="section">
+<h3>5 · The moments</h3>
+<div class="rs-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:14px">
+  <div class="rs-card" style="border:1px solid rgba(128,128,128,.25);border-radius:10px;padding:12px 14px;font-size:13.5px;line-height:1.45"><b style="display:block;margin-bottom:3px">The welcome-back glow</b>An agent finished while you were away → when you return, its row glows amber once and fades (you can see it looping in the "Quiet morning" mock). Not a badge, not a toast — a warm "this happened for you."</div>
+  <div class="rs-card" style="border:1px solid rgba(128,128,128,.25);border-radius:10px;padding:12px 14px;font-size:13.5px;line-height:1.45"><b style="display:block;margin-bottom:3px">The all-clear</b>When you handle the last needs-you item, the Now zone doesn't just vanish — it settles: a brief "All clear ✓" beat, then the zone folds away and Today rises. Finishing your queue should <i>feel</i> like finishing.</div>
+  <div class="rs-card" style="border:1px solid rgba(128,128,128,.25);border-radius:10px;padding:12px 14px;font-size:13.5px;line-height:1.45"><b style="display:block;margin-bottom:3px">The morning digest</b>First open of the day: one sunrise row atop Today — "While you were away: 2 finished, #team +5." Click it for the full story; ignore it and it dissolves. The product greets you exactly once.</div>
+  <div class="rs-card" style="border:1px solid rgba(128,128,128,.25);border-radius:10px;padding:12px 14px;font-size:13.5px;line-height:1.45"><b style="display:block;margin-bottom:3px">Suggestions that retire</b>Getting-started items check themselves off and disappear forever when done. The grouping hint appears only at 8+ agents. Chrome earns its place by being temporary.</div>
+  <div class="rs-card" style="border:1px solid rgba(128,128,128,.25);border-radius:10px;padding:12px 14px;font-size:13.5px;line-height:1.45"><b style="display:block;margin-bottom:3px">The approve-from-anywhere</b>A permission prompt slides the Now zone in wherever you are — desktop or phone — with the approve action inline. The moment users realize they can unblock an agent from the couch is the moment DorkOS becomes indispensable.</div>
+</div>
+</div>
+
+</body></html>
