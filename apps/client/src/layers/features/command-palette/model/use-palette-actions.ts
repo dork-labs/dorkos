@@ -22,6 +22,7 @@ import {
 } from '@/layers/entities/session';
 import type { RoomSummary } from '@/layers/entities/room';
 import { useAgentFrecency } from './use-agent-frecency';
+import { composeCommandDraft } from './palette-command-draft';
 import { runPaletteCommandHandler } from './palette-command-handlers';
 import type { AgentPathEntry } from '@dorkos/shared/mesh-schemas';
 
@@ -162,10 +163,10 @@ export function usePaletteActions(closePalette: () => void): PaletteActions {
    * a fresh id when it genuinely has none. `null` means the lookup FAILED,
    * which is not a licence to mint — so it says so and stays put.
    *
-   * An existing draft is joined rather than replaced. Unsent text is the one
-   * thing in a session's chat state the server cannot hand back (DOR-480), and
-   * the composer's own trigger matches a slash word after whitespace, so a
-   * command appended to a draft is still a command.
+   * An existing draft survives as the command's ARGUMENT — see
+   * {@link composeCommandDraft} for why it cannot simply be joined onto the end.
+   * Unsent text is the one thing in a session's chat state the server cannot
+   * hand back (DOR-480), so nothing a person typed is dropped.
    */
   const handleCommandSelect = useCallback(
     (command: string) => {
@@ -177,9 +178,9 @@ export function usePaletteActions(closePalette: () => void): PaletteActions {
             return;
           }
           const store = useSessionChatStore.getState();
-          const draft = store.getSession(resolved.sessionId).input.trimEnd();
+          const draft = store.getSession(resolved.sessionId).input;
           store.updateSession(resolved.sessionId, {
-            input: draft ? `${draft} ${command} ` : `${command} `,
+            input: composeCommandDraft(command, draft),
           });
           void navigate({
             to: '/session',

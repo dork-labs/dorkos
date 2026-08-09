@@ -47,12 +47,20 @@ function makeRoom(overrides: Partial<RoomSummary> = {}): RoomSummary {
   };
 }
 
+/**
+ * A live channel with something waiting.
+ *
+ * Unread deliberately: it is the POSITIVE ANCHOR the zero-query case waits on.
+ * A negative assertion ("the archived room is not here") resolves happily
+ * against an empty DOM, so without a row that must be present it passes before
+ * the room list has even arrived — which is what it did.
+ */
 const live = makeRoom({
   id: 'room-live',
   slug: 'shipping',
   title: 'Shipping',
   lastActivityAt: '2026-07-26T09:00:00.000Z',
-  unreadCount: 0,
+  unreadCount: 1,
 });
 
 /**
@@ -253,13 +261,17 @@ describe('archived rooms in the palette', () => {
   });
 
   it('never leads the palette with one, even when it is owed a read', async () => {
+    // Zero-query shows the Unread group and nothing else room-shaped. Both
+    // rooms here are unread, so the ONLY thing that can separate them is the
+    // archived guard.
     render(<CommandPaletteDialog />);
-    // Zero-query shows the Unread group and nothing else room-shaped. A closed
-    // channel is not work waiting on you, so it has no business here — this is
-    // the one place a row is what Cmd+K then Enter opens.
-    await waitFor(() => expect(mockTransport.listRooms).toHaveBeenCalled());
 
-    await waitFor(() => expect(screen.queryByText('#shipping-2025')).not.toBeInTheDocument());
+    // The positive anchor first, so the absence below is asserted against a
+    // list that has demonstrably arrived and rendered. Without it this case
+    // passed against an empty DOM — and stayed green with the guard deleted.
+    await screen.findByText('#shipping');
+
+    expect(screen.queryByText('#shipping-2025')).not.toBeInTheDocument();
   });
 
   it('opens it like any other room', async () => {

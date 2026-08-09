@@ -4,6 +4,7 @@ covers:
   - 'fix(palette): list the commands of the runtime you are actually on (DOR-1051)'
   - 'fix(palette): a channel you archived can be found again (DOR-1051)'
   - 'refactor(palette): keep the handler reader inside its slice'
+  - 'fix(palette): a slash command is only a command at position 0 (DOR-1051)'
 ---
 
 ### Fixed
@@ -15,7 +16,10 @@ covers:
 - Picking a slash command takes you to the conversation it would run in and
   types it into the message box for you. It does not send it — you press Enter
   when you are ready. Commands like `/clear` are not ones to fire off from
-  across the app with one keystroke, and anything you had already typed is kept.
+  across the app with one keystroke. Anything you had already typed is kept, as
+  the command's instructions: a half-written "focus on the API changes" plus
+  `/compact` becomes `/compact focus on the API changes`. If you had already
+  typed a different command, the new one takes its place.
 - "Continue: …" and an agent's recent conversations now open the conversation
   they name, in the right project.
 - **The palette lists the commands your agent actually has.** It used to ask

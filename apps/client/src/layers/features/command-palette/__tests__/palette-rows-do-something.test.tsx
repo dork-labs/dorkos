@@ -16,6 +16,10 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import '@testing-library/jest-dom/vitest';
 import { createMockTransport } from '@dorkos/test-utils';
 import { sessionKeys, useSessionChatStore } from '@/layers/entities/session';
+// Reaching into another feature, as only a test may: the claim is an agreement
+// between the palette and the chat send funnel, and an agreement asserted
+// against a re-typed copy of the rule is not asserted at all.
+import { isNativeCommandContent } from '@/layers/features/chat/model/native-commands';
 import {
   registerPaletteCommandHandler,
   unregisterPaletteCommandHandler,
@@ -123,7 +127,13 @@ vi.mock('../model/use-palette-items', () => ({
     recentAgents: agents,
     allAgents: agents,
     features: [],
-    commands: [{ name: '/deploy', description: 'Deploy service' }],
+    // `/compact` beside the generic one because it is a command the send funnel
+    // genuinely RECOGNIZES, so the drafts below can be put through the real
+    // recognizer instead of being compared to a hoped-for string.
+    commands: [
+      { name: '/deploy', description: 'Deploy service' },
+      { name: '/compact', description: 'Compact the conversation' },
+    ],
     quickActions: [
       { id: 'ext:demo:ping', label: 'Ping the demo', icon: 'Plus', action: 'ext:demo:ping' },
       { id: 'ext:ghost:gone', label: 'Ghost action', icon: 'Plus', action: 'ext:ghost:gone' },
@@ -132,6 +142,7 @@ vi.mock('../model/use-palette-items', () => ({
     // `>` page filters `/deploy` straight back out.
     searchableItems: [
       { id: 'cmd-/deploy', name: '/deploy', type: 'command', data: { name: '/deploy' } },
+      { id: 'cmd-/compact', name: '/compact', type: 'command', data: { name: '/compact' } },
     ],
     suggestions: [
       {
@@ -248,16 +259,38 @@ describe('a slash command row', () => {
     expect(draftFor('session-current')).toBe('/deploy ');
   });
 
-  it('never eats a draft the person had already typed', async () => {
-    // An unsent draft is the one thing in a session entry the server cannot
-    // hand back (DOR-480), so the command joins it rather than replacing it.
+  it('still produces a RUNNABLE command when the composer already had text', async () => {
+    // The assertion that matters is not the string's shape but what the send
+    // funnel makes of it. Appending the command to the draft
+    // (`ship it /compact `) reads fine and is not a command at all: both
+    // recognizers anchor at position 0, so it goes to the model as prose while
+    // the row looks like it worked.
     useSessionChatStore.getState().updateSession('session-current', { input: 'ship it' });
     render(<CommandPaletteDialog />);
     type('>');
 
-    fireEvent.click(rowFor('/deploy'));
+    fireEvent.click(rowFor('/compact'));
 
-    await waitFor(() => expect(draftFor('session-current')).toBe('ship it /deploy '));
+    await waitFor(() => expect(isNativeCommandContent(draftFor('session-current'))).toBe(true));
+    // …and the text the person typed is still there, as the command's argument.
+    expect(draftFor('session-current')).toBe('/compact ship it');
+  });
+
+  it('swaps the command when the composer already held one, keeping its arguments', async () => {
+    // Picking a command while one is typed means "this one instead". Stacking
+    // them would hand `/clear` to `/compact` as argument text.
+    useSessionChatStore
+      .getState()
+      .updateSession('session-current', { input: '/clear focus on the API changes' });
+    render(<CommandPaletteDialog />);
+    type('>');
+
+    fireEvent.click(rowFor('/compact'));
+
+    await waitFor(() =>
+      expect(draftFor('session-current')).toBe('/compact focus on the API changes')
+    );
+    expect(isNativeCommandContent(draftFor('session-current'))).toBe(true);
   });
 
   it('closes the palette', () => {
