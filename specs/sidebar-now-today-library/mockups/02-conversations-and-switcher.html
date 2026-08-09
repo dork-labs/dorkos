@@ -1,0 +1,206 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Sidebar mockup — Conversations and Switcher</title><style>
+body{font-family:-apple-system,'Segoe UI',sans-serif;max-width:1280px;margin:0 auto;padding:32px;background:#faf9f7;color:#26251f;line-height:1.5} h2{font-size:24px;margin:0 0 6px} h3{font-size:17px;margin:22px 0 8px} .subtitle{color:#75736a;font-size:14px;margin:0 0 18px} .section{margin-bottom:40px} .label{font-size:11px;font-weight:650;text-transform:uppercase;letter-spacing:.05em;color:#8a887d;margin-bottom:6px}
+</style></head><body>
+<div style="background:rgba(229,148,11,.12);border-radius:10px;padding:12px 16px;margin-bottom:24px;font-size:14px;line-height:1.5"><b>⚠ Mockup, not a final design.</b> Built during the 2026-08-09 design session to communicate direction — spacing, copy, and colors are approximate. The authoritative rules live in <code>specs/sidebar-now-today-library/design-decisions.md</code>; where this file and that doc disagree, the doc wins. Decision-option blocks were removed from this copy; the outcomes are recorded in the doc. Resolved here: clicking an agent opens its most recent conversation; the switcher handles depth.</div>
+<svg style="display:none" xmlns="http://www.w3.org/2000/svg">
+  <symbol id="i-home" viewBox="0 0 24 24"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M9 22V12h6v10"/></symbol>
+  <symbol id="i-users" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/></symbol>
+  <symbol id="i-hash" viewBox="0 0 24 24"><path d="M4 9h16"/><path d="M4 15h16"/><path d="M10 3 8 21"/><path d="M16 3l-2 18"/></symbol>
+  <symbol id="i-at" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-4 8"/></symbol>
+  <symbol id="i-bot" viewBox="0 0 24 24"><path d="M12 8V4H8"/><rect x="4" y="8" width="16" height="12" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="M12 5v14"/></symbol>
+  <symbol id="i-kebab" viewBox="0 0 24 24"><circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/></symbol>
+  <symbol id="i-chev-d" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+  <symbol id="i-chev-r" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></symbol>
+  <symbol id="i-spark" viewBox="0 0 24 24"><path d="M12 3v3"/><path d="M12 18v3"/><path d="M3 12h3"/><path d="M18 12h3"/><path d="m5.6 5.6 2.1 2.1"/><path d="m16.3 16.3 2.1 2.1"/><path d="m5.6 18.4 2.1-2.1"/><path d="m16.3 7.7 2.1-2.1"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
+  <symbol id="i-send" viewBox="0 0 24 24"><path d="m22 2-7 20-4-9-9-4z"/><path d="M22 2 11 13"/></symbol>
+  <symbol id="i-arrows" viewBox="0 0 24 24"><path d="m17 3 4 4-4 4"/><path d="M21 7H9"/><path d="m7 21-4-4 4-4"/><path d="M3 17h12"/></symbol>
+  <symbol id="i-timer" viewBox="0 0 24 24"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2 2"/><path d="M10 2h4"/></symbol>
+</svg>
+
+<style>
+  .s-stage { padding: 18px 14px; display: flex; justify-content: center; background: #e9e7e2; border-radius: 12px; }
+  .s-sb { width: 280px; background: #f8f7f5; border: 1px solid #e6e4df; border-radius: 14px; padding: 10px 8px; color: #26251f; font-family: -apple-system, 'Segoe UI', sans-serif; font-size: 13px; line-height: 1.35; text-align: left; box-shadow: 0 1px 3px rgba(30,28,20,.06); }
+  .s-sb *, .dlg * { box-sizing: border-box; }
+  .s-i { width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex-shrink: 0; }
+  .s-r { display: flex; align-items: center; gap: 8px; min-height: 28px; padding: 0 8px; border-radius: 7px; color: #3d3c36; cursor: default; }
+  .s-r:hover { background: #eceae5; }
+  .s-lbl { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .s-meta { margin-left: auto; font-size: 11px; color: #a5a39a; flex-shrink: 0; }
+  .s-sh { display: flex; align-items: center; gap: 6px; height: 28px; padding: 0 8px; color: #55534b; font-size: 12.5px; font-weight: 550; border-radius: 7px; margin-top: 2px; }
+  .s-sh:hover { background: #efede8; }
+  .s-g { width: 14px; height: 14px; position: relative; flex-shrink: 0; }
+  .s-g .ga { position: absolute; inset: 0; display: block; }
+  .s-g .gb { position: absolute; inset: 0; display: none; }
+  .s-sh:hover .s-g .ga { display: none; }
+  .s-sh:hover .s-g .gb { display: block; }
+  .s-ch { margin-left: 14px; }
+  .s-av { width: 18px; height: 18px; border-radius: 5px; display: inline-flex; align-items: center; justify-content: center; font-size: 11px; flex-shrink: 0; }
+  .s-r2 { align-items: flex-start; padding: 5px 8px; min-height: 0; }
+  .s-r2 .s-av { margin-top: 1px; }
+  .s-t1 { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
+  .s-t2 { font-size: 11px; color: #a09e94; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .s-who { font-weight: 550; color: #26251f; flex-shrink: 0; }
+  .s-sep { color: #b5b3a8; }
+  .s-bdg { background: rgba(229,148,11,.16); color: #a8690a; border-radius: 9px; font-size: 10px; font-weight: 650; padding: 1px 6px; margin-left: auto; flex-shrink: 0; }
+  .s-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+  .s-dot.on { background: #3fa374; }
+  .s-dot.off { background: #c9c7bd; }
+  .s-dot.warn { background: #e5940b; }
+  .s-pulse { animation: s-pulse 2s ease-in-out infinite; }
+  @keyframes s-pulse { 0%,100% { opacity: 1; } 50% { opacity: .3; } }
+  .s-zone { background: #f1efe9; border-radius: 10px; padding: 4px; margin-top: 8px; }
+  .s-zlbl { display: flex; align-items: center; gap: 6px; padding: 4px 6px; font-size: 11px; font-weight: 650; color: #75736a; }
+  .s-card { background: #f8f7f5; border-radius: 8px; margin-bottom: 3px; }
+  .s-note { font-size: 10.5px; color: #a5a39a; padding: 4px 8px 0; line-height: 1.4; }
+  .s-cur { background: #e9e6de; position: relative; }
+  .s-cur::before { content: ''; position: absolute; left: 0; top: 5px; bottom: 5px; width: 2px; border-radius: 2px; background: #26251f; }
+  .s-cur:hover { background: #e9e6de; }
+  .s-live { display: inline-flex; align-items: center; gap: 4px; background: rgba(63,163,116,.14); color: #2c7a56; border-radius: 8px; padding: 1px 6px; font-size: 10px; font-weight: 650; margin-left: auto; flex-shrink: 0; }
+  .s-done { color: #a5a39a; text-decoration: line-through; }
+  .s-om { width: 12px; height: 12px; color: #b0aea3; flex-shrink: 0; align-self: center; }
+  .dlg { width: 380px; background: #fdfcfb; border: 1px solid #e2e0da; border-radius: 14px; box-shadow: 0 16px 40px rgba(30,28,20,.16); font-family: -apple-system, sans-serif; font-size: 13px; color: #26251f; text-align: left; padding: 10px; }
+  .dlg-hd { display: flex; align-items: center; gap: 8px; padding: 2px 6px 8px; font-weight: 650; }
+  .dlg-search { display: flex; align-items: center; gap: 6px; background: #f1efe9; border-radius: 8px; padding: 6px 8px; color: #8a887d; font-size: 12px; margin-bottom: 8px; }
+  .dlg-gl { font-size: 10.5px; font-weight: 650; color: #8a887d; text-transform: uppercase; letter-spacing: .05em; padding: 8px 8px 3px; }
+  .dlg .s-r2 { border-radius: 8px; }
+  .dlg-ft { display: flex; gap: 12px; padding: 8px 8px 2px; font-size: 10.5px; color: #a5a39a; }
+  .journey { display: flex; gap: 20px; flex-wrap: wrap; align-items: flex-start; }
+  .j-col { width: 320px; }
+  .j-cap { font-size: 13.5px; line-height: 1.5; margin-top: 10px; }
+  .j-cap b { display: block; margin-bottom: 2px; }
+  .rule-ul { font-size: 14px; line-height: 1.55; padding-left: 20px; }
+  .rule-ul li { margin-bottom: 7px; }
+  .leg { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 8px; }
+  .leg-chip { display: inline-flex; align-items: center; gap: 7px; border: 1px solid rgba(128,128,128,.25); border-radius: 8px; padding: 5px 10px; font-size: 12.5px; }
+  .lock { font-size: 13px; opacity: .75; margin-bottom: 4px; }
+</style>
+
+<h2>Conversations, sessions, and never losing sight of your agent</h2>
+<p class="subtitle">This screen designs answers to your two new issues. One decision at the bottom.</p>
+<p class="lock">Locked so far: Direction C · New button · Ask DorkBot · empty Now disappears · Library rows toggle whole-row.</p>
+
+<!-- ================= ACTIVE ANCHOR ================= -->
+<div class="section">
+<h3>1 · The "my agent is out of view" problem</h3>
+<div class="journey">
+  <div class="j-col">
+    <div class="s-stage">
+      <div class="s-sb">
+        <div class="s-zone">
+          <div class="s-zlbl"><span class="s-dot warn"></span>Now<span class="s-meta">1 needs you</span></div>
+          <div class="s-r s-r2 s-card"><span class="s-av" style="background:#e2def6">🔮</span><div style="flex:1;min-width:0"><div class="s-t1"><span class="s-lbl"><b>Question for you</b></span><span class="s-meta">9m</span></div><div class="s-t2">oracle · API migration plan</div></div></div>
+          <div class="s-r" style="min-height:24px"><span class="s-dot on s-pulse"></span><span class="s-lbl" style="font-size:12px;color:#75736a">3 working</span></div>
+        </div>
+        <div class="s-sh" style="margin-top:8px"><span class="s-g"><svg class="s-i ga"><use href="#i-clock"/></svg><svg class="s-i gb"><use href="#i-chev-d"/></svg></span><span class="s-lbl">Today</span></div>
+        <div class="s-ch">
+          <div class="s-r s-r2 s-cur"><span class="s-av" style="background:#d9f2e3">🥝</span><div style="flex:1;min-width:0"><div class="s-t1"><span class="s-who">Mio Clicker PM</span><span class="s-sep">›</span><span class="s-lbl">NotionDocThread</span></div><div class="s-t2" style="display:flex;align-items:center;gap:5px;color:#2c7a56"><span class="s-dot on s-pulse" style="width:5px;height:5px"></span>working — updating doc outline…</div></div></div>
+          <div class="s-r"><span class="s-av" style="background:#f9d8ea">🐙</span><span class="s-lbl">Dashboard overhaul</span><span class="s-meta">7m</span></div>
+          <div class="s-r"><span class="s-av" style="background:#eceae5;color:#75736a">#</span><span class="s-lbl" style="font-weight:600;color:#141310">team</span><span class="s-bdg">2</span></div>
+          <div class="s-r"><span class="s-av" style="background:#fdeacc">🍊</span><span class="s-lbl">Design airtight box</span><span class="s-meta">1d</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="j-cap"><b>The current conversation is always Today's first row</b>Here you're chatting with Mio Clicker PM — an agent that would be 40 rows deep in a big Library. Doesn't matter: the moment you open any conversation, it anchors to the top of Today with its live status on the row (working pulse + activity verb, or idle, or needs-you).</div>
+  </div>
+  <div class="j-col" style="width:360px">
+    <ul class="rule-ul" style="margin-top:0">
+      <li><b>No new section needed.</b> Today already exists and sits directly under Now; its first row is always visible without scrolling (Now is height-capped at 3 + one working line).</li>
+      <li><b>Why not the Now zone?</b> Now means "needs you." Your open conversation doesn't need you — you're already there. Putting it in Now would teach users to ignore Now. It only enters Now if it genuinely blocks (a permission prompt), like anything else.</li>
+      <li><b>The anchor is a status instrument:</b> the active row carries the working verb, so the thing you said you use the sidebar for — "is my agent doing something?" — is answered at a fixed position, always. A fixed position beats a found position.</li>
+      <li>When you close or switch conversations, the row un-pins and falls back into natural recency order.</li>
+    </ul>
+  </div>
+</div>
+</div>
+
+<!-- ================= AGENT = CONVERSATION + SWITCHER ================= -->
+<div class="section">
+<h3>2 · Many sessions per agent</h3>
+<div class="journey">
+  <div class="j-col" style="width:300px">
+    <div class="s-stage">
+      <div class="s-sb" style="width:270px">
+        <div class="s-zlbl" style="padding-left:8px;text-transform:uppercase;letter-spacing:.05em;font-size:10px">Library</div>
+        <div class="s-sh"><span class="s-g"><svg class="s-i ga"><use href="#i-bot"/></svg><svg class="s-i gb"><use href="#i-chev-d"/></svg></span><span class="s-lbl">Agents</span></div>
+        <div class="s-ch">
+          <div class="s-r"><span class="s-av" style="background:#f9d8ea">🐙</span><span class="s-lbl">DorkOS</span><span class="s-live"><span class="s-dot on s-pulse" style="width:5px;height:5px"></span>2 live</span></div>
+          <div class="s-r"><span class="s-av" style="background:#fdeacc">🍊</span><span class="s-lbl">tangerines</span><span class="s-meta">writing tests…</span></div>
+          <div class="s-r"><span class="s-av" style="background:#d9f2e3">🥝</span><span class="s-lbl">Mio Clicker PM</span><span class="s-dot off"></span></div>
+        </div>
+        <div class="s-note">Click an agent → your conversation opens. The "2 live" chip → the switcher.</div>
+      </div>
+    </div>
+    <div class="j-cap"><b>An agent is a teammate, not a folder</b>Clicking a person in Slack opens your conversation — no "session list" in between. Same here: <b>click an agent, land in your most recent conversation</b> (or a fresh one if none). The inline 3-session preview panel dies; depth moves to the switcher.</div>
+  </div>
+
+  <div class="j-col" style="width:420px">
+    <div class="s-stage">
+      <div class="dlg">
+        <div class="dlg-hd"><span class="s-av" style="background:#f9d8ea">🐙</span>DorkOS — sessions<span class="s-meta" style="font-weight:400">14 total</span></div>
+        <div class="dlg-search"><svg class="s-i"><use href="#i-search"/></svg>Search sessions…</div>
+        <div class="dlg-gl">Live now</div>
+        <div class="s-r s-r2 s-cur"><div style="flex:1;min-width:0;padding-left:6px"><div class="s-t1"><span class="s-lbl"><b>Dashboard overhaul</b></span><span class="s-meta">now</span></div><div class="s-t2" style="color:#2c7a56">working — editing RoomRow.tsx…</div></div><span class="s-meta" style="align-self:center;font-size:10px;border:1px solid #d8d5cc;border-radius:5px;padding:1px 5px">current</span></div>
+        <div class="s-r s-r2"><div style="flex:1;min-width:0;padding-left:6px"><div class="s-t1"><span class="s-lbl">Release notes draft</span><span class="s-meta">3m</span></div><div class="s-t2" style="color:#2c7a56">working — summarizing changelog…</div></div></div>
+        <div class="dlg-gl">Recent</div>
+        <div class="s-r s-r2"><div style="flex:1;min-width:0;padding-left:6px"><div class="s-t1"><span class="s-lbl">Review help &amp; feedback options</span><span class="s-meta">26m</span></div><div class="s-t2">Settled on a two-tier submit flow</div></div></div>
+        <div class="s-r s-r2"><div style="flex:1;min-width:0;padding-left:6px"><div class="s-t1"><span class="s-lbl">Fix flaky sidebar test</span><span class="s-meta">Yest</span></div><div class="s-t2">Landed in PR #877 ✓</div></div></div>
+        <div class="dlg-gl">Automated</div>
+        <div class="s-r"><svg class="s-i s-om"><use href="#i-timer"/></svg><span class="s-lbl" style="font-size:12.5px">Nightly changelog sweep</span><span class="s-meta">6h</span></div>
+        <div class="s-r"><svg class="s-i s-om"><use href="#i-send"/></svg><span class="s-lbl" style="font-size:12.5px">Telegram · Dorian</span><span class="s-meta">2d</span></div>
+        <div class="s-r" style="color:#a5a39a;font-size:12px;min-height:24px">+ 6 more automated</div>
+        <div class="dlg-ft"><span>↵ continue</span><span>⌘↵ new session</span><span>⇧ fork</span></div>
+      </div>
+    </div>
+    <div class="j-cap"><b>The switcher — one responsive surface for depth</b>Desktop: this dialog (also reachable from ⌘K: "DorkOS sessions"). Mobile: the same content as a bottom sheet, long-press on the agent. Live sessions first with verbs, then recents with one-line outcomes, automated grouped and collapsed. Your multi-live case is just… two rows under "Live now."</div>
+  </div>
+
+  <div class="j-col" style="width:330px">
+    <b style="font-size:14px">Origin marks — one vocabulary everywhere</b>
+    <div class="leg">
+      <span class="leg-chip"><span class="s-av" style="background:#f9d8ea;width:16px;height:16px;font-size:9px">🐙</span>You ↔ agent — no mark</span>
+      <span class="leg-chip"><svg class="s-i" style="width:13px;height:13px;color:#8a887d"><use href="#i-timer"/></svg>Task / scheduled</span>
+      <span class="leg-chip"><svg class="s-i" style="width:13px;height:13px;color:#8a887d"><use href="#i-send"/></svg>Telegram / external chat</span>
+      <span class="leg-chip"><svg class="s-i" style="width:13px;height:13px;color:#8a887d"><use href="#i-hash"/></svg>Room-triggered</span>
+      <span class="leg-chip"><svg class="s-i" style="width:13px;height:13px;color:#8a887d"><use href="#i-arrows"/></svg>Agent-to-agent</span>
+    </div>
+    <ul class="rule-ul" style="margin-top:12px">
+      <li>The mark is a small muted glyph in the trailing slot — it says <i>how this session started</i>, never competing with unread/working signals.</li>
+      <li>Same glyphs in Today rows, the switcher, "+N automated", and Activity. Learn once, read everywhere.</li>
+      <li><b>Automated sessions never claim a top-level Today row.</b> They stay behind "+N automated" — unless one needs you, and then it's in Now anyway. Human attention is the scarce resource; automation doesn't get to spend it by default.</li>
+    </ul>
+  </div>
+</div>
+</div>
+
+<!-- ================= GETTING STARTED, REVISED ================= -->
+<div class="section">
+<h3>3 · Getting started, revised for auto-discovery</h3>
+<div class="journey">
+  <div class="j-col" style="width:300px">
+    <div class="s-stage">
+      <div class="s-sb" style="width:270px">
+        <div class="s-zone">
+          <div class="s-zlbl"><svg class="s-i" style="width:12px;height:12px;color:#e5940b"><use href="#i-spark"/></svg>Getting started</div>
+          <div class="s-r s-card"><span class="s-av" style="background:#eceae5;font-size:9px">🐙🍊</span><span class="s-lbl"><b>Meet the 3 agents we found</b></span></div>
+          <div class="s-r s-card"><svg class="s-i" style="color:#8a887d"><use href="#i-hash"/></svg><span class="s-lbl">Say hi in #team</span></div>
+          <div class="s-r s-card"><svg class="s-i" style="color:#3fa374"><use href="#i-check"/></svg><span class="s-lbl s-done">Ask DorkBot anything</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="j-cap"><b>Suggestions are generated, not scripted</b>You're right to distrust "Add your first agent." With onboarding scanning the disk and seeding a starter team, the honest first step is <b>"Meet the agents we found"</b> — review and confirm, not create.</div>
+  </div>
+  <div class="j-col" style="width:380px">
+    <ul class="rule-ul" style="margin-top:0">
+      <li><b>Each slot is computed from real state:</b> discovery found agents → "Meet the N agents we found." Found none → "Add your first agent" (the fallback world). Agents exist but never ran → "Start your first session." Never a static checklist.</li>
+      <li><b>This is the same engine as Now.</b> Getting-started items are just needs-you items for a brand-new account. One system, one zone, two life stages — the zone literally <i>becomes</i> Now as real signals take over.</li>
+      <li>Items retire permanently when done, and the zone disappears after all three — the user graduates to the calm sidebar.</li>
+    </ul>
+  </div>
+</div>
+</div>
+
+</body></html>

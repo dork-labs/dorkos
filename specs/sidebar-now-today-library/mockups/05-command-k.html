@@ -1,0 +1,131 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Sidebar mockup — Command K</title><style>
+body{font-family:-apple-system,'Segoe UI',sans-serif;max-width:1280px;margin:0 auto;padding:32px;background:#faf9f7;color:#26251f;line-height:1.5} h2{font-size:24px;margin:0 0 6px} h3{font-size:17px;margin:22px 0 8px} .subtitle{color:#75736a;font-size:14px;margin:0 0 18px} .section{margin-bottom:40px} .label{font-size:11px;font-weight:650;text-transform:uppercase;letter-spacing:.05em;color:#8a887d;margin-bottom:6px}
+</style></head><body>
+<div style="background:rgba(229,148,11,.12);border-radius:10px;padding:12px 16px;margin-bottom:24px;font-size:14px;line-height:1.5"><b>⚠ Mockup, not a final design.</b> Built during the 2026-08-09 design session to communicate direction — spacing, copy, and colors are approximate. The authoritative rules live in <code>specs/sidebar-now-today-library/design-decisions.md</code>; where this file and that doc disagree, the doc wins. Decision-option blocks were removed from this copy; the outcomes are recorded in the doc.</div>
+<svg style="display:none" xmlns="http://www.w3.org/2000/svg">
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></symbol>
+  <symbol id="i-hash" viewBox="0 0 24 24"><path d="M4 9h16"/><path d="M4 15h16"/><path d="M10 3 8 21"/><path d="M16 3l-2 18"/></symbol>
+  <symbol id="i-bot" viewBox="0 0 24 24"><path d="M12 8V4H8"/><rect x="4" y="8" width="16" height="12" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="M12 5v14"/></symbol>
+  <symbol id="i-timer" viewBox="0 0 24 24"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2 2"/><path d="M10 2h4"/></symbol>
+  <symbol id="i-msg" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></symbol>
+  <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></symbol>
+</svg>
+
+<style>
+  .ck * { box-sizing: border-box; }
+  .s-stage { padding: 18px 14px; background: #e9e7e2; border-radius: 12px; display: flex; justify-content: center; }
+  .pal { width: 400px; background: #fdfcfb; border: 1px solid #e2e0da; border-radius: 14px; box-shadow: 0 16px 40px rgba(30,28,20,.16); font-family: -apple-system, 'Segoe UI', sans-serif; font-size: 13px; color: #26251f; text-align: left; padding: 8px; }
+  .s-i { width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex-shrink: 0; }
+  .p-in { display: flex; align-items: center; gap: 7px; padding: 8px 10px; border-bottom: 1px solid #eeece6; margin: -8px -8px 6px; color: #26251f; }
+  .p-in .ph { color: #b5b3a8; }
+  .p-chip { display: inline-flex; align-items: center; gap: 5px; background: #ece9e2; border-radius: 6px; padding: 2px 7px; font-size: 12px; font-weight: 550; color: #55534b; }
+  .p-gl { font-size: 10.5px; font-weight: 650; color: #8a887d; text-transform: uppercase; letter-spacing: .05em; padding: 8px 8px 3px; }
+  .p-r { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 8px; min-height: 30px; }
+  .p-r:hover { background: #f0eee9; }
+  .p-r.sel { background: #ece9e2; }
+  .p-av { width: 18px; height: 18px; border-radius: 5px; display: inline-flex; align-items: center; justify-content: center; font-size: 11px; flex-shrink: 0; }
+  .p-lbl { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .p-who { font-weight: 550; }
+  .p-sep { color: #b5b3a8; padding: 0 2px; }
+  .p-hint { margin-left: auto; display: flex; gap: 4px; align-items: center; flex-shrink: 0; }
+  .p-kbd { font-size: 10px; background: #f6f5f2; border: 1px solid #e6e4df; border-radius: 4px; padding: 0 5px; color: #8a887d; min-width: 18px; text-align: center; }
+  .p-meta { font-size: 11px; color: #a5a39a; flex-shrink: 0; }
+  .p-dot { width: 6px; height: 6px; border-radius: 50%; background: #3fa374; flex-shrink: 0; animation: ck-pulse 2s ease-in-out infinite; }
+  @keyframes ck-pulse { 0%,100% { opacity: 1; } 50% { opacity: .35; } }
+  .p-mark { font-size: 10px; font-weight: 650; color: #b06e08; background: rgba(229,148,11,.12); border-radius: 4px; padding: 0 4px; }
+  .p-ft { display: flex; gap: 12px; padding: 8px 8px 2px; font-size: 10.5px; color: #a5a39a; border-top: 1px solid #eeece6; margin-top: 6px; }
+  .hl { background: rgba(229,148,11,.22); border-radius: 2px; padding: 0 1px; }
+  .p-hand { color: #55534b; }
+  .journey { display: flex; gap: 22px; flex-wrap: wrap; align-items: flex-start; }
+  .j-col { width: 430px; }
+  .j-cap { font-size: 13.5px; line-height: 1.5; margin-top: 10px; }
+  .j-cap b { display: block; margin-bottom: 2px; }
+  .rule-ul { font-size: 14px; line-height: 1.55; padding-left: 20px; }
+  .rule-ul li { margin-bottom: 8px; }
+  .dead { border-left: 3px solid #d64f4f; padding-left: 12px; margin-bottom: 10px; font-size: 13.5px; line-height: 1.45; }
+</style>
+
+<div class="ck">
+<h2>⌘K — the front door, designed</h2>
+<p class="subtitle">Direction C leans on ⌘K for recall, so it has to be excellent. The audit found it's currently a good <i>launcher</i> with dead ends where recall should be. Three states below; the rules and the honest constraint on the right.</p>
+
+<div class="section">
+<div class="journey">
+
+  <!-- STATE 1: ZERO QUERY -->
+  <div class="j-col" style="width:440px">
+    <div class="s-stage">
+      <div class="pal">
+        <div class="p-in"><svg class="s-i" style="color:#8a887d"><use href="#i-search"/></svg><span class="ph">Jump to anything…</span></div>
+        <div class="p-gl">Continue</div>
+        <div class="p-r sel"><span class="p-av" style="background:#d9f2e3">🥝</span><span class="p-lbl"><span class="p-who">Mio Clicker PM</span><span class="p-sep">›</span>NotionDocThread</span><span class="p-hint"><span class="p-dot"></span><span class="p-meta">working</span><span class="p-kbd">↵</span></span></div>
+        <div class="p-gl">Recent</div>
+        <div class="p-r"><span class="p-av" style="background:#f9d8ea">🐙</span><span class="p-lbl"><span class="p-who">DorkOS</span><span class="p-sep">›</span>Dashboard overhaul</span><span class="p-meta">7m</span></div>
+        <div class="p-r"><span class="p-av" style="background:#eceae5;color:#75736a">#</span><span class="p-lbl"><span class="p-who">team</span></span><span class="p-meta">16m</span></div>
+        <div class="p-r"><span class="p-av" style="background:#fdeacc">🍊</span><span class="p-lbl"><span class="p-who">tangerines</span><span class="p-sep">›</span>Design airtight box <span class="p-mark">archived</span></span><span class="p-meta">yest</span></div>
+        <div class="p-r"><span class="p-av" style="background:#f9d8ea">🐙</span><span class="p-lbl"><span class="p-who">DorkOS</span></span><span class="p-meta">agent</span></div>
+        <div class="p-gl">New</div>
+        <div class="p-r"><svg class="s-i" style="color:#8a887d"><use href="#i-plus"/></svg><span class="p-lbl">New session</span><span class="p-hint"><span class="p-kbd">⌘N</span></span></div>
+        <div class="p-ft"><span><b>#</b> channels</span><span><b>@</b> agents</span><span><b>&gt;</b> commands</span><span style="margin-left:auto">↵ open · ⌘↵ new session</span></div>
+      </div>
+    </div>
+    <div class="j-cap"><b>Zero query = yesterday is right here</b>This is where Today's overnight-archived items resurface: Recent is a frecency-blended mix of sessions, rooms, and agents — same row grammar as the sidebar, archived items labeled. Opening ⌘K and pressing ↵ continues your live conversation.</div>
+  </div>
+
+  <!-- STATE 2: QUERY -->
+  <div class="j-col" style="width:440px">
+    <div class="s-stage">
+      <div class="pal">
+        <div class="p-in"><svg class="s-i" style="color:#8a887d"><use href="#i-search"/></svg>dash</div>
+        <div class="p-gl">Best match</div>
+        <div class="p-r sel"><span class="p-av" style="background:#f9d8ea">🐙</span><span class="p-lbl"><span class="p-who">DorkOS</span><span class="p-sep">›</span><span class="hl">Dash</span>board overhaul</span><span class="p-hint"><span class="p-dot"></span><span class="p-kbd">↵</span></span></div>
+        <div class="p-gl">Sessions</div>
+        <div class="p-r"><span class="p-av" style="background:#f9d8ea">🐙</span><span class="p-lbl"><span class="p-who">DorkOS</span><span class="p-sep">›</span><span class="hl">Dash</span>board metrics spike</span><span class="p-meta">Tue</span></div>
+        <div class="p-gl">Actions</div>
+        <div class="p-r"><svg class="s-i" style="color:#8a887d"><use href="#i-arrow"/></svg><span class="p-lbl">Go to <span class="hl">dash</span>board home</span></div>
+        <div class="p-r p-hand"><svg class="s-i" style="color:#8a887d"><use href="#i-msg"/></svg><span class="p-lbl">Search messages for "<span class="hl">dash</span>"…</span><span class="p-hint"><span class="p-kbd">⌘⇧F</span></span></div>
+      </div>
+    </div>
+    <div class="j-cap"><b>One ranked list, best match on top</b>Relevance × frecency × recency, blended <i>across</i> types — a strong session match now outranks a weak agent match (today the group order always wins). The last row is the honest boundary: content search is a hand-off, not a ⌘K feature.</div>
+  </div>
+
+  <!-- STATE 3: SCOPED -->
+  <div class="j-col" style="width:440px">
+    <div class="s-stage">
+      <div class="pal">
+        <div class="p-in"><svg class="s-i" style="color:#8a887d"><use href="#i-search"/></svg><span class="p-chip"><span class="p-av" style="background:#f9d8ea;width:14px;height:14px;font-size:9px">🐙</span>DorkOS</span>test</div>
+        <div class="p-gl">Sessions with DorkOS</div>
+        <div class="p-r sel"><span class="p-lbl" style="padding-left:4px">Fix flaky sidebar <span class="hl">test</span></span><span class="p-meta">Yest</span></div>
+        <div class="p-r"><span class="p-lbl" style="padding-left:4px">Write <span class="hl">test</span>s for RoomRow</span><span class="p-meta">Tue</span></div>
+        <div class="p-r"><span class="p-lbl" style="padding-left:4px"><span class="hl">Test</span> harness cleanup <span class="p-mark" style="margin-left:4px">task</span></span><span class="p-meta">Jul 30</span></div>
+        <div class="p-gl">Do</div>
+        <div class="p-r"><svg class="s-i" style="color:#8a887d"><use href="#i-plus"/></svg><span class="p-lbl">New session with DorkOS: "test…"</span><span class="p-hint"><span class="p-kbd">⌘↵</span></span></div>
+      </div>
+    </div>
+    <div class="j-cap"><b>Scope chips, not a query language</b>Type <b>@dor</b>, pick the agent, and it becomes a chip — the rest of your query searches <i>that agent's</i> sessions. Same for <b>#channel</b>. Backspace pops the chip. No <code>agent:foo before:yesterday</code> syntax to memorize — the chip <i>is</i> the syntax, and it's visible.</div>
+  </div>
+
+  <!-- RULES -->
+  <div class="j-col" style="width:430px">
+    <b style="font-size:14px">The rules</b>
+    <ul class="rule-ul" style="margin-top:8px">
+      <li><b>⌘K finds <i>things</i>, not words.</b> Agents, sessions, rooms, actions — by name and title. Message-content search stays a separate surface (a recorded product decision — the Slack ⌘K / ⌘F split — and it holds). ⌘K's last row hands off to it. So C's "archived overnight, find it in ⌘K" means <i>by title and recency</i>, which is how people actually recall conversations.</li>
+      <li><b>Sessions become first-class citizens</b> — the single biggest gap. Cross-agent recents feed the index (the endpoint already exists; the sidebar uses it, the palette never did). Rows reuse the sidebar grammar exactly: avatar + Agent › title + origin mark + time.</li>
+      <li><b>One frecency store for everything</b> — the Slack-bucket algorithm already implemented for agents extends to sessions, rooms, and actions, keyed by type:id.</li>
+      <li><b>Search + act</b> (Raycast rule): every row shows its shortcut inline — ↵ open, ⌘↵ new session with that agent, passive shortcut learning for free.</li>
+      <li><b>Archived rooms become findable</b> (the API flag exists; the client never passes it) — labeled, never hidden.</li>
+    </ul>
+    <b style="font-size:14px">Dead ends found in the audit — fixable this week, no redesign needed</b>
+    <div style="margin-top:8px">
+      <div class="dead"><b>Enter on a slash command does nothing.</b> The Commands group is a read-only listing — no select handler at all.</div>
+      <div class="dead"><b>"Continue: session" closes the palette and goes nowhere.</b> The one recall affordance that exists is a no-op.</div>
+      <div class="dead"><b>Recent-session rows in the agent drill-down are inert too</b> — and extension-contributed actions silently do nothing (their handler registry is written but never read).</div>
+    </div>
+  </div>
+
+</div>
+</div>
+</div>
+
+</body></html>

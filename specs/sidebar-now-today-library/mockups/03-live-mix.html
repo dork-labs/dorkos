@@ -1,0 +1,114 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Sidebar mockup — Live Mix</title><style>
+body{font-family:-apple-system,'Segoe UI',sans-serif;max-width:1280px;margin:0 auto;padding:32px;background:#faf9f7;color:#26251f;line-height:1.5} h2{font-size:24px;margin:0 0 6px} h3{font-size:17px;margin:22px 0 8px} .subtitle{color:#75736a;font-size:14px;margin:0 0 18px} .section{margin-bottom:40px} .label{font-size:11px;font-weight:650;text-transform:uppercase;letter-spacing:.05em;color:#8a887d;margin-bottom:6px}
+</style></head><body>
+<div style="background:rgba(229,148,11,.12);border-radius:10px;padding:12px 16px;margin-bottom:24px;font-size:14px;line-height:1.5"><b>⚠ Mockup, not a final design.</b> Built during the 2026-08-09 design session to communicate direction — spacing, copy, and colors are approximate. The authoritative rules live in <code>specs/sidebar-now-today-library/design-decisions.md</code>; where this file and that doc disagree, the doc wins. Decision-option blocks were removed from this copy; the outcomes are recorded in the doc.</div>
+<svg style="display:none" xmlns="http://www.w3.org/2000/svg">
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/></symbol>
+  <symbol id="i-hash" viewBox="0 0 24 24"><path d="M4 9h16"/><path d="M4 15h16"/><path d="M10 3 8 21"/><path d="M16 3l-2 18"/></symbol>
+  <symbol id="i-at" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-4 8"/></symbol>
+  <symbol id="i-bot" viewBox="0 0 24 24"><path d="M12 8V4H8"/><rect x="4" y="8" width="16" height="12" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/></symbol>
+  <symbol id="i-chev-d" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+  <symbol id="i-timer" viewBox="0 0 24 24"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2 2"/><path d="M10 2h4"/></symbol>
+</svg>
+
+<style>
+  .s-stage { padding: 18px 14px; display: flex; justify-content: center; background: #e9e7e2; border-radius: 12px; }
+  .s-sb { width: 290px; background: #f8f7f5; border: 1px solid #e6e4df; border-radius: 14px; padding: 10px 8px; color: #26251f; font-family: -apple-system, 'Segoe UI', sans-serif; font-size: 13px; line-height: 1.35; text-align: left; box-shadow: 0 1px 3px rgba(30,28,20,.06); }
+  .s-sb * { box-sizing: border-box; }
+  .s-i { width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex-shrink: 0; }
+  .s-r { display: flex; align-items: center; gap: 8px; min-height: 28px; padding: 0 8px; border-radius: 7px; color: #3d3c36; }
+  .s-r:hover { background: #eceae5; }
+  .s-lbl { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .s-meta { margin-left: auto; font-size: 11px; color: #a5a39a; flex-shrink: 0; }
+  .s-sh { display: flex; align-items: center; gap: 6px; height: 28px; padding: 0 8px; color: #55534b; font-size: 12.5px; font-weight: 550; border-radius: 7px; }
+  .s-g { width: 14px; height: 14px; position: relative; flex-shrink: 0; }
+  .s-ch { margin-left: 14px; }
+  .s-av { width: 18px; height: 18px; border-radius: 5px; display: inline-flex; align-items: center; justify-content: center; font-size: 11px; flex-shrink: 0; }
+  .s-r2 { align-items: flex-start; padding: 5px 8px; min-height: 0; }
+  .s-r2 .s-av { margin-top: 1px; }
+  .s-t1 { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
+  .s-t2 { font-size: 11px; color: #a09e94; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .s-who { font-weight: 550; color: #26251f; flex-shrink: 0; }
+  .s-sep { color: #b5b3a8; }
+  .s-bdg { background: rgba(229,148,11,.16); color: #a8690a; border-radius: 9px; font-size: 10px; font-weight: 650; padding: 1px 6px; margin-left: auto; flex-shrink: 0; }
+  .s-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+  .s-dot.on { background: #3fa374; }
+  .s-dot.warn { background: #e5940b; }
+  .s-pulse { animation: s-pulse 2s ease-in-out infinite; }
+  @keyframes s-pulse { 0%,100% { opacity: 1; } 50% { opacity: .3; } }
+  .s-zone { background: #f1efe9; border-radius: 10px; padding: 4px; }
+  .s-zlbl { display: flex; align-items: center; gap: 6px; padding: 4px 6px; font-size: 11px; font-weight: 650; color: #75736a; }
+  .s-card { background: #f8f7f5; border-radius: 8px; margin-bottom: 3px; }
+  .s-cur { background: #e9e6de; position: relative; }
+  .s-cur::before { content: ''; position: absolute; left: 0; top: 5px; bottom: 5px; width: 2px; border-radius: 2px; background: #26251f; }
+  .s-cur:hover { background: #e9e6de; }
+  .s-om { width: 12px; height: 12px; color: #b0aea3; flex-shrink: 0; align-self: center; }
+  .s-vb { color: #2c7a56; display: flex; align-items: center; gap: 5px; }
+  .journey { display: flex; gap: 24px; flex-wrap: wrap; align-items: flex-start; }
+  .j-col { width: 330px; }
+  .j-cap { font-size: 13.5px; line-height: 1.5; margin-top: 10px; }
+  .j-cap b { display: block; margin-bottom: 2px; }
+  .rule-ul { font-size: 14px; line-height: 1.55; padding-left: 20px; }
+  .rule-ul li { margin-bottom: 8px; }
+  .lock { font-size: 13px; opacity: .75; margin-bottom: 4px; }
+  .gram { display: flex; gap: 8px; flex-wrap: wrap; margin: 10px 0 2px; }
+  .gram span { border: 1px solid rgba(128,128,128,.3); border-radius: 6px; padding: 3px 8px; font-size: 12px; }
+  .ann { position: relative; }
+  .ann-tag { position: absolute; right: -8px; transform: translateX(100%); font-size: 10px; font-weight: 650; color: #b06e08; background: rgba(229,148,11,.12); border-radius: 5px; padding: 1px 6px; white-space: nowrap; }
+</style>
+
+<h2>The crowded morning — everything live at once</h2>
+<p class="subtitle">Worst case on purpose: you're mid-conversation, DorkOS is running <b>two</b> sessions at once, tangerines is working, a channel and a DM both have news. One grammar holds it all together.</p>
+<p class="lock">All decisions final — see design-decisions.md.</p>
+
+<div class="section">
+<div class="journey">
+  <div class="j-col" style="width:420px">
+    <div class="s-stage" style="padding-right:110px">
+      <div class="s-sb">
+        <div class="s-zone">
+          <div class="s-zlbl"><span class="s-dot warn"></span>Now<span class="s-meta">1 needs you</span></div>
+          <div class="s-r s-r2 s-card"><span class="s-av" style="background:#e2def6">🔮</span><div style="flex:1;min-width:0"><div class="s-t1"><span class="s-lbl"><b>Question for you</b></span><span class="s-meta">9m</span></div><div class="s-t2">oracle · API migration plan</div></div></div>
+          <div class="s-r" style="min-height:24px"><span class="s-dot on s-pulse"></span><span class="s-lbl" style="font-size:12px;color:#75736a">4 working</span></div>
+        </div>
+
+        <div class="s-sh" style="margin-top:8px"><span class="s-g"><svg class="s-i"><use href="#i-clock"/></svg></span><span class="s-lbl">Today</span></div>
+        <div class="s-ch">
+          <div class="s-r s-r2 s-cur ann"><span class="s-av" style="background:#d9f2e3">🥝</span><div style="flex:1;min-width:0"><div class="s-t1"><span class="s-who">Mio Clicker PM</span><span class="s-sep">›</span><span class="s-lbl">NotionDocThread</span></div><div class="s-t2 s-vb"><span class="s-dot on s-pulse" style="width:5px;height:5px"></span>working — updating doc outline…</div></div><span class="ann-tag" style="top:8px">you are here</span></div>
+          <div class="s-r s-r2 ann"><span class="s-av" style="background:#f9d8ea">🐙</span><div style="flex:1;min-width:0"><div class="s-t1"><span class="s-who">DorkOS</span><span class="s-sep">›</span><span class="s-lbl">Dashboard overhaul</span></div><div class="s-t2 s-vb"><span class="s-dot on s-pulse" style="width:5px;height:5px"></span>working — editing RoomRow.tsx…</div></div><span class="ann-tag" style="top:8px">same agent…</span></div>
+          <div class="s-r s-r2 ann"><span class="s-av" style="background:#f9d8ea">🐙</span><div style="flex:1;min-width:0"><div class="s-t1"><span class="s-who">DorkOS</span><span class="s-sep">›</span><span class="s-lbl">Release notes draft</span></div><div class="s-t2 s-vb"><span class="s-dot on s-pulse" style="width:5px;height:5px"></span>working — summarizing changelog…</div></div><span class="ann-tag" style="top:8px">…twice</span></div>
+          <div class="s-r ann"><span class="s-av" style="background:#eceae5;color:#75736a">#</span><span class="s-lbl" style="font-weight:600;color:#141310">team</span><span class="s-bdg">3</span><span class="ann-tag" style="top:6px">channel</span></div>
+          <div class="s-r s-r2"><span class="s-av" style="background:#fdeacc">🍊</span><div style="flex:1;min-width:0"><div class="s-t1"><span class="s-who">tangerines</span><span class="s-sep">›</span><span class="s-lbl">Design airtight box</span><span class="s-meta">1h</span></div></div></div>
+          <div class="s-r ann"><span class="s-av" style="background:#fdeacc">🍊</span><span class="s-lbl">tangerines</span><svg class="s-i s-om"><use href="#i-at"/></svg><span class="s-meta">2h</span><span class="ann-tag" style="top:6px">DM</span></div>
+          <div class="s-r" style="color:#a5a39a;font-size:12px;min-height:24px"><svg class="s-i s-om"><use href="#i-timer"/></svg>+ 2 automated</div>
+        </div>
+      </div>
+    </div>
+    <div class="j-cap"><b>Read the grammar, not the rows</b>
+      <div class="gram"><span><b>glyph</b> = what kind</span><span><b>name</b> = who</span><span><b>› title</b> = which thread</span><span><b>trailing</b> = status</span></div>
+    Session: avatar + <b>Agent</b> › title. Channel: # + <b>name</b>. DM: avatar + <b>name</b>, no ›. The "›" <i>is</i> the session marker — its absence means "this is the place itself, not a thread."</div>
+  </div>
+
+  <div class="j-col" style="width:380px">
+    <ul class="rule-ul" style="margin-top:0">
+      <li><b>Same agent, many sessions → the name repeats, on purpose.</b> A repeated anchor is how the eye clusters: scan the "who" column, find DorkOS twice, then the titles do the telling. Structural grouping (nesting them under one header) would make Today's shape churn as sessions come and go — worse than the repetition it saves.</li>
+      <li><b>Rows never jump while you watch.</b> Today sorts by <i>your</i> last interaction, not by agent activity. A working agent pulses in place; it doesn't leapfrog. (Activity-sorted lists shuffle constantly with 4 agents live — unusable.)</li>
+      <li><b>Two lines only when there's something live to say.</b> Working rows earn a status line with the verb; idle rows stay one line with a timestamp. Height differences carry meaning.</li>
+      <li><b>Distinguishers for same-agent sessions,</b> in order: title, live verb, time. Titles are auto-generated from the first message today already — the switcher (⌘K or the "2 live" chip) is the fallback for deep stacks.</li>
+      <li><b>Overload is capped structurally:</b> Now shows max 3 + rollup, Today shows ~8 with automated behind the reveal, everything older lives in ⌘K. The crowded morning never gets taller than this mock.</li>
+    </ul>
+  </div>
+</div>
+</div>
+
+<div class="section">
+<h3>Scroll-to-active — yes, with three guardrails</h3>
+<ul class="rule-ul">
+  <li><b>On switching conversations, the sidebar scrolls the anchor row into view.</b> Since the anchor pins to Today's top, this normally means a short glide back up if you'd wandered deep into the Library. One target, fully deterministic.</li>
+  <li><b>It never auto-expands a collapsed section.</b> If the agent also appears in an expanded Library section, that row gets the active tint too (same item, two places — the Notion-favorites pattern), but we don't unfold anything you folded. Your structure is yours.</li>
+  <li><b>Reduced motion = instant jump,</b> no glide. And scrolling only happens on conversation <i>switch</i>, never while you're reading — the sidebar must never move under your cursor.</li>
+</ul>
+</div>
+
+</body></html>
