@@ -40,6 +40,22 @@ export type RoomErrorCode =
   | 'INVALID_HANDLE'
   | 'NESTED_THREAD'
   | 'ROOM_ARCHIVED'
+  /**
+   * Somebody who is not the owner tried to rename or archive a SYSTEM room —
+   * a room carrying a well-known key, which today means #team (team-room-home
+   * spec D3.1).
+   *
+   * **Narrow on purpose, and that narrowness is the whole design.**
+   * `RoomService.updateRoom` stays ungated for ordinary rooms, because the
+   * blanket `requireOperator` fix breaks `createRoom`'s DM un-archive path
+   * (DOR-608). A DM never carries a well-known key, so this refusal cannot
+   * reach that path — it closes the hole for the one room the product cannot
+   * work without, and changes nothing anywhere else.
+   *
+   * A 403 rather than a 404: the caller is a member of a room it can see, and
+   * "you may not rename this one" is more useful than pretending it is gone.
+   */
+  | 'SYSTEM_ROOM'
   | 'OPERATOR_ONLY'
   /** A non-person tried to react. Agents do not send reactions (etiquette E16b). */
   | 'PEOPLE_ONLY'

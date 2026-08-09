@@ -1,9 +1,20 @@
 /**
- * Room view widget — a room's history at `/channels` (spec `rooms` §7).
+ * Room view widget — a room's history (spec `rooms` §7).
+ *
+ * Two addresses, one widget: `/channels?id=` reads any room, and `/` reads
+ * #team through the same {@link RoomSurface} (team-room-home spec D3.2). The
+ * page components are addresses; the surface is the room.
  *
  * @module widgets/room-view
  */
 export { ChannelsPage } from './ui/ChannelsPage';
+/**
+ * The room itself, exported so the app shell can render #team as the home tab.
+ * A host contributes an address and the chrome above the feed — never a second
+ * copy of a room.
+ */
+export { RoomSurface } from './ui/RoomSurface';
+export type { RoomSurfaceProps } from './ui/RoomSurface';
 /**
  * One row of a room's history, exported for the Dev Playground's entry-actions
  * bench (`/dev/entry-actions`) — the surface a reviewer eyeballs the hover

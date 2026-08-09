@@ -50,6 +50,22 @@ model. See ADR `260726-170127` and `research/20260727_buzz-conversational-behavi
   the difference is worth holding: they refuse a SECOND turn for ONE agent — one
   transcript per `(room, agent)`, one working tree per agent path — and they
   never order two different agents with respect to each other.
+  `standDownFallbackSeat` is not arbitration either, and the same test tells you
+  why: it removes an agent nobody addressed, and never one that was. A room may
+  name one member its **fallback seat** — held on `always` so a message a PERSON
+  typed without addressing anybody still reaches somebody, which today is
+  #team's default agent (`ensure-team-room.ts`) — and the seat steps back for a
+  post that named another agent, and for any post an agent wrote, because the
+  design record for that room forbids other agents consuming an addressed
+  message and because a reply would otherwise put the seat straight back into
+  the pile-on one cascade hop later. The two escapes keep the rule honest: the
+  seat stays when it was named too, and when it is inside its own engaged
+  window. **The seat is the member `rooms.fallback_seat_author_id` names, never
+  "whoever holds `always`"** — a person may set any agent to "Everything" from
+  the room's member menu, and that choice must keep meaning `always`, fires on
+  everything, stands down for nothing. Reading the mode as the marker made
+  somebody else's setting behave like this one and let the boot reconcile revert
+  it. A future fallback room reuses all of this; nothing here elects a speaker.
 - **Stopping is a control action and is never inferred.** The halt route
   (`POST /api/rooms/:id/halt`) and the header button reach the runtimes; nothing
   pattern-matches a message for "stop", in this phase or any later one. An

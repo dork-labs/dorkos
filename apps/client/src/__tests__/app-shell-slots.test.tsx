@@ -117,7 +117,6 @@ vi.mock('@/layers/shared/model', async (importOriginal) => {
 let mockPendingApprovals: Array<{ approvalId: string }> = [];
 let mockApprovalsError = false;
 vi.mock('@/layers/features/approvals', () => ({
-  PendingApprovalsSection: () => null,
   ApprovalList: ({ approvals }: { approvals: Array<{ approvalId: string }> }) => (
     <div data-testid="approval-list">{approvals.length} cards</div>
   ),

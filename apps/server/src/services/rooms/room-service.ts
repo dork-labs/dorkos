@@ -24,6 +24,15 @@
  * be that agent. Closing it properly means splitting the re-open out first.
  * Tracked as DOR-608; do not add the gate without that split.
  *
+ * **One narrow exception now exists: a SYSTEM room** — a room carrying a
+ * well-known key, which today means the #team channel `ensureTeamRoom` opens at
+ * boot (team-room-home spec D3.1). Renaming or archiving one is refused for
+ * anyone but the owner. It is not the blanket gate above and cannot become it:
+ * the refusal reads `wellKnown`, a DM never has one, so the un-archive path
+ * DOR-608 protects is untouched by construction. The product renders its home
+ * tab from that room, so an agent that could rename or put it away could take
+ * the cockpit's front door with it.
+ *
  * **The gates ask who the OWNER is, never whether the author is a human**
  * (DOR-598). Those were the same question only while this table held exactly one
  * human author. It will not: joining a community fills it with other humans —
@@ -582,6 +591,118 @@ export class RoomService {
   }
 
   /**
+   * Get — or open, once — the channel holding a well-known key. The write half
+   * of `ensureTeamRoom` (team-room-home spec D3.1). **Operator-only.**
+   *
+   * **Idempotent on the key, not on the name.** A room already carrying the key
+   * is returned untouched, whatever it has since been renamed to, archived to,
+   * or given as a topic: this runs on every boot, and a hook that re-asserted
+   * the seed values would quietly undo the person's own edits every restart.
+   * The key is the identity precisely so the name is free to change.
+   *
+   * **Separate from {@link RoomService.createRoom} because the key must not be
+   * requestable.** `CreateRoomRequest` deliberately has no `wellKnown` field —
+   * a well-known key is what makes a room a system room, so an API that let a
+   * caller name one would let an agent mint a room the owner alone may rename.
+   * This method is reachable only from the boot hook.
+   *
+   * **The slug is de-collided, never stolen — and it steps over archived
+   * channels too.** An install may already have an ordinary `#team` somebody
+   * made; adopting it would hand a person's own channel system-room semantics
+   * and a roster of every agent, so the system room takes the next free name
+   * (`#team-2`) instead. An ARCHIVED `#team` is stepped over for a second
+   * reason: archiving releases a slug, so a system room that took it would
+   * leave that channel permanently un-un-archivable — the way back is the name
+   * it left behind. See {@link RoomService.uniqueChannelSlug}.
+   *
+   * **The find-then-insert is not atomic across processes, and the insert is
+   * what settles it.** Two boots — a cockpit and a CLI started together — can
+   * both read "no team room" and both try to write one; the unique key on
+   * `rooms.well_known` makes exactly one of them win. The loser ADOPTS the
+   * winner's row rather than failing, because a loser that gave up would leave
+   * that boot with no home room and no agents seated in the one that exists.
+   * The re-read decides it rather than an errno test: any insert failure is
+   * re-checked against the key, and one that did not leave the key held is
+   * rethrown untouched, so nothing real is swallowed.
+   *
+   * @internal Reachable only from the `ensureTeamRoom` boot hook. Not a route,
+   *   not a tool, and deliberately not part of `CreateRoomRequest`.
+   * @param wellKnown - The key this room answers to forever (`'team'`).
+   * @param seed - The name and topic to open it with, used only on creation.
+   * @param operatorAuthorId - The install owner, who is seeded as its first member.
+   * @returns The room, and whether this call is what created it.
+   */
+  /**
+   * Record which member holds this room's **fallback seat** — the one that
+   * answers a post nobody addressed (team-room-home spec D3.4).
+   * **Operator-only**, for the same reason `updateMembership` is: the seat is
+   * what makes an agent answer without being addressed, so an agent able to
+   * claim it could manufacture a conversation.
+   *
+   * Paired with, and never a substitute for, the `always` mode on that same
+   * membership: the mode is what ADDRESSING selects the seat with, and this is
+   * what tells the dispatcher and the boot reconcile WHICH member the seat is —
+   * a question `always` cannot answer, because a person may set any agent to
+   * "Everything" themselves.
+   *
+   * @internal Reachable only from the `ensureTeamRoom` boot hook and the
+   *   default-agent watcher beside it. Not a route and not a tool.
+   * @param roomId - The room.
+   * @param operatorAuthorId - The install owner.
+   * @param authorId - The member taking the seat, or `null` to empty it.
+   * @returns The updated room.
+   */
+  setFallbackSeat(roomId: string, operatorAuthorId: string, authorId: string | null): Room {
+    this.requireVisibleRoom(roomId, operatorAuthorId);
+    this.requireOperator(operatorAuthorId, 'which agent answers what nobody addressed');
+    const room = this.store.setFallbackSeat(roomId, authorId);
+    if (!room) throw new RoomError('ROOM_NOT_FOUND', 'No such room');
+    return room;
+  }
+
+  ensureSystemChannel(
+    wellKnown: string,
+    seed: { slug: string; topic?: string },
+    operatorAuthorId: string
+  ): { room: Room; created: boolean } {
+    this.requireOperator(operatorAuthorId, 'the rooms DorkOS itself depends on');
+    const existing = this.store.findByWellKnown(wellKnown);
+    if (existing) return { room: existing, created: false };
+
+    const slug = this.uniqueChannelSlug(seed.slug, { includeArchived: true });
+    const createdAt = new Date().toISOString();
+    const operator = this.roster.requireAuthor(operatorAuthorId);
+    let room: Room;
+    try {
+      room = this.store.createRoom(
+        {
+          id: ulid(),
+          kind: 'channel',
+          slug,
+          title: `#${slug}`,
+          topic: seed.topic ?? null,
+          workspaceId: null,
+          wellKnown,
+          createdAt,
+        },
+        [
+          {
+            authorId: operator.id,
+            responseMode: this.roster.seedResponseMode({ kind: 'channel' }, operator),
+            joinedAt: createdAt,
+          },
+        ]
+      );
+    } catch (err) {
+      const won = this.store.findByWellKnown(wellKnown);
+      if (!won) throw err;
+      return { room: won, created: false };
+    }
+    eventFanOut.broadcast('room_created', { roomId: room.id, kind: room.kind, title: room.title });
+    return { room, created: true };
+  }
+
+  /**
    * Open a room for a claimed platform chat (chats-as-channels spec §3.1–§3.4)
    * — the room half of the bridge create path.
    *
@@ -1063,15 +1184,31 @@ export class RoomService {
   }
 
   /**
-   * A live channel slug, appending `-2`, `-3`, … until one is free (spec
-   * §3.4, A3.4). Never throws `SLUG_TAKEN`: a platform title has no person
-   * behind it who could rename it to fix a collision.
+   * A free channel slug, appending `-2`, `-3`, … until one is (spec §3.4,
+   * A3.4). Never throws `SLUG_TAKEN` — this is the path for names DorkOS mints
+   * rather than names a person typed, and there is nobody behind a platform
+   * title or a boot hook who could rename anything to resolve a collision.
+   *
+   * **`includeArchived` decides which question is being asked**, and both
+   * callers are right about their own. A bridged room asks "may I take this
+   * name?", so it steps over LIVE channels only: an archived channel has
+   * released its slug and holding it in reserve forever would make every
+   * bridged `#standup` a `#standup-2`. A system room asks the stronger
+   * question, "is this name somebody's to come back to?", because it opens once
+   * and keeps its name for the life of the install — taking an archived
+   * channel's slug would leave that channel unable to un-archive at all, its
+   * only way back being the name that had been quietly given away.
    *
    * @param base - The slugified title to start from.
+   * @param opts.includeArchived - Step over archived channels too. Defaults to
+   *   false, which is "a live channel is the only thing in my way".
    */
-  private uniqueChannelSlug(base: string): string {
+  private uniqueChannelSlug(base: string, opts: { includeArchived?: boolean } = {}): string {
+    const taken = opts.includeArchived
+      ? (slug: string) => this.store.anyChannelHoldsSlug(slug)
+      : (slug: string) => this.store.findLiveChannelBySlug(slug) !== null;
     let candidate = base;
-    for (let suffix = 2; this.store.findLiveChannelBySlug(candidate); suffix += 1) {
+    for (let suffix = 2; taken(candidate); suffix += 1) {
       candidate = `${base}-${suffix}`;
     }
     return candidate;
@@ -1255,6 +1392,12 @@ export class RoomService {
    * means a caller who sent `{ title, deliverNotices }` for an unbridged room
    * never sees a half-applied rename.
    *
+   * **A system room refuses a rename or an archive from anyone but the owner**
+   * (team-room-home spec D3.1). See {@link RoomService.requireSystemRoomWritable}
+   * for why that is a field check here rather than the blanket `requireOperator`
+   * DOR-608 forbids. The topic is deliberately NOT covered: describing what a
+   * room is for is ordinary participation, and #team is a room agents live in.
+   *
    * @param roomId - The room id.
    * @param viewerAuthorId - The caller; must be on the roster.
    * @param patch - The validated update request.
@@ -1263,6 +1406,7 @@ export class RoomService {
   updateRoom(roomId: string, viewerAuthorId: string, patch: UpdateRoomRequest): RoomWithRoster {
     const room = this.requireVisibleRoom(roomId, viewerAuthorId);
     const { deliverNotices, ...roomPatch } = patch;
+    this.requireSystemRoomWritable(room, viewerAuthorId, roomPatch);
     if (deliverNotices !== undefined && !this.bridges.findBridgeByRoom(roomId)) {
       throw new RoomError('NOT_A_BRIDGED_ROOM', 'This room is not bridged to an external chat');
     }
@@ -2307,6 +2451,47 @@ export class RoomService {
   private requireOperator(viewerAuthorId: string, what: string): void {
     if (this.isOwnerAuthor(viewerAuthorId)) return;
     throw new RoomError('OPERATOR_ONLY', `Only you can change ${what}`);
+  }
+
+  /**
+   * Refuse a rename or an archive of a SYSTEM room from anyone but the owner
+   * (team-room-home spec D3.1).
+   *
+   * **A field check, not a caller check, and that is what makes it safe to add
+   * here at all.** DOR-608's open hole is that `updateRoom` has no operator
+   * gate, and the reason it stays open is that adding one breaks
+   * `createRoom`'s DM un-archive path — an agent legitimately re-opening its
+   * own archived direct message. This refusal cannot reach that path: it fires
+   * only on `wellKnown`, which no DM and no caller-created room ever carries.
+   * So the hole is closed for the rooms the product cannot work without, and
+   * every ordinary room behaves exactly as it did.
+   *
+   * **Rename and archive, not topic, and not delete.** The title is a channel's
+   * address (renaming it moves the `#slug`), and archiving takes the room off
+   * every list — both would break the home tab that renders #team for anybody
+   * who did not ask for it. A topic is a description, and describing a shared
+   * room is ordinary participation. There is no delete verb on a room at all
+   * (archive is this product's reversible "put it away", spec §12.4), so
+   * "nobody may delete #team" needs no code — and muting is a sidebar
+   * preference in the person's own config, which never reaches this domain,
+   * so the owner can still quiet the room without leaving it.
+   *
+   * @param room - The room being patched.
+   * @param viewerAuthorId - The caller.
+   * @param patch - The room-table half of the requested patch.
+   */
+  private requireSystemRoomWritable(
+    room: Room,
+    viewerAuthorId: string,
+    patch: { title?: string; archived?: boolean }
+  ): void {
+    if (!room.wellKnown) return;
+    if (patch.title === undefined && patch.archived === undefined) return;
+    if (this.isOwnerAuthor(viewerAuthorId)) return;
+    throw new RoomError(
+      'SYSTEM_ROOM',
+      `Only you can rename or archive ${room.slug ? `#${room.slug}` : room.title}`
+    );
   }
 
   /**

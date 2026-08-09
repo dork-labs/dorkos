@@ -5,7 +5,7 @@
  * else.
  *
  * The keys and the focus that drive it are asserted through the real composer
- * in `widgets/dashboard/__tests__/DashboardComposerSection.jump-back-in.test.tsx`
+ * in `app/__tests__/HomeRoomPage.test.tsx`
  * — this file is about the state machine underneath.
  */
 import type { ReactNode } from 'react';

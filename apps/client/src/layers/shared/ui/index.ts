@@ -25,6 +25,8 @@ export { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter }
 export { Checkbox } from './checkbox';
 export { Collapsible, CollapsibleTrigger, CollapsibleContent } from './collapsible';
 export { Progress } from './progress';
+export { PromptSuggestionChips } from './PromptSuggestionChips';
+export type { PromptSuggestionChipsProps, PromptSuggestionChipSize } from './PromptSuggestionChips';
 export { Input } from './input';
 export type { InputProps } from './input';
 export {

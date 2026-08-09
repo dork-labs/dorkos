@@ -19,7 +19,6 @@ import {
   PALETTE_DEV_ACTIONS,
 } from '@/layers/features/command-palette';
 import { SIDEBAR_FOOTER_BUTTONS } from '@/layers/features/session-list';
-import { DASHBOARD_SECTION_CONTRIBUTIONS } from '@/layers/widgets/dashboard';
 import { DIALOG_CONTRIBUTIONS } from '@/layers/widgets/app-layout';
 
 /**
@@ -73,10 +72,12 @@ export function initializeExtensions(): void {
     register('sidebar.footer', button);
   }
 
-  // Dashboard sections
-  for (const section of DASHBOARD_SECTION_CONTRIBUTIONS) {
-    register('dashboard.sections', section);
-  }
+  // No built-in `dashboard.sections` contributions: the four that existed were
+  // retired with the dashboard itself (team-room-home spec D3.5) — the composer
+  // became the #team room's, approvals and attention moved into the home tab's
+  // pinned triage header, and the activity preview became the Activity tab. The
+  // SLOT stays: extensions in the wild still contribute to it, and the Activity
+  // tab draws their sections (`widgets/activity/ui/ExtensionSections.tsx`).
 
   // Marketplace sidebar takeover (lazy-loaded). The `sidebar.body` slot is
   // FIRST-PARTY ONLY in v1: it is registered here, from client init, and is
@@ -146,7 +147,7 @@ export function registerRightPanelTabs(register: RegisterFn): void {
   // a contextual tab when one is visible and only land on Pulse when none is — the
   // Chrome sidePanel rule (contextual wins when present, global is the fallback),
   // so /session still opens to Agent Profile (honoring DOR-227) while
-  // dashboard/activity/tasks/… open to Pulse. Its body promotes global content
+  // home/activity/tasks/… open to Pulse. Its body promotes global content
   // (attention + activity teasers) into the panel so the shell is never dead.
   //
   // Strip order rests purely on this priority-5 convention — `isGlobal` gates the

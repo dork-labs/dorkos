@@ -18,8 +18,8 @@ import { zodValidator } from '@tanstack/zod-adapter';
 import type { ReactNode } from 'react';
 
 // ── Mock page components ──────────────────────────────────────
-function MockDashboard() {
-  return <div data-testid="dashboard-page">Dashboard</div>;
+function MockHome() {
+  return <div data-testid="home-page">Home</div>;
 }
 
 function MockSession() {
@@ -59,7 +59,7 @@ function buildRouteTree() {
   const indexRoute = createRoute({
     getParentRoute: () => shellRoute,
     path: '/',
-    component: MockDashboard,
+    component: MockHome,
     beforeLoad: ({ location }) => {
       const params = new URLSearchParams(location.searchStr);
       const session = params.get('session');
@@ -113,11 +113,11 @@ describe('Routing', () => {
     vi.clearAllMocks();
   });
 
-  it('renders DashboardPage at /', async () => {
+  it('renders the home page at /', async () => {
     renderWithRouter('/');
 
     await waitFor(() => {
-      expect(screen.getByTestId('dashboard-page')).toBeInTheDocument();
+      expect(screen.getByTestId('home-page')).toBeInTheDocument();
     });
   });
 

@@ -6,9 +6,9 @@ import { BasePage } from './BasePage';
  * spine tab, and the ambient attention badge.
  *
  * The panel defaults CLOSED on every route; {@link open} reveals it. On routes
- * with no contextual tab (e.g. the dashboard) Pulse fills the panel; on `/session`
- * a contextual tab (Agent Profile) wins the default per the container's
- * auto-select.
+ * with no contextual tab (Home, Activity, Scheduled) Pulse fills the panel; on
+ * `/session` a contextual tab (Agent Profile) wins the default per the
+ * container's auto-select.
  */
 export class RightPanelPage {
   readonly page: Page;
@@ -22,9 +22,9 @@ export class RightPanelPage {
   readonly pulsePanel: Locator;
   /** The ambient needs-attention count pill on the toggle. */
   readonly badge: Locator;
-  /** Pulse's "Needs attention" section heading (scoped to the panel — the dashboard has its own). */
+  /** Pulse's "Needs attention" section heading (scoped to the panel — Home has its own). */
   readonly attentionHeading: Locator;
-  /** Pulse's "Activity" section heading (scoped to the panel — the dashboard has its own). */
+  /** Pulse's "Activity" section heading (scoped to the panel). */
   readonly activityHeading: Locator;
   /** The header's single-tab title shown when only Pulse is visible. */
   readonly singleTabTitle: Locator;
@@ -48,8 +48,8 @@ export class RightPanelPage {
     this.header = page.locator('[data-slot="right-panel-header"]');
     this.pulsePanel = page.locator('[data-slot="pulse"]');
     this.badge = page.locator('[data-testid="right-panel-attention-badge"]');
-    // Scope Pulse's own sections to the panel: the dashboard route renders its own
-    // "Needs Attention"/"Recent activity" surfaces in the main column too.
+    // Scope Pulse's own sections to the panel: Home's pinned triage header
+    // renders its own "Needs Attention" group in the main column too.
     this.attentionHeading = this.pulsePanel.getByRole('heading', { name: 'Needs attention' });
     this.activityHeading = this.pulsePanel.getByRole('heading', { name: 'Activity' });
     this.singleTabTitle = this.header.getByText('Pulse', { exact: true });

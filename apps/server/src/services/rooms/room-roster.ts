@@ -53,8 +53,13 @@ import type { RoomStore } from './room-store.js';
  * Changing this constant changes NEW joins only. The value is written explicitly
  * at join time and stays written, so migration 0039 is what moved the
  * memberships that already existed.
+ *
+ * Exported for the one caller that has to move a membership BACK to it:
+ * `ensure-team-room.ts` demotes the previous default agent when the
+ * default-agent setting moves. A literal there would be a second copy of this
+ * decision, free to drift from the seed every other channel join uses.
  */
-const CHANNEL_RESPONSE_MODE: ResponseMode = 'engaged';
+export const CHANNEL_RESPONSE_MODE: ResponseMode = 'engaged';
 
 /**
  * What a non-agent membership stores. The column is NOT NULL and the value is

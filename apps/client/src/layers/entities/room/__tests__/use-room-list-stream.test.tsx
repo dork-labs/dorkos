@@ -13,6 +13,7 @@ import { renderHook } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { RoomSummary, RoomWithRoster, ThreadSummary } from '@dorkos/shared/room-schemas';
+import { roomKeys } from '../api/query-keys';
 import { useRoomListStream } from '../model/use-room-list-stream';
 import { useRoomWorkingStore } from '../model/use-room-working';
 
@@ -332,6 +333,75 @@ describe('useRoomListStream', () => {
       handlers.get('read_cursor')!(cursorEvent());
 
       expect(badge(queryClient, 'room-1')).toBeNull();
+    });
+  });
+
+  describe('the well-known lookup (the home tab is reading it)', () => {
+    /**
+     * What `useTeamRoom` caches when #team has been archived: ONE room, or
+     * `null` — not a list. The bug this covers is that the key used to sit under
+     * the list prefix, where `applyReadCursor`'s prefix-matched patch mapped
+     * over whatever it found: `rooms.map is not a function`, thrown out of an
+     * event handler, which on the in-process transport takes down the whole
+     * global stream rather than one badge.
+     */
+    function seedWellKnown(queryClient: QueryClient, room: unknown) {
+      // Through the factory, never a hand-written path: the whole defect was
+      // WHERE this key sits, so a test that spells its own path would keep
+      // passing if it moved back under the list prefix.
+      queryClient.setQueryData(roomKeys.wellKnown('team'), room);
+    }
+
+    it('is not touched by the cursor patch, and the badge still clears', () => {
+      const { queryClient } = setup();
+      seedRoomList(queryClient, 3);
+      seedWellKnown(queryClient, { id: 'team-room', archived: true, unreadCount: 0 });
+
+      expect(() => handlers.get('read_cursor')!(cursorEvent())).not.toThrow();
+
+      // The patch it was interrupting completed.
+      expect(badge(queryClient, 'room-1')).toBe(0);
+      // And the lookup is exactly as it was — a single room, not mapped over.
+      expect(queryClient.getQueryData(roomKeys.wellKnown('team'))).toEqual({
+        id: 'team-room',
+        archived: true,
+        unreadCount: 0,
+      });
+    });
+
+    it('survives a prefixed write even if something is nested under the lists again', () => {
+      // Defense in depth for the next key somebody puts there: the updater
+      // leaves anything that is not an array alone rather than throwing.
+      const { queryClient } = setup();
+      seedRoomList(queryClient, 3);
+      queryClient.setQueryData(['rooms', 'list', 'not-a-list'], { id: 'team-room' });
+
+      expect(() => handlers.get('read_cursor')!(cursorEvent())).not.toThrow();
+      expect(queryClient.getQueryData(['rooms', 'list', 'not-a-list'])).toEqual({
+        id: 'team-room',
+      });
+      expect(badge(queryClient, 'room-1')).toBe(0);
+    });
+
+    it('does not sit under the prefix the cursor patch writes through', () => {
+      // The durable half of the fix, and the half no behavioural test can pin
+      // while the guard above is also in place: a prefixed writer cannot know
+      // the shape of every key it matches, so this key must not be one of them.
+      const lists = roomKeys.lists() as readonly unknown[];
+      const wellKnown = roomKeys.wellKnown('team') as readonly unknown[];
+      expect(wellKnown.slice(0, lists.length)).not.toEqual([...lists]);
+    });
+
+    it('is refreshed by the events that can make #team appear or come back', () => {
+      // The self-heal path: a home tab showing "not open yet" has to notice the
+      // room being created, and one showing "archived" has to notice it coming
+      // back. Both arrive as room-list events, and the lookup is out of that
+      // prefix now — so it is invalidated by name or not at all.
+      const { invalidated } = setup();
+
+      handlers.get('room_created')!();
+
+      expect(invalidated).toContainEqual(['rooms', 'well-known']);
     });
   });
 

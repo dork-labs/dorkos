@@ -99,6 +99,10 @@ export class RoomStore {
   ): Room {
     const row = {
       ...room,
+      wellKnown: room.wellKnown ?? null,
+      // Empty at creation always: the seat is assigned by the boot hook that
+      // resolves the default agent, never by whoever opened the room.
+      fallbackSeatAuthorId: null,
       archived: false,
       ambientMaxEntries: DEFAULT_AMBIENT_MAX_ENTRIES,
       lastActivityAt: room.createdAt,
@@ -279,6 +283,49 @@ export class RoomStore {
   }
 
   /**
+   * Whether ANY channel holds this slug — archived ones included.
+   *
+   * The counterpart to {@link RoomStore.findLiveChannelBySlug}, and the two
+   * answer different questions on purpose. "May I take this name?" is the live
+   * one, because archiving releases a slug. "Is this name somebody's to come
+   * back to?" is this one: an archived channel's way back is the slug it left
+   * behind, so a path that hands that slug to a new room strands it for good
+   * (`updateRoom` refuses the un-archive with `SLUG_TAKEN`). Only the paths
+   * that MINT a name nobody typed ask this — a person naming a channel is told
+   * about a collision and can choose.
+   *
+   * A boolean rather than a row: the partial unique index leaves archived
+   * channels free to share a slug, so "which one" has no single honest answer
+   * and nothing here needs one.
+   *
+   * @param slug - The channel slug.
+   */
+  anyChannelHoldsSlug(slug: string): boolean {
+    return (
+      this.db
+        .select({ id: rooms.id })
+        .from(rooms)
+        .where(and(eq(rooms.slug, slug), eq(rooms.kind, 'channel')))
+        .get() !== undefined
+    );
+  }
+
+  /**
+   * The room holding a well-known key, archived or not.
+   *
+   * **Archived rooms are included, deliberately.** This is the lookup
+   * `ensureTeamRoom` is idempotent by, and skipping an archived match would let
+   * a boot open a second #team beside the one somebody put away — which is the
+   * one outcome a well-known key exists to prevent.
+   *
+   * @param key - The well-known key (`'team'`).
+   */
+  findByWellKnown(key: string): Room | null {
+    const row = this.db.select().from(rooms).where(eq(rooms.wellKnown, key)).get();
+    return row ? toRoom(row) : null;
+  }
+
+  /**
    * Patch a room's mutable fields.
    *
    * @param id - The room id.
@@ -424,6 +471,25 @@ export class RoomStore {
       .where(and(eq(roomMembers.roomId, roomId), eq(roomMembers.authorId, authorId)))
       .run();
     return this.getMember(roomId, authorId);
+  }
+
+  /**
+   * Record which member holds this room's fallback seat — the one that answers
+   * a post nobody addressed.
+   *
+   * A column rather than a sweep for `response_mode = 'always'`: the mode is
+   * also what a person picks from the member menu, and the two must not be
+   * confused (see the column's own doc in `@dorkos/db`). Not validated against
+   * the roster here, because the only caller resolves the member first and a
+   * second read would just be the same question asked twice.
+   *
+   * @param roomId - The room.
+   * @param authorId - The member holding the seat, or `null` to leave it empty.
+   * @returns The updated room, or `null` when there is no such room.
+   */
+  setFallbackSeat(roomId: string, authorId: string | null): Room | null {
+    this.db.update(rooms).set({ fallbackSeatAuthorId: authorId }).where(eq(rooms.id, roomId)).run();
+    return this.getRoom(roomId);
   }
 
   /**

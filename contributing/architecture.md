@@ -127,15 +127,17 @@ HttpTransport({ baseUrl: '/api' })
   -> TransportProvider
     -> RouterProvider (TanStack Router)
       -> AppShell (layout route with <Outlet>)
-        -> DashboardPage (/) or SessionPage (/session)
+        -> HomeRoomPage (/) or SessionPage (/session)
 ```
 
 **Client routing** (`router.tsx`): TanStack Router with code-based routes. A pathless `_shell` layout route renders `AppShell` (sidebar, header, dialogs). Child routes render into `<Outlet>`:
 
-| Path       | Component                   | Search Params                        |
-| ---------- | --------------------------- | ------------------------------------ |
-| `/`        | `DashboardPage`             | —                                    |
-| `/session` | `SessionPage` → `ChatPanel` | `?session=`, `?dir=` (Zod-validated) |
+| Path       | Component                      | Search Params                        |
+| ---------- | ------------------------------ | ------------------------------------ |
+| `/`        | `HomeRoomPage` → `RoomSurface` | `?detail=`, `?itemId=`, `?thread=`   |
+| `/session` | `SessionPage` → `ChatPanel`    | `?session=`, `?dir=` (Zod-validated) |
+
+**Home is the #team room.** `/` renders the room every install is opened with (spec `team-room-home` D3.2), through the same `RoomSurface` `/channels?id=` renders — one room widget, two addresses, no fork. `app/HomeRoomPage.tsx` is the composition: it finds the room by the `wellKnown: 'team'` key on `GET /api/rooms` (never by slug, which a person may rename), draws four honest states before there is a room to draw, and mounts the pinned triage header above the room's scroller. It sits at the app layer because it composes two widgets, and a widget may not import another widget.
 
 **The home surface is a layout, not a route.** `/`, `/activity`, `/tasks` and `/workspaces` are one tabbed place, and the tab bar is a second pathless layout route (`_home`, `widgets/home/ui/HomeSurfaceLayout.tsx`) nested inside `_shell`. Because it uses `id` rather than `path` and declares no `validateSearch`, the four pages keep their exact addresses, their own search schemas and their own loaders, so `/activity?categories=agent` still arrives with its filter applied. The active tab is derived from `location.pathname` on every render — there is no tab state to keep in sync with the URL. `shared/config/home-surface.ts` owns the list of those four paths; the tab bar reads it to name the tabs and `features/dashboard-sidebar` reads it to keep the sidebar's single **Home** entry lit across all four.
 
@@ -265,7 +267,7 @@ DorkOS dialogs (Settings, Agent, Tasks, Relay, Mesh) are URL-addressable via sea
 
 Example URLs:
 
-- `/?settings=tools` — Settings on Dashboard, Tools tab
+- `/?settings=tools` — Settings on Home, Tools tab
 - `/team?settings=tools&settingsSection=external-mcp` — Settings on the Team page, Tools tab, scrolled to External MCP
 - `/?agent=identity&agentPath=/abs/path/to/repo` — Agent dialog → Identity for that project
 

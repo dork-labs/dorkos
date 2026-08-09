@@ -53,6 +53,7 @@ function sync(urlThreadId: string | undefined, over: Partial<ThreadUrlSync> = {}
     ({ open }: { open: string | undefined }) =>
       useThreadUrlSync({
         roomId: 'room-1',
+        route: '/channels',
         urlThreadId,
         openThreadId: open,
         entries: [],
@@ -101,6 +102,7 @@ describe('useThreadUrlSync', () => {
       ({ entries, loaded }: { entries: RoomEntry[]; loaded: boolean }) =>
         useThreadUrlSync({
           roomId: 'room-1',
+          route: '/channels',
           urlThreadId: 'reply-9',
           openThreadId: useRoomOpenThreadStore.getState().open['room-1']?.rootEntryId,
           entries,
@@ -146,6 +148,7 @@ describe('useThreadUrlSync', () => {
     renderHook(() =>
       useThreadUrlSync({
         roomId: 'room-1',
+        route: '/channels',
         urlThreadId: undefined,
         openThreadId: 'root-1',
         entries: [],
@@ -155,9 +158,30 @@ describe('useThreadUrlSync', () => {
 
     await waitFor(() => expect(navigate).toHaveBeenCalled());
     expect(lastSearch()).toEqual({ id: 'room-1', thread: 'root-1' });
+    expect(navigate.mock.calls.at(-1)?.[0]).toMatchObject({ to: '/channels' });
     // Reading a thread is not navigating: Back should leave the room, not walk
     // through every thread somebody glanced at.
     expect(navigate.mock.calls.at(-1)?.[0]).toMatchObject({ replace: true });
+  });
+
+  it('writes it into the address the room is being READ at, not always /channels', async () => {
+    // Home IS the #team room (team-room-home spec D3.2). Mirroring its open
+    // thread to `/channels` would carry the reader off the page they are on
+    // every time they opened one.
+    renderHook(() =>
+      useThreadUrlSync({
+        roomId: 'room-1',
+        route: '/',
+        urlThreadId: undefined,
+        openThreadId: 'root-1',
+        entries: [],
+        historyLoaded: true,
+      })
+    );
+
+    await waitFor(() => expect(navigate).toHaveBeenCalled());
+    expect(navigate.mock.calls.at(-1)?.[0]).toMatchObject({ to: '/', replace: true });
+    expect(lastSearch()).toMatchObject({ thread: 'root-1' });
   });
 
   it('clears the param when the panel closes', async () => {
@@ -165,6 +189,7 @@ describe('useThreadUrlSync', () => {
       ({ open }: { open: string | undefined }) =>
         useThreadUrlSync({
           roomId: 'room-1',
+          route: '/channels',
           urlThreadId: 'root-1',
           openThreadId: open,
           entries: [],
@@ -207,6 +232,7 @@ describe('useThreadUrlSync', () => {
     renderHook(() =>
       useThreadUrlSync({
         roomId: null,
+        route: '/channels',
         urlThreadId: undefined,
         openThreadId: undefined,
         entries: [],

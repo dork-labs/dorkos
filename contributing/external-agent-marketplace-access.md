@@ -69,7 +69,7 @@ When an external agent calls `marketplace_install`, DorkOS does not silently ins
 
 1. Agent calls `marketplace_install({ name: 'foo' })`.
 2. DorkOS responds with `{ status: 'requires_confirmation', preview, confirmationToken: '...' }`.
-3. The approval lands on the operator's approval card (`ApprovalCard` in `apps/client/src/layers/features/approvals/ui/`, surfaced by `ApprovalsIndicator` in `apps/client/src/layers/widgets/approvals-indicator/ui/`, mounted in the app header at `AppShell.tsx:462`, and by `PendingApprovalsSection` on the dashboard). They grant or deny it **by approval id**, through `POST /api/approvals/:id/grant` or `/deny`.
+3. The approval lands on the operator's approval card (`ApprovalCard` in `apps/client/src/layers/features/approvals/ui/`, surfaced by `ApprovalsIndicator` in `apps/client/src/layers/widgets/approvals-indicator/ui/`, mounted in the app header at `AppShell.tsx:462`, and by the pinned triage header on the home tab). They grant or deny it **by approval id**, through `POST /api/approvals/:id/grant` or `/deny`.
 4. Agent re-calls `marketplace_install({ name: 'foo', confirmationToken: '...' })`.
 5. DorkOS returns either `{ status: 'installed', ... }` or `{ status: 'declined', reason: '...' }`.
 

@@ -1011,7 +1011,7 @@ Three fallback components handle different failure scopes:
 | -------------------- | ----------------------- | --------------------------------- | ------------------ |
 | `AppCrashFallback`   | Entire app              | Full page reload                  | Inline styles only |
 | `RouteErrorFallback` | Individual route        | `router.invalidate()` retry + nav | Tailwind + shadcn  |
-| `NotFoundFallback`   | 404 (no matching route) | Navigate to Dashboard             | Tailwind + shadcn  |
+| `NotFoundFallback`   | 404 (no matching route) | Navigate Home                     | Tailwind + shadcn  |
 
 ### `AppCrashFallback`
 
@@ -1045,7 +1045,7 @@ const rootRoute = createRootRouteWithContext<RouterContext>()({
 
 ### `NotFoundFallback`
 
-Renders when no route matches (404). Shows a Search icon and a "Go to Dashboard" button. Registered as `notFoundComponent` on the router root and on the root layout route.
+Renders when no route matches (404). Shows a Search icon and a "Back to Home" button. Registered as `notFoundComponent` on the router root and on the root layout route.
 
 All three components are exported from `@/layers/shared/ui`.
 

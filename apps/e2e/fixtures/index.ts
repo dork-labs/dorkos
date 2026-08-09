@@ -10,6 +10,7 @@ import { RightPanelPage } from '../pages/RightPanelPage';
 import { RoomsPage } from '../pages/RoomsPage';
 import { HomeSurfacePage } from '../pages/HomeSurfacePage';
 import { RoomsApi } from './rooms-api';
+import { TeamRoomApi } from './team-room-api';
 import { TasksApi } from './tasks-api';
 
 type DorkOSFixtures = {
@@ -24,6 +25,7 @@ type DorkOSFixtures = {
   roomsPage: RoomsPage;
   homeSurface: HomeSurfacePage;
   roomsApi: RoomsApi;
+  teamRoomApi: TeamRoomApi;
   tasksApi: TasksApi;
 };
 
@@ -64,6 +66,15 @@ export const test = base.extend<DorkOSFixtures>({
   // shares one server, so nothing may outlive the test that made it.
   roomsApi: async ({ request }, use) => {
     const api = new RoomsApi(request);
+    await use(api);
+    await api.cleanup();
+  },
+  // The one room a test may not create: #team is opened once per install and
+  // cannot be deleted, so this helper works against the room already there and
+  // puts back every change it made — including an archive, which every other
+  // page on this server can see.
+  teamRoomApi: async ({ request }, use) => {
+    const api = new TeamRoomApi(request);
     await use(api);
     await api.cleanup();
   },

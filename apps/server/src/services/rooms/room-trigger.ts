@@ -112,7 +112,11 @@ import { logError, logger } from '../../lib/logger.js';
 import { runInDispatch } from '../../lib/dispatch-context.js';
 import { logRefusal } from '../observability/refusals.js';
 import { recordDispatchEnd, recordDispatchStart } from '../observability/dispatch-buffers.js';
-import { selectTriggerTargets, type AddressingMember } from './addressing.js';
+import {
+  selectTriggerTargets,
+  standDownFallbackSeat,
+  type AddressingMember,
+} from './addressing.js';
 import {
   DISPATCH_OUTCOMES,
   agentKey,
@@ -392,15 +396,26 @@ export class RoomTriggerDispatcher {
     const threadRootEntryId = entry.threadRootEntryId ?? null;
     const engaged = new Map<string, EngagementWindow>();
     const addressing: AddressingMember[] = [];
+    // Who holds this room's FALLBACK SEAT — the member that answers a message a
+    // person typed without addressing anybody (team-room-home spec D3.4), which
+    // today is #team's default agent and `null` everywhere else. Read off the
+    // room rather than inferred from anyone's `always` mode, because a person
+    // may set that mode themselves and mean it (`rooms.fallback_seat_author_id`);
+    // and read from the room this dispatch already holds, so it costs no query.
+    const seatAuthorId = room.fallbackSeatAuthorId ?? null;
     for (const member of members) {
       const record = records.get(member.authorId);
       if (!record) continue;
-      // Only an `engaged` agent that did not write this entry can be inside a
-      // window, so no other membership pays for the query.
+      // Only an agent that did not write this entry can be inside a window, so
+      // no other membership pays for the query.
+      //
+      // The seat is weighed even though its `always` mode ignores the flag: it
+      // READS the window to decide whether to stand down for a post that
+      // addressed somebody else, so it costs one bounded query (six rows at the
+      // shipped defaults) for that one member, in that one room.
+      const weighable = member.responseMode === 'engaged' || member.authorId === seatAuthorId;
       const open =
-        record.kind === 'agent' &&
-        member.responseMode === 'engaged' &&
-        member.authorId !== entry.authorId
+        record.kind === 'agent' && weighable && member.authorId !== entry.authorId
           ? engagementFor(this.deps, {
               roomId: room.id,
               threadRootEntryId,
@@ -409,7 +424,12 @@ export class RoomTriggerDispatcher {
               now,
             })
           : null;
-      if (open) engaged.set(member.authorId, open);
+      // The CONTEXT map takes `engaged` members only, and deliberately: an
+      // agent's `roomContext.addressing` promises a window is `null` for every
+      // other mode (`room-context.ts`), because reporting one would describe a
+      // bound that mode does not apply. The fallback seat's window decides one
+      // filter below and is never told to the agent.
+      if (open && member.responseMode === 'engaged') engaged.set(member.authorId, open);
       addressing.push({
         authorId: member.authorId,
         kind: record.kind,
@@ -418,7 +438,17 @@ export class RoomTriggerDispatcher {
       });
     }
 
-    const selected = selectTriggerTargets({ roomKind: room.kind, entry, members: addressing });
+    // The second rule, a no-op in a room with no seat: a post that named another
+    // agent is that agent's to answer, and a post an AGENT wrote is a
+    // conversation already underway — the seat catches neither. See
+    // `standDownFallbackSeat` for the two escapes.
+    const selected = standDownFallbackSeat({
+      entry,
+      authorKind: records.get(entry.authorId)?.kind ?? 'system',
+      seatAuthorId,
+      members: addressing,
+      selected: selectTriggerTargets({ roomKind: room.kind, entry, members: addressing }),
+    });
     if (selected.length === 0) {
       // **The commonest shape of the ghost case comes through here**, and it is
       // why this is not a bare `return`. A channel seeds agents at `engaged`, and
@@ -426,6 +456,16 @@ export class RoomTriggerDispatcher {
       // selects nobody, and would leave the room silent in answer to the most
       // direct question in it. No selection ran, so nothing can overlap: the set
       // is exactly what the message named.
+      //
+      // A stand-down can empty the set too, and it writes NO notice — which is
+      // deliberate, and the same call this file already makes for the depth
+      // refusal against an agent's own un-provenanced post. A notice announces
+      // that something you asked for did not happen; the seat standing down is
+      // the opposite, an agent you did NOT address declining to spend a turn.
+      // The shape that empties the set is a post naming only an agent somebody
+      // silenced, and the room being quiet is precisely what silencing it asked
+      // for. Announcing it would also spray: nothing damps a line that could
+      // land on every message in a busy room.
       this.reportGone(room, entry, new Set(namedUnreachable), namedUnreachable);
       return [];
     }

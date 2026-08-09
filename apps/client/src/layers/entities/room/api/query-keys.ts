@@ -14,6 +14,21 @@ export const roomKeys = {
   list: (kind?: RoomKind) => ['rooms', 'list', kind ?? null] as const,
   /** Every room list, whatever its filter. */
   lists: () => ['rooms', 'list'] as const,
+  /**
+   * The archived-inclusive lookup of one well-known room (`#team`).
+   *
+   * **Deliberately NOT under `list`**, even though it reads the same route. The
+   * list keys are written by PREFIX — `applyReadCursor` patches every match of
+   * `lists()` at once, and a patch that maps over its data would throw on this
+   * entry, whose data is one room or `null` rather than an array. A prefixed
+   * writer cannot know the shape of every key it matches, so the honest fix is
+   * for this key not to be one of them. Its freshness is bought explicitly
+   * instead: `useRoomListStream` and `refreshRoom` invalidate
+   * {@link roomKeys.wellKnowns} by name.
+   */
+  wellKnown: (key: string) => ['rooms', 'well-known', key] as const,
+  /** Every well-known lookup — what the room-list events invalidate. */
+  wellKnowns: () => ['rooms', 'well-known'] as const,
   /** One room with its roster. */
   detail: (roomId: string) => ['rooms', 'detail', roomId] as const,
   /**

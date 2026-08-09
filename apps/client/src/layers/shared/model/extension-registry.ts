@@ -33,7 +33,7 @@ const EXTENSION_ID_SEPARATOR = ':';
  * The extension API namespaces every contribution it registers as
  * `${extensionId}:${slotLocalId}` (see `extension-api-factory.ts`), and no
  * built-in id contains a colon — the guard test on
- * `DASHBOARD_SECTION_CONTRIBUTIONS` pins that. Testing the separator rather
+ * `isExtensionContributionId` pins that. Testing the separator rather
  * than an allowlist of built-in ids means a new built-in section can never leak
  * into a surface meant for extensions just because someone forgot a list.
  *

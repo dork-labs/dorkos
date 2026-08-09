@@ -133,7 +133,7 @@ export const DORKBOT_TOUR_LINES = {
   /** The on-demand general tour: the composer, then the tabs above it. */
   general: {
     composer:
-      'Start here. Type a message and I open a session with you. This is where most days begin.',
+      'Start here. This box posts to #team, where you and every agent you run can talk. Type something and I answer. This is where most days begin.',
     homeTabs:
       'And the rest of Home is up here: what your agents have been doing, the work you scheduled, and your workspaces. That is the whole place. Go build something.',
   },

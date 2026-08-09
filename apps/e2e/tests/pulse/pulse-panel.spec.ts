@@ -9,14 +9,12 @@ import { test, expect } from '../../fixtures';
  * attention/activity models.
  */
 test.describe('Pulse — right inspector panel @smoke', () => {
-  test('opens on the dashboard to Pulse with its attention + activity sections', async ({
-    rightPanel,
-  }) => {
+  test('opens on Home to Pulse with its attention + activity sections', async ({ rightPanel }) => {
     await rightPanel.goto('/');
     // The panel defaults closed everywhere — the operator opens it.
     await rightPanel.open();
 
-    // No contextual tab applies on the dashboard, so Pulse fills the panel.
+    // No contextual tab applies on Home, so Pulse fills the panel.
     await expect(rightPanel.pulsePanel).toBeVisible();
     await expect(rightPanel.attentionHeading).toBeVisible();
     await expect(rightPanel.activityHeading).toBeVisible();

@@ -117,12 +117,22 @@ function applyReadCursor(queryClient: QueryClient, event: ReadCursorMoved): void
   // is a `room_activity` refetch in flight when the cursor lands, whose response
   // was computed before the cursor moved and resolves after this patch. Taking
   // the lower of the two means whichever of them arrives last is still right.
+  //
+  // **The guard is not defensive noise.** This writes by PREFIX, so it reaches
+  // every cache entry under `lists()` — including any future key somebody nests
+  // there whose data is not a list of rooms. One such key already existed (the
+  // well-known lookup, whose data is a single room or `null`), and mapping over
+  // it threw a `TypeError` out of an event handler: on the in-process transport
+  // that takes the whole global stream down with it. That key was moved out
+  // (`roomKeys.wellKnown`), and this stays so the next one is merely ignored.
   queryClient.setQueriesData<RoomSummary[]>({ queryKey: roomKeys.lists() }, (rooms) =>
-    rooms?.map((room) =>
-      room.id === event.threadId && room.unreadCount !== null
-        ? { ...room, unreadCount: Math.min(room.unreadCount, event.unreadCount) }
-        : room
-    )
+    Array.isArray(rooms)
+      ? rooms.map((room) =>
+          room.id === event.threadId && room.unreadCount !== null
+            ? { ...room, unreadCount: Math.min(room.unreadCount, event.unreadCount) }
+            : room
+        )
+      : rooms
   );
 
   // The open room's own copy of the cursor. Without this the reader's membership
@@ -173,6 +183,12 @@ export function useRoomListStream(): void {
   const queryClient = useQueryClient();
   const refresh = () => {
     void queryClient.invalidateQueries({ queryKey: roomKeys.lists() });
+    // By name, because the well-known lookup is deliberately not under the list
+    // prefix (`roomKeys.wellKnown` says why). It is what the home tab reads to
+    // decide whether #team is here, put away, or not opened yet, so it has to
+    // be refreshed by the same events — a room created, un-archived or renamed
+    // in another tab must not leave Home describing the world as it was.
+    void queryClient.invalidateQueries({ queryKey: roomKeys.wellKnowns() });
     // The Threads section is refreshed by the same events, and has to be: a
     // reply lands in a room nobody has open, and the row that has to notice is
     // in the sidebar rather than in the room. `room_activity` fires for a thread

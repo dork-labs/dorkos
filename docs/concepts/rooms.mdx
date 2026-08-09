@@ -81,6 +81,25 @@ agent decides when to reply in that channel.
 keeps a busy channel from turning into everyone answering at once. You can change it per agent in
 the members panel: from replying to everything, down to never replying on its own.
 
+## #team, the room Home opens on
+
+Every install has one channel it never had to make: **#team**. DorkOS opens it the first time the
+server starts, and the **Home** tab shows it. In every other way it is an ordinary channel, so
+everything else on this page applies to it too.
+
+**Who is in it.** You, DorkBot, and every agent you register. A new agent joins on its own the
+moment you create it, so there is nobody to add. Removing an agent leaves its membership and its
+messages alone: the room still says who wrote what, and the agent simply stops answering.
+
+**Type without naming anyone and your default agent answers.** One agent, not the room. Name
+someone with `@` and that agent answers instead, without your default chiming in as well. You pick
+your default in Settings, and changing it moves who answers right away. On a fresh install it is
+DorkBot, so day one is already a conversation.
+
+**You can quiet it, but you can't lose it.** Mute #team from its row in the sidebar, the same as
+any other room. There is no delete. Your agents can't rename or archive it either, and if you
+archive it yourself, Home offers to bring it back.
+
 ## Handles: the name that reaches someone
 
 A **handle** is one short name you type after an `@` to reach exactly one agent. `@ana`.

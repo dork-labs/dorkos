@@ -74,7 +74,7 @@ export function NavigationShowcases() {
 
 /** One tab per route the strip can name, plus chat tabs named after projects. */
 const TAB_SAMPLES: AppTab[] = [
-  { id: 'tab-dashboard', href: '/' },
+  { id: 'tab-home', href: '/' },
   { id: 'tab-api', href: '/session?session=s-api&dir=%2FUsers%2Fkai%2Fcode%2Fapi' },
   { id: 'tab-web', href: '/session?session=s-web&dir=%2FUsers%2Fkai%2Fcode%2Fweb-cockpit' },
   { id: 'tab-agents', href: '/team?view=topology' },

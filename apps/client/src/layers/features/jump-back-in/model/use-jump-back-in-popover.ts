@@ -53,8 +53,20 @@ export function jumpBackInRowId(index: number): string {
  */
 const COMPOSER_FIELD_SELECTOR = '[role="combobox"]';
 
-/** Whether an event target is the composer's own text field. */
-function isComposerField(target: EventTarget | null): boolean {
+/**
+ * Whether an event target is the composer's own text field.
+ *
+ * Exported because a second listener needs the same answer: the home surface
+ * watches the composer's focus to condense its pinned header while a phone
+ * keyboard is up, and it must ignore the send button for exactly the reason
+ * this popover does. One definition, so the two can never disagree about what
+ * "the composer is focused" means. (Its eventual home is the `Composer` family
+ * that publishes the role; it lives here until a second composer feature needs
+ * it too.)
+ *
+ * @param target - The event target to test.
+ */
+export function isComposerField(target: EventTarget | null): boolean {
   return target instanceof Element && target.matches(COMPOSER_FIELD_SELECTOR);
 }
 
@@ -77,6 +89,19 @@ export interface UseJumpBackInPopoverOptions {
    * palette opened over a box that is still empty.
    */
   yieldToPalette?: boolean;
+  /**
+   * Offer the panel at all — and, just as importantly, READ anything at all.
+   *
+   * `false` holds every query behind the list idle and keeps the panel shut.
+   * The case is the room composer: it is one component mounted in every room
+   * and in every thread panel, and only the home surface offers this panel
+   * (spec `team-room-home` D2.3). Without this the rest of them each subscribed
+   * to the recents fan-out, the room list, the fleet and its manifests, and
+   * re-read them on every session lifecycle event — for a panel no gesture in
+   * that room could open. Defaults to `true`, so a host that wants the panel
+   * says nothing.
+   */
+  enabled?: boolean;
 }
 
 /** What {@link useJumpBackInPopover} answers with. */
@@ -144,6 +169,7 @@ export interface UseJumpBackInPopover {
 export function useJumpBackInPopover({
   value,
   yieldToPalette = false,
+  enabled = true,
 }: UseJumpBackInPopoverOptions): UseJumpBackInPopover {
   const navigate = useNavigate();
   const sidebarPrefs = useSidebarPrefs();
@@ -201,12 +227,12 @@ export function useJumpBackInPopover({
 
   // Same derivation the sidebar makes, from the same two queries, so this is a
   // cache hit rather than a second fetch of the fleet.
-  const { data: meshData } = useMeshAgentPaths();
+  const { data: meshData } = useMeshAgentPaths({ enabled });
   const agentPaths = useMemo(
     () => (meshData?.agents ?? []).map((agent) => agent.projectPath),
     [meshData]
   );
-  const { data: resolvedAgents } = useResolvedAgents(agentPaths);
+  const { data: resolvedAgents } = useResolvedAgents(agentPaths, { enabled });
   const agents = useMemo(() => resolvedAgents ?? {}, [resolvedAgents]);
   const displayNames = useMemo(
     () => disambiguateDisplayNames(agentPaths, agents),
@@ -230,13 +256,17 @@ export function useJumpBackInPopover({
   // The reader both surfaces share, from the prefs entity — see `mutedRoomIds`.
   const muted = useMemo(() => mutedRoomIds(sidebarPrefs), [sidebarPrefs]);
 
-  const { items } = useJumpBackIn({ mutedRoomIds: muted });
+  const { items } = useJumpBackIn({ mutedRoomIds: muted, enabled });
   const rows = useMemo(() => items.slice(0, JUMP_BACK_IN_POPOVER_ROWS), [items]);
 
   // `value.length === 0` as well as the latch, and not redundantly: the latch is
   // raised during the very render that first sees a non-empty box, and this is
   // what keeps the panel down in that same pass rather than in the next one.
   const isOpen =
+    // First, and not merely implied by the empty rows a disabled read leaves
+    // behind: a host that did not ask for this panel must not be one cache
+    // warm-up away from getting one.
+    enabled &&
     isFocused &&
     !isDismissed &&
     !hasTypedSinceFocus &&

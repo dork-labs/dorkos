@@ -44,7 +44,7 @@ export const TOUR_DEFINITIONS: Record<TourId, TourDefinition> = {
     deepLink: { kind: 'route', to: '/' },
     steps: [
       {
-        anchor: TOUR_ANCHORS.dashboardComposer,
+        anchor: TOUR_ANCHORS.homeComposer,
         caption: DORKBOT_TOUR_LINES.general.composer,
         chipLabel: 'Next',
       },

@@ -376,4 +376,23 @@ export const COMPONENTS_SECTIONS: PlaygroundSection[] = [
     category: 'Chat Primitives',
     keywords: ['compact', 'result', 'row', 'approved', 'denied', 'badge', 'icon'],
   },
+  // PromptSuggestionChipsShowcases
+  {
+    id: 'promptsuggestionchips',
+    title: 'PromptSuggestionChips',
+    page: 'components',
+    category: 'Feedback',
+    keywords: [
+      'prompt',
+      'suggestion',
+      'chip',
+      'follow-up',
+      'sdk',
+      'starter',
+      'openers',
+      'day one',
+      'compact',
+      'comfortable',
+    ],
+  },
 ];

@@ -21,8 +21,15 @@
  * by the `data-testid` string stamped on the owning component.
  */
 export const TOUR_ANCHORS = {
-  /** The dashboard composer where a first message to DorkBot is typed. */
-  dashboardComposer: 'dashboard-composer',
+  /**
+   * The home tab's composer — the box you say something to your team in.
+   *
+   * Stamped by `RoomComposer` on the one composer that offers "Jump back in",
+   * which is the home surface's and no other (team-room-home spec D3.2). It was
+   * `dashboard-composer` until the dashboard was replaced by the #team room; a
+   * dead surface's name on a live anchor is worse than a rename.
+   */
+  homeComposer: 'home-composer',
   /** The home surface's tab bar: Home, Activity, Scheduled, Workspaces. */
   homeTabs: 'home-tabs',
   /** The Team page's roster of every person and agent on this install. */

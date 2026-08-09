@@ -37,6 +37,12 @@ import { roomKeys } from '../api/query-keys';
 function refreshRoom(queryClient: QueryClient, roomId: string): void {
   void queryClient.invalidateQueries({ queryKey: roomKeys.lists() });
   void queryClient.invalidateQueries({ queryKey: roomKeys.detail(roomId) });
+  // The well-known lookup is not under the list prefix (`roomKeys.wellKnown`
+  // says why), so it is named here as well. Archiving and un-archiving #team
+  // both land in this function, and the home tab reads that lookup to decide
+  // which of the two it is currently showing — without this, bringing the room
+  // back left Home still saying it was put away.
+  void queryClient.invalidateQueries({ queryKey: roomKeys.wellKnowns() });
 }
 
 /** Which room to rename, and to what. */

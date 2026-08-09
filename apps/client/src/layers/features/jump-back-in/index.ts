@@ -18,6 +18,7 @@ export { JumpBackInPopover } from './ui/JumpBackInPopover';
 export type { JumpBackInPopoverProps } from './ui/JumpBackInPopover';
 export {
   useJumpBackInPopover,
+  isComposerField,
   JUMP_BACK_IN_LISTBOX_ID,
   JUMP_BACK_IN_POPOVER_ROWS,
   jumpBackInRowId,

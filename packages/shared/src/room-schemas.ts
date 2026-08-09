@@ -298,6 +298,17 @@ export const RoomBridgeInfoSchema = z
 
 export type RoomBridgeInfo = z.infer<typeof RoomBridgeInfoSchema>;
 
+/**
+ * The `wellKnown` key of #team — the one room every install is opened with and
+ * the room the cockpit's home tab renders (team-room-home spec D3.1).
+ *
+ * It lives on the wire contract rather than in the server, because both ends
+ * read it: the boot hook opens the room under this key, and the client finds it
+ * again by the same key rather than by a slug a person may have renamed. One
+ * spelling, one place.
+ */
+export const TEAM_ROOM_WELL_KNOWN = 'team';
+
 export const RoomSchema = z
   .object({
     id: z.string().min(1),
@@ -316,6 +327,20 @@ export const RoomSchema = z
       .min(0)
       .describe(
         'How many entries of ambient history a turn in this room replays at most, oldest dropped first (room-participation spec §8.3). A bound on what one turn reads, never on the log — a room never forgets what was said, and a turn whose window was trimmed is told so.'
+      ),
+    wellKnown: z
+      .string()
+      .nullable()
+      .optional()
+      .describe(
+        "The stable name a room DorkOS itself depends on is found by — `'team'` for the #team channel every install gets at boot — and `null` for every room a person or an agent opened (team-room-home spec D3.1). It is also the tell that this is a SYSTEM room: only the owner may rename or archive one, so a client draws those controls off this field rather than guessing. It never changes, which is what makes it findable after a rename. The server always sends it, `null` included; it is optional only so that the thirty client fixtures that assemble a room by hand need not each carry a field none of them reads. Absent and `null` mean the same thing — an ordinary room."
+      ),
+    fallbackSeatAuthorId: z
+      .string()
+      .nullable()
+      .optional()
+      .describe(
+        'The one member that answers a message somebody typed in this room without addressing anybody — #team\'s default agent (team-room-home spec D3.4) — and `null` in every room a person opened. Held on the room rather than read off a member\'s `always` mode, because a person may set any agent to "Everything" themselves and that choice must not be mistaken for this one. Optional for the same reason `wellKnown` is: client fixtures that assemble a room by hand do not carry a field they never read, and absent means the same as `null`.'
       ),
     createdAt: z.string(),
     lastActivityAt: z.string(),

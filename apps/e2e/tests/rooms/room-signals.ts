@@ -163,6 +163,46 @@ export async function publishWorkingCount(
 }
 
 /**
+ * Say that a session is mid-turn, fleet-wide, on the global stream.
+ *
+ * The other half of "who is working": the home surface's presence strip reads
+ * ROOM claims for rooms whose streams are open and streaming SESSIONS for
+ * everywhere else, and home excludes its own room — so on `/` the strip's rows
+ * come from here (`use-presence-rows.ts`, `useWorkingSessions`).
+ *
+ * The `cwd` is load-bearing rather than decorative: the strip attributes a
+ * session to an agent by its working directory, and a session whose runtime
+ * reported none is a turn with nobody's name on it, which never becomes a row.
+ * So pass a REGISTERED agent's directory or the strip will correctly ignore it.
+ *
+ * @param page - The page holding the global stream, already tapped.
+ * @param session.sessionId - The session to mark as streaming.
+ * @param session.cwd - Its working directory: a registered agent's path.
+ */
+export async function publishSessionStreaming(
+  page: Page,
+  session: { sessionId: string; cwd: string }
+): Promise<void> {
+  await pushFrame(page, '__globalStream', 'session_status', {
+    type: 'session_status',
+    sessionId: session.sessionId,
+    cwd: session.cwd,
+    status: {
+      contextUsage: null,
+      cost: null,
+      usage: null,
+      cacheStats: null,
+      model: null,
+      permissionMode: 'default',
+      todoCounts: null,
+      runningSubagentCount: 0,
+      lifecycle: 'streaming',
+      lastError: null,
+    },
+  });
+}
+
+/**
  * Put one frame onto a tapped stream, once it is open.
  *
  * **Waits for the stream to be open rather than requiring it to be.** A page

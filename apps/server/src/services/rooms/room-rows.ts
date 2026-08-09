@@ -36,6 +36,14 @@ export interface NewRoom {
   title: string;
   topic: string | null;
   workspaceId: string | null;
+  /**
+   * The well-known key this room answers to, for the rooms the product itself
+   * opens (`'team'`). Omitted — and stored as `null` — for every room a person
+   * or an agent creates, which is every room that reaches here through
+   * `POST /api/rooms`: the key is what makes a room a SYSTEM room, so no
+   * request body may name one.
+   */
+  wellKnown?: string | null;
   createdAt: string;
 }
 
