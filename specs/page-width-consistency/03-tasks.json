@@ -11,7 +11,7 @@
       "phaseName": "Primitive",
       "subject": "[page-width-consistency] [P1] Add --page-width-* tokens, build PageContainer + tests + playground, retire container-default",
       "description": "Spec §1-2. Tokens beside --msg-* in index.css; PageContainer in layers/shared/ui with barrel export, TSDoc, unit tests; dev playground showcase; delete @utility container-default (its 3 users migrate in 1.2).",
-      "status": "pending"
+      "status": "done"
     },
     {
       "id": "1.2",
@@ -19,7 +19,7 @@
       "phaseName": "Primitive",
       "subject": "[page-width-consistency] [P1] Migrate all 12 surfaces per spec §3 and verify acceptance criteria §5.1-5.6",
       "description": "Rows 1-12 of the migration table, in order. Re-verify each file:line on contact. Run targeted client tests + typecheck + lint after each cluster (chat, marketplace, reading pages, full pages, home chrome).",
-      "status": "pending"
+      "status": "done"
     },
     {
       "id": "2.1",
@@ -27,7 +27,7 @@
       "phaseName": "Verification",
       "subject": "[page-width-consistency] [P2] Adversarial review per REVIEW.md, then browser verification at 1280/1720/2560 + 390px",
       "description": "Independent reviewer on the diff; then live cockpit measurement of every route incl. both marketplace views; capture evidence for PR + DOR-1047.",
-      "status": "pending"
+      "status": "in_progress"
     }
   ]
 }

@@ -3,6 +3,6 @@
   "slug": "page-width-consistency",
   "title": "Page width consistency: PageContainer primitive + route migration",
   "created": "2026-08-09",
-  "status": "specified",
+  "status": "implemented",
   "linearIssue": "DOR-1047"
 }

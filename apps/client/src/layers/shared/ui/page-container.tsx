@@ -75,12 +75,10 @@ export function PageContainer({
   }
 
   return (
-    <div className="h-full overflow-y-auto">
+    <div className="h-full [scrollbar-gutter:stable_both-edges] overflow-y-auto">
       <div data-slot="page-container" className={cn(inner, className)} {...props}>
         {children}
       </div>
     </div>
   );
 }
-
-export { pageContainerVariants };

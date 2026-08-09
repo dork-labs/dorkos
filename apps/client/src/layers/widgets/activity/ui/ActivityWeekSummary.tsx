@@ -19,7 +19,7 @@ export function ActivityWeekSummary() {
   if (dailyCounts === null) return null;
 
   return (
-    <div className="flex items-center justify-between gap-4 px-4">
+    <div className="flex items-center justify-between gap-4">
       <p className="text-muted-foreground text-sm">{sessionActivitySummary(dailyCounts)}</p>
       <ActivitySparkline data={dailyCounts} className="h-6 w-24 shrink-0" />
     </div>

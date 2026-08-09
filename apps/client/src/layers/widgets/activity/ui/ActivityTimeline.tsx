@@ -116,7 +116,7 @@ export function ActivityTimeline({
 
   if (isLoading && items.length === 0) {
     return (
-      <div data-slot="activity-timeline" className={cn('px-4', className)}>
+      <div data-slot="activity-timeline" className={cn(className)}>
         <ActivityTimelineSkeleton />
       </div>
     );
@@ -136,7 +136,7 @@ export function ActivityTimeline({
       ref={containerRef}
       onKeyDown={handleKeyDown}
       data-slot="activity-timeline"
-      className={cn('px-4', className)}
+      className={cn(className)}
     >
       {groups.map((group) => (
         <section key={group.label}>
