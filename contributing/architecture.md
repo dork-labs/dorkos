@@ -143,6 +143,10 @@ HttpTransport({ baseUrl: '/api' })
 
 Each route provides its own sidebar and header content via private slot hooks in `AppShell` (`useSidebarSlot` / `useHeaderSlot`). The sidebar body and header cross-fade on route change via `AnimatePresence`. `/` renders `DashboardSidebar` + `DashboardHeader`; `/session` keeps the same `DashboardSidebar` roster (the old session drill-in was retired — per-session context now lives in the right-panel inspector) with the `SessionHeader`. A registered `sidebar.body` contribution can take over the body wholesale for its route (the marketplace facet panel does this on `/marketplace`). `SessionSidebar` still exists but only as the Obsidian plugin's chrome (`apps/client/src/App.tsx`), not the web shell.
 
+**Today the swap region is wider than it should be.** `AppShell.tsx` wraps only `sidebarSlot.body` in the animated swap, and `SidebarFooter` (→ `SidebarFooterBar`) is a sibling outside it, so the footer survives a takeover. The header does not: `SidebarNavHeader` renders inside `DashboardSidebar`, which _is_ the body, so navigating to `/marketplace` destroys it.
+
+**The rule is that only the body swaps.** The header block and the footer strip are both persistent chrome and both belong outside the swap region, so a takeover replaces the middle of the panel and nothing else — the operator never loses the create menu or the destination icons to somebody's extension, and there is always a way back out of a contributed body. The header block moves out as the sidebar redesign lands; after that it is a review blocker to render either piece inside `sidebarSlot.body`. A takeover must keep working with zones present and absent, on desktop and inside the mobile Library tab.
+
 Search params use `@tanstack/zod-adapter` with `zodValidator()`. Hooks `useSessionId()` and `useDirectoryState()` read/write via `useSearch`/`useNavigate` internally, preserving their public API.
 
 ### Obsidian Plugin (`CopilotView.tsx`)

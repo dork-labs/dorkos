@@ -140,7 +140,7 @@ The scale below is a **content**-surface scale. Control surfaces — sidebars, t
 | Body text   | `text-sm` / `text-base`                            | 13px label, `text-2xs` (11px) metadata             |
 | Row height  | —                                                  | 28–32px (`h-7` / `h-8`)                            |
 | Inset       | 16px and up (`p-4`, `p-6`)                         | **16px total**, panel edge to first glyph          |
-| Panel width | —                                                  | 240–280px for nav panels                           |
+| Panel width | —                                                  | 240–280px (the DorkOS sidebar is 272px)            |
 
 **Budget the inset once.** Container, section and row padding must not compound — 12 + 8 + 10 is how a 30px sidebar gutter happens. Design decisions behind this live in the `designing-frontend` skill; Tailwind recipes live in `styling-with-tailwind-shadcn` → Control Surfaces.
 
@@ -280,8 +280,8 @@ Tailwind's first-party `scrollbar-*` utilities (v4.3+) are the sanctioned surfac
 
 Built on **Shadcn Sidebar** (`layers/shared/ui/sidebar.tsx`) with `collapsible="offcanvas"` mode. On the web cockpit the sidebar body is the `DashboardSidebar` agent roster (in `features/dashboard-sidebar/`) on every route — per-session context now lives in the right-panel inspector, not a sidebar drill-in. A registered `sidebar.body` contribution can take over the body for its route (the marketplace facet panel does on `/marketplace`). The Obsidian embed's chrome is `EmbedSidebar` (`features/session-list/`), a single-view roster with no tab strip — the four-tab `SessionSidebar` it replaced was retired (DOR-401); see [Sidebar Tabs](#sidebar-tabs) below.
 
-- **Width**: 320px (20rem) via `--sidebar-width` CSS custom property on `SidebarProvider`
-- **CSS variables**: `--sidebar-*` in `index.css` (subtly distinct from main background — 96% vs 98% light, 6% vs 4% dark)
+- **Width**: the visible panel is **272px** — the number to build to, and the number a browser test measures on `sidebar-inner`. It is still 304px until the sidebar redesign's primitives land. **Do not set `--sidebar-width` to 272px.** That variable on `SidebarProvider` (`AppShell.tsx`) sizes the _slot_, and the `inset` variant adds `p-2` — 8px of padding a side — before the tinted surface starts. So the slot is `calc(272px + 1rem)` and the panel inside it is 272; today's `20rem` slot is what makes the panel 304. Writing `17rem` there would give a 256px panel, not a 272px one. Never set a one-off width on a component to work around any of this.
+- **CSS variables**: `--sidebar-*` in `index.css`. The panel sits distinctly off the main background — `--sidebar` is 91% against a 98% background in light mode, and 10% against 4% in dark.
 - **Mobile**: Renders as Radix Sheet (drawer) with backdrop and swipe-to-close
 - **Desktop**: Push layout via `SidebarProvider` + `SidebarInset`
 - **Toggle**: `Cmd+B` / `Ctrl+B` (Shadcn built-in `SIDEBAR_KEYBOARD_SHORTCUT`)
@@ -295,7 +295,23 @@ Built on **Shadcn Sidebar** (`layers/shared/ui/sidebar.tsx`) with `collapsible="
 - **Empty state**: Centered "No conversations yet" message
 - **Dialogs**: All 6 dialogs (Settings, DirectoryPicker, Tasks, Relay, ServerRestartOverlay, ShapeSwitcher) registered in `DialogHost` at the app root level, outside `SidebarProvider` (`layers/widgets/app-layout/model/dialog-contributions.ts`). `OnboardingFlow` renders directly from `AppShell.tsx`, not via `DialogHost`.
 
-The 320px width above is what ships today; the control-surface guidance in [Two Spatial Modes](#two-spatial-modes) puts nav panels at 240-280px. The two disagree, and the sidebar redesign owns closing the gap — do not split the difference in a one-off component.
+### Separation by tint, not by borders
+
+Nav panels separate their levels with tint and whitespace, not hairlines. Add no `border-b` under a header, no `border-t` above a footer, and none between sections; where an edge needs to read at all, it is a scroll-edge shadow that appears only once content scrolls under the header or footer. The sidebar's remaining `border-t` on `SidebarFooter` (`AppShell.tsx`) is the last one and goes as the redesign's primitives land — do not add more, and remove any you pass.
+
+Every level of separation comes off **one ramp**, `--sidebar-accent`, and no new colour is introduced:
+
+| Level      | Class                                                  | What it does                          |
+| ---------- | ------------------------------------------------------ | ------------------------------------- |
+| Zone card  | `bg-sidebar-accent/40`                                 | recessive tint, ~2–3% effective delta |
+| Row hover  | `bg-sidebar-accent/70`                                 | reads on top of the zone tint         |
+| Row active | `bg-sidebar-accent` + `text-sidebar-accent-foreground` | the strongest step                    |
+
+**Never use `--muted` inside the sidebar.** It inverts direction between themes. `--sidebar` is 91% light and 10% dark, while `--muted` is 96% light and 9% dark — so a zone tinted with `--muted` is _lighter_ than its panel in light mode and _darker_ in dark mode. `--sidebar-accent` is 86% light (−5%) and 16% dark (+6%): it moves away from the panel in the same perceptual direction in both themes, at the 5–10% delta this system asks for.
+
+Status colour stays on the semantic tokens, which are already calibrated per theme and are already what `status-dot.ts` uses: `bg-status-success` (working), `bg-status-warning` (needs you, directed badges), `bg-status-error` (error or wedged), `bg-status-info` (unseen). No raw hex, and no new `--sidebar-zone-*` variable — one ramp is the point.
+
+Label-on-zone-tint must still meet 4.5:1 in both themes. Check it with an axe-core run over the playground showcase rather than by eye.
 
 ### Zones and Sections
 
@@ -305,6 +321,18 @@ A nav panel has two levels of grouping, and they behave differently:
 - **Section** — a collapsible group inside a zone (Channels, Agents, DMs). Only sections collapse.
 
 Never nest accordions, and keep nav trees to **one indent level** — depth past two stops helping wayfinding. Section labels are sentence case, 12px medium, muted; ALL-CAPS with letterspacing reads dated at small sizes.
+
+#### Accessibility contract
+
+This is the whole contract a zoned nav panel must meet. **It is what to build, not a description of what is already built** — the sidebar has no zones yet, so none of the markup below exists in `apps/client/src` today. It is acceptance criteria for the zones as they land, not a later pass.
+
+- **Landmarks.** The panel root is `<nav aria-label="Sidebar">`. Each zone is `<section aria-labelledby="sidebar-zone-{id}">` with a visible `<h2>` label. **Collapsible** sections are `<h3>` containing a `<button aria-expanded aria-controls>`; group sub-headers are `<h4>`. A headerless body — Now's and Today's single section — has no header element at all and therefore no button. Zone labels are headings, never buttons.
+- **Roving tabindex, per section.** Each section exposes exactly one tab stop — the active row if the section holds it, otherwise the first row. `ArrowDown`/`ArrowUp` move within the section, `Home`/`End` jump to its ends, and `ArrowLeft`/`ArrowRight` on a section header collapse or expand it. `Tab` moves between sections and zones, so a 60-agent Library is four tab stops rather than sixty.
+- **One live region, counts only.** A single visually-hidden `aria-live="polite" aria-atomic="true"` element inside the Now zone announces how many things need you ("2 agents need you"), debounced 1s. Verbs, activity and unread changes are never announced — a fleet of agents would otherwise turn a screen reader into a siren.
+- **Only "working" animates.** The status dot uses `STATUS_DOT_PULSE` (`shared/ui/status-dot.ts`), which is `motion-safe:animate-pulse`; its ping halo carries `motion-reduce:hidden`. Scroll-to-active uses `behavior: 'auto'` under `prefers-reduced-motion`, and the celebratory moments (the welcome-back glow, the all-clear beat) do not render at all under it.
+- **Hover-revealed chrome always has two other paths.** `focus-visible` reveals it on the keyboard, and on touch it is either always visible or reachable by long-press (see [Hover Pattern Mobile Alternatives](#hover-pattern-mobile-alternatives)). Nothing may be reachable by hover alone.
+- **Every drag has a keyboard and pointer alternate** (WCAG 2.5.7). Reorder, pin/unpin and move-to-group are all reachable from the row kebab and the context menu on every platform. `KeyboardSensor` and `sortableKeyboardCoordinates` stay wired, and the `buildSidebarAnnouncements` strings (`features/dashboard-sidebar/model/use-sidebar-dnd.ts`) are preserved verbatim.
+- **Colour is never the sole indicator.** Every status dot is paired with a verb line, a tooltip or an `aria-label`, and the two unread tiers differ in weight and shape as well as hue — see [Unread — Two Tiers](#unread--two-tiers), which is where that rule is defined.
 
 ### Sidebar Tabs
 
@@ -722,12 +750,13 @@ Unread carries two different facts, and they get two different marks. Collapsing
 
 | Tier                | Means                                                        | Renders as                                 |
 | ------------------- | ------------------------------------------------------------ | ------------------------------------------ |
-| **Activity**        | Something happened here                                      | Bold label + a dot                         |
+| **Activity**        | Something happened here                                      | Bold label only — no dot, no badge         |
 | **Directed at you** | A mention, a permission prompt, a reply that needs an answer | A numbered badge (`bg-primary` count pill) |
 
 Rules that come with it:
 
-- **Numbers are for you, not for volume.** A busy channel nobody addressed you in stays at bold + dot however many messages it holds.
+- **Numbers are for you, not for volume.** A busy channel nobody addressed you in stays at a bold label however many messages it holds.
+- **Activity draws no mark of its own** (decided 2026-08-09, `specs/sidebar-now-today-library/design-decisions.md` §18). It used to add a dot. A dot is a third weight in a system that deliberately has two, and the avatar corner already owns dots for agent lifecycle — two dot vocabularies on one row is the confusion this removes.
 - **A collapsed container keeps its signal.** Collapsing a section rolls its unread state up onto the collapsed row — never hides it.
 - **Only "happening right now" pulses.** An agent mid-turn pulses (see [Identity](#identity)); an unread count does not.
 

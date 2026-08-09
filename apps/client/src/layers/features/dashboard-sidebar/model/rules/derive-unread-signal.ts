@@ -23,10 +23,14 @@ export interface UnreadInput {
 /**
  * What one row's unread state is.
  *
- * Tier 1 (`activity`) is a bold label and a dot: something happened in a place
- * you are in. Tier 2 (`directed`) is a numbered badge: something was aimed at
- * you. A channel with a hundred new messages is still tier 1, because volume
- * is not the same as being addressed.
+ * Tier 1 (`activity`) is a bold label and nothing else: something happened in a
+ * place you are in. Tier 2 (`directed`) is a numbered amber badge: something was
+ * aimed at you. A channel with a hundred new messages is still tier 1, because
+ * volume is not the same as being addressed.
+ *
+ * Tier 1 draws **no dot** (design-decisions §18: "Bold label only. No badge, no
+ * dot."). A dot would be a third weight in a two-weight system, and the avatar
+ * corner already owns dots for agent lifecycle.
  *
  * **Mute kills both — and an @mention pierces it.** That single exception is
  * the whole reason `mentionCount` is carried separately from `unreadCount`:
