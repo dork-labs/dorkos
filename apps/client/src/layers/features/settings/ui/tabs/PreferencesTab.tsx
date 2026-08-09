@@ -8,6 +8,7 @@ import {
   FieldCard,
   FieldCardContent,
 } from '@/layers/shared/ui';
+import { WelcomeBackCard } from '../WelcomeBackCard';
 
 /**
  * Preferences tab — chat display, notification, and developer toggles.
@@ -135,6 +136,8 @@ export function PreferencesTab() {
           />
         </FieldCardContent>
       </FieldCard>
+
+      <WelcomeBackCard />
 
       <FieldCard>
         <FieldCardContent>

@@ -774,6 +774,179 @@ describe('GET /api/config', () => {
     });
   });
 
+  // The Settings Tools tab offers a switch for each of these two subsystems, and
+  // the switch is only honest if it can tell "what is running" from "what the
+  // setting says". The server starts them once, at boot, so those two facts part
+  // ways the moment somebody flips the switch and stay parted until the next
+  // restart — or forever, when an environment variable is deciding instead
+  // (spec team-room-home D6).
+  describe('tasks/relay — what is running versus what the setting says', () => {
+    it('reports both as on for a fresh install', async () => {
+      const res = await request(server).get('/api/config').expect(200);
+
+      expect(res.body.tasks.enabledInConfig).toBe(true);
+      expect(res.body.relay.enabledInConfig).toBe(true);
+      expect(res.body.tasks.lockedByEnv).toBe(false);
+      expect(res.body.relay.lockedByEnv).toBe(false);
+    });
+
+    it('reports the setting a person turned off, while the subsystem is still up', async () => {
+      const { configManager } = await import('../../services/core/config-manager.js');
+      configManager.set('scheduler', { ...configManager.get('scheduler')!, enabled: false });
+      configManager.set('relay', { ...configManager.get('relay')!, enabled: false });
+
+      const res = await request(server).get('/api/config').expect(200);
+
+      // `enabled` answers for the running process, which nothing has restarted.
+      expect(res.body.tasks.enabledInConfig).toBe(false);
+      expect(res.body.relay.enabledInConfig).toBe(false);
+      expect(typeof res.body.tasks.enabled).toBe('boolean');
+      expect(typeof res.body.relay.enabled).toBe('boolean');
+    });
+
+    it('round-trips a PATCH, so the switch can persist what it shows', async () => {
+      // Seeded off the default on purpose: asserting the shipped `1` survives
+      // would also pass if the patch had replaced the whole block with defaults,
+      // which is precisely the failure this line is here to catch.
+      const { configManager } = await import('../../services/core/config-manager.js');
+      configManager.set('scheduler', { ...configManager.get('scheduler')!, maxConcurrentRuns: 5 });
+
+      await request(server)
+        .patch('/api/config')
+        .send({ scheduler: { enabled: false }, relay: { enabled: false } })
+        .expect(200);
+
+      const res = await request(server).get('/api/config').expect(200);
+
+      expect(res.body.tasks.enabledInConfig).toBe(false);
+      expect(res.body.relay.enabledInConfig).toBe(false);
+      // The deep merge leaves the rest of the scheduler block intact.
+      expect(res.body.scheduler.maxConcurrentRuns).toBe(5);
+    });
+  });
+
+  // Settings owns ONE of these three: the on/off switch. The two numbers go out
+  // with it so the switch's own sentence can state the threshold actually in
+  // force rather than the shipped default, the same reason the `rooms` block
+  // carries its ceilings (spec team-room-home D5.2, task 4.3).
+  describe('welcomeBack — what agents may say when you come back', () => {
+    it('reports the shipped values when nobody has changed them', async () => {
+      const res = await request(server).get('/api/config').expect(200);
+
+      expect(res.body.welcomeBack).toEqual({
+        enabled: true,
+        absenceThresholdMinutes: 240,
+        maxPosts: 3,
+      });
+    });
+
+    it('reports what an operator actually set', async () => {
+      const { configManager } = await import('../../services/core/config-manager.js');
+      configManager.set('welcomeBack', {
+        ...configManager.get('welcomeBack')!,
+        enabled: false,
+        absenceThresholdMinutes: 720,
+      });
+
+      const res = await request(server).get('/api/config').expect(200);
+
+      expect(res.body.welcomeBack).toEqual({
+        enabled: false,
+        absenceThresholdMinutes: 720,
+        maxPosts: 3,
+      });
+    });
+
+    it('round-trips the switch through PATCH, leaving the numbers alone', async () => {
+      const { configManager } = await import('../../services/core/config-manager.js');
+      configManager.set('welcomeBack', {
+        ...configManager.get('welcomeBack')!,
+        maxPosts: 1,
+      });
+
+      await request(server)
+        .patch('/api/config')
+        .send({ welcomeBack: { enabled: false } })
+        .expect(200);
+
+      const res = await request(server).get('/api/config').expect(200);
+
+      expect(res.body.welcomeBack.enabled).toBe(false);
+      expect(res.body.welcomeBack.maxPosts).toBe(1);
+    });
+
+    it('carries the three welcomeBack fields and nothing else', async () => {
+      const res = await request(server).get('/api/config').expect(200);
+
+      expect(Object.keys(res.body.welcomeBack).sort()).toEqual([
+        'absenceThresholdMinutes',
+        'enabled',
+        'maxPosts',
+      ]);
+    });
+  });
+
+  // The env vars beat the setting, so the tab must be told to stop offering the
+  // switch rather than write a value the server will ignore. Read at module
+  // load, hence the fresh import.
+  describe('tasks/relay — lockedByEnv', () => {
+    const ORIGINAL_TASKS = process.env.DORKOS_TASKS_ENABLED;
+    const ORIGINAL_RELAY = process.env.DORKOS_RELAY_ENABLED;
+
+    afterEach(() => {
+      if (ORIGINAL_TASKS === undefined) delete process.env.DORKOS_TASKS_ENABLED;
+      else process.env.DORKOS_TASKS_ENABLED = ORIGINAL_TASKS;
+      if (ORIGINAL_RELAY === undefined) delete process.env.DORKOS_RELAY_ENABLED;
+      else process.env.DORKOS_RELAY_ENABLED = ORIGINAL_RELAY;
+    });
+
+    it('flags each subsystem whose environment variable is set, whatever its value', async () => {
+      // `false` on purpose: presence is the question, because that is what
+      // `index.ts` branches on.
+      process.env.DORKOS_TASKS_ENABLED = 'false';
+      process.env.DORKOS_RELAY_ENABLED = 'true';
+      vi.resetModules();
+
+      const { initConfigManager } = await import('../../services/core/config-manager.js');
+      initConfigManager(tmpDir);
+      const configRouter = (await import('../config.js')).default;
+      await registerDeclaringRuntimes();
+      const app = express();
+      app.use(express.json());
+      mountCallerFixture(app);
+      app.use('/api/config', configRouter);
+      target.mount(app);
+
+      const res = await request(server).get('/api/config').expect(200);
+
+      expect(res.body.tasks.lockedByEnv).toBe(true);
+      expect(res.body.relay.lockedByEnv).toBe(true);
+    });
+
+    it('flags only the one whose variable is set, leaving the other switchable', async () => {
+      // The two are read independently, and a lock reported on both would take
+      // away a switch the person can still use.
+      process.env.DORKOS_RELAY_ENABLED = 'true';
+      delete process.env.DORKOS_TASKS_ENABLED;
+      vi.resetModules();
+
+      const { initConfigManager } = await import('../../services/core/config-manager.js');
+      initConfigManager(tmpDir);
+      const configRouter = (await import('../config.js')).default;
+      await registerDeclaringRuntimes();
+      const app = express();
+      app.use(express.json());
+      mountCallerFixture(app);
+      app.use('/api/config', configRouter);
+      target.mount(app);
+
+      const res = await request(server).get('/api/config').expect(200);
+
+      expect(res.body.relay.lockedByEnv).toBe(true);
+      expect(res.body.tasks.lockedByEnv).toBe(false);
+    });
+  });
+
   // The cockpit shows a person where a new agent will live and probes that path
   // for a conflict, so the reported directory has to be the one the server will
   // actually create in — the stored `~/.dork/agents` is not it once `DORK_HOME`

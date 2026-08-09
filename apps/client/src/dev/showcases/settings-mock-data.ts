@@ -68,8 +68,12 @@ export const MOCK_SERVER_CONFIG: ServerConfig = {
     tokenConfigured: false,
     domain: null,
   },
-  tasks: { enabled: true },
-  relay: { enabled: true },
+  // Both background systems are running AND on in config, which is the state a
+  // person almost always sees. The Tools tab's background-system switches read
+  // the config value and compare it with the running one to decide whether to
+  // say a restart is pending.
+  tasks: { enabled: true, enabledInConfig: true, lockedByEnv: false },
+  relay: { enabled: true, enabledInConfig: true, lockedByEnv: false },
   scheduler: {
     maxConcurrentRuns: 3,
     timezone: null,
