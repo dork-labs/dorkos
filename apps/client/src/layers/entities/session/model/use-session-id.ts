@@ -103,6 +103,16 @@ export function useSessionId(): [
           // Set explicitly so a fresh navigation without a link drops any prior
           // `continuedFrom` rather than carrying it forward via `...prev`.
           continuedFrom: options?.continuedFrom,
+          // Launch params belong to the session they were aimed at, and this is
+          // the setter that changes which session that is — so they are dropped
+          // here for the same reason `continuedFrom` is, and one worse
+          // consequence. `/clear` calls this with a fresh uuid; a `?prompt=` and
+          // `?send=1` that rode `...prev` forward landed on a session that was
+          // empty by construction, where they typed and SENT themselves. The
+          // hook that consumes them spends them on every outcome now, so this is
+          // the second of two independent guards rather than the only one.
+          prompt: undefined,
+          send: undefined,
         }),
         replace: options?.replace,
       });

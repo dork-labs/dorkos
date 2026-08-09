@@ -9,6 +9,7 @@ import { useScrollOverlay } from '../model/view/use-scroll-overlay';
 import { useInputAutocomplete } from '../model/use-input-autocomplete';
 import { buildPaletteCommands, compactComposerGate } from '../model/build-palette-commands';
 import { useChatStatusSync } from '../model/use-chat-status-sync';
+import { useLaunchPrompt } from '../model/launch/use-launch-prompt';
 import { useRuntimeChip } from '@/layers/features/status';
 import { useFileUpload } from '../model/use-file-upload';
 import { buildFileEntries } from '../lib/build-file-entries';
@@ -51,11 +52,21 @@ interface ChatPanelProps {
   launchRuntime?: string;
   /**
    * Prompt to seed the composer with on a freshly-launched session (the
-   * `?prompt=` search param from a "Run this with…" re-run). Seeded once, only
-   * while the session is empty, so it pre-fills without ever replacing typed
-   * text or re-appearing after the turn has started.
+   * `?prompt=` search param — a "Run this with…" re-run, a docs try-it link).
+   * Seeded once, only while the conversation is empty and the composer is
+   * untouched. See {@link useLaunchPrompt} for the once-only guarantees.
    */
   launchPrompt?: string;
+  /**
+   * Whether that seed should also be SENT (`?send=1`) rather than only
+   * pre-filled. Goes through the composer's own submit, exactly once.
+   */
+  launchSend?: boolean;
+  /**
+   * Fired when the launch link is spent, so the caller can drop `prompt`/`send`
+   * from the URL — the guard against a refresh or a Back re-issuing it.
+   */
+  onLaunchConsumed?: () => void;
 }
 
 /** Top-level chat view composing message list, input, task panel, and celebration effects. */
@@ -64,6 +75,8 @@ export function ChatPanel({
   transformContent,
   launchRuntime,
   launchPrompt,
+  launchSend = false,
+  onLaunchConsumed,
 }: ChatPanelProps) {
   const [, setSessionId] = useSessionId();
   const queryClient = useQueryClient();
@@ -233,18 +246,26 @@ export function ChatPanel({
     chatInputRef.current?.focusUnlessTouch();
   }, [sessionId]);
 
-  // Seed the composer from a "Run this with…" re-run (`?prompt=`). Guarded so
-  // each distinct prompt seeds at most once, and only into an EMPTY session, so
-  // it never clobbers typed text or re-fills after the turn has started (the
-  // re-run is a fresh session — ADR-0255 — never a transplant of prior history).
-  const seededPromptRef = useRef<string | null>(null);
-  useEffect(() => {
-    if (launchPrompt && seededPromptRef.current !== launchPrompt && messages.length === 0) {
-      seededPromptRef.current = launchPrompt;
-      setInput(launchPrompt);
-      chatInputRef.current?.focusUnlessTouch();
-    }
-  }, [launchPrompt, messages.length, setInput]);
+  // Apply the launch deep link (`?prompt=`, `?send=1`): pre-fill the composer,
+  // and with the opt-in start the turn — each at most once, only into an empty
+  // conversation, and through the composer's own submit rather than a parallel
+  // path. Everything that makes "once" true lives in the hook.
+  const handleLaunchSeeded = useCallback(() => {
+    chatInputRef.current?.focusUnlessTouch();
+  }, []);
+  useLaunchPrompt({
+    sessionId,
+    prompt: launchPrompt,
+    autoSend: launchSend,
+    input,
+    setInput,
+    messageCount: messages.length,
+    hydrated,
+    status,
+    submit: handleSubmit,
+    onSeeded: handleLaunchSeeded,
+    onConsumed: onLaunchConsumed,
+  });
 
   // Thread the session's runtime so a not-yet-started Codex session's palette
   // resolves to Codex's project skills rather than the inferred claude-code

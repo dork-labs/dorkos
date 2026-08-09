@@ -158,7 +158,12 @@ export function createDirectSessionMethods(
       // `options.runtime` (the first-turn runtime hint) is intentionally not
       // forwarded: DirectTransport embeds exactly one in-process runtime, so
       // there is never a second runtime to select.
-      options?: { clientMessageId?: string; context?: ClientContext; runtime?: string }
+      options?: {
+        clientMessageId?: string;
+        context?: ClientContext;
+        runtime?: string;
+        seedContext?: string;
+      }
     ): Promise<{ sessionId: string }> {
       const result = await services.turnTrigger.trigger({
         sessionId,
@@ -166,6 +171,7 @@ export function createDirectSessionMethods(
         content,
         cwd: cwd ?? services.vaultRoot,
         context: options?.context,
+        seedContext: options?.seedContext,
       });
       if (!result.accepted) {
         const error = new Error('Session locked') as Error & SessionLockedError;

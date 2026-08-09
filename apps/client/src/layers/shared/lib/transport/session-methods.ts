@@ -160,13 +160,19 @@ export function createSessionMethods(
       sessionId: string,
       content: string,
       cwd?: string,
-      options?: { clientMessageId?: string; context?: ClientContext; runtime?: string }
+      options?: {
+        clientMessageId?: string;
+        context?: ClientContext;
+        runtime?: string;
+        seedContext?: string;
+      }
     ): Promise<{ sessionId: string }> {
       const body: Record<string, unknown> = { content };
       if (cwd) body.cwd = cwd;
       if (options?.clientMessageId) body.clientMessageId = options.clientMessageId;
       if (options?.context) body.context = options.context;
       if (options?.runtime) body.runtime = options.runtime;
+      if (options?.seedContext) body.seedContext = options.seedContext;
 
       const response = await fetch(`${baseUrl}/sessions/${sessionId}/messages`, {
         method: 'POST',

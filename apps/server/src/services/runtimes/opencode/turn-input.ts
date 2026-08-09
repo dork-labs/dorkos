@@ -16,6 +16,7 @@ import type { AdditionalContextEntry } from '@dorkos/shared/additional-context';
 import { CONTEXT_TAG } from '@dorkos/shared/additional-context';
 import { GEN_UI_CONTEXT } from '../shared/gen-ui-context.js';
 import { formatRoomContext } from '../shared/room-context-block.js';
+import { formatSeedContext } from '../shared/seed-context-block.js';
 
 /** The `session.promptAsync` text-part input shape (SDK `TextPartInput`). */
 export interface OpenCodeTextPartInput {
@@ -46,18 +47,33 @@ export function parseModelSelection(
 /**
  * Render one neutral context entry into a tagged block — the OpenCode half of
  * ADR-0273 (the server owns WHAT context exists; the adapter owns HOW it is
- * rendered). Same honest JSON rendering as the Codex adapter, and the same one
- * exception: `room_context` goes through the shared writer
- * (`runtimes/shared/room-context-block.ts`), because its body carries text other
- * people wrote inside an untrusted-input fence that a JSON dump would not carry.
+ * rendered). Same honest JSON rendering as the Codex adapter, and the same two
+ * exceptions — see {@link renderContextBody}.
  */
 function renderContextEntry(entry: AdditionalContextEntry): string {
   const tag = CONTEXT_TAG[entry.kind];
-  const body =
-    entry.kind === 'room_context'
-      ? formatRoomContext(entry.data)
-      : JSON.stringify(entry.data, null, 2);
-  return `<${tag}>\n${body}\n</${tag}>`;
+  return `<${tag}>\n${renderContextBody(entry)}\n</${tag}>`;
+}
+
+/**
+ * The body of one rendered block: structured data as JSON, except for the two
+ * kinds whose body is PROSE and must read identically on every runtime.
+ *
+ * `room_context` carries text other people wrote inside an untrusted-input fence
+ * a JSON dump would not carry. `seed_context` carries a paragraph somebody wrote
+ * for a model to read, plus the sentence telling the reader the person cannot
+ * see the block — JSON would deliver both as one quoted line with `\n` spelled
+ * out in it. Both go through the shared writers in `runtimes/shared/`.
+ */
+function renderContextBody(entry: AdditionalContextEntry): string {
+  switch (entry.kind) {
+    case 'room_context':
+      return formatRoomContext(entry.data);
+    case 'seed_context':
+      return formatSeedContext(entry.data);
+    default:
+      return JSON.stringify(entry.data, null, 2);
+  }
 }
 
 /**

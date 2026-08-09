@@ -382,6 +382,14 @@ export const ReloadPluginsResultSchema = z
 
 export type ReloadPluginsResult = z.infer<typeof ReloadPluginsResultSchema>;
 
+/**
+ * Longest `seedContext` accepted. Room enough for a page's worth of background
+ * and short enough that a paste accident — or a caller looping a whole document
+ * into it — cannot quietly become most of the agent's prompt. The person cannot
+ * see this text, so a runaway one is a cost nobody can spot from the UI.
+ */
+export const SEED_CONTEXT_MAX_LENGTH = 10_000;
+
 export const SendMessageRequestSchema = z
   .object({
     content: z.string().min(1, 'content is required'),
@@ -413,6 +421,20 @@ export const SendMessageRequestSchema = z
     workspaceKey: z.string().optional(),
     /** Provider for a newly-provisioned workspace; defaults to server config. */
     workspaceProvider: z.enum(['worktree', 'clone']).optional(),
+    /**
+     * Background for THIS turn that the agent reads and the person never sees —
+     * see `SeedContextData` in `additional-context.ts` for what it is for and
+     * what it is not.
+     *
+     * It rides the neutral context bag (ADR-0273), never `content`: the prompt
+     * is the person's message byte for byte, so anything DorkOS or a launching
+     * surface has to say about it belongs out-of-band. Every runtime delivers it
+     * and every runtime keeps it out of rendered history.
+     *
+     * Empty is a caller bug, not "inject nothing" — the block would still be
+     * rendered and would still cost the model attention, so it is refused.
+     */
+    seedContext: z.string().min(1).max(SEED_CONTEXT_MAX_LENGTH).optional(),
   })
   .openapi('SendMessageRequest');
 

@@ -152,6 +152,25 @@ in standalone mode, and validated against a configurable boundary so the agent c
 allowed paths. The directory picker in the DorkOS sidebar lets you browse and choose one before you
 start a session.
 
+### Opening a chat with the question already written
+
+A link can carry the first message for you. Add `?prompt=` to a session URL and DorkOS opens a new
+chat with those words already in the box, ready for you to read, edit, or send:
+
+```
+http://localhost:4242/session?dir=/path/to/project&prompt=what%20changed%20this%20week
+```
+
+The text has to be URL-encoded — spaces become `%20`, and most tools will do this for you.
+
+Add `&send=1` and DorkOS sends it for you as soon as the chat opens, so the agent is already working
+when you look at the screen. It sends once. Refreshing the page, or going back to it, will not send
+it again — the link drops both settings from the address the moment they're used.
+
+This is for **starting** a conversation, never for joining one. If the link points at a chat that
+already has messages in it, the prompt is ignored: nothing is typed and nothing is sent. It is also
+ignored if you've already started typing, so a link can never overwrite your own words.
+
 ## Next Steps
 
 <Cards>

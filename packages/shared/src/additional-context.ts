@@ -28,7 +28,8 @@ export type ContextKind =
   | 'queue_note'
   | 'env'
   | 'relay_context'
-  | 'room_context';
+  | 'room_context'
+  | 'seed_context';
 
 /** Lifetime of an entry — informs adapter placement, not yet load-bearing. */
 export type ContextScope = 'per-turn' | 'per-session';
@@ -440,6 +441,34 @@ export interface RoomContextData {
 }
 
 /**
+ * Background whoever STARTED a turn attached to it — the agent reads it, the
+ * person never sees it (`SendMessageRequest.seedContext`).
+ *
+ * The case it exists for: a surface that opens a conversation already knowing
+ * something the person would otherwise have to type. "Ask DorkBot" from the
+ * Marketplace knows which page they were on; a docs try-it link knows which
+ * guide sent them. Putting that in the message itself would make the person
+ * appear to have written words they did not write, every time, forever, in a
+ * transcript they can read back.
+ *
+ * **It carries no authority, and the rendered block says so.** It is parsed off
+ * the wire, so it is exactly as trusted as `content` — anything that can post a
+ * message can already put any words in it. What is genuinely different is that
+ * a seed is INVISIBLE to the person, which is why the block tells the reader
+ * that: an agent that mistakes background for the person's own instruction will
+ * act on something nobody asked for and the person cannot even see.
+ *
+ * Deliberately NOT part of {@link ClientContext}. That bag is structured signals
+ * the server renders (a UI snapshot, a queue flag); this is prose a caller wrote
+ * for a model to read, and the two are different enough that folding them
+ * together would make "never pre-formatted prose" untrue of the bag.
+ */
+export interface SeedContextData {
+  /** The background text, exactly as the caller wrote it. */
+  text: string;
+}
+
+/**
  * Discriminated union of the canonical server-assembled entries. Each member
  * pairs a {@link ContextKind} with its structured `data` payload and a
  * {@link ContextScope}.
@@ -450,7 +479,8 @@ export type AdditionalContextEntry =
   | { kind: 'queue_note'; scope: 'per-turn'; data: { composedDuringPrevTurn: true } }
   | { kind: 'env'; scope: 'per-session'; data: EnvData }
   | { kind: 'relay_context'; scope: 'per-turn'; data: RelayContextData }
-  | { kind: 'room_context'; scope: 'per-turn'; data: RoomContextData };
+  | { kind: 'room_context'; scope: 'per-turn'; data: RoomContextData }
+  | { kind: 'seed_context'; scope: 'per-turn'; data: SeedContextData };
 
 /** The per-turn bag a runtime receives via `MessageOpts.additionalContext`. */
 export type AdditionalContext = AdditionalContextEntry[];
@@ -481,6 +511,7 @@ export const CONTEXT_TAG = {
   env: 'env',
   relay_context: 'relay_context',
   room_context: 'room_context',
+  seed_context: 'seed_context',
 } satisfies Record<ContextKind, string>;
 
 /** Zod schema for {@link GitStatusData}. */
@@ -619,6 +650,9 @@ export const RoomContextDataSchema = z.object({
   }),
 });
 
+/** Zod schema for {@link SeedContextData}. */
+export const SeedContextDataSchema = z.object({ text: z.string().min(1) });
+
 /** Zod schema for {@link AdditionalContextEntry} (discriminated on `kind`). */
 export const AdditionalContextEntrySchema = z.discriminatedUnion('kind', [
   z.object({
@@ -650,6 +684,11 @@ export const AdditionalContextEntrySchema = z.discriminatedUnion('kind', [
     kind: z.literal('room_context'),
     scope: z.literal('per-turn'),
     data: RoomContextDataSchema,
+  }),
+  z.object({
+    kind: z.literal('seed_context'),
+    scope: z.literal('per-turn'),
+    data: SeedContextDataSchema,
   }),
 ]);
 

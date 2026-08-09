@@ -1003,6 +1003,38 @@ describe('Sessions Routes', () => {
       expect(fakeRuntime.sendMessage).toHaveBeenCalled();
     });
 
+    it('delivers a seedContext to the runtime as a context entry, never as the prompt', async () => {
+      // The whole point of a seed: the model reads it, the person's message is
+      // still exactly what the person wrote. Asserted on both halves of what
+      // reached the runtime — the content argument and the context bag.
+      const seed = 'They arrived from the docs page for marketplace sources.';
+
+      await sendMessageOnce(S1, { content: 'how do I add a source?', seedContext: seed });
+
+      const call = fakeRuntime.sendMessage.mock.calls.at(-1);
+      expect(call?.[1]).toBe('how do I add a source?');
+      const entry = call?.[2]?.additionalContext?.find((e) => e.kind === 'seed_context');
+      expect(entry).toEqual({ kind: 'seed_context', scope: 'per-turn', data: { text: seed } });
+    });
+
+    it('attaches no seed entry when the caller supplies none', async () => {
+      await sendMessageOnce(S1, { content: 'hi' });
+
+      const opts = fakeRuntime.sendMessage.mock.calls.at(-1)?.[2];
+      expect(opts?.additionalContext?.map((e) => e.kind)).not.toContain('seed_context');
+    });
+
+    it('rejects an empty seedContext rather than sending an empty block', async () => {
+      // A blank seed is a caller bug, not a request to inject nothing: the
+      // block would still be rendered and would still cost the model attention.
+      const res = await request(server)
+        .post(`/api/sessions/${S1}/messages`)
+        .send({ content: 'hi', seedContext: '' });
+
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe('VALIDATION_ERROR');
+    });
+
     it('returns 400 when the hinted runtime is not registered', async () => {
       vi.mocked(runtimeRegistry.has).mockReturnValue(false);
 
