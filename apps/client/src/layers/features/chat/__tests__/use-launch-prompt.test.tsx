@@ -96,6 +96,19 @@ describe('useLaunchPrompt', () => {
       expect(setInput).not.toHaveBeenCalled();
     });
 
+    it('waits for the history to land before typing into a shared link', () => {
+      // A link handed to somebody points at a session that may be a live chat.
+      // Before the snapshot lands it looks empty, and typing on that guess puts
+      // words into a composer the person is looking at — which the docs promise
+      // never happens.
+      const { setInput, rerender } = setup({ hydrated: false });
+      expect(setInput).not.toHaveBeenCalled();
+
+      // The snapshot lands and the conversation turns out to have history.
+      rerender({ prompt: PROMPT, hydrated: true, messageCount: 4 });
+      expect(setInput).not.toHaveBeenCalled();
+    });
+
     it('ignores a blank prompt', () => {
       const { setInput, onConsumed } = setup({ prompt: '   ' });
       expect(setInput).not.toHaveBeenCalled();
@@ -105,6 +118,52 @@ describe('useLaunchPrompt', () => {
     it('drops the launch params from the URL once a prefill-only link is spent', () => {
       const { onConsumed } = setup();
       expect(onConsumed).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('a launch that can never apply', () => {
+    // The defect this closes: a link that could not be used was simply left in
+    // the URL, still armed. Anything that spread the search params forward then
+    // carried it to a session where it COULD be used — `/clear` mints a fresh
+    // id, which is empty by construction, so the stale prompt typed and sent
+    // itself into somebody's new conversation.
+    it.each([
+      ['a composer somebody has typed in', { input: 'half a thought' }],
+      ['a conversation that already has history', { messageCount: 3 }],
+    ])('is spent, not deferred, on %s', (_case, overrides) => {
+      const { setInput, submit, onConsumed } = setup({ autoSend: true, ...overrides });
+      expect(setInput).not.toHaveBeenCalled();
+      expect(submit).not.toHaveBeenCalled();
+      expect(onConsumed).toHaveBeenCalledTimes(1);
+    });
+
+    it('stays disarmed once the conversation it could not enter is left behind', () => {
+      // The exact `/clear` shape: moot here, then a brand-new empty session. The
+      // latch is what keeps it from applying there.
+      const first = setup({ autoSend: true, messageCount: 3 });
+      expect(first.onConsumed).toHaveBeenCalledTimes(1);
+      cleanup();
+
+      const second = setup({ autoSend: true, sessionId: 'sess-1' });
+      expect(second.setInput).not.toHaveBeenCalled();
+      second.rerender({ prompt: PROMPT, autoSend: true, input: PROMPT });
+      expect(second.submit).not.toHaveBeenCalled();
+    });
+
+    it('decides nothing at all until the history has landed', () => {
+      // Not-yet-decidable is a third state, distinct from moot: spending the
+      // link here would throw away a launch that was about to be perfectly good.
+      const { setInput, submit, onConsumed, rerender } = setup({
+        autoSend: true,
+        hydrated: false,
+      });
+      expect(onConsumed).not.toHaveBeenCalled();
+      expect(setInput).not.toHaveBeenCalled();
+
+      rerender({ prompt: PROMPT, autoSend: true, hydrated: true });
+      expect(setInput).toHaveBeenCalledWith(PROMPT);
+      rerender({ prompt: PROMPT, autoSend: true, hydrated: true, input: PROMPT });
+      expect(submit).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -144,12 +203,21 @@ describe('useLaunchPrompt', () => {
     });
 
     it('waits for the session history to land before firing', () => {
-      const { submit, rerender } = setup({ autoSend: true, hydrated: false });
-      rerender({ prompt: PROMPT, autoSend: true, input: PROMPT, hydrated: false });
+      // A composer holding the prompt is NOT on its own a reason to send: while
+      // un-hydrated the text could be anything, including the person's own. The
+      // send waits for the same snapshot the seed does, and once it lands with a
+      // dirty composer this launch is moot rather than merely postponed.
+      const { submit, onConsumed, rerender } = setup({
+        autoSend: true,
+        hydrated: false,
+        input: PROMPT,
+      });
       expect(submit).not.toHaveBeenCalled();
+      expect(onConsumed).not.toHaveBeenCalled();
 
       rerender({ prompt: PROMPT, autoSend: true, input: PROMPT, hydrated: true });
-      expect(submit).toHaveBeenCalledTimes(1);
+      expect(submit).not.toHaveBeenCalled();
+      expect(onConsumed).toHaveBeenCalledTimes(1);
     });
 
     it('never fires into a conversation that already has messages', () => {

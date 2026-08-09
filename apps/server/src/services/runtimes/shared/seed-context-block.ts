@@ -37,14 +37,29 @@
  * from the docs page for marketplace sources" tends to start explaining
  * marketplace sources.
  *
- * The text itself is NOT fenced as untrusted the way a room's messages are, and
- * that difference is deliberate: a room carries words other people typed into a
- * shared space, while a seed comes from whoever is already driving this session
- * — the same caller that supplied `content`, with no more authority than it.
+ * ## Why the text is defused, even though it is not a room
+ *
+ * The text is NOT wrapped in a nonced untrusted fence the way a room's messages
+ * are: a room carries words other people typed into a shared space, while a seed
+ * comes from whoever is already driving this session — the same caller that
+ * supplied `content`, with no more authority than it.
+ *
+ * But no fence means `defuseSystemTags` is the ONLY boundary here, not defence
+ * in depth, and rendering the text raw was a real hole rather than a theoretical
+ * one. A seed containing `</seed_context>` closes the block, and everything
+ * after it is loose in the prompt — free to open a syntactically perfect
+ * `<git_status>` of its own, which the render strip then removes from the
+ * transcript along with the real one. The person reads back a conversation with
+ * no trace that any of it happened. That is precisely the promise this feature
+ * makes ("your transcript shows only the words you wrote"), broken by the
+ * feature itself, so the tags are defused and the escaped form (`&lt;/…`) is
+ * what a reader sees.
  *
  * @module server/services/runtimes/shared/seed-context-block
  */
 import type { SeedContextData } from '@dorkos/shared/additional-context';
+import { CONTEXT_TAG } from '@dorkos/shared/additional-context';
+import { defuseSystemTags } from '@dorkos/shared/untrusted-text';
 
 /**
  * The standing framing above every seed. Fixed prose rather than a template:
@@ -57,19 +72,26 @@ const SEED_PREAMBLE = [
   'It describes the situation; their message is the request.',
 ].join('\n');
 
+/** Tags that mean something to a runtime and must not survive in a seed. */
+const SYSTEM_TAGS = [...Object.values(CONTEXT_TAG), 'system-reminder'];
+
 /**
  * Render the body of a `<seed_context>` block: the standing framing, then the
- * caller's text verbatim.
+ * caller's text with runtime tags defused.
  *
- * Verbatim matters. The caller wrote this for a model, and a renderer that
- * reflowed, truncated or escaped it would change what the agent was told
- * without anything anywhere recording that it did. The wire schema is where the
- * length bound lives (`SEED_CONTEXT_MAX_LENGTH`), so by the time text reaches
- * here it is already something the server agreed to carry.
+ * Everything that is a seed's WORDS survives — `defuseSystemTags` escapes only
+ * the `<` of a runtime tag opening, so prose, code, `Vec<T>` and `a < b` all
+ * come through as written. What cannot survive is a spelling of a system tag
+ * that a parser would act on; see the module doc for what that bought.
+ *
+ * The length bound is enforced upstream, at the assembler
+ * (`services/session/context-assembler.ts`), because that is the one place BOTH
+ * transports pass through — the HTTP route refuses an over-length seed outright,
+ * and the embedded path has no such boundary to refuse at.
  *
  * @param data - The seed's text.
  * @returns The block body the adapter wraps in `CONTEXT_TAG.seed_context`.
  */
 export function formatSeedContext(data: SeedContextData): string {
-  return `${SEED_PREAMBLE}\n\n${data.text}`;
+  return `${SEED_PREAMBLE}\n\n${defuseSystemTags(data.text, SYSTEM_TAGS)}`;
 }

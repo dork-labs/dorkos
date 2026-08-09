@@ -13,10 +13,3 @@ covers:
   time, because the address drops both settings the moment they are used. And it
   only ever starts a conversation: pointed at a chat that already has messages,
   or at a box you have started typing in, the link does nothing at all.
-- **Background an agent can read but you never see.** A message can now carry
-  `seedContext` — a note from whatever opened the conversation about where you
-  came from or what you were looking at, so you don't have to explain it. The
-  agent reads it; your transcript still shows only the words you wrote. It works
-  the same on Claude Code, Codex, and OpenCode, and the note tells the agent
-  plainly that you cannot see it, so it never answers as though you said
-  something you didn't.
