@@ -440,9 +440,7 @@ export function AppShell() {
                   // starts. 272 is the number the design states and the number a
                   // browser test measures on `sidebar-inner`; the `+ 1rem` is
                   // the gutter it floats in.
-                  style={
-                    { '--sidebar-width': 'calc(272px + 1rem)' } as React.CSSProperties
-                  }
+                  style={{ '--sidebar-width': 'calc(272px + 1rem)' } as React.CSSProperties}
                 >
                   {/* On a phone the sidebar is a sheet over the whole screen,
                       so it has to get out of the way once a row has taken you

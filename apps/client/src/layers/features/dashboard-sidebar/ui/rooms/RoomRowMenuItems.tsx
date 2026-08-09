@@ -344,4 +344,3 @@ export function buildRoomRowMenuNodes(model: RoomRowMenuModel): RoomRowMenuNode[
 
   return nodes;
 }
-

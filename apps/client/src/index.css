@@ -475,10 +475,10 @@
   background:
     linear-gradient(var(--color-sidebar) 40%, transparent) top / 100% 14px local no-repeat,
     linear-gradient(transparent, var(--color-sidebar) 60%) bottom / 100% 14px local no-repeat,
-    radial-gradient(farthest-side at 50% 0, hsl(var(--sidebar-scroll-edge)), transparent) top /
-      100% 7px scroll no-repeat,
-    radial-gradient(farthest-side at 50% 100%, hsl(var(--sidebar-scroll-edge)), transparent) bottom /
-      100% 7px scroll no-repeat;
+    radial-gradient(farthest-side at 50% 0, hsl(var(--sidebar-scroll-edge)), transparent) top / 100%
+      7px scroll no-repeat,
+    radial-gradient(farthest-side at 50% 100%, hsl(var(--sidebar-scroll-edge)), transparent)
+      bottom / 100% 7px scroll no-repeat;
 }
 
 @utility shadow-elevated {

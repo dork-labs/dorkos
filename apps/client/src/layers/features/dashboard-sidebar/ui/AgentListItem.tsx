@@ -225,9 +225,7 @@ export function AgentListItem({
       className="font-medium"
       trailing={
         <>
-          {isMuted && (
-            <BellOff className="text-sidebar-foreground/50 size-3" aria-label="Muted" />
-          )}
+          {isMuted && <BellOff className="text-sidebar-foreground/50 size-3" aria-label="Muted" />}
           <AgentActivityBadge status={agentStatus.kind} label={agentStatus.label} />
         </>
       }

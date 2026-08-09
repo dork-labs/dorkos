@@ -342,9 +342,7 @@ function fullMenuTree(subLabels: string[] = []): string[][] {
 }
 
 function header(nodes: SectionHeaderMenuNode[]) {
-  return (
-    <SectionHeader label="Agents" nodes={nodes} collapsed={false} onToggle={() => {}} />
-  );
+  return <SectionHeader label="Agents" nodes={nodes} collapsed={false} onToggle={() => {}} />;
 }
 
 describe('SectionHeader variant parity', () => {
@@ -390,16 +388,12 @@ describe('SectionHeader variant parity', () => {
   it('renders the same items for a room section from either menu', () => {
     const nodes = buildChannelsHeaderMenuNodes(channels({ hasUnread: true }));
 
-    render(
-      <SectionHeader label="Channels" nodes={nodes} collapsed={false} onToggle={() => {}} />
-    );
+    render(<SectionHeader label="Channels" nodes={nodes} collapsed={false} onToggle={() => {}} />);
     fireEvent.contextMenu(screen.getByRole('button', { name: 'Channels' }));
     const contextTree = collectSurfaces();
     cleanup();
 
-    render(
-      <SectionHeader label="Channels" nodes={nodes} collapsed={false} onToggle={() => {}} />
-    );
+    render(<SectionHeader label="Channels" nodes={nodes} collapsed={false} onToggle={() => {}} />);
     fireEvent.pointerDown(screen.getByRole('button', { name: 'Channels section actions' }));
     const dropdownTree = collectSurfaces();
 

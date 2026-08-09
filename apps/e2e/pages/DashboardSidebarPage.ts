@@ -114,7 +114,9 @@ export class DashboardSidebarPage {
     return this.rowControls.evaluateAll((elements) =>
       elements
         .filter((el) => !el.hasAttribute('data-sidebar-row'))
-        .map((el) => `${el.className.slice(0, 40)} :: ${(el.textContent ?? '').trim().slice(0, 40)}`)
+        .map(
+          (el) => `${el.className.slice(0, 40)} :: ${(el.textContent ?? '').trim().slice(0, 40)}`
+        )
     );
   }
 

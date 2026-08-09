@@ -336,7 +336,6 @@ export function buildAgentsHeaderMenuNodes(model: AgentsHeaderMenuModel): Sectio
   ];
 }
 
-
 /** Inputs a group header's item list is built from. */
 export interface GroupHeaderMenuModel {
   /** The group this header belongs to. */

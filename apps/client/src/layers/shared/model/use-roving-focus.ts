@@ -196,7 +196,7 @@ export function useRovingFocus(options?: {
       const stops = stopsIn(container);
       if (stops.length === 0) return;
 
-// ── Sideways: a row and its two satellites ──
+      // ── Sideways: a row and its two satellites ──
       // A satellite hands the keyboard straight back to its row, whichever side
       // it sits on — a reader who stepped out to a control steps back in.
       const satellite = target.closest<HTMLElement>(

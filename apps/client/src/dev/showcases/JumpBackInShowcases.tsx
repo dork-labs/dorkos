@@ -225,7 +225,6 @@ export function JumpBackInShowcases() {
   );
 }
 
-
 /**
  * One session row, as the sidebar draws it: `Agent › title` with the origin
  * mark and the relative time in the meta slot.
