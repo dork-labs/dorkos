@@ -7,6 +7,11 @@
  * it only ever hands this component an id the entry's own `mentionSpans`
  * named — see its own doc for why that gate exists.
  *
+ * **The id arrives by prop; everything the id RESOLVES TO arrives by context.**
+ * That division is what keeps a drawn pill honest as the room changes under it
+ * — `mention-roster-context` explains what Streamdown does to anything sent the
+ * other way.
+ *
  * @module widgets/room-view/ui/MentionPillRenderer
  */
 import type { KeyboardEvent, ReactNode } from 'react';
@@ -16,13 +21,9 @@ import { useProfileDeepLink } from '@/layers/shared/model';
 import { MENTION_AUTHOR_ATTR } from '../lib/mention-markup';
 import type { RosterAuthor } from '../lib/room-timeline';
 import { useAgentInfo } from '../model/agent-info-context';
+import { useMentionAuthor } from '../model/mention-roster-context';
 
 interface MentionPillRendererProps {
-  /**
-   * The room's roster, keyed by author id — the only source of truth for who
-   * a resolved mention names.
-   */
-  authors: ReadonlyMap<string, RosterAuthor>;
   /** The `author_id` Streamdown read off the tag, or `undefined` if it was missing. */
   authorId: string | undefined;
   /**
@@ -90,14 +91,19 @@ function profileMemberIdOf(
  * it was before this: hover-only, with the card's footer still reading
  * **soon** — an inert affordance is honest, a click that opens nothing is not.
  */
-export function MentionPillRenderer({ authors, authorId, children }: MentionPillRendererProps) {
-  const author = authorId ? authors.get(authorId) : undefined;
-  // How this agent runs, if the room's provider could find out. Read from a
-  // context rather than off the roster because Streamdown's top-level memo
-  // comparator (2.5.0) does not include `components`: a rebuilt component map
-  // re-renders nothing below it, so a prop arriving after the pill was drawn
-  // never reaches it and every card in a room opened before the fleet answered
-  // comes up bare. `undefined` for a human, for an agent nothing resolved, and
+export function MentionPillRenderer({ authorId, children }: MentionPillRendererProps) {
+  // Who this mention names, as of right now. Read from a context rather than
+  // from the component map that decided to draw this pill at all, because that
+  // map cannot deliver an update: Streamdown's top-level memo comparator
+  // (2.5.0) does not include `components`, so a rebuilt map re-renders nothing
+  // below it and a pill drawn before somebody was renamed — or before they left
+  // — would go on naming them the old way for as long as the message stayed on
+  // screen (DOR-989).
+  const author = useMentionAuthor(authorId);
+  // How this agent runs, if the room's provider could find out — the same
+  // channel, for the same reason (DOR-954): a fleet answer that lands after the
+  // pill was drawn has no other way in, and every card in a room opened before
+  // it came up bare. `undefined` for a human, for an agent nothing resolved, and
   // outside a provider — all one answer, because all three mean the same thing
   // here: draw no chip.
   const agent = useAgentInfo(author?.agentRef);
@@ -171,8 +177,17 @@ export function MentionPillRenderer({ authors, authorId, children }: MentionPill
 
 /**
  * Build the Streamdown `components` map that wires its `mention` tag to
- * {@link MentionPillRenderer}, closing over the room's roster and — the part
- * that keeps this safe — the ids the SERVER actually spanned for this entry.
+ * {@link MentionPillRenderer}, closing over the part that keeps this safe: the
+ * ids the SERVER actually spanned for this entry.
+ *
+ * **Structure only — never identity.** This map decides WHETHER a tag becomes a
+ * pill; who that pill names arrives separately, through
+ * `MentionRosterProvider`. That split is not a style preference: Streamdown's
+ * top-level memo comparator (2.5.0) leaves `components` out, so anything
+ * delivered through this map is frozen at the moment the message was first
+ * drawn. `spannedIds` can live here precisely because it is frozen too — it is
+ * derived from the same `mentionSpans` that produce the body text, so it never
+ * changes without the text changing with it, and the text IS compared.
  *
  * **Why the whitelist, not just `allowedTags`.** Streamdown parses a
  * `<mention author_id="...">` the same way whether `mention-markup.ts`
@@ -186,19 +201,14 @@ export function MentionPillRenderer({ authors, authorId, children }: MentionPill
  * literal text — never a pill, not even the unresolved-fallback one, which
  * would still dress typed text up with a leading `@` it did not earn.
  *
- * A plain function rather than a hook: the only state involved is `authors`
- * and `spannedIds`, so the caller memoizes on those (`RoomEntryRow` already
- * does, via `useMemo`) instead of this module owning a second copy of that
- * decision.
+ * A plain function rather than a hook: the only state involved is
+ * `spannedIds`, so the caller memoizes on that (`RoomEntryBody` already does,
+ * via `useMemo`) instead of this module owning a second copy of that decision.
  *
- * @param authors - The room's roster, keyed by author id.
  * @param spannedIds - Author ids `entry.mentionSpans` actually names for this
  *   entry — the only ids a `<mention>` tag may resolve against.
  */
-export function buildMentionComponents(
-  authors: ReadonlyMap<string, RosterAuthor>,
-  spannedIds: ReadonlySet<string>
-): Components {
+export function buildMentionComponents(spannedIds: ReadonlySet<string>): Components {
   return {
     mention: (props: Record<string, unknown>) => {
       const authorIdValue = props[MENTION_AUTHOR_ATTR];
@@ -212,9 +222,7 @@ export function buildMentionComponents(
       }
 
       return (
-        <MentionPillRenderer authors={authors} authorId={authorId}>
-          {props.children as ReactNode}
-        </MentionPillRenderer>
+        <MentionPillRenderer authorId={authorId}>{props.children as ReactNode}</MentionPillRenderer>
       );
     },
   };

@@ -25,6 +25,7 @@ import {
   withMentionTags,
 } from '../lib/mention-markup';
 import type { RosterAuthor } from '../lib/room-timeline';
+import { MentionRosterProvider } from '../model/mention-roster-context';
 import { buildMentionComponents } from './MentionPillRenderer';
 
 interface RoomEntryBodyProps {
@@ -88,14 +89,14 @@ export function RoomEntryBody({
     () => new Set(entry.mentionSpans?.map((span) => span.authorId) ?? []),
     [entry.mentionSpans]
   );
-  // The `mention` tag's renderer, closed over the roster it resolves against
-  // and the spans that authorize it. Built even for a body with no mentions
-  // in it — cheap, and it keeps this row from having to know in advance
-  // whether `markdown` contains any.
-  const mentionComponents = useMemo(
-    () => buildMentionComponents(authors, spannedIds),
-    [authors, spannedIds]
-  );
+  // The `mention` tag's renderer, closed over the spans that authorize it —
+  // and nothing else. WHO each pill names travels by context instead
+  // (`MentionRosterProvider` below), because Streamdown's top-level memo
+  // comparator leaves `components` out and would freeze anything delivered
+  // this way at the moment the message was first drawn. Built even for a body
+  // with no mentions in it — cheap, and it keeps this row from having to know
+  // in advance whether `markdown` contains any.
+  const mentionComponents = useMemo(() => buildMentionComponents(spannedIds), [spannedIds]);
 
   return (
     <>
@@ -122,13 +123,22 @@ export function RoomEntryBody({
           '[&_:not(pre)>code]:wrap-anywhere [&_pre]:overflow-x-auto'
         )}
       >
-        <MarkdownContent
-          content={markdown}
-          linkSafety
-          allowedTags={MENTION_ALLOWED_TAGS}
-          literalTagContent={MENTION_LITERAL_TAG_CONTENT}
-          components={mentionComponents}
-        />
+        {/*
+          The roster, on the one channel that reaches a pill Streamdown has
+          already drawn. Above the markdown rather than inside it: context
+          propagates through a memo bail-out, so renaming a member or watching
+          one leave redraws every mention of them on screen without re-parsing a
+          word of the message (DOR-989).
+        */}
+        <MentionRosterProvider authors={authors}>
+          <MarkdownContent
+            content={markdown}
+            linkSafety
+            allowedTags={MENTION_ALLOWED_TAGS}
+            literalTagContent={MENTION_LITERAL_TAG_CONTENT}
+            components={mentionComponents}
+          />
+        </MentionRosterProvider>
       </div>
       {summary !== null && (
         /*
