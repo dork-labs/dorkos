@@ -13,7 +13,7 @@
  *
  * @module entities/session/ui/__tests__/SessionVerbLine
  */
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { Profiler } from 'react';
 import { render, screen, cleanup, act } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
@@ -21,6 +21,36 @@ import type { SessionActivity, SessionStatus } from '@dorkos/shared/session-stre
 import { SidebarRow } from '@/layers/shared/ui';
 import { useSessionListStore } from '../../model/session-list-store';
 import { SessionVerbLine } from '../SessionVerbLine';
+
+/** How many times each ROW has rendered, keyed by the id in its `dataSlot`. */
+const { rowRenders } = vi.hoisted(() => ({ rowRenders: new Map<string, number>() }));
+
+/**
+ * Count `SidebarRow`'s OWN renders, by becoming it.
+ *
+ * A wrapper component around `<SidebarRow/>` cannot do this, and the difference
+ * is the whole test. `SidebarRow` re-renders because of hooks it calls itself —
+ * a `useSessionToolActivity` hoisted into it, a subscription to the whole
+ * `statuses` map — and none of those touch a parent, so a wrapper's counter sits
+ * still through exactly the regressions R1 exists to prevent. A `<Profiler>`
+ * around it is no better in the other direction: it also fires when the verb
+ * subtree inside commits, so it can never tell the two apart.
+ *
+ * Calling `actual.SidebarRow(props)` as a FUNCTION rather than rendering it as
+ * JSX is what fixes it: there is then one component here, the counter and the
+ * row are the same fiber, and the row's hooks are this function's hooks.
+ */
+vi.mock('@/layers/shared/ui', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/layers/shared/ui')>();
+  return {
+    ...actual,
+    SidebarRow: (props: Parameters<typeof actual.SidebarRow>[0]) => {
+      const id = props.dataSlot ?? 'unkeyed';
+      rowRenders.set(id, (rowRenders.get(id) ?? 0) + 1);
+      return actual.SidebarRow(props);
+    },
+  };
+});
 
 /** A status carrying nothing but the two fields these tests are about. */
 function status(overrides: Partial<SessionStatus> = {}): SessionStatus {
@@ -94,8 +124,6 @@ describe('SessionVerbLine — the words, from activity', () => {
 });
 
 describe('SessionVerbLine — the re-render budget (R1, P2 AC-2)', () => {
-  /** How many times each row's body has rendered, keyed by session id. */
-  const rowRenders = new Map<string, number>();
   /** How many times each row's VERB SUBTREE has committed, keyed by session id. */
   const verbRenders = new Map<string, number>();
 
@@ -103,18 +131,21 @@ describe('SessionVerbLine — the re-render budget (R1, P2 AC-2)', () => {
    * One sidebar row, exactly as the sidebar builds one: the verb arrives as a
    * node, and the subscription lives inside it.
    *
-   * The verb is wrapped in a `<Profiler>` rather than in a counting component
-   * of my own, and the difference is the whole measurement. A wrapper component
-   * counts ITS renders — and it has none to count, because the subscription is
-   * a level below it, which is exactly the property under test. `Profiler`
-   * reports when React commits the subtree, whoever inside it caused that.
+   * Two counters, two mechanisms, because they measure opposite things. The
+   * ROW's renders are counted by the module mock above, which had to *become*
+   * `SidebarRow` to see hooks the row calls on itself. The VERB's are counted
+   * by a `<Profiler>`, which reports a subtree commit whoever inside caused it —
+   * the right tool here precisely because the subscription is below this
+   * component and a wrapper of my own would have nothing to count.
+   *
+   * `dataSlot` is what keys the row counter; it is the only id the mock sees.
    */
   function CountingRow({ sessionId }: { sessionId: string }) {
-    rowRenders.set(sessionId, (rowRenders.get(sessionId) ?? 0) + 1);
     return (
       <SidebarRow
         who="Scout"
         title={sessionId}
+        dataSlot={sessionId}
         reservesVerbLine
         secondLine={
           <Profiler

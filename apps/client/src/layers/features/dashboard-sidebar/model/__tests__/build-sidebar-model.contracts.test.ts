@@ -7,6 +7,7 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { activityVerb } from '@/layers/shared/lib';
 import { buildSidebarModel, type SidebarRowModel } from '../build-sidebar-model';
 import { SIDEBAR_FIXTURES } from '../fixtures';
 
@@ -128,6 +129,84 @@ function* walk(state: (typeof SIDEBAR_FIXTURES)[number]['state']) {
     }
   }
 }
+
+/**
+ * Every phrase the honesty ladder is capable of emitting, asked of the ladder
+ * itself rather than transcribed.
+ *
+ * Transcribing them is how this check came to be decorative: it matched
+ * `/working…|editing |running /`, which is CASE-SENSITIVE, while every verb the
+ * ladder actually ships is capitalised — `Working…`, `Editing X…`, `Running X…`,
+ * `Using X…`. Zero of six matched, so the assertion could not fail whatever the
+ * model did. Deriving the list from `activityVerb` means the check follows the
+ * ladder when the ladder changes.
+ */
+const LADDER_VERBS = [
+  activityVerb('blocked'),
+  activityVerb('streaming'),
+  activityVerb('streaming', { toolName: 'Edit', target: 'RoomRow.tsx' }),
+  activityVerb('streaming', { toolName: 'Bash', target: 'pnpm test' }),
+  activityVerb('streaming', { toolName: 'mcp__slack__send' }),
+  activityVerb('streaming', { toolName: 'some_future_tool' }),
+].filter((verb): verb is string => verb !== null);
+
+/**
+ * The shape of a live verb: a tool phrase trailing an ellipsis, or the one
+ * phrase the ladder writes itself.
+ *
+ * Case-insensitive, because the point is to catch a verb however it is spelled
+ * on the day somebody routes one in here.
+ */
+const VERB_SHAPE = /(\b\w+ing\b[^…]{0,60}…)|waiting on you/i;
+
+describe('R1 — the model can carry no verb, and the check for it can fail', () => {
+  it('recognises every phrase the ladder can produce', () => {
+    // The half that was missing. A scan is only worth its assertion if it
+    // matches the thing it is scanning for — and this one matched none of it.
+    expect(LADDER_VERBS.length).toBeGreaterThanOrEqual(5);
+    for (const verb of LADDER_VERBS) {
+      expect(verb, `the scan is blind to "${verb}"`).toMatch(VERB_SHAPE);
+    }
+  });
+
+  it('leaves ordinary row text alone', () => {
+    // The other failure mode: a matcher so broad that it fails on a session
+    // legitimately called "Refactor auth middleware".
+    for (const ordinary of [
+      'Refactor auth middleware to use JWT validation',
+      'Scout › fix the flaky room test',
+      '#general',
+      'today:interaction-recency',
+      'Ana: ship it',
+    ]) {
+      expect(ordinary, ordinary).not.toMatch(VERB_SHAPE);
+    }
+  });
+
+  it('has no way to be handed activity in the first place', () => {
+    // The strongest form of the guarantee, and the reason the scan above finds
+    // nothing: `SidebarState` is typed to carry lifecycle and NOT activity, so
+    // a verb cannot reach `buildSidebarModel` even by mistake. The acceptance
+    // criterion asked for "a fixture whose sessions carry activity"; the type
+    // makes such a fixture unconstructible, which is a stronger answer than any
+    // fixture would have been.
+    const stateSource = stripComments(readFileSync(join(MODEL_DIR, 'sidebar-state.ts'), 'utf8'));
+    expect(stateSource).toMatch(/sessionStatuses:\s*Readonly<Record<string,\s*SessionLifecycle>>/);
+    expect(stateSource).not.toMatch(/SessionActivity/);
+  });
+
+  it('exercises rows that DO reserve a verb line, so the scan is not scanning idle rows', () => {
+    // A scan over a sidebar with nothing live in it proves nothing. At least
+    // one fixture row must be mid-turn — that is the row a verb would land on.
+    const reserving = SIDEBAR_FIXTURES.flatMap(({ state: fixture }) =>
+      rowsOf(fixture).filter(({ row }) => row.reservesVerbLine)
+    );
+    expect(reserving.length).toBeGreaterThan(0);
+    for (const { row } of reserving) {
+      expect(row.preview ?? '').not.toMatch(VERB_SHAPE);
+    }
+  });
+});
 
 /** Every row a fixture produces, with the zone it came from. */
 function rowsOf(state: (typeof SIDEBAR_FIXTURES)[number]['state']) {
@@ -307,10 +386,13 @@ describe.each(SIDEBAR_FIXTURES)('$name fixture', ({ state }) => {
   });
 
   it('carries no verb text, timestamp or countdown', () => {
+    // Every field a phrase could hide in, not just the three that used to be
+    // checked — `reason` is a string the rules BUILD, so it is the likeliest
+    // place a verb would arrive by accident.
     for (const { row } of rowsOf(state)) {
-      const text = `${row.primary} ${row.secondary ?? ''} ${row.preview ?? ''}`;
+      const text = [row.primary, row.secondary, row.preview, row.reason].filter(Boolean).join(' ');
       expect(text).not.toMatch(/\d+\s?(s|m|h|d)\s?ago/i);
-      expect(text).not.toMatch(/working…|editing |running /);
+      expect(text, `verb text in a row: ${text}`).not.toMatch(VERB_SHAPE);
     }
   });
 });

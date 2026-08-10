@@ -234,6 +234,53 @@ describe('SidebarRow — the reserved verb line (BC-24, R1)', () => {
     const { container } = render(<SidebarRow title="#general" />);
     expect(secondLine(container)).toBeNull();
   });
+
+  it('keeps the preview of an idle row that was handed a silent verb node', () => {
+    // The shape every session row has once the sidebar is wired: a verb node is
+    // passed whether or not the session is live, and an idle one renders null.
+    // A null-rendering component is still an ELEMENT, so choosing between the
+    // two with `??` fell back only on `undefined` and silently ate the preview
+    // of every idle row in Today.
+    const SilentVerb = () => null;
+    const { container } = render(
+      <SidebarRow
+        title="#general"
+        preview="Scout shipped the fix"
+        secondLine={<SilentVerb />}
+        reservesVerbLine={false}
+      />
+    );
+    expect(screen.getByText('Scout shipped the fix')).toBeInTheDocument();
+    expect(secondLine(container)?.textContent).toBe('Scout shipped the fix');
+  });
+
+  it('keeps the preview of a busy room, which reserves a line but has no verb node', () => {
+    // The shape `library-rows.ts` and `select-today-items.ts` already ship:
+    // `reservesVerbLine: (room.working ?? 0) > 0` on a row that carries a
+    // preview and no verb node at all. Deciding the line's CONTENT from
+    // `reservesVerbLine` — rather than only its EXISTENCE — emptied every one
+    // of them.
+    const { container } = render(
+      <SidebarRow title="#general" reservesVerbLine preview="Ana: ship it" />
+    );
+    expect(screen.getByText('Ana: ship it')).toBeInTheDocument();
+    expect(secondLine(container)?.textContent).toBe('Ana: ship it');
+  });
+
+  it('lets the verb outrank the preview while the turn is live', () => {
+    // The other half of the same rule: a streaming row spends its one line on
+    // what is happening now, not on what happened last.
+    render(
+      <SidebarRow
+        title="#general"
+        preview="Scout shipped the fix"
+        secondLine={<span>Editing RoomRow.tsx…</span>}
+        reservesVerbLine
+      />
+    );
+    expect(screen.getByText('Editing RoomRow.tsx…')).toBeInTheDocument();
+    expect(screen.queryByText('Scout shipped the fix')).not.toBeInTheDocument();
+  });
 });
 
 describe('SidebarRow — the welcome-back glow (BC-49)', () => {

@@ -53,8 +53,9 @@ export const WELCOME_BACK_GLOW = 'motion-safe:animate-welcome-back-glow';
  * reading lapses for a beat mid-turn would collapse by 16px and grow back — the
  * churn `reservesVerbLine` exists to prevent, reintroduced one level down.
  *
- * `block` rather than the default inline: `truncate` is `overflow: hidden`, and
- * an inline box does not clip.
+ * `block` is belt-and-braces rather than a fix: this span is a direct child of
+ * a flex container, so CSS already blockifies it and its `truncate` has always
+ * clipped. The height is the part that was missing.
  */
 const ROW_SECOND_LINE_CLASS =
   'text-sidebar-foreground/50 block min-h-4 truncate text-[11px] leading-4 font-normal';
@@ -270,7 +271,22 @@ export function SidebarRow({
   const isMobile = useIsMobile();
   const plainTitle = titleText ?? (typeof title === 'string' ? title : '');
   const showSecondLine = hasSecondLine({ reservesVerbLine, preview });
-  const second = secondLine ?? (preview?.trim() ? preview : null);
+  // Reserving the line decides WHETHER there is a second line; it does not
+  // decide WHAT goes in it. Both halves of that are load-bearing, and each one
+  // alone swallows a preview somewhere real:
+  //
+  // - `secondLine ?? previewLine` alone ate the preview of every IDLE row. Once
+  //   the sidebar is wired, every session row is handed a verb node whether or
+  //   not it is live, and a node that renders `null` is still an ELEMENT — so
+  //   `??`, which falls back only on `undefined`, never reached the preview.
+  // - Keying only on `reservesVerbLine` ate the preview of every BUSY ROOM.
+  //   `library-rows.ts` and `select-today-items.ts` both set
+  //   `reservesVerbLine: (room.working ?? 0) > 0` on rows that carry a preview
+  //   and no verb node at all, so those rows rendered an empty line.
+  //
+  // A verb node when there is one, the preview otherwise.
+  const previewLine = preview?.trim() ? preview : null;
+  const second = reservesVerbLine === true ? (secondLine ?? previewLine) : previewLine;
   // Latched, never watched. A `useState` initializer rather than a ref written
   // during render: React invokes it twice under StrictMode and keeps the first
   // result, where a ref mutated mid-render would be set on the first pass and

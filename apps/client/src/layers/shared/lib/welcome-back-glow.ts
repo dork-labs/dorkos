@@ -66,6 +66,18 @@ const MS_PER_MINUTE = 60_000;
  * the work finished: you have just come back, so the absence that matters is
  * the whole of the one that just ended.
  *
+ * **Read this before wiring it up: the glow is a MOUNT-time moment.**
+ * `SidebarRow` latches `welcomeBack` when the row mounts and ignores every
+ * later change to it (deliberately — a re-armable glow would pulse on every
+ * model rebuild). So a sidebar that stays mounted across an absence never
+ * glows, however long the absence was: the row was already on screen when the
+ * work finished, and nothing re-mounts it. In practice the moment lands on a
+ * fresh load, which is the case it was designed for and the one BC-49
+ * describes ("glows once on first paint"). A caller that wants the beat on a
+ * long-lived sidebar has to give the row a new React key when the absence
+ * resolves — a decision for whoever owns that surface, not something this
+ * function can do from here.
+ *
  * @param input - The row's finish time, your last visit, the threshold and now.
  */
 export function isWelcomeBackMoment(input: WelcomeBackMomentInput): boolean {

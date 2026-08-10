@@ -46,36 +46,84 @@ function layerSources(): { path: string; source: string }[] {
 const SOURCES = layerSources();
 
 /**
- * The three files allowed to name the tool-phrasing rung directly: where it is
- * defined, the ladder that is its one caller, and that definition's own test.
+ * The files allowed to name the tool-phrasing rung: where it is defined, the
+ * ladder that is its one caller, that definition's own test, and this file.
  * Everything else must go through `activityVerb`.
  */
-const LADDER_INSIDERS = new Set([
+const MAY_NAME_THE_RUNG = new Set([
   'shared/lib/tool-labels.ts',
   'shared/lib/activity-verb.ts',
   'shared/lib/__tests__/tool-labels.test.ts',
-  // This file. It holds sample import text as executable proof that the
-  // detector below works, and that text is indistinguishable from the real
+  // This file. It holds sample module statements as executable proof that the
+  // detectors below work, and that text is indistinguishable from the real
   // thing on purpose.
   'shared/lib/__tests__/one-verb-source.test.ts',
 ]);
 
 /**
- * One `import … from '…'` statement.
+ * The files allowed to reach the `tool-labels` module AT ALL.
  *
- * Bounded by `[^;]*?` so a match can never run from one statement's `import`
- * past a later mention of the rung and on to some third statement's `from` —
- * which is exactly what a lazy `[\s\S]*?` did on the first draft of this file,
- * making it accuse itself of what its own prose warns about.
+ * The barrel is here and nowhere else: it legitimately re-exports `getToolLabel`
+ * and friends, which are ordinary tool-naming helpers with nothing to do with
+ * the ladder. It is still held to {@link MAY_NAME_THE_RUNG} and to the
+ * namespace rule, so it may pass those neighbours through and never the rung.
  */
-const IMPORT_STATEMENT = /(^|\n)\s*import\b[^;]*?\bfrom\s+['"][^'"]+['"]/g;
+const MAY_REACH_TOOL_LABELS = new Set([...MAY_NAME_THE_RUNG, 'shared/lib/index.ts']);
 
-/** Whether any single import statement in this source pulls in the rung. */
-function importsTheRung(source: string): boolean {
-  for (const match of source.matchAll(IMPORT_STATEMENT)) {
-    if (match[0].includes('formatActivityLabel')) return true;
+/**
+ * One `import`/`export … from '…'` statement; group 2 is the module specifier.
+ *
+ * `export` as well as `import`, because a re-export is an importable path like
+ * any other — a one-name `export { formatActivityLabel } from './tool-labels';`
+ * in the barrel walked straight past the first version of this file, and that
+ * is exactly how prettier formats a re-export somebody adds back.
+ *
+ * Bounded by `[^;]*?` so a match can never run from one statement's keyword
+ * past a later mention of the rung and on to some third statement's `from` —
+ * which is what a lazy `[\s\S]*?` did on the first draft, making this file
+ * accuse itself of what its own prose warns about.
+ */
+const MODULE_STATEMENT = /(^|\n)\s*(?:import|export)\b([^;]*?)\bfrom\s+['"]([^'"]+)['"]/g;
+
+/** Whether a specifier points at the `tool-labels` module, by any route. */
+function isToolLabels(specifier: string): boolean {
+  return /(^|[./])tool-labels(\.[jt]sx?)?$/.test(specifier);
+}
+
+/**
+ * Every module statement in a source, as `{ clause, specifier, namespace }`.
+ *
+ * `namespace` is the escape hatch that matters most and is the easiest to miss:
+ * `import * as toolLabels from '…/tool-labels'` names nothing, so a
+ * detector that greps for the identifier sees a clean file while
+ * `toolLabels.formatActivityLabel(...)` sits three lines below it. A namespace
+ * import defeated a guard on a sibling branch the same day this one was
+ * written, which is why the rule below is about the MODULE rather than about
+ * the name.
+ */
+function moduleStatements(source: string): { clause: string; specifier: string; ns: boolean }[] {
+  return [...source.matchAll(MODULE_STATEMENT)].map((match) => ({
+    clause: match[2] ?? '',
+    specifier: match[3] ?? '',
+    ns: (match[2] ?? '').includes('*'),
+  }));
+}
+
+/** Why this file is an offender, or `null` when it is not one. */
+function ladderEscape(path: string, source: string): string | null {
+  for (const { clause, specifier, ns } of moduleStatements(source)) {
+    if (clause.includes('formatActivityLabel') && !MAY_NAME_THE_RUNG.has(path)) {
+      return `names the rung in a module statement for '${specifier}'`;
+    }
+    if (!isToolLabels(specifier)) continue;
+    if (ns && !MAY_NAME_THE_RUNG.has(path)) {
+      return `takes '${specifier}' wholesale as a namespace, which hands it the rung`;
+    }
+    if (!MAY_REACH_TOOL_LABELS.has(path)) {
+      return `reaches '${specifier}' directly instead of going through activityVerb`;
+    }
   }
-  return false;
+  return null;
 }
 
 describe('the honesty ladder is the only verb source (BC-37)', () => {
@@ -86,42 +134,68 @@ describe('the honesty ladder is the only verb source (BC-37)', () => {
     expect(SOURCES.some((file) => file.path === 'shared/lib/activity-verb.ts')).toBe(true);
   });
 
-  it('lets nothing outside the ladder import the tool-phrasing rung', () => {
-    const offenders = SOURCES.filter(
-      (file) => importsTheRung(file.source) && !LADDER_INSIDERS.has(file.path)
-    ).map((file) => file.path);
+  it('leaves no importable path around the ladder, in any import shape', () => {
+    const offenders = SOURCES.map((file) => ({
+      path: file.path,
+      why: ladderEscape(file.path, file.source),
+    }))
+      .filter((entry) => entry.why !== null)
+      .map((entry) => `${entry.path} ${entry.why}`);
     expect(
       offenders,
       'call activityVerb(lifecycle, activity) instead — one turn, one phrasing (BC-37)'
     ).toEqual([]);
   });
 
-  it('keeps the rung out of the shared barrel, so there is no importable path to it', () => {
-    // The scan above only catches a caller that has already been written. This
-    // catches the thing that makes writing one easy: an autocomplete entry.
-    const barrel = SOURCES.find((file) => file.path === 'shared/lib/index.ts');
-    expect(barrel).toBeDefined();
-    expect(barrel?.source).not.toMatch(/^\s*formatActivityLabel,\s*$/m);
+  it('proves the detector catches every shape that has actually escaped one', () => {
+    // Red-before evidence, kept executable. Each of these is a real escape:
+    // the first is what `strip-state.ts` carried until this task rewired it,
+    // and the other two walked past the first version of THIS file.
+    const escapes = [
+      // A named import of the rung, from anywhere.
+      "import { formatActivityLabel } from '@/layers/shared/lib';",
+      // The same, wrapped as prettier wraps it.
+      'import {\n  formatActivityLabel,\n} from "../tool-labels";',
+      // A one-name re-export — how prettier formats it when somebody puts the
+      // rung back in the barrel. The old barrel check wanted a trailing comma
+      // on its own line and never saw this.
+      "export { formatActivityLabel } from './tool-labels';",
+      // A namespace import, which names nothing at all and then calls
+      // `toolLabels.formatActivityLabel(...)` out of sight of any grep.
+      "import * as toolLabels from '@/layers/shared/lib/tool-labels';",
+      // And a namespace RE-export, which puts the rung back on the barrel
+      // without ever typing its name.
+      "export * from './tool-labels';",
+    ];
+    for (const escape of escapes) {
+      expect(ladderEscape('features/chat/ui/status/strip-state.ts', escape), escape).not.toBeNull();
+    }
+    // The barrel is held to the same rule for the rung and for namespaces…
+    expect(ladderEscape('shared/lib/index.ts', "export * from './tool-labels';")).not.toBeNull();
+    expect(
+      ladderEscape('shared/lib/index.ts', "export { formatActivityLabel } from './tool-labels';")
+    ).not.toBeNull();
+    // …while the neighbours it legitimately passes through stay allowed.
+    expect(
+      ladderEscape('shared/lib/index.ts', "export { getToolLabel } from './tool-labels';")
+    ).toBeNull();
   });
 
-  it('proves the import detector catches what a bare word search does not', () => {
-    // Red-before evidence, kept executable. `strip-state.ts` carried exactly
-    // the first of these until this task rewired it.
-    expect(importsTheRung("import { formatActivityLabel } from '@/layers/shared/lib';")).toBe(true);
-    expect(importsTheRung('import {\n  formatActivityLabel,\n} from "./tool-labels";')).toBe(true);
-    // …and does not fire on the many files that merely TALK about it, which is
-    // what makes the offender list above trustworthy rather than noisy.
-    expect(importsTheRung(' * see {@link formatActivityLabel} for the rung')).toBe(false);
+  it('does not fire on the many files that merely TALK about the rung', () => {
+    // What makes the offender list trustworthy rather than noisy.
+    expect(ladderEscape('a/b.ts', ' * see {@link formatActivityLabel} for the rung')).toBeNull();
     // Nor across two unrelated statements with a mention stranded between them,
-    // which is the false positive that made the first draft of this file fail
-    // on itself.
+    // which is the false positive that made the first draft fail on itself.
     expect(
-      importsTheRung(
+      ladderEscape(
+        'a/b.ts',
         'import { readFileSync } from "node:fs";\n' +
           '/** formatActivityLabel is the rung. */\n' +
           'import { activityVerb } from "../activity-verb";\n'
       )
-    ).toBe(false);
+    ).toBeNull();
+    // And a namespace import of something that is not tool-labels is ordinary.
+    expect(ladderEscape('a/b.ts', "import * as React from 'react';")).toBeNull();
   });
 
   it('leaves no randomized verb pool anywhere in the status strip', () => {

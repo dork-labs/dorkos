@@ -1,9 +1,8 @@
 ---
 covers:
-  - 'feat(client): wire the verb ladder and avatar signals into SidebarRow (DOR-1072)'
-  - 'feat(client): the welcome-back glow, once, on a row whose work finished while you were away'
-  - 'fix(client): the chat status strip and the sidebar go through one verb function'
-  - 'fix(client): a status dot says in words what it says in colour'
+  - 'feat(client): the sidebar says what your agents are doing, once and honestly (P2.7, DOR-1072)'
+  - "test(client): the ladder's table encodes the shipped rung, not the brief's (DOR-1096)"
+  - 'fix(client): the second line keeps the preview it was about to swallow (DOR-1072 review)'
 ---
 
 ### Added
@@ -31,3 +30,5 @@ covers:
 
 - A row that is showing a live verb keeps its second line even when the reading behind it
   goes quiet for a moment. It used to collapse and grow back under your pointer.
+- Rows no longer lose their one-line preview. A quiet session and a busy channel both keep
+  the last thing that happened there, instead of showing an empty line where it should be.
