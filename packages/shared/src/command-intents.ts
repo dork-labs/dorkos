@@ -41,7 +41,11 @@ const COMMAND_INTENT_RESPONSE_HEADROOM_MS = 5_000;
  * {@link COMMAND_INTENT_REQUEST_TIMEOUT_MS} can report failure to the person and
  * then compact the conversation minutes later — a ghost compaction, which reads
  * as data loss. Deriving this by subtraction keeps the two bounds coupled: the
- * server always gives up first, so the answer the person sees is the real one.
+ * server is budgeted to give up first, so the answer the person sees is the
+ * real one. The headroom is a budget, not an enforced deadline — the 25s clock
+ * starts at queue reservation, so unusually slow pre-reservation work (routing,
+ * runtime resolution) eats into it. In the scenario that matters (a turn already
+ * running) that preamble is a local read measured in milliseconds.
  *
  * A turn's queue wait is bounded by the lock TTL instead (minutes), because a
  * turn's POST carries no abort signal and so has no client-side deadline to
