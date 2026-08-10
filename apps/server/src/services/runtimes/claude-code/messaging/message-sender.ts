@@ -890,8 +890,15 @@ export async function* executeSdkQuery(
       // then release stdin so the process drains its trailing messages and exits.
       if (result.value.type === 'result') sawResult = true;
 
-      if (result.value.type === 'result' && session.activeQuery) {
-        const query = session.activeQuery;
+      // This frame's OWN query, never the session's shared slot (DOR-1088): an
+      // overlapping turn can have replaced `activeQuery`, and the usage
+      // breakdown has to come from the subprocess that produced THIS result.
+      // The guard on `session.activeQuery` that used to sit here also gated the
+      // `heldPrompt.close()` below — so a frame whose slot had been cleared
+      // never released its own stdin, and the subprocess it owned could not
+      // exit. Reading the local removes both problems at once.
+      if (result.value.type === 'result') {
+        const query = agentQuery;
         const [breakdown, subscriptionUsage] = await Promise.all([
           fetchContextBreakdown(query, CONTEXT_USAGE_TIMEOUT_MS).catch((err: unknown) => {
             logger.debug('[sendMessage] getContextUsage failed', { err });
@@ -1073,9 +1080,19 @@ export async function* executeSdkQuery(
     // Always release the held input stream so the subprocess can never leak if we
     // exit before the result message (error, interrupt, empty stream). Idempotent.
     heldPrompt.close();
-    // Preserve the query reference for post-stream control methods (e.g. reloadPlugins)
-    session.lastQuery = session.activeQuery;
-    session.activeQuery = undefined;
+    // Preserve the query reference for post-stream control methods (e.g.
+    // reloadPlugins) — but only when this frame still OWNS the active query
+    // (DOR-1088). Unconditional, this cleared whatever query happened to be
+    // active, so a frame that settled late stranded its successor: the newer
+    // turn kept streaming with `activeQuery` set to `undefined`, and every
+    // control call that reaches for it (interrupt, model change, context usage)
+    // found nothing to talk to. The recursion retry has the same shape — the
+    // inner frame installs and clears its own query, and this line then wiped
+    // the `lastQuery` the inner frame had just recorded.
+    if (session.activeQuery === agentQuery) {
+      session.lastQuery = agentQuery;
+      session.activeQuery = undefined;
+    }
     // Commit this turn's resume anchor for the next turn: the last main-thread
     // assistant uuid, or undefined when the turn produced none (empty/error) so
     // the next resume stays plain and keeps this turn's user message in context.

@@ -195,16 +195,17 @@ export function createDirectSessionMethods(
      * feeding the session projector; the compaction is delivered solely over
      * `subscribeSession` (e.g. a `compact_boundary`). Throws a typed
      * `SESSION_LOCKED` error when the session lock is held — reachable only when
-     * another transport instance holds it (a same-client acquire steals the
-     * lock). The client pre-gates on the runtime's capability, so this is reached
-     * only for a supported intent.
+     * ANOTHER transport instance holds it, because this client's own in-flight
+     * work is waited for rather than collided with (DOR-1088). The client
+     * pre-gates on the runtime's capability, so this is reached only for a
+     * supported intent.
      */
     async runCommandIntent(
       sessionId: string,
       intent: RuntimeCommandIntentId,
       instructions?: string
     ): Promise<{ sessionId: string }> {
-      const result = services.commandIntentTrigger.trigger({
+      const result = await services.commandIntentTrigger.trigger({
         sessionId,
         clientId: getClientId(),
         intent,

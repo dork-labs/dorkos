@@ -77,15 +77,20 @@ describe('ClaudeCodeRuntime - Session Locking', () => {
       expect(agentManager.isLocked('session1', 'client2')).toBe(true);
     });
 
-    it('allows same client to re-acquire their own lock', () => {
+    it('refuses a live lock even to the client holding it (DOR-1088)', () => {
+      // One browser tab keeps one client id for its whole life, so "same client"
+      // is not "same turn". Letting the re-acquire through is what allowed a
+      // second stream to start on a session that already had one; a same-client
+      // trigger waits at the turn queue for the first to finish instead.
       const res1 = createMockResponse();
       const res2 = createMockResponse();
 
       agentManager.acquireLock('session1', 'client1', res1);
       const result = agentManager.acquireLock('session1', 'client1', res2);
 
-      expect(result).toBe(true);
-      expect(agentManager.isLocked('session1', 'client1')).toBe(false);
+      expect(result).toBe(false);
+      // The first holder kept it — the refusal did not disturb the lock.
+      expect(agentManager.getLockInfo('session1')?.clientId).toBe('client1');
     });
 
     it('allows lock after TTL expiry', () => {
