@@ -1010,16 +1010,38 @@ test.describe('conversations in the command palette', () => {
       const who = el.querySelector('[data-slot="palette-session-who"]');
       const title = el.querySelector('[data-slot="palette-session-title"]');
       if (!line || !who || !title) return null;
+
+      // What `6ch` is worth in the title's OWN font, measured rather than
+      // guessed: `ch` is the width of a "0" in the element's font, so the
+      // number differs per family and per size and there is no arithmetic that
+      // gets it from a font-size. The probe inherits the four properties that
+      // decide it and is thrown away.
+      const titleStyle = getComputedStyle(title);
+      const probe = document.createElement('span');
+      probe.style.position = 'absolute';
+      probe.style.visibility = 'hidden';
+      probe.style.display = 'inline-block';
+      probe.style.fontFamily = titleStyle.fontFamily;
+      probe.style.fontSize = titleStyle.fontSize;
+      probe.style.fontWeight = titleStyle.fontWeight;
+      probe.style.fontStyle = titleStyle.fontStyle;
+      probe.style.width = '6ch';
+      title.parentElement?.appendChild(probe);
+      const sixCh = probe.getBoundingClientRect().width;
+      probe.remove();
+
       return {
         lineWidth: line.getBoundingClientRect().width,
         whoMaxWidth: getComputedStyle(who).maxWidth,
-        titleMinWidth: getComputedStyle(title).minWidth,
+        titleMinWidth: titleStyle.minWidth,
+        sixCh,
       };
     });
 
     expect(budget).not.toBeNull();
-    const { lineWidth, whoMaxWidth, titleMinWidth } = budget!;
+    const { lineWidth, whoMaxWidth, titleMinWidth, sixCh } = budget!;
     expect(lineWidth).toBeGreaterThan(0);
+    expect(sixCh).toBeGreaterThan(0);
 
     // The agent name is capped at 42% of the line (BC-25). Browsers resolve a
     // percentage max-width to px in `getComputedStyle`, but either spelling is
@@ -1030,10 +1052,12 @@ test.describe('conversations in the command palette', () => {
       expect(parseFloat(whoMaxWidth)).toBeCloseTo(lineWidth * 0.42, 0);
     }
 
-    // And the title never shrinks below ~6 characters, so two conversations of
-    // the same agent can always be told apart.
-    expect(parseFloat(titleMinWidth)).toBeGreaterThan(0);
-    expect(parseFloat(titleMinWidth)).toBeLessThan(lineWidth);
+    // And the title floor is SIX characters of the font it is drawn in, not
+    // merely "some number of pixels". A `> 0` assertion here survives the class
+    // being cut to `min-w-[1px]` — the budget gutted, the test still green —
+    // which is precisely the shape of check this suite exists to avoid.
+    // (`row-grammar.test.ts` pins the literal; this pins what it BUYS.)
+    expect(parseFloat(titleMinWidth)).toBeCloseTo(sixCh, 0);
   });
 
   test('the untyped palette is Continue, Recent and New — and nothing else', async ({ page }) => {

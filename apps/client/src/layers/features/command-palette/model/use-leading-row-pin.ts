@@ -56,9 +56,10 @@ export interface LeadingRowPinOptions {
 /**
  * Keep the highlight on the row you are looking at when the list moves under you.
  *
- * The palette's leading rows are live: an arriving message re-sorts the Unread
- * group, so the row on top a moment ago is not the row on top now. cmdk does not
- * follow that. It re-selects the first row when a row mounts *only if nothing is
+ * The palette's leading rows are live: an arriving message re-sorts Recent
+ * (which leads with what is waiting), so the row on top a moment ago is not the
+ * row on top now. cmdk does not follow that. It re-selects the first row when a
+ * row mounts *only if nothing is
  * selected yet* (`state.value || selectFirstItem()`), and a reorder of already
  * mounted, React-keyed rows mounts nothing at all — so the highlight stays on
  * whatever it was on while a different row slides above it. Enter then opens a

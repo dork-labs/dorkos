@@ -77,6 +77,24 @@ export function usePaletteCommandCenter(
   rooms: readonly RoomSummary[],
   unreadRoomIds: ReadonlySet<string>
 ): PaletteCommandCenter {
+  // Asked for at BOOT, not when the palette opens — and that is a decision, not
+  // an oversight.
+  //
+  // `CommandPaletteDialog` mounts at the app root and never unmounts, so this
+  // fires whether or not anyone presses ⌘K. It is a real cost: the query key
+  // carries the limit, so this is a SECOND cross-runtime `/api/sessions/recent`
+  // fan-out beside the sidebar's limit-10 one, not a cache hit on it.
+  //
+  // It is worth paying because a front door for recall that spins on its first
+  // keystroke is not a front door. The window is what SEARCH reads, so gating it
+  // on `open` would put a cross-runtime fan-out between ⌘K and the first result
+  // every single time — the palette would feel slow exactly when a person is in
+  // a hurry, which is the only time they open it.
+  //
+  // `useRecentSessions` does take `{ enabled }`, and it is deliberately not used
+  // here. (Sharing one window with the sidebar would remove the second fan-out
+  // outright, but that is the sidebar's query to widen, and the sidebar is
+  // another task's territory.)
   const { data } = useRecentSessions(PALETTE_SESSION_WINDOW);
 
   // Both maps are replaced only when they change (immer), so a plain selector

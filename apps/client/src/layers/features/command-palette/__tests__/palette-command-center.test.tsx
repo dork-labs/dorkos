@@ -331,13 +331,26 @@ describe('the verb on a Continue row (BC-37)', () => {
   it('says nothing at all about an idle conversation', async () => {
     // Not a different verb — no second line. A row that keeps talking about a
     // turn that ended is the lie the ladder exists to prevent.
+    //
+    // The lifecycle is seeded rather than left absent, and that is the whole
+    // difference between this case and "the store happens to be empty": with no
+    // status at all, deleting the Continue filter still leaves nothing to draw
+    // and this passes for a reason that has nothing to do with the ladder.
+    seedLive({ [live.id]: { lifecycle: 'idle' } });
     seedSessions([live]);
 
     render();
     await screen.findByText('Palette rewrite');
 
+    // No verb, from either end of the ladder's silence…
     expect(screen.queryByText('Working…')).not.toBeInTheDocument();
     expect(screen.queryByText('waiting on you')).not.toBeInTheDocument();
+    // …and no Continue row either. The two are separate claims: the ladder
+    // silences an idle session's verb, and the Continue filter keeps it out of
+    // the group in the first place. Asserting only the first leaves the second
+    // free to break — an idle row would join Continue, say nothing, and look
+    // exactly like a passing test.
+    expect(headings()).not.toContain('Continue');
   });
 });
 
