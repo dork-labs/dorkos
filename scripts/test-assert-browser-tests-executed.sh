@@ -23,11 +23,13 @@ fail=0
 
 # Build a synthetic workspace.
 #   $1 — root to build under
-# Creates two ordinary specs, the opt-in auth spec, and the grep-filtered
-# @integration spec, plus a report in which both ordinary specs ran, the auth
-# spec skipped, and the @integration spec is absent entirely (grepInvert drops
-# it from collection, so it never reaches the report). That is the known-good
-# run every case below bends exactly one thing about.
+# Creates two ordinary specs, the opt-in auth spec, the grep-filtered
+# @integration spec, and the registered module (a plain .ts a spec imports —
+# see REGISTERED_MODULES in the subject). The report has both ordinary specs and
+# the module running, the auth spec skipped, and the @integration spec absent
+# entirely (grepInvert drops it from collection, so it never reaches the
+# report). That is the known-good run every case below bends exactly one thing
+# about.
 make_workspace() {
   local root=$1
   mkdir -p "$root/apps/e2e/tests/settings" "$root/apps/e2e/tests/chat" \
@@ -36,6 +38,7 @@ make_workspace() {
   : >"$root/apps/e2e/tests/beta.spec.ts"
   : >"$root/apps/e2e/tests/settings/auth-login.spec.ts"
   : >"$root/apps/e2e/tests/chat/send-message.spec.ts"
+  : >"$root/apps/e2e/tests/chat/session-read-state.ts"
   cat >"$root/apps/e2e/test-results/results.json" <<'JSON'
 {
   "suites": [
@@ -45,12 +48,15 @@ make_workspace() {
     { "title": "beta.spec.ts", "file": "beta.spec.ts",
       "specs": [ { "title": "beta runs", "file": "beta.spec.ts",
                    "tests": [ { "status": "expected" } ] } ] },
+    { "title": "chat/session-read-state.ts", "file": "chat/session-read-state.ts",
+      "specs": [ { "title": "the module's suite runs", "file": "chat/session-read-state.ts",
+                   "tests": [ { "status": "expected" } ] } ] },
     { "title": "settings", "file": "settings/auth-login.spec.ts", "specs": [],
       "suites": [ { "title": "Auth", "file": "settings/auth-login.spec.ts",
                     "specs": [ { "title": "auth runs", "file": "settings/auth-login.spec.ts",
                                  "tests": [ { "status": "skipped" } ] } ] } ] }
   ],
-  "stats": { "expected": 2, "unexpected": 0, "flaky": 0, "skipped": 1 }
+  "stats": { "expected": 3, "unexpected": 0, "flaky": 0, "skipped": 1 }
 }
 JSON
 }
@@ -89,7 +95,7 @@ trap 'rm -rf "$tmp"' EXIT
 # The known-good run. If this case ever fails, every refusal below is meaningless
 # because the script is rejecting healthy input.
 make_workspace "$tmp/healthy"
-check 'a healthy run passes' "$tmp/healthy" 0 '2 test(s) executed'
+check 'a healthy run passes' "$tmp/healthy" 0 '3 test(s) executed'
 
 # A spec on disk that the run never collected — the testIgnore/testMatch hole.
 make_workspace "$tmp/uncollected"
@@ -111,7 +117,7 @@ d = json.load(open(p))
 for s in d['suites']:
     if s['file'] == 'beta.spec.ts':
         s['specs'][0]['tests'][0]['status'] = 'skipped'
-d['stats'] = {"expected": 1, "unexpected": 0, "flaky": 0, "skipped": 2}
+d['stats'] = {"expected": 2, "unexpected": 0, "flaky": 0, "skipped": 2}
 json.dump(d, open(p, 'w'))
 PY
 check 'a spec whose tests all skipped is named' "$tmp/allskipped" 1 'beta.spec.ts'
@@ -125,7 +131,7 @@ d = json.load(open(p))
 for s in d['suites']:
     if s['file'] == 'settings/auth-login.spec.ts':
         s['suites'][0]['specs'][0]['tests'][0]['status'] = 'expected'
-d['stats'] = {"expected": 3, "unexpected": 0, "flaky": 0, "skipped": 0}
+d['stats'] = {"expected": 4, "unexpected": 0, "flaky": 0, "skipped": 0}
 json.dump(d, open(p, 'w'))
 PY
 check 'a stale OPT_IN exemption is named' "$tmp/stale" 1 'OPT_IN_SPECS'
@@ -142,7 +148,7 @@ d['suites'].append({
     "title": "chat", "file": "chat/send-message.spec.ts",
     "specs": [{"title": "sends", "file": "chat/send-message.spec.ts",
                "tests": [{"status": "expected"}]}]})
-d['stats'] = {"expected": 3, "unexpected": 0, "flaky": 0, "skipped": 1}
+d['stats'] = {"expected": 4, "unexpected": 0, "flaky": 0, "skipped": 1}
 json.dump(d, open(p, 'w'))
 PY
 check 'an @integration spec appearing in the run is refused' "$tmp/filteredRan" 1 'FILTERED_SPECS'
@@ -156,6 +162,69 @@ check 'an exemption naming a deleted spec is refused' "$tmp/deadExemption" 1 'do
 make_workspace "$tmp/staleReport"
 rm "$tmp/staleReport/apps/e2e/tests/beta.spec.ts"
 check 'a report naming a deleted spec is refused' "$tmp/staleReport" 1 'do not exist on disk'
+
+# --- REGISTERED_MODULES, in both directions ---------------------------------
+#
+# A module is not a spec, so `find -name '*.spec.ts'` cannot police it. These
+# four cases are what stops "not a spec" from quietly becoming "not checked".
+
+# The module stops being registered — the import deleted, the register call
+# dropped, the importing spec renamed. On disk and healthy-looking, absent from
+# every run. This is the exact guarantee the list exists to preserve, and the
+# case that would have passed if registered modules were simply waved through.
+make_workspace "$tmp/moduleUnregistered"
+python3 - "$tmp/moduleUnregistered/apps/e2e/test-results/results.json" <<'PY'
+import json, sys
+p = sys.argv[1]
+d = json.load(open(p))
+d['suites'] = [s for s in d['suites'] if s['file'] != 'chat/session-read-state.ts']
+d['stats'] = {"expected": 2, "unexpected": 0, "flaky": 0, "skipped": 1}
+json.dump(d, open(p, 'w'))
+PY
+check 'a registered module missing from the run is named' \
+  "$tmp/moduleUnregistered" 1 'chat/session-read-state.ts'
+
+# The module is collected but everything in it skipped — held to assertion 3
+# exactly as a spec is, rather than counting as present-and-therefore-fine.
+make_workspace "$tmp/moduleSkipped"
+python3 - "$tmp/moduleSkipped/apps/e2e/test-results/results.json" <<'PY'
+import json, sys
+p = sys.argv[1]
+d = json.load(open(p))
+for s in d['suites']:
+    if s['file'] == 'chat/session-read-state.ts':
+        s['specs'][0]['tests'][0]['status'] = 'skipped'
+d['stats'] = {"expected": 2, "unexpected": 0, "flaky": 0, "skipped": 2}
+json.dump(d, open(p, 'w'))
+PY
+check 'a registered module whose tests all skipped is named' \
+  "$tmp/moduleSkipped" 1 'chat/session-read-state.ts'
+
+# An entry naming a module that no longer exists — the same "list nobody
+# maintains" refusal the exemption lists get.
+make_workspace "$tmp/deadModule"
+rm "$tmp/deadModule/apps/e2e/tests/chat/session-read-state.ts"
+check 'a REGISTERED_MODULES entry naming a deleted file is refused' \
+  "$tmp/deadModule" 1 'does not exist on disk'
+
+# The mirror, and the reason the list is a door rather than an amnesty: a
+# non-spec file in the report that nobody listed is still a stale report. Without
+# this, "ignore anything that is not a *.spec.ts" would have been an equally
+# green fix and a far worse one.
+make_workspace "$tmp/unlistedModule"
+python3 - "$tmp/unlistedModule/apps/e2e/test-results/results.json" <<'PY'
+import json, sys
+p = sys.argv[1]
+d = json.load(open(p))
+d['suites'].append({
+    "title": "chat/rogue-module.ts", "file": "chat/rogue-module.ts",
+    "specs": [{"title": "rogue runs", "file": "chat/rogue-module.ts",
+               "tests": [{"status": "expected"}]}]})
+d['stats'] = {"expected": 4, "unexpected": 0, "flaky": 0, "skipped": 1}
+json.dump(d, open(p, 'w'))
+PY
+check 'a non-spec file in the report that nobody registered is refused' \
+  "$tmp/unlistedModule" 1 'chat/rogue-module.ts'
 
 # A failing test must not be certified as a healthy run.
 make_workspace "$tmp/red"

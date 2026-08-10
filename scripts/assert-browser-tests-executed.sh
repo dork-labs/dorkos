@@ -39,9 +39,25 @@
 #      the specs in OPT_IN_SPECS, which must have run NONE.
 #   4. At least one test executed overall, and none failed.
 #
-# Both exemption lists are self-policing in both directions: a listed spec that
-# stops matching its exemption fails as loudly as an unlisted spec that starts
-# needing one, and an entry naming a file that no longer exists fails too.
+# A SPEC FILE IS NOT THE ONLY THING THAT DECLARES TESTS. apps/e2e has a second
+# sanctioned shape, documented in its README under "Adding a mock-server suite":
+# a plain `*.ts` MODULE exporting a register function, which a spec file imports
+# and calls. The mock-server projects need it — `POST /api/test/reset` deletes
+# every tracked session's transcript and `fullyParallel` puts separate spec FILES
+# on concurrent workers, so a suite needing a transcript to survive cannot be its
+# own spec; registering it into chat-mock.spec.ts puts it on that file's worker.
+# Playwright reports such tests against the file that DECLARED them, so they
+# arrive in the report under a name `find -name '*.spec.ts'` will never produce.
+#
+# Those modules are enumerated in REGISTERED_MODULES and held to exactly the
+# standard a spec is: present on disk, present in the report, and having run
+# something. What they are NOT is a hole — a reported file that is neither a spec
+# on disk nor on that list still trips the stale-report check, so the list is the
+# single sanctioned door rather than a general amnesty for non-spec files.
+#
+# All three lists are self-policing in both directions: a listed entry that stops
+# matching its exemption fails as loudly as an unlisted file that starts needing
+# one, and an entry naming a file that no longer exists fails too.
 #
 # Deliberately NOT a hard-coded total. "92 tests" goes stale the first time
 # somebody adds a test, and a gate whose expectation is stale gets edited to
@@ -111,6 +127,29 @@ FILTERED_SPECS=(
   'chat/send-message.spec.ts'
 )
 
+# Modules that declare tests without being spec files — see the header.
+#
+# Held to a spec's standard, not exempted from it. Each entry must exist on
+# disk, must appear in the report, and must have run at least one test that was
+# not skipped: they join `expected_specs` below, which is what hands them
+# assertions 2 and 3 unchanged. So a module that silently stops being registered
+# — the import deleted, the register call dropped, the spec that imports it
+# renamed — fails exactly as loudly as a spec that stops being collected, which
+# is the guarantee this gate exists for.
+#
+# And each must NOT be named `*.spec.ts`. That is not tidiness: `tests/chat/` is
+# a COCKPIT-leg directory, so the extension is the only thing keeping a
+# test-mode module off the leg that drives a real, billable runtime. A rename
+# would both put it there and double-count it here; refusing the name keeps the
+# two facts from drifting apart.
+#
+#   chat/session-read-state.ts — cross-device read state for chat sessions
+#     (DOR-1040). Registered into chat-mock.spec.ts, which is what puts it on
+#     that file's worker and out of reach of its own beforeEach resets.
+REGISTERED_MODULES=(
+  'chat/session-read-state.ts'
+)
+
 fail() {
   printf 'assert-browser-tests-executed: %s\n' "$1" >&2
   exit 1
@@ -139,6 +178,20 @@ nothing."
 for entry in "${OPT_IN_SPECS[@]}" "${FILTERED_SPECS[@]}"; do
   [ -f "$tests_dir/$entry" ] || fail "an exemption names a spec that does not exist on disk: $entry
 Remove it from OPT_IN_SPECS/FILTERED_SPECS in this script."
+done
+
+# The same rule for registered modules, plus the one about their name — see
+# REGISTERED_MODULES for why the extension is load-bearing rather than cosmetic.
+for entry in "${REGISTERED_MODULES[@]}"; do
+  [ -f "$tests_dir/$entry" ] || fail "a registered module does not exist on disk: $entry
+Remove it from REGISTERED_MODULES in this script, or restore the file."
+  case "$entry" in
+  *.spec.ts) fail "a registered module is named like a spec file: $entry
+REGISTERED_MODULES is for modules a spec IMPORTS, which must not be collected as
+specs themselves — under tests/chat/ that is what keeps a test-mode suite off the
+billable cockpit leg. Either rename it back to a plain .ts module, or drop it
+from this list because it is now an ordinary spec." ;;
+  esac
 done
 
 # 1. Nothing may sit outside the one testDir the config declares.
@@ -193,33 +246,53 @@ test without the @integration tag, in which case remove it from FILTERED_SPECS."
 fi
 
 # What the report is EXPECTED to contain: everything on disk minus the
-# grep-filtered specs, whose absence was just verified.
+# grep-filtered specs, whose absence was just verified, PLUS the registered
+# modules — which is the whole of their special handling. Folding them in here
+# rather than checking them apart is what holds them to assertions 2 and 3
+# verbatim: missing from the report, or present having run nothing, and the
+# existing refusals name them.
 expected_specs=''
 while IFS= read -r spec; do
   [ -n "$spec" ] || continue
   is_filtered "$spec" || expected_specs="$expected_specs$spec"$'\n'
 done <<<"$disk_specs"
-expected_specs=${expected_specs%$'\n'}
+for entry in "${REGISTERED_MODULES[@]}"; do
+  expected_specs="$expected_specs$entry"$'\n'
+done
+expected_specs=$(printf '%s' "$expected_specs" | sort -u)
+
+# What the report is ALLOWED to contain at all. Registered modules are the only
+# non-spec names admitted; anything else the report mentions is still a stale
+# report. Deliberately NOT `expected_specs`: a FILTERED_SPEC that appears has
+# already been refused above with a message about billing, and folding it in
+# here would replace that with a vaguer one.
+known_files=$(printf '%s\n' "$disk_specs" "${REGISTERED_MODULES[@]}" | sort -u)
 
 # 2. Nothing expected may be missing from the run.
 missing=$(comm -23 <(printf '%s\n' "$expected_specs") <(printf '%s\n' "$report_specs"))
 if [ -n "$missing" ]; then
-  fail "these spec files exist on disk but no test from them appears in the run:
+  fail "these test files exist on disk but no test from them appears in the run:
 $(printf '%s\n' "$missing" | sed 's/^/  /')
 Playwright collected nothing from them and still exited 0. Check the projects'
 testMatch/testIgnore/grepInvert filters, whether the file was renamed, and —
-for the site specs — whether the marketing-site leg booted (E2E_SITE)."
+for the site specs — whether the marketing-site leg booted (E2E_SITE). For a
+REGISTERED_MODULES entry, check that the spec file which imports it still calls
+its register function: a dropped call takes the whole suite out of every run
+while leaving the module on disk looking healthy."
 fi
 
 # The mirror: something ran that is not on disk means the report describes a
 # different checkout — most often a stale results.json left by an earlier run,
 # which would let a deleted spec keep certifying itself.
-extra=$(comm -13 <(printf '%s\n' "$disk_specs") <(printf '%s\n' "$report_specs"))
+extra=$(comm -13 <(printf '%s\n' "$known_files") <(printf '%s\n' "$report_specs"))
 if [ -n "$extra" ]; then
-  fail "the run reports spec files that do not exist on disk:
+  fail "the run reports test files that do not exist on disk:
 $(printf '%s\n' "$extra" | sed 's/^/  /')
 This report does not describe this checkout — most likely a stale
-test-results/results.json left over from an earlier run."
+test-results/results.json left over from an earlier run.
+If one of these IS a real file that declares tests without being a *.spec.ts —
+a module a spec imports and registers — it belongs in REGISTERED_MODULES, which
+holds it to the same standard rather than waving it through."
 fi
 
 # 3. Per-spec: exactly the opt-in specs may have executed nothing.
@@ -284,8 +357,8 @@ if [ "$stat_unexpected" -ne 0 ]; then
 fi
 
 expected_count=$(printf '%s\n' "$expected_specs" | wc -l | tr -d ' ')
-printf 'assert-browser-tests-executed: %s test(s) executed across %s spec file(s) (%s expected, %s flaky, %s skipped across %s opt-in spec(s); %s @integration spec(s) confirmed absent).\n' \
-  "$total_ran" "$expected_count" \
+printf 'assert-browser-tests-executed: %s test(s) executed across %s test file(s), %s of them registered module(s) (%s expected, %s flaky, %s skipped across %s opt-in spec(s); %s @integration spec(s) confirmed absent).\n' \
+  "$total_ran" "$expected_count" "${#REGISTERED_MODULES[@]}" \
   "$stat_expected" "$stat_flaky" "$stat_skipped" "${#OPT_IN_SPECS[@]}" "${#FILTERED_SPECS[@]}"
 
 # Flaky tests passed on a retry, so they do not fail this gate — but a retry
