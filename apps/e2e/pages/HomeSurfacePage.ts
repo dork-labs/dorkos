@@ -18,14 +18,15 @@ export const HOME_TABS = [
 ] as const;
 
 /**
- * The four sidebar destinations, plus the Search row that opens the command
- * palette.
+ * The four sidebar destinations, in the order the footer strip draws them.
  *
  * The count is the point. Seven sidebar entries became four when Activity,
  * Scheduled and Workspaces moved into the home tab bar, and a fifth appearing
- * here is what the spec is watching for.
+ * here is what the spec is watching for. They live in the footer strip now
+ * (spec `sidebar-now-today-library` BC-47) — the header nav that used to hold
+ * them, and the Search row beside it, were retired with it.
  */
-export const SIDEBAR_NAV_LABELS = ['Home', 'Team', 'Connections', 'Marketplace', 'Search'] as const;
+export const SIDEBAR_NAV_LABELS = ['Home', 'Team', 'Marketplace', 'Connections'] as const;
 
 /**
  * Page Object for the home surface — the tab bar over `/`, `/activity`,
@@ -76,7 +77,7 @@ export class HomeSurfacePage {
     this.page = page;
     this.tabBar = page.getByTestId('home-tabs');
     this.tabs = this.tabBar.getByRole('link');
-    this.sidebarNav = page.locator('[data-slot="sidebar-header"]');
+    this.sidebarNav = page.getByTestId('sidebar-footer-strip-row');
     this.composer = page.getByTestId('home-composer');
     this.composerField = this.composer.getByRole('combobox');
     this.jumpBackIn = page.getByRole('listbox', { name: 'Jump back in' });
@@ -93,9 +94,18 @@ export class HomeSurfacePage {
     return this.tabBar.locator('a[data-active]');
   }
 
-  /** Every button in the sidebar's nav block: the destinations and Search. */
+  /**
+   * The destination buttons in the sidebar's footer strip.
+   *
+   * Located by `data-sidebar-destination`, which `SidebarFooterStrip` stamps
+   * from the loop over its destination table — NOT by the four names. A
+   * name-matching locator cannot see a fifth destination at all: it filters the
+   * newcomer out before `toHaveCount` runs, so the count that exists to catch a
+   * fifth would pass with one present. The strip's other two buttons (the `⋯`
+   * fold and Ask DorkBot) carry no such attribute and are excluded by structure.
+   */
   get sidebarNavButtons(): Locator {
-    return this.sidebarNav.getByRole('button');
+    return this.sidebarNav.locator('[data-sidebar-destination]');
   }
 
   /**

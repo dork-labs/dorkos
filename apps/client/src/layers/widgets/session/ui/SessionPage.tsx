@@ -19,13 +19,15 @@ import { useInPlaceNavigate } from '@/layers/shared/model';
  * The `?runtime=` search param (launch-time runtime selection) is forwarded so
  * the session-creating first message carries it as the runtime hint. The
  * `?prompt=` seed and its `?send=1` opt-in are forwarded so a launch link can
- * pre-fill — and optionally start — a freshly-launched session's first turn.
- * This page owns the other half of that contract: dropping both params from the
- * URL once they are spent.
+ * pre-fill — and optionally start — a freshly-launched session's first turn, and
+ * `?seed=dorkbot-help` is the sidebar's Ask DorkBot press, which pre-fills
+ * nothing and instead hands the first turn a hidden preamble (BC-48). This page
+ * owns the other half of all three contracts: dropping the params from the URL
+ * once they are spent.
  */
 export function SessionPage() {
   const [activeSessionId] = useSessionId();
-  const { runtime, prompt, send } = useSessionSearch();
+  const { runtime, prompt, send, seed } = useSessionSearch();
   const inPlaceNavigate = useInPlaceNavigate();
   useCanvasPersistence(activeSessionId);
   useRightPanelLayoutPersistence();
@@ -41,7 +43,7 @@ export function SessionPage() {
    */
   const handleLaunchConsumed = useCallback(() => {
     inPlaceNavigate?.({
-      search: (prev) => ({ ...prev, prompt: undefined, send: undefined }),
+      search: (prev) => ({ ...prev, prompt: undefined, send: undefined, seed: undefined }),
       replace: true,
     });
   }, [inPlaceNavigate]);
@@ -52,6 +54,7 @@ export function SessionPage() {
       launchRuntime={runtime}
       launchPrompt={prompt}
       launchSend={send === '1'}
+      launchSeed={seed}
       onLaunchConsumed={handleLaunchConsumed}
     />
   );

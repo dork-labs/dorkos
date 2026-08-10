@@ -55,16 +55,10 @@ vi.mock('@/layers/features/dashboard-sidebar', () => ({
       {mockZonesPresent && <section data-sidebar-zone="library">Library</section>}
     </nav>
   ),
-  // The header block is persistent chrome: AppShell mounts it OUTSIDE the
-  // `sidebar.body` swap region (spec R2).
-  SidebarNavHeader: () => <div data-testid="sidebar-nav-header">Nav</div>,
-}));
-
-// AppShell imports only SidebarFooterBar from session-list — the web session
-// drill-in (SessionSidebar) was retired for the persistent roster + right-panel
-// inspector and has since been deleted (DOR-401).
-vi.mock('@/layers/features/session-list', () => ({
-  SidebarFooterBar: () => <div data-testid="sidebar-footer-bar">SidebarFooterBar</div>,
+  // The footer strip is persistent chrome: AppShell mounts it OUTSIDE the
+  // `sidebar.body` swap region, so a contributed takeover replaces the body and
+  // leaves the panel's navigation standing (spec R2, BC-47).
+  SidebarFooterStrip: () => <div data-testid="sidebar-footer-strip">Footer strip</div>,
 }));
 
 vi.mock('@/layers/features/top-nav', () => ({
@@ -418,21 +412,19 @@ describe('AppShell slot integration', () => {
     it.each([true, false])(
       'keeps the header block OUTSIDE the swap region, so a takeover cannot take it (zones present: %s)',
       (zones) => {
-        // **Structural, not presence.** A header rendered inside the animated
+        // **Structural, not presence.** Chrome rendered inside the animated
         // body would still be on screen on the roster route and would still be
         // "mounted" after a takeover swapped a different body in — because the
         // shell mounts it either way. What distinguishes the two arrangements is
         // whether the swap region CONTAINS it. An earlier version of this test
-        // asserted presence and passed with the header moved inside.
+        // asserted presence and passed with the chrome moved inside.
         mockZonesPresent = zones;
         mockPathname = '/';
         renderAppShell();
 
         const swap = screen.getByTestId('sidebar-body-swap');
-        const header = screen.getByTestId('sidebar-nav-header');
-        const footer = screen.getByTestId('sidebar-footer-bar');
+        const footer = screen.getByTestId('sidebar-footer-strip');
         expect(swap).toContainElement(screen.getByTestId('dashboard-sidebar'));
-        expect(swap).not.toContainElement(header);
         expect(swap).not.toContainElement(footer);
         // The zones themselves live inside the body, whichever state they are in.
         expect(document.querySelector('[data-sidebar-zone="library"]') !== null).toBe(zones);
@@ -443,8 +435,7 @@ describe('AppShell slot integration', () => {
         renderAppShell();
         expect(screen.getByTestId('marketplace-sidebar-fake')).toBeInTheDocument();
         expect(screen.queryByTestId('dashboard-sidebar')).not.toBeInTheDocument();
-        expect(screen.getByTestId('sidebar-nav-header')).toBeInTheDocument();
-        expect(screen.getByTestId('sidebar-footer-bar')).toBeInTheDocument();
+        expect(screen.getByTestId('sidebar-footer-strip')).toBeInTheDocument();
       }
     );
 
@@ -496,12 +487,12 @@ describe('AppShell slot integration', () => {
         mockPathname = '/marketplace';
         renderAppShell();
 
-        // The shell survives: chrome, header, and footer all still render, and
+        // The shell survives: chrome, header, and the footer strip all still render, and
         // the sidebar body area shows the boundary's inline fallback instead of
         // the whole app being replaced by the router's error component.
         expect(screen.getByTestId('app-shell')).toBeInTheDocument();
         expect(screen.getByTestId('marketplace-header')).toBeInTheDocument();
-        expect(screen.getByTestId('sidebar-footer-bar')).toBeInTheDocument();
+        expect(screen.getByTestId('sidebar-footer-strip')).toBeInTheDocument();
         expect(screen.getByTestId('sidebar-body-error')).toBeInTheDocument();
       } finally {
         consoleError.mockRestore();
@@ -825,16 +816,16 @@ describe('AppShell slot integration', () => {
   });
 
   describe('static chrome', () => {
-    it('renders SidebarFooterBar regardless of route', () => {
+    it('renders the footer strip regardless of route', () => {
       mockPathname = '/';
       renderAppShell();
-      expect(screen.getByTestId('sidebar-footer-bar')).toBeInTheDocument();
+      expect(screen.getByTestId('sidebar-footer-strip')).toBeInTheDocument();
 
       cleanup();
 
       mockPathname = '/session';
       renderAppShell();
-      expect(screen.getByTestId('sidebar-footer-bar')).toBeInTheDocument();
+      expect(screen.getByTestId('sidebar-footer-strip')).toBeInTheDocument();
     });
 
     it('renders the app-shell container on both routes', () => {

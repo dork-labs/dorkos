@@ -171,11 +171,11 @@ export const COMPONENTS_SECTIONS: PlaygroundSection[] = [
     keywords: ['session', 'list', 'group', 'today', 'yesterday', 'empty', 'scroll'],
   },
   {
-    id: 'sidebarfooterbar',
-    title: 'SidebarFooterBar',
+    id: 'sidebarfooterstrip',
+    title: 'SidebarFooterStrip',
     page: 'components',
     category: 'Sidebar',
-    keywords: ['footer', 'sidebar', 'theme', 'settings', 'branding', 'logo', 'agent'],
+    keywords: ['footer', 'strip', 'sidebar', 'ask dorkbot', 'update', 'pill', 'navigation'],
   },
   // VerbLadderShowcases
   {

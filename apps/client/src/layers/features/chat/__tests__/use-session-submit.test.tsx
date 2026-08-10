@@ -460,6 +460,84 @@ describe('useChatSession — send (trigger-only POST → /events)', () => {
     expect(postMessage.mock.calls[0][3]).not.toHaveProperty('runtime');
   });
 
+  it('carries Ask DorkBot\u2019s background on the first send and on no send after it (BC-48)', async () => {
+    const postMessage = vi
+      .fn()
+      .mockImplementation((sessionId: string) => Promise.resolve({ sessionId }));
+    const transport = createMockTransport({ postMessage });
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    // The provider owns "at most once"; the send path just asks on every turn.
+    const takeSeedContext = vi
+      .fn<() => string | undefined>()
+      .mockReturnValueOnce('They were on the marketplace. They have 3 agents registered.')
+      .mockReturnValue(undefined);
+
+    const { result } = renderHook(() => useChatSession('s1', { takeSeedContext }), {
+      wrapper: createWrapper(transport, queryClient),
+    });
+    await waitFor(() => expect(result.current.status).toBe('idle'));
+
+    act(() => {
+      result.current.setInput('why is my agent stuck?');
+    });
+    await waitFor(() => expect(result.current.input).toBe('why is my agent stuck?'));
+    await act(async () => {
+      await result.current.handleSubmit();
+    });
+
+    // The background reaches the server as its OWN field, never folded into the
+    // message and never into the neutral client-signal bag.
+    expect(postMessage).toHaveBeenCalledTimes(1);
+    expect(postMessage.mock.calls[0][1]).toBe('why is my agent stuck?');
+    expect(postMessage.mock.calls[0][3]).toMatchObject({
+      seedContext: 'They were on the marketplace. They have 3 agents registered.',
+    });
+
+    // Settle the turn so a second send is allowed.
+    act(() => {
+      const store = useSessionStreamStore.getState();
+      store.applyEvent('s1', { seq: 1, type: 'turn_start' });
+      store.applyEvent('s1', { seq: 2, type: 'turn_end' });
+    });
+    await waitFor(() => expect(result.current.status).toBe('idle'));
+
+    act(() => {
+      result.current.setInput('and the second one?');
+    });
+    await waitFor(() => expect(result.current.input).toBe('and the second one?'));
+    await act(async () => {
+      await result.current.handleSubmit();
+    });
+
+    expect(postMessage).toHaveBeenCalledTimes(2);
+    expect(postMessage.mock.calls[1][3]).not.toHaveProperty('seedContext');
+    // Asked on both, answered on one \u2014 which is what makes the absence above a
+    // property of the provider rather than of a send path that stopped asking.
+    expect(takeSeedContext).toHaveBeenCalledTimes(2);
+  });
+
+  it('sends no seedContext at all when no surface supplied one', async () => {
+    const postMessage = vi
+      .fn()
+      .mockImplementation((sessionId: string) => Promise.resolve({ sessionId }));
+    const transport = createMockTransport({ postMessage });
+
+    const { result } = renderHook(() => useChatSession('s1'), {
+      wrapper: createWrapper(transport),
+    });
+    await waitFor(() => expect(result.current.status).toBe('idle'));
+
+    act(() => {
+      result.current.setInput('Hello');
+    });
+    await waitFor(() => expect(result.current.input).toBe('Hello'));
+    await act(async () => {
+      await result.current.handleSubmit();
+    });
+
+    expect(postMessage.mock.calls[0][3]).not.toHaveProperty('seedContext');
+  });
+
   it('seeds the optimistic session row with the server default runtime when none is selected', async () => {
     const postMessage = vi
       .fn()

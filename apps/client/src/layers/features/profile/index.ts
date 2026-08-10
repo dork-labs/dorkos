@@ -18,6 +18,11 @@ export {
   type ProfileDrawerContainerProps,
 } from './ui/ProfileDrawerContainer';
 export { AccountMenu, type AccountMenuProps } from './ui/AccountMenu';
+// `AccountMenuRows` is deliberately NOT on the barrel: the two surfaces that
+// draw it — the disc's own menu and the sidebar footer's `⋯` fold — both reach
+// it through `AccountMenuContainer`, which is what knows who you are. A second
+// public door would invite a caller to render the rows with a member it
+// resolved itself.
 export { AccountMenuContainer } from './ui/AccountMenuContainer';
 export { ProfilePanel, type ProfilePanelProps } from './ui/ProfilePanel';
 export { ProfilePanelContainer } from './ui/ProfilePanelContainer';

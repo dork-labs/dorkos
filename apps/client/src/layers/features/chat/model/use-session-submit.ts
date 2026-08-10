@@ -61,6 +61,8 @@ interface UseSessionSubmitParams {
   transformContent: ChatSessionOptions['transformContent'];
   /** Launch-time runtime selection (`?runtime=`) — see {@link ChatSessionOptions.launchRuntime}. */
   launchRuntime: ChatSessionOptions['launchRuntime'];
+  /** Background for this turn — see {@link ChatSessionOptions.takeSeedContext}. */
+  takeSeedContext: ChatSessionOptions['takeSeedContext'];
   // Store setters (sourced from useSessionStoreActions)
   setInput: SessionStoreActions['setInput'];
   setError: SessionStoreActions['setError'];
@@ -93,6 +95,7 @@ export function useSessionSubmit({
   onSessionIdChangeReplace,
   transformContent,
   launchRuntime,
+  takeSeedContext,
   setInput,
   setError,
   setSessionBusy,
@@ -120,6 +123,11 @@ export function useSessionSubmit({
   const transformContentRef = useRef(transformContent);
   useEffect(() => {
     transformContentRef.current = transformContent;
+  });
+
+  const takeSeedContextRef = useRef(takeSeedContext);
+  useEffect(() => {
+    takeSeedContextRef.current = takeSeedContext;
   });
 
   const onSessionIdChangeReplaceRef = useRef(onSessionIdChangeReplace);
@@ -356,6 +364,14 @@ export function useSessionSubmit({
         if (isNewSession && launchRuntimeRef.current) {
           postOptions.runtime = launchRuntimeRef.current;
         }
+
+        // Background a surface attached to this turn (Ask DorkBot, BC-48). Asked
+        // on every send and answered at most once per conversation — the latch is
+        // the provider's, so there is nothing here to get out of step. It is not
+        // folded into `context`: `seedContext` is prose written FOR the model,
+        // and the neutral client-signal bag is not (ADR-0273).
+        const seedContext = takeSeedContextRef.current?.();
+        if (seedContext) postOptions.seedContext = seedContext;
 
         const { sessionId: canonicalId } = await transport.postMessage(
           targetSessionId,

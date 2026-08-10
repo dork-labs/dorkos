@@ -291,7 +291,7 @@ Built on **Shadcn Sidebar** (`layers/shared/ui/sidebar.tsx`) with `collapsible="
 - **Session items**: `SidebarMenuButton` with relative time + truncated title
 - **Active session**: `isActive` prop on `SidebarMenuButton`
 - **"New chat" button**: In `SidebarHeader`, below `AgentHeader`
-- **Footer**: `SidebarFooter` contains `ProgressCard` (onboarding), `SidebarFooterBar` (branding, settings, theme toggle)
+- **Footer**: `SidebarFooter` contains `ProgressCard` (onboarding) and `SidebarFooterStrip` — one slim tinted row of destinations (Home, Team, Marketplace, Connections), a `⋯` menu holding the `sidebar.footer` slot, and ✦ Ask DorkBot. No logo, no version line, no `border-t`: separation is a step up the `--sidebar-accent` ramp (spec `sidebar-now-today-library` BC-47, R1)
 - **Empty state**: Centered "No conversations yet" message
 - **Dialogs**: All 6 dialogs (Settings, DirectoryPicker, Tasks, Relay, ServerRestartOverlay, ShapeSwitcher) registered in `DialogHost` at the app root level, outside `SidebarProvider` (`layers/widgets/app-layout/model/dialog-contributions.ts`). `OnboardingFlow` renders directly from `AppShell.tsx`, not via `DialogHost`.
 

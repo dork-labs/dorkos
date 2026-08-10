@@ -26,7 +26,7 @@ import { useSessionSearch } from './use-session-search';
  *   omitted — that opens a fresh conversation there. Safe in the router-less
  *   embed, where it moves the stores instead of the URL.
  */
-export function useStartNewSession(): (dir?: string) => void {
+export function useStartNewSession(): (dir?: string, options?: StartNewSessionOptions) => void {
   const platform = getPlatform();
   const navigate = useNavigate();
   const selectedCwd = useAppStore((s) => s.selectedCwd);
@@ -34,19 +34,33 @@ export function useStartNewSession(): (dir?: string) => void {
   const setStoreSessionId = useAppStore((s) => s.setSessionId);
 
   return useCallback(
-    (dir?: string) => {
+    (dir?: string, options?: StartNewSessionOptions) => {
       const target = dir ?? selectedCwd ?? undefined;
       if (platform.isEmbedded) {
         // No URL to write. The stores ARE the address here, and the id still has
-        // to be minted so the composer has a session to attach to.
+        // to be minted so the composer has a session to attach to. A `seed` is a
+        // URL contract, so the embed opens the conversation UNSEEDED rather than
+        // inventing a second delivery path for it (spec R5: never fake a seed).
         if (target) setSelectedCwd(target);
         setStoreSessionId(crypto.randomUUID());
         return;
       }
-      void navigate({ to: '/session', search: { dir: target, session: crypto.randomUUID() } });
+      void navigate({
+        to: '/session',
+        search: { dir: target, session: crypto.randomUUID(), seed: options?.seed },
+      });
     },
     [platform.isEmbedded, navigate, selectedCwd, setSelectedCwd, setStoreSessionId]
   );
+}
+
+/** Extras a caller can put on the fresh conversation's address. */
+export interface StartNewSessionOptions {
+  /**
+   * The `?seed=` launch param (BC-48). Background the first turn carries — never
+   * text, and never anything the caller has not enumerated in the route schema.
+   */
+  seed?: 'dorkbot-help';
 }
 
 /** Options for the session-id setter. */
@@ -111,8 +125,12 @@ export function useSessionId(): [
           // empty by construction, where they typed and SENT themselves. The
           // hook that consumes them spends them on every outcome now, so this is
           // the second of two independent guards rather than the only one.
+          // `seed` (Ask DorkBot) is dropped here for the identical reason: it is
+          // background aimed at ONE conversation, and this is the setter that
+          // changes which conversation that is.
           prompt: undefined,
           send: undefined,
+          seed: undefined,
         }),
         replace: options?.replace,
       });

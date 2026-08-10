@@ -30,6 +30,13 @@ vi.mock('@/layers/entities/config/model/use-update-config', () => ({
   useUpdateConfig: () => ({ mutate: vi.fn(), isPending: false }),
 }));
 
+// The Ask DorkBot seed hook reads the roster so it can say how big the fleet is
+// (BC-48). Stubbed to "no roster", which is what an unseeded session sees and
+// what every case below is: none of them carry `?seed=`.
+vi.mock('@/layers/entities/mesh/model/use-mesh-agent-paths', () => ({
+  useMeshAgentPaths: () => ({ data: undefined }),
+}));
+
 vi.mock('@/layers/shared/model/media/use-is-mobile', () => ({
   useIsMobile: () => mockUseIsMobile(),
 }));
@@ -315,6 +322,17 @@ describe('ChatPanel composer focus', () => {
 
   it('reaches for the guarded focus when a launch prompt seeds the composer', () => {
     render(<ChatPanel sessionId="test" launchPrompt="re-run this" />);
+    expect(chatInputFocusIfDesktop).toHaveBeenCalled();
+    expect(chatInputFocus).not.toHaveBeenCalled();
+  });
+
+  it('focuses the composer an Ask DorkBot seed opens, which it never types into', () => {
+    // BC-48 says "empty AND focused", and the two halves have different owners:
+    // the seed hook is what leaves the box empty, and this effect is the whole
+    // of what puts the caret in it. Nothing else focuses on a seeded launch —
+    // `useDorkBotSeed` has no `onSeeded` — so if this stopped firing, Ask
+    // DorkBot would land somebody in a conversation they have to click into.
+    render(<ChatPanel sessionId="test" launchSeed="dorkbot-help" />);
     expect(chatInputFocusIfDesktop).toHaveBeenCalled();
     expect(chatInputFocus).not.toHaveBeenCalled();
   });

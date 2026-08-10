@@ -28,7 +28,6 @@ export { useGitStatus, isGitStatusOk } from './model/use-git-status';
 export { useRuntimeChip, useResolvedSessionRuntime } from './model/use-runtime-chip';
 export type { RuntimeChipState, ResolvedSessionRuntime } from './model/use-runtime-chip';
 export { useSessionPopoverShortcut } from './model/use-session-popover-shortcut';
-export { isNewer, isFeatureUpdate } from './lib/version-compare';
 // Exported because "running" is a distinction every reader of a fold has to make
 // before it may say the word — the fold keeps terminal rows on purpose. The
 // composer needs it to decide whether the subagents item has anything to say.

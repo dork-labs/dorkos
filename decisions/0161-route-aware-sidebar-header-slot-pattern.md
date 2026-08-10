@@ -23,7 +23,7 @@ Five approaches were evaluated: Outlet Context, Content Map/Switch Hook, Context
 
 Use private switch hooks (`useSidebarSlot`, `useHeaderSlot`) in AppShell that read the current pathname via `useRouterState` and return `{ key, body/content }` tuples. The `key` drives `AnimatePresence` cross-fade transitions. The hooks are private to AppShell (not exported), keeping the pattern simple and contained.
 
-The sidebar footer (`SidebarFooterBar`) and static chrome (`SidebarRail`, `SidebarTrigger`) render outside the `AnimatePresence` wrapper and are route-agnostic.
+The sidebar footer (`SidebarFooterStrip`, which replaced `SidebarFooterBar` when the footer became one slim strip — spec `sidebar-now-today-library` BC-47) and static chrome (`SidebarRail`, `SidebarTrigger`) render outside the `AnimatePresence` wrapper and are route-agnostic.
 
 ## Consequences
 
