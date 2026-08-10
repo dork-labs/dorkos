@@ -3,7 +3,7 @@
  *
  * Every row here is the real `SidebarRow` fed by the real `SessionVerbLine`
  * reading the real session-list store — nothing is a mock-up of a row. That is
- * the point of the page: the four rungs are only trustworthy if the thing on
+ * the point of the page: the rungs are only trustworthy if the thing on
  * screen is the thing that ships, and a replica would agree with itself
  * forever while the product drifted underneath it.
  *
@@ -47,7 +47,16 @@ interface Rung {
  */
 const DEMO_NOW = 1_800_000_000_000;
 
-/** The four rungs, top to bottom: specific verb, working…, waiting on you, silence. */
+/**
+ * The ladder, top to bottom: a tool it can name, a tool it cannot, no reading at
+ * all, blocked, silence.
+ *
+ * Five rungs, not four. The task text for this work claimed an unrecognised
+ * tool name degrades to "Working…"; the shipped `formatActivityLabel` repeats
+ * it as `Using <name>…`, and that is the better answer — a name you do not
+ * recognise still tells an operator more than a generic verb, and repeating it
+ * is not the same as guessing at it. Corrected in DOR-1096.
+ */
 const RUNGS: readonly Rung[] = [
   {
     sessionId: 'dev-verb-specific',
@@ -58,11 +67,19 @@ const RUNGS: readonly Rung[] = [
     rung: '1 · a tool it can name, with what the tool is pointed at',
   },
   {
+    sessionId: 'dev-verb-unrecognised',
+    title: 'the plugin spike',
+    lifecycle: 'streaming',
+    activity: { toolName: 'some_future_tool' },
+    status: 'working',
+    rung: '2 · a tool it has no phrase for — repeated verbatim, because a name it does not recognise still tells you more than a generic verb',
+  },
+  {
     sessionId: 'dev-verb-generic',
     title: 'the codex port',
     lifecycle: 'streaming',
     status: 'working',
-    rung: '2 · a live turn whose tool it does not know — all it can honestly say',
+    rung: '3 · a live turn the server has said NOTHING about — the only place “Working…” is spent',
   },
   {
     sessionId: 'dev-verb-blocked',
@@ -70,21 +87,28 @@ const RUNGS: readonly Rung[] = [
     lifecycle: 'blocked',
     activity: { toolName: 'Bash', target: 'pnpm release' },
     status: 'needs-you',
-    rung: '3 · blocked. The only rung that is about YOU, so it outranks the tool',
+    rung: '4 · blocked. The only rung that is about YOU, so it outranks the tool',
   },
   {
     sessionId: 'dev-verb-idle',
     title: 'yesterday’s refactor',
     lifecycle: 'idle',
     status: 'idle',
-    rung: '4 · nothing. A verb that outlives its turn is a lie',
+    rung: '5 · nothing. A verb that outlives its turn is a lie',
   },
 ];
 
+/** One rung by id. Positional lookups here have already been wrong once. */
+function rungById(sessionId: string): Rung {
+  const found = RUNGS.find((rung) => rung.sessionId === sessionId);
+  if (!found) throw new Error(`no rung ${sessionId}`);
+  return found;
+}
+
 /** The three signals that draw a dot, for the both-themes pair. */
 const SIGNAL_ROWS: readonly Rung[] = [
-  RUNGS[0],
-  RUNGS[2],
+  rungById('dev-verb-specific'),
+  rungById('dev-verb-blocked'),
   {
     sessionId: 'dev-verb-error',
     title: 'the migration',
@@ -157,7 +181,7 @@ export function VerbLadderShowcases() {
       title="Verb ladder & signals"
       description="What a row is allowed to say a session is doing, and the corner dot that says it without words. One function feeds the sidebar, the session switcher and the chat status strip — degrade down the ladder, never guess."
     >
-      <ShowcaseLabel>The four rungs, driven by the real store</ShowcaseLabel>
+      <ShowcaseLabel>Every rung, driven by the real store</ShowcaseLabel>
       <ShowcaseDemo>
         <div className="space-y-4">
           {RUNGS.map((rung) => (
@@ -218,7 +242,7 @@ export function VerbLadderShowcases() {
                 finished two hours into a four-hour absence, and the threshold
                 is the one the user's own welcome-back setting carries. */}
             <LadderRow
-              rung={RUNGS[3]}
+              rung={rungById('dev-verb-idle')}
               welcomeBack={isWelcomeBackMoment({
                 finishedAt: DEMO_NOW - 120 * 60_000,
                 lastSeenAt: DEMO_NOW - 240 * 60_000,

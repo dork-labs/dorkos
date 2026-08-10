@@ -59,8 +59,17 @@ describe('activityVerb — the honesty ladder (BC-37)', () => {
 });
 
 /**
- * The four rungs as one table (BC-37 validation criteria), plus the property
- * that matters more than any single row of it: **no branch invents a verb.**
+ * The rungs as one table (BC-37 validation criteria), plus the property that
+ * matters more than any single row of it: **no branch invents a verb.**
+ *
+ * **The table encodes the SHIPPED contract, which the task text got wrong**
+ * (DOR-1096). An unrecognised tool name does not fall back to "Working…" — it
+ * is repeated verbatim as `Using <name>…`, and an MCP tool is named by its
+ * server. Only a turn with *no reading at all* says "Working…". That is both
+ * what `formatActivityLabel` does (verified by execution) and the better
+ * product: a name you do not recognise still tells an operator more than a
+ * generic verb, and repeating it is not the same as guessing at it. So the
+ * table has five rows rather than four, and the extra one is the correction.
  *
  * The individual cases above pin the phrasing. This block pins the SHAPE — that
  * every lifecycle the wire can carry, crossed with every reading it can carry,
@@ -75,25 +84,43 @@ describe('activityVerb — the honesty ladder (BC-37)', () => {
  */
 describe('activityVerb — the ladder as a whole', () => {
   const KNOWN: SessionActivity = { toolName: 'Edit', target: 'sidebar-row.tsx' };
+  const UNRECOGNISED: SessionActivity = { toolName: 'some_future_tool' };
 
   it.each([
-    { rung: 1, lifecycle: 'blocked' as const, activity: null, verb: 'waiting on you' },
-    { rung: 2, lifecycle: 'streaming' as const, activity: KNOWN, verb: 'Editing sidebar-row.tsx…' },
-    { rung: 3, lifecycle: 'streaming' as const, activity: null, verb: 'Working…' },
-    { rung: 4, lifecycle: 'idle' as const, activity: null, verb: null },
-  ])('rung $rung: $lifecycle → $verb', ({ lifecycle, activity, verb }) => {
+    { rung: '1 · known tool', lifecycle: 'streaming' as const, activity: KNOWN, verb: 'Editing sidebar-row.tsx…' }, // prettier-ignore
+    { rung: '2 · unrecognised tool', lifecycle: 'streaming' as const, activity: UNRECOGNISED, verb: 'Using some_future_tool…' }, // prettier-ignore
+    { rung: '3 · no reading at all', lifecycle: 'streaming' as const, activity: null, verb: 'Working…' }, // prettier-ignore
+    { rung: '4 · blocked', lifecycle: 'blocked' as const, activity: null, verb: 'waiting on you' },
+    { rung: '5 · idle', lifecycle: 'idle' as const, activity: null, verb: null },
+  ])('rung $rung → $verb', ({ lifecycle, activity, verb }) => {
     expect(activityVerb(lifecycle, activity)).toBe(verb);
+  });
+
+  it('names an unrecognised tool rather than falling back to "Working…"', () => {
+    // The correction in one assertion (DOR-1096). "Working…" is reserved for a
+    // turn the server has told us NOTHING about; a tool it has named but this
+    // client has no phrase for is still a fact worth repeating.
+    expect(activityVerb('streaming', UNRECOGNISED)).not.toBe('Working…');
+    expect(activityVerb('streaming', { toolName: 'mcp__slack__send' })).toBe('Using Slack…');
+    // …and the reserved case really is reserved for an empty reading.
+    expect(activityVerb('streaming', { toolName: '   ' })).toBe('Working…');
   });
 
   it('gives every lifecycle on the wire a rung, and invents nothing for any of them', () => {
     // The permitted answers, exhaustively. Anything else is a verb the ladder
     // made up.
-    const permitted = new Set([WAITING_ON_YOU_VERB, 'Working…', 'Editing sidebar-row.tsx…', null]);
+    const permitted = new Set([
+      WAITING_ON_YOU_VERB,
+      'Working…',
+      'Editing sidebar-row.tsx…',
+      'Using some_future_tool…',
+      null,
+    ]);
     const lifecycles = SessionLifecycleSchema.options as SessionLifecycle[];
     expect(lifecycles.length).toBeGreaterThanOrEqual(5);
 
     for (const lifecycle of lifecycles) {
-      for (const activity of [null, undefined, KNOWN]) {
+      for (const activity of [null, undefined, KNOWN, UNRECOGNISED]) {
         expect(permitted, `${lifecycle} + ${JSON.stringify(activity)}`).toContain(
           activityVerb(lifecycle, activity)
         );

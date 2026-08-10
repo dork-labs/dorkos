@@ -34,9 +34,13 @@ describe('VerbLadderShowcases', () => {
 
     // Rung 1: the tool and what it is pointed at.
     expect(screen.getAllByText('Editing RoomRow.tsx…').length).toBeGreaterThan(0);
-    // Rung 2: a live turn with no reading behind it.
+    // Rung 2: a tool with no phrase for it, repeated verbatim rather than
+    // flattened to "Working…" (the correction in DOR-1096).
+    expect(screen.getByText('Using some_future_tool…')).toBeInTheDocument();
+    // Rung 3: a live turn with no reading behind it at all — the one place
+    // "Working…" is spent.
     expect(screen.getByText('Working…')).toBeInTheDocument();
-    // Rung 3: the one rung that is about the reader.
+    // Rung 4: the one rung that is about the reader.
     expect(screen.getAllByText('waiting on you').length).toBeGreaterThan(0);
     // Rung 4 is silence, so it is proven by the absence of a second line on the
     // rows that carry it rather than by a string. (There are two: the rung
