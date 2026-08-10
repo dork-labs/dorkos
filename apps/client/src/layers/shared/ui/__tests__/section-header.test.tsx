@@ -155,4 +155,27 @@ describe('SectionHeader', () => {
     );
     expect(screen.getByText('3 unread')).toBeInTheDocument();
   });
+
+  // A folded section may not lose its `activity` tier (BC-31), and that tier is
+  // a bold label and nothing else — no badge, no dot (design-decisions §18). So
+  // the emphasis has to live on the label itself; there is nowhere else it is
+  // allowed to go. Asserted on the CLASS rather than on a screenshot because
+  // jsdom has no computed font weight to read.
+  it('wears the unread emphasis on its own label, so a folded section keeps its activity tier', () => {
+    const { rerender } = render(<SectionHeader label="Channels" collapsed onToggle={vi.fn()} />);
+    const quiet = screen.getByRole('button', { name: 'Channels' });
+    expect(quiet.className).toContain('text-sidebar-foreground/70');
+    expect(quiet.className).not.toContain('font-semibold');
+
+    rerender(<SectionHeader label="Channels" collapsed onToggle={vi.fn()} emphasized />);
+    const loud = screen.getByRole('button', { name: 'Channels' });
+    expect(loud.className).toContain('font-semibold');
+    expect(loud.className).not.toContain('text-sidebar-foreground/70');
+  });
+
+  it('emphasises a header that cannot collapse too — Pinned is a label, not a button', () => {
+    render(<SectionHeader label="Pinned" emphasized />);
+    const label = screen.getByText('Pinned').parentElement;
+    expect(label?.className).toContain('font-semibold');
+  });
 });

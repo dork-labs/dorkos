@@ -280,7 +280,7 @@ Tailwind's first-party `scrollbar-*` utilities (v4.3+) are the sanctioned surfac
 
 Built on **Shadcn Sidebar** (`layers/shared/ui/sidebar.tsx`) with `collapsible="offcanvas"` mode. On the web cockpit the sidebar body is the `DashboardSidebar` agent roster (in `features/dashboard-sidebar/`) on every route — per-session context now lives in the right-panel inspector, not a sidebar drill-in. A registered `sidebar.body` contribution can take over the body for its route (the marketplace facet panel does on `/marketplace`). The Obsidian embed's chrome is `EmbedSidebar` (`features/session-list/`), a single-view roster with no tab strip — the four-tab `SessionSidebar` it replaced was retired (DOR-401); see [Sidebar Tabs](#sidebar-tabs) below.
 
-- **Width**: the visible panel is **272px** — the number to build to, and the number a browser test measures on `sidebar-inner`. It is still 304px until the sidebar redesign's primitives land. **Do not set `--sidebar-width` to 272px.** That variable on `SidebarProvider` (`AppShell.tsx`) sizes the _slot_, and the `inset` variant adds `p-2` — 8px of padding a side — before the tinted surface starts. So the slot is `calc(272px + 1rem)` and the panel inside it is 272; today's `20rem` slot is what makes the panel 304. Writing `17rem` there would give a 256px panel, not a 272px one. Never set a one-off width on a component to work around any of this.
+- **Width**: the visible panel is **272px** — the number to build to, and the number a browser test measures on `sidebar-inner`. **Do not set `--sidebar-width` to 272px.** That variable on `SidebarProvider` (`AppShell.tsx`) sizes the _slot_, and the `inset` variant adds `p-2` — 8px of padding a side — before the tinted surface starts. So the slot is `calc(272px + 1rem)`, which is what `AppShell` writes, and the panel inside it is 272. Writing `17rem` there would give a 256px panel, not a 272px one. Never set a one-off width on a component to work around any of this.
 - **CSS variables**: `--sidebar-*` in `index.css`. The panel sits distinctly off the main background — `--sidebar` is 91% against a 98% background in light mode, and 10% against 4% in dark.
 - **Mobile**: Renders as Radix Sheet (drawer) with backdrop and swipe-to-close
 - **Desktop**: Push layout via `SidebarProvider` + `SidebarInset`
@@ -312,6 +312,30 @@ Every level of separation comes off **one ramp**, `--sidebar-accent`, and no new
 Status colour stays on the semantic tokens, which are already calibrated per theme and are already what `status-dot.ts` uses: `bg-status-success` (working), `bg-status-warning` (needs you, directed badges), `bg-status-error` (error or wedged), `bg-status-info` (unseen). No raw hex, and no new `--sidebar-zone-*` variable — one ramp is the point.
 
 Label-on-zone-tint must still meet 4.5:1 in both themes. Check it with an axe-core run over the playground showcase rather than by eye.
+
+#### Where that check lives, and how to not fool yourself with it
+
+The showcase is **`/dev/sidebar-model`** (`apps/client/src/dev/showcases/SidebarModelShowcases.tsx`), which draws `buildSidebarModel` over its four journey fixtures. The axe run over it is `apps/e2e/tests/dashboard-sidebar/sidebar-model-showcase.spec.ts`, in both themes, and it attaches a light/dark screenshot pair to the run.
+
+**An axe run is not a gate until you have proved it can fail.** axe-core's `color-contrast` builds a spatial grid bounded by the viewport, and text whose rect falls outside that grid is not evaluated at all — not a violation, not a pass, not even an `incomplete`. It is simply absent, and the run reports success. At Playwright's default 720px-tall viewport this page evaluated **1 node out of 343**, and a deliberately-injected 1.68:1 label was **not reported**. Every axe check in this repo inherits that trap.
+
+**Guard it with something that moves when the page moves.** The first attempt here was `expect(evaluated).toBeGreaterThan(200)`, and a floor is not coverage: at 1600×2400 the page evaluated 260 nodes and cleared the bar while missing two injected 1.91:1 labels, and at 1600×4000 it evaluated 322 and missed the same two. The number went up as the page got taller; it just never went up as fast as the page did. So assert page-relatively instead, and prefer both:
+
+- **The content fits the viewport** — compare the axe context's height against `window.innerHeight` before running axe. This is what actually guarantees the grid covers everything, and it fails with the real reason ("the page outgrew the viewport") rather than a threshold nobody can interpret.
+- **Every element of some class you own was evaluated** — resolve axe's reported targets back to elements and assert a known set is among them. The sidebar-model spec uses its reason chips: one per zone, section and row, spread top to bottom, so the denominator grows on its own when the page does.
+
+A threshold is not coverage unless it moves with the thing it measures.
+
+Two smaller things from the same branch:
+
+- **A one-character label is `incomplete`, not a pass.** axe refuses to judge text shorter than its "is this really text" heuristic, which covers every numbered unread badge. Those land in the run's `incomplete` bucket; the spec pins that bucket to exactly the badges, so a new "cannot determine" elsewhere is caught rather than inherited.
+- **The muted quarantine is meant to go red.** The spec quarantines the one contrast failure on the page — muted rows, below — with an equality assertion rather than a filter, so it fails both when a new failure appears and when the muted one is fixed. A green quarantine after the fix lands would be the quarantine outliving its reason.
+
+#### Muted means fewer signals, not less legibility
+
+A muted row keeps **full label contrast** and gives up its attention signals instead: no bold, no badge, no dot. That is already the vocabulary the two-tier unread system speaks, and it is what mute has always meant — "stop pulling me back into this", never "make this harder to read".
+
+Dimming is the wrong mechanism and it is not a tuning problem. `SidebarRow` dims `muted` rows with `opacity-60` over a label that is only 5.9:1 to begin with, which measures **2.6:1 in light and 3.6:1 in dark**; no opacity value clears 4.5:1 from that starting point. Reducing contrast also spends the accessibility budget of exactly the readers least able to afford it. Replacing the dim in `shared/ui/sidebar-row.tsx` is **DOR-1098**.
 
 ### Zones and Sections
 

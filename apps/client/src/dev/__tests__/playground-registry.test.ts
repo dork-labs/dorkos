@@ -24,6 +24,7 @@ import {
   GEN_UI_SECTIONS,
   ROOMS_SECTIONS,
   TOUR_SPOTLIGHT_SECTIONS,
+  SIDEBAR_MODEL_SECTIONS,
 } from '../playground-registry';
 import { slugify } from '../lib/slugify';
 import { PAGE_CONFIGS, PAGE_ORDER, PAGE_LABELS, IDENTITY_CROSS_LISTED } from '../playground-config';
@@ -70,6 +71,7 @@ describe('playground-registry', () => {
       ...GEN_UI_SECTIONS,
       ...ROOMS_SECTIONS,
       ...TOUR_SPOTLIGHT_SECTIONS,
+      ...SIDEBAR_MODEL_SECTIONS,
     ];
     expect(PLAYGROUND_REGISTRY).toEqual(combined);
   });

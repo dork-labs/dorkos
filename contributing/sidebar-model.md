@@ -16,17 +16,19 @@ The sections below follow `writing-developer-guides`, with one deliberate insert
 
 ## Key Files
 
-| Concept                              | Location                                                                                                  |
-| ------------------------------------ | --------------------------------------------------------------------------------------------------------- |
-| The function and every model type    | `apps/client/src/layers/features/dashboard-sidebar/model/build-sidebar-model.ts`                          |
-| The snapshot it reads                | `apps/client/src/layers/features/dashboard-sidebar/model/sidebar-state.ts`                                |
-| One rule per file                    | `apps/client/src/layers/features/dashboard-sidebar/model/rules/`                                          |
-| Shared spellings (keys, basenames)   | `apps/client/src/layers/features/dashboard-sidebar/model/rules/targets.ts`                                |
-| The four journey fixtures            | `apps/client/src/layers/features/dashboard-sidebar/model/fixtures/`                                       |
-| Contracts that hold for all fixtures | `apps/client/src/layers/features/dashboard-sidebar/model/__tests__/build-sidebar-model.contracts.test.ts` |
-| "When did I last open this?"         | `apps/client/src/layers/entities/interactions/`                                                           |
-| The behavioural contracts (BC-\*)    | `specs/sidebar-now-today-library/02-specification.md` §B                                                  |
-| The locked design decisions          | `specs/sidebar-now-today-library/design-decisions.md`                                                     |
+| Concept                                    | Location                                                                                                  |
+| ------------------------------------------ | --------------------------------------------------------------------------------------------------------- |
+| The function and every model type          | `apps/client/src/layers/features/dashboard-sidebar/model/build-sidebar-model.ts`                          |
+| The snapshot it reads                      | `apps/client/src/layers/features/dashboard-sidebar/model/sidebar-state.ts`                                |
+| One rule per file                          | `apps/client/src/layers/features/dashboard-sidebar/model/rules/`                                          |
+| Shared spellings (keys, basenames)         | `apps/client/src/layers/features/dashboard-sidebar/model/rules/targets.ts`                                |
+| The four journey fixtures                  | `apps/client/src/layers/features/dashboard-sidebar/model/fixtures/`                                       |
+| Contracts that hold for all fixtures       | `apps/client/src/layers/features/dashboard-sidebar/model/__tests__/build-sidebar-model.contracts.test.ts` |
+| The fixtures, drawn (`/dev/sidebar-model`) | `apps/client/src/dev/showcases/SidebarModelShowcases.tsx`                                                 |
+| The same fixtures, in a browser            | `apps/e2e/tests/dashboard-sidebar/sidebar-model-showcase.spec.ts`                                         |
+| "When did I last open this?"               | `apps/client/src/layers/entities/interactions/`                                                           |
+| The behavioural contracts (BC-\*)          | `specs/sidebar-now-today-library/02-specification.md` §B                                                  |
+| The locked design decisions                | `specs/sidebar-now-today-library/design-decisions.md`                                                     |
 
 ## The standing rule: live verbs never enter the model
 
@@ -262,7 +264,7 @@ reason: 'today:interaction-recency',
 
 ## Adding a Fixture
 
-The four journey fixtures (`first-run`, `quiet`, `busy`, `power`) are a deliverable, not test scaffolding. Today they drive the model's table tests, and nothing else imports them. The intent is that the same four also drive the Dev Playground showcases and the browser tests, so that what a reviewer looks at and what CI asserts are the same states — build any new surface against these rather than seeding a fresh state beside them.
+The four journey fixtures (`first-run`, `quiet`, `busy`, `power`) are a deliverable, not test scaffolding. The same four drive three things: the model's table tests, the Dev Playground's `SidebarModelShowcases`, and the browser spec `apps/e2e/tests/dashboard-sidebar/sidebar-model-showcase.spec.ts`. So what a reviewer looks at and what CI asserts are the same states, by construction — build any new surface against these rather than seeding a fresh state beside them.
 
 **Most of the time you do not want a new fixture — you want a variant.** Build it locally with a spread (`{ ...busyFixture, attention: [] }`). The shared files are read by several tasks at once, and editing one turns your tweak into somebody else's failing expectation.
 
@@ -295,7 +297,7 @@ Add a fifth journey only when it is a genuinely different stage of the product, 
    pnpm vitest run apps/client/src/layers/features/dashboard-sidebar/model/__tests__/build-sidebar-model.contracts.test.ts
    ```
 
-4. **Once a sidebar-model showcase exists in the Dev Playground, add it there too**, so a journey can be looked at and not only asserted on. There is no such showcase yet; the `maintaining-dev-playground` skill covers where one lives and how to register it.
+4. **It appears in the Dev Playground on its own**, so a journey can be looked at and not only asserted on. `SidebarModelShowcases` (`apps/client/src/dev/showcases/SidebarModelShowcases.tsx`, at `/dev/sidebar-model`) iterates `SIDEBAR_FIXTURES`, so a fifth entry there draws a fifth panel with no edit to the page. Check it in both themes; the browser spec's expectations are per-fixture tables (`EXPECTED_ZONES`, `EXPECTED_NOW`) that a new journey needs a row in.
 
 Note that `FIXTURE_NOW` is a **local** instant (09:15 on 9 August 2026), not a fixed UTC epoch. Every time-dependent rule is stated in local terms — the 4am boundary, the calendar day the digest is once per — so a fixture pinned to UTC would archive different rows in Auckland than in California, and the same test would pass in one office and fail in the other.
 
