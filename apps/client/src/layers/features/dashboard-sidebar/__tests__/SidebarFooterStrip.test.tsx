@@ -86,6 +86,18 @@ vi.mock('@/layers/shared/model/extension-registry', () => ({
       priority: 4,
       showInDevOnly: true,
     },
+    // An EXTENSION's dev-only button. The built-in `devtools` cannot stand in
+    // for it: that one has its own `import.meta.env.DEV` gate, so a renderer
+    // that ignored the slot's `showInDevOnly` flag entirely would still hide it
+    // — and would still show this one to every production user.
+    {
+      id: 'ext-dev-only',
+      icon: MockIcon,
+      label: 'Extension Dev Thing',
+      onClick: () => {},
+      priority: 5,
+      showInDevOnly: true,
+    },
   ],
 }));
 
@@ -106,6 +118,17 @@ vi.mock('@/layers/shared/model/use-dialog-deep-link', () => ({
     setTab: vi.fn(),
     setSection: vi.fn(),
   }),
+}));
+
+// The account rows read the roster, the auth session and two deep links; this
+// suite is about the strip's own layout, so they stand in. Their behaviour is
+// pinned in `features/profile`'s own suite.
+vi.mock('@/layers/features/profile', () => ({
+  AccountMenuContainer: () => <div data-testid="account-menu-rows" />,
+}));
+// Same treatment: the help rows are the report-issue slice's subject.
+vi.mock('@/layers/features/report-issue', () => ({
+  HelpMenuItems: () => <div data-testid="help-menu-items" />,
 }));
 
 import { TooltipProvider } from '@/layers/shared/ui';
@@ -149,6 +172,13 @@ describe('SidebarFooterStrip', () => {
 
   afterEach(() => {
     cleanup();
+    vi.unstubAllEnvs();
+    // Radix locks the page while a menu is open and restores on close, not on
+    // unmount. A suite that leaves one open hands the NEXT test a body with
+    // `pointer-events: none`, and user-event refuses to click through that — so
+    // the following test fails for a reason that has nothing to do with it.
+    document.body.style.pointerEvents = '';
+    document.body.removeAttribute('data-scroll-locked');
   });
 
   // ── BC-47: one slim tinted strip ─────────────────────────────────────────
@@ -165,6 +195,36 @@ describe('SidebarFooterStrip', () => {
       'More',
       'Ask DorkBot',
     ]);
+  });
+
+  it('marks its destinations structurally, so a fifth one cannot hide from a count', () => {
+    renderStrip();
+
+    // The browser spec counts `[data-sidebar-destination]`. It was a name-match
+    // regex first, which could never have seen a fifth destination — the
+    // newcomer was filtered out before the count ran.
+    const marked = row().querySelectorAll('[data-sidebar-destination]');
+    expect([...marked].map((el) => el.getAttribute('aria-label'))).toEqual([
+      'Home',
+      'Team',
+      'Marketplace',
+      'Connections',
+    ]);
+    // …and nothing else in the row wears the mark: `More` and Ask DorkBot are
+    // excluded by structure, not by name.
+    expect(marked).toHaveLength(within(row()).getAllByRole('button').length - 2);
+  });
+
+  it('gives every control in the row a keyboard focus ring', () => {
+    renderStrip();
+
+    // These are bare `<button>`s. The shadcn `SidebarMenuButton` they replaced
+    // carried the ring; the repo's ring is a UTILITY, not a global
+    // `:focus-visible` rule, so it has to be asked for by name or a keyboard
+    // sees nothing at all.
+    for (const button of within(row()).getAllByRole('button')) {
+      expect(button.className).toContain('focus-ring');
+    }
   });
 
   it('keeps the Ask DorkBot label on one line', () => {
@@ -185,6 +245,43 @@ describe('SidebarFooterStrip', () => {
     await userEvent.click(screen.getByLabelText('More'));
     await userEvent.click(await screen.findByText('Edit Agent'));
     expect(mockAgentDialog).toHaveBeenCalled();
+  });
+
+  it('honours showInDevOnly for an extension button, not only for the built-in', async () => {
+    vi.stubEnv('DEV', false);
+    renderStrip();
+
+    await userEvent.click(screen.getByLabelText('More'));
+    // Observable: the menu IS open and its ordinary rows are on screen.
+    expect(await screen.findByText('Edit Agent')).toBeInTheDocument();
+    // The flag belongs to the SLOT, and the footer bar this replaced applied it
+    // to every contribution. Gating only the built-in `devtools` on
+    // `import.meta.env.DEV` would put an extension's dev-only button in front of
+    // every production user.
+    expect(screen.queryByText('Extension Dev Thing')).toBeNull();
+    expect(screen.queryByText('React Query')).toBeNull();
+  });
+
+  it('shows the dev-only rows in a development build', async () => {
+    renderStrip();
+
+    await userEvent.click(screen.getByLabelText('More'));
+    expect(await screen.findByText('Extension Dev Thing')).toBeInTheDocument();
+    expect(screen.getByText('React Query')).toBeInTheDocument();
+  });
+
+  it('keeps help and feedback reachable after its ? trigger left the footer', async () => {
+    renderStrip();
+
+    // The help menu had its own trigger in the old icon cluster. One row has
+    // room for one fold, so its rows moved into `More` — deleting the slice
+    // instead would have taken the docs link, the GitHub path and the
+    // feedback-requests entry with it.
+    await userEvent.click(screen.getByLabelText('More'));
+    expect(await screen.findByTestId('help-menu-items')).toBeInTheDocument();
+    // Your account folded in beside it, for the same reason and by the same
+    // measurement: a seventh control took the row's scrollWidth past its box.
+    expect(screen.getByTestId('account-menu-rows')).toBeInTheDocument();
   });
 
   it('opens settings through the URL deep link', async () => {

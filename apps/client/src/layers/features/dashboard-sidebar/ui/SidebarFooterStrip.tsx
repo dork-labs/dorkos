@@ -19,7 +19,7 @@
  *
  * @module features/dashboard-sidebar/ui/SidebarFooterStrip
  */
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useRouterState } from '@tanstack/react-router';
 import {
   Cable,
@@ -36,8 +36,7 @@ import { useConfig, useUpdateConfig } from '@/layers/entities/config';
 import { useMeshAgentPaths } from '@/layers/entities/mesh';
 import { useStartNewSession } from '@/layers/entities/session';
 import { isHomeSurfacePath, TOUR_ANCHORS } from '@/layers/shared/config';
-import { cn, openLink, setAskDorkBotOrigin, TIMING } from '@/layers/shared/lib';
-import { isNewer } from '@/layers/features/status';
+import { cn, isNewer, openLink, setAskDorkBotOrigin, TIMING } from '@/layers/shared/lib';
 import { useDesktopUpdater } from '@/layers/features/session-list';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/layers/shared/ui';
 import { SidebarFooterMenu } from './SidebarFooterMenu';
@@ -123,9 +122,12 @@ export function SidebarFooterStrip() {
           />
         ))}
         <div className="ml-auto flex shrink-0 items-center gap-0.5">
-          {/* Everything the strip has no room for, folded into one glyph. A real
-              272px panel is what decided this: as peers, these pushed the Ask
-              DorkBot label onto a second line. */}
+          {/* Everything the strip has no room for, folded into one glyph — the
+              account rows, the `sidebar.footer` slot, help and feedback. A real
+              272px panel is what decided this, twice: as peers the footer
+              contributions pushed the Ask DorkBot label onto a second line, and
+              adding the operator's face alone took `scrollWidth` to 281 in a 256
+              box. */}
           <SidebarFooterMenu />
           <AskDorkBotButton pathname={pathname} />
         </div>
@@ -179,9 +181,20 @@ function DestinationButton({
           onClick={onClick}
           aria-label={destination.label}
           aria-current={isActive ? 'page' : undefined}
+          // Structural, and load-bearing for the browser spec that guards
+          // "four places — nothing else". A locator that matched the four
+          // NAMES could never see a fifth, because the fifth would be filtered
+          // out before the count ran; this attribute is stamped by the loop, so
+          // anything added to DESTINATIONS is counted whatever it is called.
+          data-sidebar-destination=""
           data-testid={destination.testId}
           className={cn(
-            'rounded-md p-1 transition-colors duration-150',
+            // `focus-ring` explicitly: these are bare buttons, and the shadcn
+            // `SidebarMenuButton` they replaced carried the ring for them. The
+            // repo's ring is a utility, not a global `:focus-visible` rule, so
+            // dropping it would have left the whole strip invisible to a
+            // keyboard.
+            'focus-ring rounded-md p-1 transition-colors duration-150',
             isActive
               ? 'text-sidebar-accent-foreground bg-sidebar/70'
               : 'text-sidebar-foreground/60 hover:text-sidebar-foreground hover:bg-sidebar/50'
@@ -229,7 +242,7 @@ function AskDorkBotButton({ pathname }: { pathname: string }) {
       // one that says it is not ready yet.
       disabled={dorkbotPath === undefined}
       aria-label="Ask DorkBot"
-      className="text-sidebar-foreground/70 hover:text-sidebar-foreground hover:bg-sidebar/50 inline-flex items-center gap-1.5 rounded-md px-1.5 py-1 text-[11.5px] font-medium whitespace-nowrap transition-colors duration-150 disabled:pointer-events-none disabled:opacity-50"
+      className="text-sidebar-foreground/70 hover:text-sidebar-foreground hover:bg-sidebar/50 focus-ring inline-flex items-center gap-1.5 rounded-md px-1.5 py-1 text-[11.5px] font-medium whitespace-nowrap transition-colors duration-150 disabled:pointer-events-none disabled:opacity-50"
     >
       <Sparkles className="size-3" />
       Ask DorkBot
@@ -258,10 +271,22 @@ function UpdatePill() {
     [config?.dismissedUpgradeVersions]
   );
 
+  // The "Copied" beat clears itself, and clears its own timer on unmount: the
+  // pill disappears the moment the dismissal lands, which is well inside the
+  // feedback window, and a `setCopied` firing into an unmounted component is a
+  // warning nobody can act on.
+  const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (copyTimer.current !== null) clearTimeout(copyTimer.current);
+    },
+    []
+  );
   const handleCopy = useCallback(() => {
     void navigator.clipboard.writeText(UPDATE_COMMAND);
     setCopied(true);
-    setTimeout(() => setCopied(false), TIMING.COPY_FEEDBACK_MS);
+    if (copyTimer.current !== null) clearTimeout(copyTimer.current);
+    copyTimer.current = setTimeout(() => setCopied(false), TIMING.COPY_FEEDBACK_MS);
   }, []);
 
   const handleDismiss = useCallback(
@@ -284,7 +309,7 @@ function UpdatePill() {
           type="button"
           onClick={restart}
           aria-label="Restart to install the update"
-          className="inline-flex items-center gap-1 rounded-full bg-amber-500/15 px-2 py-0.5 text-[11px] font-medium text-amber-700 transition-colors duration-150 hover:bg-amber-500/25 dark:text-amber-300"
+          className="focus-ring inline-flex items-center gap-1 rounded-full bg-amber-500/15 px-2 py-0.5 text-[11px] font-medium text-amber-700 transition-colors duration-150 hover:bg-amber-500/25 dark:text-amber-300"
         >
           <RotateCw className="size-3" />
           Update ready — Restart
@@ -306,7 +331,7 @@ function UpdatePill() {
         type="button"
         onClick={handleCopy}
         aria-label={`Copy the command that updates DorkOS to v${latestVersion}`}
-        className="inline-flex items-center gap-1 rounded-full bg-amber-500/15 px-2 py-0.5 text-[11px] font-medium text-amber-700 transition-colors duration-150 hover:bg-amber-500/25 dark:text-amber-300"
+        className="focus-ring inline-flex items-center gap-1 rounded-full bg-amber-500/15 px-2 py-0.5 text-[11px] font-medium text-amber-700 transition-colors duration-150 hover:bg-amber-500/25 dark:text-amber-300"
       >
         {copied ? <Check className="size-3" /> : <Copy className="size-3" />}
         {copied ? 'Command copied' : `Update ready — v${latestVersion}`}
@@ -315,7 +340,7 @@ function UpdatePill() {
         type="button"
         onClick={() => handleDismiss(latestVersion)}
         aria-label="Dismiss update notification"
-        className="text-sidebar-foreground/50 hover:text-sidebar-foreground rounded-md p-0.5 transition-colors duration-150"
+        className="text-sidebar-foreground/50 hover:text-sidebar-foreground focus-ring rounded-md p-0.5 transition-colors duration-150"
       >
         <X className="size-3" />
       </button>

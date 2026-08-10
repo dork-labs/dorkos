@@ -27,11 +27,11 @@
  */
 import { useCallback, useEffect, useRef } from 'react';
 import { useShallow } from 'zustand/shallow';
-import { takeAskDorkBotOrigin } from '@/layers/shared/lib';
+import { isNewer, takeAskDorkBotOrigin } from '@/layers/shared/lib';
 import { useMeshAgentPaths } from '@/layers/entities/mesh';
 import { useConfig } from '@/layers/entities/config';
 import { useSessionListStore } from '@/layers/entities/session';
-import { isNewer } from '@/layers/features/status';
+
 import { buildDorkBotSeed, type DorkBotSeedFacts } from './build-dorkbot-seed';
 
 /** The one value `?seed=` accepts — the sidebar's ✦ Ask DorkBot press. */

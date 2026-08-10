@@ -325,4 +325,15 @@ describe('ChatPanel composer focus', () => {
     expect(chatInputFocusIfDesktop).toHaveBeenCalled();
     expect(chatInputFocus).not.toHaveBeenCalled();
   });
+
+  it('focuses the composer an Ask DorkBot seed opens, which it never types into', () => {
+    // BC-48 says "empty AND focused", and the two halves have different owners:
+    // the seed hook is what leaves the box empty, and this effect is the whole
+    // of what puts the caret in it. Nothing else focuses on a seeded launch —
+    // `useDorkBotSeed` has no `onSeeded` — so if this stopped firing, Ask
+    // DorkBot would land somebody in a conversation they have to click into.
+    render(<ChatPanel sessionId="test" launchSeed="dorkbot-help" />);
+    expect(chatInputFocusIfDesktop).toHaveBeenCalled();
+    expect(chatInputFocus).not.toHaveBeenCalled();
+  });
 });

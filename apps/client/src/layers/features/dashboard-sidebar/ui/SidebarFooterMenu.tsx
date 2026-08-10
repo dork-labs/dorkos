@@ -3,11 +3,13 @@
  * itself has no room for.
  *
  * The strip is four destinations and a way to ask DorkBot for help (BC-47), and
- * measuring it in a real 272px panel is what settled the rest: laid out as
- * peers, the `sidebar.footer` contributions pushed "Ask DorkBot" onto a second
- * line. So they fold into one `⋯` here instead. Nothing is lost — Settings, the
- * theme cycle, the developer tools and any extension-contributed button are all
- * still one press away — and the row stays one row at every width.
+ * measuring it in a real 272px panel is what settled the rest — twice. Laid out
+ * as peers, the `sidebar.footer` contributions pushed "Ask DorkBot" onto a
+ * second line; the operator's face alone took the row's `scrollWidth` to 281 in
+ * a 256 box. So all of it folds into one `⋯` here instead. Nothing is lost —
+ * your account, Settings, the theme cycle, the developer tools, help and
+ * feedback, and any extension-contributed button are one press away — and the
+ * row stays one row at every width.
  *
  * `sidebar.footer` is a published extension seam: an extension registers a
  * button and it appears. That is why the slot is rendered at all rather than
@@ -18,7 +20,7 @@
  *
  * @module features/dashboard-sidebar/ui/SidebarFooterMenu
  */
-import { useCallback } from 'react';
+import { useCallback, useMemo } from 'react';
 import { Check, Copy, ExternalLink, LayoutGrid, MoreHorizontal } from 'lucide-react';
 import {
   DropdownMenu,
@@ -37,6 +39,8 @@ import {
 } from '@/layers/shared/model';
 import { cn, formatShortcutKey, openLink, SHORTCUTS } from '@/layers/shared/lib';
 import { useConfig } from '@/layers/entities/config';
+import { AccountMenuContainer } from '@/layers/features/profile';
+import { HelpMenuItems } from '@/layers/features/report-issue';
 
 /** The cycle the theme item walks. */
 const THEME_ORDER: Theme[] = ['light', 'dark', 'system'];
@@ -49,8 +53,8 @@ const THEME_LABELS: Record<Theme, string> = {
 };
 
 /**
- * Everything the strip folds away: the `sidebar.footer` slot and, in
- * development, the query inspectors.
+ * Everything the strip folds away: your account, the `sidebar.footer` slot, the
+ * query inspectors in development, and help and feedback.
  */
 export function SidebarFooterMenu() {
   const contributions = useSlotContributions('sidebar.footer');
@@ -76,11 +80,21 @@ export function SidebarFooterMenu() {
     void navigator.clipboard.writeText(info);
   }, [version]);
 
+  // `showInDevOnly` is the slot's own flag and it is honoured for EVERY
+  // contribution, not only the built-in `devtools`. The footer bar this replaced
+  // applied it in one place (`filteredButtons`); losing it here would have put
+  // an extension's dev-only button in front of every production user, which the
+  // extension author explicitly asked not to happen.
+  const visible = useMemo(
+    () => contributions.filter((b) => !b.showInDevOnly || import.meta.env.DEV),
+    [contributions]
+  );
+
   // `devtools` is the one contribution this renders as a GROUP rather than a
   // row: its behaviour was always a menu of its own, and a menu inside a menu
   // would be a submenu nobody asked for.
-  const rows = contributions.filter((b) => b.id !== 'devtools');
-  const showDevTools = import.meta.env.DEV && contributions.some((b) => b.id === 'devtools');
+  const rows = visible.filter((b) => b.id !== 'devtools');
+  const showDevTools = visible.some((b) => b.id === 'devtools');
 
   return (
     <DropdownMenu>
@@ -88,12 +102,22 @@ export function SidebarFooterMenu() {
         <button
           type="button"
           aria-label="More"
-          className="text-sidebar-foreground/60 hover:text-sidebar-foreground hover:bg-sidebar/50 rounded-md p-1 transition-colors duration-150"
+          className="text-sidebar-foreground/60 hover:text-sidebar-foreground hover:bg-sidebar/50 focus-ring rounded-md p-1 transition-colors duration-150"
         >
           <MoreHorizontal className="size-(--size-icon-sm)" />
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent side="top" align="end" className="w-52">
+      <DropdownMenuContent side="top" align="end" className="w-56">
+        {/* Who you are, first — the same rows the operator's face opens from its
+            own disc (spec `identity-consistency` §W3.1). It draws nothing until
+            the roster names somebody, so the embed gets no dead block. BC-43
+            gives the face a home of its own in the header block; this fold is
+            what keeps its items reachable until then. */}
+        {/* Settings comes from the `sidebar.footer` slot a few rows down, and
+            the browser showed the two side by side: one menu, two rows, one
+            dialog. The account block yields it. */}
+        <AccountMenuContainer variant="rows" showSettings={false} />
+        <DropdownMenuSeparator />
         {rows.map((button) => {
           const Icon = button.icon;
           if (button.id === 'theme') {
@@ -158,6 +182,11 @@ export function SidebarFooterMenu() {
             </DropdownMenuItem>
           </>
         )}
+
+        <DropdownMenuSeparator />
+        {/* Help and feedback, which used to be its own `?` trigger beside the
+            footer's icons. One row has room for one fold, so it folds here. */}
+        <HelpMenuItems />
       </DropdownMenuContent>
     </DropdownMenu>
   );

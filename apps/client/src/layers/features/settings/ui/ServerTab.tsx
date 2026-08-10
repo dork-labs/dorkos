@@ -1,9 +1,8 @@
 import { useQuery } from '@tanstack/react-query';
 import { ExternalLink } from 'lucide-react';
-import { cn, openExternalLink, useCopyFeedback } from '@/layers/shared/lib';
+import { cn, isNewer, openExternalLink, useCopyFeedback } from '@/layers/shared/lib';
 import { Button, CopyButton } from '@/layers/shared/ui';
 import { useTransport } from '@/layers/shared/model';
-import { isNewer } from '@/layers/features/status';
 
 /** Settings panel tab displaying server status, environment, and endpoints. */
 export function ServerTab() {

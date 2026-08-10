@@ -13,9 +13,28 @@ import { useProfileDeepLink, useSettingsDeepLink } from '@/layers/shared/model';
 import { useTeamRoster } from '@/layers/entities/team';
 import { useCurrentUser, useSignOut } from '@/layers/features/auth';
 import { AccountMenu } from './AccountMenu';
+import { AccountMenuRows } from './AccountMenuRows';
+
+/** Props for {@link AccountMenuContainer}. */
+export interface AccountMenuContainerProps {
+  /**
+   * How to draw it.
+   *
+   * `'trigger'` (the default) is the disc with its own menu behind it.
+   * `'rows'` is the same items with no disc, for a menu that already has a
+   * trigger — the sidebar footer's `⋯`, which folds these in because a seventh
+   * control in a 272px strip measurably overflows it (BC-47).
+   */
+  variant?: 'trigger' | 'rows';
+  /**
+   * Whether the rows include Settings. Default true; `'trigger'` ignores it.
+   * See {@link AccountMenuRowsProps.showSettings}.
+   */
+  showSettings?: boolean;
+}
 
 /**
- * Draw the operator's own face in the sidebar footer, with their menu behind it.
+ * Draw the operator's own identity, with their menu behind it.
  *
  * **Nothing is drawn until the roster names somebody.** A disc with no identity
  * behind it is a control that cannot do its job: the menu's whole content is
@@ -27,8 +46,13 @@ import { AccountMenu } from './AccountMenu';
  * extra: it shares one cache entry with the Team page and the profile drawer
  * (`TEAM_ROSTER_KEY`), so the sidebar asking for it once is the request those
  * surfaces would otherwise each make.
+ *
+ * @param props - How to draw it. See {@link AccountMenuContainerProps}.
  */
-export function AccountMenuContainer() {
+export function AccountMenuContainer({
+  variant = 'trigger',
+  showSettings = true,
+}: AccountMenuContainerProps = {}) {
   const roster = useTeamRoster();
   const { open: openProfile } = useProfileDeepLink();
   const { open: openSettings } = useSettingsDeepLink();
@@ -62,15 +86,19 @@ export function AccountMenuContainer() {
 
   if (!self) return null;
 
-  return (
-    <AccountMenu
-      member={self}
-      // Login is optional and off by default (ADR-0320). No account, no session
-      // to end — so the item is absent rather than present and inert.
-      canSignOut={currentUser !== null}
-      onViewProfile={handleViewProfile}
-      onOpenSettings={handleOpenSettings}
-      onSignOut={handleSignOut}
-    />
+  const props = {
+    member: self,
+    // Login is optional and off by default (ADR-0320). No account, no session
+    // to end — so the item is absent rather than present and inert.
+    canSignOut: currentUser !== null,
+    onViewProfile: handleViewProfile,
+    onOpenSettings: handleOpenSettings,
+    onSignOut: handleSignOut,
+  };
+
+  return variant === 'rows' ? (
+    <AccountMenuRows {...props} showSettings={showSettings} />
+  ) : (
+    <AccountMenu {...props} />
   );
 }

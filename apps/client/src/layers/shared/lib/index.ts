@@ -251,3 +251,4 @@ export { activityVerb, WAITING_ON_YOU_VERB } from './activity-verb';
 export { isWelcomeBackMoment } from './welcome-back-glow';
 export type { WelcomeBackMomentInput } from './welcome-back-glow';
 export { setAskDorkBotOrigin, takeAskDorkBotOrigin } from './ask-dorkbot-origin';
+export { isNewer } from './version-compare';

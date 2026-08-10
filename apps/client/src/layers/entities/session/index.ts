@@ -34,7 +34,6 @@ export { useSessionRenderedStatus } from './model/use-session-rendered-status';
 export { sessionDisplayTitle, UNTITLED_SESSION_LABEL } from './lib/session-display-title';
 export { useSessionRuntime } from './model/use-session-runtime';
 export { useSessionId, useStartNewSession } from './model/use-session-id';
-export type { StartNewSessionOptions } from './model/use-session-id';
 export type { SetSessionIdOptions } from './model/use-session-id';
 export { useSessionStatus } from './model/use-session-status';
 export type { SessionStatusData } from './model/use-session-status';

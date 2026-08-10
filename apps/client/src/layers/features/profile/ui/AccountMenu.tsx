@@ -12,7 +12,6 @@
  *
  * @module features/profile/ui/AccountMenu
  */
-import { LogOut, Settings, UserRound } from 'lucide-react';
 import type { TeamMember } from '@dorkos/shared/team-schemas';
 import {
   IdentityAvatar,
@@ -20,12 +19,11 @@ import {
   IDENTITY_MARK_GROUP,
   ResponsiveDropdownMenu,
   ResponsiveDropdownMenuContent,
-  ResponsiveDropdownMenuItem,
-  ResponsiveDropdownMenuSeparator,
   ResponsiveDropdownMenuTrigger,
 } from '@/layers/shared/ui';
 import { cn } from '@/layers/shared/lib';
 import { teamMemberFace } from '@/layers/entities/team';
+import { AccountMenuRows } from './AccountMenuRows';
 
 export interface AccountMenuProps {
   /** The operator's own roster row — the one with `isSelf`. */
@@ -95,41 +93,16 @@ export function AccountMenu({
       </ResponsiveDropdownMenuTrigger>
 
       <ResponsiveDropdownMenuContent side="top" align="start" className="w-56">
-        {/* Not a `MenuLabel`: on mobile that renders as the drawer's title, and
-            a name plus a handle plus a face is a block, not a title. */}
-        <div className="flex items-center gap-2 px-2 py-2 md:py-1.5">
-          <IdentityAvatar
-            size="sm"
-            kind={face.kind}
-            color={face.color}
-            emoji={face.emoji}
-            imageUrl={face.imageUrl}
-            fallback={face.fallback}
-            origin={face.origin}
-          />
-          <div className="min-w-0">
-            <p className="truncate text-sm font-medium">{member.displayName}</p>
-            {/* Absent rather than a bare `@` — a handle nobody has reaches nobody. */}
-            {member.handle !== null && (
-              <p className="text-muted-foreground truncate text-xs">@{member.handle}</p>
-            )}
-          </div>
-        </div>
-        <ResponsiveDropdownMenuSeparator />
-        <ResponsiveDropdownMenuItem icon={UserRound} onSelect={onViewProfile}>
-          View profile
-        </ResponsiveDropdownMenuItem>
-        <ResponsiveDropdownMenuItem icon={Settings} onSelect={onOpenSettings}>
-          Settings
-        </ResponsiveDropdownMenuItem>
-        {canSignOut && (
-          <>
-            <ResponsiveDropdownMenuSeparator />
-            <ResponsiveDropdownMenuItem icon={LogOut} onSelect={onSignOut}>
-              Sign out
-            </ResponsiveDropdownMenuItem>
-          </>
-        )}
+        {/* The rows themselves live in `AccountMenuRows`, so a menu that already
+            has a trigger of its own — the sidebar footer's `⋯` — can offer the
+            identical account items without a second disc. */}
+        <AccountMenuRows
+          member={member}
+          canSignOut={canSignOut}
+          onViewProfile={onViewProfile}
+          onOpenSettings={onOpenSettings}
+          onSignOut={onSignOut}
+        />
       </ResponsiveDropdownMenuContent>
     </ResponsiveDropdownMenu>
   );

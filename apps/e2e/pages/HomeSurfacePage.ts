@@ -94,9 +94,18 @@ export class HomeSurfacePage {
     return this.tabBar.locator('a[data-active]');
   }
 
-  /** The destination buttons in the sidebar's footer strip, Ask DorkBot aside. */
+  /**
+   * The destination buttons in the sidebar's footer strip.
+   *
+   * Located by `data-sidebar-destination`, which `SidebarFooterStrip` stamps
+   * from the loop over its destination table — NOT by the four names. A
+   * name-matching locator cannot see a fifth destination at all: it filters the
+   * newcomer out before `toHaveCount` runs, so the count that exists to catch a
+   * fifth would pass with one present. The strip's other two buttons (the `⋯`
+   * fold and Ask DorkBot) carry no such attribute and are excluded by structure.
+   */
   get sidebarNavButtons(): Locator {
-    return this.sidebarNav.getByRole('button', { name: /^(Home|Team|Marketplace|Connections)$/ });
+    return this.sidebarNav.locator('[data-sidebar-destination]');
   }
 
   /**

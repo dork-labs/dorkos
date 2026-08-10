@@ -86,10 +86,15 @@ test.describe('Home surface — the shell @smoke', () => {
     await basePage.ensureSidebarOpen();
 
     // The count and the words, in order. A fifth destination anywhere in this
-    // strip fails the first assertion before anyone has to notice the label.
+    // strip fails the first assertion before anyone has to notice the label —
+    // the locator is structural (`data-sidebar-destination`), so a newcomer is
+    // counted whatever it is called.
     await expect(homeSurface.sidebarNavButtons).toHaveCount(SIDEBAR_NAV_LABELS.length);
     for (const [index, label] of SIDEBAR_NAV_LABELS.entries()) {
-      await expect(homeSurface.sidebarNavButtons.nth(index)).toContainText(label);
+      // The ACCESSIBLE name, not the text. These are icon buttons: the word is
+      // in `aria-label`, `textContent` is empty, and a text assertion here read
+      // green on the old lettered nav and red the moment the strip landed.
+      await expect(homeSurface.sidebarNavButtons.nth(index)).toHaveAccessibleName(label);
     }
 
     // The three that moved into the tab bar are gone from the sidebar entirely —

@@ -5,10 +5,7 @@ import { ShowcaseLabel } from '../ShowcaseLabel';
 import { ShowcaseDemo } from '../ShowcaseDemo';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { SessionsView } from '@/layers/features/session-list';
-// Deep import on purpose: the strip is app chrome, not a feature export the
-// playground should widen the barrel for (the same reasoning
-// `SidebarModelShowcases` records for `buildSidebarModel`).
-import { SidebarFooterStrip } from '@/layers/features/dashboard-sidebar/ui/SidebarFooterStrip';
+import { SidebarFooterStrip } from '@/layers/features/dashboard-sidebar';
 import { configKeys } from '@/layers/entities/config';
 import { useSessionChatStore, useSessionListStore, SessionRow } from '@/layers/entities/session';
 import { SidebarGroup, SidebarMenu, SidebarMenuItem } from '@/layers/shared/ui';
