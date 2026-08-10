@@ -1130,6 +1130,53 @@ describe('useSessionStreamStore — runtime-opened turn windows', () => {
     expect(turn.filter((e) => e.type === 'text_delta').at(-1)).toMatchObject({ text: 'w9' });
   });
 
+  // The bound's blind spot (DOR-1107): a retained sign-in card sits AHEAD of the
+  // first window, so a scan that assumed the turn began at a window boundary cut
+  // nothing off, and the cap stopped applying for the rest of the session.
+  it('bounds a long wake-up chain that begins with a retained sign-in card', () => {
+    store.getState().applySnapshot(SID, snapshot({ cursor: 0 }));
+    let seq = 0;
+    const next = () => ++seq;
+
+    // A turn asks for a sign-in, ends, and its history reload lands — which
+    // clears the turn down to the one thing the transcript never carries: the
+    // unresolved card. That card is now the turn's first event.
+    store.getState().applyEvent(SID, { type: 'turn_start', seq: next() });
+    store.getState().applyEvent(SID, {
+      type: 'mcp_signin_required',
+      seq: next(),
+      serverName: 'granola',
+      agentId: '01HV7KJZZZ0000000000000000',
+      flowId: 'flow-1',
+      authorizeUrl: 'https://mcp.test.local/authorize',
+      disclosure: 'DorkOS stores the token on this machine.',
+    });
+    store.getState().applyEvent(SID, { type: 'turn_end', seq: next() });
+    store.getState().setHistoryMessages(SID, [MESSAGE]);
+    expect(store.getState().sessions[SID]?.inProgressTurn.map((e) => e.type)).toEqual([
+      'mcp_signin_required',
+    ]);
+
+    // The person is off in their browser, so nothing ages the card and no reload
+    // trims the turn. A hundred wake-up windows append behind it.
+    for (let window = 0; window < 100; window++) {
+      store.getState().applyEvent(SID, { type: 'turn_start', seq: next(), origin: 'runtime' });
+      for (let i = 0; i < 5; i++) {
+        store.getState().applyEvent(SID, { type: 'text_delta', seq: next(), text: `w${window}` });
+      }
+      store.getState().applyEvent(SID, { type: 'turn_end', seq: next() });
+    }
+
+    const turn = store.getState().sessions[SID]!.inProgressTurn;
+    expect(turn.length).toBeLessThanOrEqual(200);
+    // The card is still there — bounding the turn must not cost the person the
+    // link they walked away to use (DOR-1004).
+    expect(turn[0]?.type).toBe('mcp_signin_required');
+    // …and what survives behind it still starts at a window boundary.
+    expect(turn[1]?.type).toBe('turn_start');
+    expect(turn.filter((e) => e.type === 'text_delta').at(-1)).toMatchObject({ text: 'w99' });
+  });
+
   it('records who opened the window so the settle handler can tell them apart', () => {
     store.getState().applySnapshot(SID, snapshot({ cursor: 0 }));
     store.getState().applyEvent(SID, { type: 'turn_start', seq: 1 });
