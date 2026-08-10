@@ -1012,21 +1012,27 @@ test.describe('conversations in the command palette', () => {
       if (!line || !who || !title) return null;
 
       // What `6ch` is worth in the title's OWN font, measured rather than
-      // guessed: `ch` is the width of a "0" in the element's font, so the
-      // number differs per family and per size and there is no arithmetic that
-      // gets it from a font-size. The probe inherits the four properties that
-      // decide it and is thrown away.
+      // guessed: `ch` is the advance width of a "0" in the element's font, so
+      // the number differs per family and per size and there is no arithmetic
+      // that gets it from a font-size.
+      //
+      // The probe goes INSIDE the title and copies no font properties at all,
+      // which is the whole trick. Copying a handful of them onto a sibling
+      // looks equivalent and is not: `ch` also moves with the things a font
+      // shorthand does not carry — variation settings, optical sizing, feature
+      // settings, stretch — so a probe that names four properties resolves
+      // `6ch` in a subtly different font than the element it is standing in
+      // for. That cost 0.7px here, against a 0.5px tolerance, and it would
+      // drift again with any font change. Inheritance is exact by
+      // construction; a copied list is exact only until someone adds a
+      // property to it.
       const titleStyle = getComputedStyle(title);
       const probe = document.createElement('span');
       probe.style.position = 'absolute';
       probe.style.visibility = 'hidden';
       probe.style.display = 'inline-block';
-      probe.style.fontFamily = titleStyle.fontFamily;
-      probe.style.fontSize = titleStyle.fontSize;
-      probe.style.fontWeight = titleStyle.fontWeight;
-      probe.style.fontStyle = titleStyle.fontStyle;
       probe.style.width = '6ch';
-      title.parentElement?.appendChild(probe);
+      title.appendChild(probe);
       const sixCh = probe.getBoundingClientRect().width;
       probe.remove();
 
