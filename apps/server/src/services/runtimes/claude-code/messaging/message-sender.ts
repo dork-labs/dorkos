@@ -842,8 +842,15 @@ export async function* executeSdkQuery(
       // message maps to `done`, so the resulting `context_usage` event precedes
       // `done` and the terminal `session_status` carries `usage` (DOR-99) —
       // then release stdin so the process drains its trailing messages and exits.
-      if (result.value.type === 'result' && session.activeQuery) {
-        const query = session.activeQuery;
+      // This frame's OWN query, never the session's shared slot (DOR-1088): an
+      // overlapping turn can have replaced `activeQuery`, and the usage
+      // breakdown has to come from the subprocess that produced THIS result.
+      // The guard on `session.activeQuery` that used to sit here also gated the
+      // `heldPrompt.close()` below — so a frame whose slot had been cleared
+      // never released its own stdin, and the subprocess it owned could not
+      // exit. Reading the local removes both problems at once.
+      if (result.value.type === 'result') {
+        const query = agentQuery;
         const [breakdown, subscriptionUsage] = await Promise.all([
           fetchContextBreakdown(query, CONTEXT_USAGE_TIMEOUT_MS).catch((err: unknown) => {
             logger.debug('[sendMessage] getContextUsage failed', { err });

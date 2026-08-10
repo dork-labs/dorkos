@@ -17,6 +17,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { executeSdkQuery, type MessageSenderOpts } from '../message-sender.js';
 import type { AgentSession } from '../../agent-types.js';
 import { query, type SDKMessage } from '@anthropic-ai/claude-agent-sdk';
+import { fetchContextBreakdown } from '../../sdk/context-usage.js';
 
 vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
   query: vi.fn(),
@@ -146,6 +147,11 @@ describe('executeSdkQuery — activeQuery ownership (DOR-1088)', () => {
     await turnA;
     expect(session.activeQuery).toBe(queries[1]);
     expect(session.lastQuery).toBeUndefined();
+
+    // The usage breakdown for turn A's `result` must be read off turn A's own
+    // subprocess. Read off the shared slot it came from whichever turn happened
+    // to be installed — the wrong process entirely, reporting the wrong numbers.
+    expect(vi.mocked(fetchContextBreakdown)).toHaveBeenCalledWith(queries[0], expect.anything());
 
     // The surviving turn settles normally: it DOES own the channel, so it clears
     // it and records itself as the last query for post-stream control calls.

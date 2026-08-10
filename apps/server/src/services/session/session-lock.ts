@@ -78,7 +78,7 @@ export class SessionLockManager {
    * holder, which meant one browser tab (one client id for its whole life) could
    * start a second turn beside its own running one: two runtime subprocesses
    * resuming the same transcript. Same-client triggers now WAIT their turn at
-   * {@link import('./turn-queue').sessionTurnQueue} instead, so by the time one
+   * {@link import('./trigger-turn').SessionTurnQueue} instead, so by the time one
    * reaches this method the lock it is waiting on is already released and this
    * refusal is not the path anyone takes — it is the guarantee that nothing can
    * route around the queue.

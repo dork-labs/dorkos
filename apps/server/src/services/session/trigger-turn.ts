@@ -55,7 +55,30 @@
  *    stream beside it. Two streams on one session are two subprocesses resuming
  *    one transcript, and that is what left a live session showing an idle
  *    composer. A second CLIENT still meets the lock and its unchanged
- *    409/takeover answer.
+ *    409/takeover answer. Both the chain and the lock are keyed on the id the
+ *    RUNTIME resolves to, not the id the request carried, because one live
+ *    session answers to every id it has ever held.
+ *
+ * ## Known bounds of the waiting model (retired by DOR-1089)
+ *
+ * Making a queued trigger wait moves a cost onto the HTTP request, and two edges
+ * of that are worth stating rather than discovering:
+ *
+ * - **The POST is held open for the wait.** A turn parked on a person's approval
+ *   emits nothing for as long as the person takes, so the queued request behind
+ *   it waits too. That wait is bounded — `queueWaitMs`, defaulting to the lock's
+ *   TTL — after which the waiter proceeds to the lock and gets the same answer a
+ *   stranger would (it starts if the lock is free, and is refused if it is not).
+ *   So the bound is minutes, not the turn's full lifetime, but it is still long
+ *   for an HTTP request.
+ * - **The client does not bound it from its side.** `postMessage` in the web
+ *   transport is a raw `fetch` with no abort signal, and nothing here watches for
+ *   request abort — so a proxy or tunnel that kills a long-held POST shows the
+ *   person a failure for a turn that is still queued to run.
+ *
+ * Both are properties of holding the wait in a request at all. DOR-1089's durable
+ * queue retires them by accepting the message immediately and running it from
+ * server-owned state, at which point nothing waits on a socket.
  *
  * @module services/session/trigger-turn
  */
@@ -140,8 +163,9 @@ export class DetachedTurnLifecycle implements SseResponse, LockActivity {
 interface TurnSlot {
   /**
    * Resolves when every turn the SAME client reserved earlier on the SAME
-   * session has settled. Never rejects: a failed turn releases its slot like any
-   * other, so one bad turn cannot wedge the chain behind it.
+   * session has settled, or when the wait bound elapses — whichever comes first.
+   * Never rejects: a failed turn releases its slot like any other, so one bad
+   * turn cannot wedge the chain behind it.
    */
   readonly ready: Promise<void>;
   /**
@@ -149,13 +173,22 @@ interface TurnSlot {
    *
    * The caller MUST reach this on every exit path — a refused lock and a throw
    * before the turn is launched included — or every later turn this client sends
-   * to this session waits forever.
+   * to this session waits for the full bound before it can proceed.
    */
   release(): void;
 }
 
-/** Separator that cannot occur in a session id or a client id. */
-const TURN_QUEUE_KEY_SEP = ' ';
+/**
+ * Separator between the two halves of a chain key.
+ *
+ * NUL, because a client id arrives in the `X-Client-Id` header and is therefore
+ * whatever the caller chose to send. A printable separator lets a crafted id
+ * collide with another session's chain — `"a b"` + `"c"` and `"a"` + `"b c"`
+ * produce the same key with a space — which would silently serialize (or fail
+ * to serialize) two unrelated sessions. Node rejects a header value containing
+ * NUL before it reaches a route, so no id can carry one.
+ */
+const TURN_QUEUE_KEY_SEP = '\u0000';
 
 /**
  * Serializes turn triggers per (session, client) — subtlety 5 above.
@@ -173,11 +206,43 @@ const TURN_QUEUE_KEY_SEP = ' ';
  * the takeover path. Different clients therefore never queue behind each other;
  * they meet at the lock exactly as before.
  *
+ * **Why a chain can be reached by more than one id.** A live session answers to
+ * every id it has ever held: the request UUID the client first used, plus the
+ * canonical id the runtime assigns mid-first-turn. The runtime resolves both to
+ * one session, so keying a chain on the raw request id let the same tab's second
+ * POST — sent under the canonical id it just read off the 202 — miss the chain
+ * its own first turn was standing in and start a second stream into one
+ * projector (DOR-1088 review, G4). {@link link} points the newly-learned id at
+ * the chain that already exists, and callers resolve through {@link primaryOf}.
+ *
  * @internal Exported for testing only — {@link triggerTurn} owns the one instance.
  */
 export class SessionTurnQueue {
   /** Tail of each live chain, keyed by session+client; dropped when it drains. */
   private readonly tails = new Map<string, Promise<void>>();
+  /** Later-learned session id → the session id its chain is filed under. */
+  private readonly aliases = new Map<string, string>();
+
+  /** The session id `sessionId`'s chain is filed under (itself, unless aliased). */
+  private primaryOf(sessionId: string): string {
+    return this.aliases.get(sessionId) ?? sessionId;
+  }
+
+  /**
+   * Record that `aliasId` names the same live session as `primaryId`, so a
+   * trigger arriving under either id joins one chain.
+   *
+   * Idempotent, and safe to call with ids already linked; a self-link is
+   * ignored. Aliases are dropped when the session's last chain drains.
+   *
+   * @param aliasId - The newly-learned id (the runtime's canonical id).
+   * @param primaryId - The id the existing chain is filed under.
+   */
+  link(aliasId: string, primaryId: string): void {
+    const primary = this.primaryOf(primaryId);
+    if (aliasId === primary) return;
+    this.aliases.set(aliasId, primary);
+  }
 
   /**
    * Reserve the next slot in `(sessionId, clientId)`'s chain.
@@ -186,17 +251,45 @@ export class SessionTurnQueue {
    * ordered by arrival: the second sees the first's tail and queues behind it
    * instead of racing it.
    *
-   * @param sessionId - The session whose turns are being serialized.
+   * @param sessionId - The session whose turns are being serialized; resolved
+   *   through any alias recorded by {@link link}.
    * @param clientId - The lock identity triggering the turn.
+   * @param maxWaitMs - How long this reservation may wait for the turns ahead of
+   *   it before proceeding anyway. The bound exists because the write-lock has a
+   *   TTL and the chain does not: without it, a turn that went dark handed the
+   *   session to any STRANGER one TTL later while its own client's queued turn
+   *   waited on a slot that would never be released (DOR-1088 review, G1c). A
+   *   waiter released by the bound still meets the lock, so it proceeds only if
+   *   the lock is genuinely free — it gets the same answer a stranger would, at
+   *   the same moment.
    * @returns The slot to await ({@link TurnSlot.ready}) and release.
    */
-  reserve(sessionId: string, clientId: string): TurnSlot {
-    const key = `${sessionId}${TURN_QUEUE_KEY_SEP}${clientId}`;
-    const ready = this.tails.get(key) ?? Promise.resolve();
+  reserve(sessionId: string, clientId: string, maxWaitMs: number): TurnSlot {
+    const primary = this.primaryOf(sessionId);
+    const key = `${primary}${TURN_QUEUE_KEY_SEP}${clientId}`;
+    const previous = this.tails.get(key);
     let settle!: () => void;
     const settled = new Promise<void>((resolve) => {
       settle = resolve;
     });
+    // Head of the chain: nothing to wait for, and no timer to arm.
+    let ready: Promise<void>;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    if (previous === undefined) {
+      ready = Promise.resolve();
+    } else {
+      ready = Promise.race([
+        previous,
+        new Promise<void>((resolve) => {
+          timer = setTimeout(resolve, maxWaitMs);
+        }),
+      ]).finally(() => {
+        if (timer !== undefined) clearTimeout(timer);
+      });
+    }
+    // The next reservation waits for THIS one to settle, and for our own wait to
+    // be over — so a slot released by the bound above does not make its
+    // successor inherit an unbounded wait on a predecessor that never settles.
     const tail = ready.then(() => settled);
     this.tails.set(key, tail);
 
@@ -209,14 +302,33 @@ export class SessionTurnQueue {
         settle();
         // Only the CURRENT tail may drop the entry; a later reservation has
         // already chained onto ours and must keep its place in the map.
-        if (this.tails.get(key) === tail) this.tails.delete(key);
+        if (this.tails.get(key) === tail) {
+          this.tails.delete(key);
+          this.pruneAliases(primary);
+        }
       },
     };
+  }
+
+  /** Drop `primary`'s aliases once no client has a live chain on it. */
+  private pruneAliases(primary: string): void {
+    const prefix = `${primary}${TURN_QUEUE_KEY_SEP}`;
+    for (const key of this.tails.keys()) {
+      if (key.startsWith(prefix)) return;
+    }
+    for (const [alias, target] of this.aliases) {
+      if (target === primary) this.aliases.delete(alias);
+    }
   }
 
   /** How many chains are live. Zero once every reserved slot has been released. */
   get size(): number {
     return this.tails.size;
+  }
+
+  /** How many alias links are held. Zero once every aliased session goes quiet. */
+  get aliasCount(): number {
+    return this.aliases.size;
   }
 }
 
@@ -308,6 +420,13 @@ export interface TriggerTurnOpts {
   deps: TriggerTurnDeps;
   /** Inactivity window before the stall watchdog fires. Defaults to SESSIONS.TURN_STALL_TIMEOUT_MS. */
   stallTimeoutMs?: number;
+  /**
+   * How long this trigger may wait for the same client's earlier turns on this
+   * session before proceeding anyway. Defaults to SESSIONS.LOCK_TTL_MS, so a
+   * queued turn is never made to wait longer than the point at which a STRANGER
+   * could take the lock out from under the turn ahead of it (review G1c).
+   */
+  queueWaitMs?: number;
   /** Records a detached-turn failure (logging is the caller's concern). */
   onError?(err: unknown): void;
   /**
@@ -370,8 +489,7 @@ export interface TriggerTurnResult {
  * for a turn that later fails to acquire, and would tell the cockpit its queue
  * had drained while the messages were still lined up server-side, which is how
  * a person loses the chance to edit one. The cost is an HTTP request held open
- * for as long as the turn ahead of it runs; the caller is a trigger POST with no
- * body to stream, so it costs a socket and nothing else.
+ * for the wait, bounded by `queueWaitMs` — see the module doc's "Known bounds".
  *
  * @param opts - Session/turn inputs, the projector, the feed seam, and the
  *   runtime-neutral lock/send/resolve port.
@@ -392,11 +510,25 @@ export async function triggerTurn(opts: TriggerTurnOpts): Promise<TriggerTurnRes
     deps,
   } = opts;
 
+  // A live session answers to EVERY id it has ever held — the request UUID the
+  // client first used and the canonical id the runtime assigns mid-first-turn —
+  // and the runtime resolves both to one session. So the queue and the lock must
+  // key on the id the RUNTIME would resolve to, never on the id this request
+  // happened to carry: keyed on the raw id, the same tab's second POST (sent
+  // under the canonical id it just read off its own 202) missed both and started
+  // a second stream into one projector (review G4). `turnKey` is that resolved
+  // id, and it is re-pointed mid-turn the moment a canonical id appears.
+  let turnKey = deps.getInternalSessionId(sessionId) ?? sessionId;
+
   // One turn at a time per client (DOR-1088). Reserve BEFORE anything else so
   // two triggers arriving in the same tick are ordered by arrival, then wait for
   // whatever this client already has running on this session. A different client
   // never waits here — its answer is the lock's, unchanged.
-  const slot = sessionTurnQueue.reserve(sessionId, clientId);
+  const slot = sessionTurnQueue.reserve(
+    turnKey,
+    clientId,
+    opts.queueWaitMs ?? SESSIONS.LOCK_TTL_MS
+  );
   await slot.ready;
 
   // Acquire against a detached lifecycle so the lock is bound to the turn, not
@@ -413,7 +545,7 @@ export async function triggerTurn(opts: TriggerTurnOpts): Promise<TriggerTurnRes
   const waitingOnPerson = (): boolean => projector.hasPendingInteractions();
   const lifecycle = new DetachedTurnLifecycle(waitingOnPerson);
   const lockToken = Symbol('detached-turn-lock');
-  if (!deps.acquireLock(sessionId, clientId, lifecycle, lockToken)) {
+  if (!deps.acquireLock(turnKey, clientId, lifecycle, lockToken)) {
     slot.release();
     return { accepted: false };
   }
@@ -427,7 +559,9 @@ export async function triggerTurn(opts: TriggerTurnOpts): Promise<TriggerTurnRes
   const releaseOnce = (): void => {
     if (released) return;
     released = true;
-    deps.releaseLock(sessionId, clientId, lockToken);
+    // `turnKey`, not `sessionId`: a mid-turn canonical id moves the lock, and
+    // the release has to target wherever it ended up.
+    deps.releaseLock(turnKey, clientId, lockToken);
     lifecycle.close();
     slot.release();
   };
@@ -465,6 +599,22 @@ export async function triggerTurn(opts: TriggerTurnOpts): Promise<TriggerTurnRes
     if (!canonical || canonical === sessionId) return;
     idResolved = true;
     deps.rekeyProjector(sessionId, canonical);
+    // The projector is not the only thing keyed by session id. The client is
+    // about to start using this canonical id (the 202 hands it over), and a POST
+    // arriving under it has to meet THIS turn's chain and THIS turn's lock —
+    // otherwise the tab's own next message starts a second stream into the
+    // projector we just re-pointed (review G4).
+    if (canonical !== turnKey) {
+      sessionTurnQueue.link(canonical, turnKey);
+      // Move the write-lock rather than holding two: acquire under the new id,
+      // then drop the old. A refusal means someone else already holds the
+      // canonical id, which this turn cannot resolve — keep the lock we have and
+      // let the existing refusal paths answer.
+      if (deps.acquireLock(canonical, clientId, lifecycle, lockToken)) {
+        deps.releaseLock(turnKey, clientId, lockToken);
+        turnKey = canonical;
+      }
+    }
   };
   // Everything from here to `void turn` runs BEFORE anything else can release
   // the lock or the queue slot: if it throws, no turn exists to settle and no

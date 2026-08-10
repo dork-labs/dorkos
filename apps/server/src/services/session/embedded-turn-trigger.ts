@@ -107,8 +107,13 @@ export interface EmbeddedCommandIntentOpts {
 
 /** The in-process trigger bridge `DirectTransport.runCommandIntent` calls. */
 export interface EmbeddedCommandIntentTrigger {
-  /** Trigger a detached command-intent run; resolves the lock outcome. */
-  trigger(opts: EmbeddedCommandIntentOpts): TriggerCommandIntentResult;
+  /**
+   * Trigger a detached command-intent run; resolves the lock outcome.
+   *
+   * Asynchronous because an intent waits its turn behind the same client's
+   * in-flight work on the session (DOR-1088) before it reaches the lock.
+   */
+  trigger(opts: EmbeddedCommandIntentOpts): Promise<TriggerCommandIntentResult>;
 }
 
 /**
@@ -146,6 +151,7 @@ export function createEmbeddedCommandIntentTrigger(
           releaseLock: (sid, cid, token) => runtime.releaseLock(sid, cid, token),
           executeCommandIntent: (sid, i, o) => runtime.executeCommandIntent(sid, i, o),
           interruptQuery: (sid) => runtime.interruptQuery(sid),
+          getInternalSessionId: (sid) => runtime.getInternalSessionId(sid),
         },
         onError: (err) => {
           logger.warn('[EmbeddedCommandIntentTrigger] detached run error', {

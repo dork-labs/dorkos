@@ -101,8 +101,10 @@ export interface DirectTransportServices {
    * `@dorkos/server/services/session` here, so `runCommandIntent` drives a
    * detached run feeding the session projector — delivery then flows over
    * `subscribeSession` (e.g. a `compact_boundary`), exactly like the HTTP route.
-   * Resolves synchronously with the lock outcome (there is no canonical id to
-   * await for an existing session).
+   * Resolves with the lock outcome. There is no canonical id to await, but the
+   * run does wait its turn: an intent shares the session's single writer with
+   * every turn, so it queues behind this client's in-flight work rather than
+   * taking the lock beside it (DOR-1088).
    */
   commandIntentTrigger: {
     trigger(opts: {
@@ -112,7 +114,7 @@ export interface DirectTransportServices {
       cwd?: string;
       /** Trailing instructions after the intent token (see `Transport.runCommandIntent`). */
       instructions?: string;
-    }): { accepted: boolean };
+    }): Promise<{ accepted: boolean }>;
   };
   transcriptReader: {
     listSessions(vaultRoot: string): Promise<Session[]>;

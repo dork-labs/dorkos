@@ -90,6 +90,8 @@ finalizeApp(app);
 const server = listeningServer(app);
 
 const SESSION_ID = '00000000-0000-4000-8000-0000000000bb';
+/** The id the runtime assigns to a brand-new session mid-first-turn. */
+const CANONICAL_ID = '00000000-0000-4000-8000-0000000000cc';
 const TAB = 'web-one-tab';
 
 /** A promise plus the function that resolves it. */
@@ -122,12 +124,17 @@ beforeEach(() => {
 
 afterEach(() => {
   disposeProjector(SESSION_ID);
+  disposeProjector(CANONICAL_ID);
 });
 
 /** POST a message without awaiting the response, kicking the request off now. */
-function postMessage(clientId: string, content: string): Promise<{ status: number }> {
+function postMessage(
+  clientId: string,
+  content: string,
+  sessionId: string = SESSION_ID
+): Promise<{ status: number }> {
   return request(server)
-    .post(`/api/sessions/${SESSION_ID}/messages`)
+    .post(`/api/sessions/${sessionId}/messages`)
     .set('X-Client-Id', clientId)
     .send({ content })
     .then((res) => ({ status: res.status }));
@@ -217,6 +224,62 @@ describe('POST /api/sessions/:id/messages — same-client turn serialization', (
     // Drain the turn so the afterEach dispose finds it settled.
     first.open();
     await vi.waitFor(() => expect(fakeRuntime.releaseLock).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() => expect(sessionTurnQueue.size).toBe(0));
+  });
+});
+
+describe('POST /api/sessions/:id/messages — one session, two ids (review G4)', () => {
+  it('serializes a second POST sent under the canonical id the first POST handed back', async () => {
+    // A live session answers to every id it has ever held. The cockpit re-keys
+    // itself to the canonical id the moment the 202 carries it, so the tab's
+    // NEXT message arrives under a different id than the turn still running —
+    // and keyed on the raw request id, the queue and the lock both looked at the
+    // wrong shelf and let a second stream into one projector.
+    const first = gate();
+    const order: string[] = [];
+    let canonicalAssigned = false;
+
+    // Before the first turn speaks, the session does not exist yet and has no
+    // canonical id; from its first event on, BOTH ids resolve to the canonical
+    // one. That is the runtime's real alias behavior, and the whole hazard.
+    fakeRuntime.getInternalSessionId.mockImplementation(() =>
+      canonicalAssigned ? CANONICAL_ID : undefined
+    );
+
+    fakeRuntime.withScenarios([
+      async function* () {
+        order.push('turn-1:start');
+        canonicalAssigned = true;
+        yield { type: 'text_delta', data: { text: 'working' } } as StreamEvent;
+        await first.wait;
+        order.push('turn-1:end');
+        yield { type: 'done', data: {} } as StreamEvent;
+      },
+      async function* () {
+        order.push('turn-2:start');
+        yield { type: 'text_delta', data: { text: 'queued reply' } } as StreamEvent;
+        order.push('turn-2:end');
+        yield { type: 'done', data: {} } as StreamEvent;
+      },
+    ]);
+
+    const firstRes = await postMessage(TAB, 'long turn');
+    expect(firstRes.status).toBe(202);
+    expect(order).toEqual(['turn-1:start']);
+
+    // Same tab, same client id — but addressed to the id it just adopted.
+    const secondDone = postMessage(TAB, 'queued message', CANONICAL_ID);
+    await awaitArrivals(2);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(fakeRuntime.sendMessage).toHaveBeenCalledTimes(1);
+    expect(order).toEqual(['turn-1:start']);
+
+    first.open();
+    expect((await secondDone).status).toBe(202);
+    await vi.waitFor(() =>
+      expect(order).toEqual(['turn-1:start', 'turn-1:end', 'turn-2:start', 'turn-2:end'])
+    );
+    expect(fakeRuntime.sendMessage).toHaveBeenCalledTimes(2);
     await vi.waitFor(() => expect(sessionTurnQueue.size).toBe(0));
   });
 });
