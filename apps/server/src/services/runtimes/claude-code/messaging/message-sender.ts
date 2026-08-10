@@ -857,9 +857,12 @@ export async function* executeSdkQuery(
       // — a subagent's input stream is not ours to write to; and never after
       // `result`, when a steered note would START a new turn instead of
       // correcting this one) and surface a status line for the operator. The
-      // event carries NO `status` field on purpose: the client status strip
-      // drops any system_status that has one (see use-system-status-events).
+      // notice event carries NO `status` field (the client strip drops any
+      // system_status that has one) and is yielded AFTER this message's mapped
+      // events below — yielded here, the same message's tool_result events
+      // would re-derive the strip and wipe it in the same frame.
       const phantoms = detectPhantomCancellations(result.value, session);
+      let phantomNotice: string | undefined;
       if (phantoms.length > 0) {
         const steerableIds = phantoms.filter((p) => p.mainThread).map((p) => p.toolUseId);
         const steered =
@@ -874,15 +877,9 @@ export async function* executeSdkQuery(
           mainThread: steerableIds.length > 0,
           steered,
         });
-        eventCount++;
         const plural =
           phantoms.length > 1 ? `${phantoms.length} pending tool calls` : 'a pending tool call';
-        yield {
-          type: 'system_status',
-          data: {
-            message: `A background-task notification cancelled ${plural} — a runtime glitch, not you. The agent has been told it was not your doing.`,
-          },
-        };
+        phantomNotice = `A background task finished at the wrong moment and cancelled ${plural}. That was a system glitch, not you. The agent has been told.`;
       }
 
       // The `result` message marks turn completion. The subprocess is still alive
@@ -995,6 +992,13 @@ export async function* executeSdkQuery(
         }
         eventCount++;
         yield event;
+      }
+      // The phantom notice trails this message's own mapped events (see the
+      // detection block above) so the strip re-derivation those events trigger
+      // cannot wipe it in the same frame.
+      if (phantomNotice !== undefined) {
+        eventCount++;
+        yield { type: 'system_status', data: { message: phantomNotice } };
       }
       // Catch-all for an id adopted after the last event of this message was
       // yielded (nothing does that today, and this costs one comparison if

@@ -102,6 +102,11 @@ export function detectPhantomCancellations(
   now: number = Date.now()
 ): PhantomCancellation[] {
   if (message.type !== 'user') return [];
+  // Replayed history on resume (SDKUserMessageReplay) can carry GENUINE
+  // interrupt sentinels from earlier sessions — a user's real Escape in the
+  // bare CLI, or an old DorkOS stop. Same contract as the event mapper's
+  // replay skip: history is not a live event.
+  if ((message as { isReplay?: boolean }).isReplay) return [];
   const interruptedRecently =
     session.interruptRequestedAt !== undefined &&
     now - session.interruptRequestedAt < INTERRUPT_SUPPRESSION_WINDOW_MS;

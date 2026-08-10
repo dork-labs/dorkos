@@ -157,7 +157,7 @@ function isPhantomStatus(e: StreamEvent): boolean {
     e.type === 'system_status' &&
     data.status === undefined &&
     typeof data.message === 'string' &&
-    data.message.includes('background-task notification cancelled')
+    data.message.includes('background task finished at the wrong moment')
   );
 }
 

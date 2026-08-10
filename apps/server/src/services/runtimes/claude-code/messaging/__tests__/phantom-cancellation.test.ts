@@ -105,6 +105,14 @@ describe('detectPhantomCancellations', () => {
     expect(detectPhantomCancellations(userMessage([{}]), session, now)).toHaveLength(1);
   });
 
+  it('ignores replayed history on resume (isReplay) — old real stops are not phantoms', () => {
+    const msg = userMessage([{ toolUseId: 'toolu_from_last_week' }]) as unknown as {
+      isReplay?: boolean;
+    };
+    msg.isReplay = true;
+    expect(detectPhantomCancellations(msg as unknown as SDKMessage, makeSession())).toEqual([]);
+  });
+
   it('ignores a real DorkOS deny message (different wording)', () => {
     const found = detectPhantomCancellations(
       userMessage([{ content: 'User denied tool execution. Reason: not now' }]),
