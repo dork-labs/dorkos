@@ -55,9 +55,11 @@ vi.mock('@/layers/features/dashboard-sidebar', () => ({
       {mockZonesPresent && <section data-sidebar-zone="library">Library</section>}
     </nav>
   ),
-  // The footer strip is persistent chrome: AppShell mounts it OUTSIDE the
+  // Both are persistent chrome: AppShell mounts them OUTSIDE the
   // `sidebar.body` swap region, so a contributed takeover replaces the body and
-  // leaves the panel's navigation standing (spec R2, BC-47).
+  // leaves the panel's identity and its navigation standing (spec R2, BC-43,
+  // BC-47).
+  SidebarHeaderBlock: () => <div data-testid="sidebar-header-block">Header block</div>,
   SidebarFooterStrip: () => <div data-testid="sidebar-footer-strip">Footer strip</div>,
 }));
 

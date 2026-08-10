@@ -17,12 +17,12 @@
  *
  * @module features/dashboard-sidebar/ui/SidebarChrome
  */
-import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useMemo, type ReactNode } from 'react';
 import { useNavigate, useRouter } from '@tanstack/react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import type { RoomSummary } from '@dorkos/shared/room-schemas';
-import type { SidebarItemRef, SmartGroupRules } from '@dorkos/shared/config-schema';
+import type { SidebarItemRef } from '@dorkos/shared/config-schema';
 import { reportClientError } from '@/layers/shared/lib';
 import {
   useAgentCreationStore,
@@ -32,12 +32,7 @@ import {
   useTransport,
 } from '@/layers/shared/model';
 import { disambiguateDisplayNames, useResolvedAgents } from '@/layers/entities/agent';
-import {
-  createGroup,
-  createSmartGroup,
-  moveToGroup,
-  useUpdateSidebarPrefs,
-} from '@/layers/entities/config';
+import { createGroup, moveToGroup, useUpdateSidebarPrefs } from '@/layers/entities/config';
 import { useInteractionStore } from '@/layers/entities/interactions';
 import { useMeshAgentPaths, useMeshMemberIds } from '@/layers/entities/mesh';
 import { useRooms } from '@/layers/entities/room';
@@ -49,20 +44,9 @@ import {
 } from '@/layers/entities/session';
 import { useAgentHubStore } from '@/layers/features/agent-hub';
 import type { SidebarTarget, SuggestionId } from '../model/build-sidebar-model';
+import { useCreateFlowStore, type GroupCreationState } from '../model/create-flow-store';
 import { NOW_OVERFLOW_HREF } from '../model/rules/cap-now-items';
 import { buildSidebarItems, type SidebarItemVisual } from '../model/sidebar-item';
-
-/**
- * The pending inline group-create flow.
- *
- * `pendingRef` is moved into the group on commit — a reference rather than an
- * agent path, because "New group…" is offered from a room row's menu too
- * (rooms-in-groups, DOR-581).
- */
-interface GroupCreationState {
-  /** What started the flow, and what lands in the new group. */
-  pendingRef: SidebarItemRef | null;
-}
 
 /** Everything a row needs that the model does not carry. */
 export interface SidebarChromeValue {
@@ -94,7 +78,14 @@ export interface SidebarChromeValue {
   openHub: (agentPath: string) => void;
   /** Open an agent's identity drawer, or `undefined` when the mesh cannot name it. */
   viewProfileFor: (agentPath: string) => (() => void) | undefined;
-  /** Begin the inline group-create flow, optionally seeded with a member. */
+  /**
+   * Begin the inline group-create flow, optionally seeded with a member.
+   *
+   * The flow's state lives in `create-flow-store` rather than here, because the
+   * New menu starts it too and that menu is mounted outside this provider —
+   * persistent chrome, in `AppShell` (BC-45). This is the same flow reached
+   * from a row's menu.
+   */
   requestNewGroup: (ref?: SidebarItemRef) => void;
   /** The inline group-create flow, or `null` when it is not running. */
   groupCreation: GroupCreationState | null;
@@ -102,8 +93,6 @@ export interface SidebarChromeValue {
   commitNewGroup: (name: string) => void;
   /** Abandon the inline flow. */
   cancelNewGroup: () => void;
-  /** Create a smart group from a rule set (a preset, or the dialog's output). */
-  createSmartGroupFrom: (name: string, rules: SmartGroupRules) => void;
 }
 
 const SidebarChromeContext = createContext<SidebarChromeValue | null>(null);
@@ -187,11 +176,18 @@ export function SidebarChrome({ activeTarget, children }: SidebarChromeProps) {
     [itemIndex]
   );
 
-  const [groupCreation, setGroupCreation] = useState<GroupCreationState | null>(null);
+  const groupCreation = useCreateFlowStore((s) => s.groupCreation);
+  const requestNewGroup = useCreateFlowStore((s) => s.requestNewGroup);
+  const endNewGroup = useCreateFlowStore((s) => s.endNewGroup);
 
   const openSession = useCallback(
     (sessionId: string, cwd: string | null) => {
       useInteractionStore.getState().recordOpened('session', sessionId);
+      // The agent too, on the same key space. Today is ordered by the session
+      // record; the New menu's "starts with <name> (last used)" is answered by
+      // the agent one, and it has to survive walking away to Marketplace or
+      // Team — which the router's `?dir` does not.
+      if (cwd !== null) useInteractionStore.getState().recordOpened('agent', cwd);
       navigate({ to: '/session', search: { dir: cwd ?? undefined, session: sessionId } });
     },
     [navigate]
@@ -334,7 +330,7 @@ export function SidebarChrome({ activeTarget, children }: SidebarChromeProps) {
         const memberId = memberIdByPath.get(agentPath);
         return memberId === undefined ? undefined : () => openProfileDrawer(memberId);
       },
-      requestNewGroup: (ref?: SidebarItemRef) => setGroupCreation({ pendingRef: ref ?? null }),
+      requestNewGroup,
       groupCreation,
       commitNewGroup: (name: string) => {
         const pending = groupCreation?.pendingRef ?? null;
@@ -342,11 +338,9 @@ export function SidebarChrome({ activeTarget, children }: SidebarChromeProps) {
           const { next, id } = createGroup(prev, name);
           return pending ? moveToGroup(next, pending, id) : next;
         });
-        setGroupCreation(null);
+        endNewGroup();
       },
-      cancelNewGroup: () => setGroupCreation(null),
-      createSmartGroupFrom: (name: string, rules: SmartGroupRules) =>
-        update((prev) => createSmartGroup(prev, name, rules).next),
+      cancelNewGroup: endNewGroup,
     }),
     [
       rawPaths,
@@ -362,6 +356,8 @@ export function SidebarChrome({ activeTarget, children }: SidebarChromeProps) {
       memberIdByPath,
       openProfileDrawer,
       groupCreation,
+      requestNewGroup,
+      endNewGroup,
       update,
     ]
   );

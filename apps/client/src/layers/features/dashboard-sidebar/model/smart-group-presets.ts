@@ -9,26 +9,15 @@ import type { SmartGroupRules } from '@dorkos/shared/config-schema';
 import type { SmartGroupCandidate } from '@dorkos/shared/smart-groups';
 import { getRuntimeDescriptor } from '@/layers/entities/runtime';
 
-/** Minimum fleet size that unlocks the "Smart" group-create fork (spec §5). */
-const DISCLOSURE_MIN_AGENTS = 8;
-/** Minimum distinct runtimes that unlocks the fork, independent of fleet size (spec §5). */
-const DISCLOSURE_MIN_RUNTIMES = 2;
 /** A "By runtime" preset chip only appears for a runtime with at least this many agents. */
 const BY_RUNTIME_PRESET_MIN_AGENTS = 2;
 
-/**
- * Whether the fleet is large/varied enough to show the "Smart" group-create
- * fork and its preset chips. Below this, only "Manual" create is offered —
- * small cockpits see zero new chrome (spec §5, same spirit as DOR-329's
- * groups-hint threshold).
- *
- * @param candidates - Every known agent's metadata for this render.
- */
-export function meetsSmartGroupDisclosureThreshold(candidates: SmartGroupCandidate[]): boolean {
-  if (candidates.length >= DISCLOSURE_MIN_AGENTS) return true;
-  const runtimes = new Set(candidates.map((c) => c.runtime));
-  return runtimes.size >= DISCLOSURE_MIN_RUNTIMES;
-}
+// `meetsSmartGroupDisclosureThreshold` used to live here with its own pair of
+// constants — eight agents, two runtimes. `offersGroupAffordances`
+// (`model/rules/build-library-sections`) is the same predicate over the same
+// numbers, and once the New menu became the one place a group is made, the two
+// gated the same item from two names. One gate, one name: presets appear
+// exactly when grouping does.
 
 /** A one-click starter for the smart-group create flow. */
 export interface SmartGroupPreset {

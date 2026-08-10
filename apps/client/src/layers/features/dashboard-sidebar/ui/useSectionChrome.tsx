@@ -2,24 +2,26 @@
  * The per-section chrome the model deliberately has no opinion about.
  *
  * `buildLibrarySections` decides which sections exist, what is in them and
- * whether they are folded. It says nothing about the `+` that creates a
- * channel, the picker that starts a conversation, the inline field that renames
- * a group, or the confirmation that deletes one — those are acts, not
- * membership.
+ * whether they are folded. It says nothing about the inline field that renames
+ * a group, the confirmation that deletes one, or the `+` in the header's
+ * corner — those are acts, not membership.
  *
  * They used to live in five section components with five hover treatments and
  * five menu wirings. This is the one place they live now, keyed by section id,
  * so `SidebarSection` can stay a renderer and every section wears the same
  * header.
  *
+ * **No section makes anything.** A `+` here is a deep link: it opens the one
+ * New menu on the item that matches its section and runs no handler of its own
+ * (BC-45). The surfaces those items open are mounted in `NewMenu`, once.
+ *
  * @module features/dashboard-sidebar/ui/useSectionChrome
  */
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { Bot, Hash, ListFilter, MessageSquare, Pin, Plus, type LucideIcon } from 'lucide-react';
-import { toast } from 'sonner';
 import type { SidebarGroup, SmartGroupRules } from '@dorkos/shared/config-schema';
 import { cn } from '@/layers/shared/lib';
-import { useAgentCreationStore } from '@/layers/shared/model';
+import { useIsMobile } from '@/layers/shared/model';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -49,19 +51,10 @@ import {
   useUpdateSidebarPrefs,
 } from '@/layers/entities/config';
 import { getRuntimeDescriptor } from '@/layers/entities/runtime';
-import { directMessageTitle, hasUnread, useStartDirectMessage } from '@/layers/entities/room';
-import type { AgentPickerCandidate } from '@/layers/entities/agent';
-import { ChannelCreateDialog, NewDirectMessageMenu } from '@/layers/features/room-management';
+import { hasUnread } from '@/layers/entities/room';
 import { librarySectionId, type SidebarSectionModel } from '../model/build-sidebar-model';
-import { offersGroupAffordances } from '../model/rules/build-library-sections';
+import { useCreateFlowStore, type NewMenuItemId } from '../model/create-flow-store';
 import { useMarkRoomsRead } from '../model/use-mark-rooms-read';
-import {
-  activeNowPreset,
-  byRuntimePresets,
-  meetsSmartGroupDisclosureThreshold,
-  type SmartGroupPreset,
-} from '../model/smart-group-presets';
-import { AddAgentMenu } from './AddAgentMenu';
 import { GroupCreateInput } from './GroupCreateInput';
 import {
   buildAgentsHeaderMenuNodes,
@@ -119,10 +112,12 @@ export function useSectionChrome(section: SidebarSectionModel): SectionChrome {
   const prefs = useSidebarPrefs();
   const { update } = useUpdateSidebarPrefs();
   const markRoomsRead = useMarkRoomsRead();
-  const startDirectMessage = useStartDirectMessage();
+  const openNewMenu = useCreateFlowStore((s) => s.openMenu);
+  // Touch has no hover, so the `+` is drawn at rest there instead — the same
+  // two-other-paths rule the kebab follows (R2, design-system §Hover Pattern
+  // Mobile Alternatives).
+  const isMobile = useIsMobile();
 
-  const [creatingChannel, setCreatingChannel] = useState(false);
-  const [pickerOpen, setPickerOpen] = useState(false);
   const [smartDialogOpen, setSmartDialogOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [isRenaming, setIsRenaming] = useState(false);
@@ -200,38 +195,31 @@ export function useSectionChrome(section: SidebarSectionModel): SectionChrome {
     }
     return Array.from(set).sort();
   }, [smartGroupCandidates]);
-  // "Small cockpits see zero new chrome" — the smart-group fork and its presets
-  // only appear once the fleet is large or varied enough to benefit.
-  // BC-32, at the one place it can actually gate anything: no "New group" and
-  // no smart-group presets until eight agents or two runtimes. Chrome appears
-  // by data volume, and there is no settings toggle for it anywhere.
-  const offersGroups = offersGroupAffordances(smartGroupCandidates);
-  const smartGroupPresets = useMemo<SmartGroupPreset[]>(
-    () =>
-      meetsSmartGroupDisclosureThreshold(smartGroupCandidates)
-        ? [activeNowPreset(), ...byRuntimePresets(smartGroupCandidates)]
-        : [],
-    [smartGroupCandidates]
-  );
 
   /**
-   * Start a conversation with whoever the picker returned.
+   * A section's `+`: the deep link into the one New menu, on the item that
+   * matches this section (BC-45).
    *
-   * Every agent is offerable, always: the server matches a direct message on
-   * its exact member set and answers with the room you already have, so a
-   * duplicate one-to-one is prevented there rather than by hiding people here.
+   * Hidden at rest, revealed by hover AND by `focus-visible`, and drawn
+   * permanently on touch — hover-only chrome is unreachable from a keyboard and
+   * does not exist at all on a phone (R2).
+   *
+   * @param item - The New-menu item this section's `+` stands for.
+   * @param label - What a screen reader hears.
    */
-  const startDirectMessageWith = (chosen: AgentPickerCandidate[]) => {
-    const title = directMessageTitle(chosen.map((candidate) => candidate.displayName));
-    startDirectMessage.mutate(
-      { agentPaths: chosen.map((candidate) => candidate.agentPath), title },
-      {
-        onSuccess: (room) => chrome.openTarget({ kind: 'room', roomId: room.id, roomKind: 'dm' }),
-        onError: (error) =>
-          toast.error(error.message || `Could not start a conversation with ${title}`),
-      }
-    );
-  };
+  const deepLinkAction = (item: NewMenuItemId, label: string): ReactNode => (
+    <SidebarGroupAction
+      className={cn(
+        'right-2 transition-opacity',
+        'group-hover/section:opacity-100 focus-visible:opacity-100',
+        isMobile ? 'opacity-100' : 'opacity-0'
+      )}
+      aria-label={label}
+      onClick={() => openNewMenu(item)}
+    >
+      <Plus />
+    </SidebarGroupAction>
+  );
 
   const groupCreationField =
     chrome.groupCreation === null ? null : (
@@ -260,30 +248,10 @@ export function useSectionChrome(section: SidebarSectionModel): SectionChrome {
       menuNodes: buildChannelsHeaderMenuNodes({
         collapsed: section.collapsed,
         hasUnread: unreadIds.channels.length > 0,
-        onNewChannel: () => setCreatingChannel(true),
         onMarkAllRead: () => markRoomsRead(unreadIds.channels),
         onToggleCollapsed: toggleCollapsed,
       }),
-      action: (
-        <SidebarGroupAction
-          className="right-2"
-          aria-label="New channel"
-          onClick={() => setCreatingChannel(true)}
-        >
-          <Plus />
-        </SidebarGroupAction>
-      ),
-      // Mounted only while open, so a name and a half-picked roster are
-      // forgotten between attempts rather than waiting there next time.
-      dialogs: creatingChannel ? (
-        <ChannelCreateDialog
-          open
-          onOpenChange={(next) => !next && setCreatingChannel(false)}
-          onCreated={(room) =>
-            chrome.openTarget({ kind: 'room', roomId: room.id, roomKind: 'channel' })
-          }
-        />
-      ) : undefined,
+      action: deepLinkAction('new-channel', 'New channel'),
     };
   }
 
@@ -294,17 +262,10 @@ export function useSectionChrome(section: SidebarSectionModel): SectionChrome {
       menuNodes: buildDirectMessagesHeaderMenuNodes({
         collapsed: section.collapsed,
         hasUnread: unreadIds.dms.length > 0,
-        onNewMessage: () => setPickerOpen(true),
         onMarkAllRead: () => markRoomsRead(unreadIds.dms),
         onToggleCollapsed: toggleCollapsed,
       }),
-      action: (
-        <NewDirectMessageMenu
-          open={pickerOpen}
-          onOpenChange={setPickerOpen}
-          onStart={startDirectMessageWith}
-        />
-      ),
+      action: deepLinkAction('new-message', 'New direct message'),
     };
   }
 
@@ -315,48 +276,11 @@ export function useSectionChrome(section: SidebarSectionModel): SectionChrome {
       menuNodes: buildAgentsHeaderMenuNodes({
         sortMode: section.options?.sortMode === 'recent' ? 'recent' : 'name',
         displayFilter: section.options?.displayFilter ?? 'all',
-        onNewAgent: () => useAgentCreationStore.getState().open(),
-        ...(offersGroups ? { onNewGroup: () => chrome.requestNewGroup() } : {}),
         onSortModeChange: (mode) => update((prev) => setSectionSortMode(prev, 'agents', mode)),
         onDisplayFilterChange: (next) =>
           update((prev) => setSectionDisplayFilter(prev, 'agents', next)),
       }),
-      action: (
-        <>
-          <AddAgentMenu
-            {...(offersGroups ? { onNewGroup: () => chrome.requestNewGroup() } : {})}
-            onNewMessage={() => setPickerOpen(true)}
-            smartGroupPresets={smartGroupPresets}
-            onCreatePresetSmartGroup={(preset) =>
-              chrome.createSmartGroupFrom(preset.label, preset.rules)
-            }
-            onOpenSmartGroupDialog={() => setSmartDialogOpen(true)}
-          />
-          {/* The panel, anchored here but drawn from the "+" menu's own entry.
-              Direct messages are made from the Direct messages section, and
-              BC-32 withholds that section until one exists — so without this the
-              first conversation could not be started at all. P2.4's New button
-              takes it over. */}
-          <NewDirectMessageMenu
-            open={pickerOpen}
-            onOpenChange={setPickerOpen}
-            onStart={startDirectMessageWith}
-            hideTrigger
-          />
-        </>
-      ),
-      dialogs: (
-        <SmartGroupRuleDialog
-          open={smartDialogOpen}
-          onOpenChange={setSmartDialogOpen}
-          mode="create"
-          runtimeOptions={runtimeOptions}
-          namespaceOptions={namespaceOptions}
-          onSubmit={({ name, rules }: { name: string; rules: SmartGroupRules }) =>
-            chrome.createSmartGroupFrom(name, rules)
-          }
-        />
-      ),
+      action: deepLinkAction('new-agent', 'New agent'),
       ...(groupCreationField === null ? {} : { footer: groupCreationField }),
     };
   }

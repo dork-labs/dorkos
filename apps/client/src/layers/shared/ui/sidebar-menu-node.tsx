@@ -71,6 +71,15 @@ export interface SidebarMenuActionNode {
   opensInput?: boolean;
   /** Takes something away. Rendered apart, and always with its own confirmation. */
   destructive?: boolean;
+  /**
+   * A quiet trailing note on the item — a keyboard accelerator (`⌘N`).
+   *
+   * Only set it for a key that actually works on the surface the reader is
+   * looking at. A menu that advertises a chord the browser has already taken
+   * is worse than one that stays silent, because the reader blames DorkOS —
+   * the same rule `shortcuts.ts` spells `desktopOnly`, on another surface.
+   */
+  hint?: string;
   /** Perform it. */
   run: () => void;
 }
@@ -231,7 +240,9 @@ function renderNodes(nodes: SidebarMenuNode[], slots: SidebarMenuSlots): ReactNo
         const Icon = node.icon;
         return (
           <Sub key={node.id}>
-            <SubTrigger>
+            {/* Stamped like an action's: a submenu trigger is addressable by
+                the same deep link and the same browser test. */}
+            <SubTrigger data-menu-item-id={node.id}>
               <Icon className="mr-2 size-4" />
               {node.label}
             </SubTrigger>
@@ -244,11 +255,21 @@ function renderNodes(nodes: SidebarMenuNode[], slots: SidebarMenuSlots): ReactNo
         return (
           <Item
             key={node.id}
+            // The item's stable name, on the element. It is what a deep link
+            // focuses ("open New with Channel pre-selected") and what a browser
+            // test clicks — neither of which can address a menu row by its
+            // label without breaking the moment the wording changes.
+            data-menu-item-id={node.id}
             variant={node.destructive ? 'destructive' : undefined}
             onClick={node.run}
           >
             <Icon className="mr-2 size-4" />
             {node.opensInput ? `${node.label}…` : node.label}
+            {node.hint !== undefined && (
+              <span className="text-muted-foreground/60 ml-auto pl-3 text-[11px] tabular-nums">
+                {node.hint}
+              </span>
+            )}
           </Item>
         );
       }

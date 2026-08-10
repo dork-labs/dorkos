@@ -30,7 +30,11 @@ import { DialogHost, FeedbackDialogHost } from '@/layers/widgets/app-layout';
 import { AppBannerSlot, useAppBanners } from '@/layers/widgets/app-banner';
 import { ApprovalsIndicator } from '@/layers/widgets/approvals-indicator';
 import { usePulseFreshness } from '@/layers/widgets/pulse';
-import { DashboardSidebar, SidebarFooterStrip } from '@/layers/features/dashboard-sidebar';
+import {
+  DashboardSidebar,
+  SidebarFooterStrip,
+  SidebarHeaderBlock,
+} from '@/layers/features/dashboard-sidebar';
 import {
   useOnboarding,
   useOnboardingOverlayVisible,
@@ -456,9 +460,12 @@ export function AppShell() {
                           and leaves the panel's identity standing (spec
                           `sidebar-now-today-library` R2, P2 AC-8) — which is the
                           same arrangement the footer strip has and always had.
-                          Empty until P2.4 lands: the four destinations that used
-                          to live here are in the footer strip now, and this
-                          panel has exactly one nav implementation. */}
+                          The four destinations that used to sit here are in the
+                          footer strip now, so this panel has exactly one nav
+                          implementation and this block is only what it says it
+                          is: whose cockpit this is, one New button, one ⌘K
+                          pill (BC-43 → BC-46). */}
+                    <SidebarHeaderBlock />
                     {/* ── Dynamic sidebar body with directional slide ──
                           This wrapper is the clip boundary for the body swap. The
                           slide transform lives on the motion.div below, so the

@@ -16,6 +16,7 @@ import { useInteractionStore } from '@/layers/entities/interactions';
 import { useIdleNudgeStore } from '@/layers/entities/attention';
 import { useDiscoveryStore } from '@/layers/entities/discovery';
 import { useAgentCreationStore } from '@/layers/shared/model';
+import { useCreateFlowStore } from '../model/create-flow-store';
 import { DashboardSidebar } from '../ui/DashboardSidebar';
 import { ALL_CLEAR_BEAT_MS } from '../model/use-all-clear-beat';
 import { LIVE_REGION_DEBOUNCE_MS } from '../model/use-live-region-text';
@@ -702,35 +703,34 @@ describe('DashboardSidebar', () => {
       expect(libraryHeadings()).not.toContain('Pins');
     });
 
-    it('offers no grouping to a small cockpit, and offers it at eight agents', async () => {
-      // The changelog says grouping "shows up once you are running eight agents
-      // or two different kinds". It said that before anything gated it, which
-      // is a release note describing behaviour the code did not have.
-      mockMeshPaths.mockReturnValue(['/a/1', '/a/2', '/a/3']);
-      renderWithProviders(<DashboardSidebar />);
-      await screen.findByRole('heading', { name: /Agents/, level: 3 });
-      fireEvent.pointerDown(screen.getByRole('button', { name: 'Agents section actions' }));
-      expect(await screen.findByRole('menuitem', { name: /New agent/ })).toBeInTheDocument();
-      expect(screen.queryByRole('menuitem', { name: /New group/ })).not.toBeInTheDocument();
-      cleanup();
-
+    // The eight-agents / two-runtimes gate itself moved with the thing it
+    // gates: "Agent group" is a New-menu item now, and `NewMenu.test.tsx`
+    // asserts the threshold there. What is left to assert HERE is that the
+    // section header stopped offering a second door to it (BC-45).
+    it('offers no create action from the Agents section header, at any fleet size', async () => {
       mockMeshPaths.mockReturnValue(Array.from({ length: 8 }, (_, i) => `/a/${i}`));
       renderWithProviders(<DashboardSidebar />);
       await screen.findByRole('heading', { name: /Agents/, level: 3 });
       fireEvent.pointerDown(screen.getByRole('button', { name: 'Agents section actions' }));
-      expect(await screen.findByRole('menuitem', { name: /New group/ })).toBeInTheDocument();
+      // The menu is open and has items — otherwise the two absences below are
+      // true of an empty document and prove nothing.
+      expect(await screen.findByRole('menuitem', { name: /Show/ })).toBeInTheDocument();
+      expect(screen.queryByRole('menuitem', { name: /New agent/ })).not.toBeInTheDocument();
+      expect(screen.queryByRole('menuitem', { name: /New group/ })).not.toBeInTheDocument();
     });
 
-    it('offers grouping at two runtimes however small the fleet', async () => {
-      mockMeshPaths.mockReturnValue(['/a/1', '/a/2']);
-      mockResolvedAgents.mockReturnValue({
-        '/a/1': { id: 'a1', name: 'one', runtime: 'claude-code' },
-        '/a/2': { id: 'a2', name: 'two', runtime: 'codex' },
-      } as never);
+    it('points the Agents section "+" at the one New menu instead of a handler', async () => {
+      mockMeshPaths.mockReturnValue(['/a/1', '/a/2', '/a/3']);
       renderWithProviders(<DashboardSidebar />);
       await screen.findByRole('heading', { name: /Agents/, level: 3 });
-      fireEvent.pointerDown(screen.getByRole('button', { name: 'Agents section actions' }));
-      expect(await screen.findByRole('menuitem', { name: /New group/ })).toBeInTheDocument();
+      expect(useCreateFlowStore.getState().menuOpen).toBe(false);
+
+      fireEvent.click(screen.getByRole('button', { name: 'New agent' }));
+
+      expect(useCreateFlowStore.getState()).toMatchObject({
+        menuOpen: true,
+        preselect: 'new-agent',
+      });
     });
 
     it('offers no "advanced mode" toggle anywhere', () => {

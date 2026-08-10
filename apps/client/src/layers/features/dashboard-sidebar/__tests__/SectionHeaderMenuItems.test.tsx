@@ -6,12 +6,9 @@ import {
   buildAgentsHeaderMenuNodes,
   buildChannelsHeaderMenuNodes,
   buildDirectMessagesHeaderMenuNodes,
-  buildJumpBackInHeaderMenuNodes,
-  buildThreadsHeaderMenuNodes,
   type AgentsHeaderMenuModel,
   type ChannelsHeaderMenuModel,
   type DirectMessagesHeaderMenuModel,
-  type JumpBackInHeaderMenuModel,
   type SectionHeaderMenuNode,
 } from '../ui/SectionHeaderMenuItems';
 import { SectionHeader } from '@/layers/shared/ui';
@@ -36,7 +33,6 @@ function channels(overrides: Partial<ChannelsHeaderMenuModel> = {}): ChannelsHea
   return {
     collapsed: false,
     hasUnread: false,
-    onNewChannel: vi.fn(),
     onMarkAllRead: vi.fn(),
     onToggleCollapsed: vi.fn(),
     ...overrides,
@@ -49,17 +45,7 @@ function dms(
   return {
     collapsed: false,
     hasUnread: false,
-    onNewMessage: vi.fn(),
     onMarkAllRead: vi.fn(),
-    onToggleCollapsed: vi.fn(),
-    ...overrides,
-  };
-}
-
-function jumpBackIn(overrides: Partial<JumpBackInHeaderMenuModel> = {}): JumpBackInHeaderMenuModel {
-  return {
-    collapsed: false,
-    onNewSession: vi.fn(),
     onToggleCollapsed: vi.fn(),
     ...overrides,
   };
@@ -69,8 +55,6 @@ function agents(overrides: Partial<AgentsHeaderMenuModel> = {}): AgentsHeaderMen
   return {
     sortMode: 'name',
     displayFilter: 'all',
-    onNewAgent: vi.fn(),
-    onNewGroup: vi.fn(),
     onSortModeChange: vi.fn(),
     onDisplayFilterChange: vi.fn(),
     ...overrides,
@@ -102,17 +86,13 @@ function submenu(nodes: SectionHeaderMenuNode[], id: string) {
 
 describe('section header item lists', () => {
   it('offers a caught-up Channels header exactly these items, in this order', () => {
-    expect(ids(buildChannelsHeaderMenuNodes(channels()))).toEqual([
-      'new-channel',
-      'sep-create',
-      'collapse',
-    ]);
+    // No 'new-channel': the New menu is the only create surface, and this
+    // section's "+" deep-links into it (BC-45).
+    expect(ids(buildChannelsHeaderMenuNodes(channels()))).toEqual(['collapse']);
   });
 
   it('adds Mark all channels read, and its separator, only when a channel is behind', () => {
     expect(ids(buildChannelsHeaderMenuNodes(channels({ hasUnread: true })))).toEqual([
-      'new-channel',
-      'sep-create',
       'mark-all-read',
       'sep-unread',
       'collapse',
@@ -121,44 +101,18 @@ describe('section header item lists', () => {
 
   it('gives Direct messages the same shape as Channels, with its own nouns', () => {
     const dmNodes = buildDirectMessagesHeaderMenuNodes(dms({ hasUnread: true }));
-    expect(ids(dmNodes)).toEqual([
-      'new-message',
-      'sep-create',
-      'mark-all-read',
-      'sep-unread',
-      'collapse',
-    ]);
+    expect(ids(dmNodes)).toEqual(['mark-all-read', 'sep-unread', 'collapse']);
     expect(action(dmNodes, 'mark-all-read').label).toBe('Mark all read');
     expect(
       action(buildChannelsHeaderMenuNodes(channels({ hasUnread: true })), 'mark-all-read').label
     ).toBe('Mark all channels read');
   });
 
-  it('offers the Jump back in header a new session and its collapse control', () => {
-    expect(ids(buildJumpBackInHeaderMenuNodes(jumpBackIn()))).toEqual([
-      'new-session',
-      'sep-create',
-      'collapse',
-    ]);
-  });
-
-  it('offers the Threads header the one verb it has', () => {
-    expect(
-      ids(buildThreadsHeaderMenuNodes({ collapsed: false, onToggleCollapsed: vi.fn() }))
-    ).toEqual(['collapse']);
-  });
-
   it('puts Show before Sort by on the Agents header, matching a group header', () => {
     // The audit rule from spec §14.1: where a verb already exists, it keeps its
     // label AND its relative position. GroupHeader shows the display filter
     // above the sort submenu, so this one does too.
-    expect(ids(buildAgentsHeaderMenuNodes(agents()))).toEqual([
-      'new-agent',
-      'new-group',
-      'sep-create',
-      'display',
-      'sort',
-    ]);
+    expect(ids(buildAgentsHeaderMenuNodes(agents()))).toEqual(['display', 'sort']);
   });
 
   it('names the collapse item for what choosing it will do', () => {
@@ -174,7 +128,6 @@ describe('section header item lists', () => {
     const labels = [
       ...buildChannelsHeaderMenuNodes(channels({ hasUnread: true })),
       ...buildDirectMessagesHeaderMenuNodes(dms({ hasUnread: true })),
-      ...buildJumpBackInHeaderMenuNodes(jumpBackIn()),
       ...buildAgentsHeaderMenuNodes(agents()),
     ]
       .filter((node) => node.kind === 'action' || node.kind === 'radio')
@@ -182,18 +135,18 @@ describe('section header item lists', () => {
     expect(labels.some((label) => label.endsWith('…'))).toBe(false);
   });
 
-  it('marks exactly the items that need more input, and only those', () => {
+  it('asks for no further input anywhere — every remaining item acts at once', () => {
     const opening = [
       ...buildChannelsHeaderMenuNodes(channels({ hasUnread: true })),
       ...buildDirectMessagesHeaderMenuNodes(dms({ hasUnread: true })),
-      ...buildJumpBackInHeaderMenuNodes(jumpBackIn()),
       ...buildAgentsHeaderMenuNodes(agents()),
     ]
       .filter((node) => node.kind === 'action' && node.opensInput)
       .map((node) => node.id);
-    // "New session" is absent on purpose: it opens the session straight away
-    // rather than asking anything, exactly as the agent row spells it.
-    expect(opening).toEqual(['new-channel', 'new-message', 'new-agent', 'new-group']);
+    // Everything that used to open a dialog from a header — New channel, New
+    // message, New agent, New group — moved into the New menu (BC-45). What is
+    // left clears unread or folds a list, and neither asks a question.
+    expect(opening).toEqual([]);
   });
 
   it('withholds Manual from the Agents sort submenu, which has no hand order', () => {
@@ -224,34 +177,22 @@ describe('section header item lists', () => {
   });
 
   it('runs the real handler behind every item', () => {
-    const onNewChannel = vi.fn();
     const onMarkAllRead = vi.fn();
     const onToggleCollapsed = vi.fn();
     const channelNodes = buildChannelsHeaderMenuNodes(
-      channels({ hasUnread: true, onNewChannel, onMarkAllRead, onToggleCollapsed })
+      channels({ hasUnread: true, onMarkAllRead, onToggleCollapsed })
     );
-    action(channelNodes, 'new-channel').run();
     action(channelNodes, 'mark-all-read').run();
     action(channelNodes, 'collapse').run();
-    expect(onNewChannel).toHaveBeenCalledOnce();
     expect(onMarkAllRead).toHaveBeenCalledOnce();
     expect(onToggleCollapsed).toHaveBeenCalledOnce();
 
-    const onNewMessage = vi.fn();
-    action(buildDirectMessagesHeaderMenuNodes(dms({ onNewMessage })), 'new-message').run();
-    expect(onNewMessage).toHaveBeenCalledOnce();
-
-    const onNewSession = vi.fn();
-    action(buildJumpBackInHeaderMenuNodes(jumpBackIn({ onNewSession })), 'new-session').run();
-    expect(onNewSession).toHaveBeenCalledOnce();
-
-    const onNewAgent = vi.fn();
-    const onNewGroup = vi.fn();
-    const agentNodes = buildAgentsHeaderMenuNodes(agents({ onNewAgent, onNewGroup }));
-    action(agentNodes, 'new-agent').run();
-    action(agentNodes, 'new-group').run();
-    expect(onNewAgent).toHaveBeenCalledOnce();
-    expect(onNewGroup).toHaveBeenCalledOnce();
+    const onDmMarkAllRead = vi.fn();
+    action(
+      buildDirectMessagesHeaderMenuNodes(dms({ hasUnread: true, onMarkAllRead: onDmMarkAllRead })),
+      'mark-all-read'
+    ).run();
+    expect(onDmMarkAllRead).toHaveBeenCalledOnce();
   });
 
   it('writes a chosen sort mode and display filter back to the section', () => {
@@ -363,18 +304,12 @@ describe('SectionHeader variant parity', () => {
     // Same surfaces, same nodes, same order, same checked states — one list,
     // two renderers.
     expect(contextTree).toEqual(dropdownTree);
-    // Written out in full: the create block, its rule, then the two settings —
-    // the order every header in the family follows. The stored sort mode
-    // carries the dot; the other option does not.
+    // Written out in full: the two settings, and nothing that makes anything —
+    // the Agents header's creates moved to the New menu (BC-45). The stored
+    // sort mode carries the dot; the other option does not.
     expect(contextTree).toEqual(
       sortSurfaces([
-        [
-          'menuitem:New agent…',
-          'menuitem:New group…',
-          'separator:',
-          'menuitem:Show',
-          'menuitem:Sort by',
-        ],
+        ['menuitem:Show', 'menuitem:Sort by'],
         [
           'menuitemradio:All:true',
           'menuitemradio:Active:false',
@@ -401,13 +336,7 @@ describe('SectionHeader variant parity', () => {
     // Both rules included: they are what separates what you can make from what
     // you can clear from what the section looks like.
     expect(contextTree).toEqual([
-      [
-        'menuitem:New channel…',
-        'separator:',
-        'menuitem:Mark all channels read',
-        'separator:',
-        'menuitem:Collapse',
-      ],
+      ['menuitem:Mark all channels read', 'separator:', 'menuitem:Collapse'],
     ]);
   });
 });
@@ -426,7 +355,7 @@ describe('SectionHeader', () => {
 
     // Enter on a focused Radix trigger is a keydown, not a click.
     fireEvent.keyDown(trigger, { key: 'Enter' });
-    expect(screen.getByRole('menuitem', { name: 'New agent…' })).toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: 'Show' })).toBeInTheDocument();
   });
 
   it('reveals the "…" on focus, not only on hover — a keyboard has no hover', () => {
@@ -437,13 +366,20 @@ describe('SectionHeader', () => {
   });
 
   it('runs the chosen item’s handler', () => {
-    const onNewAgent = vi.fn();
-    render(header(buildAgentsHeaderMenuNodes(agents({ onNewAgent }))));
+    const onMarkAllRead = vi.fn();
+    render(
+      <SectionHeader
+        label="Channels"
+        collapsed={false}
+        onToggle={() => {}}
+        nodes={buildChannelsHeaderMenuNodes(channels({ hasUnread: true, onMarkAllRead }))}
+      />
+    );
 
-    fireEvent.pointerDown(screen.getByRole('button', { name: 'Agents section actions' }));
-    fireEvent.click(screen.getByRole('menuitem', { name: 'New agent…' }));
+    fireEvent.pointerDown(screen.getByRole('button', { name: 'Channels section actions' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Mark all channels read' }));
 
-    expect(onNewAgent).toHaveBeenCalledOnce();
+    expect(onMarkAllRead).toHaveBeenCalledOnce();
   });
 
   it('collapses from the name button as well as from the menu', () => {
@@ -473,6 +409,6 @@ describe('SectionHeader', () => {
 
     expect(screen.queryByRole('button', { name: 'Agents' })).not.toBeInTheDocument();
     fireEvent.pointerDown(screen.getByRole('button', { name: 'Agents section actions' }));
-    expect(screen.getByRole('menuitem', { name: 'New agent…' })).toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: 'Show' })).toBeInTheDocument();
   });
 });

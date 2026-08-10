@@ -16,10 +16,8 @@ import {
   CheckCheck,
   ChevronsDownUp,
   ChevronsUpDown,
-  FolderPlus,
   ListFilter,
   Pencil,
-  Plus,
   Trash2,
   Users,
   Wand2,
@@ -39,11 +37,6 @@ import { displayFilterNode } from './DisplayFilterMenu';
  * menus (spec `rooms` §14.1).
  */
 export type SectionHeaderActionId =
-  | 'new-channel'
-  | 'new-message'
-  | 'new-agent'
-  | 'new-group'
-  | 'new-session'
   | 'mark-all-read'
   | 'collapse'
   | 'rename'
@@ -71,17 +64,19 @@ export type SectionHeaderMenuNode =
   | Exclude<SidebarMenuNode, SidebarMenuActionNode>;
 
 /**
- * Every header below follows one order: what you can make, then what you can
- * clear, then how this section looks. The blocks are shared functions rather
- * than copied literals because consistency across the headers IS the
- * deliverable (spec `rooms` §14.1) — a builder picks its subset and never
- * invents an order, a label or an icon of its own.
+ * **No header below makes anything.** Every "New …" these menus used to carry
+ * moved into the one New menu on the header block, and a section's hover `+`
+ * deep-links into it rather than running a handler of its own (BC-45). What is
+ * left is one order: what you can clear, then how this section looks. The
+ * blocks are shared functions rather than copied literals because consistency
+ * across the headers IS the deliverable (spec `rooms` §14.1) — a builder picks
+ * its subset and never invents an order, a label or an icon of its own.
  *
- * The rule after the create block.
+ * Collapse or expand, named for what choosing it will do.
+ *
+ * @param collapsed - Whether the section is folded right now.
+ * @param onToggle - Flip it.
  */
-const SEP_CREATE = { kind: 'separator', id: 'sep-create' } as const;
-
-/** Collapse or expand, named for what choosing it will do. */
 function collapseNode(collapsed: boolean, onToggle: () => void): SectionHeaderAction {
   return {
     kind: 'action',
@@ -123,8 +118,6 @@ export interface ChannelsHeaderMenuModel {
   collapsed: boolean;
   /** Whether any channel is behind. Nothing to clear means no "Mark all channels read". */
   hasUnread: boolean;
-  /** Open the channel-create dialog. */
-  onNewChannel: () => void;
   /** Clear the unread badge on every channel. */
   onMarkAllRead: () => void;
   /** Flip the section's collapse state. */
@@ -147,15 +140,6 @@ export function buildChannelsHeaderMenuNodes(
   model: ChannelsHeaderMenuModel
 ): SectionHeaderMenuNode[] {
   return [
-    {
-      kind: 'action',
-      id: 'new-channel',
-      label: 'New channel',
-      icon: Plus,
-      opensInput: true,
-      run: model.onNewChannel,
-    },
-    SEP_CREATE,
     ...markAllReadNodes(model.hasUnread, 'Mark all channels read', model.onMarkAllRead),
     collapseNode(model.collapsed, model.onToggleCollapsed),
   ];
@@ -167,8 +151,6 @@ export interface DirectMessagesHeaderMenuModel {
   collapsed: boolean;
   /** Whether any conversation is behind. */
   hasUnread: boolean;
-  /** Open the agent picker that starts a conversation. */
-  onNewMessage: () => void;
   /** Clear the unread badge on every conversation. */
   onMarkAllRead: () => void;
   /** Flip the section's collapse state. */
@@ -185,82 +167,7 @@ export function buildDirectMessagesHeaderMenuNodes(
   model: DirectMessagesHeaderMenuModel
 ): SectionHeaderMenuNode[] {
   return [
-    {
-      kind: 'action',
-      id: 'new-message',
-      label: 'New message',
-      icon: Plus,
-      opensInput: true,
-      run: model.onNewMessage,
-    },
-    SEP_CREATE,
     ...markAllReadNodes(model.hasUnread, 'Mark all read', model.onMarkAllRead),
-    collapseNode(model.collapsed, model.onToggleCollapsed),
-  ];
-}
-
-/** Inputs the Threads header's item list is built from. */
-export interface ThreadsHeaderMenuModel {
-  /** Whether the section is collapsed, which names the collapse item. */
-  collapsed: boolean;
-  /** Flip the section's collapse state. */
-  onToggleCollapsed: () => void;
-}
-
-/**
- * Build the Threads header's items.
- *
- * One verb, because a thread is something that happens to you rather than
- * something you make: there is nothing to create here, and a thread's unread
- * count is measured against its room's cursor, so "mark all read" would belong
- * to the room and not to this list.
- *
- * @param model - The section's collapse state and its toggle.
- */
-export function buildThreadsHeaderMenuNodes(
-  model: ThreadsHeaderMenuModel
-): SectionHeaderMenuNode[] {
-  return [collapseNode(model.collapsed, model.onToggleCollapsed)];
-}
-
-/** Inputs the "Jump back in" header's item list is built from. */
-export interface JumpBackInHeaderMenuModel {
-  /** Whether the section is collapsed, which names the collapse item. */
-  collapsed: boolean;
-  /** Start a new session. */
-  onNewSession: () => void;
-  /** Flip the section's collapse state. */
-  onToggleCollapsed: () => void;
-}
-
-/**
- * Build the "Jump back in" header's items, in order.
- *
- * **One create action, and it stays "New session" even though the section now
- * lists rooms too.** Channels and Direct messages each carry their own "+" a few
- * rows below, so "New channel" and "New message" here would be third and fourth
- * doors to flows that already have two; a new session is the only thing this
- * list can start that has no button of its own nearby.
- *
- * "New session" carries no ellipsis on purpose: it opens the session straight
- * away rather than asking anything first, and the agent row's own "New session"
- * has always been spelled that way (`buildRowMenuNodes`).
- *
- * @param model - The section's state plus the action callbacks.
- */
-export function buildJumpBackInHeaderMenuNodes(
-  model: JumpBackInHeaderMenuModel
-): SectionHeaderMenuNode[] {
-  return [
-    {
-      kind: 'action',
-      id: 'new-session',
-      label: 'New session',
-      icon: Plus,
-      opensInput: false,
-      run: model.onNewSession,
-    },
-    SEP_CREATE,
     collapseNode(model.collapsed, model.onToggleCollapsed),
   ];
 }
@@ -271,17 +178,6 @@ export interface AgentsHeaderMenuModel {
   sortMode: 'name' | 'recent';
   /** The ungrouped section's display filter (`ui.sidebar.sections.agents.displayFilter`). */
   displayFilter: SidebarDisplayFilter;
-  /** Open the create-agent dialog. */
-  onNewAgent: () => void;
-  /**
-   * Open the inline group-create editor, or absent when this cockpit is not
-   * offered grouping yet.
-   *
-   * Chrome appears by data volume, never by a settings toggle (BC-32): somebody
-   * with three agents on one runtime has nothing to organize, and offering them
-   * a filing system is the "advanced mode" this design does not have.
-   */
-  onNewGroup?: () => void;
   /** Write the chosen sort mode back to `ui.sidebar`. */
   onSortModeChange: (mode: 'name' | 'recent') => void;
   /** Write the chosen display filter back to `ui.sidebar`. */
@@ -302,31 +198,14 @@ export interface AgentsHeaderMenuModel {
  * ungrouped list is what is left over, and hiding it would leave the sidebar
  * with nothing in it.
  *
+ * "New agent" and "New group" are not here: the New menu on the header block
+ * is the one place either is made, and this section's `+` deep-links into it
+ * (BC-45).
+ *
  * @param model - The section's settings plus the action callbacks.
  */
 export function buildAgentsHeaderMenuNodes(model: AgentsHeaderMenuModel): SectionHeaderMenuNode[] {
   return [
-    {
-      kind: 'action',
-      id: 'new-agent',
-      label: 'New agent',
-      icon: Plus,
-      opensInput: true,
-      run: model.onNewAgent,
-    },
-    ...(model.onNewGroup === undefined
-      ? []
-      : [
-          {
-            kind: 'action' as const,
-            id: 'new-group' as const,
-            label: 'New group',
-            icon: FolderPlus,
-            opensInput: true,
-            run: model.onNewGroup,
-          },
-        ]),
-    SEP_CREATE,
     displayFilterNode(model.displayFilter, (value) =>
       model.onDisplayFilterChange(value as SidebarDisplayFilter)
     ),

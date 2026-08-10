@@ -384,7 +384,7 @@ function SectionHeaderShowcase() {
   return (
     <PlaygroundSection
       title="SectionHeader"
-      description="Every sidebar section header carries its own menu — right-click the header, or use the ⋮ that appears on hover and on focus. Both render ONE node list, so they can never drift. The section's identity icon morphs into the collapse chevron the moment you reach for it. Channels collapses and can clear its unread; Agents has no collapse and exposes the section's own Show and Sort by settings."
+      description="Every sidebar section header carries its own menu — right-click the header, or use the ⋮ that appears on hover and on focus. Both render ONE node list, so they can never drift. The section's identity icon morphs into the collapse chevron the moment you reach for it. Channels collapses and can clear its unread; Agents has no collapse and exposes the section's own Show and Sort by settings. Neither makes anything: creating moved to the one New menu, and a section's hover + deep-links into it."
     >
       <ShowcaseLabel>Channels — collapsible, with unread to clear</ShowcaseLabel>
       <ShowcaseDemo>
@@ -397,7 +397,6 @@ function SectionHeaderShowcase() {
             nodes={buildChannelsHeaderMenuNodes({
               collapsed,
               hasUnread: true,
-              onNewChannel: () => {},
               onMarkAllRead: () => {},
               onToggleCollapsed: () => setCollapsed((prev) => !prev),
             })}
@@ -416,8 +415,6 @@ function SectionHeaderShowcase() {
             nodes={buildAgentsHeaderMenuNodes({
               sortMode,
               displayFilter: 'all',
-              onNewAgent: () => {},
-              onNewGroup: () => {},
               onSortModeChange: setSortMode,
               onDisplayFilterChange: () => {},
             })}

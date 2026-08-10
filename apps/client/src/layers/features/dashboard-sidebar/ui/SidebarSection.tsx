@@ -135,7 +135,12 @@ export function SidebarSection({
 
   return (
     <SidebarGroup
-      className="px-0"
+      // `group/section` is what the header's `+` hangs its hover reveal on: the
+      // `+` is positioned against this box rather than inside the header's own
+      // menu surface, so it needs a named group of its own to watch (R2's
+      // "nothing renders at rest", with `focus-visible` and touch as the two
+      // other paths).
+      className="group/section px-0"
       // A stable handle for the page objects. `[data-slot="sidebar-group"]`
       // alone is ambiguous the moment a section nests: a group's wrapper sits
       // INSIDE the Agents wrapper, so a filter for "the group whose header says

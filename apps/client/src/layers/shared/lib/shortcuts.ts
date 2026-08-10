@@ -55,6 +55,18 @@ export const SHORTCUTS = {
     label: 'Command palette',
     group: 'navigation',
   },
+  // The New menu's fast path (spec `sidebar-now-today-library` BC-45). Desktop
+  // only, and listed only there, for the reason `desktopOnly` exists: a browser
+  // claims Cmd/Ctrl+N for its own new window before the page ever sees the
+  // event, so advertising it in a browser would promise something DorkOS cannot
+  // deliver.
+  NEW_SESSION: {
+    id: 'new-session',
+    key: 'mod+n',
+    label: 'New session',
+    group: 'navigation',
+    desktopOnly: true,
+  },
   TOGGLE_SIDEBAR: {
     id: 'toggle-sidebar',
     key: 'mod+b',
