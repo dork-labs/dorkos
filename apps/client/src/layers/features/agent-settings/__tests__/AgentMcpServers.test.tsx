@@ -891,28 +891,37 @@ describe('AgentMcpServers', () => {
     // server with no bearer and hides the Sign in button — the DOR-985 lie in a
     // 1ms window. A strict `<` also made the staleness behaviour depend on
     // whether two events landed in the same millisecond, which flaked in a real
-    // full-monorepo run. `Date.now` is held at the listing's own `dataUpdatedAt`
-    // while the probe resolves, so the tie is produced deterministically rather
-    // than waited for.
-    const transport = createMockTransport({
-      listAgentMcpServers: vi
-        .fn()
-        .mockResolvedValue([{ ...oauthServer, authStatus: 'needs-auth' } as ManagedMcpServerView]),
-      getMcpConfig: vi.fn().mockResolvedValue({ servers: [] }),
-      testAgentMcpServer: vi.fn().mockResolvedValue({ ok: true, toolCount: 4 }),
-    });
-    const { container, queryClient } = renderComponent(transport);
-
-    await waitFor(() => expect(within(container).getByText('Needs sign-in')).toBeInTheDocument());
-
-    const rosterAt = Math.max(
-      ...queryClient
-        .getQueryCache()
-        .getAll()
-        .map((query) => query.state.dataUpdatedAt)
-    );
-    const now = vi.spyOn(Date, 'now').mockReturnValue(rosterAt);
+    // full-monorepo run.
+    //
+    // The tie is MANUFACTURED, and manufacturing it means holding one clock for
+    // the whole test: `rosterUpdatedAt` is the listing query's `dataUpdatedAt`
+    // (`Date.now()` when it landed) and the probe's stamp is `Date.now()` when it
+    // settled, so a frozen `Date.now` makes those two equal by construction, with
+    // no window to miss.
+    //
+    // Reading the freeze point back off the query cache instead — the MAX
+    // `dataUpdatedAt` across every query — is what made this flake on CI
+    // (DOR-1060). This panel runs two independent requests, the listing and the
+    // config, and nothing orders them. Land them in one millisecond and the max IS
+    // the listing's stamp, so the probe tied and lost; let the config land a
+    // millisecond later, as a loaded runner does, and the max sat AHEAD of the
+    // listing — so the probe was stamped strictly newer, won the very tie this
+    // test is named for, and took the Sign in button below with it.
+    const now = vi.spyOn(Date, 'now').mockReturnValue(1_760_000_000_000);
     try {
+      const transport = createMockTransport({
+        listAgentMcpServers: vi
+          .fn()
+          .mockResolvedValue([
+            { ...oauthServer, authStatus: 'needs-auth' } as ManagedMcpServerView,
+          ]),
+        getMcpConfig: vi.fn().mockResolvedValue({ servers: [] }),
+        testAgentMcpServer: vi.fn().mockResolvedValue({ ok: true, toolCount: 4 }),
+      });
+      const { container } = renderComponent(transport);
+
+      await waitFor(() => expect(within(container).getByText('Needs sign-in')).toBeInTheDocument());
+
       await pressTest(container, 'granola');
 
       // The probe really did run and answer OK — this is not a test that passes
