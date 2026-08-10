@@ -1,8 +1,8 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { useTransport } from '@/layers/shared/model';
+import { PENDING_APPROVALS_QUERY_KEY } from '@/layers/entities/attention';
 import { describeDecisionRefusal } from '../lib/decision-refusal';
-import { PENDING_APPROVALS_QUERY_KEY } from './use-pending-approvals';
 import { STANDING_PERMISSIONS_QUERY_KEY } from './use-standing-permissions';
 
 /**

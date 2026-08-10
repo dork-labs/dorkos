@@ -127,17 +127,21 @@ vi.mock('@/layers/shared/model', async (importOriginal) => {
 
 let mockPendingApprovals: Array<{ approvalId: string }> = [];
 let mockApprovalsError = false;
-vi.mock('@/layers/features/approvals', () => ({
-  ApprovalList: ({ approvals }: { approvals: Array<{ approvalId: string }> }) => (
-    <div data-testid="approval-list">{approvals.length} cards</div>
-  ),
-  ApprovalsUnavailable: () => <div data-testid="approvals-unavailable">unavailable</div>,
+// The queue itself is an ENTITY now, so its stub lives on the entity — the
+// approvals feature owns the cards it is rendered into and nothing else.
+vi.mock('@/layers/entities/attention', () => ({
   usePendingApprovals: () => ({
     approvals: mockPendingApprovals,
     isLoading: false,
     isError: mockApprovalsError,
     retry: vi.fn(),
   }),
+}));
+vi.mock('@/layers/features/approvals', () => ({
+  ApprovalList: ({ approvals }: { approvals: Array<{ approvalId: string }> }) => (
+    <div data-testid="approval-list">{approvals.length} cards</div>
+  ),
+  ApprovalsUnavailable: () => <div data-testid="approvals-unavailable">unavailable</div>,
   StandingPermissionList: () => <div data-testid="standing-permission-list" />,
   // This suite is about WHERE the marker sits, not about standing permissions.
   // An empty list keeps the marker's appearance driven solely by the pending

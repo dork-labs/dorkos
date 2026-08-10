@@ -1,0 +1,118 @@
+/**
+ * "What needs me right now?", answered once for the whole cockpit.
+ *
+ * The sidebar's Now zone and the home surface's triage header ask the same
+ * question of the same sources; before this they each assembled their own
+ * answer inside a feature the other could not import. This is the shared one.
+ *
+ * **Referential stability is a contract here, not a nicety.** The sidebar folds
+ * this list into a snapshot that must not change identity when an agent calls a
+ * tool (spec §H) — so every source is put behind a stability guard and the
+ * result is memoized. A fresh array per render would rebuild the entire sidebar
+ * every couple of seconds per working session.
+ *
+ * @module entities/attention/model/use-attention-signals
+ */
+import { useMemo } from 'react';
+import { useShallow } from 'zustand/shallow';
+import type { PendingApproval } from '@dorkos/shared/approval-schemas';
+import type { SessionLifecycle } from '@dorkos/shared/session-stream';
+import type { Session } from '@dorkos/shared/types';
+import { useNow } from '@/layers/shared/model';
+import { disambiguateDisplayNames, useResolvedAgents } from '@/layers/entities/agent';
+import { useMeshAgentPaths } from '@/layers/entities/mesh';
+import {
+  useRecentSessions,
+  useSessionListStore,
+  useSessionStreamStore,
+} from '@/layers/entities/session';
+import type { AttentionSignal } from './attention-signal';
+import { deriveAttentionSignals, type AttentionInteraction } from './derive-attention-signals';
+import { useIdleNudgeStore } from './idle-nudge-store';
+import { usePendingApprovals } from './use-pending-approvals';
+
+/**
+ * How often the idle threshold is re-evaluated.
+ *
+ * One minute, matching the sidebar's own clock: the only rule that reads the
+ * clock here is a thirty-minute boundary, and a finer tick would rebuild the
+ * list for an answer that did not change.
+ */
+const ATTENTION_CLOCK_TICK_MS = 60_000;
+
+/** Shared empties, so an unanswered query never mints a fresh array identity. */
+const NO_SESSIONS: readonly Session[] = [];
+const NO_APPROVALS: readonly PendingApproval[] = [];
+
+/**
+ * Everything needing the operator, oldest source first and dismissals applied.
+ *
+ * Ordering is not decided here — {@link deriveAttentionSignals} returns
+ * membership and the sidebar's `rankNowItems` decides priority (BC-6), so a
+ * second consumer is free to order it differently without two orderings
+ * disagreeing about what is in the list.
+ */
+export function useAttentionSignals(): readonly AttentionSignal[] {
+  const now = useNow(ATTENTION_CLOCK_TICK_MS);
+
+  const { approvals } = usePendingApprovals();
+  const recent = useRecentSessions();
+  const sessions = recent.data?.sessions ?? NO_SESSIONS;
+
+  // **Lifecycle only, never `activity`.** The status objects in the store carry
+  // the live verb, so selecting them whole would put a new identity in front of
+  // the memo on every tool call — the exact churn this hook exists to survive.
+  const lifecycles = useSessionListStore(
+    useShallow((state): Record<string, SessionLifecycle> => {
+      const out: Record<string, SessionLifecycle> = {};
+      for (const [id, status] of Object.entries(state.statuses)) out[id] = status.lifecycle;
+      return out;
+    })
+  );
+
+  // What each ATTACHED session is blocked on. `useShallow` holds across status
+  // churn because the store is immer-backed: a `session_status` replaces the
+  // session's own record but leaves `pendingInteractions` — and the DTO objects
+  // inside it — structurally shared, so the values this selector picks out keep
+  // their identity until an interaction actually opens or closes.
+  const interactions = useSessionStreamStore(
+    useShallow((state): Record<string, AttentionInteraction> => {
+      const out: Record<string, AttentionInteraction> = {};
+      for (const [id, session] of Object.entries(state.sessions)) {
+        const first = session.pendingInteractions[0];
+        if (first !== undefined) out[id] = first;
+      }
+      return out;
+    })
+  );
+
+  // The roster, for the one thing a signal needs from it: what to call the
+  // agent. Both queries are ones the cockpit already holds, so this is a cache
+  // read and the net request count is unchanged.
+  const { data: meshData } = useMeshAgentPaths();
+  const rawPaths = useMemo(
+    () => (meshData?.agents ?? []).map((entry) => entry.projectPath),
+    [meshData]
+  );
+  const { data: manifests } = useResolvedAgents(rawPaths);
+  const agentNames = useMemo(
+    () => disambiguateDisplayNames(rawPaths, manifests ?? {}),
+    [rawPaths, manifests]
+  );
+
+  const dismissed = useIdleNudgeStore((state) => state.dismissed);
+
+  return useMemo(
+    () =>
+      deriveAttentionSignals({
+        now,
+        approvals: approvals.length === 0 ? NO_APPROVALS : approvals,
+        sessions,
+        lifecycles,
+        interactions,
+        agentNames,
+        dismissed,
+      }),
+    [now, approvals, sessions, lifecycles, interactions, agentNames, dismissed]
+  );
+}

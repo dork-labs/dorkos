@@ -23,11 +23,13 @@ import {
   Sparkles,
   TriangleAlert,
   Users,
+  X,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { SidebarItemRef } from '@dorkos/shared/config-schema';
-import { SidebarRow } from '@/layers/shared/ui';
+import { SidebarRow, type SidebarRowMenu } from '@/layers/shared/ui';
 import { AgentAvatar, useAgentVisual } from '@/layers/entities/agent';
+import { dismissIdleNudge } from '@/layers/entities/attention';
 import type { SidebarIconId, SidebarRowModel, SidebarTarget } from '../model/build-sidebar-model';
 import { AgentListItem } from './AgentListItem';
 import { RoomRow } from './rooms/RoomRow';
@@ -237,6 +239,29 @@ function GenericRowFromModel({
     agentPath ?? row.key
   );
   const Icon = row.glyph.kind === 'icon' ? ICON[row.glyph.icon] : null;
+  // The only menu a Now row ever has, and only the row that earns it: an idle
+  // nudge is the product being helpful, so it is the one thing in Now the
+  // operator may wave away (BC-10). Everything else clears by being resolved —
+  // there is no snooze anywhere in this zone (BC-42).
+  const signalId =
+    row.target.kind === 'attention' && row.attention?.dismissible === true
+      ? row.target.signalId
+      : null;
+  const menu: SidebarRowMenu =
+    signalId === null
+      ? {}
+      : {
+          menuNodes: [
+            {
+              kind: 'action',
+              id: 'dismiss',
+              label: 'Dismiss',
+              icon: X,
+              run: () => dismissIdleNudge(signalId),
+            },
+          ],
+          actionsLabel: `${row.primary} actions`,
+        };
   const glyph =
     row.glyph.kind === 'agent-avatar' ? (
       <AgentAvatar color={visual.color} emoji={visual.emoji} size="xs" />
@@ -260,6 +285,7 @@ function GenericRowFromModel({
       {...(row.preview === undefined ? {} : { preview: row.preview })}
       onSelect={() => chrome.openTarget(row.target)}
       {...(drag ? { drag } : {})}
+      {...menu}
       trailing={
         row.unread.tier === 'directed' && row.unread.count !== undefined ? (
           <span

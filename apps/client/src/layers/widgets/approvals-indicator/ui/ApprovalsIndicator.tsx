@@ -9,12 +9,12 @@ import {
 } from '@/layers/shared/ui';
 import { useEventStream } from '@/layers/shared/model';
 import { cn } from '@/layers/shared/lib';
+import { usePendingApprovals } from '@/layers/entities/attention';
 import {
   ApprovalList,
   ApprovalsUnavailable,
   StandingPermissionList,
   StandingPermissionsUnavailable,
-  usePendingApprovals,
   useStandingPermissions,
 } from '@/layers/features/approvals';
 

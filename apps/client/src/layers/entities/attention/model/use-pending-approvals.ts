@@ -1,3 +1,13 @@
+/**
+ * The queue of approvals waiting on a person — unchanged behaviour, moved down
+ * a layer.
+ *
+ * It lived in `features/approvals` until the sidebar needed the same queue, and
+ * a feature may not read a sibling feature's model. `features/approvals`
+ * re-exports it, so every surface that already imported it kept its one import.
+ *
+ * @module entities/attention/model/use-pending-approvals
+ */
 import { useEffect, useState } from 'react';
 import { useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import {

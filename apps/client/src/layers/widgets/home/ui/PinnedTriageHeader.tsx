@@ -1,7 +1,7 @@
 import { useCallback } from 'react';
 import { useNavigate, useSearch } from '@tanstack/react-router';
 import { useIsMobile } from '@/layers/shared/model';
-import { usePendingApprovals } from '@/layers/features/approvals';
+import { usePendingApprovals } from '@/layers/entities/attention';
 import {
   useAttentionItems,
   DeadLetterDetailSheet,

@@ -193,6 +193,63 @@ describe('BC-9 — the working rollup', () => {
   it('is absent when nothing is working', () => {
     expect(buildWorkingRollup({ ...busyFixture, workingSessionIds: [] })).toBeNull();
   });
+
+  it('counts no automated session — a scheduled run does not need you', () => {
+    // The ruling of 2026-08-10 (see `build-working-rollup.ts`): §18's automated
+    // row reads "Automated session activity → Nothing", and Now holds only what
+    // needs the operator. `busyFixture` already carries two automated sessions
+    // — a `task` and a `room` — so this is the real shape rather than a
+    // constructed one.
+    const automatedIds = busyFixture.sessions
+      .filter((session) => session.origin !== undefined && session.origin !== 'user')
+      .map((session) => session.id);
+    // Both halves of the pair are non-empty first, so neither assertion below
+    // can pass by looking at nothing.
+    expect(automatedIds).toEqual(['ses-auto-1', 'ses-auto-2']);
+
+    expect(buildWorkingRollup({ ...busyFixture, workingSessionIds: automatedIds })).toBeNull();
+    // And the same count of HUMAN sessions does produce one, so the `null` above
+    // is the origin filter rather than an inert path.
+    expect(
+      buildWorkingRollup({ ...busyFixture, workingSessionIds: ['ses-1', 'ses-2'] })?.primary
+    ).toBe('2 working');
+  });
+
+  it('counts the human ones out of a mixed set', () => {
+    expect(
+      buildWorkingRollup({
+        ...busyFixture,
+        workingSessionIds: ['ses-1', 'ses-auto-1', 'ses-3', 'ses-auto-2'],
+      })?.primary
+    ).toBe('2 working');
+  });
+
+  it('counts a working session the snapshot cannot see at all', () => {
+    // Origin lives on the session record, so an id with no record is one whose
+    // origin is UNKNOWN — not one known to be automated. Counting it is the
+    // deliberate direction: hiding a human turn is the worse error.
+    expect(
+      buildWorkingRollup({ ...busyFixture, workingSessionIds: ['ses-not-in-recents'] })?.primary
+    ).toBe('1 working');
+  });
+
+  it('still lets an automated session that is BLOCKED into Now (§18’s carve-out)', () => {
+    // The other half of the ruling, and the half a reader will look for: only
+    // the liveness COUNT excludes automation. A blocked automated session
+    // arrives as an ATTENTION signal — `entities/attention` reads no origin,
+    // asserted in `entities/attention/__tests__/derive-attention-signals.test.ts`
+    // ("puts an automated session that IS blocked in like anything else") — and
+    // Now draws it like anything else.
+    const state: SidebarState = {
+      ...busyFixture,
+      workingSessionIds: ['ses-auto-1'],
+      attention: [signal('sig-auto', 'permission-prompt', 0.2)],
+    };
+    const rows = zoneRows(state, 'now');
+    // The automated session contributed no working row, and the blocked one it
+    // raised is present — one state proving both halves at once.
+    expect(rows.map((row) => row.reason)).toEqual(['now:permission-prompt']);
+  });
 });
 
 describe('BC-11 — the live region announces counts only', () => {

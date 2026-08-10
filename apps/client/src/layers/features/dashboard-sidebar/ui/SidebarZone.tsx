@@ -10,6 +10,8 @@
  */
 import { cn } from '@/layers/shared/lib';
 import type { SidebarZoneModel } from '../model/build-sidebar-model';
+import { useLiveRegionText } from '../model/use-live-region-text';
+import { AllClearBeat } from './AllClearBeat';
 import { SidebarSection } from './SidebarSection';
 
 /** Props for {@link SidebarZone}. */
@@ -18,6 +20,15 @@ export interface SidebarZoneProps {
   zone: SidebarZoneModel;
   /** Fold or unfold every Library section at once — Alt/Option-click (BC-30). */
   onToggleAll: () => void;
+  /**
+   * Draw the all-clear beat in place of this zone's sections (BC-50).
+   *
+   * Only ever true for `now`, and only while the beat is playing. It is a prop
+   * rather than something this component works out, because "the last item just
+   * resolved" is a transition between two models and a component handed one
+   * model cannot see it.
+   */
+  allClear?: boolean;
 }
 
 /**
@@ -31,8 +42,9 @@ export interface SidebarZoneProps {
  *
  * @param props - The zone and the all-sections toggle.
  */
-export function SidebarZone({ zone, onToggleAll }: SidebarZoneProps) {
+export function SidebarZone({ zone, onToggleAll, allClear = false }: SidebarZoneProps) {
   const headingId = `sidebar-zone-${zone.id}`;
+  const liveRegionText = useLiveRegionText(zone.liveRegionText);
   return (
     <section
       aria-labelledby={headingId}
@@ -49,21 +61,32 @@ export function SidebarZone({ zone, onToggleAll }: SidebarZoneProps) {
         zone.id === 'now' || zone.id === 'getting-started' ? 'bg-sidebar-accent/40' : undefined
       )}
     >
+      {/* **`/70`, not `/50`, and the number is a measurement.** On the zone
+          tint in the light theme a 50% label composites to #7d7d7d on #e3e3e3 —
+          3.2:1, under the 4.5:1 the design system requires of every label
+          (spec R1, design-system §Accessibility). 70% lands at #545454, which
+          clears it, and the dark theme was never the tight side. Caught by the
+          showcase's axe gate once this component was drawn there; the previous
+          gate measured a hand-rolled heading instead of this one. */}
       <h2
         id={headingId}
-        className="text-sidebar-foreground/50 px-2 pt-1 pb-0.5 text-[11px] font-medium"
+        className="text-sidebar-foreground/70 px-2 pt-1 pb-0.5 text-[11px] font-medium"
       >
         {zone.label}
       </h2>
-      {/* Count changes only, and debounced by the fact that the count is all it
-          carries: a verb or an unread change reaching a screen reader from here
-          would turn a fleet of thirty agents into a siren (BC-11, R2). */}
+      {/* Count changes only, held for a second before it is published: a verb or
+          an unread change reaching a screen reader from here would turn a fleet
+          of thirty agents into a siren (BC-11, R2). */}
       <span aria-live="polite" aria-atomic="true" className="sr-only">
-        {zone.liveRegionText ?? ''}
+        {liveRegionText}
       </span>
-      {zone.sections.map((section) => (
-        <SidebarSection key={section.id} section={section} onToggleAll={onToggleAll} />
-      ))}
+      {allClear ? (
+        <AllClearBeat />
+      ) : (
+        zone.sections.map((section) => (
+          <SidebarSection key={section.id} section={section} onToggleAll={onToggleAll} />
+        ))
+      )}
     </section>
   );
 }

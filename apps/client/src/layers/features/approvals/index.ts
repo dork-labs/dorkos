@@ -23,7 +23,6 @@ export { ApprovalList } from './ui/ApprovalList';
 // person answers on the home tab, resolving the same approval.
 export { ApprovalCard } from './ui/ApprovalCard';
 export { ApprovalsUnavailable } from './ui/ApprovalsUnavailable';
-export { usePendingApprovals } from './model/use-pending-approvals';
 export { StandingPermissionList } from './ui/StandingPermissionList';
 export { StandingPermissionsUnavailable } from './ui/StandingPermissionsUnavailable';
 export { StandingPermissionsSettings } from './ui/StandingPermissionsSettings';
