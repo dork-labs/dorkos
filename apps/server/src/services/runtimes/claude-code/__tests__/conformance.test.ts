@@ -1,4 +1,8 @@
-import { beforeEach, vi } from 'vitest';
+import { afterAll, beforeEach, vi } from 'vitest';
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { randomUUID } from 'node:crypto';
 import { runtimeConformance } from '@dorkos/test-utils';
 import { wrapSdkQuery, sdkError, sdkSimpleText, sdkCompaction } from './sdk-scenarios.js';
 
@@ -6,6 +10,46 @@ import { wrapSdkQuery, sdkError, sdkSimpleText, sdkCompaction } from './sdk-scen
 // the stateless TestModeRuntime (spec additional-agent-runtimes, task 1.5).
 // The SDK is fully mocked — this suite must NEVER require the real `claude`
 // binary. Mock preamble mirrors claude-code-runtime.test.ts.
+
+/**
+ * The hermetic Claude ACCOUNT this suite reads and watches, filled in at module
+ * scope below.
+ *
+ * A holder object rather than a bare string because `vi.mock` factories are
+ * hoisted above every import: the mock can only close over something that
+ * exists before `node:fs` does, and it reads `.root` lazily, by which time
+ * module scope has created the directory.
+ */
+const account = vi.hoisted(() => ({ root: '' }));
+
+// The account resolver is the ONLY thing standing between this suite and the
+// developer's real Claude Code history, and unmocked it does not stand there at
+// all: `resolveClaudeRootSet()` unconditionally includes `~/.claude` plus
+// whatever `$CLAUDE_CONFIG_DIR` names, so `subscribeSessionList` attached
+// chokidar to every real account on the machine — hundreds of project
+// directories and gigabytes of transcripts. Tearing those watchers down took
+// 10-24s on a working macOS box (fs.watch is one FSEvents stream per path, all
+// stopped through libuv's single CFRunLoop thread), which blew the 5000ms test
+// timeout inside the harness's `finally` — a red that had nothing to do with
+// the assertion. CI never saw it because CI has no `~/.claude` at all: the root
+// set came back EMPTY, no watcher was created, no event was ever emitted, and
+// the schema assertion the test exists for silently never ran (DOR-1085).
+//
+// Pointing the resolver at a seeded temp account fixes both halves — teardown
+// is milliseconds, and the assertion now runs on every machine including CI.
+// Real root resolution keeps its own coverage in claude-config-dir's unit tests;
+// conformance is about the AgentRuntime contract, not about which home
+// directory this laptop has.
+vi.mock('../claude-config-dir.js', () => ({
+  resolveActiveClaudeRoot: () => account.root,
+  resolveClaudeRootSet: () => [account.root],
+  claudeConfigDirEnv: (root: string) => ({ CLAUDE_CONFIG_DIR: root }),
+  describeClaudeCodeAccounts: () => ({
+    resolvedAccount: account.root,
+    inherited: false,
+    accounts: [],
+  }),
+}));
 
 vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
   query: vi.fn(),
@@ -113,6 +157,34 @@ import { drivePresenceTurn } from '../../../session/__tests__/durable-turn-harne
 
 const mockedQuery = vi.mocked(query);
 
+// Create and seed the hermetic account before any test resolves it. One project
+// directory holding one parseable transcript, which is what turns
+// `subscribeSessionList` from "emits nothing, asserts nothing" into a real
+// reading: the watcher's initial inventory finds this session and emits a
+// `session_upserted` carrying it, so `SessionListEventSchema` is actually
+// exercised against a Session the production projector built from real JSONL.
+//
+// Deliberately NOT under the slug for the suite's own `/projects/conformance`
+// working directory: the fleet-wide watcher sees it wherever it lives, while a
+// different cwd keeps it out of every `listSessions('/projects/conformance')`
+// answer the other conformance cases assert on.
+account.root = mkdtempSync(join(tmpdir(), 'dorkos-conformance-claude-'));
+const seededProjectDir = join(account.root, 'projects', '-projects-conformance-fixture');
+mkdirSync(seededProjectDir, { recursive: true });
+writeFileSync(
+  join(seededProjectDir, `${randomUUID()}.jsonl`),
+  JSON.stringify({
+    type: 'user',
+    message: { role: 'user', content: 'seeded conformance transcript' },
+    timestamp: '2026-01-01T00:00:00.000Z',
+    cwd: '/projects/conformance-fixture',
+  }) + '\n'
+);
+
+afterAll(() => {
+  rmSync(account.root, { recursive: true, force: true });
+});
+
 beforeEach(() => {
   mockedQuery.mockReset();
   // mockImplementation (not mockReturnValue): every sendMessage turn must get
@@ -130,6 +202,11 @@ runtimeConformance(
     // The mocked SDK writes no JSONL transcript, so native history is [] here;
     // real-binary history round-trips are covered by integration smokes.
     expectHistory: false,
+    // No `sessionListSilentReason`: the seeded transcript above is on disk
+    // before any test runs, so the fleet-wide watcher MUST report it and
+    // silence is a failure. That is the harness default now — the runtime that
+    // needed a waiver is the one this suite just stopped being (DOR-1085).
+
     // Presence is only assertable against a turn that really runs: drive one
     // through the same projector the trigger path feeds. Claude-code takes the
     // harness WITHOUT the durable store (its transcript is SDK JSONL — it must
