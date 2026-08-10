@@ -4,7 +4,7 @@ import { ChevronDown } from 'lucide-react';
 import type { BackgroundTaskStatus } from '@dorkos/shared/types';
 import { cn } from '@/layers/shared/lib';
 import type { VisibleBackgroundTask } from '../../model/use-background-tasks';
-import { AgentRunner } from './AgentRunner';
+import { AgentRunner, type AgentRunnerStatus } from './AgentRunner';
 import { TaskDotSection } from './TaskDotSection';
 import { TaskDetailPanel } from './TaskDetailPanel';
 
@@ -18,11 +18,17 @@ interface BackgroundTaskBarProps {
 /** Maximum agent runner figures before the overflow badge appears. */
 const MAX_VISIBLE_AGENTS = 4;
 
-/** Collapse a background task's five statuses onto the three AgentRunner draws. */
-function toRunnerStatus(status: BackgroundTaskStatus): 'running' | 'complete' | 'error' {
-  if (status === 'running') return 'running';
-  if (status === 'error') return 'error';
-  return 'complete';
+/**
+ * Collapse a background task's five statuses onto the four marks AgentRunner
+ * draws.
+ *
+ * Only `stopped` shares: it is a real ending somebody observed, so it takes the
+ * tick like `complete`. `untracked` keeps its own mark — DorkOS did not see how
+ * that one ended, and both the tick and the cross would say it did (DOR-1108).
+ */
+function toRunnerStatus(status: BackgroundTaskStatus): AgentRunnerStatus {
+  if (status === 'stopped') return 'complete';
+  return status;
 }
 
 const barTransitionEase = [0.16, 1, 0.3, 1] as const;

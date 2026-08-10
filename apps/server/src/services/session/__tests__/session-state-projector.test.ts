@@ -255,6 +255,65 @@ describe('SessionStateProjector', () => {
     ]);
   });
 
+  // Every child gets the SAME `now` at turn_end, so a multi-child leak always
+  // expires as one batch — which makes this the common case, not an edge. Retiring
+  // one id twice is not a cosmetic duplicate: the second copy reaches the client's
+  // fold as an id it no longer knows, and that arm decrements
+  // `unnamedRunningSubagents` — a counter standing for children that are still
+  // alive. Two extra copies silently delete two live children from the client's
+  // count while the server still holds them.
+  it('emits exactly one retirement per child when several expire together', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(6_000_000);
+    const p = new SessionStateProjector('leak-6');
+    p.ingest({ type: 'turn_start' } as RawSessionEvent);
+    for (const taskId of ['bt1', 'bt2', 'bt3']) {
+      p.ingest({ type: 'subagent_update', taskId, status: 'running' } as RawSessionEvent);
+    }
+    p.ingest({ type: 'turn_end' } as RawSessionEvent);
+    expect(p.getStatus().runningSubagentCount).toBe(3);
+
+    const ingestSpy = vi.spyOn(p, 'ingest');
+    vi.advanceTimersByTime(SUBAGENT_SILENCE_TIMEOUT_MS);
+
+    // The list, not the count: a count of zero is reached either way, and the
+    // damage is in the events.
+    expect(ingestSpy.mock.calls.map((c) => c[0])).toEqual([
+      { type: 'subagent_update', taskId: 'bt1', status: 'untracked' },
+      { type: 'subagent_update', taskId: 'bt2', status: 'untracked' },
+      { type: 'subagent_update', taskId: 'bt3', status: 'untracked' },
+    ]);
+  });
+
+  // The reviewer's divergence scenario, reduced: a partial sweep must not touch
+  // the child that is still reporting. A duplicate for either expired id would
+  // land on the client as an unknown-id terminal and silently discount the live
+  // one.
+  it('leaves a still-reporting child alone when its siblings expire', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(7_000_000);
+    const p = new SessionStateProjector('leak-7');
+    p.ingest({ type: 'turn_start' } as RawSessionEvent);
+    for (const taskId of ['quiet-1', 'quiet-2', 'live']) {
+      p.ingest({ type: 'subagent_update', taskId, status: 'running' } as RawSessionEvent);
+    }
+    p.ingest({ type: 'turn_end' } as RawSessionEvent);
+
+    // The live one checks in halfway through, so its deadline outlives the others'.
+    vi.advanceTimersByTime(SUBAGENT_SILENCE_TIMEOUT_MS / 2);
+    p.ingest({ type: 'subagent_update', taskId: 'live', status: 'running' } as RawSessionEvent);
+
+    const ingestSpy = vi.spyOn(p, 'ingest');
+    vi.advanceTimersByTime(SUBAGENT_SILENCE_TIMEOUT_MS / 2);
+
+    expect(ingestSpy.mock.calls.map((c) => c[0])).toEqual([
+      { type: 'subagent_update', taskId: 'quiet-1', status: 'untracked' },
+      { type: 'subagent_update', taskId: 'quiet-2', status: 'untracked' },
+    ]);
+    expect(p.getStatus().runningSubagentCount).toBe(1);
+    expect(p.listRunningSubagents()).toEqual(['live']);
+  });
+
   // The bound is on SILENCE, not on age: a child that keeps reporting keeps its
   // place however long it runs. Without this the fix would cap every background
   // task at the window and cut real work off mid-flight.

@@ -154,14 +154,24 @@ describe('SubagentBlock', () => {
     expect(block.getAttribute('data-status')).toBe('error');
   });
 
-  // DOR-1108: a task DorkOS lost sight of must not be drawn as a failure. The
-  // red ✗ is `error`'s alone; everything else that ended takes the neutral tick.
-  it('does not draw an untracked task as a failure', () => {
+  // DOR-1108: a task DorkOS lost sight of must claim NEITHER outcome. The green
+  // tick is a success it did not witness and the red ✗ a failure it did not
+  // witness, so it draws the muted dash instead.
+  it('draws an untracked task as neither a success nor a failure', () => {
     render(<SubagentBlock part={{ ...basePart, status: 'untracked' }} />);
     const block = screen.getByTestId('subagent-block');
     expect(block.getAttribute('data-status')).toBe('untracked');
-    // `toolStatus` colors the glyph; the error variant is the only red one.
+    // `toolStatus` colors the glyph: success green and error red are both claims.
     expect(block.querySelector('.text-status-error')).toBeNull();
+    expect(block.querySelector('.text-status-success')).toBeNull();
+    expect(block.querySelector('.text-muted-foreground')).not.toBeNull();
+  });
+
+  // …and `stopped` is NOT the same fact, so it keeps the tick: something stopped
+  // it, and somebody saw that happen.
+  it('still draws a stopped task with the completed glyph', () => {
+    render(<SubagentBlock part={{ ...basePart, status: 'stopped' }} />);
+    const block = screen.getByTestId('subagent-block');
     expect(block.querySelector('.text-status-success')).not.toBeNull();
   });
 

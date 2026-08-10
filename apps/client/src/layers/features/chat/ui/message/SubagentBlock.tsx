@@ -19,14 +19,19 @@ function formatDuration(ms: number): string {
 /**
  * Pick the header glyph for a background task's status.
  *
- * The icon set has four states and the task has five, so two of them share. Both
- * of the ones that share are endings that are not failures: something stopped
- * this task, or DorkOS lost sight of it (`untracked`, DOR-1108). Drawing either
- * with the red ✗ would report a failure that did not happen, so they take the
- * neutral tick — the card's own body says which it was.
+ * Three of the five map straight through. The other two are endings that are not
+ * failures, and they take DIFFERENT glyphs because they are different facts:
+ *
+ * - `stopped` — something stopped it, which is a real ending somebody observed.
+ *   The tick, as before.
+ * - `untracked` — DorkOS lost sight of it and does not know how it ended, or
+ *   whether it has (DOR-1108). The muted dash: a tick here would report a
+ *   success nobody witnessed, which is the exact claim this status exists to
+ *   avoid, and a cross would report a failure just as invented.
  */
 function toIconStatus(status: BackgroundTaskStatus): ToolIconStatus {
-  if (status === 'stopped' || status === 'untracked') return 'complete';
+  if (status === 'untracked') return 'neutral';
+  if (status === 'stopped') return 'complete';
   return status;
 }
 

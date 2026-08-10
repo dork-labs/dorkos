@@ -984,8 +984,17 @@ export class SessionStateProjector {
    * Two things make it safe to call from anywhere, including from inside
    * {@link ingest}:
    *
-   * - **It cannot recurse.** Each stale entry is deleted from the map BEFORE its
-   *   retirement is ingested, so the nested `ingest` finds nothing left to expire.
+   * - **It cannot recurse.** EVERY stale entry leaves the map before ANY
+   *   retirement is ingested, so the nested `expireStaleSubagents` at the top of
+   *   `ingest` finds nothing left to expire. The two loops must stay two, and
+   *   this is not a style preference: interleaving them retires each child once
+   *   per pass and the passes nest, so N stale children emitted N(N+1)/2 events —
+   *   three produced six. That is the COMMON case, not an edge, because
+   *   {@link restartSubagentSilenceClocks} stamps every child with the same
+   *   `now`, so a multi-child leak always expires as one batch. And the duplicate
+   *   is not cosmetic: the client's fold sees the second copy as an id it no
+   *   longer knows, which is the arm that decrements its count of children it
+   *   cannot name — silently discounting children that are still alive.
    * - **It is a no-op with a turn open.** The clock only runs while the session
    *   is idle; a child that is quiet while the agent works is ordinary, and the
    *   agent is right there to hear from it.
@@ -1002,8 +1011,9 @@ export class SessionStateProjector {
       .filter(([, lastSeenAt]) => lastSeenAt <= cutoff)
       .map(([taskId]) => taskId);
     if (stale.length === 0) return;
+    // Empty the map, THEN tell anyone. See the recursion note above.
+    for (const taskId of stale) this.runningSubagents.delete(taskId);
     for (const taskId of stale) {
-      this.runningSubagents.delete(taskId);
       this.ingest({
         type: 'subagent_update',
         taskId,
@@ -1127,7 +1137,19 @@ export class SessionStateProjector {
       // `untracked`, for the same reason the sweep uses it (DOR-1108): this path
       // is DorkOS tearing a session down, which says nothing whatever about
       // whether the work it handed off is still running.
-      for (const taskId of this.listRunningSubagents()) {
+      //
+      // Cleared BEFORE any of them is ingested, in the same shape and for the
+      // same reason as {@link expireStaleSubagents}: `ingest` runs the liveness
+      // sweep on its way in, and a half-emptied set is what lets that sweep
+      // retire the ids this loop has not reached yet — a second time. Today the
+      // open-turn guard happens to make that unreachable from here, which is a
+      // reason to be careful rather than a reason to rely on it: this path can be
+      // entered with `lifecycle === 'streaming'` and no turn open, and the safety
+      // of the loop should not depend on a condition checked in another method.
+      const stranded = this.listRunningSubagents();
+      this.runningSubagents.clear();
+      this.status.runningSubagentCount = 0;
+      for (const taskId of stranded) {
         const untracked: RawSessionEvent = {
           type: 'subagent_update',
           taskId,
@@ -1140,13 +1162,11 @@ export class SessionStateProjector {
       this.status.lifecycle = 'interrupted';
       // The turn is over, so whatever tool it was in is over with it.
       delete this.status.activity;
-      // Belt and braces after the terminal updates above: this path is the
-      // eviction degradation, which tears the session down without ever running
-      // a stream's `finally`, so the sweep that normally retires them never
-      // fires here (DOR-1100).
-      this.runningSubagents.clear();
-      this.status.runningSubagentCount = 0;
-      // Nothing left to watch, so nothing left to arm (DOR-1104).
+      // The set was emptied above, before the retirements went out. This path is
+      // the eviction degradation — it tears the session down without ever running
+      // a stream's `finally`, so the sweep that normally retires them never fires
+      // here (DOR-1100) — and with nothing left to watch there is nothing left to
+      // arm (DOR-1104).
       this.cancelSubagentExpiry();
       // This path mutates lifecycle WITHOUT an ingest, so fan out here — and
       // through the activity path, so an armed trailing flush cannot land after

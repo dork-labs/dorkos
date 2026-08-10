@@ -78,6 +78,19 @@ export const BACKGROUND_TASK_PARTS: Record<string, BackgroundTaskPart> = {
     durationMs: 30000,
     summary: 'Stopped by user.',
   },
+  // The ending nobody witnessed (DOR-1108). Deliberately carries no summary: the
+  // whole point is that there is nothing to report, so this is the sample that
+  // shows the card explaining ITSELF rather than showing the agent's words.
+  untracked: {
+    type: 'background_task',
+    taskId: 'task-untracked',
+    taskType: 'agent',
+    status: 'untracked',
+    startedAt: Date.now() - 240000,
+    description: 'Run the dev server in the background',
+    toolUses: 2,
+    durationMs: 240000,
+  },
   streaming: {
     type: 'background_task',
     taskId: 'task-streaming',

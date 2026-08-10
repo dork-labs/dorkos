@@ -155,6 +155,10 @@ export const toolStatus = tv({
       running: 'text-status-info',
       complete: 'text-status-success',
       error: 'text-status-error',
+      // Ended, outcome unobserved. The one status with no semantic colour of its
+      // own on purpose — success green and error red are both claims, and this
+      // state exists precisely because neither was witnessed.
+      neutral: 'text-muted-foreground',
     },
   },
 });

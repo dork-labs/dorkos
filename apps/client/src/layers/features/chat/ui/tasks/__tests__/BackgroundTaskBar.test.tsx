@@ -24,8 +24,10 @@ vi.mock('motion/react', () => ({
 
 // Mock child components to isolate BackgroundTaskBar logic
 vi.mock('../AgentRunner', () => ({
-  AgentRunner: ({ agent }: { agent: { taskId: string; description: string } }) => (
-    <div data-testid={`agent-runner-${agent.taskId}`}>{agent.description}</div>
+  AgentRunner: ({ agent }: { agent: { taskId: string; description: string; status: string } }) => (
+    <div data-testid={`agent-runner-${agent.taskId}`} data-status={agent.status}>
+      {agent.description}
+    </div>
   ),
 }));
 
@@ -91,6 +93,24 @@ describe('BackgroundTaskBar', () => {
     expect(status).toBeInTheDocument();
     expect(status).toHaveAttribute('aria-label', '1 background task running');
     expect(screen.getByText(/task running/)).toBeInTheDocument();
+  });
+
+  // DOR-1108: the runner draws four marks and the task has five statuses, so the
+  // collapse decides what a person sees. Only `stopped` may borrow the tick —
+  // folding `untracked` in with it drew a task DorkOS merely lost sight of as one
+  // that finished successfully.
+  it('passes untracked through to the runner instead of collapsing it to complete', () => {
+    const tasks = [
+      makeTask({ taskId: 'u-1', status: 'untracked' }),
+      makeTask({ taskId: 'u-2', status: 'stopped' }),
+      makeTask({ taskId: 'u-3', status: 'error' }),
+    ];
+    render(<BackgroundTaskBar tasks={tasks} onStopTask={vi.fn()} />);
+
+    expect(screen.getByTestId('agent-runner-u-1')).toHaveAttribute('data-status', 'untracked');
+    // A stop somebody observed is a real ending, and keeps the tick.
+    expect(screen.getByTestId('agent-runner-u-2')).toHaveAttribute('data-status', 'complete');
+    expect(screen.getByTestId('agent-runner-u-3')).toHaveAttribute('data-status', 'error');
   });
 
   it('pluralizes the task count label for multiple tasks', () => {
