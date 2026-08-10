@@ -592,7 +592,14 @@ export class SessionStateProjector {
         // Spend one turn of grace, then let the conversation move on (DOR-1004).
         // The turn a finished sign-in triggers is the FIRST one past the receipt,
         // so this is what keeps the payoff on screen through it.
-        this.ageSigninCards();
+        //
+        // A window nobody asked for does not spend it. The grace is bounded by
+        // "the conversation moved on", and an agent waking itself up because a
+        // background task finished is not the conversation moving on — it fires
+        // milliseconds later, unprompted, and would erase the card just as the
+        // person got back from their browser, which is the exact failure DOR-1004
+        // exists to prevent. The client applies the same rule.
+        if (event.origin !== 'runtime') this.ageSigninCards();
         this.ring.markTurnStarted();
         this.status.lifecycle = 'streaming';
         // A new turn clears the previous failure surface.
@@ -612,6 +619,17 @@ export class SessionStateProjector {
         // them bounds the map across a long session and keeps the lifecycle
         // derivation below reading only live state.
         this.capabilityHolds.clear();
+        // `runningSubagents` is deliberately NOT cleared beside it, and the two
+        // look similar enough that the difference has to be written down. A held
+        // tool call dies with its turn; a background task does not — it keeps
+        // running, and finishing is what WAKES the agent for another turn
+        // (DOR-1100). So a session can legitimately sit `idle` with a non-zero
+        // `runningSubagentCount`, and that pair is the whole signal: the agent
+        // has stopped talking, but it is not finished. Clearing here would erase
+        // the only honest account of why the session is about to speak again.
+        //
+        // Each entry leaves on its own terminal `subagent_update`, which is the
+        // same event that wakes the agent, so the set drains itself.
         this.status.lifecycle = this.deriveTurnEndLifecycle(event.terminalReason);
         // A turn that did not settle to error leaves no stale failure behind
         // (a mid-turn error the runtime recovered from must not linger).
@@ -832,6 +850,17 @@ export class SessionStateProjector {
     }
   }
 
+  /**
+   * The `taskId`s this projector still counts as running.
+   *
+   * Read by {@link feedProjector}'s stranding sweep, which retires each of them
+   * with a terminal `subagent_update` when the runtime's stream ends (DOR-1100).
+   * A copy, not the live set: the sweep ingests while it iterates.
+   */
+  listRunningSubagents(): string[] {
+    return [...this.runningSubagents];
+  }
+
   /** Recompute todo tallies from a `snapshot`/`update` task list. */
   private applyTodoUpdate(tasks: TaskItem[] | undefined): void {
     if (!tasks) return;
@@ -925,11 +954,32 @@ export class SessionStateProjector {
    */
   markInterrupted(): void {
     if (this.inProgressTurn !== null || this.status.lifecycle === 'streaming') {
+      // Retire the children through the STREAM, the same way `feedProjector`'s
+      // stranding sweep does, and before the turn is torn down so they still
+      // ride it. Mutating the set silently would leave every consumer holding
+      // ids it never saw finish — and a client that folds its own count from
+      // `subagent_update` (the cockpit does) would go on reporting them, or
+      // resurrect them from a replay, while the server said zero. The two
+      // projections have to drain through the same events or they disagree.
+      for (const taskId of this.listRunningSubagents()) {
+        const stopped: RawSessionEvent = {
+          type: 'subagent_update',
+          taskId,
+          status: 'stopped',
+        } as RawSessionEvent;
+        this.ingest(stopped);
+      }
       this.inProgressTurn = null;
       this.ring.markTurnEnded();
       this.status.lifecycle = 'interrupted';
       // The turn is over, so whatever tool it was in is over with it.
       delete this.status.activity;
+      // Belt and braces after the terminal updates above: this path is the
+      // eviction degradation, which tears the session down without ever running
+      // a stream's `finally`, so the sweep that normally retires them never
+      // fires here (DOR-1100).
+      this.runningSubagents.clear();
+      this.status.runningSubagentCount = 0;
       // This path mutates lifecycle WITHOUT an ingest, so fan out here — and
       // through the activity path, so an armed trailing flush cannot land after
       // it and re-assert the tool this just cleared.

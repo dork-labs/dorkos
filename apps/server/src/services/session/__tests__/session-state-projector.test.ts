@@ -154,6 +154,76 @@ describe('SessionStateProjector', () => {
     expect(p.getStatus().runningSubagentCount).toBe(1);
   });
 
+  // Failure mode (DOR-1100): a background task outlives its turn, so the count
+  // must survive `turn_end`. Clearing it beside the capability holds would erase
+  // the only account of why an "idle" session is about to speak again.
+  it('keeps running children counted after the turn that started them closes', () => {
+    const p = new SessionStateProjector('bg-1');
+    p.ingest({ type: 'turn_start' } as RawSessionEvent);
+    p.ingest({ type: 'subagent_update', taskId: 'bt1', status: 'running' } as RawSessionEvent);
+    p.ingest({ type: 'subagent_update', taskId: 'bt2', status: 'running' } as RawSessionEvent);
+    p.ingest({ type: 'turn_end' } as RawSessionEvent);
+
+    // The pair a client reads as "stopped talking, not finished".
+    expect(p.getStatus().lifecycle).toBe('idle');
+    expect(p.getStatus().runningSubagentCount).toBe(2);
+  });
+
+  // …and the set drains itself on the terminal updates, which is the same event
+  // that wakes the agent. No leak, no manual clear.
+  it('drains the running-children count as each one finishes past the turn', () => {
+    const p = new SessionStateProjector('bg-2');
+    p.ingest({ type: 'turn_start' } as RawSessionEvent);
+    p.ingest({ type: 'subagent_update', taskId: 'bt1', status: 'running' } as RawSessionEvent);
+    p.ingest({ type: 'subagent_update', taskId: 'bt2', status: 'running' } as RawSessionEvent);
+    p.ingest({ type: 'turn_end' } as RawSessionEvent);
+
+    p.ingest({ type: 'subagent_update', taskId: 'bt1', status: 'complete' } as RawSessionEvent);
+    expect(p.getStatus().runningSubagentCount).toBe(1);
+    p.ingest({ type: 'subagent_update', taskId: 'bt2', status: 'error' } as RawSessionEvent);
+    expect(p.getStatus().runningSubagentCount).toBe(0);
+    expect(p.getStatus().lifecycle).toBe('idle');
+  });
+
+  // Eviction tears a session down without ever running a stream's `finally`, so
+  // the stranding sweep never fires there. A count left standing would report
+  // live work for a session that no longer exists (DOR-1100).
+  it('retires running children when a turn is marked interrupted', () => {
+    const p = new SessionStateProjector('bg-4');
+    p.ingest({ type: 'turn_start' } as RawSessionEvent);
+    p.ingest({ type: 'subagent_update', taskId: 'bt1', status: 'running' } as RawSessionEvent);
+    p.ingest({ type: 'subagent_update', taskId: 'bt2', status: 'running' } as RawSessionEvent);
+    expect(p.getStatus().runningSubagentCount).toBe(2);
+
+    const ingestSpy = vi.spyOn(p, 'ingest');
+    p.markInterrupted();
+
+    expect(p.getStatus().lifecycle).toBe('interrupted');
+    expect(p.getStatus().runningSubagentCount).toBe(0);
+    expect(p.listRunningSubagents()).toEqual([]);
+    // Retired through the STREAM, so a client folding its own count drains the
+    // same ids the server just dropped rather than holding them forever.
+    expect(ingestSpy.mock.calls.map((c) => c[0])).toEqual([
+      { type: 'subagent_update', taskId: 'bt1', status: 'stopped' },
+      { type: 'subagent_update', taskId: 'bt2', status: 'stopped' },
+    ]);
+  });
+
+  // A reopened window (DOR-1100) is a real turn as far as the projection is
+  // concerned: it streams, it clears the previous failure, and it does not
+  // disturb the children still running underneath it.
+  it('streams again on a reopened turn without disturbing the running children', () => {
+    const p = new SessionStateProjector('bg-3');
+    p.ingest({ type: 'turn_start' } as RawSessionEvent);
+    p.ingest({ type: 'subagent_update', taskId: 'bt1', status: 'running' } as RawSessionEvent);
+    p.ingest({ type: 'turn_end' } as RawSessionEvent);
+    expect(p.getStatus().lifecycle).toBe('idle');
+
+    p.ingest({ type: 'turn_start' } as RawSessionEvent);
+    expect(p.getStatus().lifecycle).toBe('streaming');
+    expect(p.getStatus().runningSubagentCount).toBe(1);
+  });
+
   // Failure mode: an interaction left pending must surface as a recoverable
   // pending interaction with server-authoritative remainingMs; blocked lifecycle.
   it('projects pending interactions and goes blocked while one is open', () => {
@@ -1285,6 +1355,36 @@ describe('in-conversation MCP sign-in card (DOR-1004)', () => {
       outcome: 'connected',
       toolCount: 7,
     });
+  });
+
+  it('does not spend the grace on a window nobody asked for', async () => {
+    // A wake-up (DOR-1100) fires milliseconds after the turn closes and nobody
+    // asked for it, so it is not "the conversation moved on" — spending the
+    // grace on it would erase the card just as the person got back from their
+    // browser, which is the exact failure the grace exists to prevent.
+    const p = new SessionStateProjector('s1');
+    signinTurn(p);
+    p.ingest({ type: 'turn_start', origin: 'runtime' } as RawSessionEvent);
+    p.ingest({ type: 'turn_end' });
+    // A SECOND runtime window still does not retire it…
+    p.ingest({ type: 'turn_start', origin: 'runtime' } as RawSessionEvent);
+
+    const snap = await p.buildSnapshot(async () => []);
+    expect(snap.inProgressTurn?.some((e) => e.type === 'mcp_signin_required')).toBe(true);
+  });
+
+  it('still spends the grace on the next turn a person asks for', async () => {
+    const p = new SessionStateProjector('s1');
+    signinTurn(p);
+    p.ingest({ type: 'turn_start', origin: 'runtime' } as RawSessionEvent);
+    p.ingest({ type: 'turn_end' });
+    // The person sends something: NOW the conversation has moved on.
+    p.ingest({ type: 'turn_start' });
+    p.ingest({ type: 'turn_end' });
+    p.ingest({ type: 'turn_start' });
+
+    const snap = await p.buildSnapshot(async () => []);
+    expect(snap.inProgressTurn?.some((e) => e.type === 'mcp_signin_required')).toBe(false);
   });
 
   it('retires the receipt on the turn AFTER the one it rode through', async () => {

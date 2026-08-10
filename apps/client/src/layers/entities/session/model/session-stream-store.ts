@@ -129,6 +129,65 @@ export interface SessionStreamState {
    * screen, and dropped with it.
    */
   carriedSigninFlowIds: string[];
+  /**
+   * Background children this projection has watched START and not yet watched
+   * finish, by `taskId` (DOR-1100).
+   *
+   * Exists because a background task OUTLIVES the turn that launched it, and the
+   * only per-turn record of it does not: `inProgressTurn` is wiped by the
+   * turn-end reconcile's history reload, so a fold over it reports zero running
+   * children about a second after the turn closes — while the children are still
+   * working. That is the exact window this session state is for. Holding the ids
+   * at the session level rather than the turn level is what makes
+   * {@link SessionStatus.runningSubagentCount} stay true across a turn boundary,
+   * in parity with the server projector, which has always tracked its own set
+   * that way.
+   *
+   * Bounded by construction: an id enters when it starts and leaves when it
+   * reaches any terminal status.
+   */
+  runningSubagentIds: string[];
+  /**
+   * Children the SERVER counted at hydration that this projection cannot name.
+   *
+   * A cold snapshot carries the count but not the ids of children started in an
+   * earlier turn, so those cannot go in {@link runningSubagentIds}. Counting them
+   * separately is what keeps the total honest in both directions: without this
+   * field a mid-background-work refresh would report zero (dropping the server's
+   * own count), and folding them INTO the id list would double-count the next
+   * progress report for a child the client can in fact name.
+   *
+   * Decremented — never below zero — when a terminal update arrives for an id
+   * this projection never saw start, because that is what one of these finishing
+   * looks like from here.
+   */
+  unnamedRunningSubagents: number;
+  /**
+   * Who opened the turn window currently held — `'user'` for one a person or a
+   * caller triggered, `'runtime'` for one the agent opened on its own after a
+   * background task woke it (DOR-1100).
+   *
+   * Read at the SETTLE edge, which is the only place it matters: the
+   * turn-finished notification is an answer to a request, so a window nobody
+   * requested must not sound it again for the same request. Survives `turn_end`
+   * deliberately — the settle handler runs after it and needs to know what just
+   * settled.
+   */
+  turnOrigin: 'user' | 'runtime';
+  /**
+   * How many turns a PERSON (or a caller) has started on this session since it
+   * hydrated. Runtime-opened wake-up windows never move it.
+   *
+   * A counter rather than an edge, and that is the whole design. The settle
+   * handler needs to know "is this a new thing somebody asked for?", and the
+   * obvious way to answer — watch for a `turn_start` — cannot survive batching: a
+   * `Last-Event-ID` reconnect replays a whole gap in one React commit, so a
+   * `turn_end` and the wake-up's `turn_start` land together and the
+   * streaming→settled edge between them never exists to be observed. A count
+   * that CHANGED across a commit is still a fact no matter how many events were
+   * folded into it.
+   */
+  userTurnCount: number;
 }
 
 /** Default state for an un-hydrated session. */
@@ -146,6 +205,10 @@ export const DEFAULT_SESSION_STREAM_STATE: SessionStreamState = {
   triggerPending: false,
   hydrationGeneration: 0,
   carriedSigninFlowIds: [],
+  runningSubagentIds: [],
+  unnamedRunningSubagents: 0,
+  turnOrigin: 'user',
+  userTurnCount: 0,
 };
 
 /** `SessionEvent` member discriminants that map onto a {@link PendingInteractionDTO}. */
@@ -268,6 +331,85 @@ const SIGNIN_CARD_EVENT_TYPES: ReadonlySet<SessionEvent['type']> = new Set([
  */
 function retainOpenSigninCards(events: SessionEvent[]): SessionEvent[] {
   return events.filter((event) => SIGNIN_CARD_EVENT_TYPES.has(event.type));
+}
+
+/**
+ * Drop everything before the CURRENTLY OPEN window, keeping any sign-in card the
+ * dropped prefix held (DOR-1100).
+ *
+ * The preserve path exists for one situation — a new turn started while the
+ * history reload was in flight, so clearing the turn would wipe events the
+ * reload predates. It used to be able to keep the whole turn because a
+ * `turn_start` reset it, which meant "the whole turn" and "the new window" were
+ * the same thing. A runtime-opened window APPENDS instead (so the finished reply
+ * does not blank while the agent wakes up), and that broke the equivalence: the
+ * turn now also holds the FINISHED window's deltas, which the reload has just
+ * supplied as canonical history. Preserving all of it renders the reply twice
+ * for as long as the wake-up runs.
+ *
+ * So the preserve is narrowed to what the reload genuinely predates: the events
+ * at or after the last `turn_start`. A sign-in card from the prefix still
+ * survives, for the same reason it survives a full clear — the runtime's
+ * transcript has never heard of it.
+ *
+ * @param events - The live turn, possibly spanning several windows.
+ * @returns The current window, preceded by any sign-in card from before it.
+ */
+/**
+ * The most events one live turn may hold on the client before the finished
+ * windows behind it are dropped (DOR-1100).
+ *
+ * A turn used to be self-limiting: every `turn_start` reset it, so the only way
+ * to grow was to keep streaming, and the server's own `RingBuffer` caps the
+ * replayable turn at the same 200. A runtime-opened window appends instead, so a
+ * chain of wake-ups — one background task waking the agent, whose work starts
+ * another — accumulates until a reload trims it. Normally that reload lands
+ * within a round trip and this never bites; if it fails or the chain outruns it,
+ * this is the bound that keeps a long-lived tab from growing without limit.
+ *
+ * Matched to `RING_BUFFER_MAX_EVENTS` deliberately: past it the server could not
+ * replay the turn to a reconnecting client either, so keeping more here would
+ * hold events no cold hydrate could reproduce.
+ */
+const MAX_LIVE_TURN_EVENTS = 200;
+
+/**
+ * Drop whole finished windows off the front of an over-long live turn, keeping
+ * any sign-in card they held.
+ *
+ * Trims by WINDOW, never mid-window: half a window renders as a reply that
+ * starts mid-sentence, which is worse than one that is missing. So an
+ * over-budget turn gives up its oldest complete window and re-checks, and a
+ * single window over budget on its own is left alone — there is nothing to drop
+ * that would not be a lie.
+ *
+ * @param events - The live turn, possibly spanning several windows.
+ */
+function boundLiveTurn(events: SessionEvent[]): SessionEvent[] {
+  let kept = events;
+  while (kept.length > MAX_LIVE_TURN_EVENTS) {
+    const nextWindow = kept.findIndex((event, index) => index > 0 && event.type === 'turn_start');
+    if (nextWindow === -1) break;
+    kept = [...retainOpenSigninCards(kept.slice(0, nextWindow)), ...kept.slice(nextWindow)];
+    // A window of sign-in cards alone cannot shrink further; stop rather than spin.
+    if (kept.length === events.length) break;
+    events = kept;
+  }
+  return kept;
+}
+
+function retainCurrentWindow(events: SessionEvent[]): SessionEvent[] {
+  // Hand-rolled reverse scan: the client's `lib` target predates
+  // `findLastIndex`, and one loop is cheaper than raising it for one call.
+  let windowStart = -1;
+  for (let i = events.length - 1; i >= 0; i--) {
+    if (events[i]?.type === 'turn_start') {
+      windowStart = i;
+      break;
+    }
+  }
+  if (windowStart <= 0) return events;
+  return [...retainOpenSigninCards(events.slice(0, windowStart)), ...events.slice(windowStart)];
 }
 
 /** The flow a sign-in card event belongs to. Both members carry `flowId`. */
@@ -505,15 +647,92 @@ function deriveTurnEndLifecycle(
   return hasPendingInteractions ? 'blocked' : 'idle';
 }
 
+/**
+ * Re-derive `status.runningSubagentCount` from the two things that know: the
+ * children this projection can name, and the ones the server counted before it
+ * arrived.
+ */
+function syncRunningSubagentCount(session: SessionStreamState): void {
+  if (!session.status) return;
+  session.status.runningSubagentCount =
+    session.runningSubagentIds.length + session.unnamedRunningSubagents;
+}
+
+/**
+ * Fold one `subagent_update` into the session-level running set (DOR-1100).
+ *
+ * Mirrors the server projector's `applySubagentUpdate`, with one extra case it
+ * does not need: a terminal update for an id this projection never saw start is
+ * one of the {@link SessionStreamState.unnamedRunningSubagents} finishing, so it
+ * decrements that instead of doing nothing. Without that arm, a session hydrated
+ * mid-background-work would report those children as running forever.
+ *
+ * @param session - The session projection to mutate.
+ * @param taskId - The child's runtime-assigned id.
+ * @param status - Its reported lifecycle; only `running` is still in flight.
+ */
+function applyRunningSubagent(
+  session: SessionStreamState,
+  taskId: string,
+  status: 'running' | 'complete' | 'error' | 'stopped'
+): void {
+  const known = session.runningSubagentIds.includes(taskId);
+  if (status === 'running') {
+    // Progress reports repeat `running` for a child already counted — adding it
+    // again would inflate the tally with every tool the child uses.
+    if (!known) session.runningSubagentIds.push(taskId);
+  } else if (known) {
+    session.runningSubagentIds = session.runningSubagentIds.filter((id) => id !== taskId);
+  } else {
+    session.unnamedRunningSubagents = Math.max(0, session.unnamedRunningSubagents - 1);
+  }
+  syncRunningSubagentCount(session);
+}
+
+/**
+ * Name every child a snapshot's in-progress turn shows as still running.
+ *
+ * A snapshot carries the server's COUNT plus the current turn's events, so the
+ * children of that turn can be named from the events and the rest cannot. The
+ * caller books the difference as {@link SessionStreamState.unnamedRunningSubagents}.
+ *
+ * @param events - The snapshot's `inProgressTurn`, in seq order.
+ */
+function nameRunningSubagents(events: readonly SessionEvent[]): string[] {
+  const byTask = new Map<string, boolean>();
+  for (const event of events) {
+    if (event.type !== 'subagent_update') continue;
+    byTask.set(event.taskId, event.status === 'running');
+  }
+  return [...byTask].filter(([, running]) => running).map(([taskId]) => taskId);
+}
+
 /** Fold a single event into a session's projection (assumes seq already gated). */
 function projectEvent(session: SessionStreamState, event: SessionEvent): void {
   switch (event.type) {
     case 'turn_start': {
-      // A sign-in card (or its receipt) rides one turn further than the rest of
-      // the turn it belonged to — see `ageSigninCards`.
-      const aged = ageSigninCards(session.inProgressTurn, session.carriedSigninFlowIds);
-      session.carriedSigninFlowIds = aged.spentFlowIds;
-      session.inProgressTurn = [...aged.kept, event];
+      session.turnOrigin = event.origin === 'runtime' ? 'runtime' : 'user';
+      if (event.origin !== 'runtime') session.userTurnCount += 1;
+      if (event.origin === 'runtime') {
+        // A window nobody asked for APPENDS. Resetting is right when a person
+        // sends the next message — by then the settled turn has long since been
+        // reloaded into `messages`. A wake-up is not that: the CLI drains its
+        // queued notification within milliseconds, so this reopen routinely beats
+        // the turn-end history reload, and resetting here blanked the reply the
+        // agent had just finished writing until the reload landed. Appending
+        // keeps it on screen, and the reload that follows replaces both windows
+        // with canonical history in one update.
+        //
+        // No card aging either, for the same reason the server skips it: the
+        // conversation has not moved on, the agent simply woke up (DOR-1004).
+        session.inProgressTurn.push(event);
+      } else {
+        // A sign-in card (or its receipt) rides one turn further than the rest of
+        // the turn it belonged to — see `ageSigninCards`.
+        const aged = ageSigninCards(session.inProgressTurn, session.carriedSigninFlowIds);
+        session.carriedSigninFlowIds = aged.spentFlowIds;
+        session.inProgressTurn = [...aged.kept, event];
+      }
       if (session.status) {
         session.status.lifecycle = 'streaming';
         // A new turn clears the previous failure surface (server-projector parity).
@@ -588,9 +807,25 @@ function projectEvent(session: SessionStreamState, event: SessionEvent): void {
       session.pendingInteractions = session.pendingInteractions.filter((i) => i.id !== event.id);
       session.inProgressTurn.push(event);
       break;
+    case 'subagent_update':
+      // Explicit case rather than the default arm: the event both rides the turn
+      // — so the turn's own subagent fold still draws it — AND maintains the
+      // session-level running set, which is the only reading that survives the
+      // turn it started in (DOR-1100). Server-projector parity: the same
+      // add-on-running / drop-on-terminal rule `applySubagentUpdate` applies.
+      session.inProgressTurn.push(event);
+      applyRunningSubagent(session, event.taskId, event.status);
+      break;
     default:
       if (TURN_EVENT_TYPES.has(event.type)) session.inProgressTurn.push(event);
       break;
+  }
+  // Applied here rather than at the `turn_start` that starts a window, because
+  // the growth is the DELTAS: bounding only at the boundary let the newest
+  // window overshoot by its whole length. The length check is the fast path, so
+  // every ordinary turn pays one comparison and nothing else.
+  if (session.inProgressTurn.length > MAX_LIVE_TURN_EVENTS) {
+    session.inProgressTurn = boundLiveTurn(session.inProgressTurn);
   }
   session.lastAppliedSeq = event.seq;
   session.lastEventAt = Date.now();
@@ -646,6 +881,27 @@ export const useSessionStreamStore: SessionStreamStore = create<
             // authority never sent, and erasing a live card is worse than showing
             // a finished one a turn longer.
             session.carriedSigninFlowIds = [];
+            // Re-baseline the live-children set against the server's own answer
+            // (DOR-1100). The snapshot names the current turn's children and
+            // counts all of them, so anything the count covers and the events do
+            // not is a child from an earlier turn — still running, still worth
+            // reporting, just not nameable from here.
+            session.runningSubagentIds = nameRunningSubagents(session.inProgressTurn);
+            session.unnamedRunningSubagents = Math.max(
+              0,
+              snapshot.status.runningSubagentCount - session.runningSubagentIds.length
+            );
+            // Re-assign rather than mutate: the caller's snapshot object is
+            // frozen, and the two parts must add back up to the count anyway.
+            // They do today by construction; this keeps them agreeing if the
+            // clamp above ever has to bite (a snapshot whose count is lower
+            // than the children its own turn shows running). Copying also stops
+            // the store aliasing an object it does not own.
+            session.status = {
+              ...snapshot.status,
+              runningSubagentCount:
+                session.runningSubagentIds.length + session.unnamedRunningSubagents,
+            };
             session.lastAppliedSeq = snapshot.cursor;
             session.lastEventAt = Date.now();
             session.streamReadyCursor = snapshot.cursor;
@@ -806,9 +1062,12 @@ export const useSessionStreamStore: SessionStreamStore = create<
             // unless the bubble already belongs to a NEWER turn the reload predates.
             // An unresolved sign-in card survives either way: history has no record
             // of it and the person is still mid-sign-in (DOR-1004).
-            if (!opts?.preserveInProgressTurn) {
-              session.inProgressTurn = retainOpenSigninCards(session.inProgressTurn);
-            }
+            session.inProgressTurn = opts?.preserveInProgressTurn
+              ? // A newer window is open, so keep it — but only IT. See
+                // `retainCurrentWindow`: after a wake-up the turn also holds the
+                // window this reload just supplied as history.
+                retainCurrentWindow(session.inProgressTurn)
+              : retainOpenSigninCards(session.inProgressTurn);
           },
           false,
           'session-stream/setHistoryMessages'

@@ -275,6 +275,8 @@ export const HEALTHY: StatusScenario = {
     usage: USAGE_OK,
     supportsCostTracking: true,
     runningSubagents: [],
+    liveSubagentCount: 0,
+    waitingOnSubagents: false,
     connectionState: 'connected',
   },
   diagnostics: HEALTHY_DIAGNOSTICS,
@@ -328,6 +330,8 @@ export const DEGRADED: StatusScenario = {
     usage: USAGE_WARNING,
     supportsCostTracking: true,
     runningSubagents: RUNNING_SUBAGENTS,
+    liveSubagentCount: RUNNING_SUBAGENTS.length,
+    waitingOnSubagents: false,
     connectionState: 'disconnected',
   },
   diagnostics: DEGRADED_DIAGNOSTICS,
@@ -421,6 +425,33 @@ export const DELEGATING: StatusScenario = {
     connectionState: 'connected',
   },
   diagnostics: { ...DEGRADED_DIAGNOSTICS, connectionState: 'connected', usage: USAGE_OK },
+};
+
+/**
+ * A session that has stopped talking while its background tasks have not
+ * (DOR-1100).
+ *
+ * The one state where the same count means something different: `idle` with
+ * children still running is why a session can look finished and not be, so the
+ * item keeps its slot and its tooltip explains the wait. Built from HEALTHY —
+ * nothing else about this session is news, which is the point: the subagents
+ * item is the only thing that promotes.
+ */
+export const WAITING_ON_BACKGROUND_TASKS: StatusScenario = {
+  label: 'Idle, but its background tasks are still running',
+  ctx: { ...HEALTHY.ctx, subagentsInFlight: RUNNING_SUBAGENTS.length },
+  input: {
+    ...HEALTHY.input,
+    sessionId: 'showcase-waiting-on-background-tasks',
+    runningSubagents: RUNNING_SUBAGENTS,
+    liveSubagentCount: RUNNING_SUBAGENTS.length,
+    waitingOnSubagents: true,
+  },
+  diagnostics: {
+    ...HEALTHY.diagnostics,
+    activeSubagents: RUNNING_SUBAGENTS,
+    runningSubagentCount: RUNNING_SUBAGENTS.length,
+  },
 };
 
 /**
