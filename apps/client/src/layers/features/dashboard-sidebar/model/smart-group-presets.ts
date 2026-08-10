@@ -20,7 +20,7 @@ const BY_RUNTIME_PRESET_MIN_AGENTS = 2;
  * Whether the fleet is large/varied enough to show the "Smart" group-create
  * fork and its preset chips. Below this, only "Manual" create is offered —
  * small cockpits see zero new chrome (spec §5, same spirit as DOR-329's
- * `groupsHintDismissed` threshold).
+ * groups-hint threshold).
  *
  * @param candidates - Every known agent's metadata for this render.
  */

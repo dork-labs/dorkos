@@ -7,6 +7,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createMockTransport } from '@dorkos/test-utils';
 import type { RoomSummary } from '@dorkos/shared/room-schemas';
 import { SIDEBAR_PREFS_DEFAULTS } from '@dorkos/shared/config-schema';
+import type { SidebarPrefs } from '@dorkos/shared/config-schema';
 import { TooltipProvider } from '@/layers/shared/ui';
 import { TransportProvider } from '@/layers/shared/model';
 import { ChannelsSection } from '../ui/rooms/ChannelsSection';
@@ -32,7 +33,7 @@ function settled(candidates: { agentPath: string; displayName: string }[] = []) 
 // Mocks
 // ---------------------------------------------------------------------------
 
-const mockUpdate = vi.fn<(updater: (prev: { channelsCollapsed: boolean }) => unknown) => void>();
+const mockUpdate = vi.fn<(updater: (prev: SidebarPrefs) => unknown) => void>();
 let mockCollapsed = false;
 
 // Partial-over-actual, NOT a hand-written barrel. Every row this section draws
@@ -46,7 +47,10 @@ vi.mock('@/layers/entities/config', async () => {
   );
   return {
     ...actual,
-    useSidebarPrefs: () => ({ ...SIDEBAR_PREFS_DEFAULTS, channelsCollapsed: mockCollapsed }),
+    useSidebarPrefs: () => ({
+      ...SIDEBAR_PREFS_DEFAULTS,
+      sections: { channels: { collapsed: mockCollapsed } },
+    }),
     useUpdateSidebarPrefs: () => ({
       update: mockUpdate,
       updateAsync: vi.fn(),
@@ -224,8 +228,9 @@ describe('ChannelsSection', () => {
     renderSection({ channels: [channel()] });
     fireEvent.click(screen.getByRole('button', { name: 'Channels' }));
     expect(mockUpdate).toHaveBeenCalledTimes(1);
-    expect(mockUpdate.mock.calls[0]![0]({ channelsCollapsed: false })).toEqual({
-      channelsCollapsed: true,
+    expect(mockUpdate.mock.calls[0]![0](SIDEBAR_PREFS_DEFAULTS)).toEqual({
+      ...SIDEBAR_PREFS_DEFAULTS,
+      sections: { channels: { collapsed: true } },
     });
   });
 
@@ -286,8 +291,9 @@ describe('ChannelsSection', () => {
 
     fireEvent.click(within(openHeaderMenu()).getByText('Collapse'));
 
-    expect(mockUpdate.mock.calls[0]![0]({ channelsCollapsed: false })).toEqual({
-      channelsCollapsed: true,
+    expect(mockUpdate.mock.calls[0]![0](SIDEBAR_PREFS_DEFAULTS)).toEqual({
+      ...SIDEBAR_PREFS_DEFAULTS,
+      sections: { channels: { collapsed: true } },
     });
   });
 

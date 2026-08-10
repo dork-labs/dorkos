@@ -367,29 +367,140 @@ export const SidebarGroupSchema = SidebarGroupShapeSchema.superRefine((group, ct
 /** A single user-defined sidebar group (Slack-style section). */
 export type SidebarGroup = z.infer<typeof SidebarGroupSchema>;
 
+/**
+ * Every sidebar section that can remember something about itself.
+ *
+ * The four the redesign keeps are `pins`, `channels`, `dms` and `agents` — the
+ * Library's sections in render order (`specs/sidebar-now-today-library`, BC-28).
+ * `threads` and `recents` are here because their sections still render while the
+ * redesign lands, and dropping their ids would mean throwing away a collapse
+ * state the person set. They go when the sections that read them do; nothing new
+ * should start using them.
+ *
+ * Zones are deliberately absent: Now, Today and Getting started are computed and
+ * never collapse, so there is no state for them to hold (BC-2).
+ */
+export const SidebarSectionIdSchema = z.enum([
+  'pins',
+  'channels',
+  'dms',
+  'agents',
+  'threads',
+  'recents',
+]);
+
+/** One sidebar section's identity (see {@link SidebarSectionIdSchema}). */
+export type SidebarSectionId = z.infer<typeof SidebarSectionIdSchema>;
+
+/**
+ * What one section remembers: whether it is folded, and the two display choices
+ * a section can offer.
+ *
+ * `sortMode` and `displayFilter` are optional rather than defaulted because most
+ * sections offer neither — an absent value means "this section has no such
+ * option", which is a different statement from "the option is set to its
+ * default". Only the Agents section carries both today.
+ */
+export const SidebarSectionPrefsSchema = z.object({
+  /** Whether the section is folded shut. */
+  collapsed: z.boolean().default(false),
+  /** How rows inside the section are ordered, where the section offers a choice. */
+  sortMode: z.enum(['manual', 'name', 'recent']).optional(),
+  /** Which members render, where the section offers a filter (DOR-339). */
+  displayFilter: SidebarDisplayFilterSchema.optional(),
+});
+
+/** One section's remembered state (see {@link SidebarSectionPrefsSchema}). */
+export type SidebarSectionPrefs = z.infer<typeof SidebarSectionPrefsSchema>;
+
+/** The section ids as a lookup, for the read-time filter below. */
+const SIDEBAR_SECTION_IDS = new Set<string>(SidebarSectionIdSchema.options);
+
+/**
+ * Drop `sections` entries naming a section this build does not know about.
+ *
+ * **This is what makes narrowing {@link SidebarSectionIdSchema} a non-event**,
+ * and it is not a nicety — without it, retiring a section id later would leave
+ * every config that stored one PERMANENTLY UNWRITABLE. Ajv is the only validator
+ * on the config read path and the generated schema carries no `propertyNames`,
+ * so an unknown key loads fine; Zod then refuses it, and `applyConfigPatch`
+ * re-validates the WHOLE config on every write. The result is a config that
+ * boots, is never condemned, and rejects every subsequent settings change with
+ * `Invalid key in record`. Proven end to end before this filter existed.
+ *
+ * `threads` and `recents` are the ids this will actually catch: they exist only
+ * while the pre-redesign sections still render, and P2 removes them. Anyone who
+ * had those sections folded simply loses two collapse states that no longer
+ * address anything — which is the correct outcome, and it needs no second
+ * migration to bring about.
+ *
+ * Preserves identity when there is nothing to drop, and passes a non-object
+ * through untouched so the record schema below reports the real type error
+ * rather than this filter swallowing it.
+ *
+ * @param value - The stored `sections` value, in whatever shape it is on disk.
+ * @returns The same value, minus any key that is not a known section id.
+ */
+function dropUnknownSectionIds(value: unknown): unknown {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return value;
+  const entries = Object.entries(value as Record<string, unknown>);
+  const known = entries.filter(([id]) => SIDEBAR_SECTION_IDS.has(id));
+  return known.length === entries.length ? value : Object.fromEntries(known);
+}
+
+/**
+ * Per-section state, keyed by section id, tolerant of ids it has never heard of
+ * (see {@link dropUnknownSectionIds}).
+ */
+const SidebarSectionsSchema = z.preprocess(
+  dropUnknownSectionIds,
+  z.partialRecord(SidebarSectionIdSchema, SidebarSectionPrefsSchema)
+);
+
 export const SidebarPrefsSchema = z.object({
   /** Ordered pinned item references. Multi-presence references - membership in groups is unaffected. */
   pinned: z.array(SidebarItemRefSchema).default(() => []),
   groups: z.array(SidebarGroupSchema).default(() => []),
-  /** Ungrouped section ("Agents"): no manual mode - groups are the place for manual curation. */
-  ungroupedSortMode: z.enum(['name', 'recent']).default('name'),
-  ungroupedCollapsed: z.boolean().default(false),
-  recentsCollapsed: z.boolean().default(false),
-  /** Collapse state of the sidebar's "Channels" section (rooms, DOR-525). */
-  channelsCollapsed: z.boolean().default(false),
-  /** Collapse state of the sidebar's "Direct messages" section (rooms, DOR-525). */
-  dmsCollapsed: z.boolean().default(false),
-  /** Collapse state of the sidebar's "Threads" section (room messaging design §3). */
-  threadsCollapsed: z.boolean().default(false),
-  groupsHintDismissed: z.boolean().default(false),
+  /**
+   * Per-section state, keyed by section id. A section with nothing to remember
+   * is simply absent, so a fresh install stores `{}` rather than a row of
+   * `false`s — which is also why this is a partial record: adding a section id
+   * must never invalidate a config written before it existed, and
+   * {@link dropUnknownSectionIds} makes REMOVING one equally harmless.
+   *
+   * Replaced the seven per-section booleans and enums this schema used to carry
+   * (`ungroupedCollapsed`, `channelsCollapsed`, `dmsCollapsed`,
+   * `threadsCollapsed`, `recentsCollapsed`, `ungroupedSortMode`,
+   * `ungroupedDisplayFilter`); the conf migration keyed `0.59.0` moves them.
+   */
+  sections: SidebarSectionsSchema.default(() => ({})),
   /**
    * Muted item references (DOR-339). Mute owns ALL attention signals for an
    * item at once (badge, rollup-dot contribution, filter/reveal emphasis); no
    * partial mute states.
    */
   muted: z.array(SidebarItemRefSchema).default(() => []),
-  /** Display filter for the ungrouped "Agents" section (DOR-339). */
-  ungroupedDisplayFilter: SidebarDisplayFilterSchema.default('all'),
+  /**
+   * The Getting started zone's memory: which suggestions this person has
+   * finished with, so a suggestion never comes back once it has been retired —
+   * even if the condition that raised it becomes true again (BC-14).
+   *
+   * Ids are plain strings rather than an enum on purpose. The list outlives the
+   * suggestions in it: `'suggestion:groups-hint'` is a retired card the
+   * migration carries forward, and narrowing the type would make a stored
+   * history invalid every time the suggestion set changed.
+   */
+  gettingStarted: z
+    .object({ retired: z.array(z.string()).default(() => []) })
+    .default(() => ({ retired: [] })),
+  /**
+   * The welcome-back digest's memory: the local date (`YYYY-MM-DD`) it was last
+   * shown on, so it appears at most once a day (BC-22). Absent until the first
+   * digest is shown, and nothing writes it yet — the digest row itself lands in
+   * P2, and the field is here so it lands on a schema that already has room for
+   * it rather than needing a second migration.
+   */
+  digest: z.object({ lastShownDate: z.string().optional() }).default(() => ({})),
 });
 
 /** Server-persisted sidebar organization preferences (`ui.sidebar`). */
@@ -773,15 +884,10 @@ export const UserConfigSchema = z.object({
       sidebar: SidebarPrefsSchema.default(() => ({
         pinned: [],
         groups: [],
-        ungroupedSortMode: 'name' as const,
-        ungroupedCollapsed: false,
-        recentsCollapsed: false,
-        channelsCollapsed: false,
-        dmsCollapsed: false,
-        threadsCollapsed: false,
-        groupsHintDismissed: false,
+        sections: {},
         muted: [],
-        ungroupedDisplayFilter: 'all' as const,
+        gettingStarted: { retired: [] },
+        digest: {},
       })),
       /** Person-scoped Shape state (active Shape, reverse affinity hints, follow toggle). */
       shapes: ShapeUserPrefsSchema.default(() => ({
@@ -831,15 +937,10 @@ export const UserConfigSchema = z.object({
       sidebar: {
         pinned: [],
         groups: [],
-        ungroupedSortMode: 'name' as const,
-        ungroupedCollapsed: false,
-        recentsCollapsed: false,
-        channelsCollapsed: false,
-        dmsCollapsed: false,
-        threadsCollapsed: false,
-        groupsHintDismissed: false,
+        sections: {},
         muted: [],
-        ungroupedDisplayFilter: 'all' as const,
+        gettingStarted: { retired: [] },
+        digest: {},
       },
       shapes: {
         active: null,

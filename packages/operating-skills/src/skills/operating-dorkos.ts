@@ -152,8 +152,8 @@ DorkOS yourself.
 User settings live in the server config, not in the client. Read the current shape
 with \`config_get\` first, then send a partial object under a \`patch\` key:
 
-- Tool: \`config_patch({ "patch": { "ui": { "sidebar": { "recentsCollapsed": true } } } })\`
-- CLI: \`dorkos call operator.config_patch --input '{"patch":{"ui":{"sidebar":{"recentsCollapsed":true}}}}'\`
+- Tool: \`config_patch({ "patch": { "ui": { "theme": "dark" } } })\`
+- CLI: \`dorkos call operator.config_patch --input '{"patch":{"ui":{"theme":"dark"}}}'\`
 
 The \`patch\` wrapper is required. Deep-merge semantics: nested objects merge,
 arrays replace wholesale. It runs the same validation as the settings UI, so an

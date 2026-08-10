@@ -176,3 +176,42 @@ describe('createHeldUserPrompt — held single-message stream', () => {
     await expect(pull).resolves.toEqual({ value: undefined, done: true });
   });
 });
+
+describe('HeldUserPrompt.push — steering into the live stream', () => {
+  // Purpose: DOR-1087 corrective notes ride the held stream mid-turn, so a
+  // push must wake a parked consumer, and a push after close must be refused.
+  it('delivers a pushed message to a consumer parked on the held stream', async () => {
+    const { prompt, close, push } = createHeldUserPrompt('first');
+    await prompt.next(); // drain the initial message
+
+    const parked = prompt.next(); // consumer now parked on the hold
+    expect(push('steered')).toBe(true);
+    const next = await parked;
+    expect(next.done).toBe(false);
+    expect(next.value?.message.content).toBe('steered');
+
+    const pull = prompt.next();
+    close();
+    await expect(pull).resolves.toEqual({ value: undefined, done: true });
+  });
+
+  it('delivers messages pushed before the consumer catches up, in order', async () => {
+    const { prompt, close, push } = createHeldUserPrompt('first');
+    expect(push('second')).toBe(true);
+    expect(push('third')).toBe(true);
+
+    expect((await prompt.next()).value?.message.content).toBe('first');
+    expect((await prompt.next()).value?.message.content).toBe('second');
+    expect((await prompt.next()).value?.message.content).toBe('third');
+    close();
+    await expect(prompt.next()).resolves.toEqual({ value: undefined, done: true });
+  });
+
+  it('refuses a push after close and sends nothing', async () => {
+    const { prompt, close, push } = createHeldUserPrompt('first');
+    await prompt.next();
+    close();
+    expect(push('too late')).toBe(false);
+    await expect(prompt.next()).resolves.toEqual({ value: undefined, done: true });
+  });
+});

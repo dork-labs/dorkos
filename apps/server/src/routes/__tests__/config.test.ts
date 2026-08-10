@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, afterAll } from 'vitest';
 import express from 'express';
 import request from 'supertest';
 import { swappableServer } from '@dorkos/test-utils/listening-server';
@@ -15,7 +15,11 @@ vi.mock('../../services/core/tunnel-manager.js', () => ({
 
 vi.mock('../../services/runtimes/claude-code/sdk/sdk-utils.js', () => ({
   resolveClaudeCliPath: () => '/usr/local/bin/claude',
-  createHeldUserPrompt: vi.fn(() => ({ prompt: (async function* () {})(), close: vi.fn() })),
+  createHeldUserPrompt: vi.fn(() => ({
+    prompt: (async function* () {})(),
+    close: vi.fn(),
+    push: vi.fn(),
+  })),
 }));
 
 vi.mock('../../lib/boundary.js', () => ({
@@ -89,6 +93,38 @@ let agentHeader: string | undefined;
  */
 const target = swappableServer();
 const server = target.server;
+
+/**
+ * A fresh install is BUILT here, not inherited: this file runs with
+ * `DORKOS_TASKS_ENABLED` and `DORKOS_RELAY_ENABLED` absent, whatever the
+ * developer's shell exports.
+ *
+ * `routes/config.ts` reads both at MODULE LOAD to answer `lockedByEnv`, and the
+ * question it asks is PRESENCE, not value — `index.ts` branches the same way, so
+ * `DORKOS_RELAY_ENABLED=false` is still a lock. Left inherited, every assertion
+ * about an unlocked subsystem measured the machine instead of the route: the
+ * pre-push gate runs the suite through `dotenv`, so a developer whose `.env`
+ * sets either flag got a red on every push for a lock unrelated to their change,
+ * while CI — which loads no `.env` — stayed green. That is a gate people learn
+ * to bypass, and two did (DOR-1086).
+ *
+ * Deleted rather than assigned, because assigning `'false'` would swap one piece
+ * of ambient state for another and report a lock. The `lockedByEnv` block sets
+ * them deliberately for the positive half and restores this baseline after.
+ *
+ * Module scope, so it lands before the first `beforeEach` imports the router.
+ * Vitest gives each test FILE its own process, so nothing outside this file sees
+ * it; `afterAll` restores anyway rather than leaving that to the pool's shape.
+ */
+const AMBIENT_TASKS_ENABLED = process.env.DORKOS_TASKS_ENABLED;
+const AMBIENT_RELAY_ENABLED = process.env.DORKOS_RELAY_ENABLED;
+delete process.env.DORKOS_TASKS_ENABLED;
+delete process.env.DORKOS_RELAY_ENABLED;
+
+afterAll(() => {
+  if (AMBIENT_TASKS_ENABLED !== undefined) process.env.DORKOS_TASKS_ENABLED = AMBIENT_TASKS_ENABLED;
+  if (AMBIENT_RELAY_ENABLED !== undefined) process.env.DORKOS_RELAY_ENABLED = AMBIENT_RELAY_ENABLED;
+});
 
 /** Mount the request-shaping middleware every config-route app needs. */
 function mountCallerFixture(app: express.Express): void {
@@ -1076,7 +1112,8 @@ describe('GET /api/config', () => {
     expect(res.body.ui.sidebar).toBeDefined();
     expect(Array.isArray(res.body.ui.sidebar.pinned)).toBe(true);
     expect(Array.isArray(res.body.ui.sidebar.groups)).toBe(true);
-    expect(res.body.ui.sidebar.ungroupedSortMode).toBe('name');
+    expect(res.body.ui.sidebar.sections).toEqual({});
+    expect(res.body.ui.sidebar.gettingStarted).toEqual({ retired: [] });
   });
 
   it('includes ui.shapes state (DOR-355)', async () => {

@@ -356,6 +356,12 @@ export function parseTranscript(lines: string[]): HistoryMessage[] {
         continue;
       }
 
+      // DorkOS-steered corrective notes (DOR-1087) are runtime speech, not the
+      // person's — never render them as a user bubble.
+      if (text.startsWith('<dorkos-system-note>')) {
+        continue;
+      }
+
       // Strip relay context wrapper, preserving the actual user content after </relay_context>
       if (text.startsWith('<relay_context>')) {
         const userContent = stripRelayContext(text);

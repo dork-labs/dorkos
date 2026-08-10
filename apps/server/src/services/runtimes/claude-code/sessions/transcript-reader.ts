@@ -561,6 +561,7 @@ export class TranscriptReader {
           text.startsWith('<command-name>') ||
           text.startsWith('<command-message>') ||
           text.startsWith('<task-notification>') ||
+          text.startsWith('<dorkos-system-note>') ||
           text.startsWith('<relay_context>')
         ) {
           continue;

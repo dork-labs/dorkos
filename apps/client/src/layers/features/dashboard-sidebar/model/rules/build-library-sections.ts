@@ -11,7 +11,11 @@
 import type { SidebarGroup } from '@dorkos/shared/config-schema';
 import type { RoomSummary } from '@dorkos/shared/room-schemas';
 import { evaluateSmartGroup } from '@dorkos/shared/smart-groups';
-import type { SidebarRowModel, SidebarSectionModel } from '../build-sidebar-model';
+import type {
+  LibrarySectionId,
+  SidebarRowModel,
+  SidebarSectionModel,
+} from '../build-sidebar-model';
 import type { AgentRosterEntry, SidebarState } from '../sidebar-state';
 import { muteIndex, type MuteIndex } from './apply-mute-rules';
 import { agentRow, roomLibraryRow } from './library-rows';
@@ -160,7 +164,10 @@ function orderLibraryRows(
  * no Pins section until something is pinned (BC-32). Returning `null` is how
  * that promise is kept in one place instead of at four call sites.
  *
- * @param id - The section's id.
+ * @param id - Which Library section this is. Narrower than
+ *   `SidebarSectionModel['id']` on purpose: this helper reads the section's
+ *   STORED collapse and options, and only a persisted Library section has any.
+ *   Now, Today, Getting started and group sub-headers never reach here.
  * @param label - Its heading.
  * @param rows - Its rows.
  * @param state - The snapshot.
@@ -168,7 +175,7 @@ function orderLibraryRows(
  * @param subsections - Its group sub-headers, when it has any.
  */
 function section(
-  id: SidebarSectionModel['id'],
+  id: LibrarySectionId,
   label: string,
   rows: SidebarRowModel[],
   state: SidebarState,

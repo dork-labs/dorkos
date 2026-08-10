@@ -5,8 +5,8 @@ import { SectionHeader, SidebarGroup, SidebarMenu } from '@/layers/shared/ui';
 import { useAgentCreationStore, useRovingFocus } from '@/layers/shared/model';
 import {
   useUpdateSidebarPrefs,
-  setUngroupedSortMode,
-  setUngroupedDisplayFilter,
+  setSectionSortMode,
+  setSectionDisplayFilter,
 } from '@/layers/entities/config';
 import { AddAgentMenu } from './AddAgentMenu';
 import { buildAgentsHeaderMenuNodes } from './SectionHeaderMenuItems';
@@ -38,9 +38,9 @@ interface UngroupedSectionProps {
    * empty. Distinct from an empty fleet, which the onboarding card speaks to.
    */
   allAgentsGrouped: boolean;
-  /** The ungrouped section's sort mode (`ui.sidebar.ungroupedSortMode`). */
+  /** The ungrouped section's sort mode (`ui.sidebar.sections.agents.sortMode`). */
   sortMode: 'name' | 'recent';
-  /** The ungrouped section's display filter (`ui.sidebar.ungroupedDisplayFilter`). */
+  /** The ungrouped section's display filter (`ui.sidebar.sections.agents.displayFilter`). */
   filter: SidebarDisplayFilter;
   /** Render one agent row. */
   renderItem: RenderSidebarItem;
@@ -104,9 +104,9 @@ export function UngroupedSection({
             displayFilter: filter,
             onNewAgent: () => useAgentCreationStore.getState().open(),
             onNewGroup,
-            onSortModeChange: (mode) => update((prev) => setUngroupedSortMode(prev, mode)),
+            onSortModeChange: (mode) => update((prev) => setSectionSortMode(prev, 'agents', mode)),
             onDisplayFilterChange: (next) =>
-              update((prev) => setUngroupedDisplayFilter(prev, next)),
+              update((prev) => setSectionDisplayFilter(prev, 'agents', next)),
           })}
         />
       ) : (

@@ -11,7 +11,12 @@ import {
 } from '@/layers/shared/ui';
 import { useRovingFocus } from '@/layers/shared/model';
 import type { AgentPickerCandidate } from '@/layers/entities/agent';
-import { useSidebarPrefs, useUpdateSidebarPrefs, setDmsCollapsed } from '@/layers/entities/config';
+import {
+  useSidebarPrefs,
+  useUpdateSidebarPrefs,
+  isSectionCollapsed,
+  setSectionCollapsed,
+} from '@/layers/entities/config';
 import { directMessageTitle, useStartDirectMessage } from '@/layers/entities/room';
 import type { SidebarItemRef } from '@dorkos/shared/config-schema';
 import type { SidebarItemVisual } from '../../model/sidebar-item';
@@ -67,7 +72,7 @@ interface DirectMessagesSectionProps {
  * The sidebar's "Direct messages" section: one row per ungrouped conversation —
  * with one agent or with several — and an unread count when you are behind.
  *
- * Collapsible and persisted via `ui.sidebar.dmsCollapsed`. Like Channels, it is
+ * Collapsible and persisted via `ui.sidebar.sections.dms`. Like Channels, it is
  * always present: the empty state is what tells a person the feature exists, and
  * it distinguishes "you have none" from "yours are all filed into groups", which
  * are the same empty list and completely different facts.
@@ -84,7 +89,7 @@ export function DirectMessagesSection({
   onOpenAgentProfile,
   onRequestNewGroup,
 }: DirectMessagesSectionProps) {
-  const { dmsCollapsed } = useSidebarPrefs();
+  const dmsCollapsed = isSectionCollapsed(useSidebarPrefs(), 'dms');
   const { update } = useUpdateSidebarPrefs();
   const startDirectMessage = useStartDirectMessage();
   const markRoomsRead = useMarkRoomsRead();
@@ -121,7 +126,8 @@ export function DirectMessagesSection({
     );
   };
 
-  const toggleCollapsed = () => update((prev) => setDmsCollapsed(prev, !prev.dmsCollapsed));
+  const toggleCollapsed = () =>
+    update((prev) => setSectionCollapsed(prev, 'dms', !isSectionCollapsed(prev, 'dms')));
   const roving = useRovingFocus({
     onCollapse: () => !dmsCollapsed && toggleCollapsed(),
     onExpand: () => dmsCollapsed && toggleCollapsed(),
