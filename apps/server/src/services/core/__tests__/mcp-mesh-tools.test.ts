@@ -35,6 +35,7 @@ import {
   validateBoundaryOrDorkHome,
   BoundaryError,
 } from '../../../lib/boundary.js';
+import { setOnAgentCreated } from '../agent-created-hook.js';
 
 function createMockDeps(meshEnabled = true): McpToolDeps {
   const mockMeshCore = {
@@ -143,6 +144,36 @@ describe('Mesh MCP Tools', () => {
         expect.objectContaining({ name: 'Bot', runtime: 'claude-code' }),
         'mcp-tool'
       );
+    });
+
+    it('mesh_register notifies the agent-created seam, so the agent takes its #team seat now', async () => {
+      // Same seam, same reason as the HTTP register route (DOR-1042): an agent
+      // an agent registers for you must not wait for a restart to be seated.
+      const listener = vi.fn().mockResolvedValue(undefined);
+      setOnAgentCreated(listener);
+      try {
+        const deps = createMockDeps(true);
+        const meshCore = deps.meshCore as unknown as Record<string, ReturnType<typeof vi.fn>>;
+        meshCore.registerByPath.mockResolvedValue({
+          id: 'a1',
+          name: 'Bot',
+          runtime: 'claude-code',
+        });
+
+        const handler = createMeshRegisterHandler(deps);
+        await handler({ path: '/test/bot', name: 'Bot' });
+
+        expect(listener).toHaveBeenCalledWith({
+          id: 'a1',
+          name: 'Bot',
+          displayName: undefined,
+          path: '/test/bot',
+          // Registration, not creation — seated, never announced.
+          origin: 'registered',
+        });
+      } finally {
+        setOnAgentCreated(null);
+      }
     });
 
     it('mesh_register rejects re-registration over system agent', async () => {

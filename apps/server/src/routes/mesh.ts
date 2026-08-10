@@ -22,6 +22,7 @@ import { removeDorkDirectory } from '@dorkos/shared/manifest';
 import { validateBoundary, validateBoundaryOrDorkHome } from '../lib/boundary.js';
 import { logger } from '../lib/logger.js';
 import { logOrphanedInstalls } from '../services/mesh/orphaned-installs.js';
+import { notifyAgentCreated } from '../services/core/agent-created-hook.js';
 import type { ActivityService } from '../services/activity/activity-service.js';
 
 /**
@@ -301,20 +302,51 @@ export function createMeshRouter(deps: MeshRouterDeps): Router {
         validatedScanRoot
       );
 
-      // Fire-and-forget activity event for agent registration
+      // The agent-created seam: mesh registration writes the manifest through
+      // `registerByPath` rather than `createAgentWorkspace`, so it must notify
+      // directly — otherwise an agent registered here only took its #team seat
+      // at the next server boot (DOR-1042, team-room-home spec D3.1). Awaited,
+      // but never throws: a reaction that failed never turns a registration
+      // that succeeded into a 422.
+      //
+      // It goes BEFORE the activity write, and that order is deliberate: only
+      // `registerByPath` is allowed to decide this request's outcome, and the
+      // seat is what a person sees. Behind the emit, a failing activity store
+      // both 422'd a registration that had genuinely happened and left the new
+      // agent outside #team until the next boot.
+      await notifyAgentCreated({
+        id: manifest.id,
+        name: manifest.name,
+        displayName: manifest.displayName,
+        path: validatedPath,
+        // Registration, not creation: this takes a directory the person already
+        // has onto the roster. It gets the seat; it does not get a moment.
+        origin: 'registered',
+      });
+
+      // Fire-and-forget activity event for agent registration — and now
+      // actually fire-and-forget. The feed is bookkeeping: a store that is down
+      // is worth a log line, never a 422 on work that succeeded.
       const activityService = req.app.locals.activityService as ActivityService | undefined;
       if (activityService) {
-        await activityService.emit({
-          actorType: 'user',
-          actorLabel: 'You',
-          category: 'agent',
-          eventType: 'agent.registered',
-          resourceType: 'agent',
-          resourceId: manifest.id,
-          resourceLabel: manifest.name,
-          summary: `Registered agent ${manifest.name}`,
-          linkPath: '/agents',
-        });
+        try {
+          await activityService.emit({
+            actorType: 'user',
+            actorLabel: 'You',
+            category: 'agent',
+            eventType: 'agent.registered',
+            resourceType: 'agent',
+            resourceId: manifest.id,
+            resourceLabel: manifest.name,
+            summary: `Registered agent ${manifest.name}`,
+            linkPath: '/agents',
+          });
+        } catch (err) {
+          logger.warn('[mesh] could not record the agent registration in the activity feed', {
+            err,
+            agentId: manifest.id,
+          });
+        }
       }
 
       return res.status(201).json(manifest);

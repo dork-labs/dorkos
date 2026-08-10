@@ -180,6 +180,9 @@ export function createAgentsRouter(meshCore?: MeshCoreLike): Router {
         name: manifest.name,
         displayName: manifest.displayName,
         path: agentPath,
+        // The New Agent flow: this route minted the manifest and scaffolded
+        // SOUL.md/NOPE.md above, and 409s if the directory was already an agent.
+        origin: 'created',
       });
 
       return res.status(201).json(manifest);

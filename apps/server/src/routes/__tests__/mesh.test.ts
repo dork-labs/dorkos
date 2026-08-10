@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import express from 'express';
 import request from 'supertest';
 
@@ -35,6 +35,7 @@ import type { MeshCore } from '@dorkos/mesh';
 import { validateBoundary, validateBoundaryOrDorkHome, BoundaryError } from '../../lib/boundary.js';
 import { removeDorkDirectory } from '@dorkos/shared/manifest';
 import { logOrphanedInstalls } from '../../services/mesh/orphaned-installs.js';
+import { setOnAgentCreated } from '../../services/core/agent-created-hook.js';
 
 /** Create a mock MeshCore with vi.fn() stubs for all methods. */
 function createMockMeshCore() {
@@ -364,6 +365,94 @@ describe('Mesh routes', () => {
       expect(res.status).toBe(403);
       expect(res.body.error).toContain('Path outside boundary');
       expect(meshCore.registerByPath).not.toHaveBeenCalled();
+    });
+  });
+
+  // --- The agent-created seam on the mesh register route (DOR-1042) ---
+
+  describe('agent-created seam (POST /api/mesh/agents)', () => {
+    afterEach(() => {
+      setOnAgentCreated(null);
+    });
+
+    it('notifies the seam after a successful registration, so the agent takes its #team seat now', async () => {
+      const listener = vi.fn().mockResolvedValue(undefined);
+      setOnAgentCreated(listener);
+      meshCore.registerByPath.mockResolvedValue({ ...MOCK_MANIFEST, displayName: 'Testy' });
+
+      const res = await request(app)
+        .post('/api/mesh/agents')
+        .send({
+          path: '/home/user/project',
+          overrides: { name: 'Test Agent', runtime: 'claude-code' },
+        });
+
+      expect(res.status).toBe(201);
+      expect(listener).toHaveBeenCalledTimes(1);
+      expect(listener).toHaveBeenCalledWith({
+        id: 'agent-1',
+        name: 'Test Agent',
+        displayName: 'Testy',
+        // The validated directory rides along: the rooms domain keys on it.
+        path: '/home/user/project',
+        // Registration, not creation — it takes the #team seat, but it is not
+        // announced as a moment (DOR-1042).
+        origin: 'registered',
+      });
+    });
+
+    it('still returns 201 when the seam listener throws (never-500 guarantee)', async () => {
+      setOnAgentCreated(vi.fn().mockRejectedValue(new Error('team seat exploded')));
+      meshCore.registerByPath.mockResolvedValue(MOCK_MANIFEST);
+
+      const res = await request(app)
+        .post('/api/mesh/agents')
+        .send({
+          path: '/home/user/project',
+          overrides: { name: 'Test Agent', runtime: 'claude-code' },
+        });
+
+      expect(res.status).toBe(201);
+      expect(res.body.id).toBe('agent-1');
+    });
+
+    it('seats the agent even when the activity write fails', async () => {
+      // The activity feed is bookkeeping; the #team seat is the thing a person
+      // sees. A failed feed write must not cost the seat, and must not turn a
+      // registration that genuinely happened into a 422.
+      const listener = vi.fn().mockResolvedValue(undefined);
+      setOnAgentCreated(listener);
+      meshCore.registerByPath.mockResolvedValue(MOCK_MANIFEST);
+      app.locals.activityService = {
+        emit: vi.fn().mockRejectedValue(new Error('activity store is down')),
+      };
+
+      const res = await request(app)
+        .post('/api/mesh/agents')
+        .send({
+          path: '/home/user/project',
+          overrides: { name: 'Test Agent', runtime: 'claude-code' },
+        });
+
+      expect(res.status).toBe(201);
+      expect(res.body.id).toBe('agent-1');
+      expect(listener).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not notify the seam when registration fails', async () => {
+      const listener = vi.fn().mockResolvedValue(undefined);
+      setOnAgentCreated(listener);
+      meshCore.registerByPath.mockRejectedValue(new Error('Duplicate agent'));
+
+      const res = await request(app)
+        .post('/api/mesh/agents')
+        .send({
+          path: '/home/user/project',
+          overrides: { name: 'Test Agent', runtime: 'claude-code' },
+        });
+
+      expect(res.status).toBe(422);
+      expect(listener).not.toHaveBeenCalled();
     });
   });
 

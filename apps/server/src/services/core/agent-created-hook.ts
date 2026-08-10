@@ -5,14 +5,36 @@
  * `create_agent` tool (internal + external server), and the marketplace
  * agent-package install flow all funnel through here.
  *
- * TWO CALL SITES NOTIFY IT, and between them they cover every creation path:
+ * FOUR CALL SITES NOTIFY IT, and between them they cover every way an agent
+ * arrives on this machine:
  *
  * - `services/core/agent-creator.ts` (`createAgentWorkspace`) — the full
  *   pipeline, which `POST /api/agents/create`, the MCP `create_agent` tool and
  *   the marketplace agent install all funnel through;
  * - `routes/agents.ts` (`POST /api/agents`) — the register path, which writes
  *   the manifest itself rather than going through `createAgentWorkspace`, and
- *   so must notify directly.
+ *   so must notify directly;
+ * - `routes/mesh.ts` (`POST /api/mesh/agents`) and the `mesh_register` MCP tool
+ *   — mesh registration by path, which goes through `MeshCore.registerByPath`
+ *   and so also bypasses `createAgentWorkspace` (DOR-1042);
+ * - `index.ts`, wired to `MeshCore.onAgentAdopted` — a discovery scan walking
+ *   past a `.dork/agent.json` this machine had never registered. Mesh fires
+ *   that callback only on the pass that first registers an id, so a later scan
+ *   re-seeing a known agent notifies nothing (DOR-1042).
+ *
+ * `MeshCore.syncFromDisk` deliberately does NOT notify, even though it shares
+ * the auto-import pipeline with the scan: its callers are the first two sites
+ * above, which write the manifest, sync it, and then announce the agent
+ * themselves. Notifying there too would seat every created agent twice.
+ *
+ * NOT EVERY ARRIVAL IS AN EVENT. Each call site declares an `origin`, and the
+ * reactions read it: every arrival takes its #team seat and re-binds waiting
+ * Shape schedules, but only an `origin: 'created'` one is announced as a moment.
+ * A person creating an agent is news; DorkOS registering a directory that was
+ * already on disk — or a scan adopting a folder full of them — is DorkOS
+ * catching up on its own records, and announcing that would spend #team's
+ * hour-long quiet period on whichever agent a filesystem walk reached first
+ * (DOR-1042).
  *
  * WHY MODULE-LEVEL, NOT INJECTED: `createAgentWorkspace` is a free function
  * with several independent callers. Threading a reaction-flavoured callback
@@ -30,6 +52,7 @@
  * @module services/core/agent-created-hook
  */
 import { logger } from '../../lib/logger.js';
+import type { AgentArrival } from '../rooms/moments/moment-detectors.js';
 
 /** The just-created / just-registered agent, as reactions see it. */
 export interface CreatedAgentInfo {
@@ -47,6 +70,13 @@ export interface CreatedAgentInfo {
    * fifth creation path from omitting it.
    */
   path: string;
+  /**
+   * How this agent arrived. Required, and for the same reason `path` is: the
+   * reactions treat the two differently — every arrival takes its #team seat,
+   * but only a `'created'` one is announced as a moment (DOR-1042) — so a sixth
+   * call site must decide rather than inherit whichever default read better.
+   */
+  origin: AgentArrival;
 }
 
 /**
