@@ -110,6 +110,14 @@ export function SidebarSection({
 
   const header = (
     <SectionHeader
+      // **One indent level, on the sub-header and nowhere else** (BC-28: "groups
+      // are sub-headers inside Agents, one indent level (14px)"). It is
+      // deliberately NOT applied to the group's rows: `16px` of total left inset
+      // is a locked decision (design-decisions §11) and the browser bar measures
+      // EVERY row control against it, so indenting a group's members would move
+      // half the sidebar's rows off the one number the density rests on. The
+      // sub-header is the thing that is nested; its rows are rows like any other.
+      className={isSubsection ? 'pl-[14px]' : undefined}
       label={section.label ?? ''}
       {...(chrome.icon === undefined ? {} : { icon: chrome.icon })}
       collapsed={section.collapsed}
@@ -126,7 +134,16 @@ export function SidebarSection({
   );
 
   return (
-    <SidebarGroup className={cn('px-0', isSubsection && 'pl-[14px]')} {...roving}>
+    <SidebarGroup
+      className="px-0"
+      // A stable handle for the page objects. `[data-slot="sidebar-group"]`
+      // alone is ambiguous the moment a section nests: a group's wrapper sits
+      // INSIDE the Agents wrapper, so a filter for "the group whose header says
+      // X" matched the ancestor as well as the descendant and tripped strict
+      // mode (the browser suite found this, not a reader).
+      data-sidebar-section={section.id}
+      {...roving}
+    >
       {/* A headerless body — Now, Today, Getting started — is a zone's single
           section and carries no label of its own; the zone's <h2> names it. */}
       {section.label === null ? null : groupId !== null ? (

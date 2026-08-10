@@ -33,17 +33,24 @@ import { rowKey } from './targets';
 export const GROUP_AFFORDANCE_MIN_AGENTS = 8;
 
 /**
- * Whether the Agents section offers grouping at all.
+ * Whether the Agents section offers grouping at all (BC-32).
  *
- * Exported rather than folded into the section, because it gates a create
- * action and a hint that P2 renders in the header — and the decision is a rule,
- * so it belongs here rather than in JSX.
+ * Exported because it gates real chrome — the "New group" item in the Agents
+ * header menu and the smart-group presets behind its `+` — and the decision is
+ * a rule, so it belongs here rather than in JSX.
  *
- * @param state - The snapshot.
+ * **It takes the fleet rather than the snapshot**, because that is all it
+ * reads, and because its one caller in the running application is a component
+ * that has the roster and not a `SidebarState` (`useSectionChrome`). A rule
+ * that demanded the whole snapshot would have been unreachable from the only
+ * place it matters, which is how it spent P2.1 exported, unit-tested and called
+ * by nothing.
+ *
+ * @param agents - The fleet, or anything carrying each agent's runtime.
  */
-export function offersGroupAffordances(state: SidebarState): boolean {
-  if (state.agents.length >= GROUP_AFFORDANCE_MIN_AGENTS) return true;
-  return new Set(state.agents.map((agent) => agent.runtime)).size >= 2;
+export function offersGroupAffordances(agents: readonly { runtime: string }[]): boolean {
+  if (agents.length >= GROUP_AFFORDANCE_MIN_AGENTS) return true;
+  return new Set(agents.map((agent) => agent.runtime)).size >= 2;
 }
 
 /**
@@ -212,7 +219,8 @@ function section(
  * One group as a sub-header inside Agents — one indent level, and no deeper.
  *
  * A smart group's membership is evaluated live and never persisted, so its
- * stored `items` are ignored here exactly as `groupedAgentPaths` ignores them.
+ * stored `items` are ignored here, exactly as the grouped-membership pass in
+ * {@link buildLibrarySections} ignores them.
  *
  * **This is the one section that renders while empty**, and the exception is
  * deliberate: every other section in this file appears because something is in

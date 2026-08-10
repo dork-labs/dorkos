@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Plus, FolderPlus, FolderInput, Store, Wand2 } from 'lucide-react';
+import { Plus, FolderPlus, FolderInput, MessageSquare, Store, Wand2 } from 'lucide-react';
 import {
   Popover,
   PopoverTrigger,
@@ -14,6 +14,17 @@ import type { SmartGroupPreset } from '../model/smart-group-presets';
 interface AddAgentMenuProps {
   /** Open the inline group-create flow (adds a "New group" entry to the menu). */
   onNewGroup?: () => void;
+  /**
+   * Open the direct-message picker.
+   *
+   * **Here on purpose, and temporarily.** Direct messages are created from the
+   * Direct messages section's "+", and BC-32 withholds that section until a
+   * conversation exists — so on a fresh install there was no way to start the
+   * first one. The design's answer is the single New button (design-decisions
+   * §7), which P2.4 lands; until it does, the way in lives on the header that
+   * always exists when there is anybody to message. P2.4 removes this entry.
+   */
+  onNewMessage?: () => void;
   /**
    * Smart-group preset chips (DOR-338) — one click creates the group with
    * that preset's rules. Empty below the disclosure threshold, so the menu
@@ -47,6 +58,7 @@ interface AddAgentMenuProps {
  */
 export function AddAgentMenu({
   onNewGroup,
+  onNewMessage,
   smartGroupPresets = [],
   onCreatePresetSmartGroup,
   onOpenSmartGroupDialog,
@@ -87,6 +99,19 @@ export function AddAgentMenu({
           <FolderInput className="size-4" />
           Bring in a project
         </button>
+        {onNewMessage && (
+          <button
+            type="button"
+            onClick={() => {
+              setOpen(false);
+              onNewMessage();
+            }}
+            className="hover:bg-accent hover:text-accent-foreground flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm"
+          >
+            <MessageSquare className="size-4" />
+            New message…
+          </button>
+        )}
         <button
           type="button"
           onClick={() => {

@@ -408,6 +408,42 @@ function agentRowButton(name: string): HTMLElement {
   return rows[0]!;
 }
 
+/**
+ * The rules found in a source, or `[]` when it holds none.
+ *
+ * The renderer's contract is stronger than "no sorting": it TRANSFORMS NOTHING.
+ * A list of forbidden spellings is whack-a-mole — the first version of this
+ * caught `.sort(` and was walked past by `.toSorted(` — so the rule is stated
+ * as the shape of the thing instead: no collection method, no model field that
+ * only a rule should read, no arithmetic. Membership, caps, ordering and badge
+ * counts cannot be expressed without at least one of them.
+ *
+ * Comments are stripped first: the docblock deliberately NAMES the things the
+ * component may not do, which is how the rule is written down where the next
+ * author will read it.
+ *
+ * @param source - The component's source text.
+ */
+function rulesIn(source: string): string[] {
+  const code = source
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .split('\n')
+    .filter((line) => !line.trim().startsWith('//'))
+    .join('\n');
+  const forbidden: [string, RegExp][] = [
+    [
+      'a collection method',
+      /\.(map|filter|flatMap|reduce|reduceRight|sort|toSorted|slice|splice|some|every|find|findIndex|findLast|includes|concat|length)\b/,
+    ],
+    ['a model field only a rule reads', /\b(unread|collapsed|rollup|draggable|reservesVerbLine)\b/],
+    ['arithmetic', /\bMath\./],
+    ['a rule import', /model\/rules/],
+  ];
+  return forbidden
+    .filter(([, pattern]) => pattern.test(code))
+    .map(([what, pattern]) => `${what} (${String(pattern)})`);
+}
+
 /** The Library zone's `<section>`, or `null` when the model emitted none. */
 function libraryZone(): HTMLElement | null {
   return document.querySelector('[data-sidebar-zone="library"]');
@@ -612,6 +648,37 @@ describe('DashboardSidebar', () => {
       expect(libraryHeadings()).not.toContain('Pins');
     });
 
+    it('offers no grouping to a small cockpit, and offers it at eight agents', async () => {
+      // The changelog says grouping "shows up once you are running eight agents
+      // or two different kinds". It said that before anything gated it, which
+      // is a release note describing behaviour the code did not have.
+      mockMeshPaths.mockReturnValue(['/a/1', '/a/2', '/a/3']);
+      renderWithProviders(<DashboardSidebar />);
+      await screen.findByRole('heading', { name: /Agents/, level: 3 });
+      fireEvent.pointerDown(screen.getByRole('button', { name: 'Agents section actions' }));
+      expect(await screen.findByRole('menuitem', { name: /New agent/ })).toBeInTheDocument();
+      expect(screen.queryByRole('menuitem', { name: /New group/ })).not.toBeInTheDocument();
+      cleanup();
+
+      mockMeshPaths.mockReturnValue(Array.from({ length: 8 }, (_, i) => `/a/${i}`));
+      renderWithProviders(<DashboardSidebar />);
+      await screen.findByRole('heading', { name: /Agents/, level: 3 });
+      fireEvent.pointerDown(screen.getByRole('button', { name: 'Agents section actions' }));
+      expect(await screen.findByRole('menuitem', { name: /New group/ })).toBeInTheDocument();
+    });
+
+    it('offers grouping at two runtimes however small the fleet', async () => {
+      mockMeshPaths.mockReturnValue(['/a/1', '/a/2']);
+      mockResolvedAgents.mockReturnValue({
+        '/a/1': { id: 'a1', name: 'one', runtime: 'claude-code' },
+        '/a/2': { id: 'a2', name: 'two', runtime: 'codex' },
+      } as never);
+      renderWithProviders(<DashboardSidebar />);
+      await screen.findByRole('heading', { name: /Agents/, level: 3 });
+      fireEvent.pointerDown(screen.getByRole('button', { name: 'Agents section actions' }));
+      expect(await screen.findByRole('menuitem', { name: /New group/ })).toBeInTheDocument();
+    });
+
     it('offers no "advanced mode" toggle anywhere', () => {
       renderWithProviders(<DashboardSidebar />);
       expect(screen.queryByText(/advanced mode/i)).not.toBeInTheDocument();
@@ -751,34 +818,35 @@ describe('DashboardSidebar', () => {
       expect(source.split('\n').length).toBeLessThan(200);
     });
 
-    it('computes no membership, order, cap or badge', () => {
-      // The code only — the docs above deliberately name the very things the
-      // component is forbidden to do, which is how the rule is written down
-      // where the next author will read it.
-      const code = source
-        .replace(/\/\*[\s\S]*?\*\//g, '')
-        .split('\n')
-        .filter((line) => !line.trim().startsWith('//'))
-        .join('\n');
-      for (const forbidden of [
-        /\.sort\(/,
-        /unreadCount/,
-        /collapsed/,
-        /model\/rules/,
-        /sidebar-membership/,
-        /sort-sidebar-items/,
-        /filter-sidebar-items/,
-      ]) {
-        expect(code, `DashboardSidebar.tsx still does ${forbidden}`).not.toMatch(forbidden);
+    it('transforms nothing — no array work, no model field, no arithmetic', () => {
+      expect(rulesIn(source)).toEqual([]);
+    });
+
+    it('reds on every rule a reviewer could put back', () => {
+      // **This runs the REAL scanner**, over sources that differ from the
+      // component only by the line under test. The previous version of this
+      // case matched the regexes against a hand-written literal and never
+      // touched the pipeline it claimed to prove — so an adversarial review put
+      // all four rules back into the renderer and all 24 tests stayed green.
+      const cases: [string, string][] = [
+        ['membership', 'const shown = rows.filter((row) => !row.muted);'],
+        ['a cap', 'const capped = rows.slice(0, 8);'],
+        ['ordering', 'const ordered = rows.toSorted((a, b) => a.primary > b.primary ? 1 : -1);'],
+        ['a badge count', 'const n = rows.reduce((sum, row) => sum + (row.unread.count ?? 0), 0);'],
+        ['a fold decision', 'const open = !section.collapsed;'],
+        ['arithmetic on the model', 'const spare = Math.max(0, rows.length - 3);'],
+      ];
+      for (const [what, line] of cases) {
+        expect(rulesIn(`${source}\n${line}\n`), `${what} walked past the guard`).not.toEqual([]);
       }
     });
 
-    it('proves that check can fail', () => {
-      // The shape of the thing it is guarding against: the 875-line component
-      // sorted its own rows and read `unreadCount` straight off a room.
-      const code = 'const rows = items.sort(byName); const n = room.unreadCount;';
-      expect(code).toMatch(/\.sort\(/);
-      expect(code).toMatch(/unreadCount/);
+    it('does not fire on the renderer’s own prose', () => {
+      // The other half: a guard that reds on the docblock would be satisfied by
+      // deleting a comment, which is not the property anyone wants.
+      expect(rulesIn('/** Never .filter() or .sort() here. */\n// and no unread either\n')).toEqual(
+        []
+      );
     });
   });
 });

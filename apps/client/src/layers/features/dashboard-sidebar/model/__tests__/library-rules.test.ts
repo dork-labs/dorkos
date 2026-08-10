@@ -101,23 +101,21 @@ describe('BC-32 — chrome appears by data volume', () => {
 
   it('offers grouping at eight agents', () => {
     const seven = Array.from({ length: 7 }, (_, index) => agent(`/a/${index}`));
-    expect(offersGroupAffordances({ ...quietFixture, agents: seven })).toBe(false);
-    expect(offersGroupAffordances({ ...quietFixture, agents: [...seven, agent('/a/8')] })).toBe(
-      true
-    );
+    expect(offersGroupAffordances(seven)).toBe(false);
+    expect(offersGroupAffordances([...seven, agent('/a/8')])).toBe(true);
   });
 
   it('offers grouping at two runtimes, however few agents', () => {
     expect(
-      offersGroupAffordances({
-        ...quietFixture,
-        agents: [agent('/a', { runtime: 'claude-code' }), agent('/b', { runtime: 'codex' })],
-      })
+      offersGroupAffordances([
+        agent('/a', { runtime: 'claude-code' }),
+        agent('/b', { runtime: 'codex' }),
+      ])
     ).toBe(true);
   });
 
   it('offers nothing to an operator with one agent on one runtime', () => {
-    expect(offersGroupAffordances({ ...quietFixture, agents: [agent('/a')] })).toBe(false);
+    expect(offersGroupAffordances([agent('/a')])).toBe(false);
   });
 });
 

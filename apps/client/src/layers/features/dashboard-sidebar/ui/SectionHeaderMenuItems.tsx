@@ -26,7 +26,7 @@ import {
 } from 'lucide-react';
 import type { SidebarDisplayFilter, SidebarGroup } from '@dorkos/shared/config-schema';
 import type { SidebarMenuActionNode, SidebarMenuNode } from '@/layers/shared/ui';
-import { SECTION_SORT_OPTIONS, SORT_MENU_LABEL } from '../model/sort-sidebar-items';
+import { SECTION_SORT_OPTIONS, SORT_MENU_LABEL } from '../model/section-sort-options';
 import { describeRules } from '../model/evaluate-smart-group';
 import { displayFilterNode } from './DisplayFilterMenu';
 
@@ -273,8 +273,15 @@ export interface AgentsHeaderMenuModel {
   displayFilter: SidebarDisplayFilter;
   /** Open the create-agent dialog. */
   onNewAgent: () => void;
-  /** Open the inline group-create editor. */
-  onNewGroup: () => void;
+  /**
+   * Open the inline group-create editor, or absent when this cockpit is not
+   * offered grouping yet.
+   *
+   * Chrome appears by data volume, never by a settings toggle (BC-32): somebody
+   * with three agents on one runtime has nothing to organize, and offering them
+   * a filing system is the "advanced mode" this design does not have.
+   */
+  onNewGroup?: () => void;
   /** Write the chosen sort mode back to `ui.sidebar`. */
   onSortModeChange: (mode: 'name' | 'recent') => void;
   /** Write the chosen display filter back to `ui.sidebar`. */
@@ -307,14 +314,18 @@ export function buildAgentsHeaderMenuNodes(model: AgentsHeaderMenuModel): Sectio
       opensInput: true,
       run: model.onNewAgent,
     },
-    {
-      kind: 'action',
-      id: 'new-group',
-      label: 'New group',
-      icon: FolderPlus,
-      opensInput: true,
-      run: model.onNewGroup,
-    },
+    ...(model.onNewGroup === undefined
+      ? []
+      : [
+          {
+            kind: 'action' as const,
+            id: 'new-group' as const,
+            label: 'New group',
+            icon: FolderPlus,
+            opensInput: true,
+            run: model.onNewGroup,
+          },
+        ]),
     SEP_CREATE,
     displayFilterNode(model.displayFilter, (value) =>
       model.onDisplayFilterChange(value as SidebarDisplayFilter)

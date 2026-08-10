@@ -59,6 +59,16 @@ interface GroupCreationState {
 
 /** Everything a row needs that the model does not carry. */
 export interface SidebarChromeValue {
+  /**
+   * Every agent directory the mesh knows, in roster order.
+   *
+   * Carried beside {@link SidebarChromeValue.manifests} rather than derived
+   * from it: the manifests query resolves separately and answers `{}` until it
+   * lands, so a fleet size read off that map is zero for the first paint —
+   * which is exactly the fleet size that decides whether grouping is offered
+   * at all (BC-32).
+   */
+  agentPaths: readonly string[];
   /** Agent manifests by directory — the face, the colour, the runtime label. */
   manifests: Record<string, AgentManifest | null>;
   /** Disambiguated display names by directory. */
@@ -248,6 +258,7 @@ export function SidebarChrome({ activeTarget, children }: SidebarChromeProps) {
 
   const value = useMemo<SidebarChromeValue>(
     () => ({
+      agentPaths: rawPaths,
       manifests: manifests ?? {},
       displayNames,
       roomsById,
@@ -281,6 +292,7 @@ export function SidebarChrome({ activeTarget, children }: SidebarChromeProps) {
         update((prev) => createSmartGroup(prev, name, rules).next),
     }),
     [
+      rawPaths,
       manifests,
       displayNames,
       roomsById,

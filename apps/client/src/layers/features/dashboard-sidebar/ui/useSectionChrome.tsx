@@ -53,6 +53,7 @@ import { directMessageTitle, hasUnread, useStartDirectMessage } from '@/layers/e
 import type { AgentPickerCandidate } from '@/layers/entities/agent';
 import { ChannelCreateDialog, NewDirectMessageMenu } from '@/layers/features/room-management';
 import { librarySectionId, type SidebarSectionModel } from '../model/build-sidebar-model';
+import { offersGroupAffordances } from '../model/rules/build-library-sections';
 import { useMarkRoomsRead } from '../model/use-mark-rooms-read';
 import {
   activeNowPreset,
@@ -163,16 +164,23 @@ export function useSectionChrome(section: SidebarSectionModel): SectionChrome {
     };
   }, [chrome.roomsById]);
 
+  // Built from the ROSTER, with manifests looked up — never from the manifest
+  // map's own keys. That map is a separate query and answers `{}` until it
+  // lands, so keying off it reports an empty fleet on the first paint and
+  // withdraws chrome that should be there (BC-32).
   const smartGroupCandidates = useMemo(
     () =>
-      Object.entries(chrome.manifests).map(([path, manifest]) => ({
-        projectPath: path,
-        runtime: manifest?.runtime ?? 'claude-code',
-        namespace: manifest?.namespace ?? null,
-        attention: 'inactive' as const,
-        lastActivityAt: null,
-      })),
-    [chrome.manifests]
+      chrome.agentPaths.map((path) => {
+        const manifest = chrome.manifests[path] ?? null;
+        return {
+          projectPath: path,
+          runtime: manifest?.runtime ?? 'claude-code',
+          namespace: manifest?.namespace ?? null,
+          attention: 'inactive' as const,
+          lastActivityAt: null,
+        };
+      }),
+    [chrome.agentPaths, chrome.manifests]
   );
   const runtimeOptions = useMemo(() => {
     const seen = new Map<string, string>();
@@ -194,6 +202,10 @@ export function useSectionChrome(section: SidebarSectionModel): SectionChrome {
   }, [smartGroupCandidates]);
   // "Small cockpits see zero new chrome" — the smart-group fork and its presets
   // only appear once the fleet is large or varied enough to benefit.
+  // BC-32, at the one place it can actually gate anything: no "New group" and
+  // no smart-group presets until eight agents or two runtimes. Chrome appears
+  // by data volume, and there is no settings toggle for it anywhere.
+  const offersGroups = offersGroupAffordances(smartGroupCandidates);
   const smartGroupPresets = useMemo<SmartGroupPreset[]>(
     () =>
       meetsSmartGroupDisclosureThreshold(smartGroupCandidates)
@@ -304,20 +316,34 @@ export function useSectionChrome(section: SidebarSectionModel): SectionChrome {
         sortMode: section.options?.sortMode === 'recent' ? 'recent' : 'name',
         displayFilter: section.options?.displayFilter ?? 'all',
         onNewAgent: () => useAgentCreationStore.getState().open(),
-        onNewGroup: () => chrome.requestNewGroup(),
+        ...(offersGroups ? { onNewGroup: () => chrome.requestNewGroup() } : {}),
         onSortModeChange: (mode) => update((prev) => setSectionSortMode(prev, 'agents', mode)),
         onDisplayFilterChange: (next) =>
           update((prev) => setSectionDisplayFilter(prev, 'agents', next)),
       }),
       action: (
-        <AddAgentMenu
-          onNewGroup={() => chrome.requestNewGroup()}
-          smartGroupPresets={smartGroupPresets}
-          onCreatePresetSmartGroup={(preset) =>
-            chrome.createSmartGroupFrom(preset.label, preset.rules)
-          }
-          onOpenSmartGroupDialog={() => setSmartDialogOpen(true)}
-        />
+        <>
+          <AddAgentMenu
+            {...(offersGroups ? { onNewGroup: () => chrome.requestNewGroup() } : {})}
+            onNewMessage={() => setPickerOpen(true)}
+            smartGroupPresets={smartGroupPresets}
+            onCreatePresetSmartGroup={(preset) =>
+              chrome.createSmartGroupFrom(preset.label, preset.rules)
+            }
+            onOpenSmartGroupDialog={() => setSmartDialogOpen(true)}
+          />
+          {/* The panel, anchored here but drawn from the "+" menu's own entry.
+              Direct messages are made from the Direct messages section, and
+              BC-32 withholds that section until one exists — so without this the
+              first conversation could not be started at all. P2.4's New button
+              takes it over. */}
+          <NewDirectMessageMenu
+            open={pickerOpen}
+            onOpenChange={setPickerOpen}
+            onStart={startDirectMessageWith}
+            hideTrigger
+          />
+        </>
       ),
       dialogs: (
         <SmartGroupRuleDialog

@@ -38,7 +38,12 @@ export function SidebarZone({ zone, onToggleAll }: SidebarZoneProps) {
       aria-labelledby={headingId}
       data-sidebar-zone={zone.id}
       className={cn(
-        'rounded-lg px-1 py-1',
+        // **No horizontal padding.** The sidebar pays its 16px left inset in
+        // exactly two places — 8 on the panel and 8 on the row — and a zone
+        // that added its own 4 put every row in the panel at 20px. Vertical
+        // room only; separation between zones is tint and whitespace, never a
+        // third helping of inset (design-decisions §11, spec R1).
+        'rounded-lg py-1',
         // Now and Getting started carry the one tint that asks for a look; the
         // calm zones sit on the panel itself.
         zone.id === 'now' || zone.id === 'getting-started' ? 'bg-sidebar-accent/40' : undefined

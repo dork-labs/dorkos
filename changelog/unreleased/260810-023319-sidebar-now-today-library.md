@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(client): the sidebar is Now, Today and Library, drawn from one model (P2.1, DOR-1066)'
+  - 'fix(client): the zones ship at 16px, the group is addressable, and the guard can fail (P2.1 review, DOR-1066)'
 ---
 
 ### Changed
@@ -21,6 +22,9 @@ covers:
   heading until you have a conversation, and no "Pins" until you pin something. Grouping
   shows up once you are running eight agents or two different kinds. There is no settings
   toggle for any of it, and there never will be.
+- Because the "Direct messages" heading now waits until you have a conversation, starting
+  your **first** one moved: it is "New message…" under the `+` beside Agents. Once you have
+  one, the `+` beside Direct messages works as it always did.
 - Dragging still works everywhere it used to — reordering pins, moving an agent or a
   channel into a group, reordering inside a group. Dragging a row into Now or Today is the
   one thing that does not, because those two lists are worked out for you rather than

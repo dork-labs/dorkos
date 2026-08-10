@@ -125,9 +125,20 @@ export class DashboardSidebarPage {
     return this.page.getByRole('button', { name, exact: true });
   }
 
-  /** The `SidebarGroup` wrapper (header + member rows) for one user-defined group. */
+  /**
+   * The wrapper (header + member rows) for one user-defined group.
+   *
+   * **Scoped by `data-sidebar-section`, not by `data-slot="sidebar-group"`.**
+   * A group renders as a section INSIDE the Agents section, so filtering every
+   * `sidebar-group` by "contains this header" matched the ancestor as well as
+   * the descendant and tripped Playwright's strict mode — which killed the
+   * spec before it reached the drag. The section stamps its own model id, so
+   * `group:` prefixes exactly the one wrapper meant here.
+   */
   groupContainer(name: string): Locator {
-    return this.page.locator('[data-slot="sidebar-group"]').filter({ has: this.groupHeader(name) });
+    return this.page
+      .locator('[data-sidebar-section^="group:"]')
+      .filter({ has: this.groupHeader(name) });
   }
 
   /**

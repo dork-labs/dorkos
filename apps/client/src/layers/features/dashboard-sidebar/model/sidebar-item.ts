@@ -3,7 +3,7 @@
  * two things a section can hold, an agent and a room.
  *
  * Everything downstream reads this and never the underlying entity: sorting
- * (`sort-sidebar-items.ts`), the display filter (`filter-sidebar-items.ts`) and
+ * (`section-sort-options.ts`) and
  * mute all operate on the union, so a group holding a channel needs no code of
  * its own.
  *
@@ -75,7 +75,7 @@ export interface SidebarItem {
    *
    * A room is never `inactive`: it is a place rather than a process, so it is
    * `needs-attention` when there is something unread and `active` otherwise.
-   * That invariant is what lets `RevealRow` keep saying "N inactive agents".
+   * That invariant is what lets the reveal row keep saying "N inactive".
    */
   attention: AttentionState;
   /**

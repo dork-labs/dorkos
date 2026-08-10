@@ -9,12 +9,14 @@
  * @module features/dashboard-sidebar/ui/SidebarZones
  */
 import { useCallback } from 'react';
+import { useAgentCreationStore } from '@/layers/shared/model';
 import {
   setGroupCollapsed,
   setSectionCollapsed,
   useUpdateSidebarPrefs,
 } from '@/layers/entities/config';
 import { librarySectionId, type SidebarModel } from '../model/build-sidebar-model';
+import { AgentOnboardingCard } from './AgentOnboardingCard';
 import { SidebarZone } from './SidebarZone';
 
 /** Props for {@link SidebarZones}. */
@@ -62,6 +64,13 @@ export function SidebarZones({ model }: SidebarZonesProps) {
       {model.zones.map((zone) => (
         <SidebarZone key={zone.id} zone={zone} onToggleAll={onToggleAll} />
       ))}
+      {/* "Is there anything at all yet?" — a presence check on the model, not a
+          membership rule. Library is absent only when there is no agent, no room
+          and no pin to put in it, which is the one moment the invitation belongs
+          on screen. P2.2's Getting started zone takes this over. */}
+      {library === undefined && (
+        <AgentOnboardingCard onAddAgent={() => useAgentCreationStore.getState().open()} />
+      )}
     </div>
   );
 }

@@ -11,7 +11,8 @@ import { test, expect } from '../../fixtures';
  * check. A pattern survives the next thing that becomes droppable, while still
  * asserting the placeholder is the thing on screen.
  *
- * Source of truth: `SidebarGroupSection.tsx`, the `items.length === 0` branch.
+ * Source of truth: `useSectionChrome.tsx`, the group branch's `footer` — the
+ * one section allowed to render with no rows, because the operator made it.
  */
 const EMPTY_GROUP_PLACEHOLDER = /Drag .*here/;
 
@@ -37,6 +38,16 @@ test.describe('Dashboard Sidebar — Groups @smoke', () => {
 
   const runId = randomUUID().slice(0, 8);
   const agentName = `E2E Sidebar Agent ${runId}`;
+  /**
+   * A second agent, on a second runtime.
+   *
+   * **Grouping is offered by data volume, not by a setting** (BC-32): a cockpit
+   * with one agent on one runtime has nothing to organize, so "New group…" is
+   * not in its menus at all. Two distinct runtimes is the cheaper of the two
+   * bars — the other is eight agents — and it exercises the real rule rather
+   * than working around it.
+   */
+  const secondAgentName = `E2E Sidebar Codex ${runId}`;
   const groupName = `E2E Group ${runId}`;
   /** The path the server canonicalized on registration — what `items` stores. */
   let agentProjectPath: string;
@@ -49,6 +60,7 @@ test.describe('Dashboard Sidebar — Groups @smoke', () => {
   test.beforeEach(async ({ roomsApi, basePage, dashboardSidebar }) => {
     const agent = await roomsApi.registerAgent(agentName, '🧩', '#8b5cf6');
     agentProjectPath = agent.projectPath;
+    await roomsApi.registerAgent(secondAgentName, '🧭', '#0ea5e9', { runtime: 'codex' });
 
     await basePage.goto();
     await basePage.waitForAppReady();
