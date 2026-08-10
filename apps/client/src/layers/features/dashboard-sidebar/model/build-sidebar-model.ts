@@ -30,7 +30,10 @@
  *
  * @module features/dashboard-sidebar/model/build-sidebar-model
  */
-import type { SidebarDisplayFilter } from '@dorkos/shared/config-schema';
+import type {
+  SidebarDisplayFilter,
+  SidebarSectionId as PersistedSectionId,
+} from '@dorkos/shared/config-schema';
 import type { IdentityStatus } from '@/layers/shared/ui';
 import { applyMuteRules, muteIndex } from './rules/apply-mute-rules';
 import { archiveOvernight } from './rules/archive-overnight';
@@ -63,13 +66,25 @@ export type SidebarZoneId = 'getting-started' | 'now' | 'today' | 'library';
  * a function.
  *
  * It is deliberately NOT the persisted section vocabulary, which is a longer
- * list living in `packages/shared`: that package cannot import the client, and
- * the stored set carries ids this render order has no use for (the sections P2
- * retires still have collapse flags in existing config until the migration runs).
- * Task 2.8 owns making shared the one source of that vocabulary and typing this
- * tuple as a compile-checked subset of it.
+ * list living in `packages/shared` (`SidebarSectionIdSchema`): that package
+ * cannot import the client, and the stored set carries ids this render order has
+ * no use for — `threads` and `recents` still hold collapse flags in existing
+ * config while their pre-redesign sections render, and P2 removes them.
+ *
+ * The `satisfies` is what keeps the two honest without collapsing them into one
+ * list: every entry here must still be a persisted section, so retiring an id
+ * from the schema turns a render-order entry naming it into a compile error
+ * rather than a section whose fold nothing can store.
  */
-export const SIDEBAR_LIBRARY_SECTION_IDS = ['pins', 'channels', 'dms', 'agents'] as const;
+export const SIDEBAR_LIBRARY_SECTION_IDS = [
+  'pins',
+  'channels',
+  'dms',
+  'agents',
+] as const satisfies readonly PersistedSectionId[];
+
+/** One Library section's id — the four above, and only those. */
+export type LibrarySectionId = (typeof SIDEBAR_LIBRARY_SECTION_IDS)[number];
 
 /**
  * A section's id.
@@ -81,7 +96,7 @@ export const SIDEBAR_LIBRARY_SECTION_IDS = ['pins', 'channels', 'dms', 'agents']
  * zones.
  */
 export type SidebarSectionId =
-  | (typeof SIDEBAR_LIBRARY_SECTION_IDS)[number]
+  | LibrarySectionId
   | 'now'
   | 'today'
   | 'getting-started'

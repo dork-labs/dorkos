@@ -56,7 +56,8 @@ export function ThreadsSection({
   const roving = useRovingFocus({
     onCollapse: () =>
       !threadsCollapsed && update((prev) => setSectionCollapsed(prev, 'threads', true)),
-    onExpand: () => threadsCollapsed && update((prev) => setSectionCollapsed(prev, 'threads', false)),
+    onExpand: () =>
+      threadsCollapsed && update((prev) => setSectionCollapsed(prev, 'threads', false)),
   });
 
   // Nothing to say, so nothing is drawn — and that includes the first load,
