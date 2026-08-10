@@ -2,6 +2,7 @@
 covers:
   - 'feat(client): the sidebar is Now, Today and Library, drawn from one model (P2.1, DOR-1066)'
   - 'fix(client): the zones ship at 16px, the group is addressable, and the guard can fail (P2.1 review, DOR-1066)'
+  - 'fix(client): the direct-message anchor stops pretending to be a button (P2.1 review, DOR-1066)'
 ---
 
 ### Changed

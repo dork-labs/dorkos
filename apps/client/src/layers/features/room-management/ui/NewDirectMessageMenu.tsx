@@ -111,8 +111,17 @@ export function NewDirectMessageMenu({
             item beside it opens this very panel and is named that, and the
             panel it opens is titled that too. One action, one name. */}
         <SidebarGroupAction
-          aria-label="New message"
-          className={hideTrigger ? 'sr-only' : undefined}
+          // Named for the people who press it — and named for nobody when it is
+          // only an anchor. `sr-only` hides a control from SIGHT and leaves it
+          // announced and focusable, which is a phantom "New message" offered to
+          // exactly the readers who cannot see that it is a phantom.
+          // `aria-hidden` + `tabIndex={-1}` take it out of the accessibility
+          // tree and the tab order at the source, rather than leaning on the
+          // sidebar's roving-focus hook to stamp it: this component does not
+          // know whether it is inside one.
+          {...(hideTrigger
+            ? { 'aria-hidden': true, tabIndex: -1, className: 'sr-only' }
+            : { 'aria-label': 'New message' })}
         >
           <Plus />
         </SidebarGroupAction>
