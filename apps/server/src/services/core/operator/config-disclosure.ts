@@ -198,6 +198,7 @@ export const CONFIG_DISCLOSURE = {
   'welcomeBack.enabled': 'expose',
   'welcomeBack.absenceThresholdMinutes': 'expose',
   'welcomeBack.maxPosts': 'expose',
+  'welcomeBack.offersEnabled': 'expose',
 
   'onboarding.completedSteps': 'expose',
   'onboarding.skippedSteps': 'expose',

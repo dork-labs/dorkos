@@ -211,7 +211,9 @@ A room is a conversation more than one agent can be in. When you post, every age
 
 When you come back after a few hours away, the agents that got something done while you were gone can post a line about it in your team channel. The rule is news, not noise: an agent with nothing new to say says nothing, and only a few post at all.
 
-There is a switch for this in the app, at Settings → Preferences → **Welcome-back notes**, and it changes the same `welcomeBack.enabled` setting below. The other two are file-only for now. See [When you come back after being away](/docs/concepts/rooms#when-you-come-back-after-being-away) for what the notes look like.
+A note can also end with one thing the agent wants you to decide — "want me to open the PR?". That part is off unless you turn it on, and the reason is cost: there is no way to know an agent has a next step without asking it, and asking runs it for a turn. When it is on, only the agents that already left you a note are asked, and each of them only once.
+
+Both switches are in the app, at Settings → Preferences → **Welcome-back notes** and **Next-step offers**; they change `welcomeBack.enabled` and `welcomeBack.offersEnabled` below. The two numbers are file-only for now. See [When you come back after being away](/docs/concepts/rooms#when-you-come-back-after-being-away) for what the notes look like.
 
 <TypeTable
   type={{
@@ -232,6 +234,12 @@ There is a switch for this in the app, at Settings → Preferences → **Welcome
         'The most posts one return may produce, however many agents have news. When more qualify than this allows, the most useful ones post and the rest stay quiet. Set it to 0 to silence them without turning the feature off. Only you can change this.',
       type: 'integer (0--10)',
       default: '3',
+    },
+    'welcomeBack.offersEnabled': {
+      description:
+        "Whether a note may end with one next step for you to decide on. Off by default, because finding out costs a turn of the agent's time: only the agents that already left you a note are asked, and each only once. Only you can change this.",
+      type: 'boolean',
+      default: 'false',
     },
   }}
 />

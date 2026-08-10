@@ -114,10 +114,15 @@ describe('PUT /api/read-cursors/:kind/:id', () => {
     // what a greeting then does (team-room-home §D5.2).
     seen = [];
     const greeter = new WelcomeBackGreeter({
-      settings: () => ({ enabled: true, absenceThresholdMinutes: 240, maxPosts: 3 }),
+      settings: () => ({
+        enabled: true,
+        absenceThresholdMinutes: 240,
+        maxPosts: 3,
+        offersEnabled: false,
+      }),
       teamRoomId: () => null,
       work: { since: () => Promise.resolve([]) },
-      post: () => {},
+      post: () => 'entry-never-written',
       lastSeenAt: () => null,
     });
     vi.spyOn(greeter, 'personSeen').mockImplementation((userId: string) => {

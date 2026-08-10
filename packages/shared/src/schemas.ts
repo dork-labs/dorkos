@@ -3056,7 +3056,11 @@ export const ServerConfigSchema = z
       .object({
         enabled: z.boolean().openapi({
           description:
-            'Whether agents may post to your team channel when you come back after being away. The one field of this block the cockpit may write',
+            'Whether agents may post to your team channel when you come back after being away. One of the two fields of this block the cockpit may write',
+        }),
+        offersEnabled: z.boolean().openapi({
+          description:
+            'Whether a greeting may also carry a next-step offer. Writable from the cockpit, and off by default: an offer is the one part of a return that costs a model turn, because asking the agent is the only honest way to learn whether it has one',
         }),
         absenceThresholdMinutes: z.number().int().openapi({
           description:

@@ -743,6 +743,9 @@ export class RoomTriggerDispatcher {
         entryId: entry.id,
         dispatchId: target.dispatchId,
         depth: target.depth,
+        // A real trigger, so a post this agent makes mid-turn inherits this
+        // exchange and the guard sees the whole chain.
+        aside: false,
         claimedAt: new Date().toISOString(),
         pastDeadline: false,
       });
@@ -892,6 +895,9 @@ export class RoomTriggerDispatcher {
         agentPath: target.agentPath,
         sessionId: target.sessionId,
         entry,
+        // The message, unchanged. A trigger asks the agent exactly what was
+        // said; only the welcome-back offer below asks something else.
+        prompt: entry.body.text,
         // Derived HERE rather than in the runner, and after every target of this
         // entry has been claimed: `working` is read off the live claim map, so a
         // second agent addressed by the same message is already in it. Assembling
@@ -1164,6 +1170,281 @@ export class RoomTriggerDispatcher {
         this.releaseClaim(key, outcome);
         this.settleOne();
       });
+  }
+
+  /**
+   * Ask one agent something the room never posted, and hand back what it said —
+   * the welcome-back offer's only way in (DOR-1046, spec `team-room-home` D5.2).
+   *
+   * **Everything that bounds a triggered turn bounds this one**, which is the
+   * whole reason it lives here rather than beside the greeter: the `(room,
+   * agent)` session binding, both busy ceilings (one transcript per room, one
+   * working tree per agent), the room's automatic-turn budget, and the claim
+   * that makes the work visible. A second path that reached the runner without
+   * them would be an agent running two turns in one checkout, which is the
+   * contention DOR-500 measured.
+   *
+   * **Every refusal is SILENT, and that is a departure worth stating.** A
+   * refusal is normally visible (`.claude/rules/room-conduct.md`) because a
+   * dropped trigger is indistinguishable from a broken agent, and the person who
+   * notices is the one who asked. Nobody asked for this. An offer is an extra a
+   * person switched on, so a busy agent, an exhausted budget, a failed turn and
+   * an agent with nothing to offer all produce nothing at all — the same
+   * reasoning that lets the fallback seat stand down without announcing it. What
+   * a person is owed is the status line, and that has already been posted by the
+   * time this runs. The exception is written down in full where the rule lives.
+   *
+   * **A wait is the one thing it does say out loud**, because a wait is not an
+   * outcome: this method holds a claim, so the room is showing the agent
+   * working, and a turn parked on a tool approval would leave that indicator
+   * standing with nothing to explain it. The ordinary `awaiting_approval` notice
+   * covers it, damped per turn like every other.
+   *
+   * **A slow offer is late, never lost.** The room's wait is a bound on the WAIT
+   * and never on the turn, so an answer that outruns it is waited out — to
+   * `rooms.lateReplyCeilingMinutes`, which is what bounds "late" — and handed
+   * back then. Dropping it would contradict the busy notice's own promise that
+   * the answer lands here, and would release the working indicator into nothing.
+   *
+   * **The answer is not posted here.** It is handed back so the greeter can post
+   * it the way it posts a status line — un-provenanced, which is what makes
+   * `deriveCascade` stamp it AT the ceiling and the fallback seat stand down for
+   * it. Posting it from inside this method would give it THIS turn's cascade
+   * root instead, and a stamp at the ceiling under a root that is not its own
+   * entry is the exact shape that sprays a `cascade_depth` notice at every
+   * room-mate. The residual cost is one line wide and is documented with the
+   * rule: the claim releases a tick before the greeter's post, so a post the
+   * room then refuses leaves a release with nothing durable beside it.
+   *
+   * @param input.room - The room the offer would be made in.
+   * @param input.entry - The entry it is ABOUT — the status line this agent just
+   *   posted. It frames the turn's context and names the working indicator.
+   * @param input.authorId - The agent being asked.
+   * @param input.prompt - The question, as the model will see it.
+   * @returns What the agent said, or `null` for every kind of silence.
+   */
+  async askAside(input: {
+    room: Room;
+    entry: RoomEntry;
+    authorId: string;
+    prompt: string;
+  }): Promise<string | null> {
+    const { room, entry, authorId } = input;
+    const record = this.deps.authors.getMany([authorId]).get(authorId);
+    // Only an agent takes a turn, and only a live one: a directory that no
+    // longer holds this agent has nothing to offer and no session to offer it
+    // on (ADR 260801-003051).
+    if (!record || record.kind !== 'agent') return null;
+    if (!isLiveAuthor(record, this.deps.agents)) return null;
+    // It posted its status line a moment ago, so this is all but guaranteed —
+    // and it costs one indexed read to not spend a model turn on the case where
+    // it left the room in between.
+    if (!this.deps.store.getMember(room.id, authorId)) return null;
+    const agentPath = record.naturalKey;
+
+    const busyWith = this.busyWith(room.id, authorId, agentPath);
+    if (busyWith !== null) {
+      logger.debug('[rooms] skipped a welcome-back offer: the agent is already working', {
+        roomId: room.id,
+        authorId,
+        busyWith,
+      });
+      return null;
+    }
+    if (!this.deps.budget.tryReserve(room.id).allowed) {
+      logger.debug('[rooms] skipped a welcome-back offer: the room is out of automatic turns', {
+        roomId: room.id,
+        authorId,
+      });
+      return null;
+    }
+    // **The re-arm, exactly as `claimTargets` does it, and it is not optional
+    // here.** Spending again means the hourly window moved, so the next
+    // exhaustion is news rather than a repeat. Without this line an offer
+    // silently consumes the freshly-rolled window and leaves the memory of the
+    // LAST refusal standing — so the next person to be refused is refused with
+    // no notice at all. An invisible refusal of a message somebody addressed is
+    // the shape `.claude/rules/room-conduct.md` forbids, and an offer nobody
+    // asked for must not be the thing that causes it.
+    this.notices.budgetRecovered(room.id);
+
+    let sessionId: string;
+    try {
+      // The room's own session for this agent, exactly as a trigger binds it —
+      // an offer is part of the same conversation, not a thread of its own.
+      sessionId = this.deps.store.bindRoomSession(
+        room.id,
+        authorId,
+        this.deps.store.getRoomSession(room.id, authorId) ?? randomUUID(),
+        new Date().toISOString()
+      );
+    } catch (err) {
+      logger.warn('[rooms] could not bind a session for a welcome-back offer', {
+        roomId: room.id,
+        authorId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return null;
+    }
+
+    const dispatchId = newDispatchId();
+    const key = agentKey(room.id, authorId);
+    this.holdClaim({
+      roomId: room.id,
+      cascadeRoot: entry.cascadeRoot,
+      authorId,
+      agentPath,
+      entryId: entry.id,
+      dispatchId,
+      // AT the ceiling. Kept as defence in depth rather than as the thing
+      // standing between an aside and a cascade — `aside: true` below is that,
+      // and it is why nothing this turn writes can inherit a root either. Both
+      // fields are read: this one by the diagnostic claim view, that one by
+      // `deepestClaimOf`.
+      depth: this.deps.maxAgentDepth(),
+      // Nothing in the room asked for this turn, so it has no cascade to hand
+      // to a post the agent makes while it runs. See {@link ActiveClaim.aside}.
+      aside: true,
+      claimedAt: new Date().toISOString(),
+      pastDeadline: false,
+    });
+    return runInDispatch({ dispatchId, origin: 'room', entryId: entry.id }, () =>
+      this.runAsideInDispatch({
+        room,
+        entry,
+        authorId,
+        agentPath,
+        sessionId,
+        key,
+        dispatchId,
+        prompt: input.prompt,
+      })
+    );
+  }
+
+  /** The body of {@link RoomTriggerDispatcher.askAside}, already inside its scope. */
+  private async runAsideInDispatch(input: {
+    room: Room;
+    entry: RoomEntry;
+    authorId: string;
+    agentPath: string;
+    sessionId: string;
+    key: string;
+    dispatchId: string;
+    prompt: string;
+  }): Promise<string | null> {
+    const { room, entry, authorId, key } = input;
+    const displayName =
+      this.deps.authors.getMany([authorId]).get(authorId)?.displayName ?? 'An agent';
+    let outcome: ClaimOutcome = 'quiet';
+    recordDispatchStart({
+      dispatchId: input.dispatchId,
+      origin: 'room',
+      roomId: room.id,
+      sessionId: input.sessionId,
+    });
+    try {
+      const turnContext = buildRoomContext(this.deps, {
+        room,
+        agentAuthorId: authorId,
+        entry,
+        working: this.workingIn(room.id),
+        // NO AMBIENT WINDOW, and no cursor moved. A trigger replays what the
+        // agent missed because it is answering the room; this is a narrow
+        // question about the agent's own work, and replaying the conversation
+        // into it would both invite an answer to somebody else's message and
+        // silently consume the window the next real trigger owes it
+        // (room-participation spec §8.3).
+        lastReadSeq: entry.seq,
+        budget: this.deps.budget.remaining(room.id),
+        // None. An offer is one line and the end of it; the ceiling stamp above
+        // says the same thing to the guard.
+        repliesLeftInThisChain: 0,
+        engaged: null,
+      });
+      const result = await this.deps.runner.run({
+        room,
+        authorId,
+        agentPath: input.agentPath,
+        sessionId: input.sessionId,
+        entry,
+        prompt: input.prompt,
+        roomContext: turnContext.context,
+        attachmentProjection: turnContext.projection,
+        onWaiting: (waiting) =>
+          this.notices.reportWaiting(room, entry, { authorId, displayName }, waiting),
+      });
+      if (result.sessionId !== input.sessionId) {
+        this.deps.store.rebindRoomSession(room.id, authorId, result.sessionId);
+      }
+      // **A slow turn is late, never lost** (`.claude/rules/room-conduct.md`).
+      // The room's wait bounds the WAIT; the turn keeps running, and
+      // `rooms.lateReplyCeilingMinutes` is what bounds how late "late" can be —
+      // so the answer is waited out here and posted when it lands, rather than
+      // dropped on the floor while the busy notice elsewhere promises the
+      // opposite. The claim is held throughout, because the agent really is
+      // still working in its own checkout, and released by the `finally` below
+      // once this has an answer to hand back.
+      const settled = result.late === undefined ? result : await this.awaitLate(result.late, key);
+      if (settled.unanswered) {
+        outcome = settled.unanswered;
+        return null;
+      }
+      const said = settled.text?.trim();
+      if (!said) return null;
+      outcome = 'answered';
+      return said;
+    } catch (err) {
+      outcome = 'failed';
+      logger.warn('[rooms] a welcome-back offer turn failed', {
+        roomId: room.id,
+        authorId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return null;
+    } finally {
+      // Always, and last. An aside turn releases into the offer the greeter
+      // posts a tick later, or into the named exception every turn has — an
+      // agent that ran and chose to say nothing. The one hole left is a greeter
+      // post that THROWS after this release; it is logged there
+      // (`welcome-back.ts`) and written down as an exception in
+      // `.claude/rules/room-conduct.md`, because a rule with an undocumented
+      // exception is a rule somebody re-derives from scratch.
+      this.releaseClaim(key, outcome);
+    }
+  }
+
+  /**
+   * Wait out a turn the room stopped waiting for, saying so while it runs.
+   *
+   * The claim is NOT released here: the agent is still working in its own
+   * checkout, so both busy ceilings must keep seeing it and the room must keep
+   * showing it. What changes is only what the indicator says — `working_late`
+   * from this point, re-stated by the republish loop because it reads the same
+   * flag.
+   *
+   * Never rejects: `RoomTurnResult.late` is contractually resolve-or-reject and
+   * a rejection here is a turn that produced nothing, which is the same silence
+   * as an agent with nothing to offer.
+   *
+   * @param late - The runner's promise of the eventual outcome.
+   * @param key - The `(room, agent)` claim key, for the indicator.
+   * @returns What the turn finally produced.
+   */
+  private async awaitLate(late: Promise<LateRoomReply>, key: string): Promise<RoomTurnReply> {
+    const claim = this.claimed.get(key);
+    if (claim) {
+      claim.pastDeadline = true;
+      this.publishPresence(claim, 'working_late');
+    }
+    try {
+      return await late;
+    } catch (err) {
+      logger.warn('[rooms] a late welcome-back offer never landed', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return { text: null, unanswered: 'failed' };
+    }
   }
 
   /**

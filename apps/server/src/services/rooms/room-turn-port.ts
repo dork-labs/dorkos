@@ -34,6 +34,21 @@ export interface RoomTurnRequest {
   /** The entry that triggered this turn. */
   entry: RoomEntry;
   /**
+   * The words the turn is triggered with — what reaches the model as the visible
+   * user message, byte for byte.
+   *
+   * For an ordinary trigger this is `entry.body.text`, and stating it explicitly
+   * rather than letting the runner reach for the entry is what lets ONE other
+   * caller exist: the welcome-back offer (`RoomTriggerDispatcher.askAside`,
+   * DOR-1046) asks an agent a question the room never posted, about an entry it
+   * already did. The entry stays the thing the turn is ABOUT — it frames the
+   * context and names the presence indicator — while this is the thing asked.
+   *
+   * It is still the whole message and nothing else: where the turn is happening
+   * rides `roomContext` (ADR-0273), never this string.
+   */
+  prompt: string;
+  /**
    * Where the turn is happening: the room, the roster, what the agent missed and
    * what is left to spend. Rides the runtime-neutral `additionalContext` bag
    * rather than the message (ADR-0273), so `entry.body.text` reaches the model

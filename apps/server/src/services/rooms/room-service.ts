@@ -461,6 +461,49 @@ export class RoomService {
     return this.triggers.halt(room);
   }
 
+  /**
+   * Ask one agent something the room never posted, on the room's own session
+   * for it, and hand back what it said.
+   *
+   * The one caller is the welcome-back offer (DOR-1046): a person came back,
+   * their agents have already posted what they did, and this is how one of them
+   * is asked whether it has a next step worth a decision. It is deliberately
+   * NARROW — it takes no viewer, refuses nobody by name, and posts nothing, so
+   * it cannot become a second way to make an agent speak. Every bound a normal
+   * trigger has still applies; see {@link RoomTriggerDispatcher.askAside}, which
+   * also explains why the answer comes back rather than going straight in.
+   *
+   * **Never throws.** A missing room, an archived one, a deleted entry and a
+   * failed turn are all the same answer: `null`, because the greeting this
+   * belongs to must not fail the read-state write that revealed it.
+   *
+   * @param input.roomId - The room the offer belongs to.
+   * @param input.authorId - The agent being asked.
+   * @param input.aboutEntryId - The status line it just posted.
+   * @param input.prompt - The question, as the model will see it.
+   * @returns What it said, or `null` for silence of any kind.
+   */
+  async askAside(input: {
+    roomId: string;
+    authorId: string;
+    aboutEntryId: string;
+    prompt: string;
+  }): Promise<string | null> {
+    const room = this.store.getRoom(input.roomId);
+    // An archived room takes no new posts, so an offer for it could never be
+    // written down — spending a turn to find that out would be the speculative
+    // cost this whole feature is gated on avoiding.
+    if (room === null || room.archived) return null;
+    const entry = this.store.getEntryById(input.roomId, input.aboutEntryId);
+    if (entry === null) return null;
+    return this.triggers.askAside({
+      room,
+      entry,
+      authorId: input.authorId,
+      prompt: input.prompt,
+    });
+  }
+
   // === Rooms ===
 
   /**

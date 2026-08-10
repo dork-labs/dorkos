@@ -83,6 +83,27 @@ export interface ActiveClaim {
    */
   dispatchId: string;
   depth: number;
+  /**
+   * This turn answers nothing the room said, so nothing it writes belongs to a
+   * cascade — the welcome-back offer, and today nothing else
+   * ({@link RoomTriggerDispatcher.askAside}).
+   *
+   * **It is read by exactly one thing: {@link deepestClaimOf}.** Provenance
+   * follows the TURN, and an aside turn has none to pass on: it was not
+   * triggered, its `cascadeRoot` is borrowed from the entry it is ABOUT purely
+   * so presence has something to key on, and `depth` sits at the ceiling. A
+   * direct post the agent makes mid-aside-turn therefore inherits nothing and is
+   * stamped by `deriveCascade` under its OWN root at the ceiling — the same
+   * stamp a status line gets, which triggers nobody and, because
+   * `cascadeRoot === id`, writes no refusal notice either. Inheriting instead
+   * gave it a FOREIGN root at the same ceiling depth, which triggers nobody and
+   * sprays a `cascade_depth` notice at every selected room-mate (see the long
+   * comment on that refusal in `room-trigger.ts`).
+   *
+   * Both ceilings still see this claim, and so does presence: an aside turn is
+   * real work in a real checkout. Only the cascade it does not have is hidden.
+   */
+  aside: boolean;
   /** When the claim was taken — what `room_context.working` reports as `since`. */
   claimedAt: string;
   /**
@@ -217,6 +238,12 @@ export const DISPATCH_OUTCOMES: Record<ClaimOutcome, DispatchOutcome> = {
  * room at once: the room a post lands in cannot say which turn produced it, so
  * the conservative choice is the one closest to the ceiling.
  *
+ * **{@link ActiveClaim.aside} turns are skipped**, because they have no cascade
+ * to pass on: nothing in the room triggered them. Skipping leaves a mid-turn
+ * post un-provenanced, which `deriveCascade` stamps under its own root at the
+ * ceiling — silent, and the same stamp the agent's own welcome-back line gets.
+ * See that field for what inheriting instead did.
+ *
  * @param claims - The live claim map.
  * @param authorId - The author writing a post.
  * @returns The cascade to inherit, or `undefined` when it has no turn running.
@@ -227,7 +254,7 @@ export function deepestClaimOf(
 ): CascadeStamp | undefined {
   let active: CascadeStamp | undefined;
   for (const claim of claims.values()) {
-    if (claim.authorId !== authorId) continue;
+    if (claim.authorId !== authorId || claim.aside) continue;
     if (!active || claim.depth > active.depth) {
       active = { root: claim.cascadeRoot, depth: claim.depth };
     }

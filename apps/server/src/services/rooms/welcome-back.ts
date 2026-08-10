@@ -31,20 +31,30 @@
  *    safe direction: the failure it buys is one extra greeting, and the
  *    alternative failure is a greeting that never comes.
  *
- * **Cost discipline.** The lines here are derived from session state and cost
- * nothing: no agent is woken to say what it did, and above all none is woken to
- * say it is still working. Spending a model turn is reserved for an agent with
- * a genuine next-step offer to make ("Want me to open the PR?"), and this
- * install has no honest signal that says an agent HAS one without asking it —
- * asking would be the speculative turn the rule forbids. So v1 spends zero
- * turns, structurally: nothing in this module can reach a runtime. The seam a
- * later phase needs is {@link WelcomeBackWorkSource}, which is where a real
- * "this agent is parked on you" signal would arrive.
+ * **Cost discipline.** The status lines here are derived from session state and
+ * cost nothing: no agent is woken to say what it did, and above all none is
+ * woken to say it is still working. Exactly one thing in this module can spend a
+ * model turn, and it is off unless somebody turns it on.
+ *
+ * **The offer, and why asking is the honest way to find out.** A greeting is
+ * worth more when it ends in a decision you can make ("Want me to open the
+ * PR?"). This install has no signal that says an agent HAS such a next step —
+ * so the choice is to guess, or to ask. Guessing was rejected; asking costs a
+ * turn, so it is a setting (`welcomeBack.offersEnabled`, default OFF) rather
+ * than a default. When it is on, the bound is code and not a sentence in a
+ * prompt: the ONLY candidates are the agents {@link planWelcomeBack} already
+ * chose to greet with — after the `maxPosts` cap, and never an agent with no
+ * news — and each one is asked at most once per return. An agent that answers
+ * with nothing posts nothing; a turn that fails or is refused is silence, not an
+ * apology; a turn that outruns the room's wait is late rather than lost, and
+ * posts when it lands. The status lines are posted first and are never withheld
+ * waiting for an offer, so the worst an offer can do is not arrive.
  *
  * @module server/services/rooms/welcome-back
  */
 import { eq, max, readCursors, roomEntries, type Db } from '@dorkos/db';
 import type { UserConfig } from '@dorkos/shared/config-schema';
+import { sanitizeIdentity } from '@dorkos/shared/untrusted-text';
 import { logger } from '../../lib/logger.js';
 import { MENTION_PATTERN } from './mentions.js';
 
@@ -102,6 +112,42 @@ export interface WelcomeBackWorkSource {
   since(input: { roomId: string; since: string }): Promise<AgentAbsenceWork[]>;
 }
 
+/**
+ * Where a greeting learns whether an agent has a next step worth your decision.
+ *
+ * A port, and a deliberately small one: it runs ONE turn for ONE agent and hands
+ * back what it said. The production implementation is `RoomService.askAside`,
+ * which puts the turn through the room's own machinery — the `(room, agent)`
+ * session, both busy ceilings, the automatic-turn budget and the working
+ * indicator. A test supplies its own and can therefore prove the thing that
+ * matters most here: that a disabled feature never reaches a runtime at all.
+ *
+ * **Implementations must never throw and must never post.** Every kind of
+ * silence — a busy agent, an exhausted budget, a failed turn, an agent with
+ * nothing to offer — is `null`. An answer that outran the room's wait is NOT
+ * silence: it is late, so it resolves late and gets posted then, which is the
+ * rule every other slow turn in this domain follows. The greeter posts what
+ * comes back, through the same guarded path it posts the status lines through.
+ */
+export interface WelcomeBackOfferSource {
+  /**
+   * Ask one agent for its next step.
+   *
+   * @param input.roomId - The room the answer will be posted into.
+   * @param input.authorId - The agent being asked.
+   * @param input.aboutEntryId - The status line that agent just posted, which is
+   *   what the turn is framed around.
+   * @param input.prompt - The question, as the model will see it.
+   * @returns What it said, or `null` for silence of any kind.
+   */
+  ask(input: {
+    roomId: string;
+    authorId: string;
+    aboutEntryId: string;
+    prompt: string;
+  }): Promise<string | null>;
+}
+
 /** One line one agent will post. */
 export interface WelcomeBackPost {
   /** The agent posting it — the author the room will attribute the line to. */
@@ -130,45 +176,67 @@ export interface PersonReturn {
 const TITLE_LIMIT = 60;
 
 /**
- * One session title, short enough to sit inside a sentence and unable to
- * address anybody.
+ * One session title, short enough to sit inside a sentence, unable to address
+ * anybody, and unable to end the block it is quoted in.
  *
- * **The `@` sigils go, and that is not cosmetic.** A session title is text a
- * model wrote, and this line is written into a real post whose mentions are
- * resolved at write time — so a session called "@ana's refactor" would address
- * Ana with a message she was never part of. Whitespace is flattened and quote
- * marks are dropped for the same reason the room's late-answer excerpt drops
- * them: the title lands inside a quoted clause, and a newline in it would break
- * the line it is quoted on.
+ * **A session title is a LABEL somebody else's model wrote**, and both places it
+ * lands are lines DorkOS wrote around it: a status line inside the room's
+ * untrusted fence, and the offer prompt, which is not fenced at all. So it goes
+ * through `sanitizeIdentity` first — the one sanitizer this domain has for that
+ * job (`.claude/rules/room-conduct.md`), which drops every angle bracket and
+ * every control character, NEL included. Writing a second one here is exactly
+ * the mistake that rule names: the second copy is the one that misses NEL, and
+ * the two escapes below only ever handled `@` and `"`.
+ *
+ * **The `@` sigils go too, and that is not cosmetic.** This line is written into
+ * a real post whose mentions are resolved at write time — so a session called
+ * "@ana's refactor" would address Ana with a message she was never part of.
+ * Quote marks are dropped for the reason the room's late-answer excerpt drops
+ * them: the title lands inside a quoted clause.
  *
  * @param title - The title as the runtime reported it.
+ * @returns The safe, short form. Empty when nothing survives sanitizing, which
+ *   the callers read as "no title" — see {@link welcomeBackLine}.
  */
 function quoteTitle(title: string): string {
-  const flat = title.replace(/\s+/g, ' ').replace(/"/g, '').replace(MENTION_PATTERN, '$1').trim();
+  // Capped by `TITLE_LIMIT` below rather than by the identity default, so the
+  // sanitizer is asked only for safety and this file keeps its own length rule.
+  const safe = sanitizeIdentity(title, Number.MAX_SAFE_INTEGER) ?? '';
+  const flat = safe.replace(/"/g, '').replace(MENTION_PATTERN, '$1').trim();
   return flat.length <= TITLE_LIMIT ? flat : `${flat.slice(0, TITLE_LIMIT).trimEnd()}…`;
 }
 
 /**
- * How long ago something happened, in words a person reads at a glance.
+ * How long a stretch of time was, in words a person reads at a glance.
  *
  * Deliberately coarse and deliberately rounded DOWN through the unit it lands
- * in: "3 hours ago" for anything between three and four. A greeting that
- * rounded up would tell somebody their agent worked more recently than it did,
- * which is the one direction this line must not be wrong in.
+ * in: "3 hours" for anything between three and four. A greeting that rounded up
+ * would tell somebody their agent worked more recently than it did, which is the
+ * one direction this must not be wrong in.
  *
- * @param ms - How long ago, in milliseconds. Negative reads as "just now",
- *   which is what a clock that stepped backwards deserves.
+ * @param ms - The span, in milliseconds. Negative collapses to the smallest
+ *   answer, which is what a clock that stepped backwards deserves.
+ */
+function describeSpan(ms: number): string {
+  const minutes = Math.floor(ms / 60_000);
+  if (minutes < 1) return 'less than a minute';
+  if (minutes === 1) return 'a minute';
+  if (minutes < 60) return `${minutes} minutes`;
+  const hours = Math.floor(minutes / 60);
+  if (hours === 1) return 'an hour';
+  if (hours < 24) return `${hours} hours`;
+  const days = Math.floor(hours / 24);
+  return days === 1 ? 'a day' : `${days} days`;
+}
+
+/**
+ * How long ago something happened, from {@link describeSpan}.
+ *
+ * @param ms - How long ago, in milliseconds. Negative reads as "just now".
  */
 function describeAgo(ms: number): string {
-  const minutes = Math.floor(ms / 60_000);
-  if (minutes < 1) return 'just now';
-  if (minutes === 1) return 'a minute ago';
-  if (minutes < 60) return `${minutes} minutes ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours === 1) return 'an hour ago';
-  if (hours < 24) return `${hours} hours ago`;
-  const days = Math.floor(hours / 24);
-  return days === 1 ? 'a day ago' : `${days} days ago`;
+  const span = describeSpan(ms);
+  return span === 'less than a minute' ? 'just now' : `${span} ago`;
 }
 
 /**
@@ -194,6 +262,48 @@ export function welcomeBackLine(work: AgentAbsenceWork, now: number): string {
   return title
     ? `Worked on ${work.sessions} sessions while you were away. The most recent was "${title}", last changed ${ago}.`
     : `Worked on ${work.sessions} sessions while you were away. Last change ${ago}.`;
+}
+
+/**
+ * The question one agent is asked when offers are on.
+ *
+ * **It states facts and asks for one line.** Every number in it is one this
+ * module already had, off the same session listing the status line was built
+ * from — nothing here is inferred, and nothing invites the agent to summarize
+ * its work again, because it has just posted that summary and the room can see
+ * it. The instruction is the whole of the conduct: exactly one next step, or
+ * nothing at all. Silence is a first-class answer and is named as one, because
+ * an agent that thinks it owes a reply will write one.
+ *
+ * A prompt is not a bound and is not treated as one: what stops this costing
+ * more than one turn per agent is the loop in {@link WelcomeBackGreeter.greet},
+ * and what stops the answer starting a conversation is the cascade ceiling the
+ * post is stamped with. This only decides what is asked.
+ *
+ * @param work - What this agent did while the person was away.
+ * @param ret - The absence that just ended.
+ * @param now - Epoch ms, so the copy is deterministic in a test.
+ */
+export function welcomeBackOfferPrompt(
+  work: AgentAbsenceWork,
+  ret: PersonReturn,
+  now: number
+): string {
+  const away = describeSpan(ret.awayMs);
+  const ago = describeAgo(now - Date.parse(work.lastActiveAt));
+  // Empty is "no title", not an empty pair of quotes: a title can arrive as
+  // `null` from the listing, and it can also SANITIZE to nothing (a title made
+  // entirely of angle brackets). Both say the same thing, so both read the same.
+  const title = work.latestTitle === null ? '' : quoteTitle(work.latestTitle);
+  const moved =
+    work.sessions === 1
+      ? `one of your sessions moved${title === '' ? '' : `, on "${title}"`}, last changed ${ago}`
+      : `${work.sessions} of your sessions moved${title === '' ? '' : `; the most recent was "${title}"`}, last changed ${ago}`;
+  return [
+    `The person you work with has just come back after being away for ${away}. While they were away, ${moved}.`,
+    'You have already posted that summary to the team channel, so do not repeat it and do not describe your work again.',
+    'If you have exactly one genuine next step that needs the person’s decision, state it in one short line. If you do not, output nothing.',
+  ].join('\n\n');
 }
 
 /**
@@ -358,8 +468,20 @@ export interface WelcomeBackDeps {
    * Post one line as one agent — the NORMAL guarded post path, so the
    * membership check, the cascade stamp and the turn budget bind these exactly
    * as they bind anything else that agent says.
+   *
+   * @returns The id of the entry that was written, which is what an offer turn
+   *   is framed around.
    */
-  post(roomId: string, input: { authorId: string; text: string }): void;
+  post(roomId: string, input: { authorId: string; text: string }): string;
+  /**
+   * How an agent is asked whether it has a next step, when
+   * `welcomeBack.offersEnabled` says it may be.
+   *
+   * Optional, and absent means no offers ever — the honest answer for a surface
+   * with no room turn machinery behind it (the embedded transport, a test that
+   * wired only what it needed). A greeting still happens; the extra does not.
+   */
+  offers?: WelcomeBackOfferSource;
   /** The person's last durable trace, e.g. {@link lastPersonSignalAt}. */
   lastSeenAt(userId: string): string | null;
   /** Epoch ms. Injected so a test owns the clock. */
@@ -369,13 +491,17 @@ export interface WelcomeBackDeps {
 /**
  * Greets a person coming back to #team, once, with at most `maxPosts` lines.
  *
- * **Nothing here wakes an agent.** The lines are composed from session state
- * and written through the ordinary post path, so a welcome-back post is an
+ * **The status lines wake nobody.** They are composed from session state and
+ * written through the ordinary post path, so a welcome-back post is an
  * agent-authored entry with no trigger behind it — which the shipped cascade
  * stamp puts AT the ceiling (`deriveCascade`), and the fallback seat stands
  * down for. Both mechanisms already ship and both are load-bearing here: they
  * are why three agents posting good morning cannot become three agents
  * answering each other.
+ *
+ * **The offers do wake one agent apiece, and only when switched on.** They ride
+ * the same two mechanisms — an offer is posted un-provenanced exactly like a
+ * status line — so what changes is the spend, never the quiet.
  */
 export class WelcomeBackGreeter {
   private readonly ledger: AbsenceLedger;
@@ -447,11 +573,20 @@ export class WelcomeBackGreeter {
     }
 
     const posts = planWelcomeBack({ settings, awayMs: ret.awayMs, work, now: this.now() });
+    const byAuthor = new Map(work.map((entry) => [entry.authorId, entry]));
     const written: WelcomeBackPost[] = [];
+    // The agents that actually got a line into the room, paired with the entry
+    // that line became. This — after the threshold, after the delta filter,
+    // after `maxPosts` — is the entire candidate set for an offer. There is no
+    // path from "in this room" to "asked a question"; only from "had news worth
+    // a line" to it.
+    const greeted: Array<{ post: WelcomeBackPost; entryId: string; work: AgentAbsenceWork }> = [];
     for (const post of posts) {
       try {
-        this.deps.post(roomId, post);
+        const entryId = this.deps.post(roomId, post);
         written.push(post);
+        const theirs = byAuthor.get(post.authorId);
+        if (theirs) greeted.push({ post, entryId, work: theirs });
       } catch (err) {
         // One agent that cannot post (it left the room between the listing and
         // here) costs its own line and nobody else's.
@@ -462,7 +597,94 @@ export class WelcomeBackGreeter {
         });
       }
     }
-    return written;
+    return [...written, ...(await this.offer({ settings, roomId, ret, greeted }))];
+  }
+
+  /**
+   * Ask the agents that just spoke whether any of them has a next step, and post
+   * the ones that do.
+   *
+   * **Additive, never a replacement.** It runs after every status line is on the
+   * log, so a person who came back has already been told what happened whatever
+   * this produces — including nothing, which is the ordinary outcome and the
+   * one it must be cheap to reach.
+   *
+   * **One turn per candidate, and the candidates are already capped.** Each
+   * agent is asked once; the loop is the bound, so no prompt has to ask an agent
+   * to restrain itself. They run concurrently because they are different agents
+   * in different working directories, and because a person should not wait on
+   * the slowest of them to hear from the fastest.
+   *
+   * @param opts.greeted - The agents that got a line in, and the entries those
+   *   lines became.
+   * @returns The offers that were posted, in the order they landed.
+   */
+  private async offer(opts: {
+    settings: WelcomeBackSettings;
+    roomId: string;
+    ret: PersonReturn;
+    greeted: ReadonlyArray<{ post: WelcomeBackPost; entryId: string; work: AgentAbsenceWork }>;
+  }): Promise<WelcomeBackPost[]> {
+    const { offers } = this.deps;
+    // Read from the settings this return already resolved, so the switch is
+    // answered once per greeting rather than once per agent — and checked
+    // BEFORE anything else, so `offersEnabled: false` reaches no runtime, mints
+    // no prompt, and asks nothing.
+    if (!opts.settings.offersEnabled || offers === undefined) return [];
+    const offered = await Promise.all(
+      opts.greeted.map((candidate) => this.offerOne({ ...opts, candidate, offers }))
+    );
+    return offered.filter((post): post is WelcomeBackPost => post !== null);
+  }
+
+  /**
+   * One agent's offer: ask, and post whatever comes back if anything does.
+   *
+   * Every failure is this agent's alone — a throw out of the seam, or a post the
+   * room refuses — because the whole point of a welcome is that it survives one
+   * agent having a bad morning.
+   *
+   * @param opts.candidate - The agent, its news, and the line it just posted.
+   * @returns The offer that was posted, or `null` for silence.
+   */
+  private async offerOne(opts: {
+    roomId: string;
+    ret: PersonReturn;
+    offers: WelcomeBackOfferSource;
+    candidate: { post: WelcomeBackPost; entryId: string; work: AgentAbsenceWork };
+  }): Promise<WelcomeBackPost | null> {
+    const { roomId, candidate } = opts;
+    try {
+      const said = await opts.offers.ask({
+        roomId,
+        authorId: candidate.post.authorId,
+        aboutEntryId: candidate.entryId,
+        prompt: welcomeBackOfferPrompt(candidate.work, opts.ret, this.now()),
+      });
+      const text = said?.trim();
+      // An agent with no next step says nothing, and nothing is what the room
+      // gets. This is the outcome the feature is TUNED for, not a failure of it.
+      if (text === undefined || text === '') return null;
+      const post = { authorId: candidate.post.authorId, text };
+      // The same guarded path the status line took, and un-provenanced for the
+      // same reason: `deriveCascade` stamps it at the ceiling, so an offer
+      // cannot start a conversation and the fallback seat stands down for it.
+      this.deps.post(roomId, post);
+      return post;
+    } catch (err) {
+      // Covers both halves: a seam that threw, and a POST the room refused
+      // after the offer turn had already released its claim (the agent left the
+      // room in between). The second is the one release in this feature that can
+      // land with nothing durable beside it, so this line is the whole record of
+      // it — deliberately, and written down in `.claude/rules/room-conduct.md`
+      // rather than left for somebody to re-derive.
+      logger.warn('[rooms] a welcome-back offer was not made', {
+        roomId,
+        authorId: candidate.post.authorId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return null;
+    }
   }
 
   /** Epoch ms, from the injected clock or the real one. */

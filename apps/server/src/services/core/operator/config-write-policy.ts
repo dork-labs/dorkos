@@ -249,7 +249,8 @@ export const CONFIG_WRITE_POLICY = {
   'rooms.engagedWindowPosts': 'operator-only',
 
   // Whether agents may speak when the person comes back, how long an absence
-  // has to be to count, and how many may speak. All three sit on the far side
+  // has to be to count, how many may speak, and whether a greeting may spend a
+  // model turn asking for a next-step offer. All four sit on the far side
   // of the line the two room WAITS above sit on, for the reason the engaged
   // window does: they decide whether a turn RUNS and how many run, not how long
   // a room waits for one that was already going to. An agent that could lower
@@ -259,6 +260,7 @@ export const CONFIG_WRITE_POLICY = {
   'welcomeBack.enabled': 'operator-only',
   'welcomeBack.absenceThresholdMinutes': 'operator-only',
   'welcomeBack.maxPosts': 'operator-only',
+  'welcomeBack.offersEnabled': 'operator-only',
 
   'onboarding.completedSteps': 'agent-writable',
   'onboarding.skippedSteps': 'agent-writable',
@@ -605,6 +607,9 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
       'welcomeBack.enabled',
       'welcomeBack.absenceThresholdMinutes',
       'welcomeBack.maxPosts',
+      // The most literal member of this group: it is the one welcome-back
+      // setting that decides whether a model turn runs at all (DOR-1046).
+      'welcomeBack.offersEnabled',
     ],
   },
 ];

@@ -861,10 +861,12 @@ describe('GET /api/config', () => {
     });
   });
 
-  // Settings owns ONE of these three: the on/off switch. The two numbers go out
-  // with it so the switch's own sentence can state the threshold actually in
-  // force rather than the shipped default, the same reason the `rooms` block
-  // carries its ceilings (spec team-room-home D5.2, task 4.3).
+  // Settings owns TWO of these four switches: whether agents may greet you, and
+  // whether a greeting may spend a model turn on a next-step offer (DOR-1046).
+  // The two numbers go out with them so the first switch's own sentence can
+  // state the threshold actually in force rather than the shipped default, the
+  // same reason the `rooms` block carries its ceilings (spec team-room-home
+  // D5.2, task 4.3).
   describe('welcomeBack — what agents may say when you come back', () => {
     it('reports the shipped values when nobody has changed them', async () => {
       const res = await request(server).get('/api/config').expect(200);
@@ -873,6 +875,7 @@ describe('GET /api/config', () => {
         enabled: true,
         absenceThresholdMinutes: 240,
         maxPosts: 3,
+        offersEnabled: false,
       });
     });
 
@@ -890,6 +893,7 @@ describe('GET /api/config', () => {
         enabled: false,
         absenceThresholdMinutes: 720,
         maxPosts: 3,
+        offersEnabled: false,
       });
     });
 
@@ -911,13 +915,30 @@ describe('GET /api/config', () => {
       expect(res.body.welcomeBack.maxPosts).toBe(1);
     });
 
-    it('carries the three welcomeBack fields and nothing else', async () => {
+    it('round-trips the offers switch, which ships off', async () => {
+      const before = await request(server).get('/api/config').expect(200);
+      expect(before.body.welcomeBack.offersEnabled).toBe(false);
+
+      await request(server)
+        .patch('/api/config')
+        .send({ welcomeBack: { offersEnabled: true } })
+        .expect(200);
+
+      const res = await request(server).get('/api/config').expect(200);
+
+      expect(res.body.welcomeBack.offersEnabled).toBe(true);
+      // The switch a person already had is untouched by the one they just flipped.
+      expect(res.body.welcomeBack.enabled).toBe(true);
+    });
+
+    it('carries the four welcomeBack fields and nothing else', async () => {
       const res = await request(server).get('/api/config').expect(200);
 
       expect(Object.keys(res.body.welcomeBack).sort()).toEqual([
         'absenceThresholdMinutes',
         'enabled',
         'maxPosts',
+        'offersEnabled',
       ]);
     });
   });

@@ -94,6 +94,33 @@ model. See ADR `260726-170127` and `research/20260727_buzz-conversational-behavi
   fault), and the depth refusal against an agent's own un-provenanced post
   (nothing was triggered, and no damping key exists that would keep a notice
   from spraying).
+- **An ASIDE turn is the one refusal nobody is told about, and here is the whole
+  exception.** A welcome-back offer (`RoomTriggerDispatcher.askAside`,
+  `welcome-back.ts`, DOR-1046) runs a turn that no message in the room triggered:
+  a person came back, their agents have already posted what moved, and one of
+  them is asked whether it has a next step worth a decision. Four outcomes are
+  **silent** — the agent is already working, the room is out of automatic turns,
+  the turn failed, the agent had nothing to offer — with no notice, no apology
+  and nothing in the log but a `debug`/`warn` line. That is not a hole in "a
+  refusal is visible": that rule protects somebody who ASKED and got silence, and
+  here nobody asked. The person is owed the status line, and the status line is
+  already posted by the time any of this runs; a notice about an extra that did
+  not happen is the over-participation the rest of this file damps. It is the
+  same reasoning that lets `standDownFallbackSeat` empty the target set without
+  writing anything. Three things bound the exception and must stay true:
+  - **`awaiting_approval` is NOT silent.** An aside turn holds a claim, so the
+    room is showing the agent working; a turn parked on a person would leave that
+    indicator standing with nothing to explain it. It writes the ordinary notice.
+  - **A slow aside is late, never lost**, like every other turn. The answer is
+    waited out to `rooms.lateReplyCeilingMinutes` and posted when it lands, so
+    the indicator releases into a post rather than into nothing.
+  - **The residual hole is one line wide and is logged, not hidden.** The answer
+    comes back to the greeter, which posts it un-provenanced a tick after the
+    claim releases — so a post the room then refuses (the agent left the room in
+    between) is a release with no durable sibling. It writes
+    `[rooms] a welcome-back offer was not made` and nothing else, deliberately:
+    the agent is gone, and a notice in its name would be the room speaking for
+    somebody who is not there.
 - **Only a real wait is a refusal-shaped event.** `awaiting_approval` is the one
   notice that is not an outcome: a turn parked on a person produces nothing
   until they act, so it is reported WHILE it is true, off the turn's own event
