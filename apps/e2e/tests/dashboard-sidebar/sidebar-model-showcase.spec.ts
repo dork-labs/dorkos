@@ -63,7 +63,12 @@ const EXPECTED_ZONES: Record<string, string[]> = {
  * a coincidence. (The task brief said both fixtures overflow; the model says
  * otherwise, and the model is what this asserts.)
  */
-const EXPECTED_NOW: Record<string, { attention: number; overflow: string | null }> = {
+const EXPECTED_NOW: Record<string, { attention: number; overflow: string | null } | null> = {
+  // No Now zone at all — the row exists so that adding a fifth journey without
+  // an entry here throws rather than being silently skipped, which is what
+  // `Object.entries` over a partial table used to do.
+  'first-run': null,
+  quiet: null,
   busy: { attention: 3, overflow: null },
   power: { attention: 3, overflow: '+ 4 more' },
 };
@@ -72,23 +77,30 @@ const EXPECTED_NOW: Record<string, { attention: number; overflow: string | null 
 const FIXTURES = ['first-run', 'quiet', 'busy', 'power'] as const;
 
 /**
- * The one contrast failure on this page that is not this page's to fix, named
- * so it cannot spread.
+ * The dimmed rows whose labels do not meet 4.5:1, quarantined by the MECHANISM
+ * that breaks them rather than by a marker this page paints on.
  *
- * `SidebarRow` dims a muted row with `opacity-60` (`shared/ui/sidebar-row.tsx`),
- * and the label under it is already only 5.9:1 — so a muted row's name measures
- * **2.6:1 in light and 3.6:1 in dark**. It is a real WCAG AA failure in the
- * shared primitive, in the app as much as here, and it cannot be fixed by
- * picking a different opacity: any dimming of a 5.9:1 label lands under 4.5.
- * Resolving it is a design decision about what "muted" may look like, which is
- * why this branch reports it rather than changing another task's file.
+ * `SidebarRow` dims a `muted` row with `opacity-60` (`shared/ui/sidebar-row.tsx`)
+ * over a label that is already only 5.9:1, so the name measures **2.6:1 in light
+ * and 3.6:1 in dark**. No opacity clears 4.5:1 from that start, so it is a design
+ * decision and not a tuning one: muted has to mean fewer signals rather than
+ * less legibility. Tracked as **DOR-1098**.
  *
- * The quarantine is an **equality** assertion, not a filter, so it retires
- * itself: a new failure anywhere fails the test because it is not in this list,
- * and fixing the muted treatment fails the test because the list no longer
- * matches.
+ * **Two rows, and only one of them is inherited.** One is fixture-driven —
+ * `busy` mutes `#noise`, so any honest drawing of that journey has it. The other
+ * is the `archive` row this page's own unread-tier showcase adds to demonstrate
+ * that mute kills bold and badge (§18). That one is this branch's, and it stays:
+ * removing it would hide a rule the page exists to show, and it fails for
+ * exactly the same reason DOR-1098 fixes.
+ *
+ * **Matched on computed opacity, deliberately.** Asking "does an ancestor of the
+ * failing text have `opacity < 1`?" names the defect itself, so the quarantine
+ * cannot be widened by relabelling a row, and it collapses to zero the moment
+ * the dim goes. The count is an **equality** assertion, not a filter: a new
+ * failure anywhere reds the clean-set assertion, and fixing DOR-1098 reds this
+ * one, which is the instruction to delete it.
  */
-const QUARANTINED_MUTED_ROWS = 2;
+const QUARANTINED_DIMMED_ROWS = 2;
 
 /**
  * How long the first navigation to `/dev` may take, cold.
@@ -142,6 +154,113 @@ async function runAxe(page: Page): Promise<AxeResults> {
   return page.evaluate(async (context) => window.axe.run(context, {}), AXE_CONTEXT);
 }
 
+/**
+ * Assert the page fits inside the viewport, before axe is asked anything.
+ *
+ * **This is the coverage guarantee, and it replaced a number that could not be
+ * one.** axe-core's `color-contrast` builds a spatial grid bounded by the
+ * viewport and does not evaluate text whose rect falls outside it — not a
+ * violation, not a pass, not even an `incomplete`. The gate here used to be
+ * `evaluated > 200`, which the page clears comfortably while still dropping its
+ * bottom half: measured at 1600×2400 it evaluated 260 nodes and missed two
+ * injected 1.91:1 labels, and at 1600×4000 it evaluated 322 and missed the same
+ * two. An absolute floor is not coverage, because it does not move when the page
+ * does.
+ *
+ * This does. Measured: the page's scroller overflows by 2420px at 1600×2400 and
+ * by 820px at 1600×4000 — the two viewports where the old floor passed while
+ * both canaries went unevaluated — and by 0 at the viewport this suite uses.
+ * When a new showcase pushes the column past the viewport, this reds with the
+ * actual reason, and the fix is to raise the viewport (or split the page), not
+ * to loosen a threshold.
+ *
+ * @param page - The page under test.
+ */
+async function expectPageFitsViewport(page: Page): Promise<void> {
+  const fit = await page.evaluate((context) => {
+    const content = document.querySelector(context);
+    // The SCROLLER's extent, not the content box's own height. The page
+    // container is `h-full` (`PageContainer scroll={false}`), so its bounding
+    // rect is clamped to the viewport and its children overflow it visibly —
+    // measuring that box reported "fits" at every viewport, including the ones
+    // where axe was demonstrably missing a third of the page. The nearest
+    // scrolling ancestor is the only thing that knows how tall the page is.
+    let scroller = content?.parentElement ?? null;
+    while (
+      scroller !== null &&
+      !['auto', 'scroll'].includes(getComputedStyle(scroller).overflowY)
+    ) {
+      scroller = scroller.parentElement;
+    }
+    const box = scroller ?? document.documentElement;
+    return { overflow: box.scrollHeight - box.clientHeight, height: box.scrollHeight };
+  }, AXE_CONTEXT);
+
+  expect(
+    fit.overflow,
+    `the showcase page is ${fit.height}px and does not fit the viewport, so axe stopped evaluating partway down — raise the viewport in test.use() (or split the page); never lower a threshold to make this pass`
+  ).toBe(0);
+}
+
+/**
+ * Assert axe actually evaluated every reason chip on the page.
+ *
+ * The second half of the coverage guarantee, and the one that tracks content
+ * rather than geometry. There is exactly one chip per zone, per section and per
+ * row, they carry text, and they run top to bottom of the page — so "axe saw all
+ * of them" is the strongest statement available about whether it saw the page.
+ * Add a showcase and the denominator grows on its own; no constant to bump.
+ *
+ * @param page - The page under test.
+ * @param results - What the axe run returned.
+ */
+async function expectEveryReasonChipEvaluated(page: Page, results: AxeResults): Promise<void> {
+  const evaluated = [...results.passes, ...results.violations, ...results.incomplete]
+    .filter((rule) => rule.id === 'color-contrast')
+    .flatMap((rule) => rule.nodes.map((node) => node.target.join(' ')));
+
+  const missed = await page.evaluate((targets) => {
+    const seen = new Set<Element>();
+    for (const target of targets) {
+      const element = document.querySelector(target);
+      if (element) seen.add(element);
+    }
+    return [...document.querySelectorAll('[data-slot="sidebar-model-reason"]')]
+      .filter((chip) => !seen.has(chip))
+      .map((chip) => chip.getAttribute('data-reason') ?? '(no reason)');
+  }, evaluated);
+
+  expect(
+    missed.slice(0, 8),
+    `axe did not evaluate ${missed.length} of the page's reason chips — it stopped looking before the page ended, so a contrast failure down there would not be reported`
+  ).toEqual([]);
+}
+
+/**
+ * How many of these failing nodes sit under something that dims them.
+ *
+ * Walks to the document root looking for a computed `opacity` below 1, which is
+ * the defect DOR-1098 removes. Naming the mechanism rather than a marker
+ * attribute is what stops the quarantine being widened by relabelling a row.
+ *
+ * @param page - The page under test.
+ * @param targets - The failing nodes' selectors, as axe reported them.
+ */
+async function countUnderDimming(page: Page, targets: string[]): Promise<number> {
+  return page.evaluate(
+    (selectors) =>
+      selectors.filter((selector) => {
+        let node: Element | null = document.querySelector(selector);
+        while (node !== null) {
+          if (Number.parseFloat(getComputedStyle(node).opacity) < 1) return true;
+          node = node.parentElement;
+        }
+        return false;
+      }).length,
+    targets
+  );
+}
+
 /** One violation, flattened into something an assertion failure can be read from. */
 function describeViolation(violation: Result): string {
   return `${violation.id} (${violation.impact}): ${violation.nodes
@@ -163,6 +282,15 @@ function describeViolation(violation: Result): string {
  * A NEW file rather than an addition to `sidebar-groups.spec.ts`: that spec
  * seeds an agent and serializes on one shared `ui.sidebar`, and none of this
  * needs either.
+ *
+ * **P1 AC-6 asks for zero contrast violations and this page has two**, both
+ * dimmed rows, both quarantined below. Half of that is inherited and half is
+ * self-inflicted: `busy` mutes `#noise`, so any honest drawing of that journey
+ * carries it, while the `archive` row in the unread-tier showcase is this
+ * branch's own. Both fail for one reason — `SidebarRow` dims muted rows, which
+ * no opacity value can make legible (DOR-1098) — so neither is fixable here,
+ * and the second is kept because the rule it demonstrates is real. AC-6 is met
+ * for everything the page controls, and the gap is named rather than hidden.
  */
 test.describe('Sidebar model showcase @smoke', () => {
   /**
@@ -175,7 +303,7 @@ test.describe('Sidebar model showcase @smoke', () => {
    * the whole page is inside the grid, 300+ nodes are evaluated, and the same
    * injected failure is caught. Do not shrink this below the page's own height.
    */
-  test.use({ viewport: { width: 1600, height: 5200 } });
+  test.use({ viewport: { width: 1600, height: 6400 } });
 
   // The per-test default is 30s, which is under the cold cost of the first
   // navigation to `/dev` — see PLAYGROUND_COLD_START_MS. A locator ceiling
@@ -230,16 +358,36 @@ test.describe('Sidebar model showcase @smoke', () => {
   test('caps Now at three, and overflows only when there is more than three', async ({ page }) => {
     await openShowcase(page);
 
-    for (const [fixture, expected] of Object.entries(EXPECTED_NOW)) {
+    // Driven off FIXTURES, not off EXPECTED_NOW's own keys: a fifth journey with
+    // a Now zone and no entry in the table must throw here rather than be
+    // skipped by a loop that only ever visits what somebody remembered to write.
+    for (const fixture of FIXTURES) {
+      const expected = EXPECTED_NOW[fixture];
+      expect(
+        expected,
+        `${fixture} has no EXPECTED_NOW entry — add one, using null if it draws no Now zone`
+      ).not.toBeUndefined();
+
       const now = page.locator(
         `[data-slot="sidebar-model-panel"][data-fixture="${fixture}"] [data-zone="now"]`
       );
+      if (expected === null) {
+        await expect(now, `${fixture} drew a Now zone it has nothing for`).toHaveCount(0);
+        continue;
+      }
+
       // Attention rows are the ones whose reason names why they blocked —
       // `now:permission-prompt`, `now:question`, `now:error`, `now:idle-timeout`
       // — which is exactly the set the cap applies to. The working rollup and
       // the overflow row carry `rollup:` reasons and are deliberately not counted.
+      //
+      // Scoped to `li`, and that is load-bearing: the zone's headerless section
+      // carries `now:body`, which the `now:` prefix also matches. Only rows are
+      // wrapped in a list item, so this counts rows and nothing else. (Caught by
+      // this test going 3→4 the moment headerless sections started drawing their
+      // own reason chip.)
       await expect(
-        now.locator('[data-slot="sidebar-model-reason"][data-reason^="now:"]'),
+        now.locator('li [data-slot="sidebar-model-reason"][data-reason^="now:"]'),
         `${fixture} shows the wrong number of things needing you`
       ).toHaveCount(expected.attention);
 
@@ -261,21 +409,68 @@ test.describe('Sidebar model showcase @smoke', () => {
 
     for (const fixture of FIXTURES) {
       const panel = page.locator(`[data-slot="sidebar-model-panel"][data-fixture="${fixture}"]`);
-      const rows = await panel.locator('[data-slot^="sidebar-model-row"]').count();
+      const rows = await panel.locator('[data-slot="sidebar-model-row"]').count();
+      expect(rows, `${fixture} drew no rows at all`).toBeGreaterThan(0);
+
+      // Per row, not a total. `reasons.length > rows` was slack enough to be
+      // decorative — power could have lost NINE chips and stayed green — and it
+      // could not fail anyway, since the chip is emitted in the same expression
+      // as the row. This asks the question that matters: does each row's own
+      // list item carry a reason? Deleting the `expansion` prop reds it.
+      const rowsWithoutReason = await panel.evaluate((root) =>
+        [...root.querySelectorAll('[data-slot="sidebar-model-row"]')]
+          .filter(
+            (row) => row.closest('li')?.querySelector('[data-slot="sidebar-model-reason"]') == null
+          )
+          .map((row) => row.textContent?.trim().slice(0, 40) ?? '(empty row)')
+      );
+      expect(rowsWithoutReason, `${fixture} drew a row that does not say why`).toEqual([]);
+
+      // Zones and sections carry one too, including the headerless bodies Now
+      // and Today draw — those used to render no chip at all, so their reasons
+      // were never format-checked by the loop below.
+      const zones = await panel.locator('[data-slot="sidebar-model-zone"]').count();
+      const sections = await panel.locator('[data-slot="sidebar-model-section"]').count();
       const reasons = await panel
         .locator('[data-slot="sidebar-model-reason"]')
         .evaluateAll((nodes) => nodes.map((node) => node.getAttribute('data-reason') ?? ''));
-
-      // A floor of zero is what lets a loop over nothing pass, so the count is
-      // pinned to the rows actually on screen. Every zone and every section
-      // carries a reason too, so there are always MORE reasons than rows —
-      // fewer would mean a row drew without one.
-      expect(rows, `${fixture} drew no rows at all`).toBeGreaterThan(0);
-      expect(reasons.length, `${fixture} has a node with no reason`).toBeGreaterThan(rows);
+      expect(reasons.length, `${fixture} has a zone or section with no reason`).toBe(
+        rows + zones + sections
+      );
       for (const reason of reasons) {
         expect(reason, `${fixture} has a malformed reason`).toMatch(/^[a-z-]+:[a-z-]+$/);
       }
     }
+  });
+
+  test('a folded section keeps the signal folding it hid', async ({ page }) => {
+    await openShowcase(page);
+
+    // `power` folds Library → Channels with a rollup of `{ activity, working: 3 }`.
+    // Both halves have to survive the fold (BC-31), and they survive in two
+    // different places: the working count is a dot in the trailing slot, and the
+    // `activity` tier is the label going bold — no badge, no dot, because a
+    // third weight is exactly what the two-tier system refuses (§18). The page
+    // showed only the dot until `SectionHeader` gained `emphasized`.
+    const channels = page.locator(
+      '[data-slot="sidebar-model-panel"][data-fixture="power"] [data-slot="sidebar-model-section"][data-section="channels"]'
+    );
+    const header = channels.getByRole('button', { name: 'Channels' });
+    await expect(header).toHaveAttribute('aria-expanded', 'false');
+    await expect(header, 'a folded section holding unread activity reads as quiet').toHaveClass(
+      /font-semibold/
+    );
+    await expect(channels.getByLabel('3 agents working')).toBeVisible();
+
+    // And the tier really is `activity`, so the absence of a badge is the
+    // decision rather than an oversight.
+    await expect(channels.locator('[data-slot="sidebar-model-directed-badge"]')).toHaveCount(0);
+
+    // Expanding gives the signal back to the rows, so the header stops carrying
+    // it — the rollup is a stand-in for what folding hid, not a second badge.
+    await header.click();
+    await expect(header).toHaveAttribute('aria-expanded', 'true');
+    await expect(header).not.toHaveClass(/font-semibold/);
   });
 
   // The R1 gate. A `for` loop rather than two copies so neither theme can be
@@ -294,38 +489,32 @@ test.describe('Sidebar model showcase @smoke', () => {
         contentType: 'image/png',
       });
 
+      // ── Coverage, before correctness ──
+      //
+      // Asserted FIRST and page-relatively, because axe reports success for a
+      // page it never looked at. Both checks below move with the page: they
+      // cannot be satisfied by a page that outgrew the viewport, which an
+      // absolute floor could be. See PAGE_MUST_FIT_VIEWPORT.
+      await expectPageFitsViewport(page);
       const results = await runAxe(page);
-
-      // The gate itself is only worth anything if axe actually looked at the
-      // page: it evaluates ~320 nodes here, and a viewport that shrank would
-      // drop that to one while still reporting zero violations.
-      const evaluated = [...results.passes, ...results.violations, ...results.incomplete]
-        .filter((rule) => rule.id === 'color-contrast')
-        .reduce((total, rule) => total + rule.nodes.length, 0);
-      expect(
-        evaluated,
-        'axe evaluated almost nothing — the viewport is smaller than the page and the contrast gate is vacuous'
-      ).toBeGreaterThan(200);
+      await expectEveryReasonChipEvaluated(page, results);
 
       const contrast = results.violations.filter((violation) => violation.id === 'color-contrast');
       const contrastNodes = contrast.flatMap((violation) => violation.nodes);
-      const muted = await page.evaluate(
-        (targets) =>
-          targets.filter((target) =>
-            document.querySelector(target)?.closest('[data-slot="sidebar-model-row-muted"]')
-          ).length,
+      const dimmed = await countUnderDimming(
+        page,
         contrastNodes.map((node) => node.target.join(' '))
       );
 
-      // Everything that is NOT the quarantined muted-row dimming must be clean.
+      // Everything that is NOT the quarantined dimming must be clean.
       expect(
-        contrastNodes.length - muted === 0 ? [] : contrast.map(describeViolation),
+        contrastNodes.length - dimmed === 0 ? [] : contrast.map(describeViolation),
         `label-on-zone-tint must meet 4.5:1 in the ${theme} theme (design-system §Accessibility)`
       ).toEqual([]);
       expect(
-        muted,
-        'the muted-row contrast defect changed shape — re-read QUARANTINED_MUTED_ROWS and either widen it deliberately or delete it because it is fixed'
-      ).toBe(QUARANTINED_MUTED_ROWS);
+        dimmed,
+        'the dimmed-row contrast defect changed shape — either DOR-1098 landed, in which case delete QUARANTINED_DIMMED_ROWS and this assertion, or something new is dimming text'
+      ).toBe(QUARANTINED_DIMMED_ROWS);
 
       // Every other rule, held to the same bar. The zone landmarks, the heading
       // order and the list semantics are as much a part of what this page shows

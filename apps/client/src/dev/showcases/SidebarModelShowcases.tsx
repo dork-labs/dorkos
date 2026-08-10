@@ -10,8 +10,10 @@
  * (spec `sidebar-now-today-library` §13, `contributing/sidebar-model.md`).
  *
  * **Every node says why it is there.** Each zone, section and row renders its
- * `reason` beside it, so "why is this row here?" is answered by looking rather
- * than by reading `rules/`. The chips can be turned off to see the panel as an
+ * `reason` beside it — **every one of them, including the headerless bodies Now
+ * and Today draw**, which have no header element to hang a chip off and so get
+ * their own line. So "why is this row here?" is answered by looking rather than
+ * by reading `rules/`. The chips can be turned off to see the panel as an
  * operator would.
  *
  * **The composition here is temporary; the primitives are not.** Rows are the
@@ -322,12 +324,7 @@ function ModelRow({
       isActive={row.key === activeKey}
       emphasized={row.unread.tier !== 'none'}
       muted={row.muted}
-      // The muted rows are named apart because they are the one thing on this
-      // page that does not meet 4.5:1 — `SidebarRow` dims a muted row with
-      // `opacity-60` over a 5.9:1 label, which lands at 2.6. The browser spec
-      // quarantines exactly these and nothing else, so the defect is visible,
-      // pinned, and cannot spread. Fixing it is an edit to `shared/ui/sidebar-row.tsx`.
-      dataSlot={row.muted ? 'sidebar-model-row-muted' : 'sidebar-model-row'}
+      dataSlot="sidebar-model-row"
       expansion={
         <ReasonChip reason={row.reason} show={showReasons} className="mb-0.5 ml-9 max-w-full" />
       }
@@ -336,11 +333,15 @@ function ModelRow({
 }
 
 /**
- * What a folded section keeps: its unread state and how much is running in it.
+ * The part of a folded section's signal that is a MARK: how much is running in
+ * it, and how many messages are addressed to you.
  *
- * Folding a section may never lose signal (BC-31), which is exactly the thing a
- * static screenshot of an unfolded panel cannot show — so the rollup is drawn
- * here rather than left to the reader's imagination.
+ * **The `activity` tier is deliberately absent here.** It is a bold label and
+ * nothing else — no badge, no dot (design-decisions §18) — so it cannot be a
+ * mark in this slot without inventing the third weight the system does not
+ * have. It rides `SectionHeader`'s own `emphasized` instead, which
+ * {@link ModelSection} sets. Between the two, BC-31 holds: folding a section
+ * loses none of its signal.
  *
  * @param rollup - The section's rolled-up signal.
  */
@@ -390,7 +391,7 @@ function ModelSection({
 
   return (
     <div data-slot="sidebar-model-section" data-section={section.id} data-reason={section.reason}>
-      {section.label !== null && (
+      {section.label !== null ? (
         <div className="flex items-center gap-1">
           <div className="min-w-0 flex-1">
             <SectionHeader
@@ -399,12 +400,23 @@ function ModelSection({
               collapsed={collapsed}
               onToggle={() => setCollapsed((previous) => !previous)}
               controlsId={listId}
+              // Folded, and holding unread: the label goes bold. Either tier
+              // earns it — `directed` also draws its badge in `trailing`, but
+              // `activity` has nowhere else to go (BC-31, §18).
+              emphasized={collapsed && (section.rollup?.unread.tier ?? 'none') !== 'none'}
               trailing={
                 collapsed && section.rollup ? <SectionRollup rollup={section.rollup} /> : undefined
               }
             />
           </div>
           <ReasonChip reason={section.reason} show={showReasons} className="mr-1 shrink-0" />
+        </div>
+      ) : (
+        // A headerless body — Now's and Today's single section — has no header
+        // element at all (R2), so its reason had nowhere to go and was the one
+        // kind of node this page did not say "why" about. It gets its own line.
+        <div className="flex px-2 pb-0.5">
+          <ReasonChip reason={section.reason} show={showReasons} />
         </div>
       )}
       {!collapsed && (
@@ -648,7 +660,7 @@ export function SidebarUnreadTiersShowcase() {
               glyph={<Hash aria-hidden className="text-sidebar-foreground/60 size-3.5" />}
               title="archive"
               muted
-              dataSlot="sidebar-model-row-muted"
+              dataSlot="sidebar-unread-muted"
             />
           </SidebarMenu>
         </nav>

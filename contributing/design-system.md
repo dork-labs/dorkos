@@ -317,7 +317,14 @@ Label-on-zone-tint must still meet 4.5:1 in both themes. Check it with an axe-co
 
 The showcase is **`/dev/sidebar-model`** (`apps/client/src/dev/showcases/SidebarModelShowcases.tsx`), which draws `buildSidebarModel` over its four journey fixtures. The axe run over it is `apps/e2e/tests/dashboard-sidebar/sidebar-model-showcase.spec.ts`, in both themes, and it attaches a light/dark screenshot pair to the run.
 
-**An axe run is not a gate until you have proved it can fail.** axe-core's `color-contrast` builds a spatial grid bounded by the viewport, and text whose rect falls outside that grid is not evaluated at all — not a violation, not a pass, not even an `incomplete`. It is simply absent, and the run reports success. At Playwright's default 720px-tall viewport this page evaluated **1 node out of 343**, and a deliberately-injected 1.68:1 label was **not reported**. At 1600×5200 the same injected failure is caught. Every axe check in this repo inherits this trap, so every axe check owes two things: a viewport at least as tall as the page, and an **assertion on the number of nodes axe evaluated**. Without that count the check is decoration — it passes loudest exactly when it has stopped looking.
+**An axe run is not a gate until you have proved it can fail.** axe-core's `color-contrast` builds a spatial grid bounded by the viewport, and text whose rect falls outside that grid is not evaluated at all — not a violation, not a pass, not even an `incomplete`. It is simply absent, and the run reports success. At Playwright's default 720px-tall viewport this page evaluated **1 node out of 343**, and a deliberately-injected 1.68:1 label was **not reported**. Every axe check in this repo inherits that trap.
+
+**Guard it with something that moves when the page moves.** The first attempt here was `expect(evaluated).toBeGreaterThan(200)`, and a floor is not coverage: at 1600×2400 the page evaluated 260 nodes and cleared the bar while missing two injected 1.91:1 labels, and at 1600×4000 it evaluated 322 and missed the same two. The number went up as the page got taller; it just never went up as fast as the page did. So assert page-relatively instead, and prefer both:
+
+- **The content fits the viewport** — compare the axe context's height against `window.innerHeight` before running axe. This is what actually guarantees the grid covers everything, and it fails with the real reason ("the page outgrew the viewport") rather than a threshold nobody can interpret.
+- **Every element of some class you own was evaluated** — resolve axe's reported targets back to elements and assert a known set is among them. The sidebar-model spec uses its reason chips: one per zone, section and row, spread top to bottom, so the denominator grows on its own when the page does.
+
+A threshold is not coverage unless it moves with the thing it measures.
 
 Two smaller things from the same branch:
 
@@ -328,7 +335,7 @@ Two smaller things from the same branch:
 
 A muted row keeps **full label contrast** and gives up its attention signals instead: no bold, no badge, no dot. That is already the vocabulary the two-tier unread system speaks, and it is what mute has always meant — "stop pulling me back into this", never "make this harder to read".
 
-Dimming is the wrong mechanism and it is not a tuning problem. `SidebarRow` dims `muted` rows with `opacity-60` over a label that is only 5.9:1 to begin with, which measures **2.6:1 in light and 3.6:1 in dark**; no opacity value clears 4.5:1 from that starting point. Reducing contrast also spends the accessibility budget of exactly the readers least able to afford it. Replacing the dim in `shared/ui/sidebar-row.tsx` is tracked work.
+Dimming is the wrong mechanism and it is not a tuning problem. `SidebarRow` dims `muted` rows with `opacity-60` over a label that is only 5.9:1 to begin with, which measures **2.6:1 in light and 3.6:1 in dark**; no opacity value clears 4.5:1 from that starting point. Reducing contrast also spends the accessibility budget of exactly the readers least able to afford it. Replacing the dim in `shared/ui/sidebar-row.tsx` is **DOR-1098**.
 
 ### Zones and Sections
 
