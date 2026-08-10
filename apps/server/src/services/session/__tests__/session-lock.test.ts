@@ -1,11 +1,14 @@
 /**
- * SessionLockManager — token-matched release (I1).
+ * SessionLockManager — who may hold a session, and who may let it go.
  *
- * With detached turns, a second turn for the same (session, client) can start
- * (compose-next auto-flush) before the prior detached turn settles. A purely
- * (sessionId, clientId)-matched release from the FIRST turn would then delete
- * the SECOND turn's lock, admitting a concurrent writer. These tests pin the
- * per-acquisition token guard that prevents that.
+ * Two rules meet here. A LIVE lock is never replaced, not even for the client
+ * holding it (DOR-1088): the same-client re-acquire used to succeed silently, so
+ * one browser tab — one client id for its whole life — could start a second turn
+ * beside its own running one. And a release is matched on the acquisition's
+ * token (I1), so a turn that comes back late cannot drop a lock it no longer
+ * holds; that is still reachable through the expiry path, where a dark holder's
+ * lock is legitimately re-taken by the same client and the dark turn then wakes
+ * up and releases.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { SseResponse } from '@dorkos/shared/agent-runtime';
@@ -33,19 +36,53 @@ function livingRes(): SseResponse & LockActivity & { touch(): void } {
   };
 }
 
+describe('SessionLockManager — one live holder (DOR-1088)', () => {
+  it('refuses a live lock to the client that already holds it', () => {
+    // The hole this closed: the cockpit uses ONE client id per tab, so a second
+    // POST from the same tab — which the composer's auto-flush sends the moment
+    // it reads idle — walked straight through and started a second stream on a
+    // session that already had one. Same-client triggers wait at the turn queue
+    // now; this refusal is what makes that queue the only way in.
+    const mgr = new SessionLockManager();
+    expect(mgr.acquireLock(SESSION, CLIENT, fakeRes(), Symbol('turn-A'))).toBe(true);
+    expect(mgr.acquireLock(SESSION, CLIENT, fakeRes(), Symbol('turn-B'))).toBe(false);
+    // The FIRST turn still holds it — the refused attempt changed nothing.
+    expect(mgr.getLockInfo(SESSION)?.clientId).toBe(CLIENT);
+  });
+
+  it('hands the session back to the same client once the first turn released', () => {
+    // The queue's happy path: turn A finishes, releases, and turn B — same tab,
+    // same client id — takes the lock it was waiting for.
+    const mgr = new SessionLockManager();
+    const tokenA = Symbol('turn-A');
+    expect(mgr.acquireLock(SESSION, CLIENT, fakeRes(), tokenA)).toBe(true);
+    mgr.releaseLock(SESSION, CLIENT, tokenA);
+    expect(mgr.acquireLock(SESSION, CLIENT, fakeRes(), Symbol('turn-B'))).toBe(true);
+  });
+});
+
 describe('SessionLockManager — token-matched release (I1)', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it('does NOT drop a newer same-client lock when a stale token releases', () => {
     const mgr = new SessionLockManager();
     const tokenA = Symbol('turn-A');
     const tokenB = Symbol('turn-B');
 
-    // Turn A acquires; turn B re-acquires for the SAME (session, client) — the
-    // legitimate same-client re-acquire, e.g. an auto-flushed second turn.
+    // Turn A acquires and then goes dark — a turn whose process vanished without
+    // its close handler firing. Past the TTL its lock is reclaimable, and the
+    // client that owns the session is the one that reclaims it.
     expect(mgr.acquireLock(SESSION, CLIENT, fakeRes(), tokenA)).toBe(true);
+    vi.advanceTimersByTime(SESSIONS.LOCK_TTL_MS + 1);
     expect(mgr.acquireLock(SESSION, CLIENT, fakeRes(), tokenB)).toBe(true);
 
-    // Turn A's stale releaser fires (it settled late). It must be a NO-OP —
-    // releasing turn A's token must not drop turn B's lock.
+    // Turn A comes back to life and releases. It must be a NO-OP — releasing
+    // turn A's token must not drop turn B's lock.
     mgr.releaseLock(SESSION, CLIENT, tokenA);
     expect(mgr.isLocked(SESSION)).toBe(true);
     expect(mgr.getLockInfo(SESSION)?.clientId).toBe(CLIENT);

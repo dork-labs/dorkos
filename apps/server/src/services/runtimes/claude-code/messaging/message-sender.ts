@@ -1018,9 +1018,19 @@ export async function* executeSdkQuery(
     // Always release the held input stream so the subprocess can never leak if we
     // exit before the result message (error, interrupt, empty stream). Idempotent.
     heldPrompt.close();
-    // Preserve the query reference for post-stream control methods (e.g. reloadPlugins)
-    session.lastQuery = session.activeQuery;
-    session.activeQuery = undefined;
+    // Preserve the query reference for post-stream control methods (e.g.
+    // reloadPlugins) — but only when this frame still OWNS the active query
+    // (DOR-1088). Unconditional, this cleared whatever query happened to be
+    // active, so a frame that settled late stranded its successor: the newer
+    // turn kept streaming with `activeQuery` set to `undefined`, and every
+    // control call that reaches for it (interrupt, model change, context usage)
+    // found nothing to talk to. The recursion retry has the same shape — the
+    // inner frame installs and clears its own query, and this line then wiped
+    // the `lastQuery` the inner frame had just recorded.
+    if (session.activeQuery === agentQuery) {
+      session.lastQuery = agentQuery;
+      session.activeQuery = undefined;
+    }
     // Commit this turn's resume anchor for the next turn: the last main-thread
     // assistant uuid, or undefined when the turn produced none (empty/error) so
     // the next resume stays plain and keeps this turn's user message in context.

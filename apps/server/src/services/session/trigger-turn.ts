@@ -48,6 +48,15 @@
  *    concurrent turn's `turn_start` overwrites with `streaming`, which used to
  *    un-pause the watchdog for a turn still holding an unanswered approval.
  *
+ * 5. **One turn at a time per client (DOR-1088).** This is the single chokepoint
+ *    every turn-starting caller goes through, so it is where the one-writer rule
+ *    is enforced: a trigger whose session already has a live turn from the SAME
+ *    client WAITS in {@link SessionTurnQueue} instead of starting a second
+ *    stream beside it. Two streams on one session are two subprocesses resuming
+ *    one transcript, and that is what left a live session showing an idle
+ *    composer. A second CLIENT still meets the lock and its unchanged
+ *    409/takeover answer.
+ *
  * @module services/session/trigger-turn
  */
 import type { MessageOpts, SseResponse, RuntimeCapabilities } from '@dorkos/shared/agent-runtime';
@@ -126,6 +135,97 @@ export class DetachedTurnLifecycle implements SseResponse, LockActivity {
     for (const cb of this.closeCallbacks) cb();
   }
 }
+
+/** One reservation in a session's turn chain. */
+interface TurnSlot {
+  /**
+   * Resolves when every turn the SAME client reserved earlier on the SAME
+   * session has settled. Never rejects: a failed turn releases its slot like any
+   * other, so one bad turn cannot wedge the chain behind it.
+   */
+  readonly ready: Promise<void>;
+  /**
+   * Mark this turn settled so the next waiter may run. Idempotent.
+   *
+   * The caller MUST reach this on every exit path — a refused lock and a throw
+   * before the turn is launched included — or every later turn this client sends
+   * to this session waits forever.
+   */
+  release(): void;
+}
+
+/** Separator that cannot occur in a session id or a client id. */
+const TURN_QUEUE_KEY_SEP = ' ';
+
+/**
+ * Serializes turn triggers per (session, client) — subtlety 5 above.
+ *
+ * A second trigger from the same client is not a mistake to refuse: the person
+ * typed that message for this session and meant it. So it WAITS, in a promise
+ * chain of the shape `RuntimeAdapter.enqueueForSession` uses in `@dorkos/relay`
+ * (ADR-0075), and runs the instant the turn ahead of it settles.
+ *
+ * **Why the key carries the client id.** Refusing a second CLIENT is the lock's
+ * job, and that behavior is deliberate: a second client's POST is a 409 naming
+ * the holder while the turn is alive, and an accepted takeover once the holder
+ * goes dark (otherwise a crashed turn would own the session until its TTL).
+ * Making a second client wait here would turn a refusal into a hang and delete
+ * the takeover path. Different clients therefore never queue behind each other;
+ * they meet at the lock exactly as before.
+ *
+ * @internal Exported for testing only — {@link triggerTurn} owns the one instance.
+ */
+export class SessionTurnQueue {
+  /** Tail of each live chain, keyed by session+client; dropped when it drains. */
+  private readonly tails = new Map<string, Promise<void>>();
+
+  /**
+   * Reserve the next slot in `(sessionId, clientId)`'s chain.
+   *
+   * Registration is synchronous, so two triggers arriving in the same tick are
+   * ordered by arrival: the second sees the first's tail and queues behind it
+   * instead of racing it.
+   *
+   * @param sessionId - The session whose turns are being serialized.
+   * @param clientId - The lock identity triggering the turn.
+   * @returns The slot to await ({@link TurnSlot.ready}) and release.
+   */
+  reserve(sessionId: string, clientId: string): TurnSlot {
+    const key = `${sessionId}${TURN_QUEUE_KEY_SEP}${clientId}`;
+    const ready = this.tails.get(key) ?? Promise.resolve();
+    let settle!: () => void;
+    const settled = new Promise<void>((resolve) => {
+      settle = resolve;
+    });
+    const tail = ready.then(() => settled);
+    this.tails.set(key, tail);
+
+    let released = false;
+    return {
+      ready,
+      release: () => {
+        if (released) return;
+        released = true;
+        settle();
+        // Only the CURRENT tail may drop the entry; a later reservation has
+        // already chained onto ours and must keep its place in the map.
+        if (this.tails.get(key) === tail) this.tails.delete(key);
+      },
+    };
+  }
+
+  /** How many chains are live. Zero once every reserved slot has been released. */
+  get size(): number {
+    return this.tails.size;
+  }
+}
+
+/**
+ * The process-wide queue every turn trigger reserves from.
+ *
+ * @internal Exported so tests can assert every slot is handed back.
+ */
+export const sessionTurnQueue = new SessionTurnQueue();
 
 /** How long to wait for the first event before falling back to the provided id. */
 export const CANONICAL_ID_TIMEOUT_MS = 5_000;
@@ -259,6 +359,20 @@ export interface TriggerTurnResult {
  * elapses) — the turn itself continues in the background, releasing the lock
  * when it finishes.
  *
+ * ## What the 202 means for a QUEUED trigger (DOR-1088)
+ *
+ * When this client already has a live turn on this session, the trigger waits
+ * its turn (subtlety 5 in the module doc) and this promise resolves only once
+ * the queued turn actually STARTS. That keeps the 202's meaning exactly what it
+ * has always been — "your turn is running; watch `/events`" — with an accurate
+ * canonical id and a real 409 still available if the lock is gone by then.
+ * Resolving the 202 at enqueue time instead would have to invent a third answer
+ * for a turn that later fails to acquire, and would tell the cockpit its queue
+ * had drained while the messages were still lined up server-side, which is how
+ * a person loses the chance to edit one. The cost is an HTTP request held open
+ * for as long as the turn ahead of it runs; the caller is a trigger POST with no
+ * body to stream, so it costs a socket and nothing else.
+ *
  * @param opts - Session/turn inputs, the projector, the feed seam, and the
  *   runtime-neutral lock/send/resolve port.
  * @returns `{ accepted: false }` when the session is locked by another client;
@@ -278,11 +392,19 @@ export async function triggerTurn(opts: TriggerTurnOpts): Promise<TriggerTurnRes
     deps,
   } = opts;
 
+  // One turn at a time per client (DOR-1088). Reserve BEFORE anything else so
+  // two triggers arriving in the same tick are ordered by arrival, then wait for
+  // whatever this client already has running on this session. A different client
+  // never waits here — its answer is the lock's, unchanged.
+  const slot = sessionTurnQueue.reserve(sessionId, clientId);
+  await slot.ready;
+
   // Acquire against a detached lifecycle so the lock is bound to the turn, not
   // to the soon-to-be-closed POST response. The per-turn token (I1) makes this
-  // turn's release token-matched: if a second same-client turn auto-flushes and
-  // re-acquires before this one settles, this turn's stale releaseOnce becomes a
-  // no-op and cannot drop the newer lock (which would admit a concurrent writer).
+  // turn's release token-matched: if this turn goes dark, loses its lock to the
+  // TTL and a later same-client turn takes it, this turn's stale releaseOnce
+  // becomes a no-op and cannot drop the newer lock (which would admit a
+  // concurrent writer).
   // One probe, two consumers (DOR-782): the stall watchdog must not shoot a turn
   // parked on a person, and the lock must not expire under one. Read off the
   // projector's pending-interaction set rather than `lifecycle === 'blocked'` —
@@ -292,18 +414,22 @@ export async function triggerTurn(opts: TriggerTurnOpts): Promise<TriggerTurnRes
   const lifecycle = new DetachedTurnLifecycle(waitingOnPerson);
   const lockToken = Symbol('detached-turn-lock');
   if (!deps.acquireLock(sessionId, clientId, lifecycle, lockToken)) {
+    slot.release();
     return { accepted: false };
   }
 
   // Idempotent release: explicit on completion/error, plus the lifecycle close
   // that drives the lock manager's own cleanup. Both funnel through here. The
-  // token ensures only THIS turn's acquisition is released.
+  // token ensures only THIS turn's acquisition is released. The queue slot goes
+  // with it — the next turn this client sends may start the moment the lock this
+  // one held is gone, and not one moment before.
   let released = false;
   const releaseOnce = (): void => {
     if (released) return;
     released = true;
     deps.releaseLock(sessionId, clientId, lockToken);
     lifecycle.close();
+    slot.release();
   };
 
   // Tap the stream so the 202 can resolve the canonical id the instant the
@@ -340,86 +466,99 @@ export async function triggerTurn(opts: TriggerTurnOpts): Promise<TriggerTurnRes
     idResolved = true;
     deps.rekeyProjector(sessionId, canonical);
   };
-  // Assemble the neutral context bag once, server-side: git_status is derived
-  // here (identical for every runtime), client signals are normalized, and any
-  // kind the runtime injects natively is omitted. `content` is passed through
-  // pristine — context rides `additionalContext`, out-of-band (ADR-0273).
-  const additionalContext = await assembleAdditionalContext({
-    cwd: cwd ?? '',
-    clientContext: context,
-    ...(roomContext ? { roomContext } : {}),
-    ...(seedContext ? { seedContext } : {}),
-    nativeContext: deps.getCapabilities().nativeContext,
-  });
-  const tapped = tapEachEvent(
-    deps.sendMessage(sessionId, content, { cwd, additionalContext, ...settings }),
-    () => {
-      signalFirstEvent();
-      tryRekey();
-      // Proof of life for the write-lock: a turn that is visibly producing
-      // events must never be declared abandoned and stolen mid-flight (DOR-782).
-      lifecycle.touch();
-      eventCount++;
-    }
-  );
-
-  // Run the turn detached, double-wrapped. Inner: the stall watchdog abandons a
-  // source that goes silent past the threshold, interrupts the runtime, and
-  // injects the typed-error terminal sequence. It receives the ORIGINAL trigger
-  // sessionId for interruptQuery: every runtime resolves its own alias in both
-  // directions, so the pre-rekey id stays valid all turn. Outer: guardTurnErrors
-  // translates a `sendMessage`/SDK throw INTO the stream, as an error
-  // `status_change` (ingested directly, since lifecycle has no StreamEvent
-  // carrier) plus a terminal `done` bearing `terminalReason: 'error'`, so
-  // feedProjector closes the turn exactly once with
-  // `turn_end{terminalReason:'error'}` and the durable stream shows the failure
-  // (the client can no longer learn of it from the POST). The lock is released
-  // when the (now always-clean) turn settles.
-  const stallGuarded = withStallGuard(tapped, {
-    sessionId,
-    timeoutMs: opts.stallTimeoutMs ?? SESSIONS.TURN_STALL_TIMEOUT_MS,
-    isPaused: waitingOnPerson,
-    onStall: () => deps.interruptQuery(sessionId),
-    onError: (err) => opts.onError?.(err),
-  });
-  let failed = false;
-  const guarded = guardTurnErrors(projector, stallGuarded, (err) => {
-    failed = true;
-    opts.onError?.(err);
-  });
-  // The trigger content rides the turn_start (userMessage) so the EventLog is a
-  // self-sufficient history source for log-backed runtimes (ADR-0263).
-  const turn = feedProjector(projector, guarded, {
-    userMessage: content,
-    ...(opts.onTurnStart ? { onTurnStart: opts.onTurnStart } : {}),
-  })
-    // guardTurnErrors already swallows source throws; this catch is the last line
-    // of defense against a feedProjector-internal rejection so the detached
-    // promise never becomes an unhandled rejection. The lock still releases below.
-    .catch((err) => {
-      failed = true;
-      turnSpan.markError();
-      return opts.onError?.(err);
-    })
-    .finally(() => {
-      turnSpan.setAttr(ATTR.EVENT_COUNT, eventCount);
-      turnSpan.end();
-      releaseOnce();
-      // Contained: this is the turn's own settlement path, where a throw becomes
-      // an unhandled rejection. An observability hook must be structurally
-      // unable to kill a turn, so the guarantee is enforced here rather than
-      // asked for in the hook's doc.
-      try {
-        opts.onSettled?.(failed ? 'failed' : 'ok');
-      } catch (err) {
-        logger.warn('[trigger-turn] a turn-settled observer threw', {
-          sessionId,
-          ...logError(err),
-        });
-      }
+  // Everything from here to `void turn` runs BEFORE anything else can release
+  // the lock or the queue slot: if it throws, no turn exists to settle and no
+  // `finally` will ever fire, so the release has to happen in the catch. Left
+  // unguarded, one throwing context assembly would hold the lock to its TTL and
+  // wedge every later turn this client sends to this session (DOR-1088).
+  try {
+    // Assemble the neutral context bag once, server-side: git_status is derived
+    // here (identical for every runtime), client signals are normalized, and any
+    // kind the runtime injects natively is omitted. `content` is passed through
+    // pristine — context rides `additionalContext`, out-of-band (ADR-0273).
+    const additionalContext = await assembleAdditionalContext({
+      cwd: cwd ?? '',
+      clientContext: context,
+      ...(roomContext ? { roomContext } : {}),
+      ...(seedContext ? { seedContext } : {}),
+      nativeContext: deps.getCapabilities().nativeContext,
     });
-  // The turn runs to completion in the background; the request does not await it.
-  void turn;
+    const tapped = tapEachEvent(
+      deps.sendMessage(sessionId, content, { cwd, additionalContext, ...settings }),
+      () => {
+        signalFirstEvent();
+        tryRekey();
+        // Proof of life for the write-lock: a turn that is visibly producing
+        // events must never be declared abandoned and stolen mid-flight (DOR-782).
+        lifecycle.touch();
+        eventCount++;
+      }
+    );
+
+    // Run the turn detached, double-wrapped. Inner: the stall watchdog abandons a
+    // source that goes silent past the threshold, interrupts the runtime, and
+    // injects the typed-error terminal sequence. It receives the ORIGINAL trigger
+    // sessionId for interruptQuery: every runtime resolves its own alias in both
+    // directions, so the pre-rekey id stays valid all turn. Outer: guardTurnErrors
+    // translates a `sendMessage`/SDK throw INTO the stream, as an error
+    // `status_change` (ingested directly, since lifecycle has no StreamEvent
+    // carrier) plus a terminal `done` bearing `terminalReason: 'error'`, so
+    // feedProjector closes the turn exactly once with
+    // `turn_end{terminalReason:'error'}` and the durable stream shows the failure
+    // (the client can no longer learn of it from the POST). The lock is released
+    // when the (now always-clean) turn settles.
+    const stallGuarded = withStallGuard(tapped, {
+      sessionId,
+      timeoutMs: opts.stallTimeoutMs ?? SESSIONS.TURN_STALL_TIMEOUT_MS,
+      isPaused: waitingOnPerson,
+      onStall: () => deps.interruptQuery(sessionId),
+      onError: (err) => opts.onError?.(err),
+    });
+    let failed = false;
+    const guarded = guardTurnErrors(projector, stallGuarded, (err) => {
+      failed = true;
+      opts.onError?.(err);
+    });
+    // The trigger content rides the turn_start (userMessage) so the EventLog is a
+    // self-sufficient history source for log-backed runtimes (ADR-0263).
+    const turn = feedProjector(projector, guarded, {
+      userMessage: content,
+      ...(opts.onTurnStart ? { onTurnStart: opts.onTurnStart } : {}),
+    })
+      // guardTurnErrors already swallows source throws; this catch is the last line
+      // of defense against a feedProjector-internal rejection so the detached
+      // promise never becomes an unhandled rejection. The lock still releases below.
+      .catch((err) => {
+        failed = true;
+        turnSpan.markError();
+        return opts.onError?.(err);
+      })
+      .finally(() => {
+        turnSpan.setAttr(ATTR.EVENT_COUNT, eventCount);
+        turnSpan.end();
+        releaseOnce();
+        // Contained: this is the turn's own settlement path, where a throw becomes
+        // an unhandled rejection. An observability hook must be structurally
+        // unable to kill a turn, so the guarantee is enforced here rather than
+        // asked for in the hook's doc.
+        try {
+          opts.onSettled?.(failed ? 'failed' : 'ok');
+        } catch (err) {
+          logger.warn('[trigger-turn] a turn-settled observer threw', {
+            sessionId,
+            ...logError(err),
+          });
+        }
+      });
+    // The turn runs to completion in the background; the request does not await it.
+    void turn;
+  } catch (err) {
+    // No turn was launched, so nothing downstream will ever settle. Give the
+    // lock and the queue slot back here or this session is wedged for this
+    // client until the lock's TTL — and the queue, which has no TTL, forever.
+    releaseOnce();
+    throw err;
+  }
 
   // Wait for the first event or a timeout — never for the whole turn. The 202's
   // canonical id is best-effort: if the adapter has not resolved it by the first
