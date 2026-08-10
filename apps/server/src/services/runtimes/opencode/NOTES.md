@@ -364,17 +364,44 @@ with the JS embedded; `strings` recovers it). `TaskTool.execute`:
 
 The `subtask` prompt-part path (`SessionPrompt.handleSubtask`, for a `SubtaskPartInput` a client
 sends directly) does the same thing: it synthesizes a `tool: "task"` part with
-`input: {prompt, description, subagent_type, command}` and drives it running → completed/error. On
-interrupt it writes `state.error = "Cancelled"`; the tool path fails with `"Task cancelled"`.
+`input: {prompt, description, subagent_type, command}` and drives it running → completed/error.
+
+### What a STOPPED subagent actually looks like on the wire
+
+Worth stating precisely, because the first cut of this mapping got it wrong: it anchored on
+`"Cancelled"`, which is the ONE shape DorkOS cannot reach, so an ordinary user stop rendered the
+subagent as a failure. Four distinct shapes land in `state.error`:
+
+| Producer                             | `state.error`                           | Reachable from DorkOS?          |
+| ------------------------------------ | --------------------------------------- | ------------------------------- |
+| `SessionProcessor.cleanup` (abort)   | `Tool execution aborted`                | **yes — the user-stop path**    |
+| `SessionRunner.failUnsettledTools`   | `Tool execution interrupted`            | yes                             |
+| TaskTool's `Error("Task cancelled")` | `Tool execution failed: Task cancelled` | yes (the runner wraps it)       |
+| `handleSubtask` `onInterrupt`        | `Cancelled`                             | no — needs a `SubtaskPartInput` |
+
+The abort path also stamps `metadata: {...previous, interrupted: true}` onto the part, and that flag
+is the STRUCTURAL signal — it is what upstream's own renderer keys on:
+
+```js
+if (state.status === 'error') {
+  if (z(part, 'interrupted') === true || state.error === 'Tool execution aborted')
+    return 'cancelled';
+  return 'error';
+}
+// z(part, key) = ("metadata" in state ? state.metadata?.[key] : undefined) ?? part.metadata?.[key]
+```
+
+`subagentFailureStatus` mirrors that resolution order (state metadata, then part metadata, then the
+text), which is why a stop reads as `stopped` rather than `failed` even if the wording drifts.
 
 ### What DorkOS now maps (`event-mapper.ts`)
 
-| Wire fact                                 | DorkOS StreamEvent                                                                      |
-| ----------------------------------------- | --------------------------------------------------------------------------------------- |
-| `task` tool part reaches `running`        | `background_task_started` (`taskId` = `callID`, `taskType: 'agent'`, `description`)     |
-| its `state.metadata.sessionId` appears    | child session admitted to the demux; id attached as `subagentSessionId`                 |
-| a tool part in the CHILD session          | `background_task_progress` (`toolUses` = distinct child callIDs, `lastToolName`)        |
-| `task` part reaches `completed` / `error` | `background_task_done` (`completed`; `stopped` for the cancelled shapes, else `failed`) |
+| Wire fact                                 | DorkOS StreamEvent                                                                            |
+| ----------------------------------------- | --------------------------------------------------------------------------------------------- |
+| `task` tool part reaches `running`        | `background_task_started` (`taskId` = `callID`, `taskType: 'agent'`, `description`)           |
+| its `state.metadata.sessionId` appears    | child session admitted to the demux; id attached as `subagentSessionId`                       |
+| a tool part in the CHILD session          | `background_task_progress` (`toolUses` = distinct child callIDs, `lastToolName`)              |
+| `task` part reaches `completed` / `error` | `background_task_done` (`completed`; `stopped` for the four stop shapes above, else `failed`) |
 
 The session normalizer turns those three into `subagent_update`, which is what feeds
 `runningSubagentCount`, the status-line hint and the activity feed (runtime-neutral since DOR-1100).
@@ -386,6 +413,12 @@ Child sessions are admitted by `matchesOpenCodeSubagentSession` and routed away 
 mapping entirely: only their tool parts are read, and their text, todos, permissions and
 `session.idle` are dropped. That last one matters — an admitted child `session.idle` reaching the
 parent mapper would end the parent's turn early.
+
+A `sessionId` that names the PARENT is refused outright (`readSubagentChildSessionId`), checked
+against both `part.sessionID` — the structural truth, since a `task` part always lives in the
+delegating session — and the metadata's own `parentSessionId`. Not reachable at 1.18.15, but the
+failure mode if it ever were is total: the turn would route down the child path, where its text is
+dropped, its completion is misread as progress, and its `session.idle` never ends it.
 
 ### Known limits (honest, and none of them regressions)
 
@@ -403,4 +436,5 @@ parent mapper would end the parent's turn early.
   subagent run to replay, so the mapping is scripted from the implementation above rather than from a
   captured wire log. Everything degrades to "no subagent shown", never to a wrong turn: if the
   metadata key ever moves, no child is admitted and only start/done are reported; if the `task` part
-  shape moves, the tool card still renders as before.
+  shape moves, the tool card still renders as before; and a `sessionId` naming the parent — the one
+  shape that COULD have broken a turn — is refused rather than admitted.

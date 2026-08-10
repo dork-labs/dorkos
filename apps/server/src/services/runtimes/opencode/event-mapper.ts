@@ -119,12 +119,35 @@ const TASK_TOOL_NAME = 'task';
  */
 const SUBAGENT_SESSION_METADATA_KEY = 'sessionId';
 
+/** Its companion key, naming the session that DELEGATED — never a child. */
+const SUBAGENT_PARENT_SESSION_METADATA_KEY = 'parentSessionId';
+
 /**
- * Tool-error text OpenCode writes when a subagent is interrupted rather than
- * failed — `"Cancelled"` from the subtask path, `"Task cancelled"` from the
- * task tool. Mapped to `stopped` so an interrupt is not reported as a failure.
+ * Metadata flag OpenCode stamps on every tool part it tears down on abort — the
+ * STRUCTURAL stop signal, and the one upstream's own renderer keys on
+ * (`state.status === "error" && (metadata.interrupted === true || error ===
+ * "Tool execution aborted")` → `cancelled`).
  */
-const SUBAGENT_CANCELLED_PATTERN = /^(?:task\s+)?cancelled$/i;
+const SUBAGENT_INTERRUPTED_METADATA_KEY = 'interrupted';
+
+/**
+ * Tool-error text that means a subagent was STOPPED rather than failed. All
+ * four shapes verified against the compiled `opencode-ai@1.18.15` binary:
+ *
+ * - `Tool execution aborted` — `SessionProcessor.cleanup` on abort, alongside
+ *   `metadata.interrupted: true`. **This is the ordinary user-stop path.**
+ * - `Tool execution interrupted` — `SessionRunner.failUnsettledTools`.
+ * - `Tool execution failed: Task cancelled` — the TaskTool's own
+ *   `Error("Task cancelled")` after the runner wraps it; the bare message never
+ *   reaches the wire.
+ * - `Cancelled` — `SessionPrompt.handleSubtask`'s `onInterrupt`, reachable only
+ *   when a client sends a `SubtaskPartInput` (DorkOS never does).
+ *
+ * Anchoring on the last one alone (as this first shipped) painted an ordinary
+ * stop as a failure, because it is the one path DorkOS cannot reach.
+ */
+const SUBAGENT_STOPPED_PATTERN =
+  /^(?:cancelled|tool execution (?:aborted|interrupted)|tool execution failed: task cancelled)$/i;
 
 /**
  * Message signals that a turn failed because the chosen model is missing — a
@@ -582,9 +605,44 @@ function readStringField(
   return typeof value === 'string' && value.length > 0 ? value : undefined;
 }
 
-/** OpenCode's terminal tool-error text → the DorkOS background-task outcome. */
-function subagentFailureStatus(error: string): 'failed' | 'stopped' {
-  return SUBAGENT_CANCELLED_PATTERN.test(error.trim()) ? 'stopped' : 'failed';
+/**
+ * A failed `task` part → the DorkOS background-task outcome. The structural
+ * signal wins: `interrupted` is read off the tool STATE's metadata and then the
+ * PART's, exactly as upstream's own cancelled-vs-error renderer resolves it.
+ * The text match is the fallback for the stop shapes that carry no flag.
+ */
+function subagentFailureStatus(
+  error: string,
+  stateMetadata: Record<string, unknown> | undefined,
+  partMetadata: Record<string, unknown> | undefined
+): 'failed' | 'stopped' {
+  const interrupted =
+    stateMetadata?.[SUBAGENT_INTERRUPTED_METADATA_KEY] ??
+    partMetadata?.[SUBAGENT_INTERRUPTED_METADATA_KEY];
+  if (interrupted === true) return 'stopped';
+  return SUBAGENT_STOPPED_PATTERN.test(error.trim()) ? 'stopped' : 'failed';
+}
+
+/**
+ * The child session a `task` part delegates to, or undefined when it has not
+ * been created yet — or when the metadata names the PARENT session.
+ *
+ * That last guard is not reachable at 1.18.15, and is cheap insurance against a
+ * shape change with a catastrophic failure mode: admitting the parent as its own
+ * child routes the whole turn down the child path, where its text is dropped,
+ * its task completion is misread as progress, and its `session.idle` never ends
+ * the turn. `part.sessionID` is the structural truth (a `task` part always lives
+ * in the parent session), so it is checked even if `parentSessionId` disagrees.
+ */
+function readSubagentChildSessionId(part: ToolPart): string | undefined {
+  const metadata = part.state.status === 'pending' ? undefined : part.state.metadata;
+  const childSessionId = readStringField(metadata, SUBAGENT_SESSION_METADATA_KEY);
+  if (childSessionId === undefined) return undefined;
+  if (childSessionId === part.sessionID) return undefined;
+  if (childSessionId === readStringField(metadata, SUBAGENT_PARENT_SESSION_METADATA_KEY)) {
+    return undefined;
+  }
+  return childSessionId;
 }
 
 /**
@@ -599,7 +657,7 @@ function mapSubagentTaskPart(part: ToolPart, ctx: OpenCodeEventContext): StreamE
   if (state.status === 'pending') return [];
 
   const taskId = part.callID;
-  const childSessionId = readStringField(state.metadata, SUBAGENT_SESSION_METADATA_KEY);
+  const childSessionId = readSubagentChildSessionId(part);
   const events: StreamEvent[] = [];
 
   let run = ctx.subagentRuns.get(taskId);
@@ -632,7 +690,10 @@ function mapSubagentTaskPart(part: ToolPart, ctx: OpenCodeEventContext): StreamE
     type: 'background_task_done',
     data: {
       taskId,
-      status: state.status === 'completed' ? 'completed' : subagentFailureStatus(state.error),
+      status:
+        state.status === 'completed'
+          ? 'completed'
+          : subagentFailureStatus(state.error, state.metadata, part.metadata),
       durationMs: state.time.end - run.startedAt,
       ...(run.toolCallIds.size > 0 ? { toolUses: run.toolCallIds.size } : {}),
     },

@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { StreamEventSchema } from '@dorkos/shared/schemas';
+import type { ToolPart } from '@opencode-ai/sdk';
 import type { StreamEvent } from '@dorkos/shared/types';
 import { SESSIONS } from '../../../../config/constants.js';
 import {
@@ -462,6 +463,34 @@ describe('mapOpenCodeEvent', () => {
         expect(mapOpenCodeEvent(sessionIdle(OC_CHILD_SESSION), ctx)).toEqual([]);
       });
 
+      it('refuses a `sessionId` that names the parent session, whichever way it lies', () => {
+        // Not reachable at 1.18.15 — but admitting the parent as its own child
+        // would make the child path swallow the whole turn: text dropped,
+        // completion misread as progress, `session.idle` dropped → never ends.
+        for (const metadata of [
+          { parentSessionId: OC, sessionId: OC },
+          // A metadata bag whose `parentSessionId` lies: `part.sessionID` is the
+          // structural truth and must still catch it.
+          { parentSessionId: 'ses_elsewhere', sessionId: OC },
+        ]) {
+          const ctx = makeContext();
+          mapOpenCodeEvent(
+            partUpdated(taskToolPart(OC, 'call_task', toolStateRunning(input), metadata)),
+            ctx
+          );
+          expect(
+            matchesOpenCodeSubagentSession(globalEvent(DIRECTORY, sessionIdle(OC)), DIRECTORY, ctx)
+          ).toBe(false);
+          // The parent still speaks and still terminates.
+          expect(mapOpenCodeEvent(partUpdated(textPart(OC, 'prt_1', 'parent text')), ctx)).toEqual([
+            { type: 'text_delta', data: { text: 'parent text' } },
+          ]);
+          expect(mapOpenCodeEvent(sessionIdle(OC), ctx)).toEqual([
+            { type: 'done', data: { sessionId: SESSION_ID } },
+          ]);
+        }
+      });
+
       it('stops attributing child events once the subagent has finished', () => {
         const ctx = startedContext();
         mapOpenCodeEvent(
@@ -511,7 +540,7 @@ describe('mapOpenCodeEvent', () => {
         expect(StreamEventSchema.safeParse(done).success).toBe(true);
       });
 
-      it('maps a failure to status failed', () => {
+      it('maps a genuine failure to status failed', () => {
         const ctx = runningContext();
         const events = mapOpenCodeEvent(
           partUpdated(taskToolPart(OC, 'call_task', toolStateError(input, 'Agent not found'))),
@@ -522,15 +551,64 @@ describe('mapOpenCodeEvent', () => {
         });
       });
 
-      it('maps the interrupt shape (`Cancelled`) to status stopped', () => {
-        const ctx = runningContext();
-        const events = mapOpenCodeEvent(
-          partUpdated(taskToolPart(OC, 'call_task', toolStateError(input, 'Cancelled'))),
-          ctx
+      /** The `background_task_done` status a terminal task part is reported with. */
+      function doneStatusFor(part: ToolPart): unknown {
+        const events = mapOpenCodeEvent(partUpdated(part), runningContext());
+        const done = events.find((e) => e.type === 'background_task_done');
+        return (done!.data as { status: unknown }).status;
+      }
+
+      /**
+       * Every stop-shape STRING the v1.18.15 wire actually carries. The first is
+       * what a user pressing stop produces (`SessionProcessor.cleanup`); reading
+       * it as a failure paints the feed red on an ordinary interrupt, which is
+       * exactly what this mapping did when it anchored on the last one — the only
+       * shape DorkOS cannot reach.
+       */
+      const STOP_SHAPES: Array<[string, string]> = [
+        ['abort cleanup', 'Tool execution aborted'],
+        ['failUnsettledTools', 'Tool execution interrupted'],
+        ['wrapped TaskTool throw', 'Tool execution failed: Task cancelled'],
+        ['handleSubtask onInterrupt', 'Cancelled'],
+      ];
+
+      it.each(STOP_SHAPES)('maps the %s stop text to status stopped', (_name, error) => {
+        const part = taskToolPart(
+          OC,
+          'call_task',
+          toolStateError(input, error),
+          taskToolMetadata()
         );
-        expect(events.find((e) => e.type === 'background_task_done')!.data).toMatchObject({
-          status: 'stopped',
+        expect(doneStatusFor(part)).toBe('stopped');
+      });
+
+      it('prefers the structural interrupted flag over unrecognized error text', () => {
+        // The abort path stamps this flag; the text is deliberately one the
+        // pattern does NOT match, so only the flag can produce `stopped`.
+        const part = taskToolPart(OC, 'call_task', toolStateError(input, 'Provider exploded'), {
+          ...taskToolMetadata(),
+          interrupted: true,
         });
+        expect(doneStatusFor(part)).toBe('stopped');
+      });
+
+      it('reads the interrupted flag off the part when the state metadata omits it', () => {
+        // Upstream's own classifier falls back to part-level metadata.
+        const part = taskToolPart(
+          OC,
+          'call_task',
+          toolStateError(input, 'Provider exploded'),
+          taskToolMetadata()
+        );
+        expect(doneStatusFor({ ...part, metadata: { interrupted: true } })).toBe('stopped');
+      });
+
+      it('does not read a falsy interrupted flag as a stop', () => {
+        const part = taskToolPart(OC, 'call_task', toolStateError(input, 'Provider exploded'), {
+          ...taskToolMetadata(),
+          interrupted: false,
+        });
+        expect(doneStatusFor(part)).toBe('failed');
       });
 
       it('does not double-report a re-published completed task part', () => {

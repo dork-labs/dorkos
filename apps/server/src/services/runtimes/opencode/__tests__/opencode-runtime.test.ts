@@ -35,10 +35,18 @@ import {
   textPart,
   toolPart,
   toolStatePending,
+  toolStateRunning,
+  toolStateCompleted,
   permission,
   permissionUpdated,
   permissionReplied,
   opencodeSimpleTurn,
+  OC_CHILD_SESSION,
+  taskToolInput,
+  taskToolMetadata,
+  taskToolPart,
+  assistantMessage,
+  messageUpdated,
 } from './opencode-sse-fixtures.js';
 
 vi.mock('../check-dependencies.js', () => ({
@@ -289,6 +297,92 @@ describe('OpenCodeRuntime', () => {
       expect(events.filter((e) => e.type === 'done')).toHaveLength(1);
       expect(events[events.length - 1]!.type).toBe('done');
       expect(events.some((e) => e.type === 'error')).toBe(false);
+    });
+
+    it('admits a subagent child session through the live hub filter once its task part names it', async () => {
+      // The pure predicate is unit-tested; this pins the WIRING. The child
+      // session is admitted by the real `onEvent` filter, using a context the
+      // mapper mutates as it drains the parent's events — so the ordering
+      // (metadata snapshot observed BEFORE the child speaks) has to hold end to
+      // end, through the hub, the queue and the turn generator.
+      const harness = makeRuntime();
+      const { runtime } = harness;
+      const sessionId = nextSessionId();
+      runtime.ensureSession(sessionId, { permissionMode: 'default', cwd: DIRECTORY });
+
+      const { events, finished } = consume(
+        runtime.sendMessage(sessionId, 'delegate this', { cwd: DIRECTORY })
+      );
+      const connection = await openTurn(harness);
+      const input = taskToolInput();
+      const metadata = taskToolMetadata(OC_CHILD_SESSION, OC_SESSION_A);
+
+      // 1. The task part opens, then reveals its child session.
+      connection.push(
+        globalEvent(
+          DIRECTORY,
+          partUpdated(taskToolPart(OC_SESSION_A, 'call_task', toolStateRunning(input)))
+        )
+      );
+      connection.push(
+        globalEvent(
+          DIRECTORY,
+          partUpdated(taskToolPart(OC_SESSION_A, 'call_task', toolStateRunning(input), metadata))
+        )
+      );
+      await vi.waitFor(() =>
+        expect(events.some((e) => e.type === 'background_task_started')).toBe(true)
+      );
+
+      // 2. Only now can the child session's own events be admitted.
+      connection.push(
+        globalEvent(
+          DIRECTORY,
+          partUpdated(toolPart(OC_CHILD_SESSION, 'child_1', 'glob', toolStateRunning({})))
+        )
+      );
+      // Its text stays out of the parent transcript even though it is admitted.
+      connection.push(
+        globalEvent(DIRECTORY, partUpdated(textPart(OC_CHILD_SESSION, 'prt_c', 'inner')))
+      );
+      await vi.waitFor(() =>
+        expect(events.some((e) => e.type === 'background_task_progress')).toBe(true)
+      );
+
+      // 3. The subagent finishes; the parent answers and the turn ends.
+      connection.push(
+        globalEvent(
+          DIRECTORY,
+          partUpdated(
+            taskToolPart(OC_SESSION_A, 'call_task', toolStateCompleted(input, 'ok'), metadata)
+          )
+        )
+      );
+      connection.push(
+        globalEvent(DIRECTORY, partUpdated(textPart(OC_SESSION_A, 'prt_a', 'Done.', { end: true })))
+      );
+      connection.push(
+        globalEvent(DIRECTORY, messageUpdated(assistantMessage(OC_SESSION_A, { completed: true })))
+      );
+      connection.push(globalEvent(DIRECTORY, sessionIdle(OC_SESSION_A)));
+
+      const settled = await finished;
+      expect(settled.filter((e) => e.type === 'background_task_progress')).toHaveLength(1);
+      expect(settled.find((e) => e.type === 'background_task_progress')!.data).toMatchObject({
+        taskId: 'call_task',
+        lastToolName: 'glob',
+      });
+      expect(settled.find((e) => e.type === 'background_task_done')!.data).toMatchObject({
+        status: 'completed',
+        toolUses: 1,
+      });
+      // The child's text never reached the transcript, and the turn ended once.
+      const text = settled
+        .filter((e) => e.type === 'text_delta')
+        .map((e) => (e.data as { text: string }).text)
+        .join('');
+      expect(text).toBe('Done.');
+      expect(settled.filter((e) => e.type === 'done')).toHaveLength(1);
     });
 
     it('demuxes on the OpenCode-stored directory, not the DorkOS cwd', async () => {
