@@ -67,12 +67,13 @@ export function usePaletteRooms(): PaletteRooms {
       // a room can only be badged here if it is somewhere a person can also
       // find it. Filtering `rooms` directly would be a second, parallel
       // predicate — the shape that once let a row the `#` list had excluded
-      // back in through the Unread group.
+      // back in as unread.
       //
       // Archived rooms are left out of it. They are in the two lists above so
-      // they can be SEARCHED for; the unread group is what Cmd+K then Enter
-      // opens, and a channel somebody closed is not work waiting on you —
-      // however many entries it ended on.
+      // they can be SEARCHED for; this list is what leads Recent, which is the
+      // first thing Cmd+K then Enter reaches whenever nothing is live — and a
+      // channel somebody closed is not work waiting on you, however many
+      // entries it ended on.
       unread: sortRoomsForPalette(
         [...channels, ...dms].filter((room) => !room.archived && hasUnread(room))
       ),

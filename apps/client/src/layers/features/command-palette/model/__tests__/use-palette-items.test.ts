@@ -14,7 +14,8 @@ const mockUseMeshAgentPaths = vi.fn();
 const mockUseCommands = vi.fn();
 const mockUseAgentFrecency = vi.fn();
 const mockUseSessions = vi.fn();
-const mockUseActiveRunCount = vi.fn();
+const mockUseRecentSessions = vi.fn();
+const mockSessionListState = vi.fn();
 const mockUseRooms = vi.fn();
 const mockUseAppStore = vi.fn();
 
@@ -114,14 +115,13 @@ vi.mock('@/layers/entities/command', () => ({
 }));
 
 vi.mock('@/layers/entities/session', async (importOriginal) => ({
-  // Keep the real selectAgentSessions/sessionDisplayTitle — only the data
-  // hook is stubbed.
+  // Keep the real selectAgentSessions/sessionDisplayTitle/partitionSessionsByOrigin
+  // — only the data hooks are stubbed.
   ...(await importOriginal<typeof import('@/layers/entities/session')>()),
   useSessions: () => mockUseSessions(),
-}));
-
-vi.mock('@/layers/entities/tasks', () => ({
-  useActiveTaskRunCount: () => mockUseActiveRunCount(),
+  useRecentSessions: () => mockUseRecentSessions(),
+  // The fleet-wide live store, read through a selector exactly as the hook does.
+  useSessionListStore: (selector: (s: unknown) => unknown) => selector(mockSessionListState()),
 }));
 
 // Only the room list's data hook is stubbed. The display and ordering helpers
@@ -231,7 +231,8 @@ describe('usePaletteItems', () => {
     mockUseCommands.mockReturnValue({ data: undefined });
     mockUseAgentFrecency.mockReturnValue(makeFrecency([]));
     mockUseSessions.mockReturnValue({ sessions: [] });
-    mockUseActiveRunCount.mockReturnValue({ data: undefined });
+    mockUseRecentSessions.mockReturnValue({ data: undefined });
+    mockSessionListState.mockReturnValue({ statuses: {}, sessions: {} });
     mockUseAppStore.mockReturnValue({ previousCwd: null });
     mockUseRooms.mockReturnValue({ data: [], isLoading: false, isError: false });
     mockUseSlotContributions.mockReturnValue(DEFAULT_PALETTE_CONTRIBUTIONS);
@@ -464,15 +465,35 @@ describe('usePaletteItems', () => {
 
   // --- Return shape ---
 
-  it('returns all content groups including suggestions', () => {
+  it('returns every content group the palette draws', () => {
     const { result } = renderHook(() => usePaletteItems(null));
     expect(result.current).toHaveProperty('recentAgents');
     expect(result.current).toHaveProperty('allAgents');
     expect(result.current).toHaveProperty('features');
     expect(result.current).toHaveProperty('commands');
     expect(result.current).toHaveProperty('quickActions');
-    expect(result.current).toHaveProperty('suggestions');
+    expect(result.current).toHaveProperty('newActions');
+    expect(result.current).toHaveProperty('sessions');
+    expect(result.current).toHaveProperty('continueRows');
+    expect(result.current).toHaveProperty('recent');
     expect(result.current).toHaveProperty('isLoading');
+  });
+
+  // --- The zero-query "New" group ---
+
+  it('New holds the two creation actions, in their declared order', () => {
+    const { result } = renderHook(() => usePaletteItems(null));
+    expect(result.current.newActions.map((a) => a.id)).toEqual(['new-session', 'create-agent']);
+  });
+
+  it('New leaves out every quick action that does not make something', () => {
+    const { result } = renderHook(() => usePaletteItems(null));
+    const ids = result.current.newActions.map((a) => a.id);
+    // These are real quick actions in the fixture above; none of them creates
+    // anything, and none of them may take a seat in the four rows before typing.
+    expect(ids).not.toContain('theme');
+    expect(ids).not.toContain('dashboard');
+    expect(ids).not.toContain('browse');
   });
 
   // --- Which runtime's commands ---
@@ -526,109 +547,48 @@ describe('usePaletteItems', () => {
     });
   });
 
-  // --- Suggestions ---
+  // --- Conversations in the corpus (§15) ---
 
-  it('returns empty suggestions when no conditions are met', () => {
-    const { result } = renderHook(() => usePaletteItems(null));
-    expect(result.current.suggestions).toEqual([]);
-  });
+  const recentSession = {
+    id: 'f1e2d3c4-0000-4000-8000-000000000001',
+    title: 'Zanzibar migration',
+    cwd: '/projects/a',
+    createdAt: '2026-08-09T09:00:00.000Z',
+    updatedAt: '2026-08-09T10:00:00.000Z',
+    permissionMode: 'default',
+    runtime: 'claude-code',
+    lastMessagePreview: 'the flaky retry loop is what breaks it',
+  };
 
-  it('suggests continue session when most recent session was active < 1h ago', () => {
-    const recentTime = new Date(Date.now() - 10 * 60 * 1000).toISOString(); // 10 min ago
-    mockUseSessions.mockReturnValue({
-      sessions: [
-        {
-          id: 's1',
-          title: 'Fix bug',
-          cwd: '/projects/a',
-          updatedAt: recentTime,
-          createdAt: recentTime,
-        },
-      ],
-    });
-    const { result } = renderHook(() => usePaletteItems('/projects/a'));
-    const suggestion = result.current.suggestions.find((s) => s.id === 'suggestion-continue');
-    expect(suggestion).toBeDefined();
-    expect(suggestion?.label).toBe('Continue: Fix bug');
-    expect(suggestion?.action).toBe('continueSession:s1');
-  });
-
-  it('does not suggest continue session when most recent session was > 1h ago', () => {
-    const oldTime = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(); // 2h ago
-    mockUseSessions.mockReturnValue({
-      sessions: [
-        {
-          id: 's1',
-          title: 'Old session',
-          cwd: '/projects/a',
-          updatedAt: oldTime,
-          createdAt: oldTime,
-        },
-      ],
-    });
-    const { result } = renderHook(() => usePaletteItems('/projects/a'));
-    expect(result.current.suggestions.find((s) => s.id === 'suggestion-continue')).toBeUndefined();
-  });
-
-  it('suggests active Tasks runs when activeRunCount > 0', () => {
-    mockUseActiveRunCount.mockReturnValue({ data: 3 });
-    const { result } = renderHook(() => usePaletteItems(null));
-    const suggestion = result.current.suggestions.find((s) => s.id === 'suggestion-tasks');
-    expect(suggestion).toBeDefined();
-    expect(suggestion?.label).toBe('3 active Tasks runs');
-    expect(suggestion?.action).toBe('openTasks');
-  });
-
-  it('uses singular "run" when activeRunCount is 1', () => {
-    mockUseActiveRunCount.mockReturnValue({ data: 1 });
-    const { result } = renderHook(() => usePaletteItems(null));
-    const suggestion = result.current.suggestions.find((s) => s.id === 'suggestion-tasks');
-    expect(suggestion?.label).toBe('1 active Tasks run');
-  });
-
-  it('suggests switch back to previous agent when previousCwd is set', () => {
-    mockUseAppStore.mockReturnValue({ previousCwd: '/projects/b' });
-    mockUseMeshAgentPaths.mockReturnValue({
-      data: { agents: [agentA, agentB] },
-      isLoading: false,
-    });
-    mockUseAgentFrecency.mockReturnValue(makeFrecency(['agent-a', 'agent-b']));
-    const { result } = renderHook(() => usePaletteItems('/projects/a'));
-    const suggestion = result.current.suggestions.find((s) => s.id === 'suggestion-switchback');
-    expect(suggestion).toBeDefined();
-    expect(suggestion?.label).toBe('Switch back to Agent B');
-    expect(suggestion?.action).toBe('switchAgent:agent-b');
-  });
-
-  it('does not suggest switch back when previousCwd equals activeCwd', () => {
-    mockUseAppStore.mockReturnValue({ previousCwd: '/projects/a' });
+  it('puts a conversation in the flat search list under type "session", named by its title', () => {
     mockUseMeshAgentPaths.mockReturnValue({ data: { agents: [agentA] }, isLoading: false });
-    mockUseAgentFrecency.mockReturnValue(makeFrecency(['agent-a']));
-    const { result } = renderHook(() => usePaletteItems('/projects/a'));
-    expect(
-      result.current.suggestions.find((s) => s.id === 'suggestion-switchback')
-    ).toBeUndefined();
+    mockUseRecentSessions.mockReturnValue({
+      data: { sessions: [recentSession], agentActivity: {} },
+    });
+
+    const { result } = renderHook(() => usePaletteItems(null));
+    const item = result.current.searchableItems.find((i) => i.id === recentSession.id);
+
+    expect(item?.type).toBe('session');
+    expect(item?.name).toBe('Zanzibar migration');
+    // The agent that owns it and the directory it lives in are both typeable.
+    expect(item?.keywords).toEqual([recentSession.id, 'Agent A', '/projects/a']);
   });
 
-  it('caps suggestions at 3 items', () => {
-    const recentTime = new Date(Date.now() - 5 * 60 * 1000).toISOString();
-    mockUseSessions.mockReturnValue({
-      sessions: [
-        {
-          id: 's1',
-          title: 'Session',
-          cwd: '/projects/a',
-          updatedAt: recentTime,
-          createdAt: recentTime,
-        },
-      ],
+  it('never puts a message body in the corpus — ⌘K finds things, not words', () => {
+    mockUseMeshAgentPaths.mockReturnValue({ data: { agents: [agentA] }, isLoading: false });
+    mockUseRecentSessions.mockReturnValue({
+      data: { sessions: [recentSession], agentActivity: {} },
     });
-    mockUseActiveRunCount.mockReturnValue({ data: 2 });
-    mockUseAppStore.mockReturnValue({ previousCwd: '/projects/b' });
-    mockUseMeshAgentPaths.mockReturnValue({ data: { agents: [agentA, agentB] }, isLoading: false });
-    mockUseAgentFrecency.mockReturnValue(makeFrecency(['agent-a', 'agent-b']));
-    const { result } = renderHook(() => usePaletteItems('/projects/a'));
-    expect(result.current.suggestions.length).toBeLessThanOrEqual(3);
+
+    const { result } = renderHook(() => usePaletteItems(null));
+    const item = result.current.searchableItems.find((i) => i.id === recentSession.id);
+
+    // The preview is right there on the session and would be one line to add.
+    // Nothing searchable may carry it.
+    const searchable = [item?.name, ...(item?.keywords ?? [])].join(' ');
+    expect(recentSession.lastMessagePreview).toContain('flaky');
+    expect(searchable).not.toContain('flaky');
   });
 
   // --- Rooms (spec `rooms` §13.2) ---

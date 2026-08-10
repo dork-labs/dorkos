@@ -1,14 +1,16 @@
 import { useMemo } from 'react';
 import { useMeshAgentPaths } from '@/layers/entities/mesh';
 import { useCommands } from '@/layers/entities/command';
-import { useSessions, selectAgentSessions, sessionDisplayTitle } from '@/layers/entities/session';
-import { useActiveTaskRunCount } from '@/layers/entities/tasks';
-import { useAppStore, useNow, useSlotContributions } from '@/layers/shared/model';
-import { shortenHomePath } from '@/layers/shared/lib';
+import { useSessions, selectAgentSessions } from '@/layers/entities/session';
+import { useSlotContributions } from '@/layers/shared/model';
 import { roomDisplayTitle } from '@/layers/entities/room';
 import { useAgentFrecency } from './use-agent-frecency';
 import { usePaletteRooms, type PaletteRooms } from './use-palette-rooms';
+import { usePaletteCommandCenter, type PaletteContinueRow } from './use-palette-command-center';
 import { paletteRoomKeywords } from './palette-rooms';
+import { PALETTE_NEW_ACTION_IDS } from './palette-contributions';
+import { paletteSessionKeywords, type PaletteSessionItem } from './palette-sessions';
+import type { PaletteRecentEntry } from './palette-recent';
 import type { SearchableItem } from './use-palette-search';
 import type { AgentPathEntry } from '@dorkos/shared/mesh-schemas';
 
@@ -38,38 +40,39 @@ export interface CommandItemData {
   description?: string;
 }
 
-export interface SuggestionItem {
-  id: string;
-  label: string;
-  description: string;
-  icon: string;
-  action: string;
-}
-
 export interface PaletteItems {
   recentAgents: AgentPathEntry[];
   allAgents: AgentPathEntry[];
   features: FeatureItem[];
   commands: CommandItemData[];
   quickActions: QuickActionItem[];
+  /**
+   * The cockpit's own creation actions, for the zero-query "New" group. A
+   * subset of {@link PaletteItems.quickActions}, in {@link PALETTE_NEW_ACTION_IDS}'
+   * order.
+   */
+  newActions: QuickActionItem[];
   /** Channels, direct messages and what is unread among them (spec `rooms` §13.2). */
   rooms: PaletteRooms;
+  /** Every conversation in the search window — the corpus, automated runs included. */
+  sessions: PaletteSessionItem[];
+  /** Live conversations, for the zero-query Continue group. */
+  continueRows: PaletteContinueRow[];
+  /** The last things this person was in, for the zero-query Recent group. */
+  recent: PaletteRecentEntry[];
   /** Flat list of all palette items for Fuse.js search */
   searchableItems: SearchableItem[];
-  /** Contextual suggestions for the zero-query state (max 3) */
-  suggestions: SuggestionItem[];
   isLoading: boolean;
 }
 
 const MAX_RECENT_AGENTS = 5;
-const MAX_SUGGESTIONS = 3;
-const ONE_HOUR_MS = 60 * 60 * 1000;
 
 /**
  * Assemble all content groups for the command palette.
  *
- * Combines mesh agent paths, slash commands, and registry-sourced feature/action
- * contributions into a single object consumed by CommandPaletteDialog.
+ * Combines mesh agent paths, conversations, rooms, slash commands, and
+ * registry-sourced feature/action contributions into a single object consumed
+ * by CommandPaletteDialog.
  *
  * @param activeCwd - Current working directory to identify the active agent and pin it first
  */
@@ -77,26 +80,23 @@ export function usePaletteItems(activeCwd: string | null): PaletteItems {
   const { data: agentPathsData, isLoading: agentsLoading } = useMeshAgentPaths();
   const rooms = usePaletteRooms();
   const { getSortedAgentIds } = useAgentFrecency();
-  const { sessions } = useSessions();
+  const { sessions: cwdSessions } = useSessions();
 
   /**
    * The conversation the active directory is on — newest first, by the
-   * canonical membership rule (DOR-203). Two groups need it: the slash commands
-   * below, which are the RUNTIME's, and the "Continue: …" suggestion.
+   * canonical membership rule (DOR-203). The slash commands below are that
+   * RUNTIME's, so the palette has to name it.
    */
   const activeSession = useMemo(() => {
-    if (!sessions || !activeCwd) return null;
-    return selectAgentSessions(sessions, activeCwd)[0] ?? null;
-  }, [sessions, activeCwd]);
+    if (!cwdSessions || !activeCwd) return null;
+    return selectAgentSessions(cwdSessions, activeCwd)[0] ?? null;
+  }, [cwdSessions, activeCwd]);
 
   // Which runtime's commands, said out loud. Asking with no context at all left
   // the server to cold-discover the DEFAULT runtime, so a Codex conversation on
   // screen was offered claude-code's list (DOR-1051). Same three arguments the
   // chat composer's own slash palette passes, for the same reason.
   const { data: commandsData } = useCommands(activeCwd, activeSession?.id, activeSession?.runtime);
-  const { data: activeRunCount } = useActiveTaskRunCount();
-  const previousCwd = useAppStore((s) => s.previousCwd);
-  const now = useNow();
 
   const allPaletteItems = useSlotContributions('command-palette.items');
 
@@ -110,7 +110,29 @@ export function usePaletteItems(activeCwd: string | null): PaletteItems {
     [allPaletteItems]
   );
 
+  const newActions = useMemo(
+    () =>
+      PALETTE_NEW_ACTION_IDS.flatMap((id) => {
+        const action = quickActions.find((item) => item.id === id);
+        return action ? [action] : [];
+      }),
+    [quickActions]
+  );
+
   const allAgents = useMemo(() => agentPathsData?.agents ?? [], [agentPathsData]);
+
+  const unreadRoomIds = useMemo(() => new Set(rooms.unread.map((room) => room.id)), [rooms.unread]);
+
+  // One list for the mix, because Recent is about places you have been and a
+  // channel and a DM are both places. The `#`/`@` split lives in the search
+  // prefixes, which address them differently on purpose.
+  const allRooms = useMemo(() => [...rooms.channels, ...rooms.dms], [rooms.channels, rooms.dms]);
+
+  const { sessions, continueRows, recent } = usePaletteCommandCenter(
+    allAgents,
+    allRooms,
+    unreadRoomIds
+  );
 
   const recentAgents = useMemo(() => {
     if (allAgents.length === 0) return [];
@@ -121,18 +143,18 @@ export function usePaletteItems(activeCwd: string | null): PaletteItems {
     // Pin active agent first
     const activeAgent = activeCwd ? allAgents.find((a) => a.projectPath === activeCwd) : null;
 
-    const recent: AgentPathEntry[] = [];
-    if (activeAgent) recent.push(activeAgent);
+    const recentList: AgentPathEntry[] = [];
+    if (activeAgent) recentList.push(activeAgent);
 
     for (const id of sortedIds) {
-      if (recent.length >= MAX_RECENT_AGENTS) break;
+      if (recentList.length >= MAX_RECENT_AGENTS) break;
       const agent = agentMap.get(id);
       if (agent && agent.id !== activeAgent?.id) {
-        recent.push(agent);
+        recentList.push(agent);
       }
     }
 
-    return recent;
+    return recentList;
   }, [allAgents, getSortedAgentIds, activeCwd]);
 
   const commands: CommandItemData[] = useMemo(() => {
@@ -153,6 +175,19 @@ export function usePaletteItems(activeCwd: string | null): PaletteItems {
         type: 'agent',
         keywords: [agent.projectPath, agent.id],
         data: agent,
+      });
+    }
+
+    // Conversations, searched by what they are CALLED. The name is the title
+    // and nothing else — an agent's name and a directory ride in the keywords,
+    // and a message body rides nowhere: ⌘K finds things, not words (§15).
+    for (const session of sessions) {
+      items.push({
+        id: session.id,
+        name: session.title,
+        type: 'session',
+        keywords: paletteSessionKeywords(session),
+        data: session,
       });
     }
 
@@ -203,54 +238,7 @@ export function usePaletteItems(activeCwd: string | null): PaletteItems {
     }
 
     return items;
-  }, [allAgents, commands, features, quickActions, rooms.channels, rooms.dms]);
-
-  const suggestions = useMemo(() => {
-    const items: SuggestionItem[] = [];
-
-    // Rule 1: 'Continue session' if most recent session in current CWD was active < 1h ago
-    if (activeSession) {
-      const lastActive = new Date(
-        activeSession.updatedAt ?? activeSession.createdAt ?? ''
-      ).getTime();
-      if (lastActive > now - ONE_HOUR_MS) {
-        items.push({
-          id: 'suggestion-continue',
-          label: `Continue: ${sessionDisplayTitle(activeSession.title)}`,
-          description: 'Resume your most recent session',
-          icon: 'Clock',
-          action: `continueSession:${activeSession.id}`,
-        });
-      }
-    }
-
-    // Rule 2: 'N active Tasks runs' if activeRunCount > 0
-    if (activeRunCount && activeRunCount > 0) {
-      items.push({
-        id: 'suggestion-tasks',
-        label: `${activeRunCount} active Tasks run${activeRunCount > 1 ? 's' : ''}`,
-        description: 'View running schedules',
-        icon: 'Clock',
-        action: 'openTasks',
-      });
-    }
-
-    // Rule 3: 'Switch back to {previousAgent}' if user recently switched
-    if (previousCwd && previousCwd !== activeCwd) {
-      const prevAgent = allAgents.find((a) => a.projectPath === previousCwd);
-      if (prevAgent) {
-        items.push({
-          id: 'suggestion-switchback',
-          label: `Switch back to ${prevAgent.name}`,
-          description: shortenHomePath(previousCwd),
-          icon: 'FolderOpen',
-          action: `switchAgent:${prevAgent.id}`,
-        });
-      }
-    }
-
-    return items.slice(0, MAX_SUGGESTIONS);
-  }, [now, activeSession, activeCwd, activeRunCount, previousCwd, allAgents]);
+  }, [allAgents, sessions, commands, features, quickActions, rooms.channels, rooms.dms]);
 
   return {
     recentAgents,
@@ -258,9 +246,12 @@ export function usePaletteItems(activeCwd: string | null): PaletteItems {
     features,
     commands,
     quickActions,
+    newActions,
     rooms,
+    sessions,
+    continueRows,
+    recent,
     searchableItems,
-    suggestions,
     isLoading: agentsLoading,
   };
 }

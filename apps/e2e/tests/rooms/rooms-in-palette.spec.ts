@@ -122,10 +122,21 @@ test.describe('Rooms in the command palette @smoke', () => {
     // The `#` is drawn as a mark, so the visible run of text must not repeat it.
     expect(await visibleText(unreadRow)).toBe(`${unreadSlug} 2`);
 
-    // 3. This test's read channel is absent, even though it spoke more recently.
-    //    An untyped palette shows what is waiting, not the whole room list.
-    //    Already local — it names the slug it seeded rather than counting rows.
-    await expect(palette.options.filter({ hasText: readSlug })).toHaveCount(0);
+    // 3. The unread channel is ABOVE this test's read one, even though the read
+    //    one spoke more recently.
+    //
+    //    This used to assert the read channel was absent entirely. The untyped
+    //    palette is a command center now (spec `sidebar-now-today-library` §15):
+    //    its Recent list is where you have BEEN, so a caught-up channel belongs
+    //    in it. What did not change is which one a person reaches first — and
+    //    that is the claim worth keeping, because recency alone would invert it.
+    const readRow = palette.options.filter({ hasText: readSlug }).first();
+    await expect(readRow).toBeVisible({ timeout: SERVER_ROUND_TRIP_MS });
+    const [unreadTop, readTop] = await unreadRow.evaluate(
+      (unreadEl, readEl) => [unreadEl.getBoundingClientRect().y, readEl!.getBoundingClientRect().y],
+      await readRow.elementHandle()
+    );
+    expect(unreadTop).toBeLessThan(readTop!);
 
     // 4. And the whole point: Enter goes to the row cmdk has selected, not
     //    merely to the row drawn first — they are different claims, and a

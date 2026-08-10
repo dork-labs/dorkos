@@ -155,22 +155,31 @@ desktop it belongs to the shell's Window menu, which sends it back over IPC — 
 
 ### Command Palette
 
-The global command palette (`Cmd+K` / `Ctrl+K`) provides unified access to agents, features, commands, and quick actions.
+The global command palette (`Cmd+K` / `Ctrl+K`) is the front door for **recall**: it finds
+conversations, agents, rooms and actions by what they are CALLED. It never searches message
+content — that is a separate surface (spec `sidebar-now-today-library` §15).
 
-| Behavior              | Description                                                                                                                      |
-| --------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| **Content groups**    | Recent Agents (frecency-sorted), All Agents, Features, Commands, Quick Actions                                                   |
-| **`@` prefix mode**   | Typing `@` scopes search to agents only; the `@` is stripped from the search term                                                |
-| **`>` prefix mode**   | Typing `>` scopes search to commands only; the `>` is stripped from the search term                                              |
-| **Zero-query state**  | Shows frecency-sorted top 5 recent agents with the active agent pinned first, plus contextual suggestions                        |
-| **Dialog precedence** | Cmd+K toggles the palette open/closed; does not conflict with interactive tool shortcuts since the palette dialog captures focus |
-| **Mobile**            | Opens as a bottom Drawer instead of a centered Dialog                                                                            |
-| **Arrow wrapping**    | Arrow keys wrap around the list (uses cmdk `loop` prop)                                                                          |
+| Behavior              | Description                                                                                                                                                                                                                                                                                                            |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Zero-query state**  | A command center, in this order: **Continue** (conversations running right now, each with its live verb) → **Recent** (one mix of conversations, rooms and agents; unread rooms lead, then recency) → **New** (New Session, Create Agent) → the prefix legend. A group with nothing in it is absent, Continue included |
+| **Typed state**       | Conversations, All Agents, Channels, Direct Messages, Features, Commands, Quick Actions                                                                                                                                                                                                                                |
+| **Conversation rows** | The sidebar's row grammar: avatar + `Agent › title` + origin mark + time, sharing `row-grammar.ts`'s 42% / 6ch truncation budget                                                                                                                                                                                       |
+| **`#` prefix mode**   | Typing `#` scopes search to channels; the `#` is stripped from the search term                                                                                                                                                                                                                                         |
+| **`@` prefix mode**   | Typing `@` scopes search to agents and direct messages; the `@` is stripped from the search term                                                                                                                                                                                                                       |
+| **`>` prefix mode**   | Typing `>` scopes search to commands only; the `>` is stripped from the search term                                                                                                                                                                                                                                    |
+| **Dialog precedence** | Cmd+K toggles the palette open/closed; does not conflict with interactive tool shortcuts since the palette dialog captures focus                                                                                                                                                                                       |
+| **Mobile**            | Opens as a bottom Drawer instead of a centered Dialog                                                                                                                                                                                                                                                                  |
+| **Arrow wrapping**    | Arrow keys wrap around the list (uses cmdk `loop` prop)                                                                                                                                                                                                                                                                |
 
 #### Command Palette Shortcuts
 
+Rows carry their own shortcuts inline — a conversation row shows `↵` and `⌘↵` while it is the
+highlighted one, so the pair is learned by using the palette rather than by reading this table.
+
 | Key                        | Context                          | Action                                        |
 | -------------------------- | -------------------------------- | --------------------------------------------- |
+| `Enter`                    | Conversation selected            | Open that conversation, in its own directory  |
+| `Cmd+Enter` / `Ctrl+Enter` | Conversation selected            | Start a NEW conversation with the same agent  |
 | `Enter`                    | Agent item selected              | Open agent sub-menu (drill-down into actions) |
 | `Cmd+Enter` / `Ctrl+Enter` | Agent selected, root or sub-menu | Open agent in a new tab (skips sub-menu)      |
 | `Backspace`                | In sub-menu, input is empty      | Go back one level to the parent page          |

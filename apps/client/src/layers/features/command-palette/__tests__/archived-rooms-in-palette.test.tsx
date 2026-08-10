@@ -261,9 +261,9 @@ describe('archived rooms in the palette', () => {
   });
 
   it('never leads the palette with one, even when it is owed a read', async () => {
-    // Zero-query shows the Unread group and nothing else room-shaped. Both
-    // rooms here are unread, so the ONLY thing that can separate them is the
-    // archived guard.
+    // The untyped palette's Recent list leads with what is waiting, and the
+    // archived guard is the only thing that can keep a room out of that lead.
+    // Both rooms here are unread, so nothing else here can separate them.
     render(<CommandPaletteDialog />);
 
     // The positive anchor first, so the absence below is asserted against a
