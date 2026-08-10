@@ -878,3 +878,217 @@ test.describe('the chat composer with formatting on', () => {
 // transcript to survive a minute of browser work has to be on this file's
 // worker rather than beside it. See the module header for the full argument.
 registerSessionReadStateTests({ apiUrl: API_URL, agentDir: () => agentDir });
+/**
+ * Conversations in ⌘K (spec `sidebar-now-today-library` P3, §15).
+ *
+ * Two claims cannot be settled anywhere else. **Finding a conversation and
+ * landing in it** is a claim about the whole chain — the recent-sessions route,
+ * the server-derived title, Fuse, cmdk's selection and the router — and every
+ * link of it is stubbed in jsdom. **The truncation budget** is a claim about a
+ * computed layout, and jsdom computes none: every element there is 0×0 and
+ * every Tailwind class resolves to nothing.
+ *
+ * In this file rather than one of its own because the mock server is global
+ * mutable state and `POST /api/test/reset` wipes it for everyone — the config
+ * says new mock-server suites belong here, and this one needs the same seeded
+ * agent and the same default `simple-text` scenario the beforeEach above sets up.
+ *
+ * Nothing here spends money: the title comes from the real `deriveSessionTitle`
+ * over a real first message, answered by TestModeRuntime.
+ */
+test.describe('conversations in the command palette', () => {
+  /**
+   * A phrase nothing else on this server answers to — not an agent, not a room,
+   * not a slash command, not a directory. It has to be unique, or the claim
+   * below is about the palette listing everything rather than about the title
+   * matching.
+   */
+  const TITLE_WORD = 'Zanzibar';
+
+  /**
+   * The agent this suite talks to — registered with the MESH, not merely seeded
+   * on disk.
+   *
+   * That distinction is the whole reason this hook exists. `GET
+   * /api/sessions/recent` fans out over `meshCore.listWithPaths()`, so a
+   * directory the mesh has never heard of contributes no sessions however many
+   * it holds — and the palette's Recent list came up empty with a conversation
+   * plainly on screen. `POST /api/test/seed-agent` writes a manifest to disk and
+   * stops there; registration is a separate act.
+   *
+   * `runtime: 'codex'` for the same reason `seed-agent` declares it: a manifest
+   * runtime beats the server default whenever this process registers it, and
+   * this server never registers codex — so the session lands on `test-mode`,
+   * which is what makes it free.
+   */
+  let paletteAgentDir: string;
+
+  test.beforeAll(async () => {
+    const ctx = await apiRequest.newContext();
+    const seed = await ctx.post(`${API_URL}/api/test/seed-agent`);
+    const { agentDir: baseDir } = (await seed.json()) as { agentDir: string };
+    paletteAgentDir = `${baseDir}-palette`;
+    await fs.mkdir(paletteAgentDir, { recursive: true });
+    const res = await ctx.post(`${API_URL}/api/mesh/agents`, {
+      data: { path: paletteAgentDir, overrides: { name: 'Palette Test Agent', runtime: 'codex' } },
+    });
+    if (!res.ok()) {
+      throw new Error(`Failed to register the palette agent: ${res.status()}`);
+    }
+    await ctx.dispose();
+  });
+
+  /**
+   * Start a conversation whose title contains {@link TITLE_WORD}, and answer
+   * with the session id the server minted for it.
+   *
+   * The title is not set here: the first MESSAGE is, and the server derives the
+   * title from it. That is the point — what a person types into ⌘K later is
+   * what the product decided to call the conversation.
+   */
+  async function startNamedSession(page: Page): Promise<string> {
+    const chatPage = new ChatPage(page);
+    await chatPage.goto(undefined, { dir: paletteAgentDir });
+    await chatPage.sendMessage(`${TITLE_WORD} migration plan`);
+    await expect(page.getByTestId('transcript-feed').getByText(/Echo:/)).toBeVisible({
+      timeout: 15_000,
+    });
+    await expect(page).toHaveURL(/session=/, { timeout: 15_000 });
+    const sessionId = new URL(page.url()).searchParams.get('session');
+    expect(sessionId).not.toBeNull();
+    return sessionId as string;
+  }
+
+  /**
+   * Open the palette the way a person does, and wait for it.
+   *
+   * The app-ready wait is load-bearing: these cases navigate to `/` first, and
+   * a ⌘K pressed at a shell that has not mounted yet is a keystroke nobody is
+   * listening for — which reads as "the palette never opened".
+   */
+  async function openPalette(page: Page) {
+    await new BasePage(page).waitForAppReady();
+    await page.keyboard.press('ControlOrMeta+k');
+    const input = page.getByTestId('command-palette-input');
+    await expect(input).toBeVisible({ timeout: 15_000 });
+    return input;
+  }
+
+  /** The palette row for the conversation this suite started. */
+  const namedRow = (page: Page) =>
+    page
+      .locator('[cmdk-root] [role="option"]')
+      .filter({ hasText: new RegExp(TITLE_WORD, 'i') })
+      .first();
+
+  test('typing a conversation title and pressing Enter lands in that conversation', async ({
+    page,
+  }) => {
+    const sessionId = await startNamedSession(page);
+
+    // Leave it, so arriving back is a real navigation and not a page that never
+    // moved.
+    await page.goto('/');
+    await expect(page).not.toHaveURL(/session=/);
+
+    const input = await openPalette(page);
+    await input.fill(TITLE_WORD.toLowerCase());
+
+    await expect(namedRow(page)).toBeVisible({ timeout: 15_000 });
+    await page.keyboard.press('Enter');
+
+    await expect(page).toHaveURL(new RegExp(`session=${sessionId}`), { timeout: 15_000 });
+  });
+
+  test('a conversation row spends the sidebar’s truncation budget', async ({ page }) => {
+    await startNamedSession(page);
+    await page.goto('/');
+
+    const input = await openPalette(page);
+    await input.fill(TITLE_WORD.toLowerCase());
+
+    const row = namedRow(page);
+    await expect(row).toBeVisible({ timeout: 15_000 });
+
+    // `Agent › title`, whole and untruncated, in the row's own tooltip.
+    await expect(row).toHaveAttribute('title', /›/);
+
+    const budget = await row.evaluate((el) => {
+      const line = el.querySelector('[data-slot="palette-session-line"]');
+      const who = el.querySelector('[data-slot="palette-session-who"]');
+      const title = el.querySelector('[data-slot="palette-session-title"]');
+      if (!line || !who || !title) return null;
+
+      // What `6ch` is worth in the title's OWN font, measured rather than
+      // guessed: `ch` is the advance width of a "0" in the element's font, so
+      // the number differs per family and per size and there is no arithmetic
+      // that gets it from a font-size.
+      //
+      // The probe goes INSIDE the title and copies no font properties at all,
+      // which is the whole trick. Copying a handful of them onto a sibling
+      // looks equivalent and is not: `ch` also moves with the things a font
+      // shorthand does not carry — variation settings, optical sizing, feature
+      // settings, stretch — so a probe that names four properties resolves
+      // `6ch` in a subtly different font than the element it is standing in
+      // for. That cost 0.7px here, against a 0.5px tolerance, and it would
+      // drift again with any font change. Inheritance is exact by
+      // construction; a copied list is exact only until someone adds a
+      // property to it.
+      const titleStyle = getComputedStyle(title);
+      const probe = document.createElement('span');
+      probe.style.position = 'absolute';
+      probe.style.visibility = 'hidden';
+      probe.style.display = 'inline-block';
+      probe.style.width = '6ch';
+      title.appendChild(probe);
+      const sixCh = probe.getBoundingClientRect().width;
+      probe.remove();
+
+      return {
+        lineWidth: line.getBoundingClientRect().width,
+        whoMaxWidth: getComputedStyle(who).maxWidth,
+        titleMinWidth: titleStyle.minWidth,
+        sixCh,
+      };
+    });
+
+    expect(budget).not.toBeNull();
+    const { lineWidth, whoMaxWidth, titleMinWidth, sixCh } = budget!;
+    expect(lineWidth).toBeGreaterThan(0);
+    expect(sixCh).toBeGreaterThan(0);
+
+    // The agent name is capped at 42% of the line (BC-25). Browsers resolve a
+    // percentage max-width to px in `getComputedStyle`, but either spelling is
+    // permitted — and `none`, which is what a missing class gives, is not.
+    if (whoMaxWidth.endsWith('%')) {
+      expect(whoMaxWidth).toBe('42%');
+    } else {
+      expect(parseFloat(whoMaxWidth)).toBeCloseTo(lineWidth * 0.42, 0);
+    }
+
+    // And the title floor is SIX characters of the font it is drawn in, not
+    // merely "some number of pixels". A `> 0` assertion here survives the class
+    // being cut to `min-w-[1px]` — the budget gutted, the test still green —
+    // which is precisely the shape of check this suite exists to avoid.
+    // (`row-grammar.test.ts` pins the literal; this pins what it BUYS.)
+    expect(parseFloat(titleMinWidth)).toBeCloseTo(sixCh, 0);
+  });
+
+  test('the untyped palette is Continue, Recent and New — and nothing else', async ({ page }) => {
+    await startNamedSession(page);
+    await page.goto('/');
+
+    await openPalette(page);
+
+    const headings = page.locator('[cmdk-root] [cmdk-group-heading]');
+    await expect(headings.filter({ hasText: 'Recent' }).first()).toBeVisible({ timeout: 15_000 });
+
+    // Every heading the untyped palette draws is one of the three. The
+    // "Features" and "Quick Actions" dumps this replaced would both fail here.
+    const texts = await headings.allTextContents();
+    expect(texts.length).toBeGreaterThan(0);
+    for (const text of texts) {
+      expect(['Continue', 'Recent', 'New']).toContain(text.trim());
+    }
+  });
+});

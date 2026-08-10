@@ -1,4 +1,5 @@
 import { test, expect } from '../../fixtures';
+import { openFromCommandPalette } from '../../pages/command-palette';
 
 /**
  * Keyboard place-keeping in the Shape switcher's nested form (DOR-513).
@@ -44,12 +45,8 @@ test.describe('Shapes — switcher keyboard focus @smoke', () => {
 
   test('Escape out of the fork form puts focus back on its trigger', async ({ page }) => {
     // The switcher has no URL param of its own, so it opens the way a person
-    // opens it: the palette's "Switch Shape" quick action.
-    await page.getByRole('button', { name: 'Open command palette' }).click();
-    await page
-      .getByRole('option', { name: /^Switch Shape$/ })
-      .first()
-      .click();
+    // opens it: type "Switch Shape" into the palette and pick the quick action.
+    await openFromCommandPalette(page, 'Switch Shape');
 
     const dialog = page.getByRole('dialog');
     // The first row in the list, and the active Shape the footer acts on.

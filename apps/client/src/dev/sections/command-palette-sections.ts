@@ -3,6 +3,13 @@ import type { PlaygroundSection } from '../playground-registry';
 /** Command palette component sections from CommandPalettePage. */
 export const COMMAND_PALETTE_SECTIONS: PlaygroundSection[] = [
   {
+    id: 'command-center-zero-query',
+    title: 'Command center (zero query)',
+    page: 'command-palette',
+    category: 'Command Palette',
+    keywords: ['continue', 'recent', 'new', 'zero', 'query', 'session', 'verb', 'row', 'grammar'],
+  },
+  {
     id: 'agentcommanditem',
     title: 'AgentCommandItem',
     page: 'command-palette',

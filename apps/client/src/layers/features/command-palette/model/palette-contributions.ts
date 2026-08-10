@@ -1,5 +1,17 @@
 import type { CommandPaletteContribution } from '@/layers/shared/model';
 
+/**
+ * The quick actions that MAKE something, in the order the zero-query "New"
+ * group draws them.
+ *
+ * An allowlist of ids rather than a new contribution category: "creating
+ * anything → one New button" is a decision about the cockpit's own two creation
+ * paths (design-decisions §7), not a slot extensions are invited into. Anything
+ * an extension contributes stays a quick action and stays searchable — it just
+ * does not get a seat in the four rows a person sees before typing.
+ */
+export const PALETTE_NEW_ACTION_IDS: readonly string[] = ['new-session', 'create-agent'];
+
 /** Built-in feature palette items (priority 1-4 for core features). */
 export const PALETTE_FEATURES: CommandPaletteContribution[] = [
   {

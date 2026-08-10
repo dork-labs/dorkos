@@ -13,9 +13,11 @@ export { AgentCommandItem } from './ui/AgentCommandItem';
 export { AgentPreviewPanel } from './ui/AgentPreviewPanel';
 export { AgentSubMenu } from './ui/AgentSubMenu';
 export { HighlightedText } from './ui/HighlightedText';
+export { PaletteCommandCenter } from './ui/PaletteCommandCenter';
 export { PaletteFooter } from './ui/PaletteFooter';
 export { PalettePrefixLegend } from './ui/PalettePrefixLegend';
 export { RoomCommandItem } from './ui/RoomCommandItem';
+export { SessionCommandItem } from './ui/SessionCommandItem';
 
 // --- Model hooks ---
 export { useGlobalPalette } from './model/use-global-palette';
@@ -24,11 +26,16 @@ export type { FrecencyRecord } from './model/use-agent-frecency';
 export { usePaletteItems } from './model/use-palette-items';
 export type {
   PaletteItems,
-  SuggestionItem,
   FeatureItem,
   QuickActionItem,
   CommandItemData,
 } from './model/use-palette-items';
+// The three row models `PaletteItems` is made of (§15). Types only: the
+// builders behind them are the slice's own business, and nothing outside it has
+// any reason to assemble a palette row.
+export type { PaletteSessionItem } from './model/palette-sessions';
+export type { PaletteRecentEntry } from './model/palette-recent';
+export type { PaletteContinueRow } from './model/use-palette-command-center';
 export { usePaletteRooms } from './model/use-palette-rooms';
 export type { PaletteRooms } from './model/use-palette-rooms';
 export {

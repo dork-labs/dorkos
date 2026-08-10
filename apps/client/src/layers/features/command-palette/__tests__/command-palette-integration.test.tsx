@@ -229,7 +229,16 @@ vi.mock('../model/use-palette-items', () => ({
         ...commands.map((c) => ({ id: `cmd-${c.name}`, name: c.name, type: 'command', data: c })),
         ...quickActions.map((q) => ({ id: q.id, name: q.label, type: 'quick-action', data: q })),
       ],
-      suggestions: [],
+      newActions: quickActions.filter((q) => q.id === 'new-session'),
+      sessions: [],
+      continueRows: [],
+      // The untyped palette's Recent list is where agent rows live now.
+      recent: mockPaletteRecentAgents.map((agent: AgentPathEntry) => ({
+        kind: 'agent' as const,
+        key: `agent:${agent.projectPath}`,
+        lastActivityAt: '2026-08-09T10:00:00.000Z',
+        agent,
+      })),
       isLoading: false,
     };
   },
@@ -499,8 +508,20 @@ describe('Command Palette Integration', () => {
 
   // --- Feature opening ---
 
-  it('selecting Tasks Scheduler opens tasks dialog and closes palette', () => {
+  /**
+   * Features and quick actions are reached by TYPING now: the untyped palette
+   * is Continue / Recent / New and nothing else (§15). The mocked search passes
+   * everything through for a non-prefix query, so these stay about dispatch.
+   */
+  function searchThen(text = 'a') {
     render(<CommandPaletteDialog />);
+    fireEvent.change(screen.getByPlaceholderText('Search rooms, agents, commands...'), {
+      target: { value: text },
+    });
+  }
+
+  it('selecting Tasks Scheduler opens tasks dialog and closes palette', () => {
+    searchThen();
     const item = screen.getByText('Tasks Scheduler').closest('[data-slot="command-item"]');
     fireEvent.click(item as Element);
 
@@ -509,7 +530,7 @@ describe('Command Palette Integration', () => {
   });
 
   it('selecting Connections goes to the page and closes the palette', () => {
-    render(<CommandPaletteDialog />);
+    searchThen();
     const item = screen.getByText('Connections').closest('[data-slot="command-item"]');
     fireEvent.click(item as Element);
 
@@ -518,7 +539,7 @@ describe('Command Palette Integration', () => {
   });
 
   it('selecting Mesh Network navigates to /agents and closes palette', () => {
-    render(<CommandPaletteDialog />);
+    searchThen();
     const item = screen.getByText('Mesh Network').closest('[data-slot="command-item"]');
     fireEvent.click(item as Element);
 
@@ -527,7 +548,7 @@ describe('Command Palette Integration', () => {
   });
 
   it('selecting Settings opens settings dialog and closes palette', () => {
-    render(<CommandPaletteDialog />);
+    searchThen();
     const item = screen.getByText('Settings').closest('[data-slot="command-item"]');
     fireEvent.click(item as Element);
 
@@ -538,7 +559,7 @@ describe('Command Palette Integration', () => {
   // --- Quick actions ---
 
   it('Bring in existing projects opens the import dialog', () => {
-    render(<CommandPaletteDialog />);
+    searchThen();
     const item = screen
       .getByText('Bring in existing projects')
       .closest('[data-slot="command-item"]');
@@ -548,7 +569,7 @@ describe('Command Palette Integration', () => {
   });
 
   it('Browse Filesystem opens directory picker', () => {
-    render(<CommandPaletteDialog />);
+    searchThen();
     const item = screen.getByText('Browse Filesystem').closest('[data-slot="command-item"]');
     fireEvent.click(item as Element);
 
@@ -557,7 +578,7 @@ describe('Command Palette Integration', () => {
 
   it('Toggle Theme calls setTheme with opposite theme', () => {
     mockTheme = 'dark';
-    render(<CommandPaletteDialog />);
+    searchThen();
     const item = screen.getByText('Toggle Theme').closest('[data-slot="command-item"]');
     fireEvent.click(item as Element);
 
@@ -584,12 +605,12 @@ describe('Command Palette Integration', () => {
   // --- Mesh always-on (no feature flag checks) ---
 
   it('renders agent data without any feature flag gating', () => {
-    render(<CommandPaletteDialog />);
+    searchThen();
 
     // Agents from mesh appear directly without any "mesh disabled" message
     // getAllByText used because the selected agent name also appears in the preview panel
     expect(screen.getAllByText('Frontend App').length).toBeGreaterThan(0);
-    expect(screen.getByText('Auth Service')).toBeInTheDocument();
+    expect(screen.getAllByText('Auth Service').length).toBeGreaterThan(0);
 
     // Mesh is a feature option in the palette
     expect(screen.getByText('Mesh Network')).toBeInTheDocument();
@@ -605,12 +626,12 @@ describe('Command Palette Integration', () => {
     mockPaletteRecentAgents = [];
     mockPaletteAllAgents = [];
 
-    render(<CommandPaletteDialog />);
+    searchThen();
 
-    // Recent Agents group should not appear (empty)
-    expect(screen.queryByText('Recent Agents')).not.toBeInTheDocument();
+    // Recent group should not appear (empty)
+    expect(screen.queryByText('Recent')).not.toBeInTheDocument();
 
-    // Features and Quick Actions should still render
+    // Features and Quick Actions still render for a typed query
     expect(screen.getByText('Features')).toBeInTheDocument();
     expect(screen.getByText('Quick Actions')).toBeInTheDocument();
   });
