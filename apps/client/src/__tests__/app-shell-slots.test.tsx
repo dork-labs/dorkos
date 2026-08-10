@@ -45,8 +45,19 @@ vi.mock('@tanstack/react-router', () => ({
 
 // ── Mock child components with identifiable test markers ──
 
+// The roster can render with zones and without them — P2 AC-8 asks for the
+// takeover to be correct in both states, and "without" is the ordinary quiet
+// morning where Now and Today are both absent (BC-1).
+let mockZonesPresent = true;
 vi.mock('@/layers/features/dashboard-sidebar', () => ({
-  DashboardSidebar: () => <div data-testid="dashboard-sidebar">Dashboard</div>,
+  DashboardSidebar: () => (
+    <nav aria-label="Sidebar" data-testid="dashboard-sidebar">
+      {mockZonesPresent && <section data-sidebar-zone="library">Library</section>}
+    </nav>
+  ),
+  // The header block is persistent chrome: AppShell mounts it OUTSIDE the
+  // `sidebar.body` swap region (spec R2).
+  SidebarNavHeader: () => <div data-testid="sidebar-nav-header">Nav</div>,
 }));
 
 // AppShell imports only SidebarFooterBar from session-list — the web session
@@ -396,6 +407,42 @@ describe('AppShell slot integration', () => {
 
     afterEach(() => {
       unregister?.();
+      mockZonesPresent = true;
+    });
+
+    // ── P2 AC-8 ──
+    it.each([true, false])(
+      'swaps ONLY the body — header block and footer strip stay mounted (zones present: %s)',
+      (zones) => {
+        mockZonesPresent = zones;
+
+        // Before: the roster, with the chrome around it.
+        mockPathname = '/';
+        renderAppShell();
+        expect(screen.getByTestId('dashboard-sidebar')).toBeInTheDocument();
+        expect(screen.getByTestId('sidebar-nav-header')).toBeInTheDocument();
+        expect(screen.getByTestId('sidebar-footer-bar')).toBeInTheDocument();
+        cleanup();
+
+        // After: the body is gone, the chrome is not.
+        mockPathname = '/marketplace';
+        renderAppShell();
+        expect(screen.getByTestId('marketplace-sidebar-fake')).toBeInTheDocument();
+        expect(screen.queryByTestId('dashboard-sidebar')).not.toBeInTheDocument();
+        expect(screen.getByTestId('sidebar-nav-header')).toBeInTheDocument();
+        expect(screen.getByTestId('sidebar-footer-bar')).toBeInTheDocument();
+      }
+    );
+
+    it('keeps the header block outside the swap region, not merely on screen', () => {
+      // The distinction that matters: a header INSIDE the animated body would
+      // still be present on the roster route and would vanish with it on a
+      // takeover. This asserts the structural fact instead.
+      mockPathname = '/';
+      renderAppShell();
+      const swap = screen.getByTestId('sidebar-body-swap');
+      expect(swap).not.toContainElement(screen.getByTestId('sidebar-nav-header'));
+      expect(swap).toContainElement(screen.getByTestId('dashboard-sidebar'));
     });
 
     it('replaces the roster with the contributed body on /marketplace', () => {

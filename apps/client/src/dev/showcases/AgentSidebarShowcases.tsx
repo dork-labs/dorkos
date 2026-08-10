@@ -19,7 +19,6 @@ import {
   AgentListItem,
   AgentOnboardingCard,
   GroupCreateInput,
-  GroupsHintCard,
   buildAgentsHeaderMenuNodes,
   buildChannelsHeaderMenuNodes,
   useAgentRowMenuNodes,
@@ -112,7 +111,6 @@ export function AgentSidebarShowcases() {
       <RowMenuSurfaceShowcase />
       <SectionHeaderShowcase />
       <GroupCreateInputShowcase />
-      <GroupsHintCardShowcase />
       <AgentOnboardingCardShowcase />
     </>
   );
@@ -138,36 +136,6 @@ function GroupCreateInputShowcase() {
             Committed: <span className="text-foreground font-medium">{lastCommitted}</span>
           </p>
         )}
-      </ShowcaseDemo>
-    </PlaygroundSection>
-  );
-}
-
-// ── GroupsHintCard ──
-
-function GroupsHintCardShowcase() {
-  const [dismissed, setDismissed] = useState(false);
-
-  return (
-    <PlaygroundSection
-      title="GroupsHintCard"
-      description="One-time discovery nudge shown once a fleet reaches ≥8 agents with no groups yet (DOR-329). The CTA opens the inline create flow; the X dismisses it for good."
-    >
-      <ShowcaseLabel>Default</ShowcaseLabel>
-      <ShowcaseDemo>
-        <div className="max-w-xs">
-          {dismissed ? (
-            <button
-              type="button"
-              onClick={() => setDismissed(false)}
-              className="text-muted-foreground hover:text-foreground text-xs underline"
-            >
-              Reset (show again)
-            </button>
-          ) : (
-            <GroupsHintCard onNewGroup={() => {}} onDismiss={() => setDismissed(true)} />
-          )}
-        </div>
       </ShowcaseDemo>
     </PlaygroundSection>
   );

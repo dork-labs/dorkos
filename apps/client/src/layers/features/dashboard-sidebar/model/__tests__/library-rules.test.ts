@@ -5,7 +5,12 @@
  * @module features/dashboard-sidebar/model/__tests__/library-rules
  */
 import { describe, expect, it } from 'vitest';
-import { buildSidebarModel, type SidebarSectionModel } from '../build-sidebar-model';
+import {
+  buildSidebarModel,
+  librarySectionId,
+  SIDEBAR_LIBRARY_SECTION_IDS,
+  type SidebarSectionModel,
+} from '../build-sidebar-model';
 import {
   agent,
   busyFixture,
@@ -247,6 +252,65 @@ describe('Library rows', () => {
     }
   });
 
+  it('are NOT draggable inside a smart group — its membership is rule-owned', () => {
+    // The subsections, which the assertion above does not reach: a smart
+    // group's rows sit one level in, so a check that only walked `section.rows`
+    // would pass with every one of them a drag source.
+    const state: SidebarState = {
+      ...busyFixture,
+      prefs: prefs({
+        ...busyFixture.prefs,
+        groups: [
+          {
+            id: 'sg',
+            name: 'Live now',
+            kind: 'smart',
+            items: [],
+            sortMode: 'recent',
+            collapsed: false,
+            displayFilter: 'all',
+            muted: false,
+            rules: { statuses: ['active', 'needs-attention'] },
+          },
+        ],
+      }),
+    };
+    const smart = library(state)
+      .find((section) => section.id === 'agents')
+      ?.subsections?.find((sub) => sub.id === 'group:sg');
+    expect(smart?.rows.length).toBeGreaterThan(0);
+    for (const row of smart?.rows ?? []) expect(row.draggable).toBe(false);
+  });
+
+  it('ARE draggable inside a manual group — that is the one you reorder by hand', () => {
+    const state: SidebarState = {
+      ...busyFixture,
+      prefs: prefs({
+        ...busyFixture.prefs,
+        groups: [
+          {
+            id: 'mg',
+            name: 'Clients',
+            kind: 'manual',
+            items: [agent('/Users/dev/code/cardamom').path].map((path) => ({
+              kind: 'agent' as const,
+              path,
+            })),
+            sortMode: 'manual',
+            collapsed: false,
+            displayFilter: 'all',
+            muted: false,
+          },
+        ],
+      }),
+    };
+    const manual = library(state)
+      .find((section) => section.id === 'agents')
+      ?.subsections?.find((sub) => sub.id === 'group:mg');
+    expect(manual?.rows.length).toBeGreaterThan(0);
+    for (const row of manual?.rows ?? []) expect(row.draggable).toBe(true);
+  });
+
   it('offer unmute rather than mute once something is muted', () => {
     const noise = library(busyFixture)
       .find((section) => section.id === 'channels')
@@ -255,9 +319,55 @@ describe('Library rows', () => {
     expect(noise?.actions).not.toContain('mute');
   });
 
+  it('name what the filter hid, singular and plural', () => {
+    const oneHidden = library(busyFixture)
+      .find((section) => section.id === 'agents')
+      ?.rows.find((row) => row.reason === 'library:reveal');
+    expect(oneHidden?.primary).toBe('1 inactive');
+
+    const manyHidden = library(powerFixture)
+      .find((section) => section.id === 'agents')
+      ?.rows.find((row) => row.reason === 'library:reveal');
+    // The `power` fixture is the one with a fleet big enough to hide several.
+    if (manyHidden !== undefined) expect(manyHidden.primary).toMatch(/^\d+ inactive$/);
+
+    // And nothing at all when the filter hid nothing.
+    const nothingHidden: SidebarState = {
+      ...quietFixture,
+      agents: quietFixture.agents.map((entry) => ({ ...entry, attention: 'active' as const })),
+    };
+    expect(
+      library(nothingHidden)
+        .find((section) => section.id === 'agents')
+        ?.rows.some((row) => row.reason === 'library:reveal')
+    ).toBe(false);
+  });
+
   it('emit no zone at all when there is nothing structural to show', () => {
     const bare: SidebarState = { ...firstRunFixture, agents: [], rooms: [] };
     expect(buildLibrarySections(bare)).toEqual([]);
     expect(buildSidebarModel(bare).zones.map((zone) => zone.id)).not.toContain('library');
+  });
+});
+
+describe('SIDEBAR_LIBRARY_SECTION_IDS is the order', () => {
+  it('emits the sections in the tuple\u2019s order, skipping the empty ones', () => {
+    // The tuple\u2019s docblock says changing Library\u2019s shape is an edit there.
+    // `buildLibrarySections` now walks it, so this is that claim, asserted.
+    for (const state of [busyFixture, powerFixture, quietFixture]) {
+      const ids = library(state).map((section) => section.id);
+      const expected = SIDEBAR_LIBRARY_SECTION_IDS.filter((id) => ids.includes(id));
+      expect(ids).toEqual(expected);
+    }
+  });
+
+  it('narrows only the four ids that have somewhere to store a fold', () => {
+    for (const id of SIDEBAR_LIBRARY_SECTION_IDS) expect(librarySectionId(id)).toBe(id);
+    // Now, Today and Getting started cannot fold; a group\u2019s fold lives on the
+    // group. None of them has a slot in `prefs.sections`.
+    expect(librarySectionId('now')).toBeNull();
+    expect(librarySectionId('today')).toBeNull();
+    expect(librarySectionId('getting-started')).toBeNull();
+    expect(librarySectionId('group:anything')).toBeNull();
   });
 });

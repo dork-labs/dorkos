@@ -25,6 +25,8 @@ The sections below follow `writing-developer-guides`, with one deliberate insert
 | The four journey fixtures            | `apps/client/src/layers/features/dashboard-sidebar/model/fixtures/`                                       |
 | Contracts that hold for all fixtures | `apps/client/src/layers/features/dashboard-sidebar/model/__tests__/build-sidebar-model.contracts.test.ts` |
 | "When did I last open this?"         | `apps/client/src/layers/entities/interactions/`                                                           |
+| The snapshot's one assembly hook     | `apps/client/src/layers/features/dashboard-sidebar/model/use-sidebar-state.ts`                            |
+| The one call that builds the model   | `apps/client/src/layers/features/dashboard-sidebar/model/use-sidebar-model.ts`                            |
 | The behavioural contracts (BC-\*)    | `specs/sidebar-now-today-library/02-specification.md` §B                                                  |
 | The locked design decisions          | `specs/sidebar-now-today-library/design-decisions.md`                                                     |
 
@@ -48,7 +50,7 @@ Three tests enforce this, and they are written so they can actually fail:
 - The only two legal shapes of `Date` are `new Date(<argument>)` and `Date.parse(`. Bare `new Date`, `new Date()`, `Date.now()` and `const Clock = Date` are all caught.
 - No row's visible text may match `/\d+\s?(s|m|h|d)\s?ago/i` or a verb like `working…`.
 
-**The pure set is exactly three things: `build-sidebar-model.ts`, `sidebar-state.ts`, and every file in `rules/`.** Nothing else. The other files sitting beside them in `model/` — `sidebar-item.ts`, `sort-sidebar-items.ts`, `filter-sidebar-items.ts`, `sidebar-membership.ts`, `smart-group-presets.ts`, `evaluate-smart-group.ts` and the `use-*` hooks — predate this model and are **not** checked, however pure they look. Being a plain function is not what puts a file in the set; living at one of those three addresses is. A new rule therefore belongs in `rules/`, not loose in `model/`, or it ships unguarded.
+**The pure set is exactly three things: `build-sidebar-model.ts`, `sidebar-state.ts`, and every file in `rules/`.** Nothing else. The other files sitting beside them in `model/` — `sidebar-item.ts`, `sort-sidebar-items.ts`, `smart-group-presets.ts`, `evaluate-smart-group.ts` and the `use-*` hooks — predate this model and are **not** checked, however pure they look. Being a plain function is not what puts a file in the set; living at one of those three addresses is. A new rule therefore belongs in `rules/`, not loose in `model/`, or it ships unguarded.
 
 ## When to Use What
 

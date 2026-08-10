@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import type { SidebarPrefs, SidebarGroup, SidebarItemRef } from '@dorkos/shared/config-schema';
 import {
   classifySidebarDrop,
+  COMPUTED_ZONE_REJECTION,
   resolveSidebarDrop,
   buildSidebarAnnouncements,
   readSidebarDndData,
@@ -51,6 +52,8 @@ function prefs(overrides: Partial<SidebarPrefs> = {}): SidebarPrefs {
 const PINNED: SidebarContainer = { kind: 'pinned' };
 const UNGROUPED: SidebarContainer = { kind: 'ungrouped' };
 const inGroup = (groupId: string): SidebarContainer => ({ kind: 'group', groupId });
+const TODAY: SidebarContainer = { kind: 'computed', zone: 'today' };
+const NOW: SidebarContainer = { kind: 'computed', zone: 'now' };
 
 const dragItem = (ref: SidebarItemRef, from: SidebarContainer): SidebarDragDescriptor => ({
   type: 'item',
@@ -410,6 +413,75 @@ describe('node-data conversion', () => {
 // Announcements — one string per operation type
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// R3 — Library is the only place a row can be put
+// ---------------------------------------------------------------------------
+
+describe('R3 — a drop into a computed zone', () => {
+  it('is rejected wherever the row came from', () => {
+    const p = prefs({
+      pinned: [agent('/api')],
+      groups: [grp({ id: 'g1', items: [agent('/web')] })],
+    });
+    for (const drag of [
+      dragAgent('/api', PINNED),
+      dragAgent('/web', inGroup('g1')),
+      dragAgent('/other', UNGROUPED),
+    ]) {
+      expect(classifySidebarDrop(p, drag, dropContainer(TODAY)).kind).toBe('reject-computed-zone');
+      expect(classifySidebarDrop(p, drag, dropContainer(NOW)).kind).toBe('reject-computed-zone');
+    }
+  });
+
+  it('is rejected when the drop lands on a ROW in the zone, not only its body', () => {
+    const p = prefs({ pinned: [agent('/api')] });
+    const op = classifySidebarDrop(p, dragAgent('/api', PINNED), dropItem('/other', TODAY));
+    expect(op).toEqual({ kind: 'reject-computed-zone', ref: agent('/api') });
+  });
+
+  it('changes nothing — a pinned row dropped in Today stays pinned', () => {
+    // The unpin branch is one line away in the same function: a pinned row
+    // dropped on any NON-pinned container unpins. If the rejection were placed
+    // after it, this drop would silently unpin the row instead of saying no.
+    const p = prefs({ pinned: [agent('/api')] });
+    const next = resolveSidebarDrop(p, dragAgent('/api', PINNED), dropContainer(TODAY));
+    expect(next).toBe(p);
+    expect(next.pinned).toEqual([agent('/api')]);
+  });
+
+  it('says how to keep the row in place, rather than only refusing', () => {
+    expect(COMPUTED_ZONE_REJECTION).toBe(
+      'Now and Today are computed — pin it to Library to keep it in place.'
+    );
+  });
+
+  it('reads a computed container back off a node payload, and rejects a malformed one', () => {
+    expect(readSidebarDndData({ type: 'container', container: TODAY })).toEqual({
+      type: 'container',
+      container: TODAY,
+    });
+    expect(readSidebarDndData({ type: 'container', container: { kind: 'computed' } })).toBeNull();
+    expect(
+      readSidebarDndData({ type: 'container', container: { kind: 'computed', zone: 'library' } })
+    ).toBeNull();
+  });
+
+  it('leaves every Library drop the table already covered untouched', () => {
+    // The whole point of putting the check where it is: the existing semantics
+    // gain a case and lose none.
+    const p = prefs({ pinned: [agent('/api')], groups: [grp({ id: 'g1' })] });
+    expect(classifySidebarDrop(p, dragAgent('/x', UNGROUPED), dropContainer(PINNED)).kind).toBe(
+      'pin'
+    );
+    expect(classifySidebarDrop(p, dragAgent('/api', PINNED), dropContainer(UNGROUPED)).kind).toBe(
+      'unpin'
+    );
+    expect(
+      classifySidebarDrop(p, dragAgent('/x', UNGROUPED), dropContainer(inGroup('g1'))).kind
+    ).toBe('move-to-group');
+  });
+});
+
 describe('buildSidebarAnnouncements', () => {
   const names: Record<string, string> = { '/api': 'api-server', '/web': 'web-app' };
   function announcements(p: SidebarPrefs) {
@@ -558,6 +630,27 @@ describe('buildSidebarAnnouncements', () => {
     expect(msg).toBe(
       "Can't move api-server into Clients — membership is rule-based. Edit rules instead."
     );
+  });
+
+  it('announces a rejected drop into a computed zone with the same sentence as the toast', () => {
+    const a = announcements(prefs({ pinned: [agent('/api')] }));
+    expect(
+      a.onDragEnd({
+        ...active(agentNode('/api', PINNED)),
+        over: over({ type: 'container', container: { kind: 'computed', zone: 'today' } }),
+      })
+    ).toBe(`Can't move api-server there — ${COMPUTED_ZONE_REJECTION}`);
+  });
+
+  it('names Now and Today on drag-over', () => {
+    const a = announcements(prefs());
+    const hover = (zone: 'now' | 'today') =>
+      a.onDragOver({
+        ...active(agentNode('/api', UNGROUPED)),
+        over: over({ type: 'container', container: { kind: 'computed', zone } }),
+      });
+    expect(hover('today')).toBe('Over Today.');
+    expect(hover('now')).toBe('Over Now.');
   });
 
   it('announces the hovered container on drag-over', () => {

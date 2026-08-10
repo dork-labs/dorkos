@@ -18,6 +18,7 @@ import type { SidebarPrefs, SidebarItemRef } from '@dorkos/shared/config-schema'
 import {
   buildSidebarAnnouncements,
   classifySidebarDrop,
+  COMPUTED_ZONE_REJECTION,
   readSidebarDndData,
   resolveSidebarDrop,
   toDragDescriptor,
@@ -123,6 +124,12 @@ export function SidebarDnd({ children, displayNames, roomTitles }: SidebarDndPro
       toast.info('Membership is rule-based — edit rules instead.', {
         description: groupName(op.groupId),
       });
+      return;
+    }
+    // Same mechanism, different reason: Now and Today are derived, so a row
+    // dropped there has no place to be put (R3).
+    if (op.kind === 'reject-computed-zone') {
+      toast.info(COMPUTED_ZONE_REJECTION, { description: itemName(op.ref) });
       return;
     }
     update((prev) => resolveSidebarDrop(prev, drag, drop));

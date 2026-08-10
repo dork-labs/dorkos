@@ -30,6 +30,16 @@ import {
   reorderPinned,
 } from '@/layers/entities/config';
 
+/**
+ * What a drop into Now or Today is answered with (R3).
+ *
+ * One spelling, read by the toast the operator sees and by the announcement a
+ * screen reader hears, so the two can never drift. It names the way out rather
+ * than only the refusal: the row CAN be kept in place, by pinning it.
+ */
+export const COMPUTED_ZONE_REJECTION =
+  'Now and Today are computed — pin it to Library to keep it in place.';
+
 /** Where a sidebar row lives — its home section during a drag, or a drop target. */
 export type SidebarContainer =
   | { kind: 'pinned' }
@@ -42,7 +52,16 @@ export type SidebarContainer =
    * kind. `section` is the name of the one actually under the cursor, read ONLY
    * by the ARIA announcements; nothing in the reducer branches on it.
    */
-  | { kind: 'ungrouped'; section?: string };
+  | { kind: 'ungrouped'; section?: string }
+  /**
+   * A computed zone — Now, Today or Getting started (R3).
+   *
+   * These are the only containers that are never a home: nothing is dragged
+   * OUT of them, because the model gives every row in them `draggable: false`.
+   * They exist as a container so a row dragged INTO one is rejected with a
+   * sentence instead of springing back in silence.
+   */
+  | { kind: 'computed'; zone: 'now' | 'today' | 'getting-started' };
 
 /**
  * The `data` object a draggable/droppable node carries. dnd-kit reuses one data
@@ -89,7 +108,14 @@ type SidebarDropOp =
    * `SidebarDnd` surface a hint instead of silently doing nothing. A room
    * dropped on a smart group resolves here unchanged.
    */
-  | { kind: 'reject-smart-group'; groupId: string; ref: SidebarItemRef };
+  | { kind: 'reject-smart-group'; groupId: string; ref: SidebarItemRef }
+  /**
+   * A drop landed in a computed zone (R3). Applying it is a no-op — Now and
+   * Today are derived, so there is no stored order for a row to take a place
+   * in — and the distinct kind is what lets `SidebarDnd` say so rather than
+   * appear to lose the gesture.
+   */
+  | { kind: 'reject-computed-zone'; ref: SidebarItemRef };
 
 // ---------------------------------------------------------------------------
 // Node-data ↔ descriptor conversion (used by the live dnd adapter + tests)
@@ -102,6 +128,10 @@ function isSidebarContainer(value: unknown): value is SidebarContainer {
   if (kind === 'ungrouped') {
     const section = (value as { section?: unknown }).section;
     return section === undefined || typeof section === 'string';
+  }
+  if (kind === 'computed') {
+    const zone = (value as { zone?: unknown }).zone;
+    return zone === 'now' || zone === 'today' || zone === 'getting-started';
   }
   return kind === 'group' && typeof (value as { groupId?: unknown }).groupId === 'string';
 }
@@ -254,6 +284,12 @@ export function classifySidebarDrop(
   const { ref, from } = drag;
   const { container, overRef } = resolveTarget(drop);
 
+  // Now and Today are computed, and dragging into them would be a lie about
+  // what the operator controls (R3, design-meta rule 6). Checked FIRST, before
+  // any source branch: where the row came from does not change the answer, and
+  // putting it here is what leaves the existing table below untouched.
+  if (container.kind === 'computed') return { kind: 'reject-computed-zone', ref };
+
   // Source: a pinned reference.
   if (from.kind === 'pinned') {
     if (container.kind !== 'pinned') return { kind: 'unpin', ref }; // Finder drag-out.
@@ -297,6 +333,7 @@ function applySidebarDropOp(prev: SidebarPrefs, op: SidebarDropOp): SidebarPrefs
   switch (op.kind) {
     case 'none':
     case 'reject-smart-group':
+    case 'reject-computed-zone':
       return prev;
     case 'reorder-group':
       return reorderGroup(prev, op.from, op.to);
@@ -384,6 +421,8 @@ function describeSidebarDropOp(op: SidebarDropOp, ctx: SidebarDndAnnounceContext
       return `Reordered ${ctx.itemName(op.ref)} in Pinned.`;
     case 'reject-smart-group':
       return `Can't move ${ctx.itemName(op.ref)} into ${ctx.groupName(op.groupId)} — membership is rule-based. Edit rules instead.`;
+    case 'reject-computed-zone':
+      return `Can't move ${ctx.itemName(op.ref)} there — ${COMPUTED_ZONE_REJECTION}`;
     case 'none':
       return '';
   }
@@ -401,6 +440,8 @@ function describeSidebarDragOver(
       return 'Over Pinned.';
     case 'ungrouped':
       return `Over ${container.section ?? 'Agents'}.`;
+    case 'computed':
+      return container.zone === 'today' ? 'Over Today.' : 'Over Now.';
     case 'group':
       return `Over group ${ctx.groupName(container.groupId)}.`;
   }

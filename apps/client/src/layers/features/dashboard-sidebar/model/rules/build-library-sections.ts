@@ -11,10 +11,11 @@
 import type { SidebarGroup } from '@dorkos/shared/config-schema';
 import type { RoomSummary } from '@dorkos/shared/room-schemas';
 import { evaluateSmartGroup } from '@dorkos/shared/smart-groups';
-import type {
-  LibrarySectionId,
-  SidebarRowModel,
-  SidebarSectionModel,
+import {
+  SIDEBAR_LIBRARY_SECTION_IDS,
+  type LibrarySectionId,
+  type SidebarRowModel,
+  type SidebarSectionModel,
 } from '../build-sidebar-model';
 import type { AgentRosterEntry, SidebarState } from '../sidebar-state';
 import { muteIndex, type MuteIndex } from './apply-mute-rules';
@@ -213,6 +214,11 @@ function section(
  * A smart group's membership is evaluated live and never persisted, so its
  * stored `items` are ignored here exactly as `groupedAgentPaths` ignores them.
  *
+ * **This is the one section that renders while empty**, and the exception is
+ * deliberate: every other section in this file appears because something is in
+ * it (BC-32), while a group appears because the operator made it. A group that
+ * vanished the moment it was created could never be dragged into.
+ *
  * @param group - The group.
  * @param state - The snapshot.
  * @param mutes - The resolved mute sets.
@@ -225,7 +231,7 @@ function groupSection(
   mutes: MuteIndex,
   byPath: Map<string, AgentRosterEntry>,
   rooms: Map<string, RoomSummary>
-): SidebarSectionModel | null {
+): SidebarSectionModel {
   const rows: SidebarRowModel[] = [];
   if (group.kind === 'smart' && group.rules) {
     const matched = evaluateSmartGroup(
@@ -241,7 +247,12 @@ function groupSection(
     );
     for (const path of matched) {
       const agent = byPath.get(path);
-      if (agent) rows.push(agentRow(agent, state, mutes, 'library:group-member'));
+      // A smart group's members are rule-owned, so they are not drag sources:
+      // dragging one out would ask the operator to hand-edit a list the rules
+      // rebuild on the next render. `classifySidebarDrop` refuses a drop INTO
+      // one for the same reason; this is the other half of it.
+      if (agent)
+        rows.push({ ...agentRow(agent, state, mutes, 'library:group-member'), draggable: false });
     }
   } else {
     for (const ref of group.items) {
@@ -254,7 +265,12 @@ function groupSection(
       }
     }
   }
-  if (rows.length === 0) return null;
+  // An empty group still renders, and it is the ONE section that may. Every
+  // other section in this file exists because something is in it (BC-32); a
+  // group exists because the operator MADE it, and a group that vanished the
+  // moment it was created could never be dragged into. The renderer fills it
+  // with a hint — "drag things here", or "no agents match these rules" —
+  // which is information rather than disappearance.
   const ordered = orderLibraryRows(rows, group.sortMode, (row) =>
     row.target.kind === 'agent' ? (byPath.get(row.target.path)?.lastActivityAt ?? null) : null
   );
@@ -267,6 +283,18 @@ function groupSection(
     rows: ordered,
     reason: 'library:group',
   };
+}
+
+/** What one Library section holds, before {@link section} decides it exists. */
+interface LibrarySectionContent {
+  /** Its heading. */
+  label: string;
+  /** Its rows, already filtered and ordered. */
+  rows: SidebarRowModel[];
+  /** Its provenance. */
+  reason: string;
+  /** Its group sub-headers — Agents only. */
+  subsections?: SidebarSectionModel[];
 }
 
 /**
@@ -320,6 +348,15 @@ export function buildLibrarySections(state: SidebarState): SidebarSectionModel[]
     (room.kind === 'dm' ? dmRows : channelRows).push(row);
   }
 
+  // ── The Agents pipeline ──
+  // A second composition lives inside this one, and it is worth saying so:
+  // from the entry point above this reads as a single rule, while Agents is
+  // actually four steps in a fixed order — who is ungrouped, then what the
+  // display filter shows (`filteredAgentRows`), then what order they come in
+  // (`orderLibraryRows`), then one `revealRow` standing for whatever the filter
+  // hid. Filter BEFORE sort, matching how a group section has always ordered
+  // its own two, and the reveal row is appended last so it never sorts into the
+  // middle of the list it is summarizing.
   const ungrouped = state.agents.filter((agent) => !groupedAgents.has(agent.path));
   const agentPrefs = state.prefs.sections.agents;
   const filtered = filteredAgentRows(
@@ -333,33 +370,47 @@ export function buildLibrarySections(state: SidebarState): SidebarSectionModel[]
     row.target.kind === 'agent' ? (byPath.get(row.target.path)?.lastActivityAt ?? null) : null
   );
   const reveal = revealRow(filtered.hidden, filtered.hiddenLabel);
-  const groups = state.prefs.groups
-    .map((group) => groupSection(group, state, mutes, byPath, rooms))
-    .filter((sub): sub is SidebarSectionModel => sub !== null);
+  const groups = state.prefs.groups.map((group) =>
+    groupSection(group, state, mutes, byPath, rooms)
+  );
 
-  return [
-    section('pins', 'Pins', pinnedRows, state, 'library:pins'),
+  // What each of the four sections holds, keyed by id. A `Record` over
+  // `LibrarySectionId` rather than a list, so adding an id to
+  // `SIDEBAR_LIBRARY_SECTION_IDS` fails to compile here until it is given
+  // content — which is what makes that tuple's docblock true.
+  const content: Record<LibrarySectionId, LibrarySectionContent> = {
+    pins: { label: 'Pins', rows: pinnedRows, reason: 'library:pins' },
+    channels: {
+      label: 'Channels',
+      rows: orderLibraryRows(
+        channelRows,
+        state.prefs.sections.channels?.sortMode ?? 'name',
+        () => null
+      ),
+      reason: 'library:channels',
+    },
+    dms: {
+      label: 'Direct messages',
+      rows: orderLibraryRows(dmRows, state.prefs.sections.dms?.sortMode ?? 'name', () => null),
+      reason: 'library:dms',
+    },
+    agents: {
+      label: 'Agents',
+      rows: reveal ? [...agentRows, reveal] : agentRows,
+      reason: 'library:agents',
+      subsections: groups,
+    },
+  };
+
+  // The tuple IS the order, so this walks it rather than repeating the four ids.
+  return SIDEBAR_LIBRARY_SECTION_IDS.map((id) =>
     section(
-      'channels',
-      'Channels',
-      orderLibraryRows(channelRows, state.prefs.sections.channels?.sortMode ?? 'name', () => null),
+      id,
+      content[id].label,
+      content[id].rows,
       state,
-      'library:channels'
-    ),
-    section(
-      'dms',
-      'Direct messages',
-      orderLibraryRows(dmRows, state.prefs.sections.dms?.sortMode ?? 'name', () => null),
-      state,
-      'library:dms'
-    ),
-    section(
-      'agents',
-      'Agents',
-      reveal ? [...agentRows, reveal] : agentRows,
-      state,
-      'library:agents',
-      groups
-    ),
-  ].filter((entry): entry is SidebarSectionModel => entry !== null);
+      content[id].reason,
+      content[id].subsections
+    )
+  ).filter((entry): entry is SidebarSectionModel => entry !== null);
 }

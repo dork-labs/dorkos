@@ -31,7 +31,7 @@ import { AppBannerSlot, useAppBanners } from '@/layers/widgets/app-banner';
 import { ApprovalsIndicator } from '@/layers/widgets/approvals-indicator';
 import { usePulseFreshness } from '@/layers/widgets/pulse';
 import { SidebarFooterBar } from '@/layers/features/session-list';
-import { DashboardSidebar } from '@/layers/features/dashboard-sidebar';
+import { DashboardSidebar, SidebarNavHeader } from '@/layers/features/dashboard-sidebar';
 import {
   useOnboarding,
   useOnboardingOverlayVisible,
@@ -449,6 +449,17 @@ export function AppShell() {
                   <SidebarMobileNavigationClose />
                   <Sidebar variant="inset">
                     <TitlebarDragStrip />
+                    {/* ── The header block: persistent chrome ──
+                          Mounted OUTSIDE the body-swap wrapper below, so a
+                          contributed `sidebar.body` takeover replaces the body
+                          and leaves this standing — the panel's identity and
+                          its top-level navigation do not belong to whichever
+                          route is on screen (spec `sidebar-now-today-library`
+                          R2, P2 AC-8). P2.4 replaces this with the workspace
+                          switcher, the New button and the ⌘K pill; the mount
+                          point is what stays. The footer strip below is the
+                          same arrangement and always was. */}
+                    <SidebarNavHeader />
                     {/* ── Dynamic sidebar body with directional slide ──
                           This wrapper is the clip boundary for the body swap. The
                           slide transform lives on the motion.div below, so the

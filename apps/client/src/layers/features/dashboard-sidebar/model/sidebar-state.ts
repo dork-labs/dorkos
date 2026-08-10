@@ -2,10 +2,10 @@
  * Everything {@link buildSidebarModel} is allowed to know — the snapshot the
  * whole panel is a pure function of (spec `sidebar-now-today-library` §A2).
  *
- * The type lands here; the hook that fills it (`useSidebarState`) lands with
- * the zones in P2.1, because two of its sources — `entities/attention` and the
- * reshaped `SidebarPrefs` — do not exist yet. Until then this is the contract
- * the fixtures satisfy and the tests build against.
+ * The type lands here; `useSidebarState` beside it fills it. Three fields —
+ * `attention`, `journey` and `digest` — are wired there as placeholders whose
+ * sources arrive with P2.2's `entities/attention` and discovery facts, and the
+ * four journey fixtures are what everything else is tested against.
  *
  * **Two things are deliberately NOT in here: the clock and the verb.** The
  * clock is `now`, passed in, so every time-dependent rule (the overnight

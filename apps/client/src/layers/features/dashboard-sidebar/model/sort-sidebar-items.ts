@@ -66,22 +66,3 @@ function compareByRecency(a: SidebarItem, b: SidebarItem): number {
   if (b.lastActiveAt !== null) return 1;
   return compareByName(a, b);
 }
-
-/**
- * Order a section's items, immutably.
- *
- * - `manual` — a copy of the given order, which for a manual group IS the stored
- *   `items` order.
- * - `name` — ascending `localeCompare` on the item's name.
- * - `recent` — most recent first, items that were never active last.
- *
- * @param items - The items to order.
- * @param mode - The section's sort mode.
- */
-export function sortSidebarItems(
-  items: readonly SidebarItem[],
-  mode: SidebarSortMode
-): SidebarItem[] {
-  if (mode === 'manual') return [...items];
-  return [...items].sort(mode === 'name' ? compareByName : compareByRecency);
-}
