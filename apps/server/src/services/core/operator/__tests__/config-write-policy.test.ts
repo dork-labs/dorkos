@@ -19,6 +19,7 @@ import { configSchemaLeafPaths } from '../config-disclosure.js';
 import {
   CONFIG_WRITE_POLICY,
   OPERATOR_ONLY_CONFIG_PATHS,
+  OPERATOR_ONLY_STAKES,
   REQUIRES_LOGIN_CONFIG_PATHS,
   findLoginRequiredPaths,
   findOperatorOnlyPaths,
@@ -258,11 +259,127 @@ describe('findOperatorOnlyPaths', () => {
   });
 });
 
+/**
+ * The stake clause a refusal used for one path: the words between the previous
+ * sentence and the `: <path>.` that lists it. Read back out of the finished
+ * message on purpose, so these tests judge what an agent actually receives
+ * rather than the table it was built from.
+ *
+ * @param message - A finished refusal.
+ * @param path - The dot-path whose clause is wanted.
+ * @returns The clause, or `''` when the message never names the path.
+ */
+function stakeClauseFor(message: string, path: string): string {
+  const end = message.indexOf(`: ${path}`);
+  if (end === -1) return '';
+  const before = message.slice(0, end);
+  const boundary = before.lastIndexOf('. ');
+  return boundary === -1 ? before : before.slice(boundary + 2);
+}
+
+describe('OPERATOR_ONLY_STAKES drift guard', () => {
+  it('gives every operator-only path a stake, and names none twice', () => {
+    // The refusal text is only honest if the stake it cites is true of the path
+    // it is citing, so every operator-only path has to be filed under exactly one
+    // stake. A path with no stake still gets an honest fallback sentence at
+    // runtime; this test is what stops that fallback becoming the normal case.
+    const filed = OPERATOR_ONLY_STAKES.flatMap((group) => group.paths);
+    expect([...filed].sort()).toEqual([...OPERATOR_ONLY_CONFIG_PATHS].sort());
+    expect(new Set(filed).size).toBe(filed.length);
+  });
+
+  it('says something real about every path, not just a colon', () => {
+    // The guard above only proves a path is FILED. A group whose `description`
+    // was emptied or trimmed to a word still files every path it holds, and the
+    // refusal would then read ": auth.enabled." — a sentence that names the
+    // setting and says nothing about it. So the clause each path actually
+    // produces is read back here, one path at a time.
+    for (const path of OPERATOR_ONLY_CONFIG_PATHS) {
+      const clause = stakeClauseFor(describeOperatorOnlyRefusal([path]), path);
+      expect(clause, `no clause for ${path}`).not.toBe('');
+      expect(clause, `fallback clause for ${path}`).not.toBe(
+        'Settings the person keeps for themselves'
+      );
+      // Three words is not a style rule, it is the floor at which a clause can
+      // still be a claim about the setting rather than a label.
+      expect(clause.split(' ').length, `clause too thin for ${path}: "${clause}"`).toBeGreaterThan(
+        3
+      );
+    }
+  });
+});
+
 describe('describeOperatorOnlyRefusal', () => {
   it('names what was refused and what to do instead', () => {
     const message = describeOperatorOnlyRefusal(['auth.enabled']);
     expect(message).toContain('auth.enabled');
     expect(message).toContain('DorkOS changed nothing');
     expect(message).toMatch(/ask the person/i);
+  });
+
+  it('keeps the reach description for the settings it is true of', () => {
+    const message = describeOperatorOnlyRefusal(['auth.enabled', 'tunnel.domain']);
+    expect(message).toContain(
+      'Who can reach this instance, and how far it reaches on this machine'
+    );
+    expect(message).toContain('auth.enabled, tunnel.domain');
+  });
+
+  it('describes a raw MCP server as a tool DorkOS attaches, not as a way in', () => {
+    // A configured raw-MCP server is an endpoint DorkOS reaches OUT to and hands
+    // sessions as a tool. Nothing about it lets anybody in, so the inbound
+    // "who can reach this instance" sentence is the wrong claim: it sits with
+    // the approved lists, which is what the module's own prose says about it.
+    const message = describeOperatorOnlyRefusal([
+      'connectors.rawMcpServers[].url',
+      'extensions.approvedToRun',
+    ]);
+    expect(message).toContain(
+      'Which code this server runs, and which outside tools it attaches to: ' +
+        'connectors.rawMcpServers[].url, extensions.approvedToRun.'
+    );
+    expect(message).not.toMatch(/who can reach this instance/i);
+  });
+
+  it('describes a room bound as what it is, not as a security control', () => {
+    // A reply ceiling is not the login gate. Telling a model it is teaches the
+    // model something false about the product (DOR-1044).
+    const message = describeOperatorOnlyRefusal([
+      'rooms.engagedWindowMinutes',
+      'rooms.maxAgentDepth',
+    ]);
+    expect(message).toContain('When your agents speak on their own');
+    expect(message).toContain('rooms.engagedWindowMinutes, rooms.maxAgentDepth');
+    expect(message).not.toMatch(/who can reach this instance/i);
+    expect(message).not.toMatch(/credentials/i);
+    expect(message).not.toMatch(/leaves this machine/i);
+  });
+
+  it('describes a greeting cap as what it is', () => {
+    const message = describeOperatorOnlyRefusal(['welcomeBack.maxPosts']);
+    expect(message).toContain('When your agents speak on their own');
+    expect(message).not.toMatch(/who can reach this instance/i);
+    expect(message).not.toMatch(/credentials/i);
+    expect(message).not.toMatch(/leaves this machine/i);
+  });
+
+  it('gives a mixed refusal one sentence per stake, each naming its own paths', () => {
+    const message = describeOperatorOnlyRefusal([
+      'auth.enabled',
+      'telemetry.usage',
+      'welcomeBack.enabled',
+    ]);
+    expect(message).toContain(
+      'Who can reach this instance, and how far it reaches on this machine: auth.enabled.'
+    );
+    expect(message).toContain('What leaves this machine: telemetry.usage.');
+    expect(message).toContain('welcomeBack.enabled.');
+  });
+
+  it('stays honest about a path with no stake on file', () => {
+    const message = describeOperatorOnlyRefusal(['some.future.setting']);
+    expect(message).toContain('some.future.setting');
+    expect(message).toContain('Settings the person keeps for themselves');
+    expect(message).not.toMatch(/who can reach this instance/i);
   });
 });

@@ -69,9 +69,12 @@
  *   operator once connected a Direct provider at a custom base URL, an agent
  *   flipping `provider` alone makes DorkOS hand the sidecar that provider's key
  *   AND the leftover custom `OPENAI_BASE_URL` in the same env.
- * - **Code the server loads or runs.** `extensions.*` decides which extension code
- *   is compiled into the server process, and the two `binaryPath` fields name
- *   executables the server spawns.
+ * - **Code the server loads or runs, and the tool endpoints it attaches.**
+ *   `extensions.*` decides which extension code is compiled into the server
+ *   process, and the two `binaryPath` fields name executables the server spawns.
+ *   `connectors.rawMcpServers[]` sits here rather than with exposure: it is a tool
+ *   endpoint sessions can attach, so writing one grants a capability outward, and
+ *   nothing about it lets anybody in.
  * - **How far DorkOS reaches on disk.** `server.boundary` is the containment line
  *   itself (the CLI reads it at next launch, `cli.ts`), and `workspace.rootPath`
  *   and `relay.dataDir` are roots DorkOS resolves and writes under with no
@@ -80,6 +83,21 @@
  *   rather than folded into this one: neither is an unchecked write today.
  * - **Consent about what leaves the machine.** All of `telemetry.*`, which is
  *   consent-gated by design.
+ * - **Whether a person is asked at all.** `approvals.*`, the four
+ *   `defaultTrustStop` leaves, and `ui.autonomyAcknowledgedAt`: the switches that
+ *   decide whether an approval card ever appears, and the record of the consent
+ *   behind them.
+ *
+ * ### The one group that is not security-shaped
+ *
+ * `rooms.*`'s automatic-turn bounds and all of `welcomeBack.*` are refused for a
+ * different reason, stated at each entry below: they bound how often agents speak
+ * unbidden and how much of the operator's model budget that spends. Removing one
+ * does not widen a security control; it widens an agent's own initiative on
+ * somebody else's bill. They belong on the list, but they must never be
+ * DESCRIBED as security controls — `describeOperatorOnlyRefusal` carries a
+ * separate sentence for them, because a refusal that overstates what a setting
+ * does is a lie a model then repeats (DOR-1044).
  *
  * ### Considered and deliberately left writable
  *
@@ -443,6 +461,161 @@ export const OPERATOR_ONLY_CONFIG_PATHS: readonly string[] = Object.entries(CONF
 /** The `error` field every operator-only refusal carries. */
 export const OPERATOR_ONLY_CONFIG_ERROR = 'Only a person can change those settings';
 
+/**
+ * What is actually at stake in an operator-only setting.
+ *
+ * Not every setting on this list is security-shaped. Most are, but a room's
+ * reply ceiling and the welcome-back cap are not: they bound how much your
+ * agents speak and spend on their own, which is a different promise entirely.
+ * Telling a model that a greeting cap "decides who can reach this instance"
+ * teaches it something false about the product, so the stake is carried per
+ * path and the refusal quotes the right one (DOR-1044).
+ *
+ * - `reach` — who can reach this instance, and how far it reaches on this machine.
+ * - `credentials` — which sign-in and which keys the work runs on.
+ * - `code` — which code this server runs, and which outside tools it attaches to.
+ * - `disclosure` — what leaves this machine.
+ * - `approvals` — whether a person is asked before something happens.
+ * - `initiative` — when agents speak on their own, and what that spends.
+ */
+export type OperatorOnlyStake =
+  | 'reach'
+  | 'credentials'
+  | 'code'
+  | 'disclosure'
+  | 'approvals'
+  | 'initiative';
+
+/** One stake, the sentence an agent reads for it, and the paths it covers. */
+interface OperatorOnlyStakeGroup {
+  /** The stake these paths share. */
+  readonly stake: OperatorOnlyStake;
+  /**
+   * The clause the refusal quotes, written for a model and true of every path
+   * below it. No trailing punctuation: the refusal appends `: <paths>.`
+   */
+  readonly description: string;
+  /** The operator-only dot-paths this stake is true of. */
+  readonly paths: readonly string[];
+}
+
+/**
+ * Every operator-only path, filed under the stake that is TRUE of it.
+ *
+ * The drift guard in `__tests__/config-write-policy.test.ts` asserts this covers
+ * {@link OPERATOR_ONLY_CONFIG_PATHS} exactly and names nothing twice, so a newly
+ * refused setting cannot inherit a description that does not fit it. Order here
+ * is the order the refusal lists stakes in.
+ */
+export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
+  {
+    stake: 'reach',
+    description: 'Who can reach this instance, and how far it reaches on this machine',
+    paths: [
+      'auth.enabled',
+      'tunnel.enabled',
+      'tunnel.domain',
+      'tunnel.authtoken',
+      'tunnel.auth',
+      'mcp.enabled',
+      'mcp.apiKey',
+      'mcp.rateLimit.enabled',
+      'mcp.rateLimit.maxPerWindow',
+      'mcp.rateLimit.windowSecs',
+      'server.boundary',
+      'workspace.rootPath',
+      'relay.dataDir',
+      'agents.defaultDirectory',
+      'mesh.scanRoots',
+    ],
+  },
+  {
+    stake: 'credentials',
+    description: 'Which account and keys the work runs on, and who pays for it',
+    paths: [
+      'providers',
+      'cloud.instanceToken',
+      'cloud.instanceName',
+      'cloud.linkedAccountLabel',
+      'runtimes.codex.credentialRef',
+      'runtimes.opencode.provider',
+      'runtimes.opencode.baseURL',
+      'runtimes.claudeCode.activeAccount',
+      'runtimes.claudeCode.accounts[].path',
+      'runtimes.claudeCode.accounts[].label',
+    ],
+  },
+  {
+    stake: 'code',
+    // Covers both halves honestly: extension code and spawned binaries run
+    // INSIDE this machine, while a raw-MCP server is an endpoint DorkOS reaches
+    // out to and hands a session as a tool. Neither lets anybody IN, which is
+    // why none of them belong under `reach`.
+    description: 'Which code this server runs, and which outside tools it attaches to',
+    paths: [
+      'extensions.enabled',
+      'extensions.disabled',
+      'extensions.approvedToRun',
+      'harness.approvedHooks',
+      'runtimes.opencode.binaryPath',
+      'runtimes.codex.binaryPath',
+      'connectors.rawMcpServers[].slug',
+      'connectors.rawMcpServers[].displayName',
+      'connectors.rawMcpServers[].url',
+      'connectors.rawMcpServers[].transport',
+    ],
+  },
+  {
+    stake: 'disclosure',
+    description: 'What leaves this machine',
+    paths: [
+      'telemetry.userHasDecided',
+      'telemetry.install',
+      'telemetry.heartbeat',
+      'telemetry.errorReporting',
+      'telemetry.lastPromptedVersion',
+      'telemetry.usage',
+      'telemetry.linkAnalyticsToAccount',
+      'telemetry.aiMetadata',
+    ],
+  },
+  {
+    stake: 'approvals',
+    description: 'Whether the person is asked before work happens on their behalf',
+    paths: [
+      'approvals.standingGrants',
+      'approvals.trustWindowMinutes',
+      'approvals.standingGrantsVoidBefore',
+      'runtimes.defaultTrustStop',
+      'runtimes.claudeCode.defaultTrustStop',
+      'runtimes.codex.defaultTrustStop',
+      'runtimes.opencode.defaultTrustStop',
+      'ui.autonomyAcknowledgedAt',
+    ],
+  },
+  {
+    stake: 'initiative',
+    description: 'When your agents speak on their own, and how much that spends',
+    paths: [
+      'rooms.maxAgentDepth',
+      'rooms.maxAutomaticTurnsPerRoomPerHour',
+      'rooms.maxAutomaticTurnsTotalPerHour',
+      'rooms.engagedWindowMinutes',
+      'rooms.engagedWindowPosts',
+      'welcomeBack.enabled',
+      'welcomeBack.absenceThresholdMinutes',
+      'welcomeBack.maxPosts',
+    ],
+  },
+];
+
+/**
+ * The clause for a refused path with no stake on file. Deliberately says only
+ * what is certainly true, so an unclassified path can never be described as
+ * something it is not. The drift guard keeps this out of normal use.
+ */
+const OPERATOR_ONLY_FALLBACK_DESCRIPTION = 'Settings the person keeps for themselves';
+
 /** The machine-readable code every operator-only refusal carries. */
 export const OPERATOR_ONLY_CONFIG_CODE = 'operator_only_config';
 
@@ -581,16 +754,34 @@ export function findLoginRequiredPaths(patch: unknown): string[] {
  * one plain sentence, and tells it what to do instead, because this text lands in
  * a model's context and a model that is only told "no" will try again.
  *
+ * The "why" is per stake, not one blanket claim: the paths are grouped by
+ * {@link OPERATOR_ONLY_STAKES} and each group gets the sentence that is true of
+ * it. A refusal that overstates what a setting does is a lie the model then
+ * carries into the rest of the conversation (DOR-1044).
+ *
  * @param paths - The offending policy paths, from {@link findOperatorOnlyPaths}.
  * @returns One paragraph written for the model.
  */
 export function describeOperatorOnlyRefusal(paths: readonly string[]): string {
-  return (
-    `DorkOS changed nothing. These settings decide who can reach this instance, what it can ` +
-    `reach, where its credentials go, and what leaves the machine, so they are the person's to ` +
-    `choose, not yours: ${paths.join(', ')}. Ask the person to change it themselves in DorkOS ` +
-    `Settings. ` +
-    `If your patch also had ordinary settings in it, send those again on their own and they will ` +
-    `go through.`
-  );
+  const remaining = new Set(paths);
+  const clauses: string[] = [];
+
+  for (const group of OPERATOR_ONLY_STAKES) {
+    const matched = paths.filter((path) => group.paths.includes(path));
+    if (matched.length === 0) continue;
+    for (const path of matched) remaining.delete(path);
+    clauses.push(`${group.description}: ${matched.join(', ')}.`);
+  }
+
+  if (remaining.size > 0) {
+    clauses.push(`${OPERATOR_ONLY_FALLBACK_DESCRIPTION}: ${[...remaining].join(', ')}.`);
+  }
+
+  return [
+    'DorkOS changed nothing.',
+    "These settings are the person's to choose, not yours.",
+    ...clauses,
+    'Ask the person to change them in DorkOS Settings.',
+    'If your patch also had ordinary settings in it, send those again on their own and they will go through.',
+  ].join(' ');
 }
