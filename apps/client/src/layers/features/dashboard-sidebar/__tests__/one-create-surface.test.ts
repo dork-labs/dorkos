@@ -6,7 +6,7 @@
  * checked against the source rather than against a rendered tree: a `+` wired
  * to its own handler in a component nobody thought to test still fails here.
  *
- * Three claims, and each is written so it can fail:
+ * Four claims, and each is written so it can fail:
  *
  * 1. **Vocabulary.** Every `new-*` action id anywhere in the feature is one of
  *    {@link NEW_MENU_ITEM_IDS}. A section that invents `new-thread` reddens.
@@ -14,8 +14,16 @@
  *    direct-message picker, the agent-creation store, the smart-group rule form
  *    in `create` mode — are referenced by exactly ONE module, `NewMenu.tsx`.
  *    Putting `ChannelCreateDialog` back into `useSectionChrome` reddens.
- * 3. **The version number** (BC-44) is rendered by exactly one module,
- *    `SidebarHeaderBlock`'s menu builder.
+ * 3. **The version number** (BC-44). The scan for it deliberately covers the
+ *    WHOLE sidebar — this feature plus the footer strip beside it — because the
+ *    one place BC-44 is still violated sits outside this feature, and a scan
+ *    that could not reach it would state a satisfied contract that is not
+ *    satisfied. It is listed with the task that owes its removal instead.
+ * 4. **The close-focus guard** (DOR-329). The two menus here that render their
+ *    own `DropdownMenuContent` — rather than going through `SidebarMenuSurface`,
+ *    which arms it for them — arm it themselves. Forgetting is invisible: the
+ *    inline group-name field mounts and is blurred away a commit later, with
+ *    nothing logged. The browser suite found it; this catches it in 3ms.
  *
  * Every claim is paired with its positive half — the file it names is scanned,
  * exists, and really does contain what it is supposed to. A guard whose regexes
@@ -29,6 +37,19 @@ import { describe, it, expect } from 'vitest';
 import { NEW_MENU_ITEM_IDS } from '../model/create-flow-store';
 
 const FEATURE_DIR = join(__dirname, '..');
+
+/**
+ * The whole sidebar as an operator sees it: this feature, plus the footer strip
+ * `AppShell` mounts under it.
+ *
+ * BC-44's claim is about the panel, not about one directory. Scanning only the
+ * directory this task happens to own would have made the claim unfalsifiable,
+ * because the one place BC-44 is still violated lives in the other one.
+ */
+const SIDEBAR_DIRS: [label: string, dir: string][] = [
+  ['dashboard-sidebar', FEATURE_DIR],
+  ['session-list', join(__dirname, '..', '..', 'session-list')],
+];
 
 /** Every source file in the feature, tests excluded — relative to the feature root. */
 function sourceFiles(dir = FEATURE_DIR, prefix = ''): string[] {
@@ -46,9 +67,24 @@ function sourceFiles(dir = FEATURE_DIR, prefix = ''): string[] {
 const FILES = sourceFiles();
 const SOURCE = new Map(FILES.map((f) => [f, readFileSync(join(FEATURE_DIR, f), 'utf8')]));
 
-/** Which files mention a pattern. */
+/** Every sidebar source file, labelled by the feature it belongs to. */
+const SIDEBAR_SOURCE = new Map(
+  SIDEBAR_DIRS.flatMap(([label, dir]) =>
+    sourceFiles(dir).map((f) => [`${label}/${f}`, readFileSync(join(dir, f), 'utf8')] as const)
+  )
+);
+
+/** Which files in THIS feature mention a pattern. */
 function filesMatching(pattern: RegExp): string[] {
   return [...SOURCE]
+    .filter(([, text]) => pattern.test(text))
+    .map(([file]) => file)
+    .sort();
+}
+
+/** Which files across the WHOLE sidebar mention a pattern. */
+function sidebarFilesMatching(pattern: RegExp): string[] {
+  return [...SIDEBAR_SOURCE]
     .filter(([, text]) => pattern.test(text))
     .map(([file]) => file)
     .sort();
@@ -57,7 +93,10 @@ function filesMatching(pattern: RegExp): string[] {
 describe('the scan itself', () => {
   it('reads the feature, and reads the files these claims are about', () => {
     // Without this, every "no file does X" below is true of an empty scan.
-    expect(FILES.length).toBeGreaterThan(20);
+    // A real floor, not a token one: the feature has 57 source files, so a
+    // scan that lost half of them would still have cleared a threshold of 20.
+    expect(FILES.length).toBeGreaterThanOrEqual(50);
+    expect(SIDEBAR_SOURCE.size).toBeGreaterThan(FILES.length);
     for (const file of [
       'ui/NewMenu.tsx',
       'ui/SidebarHeaderBlock.tsx',
@@ -158,10 +197,76 @@ describe('AC-7 — one create surface', () => {
   });
 });
 
-describe('BC-44 — the version number leaves the chrome', () => {
-  const VERSION_RENDER = /v\$\{|v\{version|`v\$\{model\.version\}/;
+describe('DOR-329 — a menu that opens something does not blur it on the way out', () => {
+  /**
+   * Every menu in this feature that renders `SidebarMenuNodes` into its own
+   * `DropdownMenuContent` rather than through `SidebarMenuSurface`.
+   *
+   * `SidebarMenuSurface` arms the close-focus guard for its callers. These two
+   * do not go through it, so each has to arm it itself — and the cost of
+   * forgetting is invisible in a unit test and silent in review: Radix's
+   * focus restore lands a commit after the item runs and blurs whatever it
+   * opened, so the inline group-name field appeared and vanished with nothing
+   * logged. The browser suite is what caught it; this is the cheap guard that
+   * would have caught it first.
+   */
+  const OWN_MENU_CONTENT = ['ui/NewMenu.tsx', 'ui/SidebarHeaderBlock.tsx'];
 
-  it('renders a version string in the header block’s menu, and in no other module', () => {
+  it.each(OWN_MENU_CONTENT)('arms the close-focus guard in %s', (file) => {
+    const text = SOURCE.get(file) ?? '';
+    // Observable first: this file really does render its own menu content.
+    expect(text).toMatch(/<DropdownMenuContent/);
+    expect(text).toMatch(/useGuardedMenuNodes/);
+    expect(text).toMatch(/onCloseAutoFocus=\{guarded\.onCloseAutoFocus\}/);
+    // …and renders the GUARDED list, not the raw one.
+    expect(text).toMatch(/nodes=\{guarded\.nodes\}/);
+  });
+
+  it('finds no unguarded menu content anywhere else in the feature', () => {
+    const withOwnContent = filesMatching(/<DropdownMenuContent/);
+    // If a third menu appears, it lands here and has to be added above — with
+    // the guard, or with a reason it does not need one.
+    expect(withOwnContent).toEqual([...OWN_MENU_CONTENT].sort());
+  });
+});
+
+describe('BC-44 — the version number leaves the chrome', () => {
+  const VERSION_RENDER = /v\$\{model\.version\}|v\{version\}/;
+
+  /**
+   * Every module in the sidebar still allowed to draw a version number.
+   *
+   * **This list is one entry too long, and says so.** BC-44 puts the version in
+   * the header block's menu and in DorkBot's seeded context, and nowhere else.
+   * `SidebarFooterBar` still draws it because P2.4's disjoint-file guarantee
+   * forbids touching the footer — P2.5 owns retiring that strip, and the
+   * version row goes with it. Until then a reader genuinely sees the number
+   * twice, and an assertion scoped so it could not notice would be the more
+   * expensive lie.
+   *
+   * Written as an exact list rather than a "not more than" so P2.5 cannot
+   * silently leave the entry behind: deleting the row without deleting the line
+   * below fails this test.
+   */
+  const ALLOWED = [
+    'dashboard-sidebar/ui/header-block-menu.ts',
+    // OWED BY P2.5 (BC-47): goes with the footer strip.
+    'session-list/ui/SidebarFooterBar.tsx',
+  ];
+
+  it('scans both halves of the sidebar — the claim is about the panel, not a directory', () => {
+    // Without this, the exact list below could pass on a scan that never
+    // reached the footer at all.
+    const scanned = [...SIDEBAR_SOURCE.keys()];
+    expect(scanned).toContain('session-list/ui/SidebarFooterBar.tsx');
+    expect(scanned).toContain('dashboard-sidebar/ui/header-block-menu.ts');
+  });
+
+  it('draws a version number only where it is still allowed to', () => {
+    expect(sidebarFilesMatching(VERSION_RENDER)).toEqual([...ALLOWED].sort());
+  });
+
+  it('keeps this feature’s own half of the promise — one module, the header menu', () => {
     expect(filesMatching(VERSION_RENDER)).toEqual(['ui/header-block-menu.ts']);
   });
 });

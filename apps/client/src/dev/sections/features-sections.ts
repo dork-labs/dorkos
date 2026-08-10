@@ -215,6 +215,13 @@ export const FEATURES_SECTIONS: PlaygroundSection[] = [
     ],
   },
   {
+    id: 'sidebarsearchpill',
+    title: 'SidebarSearchPill',
+    page: 'features',
+    category: 'Agent',
+    keywords: ['sidebar', 'search', 'palette', 'jump', 'command', 'kbd', 'pill'],
+  },
+  {
     id: 'groupcreateinput',
     title: 'GroupCreateInput',
     page: 'features',

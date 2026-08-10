@@ -1,17 +1,32 @@
 /**
  * The sidebar's persistent chrome: the header block and the one New menu.
  *
+ * **The real components, not a lookalike.** An earlier draft of this file
+ * hand-copied `SidebarHeaderBlock`'s markup so it could be fed fabricated menu
+ * rows, and had already drifted — a `<span>` where the product has a `<button>`,
+ * and no focus ring at all. A showcase that draws its own copy cannot catch a
+ * regression in the thing it is named after, which is the entire job. The
+ * Playground supplies a query client, a transport and a memory router
+ * (`DevPlayground`), so these mount exactly as they do in the cockpit.
+ *
+ * The one thing that still cannot be driven from outside is the header menu's
+ * LENGTH — BC-43's "communities make the menu longer and nothing outside it
+ * moves". That is shown beside the live block as the menu's own node list at
+ * three rows and at six, rendered through the same `SidebarMenuNodes` the block
+ * uses. `SidebarHeaderBlock.test.tsx` is what asserts the block's box does not
+ * change between them.
+ *
  * @module dev/showcases/SidebarChromeShowcases
  */
-import { ChevronDown, Plus, Search, Users } from 'lucide-react';
+import { Users } from 'lucide-react';
+import { SidebarMenuNodes, type SidebarMenuNode } from '@/layers/shared/ui';
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuTrigger,
-  Kbd,
-  SidebarMenuNodes,
-} from '@/layers/shared/ui';
-import { buildHeaderBlockMenuNodes, buildNewMenuNodes } from '@/layers/features/dashboard-sidebar';
+  buildHeaderBlockMenuNodes,
+  buildNewMenuNodes,
+  NewMenu,
+  SidebarHeaderBlock,
+  SidebarSearchPill,
+} from '@/layers/features/dashboard-sidebar';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
 import { ShowcaseDemo } from '../ShowcaseDemo';
@@ -22,20 +37,15 @@ export function SidebarChromeShowcases() {
     <>
       <SidebarHeaderBlockShowcase />
       <NewMenuShowcase />
+      <SidebarSearchPillShowcase />
     </>
   );
 }
 
-/**
- * The header block's chrome, drawn from its own builders.
- *
- * The live components read a roster, a transport and a router, none of which
- * the playground has — so what is shown here is the real markup fed by the real
- * pure builders (`buildHeaderBlockMenuNodes`, `buildNewMenuNodes`) through the
- * real menu renderer. What you cannot see here is only the wiring.
- */
+const noop = () => {};
+
+/** The header block, live, plus the growth case its menu is built for. */
 function SidebarHeaderBlockShowcase() {
-  const noop = () => {};
   const short = buildHeaderBlockMenuNodes({
     onOpenSettings: noop,
     onOpenAccount: noop,
@@ -43,94 +53,57 @@ function SidebarHeaderBlockShowcase() {
     isDevMode: false,
     onCheckForUpdates: noop,
   });
-  // What "communities shipped" looks like: the same menu, longer. Nothing
-  // outside it moves (BC-43).
-  const long = [
+  const community = (id: string, label: string): SidebarMenuNode => ({
+    kind: 'action',
+    id,
+    label,
+    icon: Users,
+    opensInput: false,
+    run: noop,
+  });
+  // What "communities shipped" looks like from inside the menu: three more
+  // rows, in the same list, above the version line.
+  const long: SidebarMenuNode[] = [
     ...short.slice(0, 2),
-    { kind: 'separator' as const, id: 'sep-communities' },
-    {
-      kind: 'action' as const,
-      id: 'community-acme',
-      label: 'Acme Robotics',
-      icon: Users,
-      opensInput: false,
-      run: noop,
-    },
-    {
-      kind: 'action' as const,
-      id: 'community-side',
-      label: 'Side project',
-      icon: Users,
-      opensInput: false,
-      run: noop,
-    },
+    { kind: 'separator', id: 'sep-communities' },
+    community('community-acme', 'Acme Robotics'),
+    community('community-side', 'Side project'),
     ...short.slice(2),
   ];
 
   return (
     <PlaygroundSection
       title="SidebarHeaderBlock"
-      description="The panel's identity, named after the operator, and a button from day one. Its menu holds Workspace settings, Account and a quiet version line — the version number's only home in the chrome. When communities ship they arrive as more rows in this same menu: the menu gets longer, and nothing outside it moves."
+      description="The panel's identity, named after the operator, and a button from day one — press it for Workspace settings, Account and a quiet version line. The New button and the ⌘K pill are its neighbours. This is the real component wired to this install, so the name it shows is whatever your own profile says (or 'Your team' until you have set one)."
     >
-      <ShowcaseLabel>Today — three rows</ShowcaseLabel>
+      <ShowcaseLabel>Live — the block, the New button, the ⌘K pill</ShowcaseLabel>
       <ShowcaseDemo>
-        <div className="bg-sidebar w-64 rounded-lg p-2">
-          <HeaderBlockChrome nodes={short} />
+        <div className="bg-sidebar w-64 rounded-lg">
+          <SidebarHeaderBlock />
         </div>
       </ShowcaseDemo>
 
-      <ShowcaseLabel>With communities — six rows, same block</ShowcaseLabel>
+      <ShowcaseLabel>Its menu today — three rows</ShowcaseLabel>
       <ShowcaseDemo>
-        <div className="bg-sidebar w-64 rounded-lg p-2">
-          <HeaderBlockChrome nodes={long} />
+        <div className="bg-popover w-56 rounded-md border p-1">
+          <SidebarMenuNodes variant="dropdown" nodes={short} />
+        </div>
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>
+        …and once communities ship — six rows, and the block does not move
+      </ShowcaseLabel>
+      <ShowcaseDemo>
+        <div className="bg-popover w-56 rounded-md border p-1">
+          <SidebarMenuNodes variant="dropdown" nodes={long} />
         </div>
       </ShowcaseDemo>
     </PlaygroundSection>
   );
 }
 
-/** The block, its menu, the New button and the ⌘K pill — markup only. */
-function HeaderBlockChrome({
-  nodes,
-}: {
-  nodes: React.ComponentProps<typeof SidebarMenuNodes>['nodes'];
-}) {
-  return (
-    <div className="flex flex-col gap-2">
-      <div className="flex items-center gap-1">
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <button
-              type="button"
-              className="text-sidebar-foreground hover:bg-sidebar-accent/70 flex min-w-0 flex-1 items-center gap-1.5 rounded-md px-2 py-1 text-left text-[13px] font-semibold"
-            >
-              <span className="truncate">Dorian&rsquo;s team</span>
-              <ChevronDown className="size-3.5 shrink-0 opacity-50" aria-hidden />
-            </button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="w-56">
-            <SidebarMenuNodes variant="dropdown" nodes={nodes} />
-          </DropdownMenuContent>
-        </DropdownMenu>
-        <span className="bg-sidebar-accent text-sidebar-accent-foreground flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-[12px] font-medium">
-          <Plus className="size-3.5" />
-          New
-        </span>
-      </div>
-      <span className="bg-sidebar-accent/40 text-sidebar-foreground/60 flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-[13px]">
-        <Search className="size-(--size-icon-sm) shrink-0" />
-        <span className="truncate">Jump to anything…</span>
-        <Kbd className="bg-sidebar-accent text-sidebar-foreground/70 ml-auto shrink-0 border-transparent">
-          ⌘K
-        </Kbd>
-      </span>
-    </div>
-  );
-}
-
-/** The one create surface, at both fleet sizes. */
+/** The one create surface — live, plus the item list at both fleet sizes. */
 function NewMenuShowcase() {
-  const noop = () => {};
   const base = {
     onNewSession: noop,
     onNewChannel: noop,
@@ -159,8 +132,15 @@ function NewMenuShowcase() {
   return (
     <PlaygroundSection
       title="NewMenu"
-      description="The sidebar's only create surface. A section's hover + does not run a handler of its own — it opens this menu on the matching item. Agent group appears once you are running eight agents or two runtimes, and ⌘N is advertised only in the desktop app, where the key is not already the browser's."
+      description="The sidebar's only create surface. A section's hover + runs no handler of its own — it opens this menu on the matching item. Agent group appears once you are running eight agents or two runtimes, and ⌘N is advertised only in the desktop app, where the key is not already the browser's. The live button below opens the real menu for this install; the two lists under it are the same builder at both fleet sizes."
     >
+      <ShowcaseLabel>Live — press it</ShowcaseLabel>
+      <ShowcaseDemo>
+        <div className="bg-sidebar flex w-64 justify-end rounded-lg p-2">
+          <NewMenu />
+        </div>
+      </ShowcaseDemo>
+
       <ShowcaseLabel>Small cockpit, in a browser</ShowcaseLabel>
       <ShowcaseDemo>
         <div className="bg-popover w-56 rounded-md border p-1">
@@ -172,6 +152,23 @@ function NewMenuShowcase() {
       <ShowcaseDemo>
         <div className="bg-popover w-56 rounded-md border p-1">
           <SidebarMenuNodes variant="dropdown" nodes={large} />
+        </div>
+      </ShowcaseDemo>
+    </PlaygroundSection>
+  );
+}
+
+/** The ⌘K pill on its own, so its tint and its chord are readable in isolation. */
+function SidebarSearchPillShowcase() {
+  return (
+    <PlaygroundSection
+      title="SidebarSearchPill"
+      description="Opens the same command palette ⌘K opens — the flag it flips is the one the chord flips, so there is no second search to drift. It rides the --sidebar-accent ramp rather than --muted, which sits lighter than the panel in light mode and darker in dark mode and so would flip the separation between themes."
+    >
+      <ShowcaseLabel>Live</ShowcaseLabel>
+      <ShowcaseDemo>
+        <div className="bg-sidebar w-64 rounded-lg p-2">
+          <SidebarSearchPill />
         </div>
       </ShowcaseDemo>
     </PlaygroundSection>

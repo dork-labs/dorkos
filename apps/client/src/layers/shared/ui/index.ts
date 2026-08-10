@@ -347,7 +347,7 @@ export {
 } from './tour-spotlight';
 
 // ── The sidebar's two shared primitives, and the menu-as-data they both render ──
-export { SidebarMenuNodes, SidebarMenuSurface } from './sidebar-menu-node';
+export { SidebarMenuNodes, SidebarMenuSurface, useGuardedMenuNodes } from './sidebar-menu-node';
 export type {
   SidebarMenuActionNode,
   SidebarMenuChoice,

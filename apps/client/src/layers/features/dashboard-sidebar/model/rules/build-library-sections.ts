@@ -35,16 +35,21 @@ export const GROUP_AFFORDANCE_MIN_AGENTS = 8;
 /**
  * Whether the Agents section offers grouping at all (BC-32).
  *
- * Exported because it gates real chrome — the "New group" item in the Agents
- * header menu and the smart-group presets behind its `+` — and the decision is
- * a rule, so it belongs here rather than in JSX.
+ * Exported because it gates real chrome — the New menu's "Agent group" item
+ * and the smart-group presets inside it (`ui/NewMenu.tsx`) — and the decision
+ * is a rule, so it belongs here rather than in JSX.
+ *
+ * **It is the only gate.** `smart-group-presets.ts` used to carry a second one
+ * under the name `meetsSmartGroupDisclosureThreshold`, with its own pair of
+ * constants holding the same two numbers. Once P2.4 put grouping and its
+ * presets behind the one "Agent group" item, two names for one predicate was
+ * just two places to disagree, so the copy is gone.
  *
  * **It takes the fleet rather than the snapshot**, because that is all it
- * reads, and because its one caller in the running application is a component
- * that has the roster and not a `SidebarState` (`useSectionChrome`). A rule
- * that demanded the whole snapshot would have been unreachable from the only
- * place it matters, which is how it spent P2.1 exported, unit-tested and called
- * by nothing.
+ * reads, and because its caller is a component that has the roster and not a
+ * `SidebarState`. A rule that demanded the whole snapshot would have been
+ * unreachable from the only place it matters — which is how it spent P2.1
+ * exported, unit-tested and called by nothing, before P2.4 wired it up.
  *
  * @param agents - The fleet, or anything carrying each agent's runtime.
  */

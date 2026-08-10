@@ -28,6 +28,7 @@ import {
   DropdownMenuTrigger,
   SidebarHeader,
   SidebarMenuNodes,
+  useGuardedMenuNodes,
 } from '@/layers/shared/ui';
 import { useTeamRoster } from '@/layers/entities/team';
 import { isNewer } from '@/layers/features/status';
@@ -99,6 +100,10 @@ export function SidebarHeaderBlock() {
     onCheckForUpdates: () => void handleCheckForUpdates(),
   });
 
+  // Workspace settings and Account both open a dialog, so both need the
+  // close-focus guard for the reason DOR-329 records.
+  const guarded = useGuardedMenuNodes(nodes);
+
   return (
     // No hairline under the header. Separation in this panel is tint and a
     // scroll-edge shadow, never a border: a 1px line reads as a seam between
@@ -125,8 +130,12 @@ export function SidebarHeaderBlock() {
           {/* Portalled by the primitive, which is what makes BC-43's promise
               structural: however long this list grows, it renders outside the
               header block's own box and cannot move anything in it. */}
-          <DropdownMenuContent align="start" className="w-56">
-            <SidebarMenuNodes variant="dropdown" nodes={nodes} />
+          <DropdownMenuContent
+            align="start"
+            className="w-56"
+            onCloseAutoFocus={guarded.onCloseAutoFocus}
+          >
+            <SidebarMenuNodes variant="dropdown" nodes={guarded.nodes} />
           </DropdownMenuContent>
         </DropdownMenu>
         <NewMenu />

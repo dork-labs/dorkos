@@ -40,5 +40,9 @@ export {
 // header block's menu at three rows and at six, and the New menu at both fleet
 // sizes, without standing up a roster and a router behind them.
 export { buildHeaderBlockMenuNodes } from './ui/header-block-menu';
-export { buildNewMenuNodes } from './ui/NewMenu';
+export { buildNewMenuNodes, NewMenu } from './ui/NewMenu';
+// The two halves of the header block, exported so the Dev Playground shows the
+// REAL controls rather than a copy of their markup. A showcase that draws a
+// lookalike cannot catch a regression in the thing it is named after.
+export { SidebarSearchPill } from './ui/SidebarSearchPill';
 export { useAgentRowMenuNodes } from './ui/AgentRowMenuItems';

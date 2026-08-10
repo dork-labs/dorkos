@@ -29,6 +29,7 @@ import {
   DropdownMenuContent,
   DropdownMenuTrigger,
   SidebarMenuNodes,
+  useGuardedMenuNodes,
   type SidebarMenuNode,
 } from '@/layers/shared/ui';
 import type { AgentPickerCandidate } from '@/layers/entities/agent';
@@ -315,6 +316,13 @@ export function NewMenu() {
     showSessionShortcut: isDesktopShell(),
   });
 
+  // Every item here that opens a dialog, a picker or the inline group editor
+  // needs the close-focus guard: Radix's focus restore lands after the item has
+  // run and would blur what it just opened (DOR-329). The browser suite caught
+  // this — "Agent group ▸ Empty group" mounted the name field and lost it to
+  // the restore one commit later, with nothing logged.
+  const guarded = useGuardedMenuNodes(nodes);
+
   const contentRef = useRef<HTMLDivElement>(null);
 
   // The deep link, landed. A section's `+` asked for this menu ON an item, so
@@ -343,8 +351,13 @@ export function NewMenu() {
             New
           </button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent ref={contentRef} align="end" className="w-56">
-          <SidebarMenuNodes variant="dropdown" nodes={nodes} />
+        <DropdownMenuContent
+          ref={contentRef}
+          align="end"
+          className="w-56"
+          onCloseAutoFocus={guarded.onCloseAutoFocus}
+        >
+          <SidebarMenuNodes variant="dropdown" nodes={guarded.nodes} />
         </DropdownMenuContent>
       </DropdownMenu>
 

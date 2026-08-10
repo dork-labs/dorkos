@@ -14,7 +14,7 @@
  *
  * @module shared/ui/sidebar-menu-node
  */
-import type { ElementType, ReactNode } from 'react';
+import { useMemo, type ElementType, type ReactNode } from 'react';
 import { MoreVertical, type LucideIcon } from 'lucide-react';
 import { cn } from '@/layers/shared/lib';
 import { SIDEBAR_ACTIONS_ATTRIBUTE, useMenuCloseFocusGuard } from '@/layers/shared/model';
@@ -360,13 +360,7 @@ export function SidebarMenuSurface({
   hideActionsTrigger = false,
   alwaysShowActions = false,
 }: SidebarMenuSurfaceProps) {
-  const { arm, onCloseAutoFocus } = useMenuCloseFocusGuard();
-
-  // Deliberately not memoized. Every caller builds its `nodes` inline from a
-  // builder, so the array is a new identity on every render and a `useMemo`
-  // keyed on it would never hit. The map is over a handful of items and its
-  // output feeds no memoized child.
-  const guarded = armOpensInput(nodes, arm);
+  const { nodes: guarded, onCloseAutoFocus } = useGuardedMenuNodes(nodes);
 
   if (nodes.length === 0) {
     return <Root className={cn('relative', className)}>{children}</Root>;
@@ -420,8 +414,40 @@ export function SidebarMenuSurface({
 }
 
 /**
+ * A node list with its close-focus guard armed, and the handler that spends it.
+ *
+ * **Every menu built from these nodes needs this, not just the row/section
+ * surface.** Radix closes a menu one commit AFTER the chosen item runs, and its
+ * close-time focus restore lands later still — so an item that `opensInput`
+ * mounts an editor and then has that editor blurred out from under it. The
+ * inline group-name field cancels on blur, so the symptom is a field that
+ * appears and vanishes with nothing logged (DOR-329).
+ *
+ * `SidebarMenuSurface` used to be the only caller and armed it inline. The
+ * header block's menu and the New menu render {@link SidebarMenuNodes} into
+ * their own `DropdownMenuContent`, and both carry `opensInput` items — so the
+ * guard moved out here rather than being a third hand-rolled copy. The browser
+ * suite is what found the New menu missing it.
+ *
+ * @param nodes - The list as its builder produced it.
+ * @returns The guarded list, and the `onCloseAutoFocus` its menu content needs.
+ */
+export function useGuardedMenuNodes(nodes: SidebarMenuNode[]): {
+  nodes: SidebarMenuNode[];
+  onCloseAutoFocus: (event: Event) => void;
+} {
+  const { arm, onCloseAutoFocus } = useMenuCloseFocusGuard();
+  // Keyed on the array identity, which every builder makes fresh each render —
+  // so this is a re-walk, not a cache hit. It is a handful of items and feeds
+  // no memoized child; the memo is here only to keep the returned object stable
+  // within one render pass.
+  const guarded = useMemo(() => armOpensInput(nodes, arm), [nodes, arm]);
+  return { nodes: guarded, onCloseAutoFocus };
+}
+
+/**
  * Wrap every `opensInput` action so choosing it arms the close-focus guard,
- * recursing into submenus — "New group…" lives one level down and needs the
+ * recursing into submenus — "Empty group…" lives one level down and needs the
  * guard as much as "Rename…" does at the top.
  *
  * @param nodes - The list as its builder produced it.
