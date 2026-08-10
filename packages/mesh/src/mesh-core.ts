@@ -42,7 +42,7 @@ import { ContinueStrategy } from './strategies/continue-strategy.js';
 import { reconcile } from './reconciler.js';
 import type { ReconcileResult, ReconcilerDeps } from './reconciler.js';
 import * as discovery from './mesh-discovery.js';
-import type { DiscoveryDeps } from './mesh-discovery.js';
+import type { AdoptedAgent, DiscoveryDeps } from './mesh-discovery.js';
 import * as agentMgmt from './mesh-agent-management.js';
 import type { AgentManagementDeps } from './mesh-agent-management.js';
 import * as denial from './mesh-denial.js';
@@ -105,6 +105,7 @@ export class MeshCore {
   private readonly onUnregisterCallbacks: Array<(agentId: string, projectPath: string) => void> =
     [];
   private readonly onLivenessChangeCallbacks: Array<(result: ReconcileResult) => void> = [];
+  private readonly onAgentAdoptedCallbacks: Array<(agent: AdoptedAgent) => void> = [];
 
   /**
    * Create the Mesh coordination core.
@@ -153,6 +154,17 @@ export class MeshCore {
       defaultScanRoot,
       logger,
       generateUlid: monotonicFactory(),
+      // Per-callback try/catch, so one broken reaction never costs the others
+      // theirs — the same shape `onLivenessChange` fans out with.
+      onAgentAdopted: (agent) => {
+        for (const callback of this.onAgentAdoptedCallbacks) {
+          try {
+            callback(agent);
+          } catch (err) {
+            this.logger.warn('[Mesh] onAgentAdopted callback threw', { err, agentId: agent.id });
+          }
+        }
+      },
     };
     this.agentDeps = {
       registry,
@@ -261,6 +273,28 @@ export class MeshCore {
    */
   onLivenessChange(callback: (result: ReconcileResult) => void): void {
     this.onLivenessChangeCallbacks.push(callback);
+  }
+
+  /**
+   * Register a callback fired when a discovery scan adopts an agent this
+   * machine had never registered before. The DorkOS server wires this to its
+   * agent-created seam, so an agent that first appears through a scan takes its
+   * #team seat straight away instead of at the next boot (DOR-1042).
+   *
+   * **Adoption only, never re-observation.** The scanner re-yields every
+   * manifest-bearing directory it walks past, and the reconciler scans every
+   * five minutes; callbacks fire on the pass that first registers the id and on
+   * no pass after it. A relocation, a refused duplicate, an explicit
+   * `registerByPath`, and a `syncFromDisk` all stay silent — the last two
+   * because their callers announce the agent themselves.
+   *
+   * Callbacks are synchronous and their throws are logged and swallowed: a
+   * reaction must never abort the scan it rode in on.
+   *
+   * @param callback - Invoked with the newly adopted agent.
+   */
+  onAgentAdopted(callback: (agent: AdoptedAgent) => void): void {
+    this.onAgentAdoptedCallbacks.push(callback);
   }
 
   // --- Query ---

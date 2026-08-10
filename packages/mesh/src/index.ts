@@ -16,6 +16,9 @@ export type { DiscoveryStrategy } from './types.js';
 export { unifiedScan } from './discovery/unified-scanner.js';
 export type { RegistryLike, DenialListLike } from './discovery/unified-scanner.js';
 export type { ScanEvent, ScanProgress, UnifiedScanOptions } from './discovery/types.js';
+// What `MeshCore.onAgentAdopted` hands its callbacks — the server's agent-created
+// seam takes exactly this shape (DOR-1042).
+export type { AdoptedAgent } from './mesh-discovery.js';
 export { UNIFIED_EXCLUDE_PATTERNS } from './discovery/types.js';
 
 // Strategies

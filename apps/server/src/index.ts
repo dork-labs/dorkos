@@ -99,7 +99,7 @@ import {
 } from './services/relay/initiate-consent.js';
 import { makeChatNoticeTargetResolver } from './services/relay/binding-subsystem.js';
 import { TraceStore } from './services/relay/trace-store.js';
-import { MeshCore } from '@dorkos/mesh';
+import { MeshCore, type AdoptedAgent } from '@dorkos/mesh';
 import { createMeshRouter } from './routes/mesh.js';
 import { setMeshInitError } from './services/mesh/mesh-state.js';
 import { ensureDorkBot } from './services/mesh/ensure-dorkbot.js';
@@ -140,7 +140,11 @@ import {
 } from './services/shapes/apply-shape.js';
 import { ShapeScheduleService } from './services/shapes/shape-schedule-service.js';
 import { rebindShapeSchedulesForAgent } from './services/shapes/rebind-schedules.js';
-import { setOnAgentCreated, type CreatedAgentInfo } from './services/core/agent-created-hook.js';
+import {
+  setOnAgentCreated,
+  notifyAgentCreated,
+  type CreatedAgentInfo,
+} from './services/core/agent-created-hook.js';
 import {
   clearActiveShape,
   createFsShapeManifestResolver,
@@ -2122,6 +2126,20 @@ async function start() {
       metadata: { schedules: rebound },
     });
   });
+
+  // The fourth way an agent arrives: a discovery scan walks past a
+  // `.dork/agent.json` this machine had never registered, and adopts it. That
+  // agent used to sit outside the team room until the next boot's backfill
+  // picked it up (DOR-1042). Mesh fires this ONLY on the pass that first
+  // registers an id — never on the five-minute reconciler's re-scan of an agent
+  // it already knows, never on a relocation, and never on a refused duplicate —
+  // so the seat is taken once and stays taken. Fire-and-forget: the scan is a
+  // background walk with nobody waiting on a response, and `notifyAgentCreated`
+  // swallows its own failures, so the promise cannot reject.
+  // The annotation is the contract: an `AdoptedAgent` is exactly a
+  // `CreatedAgentInfo`, and the day one of them grows a field the other lacks,
+  // this line is what goes red instead of silently dropping it.
+  meshCore?.onAgentAdopted((agent: AdoptedAgent) => void notifyAgentCreated(agent));
 
   // Managed-MCP OAuth loopback callback (DOR-942) — the `redirect_uri` the
   // operator's browser lands on after authorizing a server. Mounted BEFORE the

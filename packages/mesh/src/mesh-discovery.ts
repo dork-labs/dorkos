@@ -81,6 +81,21 @@ export class DuplicateManifestReport {
   }
 }
 
+/**
+ * An agent a scan adopted for the first time — the identity a reaction needs to
+ * seat it. Mirrors what the DorkOS server's agent-created seam expects.
+ */
+export interface AdoptedAgent {
+  /** The agent's id (manifest `id`). */
+  id: string;
+  /** The agent's slug (manifest `name`). */
+  name: string;
+  /** The agent's display name, when set. */
+  displayName?: string;
+  /** The directory the manifest was found in — the rooms domain keys on it. */
+  path: string;
+}
+
 /** Dependencies required by discovery and registration functions. */
 export interface DiscoveryDeps {
   registry: AgentRegistry;
@@ -90,6 +105,11 @@ export interface DiscoveryDeps {
   defaultScanRoot: string;
   logger: import('@dorkos/shared/logger').Logger;
   generateUlid: ReturnType<typeof monotonicFactory>;
+  /**
+   * Called once for each agent a scan adopts that this machine had never
+   * registered before. Optional — absent outside a wired-up {@link MeshCore}.
+   */
+  onAgentAdopted?: (agent: AdoptedAgent) => void;
 }
 
 /**
@@ -98,6 +118,13 @@ export interface DiscoveryDeps {
  * Yields all `ScanEvent` types: `candidate`, `auto-import`, `progress`, and `complete`.
  * Auto-import events are upserted into the registry automatically before being yielded.
  * Already-registered and denied paths are skipped automatically.
+ *
+ * Adoption — an agent this machine had never registered before — also fires
+ * `deps.onAgentAdopted`, which is how a scanned-in agent takes its #team seat
+ * without waiting for the next boot (DOR-1042). It fires HERE and not inside
+ * {@link upsertAutoImported}, because `syncFromDisk` shares that pipeline and
+ * its callers (the agent-creator, `POST /api/agents`) already announce the
+ * agent themselves — firing in both places would seat every created agent twice.
  *
  * @param roots - Root directories to scan
  * @param deps - Discovery dependencies (registry, denialList, strategies, etc.)
@@ -126,7 +153,18 @@ export async function* discover(
           // actual root this manifest was found under — not defaultScanRoot,
           // which in production falls back to the homedir and would poison
           // later reconciler walks with a whole-home root.
-          await upsertAutoImported(event.data.manifest, event.data.path, deps, root, duplicates);
+          //
+          // Read "did we already know this id?" BEFORE the upsert. The scanner
+          // re-yields every manifest-bearing directory it walks past, whether
+          // registered or not, and the reconciler runs a scan every five
+          // minutes — so the outcome alone cannot tell an adoption from a
+          // re-observation, and only this read can.
+          const { manifest, path: agentPath } = event.data;
+          const alreadyKnown = deps.registry.get(manifest.id) !== undefined;
+          const outcome = await upsertAutoImported(manifest, agentPath, deps, root, duplicates);
+          if (!alreadyKnown && outcome === 'registered') {
+            announceAdoption(manifest, agentPath, deps);
+          }
         }
         yield event;
       }
@@ -136,6 +174,36 @@ export async function* discover(
     // client disconnecting calls the generator's `return()` — and the refusals
     // it already collected are exactly as real as a completed scan's.
     duplicates.flush(logger);
+  }
+}
+
+/**
+ * Tell the host that a scan adopted an agent it had never registered before.
+ *
+ * Failures are swallowed: a reaction that throws must never abort the scan it
+ * rode in on, and the agents around it are already registered by the time it
+ * runs.
+ *
+ * @param manifest - The adopted agent's manifest.
+ * @param projectPath - The directory the manifest was found in.
+ * @param deps - Discovery dependencies (the callback and the logger).
+ */
+function announceAdoption(manifest: AgentManifest, projectPath: string, deps: DiscoveryDeps): void {
+  if (!deps.onAgentAdopted) return;
+  try {
+    deps.onAgentAdopted({
+      id: manifest.id,
+      name: manifest.name,
+      displayName: manifest.displayName,
+      path: projectPath,
+    });
+  } catch (err) {
+    deps.logger.warn('[mesh] an agent-adopted callback threw', {
+      event: 'mesh.identity.adoption_callback_failed',
+      agentId: manifest.id,
+      projectPath,
+      err,
+    });
   }
 }
 

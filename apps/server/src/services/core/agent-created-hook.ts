@@ -5,14 +5,28 @@
  * `create_agent` tool (internal + external server), and the marketplace
  * agent-package install flow all funnel through here.
  *
- * TWO CALL SITES NOTIFY IT, and between them they cover every creation path:
+ * FOUR CALL SITES NOTIFY IT, and between them they cover every way an agent
+ * arrives on this machine:
  *
  * - `services/core/agent-creator.ts` (`createAgentWorkspace`) — the full
  *   pipeline, which `POST /api/agents/create`, the MCP `create_agent` tool and
  *   the marketplace agent install all funnel through;
  * - `routes/agents.ts` (`POST /api/agents`) — the register path, which writes
  *   the manifest itself rather than going through `createAgentWorkspace`, and
- *   so must notify directly.
+ *   so must notify directly;
+ * - `routes/mesh.ts` (`POST /api/mesh/agents`) and the `mesh_register` MCP tool
+ *   — mesh registration by path, which goes through `MeshCore.registerByPath`
+ *   and so also bypasses `createAgentWorkspace` (DOR-1042);
+ * - `index.ts`, wired to `MeshCore.onAgentAdopted` — a discovery scan walking
+ *   past a `.dork/agent.json` this machine had never registered. Mesh fires
+ *   that callback only on the pass that first registers an id, so the
+ *   five-minute reconciler's re-scan of a known agent notifies nothing
+ *   (DOR-1042).
+ *
+ * `MeshCore.syncFromDisk` deliberately does NOT notify, even though it shares
+ * the auto-import pipeline with the scan: its callers are the first two sites
+ * above, which write the manifest, sync it, and then announce the agent
+ * themselves. Notifying there too would seat every created agent twice.
  *
  * WHY MODULE-LEVEL, NOT INJECTED: `createAgentWorkspace` is a free function
  * with several independent callers. Threading a reaction-flavoured callback

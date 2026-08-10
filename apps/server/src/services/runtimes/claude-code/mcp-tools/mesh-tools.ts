@@ -7,6 +7,7 @@ import {
   validateBoundaryOrDorkHome,
   BoundaryError,
 } from '../../../../lib/boundary.js';
+import { notifyAgentCreated } from '../../../core/agent-created-hook.js';
 import type { McpToolDeps } from './types.js';
 import { jsonContent, structuredJsonContent } from './types.js';
 
@@ -140,6 +141,18 @@ export function createMeshRegisterHandler(deps: McpToolDeps) {
         },
         'mcp-tool'
       );
+
+      // The agent-created seam, for the same reason the HTTP mesh register
+      // route notifies it: `registerByPath` bypasses `createAgentWorkspace`, so
+      // without this an agent registered by another agent only took its #team
+      // seat at the next server boot (DOR-1042). Never throws.
+      await notifyAgentCreated({
+        id: agent.id,
+        name: agent.name,
+        displayName: agent.displayName,
+        path: resolvedPath,
+      });
+
       return jsonContent({ agent });
     } catch (e) {
       const message = e instanceof Error ? e.message : 'Registration failed';
