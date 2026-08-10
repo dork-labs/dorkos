@@ -227,6 +227,10 @@ export const SAFE_DEFAULTS: Readonly<Record<string, unknown>> = {
   // tightening it means RAISING it (`direction: 'higher'`).
   'welcomeBack.absenceThresholdMinutes': 240,
   'welcomeBack.maxPosts': 3,
+  // Next-step offers ship OFF, and off is the safe value in the strongest sense
+  // this table has: it is the only leaf of the block that spends a model turn,
+  // so the default answers "no" to a cost the person has not agreed to.
+  'welcomeBack.offersEnabled': false,
   // Upload size and count caps are real limits at their defaults.
   'uploads.maxFileSize': 10485760,
   'uploads.maxFiles': 10,

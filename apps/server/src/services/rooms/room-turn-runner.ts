@@ -214,7 +214,12 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
       // rides `additionalContext` (ADR-0273). This used to be prose wrapped
       // around the message, which put words nobody typed inside the visible user
       // turn and told the agent almost nothing.
-      const prompt = request.entry.body.text;
+      //
+      // Read off the REQUEST rather than off the entry: for every trigger the
+      // dispatcher makes they are the same string, and the one caller where they
+      // differ is the welcome-back offer, which asks about an entry rather than
+      // repeating it (see {@link RoomTurnRequest.prompt}).
+      const prompt = request.prompt;
 
       // Before the turn, never after: the context about to be handed to the
       // model names these files by relative path, so they have to be inside the

@@ -1632,7 +1632,13 @@ export function backfillRoomsDefaults(store: {
  * top-level defaults SHALLOWLY, so a `welcomeBack` block already on disk — from
  * an unreleased build, or from a later key being added to it — never inherits a
  * new nested field on its own. Filling here is what stops a return running with
- * no post cap at all.
+ * no post cap at all — and, since DOR-1046, with no answer at all to whether a
+ * greeting may spend a model turn on a next-step offer.
+ *
+ * `offersEnabled` seeds `false`, which is the only safe direction: it is the one
+ * leaf in this block that costs money, so an upgrade must never be the thing
+ * that turns it on. It is filled the same way as its siblings, so somebody who
+ * turned offers ON keeps them.
  *
  * Nothing depends on this having run: every leaf carries a Zod default, so an
  * install that skips the migration (a dev tree resolves `SERVER_VERSION` to
@@ -1649,6 +1655,7 @@ export function backfillWelcomeBackDefaults(store: {
     enabled: true,
     absenceThresholdMinutes: 240,
     maxPosts: 3,
+    offersEnabled: false,
   };
   const stored = store.get('welcomeBack');
   if (stored == null || typeof stored !== 'object') {
@@ -2416,7 +2423,12 @@ export const CONFIG_MIGRATIONS = {
   }) => {
     // The `welcomeBack` section (what agents may say when you come back after
     // being away; spec `team-room-home`, D5.2). Seeds the shipped defaults, so
-    // an upgraded install gets the same caps a fresh one does.
+    // an upgraded install gets the same caps a fresh one does — including
+    // `offersEnabled: false` (DOR-1046), which is folded into this key rather
+    // than given one of its own for the reason the sidebar body below states:
+    // it ships in this same still-unreleased window (`v0.58.0` is the newest
+    // tag), so a key above it would be one more version boundary for a leaf
+    // whose whole job is to seed OFF.
     backfillWelcomeBackDefaults(store);
     // `ui.composer` (whether the message box shows formatting as you type,
     // DOR-948). Added-with-defaults, so this is a no-op anchor in the same sense

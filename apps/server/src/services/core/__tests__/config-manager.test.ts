@@ -1854,6 +1854,7 @@ describe('backfillWelcomeBackDefaults migration (team-room-home D5.2)', () => {
       enabled: true,
       absenceThresholdMinutes: 240,
       maxPosts: 3,
+      offersEnabled: false,
     });
   });
 
@@ -1865,6 +1866,7 @@ describe('backfillWelcomeBackDefaults migration (team-room-home D5.2)', () => {
       enabled: true,
       absenceThresholdMinutes: 240,
       maxPosts: 3,
+      offersEnabled: false,
     });
   });
 
@@ -1878,6 +1880,7 @@ describe('backfillWelcomeBackDefaults migration (team-room-home D5.2)', () => {
       enabled: false,
       absenceThresholdMinutes: 720,
       maxPosts: 1,
+      offersEnabled: false,
     });
   });
 
@@ -1891,6 +1894,7 @@ describe('backfillWelcomeBackDefaults migration (team-room-home D5.2)', () => {
       enabled: false,
       absenceThresholdMinutes: 240,
       maxPosts: 3,
+      offersEnabled: false,
     });
   });
 
@@ -1901,19 +1905,38 @@ describe('backfillWelcomeBackDefaults migration (team-room-home D5.2)', () => {
       enabled: true,
       absenceThresholdMinutes: 240,
       maxPosts: 0,
+      offersEnabled: false,
+    });
+  });
+
+  it('never turns off an offers opt-in somebody paid for', () => {
+    // The one leaf here that costs money. Somebody who turned offers ON said
+    // yes to a model turn per greeting agent; an upgrade that quietly seeded
+    // `false` over it would take that back without asking, and the person would
+    // notice only by the offers no longer arriving.
+    const store = createMockStore({ welcomeBack: { offersEnabled: true } });
+    backfillWelcomeBackDefaults(store);
+    backfillWelcomeBackDefaults(store);
+    expect(store.data.welcomeBack).toEqual({
+      enabled: true,
+      absenceThresholdMinutes: 240,
+      maxPosts: 3,
+      offersEnabled: true,
     });
   });
 
   it('fills only the missing keys of a block written by an earlier build', () => {
     // conf merges top-level defaults SHALLOWLY, so a `welcomeBack` block already
     // on disk never gains a new nested key on its own. Without this, an install
-    // upgraded mid-feature would run returns with no post cap at all.
+    // upgraded mid-feature would run returns with no post cap at all — and, since
+    // DOR-1046, with no answer at all to whether offers may spend a turn.
     const store = createMockStore({ welcomeBack: { enabled: true } });
     backfillWelcomeBackDefaults(store);
     expect(store.data.welcomeBack).toEqual({
       enabled: true,
       absenceThresholdMinutes: 240,
       maxPosts: 3,
+      offersEnabled: false,
     });
   });
 });
@@ -1960,6 +1983,7 @@ describe('welcomeBack on a config written before it existed (real conf + Ajv)', 
       enabled: true,
       absenceThresholdMinutes: 240,
       maxPosts: 3,
+      offersEnabled: false,
     });
     expect(manager.validate()).toEqual({ valid: true });
   });
@@ -1983,6 +2007,7 @@ describe('welcomeBack on a config written before it existed (real conf + Ajv)', 
       enabled: true,
       absenceThresholdMinutes: 240,
       maxPosts: 3,
+      offersEnabled: false,
     });
     expect(new ConfigManager(dir).validate()).toEqual({ valid: true });
   });

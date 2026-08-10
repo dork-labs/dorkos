@@ -271,10 +271,11 @@ router.get('/', async (_req, res) => {
         engagedWindowPosts: rooms.engagedWindowPosts,
       };
     })(),
-    // Whether agents may greet you when you come back, and the two numbers that
-    // bound it. Settings offers the switch; the numbers ride along READ-ONLY for
-    // the same reason the `rooms` ceilings do — the switch's own sentence names
-    // the threshold in force, and stating the shipped default at somebody who
+    // Whether agents may greet you when you come back, whether a greeting may
+    // spend a turn on a next-step offer, and the two numbers that bound both.
+    // Settings offers the two switches; the numbers ride along READ-ONLY for the
+    // same reason the `rooms` ceilings do — the switch's own sentence names the
+    // threshold in force, and stating the shipped default at somebody who
     // changed it would be a sentence that is false about their install.
     welcomeBack: (() => {
       const welcomeBack = configManager.get('welcomeBack') ?? USER_CONFIG_DEFAULTS.welcomeBack;
@@ -282,6 +283,7 @@ router.get('/', async (_req, res) => {
         enabled: welcomeBack.enabled,
         absenceThresholdMinutes: welcomeBack.absenceThresholdMinutes,
         maxPosts: welcomeBack.maxPosts,
+        offersEnabled: welcomeBack.offersEnabled,
       };
     })(),
     workbench: configManager.get('workbench') ?? { defaultViewers: {} },

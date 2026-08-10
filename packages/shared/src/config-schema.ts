@@ -1114,11 +1114,25 @@ export const UserConfigSchema = z.object({
        * deciding who had news.
        */
       maxPosts: z.number().int().min(0).max(10).default(3),
+      /**
+       * Whether a greeting may also carry a next-step offer — and with it, the
+       * one model turn per agent that finding out costs.
+       *
+       * **Off by default, and that is the whole point of it being separate.**
+       * Everything else in this block is derived from session state and costs
+       * nothing, so leaving it on is free. An offer is not: the only honest way
+       * to learn whether an agent has a next step worth your decision is to ask
+       * it, which runs it for a turn. Turning this on says yes to that spend,
+       * for at most the same agents `maxPosts` already let speak — never for
+       * every agent, and never for one with no news.
+       */
+      offersEnabled: z.boolean().default(false),
     })
     .default(() => ({
       enabled: true,
       absenceThresholdMinutes: 240,
       maxPosts: 3,
+      offersEnabled: false,
     })),
   onboarding: OnboardingStateSchema.default(() => ({
     completedSteps: [],

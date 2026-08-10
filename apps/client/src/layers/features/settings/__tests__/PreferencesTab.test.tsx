@@ -38,6 +38,7 @@ interface WelcomeBack {
   enabled: boolean;
   absenceThresholdMinutes: number;
   maxPosts: number;
+  offersEnabled: boolean;
 }
 
 function setup(welcomeBack: WelcomeBack | undefined) {
@@ -79,7 +80,14 @@ function setup(welcomeBack: WelcomeBack | undefined) {
   return { transport, Wrapper };
 }
 
-const DEFAULTS: WelcomeBack = { enabled: true, absenceThresholdMinutes: 240, maxPosts: 3 };
+const DEFAULTS: WelcomeBack = {
+  enabled: true,
+  absenceThresholdMinutes: 240,
+  maxPosts: 3,
+  // Offers ship OFF: they are the one part of a greeting that spends a model
+  // turn, so the shipped posture says no to a cost nobody agreed to (DOR-1046).
+  offersEnabled: false,
+};
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -125,6 +133,41 @@ describe('PreferencesTab — welcome-back switch', () => {
     await screen.findByLabelText('Welcome-back notes');
     expect(screen.getByText(/12 hours/)).toBeInTheDocument();
     expect(screen.queryByText(/4 hours/)).not.toBeInTheDocument();
+  });
+
+  it('shows the offers switch off, and says what turning it on costs', async () => {
+    const { Wrapper } = setup(DEFAULTS);
+    render(<PreferencesTab />, { wrapper: Wrapper });
+
+    const toggle = await screen.findByLabelText('Next-step offers');
+    expect(toggle).toHaveAttribute('data-state', 'unchecked');
+    // The cost is stated on the switch itself, not buried in docs: this is the
+    // one preference on the tab that spends money when it is on.
+    expect(screen.getByText(/runs that agent for a turn/)).toBeInTheDocument();
+  });
+
+  it('writes welcomeBack.offersEnabled and nothing else when switched on', async () => {
+    const user = userEvent.setup();
+    const { transport, Wrapper } = setup(DEFAULTS);
+    render(<PreferencesTab />, { wrapper: Wrapper });
+
+    await user.click(await screen.findByLabelText('Next-step offers'));
+
+    await waitFor(() => {
+      expect(transport.updateConfig).toHaveBeenCalledWith({
+        welcomeBack: { offersEnabled: true },
+      });
+    });
+  });
+
+  it('does not offer the offers switch when the notes themselves are off', async () => {
+    // Nothing greets you, so there is nothing for an offer to ride on. A switch
+    // that cannot do anything is a switch that should not be there.
+    const { Wrapper } = setup({ ...DEFAULTS, enabled: false });
+    render(<PreferencesTab />, { wrapper: Wrapper });
+
+    await screen.findByLabelText('Welcome-back notes');
+    expect(screen.queryByLabelText('Next-step offers')).not.toBeInTheDocument();
   });
 
   it('offers no switch on a server that does not report the setting', async () => {

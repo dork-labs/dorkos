@@ -67,6 +67,11 @@ export interface RecordedTurn {
   authorId: string;
   agentPath: string;
   sessionId: string | null;
+  /**
+   * The words the turn was asked with. Equal to the triggering entry's text for
+   * every ordinary trigger, and the whole point of the recording for the one
+   * caller where it is not: the welcome-back offer (DOR-1046).
+   */
   prompt: string;
   /** What the agent was told about the room — derived by the real dispatcher. */
   roomContext: RoomContextData;
@@ -144,7 +149,7 @@ export function outcomeRunner(
         authorId: request.authorId,
         agentPath: request.agentPath,
         sessionId: request.sessionId,
-        prompt: request.entry.body.text,
+        prompt: request.prompt,
         roomContext: request.roomContext,
         attachmentProjection: request.attachmentProjection,
       });
@@ -237,6 +242,10 @@ export interface RoomHarness {
  *   literal, and high enough by default that it never silently masks a cascade
  *   test — a budget refusal and a guard refusal look alike from the outside.
  * @param opts.maxAutomaticTurnsTotalPerHour - The install-wide spend cap.
+ * @param opts.budgetNow - The budget's own clock, so a test can roll the hourly
+ *   window without sleeping for an hour. Only the BUDGET reads it; everything
+ *   else in the room still runs on the wall clock, which is what a test about
+ *   spending across a window boundary wants.
  * @param opts.engagedWindow - The two engaged-window ceilings. A literal for the
  *   same reason as the ceiling above, and shipped-default-shaped so a test that
  *   does not care about the window still gets the behaviour a person would.
@@ -258,6 +267,7 @@ export function createRoomHarness(opts: {
   engagedWindow?: EngagedWindow;
   maxAttachmentsPerEntry?: number;
   ownerUserId?: string;
+  budgetNow?: () => number;
 }): RoomHarness {
   const db = createTestDb();
   const agentLookup = typeof opts.agents === 'function' ? opts.agents(db) : opts.agents;
@@ -285,7 +295,10 @@ export function createRoomHarness(opts: {
     bridges,
     agents: agentLookup,
     turns: runner,
-    budget: new RoomTurnBudget({ limits: { perRoom: () => perRoom, global: () => global } }),
+    budget: new RoomTurnBudget({
+      limits: { perRoom: () => perRoom, global: () => global },
+      ...(opts.budgetNow && { now: opts.budgetNow }),
+    }),
     maxAgentDepth: () => maxAgentDepth,
     engagedWindow: () => engagedWindow,
     maxAttachmentsPerEntry: () => maxAttachmentsPerEntry,

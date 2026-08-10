@@ -106,6 +106,7 @@ describe('CONFIG_WRITE_POLICY drift guard', () => {
       'welcomeBack.absenceThresholdMinutes',
       'welcomeBack.enabled',
       'welcomeBack.maxPosts',
+      'welcomeBack.offersEnabled',
       'workspace.rootPath',
     ]);
   });

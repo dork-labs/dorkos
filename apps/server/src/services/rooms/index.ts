@@ -303,10 +303,14 @@ export function createRoomSubsystem(opts: {
     }),
     // The ordinary guarded path, deliberately — a welcome-back line is a post
     // like any other, so membership, the cascade stamp and the turn budget
-    // bind it without this module restating any of them.
-    post: (roomId, input) => {
-      service.post(roomId, input);
-    },
+    // bind it without this module restating any of them. The entry id comes
+    // back because an offer turn is framed around the line it follows.
+    post: (roomId, input) => service.post(roomId, input).id,
+    // The one thing here that can spend a model turn, and only when
+    // `welcomeBack.offersEnabled` says it may. It goes through the room's own
+    // turn machinery, so the session binding, both busy ceilings and the
+    // automatic-turn budget bind an offer exactly as they bind a reply.
+    offers: { ask: (input) => service.askAside(input) },
     lastSeenAt: (userId) => lastPersonSignalAt(opts.db, userId),
   });
   return { service, store, attachments, authors, broadcaster, bridges, readCursors, welcomeBack };

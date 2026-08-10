@@ -194,6 +194,7 @@ function request(
     agentPath: '/repo/ana',
     sessionId: null,
     entry,
+    prompt: entry.body.text,
     roomContext: {
       room: { id: room.id, kind: 'channel', name: '#backend', bridged: false },
       thread: null,
