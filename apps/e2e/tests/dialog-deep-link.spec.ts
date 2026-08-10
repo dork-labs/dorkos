@@ -1,4 +1,5 @@
 import { test, expect } from '../fixtures';
+import { openFromCommandPalette } from '../pages/command-palette';
 
 test.describe('Settings — URL Deep Links @smoke', () => {
   test('navigating to ?settings=tools opens Settings to Tools tab', async ({ page }) => {
@@ -32,13 +33,10 @@ test.describe('Settings — URL Deep Links @smoke', () => {
     await page.goto('/');
     // Wait for app shell so the global keyboard handler is mounted.
     await page.waitForSelector('[data-testid="app-shell"]');
-    // Use the in-DOM trigger button rather than a synthetic keypress so the
-    // test is robust across platforms (Meta vs Control).
-    await page.getByRole('button', { name: 'Open command palette' }).click();
-    await page
-      .getByRole('option', { name: /^Settings$/ })
-      .first()
-      .click();
+    // The shared opener presses the in-DOM trigger rather than a synthetic
+    // keypress, so the test is robust across platforms (Meta vs Control), and
+    // types the name — Settings is not a row until someone does.
+    await openFromCommandPalette(page, 'Settings');
     await page.waitForSelector('[data-testid="settings-dialog"]');
     // Palette callsite was migrated in task 2.7 — clicking the Settings entry
     // should now drive the URL via useSettingsDeepLink().open(), producing
