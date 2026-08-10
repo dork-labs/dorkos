@@ -93,7 +93,7 @@ Each action DorkOS does cover carries a size label on its card, so you can tell 
 
 ## Settings your agents cannot change
 
-Most settings are preferences, and an agent can change one on your word. A few are not preferences. They decide who can reach this DorkOS, what it can reach on your computer, where your keys go, and what leaves the machine:
+Most settings are preferences, and an agent can change one on your word. A few are not preferences. Most of them protect this DorkOS: they decide who can reach it, what it can reach on your computer, where your keys go, what leaves the machine, and whether you get asked before an agent acts:
 
 - Whether **Require login** is on
 - Your public web address, and the ngrok account it runs through
@@ -101,8 +101,14 @@ Most settings are preferences, and an agent can change one on your word. A few a
 - Your provider credentials, and the addresses they get sent to
 - The DorkOS account this instance is linked to
 - The folder DorkOS is allowed to touch, and the programs it is allowed to start
-- Which extensions may run their code inside DorkOS
+- Which extensions may run their code inside DorkOS, and which outside tool servers your agents may attach to
 - Your privacy choices
+- Whether you get asked before an agent does something, and how long a yes lasts
+
+The two below are about something else. They are not protecting anything; they decide how often your agents speak without being asked, and every one of those turns costs you model usage. They are yours to set for that reason:
+
+- How far agents may keep replying to each other in a room, how many turns an hour that may take, and how long an agent stays in the conversation after you talk to it
+- Whether agents greet you when you come back, after how long away, and how many may speak
 
 Agents are refused all of those, both from the tools they get inside DorkOS and from the settings screen itself. There is no card for them, because saying yes to one is not a decision anyone should be asked to make in the middle of somebody else's task, and there is no job that needs an agent to make it. An agent that tries gets a plain refusal telling it to ask you instead, and you change the setting yourself in Settings. Three of these settings can still be reached by another route, which the second note below explains.
 
