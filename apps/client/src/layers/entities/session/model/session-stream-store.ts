@@ -24,7 +24,12 @@ import { useCallback } from 'react';
 import { create, type Mutate, type StoreApi, type UseBoundStore } from 'zustand';
 import { devtools } from 'zustand/middleware';
 import { immer } from 'zustand/middleware/immer';
-import type { ConnectionState, HistoryMessage, PendingInteractionDTO } from '@dorkos/shared/types';
+import type {
+  BackgroundTaskStatus,
+  ConnectionState,
+  HistoryMessage,
+  PendingInteractionDTO,
+} from '@dorkos/shared/types';
 import type {
   SessionEvent,
   SessionStatus,
@@ -670,11 +675,14 @@ function syncRunningSubagentCount(session: SessionStreamState): void {
  * @param session - The session projection to mutate.
  * @param taskId - The child's runtime-assigned id.
  * @param status - Its reported lifecycle; only `running` is still in flight.
+ *   Written as a negative check on the whole enum rather than a list of terminal
+ *   values, so a status added later (`untracked`, DOR-1108) drains the count
+ *   instead of silently pinning it.
  */
 function applyRunningSubagent(
   session: SessionStreamState,
   taskId: string,
-  status: 'running' | 'complete' | 'error' | 'stopped'
+  status: BackgroundTaskStatus
 ): void {
   const known = session.runningSubagentIds.includes(taskId);
   if (status === 'running') {

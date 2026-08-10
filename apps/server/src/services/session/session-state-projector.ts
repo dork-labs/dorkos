@@ -961,13 +961,17 @@ export class SessionStateProjector {
       // `subagent_update` (the cockpit does) would go on reporting them, or
       // resurrect them from a replay, while the server said zero. The two
       // projections have to drain through the same events or they disagree.
+      //
+      // `untracked`, for the same reason the sweep uses it (DOR-1108): this path
+      // is DorkOS tearing a session down, which says nothing whatever about
+      // whether the work it handed off is still running.
       for (const taskId of this.listRunningSubagents()) {
-        const stopped: RawSessionEvent = {
+        const untracked: RawSessionEvent = {
           type: 'subagent_update',
           taskId,
-          status: 'stopped',
+          status: 'untracked',
         } as RawSessionEvent;
-        this.ingest(stopped);
+        this.ingest(untracked);
       }
       this.inProgressTurn = null;
       this.ring.markTurnEnded();

@@ -756,7 +756,8 @@
           "running",
           "complete",
           "error",
-          "stopped"
+          "stopped",
+          "untracked"
         ]
       },
       "ThinkingPart": {

@@ -1,12 +1,12 @@
 import { useMemo, useRef, useState, useEffect } from 'react';
-import type { BackgroundTaskPart } from '@dorkos/shared/types';
+import type { BackgroundTaskPart, BackgroundTaskStatus } from '@dorkos/shared/types';
 import type { ChatMessage } from './chat-types';
 
 /** A background task with a stable color assignment, ready for display. */
 export interface VisibleBackgroundTask {
   taskId: string;
   taskType: 'agent' | 'bash';
-  status: 'running' | 'complete' | 'error' | 'stopped';
+  status: BackgroundTaskStatus;
   color: string;
   startedAt: number;
   // Agent-specific
@@ -93,8 +93,10 @@ export function useBackgroundTasks(messages: ChatMessage[]): VisibleBackgroundTa
   // up-to-date before the useMemo below reads it during the same render.
   for (const [taskId, part] of taskMap) {
     const prevStatus = prevStatusRef.current.get(taskId);
-    const isTerminal =
-      part.status === 'complete' || part.status === 'error' || part.status === 'stopped';
+    // A negative check on purpose: `running` is the only status still in flight,
+    // so enumerating the terminal ones would silently stop celebrating the day a
+    // new one lands (`untracked` did exactly that, DOR-1108).
+    const isTerminal = part.status !== 'running';
     const justCompleted = prevStatus === 'running' && isTerminal;
 
     if (justCompleted && !celebratingRef.current.has(taskId)) {

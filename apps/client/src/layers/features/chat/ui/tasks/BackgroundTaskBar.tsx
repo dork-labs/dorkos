@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { ChevronDown } from 'lucide-react';
+import type { BackgroundTaskStatus } from '@dorkos/shared/types';
 import { cn } from '@/layers/shared/lib';
 import type { VisibleBackgroundTask } from '../../model/use-background-tasks';
 import { AgentRunner } from './AgentRunner';
@@ -16,6 +17,13 @@ interface BackgroundTaskBarProps {
 
 /** Maximum agent runner figures before the overflow badge appears. */
 const MAX_VISIBLE_AGENTS = 4;
+
+/** Collapse a background task's five statuses onto the three AgentRunner draws. */
+function toRunnerStatus(status: BackgroundTaskStatus): 'running' | 'complete' | 'error' {
+  if (status === 'running') return 'running';
+  if (status === 'error') return 'error';
+  return 'complete';
+}
 
 const barTransitionEase = [0.16, 1, 0.3, 1] as const;
 
@@ -158,13 +166,13 @@ function AgentRunnerSection({
               agent={{
                 taskId: task.taskId,
                 description: task.description ?? '',
-                // AgentRunner only knows 'running' | 'complete' | 'error' — map 'stopped' to 'error'
-                status:
-                  task.status === 'running'
-                    ? 'running'
-                    : task.status === 'complete'
-                      ? 'complete'
-                      : 'error',
+                // AgentRunner knows three states and the task has five, so two
+                // of them share. `error` is the only one that may draw as a
+                // failure: `stopped` and `untracked` are endings, not failures —
+                // and `untracked` in particular means DorkOS lost sight of the
+                // task, which is not evidence that anything went wrong
+                // (DOR-1108).
+                status: toRunnerStatus(task.status),
                 color: task.color,
                 toolUses: task.toolUses,
                 lastToolName: task.lastToolName,

@@ -154,6 +154,30 @@ describe('SubagentBlock', () => {
     expect(block.getAttribute('data-status')).toBe('error');
   });
 
+  // DOR-1108: a task DorkOS lost sight of must not be drawn as a failure. The
+  // red ✗ is `error`'s alone; everything else that ended takes the neutral tick.
+  it('does not draw an untracked task as a failure', () => {
+    render(<SubagentBlock part={{ ...basePart, status: 'untracked' }} />);
+    const block = screen.getByTestId('subagent-block');
+    expect(block.getAttribute('data-status')).toBe('untracked');
+    // `toolStatus` colors the glyph; the error variant is the only red one.
+    expect(block.querySelector('.text-status-error')).toBeNull();
+    expect(block.querySelector('.text-status-success')).not.toBeNull();
+  });
+
+  // …and it says so, rather than leaving a card that reads as finished. This is
+  // the only ending that needs a sentence, so it makes itself expandable.
+  it('explains an untracked task instead of claiming it stopped', () => {
+    render(<SubagentBlock part={{ ...basePart, status: 'untracked' }} />);
+    const button = screen.getByRole('button');
+    expect(button.getAttribute('aria-expanded')).toBe('false');
+    fireEvent.click(button);
+    const note = screen.getByTestId('subagent-untracked');
+    expect(note.textContent).toContain('lost track');
+    expect(note.textContent).toContain('may still be running');
+    expect(note.textContent).not.toContain('stopped');
+  });
+
   it('becomes expandable when forwarded subagent text is present', () => {
     render(<SubagentBlock part={{ ...basePart, subagentText: 'Exploring the module' }} />);
     const button = screen.getByRole('button');

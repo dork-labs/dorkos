@@ -1122,8 +1122,26 @@ export type RelayMessageEvent = z.infer<typeof RelayMessageEventSchema>;
 export const BackgroundTaskTypeSchema = z.enum(['agent', 'bash']).openapi('BackgroundTaskType');
 export type BackgroundTaskType = z.infer<typeof BackgroundTaskTypeSchema>;
 
+/**
+ * How a background child ended, or that it has not.
+ *
+ * Four of the five are what the RUNTIME reported: still `running`, finished
+ * `complete`, failed with an `error`, or `stopped` because something stopped it.
+ *
+ * `untracked` is the fifth and the only one DorkOS says on its own behalf, and
+ * it means something weaker than all of them: **DorkOS can no longer see this
+ * child, and does not know whether it is still running** (DOR-1108). It is what
+ * the agent's process ending leaves behind — a subagent inside that process is
+ * indeed gone, but a child the agent DETACHED (a dev server it started in the
+ * background, say) carries on perfectly well, and from the outside the two look
+ * identical. Reporting either as `stopped` would state a fact nobody checked.
+ *
+ * Consumers treat it like any other terminal status — it leaves the running
+ * count, it retires the row — but must never word it as "stopped" or draw it as
+ * a failure. Nothing failed; DorkOS simply lost sight of it.
+ */
 export const BackgroundTaskStatusSchema = z
-  .enum(['running', 'complete', 'error', 'stopped'])
+  .enum(['running', 'complete', 'error', 'stopped', 'untracked'])
   .openapi('BackgroundTaskStatus');
 export type BackgroundTaskStatus = z.infer<typeof BackgroundTaskStatusSchema>;
 

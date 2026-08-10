@@ -202,10 +202,12 @@ describe('SessionStateProjector', () => {
     expect(p.getStatus().runningSubagentCount).toBe(0);
     expect(p.listRunningSubagents()).toEqual([]);
     // Retired through the STREAM, so a client folding its own count drains the
-    // same ids the server just dropped rather than holding them forever.
+    // same ids the server just dropped rather than holding them forever — and
+    // as `untracked`, because tearing the session down tells us nothing about
+    // whether its children died with it (DOR-1108).
     expect(ingestSpy.mock.calls.map((c) => c[0])).toEqual([
-      { type: 'subagent_update', taskId: 'bt1', status: 'stopped' },
-      { type: 'subagent_update', taskId: 'bt2', status: 'stopped' },
+      { type: 'subagent_update', taskId: 'bt1', status: 'untracked' },
+      { type: 'subagent_update', taskId: 'bt2', status: 'untracked' },
     ]);
   });
 
