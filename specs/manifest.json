@@ -2,6 +2,14 @@
   "version": 1,
   "specs": [
     {
+      "id": "260810-003853",
+      "slug": "persistent-session-runtime",
+      "title": "Persistent session runtime, and the queue / steer / interrupt contract",
+      "created": "2026-08-09",
+      "status": "specified",
+      "linearIssue": "DOR-1089"
+    },
+    {
       "id": "260809-150251",
       "slug": "page-width-consistency",
       "title": "Page width consistency: PageContainer primitive + route migration",
@@ -78,7 +86,7 @@
       "slug": "composer-rich-text",
       "title": "Rich text via markdown in the composer (Lexical)",
       "created": "2026-08-06",
-      "status": "implemented"
+      "status": "specified"
     },
     {
       "id": "260806-215028",
