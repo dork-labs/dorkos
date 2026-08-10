@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState } from 'react';
 import {
   SectionHeader,
   SidebarProvider,
@@ -14,6 +14,8 @@ import type { Session } from '@dorkos/shared/types';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
 import { ShowcaseDemo } from '../ShowcaseDemo';
+import { MOCK_AGENTS, minutesAgo } from './agent-sidebar-fixtures';
+import { SessionSwitcherShowcase, useSwitcherFixture } from './SessionSwitcherShowcases';
 import {
   AgentActivityBadge,
   AgentListItem,
@@ -25,30 +27,6 @@ import {
 } from '@/layers/features/dashboard-sidebar';
 
 // ── Mock data ──
-
-const MOCK_AGENTS = [
-  {
-    path: '/home/user/.dork/agents/code-reviewer',
-    agent: { id: 'code-reviewer', name: 'code-reviewer', color: '#6366f1', icon: '🔍' },
-    displayName: 'code-reviewer',
-  },
-  {
-    path: '/home/user/.dork/agents/deploy-bot',
-    agent: { id: 'deploy-bot', name: 'deploy-bot', color: '#f59e0b', icon: '🚀' },
-    displayName: 'deploy-bot',
-  },
-  {
-    path: '/home/user/.dork/agents/test-runner',
-    agent: { id: 'test-runner', name: 'test-runner', color: '#10b981', icon: '🧪' },
-    displayName: 'test-runner',
-  },
-] as const;
-
-const now = new Date();
-
-function minutesAgo(n: number): string {
-  return new Date(now.getTime() - n * 60_000).toISOString();
-}
 
 const MOCK_SESSIONS: Session[] = [
   {
@@ -108,6 +86,7 @@ export function AgentSidebarShowcases() {
       <AgentActivityBadgeShowcase />
       <SessionRowCompactShowcase />
       <AgentListItemShowcase />
+      <SessionSwitcherShowcase />
       <RowMenuSurfaceShowcase />
       <SectionHeaderShowcase />
       <GroupCreateInputShowcase />
@@ -227,99 +206,14 @@ function SessionRowCompactShowcase() {
 
 function AgentListItemShowcase() {
   const [activePath, setActivePath] = useState<string>(MOCK_AGENTS[0].path);
-  const [expandedPath, setExpandedPath] = useState<string | null>(MOCK_AGENTS[0].path);
-  const [activeSessionId, setActiveSessionId] = useState('sess-1');
-
-  const handleSelect = useCallback((path: string) => {
-    setActivePath(path);
-    setExpandedPath(path);
-  }, []);
-
-  const handleToggleExpand = useCallback((path: string) => {
-    setExpandedPath((prev) => (prev === path ? null : path));
-  }, []);
+  useSwitcherFixture();
 
   return (
     <PlaygroundSection
       title="AgentListItem"
-      description="Expandable agent row in the dashboard sidebar. Click to select, click again to expand/collapse. Includes context menu, dropdown menu, session previews, and status border."
+      description="One agent in the roster. Clicking it opens the conversation you were having — it never unfolds (BC-34). When two or more of its sessions are live, a 'N live' chip appears and opens the session switcher."
     >
-      <ShowcaseLabel>Interactive demo</ShowcaseLabel>
-      <ShowcaseDemo>
-        <SidebarShell>
-          {MOCK_AGENTS.map(({ path, agent, displayName }) => {
-            const isActive = activePath === path;
-            return (
-              <AgentListItem
-                key={path}
-                path={path}
-                agent={agent as never}
-                visual={resolveAgentVisual({ id: path })}
-                displayName={displayName}
-                isActive={isActive}
-                isExpanded={expandedPath === path}
-                onSelect={() => handleSelect(path)}
-                onToggleExpand={() => handleToggleExpand(path)}
-                onOpenProfile={() => {}}
-                onRequestNewGroup={() => {}}
-                sessions={isActive ? MOCK_SESSIONS : []}
-                isLoadingSessions={false}
-                activeSessionId={isActive ? activeSessionId : null}
-                onSessionClick={setActiveSessionId}
-                onNewSession={() => {}}
-              />
-            );
-          })}
-        </SidebarShell>
-      </ShowcaseDemo>
-
-      <ShowcaseLabel>Pinned agent (active + expanded)</ShowcaseLabel>
-      <ShowcaseDemo>
-        <SidebarShell>
-          <AgentListItem
-            path={MOCK_AGENTS[0].path}
-            agent={MOCK_AGENTS[0].agent as never}
-            visual={resolveAgentVisual({ id: MOCK_AGENTS[0].path })}
-            displayName={MOCK_AGENTS[0].displayName}
-            isActive
-            isExpanded
-            onSelect={() => {}}
-            onToggleExpand={() => {}}
-            onOpenProfile={() => {}}
-            onRequestNewGroup={() => {}}
-            sessions={MOCK_SESSIONS}
-            isLoadingSessions={false}
-            activeSessionId="sess-1"
-            onSessionClick={() => {}}
-            onNewSession={() => {}}
-          />
-        </SidebarShell>
-      </ShowcaseDemo>
-
-      <ShowcaseLabel>No sessions (empty expanded state)</ShowcaseLabel>
-      <ShowcaseDemo>
-        <SidebarShell>
-          <AgentListItem
-            path={MOCK_AGENTS[1].path}
-            agent={MOCK_AGENTS[1].agent as never}
-            visual={resolveAgentVisual({ id: MOCK_AGENTS[1].path })}
-            displayName={MOCK_AGENTS[1].displayName}
-            isActive
-            isExpanded
-            onSelect={() => {}}
-            onToggleExpand={() => {}}
-            onOpenProfile={() => {}}
-            onRequestNewGroup={() => {}}
-            sessions={[]}
-            isLoadingSessions={false}
-            activeSessionId={null}
-            onSessionClick={() => {}}
-            onNewSession={() => {}}
-          />
-        </SidebarShell>
-      </ShowcaseDemo>
-
-      <ShowcaseLabel>Collapsed (inactive)</ShowcaseLabel>
+      <ShowcaseLabel>Interactive demo — the first agent has two live sessions</ShowcaseLabel>
       <ShowcaseDemo>
         <SidebarShell>
           {MOCK_AGENTS.map(({ path, agent, displayName }) => (
@@ -329,19 +223,51 @@ function AgentListItemShowcase() {
               agent={agent as never}
               visual={resolveAgentVisual({ id: path })}
               displayName={displayName}
-              isActive={false}
-              isExpanded={false}
-              onSelect={() => {}}
-              onToggleExpand={() => {}}
+              isActive={activePath === path}
+              onSelect={() => setActivePath(path)}
               onOpenProfile={() => {}}
               onRequestNewGroup={() => {}}
-              sessions={[]}
-              isLoadingSessions={false}
-              activeSessionId={null}
               onSessionClick={() => {}}
               onNewSession={() => {}}
             />
           ))}
+        </SidebarShell>
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>Active</ShowcaseLabel>
+      <ShowcaseDemo>
+        <SidebarShell>
+          <AgentListItem
+            path={MOCK_AGENTS[1].path}
+            agent={MOCK_AGENTS[1].agent as never}
+            visual={resolveAgentVisual({ id: MOCK_AGENTS[1].path })}
+            displayName={MOCK_AGENTS[1].displayName}
+            isActive
+            onSelect={() => {}}
+            onOpenProfile={() => {}}
+            onRequestNewGroup={() => {}}
+            onSessionClick={() => {}}
+            onNewSession={() => {}}
+          />
+        </SidebarShell>
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>Muted — no chip, no badge</ShowcaseLabel>
+      <ShowcaseDemo>
+        <SidebarShell>
+          <AgentListItem
+            path={MOCK_AGENTS[0].path}
+            agent={MOCK_AGENTS[0].agent as never}
+            visual={resolveAgentVisual({ id: MOCK_AGENTS[0].path })}
+            displayName={MOCK_AGENTS[0].displayName}
+            isActive={false}
+            isMuted
+            onSelect={() => {}}
+            onOpenProfile={() => {}}
+            onRequestNewGroup={() => {}}
+            onSessionClick={() => {}}
+            onNewSession={() => {}}
+          />
         </SidebarShell>
       </ShowcaseDemo>
     </PlaygroundSection>

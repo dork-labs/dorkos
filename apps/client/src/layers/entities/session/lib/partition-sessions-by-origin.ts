@@ -22,10 +22,11 @@ export interface SessionOriginPartition {
  * `room_sessions` binding (`services/session/room-origin-overlay.ts`), because
  * nothing in a room turn's transcript says where it came from.
  * Pure and synchronous; callers slice each bucket to their own row cap
- * (MAX_PREVIEW_SESSIONS in AgentListItem, MAX_JUMP_BACK_IN in the recents
- * model) AFTER partitioning, not before — partitioning must
- * see the full list so a conversation doesn't get bumped out of the cap by
- * automated sessions ahead of it in raw recency order.
+ * (MAX_JUMP_BACK_IN in the recents model) AFTER partitioning, not before —
+ * partitioning must see the full list so a conversation doesn't get bumped out
+ * of the cap by automated sessions ahead of it in raw recency order. The
+ * session switcher caps nothing: it is the surface an operator opens to see
+ * everything, so a cap there would defeat the reason they opened it.
  *
  * @param sessions - Sessions to partition, in their existing order
  */

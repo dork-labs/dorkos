@@ -2,6 +2,7 @@ import {
   FolderOpen,
   AppWindow,
   SquareArrowOutUpRight,
+  Layers,
   Plus,
   Settings,
   MessageSquare,
@@ -32,6 +33,14 @@ interface AgentSubMenuProps {
   onOpenNewWindow?: () => void;
   /** Start a new session in this agent's CWD */
   onNewSession: () => void;
+  /**
+   * Open the session switcher for this agent — ⌘K's door into it (BC-35).
+   *
+   * The three rows below cap out at the agent's three newest sessions and can
+   * say nothing about what any of them is doing. This row is where the rest of
+   * them live, grouped by whether they are live, each with its verb.
+   */
+  onBrowseSessions: () => void;
   /** Open agent settings dialog */
   onEditSettings: () => void;
   /** Recent sessions for this agent (max 3) */
@@ -62,6 +71,7 @@ export function AgentSubMenu({
   onOpenNewTab,
   onOpenNewWindow,
   onNewSession,
+  onBrowseSessions,
   onEditSettings,
   recentSessions,
   onSelectSession,
@@ -90,6 +100,10 @@ export function AgentSubMenu({
         <CommandItem value="new-session" onSelect={onNewSession}>
           <Plus className="size-4" />
           <span>New Session</span>
+        </CommandItem>
+        <CommandItem value="browse-sessions" onSelect={onBrowseSessions}>
+          <Layers className="size-4" />
+          <span>Browse sessions…</span>
         </CommandItem>
         <CommandItem value="edit-settings" onSelect={onEditSettings}>
           <Settings className="size-4" />
