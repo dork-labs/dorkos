@@ -5,6 +5,7 @@ import {
   IdentityAvatar,
   TooltipProvider,
   statusDotClass,
+  STATUS_DOT_LABEL,
   type StatusSignal,
 } from '@/layers/shared/ui';
 import { cn } from '@/layers/shared/lib';
@@ -109,6 +110,25 @@ export function StatusShowcases() {
               <div key={status} className="flex flex-col items-center gap-2">
                 <IdentityAvatar color="#6366f1" emoji="🔍" kind="agent" status={status} size="md" />
                 <span className="text-muted-foreground text-[10px]">{label}</span>
+              </div>
+            ))}
+          </div>
+        </ShowcaseDemo>
+
+        <ShowcaseLabel>…and what each one says out loud (R2)</ShowcaseLabel>
+        <ShowcaseDemo>
+          {/* Colour is never the sole indicator. A dot is a non-text graphic
+              whose whole content is a hue, so it carries its meaning as text
+              too — the corner dot is the one mark on the disc that is NOT
+              aria-hidden, unlike the identity badge below it, which only
+              repeats what the surface around it already says. */}
+          <div className="flex flex-wrap items-center gap-6">
+            {SIGNALS.map(({ signal }) => (
+              <div key={signal} className="flex items-center gap-2">
+                <span className={cn('size-1.5 shrink-0 rounded-full', statusDotClass(signal))} />
+                <span className="text-muted-foreground text-[11px]">
+                  announced as “{STATUS_DOT_LABEL[signal]}”
+                </span>
               </div>
             ))}
           </div>

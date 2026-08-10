@@ -131,6 +131,9 @@ export { useRenameSession } from './model/use-rename-session';
 export { SessionRow } from './ui/SessionRow';
 export type { SessionRowProps } from './ui/SessionRow';
 export { SessionContextGauge } from './ui/SessionContextGauge';
+// The leaf that holds the live verb, so the sidebar model never has to (R1).
+export { SessionVerbLine } from './ui/SessionVerbLine';
+export type { SessionVerbLineProps } from './ui/SessionVerbLine';
 
 // Origin — session-origin-legibility: descriptor registry, the row glyph, and the sidebar partition selector.
 export { ORIGIN_DESCRIPTORS, getOriginDescriptor } from './config/origin-descriptors';

@@ -317,10 +317,23 @@ export function selectSessionActivity(
  * hooks a letter apart, one taking a session id and one taking nothing, is an
  * autocomplete trap — and the two answer completely different questions.
  *
+ * **Compared by VALUE, not by reference, and that is what makes it cheap.**
+ * Every `session_status` event carries a freshly-built object, so a subscriber
+ * on plain `Object.is` wakes for each one — including the many that arrive
+ * because a token count moved while the session went on running the same tool.
+ * `useShallow` holds the previous reading until a field inside it actually
+ * changes, so the sidebar's verb lines re-render when the words would change
+ * and at no other time (spec R1). Measured: without it, a fleet of four rows
+ * re-rendered a verb on a status event that said nothing new.
+ *
  * @param sessionId - The session to watch.
  */
 export function useSessionToolActivity(sessionId: string): SessionActivity | null {
-  return useSessionListStore(useCallback((s) => selectSessionActivity(s, sessionId), [sessionId]));
+  return useSessionListStore(
+    useShallow(
+      useCallback((s: SessionListStoreState) => selectSessionActivity(s, sessionId), [sessionId])
+    )
+  );
 }
 
 /**

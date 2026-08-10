@@ -177,6 +177,29 @@ export const COMPONENTS_SECTIONS: PlaygroundSection[] = [
     category: 'Sidebar',
     keywords: ['footer', 'sidebar', 'theme', 'settings', 'branding', 'logo', 'agent'],
   },
+  // VerbLadderShowcases
+  {
+    id: 'verb-ladder-and-signals',
+    title: 'Verb ladder & signals',
+    page: 'components',
+    category: 'Sidebar',
+    keywords: [
+      'verb',
+      'ladder',
+      'activity',
+      'working',
+      'waiting on you',
+      'honesty',
+      'status',
+      'dot',
+      'signal',
+      'welcome back',
+      'glow',
+      'sidebar',
+      'row',
+      'second line',
+    ],
+  },
   // OverlayShowcases
   {
     id: 'dialog',

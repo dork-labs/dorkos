@@ -377,7 +377,32 @@ describe('IdentityAvatar', () => {
 
       expect(dotOf(container)).not.toBeNull();
       expect(dotOf(container)).toHaveClass('bg-status-success', 'ring-background');
-      expect(dotOf(container)).toHaveAttribute('aria-hidden', 'true');
+    });
+
+    it('says in words what it says in colour (R2)', () => {
+      // Colour is never the sole indicator. This dot is a non-text graphic
+      // whose entire content is a hue — the one shape of signal a reader who
+      // cannot see it loses completely — so it carries its meaning as text
+      // too. It is the one mark on the disc that is NOT `aria-hidden`, unlike
+      // the identity badge beside it, which only repeats what the surface
+      // around it already says.
+      for (const [status, words] of [
+        ['working', 'working'],
+        ['needs-you', 'needs you'],
+        ['error', 'error'],
+      ] as const) {
+        const { container } = render(<IdentityAvatar color="#7c3aed" emoji="🐙" status={status} />);
+        expect(dotOf(container)).not.toHaveAttribute('aria-hidden');
+        expect(dotOf(container)?.textContent, status).toBe(words);
+        cleanup();
+      }
+    });
+
+    it('keeps the words out of the halo, so the pulse is not announced twice', () => {
+      const { container } = render(<IdentityAvatar color="#7c3aed" emoji="🐙" status="working" />);
+      const halo = dotOf(container)?.querySelector('.animate-ping');
+      expect(halo).not.toBeNull();
+      expect(halo).toHaveAttribute('aria-hidden', 'true');
     });
 
     it('draws no dot when nothing is happening', () => {
