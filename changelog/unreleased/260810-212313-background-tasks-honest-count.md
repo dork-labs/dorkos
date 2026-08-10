@@ -2,6 +2,7 @@
 covers:
   - 'fix(server,client): a background task DorkOS lost sight of is not a task that stopped (DOR-1108)'
   - 'fix(server): a background task that goes quiet stops counting as running (DOR-1104)'
+  - 'fix(server,client): one retirement per expired child, and no tick for one nobody watched (DOR-1104, DOR-1108)'
 ---
 
 ### Fixed
@@ -16,4 +17,5 @@ covers:
   with it — but something it launched to keep running on its own, like a dev server,
   carries on, and DorkOS cannot tell the two apart. It now says it lost track of the
   task and that it may still be running, instead of reporting a stop that may never
-  have happened. These tasks no longer show up in red as though they failed (DOR-1108)
+  have happened. These tasks are not marked as finished or failed, because DorkOS did
+  not see either one happen (DOR-1108)
