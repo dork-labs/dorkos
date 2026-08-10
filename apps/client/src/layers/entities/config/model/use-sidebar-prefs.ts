@@ -13,7 +13,14 @@
 import { useCallback, useRef } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type { ServerConfig } from '@dorkos/shared/types';
-import type { SidebarPrefs, SidebarGroup, SidebarItemRef } from '@dorkos/shared/config-schema';
+import type {
+  SidebarPrefs,
+  SidebarGroup,
+  SidebarItemRef,
+  SidebarSectionId,
+  SidebarSectionPrefs,
+  SidebarDisplayFilter,
+} from '@dorkos/shared/config-schema';
 import {
   SIDEBAR_PREFS_DEFAULTS,
   sameSidebarItem,
@@ -384,42 +391,131 @@ export function setGroupCollapsed(
   };
 }
 
-/** Set the ungrouped ("Agents") section's collapsed state. */
-export function setUngroupedCollapsed(prev: SidebarPrefs, collapsed: boolean): SidebarPrefs {
-  return { ...prev, ungroupedCollapsed: collapsed };
+// ---------------------------------------------------------------------------
+// Per-section state (`sections`) — one keyed record replaced the seven
+// per-section booleans and enums this file used to carry
+// (`specs/sidebar-now-today-library` §D). Reads go through the accessors below
+// rather than reaching into the record, because "absent" is the common case: a
+// section only appears once the person has changed something about it.
+// ---------------------------------------------------------------------------
+
+/** Read one section's stored state, or `undefined` when it has none yet. */
+function sectionOf(prefs: SidebarPrefs, id: SidebarSectionId): SidebarSectionPrefs | undefined {
+  return prefs.sections[id];
 }
 
-/** Set the Recent section's collapsed state. */
-export function setRecentsCollapsed(prev: SidebarPrefs, collapsed: boolean): SidebarPrefs {
-  return { ...prev, recentsCollapsed: collapsed };
+/** Whether a section is folded shut. A section with no stored state is open. */
+export function isSectionCollapsed(prefs: SidebarPrefs, id: SidebarSectionId): boolean {
+  return sectionOf(prefs, id)?.collapsed === true;
 }
 
-/** Set the Channels section's collapsed state (rooms, DOR-525). */
-export function setChannelsCollapsed(prev: SidebarPrefs, collapsed: boolean): SidebarPrefs {
-  return { ...prev, channelsCollapsed: collapsed };
+/**
+ * A section's sort mode, narrowed to the sorts that section actually offers.
+ *
+ * The `offered` list belongs to the caller because it is a property of the
+ * SECTION, not of the storage: Agents sorts by name or recency and never by
+ * hand, a manual group does the opposite. Its first entry is what the section
+ * shows when the person has not chosen.
+ *
+ * A stored value the section does not offer reads as that first entry, which is
+ * what keeps a `manual` left behind on a section that stopped sorting by hand
+ * from being handed to a menu with no such item in it.
+ *
+ * @param prefs - Current sidebar prefs.
+ * @param id - The section to read.
+ * @param offered - The sorts this section offers, default first.
+ */
+export function sectionSortMode<T extends NonNullable<SidebarSectionPrefs['sortMode']>>(
+  prefs: SidebarPrefs,
+  id: SidebarSectionId,
+  offered: readonly [T, ...T[]]
+): T {
+  const stored = sectionOf(prefs, id)?.sortMode;
+  return stored !== undefined && (offered as readonly string[]).includes(stored)
+    ? (stored as T)
+    : offered[0];
 }
 
-/** Set the Direct messages section's collapsed state (rooms, DOR-525). */
-export function setDmsCollapsed(prev: SidebarPrefs, collapsed: boolean): SidebarPrefs {
-  return { ...prev, dmsCollapsed: collapsed };
+/**
+ * A section's display filter, falling back to what the section shows by default.
+ *
+ * @param prefs - Current sidebar prefs.
+ * @param id - The section to read.
+ * @param fallback - What the section shows when the person has not chosen.
+ */
+export function sectionDisplayFilter(
+  prefs: SidebarPrefs,
+  id: SidebarSectionId,
+  fallback: SidebarDisplayFilter
+): SidebarDisplayFilter {
+  return sectionOf(prefs, id)?.displayFilter ?? fallback;
 }
 
-/** Set the Threads section's collapsed state (room-messaging-design §3). */
-export function setThreadsCollapsed(prev: SidebarPrefs, collapsed: boolean): SidebarPrefs {
-  return { ...prev, threadsCollapsed: collapsed };
-}
-
-/** Set the ungrouped ("Agents") section's sort mode (`name` or `recent`). */
-export function setUngroupedSortMode(
+/** Apply an immutable patch to one section's stored state. */
+function patchSection(
   prev: SidebarPrefs,
-  mode: SidebarPrefs['ungroupedSortMode']
+  id: SidebarSectionId,
+  patch: Partial<SidebarSectionPrefs>
 ): SidebarPrefs {
-  return { ...prev, ungroupedSortMode: mode };
+  const current = prev.sections[id] ?? { collapsed: false };
+  return { ...prev, sections: { ...prev.sections, [id]: { ...current, ...patch } } };
 }
 
-/** Mark the one-time "group your agents" hint card as dismissed. */
-export function setGroupsHintDismissed(prev: SidebarPrefs, dismissed: boolean): SidebarPrefs {
-  return { ...prev, groupsHintDismissed: dismissed };
+/** Fold or unfold a section. */
+export function setSectionCollapsed(
+  prev: SidebarPrefs,
+  id: SidebarSectionId,
+  collapsed: boolean
+): SidebarPrefs {
+  return patchSection(prev, id, { collapsed });
+}
+
+/** Set how a section orders its rows. MUST NOT touch any manual order. */
+export function setSectionSortMode(
+  prev: SidebarPrefs,
+  id: SidebarSectionId,
+  sortMode: NonNullable<SidebarSectionPrefs['sortMode']>
+): SidebarPrefs {
+  return patchSection(prev, id, { sortMode });
+}
+
+/** Set which members a section shows (All / Active / Needs attention). */
+export function setSectionDisplayFilter(
+  prev: SidebarPrefs,
+  id: SidebarSectionId,
+  displayFilter: SidebarDisplayFilter
+): SidebarPrefs {
+  return patchSection(prev, id, { displayFilter });
+}
+
+// ---------------------------------------------------------------------------
+// Getting started + digest
+// ---------------------------------------------------------------------------
+
+/**
+ * The suggestion id the "group your agents" hint card became when Getting
+ * started absorbed it. Anyone who dismissed the card already answered this
+ * suggestion, and the conf migration keyed `0.59.0` records that.
+ */
+export const GROUPS_HINT_SUGGESTION_ID = 'suggestion:groups-hint';
+
+/** Whether this person has finished with a Getting-started suggestion. */
+export function isSuggestionRetired(prefs: SidebarPrefs, suggestionId: string): boolean {
+  return prefs.gettingStarted.retired.includes(suggestionId);
+}
+
+/**
+ * Retire a Getting-started suggestion, for good (idempotent).
+ *
+ * Retirement is one-way on purpose: a suggestion never comes back once it has
+ * been answered, even if the condition that raised it becomes true again.
+ */
+export function retireSuggestion(prev: SidebarPrefs, suggestionId: string): SidebarPrefs {
+  if (prev.gettingStarted.retired.includes(suggestionId)) return prev;
+  return {
+    ...prev,
+    gettingStarted: { retired: [...prev.gettingStarted.retired, suggestionId] },
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -448,14 +544,6 @@ export function setGroupMuted(prev: SidebarPrefs, groupId: string, muted: boolea
     ...prev,
     groups: prev.groups.map((g) => (g.id === groupId ? { ...g, muted } : g)),
   };
-}
-
-/** Set the ungrouped ("Agents") section's display filter. */
-export function setUngroupedDisplayFilter(
-  prev: SidebarPrefs,
-  filter: SidebarPrefs['ungroupedDisplayFilter']
-): SidebarPrefs {
-  return { ...prev, ungroupedDisplayFilter: filter };
 }
 
 /** Mute an individual item (idempotent). Mute owns ALL signals for the item at once. */

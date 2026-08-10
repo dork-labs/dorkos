@@ -13,10 +13,10 @@ vi.mock('@/layers/entities/config', () => ({
   useSidebarPrefs: () => ({
     pinned: [],
     groups: [],
-    ungroupedSortMode: 'name',
-    ungroupedCollapsed: false,
-    recentsCollapsed: false,
-    groupsHintDismissed: false,
+    sections: {},
+    muted: [],
+    gettingStarted: { retired: [] },
+    digest: {},
   }),
   useUpdateSidebarPrefs: () => ({
     update: vi.fn(),

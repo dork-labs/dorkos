@@ -26,7 +26,11 @@ import {
   createSmartGroup,
   moveToGroup,
   mutedRoomIds,
-  setGroupsHintDismissed,
+  GROUPS_HINT_SUGGESTION_ID,
+  isSuggestionRetired,
+  retireSuggestion,
+  sectionSortMode,
+  sectionDisplayFilter,
 } from '@/layers/entities/config';
 import { useMeshAgentPaths, useMeshMemberIds } from '@/layers/entities/mesh';
 import {
@@ -407,7 +411,9 @@ export function DashboardSidebar() {
   // Discovery nudge: only for a fleet big enough to benefit, with no groups yet,
   // and never again once dismissed (Resolved Q — organization is user investment).
   const showGroupsHint =
-    agentCount >= 8 && sidebarPrefs.groups.length === 0 && !sidebarPrefs.groupsHintDismissed;
+    agentCount >= 8 &&
+    sidebarPrefs.groups.length === 0 &&
+    !isSuggestionRetired(sidebarPrefs, GROUPS_HINT_SUGGESTION_ID);
 
   // ── One-time migration of legacy localStorage pins → server config (DOR-329) ──
   // If the old `dorkos-pinned-agents` key exists and the server has no pins yet,
@@ -472,7 +478,7 @@ export function DashboardSidebar() {
   );
   const handleCancelNewGroup = useCallback(() => setGroupCreation(null), []);
   const handleDismissGroupsHint = useCallback(
-    () => updateSidebarPrefs((prev) => setGroupsHintDismissed(prev, true)),
+    () => updateSidebarPrefs((prev) => retireSuggestion(prev, GROUPS_HINT_SUGGESTION_ID)),
     [updateSidebarPrefs]
   );
 
@@ -832,8 +838,8 @@ export function DashboardSidebar() {
             items={ungroupedItems}
             organized={organized}
             allAgentsGrouped={agentCount > 0 && ungroupedItems.length === 0}
-            sortMode={sidebarPrefs.ungroupedSortMode}
-            filter={sidebarPrefs.ungroupedDisplayFilter}
+            sortMode={sectionSortMode(sidebarPrefs, 'agents', ['name', 'recent'])}
+            filter={sectionDisplayFilter(sidebarPrefs, 'agents', 'all')}
             renderItem={renderSidebarItem}
             onNewGroup={() => handleRequestNewGroup()}
             smartGroupPresets={smartGroupPresets}
