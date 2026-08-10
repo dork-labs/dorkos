@@ -71,6 +71,7 @@ import type {
 } from '@/layers/features/dashboard-sidebar/model/build-sidebar-model';
 import { buildSidebarModel } from '@/layers/features/dashboard-sidebar/model/build-sidebar-model';
 import { SIDEBAR_FIXTURES } from '@/layers/features/dashboard-sidebar/model/fixtures';
+import { SidebarZone } from '@/layers/features/dashboard-sidebar/ui/SidebarZone';
 import { anchorKey } from '@/layers/features/dashboard-sidebar/model/rules/targets';
 import type { SidebarState } from '@/layers/features/dashboard-sidebar/model/sidebar-state';
 import { PlaygroundSection } from '../PlaygroundSection';
@@ -675,11 +676,149 @@ export function SidebarUnreadTiersShowcase() {
   );
 }
 
+/**
+ * The four states Now passes through, side by side.
+ *
+ * Now is the zone the whole redesign is for, and three of its four states are
+ * hard to catch in the running app on purpose: an empty one is the calm signal,
+ * an overflowing one needs seven things to be waiting at once, and the beat
+ * lasts two and a half seconds. They are drawn here from spreads over the
+ * shipped fixtures — never edits to them — so a reviewer can look at all four
+ * at once and in both themes.
+ */
+/** The zone the beat plays in, exactly as `SidebarZones` synthesizes it. */
+const ALL_CLEAR_ZONE: SidebarZoneModel = {
+  id: 'now',
+  label: 'Now',
+  sections: [],
+  reason: 'zone:now',
+};
+
+export function SidebarNowStatesShowcase() {
+  // Reasons default ON, exactly as the journeys showcase does. Two reasons: the
+  // provenance is the point of this page, and the browser suite's axe coverage
+  // guard counts the reason chips it managed to evaluate — a panel drawing them
+  // invisibly would silently shrink what the contrast gate actually looked at.
+  const [showReasons, setShowReasons] = useState(true);
+
+  // Variants, built with a spread. The fixture files are read by several tasks
+  // at once, so a tweak to one would become somebody else's failing expectation
+  // (`contributing/sidebar-model.md`).
+  const quiet = SIDEBAR_FIXTURES.find((f) => f.name === 'quiet')!.state;
+  const busy = SIDEBAR_FIXTURES.find((f) => f.name === 'busy')!.state;
+  const power = SIDEBAR_FIXTURES.find((f) => f.name === 'power')!.state;
+
+  const empty: SidebarState = { ...quiet, attention: [], workingSessionIds: [] };
+  const single: SidebarState = { ...busy, attention: busy.attention.slice(0, 1) };
+
+  // **One line each, and that is a constraint rather than a style.** The panel
+  // label is the only text on this page axe cannot judge when it wraps: a
+  // wrapped caption's rects straddle the scroll container's clip and come back
+  // `incomplete`, which the browser suite treats as a hole in the contrast gate.
+  // The sentences live in the section's own description instead.
+  const states: { name: string; caption: string; state: SidebarState }[] = [
+    { name: 'now-empty', caption: 'Nothing waiting', state: empty },
+    { name: 'now-one', caption: 'One thing needs you', state: single },
+    { name: 'now-capped', caption: 'Seven waiting, capped', state: power },
+    {
+      name: 'getting-started',
+      caption: 'Day one',
+      state: SIDEBAR_FIXTURES.find((f) => f.name === 'first-run')!.state,
+    },
+  ];
+
+  return (
+    <PlaygroundSection
+      title="Sidebar Now States"
+      description="Now is the first thing on screen and the only zone allowed to interrupt. Four states: nothing waiting (the zone disappears entirely — absence is the calm signal), one thing waiting, seven things waiting (capped at three with an overflow that leads to the home surface), and the day-one Getting started zone that shares the same slot."
+    >
+      <div className="flex items-center gap-2">
+        <Switch
+          id="sidebar-now-states-reasons"
+          checked={showReasons}
+          onCheckedChange={setShowReasons}
+        />
+        <label htmlFor="sidebar-now-states-reasons" className="text-muted-foreground text-xs">
+          Show the reason on every zone, section and row
+        </label>
+      </div>
+
+      <ShowcaseLabel>Empty, one signal, capped with overflow, day one</ShowcaseLabel>
+      <div className="border-border/50 bg-muted/30 overflow-x-auto rounded-lg border border-dashed p-4">
+        {/* Wraps rather than scrolls. Four 272px panels fit the content column
+            at the width the browser suite runs at, and a panel clipped by a
+            horizontal scroller is one axe declines to measure. */}
+        <div className="flex flex-wrap items-start gap-4">
+          {states.map(({ name, caption, state }) => (
+            <div key={name} className="flex shrink-0 flex-col gap-2" style={{ width: PANEL_WIDTH }}>
+              {/* The short name carries the id the zone's landmark is labelled
+                  BY — a dangling `aria-labelledby` leaves every panel's region
+                  nameless, which axe reds as `landmark-unique`. The sentence
+                  sits beside it rather than inside it, matching the journey
+                  panels above, so the accessible name stays two words. */}
+              <div className="flex flex-col gap-0.5">
+                <span
+                  id={`sidebar-now-state-${name}`}
+                  className="text-foreground text-xs font-medium"
+                >
+                  {name}
+                </span>
+                <span className="text-muted-foreground text-xs">{caption}</span>
+              </div>
+              <nav
+                data-slot="sidebar-now-state"
+                data-state-name={name}
+                aria-label={`Now (${name})`}
+                className="bg-sidebar text-sidebar-foreground flex flex-col gap-1.5 rounded-lg p-2"
+              >
+                {buildSidebarModel(state)
+                  .zones.filter((zone) => zone.id === 'now' || zone.id === 'getting-started')
+                  .map((zone) => (
+                    <ModelZone
+                      key={zone.id}
+                      zone={zone}
+                      state={state}
+                      activeKey={anchorKey(state)}
+                      showReasons={showReasons}
+                      fixtureName={name}
+                      panelLabelId={`sidebar-now-state-${name}`}
+                    />
+                  ))}
+              </nav>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <ShowcaseLabel>The all-clear beat</ShowcaseLabel>
+      {/* The REAL `SidebarZone`, not a drawing of one. It needs no providers
+          with an empty section list, and rendering it here is what puts the
+          shipped zone heading in front of the axe gate below — a hand-rolled
+          copy measured a copy, and the copy is what drifted. */}
+      <div className="border-border/50 bg-muted/30 rounded-lg border border-dashed p-4">
+        <nav
+          aria-label="Now (all clear)"
+          style={{ width: PANEL_WIDTH }}
+          className="bg-sidebar text-sidebar-foreground rounded-lg p-2"
+        >
+          <SidebarZone zone={ALL_CLEAR_ZONE} onToggleAll={() => {}} allClear />
+        </nav>
+      </div>
+      <p className="text-muted-foreground text-xs">
+        When the last thing needing you resolves, Now settles on this for 2.5 seconds and then folds
+        away — finishing a queue should feel like finishing. Under a reduced-motion preference it
+        never renders at all and the zone simply disappears.
+      </p>
+    </PlaygroundSection>
+  );
+}
+
 /** Every showcase on the Sidebar Model page. */
 export function SidebarModelShowcases() {
   return (
     <>
       <SidebarModelJourneysShowcase />
+      <SidebarNowStatesShowcase />
       <SidebarUnreadTiersShowcase />
     </>
   );

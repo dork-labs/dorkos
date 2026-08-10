@@ -24,7 +24,13 @@ import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import type { RoomSummary } from '@dorkos/shared/room-schemas';
 import type { SidebarItemRef, SmartGroupRules } from '@dorkos/shared/config-schema';
 import { reportClientError } from '@/layers/shared/lib';
-import { useAppStore, useProfileDeepLink, useTransport } from '@/layers/shared/model';
+import {
+  useAgentCreationStore,
+  useAppStore,
+  useImportProjectsStore,
+  useProfileDeepLink,
+  useTransport,
+} from '@/layers/shared/model';
 import { disambiguateDisplayNames, useResolvedAgents } from '@/layers/entities/agent';
 import {
   createGroup,
@@ -42,7 +48,8 @@ import {
   useStartNewSession,
 } from '@/layers/entities/session';
 import { useAgentHubStore } from '@/layers/features/agent-hub';
-import type { SidebarTarget } from '../model/build-sidebar-model';
+import type { SidebarTarget, SuggestionId } from '../model/build-sidebar-model';
+import { NOW_OVERFLOW_HREF } from '../model/rules/cap-now-items';
 import { buildSidebarItems, type SidebarItemVisual } from '../model/sidebar-item';
 
 /**
@@ -221,6 +228,43 @@ export function SidebarChrome({ activeTarget, children }: SidebarChromeProps) {
     [openSession, queryClient, router, transport]
   );
 
+  // DorkBot, found the only way the client can: `isSystem` is the flag on the
+  // wire, and an install is free to put the directory anywhere.
+  const dorkBotPath = useMemo(
+    () => rawPaths.find((path) => manifests?.[path]?.isSystem === true) ?? null,
+    [rawPaths, manifests]
+  );
+
+  const openSuggestion = useCallback(
+    (suggestionId: SuggestionId) => {
+      switch (suggestionId) {
+        case 'suggestion:agents-found':
+          // Straight into the review-and-join dialog, which already holds the
+          // scan this suggestion is counting.
+          useImportProjectsStore.getState().open();
+          return;
+        case 'suggestion:add-agent':
+          useAgentCreationStore.getState().open();
+          return;
+        case 'suggestion:first-session':
+          startNewSession();
+          return;
+        case 'suggestion:say-hi-team':
+          // Home IS #team (team-room-home §D3.2), so this is the room, not a
+          // page about it.
+          void navigate({ to: '/' });
+          return;
+        case 'suggestion:ask-dorkbot':
+          // A fresh session with the system agent. The seeded context BC-48
+          // describes belongs to the footer's Ask DorkBot button (P2.5); the
+          // suggestion's promise is only that a conversation opens.
+          if (dorkBotPath !== null) startNewSession(dorkBotPath);
+          return;
+      }
+    },
+    [dorkBotPath, navigate, startNewSession]
+  );
+
   const openTarget = useCallback(
     (target: SidebarTarget) => {
       switch (target.kind) {
@@ -246,14 +290,27 @@ export function SidebarChrome({ activeTarget, children }: SidebarChromeProps) {
         case 'command':
           if (target.commandId === 'new-session') startNewSession();
           return;
+        case 'suggestion':
+          openSuggestion(target.suggestionId);
+          return;
+        case 'rollup':
+          // "+ N more" goes to the home surface's triage header, which already
+          // holds the full list — Now never grows a second one (BC-7). "N
+          // working" goes to the same place for now: home carries the presence
+          // strip of who is working, and P2.6's session switcher scoped to live
+          // sessions is what BC-9 actually asks for.
+          if (target.rollup === 'now-overflow' || target.rollup === 'working') {
+            void navigate({ to: NOW_OVERFLOW_HREF });
+          }
+          return;
         default:
-          // `rollup`, `suggestion` and `digest` rows are Now's and Today's, and
-          // their destinations land with those zones (P2.2, P2.3). Doing nothing
-          // is the honest placeholder — a guess would navigate somewhere wrong.
+          // The `automated` rollup and the `digest` row are Today's, and their
+          // destinations land with that zone (P2.3). Doing nothing is the honest
+          // placeholder — a guess would navigate somewhere wrong.
           return;
       }
     },
-    [navigate, openAgent, openSession, router, startNewSession]
+    [navigate, openAgent, openSession, openSuggestion, router, startNewSession]
   );
 
   const value = useMemo<SidebarChromeValue>(

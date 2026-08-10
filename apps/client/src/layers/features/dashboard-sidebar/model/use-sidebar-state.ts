@@ -28,6 +28,7 @@ import {
   useExecutionExceptions,
   useResolvedAgents,
 } from '@/layers/entities/agent';
+import { useAttentionSignals } from '@/layers/entities/attention';
 import { mutedRoomIds, toSidebarModelPrefs, useSidebarPrefs } from '@/layers/entities/config';
 import { useInteractionTimestamps } from '@/layers/entities/interactions';
 import { useMeshAgentPaths } from '@/layers/entities/mesh';
@@ -39,7 +40,9 @@ import {
   useSessionListStore,
 } from '@/layers/entities/session';
 import type { SidebarTarget } from './build-sidebar-model';
-import type { AgentRosterEntry, JourneyFacts, SidebarState } from './sidebar-state';
+import { useGettingStartedRetirement } from './use-getting-started-retirement';
+import { useJourneyFacts } from './use-journey-facts';
+import type { AgentRosterEntry, SidebarState } from './sidebar-state';
 
 /**
  * How coarse the model's clock is, in milliseconds.
@@ -49,28 +52,6 @@ import type { AgentRosterEntry, JourneyFacts, SidebarState } from './sidebar-sta
  * would rebuild the whole tree for an answer that did not change.
  */
 export const SIDEBAR_CLOCK_TICK_MS = 60_000;
-
-/**
- * The journey facts until P2.2 supplies their sources.
- *
- * Getting started is P2.2's zone — its inputs are the discovery results, the
- * `#team` post count and the DorkBot-session flag, and none of them are fetched
- * here. These are the values that mean "nothing to suggest", so the zone stays
- * absent rather than rendering onboarding computed from facts nobody
- * established.
- *
- * **A guess would be worse than a placeholder, and specifically this one.**
- * `suggestion:add-agent` fires on `nonSystemAgentCount === 0`, which is exactly
- * what an unanswered roster query looks like — so deriving the count here would
- * flash first-run onboarding at every existing user on every cold load.
- */
-const JOURNEY_BEFORE_P2_2: JourneyFacts = {
-  discoveredUnregisteredPaths: [],
-  nonSystemAgentCount: 1,
-  hasEverStartedSession: true,
-  hasPostedInTeam: true,
-  hasDorkBotSession: true,
-};
 
 /**
  * The previous value, whenever the new one is shallow-equal to it.
@@ -145,9 +126,9 @@ function useActiveTarget(
 /**
  * Everything the sidebar is a function of, as one memoized snapshot.
  *
- * `attention`, `journey` and `digest` are wired as fields here and filled by
- * P2.2, which extends this hook with `entities/attention`, the discovery facts
- * and the welcome-back data.
+ * `digest` is the last field still waiting for its source: it is Today's
+ * morning row (BC-22), and P2.3 fills it from `prefs.digest` and
+ * team-room-home's welcome-back data.
  */
 export function useSidebarState(): SidebarState {
   const now = useNow(SIDEBAR_CLOCK_TICK_MS);
@@ -181,11 +162,13 @@ export function useSidebarState(): SidebarState {
   const threads = useMemo(() => threadsQuery.data ?? [], [threadsQuery.data]);
 
   // ── The fleet ──
-  const { data: meshData } = useMeshAgentPaths();
+  const meshQuery = useMeshAgentPaths();
+  const meshData = meshQuery.data;
   const rawPaths = useStableList(
     useMemo(() => (meshData?.agents ?? []).map((entry) => entry.projectPath), [meshData])
   );
-  const { data: manifests } = useResolvedAgents(rawPaths);
+  const manifestsQuery = useResolvedAgents(rawPaths);
+  const manifests = manifestsQuery.data;
   const { brokenPaths } = useExecutionExceptions();
   const attentionMap = useShallowStable(useAgentAttentionMap(rawPaths, brokenPaths));
   const agentActivity = useMemo(() => recentQuery.data?.agentActivity ?? {}, [recentQuery.data]);
@@ -237,6 +220,27 @@ export function useSidebarState(): SidebarState {
   );
   const activeTarget = useActiveTarget(roomKindOf);
 
+  // ── What needs the operator (BC-5) ──
+  // The only source Now draws from, normalized once in `entities/attention` so
+  // the home surface's triage header and this panel read the same list.
+  const attention = useAttentionSignals();
+
+  // ── How far along this operator is (BC-12) ──
+  // `rosterResolved` is what keeps the loading placeholder out of permanent
+  // retirement: a roster query that has not answered looks exactly like an
+  // empty fleet, and Getting started's whole first suggestion turns on that.
+  // An empty roster is `isSuccess` with no paths, in which case there are no
+  // manifests to wait for and the manifests query stays disabled forever.
+  const journey = useJourneyFacts({
+    agents,
+    agentActivity,
+    sessionCount: sessions.length,
+    rosterResolved:
+      meshQuery.isSuccess &&
+      recentQuery.isSuccess &&
+      (rawPaths.length === 0 || manifestsQuery.isSuccess),
+  });
+
   // ── The repo dimension (BC-38) ──
   const projects = useMemo(() => {
     const byCwd: Record<string, string> = {};
@@ -247,7 +251,7 @@ export function useSidebarState(): SidebarState {
     return { activeCount: Object.keys(byCwd).length, byCwd };
   }, [sessions, displayNames]);
 
-  return useMemo(
+  const state = useMemo(
     () => ({
       now,
       sessions,
@@ -257,7 +261,7 @@ export function useSidebarState(): SidebarState {
       threads,
       agents,
       displayNames,
-      attention: [],
+      attention,
       recents,
       prefs,
       interactions,
@@ -268,7 +272,7 @@ export function useSidebarState(): SidebarState {
       userLastMessageAt: {},
       mentions: {},
       activeTarget,
-      journey: JOURNEY_BEFORE_P2_2,
+      journey: journey.facts,
       digest: { finishedWhileAwayCount: 0 },
       projects,
     }),
@@ -281,11 +285,23 @@ export function useSidebarState(): SidebarState {
       threads,
       agents,
       displayNames,
+      attention,
       recents,
       prefs,
       interactions,
       activeTarget,
+      journey.facts,
       projects,
     ]
   );
+
+  // **A write, inside the hook that gathers reads — deliberately.** Retirement
+  // is permanent (BC-13), so its writer needs both the facts and the one bit
+  // that says whether they are real; `SidebarState` carries the first and not
+  // the second, and adding a resolution flag to the model's snapshot would put
+  // a loading state into a pure function that has no business knowing about
+  // one. Placing it here keeps that bit where it is produced.
+  useGettingStartedRetirement(state, journey.isResolved);
+
+  return state;
 }

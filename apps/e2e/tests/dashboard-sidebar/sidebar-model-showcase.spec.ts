@@ -303,7 +303,7 @@ test.describe('Sidebar model showcase @smoke', () => {
    * the whole page is inside the grid, 300+ nodes are evaluated, and the same
    * injected failure is caught. Do not shrink this below the page's own height.
    */
-  test.use({ viewport: { width: 1600, height: 6400 } });
+  test.use({ viewport: { width: 1600, height: 7600 } });
 
   // The per-test default is 30s, which is under the cold cost of the first
   // navigation to `/dev` — see PLAYGROUND_COLD_START_MS. A locator ceiling
@@ -402,6 +402,66 @@ test.describe('Sidebar model showcase @smoke', () => {
         await expect(now.getByText(expected.overflow, { exact: true })).toBeVisible();
       }
     }
+  });
+
+  test('never lets Now scroll — five rows is its ceiling (BC-8)', async ({ page }) => {
+    await openShowcase(page);
+
+    // `power` is the worst case the fixtures hold: seven things waiting and six
+    // sessions working, so Now draws its maximum — three attention rows, an
+    // overflow row and the working rollup.
+    const now = page.locator(
+      '[data-slot="sidebar-model-panel"][data-fixture="power"] [data-zone="now"]'
+    );
+    await expect(now.locator('li')).toHaveCount(5);
+
+    // The measurement only a browser can make. jsdom reports 0 for both
+    // heights, so this assertion is vacuous there and is deliberately here
+    // instead: a zone that had grown a scroller would report an overflow.
+    const overflow = await now.evaluate((zone) => zone.scrollHeight - zone.clientHeight);
+    expect(overflow, 'the Now zone grew a scroller — it must never scroll').toBe(0);
+
+    // And the measurement is live: the same reading over a box that IS
+    // scrollable comes back non-zero, so a zero above means "does not scroll"
+    // rather than "was never measured".
+    const proof = await now.evaluate((zone) => {
+      const probe = document.createElement('div');
+      probe.style.cssText = 'height:20px;overflow:auto';
+      probe.innerHTML = '<div style="height:200px"></div>';
+      zone.appendChild(probe);
+      const reading = probe.scrollHeight - probe.clientHeight;
+      probe.remove();
+      return reading;
+    });
+    expect(proof).toBeGreaterThan(0);
+  });
+
+  test('draws Now’s four states, and the beat, on the same page', async ({ page }) => {
+    await openShowcase(page);
+
+    // The states a reviewer cannot catch in the running app: empty, one signal,
+    // capped with an overflow, and the day-one zone (spec §13).
+    const states = page.locator('[data-slot="sidebar-now-state"]');
+    expect(await states.evaluateAll((nodes) => nodes.map((n) => n.dataset.stateName))).toEqual([
+      'now-empty',
+      'now-one',
+      'now-capped',
+      'getting-started',
+    ]);
+
+    // Empty means EMPTY: the panel is mounted and holds no zone at all.
+    const empty = page.locator('[data-slot="sidebar-now-state"][data-state-name="now-empty"]');
+    await expect(empty).toBeVisible();
+    await expect(empty.locator('[data-slot="sidebar-model-zone"]')).toHaveCount(0);
+
+    // While the panel beside it, drawn from the same component, does hold one.
+    await expect(
+      page.locator(
+        '[data-slot="sidebar-now-state"][data-state-name="now-one"] [data-slot="sidebar-model-zone"]'
+      )
+    ).toHaveCount(1);
+
+    await expect(page.getByText('All clear', { exact: true })).toBeVisible();
   });
 
   test('says why every row it drew is there', async ({ page }) => {

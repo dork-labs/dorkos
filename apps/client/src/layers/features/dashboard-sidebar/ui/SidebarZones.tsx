@@ -15,9 +15,29 @@ import {
   setSectionCollapsed,
   useUpdateSidebarPrefs,
 } from '@/layers/entities/config';
-import { librarySectionId, type SidebarModel } from '../model/build-sidebar-model';
+import {
+  librarySectionId,
+  type SidebarModel,
+  type SidebarZoneModel,
+} from '../model/build-sidebar-model';
+import { useAllClearBeat } from '../model/use-all-clear-beat';
 import { AgentOnboardingCard } from './AgentOnboardingCard';
 import { SidebarZone } from './SidebarZone';
+
+/**
+ * The zone the all-clear beat draws in, once the model has stopped emitting one.
+ *
+ * A constant rather than a synthesized object, so it never changes identity and
+ * the beat cannot be restarted by a re-render. It carries no `liveRegionText`:
+ * the count went to zero, and the region clearing is the whole of what a screen
+ * reader should get (BC-11).
+ */
+const ALL_CLEAR_ZONE: SidebarZoneModel = {
+  id: 'now',
+  label: 'Now',
+  sections: [],
+  reason: 'zone:now',
+};
 
 /** Props for {@link SidebarZones}. */
 export interface SidebarZonesProps {
@@ -59,8 +79,19 @@ export function SidebarZones({ model }: SidebarZonesProps) {
     });
   }, [library, update]);
 
+  // BC-50. Drawn before the map so the beat sits in Now's own slot at the top,
+  // and suppressed the moment anything real wants that slot back — a zone the
+  // model is emitting always wins over an animation about one it is not.
+  const beating = useAllClearBeat(model);
+  const nowSlotTaken = model.zones.some(
+    (zone) => zone.id === 'now' || zone.id === 'getting-started'
+  );
+
   return (
     <div className="flex flex-col gap-1">
+      {beating && !nowSlotTaken && (
+        <SidebarZone zone={ALL_CLEAR_ZONE} onToggleAll={onToggleAll} allClear />
+      )}
       {model.zones.map((zone) => (
         <SidebarZone key={zone.id} zone={zone} onToggleAll={onToggleAll} />
       ))}

@@ -47,12 +47,24 @@ const ROOMS: unknown[] = [];
 const THREADS = { data: [] as unknown[], isLoading: false, error: null };
 
 vi.mock('@/layers/entities/mesh', () => ({
-  useMeshAgentPaths: () => ({ data: { agents: AGENT_PATHS } }),
+  useMeshAgentPaths: () => ({ data: { agents: AGENT_PATHS }, isSuccess: true }),
 }));
+
+// Hoisted for the same reason `THREADS` is: `useAttentionSignals` is a real
+// hook over real queries, and mounting it here would need a transport this
+// suite does not stand up. Its OWN identity-stability contract — the one that
+// matters for this file's claim — is asserted where the hook lives, in
+// `entities/attention/__tests__/use-attention-signals.test.tsx`, against the
+// same hundred injected activity events.
+const ATTENTION: unknown[] = [];
+vi.mock('@/layers/entities/attention', () => ({ useAttentionSignals: () => ATTENTION }));
+
+/** The prefs writer, hoisted so its identity never moves the snapshot's. */
+const UPDATE_PREFS = { update: vi.fn(), updateAsync: vi.fn(), isPending: false, isError: false };
 
 vi.mock('@/layers/entities/agent', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/layers/entities/agent')>()),
-  useResolvedAgents: () => ({ data: MANIFESTS }),
+  useResolvedAgents: () => ({ data: MANIFESTS, isSuccess: true }),
   useExecutionExceptions: () => ({
     exceptions: [],
     brokenPaths: [],
@@ -64,7 +76,7 @@ vi.mock('@/layers/entities/agent', async (importOriginal) => ({
 // `useRecentSessions` from './use-recent-sessions' directly, so a barrel mock
 // would leave the real hook reaching for a transport this suite does not mount.
 vi.mock('@/layers/entities/session/model/use-recent-sessions', () => ({
-  useRecentSessions: () => ({ data: RECENT, isLoading: false }),
+  useRecentSessions: () => ({ data: RECENT, isLoading: false, isSuccess: true }),
 }));
 
 vi.mock('@/layers/entities/room', async (importOriginal) => ({
@@ -83,7 +95,11 @@ vi.mock('@/layers/entities/config', async (importOriginal) => {
     gettingStarted: { retired: [] },
     digest: {},
   };
-  return { ...actual, useSidebarPrefs: () => PREFS };
+  // The prefs WRITER is stubbed, not the readers: `useUpdateSidebarPrefs` is a
+  // TanStack mutation over the transport, and Getting started's retirement
+  // (BC-13) calls it from inside the hook under test. Its behaviour has its own
+  // suite; here it only has to exist.
+  return { ...actual, useSidebarPrefs: () => PREFS, useUpdateSidebarPrefs: () => UPDATE_PREFS };
 });
 
 import { useSidebarState } from '../use-sidebar-state';

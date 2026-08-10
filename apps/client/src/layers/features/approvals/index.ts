@@ -23,7 +23,10 @@ export { ApprovalList } from './ui/ApprovalList';
 // person answers on the home tab, resolving the same approval.
 export { ApprovalCard } from './ui/ApprovalCard';
 export { ApprovalsUnavailable } from './ui/ApprovalsUnavailable';
-export { usePendingApprovals } from './model/use-pending-approvals';
+// The queue itself lives in `entities/attention` now: the sidebar's Now zone
+// needs the same list, and a feature may not import a sibling feature's model.
+// Re-exported here so every existing surface keeps its one import.
+export { usePendingApprovals } from '@/layers/entities/attention';
 export { StandingPermissionList } from './ui/StandingPermissionList';
 export { StandingPermissionsUnavailable } from './ui/StandingPermissionsUnavailable';
 export { StandingPermissionsSettings } from './ui/StandingPermissionsSettings';

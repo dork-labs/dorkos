@@ -33,7 +33,7 @@ import { toast } from 'sonner';
 import { TransportProvider, useEventSubscription } from '@/layers/shared/model';
 import { createQueryClientConfig } from '@/layers/shared/lib';
 import { ApprovalList } from '../ui/ApprovalList';
-import { usePendingApprovals } from '../model/use-pending-approvals';
+import { usePendingApprovals } from '@/layers/entities/attention';
 import { StandingPermissionsSettings } from '../ui/StandingPermissionsSettings';
 import { useStandingGrantPolicy } from '../model/use-standing-grant-policy';
 

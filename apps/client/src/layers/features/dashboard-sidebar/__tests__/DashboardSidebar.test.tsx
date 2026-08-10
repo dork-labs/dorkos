@@ -13,9 +13,15 @@ import {
 import { toast } from 'sonner';
 import { resolveAgentVisual } from '@/layers/shared/lib';
 import { useInteractionStore } from '@/layers/entities/interactions';
+import { useIdleNudgeStore } from '@/layers/entities/attention';
+import { useDiscoveryStore } from '@/layers/entities/discovery';
+import { useAgentCreationStore } from '@/layers/shared/model';
 import { DashboardSidebar } from '../ui/DashboardSidebar';
 import { SidebarProvider, TooltipProvider } from '@/layers/shared/ui';
 import type { SidebarPrefs, SidebarGroup, SidebarItemRef } from '@dorkos/shared/config-schema';
+import type { PendingApproval } from '@dorkos/shared/approval-schemas';
+import type { SessionLifecycle } from '@dorkos/shared/session-stream';
+import { useSessionListStore } from '@/layers/entities/session';
 
 /** An agent member reference — `pinned`, `muted` and `items` all hold these. */
 const agent = (path: string): SidebarItemRef => ({ kind: 'agent', path });
@@ -137,10 +143,28 @@ interface RecentResult {
     | { sessions: unknown[]; agentActivity: Record<string, string>; warnings?: unknown[] }
     | undefined;
   isLoading: boolean;
+  isSuccess?: boolean;
 }
 const mockRecent = vi.fn<() => RecentResult>(() => ({
   data: { sessions: [], agentActivity: {} },
   isLoading: false,
+  isSuccess: true,
+}));
+
+/** Approvals waiting on a person, as `GET /api/approvals/pending` returns them. */
+const mockApprovals = vi.fn<() => PendingApproval[]>(() => []);
+
+/**
+ * Whether the operator asked for less motion.
+ *
+ * A `let` behind a mock rather than a redefined `matchMedia`: BC-50 turns on
+ * this one answer, and driving it through the media query would make the case
+ * depend on when motion happens to read it.
+ */
+let mockReducedMotion = false;
+vi.mock('motion/react', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('motion/react')>()),
+  useReducedMotion: () => mockReducedMotion,
 }));
 
 const mockRooms = vi.fn<() => RoomSummary[]>(() => []);
@@ -151,6 +175,8 @@ const mockTransport = {
   resolveAgents: vi.fn().mockResolvedValue({}),
   listSessions: vi.fn().mockResolvedValue({ sessions: [] }),
   listRooms: vi.fn(() => Promise.resolve(mockRooms())),
+  // The permission queue Now draws from (BC-5). Empty unless a case says otherwise.
+  listPendingApprovals: vi.fn(() => Promise.resolve({ approvals: mockApprovals() })),
   listThreads: vi.fn(() => Promise.resolve(mockThreads())),
 };
 
@@ -225,7 +251,10 @@ const meshFleet = () =>
 const mockUnmappedPaths = vi.fn<() => string[]>(() => []);
 
 vi.mock('@/layers/entities/mesh', () => ({
-  useMeshAgentPaths: () => ({ data: { agents: meshFleet() } }),
+  // `isSuccess` is what tells Getting started's facts apart from a roster query
+  // that has not answered — without it the journey never resolves and the zone
+  // can never appear (BC-12).
+  useMeshAgentPaths: () => ({ data: { agents: meshFleet() }, isSuccess: true }),
   // The real join's SHAPE, not a stub of its answer: a row's profile link is
   // only correct if this returns the REGISTRY id for a path, and a mock keyed
   // path→path would hide exactly that.
@@ -247,7 +276,7 @@ vi.mock('@/layers/entities/agent', async () => ({
   ...(await vi.importActual<typeof import('@/layers/entities/agent/lib/agent-choices')>(
     '@/layers/entities/agent/lib/agent-choices'
   )),
-  useResolvedAgents: () => ({ data: mockResolvedAgents() }),
+  useResolvedAgents: () => ({ data: mockResolvedAgents(), isSuccess: true }),
   useExecutionExceptions: () => mockExecutionExceptions(),
   useAgentVisual: () => ({ color: '#aaaaaa', emoji: '🤖' }),
   // The face is a control now, so the stub grows one: without it the row's
@@ -327,6 +356,11 @@ vi.mock('@/layers/entities/session', async (importOriginal) => ({
   // remove the very object whose identity is under test.
   useSessionListStore: (await importOriginal<typeof import('@/layers/entities/session')>())
     .useSessionListStore,
+  // Real for the same reason: `entities/attention` reads what each ATTACHED
+  // session is blocked on out of it, and that read is on the same identity
+  // path as the lifecycle one above.
+  useSessionStreamStore: (await importOriginal<typeof import('@/layers/entities/session')>())
+    .useSessionStreamStore,
   sessionDisplayTitle: (t: string) => t,
   SessionRow: () => null,
   SessionOriginMark: () => null,
@@ -370,13 +404,18 @@ beforeAll(() => {
 
 function renderWithProviders(ui: React.ReactElement) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(
-    <QueryClientProvider client={queryClient}>
-      <TooltipProvider>
-        <SidebarProvider>{ui}</SidebarProvider>
-      </TooltipProvider>
-    </QueryClientProvider>
-  );
+  return {
+    // Handed back so a case can make a query answer again — the only way to
+    // move a server-backed list (the approvals queue) from inside a test.
+    queryClient,
+    ...render(
+      <QueryClientProvider client={queryClient}>
+        <TooltipProvider>
+          <SidebarProvider>{ui}</SidebarProvider>
+        </TooltipProvider>
+      </QueryClientProvider>
+    ),
+  };
 }
 
 function group(overrides: Partial<SidebarGroup> = {}): SidebarGroup {
@@ -496,7 +535,20 @@ describe('DashboardSidebar', () => {
     mockResolvedAgents.mockReturnValue({});
     mockMeshPaths.mockReturnValue(['~/.dork/agents/dorkbot', '/projects/alpha', '/projects/beta']);
     mockSidebarPrefs.mockReturnValue(makePrefs());
-    mockRecent.mockReturnValue({ data: { sessions: [], agentActivity: {} }, isLoading: false });
+    mockRecent.mockReturnValue({
+      data: { sessions: [], agentActivity: {} },
+      isLoading: false,
+      isSuccess: true,
+    });
+    // Every suggestion already answered, so Getting started stays out of the way
+    // of the cases that are about Now. The block that IS about Getting started
+    // gives itself an unretired set (BC-4: they share one slot).
+    mockSidebarPrefs.mockReturnValue(makePrefs({ gettingStarted: { retired: ALL_SUGGESTIONS } }));
+    mockApprovals.mockReset();
+    mockApprovals.mockReturnValue([]);
+    mockReducedMotion = false;
+    useSessionListStore.getState().resetStatuses();
+    useIdleNudgeStore.getState().reset();
     mockRooms.mockReset();
     mockRooms.mockReturnValue([]);
     mockThreads.mockReset();
@@ -848,5 +900,608 @@ describe('DashboardSidebar', () => {
         []
       );
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Now, Getting started, and the all-clear beat (P2.2)
+// ---------------------------------------------------------------------------
+
+/** DorkBot's directory, the one agent every install has. */
+const DORKBOT = '~/.dork/agents/dorkbot';
+
+/** Every suggestion id, so a case can put Getting started to bed wholesale. */
+const ALL_SUGGESTIONS = [
+  'suggestion:agents-found',
+  'suggestion:add-agent',
+  'suggestion:first-session',
+  'suggestion:say-hi-team',
+  'suggestion:ask-dorkbot',
+];
+
+/** The Now zone's `<section>`, or `null` when the model emitted none. */
+function nowZone(): HTMLElement | null {
+  return document.querySelector('[data-sidebar-zone="now"]');
+}
+
+/**
+ * Every row inside a zone, in DOM order, as the words a person reads.
+ *
+ * The face is dropped: `AgentAvatar` is stubbed to its emoji here, and a row's
+ * mark is not part of its sentence.
+ */
+function zoneRows(zone: HTMLElement | null): string[] {
+  if (zone === null) return [];
+  return Array.from(zone.querySelectorAll('[data-sidebar-row]')).map((row) => {
+    const copy = row.cloneNode(true) as HTMLElement;
+    copy.querySelectorAll('[data-testid="avatar"]').forEach((node) => node.remove());
+    return copy.textContent?.trim() ?? '';
+  });
+}
+
+/** A session as `GET /api/sessions/recent` carries it. */
+function recentSession(id: string, overrides: Record<string, unknown> = {}) {
+  return {
+    id,
+    title: `Session ${id}`,
+    cwd: '/projects/alpha',
+    createdAt: new Date(Date.now() - 7_200_000).toISOString(),
+    updatedAt: new Date(Date.now() - 60_000).toISOString(),
+    permissionMode: 'default',
+    runtime: 'claude-code',
+    ...overrides,
+  };
+}
+
+/** An approval waiting on a person. */
+function pendingApproval(overrides: Partial<PendingApproval> = {}): PendingApproval {
+  return {
+    approvalId: 'apr-1',
+    capabilityId: 'files.write',
+    capabilityTitle: 'Write a file',
+    tier: 'destructive',
+    summary: 'Write src/index.ts',
+    requestedBy: 'alpha',
+    hasAgentPath: true,
+    requestedAt: new Date(Date.now() - 540_000).toISOString(),
+    expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
+    ...overrides,
+  };
+}
+
+/** Put sessions on the wire and give each one a lifecycle on the live stream. */
+function seedSessions(
+  entries: { session: ReturnType<typeof recentSession>; lifecycle: SessionLifecycle }[]
+) {
+  mockRecent.mockReturnValue({
+    data: { sessions: entries.map((e) => e.session), agentActivity: {} },
+    isLoading: false,
+    isSuccess: true,
+  });
+  act(() => {
+    for (const entry of entries) {
+      useSessionListStore.getState().setSessionStatus(entry.session.id, {
+        lifecycle: entry.lifecycle,
+      } as never);
+    }
+  });
+}
+
+/** Mount the sidebar and wait for the approvals read to land. */
+async function renderSidebarWithNow() {
+  const view = renderWithProviders(<DashboardSidebar />);
+  await waitFor(() => expect(mockTransport.listPendingApprovals).toHaveBeenCalled());
+  return view;
+}
+
+describe('Now — the zone that justifies the redesign', () => {
+  afterEach(() => cleanup());
+
+  // Its own resets, because this is a sibling of the suite above rather than a
+  // block inside it — and a shared mock left holding the previous suite's last
+  // answer is exactly how a zone assertion goes green for the wrong reason.
+  beforeEach(() => {
+    localStorage.clear();
+    useInteractionStore.getState().reset();
+    useSessionListStore.getState().resetStatuses();
+    useIdleNudgeStore.getState().reset();
+    mockReducedMotion = false;
+    mockMeshPaths.mockReset();
+    mockMeshPaths.mockReturnValue(['~/.dork/agents/dorkbot', '/projects/alpha', '/projects/beta']);
+    mockResolvedAgents.mockReset();
+    mockResolvedAgents.mockReturnValue({});
+    mockSidebarPrefs.mockReset();
+    mockSidebarPrefs.mockReturnValue(makePrefs());
+    mockUpdateSidebar.mockReset();
+    mockRecent.mockReset();
+    mockRecent.mockReturnValue({
+      data: { sessions: [], agentActivity: {} },
+      isLoading: false,
+      isSuccess: true,
+    });
+    // Every suggestion already answered, so Getting started stays out of the way
+    // of the cases that are about Now. The block that IS about Getting started
+    // gives itself an unretired set (BC-4: they share one slot).
+    mockSidebarPrefs.mockReturnValue(makePrefs({ gettingStarted: { retired: ALL_SUGGESTIONS } }));
+    mockApprovals.mockReset();
+    mockApprovals.mockReturnValue([]);
+    mockRooms.mockReset();
+    mockRooms.mockReturnValue([]);
+    mockThreads.mockReset();
+    mockThreads.mockReturnValue([]);
+    mockNavigate.mockReset();
+    mockAttentionMap.mockReset();
+    mockAttentionMap.mockImplementation((paths: string[]) =>
+      Object.fromEntries(paths.map((p) => [p, 'active']))
+    );
+    mockSelectedCwd = null;
+    mockPathname = '/';
+    mockLocation = { pathname: '/', search: {} };
+  });
+
+  describe('P2 AC-1 — empty is ABSENT, not hidden', () => {
+    it('renders zero DOM nodes with nothing waiting and nothing working', async () => {
+      await renderSidebarWithNow();
+      // Absence, not a hidden class: there is no element to interrogate.
+      expect(nowZone()).toBeNull();
+      expect(document.querySelector('[data-sidebar-zone="getting-started"]')).toBeNull();
+      expect(document.querySelector('[data-slot="sidebar-all-clear"]')).toBeNull();
+      // And the sidebar itself DID render — otherwise "no zone" is only a
+      // statement about a tree that never mounted.
+      expect(document.querySelector('[data-sidebar-zone="library"]')).not.toBeNull();
+    });
+
+    it('renders the zone the moment something needs you', async () => {
+      mockApprovals.mockReturnValue([pendingApproval()]);
+      await renderSidebarWithNow();
+      await waitFor(() => expect(nowZone()).not.toBeNull());
+      expect(zoneRows(nowZone())).toEqual(['alpha›Write a file']);
+    });
+  });
+
+  describe('P2 AC-5 — what can never be in Now', () => {
+    it('keeps mentions, DMs, unread channels and automated activity out', async () => {
+      mockRooms.mockReturnValue([
+        { ...channel('c1', 'deploys'), unreadCount: 12 },
+        { ...dmWith('d1', '/projects/alpha', 'alpha'), unreadCount: 6 },
+      ]);
+      seedSessions([
+        { session: recentSession('auto', { origin: 'task' }), lifecycle: 'streaming' },
+      ]);
+      mockSelectedCwd = null;
+      await renderSidebarWithNow();
+
+      // The rooms and the automated session ARE in the panel — this is not a
+      // test of an empty cockpit.
+      await waitFor(() => expect(document.body.textContent).toContain('deploys'));
+      // Now holds the working rollup and nothing else: no room, no DM, no
+      // unread count, no session title.
+      expect(zoneRows(nowZone())).toEqual(['1 working']);
+    });
+  });
+
+  describe('BC-6 — priority order', () => {
+    it('answers permission prompt, question, error, idle-timeout', async () => {
+      mockApprovals.mockReturnValue([]);
+      seedSessions([
+        // Quiet for 45 minutes: past the nudge threshold, inside the day window.
+        {
+          session: recentSession('idle-1', {
+            title: 'Idle one',
+            updatedAt: new Date(Date.now() - 45 * 60_000).toISOString(),
+          }),
+          lifecycle: 'idle',
+        },
+        { session: recentSession('err-1', { title: 'Wedged one' }), lifecycle: 'error' },
+        { session: recentSession('blk-1', { title: 'Blocked one' }), lifecycle: 'blocked' },
+      ]);
+      await renderSidebarWithNow();
+      await waitFor(() => expect(nowZone()).not.toBeNull());
+
+      expect(zoneRows(nowZone())).toEqual([
+        'alpha›Waiting on you',
+        'alpha›Stopped with an error',
+        'alpha›Went quiet',
+      ]);
+    });
+  });
+
+  describe('BC-7 / BC-8 — the cap, the overflow, and never scrolling', () => {
+    it('shows three rows and "+ N more", and the overflow goes to the home surface', async () => {
+      mockApprovals.mockReturnValue(
+        Array.from({ length: 7 }, (_, i) =>
+          pendingApproval({
+            approvalId: `apr-${i}`,
+            capabilityTitle: `Capability ${i}`,
+            requestedAt: new Date(Date.now() - (7 - i) * 60_000).toISOString(),
+          })
+        )
+      );
+      await renderSidebarWithNow();
+      await waitFor(() => expect(nowZone()).not.toBeNull());
+
+      const rows = zoneRows(nowZone());
+      expect(rows).toHaveLength(4);
+      expect(rows.at(-1)).toBe('+ 4 more');
+
+      mockNavigate.mockClear();
+      const overflow = Array.from(nowZone()!.querySelectorAll('[data-sidebar-row]')).at(-1)!;
+      fireEvent.click(overflow);
+      // The real route, not a stubbed handler: `/` is where the triage header
+      // already holds the full list (BC-7).
+      expect(mockNavigate).toHaveBeenCalledWith({ to: '/' });
+    });
+
+    it('never grows past five rows, however much is waiting', async () => {
+      mockApprovals.mockReturnValue(
+        Array.from({ length: 7 }, (_, i) => pendingApproval({ approvalId: `apr-${i}` }))
+      );
+      seedSessions([
+        { session: recentSession('w1'), lifecycle: 'streaming' },
+        { session: recentSession('w2'), lifecycle: 'streaming' },
+      ]);
+      await renderSidebarWithNow();
+      await waitFor(() => expect(nowZone()).not.toBeNull());
+      // 3 attention + 1 overflow + 1 working rollup, a fixed ceiling (BC-8).
+      await waitFor(() => expect(zoneRows(nowZone())).toHaveLength(5));
+    });
+  });
+
+  describe('BC-9 — the working rollup', () => {
+    it('aggregates three streaming sessions into one line', async () => {
+      seedSessions([
+        { session: recentSession('w1'), lifecycle: 'streaming' },
+        { session: recentSession('w2'), lifecycle: 'streaming' },
+        { session: recentSession('w3'), lifecycle: 'streaming' },
+      ]);
+      await renderSidebarWithNow();
+      await waitFor(() => expect(zoneRows(nowZone())).toEqual(['3 working']));
+    });
+
+    it('says nothing when the ONE working session is the one you are looking at', async () => {
+      seedSessions([{ session: recentSession('w1'), lifecycle: 'streaming' }]);
+      mockLocation = { pathname: '/session', search: { session: 'w1', dir: '/projects/alpha' } };
+      mockPathname = '/session';
+      await renderSidebarWithNow();
+      expect(nowZone()).toBeNull();
+    });
+  });
+
+  describe('BC-10 / BC-42 — dismissal, and the absence of snooze', () => {
+    it('removes an idle nudge for the session and writes NOTHING to config', async () => {
+      seedSessions([
+        {
+          session: recentSession('idle-1', {
+            updatedAt: new Date(Date.now() - 45 * 60_000).toISOString(),
+          }),
+          lifecycle: 'idle',
+        },
+      ]);
+      await renderSidebarWithNow();
+      await waitFor(() => expect(zoneRows(nowZone())).toEqual(['alpha›Went quiet']));
+
+      mockUpdateSidebar.mockClear();
+      act(() => {
+        useIdleNudgeStore.getState().dismiss('idle:idle-1');
+      });
+
+      // The row is gone. The zone is briefly still there, drawing the all-clear
+      // beat — which is BC-50 doing its job on the same transition.
+      await waitFor(() => expect(zoneRows(nowZone())).toEqual([]));
+      expect(document.querySelector('[data-slot="sidebar-all-clear"]')).not.toBeNull();
+      expect(mockUpdateSidebar).not.toHaveBeenCalled();
+    });
+
+    it('and the prefs writer this asserts on is one that really does fire', () => {
+      // The other half of "wrote nothing". `mockUpdateSidebar` is the same spy
+      // the folding suite above drives; a case that only ever asserted
+      // `not.toHaveBeenCalled()` would pass against a spy nothing can reach.
+      renderWithProviders(<DashboardSidebar />);
+      mockUpdateSidebar.mockClear();
+      fireEvent.click(sectionToggle('Agents'));
+      expect(mockUpdateSidebar).toHaveBeenCalled();
+    });
+
+    it('offers a dismiss on the nudge and on nothing else in Now', async () => {
+      mockApprovals.mockReturnValue([pendingApproval()]);
+      seedSessions([
+        {
+          session: recentSession('idle-1', {
+            updatedAt: new Date(Date.now() - 45 * 60_000).toISOString(),
+          }),
+          lifecycle: 'idle',
+        },
+      ]);
+      await renderSidebarWithNow();
+      await waitFor(() => expect(zoneRows(nowZone())).toHaveLength(2));
+
+      const menus = nowZone()!.querySelectorAll('[data-sidebar-actions]');
+      expect(menus).toHaveLength(1);
+      expect(menus[0]?.getAttribute('aria-label')).toBe('alpha actions');
+    });
+
+    it('offers no snooze anywhere in the sidebar', () => {
+      const dir = join(__dirname, '..');
+      const files = [
+        'ui/SidebarModelRow.tsx',
+        'ui/SidebarZone.tsx',
+        'ui/SidebarZones.tsx',
+        'ui/AllClearBeat.tsx',
+        'model/rules/select-now-items.ts',
+        'model/rules/cap-now-items.ts',
+      ];
+      // Comments stripped: the word appears in prose SAYING there is no snooze,
+      // and a scan that reds on its own explanation would be satisfied by
+      // deleting the explanation.
+      const code = files.map((f) =>
+        readFileSync(join(dir, f), 'utf8')
+          .replace(/\/\*[\s\S]*?\*\//g, '')
+          .replace(/\/\/.*$/gm, '')
+      );
+      // Named files, read for real: a scan over a directory that had been
+      // renamed would report the same clean answer as one that is really clean.
+      expect(code).toHaveLength(files.length);
+      for (const source of code) expect(source.toLowerCase()).not.toContain('snooze');
+      // And the read reaches real code — a spelling that IS there is found.
+      expect(code.some((source) => source.includes('dismissIdleNudge'))).toBe(true);
+    });
+  });
+
+  describe('BC-11 — the live region announces counts, and only counts', () => {
+    it('publishes the count once, a second after it changes', async () => {
+      vi.useFakeTimers();
+      try {
+        mockApprovals.mockReturnValue([
+          pendingApproval({ approvalId: 'a' }),
+          pendingApproval({ approvalId: 'b' }),
+        ]);
+        renderWithProviders(<DashboardSidebar />);
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(50);
+        });
+        const region = () =>
+          nowZone()?.querySelector('[aria-live="polite"]')?.textContent?.trim() ?? '';
+
+        // The zone is up and the region is still silent: the debounce is real.
+        expect(nowZone()).not.toBeNull();
+        expect(region()).toBe('');
+
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(1_000);
+        });
+        expect(region()).toBe('2 agents need you');
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('says nothing new across twenty activity events', async () => {
+      vi.useFakeTimers();
+      try {
+        mockApprovals.mockReturnValue([pendingApproval({ approvalId: 'a' })]);
+        seedSessions([{ session: recentSession('w1'), lifecycle: 'streaming' }]);
+        renderWithProviders(<DashboardSidebar />);
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(1_100);
+        });
+        const region = () =>
+          nowZone()?.querySelector('[aria-live="polite"]')?.textContent?.trim() ?? '';
+        expect(region()).toBe('1 agent needs you');
+
+        for (let i = 0; i < 20; i += 1) {
+          act(() => {
+            useSessionListStore.getState().setSessionStatus('w1', {
+              lifecycle: 'streaming',
+              activity: { kind: 'tool', toolName: `Tool${i}`, at: new Date().toISOString() },
+            } as never);
+          });
+        }
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(2_000);
+        });
+        expect(region()).toBe('1 agent needs you');
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+  });
+
+  describe('BC-50 — the all-clear beat', () => {
+    it('settles with "All clear" for 2.5s, then folds away', async () => {
+      vi.useFakeTimers();
+      try {
+        mockApprovals.mockReturnValue([pendingApproval()]);
+        const view = renderWithProviders(<DashboardSidebar />);
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(50);
+        });
+        expect(nowZone()).not.toBeNull();
+
+        // The last item resolves.
+        mockApprovals.mockReturnValue([]);
+        await act(async () => {
+          void view.queryClient.invalidateQueries();
+          await vi.advanceTimersByTimeAsync(50);
+        });
+
+        expect(document.querySelector('[data-slot="sidebar-all-clear"]')?.textContent).toContain(
+          'All clear'
+        );
+
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(2_500);
+        });
+        expect(document.querySelector('[data-slot="sidebar-all-clear"]')).toBeNull();
+        expect(nowZone()).toBeNull();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('never renders under a reduced-motion preference', async () => {
+      vi.useFakeTimers();
+      mockReducedMotion = true;
+      try {
+        mockApprovals.mockReturnValue([pendingApproval()]);
+        const view = renderWithProviders(<DashboardSidebar />);
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(50);
+        });
+        expect(nowZone()).not.toBeNull();
+
+        mockApprovals.mockReturnValue([]);
+        await act(async () => {
+          void view.queryClient.invalidateQueries();
+          await vi.advanceTimersByTimeAsync(50);
+        });
+
+        expect(document.querySelector('[data-slot="sidebar-all-clear"]')).toBeNull();
+        expect(nowZone()).toBeNull();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+  });
+});
+
+describe('Getting started — Now’s first life stage (BC-4, BC-12 → BC-14)', () => {
+  afterEach(() => cleanup());
+
+  /** The Getting-started zone's `<section>`, or `null`. */
+  const zone = () => document.querySelector<HTMLElement>('[data-sidebar-zone="getting-started"]');
+
+  beforeEach(() => {
+    localStorage.clear();
+    useInteractionStore.getState().reset();
+    useSessionListStore.getState().resetStatuses();
+    useIdleNudgeStore.getState().reset();
+    useDiscoveryStore.setState({ candidates: [] });
+    mockReducedMotion = false;
+    // A day-one install: DorkBot and nothing else, no session ever.
+    mockMeshPaths.mockReset();
+    mockMeshPaths.mockReturnValue([DORKBOT]);
+    mockResolvedAgents.mockReset();
+    mockResolvedAgents.mockReturnValue({
+      [DORKBOT]: { id: 'dorkbot', name: 'dorkbot', isSystem: true } as never,
+    });
+    mockSidebarPrefs.mockReset();
+    mockSidebarPrefs.mockReturnValue(makePrefs());
+    mockUpdateSidebar.mockReset();
+    mockRecent.mockReset();
+    mockRecent.mockReturnValue({
+      data: { sessions: [], agentActivity: {} },
+      isLoading: false,
+      isSuccess: true,
+    });
+    mockApprovals.mockReset();
+    mockApprovals.mockReturnValue([]);
+    mockRooms.mockReset();
+    mockRooms.mockReturnValue([]);
+    mockThreads.mockReset();
+    mockThreads.mockReturnValue([]);
+    mockNavigate.mockReset();
+    mockAttentionMap.mockReset();
+    mockAttentionMap.mockImplementation((paths: string[]) =>
+      Object.fromEntries(paths.map((p) => [p, 'active']))
+    );
+    mockSelectedCwd = null;
+    mockPathname = '/';
+    mockLocation = { pathname: '/', search: {} };
+  });
+
+  it('offers what a day-one install has not done yet', async () => {
+    await renderSidebarWithNow();
+    await waitFor(() => expect(zone()).not.toBeNull());
+    expect(zoneRows(zone())).toEqual(['Add your first agent', 'Ask DorkBot anything']);
+  });
+
+  it('counts what discovery found, and drops the fallback when it found any', async () => {
+    act(() => {
+      useDiscoveryStore.setState({
+        candidates: [
+          {
+            path: '/code/one',
+            strategy: 'fs',
+            hints: {},
+            discoveredAt: '2026-08-09T00:00:00.000Z',
+          },
+          {
+            path: '/code/two',
+            strategy: 'fs',
+            hints: {},
+            discoveredAt: '2026-08-09T00:00:00.000Z',
+          },
+        ] as never,
+      });
+    });
+    await renderSidebarWithNow();
+    await waitFor(() => expect(zone()).not.toBeNull());
+    // `agents-found` and `add-agent` are mutually exclusive: telling somebody to
+    // add their first agent when the product just found two is nonsense.
+    expect(zoneRows(zone())).toEqual(['Meet the 2 agents we found', 'Ask DorkBot anything']);
+  });
+
+  it('gives Now the slot the moment something real needs you (BC-4)', async () => {
+    mockApprovals.mockReturnValue([pendingApproval()]);
+    await renderSidebarWithNow();
+    await waitFor(() => expect(nowZone()).not.toBeNull());
+    expect(zone()).toBeNull();
+  });
+
+  /**
+   * Make the sidebar look again.
+   *
+   * A store tick rather than RTL's `rerender`, which re-renders the element it
+   * is handed into the same container and so drops the providers around it.
+   */
+  const tick = () =>
+    act(() => {
+      useDiscoveryStore.setState({ candidates: [...useDiscoveryStore.getState().candidates] });
+    });
+
+  it('retires a suggestion the operator has answered, permanently (BC-13)', async () => {
+    await renderSidebarWithNow();
+    await waitFor(() => expect(zoneRows(zone())).toContain('Add your first agent'));
+    expect(mockUpdateSidebar).not.toHaveBeenCalled();
+
+    // The operator adds an agent. `add-agent` stops applying.
+    mockMeshPaths.mockReturnValue([DORKBOT, '/projects/alpha']);
+    mockResolvedAgents.mockReturnValue({
+      [DORKBOT]: { id: 'dorkbot', name: 'dorkbot', isSystem: true } as never,
+      '/projects/alpha': { id: 'alpha', name: 'alpha' } as never,
+    });
+    tick();
+
+    await waitFor(() => expect(mockUpdateSidebar).toHaveBeenCalled());
+    expect(lastPrefsWrite().gettingStarted.retired).toEqual(['suggestion:add-agent']);
+  });
+
+  it('does not retire anything before the roster has answered', async () => {
+    // The loading placeholder says "nothing to suggest" for every fact, which is
+    // indistinguishable from an operator finishing all five at once. Retiring on
+    // it would erase the whole of Getting started on a cold load, for good.
+    mockRecent.mockReturnValue({ data: undefined, isLoading: true, isSuccess: false });
+    await renderSidebarWithNow();
+    tick();
+    expect(zone()).toBeNull();
+    expect(mockUpdateSidebar).not.toHaveBeenCalled();
+  });
+
+  it('is gone for good once every suggestion is retired (BC-14)', async () => {
+    mockSidebarPrefs.mockReturnValue(makePrefs({ gettingStarted: { retired: ALL_SUGGESTIONS } }));
+    await renderSidebarWithNow();
+    // The panel rendered — this is not a statement about an empty tree.
+    expect(document.querySelector('[data-sidebar-zone="library"]')).not.toBeNull();
+    expect(zone()).toBeNull();
+  });
+
+  it('sends each suggestion somewhere real', async () => {
+    await renderSidebarWithNow();
+    await waitFor(() => expect(zone()).not.toBeNull());
+    const rows = Array.from(zone()!.querySelectorAll('[data-sidebar-row]'));
+    expect(rows).toHaveLength(2);
+
+    fireEvent.click(rows[0]!);
+    expect(useAgentCreationStore.getState().isOpen).toBe(true);
   });
 });

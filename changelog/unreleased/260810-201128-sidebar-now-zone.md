@@ -1,0 +1,25 @@
+---
+covers:
+  - "feat(client): the sidebar's Now zone says what needs you, and Getting started fills its slot on day one (P2.2, DOR-1067)"
+---
+
+### Added
+
+- The top of the sidebar is now a **Now** zone: the things that are actually waiting on you.
+  Only four things are allowed in — an agent asking permission, an agent asking a question, a
+  session that stopped with an error, and one gentle nudge about a session that went quiet.
+  Mentions, unread channels, direct messages and background work never appear there, so a Now
+  zone with something in it always means something (DOR-1067)
+- Now shows at most three things plus a "+ N more" row that takes you to the home page, where
+  the full list already lives. It never scrolls, and agents that are busy working are summed
+  into a single "N working" line instead of a row each
+- When the last thing needing you is done, Now says "All clear" for a moment and then folds
+  away. If you have asked your system for less motion, it simply disappears
+- A new **Getting started** zone takes Now's place on a fresh install. It suggests what you
+  have not done yet — meet the agents we found on your machine, add your first agent, say hi in
+  #team, ask DorkBot something — and each suggestion retires for good once you have done it
+
+### Changed
+
+- Zone headings in the sidebar are a little darker, so they meet the readable-contrast bar in
+  the light theme as well as the dark one
