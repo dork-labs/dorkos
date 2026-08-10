@@ -90,6 +90,17 @@ const MOCK_VISIBLE_TASKS: Record<string, VisibleBackgroundTask> = {
     durationMs: 30000,
     summary: 'Stopped by user.',
   },
+  // Beside `agent_stopped` on purpose — the two are one comparison: the tick for
+  // a stop somebody observed, the dash for one DorkOS lost sight of (DOR-1108).
+  agent_untracked: {
+    taskId: 'vis-agent-4',
+    taskType: 'agent',
+    status: 'untracked',
+    color: TASK_COLORS[3],
+    startedAt: Date.now() - 240000,
+    description: 'Run the dev server in the background',
+    durationMs: 240000,
+  },
 };
 
 /** Tool-related component showcases: ToolCallCard, ToolApproval. */
@@ -499,7 +510,7 @@ function BackgroundTaskShowcases() {
         title="TaskDetailPanel"
         description="Expandable chip list showing all background tasks with kill buttons and status."
       >
-        <ShowcaseLabel>Mixed tasks (agent + bash, running + completed + stopped)</ShowcaseLabel>
+        <ShowcaseLabel>Mixed tasks (agent + bash, every status)</ShowcaseLabel>
         <ShowcaseDemo>
           <div className="bg-card max-w-md rounded-lg border">
             <TaskDetailPanel tasks={allTasks} onStopTask={logStop} />

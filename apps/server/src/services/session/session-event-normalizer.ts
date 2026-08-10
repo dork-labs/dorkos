@@ -777,11 +777,11 @@ export async function feedProjector(
     }
   } finally {
     // The end of the stream is the end of the runtime's process, so anything it
-    // still reports as running is gone with it. Retire each stranded child with
-    // a terminal `subagent_update` BEFORE the close, so the stops ride inside
-    // the last window (persisted with it), every consumer drains through the
-    // same event it would have drained through anyway, and the turn settles
-    // with an honest zero.
+    // still reports as running has stopped being OBSERVABLE. Retire each
+    // stranded child with a terminal `subagent_update` BEFORE the close, so the
+    // updates ride inside the last window (persisted with it), every consumer
+    // drains through the same event it would have drained through anyway, and
+    // the turn settles with an honest zero.
     //
     // The stream, not the turn, is the right boundary — verified in the
     // claude-code runtime rather than assumed. `executeSdkQuery` releases stdin
@@ -795,6 +795,23 @@ export async function feedProjector(
     // terminal reason. Without it the count is a permanent on-screen lie:
     // nothing else would ever clear it.
     //
+    // ## Why `untracked` and not `stopped` (DOR-1108)
+    //
+    // This sweep used to declare every swept child STOPPED, on the reasoning
+    // that the process hosting it had exited. That reasoning is one case short.
+    // A subagent does live inside the CLI process and does die with it — but a
+    // child the agent DETACHED does not: a `nohup`'d dev server started as a
+    // background task is still serving long after the turn, the CLI, and the
+    // session are over. DorkOS cannot observe either kind once the stream ends,
+    // so it cannot tell them apart, and `stopped` asserted a death for both.
+    //
+    // `untracked` is the strongest claim the evidence supports: DorkOS lost
+    // sight of this child. It is terminal in every way `stopped` was — it leaves
+    // the running count, it retires the row — and it stops the product saying
+    // something it does not know. Actually WATCHING a detached child is not this
+    // fix's job and is not attempted here; the persistent-session pump (spec
+    // `persistent-session-runtime`, P3) owns child lifecycle.
+    //
     // It sweeps the SESSION's children, not this stream's, so it depends on one
     // stream per session at a time — the single-flight guarantee `sendMessage`
     // has always claimed and that DOR-1088 / PR #906 actually enforce (turn
@@ -802,14 +819,15 @@ export async function feedProjector(
     // ever ran concurrently on one session, whichever finished first would
     // retire the other's live children. The persistent pump keeps this correct
     // for a different reason: its stream spans every turn, so the `finally` is
-    // the pump dying, which is still exactly when the children die.
+    // the pump dying, which is still exactly when it stops being able to see
+    // them.
     for (const taskId of projector.listRunningSubagents()) {
-      const stopped: RawOf<'subagent_update'> = {
+      const untracked: RawOf<'subagent_update'> = {
         type: 'subagent_update',
         taskId,
-        status: 'stopped',
+        status: 'untracked',
       };
-      projector.ingest(stopped);
+      projector.ingest(untracked);
     }
     // Defensive: a stream that ends with a window still open — no `done` at all,
     // or a reopened continuation the runtime never terminated — still closes it

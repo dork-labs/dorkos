@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { ChevronDown } from 'lucide-react';
+import type { BackgroundTaskStatus } from '@dorkos/shared/types';
 import { cn } from '@/layers/shared/lib';
 import type { VisibleBackgroundTask } from '../../model/use-background-tasks';
-import { AgentRunner } from './AgentRunner';
+import { AgentRunner, type AgentRunnerStatus } from './AgentRunner';
 import { TaskDotSection } from './TaskDotSection';
 import { TaskDetailPanel } from './TaskDetailPanel';
 
@@ -16,6 +17,19 @@ interface BackgroundTaskBarProps {
 
 /** Maximum agent runner figures before the overflow badge appears. */
 const MAX_VISIBLE_AGENTS = 4;
+
+/**
+ * Collapse a background task's five statuses onto the four marks AgentRunner
+ * draws.
+ *
+ * Only `stopped` shares: it is a real ending somebody observed, so it takes the
+ * tick like `complete`. `untracked` keeps its own mark — DorkOS did not see how
+ * that one ended, and both the tick and the cross would say it did (DOR-1108).
+ */
+function toRunnerStatus(status: BackgroundTaskStatus): AgentRunnerStatus {
+  if (status === 'stopped') return 'complete';
+  return status;
+}
 
 const barTransitionEase = [0.16, 1, 0.3, 1] as const;
 
@@ -158,13 +172,13 @@ function AgentRunnerSection({
               agent={{
                 taskId: task.taskId,
                 description: task.description ?? '',
-                // AgentRunner only knows 'running' | 'complete' | 'error' — map 'stopped' to 'error'
-                status:
-                  task.status === 'running'
-                    ? 'running'
-                    : task.status === 'complete'
-                      ? 'complete'
-                      : 'error',
+                // AgentRunner knows three states and the task has five, so two
+                // of them share. `error` is the only one that may draw as a
+                // failure: `stopped` and `untracked` are endings, not failures —
+                // and `untracked` in particular means DorkOS lost sight of the
+                // task, which is not evidence that anything went wrong
+                // (DOR-1108).
+                status: toRunnerStatus(task.status),
                 color: task.color,
                 toolUses: task.toolUses,
                 lastToolName: task.lastToolName,

@@ -5,11 +5,20 @@ import './agent-runner.css';
 
 type RunnerPhase = 'running' | 'celebrating' | 'done';
 
+/**
+ * The states a runner figure can draw.
+ *
+ * `untracked` is an ending DorkOS did not witness — it lost sight of the task
+ * (DOR-1108) — and gets the dash rather than the tick or the cross, both of
+ * which would state an outcome nobody observed.
+ */
+export type AgentRunnerStatus = 'running' | 'complete' | 'error' | 'untracked';
+
 /** Shape expected by AgentRunner for rendering an animated running figure. */
 interface AgentRunnerAgent {
   taskId: string;
   description: string;
-  status: 'running' | 'complete' | 'error';
+  status: AgentRunnerStatus;
   color: string;
   toolUses?: number;
   lastToolName?: string;
@@ -22,6 +31,70 @@ interface AgentRunnerProps {
   index: number;
 }
 
+/**
+ * The mark a finished runner settles into: one shared ring, and one stroke
+ * inside it saying how the run ended.
+ *
+ * Three marks, and the third is the point of the trio. A tick claims success and
+ * a cross claims failure; `untracked` is the ending DorkOS did not witness
+ * (DOR-1108), so it gets a dash — the same neutral the run-history panels
+ * already use for a run nobody saw finish — drawn fainter than the other two
+ * because it is the weakest claim of the three.
+ *
+ * @param props - The finished status and the runner's assigned colour.
+ */
+function DoneMark({ status, color }: { status: AgentRunnerAgent['status']; color: string }) {
+  return (
+    <svg className="check-appear h-6 w-[22px]" viewBox="0 0 22 24" data-status={status}>
+      <circle cx="11" cy="12" r="7" fill="none" stroke={color} strokeWidth="1.5" opacity="0.3" />
+      {status === 'error' && (
+        <>
+          <line
+            x1="8"
+            y1="9"
+            x2="14"
+            y2="15"
+            stroke={color}
+            strokeWidth="2"
+            strokeLinecap="round"
+          />
+          <line
+            x1="14"
+            y1="9"
+            x2="8"
+            y2="15"
+            stroke={color}
+            strokeWidth="2"
+            strokeLinecap="round"
+          />
+        </>
+      )}
+      {status === 'untracked' && (
+        <line
+          x1="8"
+          y1="12"
+          x2="14"
+          y2="12"
+          stroke={color}
+          strokeWidth="2"
+          strokeLinecap="round"
+          opacity="0.5"
+        />
+      )}
+      {status !== 'error' && status !== 'untracked' && (
+        <polyline
+          points="7,12 10,15 15,9"
+          fill="none"
+          stroke={color}
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      )}
+    </svg>
+  );
+}
+
 /** Animated SVG running figure representing a single background agent. */
 export function AgentRunner({ agent, index }: AgentRunnerProps) {
   const staggerStyle = useMemo(() => ({ animationDelay: `${index * 0.09}s` }), [index]);
@@ -30,11 +103,7 @@ export function AgentRunner({ agent, index }: AgentRunnerProps) {
 
   /* eslint-disable react-hooks/set-state-in-effect -- phase transition on agent completion */
   useEffect(() => {
-    if (
-      prevStatusRef.current === 'running' &&
-      (agent.status === 'complete' || agent.status === 'error') &&
-      phase === 'running'
-    ) {
+    if (prevStatusRef.current === 'running' && agent.status !== 'running' && phase === 'running') {
       setPhase('celebrating');
       const checkTimer = setTimeout(() => setPhase('done'), 350);
       return () => clearTimeout(checkTimer);
@@ -46,57 +115,7 @@ export function AgentRunner({ agent, index }: AgentRunnerProps) {
   if (phase === 'done') {
     return (
       <div className="relative inline-flex">
-        {agent.status === 'error' ? (
-          <svg className="check-appear h-6 w-[22px]" viewBox="0 0 22 24">
-            <circle
-              cx="11"
-              cy="12"
-              r="7"
-              fill="none"
-              stroke={agent.color}
-              strokeWidth="1.5"
-              opacity="0.3"
-            />
-            <line
-              x1="8"
-              y1="9"
-              x2="14"
-              y2="15"
-              stroke={agent.color}
-              strokeWidth="2"
-              strokeLinecap="round"
-            />
-            <line
-              x1="14"
-              y1="9"
-              x2="8"
-              y2="15"
-              stroke={agent.color}
-              strokeWidth="2"
-              strokeLinecap="round"
-            />
-          </svg>
-        ) : (
-          <svg className="check-appear h-6 w-[22px]" viewBox="0 0 22 24">
-            <circle
-              cx="11"
-              cy="12"
-              r="7"
-              fill="none"
-              stroke={agent.color}
-              strokeWidth="1.5"
-              opacity="0.3"
-            />
-            <polyline
-              points="7,12 10,15 15,9"
-              fill="none"
-              stroke={agent.color}
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
-        )}
+        <DoneMark status={agent.status} color={agent.color} />
       </div>
     );
   }

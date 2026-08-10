@@ -73,6 +73,46 @@ export type RawSessionEvent = Omit<SessionEvent, 'seq'>;
 export const CAPABILITY_HOLD_PAUSE_GRACE_MS = 30_000;
 
 /**
+ * How long a background child may stay silent, once its session has gone idle,
+ * before DorkOS stops counting it as running (DOR-1104).
+ *
+ * ## Why a clock is needed at all
+ *
+ * `runningSubagents` drains two ways: the child reports a terminal status, or the
+ * stream-end sweep retires it (`feedProjector`'s `finally`, DOR-1100). A child
+ * that hits NEITHER — its turn interrupted, its process killed, a runtime that
+ * simply stops reporting — used to sit in the count with no bound and nothing in
+ * the system that could ever remove it. Since DOR-1100 that count is on screen as
+ * "still working in the background", so a leaked child is a session that claims
+ * forever to be about to speak again.
+ *
+ * The gap cannot be closed by reacting to events, because the failure IS the
+ * absence of events: on a session nobody touches again, nothing ever arrives to
+ * notice. So the bound is a clock, and this is its length.
+ *
+ * ## What the clock measures, and why fifteen minutes
+ *
+ * SILENCE, not age, and only while the session is idle. A child that keeps
+ * reporting keeps its place however long it runs, and the clock restarts at every
+ * `turn_end` — the agent working is itself evidence its children are fine, and
+ * finishing is what wakes it.
+ *
+ * Fifteen minutes is longer than the turn stall timeout (ten), on purpose: a
+ * quiet turn means the agent is stuck, but a quiet CHILD is ordinary — a subagent
+ * can read for minutes between tool calls. It is short enough that a leak is a
+ * bounded wrong answer rather than a permanent one, and the cost of being early
+ * is small now that the retirement says `untracked`
+ * (DOR-1108) rather than claiming the child stopped: expiring a child that was in
+ * fact alive downgrades what DorkOS says to "I lost sight of it", which was true
+ * the whole time.
+ *
+ * The real fix for child lifecycle is the persistent-session pump (spec
+ * `persistent-session-runtime`, P3), which can ask the runtime what is actually
+ * running. This is the honest bound until it lands.
+ */
+export const SUBAGENT_SILENCE_TIMEOUT_MS = 15 * 60_000;
+
+/**
  * Shortest gap between two fan-outs that exist only to report a NEW tool
  * ({@link SessionStatus.activity}).
  *
@@ -333,8 +373,22 @@ export class SessionStateProjector {
    */
   private readonly openSigninCards = new Map<string, SigninCardEntry>();
 
-  /** Running subagents by taskId; size feeds `runningSubagentCount`. */
-  private readonly runningSubagents = new Set<string>();
+  /**
+   * Running subagents by taskId, each mapped to the epoch ms of the last thing
+   * DorkOS heard about it; size feeds `runningSubagentCount`.
+   *
+   * The timestamp is the liveness bound's only input (DOR-1104): it is refreshed
+   * by every `running` update the child sends AND by every `turn_end`, and
+   * {@link SUBAGENT_SILENCE_TIMEOUT_MS} past it — with no turn open — the child
+   * is retired as `untracked`.
+   */
+  private readonly runningSubagents = new Map<string, number>();
+
+  /**
+   * Armed liveness sweep for {@link runningSubagents}, or `undefined` when none
+   * is (no children, or a turn is open and the clock is not running).
+   */
+  private subagentExpiryTimer: ReturnType<typeof setTimeout> | undefined;
 
   /**
    * Epoch ms of the last ACTIVITY-driven fan-out — the floor the throttle
@@ -392,6 +446,13 @@ export class SessionStateProjector {
    * @param raw - A {@link SessionEvent} union member without its `seq`.
    */
   ingest(raw: RawSessionEvent): SessionEvent {
+    // Before anything else, so a stale child cannot ride one more event into a
+    // count somebody is about to read. The armed timer is what normally catches
+    // these; this catches the case where it could not run (a suspended process,
+    // a machine asleep) and costs a map-size check otherwise. Re-entrant by
+    // design — it ingests the retirements — and terminates because each stale
+    // entry is removed before its own event is ingested.
+    this.expireStaleSubagents();
     const event = { ...raw, seq: ++this.counter } as SessionEvent;
     // Capture before project(): applyStatusChange replaces the status object.
     const lifecycleBefore = this.status.lifecycle;
@@ -485,15 +546,23 @@ export class SessionStateProjector {
   }
 
   /**
-   * Drop any armed trailing activity flush.
+   * Drop every timer this projector owns, for a projector that is being retired
+   * ({@link terminate}) or dropped from the registry ({@link disposeProjector}).
    *
-   * Also called from outside a fan-out — by {@link terminate} and by
-   * {@link disposeProjector} — because an armed timer on a retired projector
-   * would announce a session that no longer exists to every connected client.
+   * One call rather than one per timer, because the two failure modes are the
+   * same shape and the next timer added here would otherwise be forgotten at
+   * exactly these two sites: an armed timer on a retired projector announces a
+   * session that no longer exists, or ingests into an instance nothing can reach.
    *
    * @internal
    */
-  cancelActivityFlush(): void {
+  cancelTimers(): void {
+    this.cancelActivityFlush();
+    this.cancelSubagentExpiry();
+  }
+
+  /** Drop any armed trailing activity flush. */
+  private cancelActivityFlush(): void {
     if (this.activityFlushTimer === undefined) return;
     clearTimeout(this.activityFlushTimer);
     this.activityFlushTimer = undefined;
@@ -600,6 +669,9 @@ export class SessionStateProjector {
         // person got back from their browser, which is the exact failure DOR-1004
         // exists to prevent. The client applies the same rule.
         if (event.origin !== 'runtime') this.ageSigninCards();
+        // The children's silence clock does not run while a turn is open
+        // (DOR-1104), so drop any sweep armed while the session was idle.
+        this.cancelSubagentExpiry();
         this.ring.markTurnStarted();
         this.status.lifecycle = 'streaming';
         // A new turn clears the previous failure surface.
@@ -629,7 +701,10 @@ export class SessionStateProjector {
         // the only honest account of why the session is about to speak again.
         //
         // Each entry leaves on its own terminal `subagent_update`, which is the
-        // same event that wakes the agent, so the set drains itself.
+        // same event that wakes the agent, so the set drains itself — and for
+        // the ones that never send it, the silence clock starts HERE (DOR-1104),
+        // which is what "after the session went idle" means.
+        this.restartSubagentSilenceClocks();
         this.status.lifecycle = this.deriveTurnEndLifecycle(event.terminalReason);
         // A turn that did not settle to error leaves no stale failure behind
         // (a mid-turn error the runtime recovered from must not linger).
@@ -858,7 +933,7 @@ export class SessionStateProjector {
    * A copy, not the live set: the sweep ingests while it iterates.
    */
   listRunningSubagents(): string[] {
-    return [...this.runningSubagents];
+    return [...this.runningSubagents.keys()];
   }
 
   /** Recompute todo tallies from a `snapshot`/`update` task list. */
@@ -871,14 +946,111 @@ export class SessionStateProjector {
     };
   }
 
-  /** Track running subagents; `runningSubagentCount` mirrors the live set size. */
+  /**
+   * Track running subagents; `runningSubagentCount` mirrors the live set size.
+   *
+   * A `running` update also refreshes the child's silence clock — progress
+   * reports are the evidence the liveness bound (DOR-1104) waits for.
+   */
   private applySubagentUpdate(taskId: string, status: string): void {
     if (status === 'running') {
-      this.runningSubagents.add(taskId);
+      this.runningSubagents.set(taskId, Date.now());
     } else {
       this.runningSubagents.delete(taskId);
     }
     this.status.runningSubagentCount = this.runningSubagents.size;
+    this.scheduleSubagentExpiry();
+  }
+
+  /**
+   * Restart every running child's silence clock (DOR-1104).
+   *
+   * Called at `turn_end`, because the bound is "silent for a window AFTER the
+   * session went idle" and this is that moment. Without it, a child that was
+   * quiet through a long turn would be retired the instant the turn closed —
+   * with a deadline that had already passed while the agent was demonstrably
+   * alive and working beside it.
+   */
+  private restartSubagentSilenceClocks(): void {
+    const now = Date.now();
+    for (const taskId of this.runningSubagents.keys()) this.runningSubagents.set(taskId, now);
+    this.scheduleSubagentExpiry();
+  }
+
+  /**
+   * Retire every running child whose silence has outlasted
+   * {@link SUBAGENT_SILENCE_TIMEOUT_MS} (DOR-1104).
+   *
+   * Two things make it safe to call from anywhere, including from inside
+   * {@link ingest}:
+   *
+   * - **It cannot recurse.** EVERY stale entry leaves the map before ANY
+   *   retirement is ingested, so the nested `expireStaleSubagents` at the top of
+   *   `ingest` finds nothing left to expire. The two loops must stay two, and
+   *   this is not a style preference: interleaving them retires each child once
+   *   per pass and the passes nest, so N stale children emitted N(N+1)/2 events —
+   *   three produced six. That is the COMMON case, not an edge, because
+   *   {@link restartSubagentSilenceClocks} stamps every child with the same
+   *   `now`, so a multi-child leak always expires as one batch. And the duplicate
+   *   is not cosmetic: the client's fold sees the second copy as an id it no
+   *   longer knows, which is the arm that decrements its count of children it
+   *   cannot name — silently discounting children that are still alive.
+   * - **It is a no-op with a turn open.** The clock only runs while the session
+   *   is idle; a child that is quiet while the agent works is ordinary, and the
+   *   agent is right there to hear from it.
+   *
+   * Retirements ride the stream like every other one, so a client folding its own
+   * count drains the same ids rather than holding them forever — and they say
+   * `untracked`, not `stopped` (DOR-1108), because silence is not evidence of a
+   * stop.
+   */
+  private expireStaleSubagents(): void {
+    if (this.runningSubagents.size === 0 || this.inProgressTurn !== null) return;
+    const cutoff = Date.now() - SUBAGENT_SILENCE_TIMEOUT_MS;
+    const stale = [...this.runningSubagents]
+      .filter(([, lastSeenAt]) => lastSeenAt <= cutoff)
+      .map(([taskId]) => taskId);
+    if (stale.length === 0) return;
+    // Empty the map, THEN tell anyone. See the recursion note above.
+    for (const taskId of stale) this.runningSubagents.delete(taskId);
+    for (const taskId of stale) {
+      this.ingest({
+        type: 'subagent_update',
+        taskId,
+        status: 'untracked',
+      } as RawSessionEvent);
+    }
+    // The count moved without the lifecycle moving, so nothing else would tell
+    // the fleet. A sidebar row reading "waiting on 3" for work that ended is the
+    // whole bug; announcing here is what corrects it everywhere at once.
+    this.announceNow();
+  }
+
+  /**
+   * Arm (or re-arm) the liveness sweep for the earliest deadline outstanding.
+   *
+   * Cancels first, so this is also the "nothing to watch" path: no children, or a
+   * turn open and the clock therefore stopped. `unref` for the same reason the
+   * activity flush does it — a pending sweep is pure bookkeeping and must never
+   * hold the process open.
+   */
+  private scheduleSubagentExpiry(): void {
+    this.cancelSubagentExpiry();
+    if (this.runningSubagents.size === 0 || this.inProgressTurn !== null) return;
+    const earliest = Math.min(...this.runningSubagents.values());
+    const delay = Math.max(0, earliest + SUBAGENT_SILENCE_TIMEOUT_MS - Date.now());
+    this.subagentExpiryTimer = setTimeout(() => {
+      this.subagentExpiryTimer = undefined;
+      this.expireStaleSubagents();
+    }, delay);
+    this.subagentExpiryTimer.unref?.();
+  }
+
+  /** Drop any armed liveness sweep. */
+  private cancelSubagentExpiry(): void {
+    if (this.subagentExpiryTimer === undefined) return;
+    clearTimeout(this.subagentExpiryTimer);
+    this.subagentExpiryTimer = undefined;
   }
 
   /** Record a pending interaction and flip the session to `blocked`. */
@@ -961,25 +1133,41 @@ export class SessionStateProjector {
       // `subagent_update` (the cockpit does) would go on reporting them, or
       // resurrect them from a replay, while the server said zero. The two
       // projections have to drain through the same events or they disagree.
-      for (const taskId of this.listRunningSubagents()) {
-        const stopped: RawSessionEvent = {
+      //
+      // `untracked`, for the same reason the sweep uses it (DOR-1108): this path
+      // is DorkOS tearing a session down, which says nothing whatever about
+      // whether the work it handed off is still running.
+      //
+      // Cleared BEFORE any of them is ingested, in the same shape and for the
+      // same reason as {@link expireStaleSubagents}: `ingest` runs the liveness
+      // sweep on its way in, and a half-emptied set is what lets that sweep
+      // retire the ids this loop has not reached yet — a second time. Today the
+      // open-turn guard happens to make that unreachable from here, which is a
+      // reason to be careful rather than a reason to rely on it: this path can be
+      // entered with `lifecycle === 'streaming'` and no turn open, and the safety
+      // of the loop should not depend on a condition checked in another method.
+      const stranded = this.listRunningSubagents();
+      this.runningSubagents.clear();
+      this.status.runningSubagentCount = 0;
+      for (const taskId of stranded) {
+        const untracked: RawSessionEvent = {
           type: 'subagent_update',
           taskId,
-          status: 'stopped',
+          status: 'untracked',
         } as RawSessionEvent;
-        this.ingest(stopped);
+        this.ingest(untracked);
       }
       this.inProgressTurn = null;
       this.ring.markTurnEnded();
       this.status.lifecycle = 'interrupted';
       // The turn is over, so whatever tool it was in is over with it.
       delete this.status.activity;
-      // Belt and braces after the terminal updates above: this path is the
-      // eviction degradation, which tears the session down without ever running
-      // a stream's `finally`, so the sweep that normally retires them never
-      // fires here (DOR-1100).
-      this.runningSubagents.clear();
-      this.status.runningSubagentCount = 0;
+      // The set was emptied above, before the retirements went out. This path is
+      // the eviction degradation — it tears the session down without ever running
+      // a stream's `finally`, so the sweep that normally retires them never fires
+      // here (DOR-1100) — and with nothing left to watch there is nothing left to
+      // arm (DOR-1104).
+      this.cancelSubagentExpiry();
       // This path mutates lifecycle WITHOUT an ingest, so fan out here — and
       // through the activity path, so an armed trailing flush cannot land after
       // it and re-assert the tool this just cleared.
@@ -1147,9 +1335,16 @@ export class SessionStateProjector {
    * their browser signing in therefore draws the card, which is the only state
    * in which a person is likely to open one.
    *
+   * Reconciles the running-children count first (DOR-1104): a snapshot is a
+   * fresh reader's whole picture of the session, and a child whose silence has
+   * already outlasted the bound must not be in it — including on the paths the
+   * armed sweep could not answer for (a suspended process, a projector nothing
+   * has touched since the deadline passed).
+   *
    * @param loadHistory - Supplies completed messages (Claude: JSONL; stateless: EventLog).
    */
   async buildSnapshot(loadHistory: () => Promise<HistoryMessage[]>): Promise<SessionSnapshot> {
+    this.expireStaleSubagents();
     const messages = await loadHistory();
     return {
       messages,
@@ -1362,7 +1557,7 @@ export class SessionStateProjector {
   terminate(): number {
     if (this.terminated) return 0;
     this.terminated = true;
-    this.cancelActivityFlush();
+    this.cancelTimers();
     const waiters = this.waiters;
     this.waiters = [];
     for (const wake of waiters) wake(TERMINATED);
@@ -1515,9 +1710,9 @@ export function peekProjector(sessionId: string): SessionStateProjector | undefi
  * @param sessionId - DorkOS session id.
  */
 export function disposeProjector(sessionId: string): void {
-  // Before the entry goes: an armed activity flush would otherwise fire on an
-  // instance nothing can reach and announce a session that is gone.
-  projectors.get(sessionId)?.cancelActivityFlush();
+  // Before the entry goes: an armed timer would otherwise fire on an instance
+  // nothing can reach and announce a session that is gone.
+  projectors.get(sessionId)?.cancelTimers();
   projectors.delete(sessionId);
   // Drop the session's DevTools capture buffer alongside its projector — the
   // preview is gone, and the buffer must not outlive the session (DOR-213).

@@ -154,6 +154,40 @@ describe('SubagentBlock', () => {
     expect(block.getAttribute('data-status')).toBe('error');
   });
 
+  // DOR-1108: a task DorkOS lost sight of must claim NEITHER outcome. The green
+  // tick is a success it did not witness and the red ✗ a failure it did not
+  // witness, so it draws the muted dash instead.
+  it('draws an untracked task as neither a success nor a failure', () => {
+    render(<SubagentBlock part={{ ...basePart, status: 'untracked' }} />);
+    const block = screen.getByTestId('subagent-block');
+    expect(block.getAttribute('data-status')).toBe('untracked');
+    // `toolStatus` colors the glyph: success green and error red are both claims.
+    expect(block.querySelector('.text-status-error')).toBeNull();
+    expect(block.querySelector('.text-status-success')).toBeNull();
+    expect(block.querySelector('.text-muted-foreground')).not.toBeNull();
+  });
+
+  // …and `stopped` is NOT the same fact, so it keeps the tick: something stopped
+  // it, and somebody saw that happen.
+  it('still draws a stopped task with the completed glyph', () => {
+    render(<SubagentBlock part={{ ...basePart, status: 'stopped' }} />);
+    const block = screen.getByTestId('subagent-block');
+    expect(block.querySelector('.text-status-success')).not.toBeNull();
+  });
+
+  // …and it says so, rather than leaving a card that reads as finished. This is
+  // the only ending that needs a sentence, so it makes itself expandable.
+  it('explains an untracked task instead of claiming it stopped', () => {
+    render(<SubagentBlock part={{ ...basePart, status: 'untracked' }} />);
+    const button = screen.getByRole('button');
+    expect(button.getAttribute('aria-expanded')).toBe('false');
+    fireEvent.click(button);
+    const note = screen.getByTestId('subagent-untracked');
+    expect(note.textContent).toContain('lost track');
+    expect(note.textContent).toContain('may still be running');
+    expect(note.textContent).not.toContain('stopped');
+  });
+
   it('becomes expandable when forwarded subagent text is present', () => {
     render(<SubagentBlock part={{ ...basePart, subagentText: 'Exploring the module' }} />);
     const button = screen.getByRole('button');

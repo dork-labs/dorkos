@@ -1153,10 +1153,12 @@ describe('feedProjector — turn windows', () => {
   });
 });
 
-// A background task that is still running when the runtime's stream ends is
-// gone: the subprocess it lived in exited, so its `task_notification` can never
-// arrive. Nothing else in the system would ever clear it, so an uncleared count
-// is a permanent on-screen lie (DOR-1100).
+// A background task that is still running when the runtime's stream ends stops
+// being VISIBLE: the subprocess it lived in exited, so its `task_notification`
+// can never arrive. Nothing else in the system would ever clear it, so an
+// uncleared count is a permanent on-screen lie (DOR-1100) — and the terminal
+// update the sweep writes says `untracked`, not `stopped`, because a detached
+// child outlives that process and DorkOS cannot tell the two apart (DOR-1108).
 describe('feedProjector — stranded background children', () => {
   it('retires every still-running child when the stream ends', async () => {
     const projector = new SessionStateProjector('strand-1');
@@ -1174,10 +1176,44 @@ describe('feedProjector — stranded background children', () => {
     expect(projector.getStatus().runningSubagentCount).toBe(0);
     // The one that never reported gets a terminal update of its own, so a
     // replay and a live client drain through the same event.
-    const stops = ingestSpy.mock.calls
+    // Every non-running update, so the child that DID report is pinned as
+    // `complete` (its own word) beside the swept one's `untracked` (DorkOS's).
+    const terminal = ingestSpy.mock.calls
       .map((c) => c[0])
-      .filter((e) => e.type === 'subagent_update' && e.status === 'stopped');
-    expect(stops).toEqual([{ type: 'subagent_update', taskId: 'bt2', status: 'stopped' }]);
+      .filter((e) => e.type === 'subagent_update' && e.status !== 'running');
+    expect(terminal).toEqual([
+      { type: 'subagent_update', taskId: 'bt1', status: 'complete' },
+      { type: 'subagent_update', taskId: 'bt2', status: 'untracked' },
+    ]);
+  });
+
+  // DOR-1108: the sweep knows the agent's process is gone. It does NOT know that
+  // everything the agent started is gone with it — a child the agent detached
+  // keeps running, and saying `stopped` would report a death nobody witnessed.
+  // The one word that is true of every swept child is that DorkOS lost sight of
+  // it.
+  it('says it lost track of them, never that it stopped them', async () => {
+    const projector = new SessionStateProjector('strand-5');
+    const ingestSpy = vi.spyOn(projector, 'ingest');
+
+    async function* turn(): AsyncIterable<StreamEvent> {
+      // A `nohup`'d dev server: started as a background task, still serving long
+      // after the turn — and the CLI — is over.
+      yield { type: 'background_task_started', data: { taskId: 'dev-server' } };
+      yield { type: 'done', data: { sessionId: 'strand-5' } };
+    }
+
+    await feedProjector(projector, turn());
+
+    const terminal = ingestSpy.mock.calls
+      .map((c) => c[0])
+      .filter((e) => e.type === 'subagent_update' && e.status !== 'running');
+    expect(terminal).toHaveLength(1);
+    expect(terminal[0]).toMatchObject({ status: 'untracked' });
+    // The claim that was wrong: nothing on this stream may report a stop.
+    expect(terminal.some((e) => e.type === 'subagent_update' && e.status === 'stopped')).toBe(
+      false
+    );
   });
 
   // The stop must land INSIDE the window, before it closes: outside it, the turn
@@ -1215,10 +1251,10 @@ describe('feedProjector — stranded background children', () => {
 
     await feedProjector(projector, turn());
 
-    const stops = ingestSpy.mock.calls
+    const swept = ingestSpy.mock.calls
       .map((c) => c[0])
-      .filter((e) => e.type === 'subagent_update' && e.status === 'stopped');
-    expect(stops).toHaveLength(1);
+      .filter((e) => e.type === 'subagent_update' && e.status === 'untracked');
+    expect(swept).toHaveLength(1);
     expect(projector.getStatus().runningSubagentCount).toBe(0);
   });
 
