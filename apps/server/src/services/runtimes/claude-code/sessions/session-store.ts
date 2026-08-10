@@ -20,7 +20,6 @@ import type {
   ToolDecisionOptions,
 } from '@dorkos/shared/agent-runtime';
 import type { AgentSession } from '../agent-types.js';
-import { OPERATOR_DENIED_TOOL_IDS_MAX } from '../agent-types.js';
 import { SESSIONS } from '../../../../config/constants.js';
 import { logger } from '../../../../lib/logger.js';
 import { resolveActiveClaudeRoot } from '../claude-config-dir.js';
@@ -453,17 +452,6 @@ export class SessionStore {
       // "Always Allow" — pass the SDK permission suggestions array
       pending.resolve(pending.suggestions);
     } else {
-      if (!approved && session) {
-        // Record the REAL operator deny, so the phantom-cancellation detector
-        // (DOR-1087) never mistakes the CLI's self-cancellation sentinel for
-        // one — and vice versa. Bounded FIFO.
-        session.operatorDeniedToolIds ??= new Set();
-        session.operatorDeniedToolIds.add(toolCallId);
-        if (session.operatorDeniedToolIds.size > OPERATOR_DENIED_TOOL_IDS_MAX) {
-          const oldest = session.operatorDeniedToolIds.values().next().value;
-          if (oldest !== undefined) session.operatorDeniedToolIds.delete(oldest);
-        }
-      }
       pending.resolve(approved, approved ? undefined : options?.denyReason);
     }
     return true;
@@ -499,10 +487,16 @@ export class SessionStore {
   async stopTask(sessionId: string, taskId: string): Promise<boolean> {
     const session = this.findSession(sessionId);
     if (!session?.activeQuery) return false;
+    // Like interruptQuery: an operator-driven cancellation may surface as the
+    // CLI's interrupt sentinel on the task's pending calls — stamp it so the
+    // phantom detector (DOR-1087) treats those as legitimate.
+    session.interruptRequestedAt = Date.now();
     try {
       await session.activeQuery.stopTask(taskId);
       return true;
     } catch {
+      // The stop never took effect — do not blind the phantom detector.
+      session.interruptRequestedAt = undefined;
       return false;
     }
   }
@@ -529,6 +523,8 @@ export class SessionStore {
         session.activeQuery.close();
         return true;
       } catch {
+        // Neither path stopped the turn — do not blind the phantom detector.
+        session.interruptRequestedAt = undefined;
         return false;
       }
     }

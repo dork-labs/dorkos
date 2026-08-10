@@ -46,7 +46,11 @@ vi.mock('../../services/core/tunnel-manager.js', () => ({
 
 vi.mock('../../services/runtimes/claude-code/sdk/sdk-utils.js', () => ({
   resolveClaudeCliPath: () => '/usr/local/bin/claude',
-  createHeldUserPrompt: vi.fn(() => ({ prompt: (async function* () {})(), close: vi.fn() })),
+  createHeldUserPrompt: vi.fn(() => ({
+    prompt: (async function* () {})(),
+    close: vi.fn(),
+    push: vi.fn(),
+  })),
 }));
 
 /** The session a person is about to start. */

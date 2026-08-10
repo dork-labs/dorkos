@@ -13,10 +13,11 @@
  *
  * DorkOS can tell a phantom from the real thing because every REAL operator
  * decision flows through this server: a UI deny writes `User denied tool
- * execution…` (see `denialMessage` in `interactive-handlers.ts`), and an
- * operator stop goes through `interruptQuery`. A sentinel tool_result that
- * matches neither is the CLI talking to itself — this module detects it so the
- * sender can steer a corrective note into the live turn and warn the operator.
+ * execution…` (see `denialMessage` in `interactive-handlers.ts`) — never the
+ * sentinel — and an operator stop goes through `interruptQuery`/`stopTask`,
+ * which stamp `session.interruptRequestedAt`. A sentinel with no recent stamp
+ * is the CLI talking to itself — this module detects it so the sender can
+ * steer a corrective note into the live turn and warn the operator.
  *
  * @module services/runtimes/claude-code/messaging/phantom-cancellation
  */
@@ -24,10 +25,13 @@ import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import type { AgentSession } from '../agent-types.js';
 
 /**
- * The CLI's interrupt sentinel, verbatim (CLI 2.1.x, constant `Uj` in the
- * bundle). Written as a tool_result when a pending tool call is cancelled by
- * the CLI itself — never by a DorkOS-mediated operator decision, which always
- * carries its own wording.
+ * The CLI's interrupt sentinel, verbatim as extracted from the bundled binary
+ * of `@anthropic-ai/claude-agent-sdk` 0.3.224 (CLI 2.1.224, constant `Uj`).
+ * Written as a tool_result when a pending tool call is cancelled by the CLI
+ * itself — never by a DorkOS-mediated operator decision, which always carries
+ * its own wording. Compared against trimmed text (see {@link matchesSentinel})
+ * so a whitespace change in the bundle cannot silently disable detection; a
+ * WORDING change upstream still can, so re-verify this string on SDK bumps.
  */
 export const CLI_INTERRUPT_SENTINEL =
   "The user doesn't want to take this action right now. STOP what you are doing and wait for the user to tell you how to proceed.";
@@ -36,7 +40,8 @@ export const CLI_INTERRUPT_SENTINEL =
  * How long after an operator-initiated interrupt a sentinel is still treated
  * as legitimate. `interruptQuery` cancels every pending tool call in the turn,
  * and those results land within moments; anything past this window is a new
- * event, not fallout from the stop.
+ * event, not fallout from the stop. The stamp is additionally cleared when a
+ * new turn starts, so the window never bleeds across turns.
  */
 export const INTERRUPT_SUPPRESSION_WINDOW_MS = 30_000;
 
@@ -48,7 +53,7 @@ export const INTERRUPT_SUPPRESSION_WINDOW_MS = 30_000;
  */
 export const PHANTOM_CORRECTIONS_MAX_PER_TURN = 3;
 
-/** What {@link detectPhantomCancellation} found in one SDK user message. */
+/** What {@link detectPhantomCancellations} found in one SDK user message. */
 export interface PhantomCancellation {
   /** The cancelled call's tool_use id. */
   toolUseId: string;
@@ -61,78 +66,94 @@ export interface PhantomCancellation {
   mainThread: boolean;
 }
 
-/** Extract a tool_result block's text, tolerating both SDK content shapes. */
-function resultText(content: unknown): string | undefined {
-  if (typeof content === 'string') return content;
+/** Whether any text in a tool_result's content matches the sentinel. */
+function matchesSentinel(content: unknown): boolean {
+  if (typeof content === 'string') return content.trim() === CLI_INTERRUPT_SENTINEL;
   if (Array.isArray(content)) {
-    const text = content.find(
-      (block): block is { type: 'text'; text: string } =>
+    return content.some(
+      (block) =>
         typeof block === 'object' &&
         block !== null &&
         (block as { type?: string }).type === 'text' &&
-        typeof (block as { text?: unknown }).text === 'string'
+        typeof (block as { text?: unknown }).text === 'string' &&
+        (block as { text: string }).text.trim() === CLI_INTERRUPT_SENTINEL
     );
-    return text?.text;
   }
-  return undefined;
+  return false;
 }
 
 /**
- * Detect a phantom cancellation in one streamed SDK `user` message.
+ * Detect phantom cancellations in one streamed SDK `user` message.
  *
- * A tool_result is a phantom when it carries the CLI's interrupt sentinel and
- * DorkOS has no record of the operator causing it — the tool call was never
- * denied through `approveTool` (tracked in `session.operatorDeniedToolIds`)
- * and no `interruptQuery` ran inside {@link INTERRUPT_SUPPRESSION_WINDOW_MS}.
+ * A tool_result is a phantom when it is an error carrying the CLI's interrupt
+ * sentinel while no operator stop is on record — no `interruptQuery`/`stopTask`
+ * ran inside {@link INTERRUPT_SUPPRESSION_WINDOW_MS}. The CLI cancels parallel
+ * tool calls as multiple `tool_result` blocks in ONE user message, so this
+ * returns every phantom in the message, not just the first.
  *
  * @param message - The raw SDK message as it streams through the send loop.
- * @param session - The live session, for the operator-action bookkeeping.
+ * @param session - The live session, for the operator-stop stamp.
  * @param now - Injection point for the clock (tests); defaults to `Date.now()`.
- * @returns The phantom found, or `null` when the message carries none.
+ * @returns Every phantom found; empty when the message carries none.
  */
-export function detectPhantomCancellation(
+export function detectPhantomCancellations(
   message: SDKMessage,
   session: AgentSession,
   now: number = Date.now()
-): PhantomCancellation | null {
-  if (message.type !== 'user') return null;
+): PhantomCancellation[] {
+  if (message.type !== 'user') return [];
   const interruptedRecently =
     session.interruptRequestedAt !== undefined &&
     now - session.interruptRequestedAt < INTERRUPT_SUPPRESSION_WINDOW_MS;
-  if (interruptedRecently) return null;
+  if (interruptedRecently) return [];
 
   const content = message.message.content;
-  if (!Array.isArray(content)) return null;
+  if (!Array.isArray(content)) return [];
 
+  const phantoms: PhantomCancellation[] = [];
   for (const block of content) {
     if (typeof block !== 'object' || block === null) continue;
-    const b = block as { type?: string; tool_use_id?: string; content?: unknown };
+    const b = block as {
+      type?: string;
+      tool_use_id?: string;
+      is_error?: boolean;
+      content?: unknown;
+    };
     if (b.type !== 'tool_result' || typeof b.tool_use_id !== 'string') continue;
-    if (resultText(b.content) !== CLI_INTERRUPT_SENTINEL) continue;
-    if (session.operatorDeniedToolIds?.has(b.tool_use_id)) continue;
-    return {
+    // A genuine cancellation is always an error result; a non-error result
+    // merely CONTAINING the sentinel text (e.g. a file read) is not one.
+    if (b.is_error !== true) continue;
+    if (!matchesSentinel(b.content)) continue;
+    phantoms.push({
       toolUseId: b.tool_use_id,
       mainThread: message.parent_tool_use_id == null,
-    };
+    });
   }
-  return null;
+  return phantoms;
 }
 
 /**
- * The corrective note steered into the live turn after a main-thread phantom.
+ * The corrective note steered into the live turn after main-thread phantoms.
  *
- * Spoken as the system, never as the user: the model just read a message
- * claiming the user stopped it, and this note is the counter-evidence. It also
- * tells the model to retry only after the note arrives — the note itself
- * travels through the same queue that caused the cancellation, so a retry
- * issued before it lands would be cancelled the same way.
+ * Delivered as a user-role message because the held input stream is the only
+ * channel DorkOS owns into a live turn; the `<dorkos-system-note>` tag marks
+ * it as DorkOS speech, not the operator's. One note covers every phantom in
+ * the triggering message — one per phantom would burn the per-turn cap on a
+ * single multi-cancellation. It also tells the model to retry only after the
+ * note arrives: the note itself travels through the same queue that caused
+ * the cancellation, so a retry issued before it lands would be cancelled the
+ * same way.
  */
-export function buildPhantomCorrectionNote(toolUseId: string): string {
+export function buildPhantomCorrectionNote(toolUseIds: string[]): string {
+  const calls =
+    toolUseIds.length === 1
+      ? `The tool call ${toolUseIds[0]} was`
+      : `The tool calls ${toolUseIds.join(', ')} were`;
   return (
-    `<dorkos-system-note>The tool call ${toolUseId} was cancelled by the runtime, not by the user. ` +
-    'A background-task notification arrived while the call was awaiting permission, and the runtime ' +
-    'cancelled it with a message that wrongly reads as a user refusal. The user did NOT stop you and ' +
-    'did NOT deny that action. Now that this note has reached you, the queue is clear: continue your ' +
-    'work and re-issue the cancelled tool call if it is still needed.</dorkos-system-note>'
+    `<dorkos-system-note>${calls} cancelled by the runtime, not by the user. ` +
+    'A background-task notification arrived while awaiting permission, and the runtime ' +
+    'cancelled with a message that wrongly reads as a user refusal. The user did NOT stop you and ' +
+    'did NOT deny those actions. Now that this note has reached you, the queue is clear: continue your ' +
+    'work and re-issue the cancelled tool calls if they are still needed.</dorkos-system-note>'
   );
 }

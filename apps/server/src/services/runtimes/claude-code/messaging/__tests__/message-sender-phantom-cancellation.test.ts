@@ -59,7 +59,6 @@ vi.mock('../../sdk/subscription-usage.js', () => ({
 // Inert mapper: the phantom path reads the RAW SDK message and yields its own
 // system_status, independent of mapped output.
 vi.mock('../../sdk/sdk-event-mapper.js', () => ({
-  // eslint-disable-next-line require-yield -- intentional empty async generator
   mapSdkMessage: vi.fn(async function* () {}),
 }));
 
@@ -79,22 +78,24 @@ function makeOpts(overrides: Partial<MessageSenderOpts> = {}): MessageSenderOpts
   return { cwd: '/mock/project', onSdkSessionRebind: async () => {}, ...overrides };
 }
 
-function sentinelMsg(toolUseId: string, parentToolUseId: string | null = null): SDKMessage {
+function sentinelMsg(
+  toolUseIds: string | string[],
+  parentToolUseId: string | null = null
+): SDKMessage {
+  const ids = Array.isArray(toolUseIds) ? toolUseIds : [toolUseIds];
   return {
     type: 'user',
-    uuid: `u-${toolUseId}`,
+    uuid: `u-${ids[0]}`,
     session_id: 'sdk-1',
     parent_tool_use_id: parentToolUseId,
     message: {
       role: 'user',
-      content: [
-        {
-          type: 'tool_result',
-          tool_use_id: toolUseId,
-          is_error: true,
-          content: CLI_INTERRUPT_SENTINEL,
-        },
-      ],
+      content: ids.map((toolUseId) => ({
+        type: 'tool_result',
+        tool_use_id: toolUseId,
+        is_error: true,
+        content: CLI_INTERRUPT_SENTINEL,
+      })),
     },
   } as unknown as SDKMessage;
 }
@@ -115,7 +116,7 @@ function resultMsg(): SDKMessage {
  */
 async function runTurn(
   session: AgentSession,
-  messages: SDKMessage[]
+  messages: Array<SDKMessage | (() => void)>
 ): Promise<{ events: StreamEvent[]; promptMessages: string[] }> {
   const promptMessages: string[] = [];
   let drained: Promise<void> | undefined;
@@ -128,7 +129,12 @@ async function runTurn(
     })();
     return {
       [Symbol.asyncIterator]: async function* () {
-        for (const m of messages) yield m;
+        // A function entry runs MID-STREAM (e.g. stamping an interrupt while
+        // the turn is live, as the real stop path does) instead of yielding.
+        for (const m of messages) {
+          if (typeof m === 'function') m();
+          else yield m;
+        }
       },
     } as unknown as ReturnType<typeof query>;
   });
@@ -140,10 +146,18 @@ async function runTurn(
   return { events, promptMessages };
 }
 
-/** Narrow helper: StreamEvent's `data` is not discriminated by `type`. */
+/**
+ * Narrow helper: StreamEvent's `data` is not discriminated by `type`. The
+ * phantom notice carries NO `status` field (the client strip drops any
+ * system_status that has one), so it is recognized by its message text.
+ */
 function isPhantomStatus(e: StreamEvent): boolean {
+  const data = e.data as { message?: string; status?: string };
   return (
-    e.type === 'system_status' && (e.data as { status?: string }).status === 'phantom_cancellation'
+    e.type === 'system_status' &&
+    data.status === undefined &&
+    typeof data.message === 'string' &&
+    data.message.includes('background-task notification cancelled')
   );
 }
 
@@ -177,10 +191,39 @@ describe('executeSdkQuery — phantom cancellation mitigation (DOR-1087)', () =>
     expect(promptMessages).toEqual(['hello']);
   });
 
-  it('does nothing for a tool call the operator really denied', async () => {
-    const session = makeSession({ operatorDeniedToolIds: new Set(['toolu_denied']) });
+  it('covers every parallel cancellation with ONE note naming all ids', async () => {
+    const { events, promptMessages } = await runTurn(makeSession(), [
+      sentinelMsg(['toolu_A', 'toolu_B', 'toolu_C']),
+      resultMsg(),
+    ]);
+
+    expect(events.filter(isPhantomStatus)).toHaveLength(1);
+    const notes = promptMessages.filter((m) => m.includes('dorkos-system-note'));
+    expect(notes).toHaveLength(1);
+    expect(notes[0]).toContain('toolu_A');
+    expect(notes[0]).toContain('toolu_B');
+    expect(notes[0]).toContain('toolu_C');
+  });
+
+  it('surfaces but does NOT steer a phantom arriving after the result message', async () => {
+    const { events, promptMessages } = await runTurn(makeSession(), [
+      resultMsg(),
+      sentinelMsg('toolu_late'),
+    ]);
+
+    expect(events.some(isPhantomStatus)).toBe(true);
+    expect(promptMessages).toEqual(['hello']);
+  });
+
+  it('does nothing when the operator interrupted mid-turn', async () => {
+    const session = makeSession();
     const { events, promptMessages } = await runTurn(session, [
-      sentinelMsg('toolu_denied'),
+      // The stop path stamps the session while the turn is live; the CLI's
+      // trailing sentinel then arrives in the same stream.
+      () => {
+        session.interruptRequestedAt = Date.now();
+      },
+      sentinelMsg('toolu_after_stop'),
       resultMsg(),
     ]);
 
@@ -188,15 +231,11 @@ describe('executeSdkQuery — phantom cancellation mitigation (DOR-1087)', () =>
     expect(promptMessages).toEqual(['hello']);
   });
 
-  it('does nothing right after an operator interrupt', async () => {
+  it('is not blinded by a stop stamped in a PREVIOUS turn', async () => {
     const session = makeSession({ interruptRequestedAt: Date.now() });
-    const { events, promptMessages } = await runTurn(session, [
-      sentinelMsg('toolu_after_stop'),
-      resultMsg(),
-    ]);
+    const { events } = await runTurn(session, [sentinelMsg('toolu_new_turn'), resultMsg()]);
 
-    expect(events.some(isPhantomStatus)).toBe(false);
-    expect(promptMessages).toEqual(['hello']);
+    expect(events.some(isPhantomStatus)).toBe(true);
   });
 
   it('caps steered corrections per turn but keeps surfacing status events', async () => {

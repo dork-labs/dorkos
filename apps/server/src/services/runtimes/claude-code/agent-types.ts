@@ -19,13 +19,6 @@ export interface RequestUsage {
   cacheCreationTokens: number;
 }
 
-/**
- * Cap on {@link AgentSession.operatorDeniedToolIds}. Denies are rare and only
- * consulted within the turn they happened in; the cap just keeps a very long
- * session from growing the set without bound.
- */
-export const OPERATOR_DENIED_TOOL_IDS_MAX = 100;
-
 /** In-memory state for an active agent session. */
 export interface AgentSession {
   sdkSessionId: string;
@@ -77,16 +70,10 @@ export interface AgentSession {
   eventQueue: StreamEvent[];
   eventQueueNotify?: () => void;
   /**
-   * Tool-call ids the OPERATOR denied through `approveTool`. Distinguishes a
-   * real refusal from the CLI's phantom self-cancellation (DOR-1087, see
-   * `messaging/phantom-cancellation.ts`). Bounded FIFO — oldest entries are
-   * evicted past {@link OPERATOR_DENIED_TOOL_IDS_MAX}.
-   */
-  operatorDeniedToolIds?: Set<string>;
-  /**
-   * Wall time of the last operator/DorkOS-initiated `interruptQuery`. A CLI
-   * interrupt sentinel arriving shortly after this is legitimate fallout from
-   * the stop, not a phantom (DOR-1087).
+   * Wall time of the last operator/DorkOS-initiated `interruptQuery` or
+   * `stopTask`. A CLI interrupt sentinel arriving shortly after this is
+   * legitimate fallout from the stop, not a phantom (DOR-1087). Cleared when
+   * the stop provably failed and at the start of each new turn.
    */
   interruptRequestedAt?: number;
   /** Client-reported UI state, updated with each message. Used by `get_ui_state` tool. */
