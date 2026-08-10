@@ -96,8 +96,8 @@ export class RoomsPage {
 
   constructor(page: Page) {
     this.page = page;
-    this.channels = this.section('Channels');
-    this.directMessages = this.section('Direct messages');
+    this.channels = this.section('channels');
+    this.directMessages = this.section('dms');
     this.roomHeader = page
       .locator('header')
       .filter({ has: page.locator('[data-slot="room-title"]') });
@@ -115,16 +115,18 @@ export class RoomsPage {
   }
 
   /**
-   * One sidebar section, found by its collapse header.
+   * One sidebar section, found by the model id it stamps on itself.
    *
-   * @param label - The header's label, exactly as `SectionHeader` is given it.
-   *   Matched exactly, so it resolves to the collapse button and never to the
-   *   header's "… section actions" trigger beside it.
+   * @param id - The section's `SidebarSectionModel['id']` — `'channels'`,
+   *   `'dms'`, `'agents'`, `'pins'`, or a `group:<id>`.
    */
-  section(label: string): Locator {
-    return this.page
-      .locator('[data-slot="sidebar-group"]')
-      .filter({ has: this.page.getByRole('button', { name: label, exact: true }) });
+  section(id: string): Locator {
+    // Matched on the section's own model id rather than on its header's
+    // accessible name. The name is chrome and moves with it — the redesign made
+    // the whole header row the toggle, which put the rollup and the section's
+    // adornments inside the button and stopped an exact-match filter resolving
+    // at all. The id is what the section IS.
+    return this.page.locator(`[data-sidebar-section="${id}"]`);
   }
 
   /**
@@ -256,9 +258,24 @@ export class RoomsPage {
     return this.page.getByRole('button', { name: /^Add (more )?agents$/ });
   }
 
-  /** Open the "+" beside Direct messages. */
+  /**
+   * Open the direct-message picker, from whichever door this install has.
+   *
+   * There are two, and which one exists is a property of the data: the Direct
+   * messages section carries a "+", and BC-32 withholds that section entirely
+   * until a conversation exists — so on a fresh install the way in is the
+   * Agents header's "+" menu instead. (Both are interim: the single New button
+   * subsumes them in P2.4.) A page object that knew only the first one turned
+   * "this operator has no conversations yet" into a timeout.
+   */
   async openDirectMessagePicker(): Promise<void> {
-    await this.directMessages.getByRole('button', { name: 'New message' }).click();
+    const sectionPlus = this.directMessages.getByRole('button', { name: 'New message' });
+    if ((await sectionPlus.count()) > 0) {
+      await sectionPlus.first().click();
+    } else {
+      await this.page.getByRole('button', { name: 'Add agent' }).click();
+      await this.page.getByRole('button', { name: 'New message…' }).click();
+    }
     await this.agentSearch.waitFor({ state: 'visible' });
   }
 

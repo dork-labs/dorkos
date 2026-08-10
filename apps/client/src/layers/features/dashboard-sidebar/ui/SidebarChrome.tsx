@@ -1,0 +1,313 @@
+/**
+ * How a row LOOKS and what pressing it DOES — the half of the sidebar the model
+ * deliberately does not carry.
+ *
+ * `buildSidebarModel` emits semantic ids (`glyph: { kind: 'agent-avatar' }`), a
+ * target, and a reason. It never emits a face, a colour, or a navigation. Those
+ * are resolved here, once, and handed to every row through a context so that
+ * `SidebarZone` and `SidebarSection` can stay pure model consumers with no row
+ * plumbing threaded through them.
+ *
+ * **This reads queries, and `useSidebarState` is still the one assembly hook.**
+ * The two answer different questions. `useSidebarState` builds the §A2 snapshot
+ * — what the sidebar CONTAINS. This resolves presentation and behaviour for
+ * rows the model has already decided on. Every query it touches
+ * (`useResolvedAgents`, `useRooms`) is one `useSidebarState` already asked for,
+ * so the shared cache answers both and the net request count is unchanged.
+ *
+ * @module features/dashboard-sidebar/ui/SidebarChrome
+ */
+import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react';
+import { useNavigate, useRouter } from '@tanstack/react-router';
+import { useQueryClient } from '@tanstack/react-query';
+import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
+import type { RoomSummary } from '@dorkos/shared/room-schemas';
+import type { SidebarItemRef, SmartGroupRules } from '@dorkos/shared/config-schema';
+import { reportClientError } from '@/layers/shared/lib';
+import { useAppStore, useProfileDeepLink, useTransport } from '@/layers/shared/model';
+import { disambiguateDisplayNames, useResolvedAgents } from '@/layers/entities/agent';
+import {
+  createGroup,
+  createSmartGroup,
+  moveToGroup,
+  useUpdateSidebarPrefs,
+} from '@/layers/entities/config';
+import { useInteractionStore } from '@/layers/entities/interactions';
+import { useMeshAgentPaths, useMeshMemberIds } from '@/layers/entities/mesh';
+import { useRooms } from '@/layers/entities/room';
+import {
+  beginSessionNavigation,
+  notifySessionLookupFailed,
+  resolveSessionForCwd,
+  useStartNewSession,
+} from '@/layers/entities/session';
+import { useAgentHubStore } from '@/layers/features/agent-hub';
+import type { SidebarTarget } from '../model/build-sidebar-model';
+import { buildSidebarItems, type SidebarItemVisual } from '../model/sidebar-item';
+
+/**
+ * The pending inline group-create flow.
+ *
+ * `pendingRef` is moved into the group on commit — a reference rather than an
+ * agent path, because "New group…" is offered from a room row's menu too
+ * (rooms-in-groups, DOR-581).
+ */
+interface GroupCreationState {
+  /** What started the flow, and what lands in the new group. */
+  pendingRef: SidebarItemRef | null;
+}
+
+/** Everything a row needs that the model does not carry. */
+export interface SidebarChromeValue {
+  /**
+   * Every agent directory the mesh knows, in roster order.
+   *
+   * Carried beside {@link SidebarChromeValue.manifests} rather than derived
+   * from it: the manifests query resolves separately and answers `{}` until it
+   * lands, so a fleet size read off that map is zero for the first paint —
+   * which is exactly the fleet size that decides whether grouping is offered
+   * at all (BC-32).
+   */
+  agentPaths: readonly string[];
+  /** Agent manifests by directory — the face, the colour, the runtime label. */
+  manifests: Record<string, AgentManifest | null>;
+  /** Disambiguated display names by directory. */
+  displayNames: Record<string, string>;
+  /** Room records by id, for the rows that draw one. */
+  roomsById: Map<string, RoomSummary>;
+  /** The mark a room draws, resolved in the one place that resolves faces. */
+  roomVisualOf: (room: RoomSummary) => SidebarItemVisual;
+  /** What the operator has open, so the matching row (and its Library copy) tints. */
+  activeTarget: SidebarTarget | null;
+  /** Open whatever a row points at, and remember that it was opened (BC-16). */
+  openTarget: (target: SidebarTarget) => void;
+  /** Start a session, optionally scoped to one agent's directory. */
+  newSession: (dir?: string) => void;
+  /** Open an agent's hub in the right panel. */
+  openHub: (agentPath: string) => void;
+  /** Open an agent's identity drawer, or `undefined` when the mesh cannot name it. */
+  viewProfileFor: (agentPath: string) => (() => void) | undefined;
+  /** Begin the inline group-create flow, optionally seeded with a member. */
+  requestNewGroup: (ref?: SidebarItemRef) => void;
+  /** The inline group-create flow, or `null` when it is not running. */
+  groupCreation: GroupCreationState | null;
+  /** Commit the inline flow under this name. */
+  commitNewGroup: (name: string) => void;
+  /** Abandon the inline flow. */
+  cancelNewGroup: () => void;
+  /** Create a smart group from a rule set (a preset, or the dialog's output). */
+  createSmartGroupFrom: (name: string, rules: SmartGroupRules) => void;
+}
+
+const SidebarChromeContext = createContext<SidebarChromeValue | null>(null);
+
+/**
+ * The row chrome for the current tree.
+ *
+ * Throws outside a provider rather than degrading: a row rendered without it
+ * would draw faceless and navigate nowhere, which is a defect that should stop
+ * a test rather than ship quietly.
+ */
+export function useSidebarChrome(): SidebarChromeValue {
+  const value = useContext(SidebarChromeContext);
+  if (value === null) {
+    throw new Error('useSidebarChrome must be used inside <SidebarChrome>');
+  }
+  return value;
+}
+
+/** Props for {@link SidebarChrome}. */
+interface SidebarChromeProps {
+  /** What the operator has open, from the model's snapshot. */
+  activeTarget: SidebarTarget | null;
+  /** The zones. */
+  children: ReactNode;
+}
+
+/**
+ * Resolve every row's presentation and behaviour once, for the whole panel.
+ *
+ * @param props - The active target and the tree to serve.
+ */
+export function SidebarChrome({ activeTarget, children }: SidebarChromeProps) {
+  const navigate = useNavigate();
+  const router = useRouter();
+  const queryClient = useQueryClient();
+  const transport = useTransport();
+  const startNewSession = useStartNewSession();
+  const { open: openProfileDrawer } = useProfileDeepLink();
+  const memberIdByPath = useMeshMemberIds();
+  const setRightPanelOpen = useAppStore((s) => s.setRightPanelOpen);
+  const setActiveRightPanelTab = useAppStore((s) => s.setActiveRightPanelTab);
+  const { update } = useUpdateSidebarPrefs();
+
+  const { data: meshData } = useMeshAgentPaths();
+  const rawPaths = useMemo(
+    () => (meshData?.agents ?? []).map((entry) => entry.projectPath),
+    [meshData]
+  );
+  const { data: manifests } = useResolvedAgents(rawPaths);
+  const displayNames = useMemo(
+    () => disambiguateDisplayNames(rawPaths, manifests ?? {}),
+    [rawPaths, manifests]
+  );
+  const roomsQuery = useRooms();
+  const roomsById = useMemo(
+    () => new Map((roomsQuery.data ?? []).map((room) => [room.id, room])),
+    [roomsQuery.data]
+  );
+  // The one place a room's mark is resolved. A direct message draws the agent's
+  // own face, which only a layer that can see both the room and the fleet can
+  // work out (sidebar-groups §3.1) — resolving it twice is what let a DM row and
+  // its agent row disagree (DOR-582).
+  const itemIndex = useMemo(
+    () =>
+      buildSidebarItems({
+        agentPaths: rawPaths,
+        agentsByPath: manifests ?? {},
+        displayNames,
+        attention: {},
+        agentActivity: {},
+        rooms: roomsQuery.data ?? [],
+        mutedAgentPaths: new Set<string>(),
+        mutedRoomIds: new Set<string>(),
+      }),
+    [rawPaths, manifests, displayNames, roomsQuery.data]
+  );
+  const roomVisualOf = useCallback(
+    (room: RoomSummary): SidebarItemVisual =>
+      itemIndex.byRoomId.get(room.id)?.visual ?? { kind: 'sigil' },
+    [itemIndex]
+  );
+
+  const [groupCreation, setGroupCreation] = useState<GroupCreationState | null>(null);
+
+  const openSession = useCallback(
+    (sessionId: string, cwd: string | null) => {
+      useInteractionStore.getState().recordOpened('session', sessionId);
+      navigate({ to: '/session', search: { dir: cwd ?? undefined, session: sessionId } });
+    },
+    [navigate]
+  );
+
+  const openAgent = useCallback(
+    (agentPath: string) => {
+      // Clicking an agent resumes its most recent conversation (BC-34). The
+      // lookup goes through the shared resolver rather than this tab's cache:
+      // the roster lists every agent, but only the one this window has opened
+      // has a cached session list, so a cache read alone would send you to an
+      // empty chat for every other one (DOR-928). It is asynchronous while every
+      // row around it is not, so it guards against being overtaken — by another
+      // agent click, and by any of the app's other navigations, which it
+      // notices through the router's own location.
+      const isStillWanted = beginSessionNavigation(() => router.state.location);
+      void resolveSessionForCwd({ queryClient, transport }, agentPath)
+        .then((resolved) => {
+          if (!isStillWanted()) return;
+          if (resolved === null) {
+            notifySessionLookupFailed(agentPath);
+            return;
+          }
+          openSession(resolved.sessionId, agentPath);
+        })
+        .catch((error: unknown) => {
+          // The resolver handles its own failures, so a throw here is a defect
+          // in this callback — otherwise an unhandled rejection and a click that
+          // died in silence.
+          reportClientError(transport, error);
+          if (isStillWanted()) notifySessionLookupFailed(agentPath);
+        });
+    },
+    [openSession, queryClient, router, transport]
+  );
+
+  const openTarget = useCallback(
+    (target: SidebarTarget) => {
+      switch (target.kind) {
+        case 'session':
+          openSession(target.sessionId, target.cwd);
+          return;
+        case 'agent':
+          openAgent(target.path);
+          return;
+        case 'room':
+          // A thread row lands in its ROOM, not in its panel. `SidebarTarget`'s
+          // room branch carries only `roomId`, so the root entry a thread hangs
+          // off is not reachable from here — the model would have to grow a
+          // field for it (noted for P2.3, which owns Today's thread rows).
+          useInteractionStore.getState().recordOpened('room', target.roomId);
+          navigate({ to: '/channels', search: { id: target.roomId } });
+          return;
+        case 'attention':
+          // A raw href, because a deep link is a string the signal supplies
+          // rather than one of the router's declared routes.
+          void router.navigate({ href: target.deepLink });
+          return;
+        case 'command':
+          if (target.commandId === 'new-session') startNewSession();
+          return;
+        default:
+          // `rollup`, `suggestion` and `digest` rows are Now's and Today's, and
+          // their destinations land with those zones (P2.2, P2.3). Doing nothing
+          // is the honest placeholder — a guess would navigate somewhere wrong.
+          return;
+      }
+    },
+    [navigate, openAgent, openSession, router, startNewSession]
+  );
+
+  const value = useMemo<SidebarChromeValue>(
+    () => ({
+      agentPaths: rawPaths,
+      manifests: manifests ?? {},
+      displayNames,
+      roomsById,
+      roomVisualOf,
+      activeTarget,
+      openTarget,
+      newSession: (dir?: string) => startNewSession(dir),
+      openHub: (agentPath: string) => {
+        useAgentHubStore.getState().openHub(agentPath);
+        setRightPanelOpen(true);
+        setActiveRightPanelTab('agent-hub');
+      },
+      // `undefined` — never a no-op handler — for an agent the mesh cannot name,
+      // so the face renders as plain art instead of a control that opens nothing.
+      viewProfileFor: (agentPath: string) => {
+        const memberId = memberIdByPath.get(agentPath);
+        return memberId === undefined ? undefined : () => openProfileDrawer(memberId);
+      },
+      requestNewGroup: (ref?: SidebarItemRef) => setGroupCreation({ pendingRef: ref ?? null }),
+      groupCreation,
+      commitNewGroup: (name: string) => {
+        const pending = groupCreation?.pendingRef ?? null;
+        update((prev) => {
+          const { next, id } = createGroup(prev, name);
+          return pending ? moveToGroup(next, pending, id) : next;
+        });
+        setGroupCreation(null);
+      },
+      cancelNewGroup: () => setGroupCreation(null),
+      createSmartGroupFrom: (name: string, rules: SmartGroupRules) =>
+        update((prev) => createSmartGroup(prev, name, rules).next),
+    }),
+    [
+      rawPaths,
+      manifests,
+      displayNames,
+      roomsById,
+      roomVisualOf,
+      activeTarget,
+      openTarget,
+      startNewSession,
+      setRightPanelOpen,
+      setActiveRightPanelTab,
+      memberIdByPath,
+      openProfileDrawer,
+      groupCreation,
+      update,
+    ]
+  );
+
+  return <SidebarChromeContext.Provider value={value}>{children}</SidebarChromeContext.Provider>;
+}

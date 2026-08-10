@@ -500,14 +500,34 @@ describe('BC-26 — origin marks', () => {
     // Every origin the table maps is one `partitionSessionsByOrigin` classes as
     // automated, and BC-19 keeps those off Today's top level. If this ever
     // stops being true, delete this test and assert through the rows instead.
-    const state: SidebarState = {
+    const automatedOnly: SidebarState = {
       ...busyFixture,
       sessions: [session({ id: 'ses-tg', title: 'From Telegram', origin: 'channel' })],
       interactions: { 'session:ses-tg': hoursAgo(0.05) },
       userLastMessageAt: {},
       activeTarget: null,
     };
-    expect(selectTodayItems(state).map((row) => row.key)).toEqual(['rollup:automated']);
+    // No session row — which is the point — and no reveal either: the reveal
+    // stands FOR a list, so on its own it would be a heading and one inert row
+    // on a fresh install (BC-19, BC-1's blind spot).
+    expect(selectTodayItems(automatedOnly)).toEqual([]);
+
+    // With something to stand beside, it appears — and still draws no session
+    // row of its own, so the origin mark remains unreachable from here.
+    const withCompany: SidebarState = {
+      ...automatedOnly,
+      sessions: [
+        ...automatedOnly.sessions,
+        session({ id: 'ses-mine', title: 'Ship the parser', cwd: '/Users/dev/code/tangerine' }),
+      ],
+      interactions: {
+        'session:ses-tg': hoursAgo(0.05),
+        'session:ses-mine': hoursAgo(0.05),
+      },
+    };
+    const keys = selectTodayItems(withCompany).map((row) => row.key);
+    expect(keys).toContain('rollup:automated');
+    expect(keys).not.toContain('session:ses-tg');
   });
 });
 

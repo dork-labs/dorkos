@@ -1,4 +1,4 @@
-import { useRef, useState, type ReactNode } from 'react';
+import { useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   DndContext,
   DragOverlay,
@@ -14,10 +14,12 @@ import { sortableKeyboardCoordinates } from '@dnd-kit/sortable';
 import { toast } from 'sonner';
 import { useIsMobile } from '@/layers/shared/model';
 import { useSidebarPrefs, useUpdateSidebarPrefs } from '@/layers/entities/config';
+import type { RoomSummary } from '@dorkos/shared/room-schemas';
 import type { SidebarPrefs, SidebarItemRef } from '@dorkos/shared/config-schema';
 import {
   buildSidebarAnnouncements,
   classifySidebarDrop,
+  COMPUTED_ZONE_REJECTION,
   readSidebarDndData,
   resolveSidebarDrop,
   toDragDescriptor,
@@ -31,11 +33,16 @@ interface SidebarDndProps {
   /** Agent display names keyed by projectPath — used for the overlay and announcements. */
   displayNames: Record<string, string>;
   /**
-   * Room titles keyed by room id, for the same two surfaces: room rows are
-   * drag sources since DOR-581, and `ui.sidebar` is agent-writable besides,
-   * so `config_patch` can also put a room reference in `pinned`.
+   * Every room the sidebar can see, for the same two surfaces: room rows are
+   * drag sources since DOR-581, and `ui.sidebar` is agent-writable besides, so
+   * `config_patch` can also put a room reference in `pinned`.
+   *
+   * The LIST rather than a prepared title map, so the one caller that has this
+   * state does not have to reshape it on the way in — `DashboardSidebar` is
+   * held to transforming nothing, and naming a room is this layer's business
+   * anyway, since this is where a name is read out loud.
    */
-  roomTitles: Record<string, string>;
+  rooms: readonly RoomSummary[];
 }
 
 /** The floating label shown under the cursor while dragging. */
@@ -72,7 +79,7 @@ function DragOverlayContent({
  * children render without a `DndContext` and every drag operation stays reachable
  * through the row/header context menus.
  */
-export function SidebarDnd({ children, displayNames, roomTitles }: SidebarDndProps) {
+export function SidebarDnd({ children, displayNames, rooms }: SidebarDndProps) {
   const isMobile = useIsMobile();
   const prefs = useSidebarPrefs();
   const { update } = useUpdateSidebarPrefs();
@@ -84,6 +91,10 @@ export function SidebarDnd({ children, displayNames, roomTitles }: SidebarDndPro
   prefsRef.current = prefs;
   const namesRef = useRef(displayNames);
   namesRef.current = displayNames;
+  const roomTitles = useMemo(
+    () => Object.fromEntries(rooms.map((room) => [room.id, room.slug ?? room.title])),
+    [rooms]
+  );
   const roomTitlesRef = useRef(roomTitles);
   roomTitlesRef.current = roomTitles;
 
@@ -123,6 +134,12 @@ export function SidebarDnd({ children, displayNames, roomTitles }: SidebarDndPro
       toast.info('Membership is rule-based — edit rules instead.', {
         description: groupName(op.groupId),
       });
+      return;
+    }
+    // Same mechanism, different reason: Now and Today are derived, so a row
+    // dropped there has no place to be put (R3).
+    if (op.kind === 'reject-computed-zone') {
+      toast.info(COMPUTED_ZONE_REJECTION, { description: itemName(op.ref) });
       return;
     }
     update((prev) => resolveSidebarDrop(prev, drag, drop));

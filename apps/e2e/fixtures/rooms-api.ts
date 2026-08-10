@@ -150,8 +150,17 @@ export class RoomsApi {
    * @param name - Display name, which is also the DM picker's label.
    * @param emoji - The face every avatar of this agent must draw.
    * @param color - The identity colour its disc is tinted from.
+   * @param options - `runtime` seeds an agent on a runtime other than Claude
+   *   Code. Grouping is offered by data volume — eight agents, or two distinct
+   *   runtimes (BC-32) — so a spec about groups needs a way to reach the bar
+   *   without registering eight of them.
    */
-  async registerAgent(name: string, emoji: string, color: string): Promise<SeededAgent> {
+  async registerAgent(
+    name: string,
+    emoji: string,
+    color: string,
+    options: { runtime?: string } = {}
+  ): Promise<SeededAgent> {
     const path = join(this.agentRoot, `room-agent-${randomUUID()}`);
     // Make the tree ours before the server writes into it, so both paths below
     // resolve through the same real directory rather than one of them being
@@ -164,7 +173,13 @@ export class RoomsApi {
         // scan root, which is fine only while the agents live under it. Naming
         // the root keeps the namespace `run-<runId>` wherever the checkout is.
         scanRoot: FIXTURE_AGENT_ROOT,
-        overrides: { name, runtime: 'claude-code', icon: emoji, color, behavior: SILENT },
+        overrides: {
+          name,
+          runtime: options.runtime ?? 'claude-code',
+          icon: emoji,
+          color,
+          behavior: SILENT,
+        },
       },
     });
     if (!res.ok()) {

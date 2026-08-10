@@ -336,7 +336,16 @@ describe.each(SIDEBAR_FIXTURES)('$name fixture', ({ state }) => {
         ]);
         expect(rows.length, `zone ${node.zone.id} is empty`).toBeGreaterThan(0);
       }
-      if (node.kind === 'section' && node.section.rows.length === 0) {
+      // One exception, and only one: a group the operator MADE. Everything
+      // else here appears because something is in it, so an empty one is a box
+      // with nothing to say — but a group that disappeared the instant it was
+      // created could never be dragged into, and Library's whole promise is
+      // that the structure you built stays where you put it.
+      if (
+        node.kind === 'section' &&
+        node.section.rows.length === 0 &&
+        node.section.reason !== 'library:group'
+      ) {
         expect(node.section.subsections?.length ?? 0).toBeGreaterThan(0);
       }
     }

@@ -47,6 +47,8 @@ vi.mock('@tanstack/react-router', () => ({
 
 vi.mock('@/layers/features/dashboard-sidebar', () => ({
   DashboardSidebar: () => <div data-testid="dashboard-sidebar">Dashboard</div>,
+  // Persistent chrome: the shell mounts it outside the `sidebar.body` swap.
+  SidebarNavHeader: () => <div data-testid="sidebar-nav-header">Nav</div>,
 }));
 
 vi.mock('@/layers/features/session-list', () => ({

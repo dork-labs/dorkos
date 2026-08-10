@@ -1,0 +1,175 @@
+// @vitest-environment jsdom
+/**
+ * The one contract this hook exists to keep: an activity event must not produce
+ * a new `SidebarState` (spec §H, Risk R1).
+ *
+ * A fleet of thirty agents emits a `session_status` roughly every two seconds
+ * per working session. A new state object rebuilds every zone, every section and
+ * every row — so "the values did not change" has to become "the object did not
+ * change", or the whole design's performance claim is a comment.
+ *
+ * **`useAgentAttentionMap` is deliberately NOT mocked.** It is the hook that
+ * hands back a structurally identical record with a fresh identity on every
+ * store tick, and it is the reason the guard exists. Stubbing it with a stable
+ * object would make this file pass with the guard deleted.
+ *
+ * @module features/dashboard-sidebar/model/__tests__/use-sidebar-state
+ */
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { act, cleanup, renderHook } from '@testing-library/react';
+import type { SessionStatus } from '@dorkos/shared/session-stream';
+import { useSessionListStore } from '@/layers/entities/session';
+
+const FIXED_NOW = 1_786_000_000_000;
+
+vi.mock('@tanstack/react-router', () => ({
+  useRouterState: ({ select }: { select: (s: { location: { pathname: string } }) => unknown }) =>
+    select({ location: { pathname: '/' } }),
+  useSearch: () => ({}),
+}));
+
+vi.mock('@/layers/shared/model', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/layers/shared/model')>()),
+  useNow: () => FIXED_NOW,
+}));
+
+// The three query-backed reads, answered from constants that never change
+// identity — so anything that DOES change identity across a rerender came from
+// the store, which is exactly what is under test.
+const AGENT_PATHS = [{ id: 'm1', name: 'alpha', projectPath: '/projects/alpha' }];
+const MANIFESTS = { '/projects/alpha': null };
+const RECENT = { sessions: [], agentActivity: {}, warnings: [] };
+const ROOMS: unknown[] = [];
+// Hoisted, and that matters: a mock that answered with a fresh `[]` per call
+// would move the snapshot's identity by itself and make this suite pass or fail
+// for a reason that has nothing to do with the hook. A real `useQuery` hands
+// back the same `data` reference until the query refetches.
+const THREADS = { data: [] as unknown[], isLoading: false, error: null };
+
+vi.mock('@/layers/entities/mesh', () => ({
+  useMeshAgentPaths: () => ({ data: { agents: AGENT_PATHS } }),
+}));
+
+vi.mock('@/layers/entities/agent', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/layers/entities/agent')>()),
+  useResolvedAgents: () => ({ data: MANIFESTS }),
+  useExecutionExceptions: () => ({
+    exceptions: [],
+    brokenPaths: [],
+    defaultRuntime: 'claude-code',
+  }),
+}));
+
+// The SUBMODULE, not the barrel: `agent-attention.ts` imports
+// `useRecentSessions` from './use-recent-sessions' directly, so a barrel mock
+// would leave the real hook reaching for a transport this suite does not mount.
+vi.mock('@/layers/entities/session/model/use-recent-sessions', () => ({
+  useRecentSessions: () => ({ data: RECENT, isLoading: false }),
+}));
+
+vi.mock('@/layers/entities/room', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/layers/entities/room')>()),
+  useRooms: () => ({ data: ROOMS, isLoading: false }),
+  useThreads: () => THREADS,
+}));
+
+vi.mock('@/layers/entities/config', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/layers/entities/config')>();
+  const PREFS = {
+    pinned: [],
+    groups: [],
+    muted: [],
+    sections: {},
+    gettingStarted: { retired: [] },
+    digest: {},
+  };
+  return { ...actual, useSidebarPrefs: () => PREFS };
+});
+
+import { useSidebarState } from '../use-sidebar-state';
+
+/** A `session_status` projection with a lifecycle and, optionally, a verb. */
+function status(lifecycle: SessionStatus['lifecycle'], toolName?: string): SessionStatus {
+  return {
+    lifecycle,
+    ...(toolName === undefined
+      ? {}
+      : { activity: { kind: 'tool' as const, toolName, at: new Date(FIXED_NOW).toISOString() } }),
+  } as SessionStatus;
+}
+
+describe('useSidebarState — referential stability (spec §H)', () => {
+  beforeEach(() => {
+    useSessionListStore.getState().resetStatuses();
+  });
+  afterEach(() => cleanup());
+
+  it('produces NO new state object when an activity event arrives', () => {
+    act(() => {
+      useSessionListStore.getState().setSessionStatus('s1', status('streaming', 'Read'));
+    });
+    const { result, rerender } = renderHook(() => useSidebarState());
+    const before = result.current;
+
+    // The same turn, a different tool — exactly what a fleet emits every couple
+    // of seconds per working session.
+    act(() => {
+      useSessionListStore.getState().setSessionStatus('s1', status('streaming', 'Edit'));
+    });
+    rerender();
+
+    // Named rather than counted: `toBe` alone says "a new object", and the
+    // first question anyone asks is which field moved.
+    const fieldsOf = (state: typeof before) => state as unknown as Record<string, unknown>;
+    const changed = Object.keys(before).filter(
+      (key) => fieldsOf(before)[key] !== fieldsOf(result.current)[key]
+    );
+    expect(changed).toEqual([]);
+    expect(result.current).toBe(before);
+  });
+
+  it('survives a hundred of them', () => {
+    act(() => {
+      useSessionListStore.getState().setSessionStatus('s1', status('streaming', 'Read'));
+    });
+    const { result, rerender } = renderHook(() => useSidebarState());
+    const before = result.current;
+    for (let i = 0; i < 100; i += 1) {
+      act(() => {
+        useSessionListStore.getState().setSessionStatus('s1', status('streaming', `Tool${i}`));
+      });
+      rerender();
+    }
+    expect(result.current).toBe(before);
+  });
+
+  it('DOES produce a new state object when the lifecycle changes', () => {
+    // The other half of the guard, and the half that proves it is not simply
+    // returning a frozen object: layout comes from lifecycle, so a lifecycle
+    // change has to reach the model.
+    act(() => {
+      useSessionListStore.getState().setSessionStatus('s1', status('streaming', 'Read'));
+    });
+    const { result, rerender } = renderHook(() => useSidebarState());
+    const before = result.current;
+    expect(before.workingSessionIds).toEqual(['s1']);
+
+    act(() => {
+      useSessionListStore.getState().setSessionStatus('s1', status('idle'));
+    });
+    rerender();
+
+    expect(result.current).not.toBe(before);
+    expect(result.current.workingSessionIds).toEqual([]);
+  });
+
+  it('carries lifecycle and nothing else out of the status map', () => {
+    act(() => {
+      useSessionListStore.getState().setSessionStatus('s1', status('streaming', 'Read'));
+    });
+    const { result } = renderHook(() => useSidebarState());
+    // A verb in the snapshot is the one thing the whole design forbids.
+    expect(result.current.sessionStatuses).toEqual({ s1: 'streaming' });
+    expect(JSON.stringify(result.current.sessionStatuses)).not.toContain('Read');
+  });
+});

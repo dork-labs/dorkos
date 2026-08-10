@@ -45,8 +45,19 @@ vi.mock('@tanstack/react-router', () => ({
 
 // ── Mock child components with identifiable test markers ──
 
+// The roster can render with zones and without them — P2 AC-8 asks for the
+// takeover to be correct in both states, and "without" is the ordinary quiet
+// morning where Now and Today are both absent (BC-1).
+let mockZonesPresent = true;
 vi.mock('@/layers/features/dashboard-sidebar', () => ({
-  DashboardSidebar: () => <div data-testid="dashboard-sidebar">Dashboard</div>,
+  DashboardSidebar: () => (
+    <nav aria-label="Sidebar" data-testid="dashboard-sidebar">
+      {mockZonesPresent && <section data-sidebar-zone="library">Library</section>}
+    </nav>
+  ),
+  // The header block is persistent chrome: AppShell mounts it OUTSIDE the
+  // `sidebar.body` swap region (spec R2).
+  SidebarNavHeader: () => <div data-testid="sidebar-nav-header">Nav</div>,
 }));
 
 // AppShell imports only SidebarFooterBar from session-list — the web session
@@ -396,7 +407,42 @@ describe('AppShell slot integration', () => {
 
     afterEach(() => {
       unregister?.();
+      mockZonesPresent = true;
     });
+
+    // ── P2 AC-8 ──
+    it.each([true, false])(
+      'keeps the header block OUTSIDE the swap region, so a takeover cannot take it (zones present: %s)',
+      (zones) => {
+        // **Structural, not presence.** A header rendered inside the animated
+        // body would still be on screen on the roster route and would still be
+        // "mounted" after a takeover swapped a different body in — because the
+        // shell mounts it either way. What distinguishes the two arrangements is
+        // whether the swap region CONTAINS it. An earlier version of this test
+        // asserted presence and passed with the header moved inside.
+        mockZonesPresent = zones;
+        mockPathname = '/';
+        renderAppShell();
+
+        const swap = screen.getByTestId('sidebar-body-swap');
+        const header = screen.getByTestId('sidebar-nav-header');
+        const footer = screen.getByTestId('sidebar-footer-bar');
+        expect(swap).toContainElement(screen.getByTestId('dashboard-sidebar'));
+        expect(swap).not.toContainElement(header);
+        expect(swap).not.toContainElement(footer);
+        // The zones themselves live inside the body, whichever state they are in.
+        expect(document.querySelector('[data-sidebar-zone="library"]') !== null).toBe(zones);
+        cleanup();
+
+        // And the takeover swaps only what the swap region held.
+        mockPathname = '/marketplace';
+        renderAppShell();
+        expect(screen.getByTestId('marketplace-sidebar-fake')).toBeInTheDocument();
+        expect(screen.queryByTestId('dashboard-sidebar')).not.toBeInTheDocument();
+        expect(screen.getByTestId('sidebar-nav-header')).toBeInTheDocument();
+        expect(screen.getByTestId('sidebar-footer-bar')).toBeInTheDocument();
+      }
+    );
 
     it('replaces the roster with the contributed body on /marketplace', () => {
       mockPathname = '/marketplace';

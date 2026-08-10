@@ -87,6 +87,20 @@ export const SIDEBAR_LIBRARY_SECTION_IDS = [
 export type LibrarySectionId = (typeof SIDEBAR_LIBRARY_SECTION_IDS)[number];
 
 /**
+ * Narrow a section id to one that has a place to store its collapse state.
+ *
+ * Only a Library section does. Now, Today, Getting started and a group
+ * sub-header all answer `null`: the first three cannot fold at all (BC-2), and
+ * a group's fold already lives on the group. Reading the tuple rather than
+ * repeating the four ids, so it stays the one place Library's shape is edited.
+ *
+ * @param id - Any section id the model emits.
+ */
+export function librarySectionId(id: SidebarSectionId): LibrarySectionId | null {
+  return SIDEBAR_LIBRARY_SECTION_IDS.find((entry) => entry === id) ?? null;
+}
+
+/**
  * A section's id.
  *
  * The persisted Library sections are a closed set; a group sub-header is

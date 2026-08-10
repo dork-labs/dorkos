@@ -28,7 +28,7 @@ vi.mock('@/layers/entities/config', () => ({
 
 function Row() {
   return (
-    <SidebarDnd displayNames={{ '/a': 'alpha' }} roomTitles={{}}>
+    <SidebarDnd displayNames={{ '/a': 'alpha' }} rooms={[]}>
       <Sortable
         id="ungrouped::agent:/a"
         data={sidebarDndData('ungrouped', { kind: 'agent', path: '/a' })}

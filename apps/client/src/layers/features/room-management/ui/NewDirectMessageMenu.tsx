@@ -28,6 +28,16 @@ interface NewDirectMessageMenuProps {
   open: boolean;
   /** Show or hide the picker. */
   onOpenChange: (open: boolean) => void;
+  /**
+   * Render no "+" of its own — the panel is opened from a control somewhere
+   * else and only needs an anchor.
+   *
+   * A section that already carries a "+" cannot carry a second one, and the
+   * sidebar's Agents header is exactly that case while it hosts this panel's
+   * only entry point (see its call site). The trigger still exists in the DOM
+   * as the popover's anchor; it is simply not drawn.
+   */
+  hideTrigger?: boolean;
 }
 
 /**
@@ -68,7 +78,12 @@ interface NewDirectMessageMenuProps {
  * room sheet stopped doing that; this is the same panel, offering the same way
  * out of the same sentence.
  */
-export function NewDirectMessageMenu({ onStart, open, onOpenChange }: NewDirectMessageMenuProps) {
+export function NewDirectMessageMenu({
+  onStart,
+  open,
+  onOpenChange,
+  hideTrigger = false,
+}: NewDirectMessageMenuProps) {
   // Read here rather than taken as a prop: the fleet is this slice's business,
   // and asking for it directly is what keeps the sidebar from having to know
   // about it (see the module doc on `features/room-management`).
@@ -95,7 +110,19 @@ export function NewDirectMessageMenu({ onStart, open, onOpenChange }: NewDirectM
         {/* "New message", not "New direct message": the section header's own
             item beside it opens this very panel and is named that, and the
             panel it opens is titled that too. One action, one name. */}
-        <SidebarGroupAction aria-label="New message">
+        <SidebarGroupAction
+          // Named for the people who press it — and named for nobody when it is
+          // only an anchor. `sr-only` hides a control from SIGHT and leaves it
+          // announced and focusable, which is a phantom "New message" offered to
+          // exactly the readers who cannot see that it is a phantom.
+          // `aria-hidden` + `tabIndex={-1}` take it out of the accessibility
+          // tree and the tab order at the source, rather than leaning on the
+          // sidebar's roving-focus hook to stamp it: this component does not
+          // know whether it is inside one.
+          {...(hideTrigger
+            ? { 'aria-hidden': true, tabIndex: -1, className: 'sr-only' }
+            : { 'aria-label': 'New message' })}
+        >
           <Plus />
         </SidebarGroupAction>
       </ResponsivePopoverTrigger>

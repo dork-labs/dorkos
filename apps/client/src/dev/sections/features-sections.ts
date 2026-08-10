@@ -199,13 +199,6 @@ export const FEATURES_SECTIONS: PlaygroundSection[] = [
     keywords: ['group', 'create', 'input', 'inline', 'rename', 'sidebar', 'enter', 'escape'],
   },
   {
-    id: 'groupshintcard',
-    title: 'GroupsHintCard',
-    page: 'features',
-    category: 'Agent',
-    keywords: ['group', 'hint', 'card', 'nudge', 'discovery', 'dismiss', 'fleet', 'sidebar'],
-  },
-  {
     id: 'agentactivitybadge',
     title: 'AgentActivityBadge',
     page: 'features',

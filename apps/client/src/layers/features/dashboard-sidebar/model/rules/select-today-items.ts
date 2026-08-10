@@ -288,6 +288,12 @@ export function selectTodayItems(state: SidebarState): SidebarRowModel[] {
     if (!touched(`room:${thread.roomId}`)) continue;
     rows.push(threadRow(thread, state, mutes));
   }
-  if (automated.length > 0) rows.push(automatedRow(automated.length));
+  // The reveal stands FOR the list; it is not a list of its own. Appended
+  // unconditionally it could be Today's only row — a heading and one inert
+  // "+ 3 automated" on a fresh install where nothing has been opened yet — and
+  // BC-1's "no empty zone" cannot see that, because the zone is not empty.
+  // Automated runs are not what the operator was doing (BC-19), so with nothing
+  // else in Today there is nothing to reveal them beside.
+  if (automated.length > 0 && rows.length > 0) rows.push(automatedRow(automated.length));
   return rows;
 }

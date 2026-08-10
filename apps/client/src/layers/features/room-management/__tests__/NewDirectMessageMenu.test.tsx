@@ -24,9 +24,22 @@ vi.mock('../model/use-agent-picker-candidates', () => ({
  * the panel no longer holds itself — the section header's "New message…" opens
  * the same panel, so there is one owner and two ways in (spec `rooms` §14.1).
  */
-function Harness({ onStart }: { onStart: (chosen: AgentPickerCandidate[]) => void }) {
+function Harness({
+  onStart,
+  hideTrigger = false,
+}: {
+  onStart: (chosen: AgentPickerCandidate[]) => void;
+  hideTrigger?: boolean;
+}) {
   const [open, setOpen] = useState(false);
-  return <NewDirectMessageMenu open={open} onOpenChange={setOpen} onStart={onStart} />;
+  return (
+    <NewDirectMessageMenu
+      open={open}
+      onOpenChange={setOpen}
+      onStart={onStart}
+      hideTrigger={hideTrigger}
+    />
+  );
 }
 
 function renderMenu(candidates: AgentPickerCandidate[]) {
@@ -84,5 +97,37 @@ describe('NewDirectMessageMenu', () => {
 
     expect(useAgentCreationStore.getState().isOpen).toBe(true);
     expect(screen.queryByRole('button', { name: 'Create agent' })).not.toBeInTheDocument();
+  });
+});
+
+describe('NewDirectMessageMenu as somebody else’s panel (hideTrigger)', () => {
+  it('leaves no control behind — not a visible one, and not one only a reader meets', () => {
+    // The sidebar's Agents header opens this panel from its own "+" menu while
+    // BC-32 withholds the Direct messages section, so the panel needs an anchor
+    // and not a second button. `sr-only` alone would have hidden it from SIGHT
+    // and left it announced and focusable: a phantom "New message" offered to
+    // exactly the readers who cannot see that it is a phantom.
+    mockRosterRef.current = { candidates: [], isLoading: false, isError: false, retry: vi.fn() };
+    render(<Harness onStart={vi.fn()} hideTrigger />);
+
+    expect(screen.queryByRole('button', { name: 'New message' })).not.toBeInTheDocument();
+
+    const anchor = document.querySelector('[data-sidebar="group-action"]');
+    expect(anchor, 'the popover still needs something to hang off').not.toBeNull();
+    expect(anchor).toHaveAttribute('aria-hidden', 'true');
+    // Out of the tab order on its own account, rather than because the sidebar's
+    // roving-focus hook happened to stamp it — this component does not know
+    // whether it is inside one.
+    expect(anchor).toHaveAttribute('tabindex', '-1');
+  });
+
+  it('is a real, named control when it owns its own "+"', () => {
+    // The other half: the default must not quietly become unreachable.
+    mockRosterRef.current = { candidates: [], isLoading: false, isError: false, retry: vi.fn() };
+    render(<Harness onStart={vi.fn()} />);
+
+    const trigger = screen.getByRole('button', { name: 'New message' });
+    expect(trigger).not.toHaveAttribute('aria-hidden');
+    expect(trigger).not.toHaveAttribute('tabindex', '-1');
   });
 });

@@ -23,7 +23,7 @@ export interface MuteIndex {
  * **Group mute is a lens, never a write.** A muted group dims its members while
  * it is muted and gives each of them its own state back when it is not, which
  * only works if membership is resolved on read. A smart group's stored `items`
- * are ignored here for the same reason `groupedAgentPaths` ignores them: they
+ * are ignored here for the same reason `buildLibrarySections` ignores them: they
  * are a convert-to-manual target, not live membership.
  *
  * @param prefs - The operator's stored sidebar preferences.
