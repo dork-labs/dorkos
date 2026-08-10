@@ -56,6 +56,12 @@ export interface HeldUserPrompt {
   }>;
   /** Close stdin so the SDK subprocess finishes the turn and exits. Idempotent. */
   close: () => void;
+  /**
+   * Steer another user message into the still-open stream. The CLI queues it
+   * and delivers it at its next opportunity within the live turn. Returns
+   * `false` (and sends nothing) once {@link close} has been called.
+   */
+  push: (content: string) => boolean;
 }
 
 /**
@@ -71,11 +77,17 @@ export interface HeldUserPrompt {
  * @param messages - User message texts to yield before holding the stream open.
  */
 function createHeldPrompt(messages: string[]): HeldUserPrompt {
-  let release!: () => void;
-  const held = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-  // With no messages the generator yields nothing before awaiting `held` — an
+  // Queue-driven so `push()` can steer additional messages into the live turn
+  // (DOR-1087 corrective notes). The generator drains the queue, then parks on
+  // `wake` until the next push or close.
+  const queue = [...messages];
+  let closed = false;
+  let notify: (() => void) | undefined;
+  const wakeUp = (): void => {
+    notify?.();
+    notify = undefined;
+  };
+  // With no messages the generator yields nothing before parking — an
   // intentional idle probe. (No require-yield disable is needed: the `yield` in
   // the loop below satisfies the rule statically even when `messages` is empty.)
   async function* gen(): AsyncGenerator<{
@@ -84,17 +96,35 @@ function createHeldPrompt(messages: string[]): HeldUserPrompt {
     parent_tool_use_id: null;
     session_id: string;
   }> {
-    for (const content of messages) {
-      yield {
-        type: 'user' as const,
-        message: { role: 'user' as const, content },
-        parent_tool_use_id: null,
-        session_id: '',
-      };
+    while (true) {
+      while (queue.length > 0) {
+        const content = queue.shift()!;
+        yield {
+          type: 'user' as const,
+          message: { role: 'user' as const, content },
+          parent_tool_use_id: null,
+          session_id: '',
+        };
+      }
+      if (closed) return;
+      await new Promise<void>((resolve) => {
+        notify = resolve;
+      });
     }
-    await held;
   }
-  return { prompt: gen(), close: () => release() };
+  return {
+    prompt: gen(),
+    close: () => {
+      closed = true;
+      wakeUp();
+    },
+    push: (content: string) => {
+      if (closed) return false;
+      queue.push(content);
+      wakeUp();
+      return true;
+    },
+  };
 }
 
 /**

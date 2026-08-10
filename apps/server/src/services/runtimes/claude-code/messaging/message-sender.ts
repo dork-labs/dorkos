@@ -25,6 +25,11 @@ import type { McpServerEntry } from '@dorkos/shared/transport';
 import type { AgentSession } from '../agent-types.js';
 import { createToolState } from '../agent-types.js';
 import { createCanUseTool, handleElicitation } from './interactive-handlers.js';
+import {
+  detectPhantomCancellation,
+  buildPhantomCorrectionNote,
+  PHANTOM_CORRECTIONS_MAX_PER_TURN,
+} from './phantom-cancellation.js';
 import { mapSdkMessage } from '../sdk/sdk-event-mapper.js';
 import { createHeldUserPrompt } from '../sdk/sdk-utils.js';
 import { fetchContextBreakdown } from '../sdk/context-usage.js';
@@ -792,6 +797,9 @@ export async function* executeSdkQuery(
   // `finally`, unless a recursion retry already set the authoritative value.
   let lastMainAssistantUuid: string | undefined;
   let retriedViaRecursion = false;
+  // Corrective notes steered into this turn after phantom cancellations
+  // (DOR-1087) — capped so the correction can never feed itself.
+  let phantomCorrections = 0;
   const streamStart = Date.now();
   const toolState = createToolState();
 
@@ -834,6 +842,35 @@ export async function* executeSdkQuery(
       // transcript, so they must never become the main-session anchor.
       if (result.value.type === 'assistant' && result.value.parent_tool_use_id === null) {
         lastMainAssistantUuid = result.value.uuid;
+      }
+
+      // Phantom cancellation (DOR-1087): the CLI cancelled a pending tool call
+      // because a task-notification was queued, writing a sentinel that reads
+      // as a user refusal. Tell the model it wasn't the user (main thread only
+      // — a subagent's input stream is not ours to write to) and surface a
+      // status line so the operator sees what actually happened.
+      const phantom = detectPhantomCancellation(result.value, session);
+      if (phantom) {
+        const steered =
+          phantom.mainThread &&
+          phantomCorrections < PHANTOM_CORRECTIONS_MAX_PER_TURN &&
+          heldPrompt.push(buildPhantomCorrectionNote(phantom.toolUseId));
+        if (steered) phantomCorrections++;
+        logger.warn('[sendMessage] phantom tool-call cancellation detected', {
+          session: sessionId,
+          toolUseId: phantom.toolUseId,
+          mainThread: phantom.mainThread,
+          steered,
+        });
+        eventCount++;
+        yield {
+          type: 'system_status',
+          data: {
+            message:
+              'A background-task notification cancelled a pending tool call. This was a runtime artifact, not the operator; the agent has been told so.',
+            status: 'phantom_cancellation',
+          },
+        };
       }
 
       // The `result` message marks turn completion. The subprocess is still alive
