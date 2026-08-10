@@ -209,7 +209,7 @@ describe('moment detectors', () => {
     it('marks the first agent as the first, and says whose face to draw', () => {
       register(TANGERINES, { name: 'tangerines' });
 
-      detectors.agentCreated({ name: 'tangerines', path: TANGERINES });
+      detectors.agentCreated({ name: 'tangerines', path: TANGERINES, origin: 'created' });
 
       const marked = onlyMoment();
       expect(marked.body.text).toBe('tangerines joined your team. Your first agent.');
@@ -231,7 +231,7 @@ describe('moment detectors', () => {
       register(TANGERINES, { name: 'tangerines', registeredAt: new Date(Date.now() - DAY_MS) });
       register(ANA, { name: 'Ana' });
 
-      detectors.agentCreated({ name: 'ana', displayName: 'Ana', path: ANA });
+      detectors.agentCreated({ name: 'ana', displayName: 'Ana', path: ANA, origin: 'created' });
 
       const marked = onlyMoment();
       expect(marked.body.text).toBe('Ana joined your team.');
@@ -241,16 +241,38 @@ describe('moment detectors', () => {
     it('says nothing about a system agent — DorkBot was not your decision', () => {
       register(DORKBOT, { name: 'DorkBot', isSystem: true });
 
-      detectors.agentCreated({ name: 'dorkbot', path: DORKBOT });
+      detectors.agentCreated({ name: 'dorkbot', path: DORKBOT, origin: 'created' });
 
       expect(moments()).toEqual([]);
+    });
+
+    it('says nothing about an agent DorkOS was merely told to register', () => {
+      // The line between the two origins is who did something. Creating an agent
+      // is a person bringing a teammate into being; registering a directory that
+      // was already on disk is DorkOS updating its own records. Announcing the
+      // second is the system talking about its bookkeeping — and worse, a scan
+      // that adopts twelve directories would spend the quiet hour celebrating
+      // whichever one the walk happened to reach first (DOR-1042).
+      register(TANGERINES, { name: 'tangerines' });
+
+      detectors.agentCreated({ name: 'tangerines', path: TANGERINES, origin: 'registered' });
+
+      expect(moments()).toEqual([]);
+    });
+
+    it('still marks an agent a person created', () => {
+      register(ANA, { name: 'Ana' });
+
+      detectors.agentCreated({ name: 'ana', displayName: 'Ana', path: ANA, origin: 'created' });
+
+      expect(onlyMoment().body.text).toBe('Ana joined your team. Your first agent.');
     });
 
     it('says nothing about an agent the registry does not have', () => {
       // The near-miss that matters: the seam reported a creation, but nothing in
       // this install's own records says it happened. A moment is never written
       // from what a caller claimed.
-      detectors.agentCreated({ name: 'ghost', path: '/agents/ghost' });
+      detectors.agentCreated({ name: 'ghost', path: '/agents/ghost', origin: 'created' });
 
       expect(moments()).toEqual([]);
     });
@@ -258,20 +280,20 @@ describe('moment detectors', () => {
     it('does not mark the same agent twice, even after a restart', () => {
       register(TANGERINES, { name: 'tangerines', registeredAt: new Date(Date.now() - DAY_MS) });
       register(ANA, { name: 'Ana' });
-      build().agentCreated({ name: 'ana', displayName: 'Ana', path: ANA });
+      build().agentCreated({ name: 'ana', displayName: 'Ana', path: ANA, origin: 'created' });
       expect(moments()).toHaveLength(1);
 
       // A fresh process, over the same database, past the quiet period. The
       // marker it reads is the moment itself.
       moveThePageOn();
-      build().agentCreated({ name: 'ana', displayName: 'Ana', path: ANA });
+      build().agentCreated({ name: 'ana', displayName: 'Ana', path: ANA, origin: 'created' });
 
       expect(moments()).toHaveLength(1);
     });
 
     it('never calls a second agent your first, however empty the registry got', () => {
       register(TANGERINES, { name: 'tangerines' });
-      detectors.agentCreated({ name: 'tangerines', path: TANGERINES });
+      detectors.agentCreated({ name: 'tangerines', path: TANGERINES, origin: 'created' });
       expect(onlyMoment().body.moment?.kind).toBe('first_agent');
 
       // You delete that agent and start again. The registry is back to one row,
@@ -281,7 +303,7 @@ describe('moment detectors', () => {
       db.delete(agentsTable).run();
       register(ANA, { name: 'Ana' });
       moveThePageOn();
-      build().agentCreated({ name: 'ana', displayName: 'Ana', path: ANA });
+      build().agentCreated({ name: 'ana', displayName: 'Ana', path: ANA, origin: 'created' });
 
       const marked = moments();
       expect(marked.map((entry) => entry.body.moment?.kind)).toEqual([
@@ -297,7 +319,7 @@ describe('moment detectors', () => {
       }
 
       for (const [index, path] of ['/a', '/b', '/c', '/d', '/e'].entries()) {
-        detectors.agentCreated({ name: `agent-${index}`, path });
+        detectors.agentCreated({ name: `agent-${index}`, path, origin: 'created' });
       }
 
       // Four of them are dropped, not queued: a milestone that arrives an hour
@@ -584,7 +606,7 @@ describe('moment detectors', () => {
   describe('quiet', () => {
     it('marks nothing in the hour after it marked something', () => {
       register(TANGERINES, { name: 'tangerines' });
-      detectors.agentCreated({ name: 'tangerines', path: TANGERINES });
+      detectors.agentCreated({ name: 'tangerines', path: TANGERINES, origin: 'created' });
       expect(moments()).toHaveLength(1);
 
       // A completely different milestone, minutes later. It is real, and it is
@@ -613,7 +635,7 @@ describe('moment detectors', () => {
         store: elsewhere.store,
         authors: elsewhere.authors,
         db: elsewhere.db,
-      }).agentCreated({ name: 'tangerines', path: TANGERINES });
+      }).agentCreated({ name: 'tangerines', path: TANGERINES, origin: 'created' });
 
       expect(elsewhere.store.listRooms()).toEqual([]);
     });

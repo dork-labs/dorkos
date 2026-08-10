@@ -274,6 +274,8 @@ describe('Agents Routes', () => {
         // The directory rides along because the rooms domain keys on it: a
         // reaction that had to look it back up could silently do nothing.
         path: '/home/user/my-project',
+        // The New Agent flow creates; only a creation is announced as a moment.
+        origin: 'created',
       });
     });
 

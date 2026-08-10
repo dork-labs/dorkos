@@ -168,6 +168,8 @@ describe('Mesh MCP Tools', () => {
           name: 'Bot',
           displayName: undefined,
           path: '/test/bot',
+          // Registration, not creation — seated, never announced.
+          origin: 'registered',
         });
       } finally {
         setOnAgentCreated(null);

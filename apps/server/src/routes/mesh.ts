@@ -319,6 +319,9 @@ export function createMeshRouter(deps: MeshRouterDeps): Router {
         name: manifest.name,
         displayName: manifest.displayName,
         path: validatedPath,
+        // Registration, not creation: this takes a directory the person already
+        // has onto the roster. It gets the seat; it does not get a moment.
+        origin: 'registered',
       });
 
       // Fire-and-forget activity event for agent registration — and now

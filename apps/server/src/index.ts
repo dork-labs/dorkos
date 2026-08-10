@@ -2131,15 +2131,19 @@ async function start() {
   // `.dork/agent.json` this machine had never registered, and adopts it. That
   // agent used to sit outside the team room until the next boot's backfill
   // picked it up (DOR-1042). Mesh fires this ONLY on the pass that first
-  // registers an id — never on the five-minute reconciler's re-scan of an agent
-  // it already knows, never on a relocation, and never on a refused duplicate —
-  // so the seat is taken once and stays taken. Fire-and-forget: the scan is a
-  // background walk with nobody waiting on a response, and `notifyAgentCreated`
-  // swallows its own failures, so the promise cannot reject.
-  // The annotation is the contract: an `AdoptedAgent` is exactly a
-  // `CreatedAgentInfo`, and the day one of them grows a field the other lacks,
-  // this line is what goes red instead of silently dropping it.
-  meshCore?.onAgentAdopted((agent: AdoptedAgent) => void notifyAgentCreated(agent));
+  // registers an id — never on a re-scan of an agent it already knows, never on
+  // a relocation, and never on a refused duplicate — so the seat is taken once
+  // and stays taken. Fire-and-forget: the scan is a background walk with nobody
+  // waiting on a response, and `notifyAgentCreated` swallows its own failures,
+  // so the promise cannot reject.
+  //
+  // `origin: 'registered'` is the load-bearing word. A scan finding a directory
+  // is DorkOS updating its own records, not a person adding a teammate, so this
+  // takes the seat silently — a scan that adopts a folder full of agents must
+  // not spend the quiet hour announcing whichever one the walk reached first.
+  meshCore?.onAgentAdopted(
+    (agent: AdoptedAgent) => void notifyAgentCreated({ ...agent, origin: 'registered' })
+  );
 
   // Managed-MCP OAuth loopback callback (DOR-942) — the `redirect_uri` the
   // operator's browser lands on after authorizing a server. Mounted BEFORE the

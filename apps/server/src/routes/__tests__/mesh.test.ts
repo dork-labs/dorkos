@@ -395,6 +395,9 @@ describe('Mesh routes', () => {
         displayName: 'Testy',
         // The validated directory rides along: the rooms domain keys on it.
         path: '/home/user/project',
+        // Registration, not creation — it takes the #team seat, but it is not
+        // announced as a moment (DOR-1042).
+        origin: 'registered',
       });
     });
 

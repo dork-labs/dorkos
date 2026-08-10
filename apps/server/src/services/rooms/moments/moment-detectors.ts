@@ -241,7 +241,19 @@ export interface MomentRoom {
   agentAuthorId(agent: { path: string; displayName: string }): string | null;
 }
 
-/** The just-created agent, as the agent-created seam reports it. */
+/**
+ * How an agent arrived on this install's roster.
+ *
+ * - `'created'` — a person brought a new agent into being (the New Agent flow,
+ *   the `create_agent` tool, a marketplace agent install). Its workspace is
+ *   scaffolded here and did not exist a moment ago.
+ * - `'registered'` — DorkOS took a directory that was already on disk onto its
+ *   records: mesh registration by path, the `mesh_register` tool, or a
+ *   discovery scan adopting a `.dork/agent.json` it walked past.
+ */
+export type AgentArrival = 'created' | 'registered';
+
+/** The just-created or just-registered agent, as the agent-created seam reports it. */
 export interface CreatedAgent {
   /** Manifest `name`. */
   name: string;
@@ -249,6 +261,13 @@ export interface CreatedAgent {
   displayName?: string;
   /** Its directory. */
   path: string;
+  /**
+   * How this agent reached the roster. `'created'` is a new agent workspace
+   * coming into being; `'registered'` is DorkOS taking a directory that was
+   * already on disk onto its records. Only the first is a moment — see
+   * {@link MomentDetectors.agentCreated}.
+   */
+  origin: AgentArrival;
 }
 
 /** What a pass knows before any detector runs. */
@@ -325,9 +344,19 @@ export class MomentDetectors {
    * of the question: an install that has already had its first agent falls
    * through to the ordinary line, forever.
    *
+   * **Only an agent a person CREATED is a moment.** The same seam also fires
+   * when DorkOS merely takes an existing directory onto its records — mesh
+   * registration by path, or a discovery scan adopting a manifest it walked
+   * past (DOR-1042). Those need the #team seat, which the seam still gives
+   * them, but they are not events a person caused: a scan that adopts twelve
+   * directories would otherwise spend the hour-long quiet period announcing
+   * whichever one the walk reached first, which is the over-participation the
+   * quiet period exists to prevent.
+   *
    * @param agent - The agent the seam reports.
    */
   agentCreated(agent: CreatedAgent): void {
+    if (agent.origin !== 'created') return;
     this.pass((ctx) => {
       // The registry is what makes this real rather than reported: an agent that
       // is not in it (a system agent like DorkBot, or one whose sync did not

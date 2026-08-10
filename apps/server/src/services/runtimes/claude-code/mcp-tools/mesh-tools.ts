@@ -151,6 +151,8 @@ export function createMeshRegisterHandler(deps: McpToolDeps) {
         name: agent.name,
         displayName: agent.displayName,
         path: resolvedPath,
+        // Registration, not creation — same as the HTTP mesh register route.
+        origin: 'registered',
       });
 
       return jsonContent({ agent });

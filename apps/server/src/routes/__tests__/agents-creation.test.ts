@@ -337,6 +337,9 @@ describe('POST /api/agents/create', () => {
         // The directory rides along because the rooms domain keys on it: a
         // reaction that had to look it back up could silently do nothing.
         path: '/mock/agents/my-agent',
+        // The creation pipeline scaffolded this workspace, so it is announced
+        // as a moment — unlike a mesh registration or a scan adoption.
+        origin: 'created',
       });
     });
 

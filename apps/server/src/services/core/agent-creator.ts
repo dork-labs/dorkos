@@ -455,6 +455,9 @@ export async function createAgentWorkspace(
       name: manifest.name,
       displayName: manifest.displayName,
       path: resolvedPath,
+      // This function IS the creation pipeline — it scaffolded the workspace a
+      // few lines up, so the agent did not exist a moment ago.
+      origin: 'created',
     });
 
     result = { manifest, path: resolvedPath, meta };
