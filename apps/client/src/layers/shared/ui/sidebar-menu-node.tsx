@@ -437,10 +437,11 @@ export function useGuardedMenuNodes(nodes: SidebarMenuNode[]): {
   onCloseAutoFocus: (event: Event) => void;
 } {
   const { arm, onCloseAutoFocus } = useMenuCloseFocusGuard();
-  // Keyed on the array identity, which every builder makes fresh each render —
-  // so this is a re-walk, not a cache hit. It is a handful of items and feeds
-  // no memoized child; the memo is here only to keep the returned object stable
-  // within one render pass.
+  // Keyed on the array identity. Every caller in this repo builds its `nodes`
+  // inline from a builder, so that identity is fresh each render and this is a
+  // re-walk rather than a cache hit — the memo buys nothing today. It is here
+  // for the caller that DOES hold a stable list: for that one, the walked array
+  // keeps its identity ACROSS renders instead of remounting every item.
   const guarded = useMemo(() => armOpensInput(nodes, arm), [nodes, arm]);
   return { nodes: guarded, onCloseAutoFocus };
 }

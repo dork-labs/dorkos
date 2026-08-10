@@ -1,25 +1,25 @@
 /**
  * The sidebar's persistent chrome: the header block and the one New menu.
  *
- * **The real components, not a lookalike.** An earlier draft of this file
- * hand-copied `SidebarHeaderBlock`'s markup so it could be fed fabricated menu
- * rows, and had already drifted — a `<span>` where the product has a `<button>`,
- * and no focus ring at all. A showcase that draws its own copy cannot catch a
- * regression in the thing it is named after, which is the entire job. The
- * Playground supplies a query client, a transport and a memory router
- * (`DevPlayground`), so these mount exactly as they do in the cockpit.
+ * **The real components, not a lookalike.** An earlier draft hand-copied
+ * `SidebarHeaderBlock`'s markup so it could be fed fabricated menu rows, and had
+ * already drifted — a `<span>` where the product has a `<button>`, and no focus
+ * ring at all. A showcase that draws its own copy cannot catch a regression in
+ * the thing it is named after. The Playground supplies a query client, a
+ * transport and a memory router (`DevPlayground`), so the live blocks below
+ * mount exactly as they do in the cockpit.
  *
- * The one thing that still cannot be driven from outside is the header menu's
- * LENGTH — BC-43's "communities make the menu longer and nothing outside it
- * moves". That is shown beside the live block as the menu's own node list at
- * three rows and at six, rendered through the same `SidebarMenuNodes` the block
- * uses. `SidebarHeaderBlock.test.tsx` is what asserts the block's box does not
- * change between them.
+ * **A node list needs a menu root.** `SidebarMenuNodes` renders Radix
+ * `DropdownMenuItem`, which throws outside a `DropdownMenu` — so the drafts that
+ * dropped a list into a bare `<div>` to show it "flat" took the whole section
+ * down with them, live components included. Every list here therefore goes
+ * through `SidebarMenuSurface`, which owns both menu roots and is the standing
+ * pattern in `AgentSidebarShowcases`. Right-click the target or press its ⋮.
  *
  * @module dev/showcases/SidebarChromeShowcases
  */
 import { Users } from 'lucide-react';
-import { SidebarMenuNodes, type SidebarMenuNode } from '@/layers/shared/ui';
+import { SidebarMenuSurface, type SidebarMenuNode } from '@/layers/shared/ui';
 import {
   buildHeaderBlockMenuNodes,
   buildNewMenuNodes,
@@ -44,6 +44,25 @@ export function SidebarChromeShowcases() {
 
 const noop = () => {};
 
+/**
+ * One node list, openable.
+ *
+ * `SidebarMenuSurface` brings its own `ContextMenu` and `DropdownMenu` roots,
+ * which is the whole reason to route through it: a list rendered without one
+ * throws on its first item.
+ *
+ * @param props - The list, and what to call the target that opens it.
+ */
+function MenuTarget({ nodes, label }: { nodes: SidebarMenuNode[]; label: string }) {
+  return (
+    <SidebarMenuSurface nodes={nodes} actionsLabel={label} alwaysShowActions className="w-72">
+      <div className="border-sidebar-border text-sidebar-foreground/70 hover:bg-sidebar-accent/70 hover:text-sidebar-foreground flex w-full cursor-context-menu items-center rounded-lg border border-dashed py-3 pr-8 pl-4 text-xs transition-colors">
+        {label} — right-click, or press the ⋮
+      </div>
+    </SidebarMenuSurface>
+  );
+}
+
 /** The header block, live, plus the growth case its menu is built for. */
 function SidebarHeaderBlockShowcase() {
   const short = buildHeaderBlockMenuNodes({
@@ -61,8 +80,8 @@ function SidebarHeaderBlockShowcase() {
     opensInput: false,
     run: noop,
   });
-  // What "communities shipped" looks like from inside the menu: three more
-  // rows, in the same list, above the version line.
+  // What "communities shipped" looks like from inside the menu: more rows, in
+  // the same list, above the version line.
   const long: SidebarMenuNode[] = [
     ...short.slice(0, 2),
     { kind: 'separator', id: 'sep-communities' },
@@ -85,24 +104,20 @@ function SidebarHeaderBlockShowcase() {
 
       <ShowcaseLabel>Its menu today — three rows</ShowcaseLabel>
       <ShowcaseDemo>
-        <div className="bg-popover w-56 rounded-md border p-1">
-          <SidebarMenuNodes variant="dropdown" nodes={short} />
-        </div>
+        <MenuTarget nodes={short} label="Header menu today" />
       </ShowcaseDemo>
 
       <ShowcaseLabel>
-        …and once communities ship — six rows, and the block does not move
+        …and once communities ship — six rows, and the block above does not move
       </ShowcaseLabel>
       <ShowcaseDemo>
-        <div className="bg-popover w-56 rounded-md border p-1">
-          <SidebarMenuNodes variant="dropdown" nodes={long} />
-        </div>
+        <MenuTarget nodes={long} label="Header menu with communities" />
       </ShowcaseDemo>
     </PlaygroundSection>
   );
 }
 
-/** The one create surface — live, plus the item list at both fleet sizes. */
+/** The one create surface — live, plus its item list at both fleet sizes. */
 function NewMenuShowcase() {
   const base = {
     onNewSession: noop,
@@ -132,7 +147,7 @@ function NewMenuShowcase() {
   return (
     <PlaygroundSection
       title="NewMenu"
-      description="The sidebar's only create surface. A section's hover + runs no handler of its own — it opens this menu on the matching item. Agent group appears once you are running eight agents or two runtimes, and ⌘N is advertised only in the desktop app, where the key is not already the browser's. The live button below opens the real menu for this install; the two lists under it are the same builder at both fleet sizes."
+      description="The sidebar's only create surface. A section's hover + runs no handler of its own — it opens this menu on the matching item. Agent group appears once you are running eight agents or two runtimes, and ⌘N is advertised only in the desktop app, where the key is not already the browser's. The live button below opens the real menu for this install; the two targets under it are the same builder at both fleet sizes."
     >
       <ShowcaseLabel>Live — press it</ShowcaseLabel>
       <ShowcaseDemo>
@@ -143,16 +158,12 @@ function NewMenuShowcase() {
 
       <ShowcaseLabel>Small cockpit, in a browser</ShowcaseLabel>
       <ShowcaseDemo>
-        <div className="bg-popover w-56 rounded-md border p-1">
-          <SidebarMenuNodes variant="dropdown" nodes={small} />
-        </div>
+        <MenuTarget nodes={small} label="New menu — small cockpit" />
       </ShowcaseDemo>
 
       <ShowcaseLabel>Eight agents, on the desktop app, with a last-used agent</ShowcaseLabel>
       <ShowcaseDemo>
-        <div className="bg-popover w-56 rounded-md border p-1">
-          <SidebarMenuNodes variant="dropdown" nodes={large} />
-        </div>
+        <MenuTarget nodes={large} label="New menu — eight agents on desktop" />
       </ShowcaseDemo>
     </PlaygroundSection>
   );

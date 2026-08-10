@@ -93,13 +93,19 @@ export class NewMenuPage {
    * `ArrowRight` rather than a hover: it is the Radix LTR sub-open key, and it
    * is what the rest of this repo's menu tests use.
    *
-   * @param entry - The submenu row's accessible name, e.g. `'Empty group…'`.
+   * The entry is addressed by id like everything else here. `renderNodes`
+   * recurses into a submenu with the same walk, so its rows carry
+   * `data-menu-item-id` too — and reaching for `'Empty group…'` by name would
+   * bake in both the wording and the renderer's `…` convention, which is the
+   * coupling this file exists to avoid.
+   *
+   * @param entryId - The submenu row's id, e.g. `'new-group-empty'`.
    */
-  async chooseGroupSubmenu(entry: string): Promise<void> {
+  async chooseGroupSubmenu(entryId: string): Promise<void> {
     await this.trigger.click();
     const group = this.item('new-group');
     await group.waitFor({ state: 'visible' });
     await group.press('ArrowRight');
-    await this.page.getByRole('menuitem', { name: entry }).click();
+    await this.item(entryId).click();
   }
 }

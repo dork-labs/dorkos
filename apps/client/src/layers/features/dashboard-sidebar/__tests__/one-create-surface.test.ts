@@ -212,14 +212,22 @@ describe('DOR-329 — a menu that opens something does not blur it on the way ou
    */
   const OWN_MENU_CONTENT = ['ui/NewMenu.tsx', 'ui/SidebarHeaderBlock.tsx'];
 
-  it.each(OWN_MENU_CONTENT)('arms the close-focus guard in %s', (file) => {
+  /** How many times `pattern` appears in `text`. */
+  const count = (text: string, pattern: RegExp): number =>
+    [...text.matchAll(new RegExp(pattern, 'g'))].length;
+
+  it.each(OWN_MENU_CONTENT)('arms the close-focus guard on every menu in %s', (file) => {
     const text = SOURCE.get(file) ?? '';
-    // Observable first: this file really does render its own menu content.
-    expect(text).toMatch(/<DropdownMenuContent/);
+    // Counted, not merely present. "The three strings appear somewhere in this
+    // file" would be satisfied by a file that grew a SECOND, unguarded menu
+    // beside a guarded one — which is the shape the bug took the first time.
+    const contents = count(text, /<DropdownMenuContent/);
+    expect(contents).toBeGreaterThan(0);
+    expect(count(text, /onCloseAutoFocus=\{guarded\.onCloseAutoFocus\}/)).toBe(contents);
+    // …and every one of them renders the GUARDED list, not the raw one.
+    expect(count(text, /<SidebarMenuNodes\b/)).toBe(contents);
+    expect(count(text, /nodes=\{guarded\.nodes\}/)).toBe(contents);
     expect(text).toMatch(/useGuardedMenuNodes/);
-    expect(text).toMatch(/onCloseAutoFocus=\{guarded\.onCloseAutoFocus\}/);
-    // …and renders the GUARDED list, not the raw one.
-    expect(text).toMatch(/nodes=\{guarded\.nodes\}/);
   });
 
   it('finds no unguarded menu content anywhere else in the feature', () => {
@@ -231,27 +239,51 @@ describe('DOR-329 — a menu that opens something does not blur it on the way ou
 });
 
 describe('BC-44 — the version number leaves the chrome', () => {
-  const VERSION_RENDER = /v\$\{model\.version\}|v\{version\}/;
+  /**
+   * A version number being drawn.
+   *
+   * **This matches spellings, not semantics, and the boundary is worth
+   * knowing.** It covers the two forms the sidebar uses today plus the obvious
+   * neighbours — a `v`-prefixed template or JSX hole over any identifier whose
+   * name ends in `version` (`version`, `model.version`, `serverConfig.version`,
+   * `latestVersion`), and a component named `Version…`. What it cannot see is a
+   * module that renders a version through a name with no `version` in it
+   * (`` {`v${v}`} ``) or assembles the string somewhere else and passes it in.
+   * A source scan cannot close that; what closes it is this test failing loudly
+   * enough that the next person adding a version line reads it first.
+   */
+  const VERSION_RENDER =
+    /v\$\{[^}]*[Vv]ersion\b[^}]*\}|v\{[^}]*[Vv]ersion\b[^}]*\}|<Version[A-Za-z]*[\s/>]/;
 
   /**
    * Every module in the sidebar still allowed to draw a version number.
    *
-   * **This list is one entry too long, and says so.** BC-44 puts the version in
-   * the header block's menu and in DorkBot's seeded context, and nowhere else.
-   * `SidebarFooterBar` still draws it because P2.4's disjoint-file guarantee
-   * forbids touching the footer — P2.5 owns retiring that strip, and the
-   * version row goes with it. Until then a reader genuinely sees the number
-   * twice, and an assertion scoped so it could not notice would be the more
-   * expensive lie.
+   * **This list is three entries too long, and says so.** BC-44 puts the
+   * version in the header block's menu and in DorkBot's seeded context, and
+   * nowhere else. The three below all live in the footer strip, which P2.4's
+   * disjoint-file guarantee forbids touching — P2.5 owns retiring that strip,
+   * and BC-44 replaces its two update cards with one transient "Update ready —
+   * Restart" pill. Until then a reader genuinely sees a version number in more
+   * than one place, and an assertion scoped so it could not notice would be the
+   * more expensive lie.
+   *
+   * **Two of these were invisible to the first version of this guard**, whose
+   * pattern matched only the two literal spellings this feature happened to
+   * use. Widening it to any `v`-prefixed render of a `*version` identifier
+   * found the update cards immediately — which is the argument for a pattern
+   * that is looser than the code you wrote it against.
    *
    * Written as an exact list rather than a "not more than" so P2.5 cannot
-   * silently leave the entry behind: deleting the row without deleting the line
-   * below fails this test.
+   * silently leave an entry behind: deleting a row without deleting its line
+   * here fails this test.
    */
   const ALLOWED = [
     'dashboard-sidebar/ui/header-block-menu.ts',
-    // OWED BY P2.5 (BC-47): goes with the footer strip.
+    // OWED BY P2.5 (BC-47): all three go with the footer strip. The two cards
+    // become BC-44's single transient update pill.
+    'session-list/ui/DesktopUpdateCard.tsx',
     'session-list/ui/SidebarFooterBar.tsx',
+    'session-list/ui/SidebarUpgradeCard.tsx',
   ];
 
   it('scans both halves of the sidebar — the claim is about the panel, not a directory', () => {

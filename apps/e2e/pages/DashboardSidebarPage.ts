@@ -166,7 +166,7 @@ export class DashboardSidebarPage {
     // Two steps now, and they are the product's: the New menu's "Agent group"
     // is a submenu — by hand, or from rules — and "Empty group" is the by-hand
     // entry that mounts the inline editor Library ▸ Agents draws (BC-45).
-    await this.newMenu.chooseGroupSubmenu('Empty group…');
+    await this.newMenu.chooseGroupSubmenu('new-group-empty');
     const input = this.page.getByRole('textbox', { name: 'New group name' });
     await input.fill(name);
     await input.press('Enter');
