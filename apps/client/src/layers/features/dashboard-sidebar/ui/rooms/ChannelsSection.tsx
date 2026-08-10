@@ -13,7 +13,8 @@ import { useRovingFocus } from '@/layers/shared/model';
 import {
   useSidebarPrefs,
   useUpdateSidebarPrefs,
-  setChannelsCollapsed,
+  isSectionCollapsed,
+  setSectionCollapsed,
 } from '@/layers/entities/config';
 import { ChannelCreateDialog } from '@/layers/features/room-management';
 import type { SidebarItemRef } from '@dorkos/shared/config-schema';
@@ -69,7 +70,7 @@ interface ChannelsSectionProps {
  * The sidebar's "Channels" section: every ungrouped conversation with a `#name`,
  * one click from open, with an unread count when you are behind.
  *
- * Collapsible and persisted via `ui.sidebar.channelsCollapsed`. The section is
+ * Collapsible and persisted via `ui.sidebar.sections.channels`. The section is
  * always present, empty or not — a person who has never made a channel should
  * still be able to find out that they can.
  *
@@ -95,13 +96,13 @@ export function ChannelsSection({
   onOpenAgentProfile,
   onRequestNewGroup,
 }: ChannelsSectionProps) {
-  const { channelsCollapsed } = useSidebarPrefs();
+  const channelsCollapsed = isSectionCollapsed(useSidebarPrefs(), 'channels');
   const { update } = useUpdateSidebarPrefs();
   const [creating, setCreating] = useState(false);
   const markRoomsRead = useMarkRoomsRead();
 
   const toggleCollapsed = () =>
-    update((prev) => setChannelsCollapsed(prev, !prev.channelsCollapsed));
+    update((prev) => setSectionCollapsed(prev, 'channels', !isSectionCollapsed(prev, 'channels')));
   const roving = useRovingFocus({
     onCollapse: () => !channelsCollapsed && toggleCollapsed(),
     onExpand: () => channelsCollapsed && toggleCollapsed(),

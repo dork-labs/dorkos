@@ -20,7 +20,8 @@ import {
 import {
   useSidebarPrefs,
   useUpdateSidebarPrefs,
-  setRecentsCollapsed,
+  isSectionCollapsed,
+  setSectionCollapsed,
 } from '@/layers/entities/config';
 import { AgentAvatar, useAgentVisual } from '@/layers/entities/agent';
 import { hasUnread, RoomAvatar, RoomTitle } from '@/layers/entities/room';
@@ -74,7 +75,7 @@ interface JumpBackInSectionProps {
  * a DM saw neither, and the one list that claimed to be about "what you were
  * doing" was about a third of it.
  *
- * Collapsible, persisted under the same `ui.sidebar.recentsCollapsed` key the
+ * Collapsible, persisted under the same `ui.sidebar.sections.recents` key the
  * section it replaces used — the preference is "is my recents list open", and
  * that fact did not change when the list learned about rooms.
  *
@@ -110,10 +111,11 @@ export function JumpBackInSection({
   onSelectRoom,
   onNewSession,
 }: JumpBackInSectionProps) {
-  const { recentsCollapsed } = useSidebarPrefs();
+  const recentsCollapsed = isSectionCollapsed(useSidebarPrefs(), 'recents');
   const { update } = useUpdateSidebarPrefs();
   const [automatedExpanded, setAutomatedExpanded] = useState(false);
-  const toggleCollapsed = () => update((prev) => setRecentsCollapsed(prev, !prev.recentsCollapsed));
+  const toggleCollapsed = () =>
+    update((prev) => setSectionCollapsed(prev, 'recents', !isSectionCollapsed(prev, 'recents')));
   const roving = useRovingFocus({
     onCollapse: () => !recentsCollapsed && toggleCollapsed(),
     onExpand: () => recentsCollapsed && toggleCollapsed(),

@@ -5,7 +5,7 @@ import { cn } from '@/layers/shared/lib';
 interface GroupsHintCardProps {
   /** Open the inline group-create flow. */
   onNewGroup: () => void;
-  /** Dismiss the hint for good (persists `groupsHintDismissed`). */
+  /** Dismiss the hint for good (retires `suggestion:groups-hint`). */
   onDismiss: () => void;
 }
 

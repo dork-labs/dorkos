@@ -1076,7 +1076,8 @@ describe('GET /api/config', () => {
     expect(res.body.ui.sidebar).toBeDefined();
     expect(Array.isArray(res.body.ui.sidebar.pinned)).toBe(true);
     expect(Array.isArray(res.body.ui.sidebar.groups)).toBe(true);
-    expect(res.body.ui.sidebar.ungroupedSortMode).toBe('name');
+    expect(res.body.ui.sidebar.sections).toEqual({});
+    expect(res.body.ui.sidebar.gettingStarted).toEqual({ retired: [] });
   });
 
   it('includes ui.shapes state (DOR-355)', async () => {

@@ -4,6 +4,12 @@ describe('AppStore', () => {
   beforeEach(async () => {
     vi.resetModules();
     vi.clearAllMocks();
+    // The store reads its persisted booleans at module init, and `resetModules`
+    // above makes every test re-run that init. Without this the DEFAULTS asserted
+    // below are not defaults at all — they are whatever the previous test's
+    // `setSidebarOpen`/`toggleSidebar` last wrote, and the file only passes in
+    // declaration order. Every sibling app-store suite clears it for this reason.
+    localStorage.clear();
   });
 
   it('toggleSidebar flips state', async () => {

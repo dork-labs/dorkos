@@ -7,22 +7,28 @@ import type { RoomSummary } from '@dorkos/shared/room-schemas';
 import type { Session } from '@dorkos/shared/types';
 import { mergeJumpBackIn } from '@/layers/entities/recents';
 import { TooltipProvider } from '@/layers/shared/ui';
+import { SIDEBAR_PREFS_DEFAULTS } from '@dorkos/shared/config-schema';
 import { JumpBackInSection } from '../ui/JumpBackInSection';
 
 // ---------------------------------------------------------------------------
 // Mocks
 // ---------------------------------------------------------------------------
 
-vi.mock('@/layers/entities/config', () => ({
-  useSidebarPrefs: () => ({ recentsCollapsed: false }),
-  useUpdateSidebarPrefs: () => ({
-    update: vi.fn(),
-    updateAsync: vi.fn(),
-    isPending: false,
-    isError: false,
-  }),
-  setRecentsCollapsed: (prev: unknown) => prev,
-}));
+vi.mock('@/layers/entities/config', async () => {
+  const actual = await vi.importActual<typeof import('@/layers/entities/config')>(
+    '@/layers/entities/config'
+  );
+  return {
+    ...actual,
+    useSidebarPrefs: () => SIDEBAR_PREFS_DEFAULTS,
+    useUpdateSidebarPrefs: () => ({
+      update: vi.fn(),
+      updateAsync: vi.fn(),
+      isPending: false,
+      isError: false,
+    }),
+  };
+});
 
 beforeAll(() => {
   global.ResizeObserver = class ResizeObserver {

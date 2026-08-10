@@ -47,6 +47,26 @@ function render(ui: React.ReactElement, options?: Parameters<typeof renderWithTr
 beforeEach(() => {
   readState.reset();
   eventHandlers.clear();
+  // The virtualizer spies are module-level, so they carry every call the
+  // PREVIOUS test made, and a spy that is already non-empty satisfies
+  // `toHaveBeenCalled()` on its first poll. A case that waits for its list to
+  // land by watching `mockScrollToEnd` is then not waiting for anything.
+  //
+  // Most cases below already guarded against that by clearing the spies
+  // themselves, immediately before `render`. Clearing here generalises that
+  // guard so no future test has to remember it — and repairs the one case that
+  // did not have it: `anchors once per session` (DOR-1060, the CI red). Its wait
+  // returned on residue, before its own list had read its cursor back, so
+  // whether the anchor landed before or after the `mockClear()` that follows was
+  // decided by which `act()` happened to flush the cursor promise's commit.
+  //
+  // Worth knowing what that cost, because it is more than a red build: on the
+  // fast path that test still caught a broken anchoring guard. It stopped
+  // catching one once the cursor read was SLOW — which is the CI condition. Left
+  // alone it would have gone on passing over a real regression on exactly the
+  // runners it was failing on.
+  mockScrollToEnd.mockClear();
+  mockScrollToIndex.mockClear();
 });
 
 afterEach(() => {
@@ -251,8 +271,6 @@ describe('MessageList rows', () => {
 
   it('opens one row above the unread rule, keeping the last seen message on screen', async () => {
     readState.storedCursor = cursor('anchor-session', 1);
-    mockScrollToEnd.mockClear();
-    mockScrollToIndex.mockClear();
     isAtEndTrueOnlyOnFirstCommit();
     const messages = [messageOnDay('1', 0, 'Seen'), messageOnDay('2', 0, 'Unseen')];
     render(<MessageList sessionId="anchor-session" messages={messages} />);
@@ -267,8 +285,6 @@ describe('MessageList rows', () => {
   });
 
   it('lands on the newest message when there is no unread rule', async () => {
-    mockScrollToEnd.mockClear();
-    mockScrollToIndex.mockClear();
     const messages = [messageOnDay('1', 0, 'A'), messageOnDay('2', 0, 'B')];
     render(<MessageList sessionId="test-session" messages={messages} />);
     await waitFor(() => expect(mockScrollToEnd).toHaveBeenCalled());

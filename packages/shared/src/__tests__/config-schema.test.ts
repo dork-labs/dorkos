@@ -37,15 +37,10 @@ describe('UserConfigSchema', () => {
         sidebar: {
           pinned: [],
           groups: [],
-          ungroupedSortMode: 'name',
-          ungroupedCollapsed: false,
-          recentsCollapsed: false,
-          channelsCollapsed: false,
-          dmsCollapsed: false,
-          threadsCollapsed: false,
-          groupsHintDismissed: false,
+          sections: {},
           muted: [],
-          ungroupedDisplayFilter: 'all',
+          gettingStarted: { retired: [] },
+          digest: {},
         },
         shapes: {
           active: null,
@@ -379,15 +374,10 @@ describe('USER_CONFIG_DEFAULTS', () => {
         sidebar: {
           pinned: [],
           groups: [],
-          ungroupedSortMode: 'name',
-          ungroupedCollapsed: false,
-          recentsCollapsed: false,
-          channelsCollapsed: false,
-          dmsCollapsed: false,
-          threadsCollapsed: false,
-          groupsHintDismissed: false,
+          sections: {},
           muted: [],
-          ungroupedDisplayFilter: 'all',
+          gettingStarted: { retired: [] },
+          digest: {},
         },
         shapes: {
           active: null,
@@ -1216,15 +1206,10 @@ describe('UserConfigSchema ui.sidebar (DOR-329)', () => {
   const SIDEBAR_DEFAULTS = {
     pinned: [],
     groups: [],
-    ungroupedSortMode: 'name',
-    ungroupedCollapsed: false,
-    recentsCollapsed: false,
-    channelsCollapsed: false,
-    dmsCollapsed: false,
-    threadsCollapsed: false,
-    groupsHintDismissed: false,
+    sections: {},
     muted: [],
-    ungroupedDisplayFilter: 'all',
+    gettingStarted: { retired: [] },
+    digest: {},
   };
 
   it('parsing an empty config yields ui.sidebar with all documented defaults', () => {
@@ -1284,6 +1269,24 @@ describe('UserConfigSchema ui.sidebar (DOR-329)', () => {
           kind: 'manual',
         },
       ],
+      sections: {
+        agents: { collapsed: true, sortMode: 'recent', displayFilter: 'active' },
+        channels: { collapsed: true },
+        dms: { collapsed: false },
+      },
+      muted: [{ kind: 'agent', path: '/b' }],
+      gettingStarted: { retired: ['suggestion:groups-hint', 'suggestion:ask-dorkbot'] },
+      digest: { lastShownDate: '2026-08-09' },
+    };
+    const result = UserConfigSchema.parse({ version: 1, ui: { sidebar } });
+    expect(result.ui.sidebar).toEqual(sidebar);
+  });
+
+  it('drops the eight fields the sidebar redesign retired', () => {
+    // Zod strips unknown keys, so a stored config carrying the pre-redesign
+    // shape parses — and comes back WITHOUT it. The conf migration is the only
+    // thing that carries the values across; nothing here reads them.
+    const parsed = SidebarPrefsSchema.parse({
       ungroupedSortMode: 'recent',
       ungroupedCollapsed: true,
       recentsCollapsed: true,
@@ -1291,11 +1294,81 @@ describe('UserConfigSchema ui.sidebar (DOR-329)', () => {
       dmsCollapsed: true,
       threadsCollapsed: true,
       groupsHintDismissed: true,
-      muted: [{ kind: 'agent', path: '/b' }],
       ungroupedDisplayFilter: 'active',
-    };
-    const result = UserConfigSchema.parse({ version: 1, ui: { sidebar } });
-    expect(result.ui.sidebar).toEqual(sidebar);
+    }) as Record<string, unknown>;
+    for (const retired of [
+      'ungroupedSortMode',
+      'ungroupedCollapsed',
+      'recentsCollapsed',
+      'channelsCollapsed',
+      'dmsCollapsed',
+      'threadsCollapsed',
+      'groupsHintDismissed',
+      'ungroupedDisplayFilter',
+    ]) {
+      expect(retired in parsed).toBe(false);
+    }
+  });
+
+  it('sections is a PARTIAL record — one section alone is valid', () => {
+    // The whole point of the record: a section id that gains state later must
+    // not invalidate a config written before it existed.
+    const prefs = SidebarPrefsSchema.parse({ sections: { channels: { collapsed: true } } });
+    expect(prefs.sections).toEqual({ channels: { collapsed: true } });
+    expect(prefs.sections.agents).toBeUndefined();
+  });
+
+  it('a section fills collapsed but leaves the two optional choices absent', () => {
+    // Absent `sortMode` means "this section offers no sort", which is a
+    // different statement from "sorted by its default".
+    const prefs = SidebarPrefsSchema.parse({ sections: { pins: {} } });
+    expect(prefs.sections.pins).toEqual({ collapsed: false });
+  });
+
+  it('DROPS a section id it has never heard of, rather than refusing the config', () => {
+    // The whole forward-compatibility story. An unknown key must not be an
+    // error, because `applyConfigPatch` re-validates the WHOLE config on every
+    // write: refusing here would make a config that merely LOADS unwritable
+    // forever. This is what lets P2 retire `threads`/`recents` from the enum
+    // with no second migration and no user-visible failure.
+    const prefs = SidebarPrefsSchema.parse({
+      sections: { channels: { collapsed: true }, nowhere: { collapsed: true } },
+    });
+    expect(prefs.sections).toEqual({ channels: { collapsed: true } });
+  });
+
+  it('keeps what it was given when there is nothing to drop', () => {
+    const stored = { channels: { collapsed: true } };
+    expect(SidebarPrefsSchema.parse({ sections: stored }).sections).toEqual(stored);
+  });
+
+  it('still refuses a `sections` that is not an object at all', () => {
+    // The filter passes a non-object straight through, so the record schema
+    // reports the real type error instead of the filter swallowing it.
+    expect(() => SidebarPrefsSchema.parse({ sections: [] })).toThrow();
+    expect(() => SidebarPrefsSchema.parse({ sections: 'nope' })).toThrow();
+  });
+
+  it('rejects a sort mode a section cannot offer', () => {
+    expect(() =>
+      SidebarPrefsSchema.parse({ sections: { agents: { sortMode: 'sideways' } } })
+    ).toThrow();
+  });
+
+  it('defaults gettingStarted.retired to an empty list and digest to no date', () => {
+    const prefs = SidebarPrefsSchema.parse({});
+    expect(prefs.gettingStarted).toEqual({ retired: [] });
+    expect(prefs.digest).toEqual({});
+    expect(prefs.digest.lastShownDate).toBeUndefined();
+  });
+
+  it('keeps a retired suggestion id that no longer names a live suggestion', () => {
+    // `suggestion:groups-hint` is the card the groups hint became. The list is
+    // a history, so a narrowed suggestion set must never invalidate it.
+    const prefs = SidebarPrefsSchema.parse({
+      gettingStarted: { retired: ['suggestion:groups-hint'] },
+    });
+    expect(prefs.gettingStarted.retired).toEqual(['suggestion:groups-hint']);
   });
 });
 
@@ -1328,10 +1401,10 @@ describe('SidebarDisplayFilterSchema + display filter / mute fields (DOR-339)', 
     expect(group.muted).toBe(true);
   });
 
-  it('SidebarPrefsSchema defaults muted to [] and ungroupedDisplayFilter to "all"', () => {
+  it('SidebarPrefsSchema defaults muted to [] and the Agents section to no filter', () => {
     const prefs = SidebarPrefsSchema.parse({});
     expect(prefs.muted).toEqual([]);
-    expect(prefs.ungroupedDisplayFilter).toBe('all');
+    expect(prefs.sections.agents).toBeUndefined();
   });
 
   it('an existing (pre-DOR-339) legacy sidebar object still parses, picking up the new defaults', () => {
@@ -1345,14 +1418,10 @@ describe('SidebarDisplayFilterSchema + display filter / mute fields (DOR-339)', 
           sortMode: 'manual',
         },
       ],
-      ungroupedSortMode: 'name',
-      ungroupedCollapsed: false,
-      recentsCollapsed: false,
-      groupsHintDismissed: false,
     };
     const result = UserConfigSchema.parse({ version: 1, ui: { sidebar: legacy } });
     expect(result.ui.sidebar.muted).toEqual([]);
-    expect(result.ui.sidebar.ungroupedDisplayFilter).toBe('all');
+    expect(result.ui.sidebar.sections).toEqual({});
     expect(result.ui.sidebar.groups[0]).toEqual({
       id: 'g1',
       name: 'Clients',

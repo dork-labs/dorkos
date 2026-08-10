@@ -18,18 +18,27 @@
  *
  * @module features/dashboard-sidebar/model/sidebar-state
  */
-import type {
-  SidebarDisplayFilter,
-  SidebarGroup,
-  SidebarItemRef,
-} from '@dorkos/shared/config-schema';
+import type { SidebarGroup, SidebarItemRef } from '@dorkos/shared/config-schema';
 import type { RoomSummary, ThreadSummary } from '@dorkos/shared/room-schemas';
 import type { SessionLifecycle } from '@dorkos/shared/session-stream';
 import type { Session } from '@dorkos/shared/types';
 import type { InteractionTimestamps } from '@/layers/entities/interactions';
 import type { JumpBackInModel } from '@/layers/entities/recents';
 import type { AttentionState } from '@/layers/entities/session';
-import type { NowKind, SidebarSectionId, SidebarTarget } from './build-sidebar-model';
+import type { SidebarModelPrefs } from '@/layers/entities/config';
+import type { NowKind, SidebarTarget } from './build-sidebar-model';
+
+/**
+ * The prefs slice the model reads, and one section's stored state.
+ *
+ * Both are re-exports, not declarations. `entities/config` owns the mapping from
+ * the stored `ui.sidebar` to this view (`toSidebarModelPrefs`) and `packages/shared`
+ * owns the section shape itself, so declaring either here would put two
+ * definitions of one contract in the repo. Re-exported because the rules and
+ * fixtures in this directory read them as part of `SidebarState`.
+ */
+export type { SidebarModelPrefs } from '@/layers/entities/config';
+export type { SidebarSectionPrefs } from '@dorkos/shared/config-schema';
 
 /**
  * One agent as the sidebar's rules read it.
@@ -86,40 +95,6 @@ export interface SidebarAttentionSignal {
   dismissible: boolean;
   /** The agent this is about, when there is a face to draw. */
   agentPath?: string;
-}
-
-/** One section's stored preferences, as the model reads them. */
-export interface SidebarSectionPrefs {
-  /** Whether the operator folded it. Only Library sections may fold (BC-2). */
-  collapsed: boolean;
-  /** How it orders its rows. Absent means the section's own default. */
-  sortMode?: 'manual' | 'name' | 'recent';
-  /** Which rows it shows at all. Absent means all of them. */
-  displayFilter?: SidebarDisplayFilter;
-}
-
-/**
- * The slice of `ui.sidebar` the model consumes.
- *
- * **A model-local view type on purpose.** The real `SidebarPrefsSchema` grows
- * `sections`, `gettingStarted` and `digest` in P2.8, which also ships the conf
- * migration; duplicating that Zod schema in the client would put two
- * definitions of one contract in the repo. So the model states what it needs,
- * P2.8 owns the schema, and P2.1 writes the single mapping between them.
- */
-export interface SidebarModelPrefs {
-  /** What the operator pinned, in their order. Library ▸ Pins. */
-  pinned: readonly SidebarItemRef[];
-  /** Their manual and smart groups. Sub-headers inside Library ▸ Agents. */
-  groups: readonly SidebarGroup[];
-  /** What they muted (BC-40). */
-  muted: readonly SidebarItemRef[];
-  /** Per-section collapse, sort and filter. */
-  sections: Readonly<Partial<Record<SidebarSectionId, SidebarSectionPrefs>>>;
-  /** Getting started's memory of what is done with (BC-13). */
-  gettingStarted: { readonly retired: readonly string[] };
-  /** The digest's memory of the last local day it was shown (BC-22). */
-  digest: { readonly lastShownDate?: string };
 }
 
 /**

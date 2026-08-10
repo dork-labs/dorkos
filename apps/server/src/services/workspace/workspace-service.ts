@@ -171,9 +171,26 @@ export class WorkspaceService implements WorkspaceManager {
   async sweep(): Promise<SweepResult> {
     const removed: string[] = [];
     const skipped: SweepResult['skipped'] = [];
-    for (const ws of this.deps.store.list()) {
+    const cap = this.deps.config.retentionCap;
+    // `retentionCap: null` (the default) disables reclamation entirely.
+    if (cap === null) return { removed, skipped };
+
+    // Only ready checkouts are sweep-eligible; provisioning/failed/removing ones
+    // belong to ensure()'s recovery path and the reconciler. The newest `cap`
+    // workspaces (by lastUsedAt) are retained; older ones are reclaim candidates.
+    const ready = this.deps.store
+      .list()
+      .filter((ws) => ws.status === 'ready')
+      .sort((a, b) => b.lastUsedAt.localeCompare(a.lastUsedAt));
+
+    for (const ws of ready.slice(cap)) {
       if (ws.pinned) {
         skipped.push({ id: ws.id, reason: 'pinned' });
+        continue;
+      }
+      const sessions = (await this.deps.listAttachedSessions?.(ws.path)) ?? [];
+      if (sessions.length > 0) {
+        skipped.push({ id: ws.id, reason: 'active' });
         continue;
       }
       const result = await this.remove(ws.id, { force: false });
