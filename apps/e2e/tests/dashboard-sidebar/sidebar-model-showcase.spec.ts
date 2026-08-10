@@ -2,7 +2,6 @@ import { createRequire } from 'node:module';
 import type { AxeResults, Result } from 'axe-core';
 import type { Locator, Page } from '@playwright/test';
 import { test, expect } from '../../fixtures';
-import { SERVER_ROUND_TRIP_MS } from '../../fixtures/rooms-api';
 
 declare global {
   interface Window {
@@ -92,22 +91,27 @@ const FIXTURES = ['first-run', 'quiet', 'busy', 'power'] as const;
 const QUARANTINED_MUTED_ROWS = 2;
 
 /**
- * Open the showcase and wait until all four panels are on screen.
+ * How long the first navigation to `/dev` may take, cold.
  *
- * The ceiling is the suite's shared {@link SERVER_ROUND_TRIP_MS}, not the 5s
- * default, and it is a **ceiling rather than a delay** — on a warm dev server
- * the panels resolve in milliseconds. What it buys is the cold case: the six
- * tests in this file run on concurrent workers that all fault in the Dev
- * Playground's module graph at once, and the first run measured ~17s per test
- * against a 5s default. One of the six lost that race for a reason that had
- * nothing to do with what it was asserting.
+ * A **ceiling, not a delay**: against a warm dev server the panels resolve in
+ * milliseconds and this costs nothing. What it pays for is the first
+ * navigation of a run, when Vite faults in the Dev Playground's whole module
+ * graph — every showcase on every page — on demand. Measured cold on a machine
+ * running several agents: 32–39 seconds, with six workers all asking at once.
+ * The suite's 5s locator default and its 30s per-test default were both under
+ * that, so a cold run failed all six tests on a page that renders correctly.
+ */
+const PLAYGROUND_COLD_START_MS = 90_000;
+
+/**
+ * Open the showcase and wait until all four panels are on screen.
  *
  * @param page - The page under test.
  */
 async function openShowcase(page: Page): Promise<Locator> {
   await page.goto(SHOWCASE_PATH);
   const panels = page.locator('[data-slot="sidebar-model-panel"]');
-  await expect(panels).toHaveCount(FIXTURES.length, { timeout: SERVER_ROUND_TRIP_MS });
+  await expect(panels).toHaveCount(FIXTURES.length, { timeout: PLAYGROUND_COLD_START_MS });
   return panels;
 }
 
@@ -172,6 +176,12 @@ test.describe('Sidebar model showcase @smoke', () => {
    * injected failure is caught. Do not shrink this below the page's own height.
    */
   test.use({ viewport: { width: 1600, height: 5200 } });
+
+  // The per-test default is 30s, which is under the cold cost of the first
+  // navigation to `/dev` — see PLAYGROUND_COLD_START_MS. A locator ceiling
+  // longer than the test timeout it sits inside can never be reached, so the
+  // two are raised together.
+  test.describe.configure({ timeout: 150_000 });
 
   test('renders all four journeys, and asks the server for nothing', async ({ page }) => {
     // Collected from before the navigation, so a call made during the initial
