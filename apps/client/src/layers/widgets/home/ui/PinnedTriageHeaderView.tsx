@@ -1,8 +1,9 @@
-import { useId, type ReactNode } from 'react';
+import { useId, useRef, type ReactNode } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { ChevronDown } from 'lucide-react';
 import type { PendingApproval } from '@dorkos/shared/approval-schemas';
 import { cn } from '@/layers/shared/lib';
+import { useScrollOverflow } from '@/layers/shared/model';
 import { ApprovalList, ApprovalsUnavailable } from '@/layers/features/approvals';
 import { AttentionItemRow, type AttentionItem } from '@/layers/features/dashboard-attention';
 import { triageSummary } from '../lib/triage-summary';
@@ -64,6 +65,34 @@ function TriageGroup({ title, children }: { title: string; children: ReactNode }
       </h2>
       {children}
     </section>
+  );
+}
+
+/**
+ * The fade drawn over an edge that still has cards behind it.
+ *
+ * Purely decorative, and never in the way: it lies over the Allow button of a
+ * half-shown card, so `pointer-events-none` is what keeps the click going where
+ * it was aimed. `background` rather than a literal colour, so it is the header's
+ * own surface dissolving in both themes rather than a grey smear in one of them.
+ *
+ * It stops at the header's own opacity rather than at solid: the surface it is
+ * dissolving is `bg-background/95` over the feed, so an opaque fade would read as
+ * a solid band pasted across the bottom of a translucent header — and more so in
+ * the sticky-over-feed arrangement the header's own note contemplates.
+ *
+ * @param edge - Which edge still has content behind it.
+ */
+function ScrollEdgeFade({ edge }: { edge: 'top' | 'bottom' }) {
+  return (
+    <div
+      aria-hidden="true"
+      data-slot={`pinned-triage-fade-${edge}`}
+      className={cn(
+        'from-background/95 via-background/65 pointer-events-none absolute inset-x-0 h-6 to-transparent',
+        edge === 'bottom' ? 'bottom-0 bg-gradient-to-t' : 'top-0 bg-gradient-to-b'
+      )}
+    />
   );
 }
 
@@ -183,6 +212,14 @@ export interface PinnedTriageHeaderViewProps {
  * condenses. jsdom cannot measure a keyboard, so the tests here pin the state
  * machine and the geometry stays the browser gate's to prove.
  *
+ * **It says when it is holding more than it can show.** Past {@link MAX_HEIGHT}
+ * the cards scroll inside the header, and a card clipped by the cap looks
+ * exactly like the last card there is — macOS shows no scrollbar until you have
+ * already scrolled, so nothing said otherwise (DOR-1043). A fade dissolves
+ * whichever edge still has cards behind it, and only while they are really
+ * there: an affordance over content that cannot be reached is worse than none
+ * (ADR 260725-004456).
+ *
  * Presentational on purpose: it holds no queries, so the playground can draw
  * every state and `PinnedTriageHeader` is the only thing that has to know where
  * the data comes from.
@@ -200,6 +237,11 @@ export function PinnedTriageHeaderView({
   className,
 }: PinnedTriageHeaderViewProps) {
   const reducedMotion = useReducedMotion();
+  // The header is capped at {@link MAX_HEIGHT} and scrolls inside itself, and a
+  // list cut off at a cap looks exactly like a list that ended — macOS draws no
+  // scrollbar until you have already scrolled (DOR-1043).
+  const scrollerRef = useRef<HTMLDivElement>(null);
+  const overflow = useScrollOverflow(scrollerRef);
 
   const showsWaiting = approvals.length > 0 || approvalsUnavailable;
   const showsAttention = attentionItems.length > 0;
@@ -273,14 +315,27 @@ export function PinnedTriageHeaderView({
             // there needs `sticky top-0 z-30` — `z-30`, not `z-20`, because
             // `z-20` ties with the room's own entry actions. Overlays stay
             // above everything at `z-50`.
+            //
+            // `relative` is for the edge fades, which hang off THIS box rather
+            // than off the scroller: absolutely positioned inside the scroller
+            // they would scroll away with the very cards they are drawn over,
+            // and `sticky` in there would fight the height animation.
             className={cn(
-              'bg-background/95 border-border/60 shrink-0 overflow-hidden border-b backdrop-blur-sm',
+              'bg-background/95 border-border/60 relative shrink-0 overflow-hidden border-b backdrop-blur-sm',
               className
             )}
           >
             <div
+              ref={scrollerRef}
+              onScroll={overflow.onScroll}
+              data-slot="pinned-triage-scroller"
+              // `scroll-py-6` matches the fades' 24px: keyboard focus and
+              // `scrollIntoView` scroll the least distance that reveals a
+              // target, which parks a mid-list Allow button flush under the
+              // gradient without it. Same margin the right panel's tab strip
+              // reveals its selected tab with, for the same reason.
               className={cn(
-                'flex w-full min-w-0 flex-col gap-3 overflow-y-auto overscroll-contain px-[var(--msg-padding-x)] py-3',
+                'flex w-full min-w-0 scroll-py-6 flex-col gap-3 overflow-y-auto overscroll-contain px-[var(--msg-padding-x)] py-3',
                 MAX_HEIGHT
               )}
             >
@@ -308,6 +363,9 @@ export function PinnedTriageHeaderView({
 
               {presence?.node}
             </div>
+
+            {overflow.above && <ScrollEdgeFade edge="top" />}
+            {overflow.below && <ScrollEdgeFade edge="bottom" />}
           </motion.div>
         )}
       </AnimatePresence>
