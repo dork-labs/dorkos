@@ -714,6 +714,46 @@ export const RecentSessionsResponseSchema = z
 
 export type RecentSessionsResponse = z.infer<typeof RecentSessionsResponseSchema>;
 
+/**
+ * Query for `GET /api/sessions/daily-counts` (DOR-1039): how many days of
+ * machine-wide session counts to return, ending today. Coerced from the query
+ * string and validated to 1-31 (default 7); out-of-range values are rejected
+ * (400).
+ */
+export const SessionDailyCountsQuerySchema = z
+  .object({
+    days: z.coerce.number().int().min(1).max(31).default(7),
+  })
+  .openapi('SessionDailyCountsQuery');
+
+export type SessionDailyCountsQuery = z.infer<typeof SessionDailyCountsQuerySchema>;
+
+/**
+ * Response envelope for `GET /api/sessions/daily-counts` (DOR-1039, ADR-0310).
+ *
+ * `dailyCounts` holds exactly `days` entries, oldest day first, counting the
+ * sessions STARTED that day across every registered agent — the machine-wide
+ * scope the activity feed is drawn at, not the caller's currently selected
+ * project. A session is counted on the day it was created, so one started last
+ * month and resumed today is not in this week. Days are the server's local days.
+ *
+ * `warnings` carries per-runtime degradation. When it is non-empty the counts
+ * are a FLOOR, not a total: a runtime that could not be read contributed zero
+ * sessions, so a reader that prints the number as a total is guessing.
+ */
+export const SessionDailyCountsResponseSchema = z
+  .object({
+    /** Window width the counts cover, in days. */
+    days: z.number().int(),
+    /** One count per day, oldest first; the last entry is today. */
+    dailyCounts: z.array(z.number().int()),
+    /** Present only when at least one runtime failed or timed out. */
+    warnings: z.array(SessionListWarningSchema).optional(),
+  })
+  .openapi('SessionDailyCountsResponse');
+
+export type SessionDailyCountsResponse = z.infer<typeof SessionDailyCountsResponseSchema>;
+
 export const CommandsQuerySchema = z
   .object({
     refresh: z.enum(['true', 'false']).optional(),

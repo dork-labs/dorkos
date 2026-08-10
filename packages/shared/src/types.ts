@@ -15,6 +15,8 @@ export type {
   SessionListResponse,
   RecentSessionsQuery,
   RecentSessionsResponse,
+  SessionDailyCountsQuery,
+  SessionDailyCountsResponse,
   UpdateSessionRequest,
   SessionSettings,
   ForkSessionRequest,

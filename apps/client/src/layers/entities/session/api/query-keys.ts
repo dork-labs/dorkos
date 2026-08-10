@@ -62,4 +62,17 @@ export const sessionKeys = {
    * @param limit - How many sessions the page asked for.
    */
   recent: (limit: number) => [...sessionKeys.recentRoot, limit] as const,
+  /**
+   * Root of the machine-wide daily session-count query (DOR-1039), for prefix
+   * invalidation. Outside `listRoot` for the same reason `recentRoot` is: its
+   * value is an envelope object, and everything under the list prefix is swept
+   * as a `Session[]`.
+   */
+  dailyCountsRoot: ['session-daily-counts'] as const,
+  /**
+   * The exact key holding one window of machine-wide daily session counts.
+   *
+   * @param days - How many days the window covers.
+   */
+  dailyCounts: (days: number) => [...sessionKeys.dailyCountsRoot, days] as const,
 };

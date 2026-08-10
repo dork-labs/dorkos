@@ -11,6 +11,7 @@ import type {
   Session,
   SessionListResponse,
   RecentSessionsResponse,
+  SessionDailyCountsResponse,
   UpdateSessionRequest,
   BrowseDirectoryResponse,
   CommandRegistry,
@@ -527,6 +528,18 @@ export interface Transport extends RoomTransport {
    * @param limit - Maximum sessions to return (1-50, default 10).
    */
   listRecentSessions(limit?: number): Promise<RecentSessionsResponse>;
+  /**
+   * Count the sessions started per day across ALL registered agents
+   * (DOR-1039), backing the Activity tab's week line. Returns `dailyCounts`
+   * with one entry per day, oldest first, plus per-runtime `warnings`
+   * (ADR-0310) — a warning means the counts are a floor, not a total.
+   *
+   * Embedded mode has no multi-agent roster and returns an empty
+   * `dailyCounts`, which callers must read as "no answer", not "no runs".
+   *
+   * @param days - Window width in days ending today (1-31, default 7).
+   */
+  getSessionDailyCounts(days?: number): Promise<SessionDailyCountsResponse>;
   /** Get metadata for a single session by ID. */
   getSession(id: string, cwd?: string): Promise<Session>;
   /**

@@ -38,6 +38,34 @@ function invalidateRecentSessions(queryClient: QueryClient): void {
 }
 
 /**
+ * Invalidate the machine-wide week count behind the Activity tab's summary line
+ * (DOR-1039). A prefix key invalidates every window width.
+ *
+ * Called only when the SET of live sessions changed, never on a plain update:
+ * the query counts sessions per day across every agent, which one streaming
+ * turn's many upserts cannot move, and each refetch re-reads every agent's
+ * transcript directory.
+ *
+ * @param queryClient - The TanStack Query client whose week-count query to refresh.
+ */
+function invalidateSessionDailyCounts(queryClient: QueryClient): void {
+  void queryClient.invalidateQueries({ queryKey: sessionKeys.dailyCountsRoot });
+}
+
+/**
+ * Whether two session maps hold a different SET of ids — the only transition
+ * that can change how many sessions a day has seen.
+ *
+ * @param next - The new `sessions` map from the list store.
+ * @param prev - The previously reconciled `sessions` map.
+ */
+function sessionIdsChanged(next: Record<string, Session>, prev: Record<string, Session>): boolean {
+  const nextIds = Object.keys(next);
+  if (nextIds.length !== Object.keys(prev).length) return true;
+  return nextIds.some((id) => !(id in prev));
+}
+
+/**
  * Upsert a single session into its cwd-keyed {@link sessionKeys.list} cache, keeping the
  * list sorted most-recent-first (the order `sessionRouteLoader` relies on).
  */
@@ -162,6 +190,8 @@ export function useGlobalSessionStream(): void {
         reconcileSessionsCache(queryClient, state.sessions, prev);
         // Keep the cross-agent Recent section (DOR-329) live on lifecycle events.
         invalidateRecentSessions(queryClient);
+        // The week count moves only when a session appears or disappears.
+        if (sessionIdsChanged(state.sessions, prev)) invalidateSessionDailyCounts(queryClient);
         prev = state.sessions;
       }
       if (state.rekeys !== prevRekeys) {
@@ -179,6 +209,8 @@ export function useGlobalSessionStream(): void {
       useSessionListStore.getState().dropSessions();
       void queryClient.invalidateQueries({ queryKey: sessionKeys.listRoot });
       invalidateRecentSessions(queryClient);
+      // The whole list is being re-read, so the count derived from it is stale too.
+      invalidateSessionDailyCounts(queryClient);
     });
 
     // Reconcile whatever already landed (the singleton store survives unmount /

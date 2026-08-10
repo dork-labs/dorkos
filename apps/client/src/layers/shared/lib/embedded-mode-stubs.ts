@@ -22,7 +22,7 @@ import type {
   McpClientCredentials,
   McpSigninPollResult,
 } from '@dorkos/shared/transport';
-import type { RecentSessionsResponse } from '@dorkos/shared/types';
+import type { RecentSessionsResponse, SessionDailyCountsResponse } from '@dorkos/shared/types';
 import type { TeamRosterResponse } from '@dorkos/shared/team-schemas';
 import type { UnattendedAutonomyState } from '@dorkos/shared/permission-semantics';
 import type {
@@ -517,6 +517,13 @@ export const serverOnlyStubs = {
     // Embedded mode has no multi-agent roster — the cross-agent Recent section
     // does not apply, so this returns an empty envelope.
     return { sessions: [], agentActivity: {}, warnings: [] };
+  },
+
+  async getSessionDailyCounts(_days?: number): Promise<SessionDailyCountsResponse> {
+    // No agent roster here either, so there is nothing machine-wide to count.
+    // `days: 0` with no buckets says "no answer" — a week of zeros would say
+    // "nothing ran", which is a claim the embed has not earned.
+    return { days: 0, dailyCounts: [], warnings: [] };
   },
 
   async getUnattendedAutonomy(): Promise<UnattendedAutonomyState> {

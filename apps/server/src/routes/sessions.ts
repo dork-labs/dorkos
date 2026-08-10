@@ -16,6 +16,7 @@ import {
   SubmitElicitationRequestSchema,
   ListSessionsQuerySchema,
   RecentSessionsQuerySchema,
+  SessionDailyCountsQuerySchema,
 } from '@dorkos/shared/schemas';
 import type { PermissionMode, PermissionModeId } from '@dorkos/shared/types';
 import type { AgentRuntime, PermissionModeDescriptor } from '@dorkos/shared/agent-runtime';
@@ -36,6 +37,7 @@ import {
 import {
   aggregateSessionList,
   listRecentSessions,
+  countSessionsPerDay,
   getOrCreateProjector,
   persistenceModeFor,
   rekeyProjector,
@@ -130,6 +132,29 @@ router.get('/recent', async (req, res) => {
   const resolveTaskOrigins = req.app.locals.resolveTaskOrigins as ResolveTaskOrigins | undefined;
   applyTaskOriginOverlay(sessions, resolveTaskOrigins);
   res.json({ sessions, agentActivity, warnings });
+});
+
+// GET /api/sessions/daily-counts - Sessions started per day across ALL agents
+// (DOR-1039). Same registration rule as `/recent` above: it MUST precede the
+// `/:id` routes or Express 5 captures `daily-counts` as an `:id`. Backs the
+// Activity tab's week line, which sits above a machine-wide feed and so must
+// count at that same machine-wide SCOPE rather than one project's sessions.
+router.get('/daily-counts', async (req, res) => {
+  const parsed = SessionDailyCountsQuerySchema.safeParse(req.query);
+  if (!parsed.success) {
+    return res.status(400).json({ error: 'Invalid query', details: z.treeifyError(parsed.error) });
+  }
+  const { days } = parsed.data;
+
+  const meshCore = req.app.locals.meshCore as MeshCore | undefined;
+  const agentPaths = meshCore ? meshCore.listWithPaths().map((a) => a.projectPath) : [];
+
+  const { dailyCounts, warnings } = await countSessionsPerDay({
+    runtimes: runtimeRegistry.listRuntimes(),
+    agentPaths,
+    days,
+  });
+  res.json({ days, dailyCounts, warnings });
 });
 
 // GET /api/sessions/:id/runtime-type — Lightweight endpoint for clients that

@@ -139,6 +139,9 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     listRecentSessions: vi
       .fn()
       .mockResolvedValue({ sessions: [], agentActivity: {}, warnings: [] }),
+    getSessionDailyCounts: vi
+      .fn()
+      .mockResolvedValue({ days: 7, dailyCounts: [0, 0, 0, 0, 0, 0, 0], warnings: [] }),
     getSession: vi.fn(),
     getSessionRuntimeType: vi.fn().mockResolvedValue('claude-code'),
     getMessages: vi.fn().mockResolvedValue({ messages: [] }),
