@@ -20,7 +20,8 @@ export type Page =
   | 'marketplace'
   | 'gen-ui'
   | 'rooms'
-  | 'tour-spotlight';
+  | 'tour-spotlight'
+  | 'sidebar-model';
 
 /** A single searchable/navigable section in the playground. */
 export interface PlaygroundSection {
@@ -64,6 +65,7 @@ export { MARKETPLACE_SECTIONS } from './sections/marketplace-sections';
 export { GEN_UI_SECTIONS } from './sections/gen-ui-sections';
 export { ROOMS_SECTIONS } from './sections/rooms-sections';
 export { TOUR_SPOTLIGHT_SECTIONS } from './sections/tour-spotlight-sections';
+export { SIDEBAR_MODEL_SECTIONS } from './sections/sidebar-model-sections';
 
 // Imported under aliases to compose the full registry without circular re-export issues.
 import { TOKENS_SECTIONS as tokens } from './sections/tokens-sections';
@@ -86,6 +88,7 @@ import { MARKETPLACE_SECTIONS as marketplace } from './sections/marketplace-sect
 import { GEN_UI_SECTIONS as genUi } from './sections/gen-ui-sections';
 import { ROOMS_SECTIONS as rooms } from './sections/rooms-sections';
 import { TOUR_SPOTLIGHT_SECTIONS as tourSpotlight } from './sections/tour-spotlight-sections';
+import { SIDEBAR_MODEL_SECTIONS as sidebarModel } from './sections/sidebar-model-sections';
 
 /**
  * Full playground registry combining all page-level section arrays.
@@ -113,4 +116,5 @@ export const PLAYGROUND_REGISTRY: PlaygroundSection[] = [
   ...genUi,
   ...rooms,
   ...tourSpotlight,
+  ...sidebarModel,
 ];

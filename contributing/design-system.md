@@ -313,6 +313,16 @@ Status colour stays on the semantic tokens, which are already calibrated per the
 
 Label-on-zone-tint must still meet 4.5:1 in both themes. Check it with an axe-core run over the playground showcase rather than by eye.
 
+#### Where that check lives, and how to not fool yourself with it
+
+The showcase is **`/dev/sidebar-model`** (`apps/client/src/dev/showcases/SidebarModelShowcases.tsx`), which draws `buildSidebarModel` over its four journey fixtures. The axe run over it is `apps/e2e/tests/dashboard-sidebar/sidebar-model-showcase.spec.ts`, in both themes, and it attaches a light/dark screenshot pair to the run.
+
+Three things that branch had to learn the hard way, all of which will bite the next person:
+
+- **axe-core's `color-contrast` silently skips anything outside the viewport.** It builds a spatial grid bounded by the viewport and declines to match text whose rect falls outside it — not a violation, not a pass, not an incomplete: nothing. At a default 720px-tall viewport this page returned **one** evaluated node out of ~340, and a deliberately-broken 1.7:1 label went unreported. The spec runs at 1600×5200 and asserts that axe evaluated more than 200 nodes, so a shrinking viewport fails the test instead of quietly emptying it. Any new axe check owes the same guard.
+- **A one-character label is `incomplete`, not a pass.** axe refuses to judge text shorter than its "is this really text" heuristic, which covers every numbered unread badge. Those land in the run's `incomplete` bucket; the spec pins that bucket to exactly the badges, so a new "cannot determine" elsewhere is caught rather than inherited.
+- **A muted row does not meet 4.5:1 today, and no opacity fixes it.** `SidebarRow` dims `muted` rows with `opacity-60` over a label that is already 5.9:1, which measures **2.6:1 light / 3.6:1 dark**. Any dimming of a 5.9:1 label lands under the bar, so "muted" needs a treatment that is not opacity — a different token, or a mark instead of a dim. Until that is decided, the spec quarantines exactly those rows and fails if the shape of the failure changes.
+
 ### Zones and Sections
 
 A nav panel has two levels of grouping, and they behave differently:
