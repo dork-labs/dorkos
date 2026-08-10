@@ -13,6 +13,43 @@
  * @module shared/command-intents
  */
 
+/**
+ * How long a client waits for the command-intent trigger to answer before it
+ * abandons the request (ms).
+ *
+ * The web transport's `runCommandIntent` is a raw `fetch` that arms
+ * `AbortSignal.timeout` with this; the in-process (embedded) transport has no
+ * socket to abandon and so is bounded only by the server. It lives here rather
+ * than in the client because the server has to know it — see
+ * {@link COMMAND_INTENT_QUEUE_WAIT_MS}.
+ */
+export const COMMAND_INTENT_REQUEST_TIMEOUT_MS = 30_000;
+
+/**
+ * Slack between the server giving up on a queued intent and the client giving up
+ * on the request (ms) — room for the lock probe, the 409, and the wire.
+ */
+const COMMAND_INTENT_RESPONSE_HEADROOM_MS = 5_000;
+
+/**
+ * How long a queued command intent may wait for the session's in-flight work
+ * before the server stops waiting and answers (ms).
+ *
+ * **The invariant this exists for (DOR-1101): if the person is shown a failure,
+ * the intent must never run afterwards.** Aborting a `fetch` does not cancel the
+ * Express handler behind it, so any server-side wait that outlasts
+ * {@link COMMAND_INTENT_REQUEST_TIMEOUT_MS} can report failure to the person and
+ * then compact the conversation minutes later — a ghost compaction, which reads
+ * as data loss. Deriving this by subtraction keeps the two bounds coupled: the
+ * server always gives up first, so the answer the person sees is the real one.
+ *
+ * A turn's queue wait is bounded by the lock TTL instead (minutes), because a
+ * turn's POST carries no abort signal and so has no client-side deadline to
+ * stay under.
+ */
+export const COMMAND_INTENT_QUEUE_WAIT_MS =
+  COMMAND_INTENT_REQUEST_TIMEOUT_MS - COMMAND_INTENT_RESPONSE_HEADROOM_MS;
+
 /** The closed set of canonical DorkOS command-intent ids. */
 export type CommandIntentId = 'compact' | 'clear' | 'context';
 

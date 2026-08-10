@@ -23,6 +23,7 @@ import type {
 import { RecentSessionsResponseSchema } from '@dorkos/shared/schemas';
 import type { ClientContext } from '@dorkos/shared/additional-context';
 import type { RuntimeCommandIntentId } from '@dorkos/shared/command-intents';
+import { COMMAND_INTENT_REQUEST_TIMEOUT_MS } from '@dorkos/shared/command-intents';
 import { fetchJSON, buildQueryString } from './http-client';
 
 // Interaction requests use a longer timeout (10 min) to match the server-side
@@ -34,13 +35,6 @@ import { fetchJSON, buildQueryString } from './http-client';
 // — the streams are WebSockets and do not draw on that pool (ADR
 // 260805-041016) — but the first reason is the real one and still holds.
 const INTERACTION_TIMEOUT_MS = 10 * 60 * 1000;
-
-/**
- * Timeout for the command-intent trigger, matching `fetchJSON`'s default. It is
- * spelled out here because `runCommandIntent` is a raw `fetch` (it reads the 409
- * body itself) and so does not inherit that default.
- */
-const COMMAND_INTENT_TIMEOUT_MS = 30_000;
 
 /**
  * Create all session-related methods bound to a base URL.
@@ -215,13 +209,17 @@ export function createSessionMethods(
      * `SESSION_LOCKED` error on 409 when a turn is already running. Trailing
      * instructions (e.g. `/compact focus on the API changes`) ride the JSON body.
      *
-     * Bounded by the same 30s timeout `fetchJSON` gives every other call. This
-     * is a raw `fetch` (it needs the 409 body), and without a signal it was the
-     * one transport call that could hang forever — so a dead network left
-     * `dispatchCompactIntent` unsettled, silently, with no toast. Callers now
-     * latch composer state on that promise (DOR-479), which turns "hangs
-     * silently" into "the composer never comes back", so the bound is what
-     * makes the latch safe to hold.
+     * Bounded by `COMMAND_INTENT_REQUEST_TIMEOUT_MS` — the same 30s `fetchJSON`
+     * gives every other call, spelled out because this is a raw `fetch` (it
+     * needs the 409 body) and so inherits no default. Without a signal it was
+     * the one transport call that could hang forever, leaving
+     * `dispatchCompactIntent` unsettled and silent. Callers latch composer state
+     * on that promise (DOR-479), which turns "hangs silently" into "the composer
+     * never comes back", so the bound is what makes the latch safe to hold.
+     *
+     * The bound lives in `@dorkos/shared` because the server reads it too: it
+     * keeps its own queue wait strictly under this one, so an intent this
+     * request abandons is never executed afterwards (DOR-1101).
      */
     async runCommandIntent(
       sessionId: string,
@@ -235,7 +233,7 @@ export function createSessionMethods(
           'X-Client-Id': getClientId(),
         },
         credentials: 'include',
-        signal: AbortSignal.timeout(COMMAND_INTENT_TIMEOUT_MS),
+        signal: AbortSignal.timeout(COMMAND_INTENT_REQUEST_TIMEOUT_MS),
         // Express 5 leaves req.body undefined on an empty POST, so the body is
         // sent only when there are instructions to carry.
         ...(instructions !== undefined ? { body: JSON.stringify({ instructions }) } : {}),
