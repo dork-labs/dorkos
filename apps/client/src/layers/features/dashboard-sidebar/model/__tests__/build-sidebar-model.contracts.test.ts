@@ -156,6 +156,20 @@ const LADDER_VERBS = [
  *
  * Case-insensitive, because the point is to catch a verb however it is spelled
  * on the day somebody routes one in here.
+ *
+ * **Calibrated for scanning CURATED FIXTURES, and safe only there.** It is
+ * deliberately over-eager: any `-ing` word followed by an ellipsis inside 60
+ * characters counts, so ordinary prose trips it — `"Ana: shipping the new
+ * thing…"`, `"Testing…"` and `"Refactoring the parser and then some…"` all
+ * match, and none of them is a verb the model emitted. That is the right
+ * trade-off against a hand-written fixture set, where a false positive costs
+ * one edit and a false negative costs the whole guarantee (this check matched
+ * ZERO of six real verbs before it was rewritten).
+ *
+ * It must NOT be pointed at live user data — a room preview, a session title,
+ * anything a person typed. If a future check wants that, it needs an exact
+ * match against {@link LADDER_VERBS} instead of a shape, and it should be a
+ * different constant rather than a loosened version of this one.
  */
 const VERB_SHAPE = /(\b\w+ing\b[^…]{0,60}…)|waiting on you/i;
 
@@ -178,8 +192,28 @@ describe('R1 — the model can carry no verb, and the check for it can fail', ()
       '#general',
       'today:interaction-recency',
       'Ana: ship it',
+      // An ellipsis on its own is not a verb — a truncated preview is the most
+      // common thing in the sidebar, and the matcher must not fire on one.
+      // (The first five samples all lack an ellipsis, which made this test
+      // read as broader proof than it was.)
+      'Ana: ship it, and then the rest of the list…',
     ]) {
       expect(ordinary, ordinary).not.toMatch(VERB_SHAPE);
+    }
+  });
+
+  it('is over-eager on live prose, which is why it only ever scans fixtures', () => {
+    // Recorded rather than left latent. These are FALSE POSITIVES — none is a
+    // verb the model emitted — and they are the price of catching every real
+    // verb in a curated fixture set. The test exists so that whoever considers
+    // pointing this matcher at a room preview or a session title finds out here
+    // instead of in production. See VERB_SHAPE's own note.
+    for (const livePros of [
+      'Ana: shipping the new thing…',
+      'Testing…',
+      'Refactoring the parser and then some…',
+    ]) {
+      expect(livePros, livePros).toMatch(VERB_SHAPE);
     }
   });
 

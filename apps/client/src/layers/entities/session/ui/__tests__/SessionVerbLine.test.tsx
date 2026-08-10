@@ -193,6 +193,20 @@ describe('SessionVerbLine — the re-render budget (R1, P2 AC-2)', () => {
     // activity event never touches the row's own tree: not its glyph, not its
     // title, not its menu, not its drag bindings.
     const before = new Map(rowRenders);
+
+    // FIRST: prove the measurement happened at all. "It did not re-render" is
+    // also true of a row that was never counted — drop `dataSlot` from
+    // `CountingRow` and every row falls into one `'unkeyed'` bucket, every
+    // lookup below returns `undefined`, and `expect(undefined).toBe(undefined)`
+    // passes four times over. For any "X did not happen" assertion, assert that
+    // X was observable in the first place.
+    for (const id of IDS) {
+      expect(
+        before.get(id),
+        `row ${id} was never counted, so nothing below means anything`
+      ).toBeGreaterThan(0);
+    }
+
     emitActivity('s2', { toolName: 'Bash', target: 'pnpm verify' });
     for (const id of IDS) {
       expect(rowRenders.get(id), `row ${id} re-rendered`).toBe(before.get(id));

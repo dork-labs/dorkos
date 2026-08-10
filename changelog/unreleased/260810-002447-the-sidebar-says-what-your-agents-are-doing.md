@@ -3,6 +3,7 @@ covers:
   - 'feat(client): the sidebar says what your agents are doing, once and honestly (P2.7, DOR-1072)'
   - "test(client): the ladder's table encodes the shipped rung, not the brief's (DOR-1096)"
   - 'fix(client): the second line keeps the preview it was about to swallow (DOR-1072 review)'
+  - 'test(client): assert the measurement happened, not just that nothing did (DOR-1072 review 2)'
 ---
 
 ### Added

@@ -85,6 +85,17 @@ const MAY_REACH_TOOL_LABELS = new Set([...MAY_NAME_THE_RUNG, 'shared/lib/index.t
  */
 const MODULE_STATEMENT = /(^|\n)\s*(?:import|export)\b([^;]*?)\bfrom\s+['"]([^'"]+)['"]/g;
 
+/**
+ * A dynamic `import('…')`, which has no `from` keyword at all.
+ *
+ * The third escape shape, and the last one: `const { formatActivityLabel } =
+ * await import('…/tool-labels')` is invisible to {@link MODULE_STATEMENT}
+ * because that regex is anchored on `from`. It resolves to the whole module
+ * namespace, so it is treated exactly as `import * as` is — whoever holds it
+ * holds the rung, whether or not they type its name.
+ */
+const DYNAMIC_IMPORT = /\bimport\s*\(\s*['"]([^'"]+)['"]\s*\)/g;
+
 /** Whether a specifier points at the `tool-labels` module, by any route. */
 function isToolLabels(specifier: string): boolean {
   return /(^|[./])tool-labels(\.[jt]sx?)?$/.test(specifier);
@@ -102,11 +113,19 @@ function isToolLabels(specifier: string): boolean {
  * the name.
  */
 function moduleStatements(source: string): { clause: string; specifier: string; ns: boolean }[] {
-  return [...source.matchAll(MODULE_STATEMENT)].map((match) => ({
-    clause: match[2] ?? '',
-    specifier: match[3] ?? '',
-    ns: (match[2] ?? '').includes('*'),
-  }));
+  return [
+    ...[...source.matchAll(MODULE_STATEMENT)].map((match) => ({
+      clause: match[2] ?? '',
+      specifier: match[3] ?? '',
+      ns: (match[2] ?? '').includes('*'),
+    })),
+    // A dynamic import is a namespace grab with extra steps.
+    ...[...source.matchAll(DYNAMIC_IMPORT)].map((match) => ({
+      clause: '',
+      specifier: match[1] ?? '',
+      ns: true,
+    })),
+  ];
 }
 
 /** Why this file is an offender, or `null` when it is not one. */
@@ -166,6 +185,11 @@ describe('the honesty ladder is the only verb source (BC-37)', () => {
       // And a namespace RE-export, which puts the rung back on the barrel
       // without ever typing its name.
       "export * from './tool-labels';",
+      // A dynamic import, which has no `from` keyword for a statement regex to
+      // anchor on and resolves to the whole namespace anyway.
+      "const { formatActivityLabel } = await import('@/layers/shared/lib/tool-labels');",
+      // …including the shape that never types the name at all.
+      "const mod = await import('../tool-labels');",
     ];
     for (const escape of escapes) {
       expect(ladderEscape('features/chat/ui/status/strip-state.ts', escape), escape).not.toBeNull();
@@ -196,6 +220,8 @@ describe('the honesty ladder is the only verb source (BC-37)', () => {
     ).toBeNull();
     // And a namespace import of something that is not tool-labels is ordinary.
     expect(ladderEscape('a/b.ts', "import * as React from 'react';")).toBeNull();
+    // As is a dynamic import of anything else — the client is full of them.
+    expect(ladderEscape('a/b.ts', "const m = await import('./TopologyGraph');")).toBeNull();
   });
 
   it('leaves no randomized verb pool anywhere in the status strip', () => {
