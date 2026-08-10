@@ -106,32 +106,39 @@ function spanFor(text: string, needle: string, authorId: string): MentionSpan {
   return { offset, length: needle.length, authorId };
 }
 
-function renderRow(target: RoomEntry) {
-  const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
-  });
-  return render(
+/**
+ * The row under test, as an element — so a test can render it twice with a
+ * different roster and assert on what the SECOND render leaves on screen.
+ */
+function row(target: RoomEntry, authors: ReadonlyMap<string, RosterAuthor>) {
+  return (
     <RoomEntryRow
       roomId="room-1"
       entry={target}
       author={{ id: 'ana', kind: 'human', displayName: 'Ana' }}
-      authorRef={AUTHORS.get('ana')}
-      authors={AUTHORS}
+      authorRef={authors.get('ana')}
+      authors={authors}
       viewerAuthorId="ana"
       authorNames={new Map([['ana', 'Ana']])}
       reactionFrequents={['👍', '❤️', '🎉']}
       grouping={{ position: 'only' }}
-    />,
-    {
-      wrapper: ({ children }) => (
-        <QueryClientProvider client={queryClient}>
-          <TransportProvider transport={createMockTransport()}>
-            <TooltipProvider>{children}</TooltipProvider>
-          </TransportProvider>
-        </QueryClientProvider>
-      ),
-    }
+    />
   );
+}
+
+function renderRow(target: RoomEntry, authors: ReadonlyMap<string, RosterAuthor> = AUTHORS) {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  });
+  return render(row(target, authors), {
+    wrapper: ({ children }) => (
+      <QueryClientProvider client={queryClient}>
+        <TransportProvider transport={createMockTransport()}>
+          <TooltipProvider>{children}</TooltipProvider>
+        </TransportProvider>
+      </QueryClientProvider>
+    ),
+  });
 }
 
 /** The message body's own content region, where a mention pill would render. */
@@ -259,5 +266,78 @@ describe('RoomEntryRow — mentions inside a message', () => {
     expect(content()).toHaveTextContent('a < b & b > a');
     expect(content().querySelector('code')).toHaveTextContent('code span');
     expect(pillOf()).not.toBeNull();
+  });
+});
+
+/**
+ * A pill is only as honest as its LAST render (DOR-989).
+ *
+ * The roster is live: somebody renames an agent, somebody leaves the room, and
+ * every mention of them already on screen has to say so. Nothing about the
+ * message itself changed, which is exactly what makes this its own suite —
+ * Streamdown's top-level memo comparator (2.5.0) compares `children` and a
+ * dozen display options and stops, so an update carried on the `components`
+ * prop alone re-renders nothing below it and a drawn pill keeps whatever the
+ * roster said the moment it was first painted.
+ */
+describe('RoomEntryRow — a drawn mention follows the roster', () => {
+  /** The same room a beat later: Bo has been renamed to Bobby. */
+  const RENAMED = new Map<string, RosterAuthor>([
+    ...AUTHORS,
+    [
+      'bo',
+      {
+        id: 'bo',
+        kind: 'agent',
+        displayName: 'Bobby',
+        handle: 'bobby',
+        color: '#7c9cf5',
+        origin: 'local',
+      },
+    ],
+  ]);
+
+  /** The same room a beat later: Bo has left, so nobody can vouch for the id. */
+  const DEPARTED = new Map<string, RosterAuthor>([...AUTHORS].filter(([id]) => id !== 'bo'));
+
+  it('renames a pill that was already on screen when the roster renames its author', () => {
+    const text = 'hey @bo can you take a look?';
+    const target = entry(text, [spanFor(text, '@bo', 'bo')]);
+    const { rerender } = renderRow(target);
+
+    expect(pillOf()).toHaveTextContent('Bo');
+
+    rerender(row(target, RENAMED));
+
+    expect(pillOf()).toHaveTextContent('Bobby');
+    expect(content()).toHaveTextContent('hey Bobby can you take a look?');
+  });
+
+  it('drops a drawn pill back to plain text when its author leaves the room', () => {
+    const text = 'ping @bo about the release';
+    const target = entry(text, [spanFor(text, '@bo', 'bo')]);
+    const { rerender } = renderRow(target);
+
+    expect(pillOf()).toHaveAttribute('data-kind', 'agent');
+
+    rerender(row(target, DEPARTED));
+
+    const pill = pillOf();
+    expect(pill).toHaveAttribute('data-resolved', 'false');
+    expect(pill).not.toHaveAttribute('data-kind');
+  });
+
+  it('still refuses an unspanned `<mention>` tag after the roster changes', () => {
+    // The spoof guard rides the components map, not the roster context — this
+    // pins that moving identity out of that map did not take the gate with it.
+    const target = entry('cc <mention author_id="bo">definitely bo</mention>, thanks');
+    const { rerender } = renderRow(target);
+
+    expect(pillOf()).toBeNull();
+
+    rerender(row(target, RENAMED));
+
+    expect(pillOf()).toBeNull();
+    expect(content()).toHaveTextContent('cc definitely bo, thanks');
   });
 });
