@@ -1062,15 +1062,12 @@ describe('Now — the zone that justifies the redesign', () => {
   });
 
   describe('P2 AC-5 — what can never be in Now', () => {
-    it('keeps mentions, DMs and unread channels out, and gives an automated session no row', async () => {
-      // Renamed from "…and automated activity out", which is not what it
-      // proves: the automated session below IS counted by the working rollup,
-      // so the old name claimed the opposite of the assertion. What it does
-      // prove — and what P2 AC-5 asks for — is that no ROW is sourced from a
-      // mention, a DM, an unread channel or an automated session. Whether a
-      // background task belongs in the "N working" count at all is a question
-      // about `buildWorkingRollup` (P1.1's rule, which reads no origin) and is
-      // raised for a ruling rather than settled here.
+    it('keeps mentions, DMs, unread channels and automated activity out', async () => {
+      // The name is honest again as of the 2026-08-10 ruling: a scheduled run is
+      // not counted as working, so an automated session streaming on its own
+      // leaves Now with nothing at all to say. Before that ruling this exact
+      // fixture drew a "1 working" row — automated activity rendered in the one
+      // zone that promises to hold only what needs you.
       mockRooms.mockReturnValue([
         { ...channel('c1', 'deploys'), unreadCount: 12 },
         { ...dmWith('d1', '/projects/alpha', 'alpha'), unreadCount: 6 },
@@ -1087,12 +1084,22 @@ describe('Now — the zone that justifies the redesign', () => {
       // The rooms and the automated session ARE in the panel — this is not a
       // test of an empty cockpit.
       await waitFor(() => expect(document.body.textContent).toContain('deploys'));
-      // Now holds the working rollup and nothing else: no room, no DM, no
-      // unread count, and no row of the automated session's own.
-      expect(zoneRows(nowZone())).toEqual(['1 working']);
-      expect(nowZone()?.textContent).not.toContain('Nightly sweep');
-      expect(nowZone()?.textContent).not.toContain('deploys');
-      expect(nowZone()?.textContent).not.toContain('12');
+      expect(document.querySelector('[data-sidebar-zone="library"]')).not.toBeNull();
+      // And Now is absent entirely: no rollup, no room, no DM, no unread count.
+      expect(nowZone()).toBeNull();
+    });
+
+    it('does raise the rollup for a HUMAN session, so the absence above is the filter', async () => {
+      // The discriminating half. Identical to the case above but for the
+      // session's origin — remove the exclusion and both draw a rollup, so only
+      // this one would still be passing for the right reason.
+      mockRooms.mockReturnValue([{ ...channel('c1', 'deploys'), unreadCount: 12 }]);
+      seedSessions([
+        { session: recentSession('human', { title: 'Ship the parser' }), lifecycle: 'streaming' },
+      ]);
+      await renderSidebarWithNow();
+
+      await waitFor(() => expect(zoneRows(nowZone())).toEqual(['1 working']));
     });
   });
 
