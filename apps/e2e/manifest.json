@@ -1,6 +1,21 @@
 {
   "version": 1,
   "tests": {
+    "sidebar-model-showcase": {
+      "specFile": "tests/dashboard-sidebar/sidebar-model-showcase.spec.ts",
+      "feature": "dashboard-sidebar",
+      "description": "renders all four journeys, and asks the server for nothing, draws the zones each journey earns, and never an empty box, caps Now at three, and overflows only when there is more than three, says why every row it drew is there, meets 4.5:1 on the zone tint in the light theme, meets 4.5:1 on the zone tint in the dark theme",
+      "lastRun": "2026-08-10T00:43:42.662Z",
+      "lastStatus": "passed",
+      "runCount": 1,
+      "passCount": 1,
+      "failCount": 0,
+      "relatedCode": [
+        "apps/client/src/dev/showcases/SidebarModelShowcases.tsx",
+        "apps/client/src/layers/features/dashboard-sidebar/model/build-sidebar-model.ts"
+      ],
+      "lastModified": ""
+    },
     "app-loads": {
       "specFile": "tests/smoke/app-loads.spec.ts",
       "feature": "smoke",

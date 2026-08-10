@@ -9,7 +9,7 @@
 import { Info } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { SessionActivity } from '@dorkos/shared/session-stream';
-import { formatActivityLabel } from '@/layers/shared/lib';
+import { activityVerb } from '@/layers/shared/lib';
 import type { IndicatorTheme } from './inference-themes';
 import type { SystemStatusState, OperationProgressState } from '../../model/chat-types';
 
@@ -112,9 +112,17 @@ export function deriveStripState(input: StripStateInput): StripState {
 
   // Priority 4: Streaming
   if (input.status === 'streaming') {
-    // The label is derived here, not passed in, so the strip and every other
-    // consumer of the fleet reading phrase one tool exactly one way.
-    const verb = formatActivityLabel(input.activity);
+    // Through the honesty ladder, not around it (BC-37). The strip used to call
+    // the tool-naming rung directly, which agreed with the sidebar only for as
+    // long as nobody changed the rung above it. One entry point, one phrasing,
+    // everywhere.
+    //
+    // `'streaming'` is a fact this branch has already established rather than a
+    // guess: the ladder's `blocked` rung belongs to the strip's own priority-1
+    // "waiting" state, which is checked before this. Passing it also buys the
+    // non-null overload, so there is no fallback here to drift into a second
+    // way of saying "Working…".
+    const verb = activityVerb('streaming', input.activity);
     return {
       type: 'streaming',
       verb,

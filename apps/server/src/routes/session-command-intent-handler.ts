@@ -135,7 +135,7 @@ export async function sessionCommandIntentHandler(req: Request, res: Response): 
     persist: persistenceModeFor(caps),
   });
 
-  const result = triggerCommandIntent({
+  const result = await triggerCommandIntent({
     sessionId,
     clientId,
     intent,
@@ -147,6 +147,7 @@ export async function sessionCommandIntentHandler(req: Request, res: Response): 
       releaseLock: (sid, cid, token) => runtime.releaseLock(sid, cid, token),
       executeCommandIntent: (sid, i, o) => runtime.executeCommandIntent(sid, i, o),
       interruptQuery: (sid) => runtime.interruptQuery(sid),
+      getInternalSessionId: (sid) => runtime.getInternalSessionId(sid),
     },
     onError: (err) => {
       logger.warn('[POST /command-intents] detached run error', {

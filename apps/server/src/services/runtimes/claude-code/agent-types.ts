@@ -69,6 +69,13 @@ export interface AgentSession {
   pendingInteractions: Map<string, PendingInteraction>;
   eventQueue: StreamEvent[];
   eventQueueNotify?: () => void;
+  /**
+   * Wall time of the last operator/DorkOS-initiated `interruptQuery` or
+   * `stopTask`. A CLI interrupt sentinel arriving shortly after this is
+   * legitimate fallout from the stop, not a phantom (DOR-1087). Cleared when
+   * the stop provably failed and at the start of each new turn.
+   */
+  interruptRequestedAt?: number;
   /** Client-reported UI state, updated with each message. Used by `get_ui_state` tool. */
   uiState?: UiState;
   /**

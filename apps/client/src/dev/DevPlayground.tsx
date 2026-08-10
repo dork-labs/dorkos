@@ -48,6 +48,7 @@ import { MarketplacePage } from './pages/MarketplacePage';
 import { GenUiPage } from './pages/GenUiPage';
 import { RoomsPage } from './pages/RoomsPage';
 import { TourSpotlightPage } from './pages/TourSpotlightPage';
+import { SidebarModelPage } from './pages/SidebarModelPage';
 import { PlaygroundSearch } from './PlaygroundSearch';
 import {
   DESIGN_SYSTEM_NAV,
@@ -108,6 +109,7 @@ const PAGE_COMPONENTS: Record<string, React.ComponentType<PlaygroundPageProps>> 
   'gen-ui': GenUiPage,
   rooms: RoomsPage,
   'tour-spotlight': TourSpotlightPage,
+  'sidebar-model': SidebarModelPage,
 };
 
 /**

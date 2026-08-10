@@ -10,11 +10,12 @@
  * verb that outlives its turn is a lie, and a lying verb is worse than none —
  * which is why an idle session gets `null` rather than a stale phrase.
  *
- * **No sidebar row calls this yet, and that is on purpose.** Live verbs need
- * the fleet-wide session stream to start carrying an `activity` label, which is
- * P2.7's one server task; P1's job is to land the ladder and its rules so every
- * surface adopts the same one at once (spec BC-37). It is a sanctioned shell,
- * not dead code — `SidebarRow.reservesVerbLine` is the other half of it.
+ * **This is the only place in the client that turns a session's state into
+ * words.** The sidebar reaches it through `SessionVerbLine`, the chat status
+ * strip calls it directly, and `formatActivityLabel` — the tool-naming rung
+ * underneath — is not called anywhere else outside this module. A test reads
+ * the sources and fails if a second caller appears, because the failure mode
+ * here is not a crash: it is two surfaces quietly describing one turn two ways.
  *
  * @module shared/lib/activity-verb
  */
@@ -56,6 +57,34 @@ export const WAITING_ON_YOU_VERB = 'waiting on you';
  * @param activity - The tool the session most recently started, when the server
  *   knows one. Absent for an idle session, a turn before its first tool, or a
  *   server that predates the field.
+ */
+export function activityVerb(
+  lifecycle: 'streaming' | 'blocked',
+  activity?: SessionActivity | null
+): string;
+/**
+ * Say what a session is doing right now, or nothing at all.
+ *
+ * A live turn ALWAYS has something honest to say — rung 3 is the floor, and the
+ * lifecycle contract guarantees every runtime reaches it — so the overload
+ * above narrows the return to `string` for the two lifecycles that are moving.
+ * That is a promise about the ladder, not a convenience: a caller inside a
+ * `status === 'streaming'` branch would otherwise need a `?? fallback`, and a
+ * fallback is a second phrasing rule, which is the exact drift this module
+ * exists to prevent. A test pins the promise at runtime.
+ *
+ * @param lifecycle - The session's coarse phase, as its runtime reports it.
+ * @param activity - The tool the session most recently started, when known.
+ */
+export function activityVerb(
+  lifecycle: SessionLifecycle | null | undefined,
+  activity?: SessionActivity | null
+): string | null;
+/**
+ * The ladder itself. See the overloads above for the contract callers see.
+ *
+ * @param lifecycle - The session's coarse phase, as its runtime reports it.
+ * @param activity - The tool the session most recently started, when known.
  */
 export function activityVerb(
   lifecycle: SessionLifecycle | null | undefined,

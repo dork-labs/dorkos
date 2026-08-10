@@ -107,6 +107,29 @@ describe('parseTranscript relay context handling', () => {
   });
 });
 
+describe('parseTranscript skips DorkOS-steered corrective notes (DOR-1087)', () => {
+  it('never renders a <dorkos-system-note> user message as a user bubble', () => {
+    const lines = [
+      JSON.stringify({
+        type: 'user',
+        message: {
+          content:
+            '<dorkos-system-note>The tool call toolu_x was cancelled by the runtime, not by the user.</dorkos-system-note>',
+        },
+        uuid: 'msg-1',
+      }),
+      JSON.stringify({
+        type: 'user',
+        message: { content: 'a real user message' },
+        uuid: 'msg-2',
+      }),
+    ];
+    const result = parseTranscript(lines);
+    expect(result).toHaveLength(1);
+    expect(result[0].content).toBe('a real user message');
+  });
+});
+
 describe('parseTranscript keeps a seeded context out of the rendered user message', () => {
   // The transcript is the record a person reads back. `seedContext` is
   // background a CALLER attached to the turn — the model reads it, the person

@@ -36,11 +36,13 @@ interface SessionLock {
   /** The holder's liveness probe, when it offers one; see {@link LockActivity}. */
   activity?: LockActivity;
   /**
-   * Unique per-acquisition identity (I1). A same-client re-acquire (e.g. a
-   * compose-next auto-flush starting a second detached turn before the first
-   * settles) mints a NEW token, so a stale releaser holding the prior token is a
-   * no-op and cannot drop the lock the second turn now holds — which would
-   * otherwise admit a concurrent writer.
+   * Unique per-acquisition identity (I1). Every acquisition mints a NEW token,
+   * so a stale releaser holding the prior one is a no-op and cannot drop the
+   * lock a later turn now holds — which would otherwise admit a concurrent
+   * writer. Still reachable after DOR-1088 closed the live re-acquire: a turn
+   * whose lock EXPIRED (it went dark) can be replaced by the same client and
+   * then come back to life and release, which without the token would delete
+   * the successor's lock.
    */
   token: symbol;
 }
@@ -70,22 +72,33 @@ export class SessionLockManager {
 
   /**
    * Attempt to acquire a lock on a session for a specific client.
-   * Returns true if the lock was acquired, false if the session is locked by another client.
+   *
+   * A LIVE lock is never replaced — not even for the client that holds it
+   * (DOR-1088). The same-client re-acquire used to succeed and silently swap the
+   * holder, which meant one browser tab (one client id for its whole life) could
+   * start a second turn beside its own running one: two runtime subprocesses
+   * resuming the same transcript. Same-client triggers now WAIT their turn at
+   * {@link import('./trigger-turn').SessionTurnQueue} instead, so by the time one
+   * reaches this method the lock it is waiting on is already released and this
+   * refusal is not the path anyone takes — it is the guarantee that nothing can
+   * route around the queue.
+   *
+   * A lock past its TTL of inactivity is still reclaimable by anyone; that is
+   * how a session whose holder crashed comes back.
    *
    * @param token - Optional per-acquisition identity. When the caller threads
    *   this token into {@link releaseLock}, release is token-matched (I1) so a
-   *   stale releaser from a superseded same-client turn cannot drop a newer
-   *   lock. Omit for callers that do not need the guard (legacy same-client
+   *   stale releaser from a superseded turn cannot drop a newer lock. Omit for
+   *   callers that do not need the guard (legacy same-client
    *   release-by-clientId semantics still apply).
+   * @returns True when the lock was acquired; false when the session is already
+   *   locked and that lock is still live, whoever holds it.
    */
   acquireLock(sessionId: string, clientId: string, res: SseResponse, token?: symbol): boolean {
     const existing = this.locks.get(sessionId);
     if (existing) {
-      if (this.isExpired(existing)) {
-        this.locks.delete(sessionId);
-      } else if (existing.clientId !== clientId) {
-        return false;
-      }
+      if (!this.isExpired(existing)) return false;
+      this.locks.delete(sessionId);
     }
     const lock: SessionLock = {
       clientId,

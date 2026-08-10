@@ -66,6 +66,28 @@ export const STATUS_DOT_COLOR: Record<StatusSignal, string> = {
 export const STATUS_DOT_PULSE = 'motion-safe:animate-pulse';
 
 /**
+ * What each dot MEANS, in words — the half of the signal that survives when the
+ * colour does not.
+ *
+ * **Colour is never the sole indicator** (spec R2, WCAG 1.4.1). A dot is a
+ * non-text graphic whose entire content is a hue, so every one of them has to
+ * be paired with something readable: a verb line beside it, a tooltip, or — for
+ * the dots that sit in an avatar's corner with no row text to lean on — a
+ * visually-hidden label. This map is that label, in one place, so the sidebar
+ * and the roster and the tab strip cannot end up calling the same amber dot
+ * three different things.
+ *
+ * Lower case and bare, because these are read INSIDE a longer accessible name
+ * ("Scout, needs you") rather than on their own.
+ */
+export const STATUS_DOT_LABEL: Record<StatusSignal, string> = {
+  working: 'working',
+  'needs-you': 'needs you',
+  error: 'error',
+  unseen: 'unseen',
+};
+
+/**
  * The expanding halo a `working` dot does when it sits in an avatar's corner —
  * a second element behind the dot, not a property of it.
  *

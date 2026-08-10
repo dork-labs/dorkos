@@ -177,7 +177,13 @@ export function IdentityShapeMatrixShowcase() {
 
             Only `working` moves. Motion is what the word "now" is made of, so a
             still amber dot is how "waiting on you" reads as a state rather than
-            as a turn still running. */}
+            as a turn still running.
+
+            And every dot here says in words what it says in colour (spec R2):
+            it is the one mark on the disc that is not aria-hidden, because it
+            is the only one whose whole content is a hue. The row under it is
+            the second half of that pairing — a status dot always sits beside a
+            verb line, a tooltip or a Now item. */}
         <div className="grid grid-cols-[8rem_repeat(4,5rem)] items-center gap-x-4 gap-y-3">
           <span />
           {IDENTITY_STATUSES.map(({ status, label }) => (

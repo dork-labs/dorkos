@@ -19,6 +19,7 @@ import {
   MapPin,
   Hash,
   Fingerprint,
+  PanelLeft,
 } from 'lucide-react';
 import type { PlaygroundSection } from './playground-registry';
 import {
@@ -43,6 +44,7 @@ import {
   GEN_UI_SECTIONS,
   ROOMS_SECTIONS,
   TOUR_SPOTLIGHT_SECTIONS,
+  SIDEBAR_MODEL_SECTIONS,
 } from './playground-registry';
 
 /** Navigation group a page belongs to in the sidebar. */
@@ -318,6 +320,22 @@ export const PAGE_CONFIGS: PageConfig[] = [
     group: 'agents',
     sections: MARKETPLACE_SECTIONS,
     path: 'marketplace',
+  },
+  // ── App Shell (continued) ──
+  //
+  // Appended at the very end deliberately. This array is edited by several
+  // tasks at once during the sidebar redesign; a new page goes on the end and
+  // an edit to an existing page goes where that page already is, so two
+  // branches never touch the same lines.
+  {
+    id: 'sidebar-model',
+    label: 'Sidebar Model',
+    description:
+      'buildSidebarModel over its four journey fixtures — every zone, section and row, each carrying the reason it is there.',
+    icon: PanelLeft,
+    group: 'app-shell',
+    sections: SIDEBAR_MODEL_SECTIONS,
+    path: 'sidebar-model',
   },
 ];
 

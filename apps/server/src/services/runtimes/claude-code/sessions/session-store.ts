@@ -487,10 +487,16 @@ export class SessionStore {
   async stopTask(sessionId: string, taskId: string): Promise<boolean> {
     const session = this.findSession(sessionId);
     if (!session?.activeQuery) return false;
+    // Like interruptQuery: an operator-driven cancellation may surface as the
+    // CLI's interrupt sentinel on the task's pending calls — stamp it so the
+    // phantom detector (DOR-1087) treats those as legitimate.
+    session.interruptRequestedAt = Date.now();
     try {
       await session.activeQuery.stopTask(taskId);
       return true;
     } catch {
+      // The stop never took effect — do not blind the phantom detector.
+      session.interruptRequestedAt = undefined;
       return false;
     }
   }
@@ -504,6 +510,10 @@ export class SessionStore {
   async interruptQuery(sessionId: string): Promise<boolean> {
     const session = this.findSession(sessionId);
     if (!session?.activeQuery) return false;
+    // A deliberate stop is about to cancel every pending tool call; stamp it so
+    // the phantom-cancellation detector (DOR-1087) treats the resulting CLI
+    // interrupt sentinels as legitimate rather than phantoms.
+    session.interruptRequestedAt = Date.now();
     try {
       await session.activeQuery.interrupt();
       return true;
@@ -513,6 +523,8 @@ export class SessionStore {
         session.activeQuery.close();
         return true;
       } catch {
+        // Neither path stopped the turn — do not blind the phantom detector.
+        session.interruptRequestedAt = undefined;
         return false;
       }
     }

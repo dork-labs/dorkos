@@ -108,7 +108,13 @@ export {
 export type { IdentityAvatarProps } from './identity-avatar';
 export { AGENT_GLYPH, ORIGIN_GLYPH, platformGlyph } from './identity-glyphs';
 export type { IdentityGlyph } from './identity-glyphs';
-export { STATUS_DOT_COLOR, STATUS_DOT_HALO, STATUS_DOT_PULSE, statusDotClass } from './status-dot';
+export {
+  STATUS_DOT_COLOR,
+  STATUS_DOT_HALO,
+  STATUS_DOT_LABEL,
+  STATUS_DOT_PULSE,
+  statusDotClass,
+} from './status-dot';
 export type { IdentityStatus, StatusSignal } from './status-dot';
 export { IdentityHoverCard } from './identity-hover-card';
 export type {

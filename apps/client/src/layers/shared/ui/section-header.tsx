@@ -48,6 +48,18 @@ export interface SectionHeaderProps {
   /** Width class for the menus. */
   menuWidth?: string;
   /**
+   * The section is asking to be read — the same unread emphasis
+   * {@link SidebarRow} wears, on a header.
+   *
+   * **This is how a folded section keeps its `activity` tier.** Collapsing may
+   * never lose signal (BC-31), and the two-tier system says `activity` is a
+   * bold label and NOTHING else — no badge, no dot (design-decisions §18). So
+   * `trailing` cannot carry it: a mark there would be the third weight the
+   * system deliberately does not have. Without this prop a collapsed section
+   * holding unread activity was indistinguishable from a quiet one.
+   */
+  emphasized?: boolean;
+  /**
    * Rendered at the right of the header — a collapsed section's rollup, an
    * activity dot. Sits left of the "⋮" gutter, never under it.
    */
@@ -100,6 +112,7 @@ export function SectionHeader({
   nodes = [],
   actionsLabel,
   menuWidth = 'w-48',
+  emphasized = false,
   trailing,
   adornment,
   editor,
@@ -134,7 +147,8 @@ export function SectionHeader({
         {...{ [SIDEBAR_SECTION_TOGGLE_ATTRIBUTE]: '' }}
         className={cn(
           'text-sidebar-foreground/70 hover:text-sidebar-foreground focus-visible:ring-sidebar-ring',
-          'group/section-toggle flex h-8 min-w-0 flex-1 items-center gap-1.5 rounded-md px-2 text-xs font-medium outline-hidden focus-visible:ring-2'
+          'group/section-toggle flex h-8 min-w-0 flex-1 items-center gap-1.5 rounded-md px-2 text-xs font-medium outline-hidden focus-visible:ring-2',
+          emphasized && 'text-sidebar-foreground font-semibold'
         )}
       >
         {Icon ? (
@@ -157,7 +171,12 @@ export function SectionHeader({
         {adornment}
       </button>
     ) : (
-      <span className="text-sidebar-foreground/70 flex h-8 min-w-0 flex-1 items-center gap-1.5 px-2 text-xs font-medium">
+      <span
+        className={cn(
+          'text-sidebar-foreground/70 flex h-8 min-w-0 flex-1 items-center gap-1.5 px-2 text-xs font-medium',
+          emphasized && 'text-sidebar-foreground font-semibold'
+        )}
+      >
         {/* The icon draws here too. A section that cannot collapse has no
             chevron to morph into, so the mark simply stays put — but it still
             has to be DRAWN, or `Pinned` asks for a pin and gets a bare word. */}
