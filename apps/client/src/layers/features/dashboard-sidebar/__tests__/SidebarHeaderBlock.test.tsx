@@ -217,6 +217,22 @@ describe('SidebarHeaderBlock', () => {
     expect(screen.getByTestId('sidebar-search-pill')).toBeInTheDocument();
   });
 
+  it('says "workspace" nowhere in the block itself — not even to a screen reader', async () => {
+    renderBlock();
+    // Observable first: the block IS rendered and DOES carry an accessible
+    // name, so the absence below is about the wording and not about an empty
+    // document.
+    const block = screen.getByTestId('sidebar-header-block');
+    expect(block.getAttribute('aria-label')).toMatch(/team/);
+    expect(block.outerHTML).not.toMatch(/workspace/i);
+
+    // …and inside the menu it is said exactly once, naming the settings
+    // surface that already carries that word (§16, R4).
+    fireEvent.pointerDown(block);
+    const menu = await screen.findByRole('menu');
+    expect(menu.textContent?.match(/workspace/gi)).toHaveLength(1);
+  });
+
   it('opens the settings dialog from Workspace settings', async () => {
     renderBlock();
     fireEvent.pointerDown(screen.getByTestId('sidebar-header-block'));
