@@ -80,8 +80,33 @@ Off by default everywhere, not just in CI. Forgetting the flag costs you a
 skipped test; forgetting the opposite default costs you money.
 
 Tag a spec `@integration` whenever it cannot pass without a live model. If you
-can express it against `TestModeRuntime` instead, add it to `chat-mock.spec.ts`
-and it runs everywhere.
+can express it against `TestModeRuntime` instead, put it on the mock leg (next
+section) and it runs everywhere.
+
+## Adding a mock-server suite
+
+`chromium-mock` matches exactly one file, `chat-mock.spec.ts`, and that is a
+safety property rather than tidiness. The test-mode server is global mutable
+state — `POST /api/test/reset` wipes scenarios and **deletes every tracked
+session's transcript**, and that file calls it before each of its tests — while
+`fullyParallel` schedules separate spec **files** onto concurrent workers. A
+second mock spec file would have its transcript deleted mid-run by a neighbour.
+
+So a new mock-server suite takes one of two shapes, never a second spec file:
+
+- **Write it into `chat-mock.spec.ts`.** The default, for a handful of tests
+  that share the file's `beforeEach` (reset, dismiss onboarding, seed agent).
+- **Put it in a module that exports a register function**, and call that from
+  `chat-mock.spec.ts`. For a coherent feature suite worth finding by name, or one
+  big enough to push the spec file past `max-lines`.
+  `tests/chat/session-read-state.ts` is the worked example. Playwright groups
+  workers by the file it **loaded**, so the registered tests run on
+  `chat-mock.spec.ts`'s worker in its order — as safe from the resets as if they
+  were written inline — while living under the feature they test. Name the module
+  `*.ts`, never `*.spec.ts`: the extension is the whole thing keeping it off the
+  cockpit leg.
+
+Either way the suite needs no new project and no new server leg.
 
 ## The suite turns on the features it tests
 

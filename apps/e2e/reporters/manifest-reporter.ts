@@ -94,7 +94,13 @@ class ManifestReporter implements Reporter {
     }
 
     for (const [file, results] of byFile) {
-      const testKey = path.basename(file, '.spec.ts');
+      // Both suffixes, because not every file that declares tests is a spec
+      // file: `tests/chat/session-read-state.ts` is a module the mock spec
+      // registers its tests from (see its header), and Playwright reports them
+      // against the file that DECLARED them. Stripping only `.spec.ts` left that
+      // one keyed `session-read-state.ts` — an extension in a namespace where
+      // nothing else has one.
+      const testKey = path.basename(file).replace(/(\.spec)?\.ts$/, '');
       const allPassed = results.every((r) => r.status === 'passed');
       const anyFailed = results.some((r) => r.status === 'failed');
 
