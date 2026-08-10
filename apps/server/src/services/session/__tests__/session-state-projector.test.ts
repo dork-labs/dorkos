@@ -195,11 +195,18 @@ describe('SessionStateProjector', () => {
     p.ingest({ type: 'subagent_update', taskId: 'bt2', status: 'running' } as RawSessionEvent);
     expect(p.getStatus().runningSubagentCount).toBe(2);
 
+    const ingestSpy = vi.spyOn(p, 'ingest');
     p.markInterrupted();
 
     expect(p.getStatus().lifecycle).toBe('interrupted');
     expect(p.getStatus().runningSubagentCount).toBe(0);
     expect(p.listRunningSubagents()).toEqual([]);
+    // Retired through the STREAM, so a client folding its own count drains the
+    // same ids the server just dropped rather than holding them forever.
+    expect(ingestSpy.mock.calls.map((c) => c[0])).toEqual([
+      { type: 'subagent_update', taskId: 'bt1', status: 'stopped' },
+      { type: 'subagent_update', taskId: 'bt2', status: 'stopped' },
+    ]);
   });
 
   // A reopened window (DOR-1100) is a real turn as far as the projection is

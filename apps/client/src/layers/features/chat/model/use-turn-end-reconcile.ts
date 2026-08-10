@@ -51,17 +51,10 @@ export function useTurnEndReconcile({
   const sessionIdRef = useRef(sessionId);
   const selectedCwdRef = useRef(selectedCwd);
   const onStreamingDoneRef = useRef(onStreamingDone);
-  // Who opened the window that is settling (DOR-1100). A ref, not a dep: it must
-  // colour the settle effect without re-running it. Synced in this effect —
-  // declared BEFORE the settle effect, so it always holds the current value by
-  // the time that one reads it — rather than during render, which the
-  // refs-during-render rule rightly refuses.
-  const turnOriginRef = useRef(streamState.turnOrigin);
   useEffect(() => {
     sessionIdRef.current = sessionId;
     selectedCwdRef.current = selectedCwd;
     onStreamingDoneRef.current = onStreamingDone;
-    turnOriginRef.current = streamState.turnOrigin;
   });
 
   // Previous lifecycle per session — detect the streaming → settled edge once.
@@ -83,11 +76,30 @@ export function useTurnEndReconcile({
   // settle edge that triggers the reload).
   const turnOptimisticIdRef = useRef<Map<string, string | null>>(new Map());
 
+  // Per session: whether the turn-finished notification has already been spent
+  // on the message currently being answered (DOR-1100). Not "did the settling
+  // window belong to a person" — see below.
+  const chimeSpentRef = useRef<Map<string, boolean>>(new Map());
+
+  // Per session: the `userTurnCount` last observed, so a CHANGE re-arms the
+  // notification. See `SessionStreamState.userTurnCount` for why this is a
+  // counter and not an edge.
+  const prevUserTurnCountRef = useRef<Map<string, number>>(new Map());
+
   const lifecycle = streamState.status?.lifecycle ?? null;
   const hydrationGeneration = streamState.hydrationGeneration;
+  const userTurnCount = streamState.userTurnCount;
 
   useEffect(() => {
     if (!sessionId) return;
+
+    // A turn the person started re-arms the notification, wherever in the batch
+    // that `turn_start` happened to land.
+    const prevUserTurns = prevUserTurnCountRef.current.get(sessionId);
+    prevUserTurnCountRef.current.set(sessionId, userTurnCount);
+    if (prevUserTurns !== undefined && userTurnCount !== prevUserTurns) {
+      chimeSpentRef.current.set(sessionId, false);
+    }
 
     const prevGen = prevHydrationGenRef.current.get(sessionId);
     prevHydrationGenRef.current.set(sessionId, hydrationGeneration);
@@ -178,15 +190,22 @@ export function useTurnEndReconcile({
     void queryClient.invalidateQueries({ queryKey: ['tasks', reloadId] });
 
     // The notification answers a REQUEST — "the thing you asked for is done" —
-    // so a window nobody asked for does not sound it (DOR-1100). A background
-    // task finishing wakes the agent for another window milliseconds after the
-    // first one closed, and without this the person is pinged twice for one
-    // message. The history reload above deliberately still runs for both: the
-    // second one is what folds the continuation into canonical history.
+    // so it fires ONCE per message, however many windows answering it took
+    // (DOR-1100). A background task finishing wakes the agent for another window
+    // milliseconds after the first closed, and unguarded that pings the person
+    // twice for one message. The history reload above deliberately still runs
+    // for every settle: the later ones fold the continuation into canonical
+    // history.
     //
-    // The cost, stated plainly: the ping lands when the turn the person sent
-    // finishes, not when the wake-up work finishes. That is the honest reading
-    // of what the sound has always meant, and it is the quieter of the two.
-    if (turnOriginRef.current !== 'runtime') onStreamingDoneRef.current?.();
-  }, [sessionId, lifecycle, hydrationGeneration, transport, queryClient]);
+    // Spent-once, NOT "the settling window was runtime-opened", because those
+    // two only agree when every event arrives in its own commit. When a
+    // `turn_end` and the wake-up's `turn_start` land together — guaranteed on a
+    // `Last-Event-ID` reconnect replay — the person's own turn never presents a
+    // settled edge at all, and origin-keying then fires ZERO times: strictly
+    // worse than the double it was fixing.
+    if (chimeSpentRef.current.get(reloadId) !== true) {
+      chimeSpentRef.current.set(reloadId, true);
+      onStreamingDoneRef.current?.();
+    }
+  }, [sessionId, lifecycle, hydrationGeneration, userTurnCount, transport, queryClient]);
 }

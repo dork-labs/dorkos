@@ -22,12 +22,17 @@ import { SessionStateProjector } from '../session-state-projector.js';
 import { mapSdkMessage } from '../../runtimes/claude-code/sdk/sdk-event-mapper.js';
 import { createToolState } from '../../runtimes/claude-code/agent-types.js';
 import type { AgentSession } from '../../runtimes/claude-code/agent-types.js';
+import { CLI_INTERRUPT_SENTINEL } from '../../runtimes/claude-code/messaging/phantom-cancellation.js';
 
 /** An SDK message, kept SDK-type-free at this layer (the mapper owns that import). */
 type Msg = Parameters<typeof mapSdkMessage>[0];
 
-/** The CLI's interrupt sentinel text, as `phantom-cancellation` recognizes it. */
-const SENTINEL = 'The user doesn’t want to proceed with this tool use.';
+/**
+ * The CLI's interrupt sentinel, imported rather than retyped: an approximation
+ * here would still exercise the mapper (which reads any non-empty tool_result
+ * text) while quietly ceasing to be the message this suite claims to be about.
+ */
+const SENTINEL = CLI_INTERRUPT_SENTINEL;
 
 function resultMsg(): Msg {
   return {
@@ -81,6 +86,35 @@ function textDeltaMsg(text: string): Msg {
   return {
     type: 'stream_event',
     event: { type: 'content_block_delta', delta: { type: 'text_delta', text } },
+  } as unknown as Msg;
+}
+
+/** An already-open tool call streaming its arguments — NOT the model restarting. */
+function toolInputDeltaMsg(partialJson: string): Msg {
+  return {
+    type: 'stream_event',
+    event: {
+      type: 'content_block_delta',
+      delta: { type: 'input_json_delta', partial_json: partialJson },
+    },
+  } as unknown as Msg;
+}
+
+/**
+ * An `assistant` message backfilling a tool call's input — the CLI's way of
+ * supplying arguments that never streamed. The tool's `content_block_start` was
+ * in the window that already closed, so this arrives after it.
+ */
+function assistantBackfillMsg(id: string): Msg {
+  return {
+    type: 'assistant',
+    uuid: `a-${id}`,
+    session_id: 'sdk-1',
+    parent_tool_use_id: null,
+    message: {
+      role: 'assistant',
+      content: [{ type: 'tool_use', id, name: 'Read', input: { file_path: '/x' } }],
+    },
   } as unknown as Msg;
 }
 
@@ -154,6 +188,17 @@ describe('turn windows against real SDK message shapes', () => {
     {
       name: 'an assistant turn, its result, then the tool summary behind it',
       messages: [textDeltaMsg('here you go'), resultMsg(), toolUseSummaryMsg('toolu_a')],
+    },
+    // Both of these normalize to `tool_call`, identically to the model opening a
+    // NEW call — which is exactly why the reopen predicate reads the StreamEvent
+    // and not the normalized member.
+    {
+      name: 'an already-open tool call streaming its arguments after the result',
+      messages: [resultMsg(), toolInputDeltaMsg('{"file_path":')],
+    },
+    {
+      name: 'an assistant message backfilling an open tool call’s input',
+      messages: [resultMsg(), assistantBackfillMsg('toolu_a')],
     },
   ];
 

@@ -954,16 +954,30 @@ export class SessionStateProjector {
    */
   markInterrupted(): void {
     if (this.inProgressTurn !== null || this.status.lifecycle === 'streaming') {
+      // Retire the children through the STREAM, the same way `feedProjector`'s
+      // stranding sweep does, and before the turn is torn down so they still
+      // ride it. Mutating the set silently would leave every consumer holding
+      // ids it never saw finish — and a client that folds its own count from
+      // `subagent_update` (the cockpit does) would go on reporting them, or
+      // resurrect them from a replay, while the server said zero. The two
+      // projections have to drain through the same events or they disagree.
+      for (const taskId of this.listRunningSubagents()) {
+        const stopped: RawSessionEvent = {
+          type: 'subagent_update',
+          taskId,
+          status: 'stopped',
+        } as RawSessionEvent;
+        this.ingest(stopped);
+      }
       this.inProgressTurn = null;
       this.ring.markTurnEnded();
       this.status.lifecycle = 'interrupted';
       // The turn is over, so whatever tool it was in is over with it.
       delete this.status.activity;
-      // …and so are its children. This path is the eviction degradation, which
-      // tears the session down without ever running a stream's `finally`, so
-      // the stranding sweep that normally retires them never fires here. A
-      // count left standing would be reported as live work by a session that no
-      // longer exists (DOR-1100).
+      // Belt and braces after the terminal updates above: this path is the
+      // eviction degradation, which tears the session down without ever running
+      // a stream's `finally`, so the sweep that normally retires them never
+      // fires here (DOR-1100).
       this.runningSubagents.clear();
       this.status.runningSubagentCount = 0;
       // This path mutates lifecycle WITHOUT an ingest, so fan out here — and

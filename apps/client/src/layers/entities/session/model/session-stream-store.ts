@@ -174,6 +174,20 @@ export interface SessionStreamState {
    * settled.
    */
   turnOrigin: 'user' | 'runtime';
+  /**
+   * How many turns a PERSON (or a caller) has started on this session since it
+   * hydrated. Runtime-opened wake-up windows never move it.
+   *
+   * A counter rather than an edge, and that is the whole design. The settle
+   * handler needs to know "is this a new thing somebody asked for?", and the
+   * obvious way to answer — watch for a `turn_start` — cannot survive batching: a
+   * `Last-Event-ID` reconnect replays a whole gap in one React commit, so a
+   * `turn_end` and the wake-up's `turn_start` land together and the
+   * streaming→settled edge between them never exists to be observed. A count
+   * that CHANGED across a commit is still a fact no matter how many events were
+   * folded into it.
+   */
+  userTurnCount: number;
 }
 
 /** Default state for an un-hydrated session. */
@@ -194,6 +208,7 @@ export const DEFAULT_SESSION_STREAM_STATE: SessionStreamState = {
   runningSubagentIds: [],
   unnamedRunningSubagents: 0,
   turnOrigin: 'user',
+  userTurnCount: 0,
 };
 
 /** `SessionEvent` member discriminants that map onto a {@link PendingInteractionDTO}. */
@@ -316,6 +331,85 @@ const SIGNIN_CARD_EVENT_TYPES: ReadonlySet<SessionEvent['type']> = new Set([
  */
 function retainOpenSigninCards(events: SessionEvent[]): SessionEvent[] {
   return events.filter((event) => SIGNIN_CARD_EVENT_TYPES.has(event.type));
+}
+
+/**
+ * Drop everything before the CURRENTLY OPEN window, keeping any sign-in card the
+ * dropped prefix held (DOR-1100).
+ *
+ * The preserve path exists for one situation — a new turn started while the
+ * history reload was in flight, so clearing the turn would wipe events the
+ * reload predates. It used to be able to keep the whole turn because a
+ * `turn_start` reset it, which meant "the whole turn" and "the new window" were
+ * the same thing. A runtime-opened window APPENDS instead (so the finished reply
+ * does not blank while the agent wakes up), and that broke the equivalence: the
+ * turn now also holds the FINISHED window's deltas, which the reload has just
+ * supplied as canonical history. Preserving all of it renders the reply twice
+ * for as long as the wake-up runs.
+ *
+ * So the preserve is narrowed to what the reload genuinely predates: the events
+ * at or after the last `turn_start`. A sign-in card from the prefix still
+ * survives, for the same reason it survives a full clear — the runtime's
+ * transcript has never heard of it.
+ *
+ * @param events - The live turn, possibly spanning several windows.
+ * @returns The current window, preceded by any sign-in card from before it.
+ */
+/**
+ * The most events one live turn may hold on the client before the finished
+ * windows behind it are dropped (DOR-1100).
+ *
+ * A turn used to be self-limiting: every `turn_start` reset it, so the only way
+ * to grow was to keep streaming, and the server's own `RingBuffer` caps the
+ * replayable turn at the same 200. A runtime-opened window appends instead, so a
+ * chain of wake-ups — one background task waking the agent, whose work starts
+ * another — accumulates until a reload trims it. Normally that reload lands
+ * within a round trip and this never bites; if it fails or the chain outruns it,
+ * this is the bound that keeps a long-lived tab from growing without limit.
+ *
+ * Matched to `RING_BUFFER_MAX_EVENTS` deliberately: past it the server could not
+ * replay the turn to a reconnecting client either, so keeping more here would
+ * hold events no cold hydrate could reproduce.
+ */
+const MAX_LIVE_TURN_EVENTS = 200;
+
+/**
+ * Drop whole finished windows off the front of an over-long live turn, keeping
+ * any sign-in card they held.
+ *
+ * Trims by WINDOW, never mid-window: half a window renders as a reply that
+ * starts mid-sentence, which is worse than one that is missing. So an
+ * over-budget turn gives up its oldest complete window and re-checks, and a
+ * single window over budget on its own is left alone — there is nothing to drop
+ * that would not be a lie.
+ *
+ * @param events - The live turn, possibly spanning several windows.
+ */
+function boundLiveTurn(events: SessionEvent[]): SessionEvent[] {
+  let kept = events;
+  while (kept.length > MAX_LIVE_TURN_EVENTS) {
+    const nextWindow = kept.findIndex((event, index) => index > 0 && event.type === 'turn_start');
+    if (nextWindow === -1) break;
+    kept = [...retainOpenSigninCards(kept.slice(0, nextWindow)), ...kept.slice(nextWindow)];
+    // A window of sign-in cards alone cannot shrink further; stop rather than spin.
+    if (kept.length === events.length) break;
+    events = kept;
+  }
+  return kept;
+}
+
+function retainCurrentWindow(events: SessionEvent[]): SessionEvent[] {
+  // Hand-rolled reverse scan: the client's `lib` target predates
+  // `findLastIndex`, and one loop is cheaper than raising it for one call.
+  let windowStart = -1;
+  for (let i = events.length - 1; i >= 0; i--) {
+    if (events[i]?.type === 'turn_start') {
+      windowStart = i;
+      break;
+    }
+  }
+  if (windowStart <= 0) return events;
+  return [...retainOpenSigninCards(events.slice(0, windowStart)), ...events.slice(windowStart)];
 }
 
 /** The flow a sign-in card event belongs to. Both members carry `flowId`. */
@@ -618,6 +712,7 @@ function projectEvent(session: SessionStreamState, event: SessionEvent): void {
   switch (event.type) {
     case 'turn_start': {
       session.turnOrigin = event.origin === 'runtime' ? 'runtime' : 'user';
+      if (event.origin !== 'runtime') session.userTurnCount += 1;
       if (event.origin === 'runtime') {
         // A window nobody asked for APPENDS. Resetting is right when a person
         // sends the next message — by then the settled turn has long since been
@@ -724,6 +819,13 @@ function projectEvent(session: SessionStreamState, event: SessionEvent): void {
     default:
       if (TURN_EVENT_TYPES.has(event.type)) session.inProgressTurn.push(event);
       break;
+  }
+  // Applied here rather than at the `turn_start` that starts a window, because
+  // the growth is the DELTAS: bounding only at the boundary let the newest
+  // window overshoot by its whole length. The length check is the fast path, so
+  // every ordinary turn pays one comparison and nothing else.
+  if (session.inProgressTurn.length > MAX_LIVE_TURN_EVENTS) {
+    session.inProgressTurn = boundLiveTurn(session.inProgressTurn);
   }
   session.lastAppliedSeq = event.seq;
   session.lastEventAt = Date.now();
@@ -960,9 +1062,12 @@ export const useSessionStreamStore: SessionStreamStore = create<
             // unless the bubble already belongs to a NEWER turn the reload predates.
             // An unresolved sign-in card survives either way: history has no record
             // of it and the person is still mid-sign-in (DOR-1004).
-            if (!opts?.preserveInProgressTurn) {
-              session.inProgressTurn = retainOpenSigninCards(session.inProgressTurn);
-            }
+            session.inProgressTurn = opts?.preserveInProgressTurn
+              ? // A newer window is open, so keep it — but only IT. See
+                // `retainCurrentWindow`: after a wake-up the turn also holds the
+                // window this reload just supplied as history.
+                retainCurrentWindow(session.inProgressTurn)
+              : retainOpenSigninCards(session.inProgressTurn);
           },
           false,
           'session-stream/setHistoryMessages'

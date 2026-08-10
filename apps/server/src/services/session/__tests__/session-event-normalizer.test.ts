@@ -4,7 +4,7 @@ import type { RawSessionEvent } from '../index.js';
 import {
   toRawSessionEvent,
   feedProjector,
-  TURN_REOPENING_EVENT_TYPES,
+  TURN_REOPENING_STREAM_EVENT_TYPES,
 } from '../session-event-normalizer.js';
 import { mapResultEvent } from '../../runtimes/claude-code/sdk/event-mappers/result-event-mapper.js';
 import { SessionStateProjector, CAPABILITY_HOLD_PAUSE_GRACE_MS } from '../index.js';
@@ -1310,10 +1310,7 @@ describe('feedProjector — a normal turn grows no ghost window', () => {
     }
 
     expect(emitted[emitted.length - 1]?.type).toBe('done');
-    const reopeners = emitted.filter((event) => {
-      const raw = toRawSessionEvent(event);
-      return raw !== null && TURN_REOPENING_EVENT_TYPES.has(raw.type);
-    });
+    const reopeners = emitted.filter((event) => TURN_REOPENING_STREAM_EVENT_TYPES.has(event.type));
     expect(reopeners).toEqual([]);
   });
 });

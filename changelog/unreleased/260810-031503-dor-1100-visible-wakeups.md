@@ -2,6 +2,7 @@
 covers:
   - 'fix(server): the busy bar stops lying when an agent wakes up to keep working (DOR-1100)'
   - 'fix(server): address adversarial review — narrow the wake-up signal, retire dead background tasks (DOR-1100)'
+  - 'fix(client): address adversarial review — one copy of the reply, one chime, one bounded turn (DOR-1100)'
 ---
 
 ### Fixed

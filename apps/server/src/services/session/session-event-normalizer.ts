@@ -634,16 +634,28 @@ function readTerminalReason(event: StreamEvent): TerminalReason | undefined {
  *
  * The narrowing costs nothing against the incident this exists for: a genuine
  * wake-up is the agent REACTING to a notification, which starts with reasoning,
- * prose, or a fresh tool call — all three still here. And a `tool_call` can only
- * reach this set via a `stream_event` `content_block_start`, which is the model
- * opening a new tool call; the `assistant`-message arm emits `tool_call_delta`
- * only as INPUT BACKFILL for an id `toolState` already knows, so it can never be
- * the first event to reopen.
+ * prose, or a fresh tool call — all three still here.
+ *
+ * ## Why this is keyed on the StreamEvent, not the normalized member
+ *
+ * Because the normalizer ERASES the distinction this rule turns on.
+ * `tool_call_start` (the model opening a NEW call) and `tool_call_delta` (an
+ * already-open call streaming its arguments, or an `assistant` message
+ * backfilling them) both normalize to one `tool_call` member — so a set keyed on
+ * the normalized type cannot tell "the agent started something" from "the thing
+ * it already started is still arriving". Two shapes exploit that gap, both
+ * reproduced: a `content_block_delta{input_json_delta}` for a tool still open at
+ * the `result`, and the `assistant` arm's input backfill for an id `toolState`
+ * already knows — whose `content_block_start` was in the window that just
+ * closed, so it is perfectly capable of being the first event after one.
+ *
+ * Reading the StreamEvent keeps the discriminant intact and costs nothing: this
+ * predicate runs one line above the normalization anyway.
  */
-export const TURN_REOPENING_EVENT_TYPES: ReadonlySet<RawSessionEvent['type']> = new Set([
+export const TURN_REOPENING_STREAM_EVENT_TYPES: ReadonlySet<StreamEvent['type']> = new Set([
   'text_delta',
   'thinking_delta',
-  'tool_call',
+  'tool_call_start',
 ]);
 
 /**
@@ -666,7 +678,7 @@ export const TURN_REOPENING_EVENT_TYPES: ReadonlySet<RawSessionEvent['type']> = 
  * A stream can carry MORE than one window, because the CLI can keep a turn alive
  * past the `result` DorkOS closed on: a queued background-task notification
  * wakes the agent and it keeps working. A content event arriving after the
- * window closed OPENS A NEW ONE ({@link TURN_REOPENING_EVENT_TYPES}, DOR-1100),
+ * window closed OPENS A NEW ONE ({@link TURN_REOPENING_STREAM_EVENT_TYPES}, DOR-1100),
  * so the continuation streams live, puts the lifecycle back to `streaming`, and
  * is persisted as its own turn when its own `done` (or the end of the stream)
  * closes it. The invariant that holds throughout is the spec's C2: exactly one
@@ -753,7 +765,7 @@ export async function feedProjector(
       // Checked BEFORE the latches below so the reopen's reset cannot be undone
       // by the very event that caused it (content events carry neither a
       // terminal reason nor an error, so this is belt-and-braces).
-      if (raw !== null && !turnOpen && TURN_REOPENING_EVENT_TYPES.has(raw.type)) reopenTurn();
+      if (!turnOpen && TURN_REOPENING_STREAM_EVENT_TYPES.has(event.type)) reopenTurn();
       const reason = readTerminalReason(event);
       if (reason !== undefined) terminalReason = reason;
       if (event.type === 'error') sawError = true;
@@ -782,6 +794,15 @@ export async function feedProjector(
     // which is why this is one sweep at the end rather than a special case per
     // terminal reason. Without it the count is a permanent on-screen lie:
     // nothing else would ever clear it.
+    //
+    // It sweeps the SESSION's children, not this stream's, so it depends on one
+    // stream per session at a time — the single-flight guarantee `sendMessage`
+    // has always claimed and that DOR-1088 / PR #906 actually enforce (turn
+    // serialization plus a lock that refuses any live holder). If two streams
+    // ever ran concurrently on one session, whichever finished first would
+    // retire the other's live children. The persistent pump keeps this correct
+    // for a different reason: its stream spans every turn, so the `finally` is
+    // the pump dying, which is still exactly when the children die.
     for (const taskId of projector.listRunningSubagents()) {
       const stopped: RawOf<'subagent_update'> = {
         type: 'subagent_update',

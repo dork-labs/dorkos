@@ -1105,6 +1105,31 @@ describe('useSessionStreamStore — runtime-opened turn windows', () => {
     ]);
   });
 
+  // A chain of wake-ups appends without bound if no reload lands to trim it, and
+  // a long-lived tab must not grow forever. The trim takes whole finished
+  // windows: half a window renders as a reply starting mid-sentence.
+  it('bounds a long wake-up chain by dropping whole finished windows', () => {
+    store.getState().applySnapshot(SID, snapshot({ cursor: 0 }));
+    let seq = 0;
+    const next = () => ++seq;
+    store.getState().applyEvent(SID, { type: 'turn_start', seq: next() });
+    // Ten wake-up windows of 40 deltas each — well past the 200 bound.
+    for (let window = 0; window < 10; window++) {
+      store.getState().applyEvent(SID, { type: 'turn_end', seq: next() });
+      store.getState().applyEvent(SID, { type: 'turn_start', seq: next(), origin: 'runtime' });
+      for (let i = 0; i < 40; i++) {
+        store.getState().applyEvent(SID, { type: 'text_delta', seq: next(), text: `w${window}` });
+      }
+    }
+
+    const turn = store.getState().sessions[SID]!.inProgressTurn;
+    expect(turn.length).toBeLessThanOrEqual(200);
+    // Whatever survived still begins at a window boundary, never mid-reply.
+    expect(turn[0]?.type).toBe('turn_start');
+    // …and the newest window is intact, which is the one on screen.
+    expect(turn.filter((e) => e.type === 'text_delta').at(-1)).toMatchObject({ text: 'w9' });
+  });
+
   it('records who opened the window so the settle handler can tell them apart', () => {
     store.getState().applySnapshot(SID, snapshot({ cursor: 0 }));
     store.getState().applyEvent(SID, { type: 'turn_start', seq: 1 });
