@@ -318,3 +318,89 @@ server source at v1.17.13):**
   A live-sidecar smoke test — spawn `opencode serve`, `mcp.add` a server, assert
   the user's `opencode.json` is byte-unchanged — would pin it. Deferred (no real
   binary in CI); revisit if OpenCode changes its MCP endpoints.
+
+---
+
+## 7. Subagents: the surface EXISTS, and it is the `task` tool part (DOR-1109)
+
+**Question:** OpenCode has real subagents (agents are selectable per prompt; §2 noted `plan` is one).
+DorkOS showed none of it — the cockpit's subagent count and activity feed were fed only by
+claude-code's `task_*` system messages. What does the sidecar actually emit?
+
+**Verdict: there is no subagent event on the wire, and none is needed.** A subagent run is fully
+described by the ordinary `task` **tool part** in the PARENT session, plus the child session's own
+events. Both already ride `/global/event`; DorkOS was simply discarding them.
+
+### Evidence
+
+Gathered two ways at the pinned version, `opencode-ai@1.18.15` / `@opencode-ai/sdk@1.18.15`.
+
+**(a) A live sidecar probe — free, no model call, no credentials.** The provisioned binary
+(`~/.dork/runtimes/opencode/node_modules/.bin/opencode`, `provision.ts`) was booted with
+`opencode serve --port 0` and interrogated over HTTP:
+
+- `GET /experimental/tool/ids` → `["invalid","question","bash","read","glob","grep","edit","write",`
+  `"task","webfetch","todowrite","websearch","skill","apply_patch"]`. **`task` is the delegation tool.**
+- `GET /experimental/tool` → the `task` schema: required `description`, `prompt`, `subagent_type`;
+  optional `task_id` (resume) and `command`. Its description enumerates the installed subagent types.
+- `GET /agent` → the roster, each with `mode: "subagent" | "primary" | "all"`.
+- `GET /doc` (OpenAPI) → 92 `Event*` schemas. **None of them is a subagent lifecycle event.** The
+  only agent-shaped one is `session.next.agent.switched` (`{sessionID, messageID, agent}`), which
+  belongs to the unreleased `session.next.*` family the v1 `Event` union does not carry.
+- `GET /session/{id}/children` exists, and `Session.parentID` is on the v1 `Session` schema — child
+  sessions are how a subagent is modeled.
+
+**(b) The task tool's own implementation**, read out of the compiled binary (a Bun single-file exe
+with the JS embedded; `strings` recovers it). `TaskTool.execute`:
+
+1. enforces `subagent_depth` (default **1**, so nested subagents are off unless configured);
+2. asks permission `task` with `patterns:[subagent_type]`;
+3. creates the child session —
+   `create({ parentID: ctx.sessionID, title: description + " (@<agent> subagent)", agent, permission })`;
+4. **publishes `ctx.metadata({ title: description, metadata: { parentSessionId, sessionId, model } })`**
+   onto its own tool part, so the parent's `task` part carries the child session id from that moment;
+5. prompts the child session and returns
+   `<task id="<childSessionID>" state="completed"><task_result>…</task_result></task>`.
+
+The `subtask` prompt-part path (`SessionPrompt.handleSubtask`, for a `SubtaskPartInput` a client
+sends directly) does the same thing: it synthesizes a `tool: "task"` part with
+`input: {prompt, description, subagent_type, command}` and drives it running → completed/error. On
+interrupt it writes `state.error = "Cancelled"`; the tool path fails with `"Task cancelled"`.
+
+### What DorkOS now maps (`event-mapper.ts`)
+
+| Wire fact                                 | DorkOS StreamEvent                                                                      |
+| ----------------------------------------- | --------------------------------------------------------------------------------------- |
+| `task` tool part reaches `running`        | `background_task_started` (`taskId` = `callID`, `taskType: 'agent'`, `description`)     |
+| its `state.metadata.sessionId` appears    | child session admitted to the demux; id attached as `subagentSessionId`                 |
+| a tool part in the CHILD session          | `background_task_progress` (`toolUses` = distinct child callIDs, `lastToolName`)        |
+| `task` part reaches `completed` / `error` | `background_task_done` (`completed`; `stopped` for the cancelled shapes, else `failed`) |
+
+The session normalizer turns those three into `subagent_update`, which is what feeds
+`runningSubagentCount`, the status-line hint and the activity feed (runtime-neutral since DOR-1100).
+**No shared-schema change, no new `SessionEvent` member, no client change.** The `task` call also
+keeps its ordinary tool card, exactly as claude-code renders a `Task` tool call beside its
+background-task card.
+
+Child sessions are admitted by `matchesOpenCodeSubagentSession` and routed away from the parent
+mapping entirely: only their tool parts are read, and their text, todos, permissions and
+`session.idle` are dropped. That last one matters — an admitted child `session.idle` reaching the
+parent mapper would end the parent's turn early.
+
+### Known limits (honest, and none of them regressions)
+
+- **Progress beats can be missed.** The child session id is learned by the mapper, which sees events
+  only after the demux admits them, so a child event that arrives before the mapper drains the
+  metadata snapshot is dropped. Start and terminal are unaffected — they ride the parent session,
+  which is always admitted.
+- **No `summary` on the terminal.** The task tool's output is the `<task …><task_result>` envelope,
+  not a short summary; forwarding it verbatim would put a wall of text where claude-code puts a line.
+- **A subagent's own permission prompts are still invisible.** They are raised against the child
+  session, and the child path drops them. Pre-existing (the child session was dropped entirely
+  before this change); surfacing them is a separate decision about whose card owns the prompt.
+- **Not observed end-to-end against a real model.** No provider is authenticated on this machine
+  (`~/.local/share/opencode/auth.json` is absent) and the local sidecar store had no historical
+  subagent run to replay, so the mapping is scripted from the implementation above rather than from a
+  captured wire log. Everything degrades to "no subagent shown", never to a wrong turn: if the
+  metadata key ever moves, no child is admitted and only start/done are reported; if the `task` part
+  shape moves, the tool card still renders as before.

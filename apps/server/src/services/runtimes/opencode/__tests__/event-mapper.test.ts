@@ -8,13 +8,16 @@ import {
   mapOpenCodeEvent,
   mapOpenCodeTurn,
   matchesOpenCodeSession,
+  matchesOpenCodeSubagentSession,
   type OpenCodeEventContext,
   type OpenCodeWireEvent,
 } from '../event-mapper.js';
 import {
+  COMPLETED_AT,
   CREATED_AT,
   DEFAULT_COST,
   DIRECTORY,
+  OC_CHILD_SESSION,
   OC_SESSION_A,
   OC_SESSION_B,
   OTHER_DIRECTORY,
@@ -29,6 +32,7 @@ import {
   opencodeApprovalTurn,
   opencodeErrorTurn,
   opencodeSimpleTurn,
+  opencodeSubagentTurn,
   opencodeToolTurn,
   outputLengthError,
   partDelta,
@@ -45,6 +49,9 @@ import {
   sessionInfo,
   sessionUpdated,
   statusEvent,
+  taskToolInput,
+  taskToolMetadata,
+  taskToolPart,
   textPart,
   todo,
   todoUpdated,
@@ -150,6 +157,31 @@ describe('matchesOpenCodeSession — demux on one multiplexed stream', () => {
       expect(events.filter((e) => e.type === 'done')).toHaveLength(1);
       expect(events[events.length - 1]).toEqual({ type: 'done', data: { sessionId: dorkosId } });
     }
+  });
+});
+
+describe('matchesOpenCodeSubagentSession — admitting a subagent child session', () => {
+  it('admits nothing until a task tool part has revealed its child session', () => {
+    const ctx = createOpenCodeEventContext(SESSION_ID);
+    const childEvent = globalEvent(
+      DIRECTORY,
+      partUpdated(toolPart(OC_CHILD_SESSION, 'child_1', 'grep', toolStateRunning({})))
+    );
+    expect(matchesOpenCodeSubagentSession(childEvent, DIRECTORY, ctx)).toBe(false);
+
+    mapOpenCodeEvent(
+      partUpdated(
+        taskToolPart(OC, 'call_task', toolStateRunning(taskToolInput()), taskToolMetadata())
+      ),
+      ctx
+    );
+    expect(matchesOpenCodeSubagentSession(childEvent, DIRECTORY, ctx)).toBe(true);
+    // A same-id event from another directory is still a different instance.
+    expect(matchesOpenCodeSubagentSession(childEvent, OTHER_DIRECTORY, ctx)).toBe(false);
+    // The parent's own events are the base filter's job, not this one's.
+    expect(
+      matchesOpenCodeSubagentSession(globalEvent(DIRECTORY, sessionIdle(OC)), DIRECTORY, ctx)
+    ).toBe(false);
   });
 });
 
@@ -323,6 +355,206 @@ describe('mapOpenCodeEvent', () => {
       mapOpenCodeEvent(completed, ctx);
       // Compaction re-saves completed tool parts (time.compacted) → re-publication.
       expect(mapOpenCodeEvent(completed, ctx)).toEqual([]);
+    });
+  });
+
+  describe('`task` tool parts → subagent background-task events', () => {
+    const input = taskToolInput();
+
+    it('emits background_task_started alongside the tool call when the subagent starts', () => {
+      const events = mapOpenCodeEvent(
+        partUpdated(taskToolPart(OC, 'call_task', toolStateRunning(input))),
+        makeContext()
+      );
+      expect(events.map((e) => e.type)).toEqual(['tool_call_start', 'background_task_started']);
+      expect(events[1]!.data).toEqual({
+        taskId: 'call_task',
+        taskType: 'agent',
+        startedAt: CREATED_AT,
+        toolUseId: 'call_task',
+        description: 'survey the routes',
+      });
+      expect(StreamEventSchema.safeParse(events[1]).success).toBe(true);
+    });
+
+    it('starts the subagent exactly once across repeated running snapshots', () => {
+      const ctx = makeContext();
+      mapOpenCodeEvent(partUpdated(taskToolPart(OC, 'call_task', toolStateRunning(input))), ctx);
+      const second = mapOpenCodeEvent(
+        partUpdated(taskToolPart(OC, 'call_task', toolStateRunning(input), taskToolMetadata())),
+        ctx
+      );
+      expect(second.map((e) => e.type)).toEqual([]);
+    });
+
+    it('carries the child session id when the first snapshot already has metadata', () => {
+      const events = mapOpenCodeEvent(
+        partUpdated(taskToolPart(OC, 'call_task', toolStateRunning(input), taskToolMetadata())),
+        makeContext()
+      );
+      expect(events[1]!.data).toMatchObject({ subagentSessionId: OC_CHILD_SESSION });
+    });
+
+    it('does not touch non-task tools', () => {
+      const events = mapOpenCodeEvent(
+        partUpdated(toolPart(OC, 'call_1', 'bash', toolStateRunning({ command: 'ls' }))),
+        makeContext()
+      );
+      expect(events.map((e) => e.type)).toEqual(['tool_call_start']);
+    });
+
+    describe('child-session activity', () => {
+      function startedContext(): OpenCodeEventContext {
+        const ctx = makeContext();
+        mapOpenCodeEvent(
+          partUpdated(taskToolPart(OC, 'call_task', toolStateRunning(input), taskToolMetadata())),
+          ctx
+        );
+        return ctx;
+      }
+
+      it('reports each child tool call as background_task_progress on the parent task', () => {
+        const ctx = startedContext();
+        const first = mapOpenCodeEvent(
+          partUpdated(
+            toolPart(OC_CHILD_SESSION, 'child_1', 'grep', toolStateRunning({ pattern: 'router' }))
+          ),
+          ctx
+        );
+        expect(first).toEqual([
+          {
+            type: 'background_task_progress',
+            data: { taskId: 'call_task', toolUses: 1, lastToolName: 'grep', durationMs: 0 },
+          },
+        ]);
+        expect(StreamEventSchema.safeParse(first[0]).success).toBe(true);
+
+        const second = mapOpenCodeEvent(
+          partUpdated(
+            toolPart(OC_CHILD_SESSION, 'child_2', 'read', toolStateCompleted({}, 'contents'))
+          ),
+          ctx
+        );
+        expect(second[0]!.data).toMatchObject({ toolUses: 2, lastToolName: 'read' });
+      });
+
+      it('counts each child tool call once across its state transitions', () => {
+        const ctx = startedContext();
+        mapOpenCodeEvent(
+          partUpdated(toolPart(OC_CHILD_SESSION, 'child_1', 'grep', toolStateRunning({}))),
+          ctx
+        );
+        expect(
+          mapOpenCodeEvent(
+            partUpdated(
+              toolPart(OC_CHILD_SESSION, 'child_1', 'grep', toolStateCompleted({}, 'hit'))
+            ),
+            ctx
+          )
+        ).toEqual([]);
+      });
+
+      it('never leaks the child session into the parent transcript or ends the parent turn', () => {
+        const ctx = startedContext();
+        expect(
+          mapOpenCodeEvent(partUpdated(textPart(OC_CHILD_SESSION, 'p_child', 'inner text')), ctx)
+        ).toEqual([]);
+        expect(mapOpenCodeEvent(sessionIdle(OC_CHILD_SESSION), ctx)).toEqual([]);
+      });
+
+      it('stops attributing child events once the subagent has finished', () => {
+        const ctx = startedContext();
+        mapOpenCodeEvent(
+          partUpdated(
+            taskToolPart(OC, 'call_task', toolStateCompleted(input, 'done'), taskToolMetadata())
+          ),
+          ctx
+        );
+        expect(
+          mapOpenCodeEvent(
+            partUpdated(toolPart(OC_CHILD_SESSION, 'child_9', 'grep', toolStateRunning({}))),
+            ctx
+          )
+        ).toEqual([]);
+      });
+    });
+
+    describe('terminal states', () => {
+      function runningContext(): OpenCodeEventContext {
+        const ctx = makeContext();
+        mapOpenCodeEvent(
+          partUpdated(taskToolPart(OC, 'call_task', toolStateRunning(input), taskToolMetadata())),
+          ctx
+        );
+        mapOpenCodeEvent(
+          partUpdated(toolPart(OC_CHILD_SESSION, 'child_1', 'grep', toolStateRunning({}))),
+          ctx
+        );
+        return ctx;
+      }
+
+      it('maps completion to background_task_done with the observed tool count and duration', () => {
+        const ctx = runningContext();
+        const events = mapOpenCodeEvent(
+          partUpdated(
+            taskToolPart(OC, 'call_task', toolStateCompleted(input, 'result'), taskToolMetadata())
+          ),
+          ctx
+        );
+        const done = events.find((e) => e.type === 'background_task_done');
+        expect(done!.data).toEqual({
+          taskId: 'call_task',
+          status: 'completed',
+          toolUses: 1,
+          durationMs: COMPLETED_AT - CREATED_AT,
+        });
+        expect(StreamEventSchema.safeParse(done).success).toBe(true);
+      });
+
+      it('maps a failure to status failed', () => {
+        const ctx = runningContext();
+        const events = mapOpenCodeEvent(
+          partUpdated(taskToolPart(OC, 'call_task', toolStateError(input, 'Agent not found'))),
+          ctx
+        );
+        expect(events.find((e) => e.type === 'background_task_done')!.data).toMatchObject({
+          status: 'failed',
+        });
+      });
+
+      it('maps the interrupt shape (`Cancelled`) to status stopped', () => {
+        const ctx = runningContext();
+        const events = mapOpenCodeEvent(
+          partUpdated(taskToolPart(OC, 'call_task', toolStateError(input, 'Cancelled'))),
+          ctx
+        );
+        expect(events.find((e) => e.type === 'background_task_done')!.data).toMatchObject({
+          status: 'stopped',
+        });
+      });
+
+      it('does not double-report a re-published completed task part', () => {
+        const ctx = runningContext();
+        const completed = partUpdated(
+          taskToolPart(OC, 'call_task', toolStateCompleted(input, 'result'), taskToolMetadata())
+        );
+        mapOpenCodeEvent(completed, ctx);
+        expect(mapOpenCodeEvent(completed, ctx)).toEqual([]);
+      });
+
+      it('reports a subagent that was never seen running (terminal-only snapshot)', () => {
+        const events = mapOpenCodeEvent(
+          partUpdated(taskToolPart(OC, 'call_task', toolStateCompleted(input, 'result'))),
+          makeContext()
+        );
+        expect(events.map((e) => e.type)).toEqual([
+          'tool_call_start',
+          'tool_call_end',
+          'tool_result',
+          'background_task_started',
+          'background_task_done',
+        ]);
+      });
     });
   });
 
@@ -617,6 +849,7 @@ describe('mapOpenCodeTurn', () => {
     ['tool approval turn', () => opencodeApprovalTurn(OC)],
     ['failed turn', () => opencodeErrorTurn(OC, 'boom')],
     ['aborted (interrupted) turn', () => opencodeAbortedTurn(OC, 'partial answer')],
+    ['subagent delegation turn', () => opencodeSubagentTurn(OC)],
   ];
 
   it.each(FULL_TURNS)(
@@ -652,6 +885,33 @@ describe('mapOpenCodeTurn', () => {
       .map((e) => (e.data as { text: string }).text)
       .join('');
     expect(text).toBe('Hello world');
+  });
+
+  it('maps a delegating turn to a subagent lifecycle without leaking the child session', async () => {
+    const events = await drain(opencodeSubagentTurn(OC));
+    expect(events.map((e) => e.type)).toEqual([
+      'tool_call_start',
+      'background_task_started',
+      'background_task_progress',
+      'background_task_progress',
+      'tool_call_end',
+      'tool_result',
+      'background_task_done',
+      'text_delta',
+      'session_status',
+      'done',
+    ]);
+    // The child's own text never reaches the transcript, and its session.idle
+    // did not end the parent turn early (the single `done` is the parent's).
+    const text = events
+      .filter((e) => e.type === 'text_delta')
+      .map((e) => (e.data as { text: string }).text)
+      .join('');
+    expect(text).toBe('The explorer found 3 routes.');
+    expect(events.find((e) => e.type === 'background_task_done')!.data).toMatchObject({
+      status: 'completed',
+      toolUses: 2,
+    });
   });
 
   it('surfaces the approval flow mid-turn and resolves it before the tool events', async () => {

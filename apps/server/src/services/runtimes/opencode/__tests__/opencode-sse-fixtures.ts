@@ -142,6 +142,50 @@ export function toolStateError(input: Record<string, unknown>, error: string): T
   return { status: 'error', input, error, time: { start: CREATED_AT, end: COMPLETED_AT } };
 }
 
+// === Subagent (`task` tool) builders ===
+
+/** OpenCode session id of the child session a scripted subagent runs in. */
+export const OC_CHILD_SESSION = 'ses_child0003';
+
+/** The `task` tool's finalized input, exactly as the sidecar records it. */
+export function taskToolInput(
+  description = 'survey the routes',
+  subagentType = 'explore'
+): Record<string, unknown> {
+  return {
+    prompt: 'Find every Express route and report the file paths.',
+    description,
+    subagent_type: subagentType,
+  };
+}
+
+/**
+ * The metadata the `task` tool attaches to its own tool part once it has
+ * created the subagent's child session (`{parentSessionId, sessionId, model}`).
+ */
+export function taskToolMetadata(
+  childSessionId = OC_CHILD_SESSION,
+  parentSessionId = OC_SESSION_A
+): Record<string, unknown> {
+  return {
+    parentSessionId,
+    sessionId: childSessionId,
+    model: { providerID: 'anthropic', modelID: 'claude-sonnet-4-5' },
+  };
+}
+
+/** Build a `task` tool part in the given state, optionally carrying metadata. */
+export function taskToolPart(
+  sessionID: string,
+  callID: string,
+  state: ToolState,
+  metadata?: Record<string, unknown>
+): ToolPart {
+  const withMetadata =
+    metadata === undefined || state.status === 'pending' ? state : { ...state, metadata };
+  return toolPart(sessionID, callID, 'task', withMetadata);
+}
+
 // === Message builders ===
 
 /** Build an assistant message; `completed: true` stamps `time.completed` + usage. */
@@ -400,6 +444,39 @@ export function opencodeToolTurn(sessionID: string): OpenCodeWireEvent[] {
       toolPart(sessionID, 'call_001', 'bash', toolStateCompleted(input, 'file1\nfile2\n'))
     ),
     partUpdated(textPart(sessionID, 'prt_text01', 'Two files.', { end: true })),
+    messageUpdated(assistantMessage(sessionID, { completed: true })),
+    statusEvent(sessionID, { type: 'idle' }),
+    sessionIdle(sessionID),
+  ];
+}
+
+/**
+ * A turn that delegates to a subagent: the `task` tool part opens, gains its
+ * child-session metadata, the CHILD session interleaves its own work (text,
+ * two tool calls and its own `session.idle`), then the task part completes and
+ * the parent turn finishes. Scripted from the v1.18.15 task tool's own
+ * execution order — create child session → publish `{parentSessionId,
+ * sessionId, model}` onto the tool part → prompt the child → complete.
+ */
+export function opencodeSubagentTurn(
+  sessionID: string,
+  childSessionID = OC_CHILD_SESSION
+): OpenCodeWireEvent[] {
+  const input = taskToolInput();
+  const metadata = taskToolMetadata(childSessionID, sessionID);
+  return [
+    statusEvent(sessionID, { type: 'busy' }),
+    partUpdated(taskToolPart(sessionID, 'call_task', toolStatePending(input))),
+    partUpdated(taskToolPart(sessionID, 'call_task', toolStateRunning(input))),
+    partUpdated(taskToolPart(sessionID, 'call_task', toolStateRunning(input), metadata)),
+    partUpdated(textPart(childSessionID, 'prt_child01', 'Working on it.', { end: true })),
+    partUpdated(toolPart(childSessionID, 'child_1', 'glob', toolStateRunning({ pattern: '*.ts' }))),
+    partUpdated(toolPart(childSessionID, 'child_2', 'read', toolStateCompleted({}, 'source'))),
+    sessionIdle(childSessionID),
+    partUpdated(
+      taskToolPart(sessionID, 'call_task', toolStateCompleted(input, '<task_result/>'), metadata)
+    ),
+    partUpdated(textPart(sessionID, 'prt_text01', 'The explorer found 3 routes.', { end: true })),
     messageUpdated(assistantMessage(sessionID, { completed: true })),
     statusEvent(sessionID, { type: 'idle' }),
     sessionIdle(sessionID),

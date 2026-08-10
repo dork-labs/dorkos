@@ -74,6 +74,7 @@ import {
   mapOpenCodeTurn,
   mapOpenCodeTodos,
   matchesOpenCodeSession,
+  matchesOpenCodeSubagentSession,
   type OpenCodeWireEvent,
 } from './event-mapper.js';
 import {
@@ -352,9 +353,12 @@ export class OpenCodeRuntime implements AgentRuntime {
     const subscription = this.hub.subscribe({
       cwd,
       onEvent: (event) => {
-        if (matchesOpenCodeSession(event, directory, ocSessionId)) {
-          queue.push(event.payload as OpenCodeWireEvent);
-        }
+        // The turn's own session, plus any child session a `task` tool part has
+        // revealed — that is how a subagent's activity reaches its parent card.
+        const admit =
+          matchesOpenCodeSession(event, directory, ocSessionId) ||
+          matchesOpenCodeSubagentSession(event, directory, ctx);
+        if (admit) queue.push(event.payload as OpenCodeWireEvent);
       },
       onStreamDrop: (error) => queue.fail(error),
     });
