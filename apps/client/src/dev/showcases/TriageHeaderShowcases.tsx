@@ -78,6 +78,26 @@ const ATTENTION: AttentionItem[] = [
 ];
 
 /**
+ * More than the header is allowed to be tall, so the scroll cue is on screen.
+ *
+ * The height cap is a viewport fraction, so the only way to make a demo overflow
+ * is to give it more than a screen of cards — six approvals and eight rows is
+ * the load the cap was written for, and a bad afternoon reaches it.
+ */
+const APPROVALS_OVERFLOWING: PendingApproval[] = Array.from({ length: 6 }, (_, i) => ({
+  ...APPROVALS[i % APPROVALS.length]!,
+  approvalId: `01JZ00000000000000000001${i}`,
+  requestedAt: minutesFromLoad(-2 - i * 4),
+  expiresAt: minutesFromLoad(90 - i * 7),
+}));
+
+const ATTENTION_OVERFLOWING: AttentionItem[] = Array.from({ length: 8 }, (_, i) => ({
+  ...ATTENTION[i % ATTENTION.length]!,
+  id: `overflow-${i}`,
+  timestamp: minutesFromLoad(-3 - i * 6),
+}));
+
+/**
  * The strip task 2.4 fills, stood in for so the seam is visible: anything in the
  * slot keeps the header on screen by itself, which is what lets an idle cockpit
  * still say who is working.
@@ -102,7 +122,7 @@ export function TriageHeaderShowcases() {
   return (
     <PlaygroundSection
       title="Pinned triage header"
-      description="What sits above the home feed and stays there while it scrolls — a band of its own between the room's masthead and the conversation, never inside it: the approvals waiting on a decision, and what broke. Nothing waiting and nothing wrong draws no header at all — no border, no 'all clear' card, nothing. Answers happen where the card is; the feed underneath never moves. On a phone it condenses to one line of counts while the composer holds the caret, because a software keyboard and this header cannot both have the screen."
+      description="What sits above the home feed and stays there while it scrolls — a band of its own between the room's masthead and the conversation, never inside it: the approvals waiting on a decision, and what broke. Nothing waiting and nothing wrong draws no header at all — no border, no 'all clear' card, nothing. Answers happen where the card is; the feed underneath never moves. It is capped at a fraction of the viewport and scrolls inside itself past that, with a fade over whichever edge still has cards behind it — and only while they are really there. On a phone it condenses to one line of counts while the composer holds the caret, because a software keyboard and this header cannot both have the screen."
     >
       <ShowcaseLabel>
         Quiet: zero DOM, not an empty box (the frame below is the demo&rsquo;s)
@@ -152,6 +172,20 @@ export function TriageHeaderShowcases() {
             onRetryApprovals={() => {}}
             attentionItems={ATTENTION}
             presence={{ occupied: true, node: <PresenceSlotStandIn /> }}
+          />
+        </div>
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>
+        More than fits: the fade over the edge that still has cards behind it (scroll it)
+      </ShowcaseLabel>
+      <ShowcaseDemo>
+        <div className="w-full">
+          <PinnedTriageHeaderView
+            approvals={APPROVALS_OVERFLOWING}
+            approvalsUnavailable={false}
+            onRetryApprovals={() => {}}
+            attentionItems={ATTENTION_OVERFLOWING}
           />
         </div>
       </ShowcaseDemo>

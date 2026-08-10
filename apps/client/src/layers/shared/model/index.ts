@@ -116,6 +116,7 @@ export {
   type ProfileDeepLink,
 } from './use-dialog-deep-link';
 export { useDeepLinkScroll } from './use-deep-link-scroll';
+export { useScrollOverflow, type ScrollOverflow } from './scroll/use-scroll-overflow';
 export { useSafeSearch, useSafeNavigate, useSafePathname, EMBED_PATHNAME } from './use-safe-router';
 export {
   useInPlaceNavigate,

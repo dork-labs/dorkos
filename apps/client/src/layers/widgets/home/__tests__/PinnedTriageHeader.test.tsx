@@ -7,7 +7,7 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { useEffect, useState } from 'react';
-import { act, render, screen, cleanup, waitFor } from '@testing-library/react';
+import { act, render, screen, cleanup, fireEvent, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -36,7 +36,7 @@ vi.mock('@/layers/shared/model', async (importOriginal) => {
 
 import { TransportProvider, useEventSubscription } from '@/layers/shared/model';
 import { PinnedTriageHeader } from '../ui/PinnedTriageHeader';
-import type { TriagePresenceSlot } from '../ui/PinnedTriageHeaderView';
+import { PinnedTriageHeaderView, type TriagePresenceSlot } from '../ui/PinnedTriageHeaderView';
 
 /** The header element itself, or `null` when it drew nothing at all. */
 function header(): HTMLElement | null {
@@ -46,6 +46,41 @@ function header(): HTMLElement | null {
 /** The condensed one-line bar, or `null` when the header is drawing in full. */
 function summaryBar(): HTMLElement | null {
   return document.querySelector('[data-slot="pinned-triage-summary"]');
+}
+
+/** The header's internal scroller — the box with the height cap on it. */
+function scroller(): HTMLElement | null {
+  return document.querySelector('[data-slot="pinned-triage-scroller"]');
+}
+
+/** The fade drawn over one edge, or `null` when nothing is behind that edge. */
+function fade(edge: 'top' | 'bottom'): HTMLElement | null {
+  return document.querySelector(`[data-slot="pinned-triage-fade-${edge}"]`);
+}
+
+/**
+ * Tell the scroller how tall it is, because jsdom lays nothing out.
+ *
+ * Every metric a cue turns on reads zero in this environment, so the geometry is
+ * stubbed and what is pinned here is the WIRING: the header asks its scroller,
+ * and draws the cue the answer calls for.
+ */
+function stubMetrics(
+  el: HTMLElement,
+  metrics: { scrollHeight: number; clientHeight: number; scrollTop?: number }
+) {
+  Object.defineProperty(el, 'scrollHeight', { value: metrics.scrollHeight, configurable: true });
+  Object.defineProperty(el, 'clientHeight', { value: metrics.clientHeight, configurable: true });
+  el.scrollTop = metrics.scrollTop ?? 0;
+}
+
+/** Stub the scroller's geometry and tell the header somebody scrolled. */
+function measureAs(
+  el: HTMLElement,
+  metrics: { scrollHeight: number; clientHeight: number; scrollTop?: number }
+) {
+  stubMetrics(el, metrics);
+  fireEvent.scroll(el);
 }
 
 /** What the header is currently saying to a screen reader. */
@@ -297,6 +332,147 @@ describe('PinnedTriageHeader while the composer has the caret', () => {
 
     expect(summaryBar()).toBeNull();
     expect(header()).toBeNull();
+  });
+});
+
+/**
+ * More waiting than the header is allowed to be tall (DOR-1043).
+ *
+ * At its height cap the header cuts the last card mid-row, and a cut-off card
+ * looks exactly like the end of the list — macOS draws no scrollbar until you
+ * have already scrolled, so nothing at all said there was more. The fix is a
+ * fade over whichever edge still has content behind it.
+ */
+describe('PinnedTriageHeader at its height cap', () => {
+  beforeEach(() => {
+    vi.mocked(useEventSubscription).mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.clearAllMocks();
+  });
+
+  it('says there is more below when the list is taller than the cap', async () => {
+    renderHeader({
+      listPendingApprovals: vi.fn().mockResolvedValue({ approvals: [buildApproval()] }),
+    });
+    await screen.findByText('Waiting On You');
+
+    act(() => {
+      measureAs(scroller()!, { scrollHeight: 900, clientHeight: 300, scrollTop: 0 });
+    });
+
+    expect(fade('bottom')).not.toBeNull();
+    // Nothing is hidden above yet, and a cue over content that is not there is
+    // worse than no cue (ADR 260725-004456).
+    expect(fade('top')).toBeNull();
+  });
+
+  it('draws no cue at all when everything already fits', async () => {
+    renderHeader({
+      listPendingApprovals: vi.fn().mockResolvedValue({ approvals: [buildApproval()] }),
+    });
+    await screen.findByText('Waiting On You');
+
+    act(() => {
+      measureAs(scroller()!, { scrollHeight: 300, clientHeight: 300 });
+    });
+
+    expect(fade('bottom')).toBeNull();
+    expect(fade('top')).toBeNull();
+  });
+
+  it('swaps the cue to the top edge once the list is scrolled to its end', async () => {
+    renderHeader({
+      listPendingApprovals: vi.fn().mockResolvedValue({ approvals: [buildApproval()] }),
+    });
+    await screen.findByText('Waiting On You');
+
+    act(() => {
+      measureAs(scroller()!, { scrollHeight: 900, clientHeight: 300, scrollTop: 600 });
+    });
+
+    expect(fade('bottom')).toBeNull();
+    expect(fade('top')).not.toBeNull();
+  });
+
+  it('keeps the cue out of the way of the cards it is drawn over', async () => {
+    renderHeader({
+      listPendingApprovals: vi.fn().mockResolvedValue({ approvals: [buildApproval()] }),
+    });
+    await screen.findByText('Waiting On You');
+
+    act(() => {
+      measureAs(scroller()!, { scrollHeight: 900, clientHeight: 300, scrollTop: 0 });
+    });
+
+    // Decoration only: it sits over an Allow button at the bottom edge, and a
+    // click landing on the gradient instead of the button would be the defect.
+    expect(fade('bottom')!.className).toContain('pointer-events-none');
+    expect(fade('bottom')!.getAttribute('aria-hidden')).toBe('true');
+  });
+
+  it('cues a list that GREW, with nobody scrolling', async () => {
+    // The ticket's real trigger: an approval lands over the event stream, the
+    // list gets longer, and no scroll event is fired because nobody touched it.
+    // Drawn from props here so the growth is a plain re-render.
+    function Host() {
+      const [count, setCount] = useState(1);
+      return (
+        <>
+          <button type="button" onClick={() => setCount(4)}>
+            grow
+          </button>
+          <PinnedTriageHeaderView
+            approvals={Array.from({ length: count }, (_, i) =>
+              buildApproval({ approvalId: `01JZ00000000000000000000${i}` })
+            )}
+            approvalsUnavailable={false}
+            onRetryApprovals={() => {}}
+            attentionItems={[]}
+          />
+        </>
+      );
+    }
+
+    render(
+      <QueryClientProvider
+        client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+      >
+        <TransportProvider transport={createMockTransport()}>
+          <Host />
+        </TransportProvider>
+      </QueryClientProvider>
+    );
+    await screen.findByText('Waiting On You');
+
+    act(() => {
+      measureAs(scroller()!, { scrollHeight: 300, clientHeight: 300 });
+    });
+    expect(fade('bottom')).toBeNull();
+
+    // The cards arrive, and the box they are in stays exactly the size it was.
+    stubMetrics(scroller()!, { scrollHeight: 900, clientHeight: 300 });
+    await userEvent.click(screen.getByRole('button', { name: 'grow' }));
+
+    expect(fade('bottom')).not.toBeNull();
+  });
+
+  it('has no scroller to cue while the header is condensed to one line', async () => {
+    // One line of counts cannot overflow, and a fade across it would be a
+    // smudge on the only thing there is to read.
+    viewport.mobile = true;
+    renderHeader(
+      { listPendingApprovals: vi.fn().mockResolvedValue({ approvals: [buildApproval()] }) },
+      { composerFocused: true }
+    );
+    await screen.findByText('1 waiting');
+
+    expect(scroller()).toBeNull();
+    expect(fade('bottom')).toBeNull();
+    expect(fade('top')).toBeNull();
+    viewport.mobile = false;
   });
 });
 
