@@ -11,6 +11,7 @@
  */
 import { useEffect, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
+import { useNavigate } from '@tanstack/react-router';
 import type { Session } from '@dorkos/shared/types';
 import { Button } from '@/layers/shared/ui';
 import { resolveAgentVisual } from '@/layers/entities/agent';
@@ -120,12 +121,20 @@ const SWITCHER_LIVE: { id: string; toolName: string; target: string }[] = [
  *
  * Seeded on mount and torn down on unmount, so leaving the page leaves no
  * phantom live sessions behind for the rest of the playground.
+ *
+ * **Metadata AND status, because the real stream sends both.** The chip counts
+ * only human-origin sessions, and origin lives on the metadata a
+ * `session_upserted` carries — so a fixture that set a status alone described a
+ * state production never produces (live, but of unknowable origin) and drew no
+ * chip at all. Upserting first is what the server does; the fixture now does it
+ * too.
  */
 export function useSwitcherFixture(): void {
   const queryClient = useQueryClient();
   useEffect(() => {
     queryClient.setQueryData(sessionKeys.list(SWITCHER_AGENT.path), SWITCHER_SESSIONS);
     const store = useSessionListStore.getState();
+    for (const session of SWITCHER_SESSIONS) store.upsertSession(session);
     for (const { id, toolName, target } of SWITCHER_LIVE) {
       store.setSessionStatus(
         id,
@@ -146,10 +155,52 @@ export function useSwitcherFixture(): void {
       );
     }
     return () => {
-      for (const { id } of SWITCHER_LIVE) useSessionListStore.getState().removeSession(id);
+      // `removeSession` drops the metadata, the status and the cwd together, so
+      // every session seeded above is swept whether or not it was ever live.
+      for (const { id } of SWITCHER_SESSIONS) useSessionListStore.getState().removeSession(id);
       queryClient.removeQueries({ queryKey: sessionKeys.list(SWITCHER_AGENT.path) });
     };
   }, [queryClient]);
+}
+
+/** The fixture session the showcase pretends is open, so the tag has a target. */
+const CURRENT_SESSION_ID = 'sw-live-2';
+
+/**
+ * Make one fixture session read as "the one you have open", so the showcase can
+ * actually demonstrate the `current` tag.
+ *
+ * The tag is not a prop — the switcher asks `useSessionId()`, which reads
+ * `?session=` off the router. The playground runs its OWN memory router
+ * (`DevPlayground`, `createMemoryHistory({ initialEntries: ['/dev'] })`), so a
+ * param typed into the browser's address bar never reaches it, and the required
+ * "current-session-tagged" state measured zero tagged rows.
+ *
+ * Writing the param into the playground's own router drives the REAL mechanism
+ * — URL → `useSessionId` → the tag — rather than adding a demo-only prop to the
+ * production component. It is scoped to while the dialog is open and unwound on
+ * close, so no other showcase ever sees a session it did not ask for.
+ *
+ * @param open - Whether the switcher is currently up.
+ */
+function useCurrentSessionInPlayground(open: boolean): void {
+  const navigate = useNavigate();
+  useEffect(() => {
+    // `useNavigate` is typed against the APP router — the one the `Register`
+    // interface declares — but inside the playground it resolves the dev memory
+    // router, whose root route validates no search at all. The two search shapes
+    // cannot be reconciled at the type level, so the reducer is cast. This is
+    // dev-only code and the cast is the whole of the compromise.
+    const navigateInPlayground = navigate as unknown as (options: {
+      search: (previous: Record<string, unknown>) => Record<string, unknown>;
+    }) => void;
+    navigateInPlayground({
+      search: (previous) => ({
+        ...previous,
+        session: open ? CURRENT_SESSION_ID : undefined,
+      }),
+    });
+  }, [open, navigate]);
 }
 
 /**
@@ -164,6 +215,7 @@ export function SessionSwitcherShowcase() {
   const [open, setOpen] = useState(false);
   const [lastAction, setLastAction] = useState<string | null>(null);
   useSwitcherFixture();
+  useCurrentSessionInPlayground(open);
 
   return (
     <PlaygroundSection

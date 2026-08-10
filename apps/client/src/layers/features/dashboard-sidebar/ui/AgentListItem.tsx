@@ -215,9 +215,26 @@ export function AgentListItem({
         // sitting exactly over the space the trailing slot reserved. The row is a
         // real `<button>` and a `<button>` inside one is invalid HTML that
         // assistive tech announces unpredictably, so the chip cannot live in the
-        // trailing slot it is measured by. `right-7` is the row's own `pr-7`
-        // kebab gutter spelled as a position, so the chip lands where its
-        // reservation is and clears the "⋮".
+        // trailing slot it is measured by.
+        //
+        // **`right-2`, matching the row's MEASURED padding, not its source.**
+        // `sidebar-row.tsx` writes `cn('… pr-7 …', SIDEBAR_ROW_INSET)` with
+        // `SIDEBAR_ROW_INSET = 'px-2'`, and tailwind-merge resolves that to
+        // `px-2` — the `pr-7` never reaches the DOM. Positioning at `right-7`
+        // against a gutter that is really 8px put the chip 20px left of the
+        // space the trailing slot reserved, painting it over the truncated agent
+        // name. Measured, not assumed; a test pins the two together.
+        //
+        // **Known limitation, and it belongs to the slot rather than to this
+        // call site**: `{expansion}` is a sibling of the drag wrapper, so this
+        // satellite does not ride the drag transform (dragging an agent leaves
+        // the chip behind at full opacity), sits outside `SidebarMenuSurface`
+        // (no context menu of its own), and lands after the "⋮" in tab order.
+        // `SidebarRow` has no trailing-action slot; the fix is a
+        // `trailingAction` twin of `glyphAction` (DOR-1111), over the `cn()`
+        // merge-order bug that ate the `pr-7` above (DOR-1115). Both live in a
+        // file this task does not own, and a workaround here would only hide
+        // the seam rather than close it.
         {...(showChip
           ? {
               expansion: (
@@ -225,7 +242,7 @@ export function AgentListItem({
                   type="button"
                   aria-label={`${liveCount} live sessions — open the session switcher for ${displayName}`}
                   onClick={openSwitcher}
-                  className="focus-ring absolute top-1/2 right-7 -translate-y-1/2 cursor-pointer rounded-full transition-[scale] active:scale-[0.94]"
+                  className="focus-ring absolute top-1/2 right-2 -translate-y-1/2 cursor-pointer rounded-full transition-[scale] active:scale-[0.94]"
                 >
                   <LiveSessionsChip count={liveCount} />
                 </button>

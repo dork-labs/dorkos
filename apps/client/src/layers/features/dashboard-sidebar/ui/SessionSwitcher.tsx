@@ -269,7 +269,11 @@ export function SessionSwitcher({
   return (
     <ResponsiveDialog open={open} onOpenChange={onOpenChange}>
       <ResponsiveDialogContent
-        className="max-w-[420px] gap-0 p-0 sm:max-w-[420px]"
+        // `min-h-0` overrides `ResponsiveDialogContent`'s own `min-h-[50vh]`,
+        // which is right for a form and wrong for a list: an agent with no
+        // conversations rendered a 420×450 box holding one sentence. The surface
+        // is as tall as what it has to say.
+        className="min-h-0 max-w-[420px] gap-0 p-0 sm:max-w-[420px]"
         aria-label={`${agentName} sessions`}
         onKeyDown={handleKeyDown}
       >

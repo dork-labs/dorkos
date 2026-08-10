@@ -29,8 +29,7 @@ export { AgentListItem } from './ui/AgentListItem';
 // Where an agent's depth lives (BC-35). Exported because the command palette
 // renders it too — a sibling feature composing this one's UI, which is the one
 // cross-feature import the layer rules allow.
-export { SessionSwitcher, SWITCHER_ROW_SLOT } from './ui/SessionSwitcher';
-export type { SessionSwitcherProps } from './ui/SessionSwitcher';
+export { SessionSwitcher } from './ui/SessionSwitcher';
 export { AgentActivityBadge } from './ui/AgentActivityBadge';
 export { AgentOnboardingCard } from './ui/AgentOnboardingCard';
 export { GroupCreateInput } from './ui/GroupCreateInput';

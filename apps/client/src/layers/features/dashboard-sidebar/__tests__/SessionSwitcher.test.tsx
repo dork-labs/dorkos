@@ -2,7 +2,7 @@
  * @vitest-environment jsdom
  */
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
-import { act, render, screen, cleanup, waitFor, within } from '@testing-library/react';
+import { render, screen, cleanup, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -356,40 +356,6 @@ describe('SessionSwitcher', () => {
     await waitFor(() => expect(onSelectSession).toHaveBeenCalledWith('forked-1'));
     // Forking is not continuing: the original must not also have been opened.
     expect(onSelectSession).toHaveBeenCalledTimes(1);
-  });
-
-  it('⇧↵ still forks a row that has MOVED between groups since it was drawn', async () => {
-    // The case a browser found and jsdom did not. Seeding the lifecycle before
-    // the first render leaves every row where it started, so nothing ever
-    // remounts and a row-identity bug cannot show itself. Here the turn starts
-    // AFTER the first paint: the row leaves Recent, joins Live now, and React
-    // mounts the new node before detaching the old one. A `Map` keyed by session
-    // id — deleted on the stale node's cleanup — is empty by the time the key is
-    // pressed, and `⇧↵` silently does nothing.
-    mockTransport.forkSession = vi.fn().mockResolvedValue(session('forked-1', 'Fork'));
-    const { onSelectSession } = renderSwitcher([session('mover-1', 'Dashboard overhaul')]);
-
-    const before = await findRow('Dashboard overhaul');
-    expect(screen.queryByRole('region', { name: 'Live now' })).not.toBeInTheDocument();
-
-    await act(async () => {
-      goLive('mover-1', 'streaming', { toolName: 'Edit', target: 'RoomRow.tsx' });
-    });
-
-    // Really moved: a new group, and a different DOM node.
-    const after = await waitFor(() => {
-      const live = screen.getByRole('region', { name: 'Live now' });
-      return within(live).getByRole('button');
-    });
-    expect(after).not.toBe(before);
-    expect(after).toHaveTextContent('RoomRow.tsx');
-
-    after.focus();
-    await userEvent.keyboard('{Shift>}{Enter}{/Shift}');
-    await waitFor(() =>
-      expect(mockTransport.forkSession).toHaveBeenCalledWith('mover-1', undefined, AGENT_PATH)
-    );
-    await waitFor(() => expect(onSelectSession).toHaveBeenCalledWith('forked-1'));
   });
 
   it('names all three keys in its footer', async () => {

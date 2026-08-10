@@ -213,7 +213,7 @@ function AgentListItemShowcase() {
       title="AgentListItem"
       description="One agent in the roster. Clicking it opens the conversation you were having — it never unfolds (BC-34). When two or more of its sessions are live, a 'N live' chip appears and opens the session switcher."
     >
-      <ShowcaseLabel>Interactive demo — the first agent has two live sessions</ShowcaseLabel>
+      <ShowcaseLabel>Interactive demo — the first agent has three live sessions</ShowcaseLabel>
       <ShowcaseDemo>
         <SidebarShell>
           {MOCK_AGENTS.map(({ path, agent, displayName }) => (

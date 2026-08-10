@@ -581,11 +581,20 @@ export function CommandPaletteDialog() {
                           setRightPanelOpen(true);
                           closePalette();
                         }}
-                        onBrowseSessions={() => {
-                          setSwitcherAgent(subMenuAgent);
-                          recordUsage(subMenuAgent.id);
-                          closePalette();
-                        }}
+                        // Offered only when there is something to browse. The
+                        // count is already in hand here, and a row that opens a
+                        // dialog saying "no conversations yet" is a dead end
+                        // dressed as a destination — "New Session" above it is
+                        // what that operator actually wants.
+                        onBrowseSessions={
+                          previewData.sessionCount > 0
+                            ? () => {
+                                setSwitcherAgent(subMenuAgent);
+                                recordUsage(subMenuAgent.id);
+                                closePalette();
+                              }
+                            : undefined
+                        }
                         recentSessions={previewData.recentSessions}
                         // The AGENT's directory, not the one on screen: the
                         // durable stream resolves a session's history from

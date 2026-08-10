@@ -39,8 +39,11 @@ interface AgentSubMenuProps {
    * The three rows below cap out at the agent's three newest sessions and can
    * say nothing about what any of them is doing. This row is where the rest of
    * them live, grouped by whether they are live, each with its verb.
+   *
+   * Omitted for an agent with no sessions: the row is left out entirely rather
+   * than opening a switcher that has nothing to show.
    */
-  onBrowseSessions: () => void;
+  onBrowseSessions?: () => void;
   /** Open agent settings dialog */
   onEditSettings: () => void;
   /** Recent sessions for this agent (max 3) */
@@ -101,10 +104,12 @@ export function AgentSubMenu({
           <Plus className="size-4" />
           <span>New Session</span>
         </CommandItem>
-        <CommandItem value="browse-sessions" onSelect={onBrowseSessions}>
-          <Layers className="size-4" />
-          <span>Browse sessions…</span>
-        </CommandItem>
+        {onBrowseSessions && (
+          <CommandItem value="browse-sessions" onSelect={onBrowseSessions}>
+            <Layers className="size-4" />
+            <span>Browse sessions…</span>
+          </CommandItem>
+        )}
         <CommandItem value="edit-settings" onSelect={onEditSettings}>
           <Settings className="size-4" />
           <span>Edit {getAgentDisplayName(agent)} Settings</span>
