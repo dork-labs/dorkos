@@ -383,17 +383,29 @@ const MAX_LIVE_TURN_EVENTS = 200;
  * single window over budget on its own is left alone — there is nothing to drop
  * that would not be a lie.
  *
+ * The oldest window does NOT always start at index 0: a retained sign-in card
+ * sits ahead of it (`retainOpenSigninCards`, and the same card is why the trim
+ * puts one back). Finding the first `turn_start` before looking for the next is
+ * what makes the cut land a whole window later than that card, rather than on
+ * the card itself — cutting there dropped nothing, and the cap silently stopped
+ * applying for the rest of the session (DOR-1107).
+ *
  * @param events - The live turn, possibly spanning several windows.
  */
 function boundLiveTurn(events: SessionEvent[]): SessionEvent[] {
   let kept = events;
   while (kept.length > MAX_LIVE_TURN_EVENTS) {
-    const nextWindow = kept.findIndex((event, index) => index > 0 && event.type === 'turn_start');
+    const oldestWindow = kept.findIndex((event) => event.type === 'turn_start');
+    if (oldestWindow === -1) break;
+    const nextWindow = kept.findIndex(
+      (event, index) => index > oldestWindow && event.type === 'turn_start'
+    );
+    // Nothing but the oldest window left: over budget on its own, and dropping
+    // part of it would render a reply starting mid-sentence.
     if (nextWindow === -1) break;
+    // Always strictly shorter — the dropped prefix holds that `turn_start`, and
+    // only sign-in cards come back — so the loop cannot spin.
     kept = [...retainOpenSigninCards(kept.slice(0, nextWindow)), ...kept.slice(nextWindow)];
-    // A window of sign-in cards alone cannot shrink further; stop rather than spin.
-    if (kept.length === events.length) break;
-    events = kept;
   }
   return kept;
 }
