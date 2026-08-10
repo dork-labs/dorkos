@@ -153,8 +153,15 @@ const props = {
   syncConnectionState: 'connected' as const,
 };
 
-/** A hydrated session with `n` children the server counts as still running. */
-function snapshotWithChildren(n: number, inProgressTurn: SessionSnapshot['inProgressTurn'] = null) {
+/**
+ * A hydrated session with `n` children the server counts as still running, in
+ * whatever lifecycle the case is about.
+ */
+function snapshotWithChildren(
+  n: number,
+  lifecycle: SessionSnapshot['status']['lifecycle'] = 'idle',
+  inProgressTurn: SessionSnapshot['inProgressTurn'] = null
+) {
   return {
     messages: [],
     inProgressTurn,
@@ -167,7 +174,7 @@ function snapshotWithChildren(n: number, inProgressTurn: SessionSnapshot['inProg
       permissionMode: 'default',
       todoCounts: null,
       runningSubagentCount: n,
-      lifecycle: 'idle',
+      lifecycle,
       lastError: null,
     },
     pendingInteractions: [],
@@ -194,7 +201,7 @@ describe('ChatStatusSection — background tasks outliving their turn', () => {
 
     render(<ChatStatusSection {...props} />);
 
-    expect(screen.getByLabelText('2 background tasks still running')).toBeInTheDocument();
+    expect(screen.getByLabelText('2 subagents running')).toBeInTheDocument();
     expect(
       screen.getByText(
         'Still working in the background. The agent picks up again when they finish.'
@@ -224,7 +231,7 @@ describe('ChatStatusSection — background tasks outliving their turn', () => {
     render(<ChatStatusSection {...props} />);
 
     expect(useSessionStreamStore.getState().sessions['session-1']?.inProgressTurn).toEqual([]);
-    expect(screen.getByLabelText('1 background task still running')).toBeInTheDocument();
+    expect(screen.getByLabelText('1 subagent running')).toBeInTheDocument();
   });
 
   it('draws no subagent item at all when nothing is running', () => {
@@ -234,14 +241,16 @@ describe('ChatStatusSection — background tasks outliving their turn', () => {
 
     render(<ChatStatusSection {...props} />);
 
-    expect(screen.queryByText(/background task/i)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/subagent/)).not.toBeInTheDocument();
   });
 
   // While the agent is talking the same count is ordinary delegation, and the
   // line stays quiet about it.
   it('does not explain the wait while the agent is streaming', () => {
     act(() => {
-      useSessionStreamStore.getState().applySnapshot('session-1', snapshotWithChildren(1));
+      useSessionStreamStore
+        .getState()
+        .applySnapshot('session-1', snapshotWithChildren(1, 'streaming'));
     });
 
     render(<ChatStatusSection {...props} isStreaming />);
@@ -249,4 +258,25 @@ describe('ChatStatusSection — background tasks outliving their turn', () => {
     expect(screen.getByLabelText('1 subagent running')).toBeInTheDocument();
     expect(screen.queryByText(/Still working in the background/)).not.toBeInTheDocument();
   });
+
+  // The sentence promises the agent picks up again when the children finish,
+  // and that is only true of an IDLE session. These three are the states where
+  // it would be a lie, and `isStreaming` collapses all of them into "not
+  // streaming" — which is why the gate reads the projected lifecycle instead.
+  for (const lifecycle of ['blocked', 'error', 'interrupted'] as const) {
+    it(`does not promise a pick-up while the session is ${lifecycle}`, () => {
+      act(() => {
+        useSessionStreamStore
+          .getState()
+          .applySnapshot('session-1', snapshotWithChildren(2, lifecycle));
+      });
+
+      render(<ChatStatusSection {...props} />);
+
+      // The count is still honest — those children really are running…
+      expect(screen.getByLabelText('2 subagents running')).toBeInTheDocument();
+      // …but nothing claims the agent is about to carry on.
+      expect(screen.queryByText(/Still working in the background/)).not.toBeInTheDocument();
+    });
+  }
 });

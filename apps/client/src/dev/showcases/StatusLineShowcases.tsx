@@ -35,6 +35,7 @@ import {
   DEGRADED_ON_DEFAULT,
   DELEGATING,
   HEALTHY,
+  WAITING_ON_BACKGROUND_TASKS,
   RATE_LIMITED,
   SAMPLED_WIDTHS,
   TIER_WIDTHS,
@@ -269,6 +270,7 @@ export function StatusLineShowcases() {
         <ShowcaseLabel>At rest — clean tree, connected, default permissions</ShowcaseLabel>
         <ShowcaseDemo className="overflow-x-auto">
           <BudgetedLine scenario={HEALTHY} width={640} />
+          <BudgetedLine scenario={WAITING_ON_BACKGROUND_TASKS} width={640} />
         </ShowcaseDemo>
 
         <ShowcaseLabel>Under stress — same width, everything wrong</ShowcaseLabel>

@@ -589,7 +589,26 @@ export const SessionEventSchema = z
     // content must ride the stream or the reconstructed history would hold
     // answers with no questions. Optional: externally-driven turns (e.g. the
     // Claude CLI appending JSONL) have no DorkOS-observed trigger.
-    z.object({ ...seqShape, type: z.literal('turn_start'), userMessage: z.string().optional() }),
+    z.object({
+      ...seqShape,
+      type: z.literal('turn_start'),
+      userMessage: z.string().optional(),
+      /**
+       * Who opened this turn window. `'runtime'` means NOBODY asked for it: the
+       * runtime started talking again on its own — a background task finished
+       * and woke the agent (DOR-1100), or (once the persistent pump lands) a
+       * `result` arrived that answers no dispatch. Absent means the ordinary
+       * case, a turn a person or a caller triggered.
+       *
+       * It is load-bearing, not decoration. A window nobody asked for must not
+       * spend a sign-in card's one turn of grace, must not sound the
+       * turn-finished notification a second time for one request, and must not
+       * blank the reply the previous window just produced. Every one of those
+       * rules keys off this field, on the server and the client alike, so the
+       * two projections cannot disagree about which turns were asked for.
+       */
+      origin: z.enum(['user', 'runtime']).optional(),
+    }),
     // The end of an assistant turn.
     z.object({
       ...seqShape,

@@ -428,6 +428,33 @@ export const DELEGATING: StatusScenario = {
 };
 
 /**
+ * A session that has stopped talking while its background tasks have not
+ * (DOR-1100).
+ *
+ * The one state where the same count means something different: `idle` with
+ * children still running is why a session can look finished and not be, so the
+ * item keeps its slot and its tooltip explains the wait. Built from HEALTHY —
+ * nothing else about this session is news, which is the point: the subagents
+ * item is the only thing that promotes.
+ */
+export const WAITING_ON_BACKGROUND_TASKS: StatusScenario = {
+  label: 'Idle, but its background tasks are still running',
+  ctx: { ...HEALTHY.ctx, subagentsInFlight: RUNNING_SUBAGENTS.length },
+  input: {
+    ...HEALTHY.input,
+    sessionId: 'showcase-waiting-on-background-tasks',
+    runningSubagents: RUNNING_SUBAGENTS,
+    liveSubagentCount: RUNNING_SUBAGENTS.length,
+    waitingOnSubagents: true,
+  },
+  diagnostics: {
+    ...HEALTHY.diagnostics,
+    activeSubagents: RUNNING_SUBAGENTS,
+    runningSubagentCount: RUNNING_SUBAGENTS.length,
+  },
+};
+
+/**
  * One bar width per density tier, widest first: each tier at its floor from
  * `status-budget` (640 / 440 / 340), plus 320 for `avatar`, which has no floor.
  *

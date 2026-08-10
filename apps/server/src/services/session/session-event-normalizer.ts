@@ -587,24 +587,41 @@ function readTerminalReason(event: StreamEvent): TerminalReason | undefined {
  * window puts the continuation back on screen, back in the lifecycle, and back
  * in history.
  *
- * ## Why exactly these five, and why nothing else
+ * ## Why exactly these three, and why nothing else
  *
- * Only events that are the AGENT ITSELF PRODUCING WORK reopen: prose, reasoning,
- * a tool starting, a tool's output, a tool's progress. Everything else that can
- * follow a `done` is bookkeeping ABOUT a turn rather than a turn, and would
- * manufacture a window that nothing ever fills — a ghost window, which costs a
- * `turn_start`/`turn_end` pair on the durable stream, a spurious `streaming`
- * flicker, and an empty persisted turn, on EVERY normal turn.
+ * The line is THE MODEL SPEAKING AGAIN — new prose, new reasoning, a new tool
+ * call — and nothing else. It is deliberately narrower than "content", because
+ * plenty of ordinary content-shaped traffic trails a `result` in a turn that is
+ * genuinely over, and reopening on any of it would manufacture a window nothing
+ * ever fills: a ghost window, costing a `turn_start`/`turn_end` pair on the
+ * durable stream, a spurious `streaming` flicker, and an empty persisted turn,
+ * on turns that were perfectly normal.
  *
- * That risk is why the set is drawn from what actually trails a `result` today:
+ * `tool_result` and `tool_progress` are the two that look like they belong here
+ * and do not. All four of these post-`done` shapes were reproduced through the
+ * real mappers:
+ *
+ * | Trailing SDK message                                   | Maps to          |
+ * | ------------------------------------------------------ | ---------------- |
+ * | `user` carrying the CLI's interrupt sentinel           | `tool_result`    |
+ * | `tool_use_summary` for a tool that was in flight       | `tool_result`    |
+ * | `stream_event` `content_block_stop` of a live tool     | `tool_result`    |
+ * | `tool_progress` from a long-running tool               | `tool_progress`  |
+ *
+ * The first is pinned on `main` by `message-sender-phantom-cancellation.test.ts`
+ * ("surfaces but does NOT steer a phantom arriving after the result message"),
+ * and `message-sender`'s own `sawResult` guard exists precisely because that
+ * ordering is real. All four are a tool call that was already running when the
+ * `result` landed, reporting in afterwards — the turn settling, not restarting.
+ *
+ * The rest are bookkeeping ABOUT a turn rather than a turn:
  *
  * - **`status_change`** — `mapResultEvent` emits the terminal `session_status`
  *   BEFORE `done`, but a `rate_limit_event` can land after it, and the projector
- *   merges it into the held status either way. Pure bookkeeping.
+ *   merges it into the held status either way.
  * - **`system_status`** — the phantom-cancellation notice (DOR-1087) is yielded
- *   deliberately AFTER its message's mapped events, so it is the one thing
- *   guaranteed to be able to trail a terminal `done`. It is an operator note,
- *   not work.
+ *   deliberately AFTER its message's mapped events, so it is guaranteed to be
+ *   able to trail a terminal `done`. An operator note, not work.
  * - **`subagent_update`** — a background child starting, reporting, or finishing
  *   is precisely the "idle, but children are still live" state; the projector's
  *   `runningSubagentCount` carries it, and drawing a turn around it would claim
@@ -613,21 +630,20 @@ function readTerminalReason(event: StreamEvent): TerminalReason | undefined {
  *   on purpose ("nothing may follow done"). One arriving after is a stream-death
  *   artifact, and wrapping it in a fresh window would invent a turn that failed.
  * - Todo/hook/memory/compaction/interaction/sign-in/UI-command members are all
- *   either bookkeeping or a card, and none of them is the agent speaking.
+ *   either bookkeeping or a card, and none of them is the model talking.
  *
- * Net effect on a normal claude-code turn: every content event precedes the SDK
- * `result`, and `result` maps to `session_status → context_usage → [error] →
- * done` with `done` last, so nothing in this set can follow it and the turn
- * yields exactly one window. Pinned by the "no ghost window on a normal turn"
- * test, which builds its stream from `mapResultEvent`'s real output rather than
- * a hand-written guess at it.
+ * The narrowing costs nothing against the incident this exists for: a genuine
+ * wake-up is the agent REACTING to a notification, which starts with reasoning,
+ * prose, or a fresh tool call — all three still here. And a `tool_call` can only
+ * reach this set via a `stream_event` `content_block_start`, which is the model
+ * opening a new tool call; the `assistant`-message arm emits `tool_call_delta`
+ * only as INPUT BACKFILL for an id `toolState` already knows, so it can never be
+ * the first event to reopen.
  */
 export const TURN_REOPENING_EVENT_TYPES: ReadonlySet<RawSessionEvent['type']> = new Set([
   'text_delta',
   'thinking_delta',
   'tool_call',
-  'tool_result',
-  'tool_progress',
 ]);
 
 /**
@@ -724,8 +740,12 @@ export async function feedProjector(
     turnOpen = true;
     terminalReason = undefined;
     sawError = false;
-    // No `userMessage`: nobody typed this one. The agent woke itself up.
-    projector.ingest({ type: 'turn_start' });
+    // `origin: 'runtime'` and no `userMessage`: nobody asked for this one, the
+    // agent woke itself up. Both projections read that field to keep a window
+    // nobody asked for from spending a sign-in card's grace, sounding the
+    // turn-finished notification twice, or blanking the reply just produced.
+    const reopened: RawOf<'turn_start'> = { type: 'turn_start', origin: 'runtime' };
+    projector.ingest(reopened);
   };
   try {
     for await (const event of events) {
@@ -744,6 +764,32 @@ export async function feedProjector(
       if (raw !== null) projector.ingest(raw);
     }
   } finally {
+    // The end of the stream is the end of the runtime's process, so anything it
+    // still reports as running is gone with it. Retire each stranded child with
+    // a terminal `subagent_update` BEFORE the close, so the stops ride inside
+    // the last window (persisted with it), every consumer drains through the
+    // same event it would have drained through anyway, and the turn settles
+    // with an honest zero.
+    //
+    // The stream, not the turn, is the right boundary — verified in the
+    // claude-code runtime rather than assumed. `executeSdkQuery` releases stdin
+    // at the `result` and keeps reading, so the subprocess stays alive exactly
+    // as long as it has queued background work to drain; that is what lets a
+    // finished task wake the agent for another window in the first place. When
+    // the iterator finally ends the process is gone, and no `task_notification`
+    // can ever follow. The same holds for the paths that end a stream early — a
+    // stop escalating to `query.close()`, a crash, an abandoned generator —
+    // which is why this is one sweep at the end rather than a special case per
+    // terminal reason. Without it the count is a permanent on-screen lie:
+    // nothing else would ever clear it.
+    for (const taskId of projector.listRunningSubagents()) {
+      const stopped: RawOf<'subagent_update'> = {
+        type: 'subagent_update',
+        taskId,
+        status: 'stopped',
+      };
+      projector.ingest(stopped);
+    }
     // Defensive: a stream that ends with a window still open — no `done` at all,
     // or a reopened continuation the runtime never terminated — still closes it
     // so the projection does not stay `streaming` forever.

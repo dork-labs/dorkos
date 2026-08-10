@@ -51,10 +51,17 @@ export function useTurnEndReconcile({
   const sessionIdRef = useRef(sessionId);
   const selectedCwdRef = useRef(selectedCwd);
   const onStreamingDoneRef = useRef(onStreamingDone);
+  // Who opened the window that is settling (DOR-1100). A ref, not a dep: it must
+  // colour the settle effect without re-running it. Synced in this effect —
+  // declared BEFORE the settle effect, so it always holds the current value by
+  // the time that one reads it — rather than during render, which the
+  // refs-during-render rule rightly refuses.
+  const turnOriginRef = useRef(streamState.turnOrigin);
   useEffect(() => {
     sessionIdRef.current = sessionId;
     selectedCwdRef.current = selectedCwd;
     onStreamingDoneRef.current = onStreamingDone;
+    turnOriginRef.current = streamState.turnOrigin;
   });
 
   // Previous lifecycle per session — detect the streaming → settled edge once.
@@ -170,6 +177,16 @@ export function useTurnEndReconcile({
     // effects) — invalidate so useTaskState reloads it (CLI-B4).
     void queryClient.invalidateQueries({ queryKey: ['tasks', reloadId] });
 
-    onStreamingDoneRef.current?.();
+    // The notification answers a REQUEST — "the thing you asked for is done" —
+    // so a window nobody asked for does not sound it (DOR-1100). A background
+    // task finishing wakes the agent for another window milliseconds after the
+    // first one closed, and without this the person is pinged twice for one
+    // message. The history reload above deliberately still runs for both: the
+    // second one is what folds the continuation into canonical history.
+    //
+    // The cost, stated plainly: the ping lands when the turn the person sent
+    // finishes, not when the wake-up work finishes. That is the honest reading
+    // of what the sound has always meant, and it is the quieter of the two.
+    if (turnOriginRef.current !== 'runtime') onStreamingDoneRef.current?.();
   }, [sessionId, lifecycle, hydrationGeneration, transport, queryClient]);
 }

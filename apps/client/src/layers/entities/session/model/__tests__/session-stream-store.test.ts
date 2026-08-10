@@ -1054,3 +1054,68 @@ describe('useSessionStreamStore — live background children', () => {
     expect(store.getState().sessions[SID]?.status?.runningSubagentCount).toBe(1);
   });
 });
+
+// A turn window the RUNTIME opened (DOR-1100) — the agent waking itself up when
+// a background task finished — is not the same thing as the person sending the
+// next message, and the projection must not treat it as one.
+describe('useSessionStreamStore — runtime-opened turn windows', () => {
+  const store = useSessionStreamStore;
+
+  beforeEach(() => {
+    store.setState({ sessions: {}, sessionAccessOrder: [], pinnedSessionId: null });
+  });
+
+  // The failure this replaces: the CLI drains its queued notification within
+  // milliseconds, so the reopen routinely beats the turn-end history reload.
+  // Resetting the turn there blanked the reply the agent had just written.
+  it('keeps the finished window’s events on screen when the agent wakes itself', () => {
+    store.getState().applySnapshot(SID, snapshot({ cursor: 0 }));
+    store.getState().applyEvent(SID, { type: 'turn_start', seq: 1 });
+    store.getState().applyEvent(SID, { type: 'text_delta', seq: 2, text: 'here is the answer' });
+    store.getState().applyEvent(SID, { type: 'turn_end', seq: 3 });
+    store.getState().applyEvent(SID, { type: 'turn_start', seq: 4, origin: 'runtime' });
+    store.getState().applyEvent(SID, { type: 'text_delta', seq: 5, text: 'and one more thing' });
+
+    // `turn_end` itself is never pushed onto the turn (server parity), so the
+    // preserved shape is the finished window's CONTENT followed by the new
+    // window's — which is exactly what stays on screen.
+    expect(store.getState().sessions[SID]?.inProgressTurn.map((e) => e.type)).toEqual([
+      'turn_start',
+      'text_delta',
+      'turn_start',
+      'text_delta',
+    ]);
+    expect(
+      store.getState().sessions[SID]?.inProgressTurn.find((e) => e.type === 'text_delta')
+    ).toMatchObject({ text: 'here is the answer' });
+    expect(store.getState().sessions[SID]?.status?.lifecycle).toBe('streaming');
+  });
+
+  // A turn the PERSON sends still resets: by then the settled turn has long
+  // since been reloaded into canonical history, so keeping it would double it.
+  it('still resets the turn when a person sends the next message', () => {
+    store.getState().applySnapshot(SID, snapshot({ cursor: 0 }));
+    store.getState().applyEvent(SID, { type: 'turn_start', seq: 1 });
+    store.getState().applyEvent(SID, { type: 'text_delta', seq: 2, text: 'first' });
+    store.getState().applyEvent(SID, { type: 'turn_end', seq: 3 });
+    store.getState().applyEvent(SID, { type: 'turn_start', seq: 4, userMessage: 'again please' });
+
+    expect(store.getState().sessions[SID]?.inProgressTurn.map((e) => e.type)).toEqual([
+      'turn_start',
+    ]);
+  });
+
+  it('records who opened the window so the settle handler can tell them apart', () => {
+    store.getState().applySnapshot(SID, snapshot({ cursor: 0 }));
+    store.getState().applyEvent(SID, { type: 'turn_start', seq: 1 });
+    expect(store.getState().sessions[SID]?.turnOrigin).toBe('user');
+
+    store.getState().applyEvent(SID, { type: 'turn_end', seq: 2 });
+    // Survives turn_end: the settle handler runs after it and needs to know
+    // what just settled.
+    expect(store.getState().sessions[SID]?.turnOrigin).toBe('user');
+
+    store.getState().applyEvent(SID, { type: 'turn_start', seq: 3, origin: 'runtime' });
+    expect(store.getState().sessions[SID]?.turnOrigin).toBe('runtime');
+  });
+});

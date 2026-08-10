@@ -477,7 +477,14 @@ export function ChatStatusSection({
     supportsCostTracking: activeCaps?.supportsCostTracking ?? true,
     runningSubagents,
     liveSubagentCount,
-    waitingOnSubagents: !isStreaming,
+    // `lifecycle === 'idle'`, never `!isStreaming`. The sentence this gates
+    // promises the agent picks up again when the children finish, and that is
+    // only true of an idle session: a `blocked` one is waiting on the OPERATOR
+    // and will not move whatever the children do, and an `error`/`interrupted`
+    // one is not going to pick anything up at all. `isStreaming` collapses all
+    // three into "not streaming" (see `renderedStatusFrom`), so the raw
+    // projected lifecycle is the only input that can tell them apart.
+    waitingOnSubagents: diagnostics.lifecycle === 'idle',
     connectionState: syncConnectionState,
     density: budget.density,
   });

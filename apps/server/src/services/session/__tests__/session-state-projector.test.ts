@@ -185,6 +185,23 @@ describe('SessionStateProjector', () => {
     expect(p.getStatus().lifecycle).toBe('idle');
   });
 
+  // Eviction tears a session down without ever running a stream's `finally`, so
+  // the stranding sweep never fires there. A count left standing would report
+  // live work for a session that no longer exists (DOR-1100).
+  it('retires running children when a turn is marked interrupted', () => {
+    const p = new SessionStateProjector('bg-4');
+    p.ingest({ type: 'turn_start' } as RawSessionEvent);
+    p.ingest({ type: 'subagent_update', taskId: 'bt1', status: 'running' } as RawSessionEvent);
+    p.ingest({ type: 'subagent_update', taskId: 'bt2', status: 'running' } as RawSessionEvent);
+    expect(p.getStatus().runningSubagentCount).toBe(2);
+
+    p.markInterrupted();
+
+    expect(p.getStatus().lifecycle).toBe('interrupted');
+    expect(p.getStatus().runningSubagentCount).toBe(0);
+    expect(p.listRunningSubagents()).toEqual([]);
+  });
+
   // A reopened window (DOR-1100) is a real turn as far as the projection is
   // concerned: it streams, it clears the previous failure, and it does not
   // disturb the children still running underneath it.
@@ -1331,6 +1348,36 @@ describe('in-conversation MCP sign-in card (DOR-1004)', () => {
       outcome: 'connected',
       toolCount: 7,
     });
+  });
+
+  it('does not spend the grace on a window nobody asked for', async () => {
+    // A wake-up (DOR-1100) fires milliseconds after the turn closes and nobody
+    // asked for it, so it is not "the conversation moved on" — spending the
+    // grace on it would erase the card just as the person got back from their
+    // browser, which is the exact failure the grace exists to prevent.
+    const p = new SessionStateProjector('s1');
+    signinTurn(p);
+    p.ingest({ type: 'turn_start', origin: 'runtime' } as RawSessionEvent);
+    p.ingest({ type: 'turn_end' });
+    // A SECOND runtime window still does not retire it…
+    p.ingest({ type: 'turn_start', origin: 'runtime' } as RawSessionEvent);
+
+    const snap = await p.buildSnapshot(async () => []);
+    expect(snap.inProgressTurn?.some((e) => e.type === 'mcp_signin_required')).toBe(true);
+  });
+
+  it('still spends the grace on the next turn a person asks for', async () => {
+    const p = new SessionStateProjector('s1');
+    signinTurn(p);
+    p.ingest({ type: 'turn_start', origin: 'runtime' } as RawSessionEvent);
+    p.ingest({ type: 'turn_end' });
+    // The person sends something: NOW the conversation has moved on.
+    p.ingest({ type: 'turn_start' });
+    p.ingest({ type: 'turn_end' });
+    p.ingest({ type: 'turn_start' });
+
+    const snap = await p.buildSnapshot(async () => []);
+    expect(snap.inProgressTurn?.some((e) => e.type === 'mcp_signin_required')).toBe(false);
   });
 
   it('retires the receipt on the turn AFTER the one it rode through', async () => {

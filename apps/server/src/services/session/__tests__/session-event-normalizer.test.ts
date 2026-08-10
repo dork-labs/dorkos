@@ -1130,6 +1130,18 @@ describe('feedProjector — turn windows', () => {
         data: { sessionId: 'win-8', usage: { kind: 'pay-as-you-go', costUsd: 0.02 } },
       };
       yield { type: 'task_update', data: { action: 'snapshot', tasks: [] } };
+      // The content-SHAPED trailers, all four reproduced through the real
+      // mappers: a tool that was in flight when the result landed, reporting in
+      // afterwards. The turn is settling, not restarting.
+      yield {
+        type: 'tool_result',
+        data: { toolCallId: 't1', toolName: 'Read', result: 'late', status: 'complete' },
+      };
+      yield {
+        type: 'tool_call_end',
+        data: { toolCallId: 't2', toolName: 'Bash', status: 'complete' },
+      };
+      yield { type: 'tool_progress', data: { toolCallId: 't2', content: 'still going' } };
     }
 
     await feedProjector(projector, turn());
@@ -1138,6 +1150,95 @@ describe('feedProjector — turn windows', () => {
     expect(types.filter((t) => t === 'turn_start')).toHaveLength(1);
     expect(types.filter((t) => t === 'turn_end')).toHaveLength(1);
     expect(projector.getStatus().lifecycle).toBe('idle');
+  });
+});
+
+// A background task that is still running when the runtime's stream ends is
+// gone: the subprocess it lived in exited, so its `task_notification` can never
+// arrive. Nothing else in the system would ever clear it, so an uncleared count
+// is a permanent on-screen lie (DOR-1100).
+describe('feedProjector — stranded background children', () => {
+  it('retires every still-running child when the stream ends', async () => {
+    const projector = new SessionStateProjector('strand-1');
+    const ingestSpy = vi.spyOn(projector, 'ingest');
+
+    async function* turn(): AsyncIterable<StreamEvent> {
+      yield { type: 'background_task_started', data: { taskId: 'bt1', description: 'lint' } };
+      yield { type: 'background_task_started', data: { taskId: 'bt2', description: 'tests' } };
+      yield { type: 'background_task_done', data: { taskId: 'bt1', status: 'completed' } };
+      yield { type: 'done', data: { sessionId: 'strand-1' } };
+    }
+
+    await feedProjector(projector, turn());
+
+    expect(projector.getStatus().runningSubagentCount).toBe(0);
+    // The one that never reported gets a terminal update of its own, so a
+    // replay and a live client drain through the same event.
+    const stops = ingestSpy.mock.calls
+      .map((c) => c[0])
+      .filter((e) => e.type === 'subagent_update' && e.status === 'stopped');
+    expect(stops).toEqual([{ type: 'subagent_update', taskId: 'bt2', status: 'stopped' }]);
+  });
+
+  // The stop must land INSIDE the window, before it closes: outside it, the turn
+  // would be persisted still claiming the child was running.
+  it('retires them before the final turn_end, not after', async () => {
+    const projector = new SessionStateProjector('strand-2');
+    const ingestSpy = vi.spyOn(projector, 'ingest');
+
+    async function* turn(): AsyncIterable<StreamEvent> {
+      yield { type: 'background_task_started', data: { taskId: 'bt1' } };
+    }
+
+    await feedProjector(projector, turn());
+
+    expect(ingestSpy.mock.calls.map((c) => c[0].type)).toEqual([
+      'turn_start',
+      'subagent_update',
+      'subagent_update',
+      'turn_end',
+    ]);
+  });
+
+  // A stream that ends with the agent mid-wake-up closes the reopened window
+  // AND retires its children — one sweep at the end covers every terminal shape.
+  it('retires them once across a stream that carried two windows', async () => {
+    const projector = new SessionStateProjector('strand-3');
+    const ingestSpy = vi.spyOn(projector, 'ingest');
+
+    async function* turn(): AsyncIterable<StreamEvent> {
+      yield { type: 'background_task_started', data: { taskId: 'bt1' } };
+      yield { type: 'done', data: { sessionId: 'strand-3' } };
+      yield { type: 'text_delta', data: { text: 'awake' } };
+      yield { type: 'done', data: { sessionId: 'strand-3' } };
+    }
+
+    await feedProjector(projector, turn());
+
+    const stops = ingestSpy.mock.calls
+      .map((c) => c[0])
+      .filter((e) => e.type === 'subagent_update' && e.status === 'stopped');
+    expect(stops).toHaveLength(1);
+    expect(projector.getStatus().runningSubagentCount).toBe(0);
+  });
+
+  // Nothing running, nothing swept: an ordinary turn gains no events at all.
+  it('adds nothing to a turn that had no children', async () => {
+    const projector = new SessionStateProjector('strand-4');
+    const ingestSpy = vi.spyOn(projector, 'ingest');
+
+    async function* turn(): AsyncIterable<StreamEvent> {
+      yield { type: 'text_delta', data: { text: 'hi' } };
+      yield { type: 'done', data: { sessionId: 'strand-4' } };
+    }
+
+    await feedProjector(projector, turn());
+
+    expect(ingestSpy.mock.calls.map((c) => c[0].type)).toEqual([
+      'turn_start',
+      'text_delta',
+      'turn_end',
+    ]);
   });
 });
 

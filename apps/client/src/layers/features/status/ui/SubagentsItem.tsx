@@ -45,9 +45,19 @@ interface SubagentsItemProps {
  * so the row never squeezes it and the count is never partly drawn. The word is in
  * the tooltip and in the accessible name, where a narrow row cannot cut it.
  *
- * The glyph never changes and the number never animates, including when the turn
- * ends underneath it: a quiet fact that stays put is the point, and a session
- * that has gone quiet is not the moment to start moving things.
+ * The glyph never changes, the number never animates, and the accessible name
+ * keeps ONE phrasing across a turn boundary — only the count in it changes. The
+ * row is `aria-live="polite"`, so re-wording the same fact when the turn ends
+ * would announce a change to a screen reader that nothing actually changed for.
+ * The extra context that only applies once the agent has stopped talking lives
+ * in the tooltip instead.
+ *
+ * That tooltip is unreachable on touch, and deliberately gains no second surface
+ * here: the registry already gives this item `group: 'diagnostics'`, so the
+ * count keeps its own row in the Session popover behind the line's `⋯` — the
+ * same pattern every other item uses when the bar is too narrow to be the whole
+ * story. A new mobile affordance for one sentence would be a worse trade than
+ * the row that already exists.
  *
  * @param props - The count, the rows that can be named, and whether the agent is
  *   waiting on them.
@@ -55,20 +65,15 @@ interface SubagentsItemProps {
 export function SubagentsItem({ count, running, waiting }: SubagentsItemProps) {
   const plural = count === 1 ? '' : 's';
   const unnamed = count - running.length;
+  // One phrasing, whatever the turn is doing — see the note above.
+  const label = `${count} subagent${plural} running`;
   return (
     <Tooltip>
       <TooltipTrigger asChild>
         {/* No `role="status"`: the row itself is already `aria-live="polite"`
             (see `StatusLine`), and a live region inside a live region can
             announce the same change twice. */}
-        <span
-          className="inline-flex min-w-0 items-center gap-1"
-          aria-label={
-            waiting
-              ? `${count} background task${plural} still running`
-              : `${count} subagent${plural} running`
-          }
-        >
+        <span className="inline-flex min-w-0 items-center gap-1" aria-label={label}>
           <Users className="size-(--size-icon-xs) shrink-0" />
           {/* No `truncate`: an ellipsis costs width, so a squeezed two-digit
               count renders as one digit with the ellipsis itself clipped — a

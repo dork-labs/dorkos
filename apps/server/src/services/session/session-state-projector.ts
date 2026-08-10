@@ -592,7 +592,14 @@ export class SessionStateProjector {
         // Spend one turn of grace, then let the conversation move on (DOR-1004).
         // The turn a finished sign-in triggers is the FIRST one past the receipt,
         // so this is what keeps the payoff on screen through it.
-        this.ageSigninCards();
+        //
+        // A window nobody asked for does not spend it. The grace is bounded by
+        // "the conversation moved on", and an agent waking itself up because a
+        // background task finished is not the conversation moving on — it fires
+        // milliseconds later, unprompted, and would erase the card just as the
+        // person got back from their browser, which is the exact failure DOR-1004
+        // exists to prevent. The client applies the same rule.
+        if (event.origin !== 'runtime') this.ageSigninCards();
         this.ring.markTurnStarted();
         this.status.lifecycle = 'streaming';
         // A new turn clears the previous failure surface.
@@ -843,6 +850,17 @@ export class SessionStateProjector {
     }
   }
 
+  /**
+   * The `taskId`s this projector still counts as running.
+   *
+   * Read by {@link feedProjector}'s stranding sweep, which retires each of them
+   * with a terminal `subagent_update` when the runtime's stream ends (DOR-1100).
+   * A copy, not the live set: the sweep ingests while it iterates.
+   */
+  listRunningSubagents(): string[] {
+    return [...this.runningSubagents];
+  }
+
   /** Recompute todo tallies from a `snapshot`/`update` task list. */
   private applyTodoUpdate(tasks: TaskItem[] | undefined): void {
     if (!tasks) return;
@@ -941,6 +959,13 @@ export class SessionStateProjector {
       this.status.lifecycle = 'interrupted';
       // The turn is over, so whatever tool it was in is over with it.
       delete this.status.activity;
+      // …and so are its children. This path is the eviction degradation, which
+      // tears the session down without ever running a stream's `finally`, so
+      // the stranding sweep that normally retires them never fires here. A
+      // count left standing would be reported as live work by a session that no
+      // longer exists (DOR-1100).
+      this.runningSubagents.clear();
+      this.status.runningSubagentCount = 0;
       // This path mutates lifecycle WITHOUT an ingest, so fan out here — and
       // through the activity path, so an armed trailing flush cannot land after
       // it and re-assert the tool this just cleared.

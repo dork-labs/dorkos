@@ -39,12 +39,26 @@ describe('SubagentsItem', () => {
     expect(screen.getByText('Run the test suite')).toBeInTheDocument();
   });
 
+  // The row is `aria-live="polite"`, so re-wording the same fact when the turn
+  // ends would announce a change to a screen reader that nothing changed for.
+  // One phrasing; only the number in it moves.
+  it('keeps one accessible phrasing across the turn boundary', () => {
+    const { rerender } = render(<SubagentsItem count={2} running={[ROW]} waiting={false} />);
+    expect(screen.getByLabelText('2 subagents running')).toBeInTheDocument();
+
+    rerender(<SubagentsItem count={2} running={[ROW]} waiting />);
+    expect(screen.getByLabelText('2 subagents running')).toBeInTheDocument();
+
+    rerender(<SubagentsItem count={1} running={[ROW]} waiting />);
+    expect(screen.getByLabelText('1 subagent running')).toBeInTheDocument();
+  });
+
   // DOR-1100: the same number after the turn closes is the reason the session
   // looks finished and is not, so this is the one moment it earns a sentence.
   it('explains the wait once the agent has stopped talking', () => {
     render(<SubagentsItem count={2} running={[ROW]} waiting />);
 
-    expect(screen.getByLabelText('2 background tasks still running')).toBeInTheDocument();
+    expect(screen.getByLabelText('2 subagents running')).toBeInTheDocument();
     expect(
       screen.getByText(
         'Still working in the background. The agent picks up again when they finish.'

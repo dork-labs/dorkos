@@ -162,6 +162,18 @@ export interface SessionStreamState {
    * looks like from here.
    */
   unnamedRunningSubagents: number;
+  /**
+   * Who opened the turn window currently held — `'user'` for one a person or a
+   * caller triggered, `'runtime'` for one the agent opened on its own after a
+   * background task woke it (DOR-1100).
+   *
+   * Read at the SETTLE edge, which is the only place it matters: the
+   * turn-finished notification is an answer to a request, so a window nobody
+   * requested must not sound it again for the same request. Survives `turn_end`
+   * deliberately — the settle handler runs after it and needs to know what just
+   * settled.
+   */
+  turnOrigin: 'user' | 'runtime';
 }
 
 /** Default state for an un-hydrated session. */
@@ -181,6 +193,7 @@ export const DEFAULT_SESSION_STREAM_STATE: SessionStreamState = {
   carriedSigninFlowIds: [],
   runningSubagentIds: [],
   unnamedRunningSubagents: 0,
+  turnOrigin: 'user',
 };
 
 /** `SessionEvent` member discriminants that map onto a {@link PendingInteractionDTO}. */
@@ -604,11 +617,27 @@ function nameRunningSubagents(events: readonly SessionEvent[]): string[] {
 function projectEvent(session: SessionStreamState, event: SessionEvent): void {
   switch (event.type) {
     case 'turn_start': {
-      // A sign-in card (or its receipt) rides one turn further than the rest of
-      // the turn it belonged to — see `ageSigninCards`.
-      const aged = ageSigninCards(session.inProgressTurn, session.carriedSigninFlowIds);
-      session.carriedSigninFlowIds = aged.spentFlowIds;
-      session.inProgressTurn = [...aged.kept, event];
+      session.turnOrigin = event.origin === 'runtime' ? 'runtime' : 'user';
+      if (event.origin === 'runtime') {
+        // A window nobody asked for APPENDS. Resetting is right when a person
+        // sends the next message — by then the settled turn has long since been
+        // reloaded into `messages`. A wake-up is not that: the CLI drains its
+        // queued notification within milliseconds, so this reopen routinely beats
+        // the turn-end history reload, and resetting here blanked the reply the
+        // agent had just finished writing until the reload landed. Appending
+        // keeps it on screen, and the reload that follows replaces both windows
+        // with canonical history in one update.
+        //
+        // No card aging either, for the same reason the server skips it: the
+        // conversation has not moved on, the agent simply woke up (DOR-1004).
+        session.inProgressTurn.push(event);
+      } else {
+        // A sign-in card (or its receipt) rides one turn further than the rest of
+        // the turn it belonged to — see `ageSigninCards`.
+        const aged = ageSigninCards(session.inProgressTurn, session.carriedSigninFlowIds);
+        session.carriedSigninFlowIds = aged.spentFlowIds;
+        session.inProgressTurn = [...aged.kept, event];
+      }
       if (session.status) {
         session.status.lifecycle = 'streaming';
         // A new turn clears the previous failure surface (server-projector parity).
@@ -760,6 +789,17 @@ export const useSessionStreamStore: SessionStreamStore = create<
               0,
               snapshot.status.runningSubagentCount - session.runningSubagentIds.length
             );
+            // Re-assign rather than mutate: the caller's snapshot object is
+            // frozen, and the two parts must add back up to the count anyway.
+            // They do today by construction; this keeps them agreeing if the
+            // clamp above ever has to bite (a snapshot whose count is lower
+            // than the children its own turn shows running). Copying also stops
+            // the store aliasing an object it does not own.
+            session.status = {
+              ...snapshot.status,
+              runningSubagentCount:
+                session.runningSubagentIds.length + session.unnamedRunningSubagents,
+            };
             session.lastAppliedSeq = snapshot.cursor;
             session.lastEventAt = Date.now();
             session.streamReadyCursor = snapshot.cursor;
