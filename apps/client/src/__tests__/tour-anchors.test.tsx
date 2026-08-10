@@ -40,7 +40,7 @@ import { TransportProvider } from '@/layers/shared/model';
 import { Sidebar, SidebarProvider, TooltipProvider } from '@/layers/shared/ui';
 import { TOUR_ANCHORS, type TourAnchorId, type TourAnchorKey } from '@/layers/shared/config';
 import { TOUR_DEFINITIONS, type TourId } from '@/layers/features/tours';
-import { SidebarNavHeader } from '@/layers/features/dashboard-sidebar';
+import { SidebarFooterStrip } from '@/layers/features/dashboard-sidebar';
 import { TasksList } from '@/layers/features/tasks';
 import { TeamRosterGrid } from '@/layers/features/team-roster';
 import { HomeSurfaceLayout } from '@/layers/widgets/home';
@@ -99,12 +99,15 @@ function componentFiles(dir: string): string[] {
 
 /**
  * The anchor keys some component actually stamps on a DOM node, found by the
- * two spellings that reach the DOM: `data-testid={TOUR_ANCHORS.x}` on an
- * element, and `testId={TOUR_ANCHORS.x}` on a wrapper that forwards it.
+ * three spellings that reach the DOM: `data-testid={TOUR_ANCHORS.x}` on an
+ * element, `testId={TOUR_ANCHORS.x}` on a wrapper that forwards it, and
+ * `testId: TOUR_ANCHORS.x` in a data table a component maps over — which is how
+ * the footer strip declares its destinations, and which the first two spellings
+ * would have silently missed.
  */
 function stampedAnchorKeys(): Set<string> {
   const stamped = new Set<string>();
-  const pattern = /(?:data-testid|testId)=\{TOUR_ANCHORS\.(\w+)\}/g;
+  const pattern = /(?:data-testid|testId)\s*[=:]\s*\{?TOUR_ANCHORS\.(\w+)\}?/g;
   for (const file of componentFiles(LAYERS_DIR)) {
     for (const match of readFileSync(file, 'utf8').matchAll(pattern)) {
       stamped.add(match[1]);
@@ -232,9 +235,12 @@ function renderSurface(tourId: TourId, isMobile: boolean) {
         <TooltipProvider>
           <SidebarProvider>
             {/* The real sidebar, not just its contents: on a phone this is the
-                Sheet that leaves everything inside it unmounted. */}
+                Sheet that leaves everything inside it unmounted. The strip is
+                what carries the panel's navigation now — the header nav that
+                used to stamp `nav-agents` was retired, and the anchor moved
+                with the buttons rather than dying with the file. */}
             <Sidebar>
-              <SidebarNavHeader />
+              <SidebarFooterStrip />
             </Sidebar>
             <main>{surface}</main>
           </SidebarProvider>
@@ -257,6 +263,21 @@ beforeAll(() => {
 
 afterEach(() => {
   cleanup();
+});
+
+describe('the sidebar navigation anchor', () => {
+  it('still resolves after the header nav that used to stamp it was retired', async () => {
+    // `nav-agents` is what the Team e2e specs click and what the typed registry
+    // promises resolves. It survived the death of `SidebarNavHeader` only
+    // because the footer strip re-stamps it, and nothing in the type system
+    // would have said otherwise — a `data-testid` is a string.
+    renderSurface('general', false);
+
+    await waitFor(() => {
+      expect(screen.queryByTestId(TOUR_ANCHORS.navAgents)).not.toBeNull();
+    });
+    expect(screen.getByTestId(TOUR_ANCHORS.navAgents)).toHaveAttribute('aria-label', 'Team');
+  });
 });
 
 describe.each([

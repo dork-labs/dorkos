@@ -10,6 +10,7 @@ import { useInputAutocomplete } from '../model/use-input-autocomplete';
 import { buildPaletteCommands, compactComposerGate } from '../model/build-palette-commands';
 import { useChatStatusSync } from '../model/use-chat-status-sync';
 import { useLaunchPrompt } from '../model/launch/use-launch-prompt';
+import { useDorkBotSeed } from '../model/launch/use-dorkbot-seed';
 import { useRuntimeChip } from '@/layers/features/status';
 import { useFileUpload } from '../model/use-file-upload';
 import { buildFileEntries } from '../lib/build-file-entries';
@@ -64,8 +65,14 @@ interface ChatPanelProps {
    */
   launchSend?: boolean;
   /**
-   * Fired when the launch link is spent, so the caller can drop `prompt`/`send`
-   * from the URL — the guard against a refresh or a Back re-issuing it.
+   * The `?seed=` value (`'dorkbot-help'` and nothing else today): background the
+   * first turn carries, never text. See {@link useDorkBotSeed}.
+   */
+  launchSeed?: string;
+  /**
+   * Fired when a launch link is spent, so the caller can drop `prompt`, `send`
+   * and `seed` from the URL — the guard against a refresh or a Back re-issuing
+   * one.
    */
   onLaunchConsumed?: () => void;
 }
@@ -77,6 +84,7 @@ export function ChatPanel({
   launchRuntime,
   launchPrompt,
   launchSend = false,
+  launchSeed,
   onLaunchConsumed,
 }: ChatPanelProps) {
   const [, setSessionId] = useSessionId();
@@ -187,6 +195,13 @@ export function ChatPanel({
     [activeCaps, runtimeLabel]
   );
 
+  // Ask DorkBot's hidden preamble reaches the send path through this indirection
+  // because the hook that builds it needs `messages.length` and `hydrated`,
+  // which the session hook below RETURNS — so the option handed down has to be a
+  // stable shim whose target is filled in after.
+  const takeSeedRef = useRef<(() => string | undefined) | null>(null);
+  const takeSeedContext = useCallback(() => takeSeedRef.current?.(), []);
+
   const {
     messages,
     input,
@@ -223,6 +238,7 @@ export function ChatPanel({
     startFreshSession,
     compactIntent,
     launchRuntime,
+    takeSeedContext,
     onStreamingDone: useCallback(() => {
       if (enableNotificationSound) {
         playNotificationSound();
@@ -271,6 +287,20 @@ export function ChatPanel({
     onSeeded: handleLaunchSeeded,
     onConsumed: onLaunchConsumed,
   });
+
+  // Ask DorkBot (`?seed=dorkbot-help`): no words, no focus change — the composer
+  // is already empty and already focused by the effect above. All this arms is
+  // the background the FIRST send carries.
+  const takeDorkBotSeed = useDorkBotSeed({
+    sessionId,
+    seed: launchSeed,
+    messageCount: messages.length,
+    hydrated,
+    onConsumed: onLaunchConsumed,
+  });
+  useEffect(() => {
+    takeSeedRef.current = takeDorkBotSeed;
+  }, [takeDorkBotSeed]);
 
   // Thread the session's runtime so a not-yet-started Codex session's palette
   // resolves to Codex's project skills rather than the inferred claude-code

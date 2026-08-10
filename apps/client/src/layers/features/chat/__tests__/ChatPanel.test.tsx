@@ -30,6 +30,13 @@ vi.mock('@/layers/entities/config/model/use-update-config', () => ({
   useUpdateConfig: () => ({ mutate: vi.fn(), isPending: false }),
 }));
 
+// The Ask DorkBot seed hook reads the roster so it can say how big the fleet is
+// (BC-48). Stubbed to "no roster", which is what an unseeded session sees and
+// what every case below is: none of them carry `?seed=`.
+vi.mock('@/layers/entities/mesh/model/use-mesh-agent-paths', () => ({
+  useMeshAgentPaths: () => ({ data: undefined }),
+}));
+
 vi.mock('@/layers/shared/model/media/use-is-mobile', () => ({
   useIsMobile: () => mockUseIsMobile(),
 }));

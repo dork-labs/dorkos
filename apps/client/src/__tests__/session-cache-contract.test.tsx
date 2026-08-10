@@ -119,7 +119,14 @@ async function loaderRedirectSession(
   try {
     await sessionRouteLoader({
       context,
-      deps: { dir, session: undefined, runtime: undefined, prompt: undefined, send: undefined },
+      deps: {
+        dir,
+        session: undefined,
+        runtime: undefined,
+        prompt: undefined,
+        send: undefined,
+        seed: undefined,
+      },
     });
     return null;
   } catch (thrown: unknown) {

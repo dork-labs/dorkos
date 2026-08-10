@@ -30,8 +30,7 @@ import { DialogHost, FeedbackDialogHost } from '@/layers/widgets/app-layout';
 import { AppBannerSlot, useAppBanners } from '@/layers/widgets/app-banner';
 import { ApprovalsIndicator } from '@/layers/widgets/approvals-indicator';
 import { usePulseFreshness } from '@/layers/widgets/pulse';
-import { SidebarFooterBar } from '@/layers/features/session-list';
-import { DashboardSidebar, SidebarNavHeader } from '@/layers/features/dashboard-sidebar';
+import { DashboardSidebar, SidebarFooterStrip } from '@/layers/features/dashboard-sidebar';
 import {
   useOnboarding,
   useOnboardingOverlayVisible,
@@ -450,16 +449,16 @@ export function AppShell() {
                   <Sidebar variant="inset">
                     <TitlebarDragStrip />
                     {/* ── The header block: persistent chrome ──
-                          Mounted OUTSIDE the body-swap wrapper below, so a
+                          The mount point for the workspace switcher, the New
+                          button and the ⌘K pill (spec BC-43→46, task P2.4). It
+                          belongs OUTSIDE the body-swap wrapper below, so a
                           contributed `sidebar.body` takeover replaces the body
-                          and leaves this standing — the panel's identity and
-                          its top-level navigation do not belong to whichever
-                          route is on screen (spec `sidebar-now-today-library`
-                          R2, P2 AC-8). P2.4 replaces this with the workspace
-                          switcher, the New button and the ⌘K pill; the mount
-                          point is what stays. The footer strip below is the
-                          same arrangement and always was. */}
-                    <SidebarNavHeader />
+                          and leaves the panel's identity standing (spec
+                          `sidebar-now-today-library` R2, P2 AC-8) — which is the
+                          same arrangement the footer strip has and always had.
+                          Empty until P2.4 lands: the four destinations that used
+                          to live here are in the footer strip now, and this
+                          panel has exactly one nav implementation. */}
                     {/* ── Dynamic sidebar body with directional slide ──
                           This wrapper is the clip boundary for the body swap. The
                           slide transform lives on the motion.div below, so the
@@ -512,7 +511,7 @@ export function AppShell() {
                           is not visible"), so mounting it unconditionally is
                           safe — never two cards. */}
                       <ProfilePromptCard />
-                      <SidebarFooterBar />
+                      <SidebarFooterStrip />
                     </SidebarFooter>
                     <SidebarRail />
                   </Sidebar>

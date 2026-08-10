@@ -104,6 +104,15 @@ const appShellRoute = createRoute({
  * dropped from the URL the moment they are consumed, so a refresh or a Back does
  * not re-issue them.
  *
+ * `seed=dorkbot-help` is the sidebar's ✦ Ask DorkBot press (BC-48). It carries
+ * no words: the composer stays empty and focused, and the chat model builds a
+ * hidden preamble locally — the page you came from, your fleet, your version,
+ * what is currently broken — which rides the first send as `seedContext` and
+ * nothing after it. An ENUMERATED literal and `.catch()`ed like `send`, because
+ * this param names a situation the client knows how to describe, not text an
+ * address bar supplies: a URL cannot dictate what an agent is told. Spent the
+ * moment it is taken, exactly as `prompt`/`send` are.
+ *
  * `continuedFrom` is the `/clear` intent's "linked back" reference (DOR-109) —
  * the id of the session this fresh one continues from. A lightweight client-side
  * link recorded in the URL only; there is no DB column.
@@ -117,6 +126,7 @@ export const sessionSearchSchema = mergeDialogSearch(
     runtime: z.string().optional(),
     prompt: z.string().optional(),
     send: z.literal('1').optional().catch(undefined),
+    seed: z.literal('dorkbot-help').optional().catch(undefined),
     continuedFrom: z.string().optional(),
   })
 );
@@ -268,6 +278,7 @@ export function sessionLoaderDeps({ search }: { search: SessionSearch }) {
     runtime: search.runtime,
     prompt: search.prompt,
     send: search.send,
+    seed: search.seed,
   };
 }
 
@@ -307,9 +318,10 @@ export async function sessionRouteLoader({
   // `prompt` is the launch-time seed ("Run this with…", a docs try-it link),
   // carried ONLY when the session is brand-new so its composer is pre-filled —
   // and `send` with it, since a seed that must not ride an existing conversation
-  // must certainly not START a turn on one. Both are deliberately dropped when
-  // this resolves to a session that already exists (defense-in-depth atop
-  // `useLaunchPrompt`'s empty-conversation guard).
+  // must certainly not START a turn on one. `seed` (Ask DorkBot) travels with
+  // them for the same reason. All three are deliberately dropped when this
+  // resolves to a session that already exists (defense-in-depth atop
+  // `useLaunchPrompt`'s and `useDorkBotSeed`'s empty-conversation guards).
   const resolved = await resolveSessionForCwd(context, dir ?? null);
   // The lookup failed. There is no "stay put" for a loader — this URL IS where
   // the person asked to be — so the honest move is the route's error boundary,
@@ -328,6 +340,10 @@ export async function sessionRouteLoader({
       runtime,
       prompt: resolved.isNew ? deps.prompt : undefined,
       send: resolved.isNew ? deps.send : undefined,
+      // Same rule, same reason: background about the page somebody just left
+      // belongs to a conversation that is starting, not to one they are
+      // resuming ten turns in.
+      seed: resolved.isNew ? deps.seed : undefined,
     },
     replace: true,
   });

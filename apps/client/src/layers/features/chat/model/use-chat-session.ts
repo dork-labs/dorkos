@@ -226,6 +226,7 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
       onSessionIdChangeReplace: options.onSessionIdChangeReplace,
       transformContent: options.transformContent,
       launchRuntime: options.launchRuntime,
+      takeSeedContext: options.takeSeedContext,
       setInput,
       setError,
       setSessionBusy,

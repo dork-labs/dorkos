@@ -9,11 +9,13 @@
  * @module features/dashboard-sidebar
  */
 export { DashboardSidebar } from './ui/DashboardSidebar';
-// The nav header on its own. It is persistent chrome now — `AppShell` mounts it
+// The footer strip on its own. It is persistent chrome — `AppShell` mounts it
 // OUTSIDE the `sidebar.body` swap region, so a marketplace takeover replaces
-// the body and leaves the header standing (spec R2, P2 AC-8). The tour-anchor
-// guard mounts it at both widths for the same reason it always did.
-export { SidebarNavHeader } from './ui/SidebarNavHeader';
+// the body and leaves the strip standing (spec R2, P2 AC-8). It is also the one
+// nav implementation in the panel now: the four destinations moved here off the
+// retired `SidebarNavHeader`, tour anchor and all, so the tour-anchor guard
+// mounts THIS at both widths for the reason it always mounted that.
+export { SidebarFooterStrip } from './ui/SidebarFooterStrip';
 export { AgentListItem } from './ui/AgentListItem';
 export { AgentActivityBadge } from './ui/AgentActivityBadge';
 export { AgentOnboardingCard } from './ui/AgentOnboardingCard';

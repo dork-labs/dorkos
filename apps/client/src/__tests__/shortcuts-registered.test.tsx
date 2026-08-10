@@ -128,12 +128,13 @@ const DECLARED: Record<string, string> = {
   // Window-level, but registered with a text-input guard so it cannot fire
   // while you are typing a `?`.
   'shortcuts-panel': 'features/shortcuts/model/use-shortcuts-panel',
-  // Registered by SidebarFooterBar, and only under `import.meta.env.DEV`.
-  // Proving it here would mean mounting SidebarFooterBar's full provider
-  // stack (transport, query client, settings deep link), so its `devOnly`
-  // flag is proved against the panel listing below instead (DOR-567) — the
-  // handler keeps its own `import.meta.env.DEV` guard as defense in depth.
-  'dev-playground': 'features/session-list/ui/SidebarFooterBar (dev only)',
+  // Registered by the sidebar footer strip — persistent chrome, which is what a
+  // window-level shortcut needs — and only under `import.meta.env.DEV`. Proving
+  // it here would mean standing up that component's provider stack (router,
+  // transport, query client), so its `devOnly` flag is proved against the panel
+  // listing below instead (DOR-567) — the handler keeps its own
+  // `import.meta.env.DEV` guard as defense in depth.
+  'dev-playground': 'features/dashboard-sidebar/ui/SidebarFooterStrip (dev only)',
   // Composer keys — the chat composer's own `onKeyDown`.
   'new-line': 'features/chat composer',
   'new-line-alt': 'features/chat composer',

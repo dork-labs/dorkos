@@ -3,7 +3,13 @@ import type { Session } from '@dorkos/shared/types';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
 import { ShowcaseDemo } from '../ShowcaseDemo';
-import { SessionsView, SidebarFooterBar } from '@/layers/features/session-list';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { SessionsView } from '@/layers/features/session-list';
+// Deep import on purpose: the strip is app chrome, not a feature export the
+// playground should widen the barrel for (the same reasoning
+// `SidebarModelShowcases` records for `buildSidebarModel`).
+import { SidebarFooterStrip } from '@/layers/features/dashboard-sidebar/ui/SidebarFooterStrip';
+import { configKeys } from '@/layers/entities/config';
 import { useSessionChatStore, useSessionListStore, SessionRow } from '@/layers/entities/session';
 import { SidebarGroup, SidebarMenu, SidebarMenuItem } from '@/layers/shared/ui';
 
@@ -130,13 +136,13 @@ const GROUPED_SESSIONS = [
 // Showcases
 // ---------------------------------------------------------------------------
 
-/** Sidebar component showcases: SessionRow, SessionsView, SidebarFooterBar. */
+/** Sidebar component showcases: SessionRow, SessionsView, SidebarFooterStrip. */
 export function SidebarShowcases() {
   return (
     <>
       <SessionRowShowcase />
       <SessionsViewShowcase />
-      <SidebarFooterBarShowcase />
+      <SidebarFooterStripShowcase />
     </>
   );
 }
@@ -345,20 +351,59 @@ function SessionsViewShowcase() {
 }
 
 // ---------------------------------------------------------------------------
-// SidebarFooterBar
+// SidebarFooterStrip
 // ---------------------------------------------------------------------------
 
-function SidebarFooterBarShowcase() {
+/** A server config the real `useConfig` would return, without asking a server. */
+function configFixture(latestVersion: string | null) {
+  return {
+    version: '0.58.0',
+    latestVersion,
+    isDevMode: false,
+    dismissedUpgradeVersions: [] as string[],
+  };
+}
+
+/**
+ * Render the strip against a fabricated server config.
+ *
+ * Its own `QueryClient`, seeded and never fetching, so the update-ready state is
+ * a state a reviewer can LOOK at rather than one they have to wait for a release
+ * to see. Nested inside the app's provider, so the real client — and the real
+ * config the cockpit is running on — is untouched.
+ */
+function StripWithConfig({ latestVersion }: { latestVersion: string | null }) {
+  const [client] = useState(() => {
+    const created = new QueryClient({
+      defaultOptions: { queries: { retry: false, staleTime: Infinity, gcTime: Infinity } },
+    });
+    created.setQueryData(configKeys.current(), configFixture(latestVersion));
+    return created;
+  });
+
+  return (
+    <QueryClientProvider client={client}>
+      <div className="bg-sidebar w-[272px] rounded-lg p-2">
+        <SidebarFooterStrip />
+      </div>
+    </QueryClientProvider>
+  );
+}
+
+function SidebarFooterStripShowcase() {
   return (
     <PlaygroundSection
-      title="SidebarFooterBar"
-      description="Bottom bar with branding, settings, edit agent, and theme cycle toggle. Settings and Edit Agent buttons open app dialogs (non-functional in playground context)."
+      title="SidebarFooterStrip"
+      description="One slim tinted strip: Home, Team, Marketplace, Connections, and the permanent Ask DorkBot affordance. No logo, no version line, no border — separation is a step up the --sidebar-accent ramp, which moves the same way in both themes (spec BC-47, R1). Flip the playground theme to check the pair."
     >
-      <ShowcaseLabel>Default</ShowcaseLabel>
+      <ShowcaseLabel>Idle — no update waiting</ShowcaseLabel>
       <ShowcaseDemo>
-        <div className="w-64">
-          <SidebarFooterBar />
-        </div>
+        <StripWithConfig latestVersion={null} />
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>Update ready — the transient pill (BC-44)</ShowcaseLabel>
+      <ShowcaseDemo>
+        <StripWithConfig latestVersion="0.59.0" />
       </ShowcaseDemo>
     </PlaygroundSection>
   );

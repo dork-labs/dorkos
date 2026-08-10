@@ -44,6 +44,7 @@ describe('sessionLoaderDeps', () => {
       'dir',
       'prompt',
       'runtime',
+      'seed',
       'send',
       'session',
     ]);
@@ -258,6 +259,7 @@ describe('sessionRouteLoader', () => {
           runtime: undefined,
           prompt: undefined,
           send: undefined,
+          seed: undefined,
         },
       })
     ).rejects.toThrow(/could ?n[o']t reach the server/i);

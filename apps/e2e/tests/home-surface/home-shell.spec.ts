@@ -15,7 +15,7 @@ import { HOME_TABS, SIDEBAR_NAV_LABELS } from '../../pages/HomeSurfacePage';
  * viewport. "A deep link keeps its filter" spans the router, the search schema
  * and two components that never meet in one unit test. And a nav-item count is
  * only worth asserting against the real shell — the unit suite mounts
- * `SidebarNavHeader` standalone, so it would still pass with a fifth
+ * `SidebarFooterStrip` standalone, so it would still pass with a fifth
  * destination added anywhere else in the sidebar.
  *
  * No agent turn, no model, no seeded state: this is chrome, so it is `@smoke`.
@@ -82,14 +82,11 @@ test.describe('Home surface — the shell @smoke', () => {
     await expect(agentChip).toHaveAttribute('aria-pressed', 'true');
   });
 
-  test('the sidebar has four places and a Search row — nothing else', async ({
-    basePage,
-    homeSurface,
-  }) => {
+  test('the sidebar has four places — nothing else', async ({ basePage, homeSurface }) => {
     await basePage.ensureSidebarOpen();
 
     // The count and the words, in order. A fifth destination anywhere in this
-    // block fails the first assertion before anyone has to notice the label.
+    // strip fails the first assertion before anyone has to notice the label.
     await expect(homeSurface.sidebarNavButtons).toHaveCount(SIDEBAR_NAV_LABELS.length);
     for (const [index, label] of SIDEBAR_NAV_LABELS.entries()) {
       await expect(homeSurface.sidebarNavButtons.nth(index)).toContainText(label);

@@ -49,4 +49,13 @@ export interface ChatSessionOptions {
    * recognized (its tokens fall through unchanged).
    */
   compactIntent?: { supported: boolean; runtimeLabel: string };
+  /**
+   * Background to attach to a turn, asked for on every send (BC-48).
+   *
+   * Called once per send and expected to answer at most once per conversation —
+   * Ask DorkBot's hidden preamble rides the FIRST turn and nothing after it. The
+   * "at most once" latch lives in the provider (`useDorkBotSeed`), not here, so
+   * the send path has no state to keep and cannot forget to.
+   */
+  takeSeedContext?: () => string | undefined;
 }
