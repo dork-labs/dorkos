@@ -27,6 +27,7 @@
 import type { CommandIntentOpts, SseResponse } from '@dorkos/shared/agent-runtime';
 import type { StreamEvent } from '@dorkos/shared/types';
 import type { RuntimeCommandIntentId } from '@dorkos/shared/command-intents';
+import { COMMAND_INTENT_QUEUE_WAIT_MS } from '@dorkos/shared/command-intents';
 import type { SessionStateProjector } from './session-state-projector.js';
 import { feedProjector } from './session-event-normalizer.js';
 import { withStallGuard } from './stall-guard.js';
@@ -85,7 +86,9 @@ export interface TriggerCommandIntentOpts {
   stallTimeoutMs?: number;
   /**
    * How long this intent may wait for the same client's earlier work on this
-   * session. Defaults to SESSIONS.LOCK_TTL_MS, matching a turn's bound.
+   * session. Defaults to `COMMAND_INTENT_QUEUE_WAIT_MS` — deliberately SHORTER
+   * than a turn's bound; see the "Waiting is bounded by the client" note on
+   * {@link triggerCommandIntent}.
    */
   queueWaitMs?: number;
   /** Records a detached-turn failure (logging is the caller's concern). */
@@ -112,11 +115,27 @@ export interface TriggerCommandIntentResult {
  * lock. And it can no longer slip into the gap between a turn releasing the lock
  * and the queued turn behind it acquiring one.
  *
- * The client bounds its own request at 30s (`runCommandIntent` in the web
- * transport), which is shorter than the wait this may impose. A compact behind a
- * long turn therefore reports a failure to the person while still being queued
- * to run — a rough edge inherited from holding the wait in a request, retired
- * with the rest of that model by DOR-1089's durable queue.
+ * ## Waiting is bounded by the CLIENT, not by the lock (DOR-1101)
+ *
+ * A turn's queue wait is bounded by the lock TTL, minutes long. An intent's
+ * cannot be: the web transport arms `AbortSignal.timeout` on this request
+ * (`COMMAND_INTENT_REQUEST_TIMEOUT_MS`, `runCommandIntent` in
+ * `apps/client/src/layers/shared/lib/transport/session-methods.ts`), and
+ * aborting a fetch does not cancel the Express handler behind it. A wait that
+ * outlasts the client's therefore showed the person an error at 30s and
+ * compacted the conversation minutes later anyway — "we told you it failed and
+ * did it anyway", which reads as data loss.
+ *
+ * So the default wait is {@link COMMAND_INTENT_QUEUE_WAIT_MS}, derived by
+ * subtraction from the client's bound so the two cannot drift apart. The server
+ * always stops waiting first and answers while the person is still listening:
+ * the turn ahead is normally still alive, so the honest answer is the same
+ * `409` a stranger would get, and the intent never runs. **The invariant: if the
+ * person is shown a failure, the intent must not execute afterwards.**
+ *
+ * The cost is that a compact behind a long turn is refused rather than queued.
+ * That is the honest trade while the wait is held in a request at all; DOR-1089's
+ * durable queue retires the whole held-open model and can then accept it.
  *
  * @param opts - Session/intent inputs, the projector, and the runtime-neutral port.
  * @returns `{ accepted: false }` when the session is locked by another client;
@@ -133,7 +152,7 @@ export async function triggerCommandIntent(
   const slot = sessionTurnQueue.reserve(
     turnKey,
     clientId,
-    opts.queueWaitMs ?? SESSIONS.LOCK_TTL_MS
+    opts.queueWaitMs ?? COMMAND_INTENT_QUEUE_WAIT_MS
   );
   await slot.ready;
 

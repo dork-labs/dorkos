@@ -13,10 +13,15 @@
  *   bounded so the owner is never the last to get in.
  * - **G7.** A command intent (`/compact`) shares the session's single writer with
  *   every turn, so it queues like one instead of taking the lock beside it.
+ * - **DOR-1101.** The client abandons a command-intent request at 30s while the
+ *   server used to keep the intent queued for the lock's full TTL. Aborting the
+ *   fetch does not cancel the handler, so the person was shown a failure and the
+ *   conversation was compacted minutes later anyway.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import type { StreamEvent } from '@dorkos/shared/types';
 import type { RuntimeCapabilities, SseResponse } from '@dorkos/shared/agent-runtime';
+import { COMMAND_INTENT_REQUEST_TIMEOUT_MS } from '@dorkos/shared/command-intents';
 
 // The neutral context bag is assembled from the real filesystem (git status);
 // these tests care about ordering, not context, so keep it inert and fast.
@@ -328,5 +333,133 @@ describe('triggerCommandIntent — a compact queues like a turn (G7)', () => {
     expect(refused.accepted).toBe(false);
     expect(intentCalls).toEqual([]);
     turnGate.open();
+  });
+});
+
+describe('triggerCommandIntent — told it failed means it did not run (DOR-1101)', () => {
+  /**
+   * A session id per case. `sessionTurnQueue` is process-wide and these cases
+   * deliberately leave a turn parked, so sharing one id would let a case that
+   * fails mid-way wedge the next one on a chain it never released — which is a
+   * timeout, not a finding.
+   */
+  let session: string;
+  let caseIndex = 0;
+  const sessionFor = (index: number): string =>
+    `00000000-0000-4000-8000-${String(index).padStart(12, '0')}`;
+
+  /**
+   * Start a long turn this client owns, then queue a compact behind it using the
+   * PRODUCTION default wait — passing `queueWaitMs` here would hide the very
+   * mismatch under test. Returns the levers each case needs.
+   */
+  function compactBehindALongTurn(): {
+    turnStarted: Promise<boolean>;
+    intent: Promise<{ accepted: boolean }>;
+    intentCalls: string[];
+    openTurn: () => void;
+  } {
+    const turnGate = gate();
+    const intentCalls: string[] = [];
+    const projector = getOrCreateProjector(session);
+
+    const turnDeps: TriggerTurnDeps = {
+      ...lockDeps(),
+      sendMessage: () =>
+        (async function* () {
+          yield { type: 'text_delta', data: { text: 'working' } } as StreamEvent;
+          await turnGate.wait;
+          yield { type: 'done', data: {} } as StreamEvent;
+        })(),
+      interruptQuery: async () => false,
+      getInternalSessionId: () => undefined,
+      rekeyProjector: () => {},
+      getCapabilities: () => ({ nativeContext: [] }) as unknown as RuntimeCapabilities,
+    };
+    const intentDeps: TriggerCommandIntentDeps = {
+      ...lockDeps(),
+      executeCommandIntent: (_sid, intent) => {
+        intentCalls.push(intent);
+        return (async function* () {
+          yield { type: 'done', data: {} } as StreamEvent;
+        })();
+      },
+      interruptQuery: async () => false,
+      getInternalSessionId: () => undefined,
+    };
+
+    const turnStarted = triggerTurn({
+      sessionId: session,
+      clientId: TAB,
+      content: 'long turn',
+      projector,
+      deps: turnDeps,
+      queueWaitMs: SESSIONS.LOCK_TTL_MS,
+      stallTimeoutMs: SESSIONS.LOCK_TTL_MS,
+    }).then((result) => result.accepted);
+
+    const intent = turnStarted.then(() =>
+      triggerCommandIntent({
+        sessionId: session,
+        clientId: TAB,
+        intent: 'compact',
+        projector,
+        deps: intentDeps,
+        stallTimeoutMs: SESSIONS.LOCK_TTL_MS,
+      })
+    );
+
+    return { turnStarted, intent, intentCalls, openTurn: turnGate.open };
+  }
+
+  beforeEach(() => {
+    caseIndex += 1;
+    session = sessionFor(caseIndex);
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    disposeProjector(session);
+  });
+
+  it('answers before the client abandons the request', async () => {
+    const { turnStarted, intent, intentCalls, openTurn } = compactBehindALongTurn();
+    expect(await turnStarted).toBe(true);
+
+    let settled: { accepted: boolean } | undefined;
+    void intent.then((result) => (settled = result));
+
+    // The client arms `AbortSignal.timeout(COMMAND_INTENT_REQUEST_TIMEOUT_MS)`.
+    // Once that elapses the person has an error on screen, so the server owes an
+    // answer before it — otherwise the answer it eventually gives reaches nobody.
+    await vi.advanceTimersByTimeAsync(COMMAND_INTENT_REQUEST_TIMEOUT_MS);
+
+    expect(settled, 'the server must answer before the client gives up').toBeDefined();
+    // The turn ahead is still demonstrably alive, so the honest answer is "busy".
+    expect(settled?.accepted).toBe(false);
+    expect(intentCalls).toEqual([]);
+
+    // Let the parked turn finish so this case leaves the process-wide queue empty.
+    openTurn();
+    await vi.advanceTimersByTimeAsync(1_000);
+  });
+
+  it('never compacts after the person has been told it failed', async () => {
+    const { turnStarted, intentCalls, openTurn } = compactBehindALongTurn();
+    expect(await turnStarted).toBe(true);
+
+    // Past the client's bound: the request is aborted and the person sees a
+    // failure. Aborting a fetch does not cancel the handler, so whether the
+    // intent still runs is entirely up to the server.
+    await vi.advanceTimersByTimeAsync(COMMAND_INTENT_REQUEST_TIMEOUT_MS);
+
+    // The long turn finally finishes and hands back the lock. THIS is the ghost:
+    // an intent still parked in the queue wakes up here and compacts a
+    // conversation the person was told would not be touched.
+    openTurn();
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    expect(intentCalls, 'a failure the person saw must never execute later').toEqual([]);
   });
 });
