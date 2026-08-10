@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(client): the sidebar footer is one strip, and ✦ Ask DorkBot opens a session that already knows the situation (P2.5, DOR-1070)'
+  - 'docs(contributing): the three guides that still describe the footer bar describe the footer strip (P2.5, DOR-1070)'
 ---
 
 ### Changed
