@@ -3,6 +3,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import {
   SessionStateProjector,
   CAPABILITY_HOLD_PAUSE_GRACE_MS,
+  SUBAGENT_SILENCE_TIMEOUT_MS,
   getOrCreateProjector,
   peekProjector,
   disposeProjector,
@@ -209,6 +210,119 @@ describe('SessionStateProjector', () => {
       { type: 'subagent_update', taskId: 'bt1', status: 'untracked' },
       { type: 'subagent_update', taskId: 'bt2', status: 'untracked' },
     ]);
+  });
+
+  // DOR-1104: the DOR-1100 set drains on terminal updates and on the stream-end
+  // sweep, and a child that produces NEITHER — its turn interrupted, its process
+  // killed, a runtime that simply stops reporting — used to sit in the count with
+  // no bound and nothing that could ever clear it. On a quiet session no further
+  // event arrives to notice, so the bound has to be a clock of its own.
+  it('expires a running child that goes silent past the bound once the session is idle', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(1_000_000);
+    const p = new SessionStateProjector('leak-1');
+    p.ingest({ type: 'turn_start' } as RawSessionEvent);
+    p.ingest({ type: 'subagent_update', taskId: 'bt1', status: 'running' } as RawSessionEvent);
+    p.ingest({ type: 'turn_end' } as RawSessionEvent);
+    expect(p.getStatus().runningSubagentCount).toBe(1);
+
+    // One millisecond short: still the honest "stopped talking, not finished".
+    vi.advanceTimersByTime(SUBAGENT_SILENCE_TIMEOUT_MS - 1);
+    expect(p.getStatus().runningSubagentCount).toBe(1);
+
+    vi.advanceTimersByTime(1);
+    expect(p.getStatus().runningSubagentCount).toBe(0);
+    expect(p.listRunningSubagents()).toEqual([]);
+  });
+
+  // It drains through the STREAM, like every other retirement, so a client that
+  // folds its own count (the cockpit does) drops the same id instead of holding
+  // it forever while the server reads zero. And `untracked` (DOR-1108): silence
+  // is not evidence of a stop.
+  it('retires an expired child through the stream as untracked', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(2_000_000);
+    const p = new SessionStateProjector('leak-2');
+    p.ingest({ type: 'turn_start' } as RawSessionEvent);
+    p.ingest({ type: 'subagent_update', taskId: 'bt1', status: 'running' } as RawSessionEvent);
+    p.ingest({ type: 'turn_end' } as RawSessionEvent);
+
+    const ingestSpy = vi.spyOn(p, 'ingest');
+    vi.advanceTimersByTime(SUBAGENT_SILENCE_TIMEOUT_MS);
+
+    expect(ingestSpy.mock.calls.map((c) => c[0])).toEqual([
+      { type: 'subagent_update', taskId: 'bt1', status: 'untracked' },
+    ]);
+  });
+
+  // The bound is on SILENCE, not on age: a child that keeps reporting keeps its
+  // place however long it runs. Without this the fix would cap every background
+  // task at the window and cut real work off mid-flight.
+  it('keeps a child that is still reporting, however long it has run', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(3_000_000);
+    const p = new SessionStateProjector('leak-3');
+    p.ingest({ type: 'turn_start' } as RawSessionEvent);
+    p.ingest({ type: 'subagent_update', taskId: 'bt1', status: 'running' } as RawSessionEvent);
+    p.ingest({ type: 'turn_end' } as RawSessionEvent);
+
+    // Four windows' worth of work, each one broken by a progress report.
+    for (let i = 0; i < 4; i++) {
+      vi.advanceTimersByTime(SUBAGENT_SILENCE_TIMEOUT_MS - 1_000);
+      p.ingest({
+        type: 'subagent_update',
+        taskId: 'bt1',
+        status: 'running',
+        toolUses: i + 1,
+      } as RawSessionEvent);
+    }
+    expect(p.getStatus().runningSubagentCount).toBe(1);
+
+    // …and it goes when the reports do.
+    vi.advanceTimersByTime(SUBAGENT_SILENCE_TIMEOUT_MS);
+    expect(p.getStatus().runningSubagentCount).toBe(0);
+  });
+
+  // The clock only runs while the session is idle. A quiet child during a turn
+  // the agent is still working is not suspicious — the agent is right there, and
+  // finishing is what wakes it. Expiring one mid-turn would delete a live child
+  // out from under the turn that is about to hear from it.
+  it('does not expire a child while a turn is still open', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(4_000_000);
+    const p = new SessionStateProjector('leak-4');
+    p.ingest({ type: 'turn_start' } as RawSessionEvent);
+    p.ingest({ type: 'subagent_update', taskId: 'bt1', status: 'running' } as RawSessionEvent);
+
+    vi.advanceTimersByTime(SUBAGENT_SILENCE_TIMEOUT_MS * 3);
+    expect(p.getStatus().runningSubagentCount).toBe(1);
+
+    // The window starts over when the turn closes, not when the child last spoke:
+    // a long turn must not hand the child a deadline that has already passed.
+    p.ingest({ type: 'turn_end' } as RawSessionEvent);
+    vi.advanceTimersByTime(SUBAGENT_SILENCE_TIMEOUT_MS - 1);
+    expect(p.getStatus().runningSubagentCount).toBe(1);
+    vi.advanceTimersByTime(1);
+    expect(p.getStatus().runningSubagentCount).toBe(0);
+  });
+
+  // A snapshot reconciles too, so a tab opened after the deadline passed reads
+  // the truth even if the timer never got to run (a suspended process, a
+  // projector nothing has touched since).
+  it('reconciles the expired count when a snapshot is built', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(5_000_000);
+    const p = new SessionStateProjector('leak-5');
+    p.ingest({ type: 'turn_start' } as RawSessionEvent);
+    p.ingest({ type: 'subagent_update', taskId: 'bt1', status: 'running' } as RawSessionEvent);
+    p.ingest({ type: 'turn_end' } as RawSessionEvent);
+    // Cancel the armed sweep the way disposal does, so only the snapshot can fix
+    // this — otherwise the timer would answer and the reconcile prove nothing.
+    p.cancelTimers();
+
+    vi.advanceTimersByTime(SUBAGENT_SILENCE_TIMEOUT_MS);
+    const snapshot = await p.buildSnapshot(async () => []);
+    expect(snapshot.status.runningSubagentCount).toBe(0);
   });
 
   // A reopened window (DOR-1100) is a real turn as far as the projection is
