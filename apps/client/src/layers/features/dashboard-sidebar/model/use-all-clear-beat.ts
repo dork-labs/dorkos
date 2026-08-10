@@ -62,8 +62,29 @@ export function useAllClearBeat(model: SidebarModel): boolean {
   useEffect(() => {
     const before = previousCount.current;
     previousCount.current = count;
-    if (reducedMotion === true) return;
-    if (before === 0 || count > 0 || hasNowZone) return;
+    const shouldBeat = reducedMotion !== true && before > 0 && count === 0 && !hasNowZone;
+
+    // **Every path that is not a beat puts the flag down, and that is the whole
+    // fix.** React runs this effect's cleanup before re-running it, so a re-run
+    // that took an early return had already cancelled the timer that was going
+    // to lower the flag — leaving `beating` stuck true with nothing left to
+    // clear it. The stuck flag was invisible while the zone slot was occupied
+    // and then rendered "All clear ✓" forever the moment it freed up, which
+    // breaks the zone's own zero-DOM-when-empty promise (P2 AC-1, BC-50).
+    //
+    // The interleaving that reaches it is the ordinary one: resolve the last
+    // approval, and an agent starts a turn inside the next 2.5 seconds. Now
+    // comes straight back holding only "1 working", so `count` is still 0 while
+    // `hasNowZone` flips true.
+    if (!shouldBeat) {
+      setBeating(false);
+      return;
+    }
+
+    // Abandoned rather than resumed when that happens. The beat is an
+    // announcement that the zone is going away, and a zone that came back has
+    // not gone away — replaying it after the turn ends would say "all clear"
+    // about a queue that was cleared minutes ago.
     setBeating(true);
     const timer = setTimeout(() => setBeating(false), ALL_CLEAR_BEAT_MS);
     return () => clearTimeout(timer);

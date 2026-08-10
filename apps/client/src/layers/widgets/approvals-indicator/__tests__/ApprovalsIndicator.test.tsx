@@ -33,7 +33,8 @@ vi.mock('@/layers/shared/model', async (importOriginal) => {
 });
 
 import { TransportProvider, useEventSubscription } from '@/layers/shared/model';
-import { usePendingApprovals, useStandingPermissions } from '@/layers/features/approvals';
+import { usePendingApprovals } from '@/layers/entities/attention';
+import { useStandingPermissions } from '@/layers/features/approvals';
 import { useConfig } from '@/layers/entities/config';
 import { ApprovalsIndicator } from '../ui/ApprovalsIndicator';
 

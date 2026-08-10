@@ -17,6 +17,8 @@ import { useIdleNudgeStore } from '@/layers/entities/attention';
 import { useDiscoveryStore } from '@/layers/entities/discovery';
 import { useAgentCreationStore } from '@/layers/shared/model';
 import { DashboardSidebar } from '../ui/DashboardSidebar';
+import { ALL_CLEAR_BEAT_MS } from '../model/use-all-clear-beat';
+import { LIVE_REGION_DEBOUNCE_MS } from '../model/use-live-region-text';
 import { SidebarProvider, TooltipProvider } from '@/layers/shared/ui';
 import type { SidebarPrefs, SidebarGroup, SidebarItemRef } from '@dorkos/shared/config-schema';
 import type { PendingApproval } from '@dorkos/shared/approval-schemas';
@@ -1060,13 +1062,24 @@ describe('Now — the zone that justifies the redesign', () => {
   });
 
   describe('P2 AC-5 — what can never be in Now', () => {
-    it('keeps mentions, DMs, unread channels and automated activity out', async () => {
+    it('keeps mentions, DMs and unread channels out, and gives an automated session no row', async () => {
+      // Renamed from "…and automated activity out", which is not what it
+      // proves: the automated session below IS counted by the working rollup,
+      // so the old name claimed the opposite of the assertion. What it does
+      // prove — and what P2 AC-5 asks for — is that no ROW is sourced from a
+      // mention, a DM, an unread channel or an automated session. Whether a
+      // background task belongs in the "N working" count at all is a question
+      // about `buildWorkingRollup` (P1.1's rule, which reads no origin) and is
+      // raised for a ruling rather than settled here.
       mockRooms.mockReturnValue([
         { ...channel('c1', 'deploys'), unreadCount: 12 },
         { ...dmWith('d1', '/projects/alpha', 'alpha'), unreadCount: 6 },
       ]);
       seedSessions([
-        { session: recentSession('auto', { origin: 'task' }), lifecycle: 'streaming' },
+        {
+          session: recentSession('auto', { origin: 'task', title: 'Nightly sweep' }),
+          lifecycle: 'streaming',
+        },
       ]);
       mockSelectedCwd = null;
       await renderSidebarWithNow();
@@ -1075,8 +1088,11 @@ describe('Now — the zone that justifies the redesign', () => {
       // test of an empty cockpit.
       await waitFor(() => expect(document.body.textContent).toContain('deploys'));
       // Now holds the working rollup and nothing else: no room, no DM, no
-      // unread count, no session title.
+      // unread count, and no row of the automated session's own.
       expect(zoneRows(nowZone())).toEqual(['1 working']);
+      expect(nowZone()?.textContent).not.toContain('Nightly sweep');
+      expect(nowZone()?.textContent).not.toContain('deploys');
+      expect(nowZone()?.textContent).not.toContain('12');
     });
   });
 
@@ -1267,7 +1283,7 @@ describe('Now — the zone that justifies the redesign', () => {
         expect(region()).toBe('');
 
         await act(async () => {
-          await vi.advanceTimersByTimeAsync(1_000);
+          await vi.advanceTimersByTimeAsync(LIVE_REGION_DEBOUNCE_MS);
         });
         expect(region()).toBe('2 agents need you');
       } finally {
@@ -1282,7 +1298,7 @@ describe('Now — the zone that justifies the redesign', () => {
         seedSessions([{ session: recentSession('w1'), lifecycle: 'streaming' }]);
         renderWithProviders(<DashboardSidebar />);
         await act(async () => {
-          await vi.advanceTimersByTimeAsync(1_100);
+          await vi.advanceTimersByTimeAsync(LIVE_REGION_DEBOUNCE_MS + 100);
         });
         const region = () =>
           nowZone()?.querySelector('[aria-live="polite"]')?.textContent?.trim() ?? '';
@@ -1329,7 +1345,64 @@ describe('Now — the zone that justifies the redesign', () => {
         );
 
         await act(async () => {
-          await vi.advanceTimersByTimeAsync(2_500);
+          await vi.advanceTimersByTimeAsync(ALL_CLEAR_BEAT_MS);
+        });
+        expect(document.querySelector('[data-slot="sidebar-all-clear"]')).toBeNull();
+        expect(nowZone()).toBeNull();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('abandons the beat when Now comes straight back holding a working session', async () => {
+      // **The interleaving that stranded the flag.** Resolve the last approval,
+      // and an agent starts a turn inside the beat's own 2.5 seconds: Now
+      // returns holding only "1 working", so the needs-you count is still zero
+      // while the zone exists again. The effect re-runs, React's cleanup has
+      // already cancelled the timer that would have lowered the flag, and every
+      // early return left it raised — so when the turn ended and the zone went
+      // away, "All clear ✓" came back with nothing to take it away again.
+      vi.useFakeTimers();
+      try {
+        mockApprovals.mockReturnValue([pendingApproval()]);
+        const view = renderWithProviders(<DashboardSidebar />);
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(50);
+        });
+        expect(nowZone()).not.toBeNull();
+
+        // The last thing needing you resolves. The beat starts.
+        mockApprovals.mockReturnValue([]);
+        await act(async () => {
+          void view.queryClient.invalidateQueries();
+          await vi.advanceTimersByTimeAsync(50);
+        });
+        expect(document.querySelector('[data-slot="sidebar-all-clear"]')).not.toBeNull();
+
+        // An agent starts a turn, well inside the beat.
+        await act(async () => {
+          useSessionListStore
+            .getState()
+            .setSessionStatus('w1', { lifecycle: 'streaming' } as never);
+          await vi.advanceTimersByTimeAsync(200);
+        });
+        // The zone is back, and it is the working rollup — not the beat.
+        expect(zoneRows(nowZone())).toEqual(['1 working']);
+        expect(document.querySelector('[data-slot="sidebar-all-clear"]')).toBeNull();
+
+        // The turn ends. Nothing is waiting and nothing is working, so the zone
+        // must be gone — permanently, not until something re-renders.
+        await act(async () => {
+          useSessionListStore.getState().setSessionStatus('w1', { lifecycle: 'idle' } as never);
+          await vi.advanceTimersByTimeAsync(50);
+        });
+        expect(document.querySelector('[data-slot="sidebar-all-clear"]')).toBeNull();
+        expect(nowZone()).toBeNull();
+
+        // And it stays gone long past the beat's own life, which is what says
+        // the flag was lowered rather than merely waiting on a timer.
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(ALL_CLEAR_BEAT_MS * 4);
         });
         expect(document.querySelector('[data-slot="sidebar-all-clear"]')).toBeNull();
         expect(nowZone()).toBeNull();

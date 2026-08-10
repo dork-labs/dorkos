@@ -33,13 +33,15 @@ export const IDLE_NUDGE_WINDOW_MS = 24 * 60 * 60 * 1000;
 /**
  * How many idle nudges may exist at once.
  *
+ * Module-private: it is a property of this rule, not a knob a caller sets.
+ *
  * **One.** BC-10 states the restart cost as "a restart may re-surface at most
  * one nudge", which only reads as a bound if at most one exists to begin with.
  * It is also the etiquette rule (`meta/agent-etiquette.md`): over-participation
  * is the failure mode people complain about, and a fleet of thirty agents with
  * a nudge each is the loudest possible way to say nothing.
  */
-export const IDLE_NUDGE_LIMIT = 1;
+const IDLE_NUDGE_LIMIT = 1;
 
 /**
  * What a session this client has ATTACHED to is waiting on.
@@ -192,6 +194,18 @@ export function deriveAttentionSignals(sources: AttentionSources): AttentionSign
       // the only one that needs the attached session's own answer. An
       // elicitation is a prompt from an MCP server that the operator answers
       // exactly like a permission ask, so it reads as one.
+      //
+      // **The degradation has a cost worth stating.** A session this window has
+      // not attached to falls back to `permission-prompt`, which is BC-6's top
+      // tier — so a background agent's QUESTION is asked about before a real
+      // permission prompt, and `select-now-items.ts` gives it the shield glyph
+      // when the session has no `cwd` to draw a face from. The copy is kept
+      // neutral ("Waiting on you") rather than claiming a permission was asked
+      // for. Fixing it properly means either a fifth `NowKind` for "blocked,
+      // kind unknown" — which BC-5 closes at four — or the fleet-wide stream
+      // carrying the interaction kind, which is a server change. Both are
+      // spec-level decisions, so this stays honest in words and is raised
+      // rather than quietly re-tiered.
       const isQuestion = interaction?.type === 'question';
       signals.push(
         sessionSignal(session, sources, {

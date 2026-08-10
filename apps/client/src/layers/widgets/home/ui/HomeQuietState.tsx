@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useLoadedRoomEntries } from '@/layers/entities/room';
 import { useTasks, useTasksEnabled } from '@/layers/entities/tasks';
-import { usePendingApprovals } from '@/layers/features/approvals';
+import { usePendingApprovals } from '@/layers/entities/attention';
 import { useAttentionItems } from '@/layers/features/dashboard-attention';
 import { QuietSuggestion } from '@/layers/features/feature-promos';
 import { useNow } from '@/layers/shared/model';

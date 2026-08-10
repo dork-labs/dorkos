@@ -224,10 +224,15 @@ describe('deriveAttentionSignals — the idle nudge (BC-10)', () => {
 
 describe('deriveAttentionSignals — what can never get in (BC-5, BC-39, P2 AC-5)', () => {
   it('has no room, mention, unread or update input to be given', () => {
-    // The allowlist is enforced by the SHAPE, not by a filter somebody could
-    // relax: there is nowhere in `AttentionSources` to put a room, a mention
-    // count or an update-ready notice. Asserted on the source of truth rather
-    // than on a type, so deleting the guard is not enough to keep it green.
+    // The allowlist is enforced by the SHAPE: there is nowhere in
+    // `AttentionSources` to put a room, a mention count or an update-ready
+    // notice, so no future branch can read one.
+    //
+    // **What this actually guards, exactly.** It reads the keys this file's own
+    // factory supplies, which is every REQUIRED field of `AttentionSources` —
+    // adding one without adding it here does not compile. It does NOT catch a
+    // new OPTIONAL field, which would leave this green; that case is a review
+    // question, and the docblock on `AttentionSources` is where it is answered.
     const keys = Object.keys(sources()).sort();
     expect(keys).toEqual([
       'agentNames',
@@ -240,12 +245,26 @@ describe('deriveAttentionSignals — what can never get in (BC-5, BC-39, P2 AC-5
     ]);
   });
 
-  it('says nothing about an automated session that is merely busy', () => {
-    const automated = session({ id: 'auto', origin: 'task' });
-    const signals = deriveAttentionSignals(
-      sources({ sessions: [automated], lifecycles: { auto: 'streaming' } })
+  it('treats an automated session exactly like any other — origin is not read', () => {
+    // The previous version of this case seeded `origin: 'task'` on a STREAMING
+    // session and asserted silence, which the lifecycle guard already produced:
+    // deleting the origin changed nothing, so it proved nothing about
+    // automation. This asserts the real property instead — that origin is not a
+    // dimension this rule has — by running the same two states past it and
+    // requiring identical answers.
+    const user = session({ id: 'same', updatedAt: ago(45 * MINUTE) });
+    const automated = session({ id: 'same', origin: 'task', updatedAt: ago(45 * MINUTE) });
+    const forUser = deriveAttentionSignals(
+      sources({ sessions: [user], lifecycles: { same: 'idle' } })
     );
-    expect(signals).toEqual([]);
+    const forAutomated = deriveAttentionSignals(
+      sources({ sessions: [automated], lifecycles: { same: 'idle' } })
+    );
+
+    // Both raise the nudge — an assertion on non-empty output, so "identical"
+    // below cannot be satisfied by two empty lists.
+    expect(forUser.map((s) => s.id)).toEqual(['idle:same']);
+    expect(forAutomated).toEqual(forUser);
   });
 
   it('puts an automated session that IS blocked in like anything else (BC-19)', () => {

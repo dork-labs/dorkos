@@ -495,8 +495,17 @@ function ModelZone({
       aria-labelledby={`${panelLabelId} ${headingId}`}
       className="bg-sidebar-accent/40 rounded-lg p-1"
     >
+      {/* **The real zone's own heading treatment, class for class.** Rows are
+          the real `SidebarRow` and section headers the real `SectionHeader`;
+          the zone heading was the one thing on this page drawn by hand, and it
+          was drawn at full opacity and a heavier weight than the shipped one.
+          That divergence is exactly what let `SidebarZone`'s heading sit at
+          3.2:1 in the light theme while this page's axe gate reported clean —
+          the gate was measuring a copy. Keep these in step with
+          `features/dashboard-sidebar/ui/SidebarZone.tsx`, or render that
+          component instead when it no longer needs row chrome to do it. */}
       <div className="flex items-center gap-1.5 px-2 pt-1 pb-1">
-        <h2 id={headingId} className="text-sidebar-foreground text-xs font-semibold">
+        <h2 id={headingId} className="text-sidebar-foreground/70 text-[11px] font-medium">
           {zone.label}
         </h2>
         <ReasonChip reason={zone.reason} show={showReasons} />

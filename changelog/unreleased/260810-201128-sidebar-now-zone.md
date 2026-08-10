@@ -1,6 +1,7 @@
 ---
 covers:
   - "feat(client): the sidebar's Now zone says what needs you, and Getting started fills its slot on day one (P2.2, DOR-1067)"
+  - 'fix(client): the all-clear beat lets go when Now comes straight back, and the approvals queue loses its shim (P2.2 review, DOR-1067)'
 ---
 
 ### Added
@@ -15,9 +16,9 @@ covers:
   into a single "N working" line instead of a row each
 - When the last thing needing you is done, Now says "All clear" for a moment and then folds
   away. If you have asked your system for less motion, it simply disappears
-- A new **Getting started** zone takes Now's place on a fresh install. It suggests what you
-  have not done yet — meet the agents we found on your machine, add your first agent, say hi in
-  #team, ask DorkBot something — and each suggestion retires for good once you have done it
+- A new **Getting started** zone takes Now's place on a fresh install. It suggests what you have
+  not done yet — add your first agent, ask DorkBot something — and each suggestion retires for
+  good once you have done it, even if the thing it was about goes away again later
 
 ### Changed
 
