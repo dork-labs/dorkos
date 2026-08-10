@@ -3,54 +3,55 @@
  *
  * @module widgets/activity/model/use-session-activity
  */
-import { useMemo } from 'react';
-import { useSessions } from '@/layers/entities/session';
-import { useNow } from '@/layers/shared/model';
+import { useQuery } from '@tanstack/react-query';
+import type { SessionDailyCountsResponse } from '@dorkos/shared/types';
+import { sessionKeys } from '@/layers/entities/session';
+import { useTransport } from '@/layers/shared/model';
 
-const MS_PER_DAY = 24 * 60 * 60 * 1000;
-const BUCKET_COUNT = 7;
+/** How many days the week line covers, ending today. */
+export const ACTIVITY_WINDOW_DAYS = 7;
+
+/** A counted week, as the summary line and sparkline consume it. */
+export interface SessionWeekActivity {
+  /** Sessions started per day, oldest first; the last entry is today. */
+  dailyCounts: number[];
+  /**
+   * At least one runtime could not be read, so `dailyCounts` is a FLOOR, not a
+   * total. Copy built on it must not report the number as a total (ADR-0310).
+   */
+  degraded: boolean;
+}
 
 /**
- * Derive a 7-day daily session count array for the activity sparkline.
- * Index 0 = 6 days ago, index 6 = today.
+ * Count the sessions started per day across EVERY agent on this machine.
  *
- * Counts sessions in the **currently selected project**, not across the whole
- * machine: `GET /api/sessions` is project-scoped by construction (ADR-0310 —
- * every runtime derives its list from that project's own transcript store), so
- * there is no global session list to count. Callers must say so in their copy.
+ * The Activity feed below this line is machine-wide, so this count is taken at
+ * the same SCOPE — from `GET /api/sessions/daily-counts`, which fans out across
+ * every registered agent and every runtime (DOR-1039). It is deliberately NOT
+ * derived from `useSessions`, which answers for the one project the client has
+ * selected (ADR-0310) and so described a smaller machine than the feed it sat
+ * above.
  *
- * @returns Seven integers, oldest day first — or `null` while the session list
- *   is unknown (no project selected yet, first load in flight, or the list
- *   failed). `null` is not zero: it means the question has no answer yet, and
- *   the caller must render nothing rather than claim a quiet week.
+ * Same scope is as far as it goes: the feed carries no session events, so the
+ * line counts sessions while the feed lists what subsystems did.
+ *
+ * @returns The counted week, or `null` while there is no answer — the first
+ *   load, a failed request, or an embedded transport with no agent roster.
+ *   `null` is not zero: it means the question is unanswered, and the caller
+ *   must render nothing rather than claim a quiet week.
  */
-export function useSessionActivity(): number[] | null {
-  const { sessions, isAnswered } = useSessions();
-  const nowMs = useNow();
+export function useSessionActivity(): SessionWeekActivity | null {
+  const transport = useTransport();
 
-  return useMemo(() => {
-    if (!isAnswered) return null;
+  const { data } = useQuery<SessionDailyCountsResponse>({
+    queryKey: sessionKeys.dailyCounts(ACTIVITY_WINDOW_DAYS),
+    queryFn: () => transport.getSessionDailyCounts(ACTIVITY_WINDOW_DAYS),
+    staleTime: 60_000,
+  });
 
-    const buckets = Array(BUCKET_COUNT).fill(0) as number[];
-    if (!sessions.length) return buckets;
+  // An empty window is what a transport with nothing to count returns; it is an
+  // absent answer, not a week of zeros.
+  if (!data || data.dailyCounts.length === 0) return null;
 
-    const now = new Date(nowMs);
-    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-
-    for (const session of sessions) {
-      const created = new Date(session.createdAt);
-      const startOfCreatedDay = new Date(
-        created.getFullYear(),
-        created.getMonth(),
-        created.getDate()
-      );
-      const diffDays = Math.floor(
-        (startOfToday.getTime() - startOfCreatedDay.getTime()) / MS_PER_DAY
-      );
-      if (diffDays >= 0 && diffDays < BUCKET_COUNT) {
-        buckets[BUCKET_COUNT - 1 - diffDays]++;
-      }
-    }
-    return buckets;
-  }, [isAnswered, nowMs, sessions]);
+  return { dailyCounts: data.dailyCounts, degraded: (data.warnings?.length ?? 0) > 0 };
 }

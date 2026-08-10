@@ -19,8 +19,12 @@ import type {
   McpAppResourceResponse,
   DevtoolsIngest,
   RecentSessionsResponse,
+  SessionDailyCountsResponse,
 } from '@dorkos/shared/schemas';
-import { RecentSessionsResponseSchema } from '@dorkos/shared/schemas';
+import {
+  RecentSessionsResponseSchema,
+  SessionDailyCountsResponseSchema,
+} from '@dorkos/shared/schemas';
 import type { ClientContext } from '@dorkos/shared/additional-context';
 import type { RuntimeCommandIntentId } from '@dorkos/shared/command-intents';
 import { COMMAND_INTENT_REQUEST_TIMEOUT_MS } from '@dorkos/shared/command-intents';
@@ -63,6 +67,12 @@ export function createSessionMethods(
       const qs = buildQueryString({ limit });
       const data = await fetchJSON<unknown>(baseUrl, `/sessions/recent${qs}`);
       return RecentSessionsResponseSchema.parse(data);
+    },
+
+    async getSessionDailyCounts(days?: number): Promise<SessionDailyCountsResponse> {
+      const qs = buildQueryString({ days });
+      const data = await fetchJSON<unknown>(baseUrl, `/sessions/daily-counts${qs}`);
+      return SessionDailyCountsResponseSchema.parse(data);
     },
 
     getSession(id: string, cwd?: string): Promise<Session> {

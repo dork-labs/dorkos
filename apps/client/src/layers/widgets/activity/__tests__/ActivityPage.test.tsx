@@ -25,7 +25,7 @@ vi.mock('../ui/ActivityLoadMore', () => ({
   ActivityLoadMore: () => null,
 }));
 
-const useSessionActivity = vi.fn<() => number[] | null>();
+const useSessionActivity = vi.fn<() => { dailyCounts: number[]; degraded: boolean } | null>();
 vi.mock('../model/use-session-activity', () => ({
   useSessionActivity: () => useSessionActivity(),
 }));
@@ -41,7 +41,7 @@ describe('ActivityPage', () => {
   beforeEach(() => {
     useExtensionRegistry.setState({ slots: createInitialSlots() });
     useSessionActivity.mockReset();
-    useSessionActivity.mockReturnValue([1, 0, 0, 0, 0, 0, 2]);
+    useSessionActivity.mockReturnValue({ dailyCounts: [1, 0, 0, 0, 0, 0, 2], degraded: false });
   });
 
   it('puts the week summary and extension sections above the feed, in that order', () => {
@@ -52,7 +52,7 @@ describe('ActivityPage', () => {
 
     const { container } = render(<ActivityPage />);
 
-    const summary = screen.getByText('3 runs in this project this week');
+    const summary = screen.getByText('Your agents started 3 sessions this week');
     const heading = screen.getByText('From your extensions');
     const widget = screen.getByTestId('acme-widget');
     const timeline = screen.getByTestId('activity-timeline');
@@ -78,12 +78,12 @@ describe('ActivityPage', () => {
     expect(screen.getByTestId('activity-timeline')).toBeInTheDocument();
   });
 
-  it('shows the feed with no week summary while the session list is unknown', () => {
+  it('shows the feed with no week summary while the count is unknown', () => {
     useSessionActivity.mockReturnValue(null);
 
     render(<ActivityPage />);
 
-    expect(screen.queryByText(/this project this week/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/this week/)).not.toBeInTheDocument();
     expect(screen.getByTestId('activity-timeline')).toBeInTheDocument();
   });
 });

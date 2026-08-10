@@ -4,7 +4,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, waitFor, act } from '@testing-library/react';
 import type { ReactNode } from 'react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query';
 import type { RecentSessionsResponse, Session } from '@dorkos/shared/types';
 import { createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
@@ -41,6 +41,7 @@ import { useGlobalSessionStream } from '../model/use-global-session-stream';
 import { useRecentSessions } from '../model/use-recent-sessions';
 import { useSessions } from '../model/use-sessions';
 import { useSessionListStore } from '../model/session-list-store';
+import { sessionKeys } from '../api/query-keys';
 
 function makeSession(id: string): Session {
   return {
@@ -152,5 +153,87 @@ describe('useGlobalSessionStream — session_list_invalidated', () => {
     // session and the store keeps holding it.
     await waitFor(() => expect(result.current.list.sessions[0]?.id).toBe('from-new-account'));
     expect(useSessionListStore.getState().sessions).toEqual({});
+  });
+});
+
+/**
+ * The Activity tab's week line (DOR-1039) counts sessions across EVERY agent, so
+ * it goes stale when a session appears or disappears — and only then. A
+ * streaming turn upserts the same session many times a second, and a fan-out per
+ * upsert would re-read every agent's transcripts for a number that cannot have
+ * moved.
+ */
+describe('useGlobalSessionStream — daily-counts invalidation', () => {
+  beforeEach(() => {
+    useSessionListStore.setState({ sessions: {}, rekeys: {} });
+    vi.clearAllMocks();
+  });
+
+  /**
+   * Mount a reader of the week-count query beside the bridge. It stands in for
+   * `widgets/activity`'s `useSessionActivity`, which this layer must not import
+   * (FSD: entities never reach up into widgets) — both read under the same key
+   * factory, which is the contract the bridge has to keep matching.
+   */
+  function mountWeekCount() {
+    const getSessionDailyCounts = vi
+      .fn()
+      .mockResolvedValue({ days: 7, dailyCounts: [0, 0, 0, 0, 0, 0, 1], warnings: [] });
+    const transport = createMockTransport({ getSessionDailyCounts });
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={queryClient}>
+        <TransportProvider transport={transport}>{children}</TransportProvider>
+      </QueryClientProvider>
+    );
+    const rendered = renderHook(
+      () => ({
+        week: useQuery({
+          queryKey: sessionKeys.dailyCounts(7),
+          queryFn: () => transport.getSessionDailyCounts(7),
+        }),
+        stream: useGlobalSessionStream(),
+      }),
+      { wrapper }
+    );
+    return { getSessionDailyCounts, ...rendered };
+  }
+
+  it('recounts the week when a session appears', async () => {
+    // Red when: the bridge's invalidation prefix and the week query's key drift
+    // apart — the count then sits still while the feed under it moves.
+    const { getSessionDailyCounts, result } = mountWeekCount();
+    await waitFor(() => expect(result.current.week.isSuccess).toBe(true));
+    expect(getSessionDailyCounts).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      useSessionListStore.getState().upsertSession(makeSession('brand-new'));
+    });
+
+    await waitFor(() => expect(getSessionDailyCounts).toHaveBeenCalledTimes(2));
+  });
+
+  it('does not recount while a session it already knows about keeps streaming', async () => {
+    const { getSessionDailyCounts, result } = mountWeekCount();
+    await waitFor(() => expect(result.current.week.isSuccess).toBe(true));
+
+    act(() => {
+      useSessionListStore.getState().upsertSession(makeSession('a1'));
+    });
+    await waitFor(() => expect(getSessionDailyCounts).toHaveBeenCalledTimes(2));
+
+    // The same session, updated the way a streaming turn updates it.
+    act(() => {
+      for (let i = 0; i < 5; i++) {
+        useSessionListStore
+          .getState()
+          .upsertSession({ ...makeSession('a1'), updatedAt: `2026-03-01T00:00:0${i}.000Z` });
+      }
+    });
+
+    // Red when: every upsert invalidates the count — a fleet of streaming
+    // sessions then re-reads every agent's transcript directory continuously.
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(getSessionDailyCounts).toHaveBeenCalledTimes(2);
   });
 });

@@ -3,8 +3,9 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import type { SessionWeekActivity } from '../model/use-session-activity';
 
-const useSessionActivity = vi.fn<() => number[] | null>();
+const useSessionActivity = vi.fn<() => SessionWeekActivity | null>();
 vi.mock('../model/use-session-activity', () => ({
   useSessionActivity: () => useSessionActivity(),
 }));
@@ -16,9 +17,9 @@ describe('ActivityWeekSummary', () => {
     useSessionActivity.mockReset();
   });
 
-  it('renders nothing while the session list is unknown', () => {
-    // A disabled query (no project selected yet) or a first load in flight.
-    // An empty list there is an unanswered question, not a quiet week.
+  it('renders nothing while the count is unknown', () => {
+    // First load in flight, a failed request, or an embed with no agent roster.
+    // Silence there is an unanswered question, not a quiet week.
     useSessionActivity.mockReturnValue(null);
 
     const { container } = render(<ActivityWeekSummary />);
@@ -26,24 +27,34 @@ describe('ActivityWeekSummary', () => {
     expect(container).toBeEmptyDOMElement();
   });
 
-  it('says nothing ran once the list has answered and is empty', () => {
-    useSessionActivity.mockReturnValue([0, 0, 0, 0, 0, 0, 0]);
+  it('says nothing started once the count has answered and is zero', () => {
+    useSessionActivity.mockReturnValue({ dailyCounts: [0, 0, 0, 0, 0, 0, 0], degraded: false });
 
     render(<ActivityWeekSummary />);
 
-    expect(screen.getByText('No runs in this project this week')).toBeInTheDocument();
+    expect(screen.getByText('Your agents started no sessions this week')).toBeInTheDocument();
   });
 
-  it('says how busy the week has been', () => {
-    useSessionActivity.mockReturnValue([1, 0, 2, 0, 0, 3, 1]);
+  it('says how busy the week has been across every agent', () => {
+    useSessionActivity.mockReturnValue({ dailyCounts: [1, 0, 2, 0, 0, 3, 1], degraded: false });
 
     render(<ActivityWeekSummary />);
 
-    expect(screen.getByText('7 runs in this project this week')).toBeInTheDocument();
+    expect(screen.getByText('Your agents started 7 sessions this week')).toBeInTheDocument();
+  });
+
+  it('reports a floor, not a total, when a runtime could not be read', () => {
+    useSessionActivity.mockReturnValue({ dailyCounts: [1, 0, 2, 0, 0, 3, 1], degraded: true });
+
+    render(<ActivityWeekSummary />);
+
+    expect(
+      screen.getByText('Your agents started at least 7 sessions this week')
+    ).toBeInTheDocument();
   });
 
   it('draws one bar per day', () => {
-    useSessionActivity.mockReturnValue([1, 0, 2, 0, 0, 3, 1]);
+    useSessionActivity.mockReturnValue({ dailyCounts: [1, 0, 2, 0, 0, 3, 1], degraded: false });
 
     const { container } = render(<ActivityWeekSummary />);
 

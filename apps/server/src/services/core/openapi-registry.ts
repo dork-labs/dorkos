@@ -33,6 +33,8 @@ import {
   SessionListResponseSchema,
   RecentSessionsQuerySchema,
   RecentSessionsResponseSchema,
+  SessionDailyCountsQuerySchema,
+  SessionDailyCountsResponseSchema,
   UpdateSessionRequestSchema,
   SendMessageRequestSchema,
   SendMessageResponseSchema,
@@ -412,6 +414,30 @@ registry.registerPath({
       description: 'Recent sessions envelope with per-agent activity map',
       content: {
         'application/json': { schema: RecentSessionsResponseSchema },
+      },
+    },
+    400: {
+      description: 'Validation error',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/sessions/daily-counts',
+  tags: ['Sessions'],
+  summary: 'Count sessions started per day across all agents',
+  description:
+    'Counts the sessions started each local day across every registered agent (DOR-1039), oldest day first. Per-runtime failures degrade to `warnings[]`, which makes the counts a floor rather than a total (ADR-0310).',
+  request: {
+    query: SessionDailyCountsQuerySchema,
+  },
+  responses: {
+    200: {
+      description: 'Machine-wide daily session counts',
+      content: {
+        'application/json': { schema: SessionDailyCountsResponseSchema },
       },
     },
     400: {

@@ -291,6 +291,30 @@
           "agentActivity"
         ]
       },
+      "SessionDailyCountsResponse": {
+        "type": "object",
+        "properties": {
+          "days": {
+            "type": "integer"
+          },
+          "dailyCounts": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SessionListWarning"
+            }
+          }
+        },
+        "required": [
+          "days",
+          "dailyCounts"
+        ]
+      },
       "HistoryMessage": {
         "type": "object",
         "properties": {
@@ -7471,6 +7495,50 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/RecentSessionsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/sessions/daily-counts": {
+      "get": {
+        "tags": [
+          "Sessions"
+        ],
+        "summary": "Count sessions started per day across all agents",
+        "description": "Counts the sessions started each local day across every registered agent (DOR-1039), oldest day first. Per-runtime failures degrade to `warnings[]`, which makes the counts a floor rather than a total (ADR-0310).",
+        "parameters": [
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 31,
+              "default": 7
+            },
+            "required": false,
+            "name": "days",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Machine-wide daily session counts",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionDailyCountsResponse"
                 }
               }
             }
