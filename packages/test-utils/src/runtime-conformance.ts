@@ -34,7 +34,11 @@ import {
   StreamEventSchema,
   UsageStatusSchema,
 } from '@dorkos/shared/schemas';
-import { SessionLifecycleSchema, SessionListEventSchema } from '@dorkos/shared/session-stream';
+import {
+  SessionLifecycleSchema,
+  SessionListEventSchema,
+  type SessionListEvent,
+} from '@dorkos/shared/session-stream';
 import type { HistoryMessage, PermissionMode, StreamEvent } from '@dorkos/shared/types';
 
 /**
@@ -134,26 +138,111 @@ export interface RuntimeConformanceOpts {
    */
   autonomyDefaultReason?: string;
   /**
-   * Declares that this runtime's `subscribeSessionList` has something to report
-   * the moment it is subscribed — set it to a sentence naming the fixture that
-   * guarantees it (claude-code: a seeded transcript in a hermetic Claude
-   * account). Supplying it turns silence from a tolerated outcome into a
-   * failure.
+   * Waives the requirement that `subscribeSessionList` actually emit something.
+   * The string is the reason, and it is required rather than a boolean for the
+   * same purpose as {@link autonomyDefaultReason}: an empty or whitespace-only
+   * string waives nothing.
    *
-   * The default (absent) is the honest answer for a runtime whose list stream
-   * observes a store the mocked backend never writes to: it emits nothing, and
-   * that is not a defect. But it means the schema check below runs against no
-   * event, so the case passes without asserting anything — which is how this
-   * test stayed green in CI for a runtime whose watcher was never even
-   * constructed there (DOR-1085). A runtime that CAN guarantee an event owes
-   * this declaration, so that a stream which silently stops emitting is a red
-   * rather than an unnoticed no-op.
+   * **Absent is strict.** By default a runtime must produce at least one event,
+   * because the schema check this case exists for cannot run against a stream
+   * that says nothing — it passes, silently, having asserted nothing. That is
+   * not hypothetical: claude-code's suite was green in CI for exactly that
+   * reason, its watcher never constructed there, and a probe that made the parse
+   * site fail unconditionally still reported 21/21 (DOR-1085).
    *
-   * A sentence rather than a boolean for the same reason as
-   * {@link autonomyDefaultReason}: the failure message can then name the
-   * fixture that was supposed to make the event appear.
+   * All four shipped runtimes reach the parse site, so nothing needs this today.
+   * It exists for a future adapter whose list stream genuinely observes a store
+   * a mocked backend cannot write to — and it makes that author state the case
+   * in a sentence, rather than inheriting a silent pass they never chose.
    */
-  sessionListFixture?: string;
+  sessionListSilentReason?: string;
+}
+
+/**
+ * Whether a runtime has WAIVED the requirement to emit a session-list event.
+ *
+ * Whitespace does not waive, matching `autonomyDefaultReason`: the waiver has to
+ * be a sentence somebody wrote, not a flag somebody flipped.
+ *
+ * @param silentReason - The runtime's {@link RuntimeConformanceOpts.sessionListSilentReason}.
+ * @returns True when silence is an accepted answer for this runtime.
+ */
+export function sessionListSilenceWaived(silentReason: string | undefined): boolean {
+  return (silentReason ?? '').trim().length > 0;
+}
+
+/**
+ * How long the session-list case waits for a first event.
+ *
+ * Longer when an event is REQUIRED, because that wait now decides a real
+ * assertion and must not fail a working stream that was merely slow; shorter
+ * when silence is waived, so a runtime that will never emit is not taxed for it.
+ * Both fit inside the default 5000ms `it` timeout with room for the turn — this
+ * case must never be the thing that runs the clock out.
+ *
+ * @param silentReason - The runtime's {@link RuntimeConformanceOpts.sessionListSilentReason}.
+ * @returns Milliseconds to wait before treating the stream as silent.
+ */
+export function sessionListWaitMs(silentReason: string | undefined): number {
+  return sessionListSilenceWaived(silentReason) ? 500 : 2000;
+}
+
+/**
+ * The session-list contract, applied to one subscribed stream.
+ *
+ * Reads at most one event, bounded by {@link sessionListWaitMs}, and answers the
+ * two ways a list stream can be wrong: it said NOTHING when this runtime never
+ * waived that, or it said something `SessionListEventSchema` rejects.
+ *
+ * Extracted and exported so the suite and its proof-of-failure
+ * (`runtime-conformance-session-list.test.ts`) run the SAME rules — the suite
+ * only ever meets adapters that are supposed to pass, so a green conformance run
+ * is no evidence these rules fired at all. Nothing in that test re-implements
+ * what is here.
+ *
+ * The caller owns closing the stream; this never does, because teardown belongs
+ * on a different clock (see the call site).
+ *
+ * @param iterator - A subscribed `subscribeSessionList` iterator.
+ * @param silentReason - The runtime's {@link RuntimeConformanceOpts.sessionListSilentReason}.
+ * @returns Null when the stream satisfies the contract, else the failure message.
+ */
+export async function evaluateSessionListStream(
+  iterator: AsyncIterator<SessionListEvent>,
+  silentReason: string | undefined
+): Promise<string | null> {
+  const waitMs = sessionListWaitMs(silentReason);
+  // Cleared in `finally` rather than left to expire: when the event wins the
+  // race the timer is still armed, and an orphan 2s timer per conformance run
+  // holds the event loop open past the assertion for no reason.
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let race: { kind: 'event'; result: IteratorResult<SessionListEvent> } | { kind: 'timeout' };
+  try {
+    race = await Promise.race([
+      iterator.next().then((result) => ({ kind: 'event' as const, result })),
+      new Promise<{ kind: 'timeout' }>((resolve) => {
+        timer = setTimeout(() => resolve({ kind: 'timeout' }), waitMs);
+      }),
+    ]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+
+  if (race.kind === 'timeout' || race.result.done) {
+    if (sessionListSilenceWaived(silentReason)) return null;
+    return (
+      `subscribeSessionList emitted nothing within ${waitMs}ms, so SessionListEventSchema was ` +
+      `never applied and this case asserted nothing — a dead stream, not a pass. A runtime that ` +
+      `genuinely cannot produce an event here must say why via sessionListSilentReason.`
+    );
+  }
+
+  const parsed = SessionListEventSchema.safeParse(race.result.value);
+  if (parsed.success) return null;
+  return (
+    `subscribeSessionList produced an event that fails SessionListEventSchema ` +
+    `(SessionListBroadcaster would silently drop it): ${parsed.error.message}`
+  );
 }
 
 /** Every valid {@link PermissionModeDescriptor.stop} value. */
@@ -501,18 +590,8 @@ export function runtimeConformance(
     durableHistory,
     presenceTurn,
     autonomyDefaultReason,
-    sessionListFixture,
+    sessionListSilentReason,
   } = opts;
-
-  /**
-   * How long the session-list case waits for a first event. Short when absence
-   * is an acceptable answer, so the suite is not taxed for every runtime that
-   * legitimately emits nothing; longer when {@link RuntimeConformanceOpts.sessionListFixture}
-   * promises one, since that wait now decides a real assertion. Both fit inside
-   * the default 5000ms `it` timeout with room for the turn and the teardown —
-   * the case must never be the thing that runs the clock out.
-   */
-  const SESSION_LIST_WAIT_MS = sessionListFixture === undefined ? 500 : 2000;
 
   /**
    * The mode a fresh session should carry: the suite override when given,
@@ -693,55 +772,32 @@ export function runtimeConformance(
         await drainTurn(runtime, sessionId);
 
         const iterator = runtime.subscribeSessionList(sessionOpts(runtime))[Symbol.asyncIterator]();
-        // Closing this stream is CLEANUP, and it gets cleanup's own budget
-        // rather than the assertion's. Closing a list stream can be genuinely
-        // slow through no fault of the runtime: claude-code's is a chokidar
-        // watch, and on macOS every watched path is an FSEvents stream torn
-        // down through libuv's single CFRunLoop thread — measured at 50ms to
-        // 2.3s for a ONE-file temp tree, and 10-24s against a real `~/.claude`.
-        // Awaiting that in a `finally` inside the 5000ms `it` is what turned a
-        // ~5ms assertion into a timeout on every macOS checkout, reported as a
-        // timeout on the assertion that had already passed (DOR-1085). A hook
-        // still fails the test if the close hangs or throws — the signal is
-        // kept, only the clock it shares is not.
+        // Closing this stream is CLEANUP, and it is moved off the assertion's
+        // clock onto its own. This applies to EVERY runtime, not just the one
+        // that needed it: closing a list stream can be slow through no fault of
+        // the adapter — claude-code's is a chokidar watch, and on macOS every
+        // watched path is an FSEvents stream torn down through libuv's single
+        // CFRunLoop thread, measured at 50ms to 2.3s for a ONE-file temp tree
+        // and 10-24s against a real `~/.claude`. Awaiting that in a `finally`
+        // inside the 5000ms `it` is what reported a ~5ms assertion as a timeout
+        // on every macOS checkout (DOR-1085).
+        //
+        // State the trade rather than leave it to be discovered: the bound it
+        // moves TO is vitest's default `hookTimeout`, 10_000ms, so the threshold
+        // at which a slow teardown is caught roughly doubles. A `close()` taking
+        // 6-9s now passes where it previously failed. That is deliberate — a
+        // teardown budget and an assertion budget are different questions, and
+        // the signal survives: a close that hangs fails the hook, and one that
+        // throws fails the test.
         onTestFinished(async () => {
           await iterator.return?.();
         });
 
-        // Not every adapter observes a session SYNCHRONOUSLY in a fully mocked
-        // test environment — a log-backed runtime whose store the mocked
-        // backend never writes to legitimately has nothing to emit. Bounded so
-        // that absence times out quickly instead of hanging the suite; for
-        // those runtimes absence is not a failure, a MALFORMED event is. A
-        // runtime that declares `sessionListFixture` has said the opposite —
-        // see the option's doc — and for it silence IS the failure, because a
-        // suite that checks a schema against an event that never arrives
-        // asserts nothing at all (DOR-1085).
-        const race = await Promise.race([
-          iterator.next().then((result) => ({ kind: 'event' as const, result })),
-          new Promise<{ kind: 'timeout' }>((resolve) =>
-            setTimeout(() => resolve({ kind: 'timeout' }), SESSION_LIST_WAIT_MS)
-          ),
-        ]);
-        if (race.kind === 'timeout' || race.result.done) {
-          if (sessionListFixture !== undefined) {
-            expect.fail(
-              `subscribeSessionList emitted nothing within ${SESSION_LIST_WAIT_MS}ms, but this ` +
-                `runtime declares an already-observable session: ${sessionListFixture}. ` +
-                `Nothing was parsed, so this case asserted nothing — a dead stream, not a pass.`
-            );
-          }
-          return;
-        }
-
-        const parsed = SessionListEventSchema.safeParse(race.result.value);
-        expect(
-          parsed.success,
-          `subscribeSessionList produced an event that fails SessionListEventSchema ` +
-            `(SessionListBroadcaster would silently drop it): ${
-              parsed.success ? '' : parsed.error.message
-            }`
-        ).toBe(true);
+        // Both ways a list stream can be wrong live in one exported predicate,
+        // so the proof that they can FAIL (runtime-conformance-session-list.test.ts)
+        // exercises these exact rules rather than a copy of them.
+        const failure = await evaluateSessionListStream(iterator, sessionListSilentReason);
+        if (failure !== null) expect.fail(failure);
       });
 
       it('getInternalSessionId returns a string or undefined — never throws', () => {

@@ -202,12 +202,11 @@ runtimeConformance(
     // The mocked SDK writes no JSONL transcript, so native history is [] here;
     // real-binary history round-trips are covered by integration smokes.
     expectHistory: false,
-    // The seeded transcript above is on disk before any test runs, so the
-    // fleet-wide list watcher MUST report it. Declaring that makes silence a
-    // failure instead of an early return — without it the schema assertion
-    // could stop running and nothing would say so (DOR-1085).
-    sessionListFixture:
-      'a seeded JSONL transcript in the hermetic Claude account this suite mocks claude-config-dir onto',
+    // No `sessionListSilentReason`: the seeded transcript above is on disk
+    // before any test runs, so the fleet-wide watcher MUST report it and
+    // silence is a failure. That is the harness default now — the runtime that
+    // needed a waiver is the one this suite just stopped being (DOR-1085).
+
     // Presence is only assertable against a turn that really runs: drive one
     // through the same projector the trigger path feeds. Claude-code takes the
     // harness WITHOUT the durable store (its transcript is SDK JSONL — it must
