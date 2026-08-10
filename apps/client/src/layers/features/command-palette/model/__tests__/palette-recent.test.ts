@@ -178,6 +178,44 @@ describe('buildPaletteRecent', () => {
     expect(keys(entries)).toEqual(['session:s']);
   });
 
+  it('drops an agent whose ONLY conversation is the live one Continue is showing', () => {
+    // The common case, not an edge one: an agent with a single conversation
+    // that is running right now. Continue draws it, so it is excluded from
+    // Recent's session rows — and if the "is this agent already listed?" set is
+    // built from what SURVIVED that exclusion, the agent walks straight back in
+    // and the operator reads the same thing twice, one row apart.
+    //
+    // Being live is the strongest possible reason to suppress the agent row,
+    // not a reason to forget about it.
+    const entries = buildPaletteRecent({
+      ...base,
+      sessions: [makeSessionItem({ id: 'live', cwd: '/projects/warden' })],
+      agents: [agent],
+      agentActivity: { '/projects/warden': '2026-08-09T09:30:00.000Z' },
+      excludeSessionIds: new Set(['live']),
+    });
+
+    expect(keys(entries)).toEqual([]);
+  });
+
+  it('still drops the agent when one of its several conversations is live', () => {
+    // The same rule with the masking removed the other way round: here a second,
+    // idle conversation shares the cwd. That alone keeps the agent suppressed,
+    // which is exactly why a fixture carrying one cannot prove the case above.
+    const entries = buildPaletteRecent({
+      ...base,
+      sessions: [
+        makeSessionItem({ id: 'live', cwd: '/projects/warden' }),
+        makeSessionItem({ id: 'idle', cwd: '/projects/warden' }),
+      ],
+      agents: [agent],
+      agentActivity: { '/projects/warden': '2026-08-09T09:30:00.000Z' },
+      excludeSessionIds: new Set(['live']),
+    });
+
+    expect(keys(entries)).toEqual(['session:idle']);
+  });
+
   it('leaves out an agent that has never run anything the window can see', () => {
     const entries = buildPaletteRecent({ ...base, agents: [agent], agentActivity: {} });
     expect(entries).toEqual([]);

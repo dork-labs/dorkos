@@ -295,6 +295,49 @@ describe('the zero-query command center', () => {
   });
 });
 
+describe('an agent whose only conversation is live', () => {
+  /**
+   * Every agent row in the palette renders its project path in this slot, and
+   * nothing else does — so counting these counts agent rows, without depending
+   * on a name the live session's own row also carries.
+   */
+  const agentRows = () => document.querySelectorAll('[data-slot="agent-option-row-secondary"]');
+
+  it('is offered once, in Continue — not again in Recent', async () => {
+    // Deliberately ONE session for this agent, and it is the live one. The
+    // fixtures in the neighbouring cases seed a second, idle conversation on
+    // the same directory, which keeps that directory "listed" and would hide
+    // this whether or not the code were right (a fixture that guarantees the
+    // guard passes is the same class of problem as an assertion that cannot
+    // fail). `zanzibar` lives alone at /projects/warden, so nothing props it up.
+    seedLive({ [zanzibar.id]: { lifecycle: 'streaming' } });
+    seedSessions([zanzibar], { '/projects/warden': '2026-08-09T08:00:00.000Z' });
+
+    render();
+
+    // The positive anchor: the conversation IS drawn, under Continue.
+    await screen.findByText('Zanzibar migration');
+    expect(headings()).toContain('Continue');
+
+    // …and the agent that owns it is not offered a second time beneath it.
+    expect(agentRows()).toHaveLength(0);
+  });
+
+  it('is still offered as an agent when its live conversation belongs to someone else', async () => {
+    // The control. Same agent, same activity — but the live conversation is
+    // another agent's, so Warden has nothing drawn for it yet and its row is
+    // the only way to reach it. Without this, "no agent rows, ever" would pass
+    // the case above just as well.
+    seedLive({ [live.id]: { lifecycle: 'streaming' } });
+    seedSessions([live], { '/projects/warden': '2026-08-09T08:00:00.000Z' });
+
+    render();
+
+    await screen.findByText('Palette rewrite');
+    expect(agentRows()).toHaveLength(1);
+  });
+});
+
 describe('the verb on a Continue row (BC-37)', () => {
   it('names the tool when the conversation is on one it recognizes', async () => {
     seedLive({

@@ -183,11 +183,16 @@ export function buildPaletteRecent({
       session,
     }));
 
-  const listedCwds = new Set(
-    sessionEntries.flatMap((entry) =>
-      entry.kind === 'session' && entry.session.cwd ? [entry.session.cwd] : []
-    )
-  );
+  // Built from the UNFILTERED sessions, and that is the whole point of it.
+  //
+  // A conversation is excluded above because Continue is already drawing it —
+  // which is the strongest possible reason to suppress its agent's row, not a
+  // reason to forget the agent has a conversation at all. Reading this off
+  // `sessionEntries` instead meant an agent with exactly one conversation, live
+  // right now, appeared in Continue and again in Recent one row below: the
+  // "one thing twice" this function exists to prevent, walked in from the
+  // Continue side (BC-34).
+  const listedCwds = new Set(sessions.flatMap((session) => (session.cwd ? [session.cwd] : [])));
 
   const roomEntries: PaletteRecentEntry[] = rooms.filter(isRecentRoom).map((room) => ({
     kind: 'room' as const,
