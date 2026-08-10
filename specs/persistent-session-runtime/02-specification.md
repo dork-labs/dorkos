@@ -65,7 +65,7 @@ The full evidence trace is in [`01-ideation.md` §2](01-ideation.md), with `file
 | `@anthropic-ai/claude-agent-sdk`                    | `0.3.224` (pinned, `apps/server/package.json:26`) | `streamInput` (`sdk.d.ts:2610`), `shouldQuery` (`:4764`), interrupt receipt (`:2346`), `cancel_queued` (`:3620`), `reinitialize` (`:2452`), capability feature-detection (`:4613`) |
 | **DOR-1088** (`worktree-dor-1088-stream-serialize`) | in flight                                         | **Hard prerequisite.** See §4                                                                                                                                                      |
 | `runtime-interrupt-receipts` (spec `260807-231651`) | not started                                       | Owns the typed interrupt result and `cancel_queued`. This spec consumes it (D7)                                                                                                    |
-| `runtime-prompt-redelivery` (spec `260807-231653`)  | not started                                       | Owns `reinitialize()`. Composes with warm sessions; not a blocker                                                                                                                  |
+| `runtime-prompt-redelivery` (spec `260807-231652`)  | not started                                       | Owns `reinitialize()`. Composes with warm sessions; not a blocker                                                                                                                  |
 
 Capability detection is by **feature flag from `system/init`, never by version sniffing**, per the SDK's own instruction at `sdk.d.ts:4613`. A CLI that does not advertise `interrupt_cancel_queued_v1` gets the documented older behavior and the client is told so.
 
@@ -727,7 +727,7 @@ Whether the `priority`-field question (D3) earns its own ADR is a DECOMPOSE call
 
 - `research/20260610_message_queuing_agent_runtimes.md` (DOR-82): the four-pattern taxonomy, the cross-runtime matrix, and the recommendation this spec executes. Its §7 questions Q1, Q2, Q4, Q5, Q8 are answered here.
 - [`01-ideation.md`](01-ideation.md): the full evidence trace with verified `file:line` pointers at `e4b9e1a9b`.
-- `specs/runtime-interrupt-receipts/01-ideation.md` (`260807-231651`), `specs/runtime-prompt-redelivery/01-ideation.md` (`260807-231653`): adjacent specs; boundaries in D7.
+- `specs/runtime-interrupt-receipts/01-ideation.md` (`260807-231651`), `specs/runtime-prompt-redelivery/01-ideation.md` (`260807-231652`): adjacent specs; boundaries in D7.
 - `contributing/adding-a-runtime.md`: the runtime author contract, the presence-truthfulness stance, and the mocking stance.
 - `packages/test-utils/src/runtime-conformance.ts`: the suite to extend; `RuntimeConformanceOpts` at `:44-131`, driver pattern at `presenceTurn` / `durableHistory`.
 - `@anthropic-ai/claude-agent-sdk@0.3.224` `sdk.d.ts`: `streamInput` `:2610`, `interrupt` `:2346`, `reinitialize` `:2452`, `priority` `:4757` (still undocumented), `shouldQuery` `:4764`, `cancel_queued` `:3620`, capability feature-detection `:4613`.
