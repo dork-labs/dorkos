@@ -719,6 +719,20 @@ describe('DashboardSidebar', () => {
       expect(screen.queryByRole('menuitem', { name: /New group/ })).not.toBeInTheDocument();
     });
 
+    it('reveals each section "+" on focus as well as on hover — a keyboard has no hover', async () => {
+      mockRooms.mockReturnValue([channel('r1', 'general'), dmWith('d1', '/a/1', 'Alpha')]);
+      renderWithProviders(<DashboardSidebar />);
+      await waitFor(() => expect(libraryHeadings()).toContain('Channels'));
+
+      // All three, so a section that quietly loses its keyboard path fails
+      // here rather than in a screen reader (R2).
+      for (const label of ['New channel', 'New direct message', 'New agent']) {
+        const plus = screen.getByRole('button', { name: label });
+        expect(plus.className).toContain('focus-visible:opacity-100');
+        expect(plus.className).toContain('group-hover/section:opacity-100');
+      }
+    });
+
     it('points the Agents section "+" at the one New menu instead of a handler', async () => {
       mockMeshPaths.mockReturnValue(['/a/1', '/a/2', '/a/3']);
       renderWithProviders(<DashboardSidebar />);
