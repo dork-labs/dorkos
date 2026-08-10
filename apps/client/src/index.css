@@ -144,7 +144,22 @@
   --radius-msg-tool: var(--msg-tool-radius);
 }
 
-:root {
+/* The light palette. `.light` is the same declarations under a class, so a
+   region can hold the light theme while the page around it is dark — custom
+   properties inherit, and an element's own declaration beats one inherited from
+   a `.dark` ancestor.
+
+   It exists for ONE job: the both-themes review pair the sidebar programme
+   requires (spec R1), where a light panel and a dark panel have to sit side by
+   side on a single screenshot. Nothing in the app sets it; the app switches
+   themes by putting `dark` on the document element, exactly as before.
+
+   The caveat, stated so nobody is surprised by it: Tailwind's `dark:` variant
+   keys off `.dark *`, so inside a `.light` island on a dark page the TOKENS
+   flip and any explicit `dark:` utility does not. Every surface reviewed this
+   way is token-driven, which is why the pair is honest. */
+:root,
+.light {
   --background: 0 0% 98%;
   --foreground: 0 0% 9%;
   --card: 0 0% 100%;
@@ -1008,6 +1023,45 @@ body {
 @utility animate-count-flip {
   animation: count-flip var(--msg-count-flip) cubic-bezier(0.2, 1.6, 0.4, 1);
   display: inline-block;
+}
+
+/* The welcome-back glow (spec BC-49): the one beat a sidebar row plays when the
+   work on it finished while you were away. An amber ring that fades to nothing
+   over 1.8s, once, on the row's first paint and never again.
+
+   A RING, not a background, and that is structural rather than decorative. The
+   sidebar separates by tint — hover is one step up the `--sidebar-accent` ramp
+   and active is the top of it (spec R1) — so a background animation would fight
+   the row's own state for the second it ran, and a `forwards`/`both` fill mode
+   would go on beating it after the animation ended, because an animated value
+   outranks a stylesheet one for as long as it is applied. A box-shadow touches
+   nothing the ramp owns.
+
+   No fill mode, so when the beat ends the row is back on its stylesheet value
+   with nothing left behind.
+
+   `--status-warning` is the amber the rest of the cockpit spends on "this wants
+   you", and 55% of it at 2px is a glow rather than a border — the row is being
+   pointed at, not selected. It is spelled `hsl(var(--status-warning) / …)`
+   because the token holds HSL COMPONENTS rather than a colour, which is the
+   convention every `--color-*` alias at the top of this file follows.
+
+   Every call site gates this with `motion-safe:`, so under a reduced-motion
+   preference the utility is never applied and NOTHING renders. That is the
+   right reading here: unlike a status dot, this beat carries no standing fact —
+   it is an announcement about the past, and the row's own content still says
+   everything the glow was hinting at. */
+@keyframes welcome-back-glow {
+  from {
+    box-shadow: 0 0 0 2px hsl(var(--status-warning) / 0.55);
+  }
+  to {
+    box-shadow: 0 0 0 2px hsl(var(--status-warning) / 0);
+  }
+}
+
+@utility animate-welcome-back-glow {
+  animation: welcome-back-glow 1.8s ease-out 1;
 }
 
 @keyframes health-pulse {

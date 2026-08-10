@@ -94,12 +94,12 @@ export {
   takePendingFeedback,
   type PendingFeedback,
 } from './pending-feedback';
-export {
-  getToolLabel,
-  getMcpServerBadge,
-  parseMcpToolName,
-  formatActivityLabel,
-} from './tool-labels';
+// `formatActivityLabel` is deliberately NOT re-exported here. It is one rung of
+// the honesty ladder, and every surface reaches it through `activityVerb` below
+// so that one turn cannot be described two ways (BC-37). Withdrawing it from
+// the barrel is what makes that a structural fact rather than a convention: the
+// only importable path to it is a relative one inside `shared/lib`.
+export { getToolLabel, getMcpServerBadge, parseMcpToolName } from './tool-labels';
 export { ToolArgumentsDisplay } from './tool-arguments-formatter';
 export {
   EMOJI_SET,
@@ -247,3 +247,6 @@ export type {
 } from './execution-config';
 
 export { activityVerb, WAITING_ON_YOU_VERB } from './activity-verb';
+
+export { isWelcomeBackMoment } from './welcome-back-glow';
+export type { WelcomeBackMomentInput } from './welcome-back-glow';

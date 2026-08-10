@@ -1,4 +1,6 @@
 import { describe, it, expect } from 'vitest';
+import type { SessionActivity, SessionLifecycle } from '@dorkos/shared/session-stream';
+import { SessionLifecycleSchema } from '@dorkos/shared/session-stream';
 import { activityVerb, WAITING_ON_YOU_VERB } from '../activity-verb';
 
 describe('activityVerb — the honesty ladder (BC-37)', () => {
@@ -53,5 +55,63 @@ describe('activityVerb — the honesty ladder (BC-37)', () => {
     // A wedged session is a Now item (BC-5). Spending the row's second line on
     // it would say the same thing twice, in the weaker of the two places.
     expect(activityVerb('error')).toBeNull();
+  });
+});
+
+/**
+ * The four rungs as one table (BC-37 validation criteria), plus the property
+ * that matters more than any single row of it: **no branch invents a verb.**
+ *
+ * The individual cases above pin the phrasing. This block pins the SHAPE — that
+ * every lifecycle the wire can carry, crossed with every reading it can carry,
+ * lands on a rung that already exists.
+ *
+ * To be precise about what that does and does not catch: a NEW lifecycle added
+ * to `SessionLifecycleSchema` passes here by returning `null`, and that is the
+ * right answer — "degrade down the ladder, never guess" means an unrecognised
+ * state says nothing. What fails here is the opposite mistake, and the one
+ * worth a test: a branch that answers a state with words the ladder never
+ * agreed to say.
+ */
+describe('activityVerb — the ladder as a whole', () => {
+  const KNOWN: SessionActivity = { toolName: 'Edit', target: 'sidebar-row.tsx' };
+
+  it.each([
+    { rung: 1, lifecycle: 'blocked' as const, activity: null, verb: 'waiting on you' },
+    { rung: 2, lifecycle: 'streaming' as const, activity: KNOWN, verb: 'Editing sidebar-row.tsx…' },
+    { rung: 3, lifecycle: 'streaming' as const, activity: null, verb: 'Working…' },
+    { rung: 4, lifecycle: 'idle' as const, activity: null, verb: null },
+  ])('rung $rung: $lifecycle → $verb', ({ lifecycle, activity, verb }) => {
+    expect(activityVerb(lifecycle, activity)).toBe(verb);
+  });
+
+  it('gives every lifecycle on the wire a rung, and invents nothing for any of them', () => {
+    // The permitted answers, exhaustively. Anything else is a verb the ladder
+    // made up.
+    const permitted = new Set([WAITING_ON_YOU_VERB, 'Working…', 'Editing sidebar-row.tsx…', null]);
+    const lifecycles = SessionLifecycleSchema.options as SessionLifecycle[];
+    expect(lifecycles.length).toBeGreaterThanOrEqual(5);
+
+    for (const lifecycle of lifecycles) {
+      for (const activity of [null, undefined, KNOWN]) {
+        expect(permitted, `${lifecycle} + ${JSON.stringify(activity)}`).toContain(
+          activityVerb(lifecycle, activity)
+        );
+      }
+    }
+  });
+
+  it('keeps its promise that a live turn always has something to say', () => {
+    // The `'streaming' | 'blocked'` overload narrows the return to `string`, so
+    // a caller inside a streaming branch needs no `?? fallback` — and a
+    // fallback would be a second phrasing rule. The type cannot check itself at
+    // runtime; this does.
+    for (const activity of [null, undefined, KNOWN, { toolName: '' }, { toolName: '   ' }]) {
+      for (const lifecycle of ['streaming', 'blocked'] as const) {
+        const verb = activityVerb(lifecycle, activity);
+        expect(typeof verb, `${lifecycle} + ${JSON.stringify(activity)}`).toBe('string');
+        expect(verb.trim().length).toBeGreaterThan(0);
+      }
+    }
   });
 });

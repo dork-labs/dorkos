@@ -10,7 +10,12 @@ import { readableForeground } from '../lib/readable-foreground';
 import { cn } from '../lib/utils';
 import type { IdentityOrigin } from '../lib/identity-origin';
 import { AGENT_GLYPH, platformGlyph } from './identity-glyphs';
-import { STATUS_DOT_COLOR, STATUS_DOT_HALO, type IdentityStatus } from './status-dot';
+import {
+  STATUS_DOT_COLOR,
+  STATUS_DOT_HALO,
+  STATUS_DOT_LABEL,
+  type IdentityStatus,
+} from './status-dot';
 
 /**
  * How much of the identity's own colour tints the disc in the default
@@ -486,8 +491,15 @@ function IdentityAvatar({
         // The colour is the shared token map, not a green written here — the
         // sidebar, the tab strip and the group headers all spell the same three
         // states, and they used to spell them four different ways.
+        //
+        // NOT `aria-hidden`, unlike the identity badge below it. The badge
+        // repeats something the surface around it already says (this is an
+        // agent; this one came in over Telegram), so hiding it costs nothing.
+        // This dot says something nothing else on the disc says, and it says it
+        // in a hue — the one shape of signal a reader who cannot see it loses
+        // entirely. So it carries its meaning as text too (spec R2), and the
+        // words come from the shared map rather than from here.
         <span
-          aria-hidden
           data-slot="identity-status-dot"
           data-status={status}
           className={cn(
@@ -495,6 +507,7 @@ function IdentityAvatar({
             STATUS_DOT_COLOR[status]
           )}
         >
+          <span className="sr-only">{STATUS_DOT_LABEL[status]}</span>
           {/* Only `working` gets the halo, because only `working` is happening
               RIGHT NOW — a still dot says the same thing about a state that
               began an hour ago, and "needs you" and "error" are states. The
@@ -503,7 +516,7 @@ function IdentityAvatar({
               removes the halo and leaves the dot beneath it, so the fact
               survives the preference and only the motion goes. */}
           {status === 'working' && (
-            <span className={cn(STATUS_DOT_COLOR.working, STATUS_DOT_HALO)} />
+            <span aria-hidden className={cn(STATUS_DOT_COLOR.working, STATUS_DOT_HALO)} />
           )}
         </span>
       )}

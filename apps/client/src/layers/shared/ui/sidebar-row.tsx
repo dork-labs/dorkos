@@ -10,6 +10,7 @@
  *
  * @module shared/ui/sidebar-row
  */
+import { useState } from 'react';
 import type { CSSProperties, HTMLAttributes, ReactNode, Ref } from 'react';
 import { cn } from '@/layers/shared/lib';
 import { useIsMobile } from '@/layers/shared/model';
@@ -31,6 +32,32 @@ import { SidebarMenuSurface, type SidebarMenuNode } from './sidebar-menu-node';
 
 /** The horizontal inset every sidebar row pays, and the only place it is paid. */
 export const SIDEBAR_ROW_INSET = 'px-2';
+
+/**
+ * The welcome-back beat, as a class (BC-49).
+ *
+ * A constant rather than a literal for one reason: `animate-welcome-back-glow`
+ * is a Tailwind `@utility` declared in `index.css`, and a class name that does
+ * not match one is silently nothing at all. This repo has shipped exactly that
+ * bug before — ~20 call sites wore `animate-tasks` for months while no keyframe
+ * by that name existed — so the name lives in one place, and a test reads
+ * `index.css` to prove the utility and its keyframes are really there.
+ */
+export const WELCOME_BACK_GLOW = 'motion-safe:animate-welcome-back-glow';
+
+/**
+ * The second line's own height, held whether or not there are words in it.
+ *
+ * `min-h-4` with `leading-4`, so a reserved-but-silent verb line is exactly as
+ * tall as one carrying "Editing sidebar-row.tsx…". Without it, a row whose tool
+ * reading lapses for a beat mid-turn would collapse by 16px and grow back — the
+ * churn `reservesVerbLine` exists to prevent, reintroduced one level down.
+ *
+ * `block` rather than the default inline: `truncate` is `overflow: hidden`, and
+ * an inline box does not clip.
+ */
+const ROW_SECOND_LINE_CLASS =
+  'text-sidebar-foreground/50 block min-h-4 truncate text-[11px] leading-4 font-normal';
 
 /**
  * What a drag layer hands a row it has made a drag source.
@@ -114,18 +141,44 @@ export interface SidebarRowProps {
   /**
    * The second line. Renders only when the row earns one: a live verb
    * ({@link reservesVerbLine}) or a {@link preview} worth showing (BC-24).
+   *
+   * **This is where a live verb arrives, as a node that subscribes to it
+   * itself.** The row is handed an element, not a string: the caller passes
+   * something like `<SessionVerbLine sessionId={id} lifecycle={lifecycle} />`,
+   * and that leaf — not this row, and emphatically not the sidebar model —
+   * holds the subscription to the session's activity. An activity event then
+   * re-renders one text node in one row, rather than rebuilding a tree of
+   * sixty. It is a node for the same reason {@link glyph} is one: `shared/` is
+   * not allowed to know what a session is (spec R1, BC-37).
    */
   secondLine?: ReactNode;
   /**
    * The row carries a live verb, so it keeps its second line even while the
    * verb is empty.
    *
-   * **Unconsumed on purpose.** Live verbs reach rows in P2.7, when the fleet
-   * stream starts carrying an `activity` label; this is the shell the spec asks
-   * P1 to land alongside `activityVerb` (BC-24, BC-37), and the two are tested
-   * together. It is not dead code awaiting deletion.
+   * Derived from LIFECYCLE — is a turn streaming — and never from the verb
+   * text, which is the whole trick: the row's height is decided by something
+   * that changes when a turn starts and stops, while the words inside it change
+   * every couple of seconds. A row whose tool reading lapses mid-turn keeps its
+   * line and goes quiet, instead of collapsing and re-growing under the
+   * pointer (BC-24).
    */
   reservesVerbLine?: boolean;
+  /**
+   * This row's work finished while you were away — glow amber once, then never
+   * again (BC-49).
+   *
+   * **Read once, at mount.** "On first paint" is the whole of the moment: a
+   * glow that could be re-armed by a prop flipping back and forth would be a
+   * row that pulses at you every time the model rebuilds. So the value is
+   * latched when the row mounts and every later change to it is ignored.
+   *
+   * `motion-safe` only, and gated at the class rather than inside the
+   * animation: under a reduced-motion preference the utility is never applied
+   * and nothing renders at all. Nothing is lost by that — the beat is an
+   * announcement about the past, not a fact the row would otherwise be missing.
+   */
+  welcomeBack?: boolean;
   /** One line about the last thing that happened here, or `null` for none. */
   preview?: string | null;
   /** This row is the thing currently on screen. */
@@ -193,6 +246,7 @@ export function SidebarRow({
   trailing,
   secondLine,
   reservesVerbLine,
+  welcomeBack = false,
   preview,
   menuNodes = [],
   actionsLabel,
@@ -217,6 +271,12 @@ export function SidebarRow({
   const plainTitle = titleText ?? (typeof title === 'string' ? title : '');
   const showSecondLine = hasSecondLine({ reservesVerbLine, preview });
   const second = secondLine ?? (preview?.trim() ? preview : null);
+  // Latched, never watched. A `useState` initializer rather than a ref written
+  // during render: React invokes it twice under StrictMode and keeps the first
+  // result, where a ref mutated mid-render would be set on the first pass and
+  // read as already-played on the second, and the glow would never appear in
+  // development. See {@link SidebarRowProps.welcomeBack}.
+  const [glowOnce] = useState(() => welcomeBack);
 
   const row =
     editor !== undefined ? (
@@ -247,6 +307,9 @@ export function SidebarRow({
             ? 'bg-sidebar-accent text-sidebar-accent-foreground'
             : 'text-sidebar-foreground/70 hover:bg-sidebar-accent/70 hover:text-sidebar-foreground',
           emphasized && !isActive && !muted && 'text-sidebar-foreground font-medium',
+          // BC-49. `motion-safe:` is the whole reduced-motion contract — the
+          // utility is not applied at all, so there is no glow to suppress.
+          glowOnce && WELCOME_BACK_GLOW,
           className
         )}
       >
@@ -280,8 +343,8 @@ export function SidebarRow({
               </span>
             )}
           </span>
-          {showSecondLine && second !== null && (
-            <span className="text-sidebar-foreground/50 truncate text-[11px] font-normal">
+          {showSecondLine && (
+            <span data-slot="sidebar-row-second-line" className={ROW_SECOND_LINE_CLASS}>
               {second}
             </span>
           )}
