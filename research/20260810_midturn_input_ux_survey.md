@@ -273,4 +273,4 @@ The June repo report's recommendation — standardize **queue / steer / interrup
 - [Windsurf — Cascade overview](https://docs.windsurf.com/plugins/cascade/cascade-overview)
 - [GitHub Docs — Steering and queueing (Copilot SDK)](https://docs.github.com/en/copilot/how-tos/copilot-sdk/use-copilot-sdk/steering-and-queueing)
 - [github/copilot-cli#2055](https://github.com/github/copilot-cli/issues/2055), [#1857](https://github.com/github/copilot-cli/issues/1857), [#3344](https://github.com/github/copilot-cli/issues/3344); [microsoft/vscode#297145](https://github.com/microsoft/vscode/issues/297145), [#260330](https://github.com/microsoft/vscode/issues/260330)
-- Prior repo research: `/Users/doriancollier/Keep/dork-os/dorkos/research/20260610_message_queuing_agent_runtimes.md`
+- Prior repo research: `research/20260610_message_queuing_agent_runtimes.md`
