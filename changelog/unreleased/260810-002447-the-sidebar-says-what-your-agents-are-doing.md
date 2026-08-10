@@ -13,10 +13,6 @@ covers:
   The rule is deliberately honest: if we do not know which tool is running, the row says
   "Working…", and if the turn is over it says nothing rather than leaving an old phrase up.
   A verb that outlives its turn is just a lie in a small font.
-- A row whose work finished while you were away glows amber once when you come back, and
-  only that row. It uses the same "how long is away" setting your agents already use before
-  they greet you in your team channel — there is no second setting to find. If you have
-  asked your computer for less motion, the glow does not appear at all.
 
 ### Changed
 
