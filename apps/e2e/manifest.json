@@ -25,9 +25,7 @@
       "runCount": 8,
       "passCount": 7,
       "failCount": 1,
-      "relatedCode": [
-        "apps/client/src/App.tsx"
-      ],
+      "relatedCode": ["apps/client/src/App.tsx"],
       "lastModified": ""
     },
     "send-message": {
@@ -71,9 +69,7 @@
       "runCount": 10,
       "passCount": 9,
       "failCount": 1,
-      "relatedCode": [
-        "apps/client/src/layers/features/settings/ui/SettingsDialog.tsx"
-      ],
+      "relatedCode": ["apps/client/src/layers/features/settings/ui/SettingsDialog.tsx"],
       "lastModified": ""
     },
     "pulse-scheduler": {
@@ -116,10 +112,10 @@
       "specFile": "tests/chat-mock.spec.ts",
       "feature": "chat-mock.spec.ts",
       "description": "scenario endpoint rejects unknown scenario names, renders tool call card for tool-call scenario, renders streamed text response from simple-text scenario",
-      "lastRun": "2026-08-10T22:11:41.752Z",
+      "lastRun": "2026-08-08T21:25:32.483Z",
       "lastStatus": "passed",
-      "runCount": 19,
-      "passCount": 7,
+      "runCount": 18,
+      "passCount": 6,
       "failCount": 11,
       "relatedCode": [],
       "lastModified": ""
@@ -215,7 +211,7 @@
     "connections": {
       "specFile": "tests/connections/connections.spec.ts",
       "feature": "connections",
-      "description": "walks unconfigured → key saved → connect Gmail twice with custody disclosed before every auth step, attaches Gmail (work) to a session, shows it with exposure state, and detaches",
+      "description": "walks unconfigured \u2192 key saved \u2192 connect Gmail twice with custody disclosed before every auth step, attaches Gmail (work) to a session, shows it with exposure state, and detaches",
       "lastRun": "2026-08-07T02:12:57.019Z",
       "lastStatus": "passed",
       "runCount": 12,
@@ -239,7 +235,7 @@
     "room-entry-actions": {
       "specFile": "tests/rooms/room-entry-actions.spec.ts",
       "feature": "rooms",
-      "description": "the toolbar appears on hover and offers what can be done to the message, the toolbar encloses the buttons it is drawn around, the toolbar straddles a message, and covers no word of one at rest, the toolbar rides the viewport edge on a message taller than the window, right-click offers the same actions as the toolbar, the keyboard alone reaches the actions and lands in the composer, a room costs one Tab per message, not one per action, a message is announced before the things you can do to it, Page Down crosses the room a message at a time, whatever each one carries, Page Down crosses the thread, and Ctrl+End lands in the thread’s own composer, a reply lands in the panel beside the room, and a reply to a reply joins it, a reply row opens the thread it counts, and Escape closes it again, a reply that arrives after you last looked wears the accent, a thread has an address, and a reload lands back on it, a long press opens the drawer, and a short one or a drag does not, the thread takes the whole screen, and Back returns to the room",
+      "description": "the toolbar appears on hover and offers what can be done to the message, the toolbar encloses the buttons it is drawn around, the toolbar straddles a message, and covers no word of one at rest, the toolbar rides the viewport edge on a message taller than the window, right-click offers the same actions as the toolbar, the keyboard alone reaches the actions and lands in the composer, a room costs one Tab per message, not one per action, a message is announced before the things you can do to it, Page Down crosses the room a message at a time, whatever each one carries, Page Down crosses the thread, and Ctrl+End lands in the thread\u2019s own composer, a reply lands in the panel beside the room, and a reply to a reply joins it, a reply row opens the thread it counts, and Escape closes it again, a reply that arrives after you last looked wears the accent, a thread has an address, and a reload lands back on it, a long press opens the drawer, and a short one or a drag does not, the thread takes the whole screen, and Back returns to the room",
       "lastRun": "2026-08-09T00:06:19.907Z",
       "lastStatus": "passed",
       "runCount": 49,
@@ -341,9 +337,7 @@
       "runCount": 4,
       "passCount": 4,
       "failCount": 0,
-      "relatedCode": [
-        "apps/client/src/layers/shared/ui/navigation-layout.tsx"
-      ],
+      "relatedCode": ["apps/client/src/layers/shared/ui/navigation-layout.tsx"],
       "lastModified": ""
     },
     "adapter-wizard-fields": {
@@ -415,7 +409,7 @@
     "pulse-panel": {
       "specFile": "tests/pulse/pulse-panel.spec.ts",
       "feature": "pulse",
-      "description": "opens on the dashboard to Pulse with its attention + activity sections, opens on a session to the contextual default (Agent Profile), not Pulse, the attention badge is honest — hidden when nothing needs the operator",
+      "description": "opens on the dashboard to Pulse with its attention + activity sections, opens on a session to the contextual default (Agent Profile), not Pulse, the attention badge is honest \u2014 hidden when nothing needs the operator",
       "lastRun": "2026-08-09T00:06:19.907Z",
       "lastStatus": "passed",
       "runCount": 3,
@@ -463,7 +457,7 @@
     "room-reactions": {
       "specFile": "tests/rooms/room-reactions.spec.ts",
       "feature": "rooms",
-      "description": "a reaction from the capsule becomes a pill, and pressing the pill takes it back, a reaction made outside this page arrives on the stream, with no reload, the picker finds an emoji the quick row does not hold, the keyboard alone reaches the quick row, reacts, and then reaches the pill, a room that has stopped listening stops offering reactions, the long-press drawer opens with a reaction row on top, the drawer’s 🙂+ opens the same picker inline",
+      "description": "a reaction from the capsule becomes a pill, and pressing the pill takes it back, a reaction made outside this page arrives on the stream, with no reload, the picker finds an emoji the quick row does not hold, the keyboard alone reaches the quick row, reacts, and then reaches the pill, a room that has stopped listening stops offering reactions, the long-press drawer opens with a reaction row on top, the drawer\u2019s \ud83d\ude42+ opens the same picker inline",
       "lastRun": "2026-08-09T00:06:19.907Z",
       "lastStatus": "passed",
       "runCount": 3,
@@ -487,7 +481,7 @@
     "mcp-oauth-signin": {
       "specFile": "tests/connections/mcp-oauth-signin.spec.ts",
       "feature": "connections",
-      "description": "add → needs sign-in → Sign in → approve → connected with N tools",
+      "description": "add \u2192 needs sign-in \u2192 Sign in \u2192 approve \u2192 connected with N tools",
       "lastRun": "2026-08-07T09:53:20.277Z",
       "lastStatus": "passed",
       "runCount": 4,
@@ -511,7 +505,7 @@
     "home-shell": {
       "specFile": "tests/home-surface/home-shell.spec.ts",
       "feature": "home-surface",
-      "description": "the tab bar is Home, Activity, Scheduled, Workspaces — and Home is lit on /, the retired home sections are gone, not hidden, each tab goes to the address it has always had, the sidebar has four places and a Search row — nothing else, a filtered Activity deep link keeps its filter, and survives leaving and coming back, the tab bar takes the overflow, and the page never scrolls sideways",
+      "description": "the tab bar is Home, Activity, Scheduled, Workspaces \u2014 and Home is lit on /, the retired home sections are gone, not hidden, each tab goes to the address it has always had, the sidebar has four places and a Search row \u2014 nothing else, a filtered Activity deep link keeps its filter, and survives leaving and coming back, the tab bar takes the overflow, and the page never scrolls sideways",
       "lastRun": "2026-08-09T00:06:19.907Z",
       "lastStatus": "passed",
       "runCount": 4,
@@ -535,11 +529,11 @@
     "team-room": {
       "specFile": "tests/home-surface/team-room.spec.ts",
       "feature": "home-surface",
-      "description": "`/` opens the room: its masthead, its feed, its composer, typing here reaches your default agent, and nobody else piles on, naming an agent stands the default agent down, nothing waiting draws nothing — no empty box, no border, an approval can be answered from home, and the card resolves where it stands, an attention deep link still opens its sheet on /, somebody working elsewhere shows up, and clicking follows them, home offers to bring it back, and does not do it behind your back",
-      "lastRun": "2026-08-10T22:11:41.752Z",
+      "description": "`/` opens the room: its masthead, its feed, its composer, typing here reaches your default agent, and nobody else piles on, naming an agent stands the default agent down, nothing waiting draws nothing \u2014 no empty box, no border, an approval can be answered from home, and the card resolves where it stands, an attention deep link still opens its sheet on /, somebody working elsewhere shows up, and clicking follows them, home offers to bring it back, and does not do it behind your back",
+      "lastRun": "2026-08-09T00:06:19.907Z",
       "lastStatus": "passed",
-      "runCount": 8,
-      "passCount": 3,
+      "runCount": 7,
+      "passCount": 2,
       "failCount": 5,
       "relatedCode": [],
       "lastModified": ""
@@ -570,6 +564,15 @@
     }
   },
   "runHistory": [
+    {
+      "id": "2026-07-30T10-55-29",
+      "timestamp": "2026-07-30T10:55:29.439Z",
+      "total": 27,
+      "passed": 26,
+      "failed": 1,
+      "skipped": 0,
+      "duration": 41385
+    },
     {
       "id": "2026-07-30T10-55-58",
       "timestamp": "2026-07-30T10:55:58.276Z",
@@ -1460,15 +1463,6 @@
       "failed": 0,
       "skipped": 3,
       "duration": 243183
-    },
-    {
-      "id": "2026-08-10T22-11-41",
-      "timestamp": "2026-08-10T22:11:41.752Z",
-      "total": 30,
-      "passed": 30,
-      "failed": 0,
-      "skipped": 0,
-      "duration": 394434
     }
   ]
 }
