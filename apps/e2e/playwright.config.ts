@@ -310,6 +310,14 @@ export default defineConfig({
         // Needs the test-mode server's `/api/test/seed-bridge` seam, so it runs
         // in `chromium-bridge` below, never against the real cockpit leg.
         '**/relay/bridged-channel.spec.ts',
+        // Belt and braces. `tests/chat/session-read-state*` is a MODULE, not a
+        // spec — it is registered into `chat-mock.spec.ts` and runs on the
+        // test-mode leg (see its header), so the default `**/*.spec.ts` match
+        // already cannot reach it. Named anyway because `tests/chat/` is
+        // otherwise a cockpit-leg directory, and this suite drives real turns:
+        // one rename to `.spec.ts` would put four billable sessions on the
+        // machine's own `claude` sign-in, and nothing else here would object.
+        '**/chat/session-read-state*',
         ...(INCLUDE_SITE ? [] : SITE_SPECS),
       ],
       // Skips the specs that need real model credentials — see INCLUDE_INTEGRATION.
@@ -323,7 +331,16 @@ export default defineConfig({
       // state (POST /api/test/reset wipes scenarios, sessions, and projectors
       // for everyone), and fullyParallel schedules separate files onto
       // concurrent workers — a second mock spec file would race the first's
-      // beforeEach resets. Add new mock-server suites to chat-mock.spec.ts.
+      // beforeEach resets.
+      //
+      // So a new mock-server suite takes one of two shapes, never a second spec
+      // file. Write it into chat-mock.spec.ts when it is a handful of tests. Put
+      // it in a MODULE that exports a register function when it is a coherent
+      // feature suite worth finding by name — `tests/chat/session-read-state.ts`
+      // is the worked example. Playwright groups workers by the file it LOADED
+      // (`_requireFile`), so a registered module runs on this file's worker, in
+      // its order, and is as safe from the resets as a suite written inline.
+      // What it must not be is its own `*.spec.ts`.
       name: 'chromium-mock',
       use: {
         ...devices['Desktop Chrome'],

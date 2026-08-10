@@ -5,6 +5,7 @@ import path from 'path';
 import { BasePage } from '../pages/BasePage.js';
 import { ChatPage } from '../pages/ChatPage.js';
 import { caretOffset, composerText, expectComposerText } from '../pages/composer-probe.js';
+import { registerSessionReadStateTests } from './chat/session-read-state.js';
 
 /**
  * Browser simulation tests using TestModeRuntime.
@@ -870,6 +871,13 @@ test.describe('the chat composer with formatting on', () => {
   });
 });
 
+// Cross-device read state for chat sessions (DOR-1040). Declared in its own
+// module but registered INTO this file, and that is the point: `/api/test/reset`
+// above deletes every tracked session's transcript, and Playwright schedules
+// separate spec FILES onto concurrent workers — so a suite that needs a
+// transcript to survive a minute of browser work has to be on this file's
+// worker rather than beside it. See the module header for the full argument.
+registerSessionReadStateTests({ apiUrl: API_URL, agentDir: () => agentDir });
 /**
  * Conversations in ⌘K (spec `sidebar-now-today-library` P3, §15).
  *
