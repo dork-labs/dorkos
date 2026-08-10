@@ -154,6 +154,52 @@ describe('SessionStateProjector', () => {
     expect(p.getStatus().runningSubagentCount).toBe(1);
   });
 
+  // Failure mode (DOR-1100): a background task outlives its turn, so the count
+  // must survive `turn_end`. Clearing it beside the capability holds would erase
+  // the only account of why an "idle" session is about to speak again.
+  it('keeps running children counted after the turn that started them closes', () => {
+    const p = new SessionStateProjector('bg-1');
+    p.ingest({ type: 'turn_start' } as RawSessionEvent);
+    p.ingest({ type: 'subagent_update', taskId: 'bt1', status: 'running' } as RawSessionEvent);
+    p.ingest({ type: 'subagent_update', taskId: 'bt2', status: 'running' } as RawSessionEvent);
+    p.ingest({ type: 'turn_end' } as RawSessionEvent);
+
+    // The pair a client reads as "stopped talking, not finished".
+    expect(p.getStatus().lifecycle).toBe('idle');
+    expect(p.getStatus().runningSubagentCount).toBe(2);
+  });
+
+  // …and the set drains itself on the terminal updates, which is the same event
+  // that wakes the agent. No leak, no manual clear.
+  it('drains the running-children count as each one finishes past the turn', () => {
+    const p = new SessionStateProjector('bg-2');
+    p.ingest({ type: 'turn_start' } as RawSessionEvent);
+    p.ingest({ type: 'subagent_update', taskId: 'bt1', status: 'running' } as RawSessionEvent);
+    p.ingest({ type: 'subagent_update', taskId: 'bt2', status: 'running' } as RawSessionEvent);
+    p.ingest({ type: 'turn_end' } as RawSessionEvent);
+
+    p.ingest({ type: 'subagent_update', taskId: 'bt1', status: 'complete' } as RawSessionEvent);
+    expect(p.getStatus().runningSubagentCount).toBe(1);
+    p.ingest({ type: 'subagent_update', taskId: 'bt2', status: 'error' } as RawSessionEvent);
+    expect(p.getStatus().runningSubagentCount).toBe(0);
+    expect(p.getStatus().lifecycle).toBe('idle');
+  });
+
+  // A reopened window (DOR-1100) is a real turn as far as the projection is
+  // concerned: it streams, it clears the previous failure, and it does not
+  // disturb the children still running underneath it.
+  it('streams again on a reopened turn without disturbing the running children', () => {
+    const p = new SessionStateProjector('bg-3');
+    p.ingest({ type: 'turn_start' } as RawSessionEvent);
+    p.ingest({ type: 'subagent_update', taskId: 'bt1', status: 'running' } as RawSessionEvent);
+    p.ingest({ type: 'turn_end' } as RawSessionEvent);
+    expect(p.getStatus().lifecycle).toBe('idle');
+
+    p.ingest({ type: 'turn_start' } as RawSessionEvent);
+    expect(p.getStatus().lifecycle).toBe('streaming');
+    expect(p.getStatus().runningSubagentCount).toBe(1);
+  });
+
   // Failure mode: an interaction left pending must surface as a recoverable
   // pending interaction with server-authoritative remainingMs; blocked lifecycle.
   it('projects pending interactions and goes blocked while one is open', () => {

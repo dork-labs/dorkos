@@ -125,6 +125,12 @@ export function ChatStatusSection({
   // Running, not available: the fold keeps a row per subagent for the whole turn,
   // terminal ones included, so "in the list" never means "in flight" (DOR-462).
   const runningSubagents = partitionSubagents(diagnostics.activeSubagents).running;
+  // How many there ARE comes from the server's own count, not from the rows: a
+  // background task outlives the turn that started it, and the turn's rows are
+  // wiped by the history reload seconds after it closes — which is exactly when
+  // the session looks finished and is not (DOR-1100). The rows still supply the
+  // names, so the tooltip stays specific for as long as it can.
+  const liveSubagentCount = diagnostics.runningSubagentCount ?? runningSubagents.length;
 
   // Per-model gating for the 'auto' permission mode, scoped by the chip runtime
   // so a pre-launch Codex session gates on Codex's models.
@@ -433,7 +439,7 @@ export function ChatStatusSection({
             canSelect: runtimeChip.canSelect,
           },
     usage,
-    subagentsInFlight: runningSubagents.length,
+    subagentsInFlight: liveSubagentCount,
   };
 
   // The inline Compact action is the one thing the line gives up first: it costs a
@@ -470,6 +476,8 @@ export function ChatStatusSection({
     usage,
     supportsCostTracking: activeCaps?.supportsCostTracking ?? true,
     runningSubagents,
+    liveSubagentCount,
+    waitingOnSubagents: !isStreaming,
     connectionState: syncConnectionState,
     density: budget.density,
   });

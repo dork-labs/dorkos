@@ -612,6 +612,17 @@ export class SessionStateProjector {
         // them bounds the map across a long session and keeps the lifecycle
         // derivation below reading only live state.
         this.capabilityHolds.clear();
+        // `runningSubagents` is deliberately NOT cleared beside it, and the two
+        // look similar enough that the difference has to be written down. A held
+        // tool call dies with its turn; a background task does not — it keeps
+        // running, and finishing is what WAKES the agent for another turn
+        // (DOR-1100). So a session can legitimately sit `idle` with a non-zero
+        // `runningSubagentCount`, and that pair is the whole signal: the agent
+        // has stopped talking, but it is not finished. Clearing here would erase
+        // the only honest account of why the session is about to speak again.
+        //
+        // Each entry leaves on its own terminal `subagent_update`, which is the
+        // same event that wakes the agent, so the set drains itself.
         this.status.lifecycle = this.deriveTurnEndLifecycle(event.terminalReason);
         // A turn that did not settle to error leaves no stale failure behind
         // (a mid-turn error the runtime recovered from must not linger).

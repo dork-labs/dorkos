@@ -4,15 +4,34 @@ import type { ActiveSubagent } from '../model/session-diagnostics';
 
 interface SubagentsItemProps {
   /**
-   * The subagents still in flight — `partitionSubagents`' `running` half, never
-   * the whole fold (which keeps terminal rows) and never the runtime's catalogue
-   * of callable agent types.
+   * How many helpers are running, as the SERVER counts them.
+   *
+   * The number drawn, and deliberately not `running.length`: a background task
+   * outlives the turn that started it, and after that turn's history reloads the
+   * only thing left that can name it is gone (DOR-1100). The count survives; the
+   * rows do not.
+   */
+  count: number;
+  /**
+   * The running helpers this turn can still NAME, for the tooltip —
+   * `partitionSubagents`' `running` half, never the whole fold (which keeps
+   * terminal rows) and never the runtime's catalogue of callable agent types.
+   * May be shorter than {@link count}, and empty is normal once the turn that
+   * started them has closed.
    */
   running: readonly ActiveSubagent[];
+  /**
+   * True when the agent itself has stopped talking and these are what remain.
+   *
+   * The same number means two different things either side of this flag: during
+   * a turn it is work being done alongside the agent, and afterwards it is the
+   * reason the session looks finished when it is not.
+   */
+  waiting: boolean;
 }
 
 /**
- * Status line item: how many helper agents are working on this turn.
+ * Status line item: how many helper agents are working right now.
  *
  * It counts what is *running*, which is the only reading that can earn a slot in
  * a quiet-by-default line. The runtime's catalogue of callable agent types is a
@@ -26,9 +45,16 @@ interface SubagentsItemProps {
  * so the row never squeezes it and the count is never partly drawn. The word is in
  * the tooltip and in the accessible name, where a narrow row cannot cut it.
  *
- * @param props - The running subagents.
+ * The glyph never changes and the number never animates, including when the turn
+ * ends underneath it: a quiet fact that stays put is the point, and a session
+ * that has gone quiet is not the moment to start moving things.
+ *
+ * @param props - The count, the rows that can be named, and whether the agent is
+ *   waiting on them.
  */
-export function SubagentsItem({ running }: SubagentsItemProps) {
+export function SubagentsItem({ count, running, waiting }: SubagentsItemProps) {
+  const plural = count === 1 ? '' : 's';
+  const unnamed = count - running.length;
   return (
     <Tooltip>
       <TooltipTrigger asChild>
@@ -37,17 +63,28 @@ export function SubagentsItem({ running }: SubagentsItemProps) {
             announce the same change twice. */}
         <span
           className="inline-flex min-w-0 items-center gap-1"
-          aria-label={`${running.length} subagent${running.length === 1 ? '' : 's'} running`}
+          aria-label={
+            waiting
+              ? `${count} background task${plural} still running`
+              : `${count} subagent${plural} running`
+          }
         >
           <Users className="size-(--size-icon-xs) shrink-0" />
           {/* No `truncate`: an ellipsis costs width, so a squeezed two-digit
               count renders as one digit with the ellipsis itself clipped — a
               confident wrong number rather than a visibly cut one. The item is
               rigid instead, so it is never asked. */}
-          <span className="shrink-0 tabular-nums">{running.length}</span>
+          <span className="shrink-0 tabular-nums">{count}</span>
         </span>
       </TooltipTrigger>
       <TooltipContent side="top" className="max-w-64">
+        {/* The one line that explains why the session looks finished and isn't.
+            Only when it is true — during a turn this would be noise. */}
+        {waiting && (
+          <p className="mb-1 font-medium">
+            Still working in the background. The agent picks up again when they finish.
+          </p>
+        )}
         <ul className="space-y-1">
           {running.map((subagent) => (
             <li key={subagent.taskId}>
@@ -61,6 +98,13 @@ export function SubagentsItem({ running }: SubagentsItemProps) {
             </li>
           ))}
         </ul>
+        {/* Says "there are more than I can name" rather than pretending the list
+            is the whole story — the rows are per-turn, the count is not. */}
+        {unnamed > 0 && (
+          <p className="text-muted-foreground text-[10px] leading-tight">
+            {running.length > 0 ? `and ${unnamed} more` : `${unnamed} task${plural} from earlier`}
+          </p>
+        )}
       </TooltipContent>
     </Tooltip>
   );

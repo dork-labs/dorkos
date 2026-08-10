@@ -87,9 +87,20 @@ export interface StatusItemNodesInput {
   supportsCostTracking: boolean;
   /**
    * The subagents this turn has in flight — the `running` half of the fold, never
-   * the runtime's catalogue of callable agent types (DOR-462).
+   * the runtime's catalogue of callable agent types (DOR-462). Names them for the
+   * tooltip; it is {@link liveSubagentCount} that decides whether there are any.
    */
   runningSubagents: readonly ActiveSubagent[];
+  /**
+   * How many helpers are running as the SERVER counts them — the number drawn.
+   *
+   * Separate from `runningSubagents.length` because a background task outlives
+   * its turn and the turn's rows do not (DOR-1100): after the history reload the
+   * list is empty while the children are still working.
+   */
+  liveSubagentCount: number;
+  /** True when the agent has stopped talking and those children are what remain. */
+  waitingOnSubagents: boolean;
   /** Live-sync connection state. */
   connectionState: ConnectionState;
   /**
@@ -230,8 +241,14 @@ export function buildStatusItemNodes(
     nodes.usage = <UsageStatusItem usage={input.usage} />;
   }
 
-  if (input.runningSubagents.length > 0) {
-    nodes.subagents = <SubagentsItem running={input.runningSubagents} />;
+  if (input.liveSubagentCount > 0) {
+    nodes.subagents = (
+      <SubagentsItem
+        count={input.liveSubagentCount}
+        running={input.runningSubagents}
+        waiting={input.waitingOnSubagents}
+      />
+    );
   }
 
   nodes.connection = (

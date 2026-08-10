@@ -186,7 +186,17 @@ export const SessionStatusSchema = z
     permissionMode: PermissionModeIdSchema,
     /** Todo tallies, or `null` before the agent emits its first todo list. */
     todoCounts: SessionTodoCountsSchema.nullable(),
-    /** Count of subagents currently running under this session. */
+    /**
+     * Count of subagents and background tasks currently running under this
+     * session.
+     *
+     * Survives the turn that started them, and is meant to: a background task
+     * outlives its turn, and non-zero beside `lifecycle: 'idle'` is the honest
+     * reading "the agent has stopped talking, but it is not finished" — the
+     * state a client draws as still-working-in-the-background (DOR-1100). A
+     * client that reports this must therefore never infer it from the current
+     * turn's events alone, which are gone moments after the turn closes.
+     */
     runningSubagentCount: z.number().int().default(0),
     /** Coarse lifecycle phase of the session. */
     lifecycle: SessionLifecycleSchema,

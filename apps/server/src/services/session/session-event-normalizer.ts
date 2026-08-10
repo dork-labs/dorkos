@@ -572,6 +572,65 @@ function readTerminalReason(event: StreamEvent): TerminalReason | undefined {
 }
 
 /**
+ * The normalized event types that REOPEN a turn window when they arrive after
+ * the window already closed (DOR-1100).
+ *
+ * ## What this is for
+ *
+ * The claude-code adapter emits `done` on every SDK `result`
+ * (`result-event-mapper.ts`, "Always emit done"), and {@link feedProjector}
+ * closes the turn on it — but the CLI can keep a turn alive past its `result`
+ * when a background task's notification is queued. The agent wakes, says more,
+ * calls more tools, and every one of those events used to land OUTSIDE any turn:
+ * the cockpit read idle while the agent worked, and the continuation was never
+ * persisted (`flushTurn` only runs for events held in an open turn). Reopening a
+ * window puts the continuation back on screen, back in the lifecycle, and back
+ * in history.
+ *
+ * ## Why exactly these five, and why nothing else
+ *
+ * Only events that are the AGENT ITSELF PRODUCING WORK reopen: prose, reasoning,
+ * a tool starting, a tool's output, a tool's progress. Everything else that can
+ * follow a `done` is bookkeeping ABOUT a turn rather than a turn, and would
+ * manufacture a window that nothing ever fills — a ghost window, which costs a
+ * `turn_start`/`turn_end` pair on the durable stream, a spurious `streaming`
+ * flicker, and an empty persisted turn, on EVERY normal turn.
+ *
+ * That risk is why the set is drawn from what actually trails a `result` today:
+ *
+ * - **`status_change`** — `mapResultEvent` emits the terminal `session_status`
+ *   BEFORE `done`, but a `rate_limit_event` can land after it, and the projector
+ *   merges it into the held status either way. Pure bookkeeping.
+ * - **`system_status`** — the phantom-cancellation notice (DOR-1087) is yielded
+ *   deliberately AFTER its message's mapped events, so it is the one thing
+ *   guaranteed to be able to trail a terminal `done`. It is an operator note,
+ *   not work.
+ * - **`subagent_update`** — a background child starting, reporting, or finishing
+ *   is precisely the "idle, but children are still live" state; the projector's
+ *   `runningSubagentCount` carries it, and drawing a turn around it would claim
+ *   the agent is talking when it is not.
+ * - **`error`** — `message-sender` orders every error BEFORE the terminal `done`
+ *   on purpose ("nothing may follow done"). One arriving after is a stream-death
+ *   artifact, and wrapping it in a fresh window would invent a turn that failed.
+ * - Todo/hook/memory/compaction/interaction/sign-in/UI-command members are all
+ *   either bookkeeping or a card, and none of them is the agent speaking.
+ *
+ * Net effect on a normal claude-code turn: every content event precedes the SDK
+ * `result`, and `result` maps to `session_status → context_usage → [error] →
+ * done` with `done` last, so nothing in this set can follow it and the turn
+ * yields exactly one window. Pinned by the "no ghost window on a normal turn"
+ * test, which builds its stream from `mapResultEvent`'s real output rather than
+ * a hand-written guess at it.
+ */
+export const TURN_REOPENING_EVENT_TYPES: ReadonlySet<RawSessionEvent['type']> = new Set([
+  'text_delta',
+  'thinking_delta',
+  'tool_call',
+  'tool_result',
+  'tool_progress',
+]);
+
+/**
  * Drive a single triggered turn through the projector: emit `turn_start`,
  * normalize and ingest each `StreamEvent`, then emit `turn_end` when the turn's
  * `done` event arrives (or when the stream ends without one). The last-seen
@@ -579,6 +638,31 @@ function readTerminalReason(event: StreamEvent): TerminalReason | undefined {
  * `turn_end`; when none was carried but the turn yielded a typed `error`, the
  * error latch fills `terminalReason: 'error'` so the failure settles instead
  * of reading idle.
+ *
+ * ## One stream, one or more turn WINDOWS
+ *
+ * A `done` closes the window that is currently open. A `done` with no open
+ * window is a no-op — never a second `turn_end` for the same window, never a
+ * crash (spec `persistent-session-runtime` P0 / task 0.1; F5). The `finally`
+ * closes whatever is still open, so the projection can never be left
+ * `streaming`.
+ *
+ * A stream can carry MORE than one window, because the CLI can keep a turn alive
+ * past the `result` DorkOS closed on: a queued background-task notification
+ * wakes the agent and it keeps working. A content event arriving after the
+ * window closed OPENS A NEW ONE ({@link TURN_REOPENING_EVENT_TYPES}, DOR-1100),
+ * so the continuation streams live, puts the lifecycle back to `streaming`, and
+ * is persisted as its own turn when its own `done` (or the end of the stream)
+ * closes it. The invariant that holds throughout is the spec's C2: exactly one
+ * `turn_end` per window, however many native `result`s the backend produced.
+ *
+ * A reopened window resets the per-window latches, which is what makes it a
+ * window rather than a continuation of the closed one: the previous window's
+ * `terminalReason` and `error` belonged to the turn that already ended, and
+ * carrying either forward would settle the new work as failed or interrupted
+ * before it produced anything. Only the FIRST window notifies `onTurnStart` —
+ * the caller's turn identity is the turn it triggered, not one the runtime
+ * started on its own.
  *
  * This is the call site task #6 uses to make the message POST trigger-only:
  * pass it the runtime's `sendMessage(...)` generator so the turn is projected
@@ -614,6 +698,8 @@ export async function feedProjector(
   // is every caller but the room — never opened its turn at all.
   const started = projector.ingest(start);
   opts.onTurnStart?.(started.seq);
+  /** Whether a turn window is open right now — the thing `done` closes. */
+  let turnOpen = true;
   let terminalReason: TerminalReason | undefined;
   // Error latch: a turn that carried a typed `error` but whose runtime never
   // attached an explicit terminalReason (OpenCode/Codex crash paths) must still
@@ -621,29 +707,46 @@ export async function feedProjector(
   // lifecycle. Explicit reasons always win; the latch only fills undefined.
   let sawError = false;
   const closeTurn = (): void => {
+    // No open window: a second `done`, or a `finally` after one already closed.
+    // Silently nothing — a second `turn_end` would double-settle the lifecycle,
+    // re-flush the turn to the store, and (once the pump lands) close a window
+    // that belongs to a different dispatch.
+    if (!turnOpen) return;
+    turnOpen = false;
     const reason = terminalReason ?? (sawError ? 'error' : undefined);
     projector.ingest({
       type: 'turn_end',
       ...(reason !== undefined ? { terminalReason: reason } : {}),
     });
   };
-  let ended = false;
+  /** Open a fresh window for runtime-initiated continuation work (DOR-1100). */
+  const reopenTurn = (): void => {
+    turnOpen = true;
+    terminalReason = undefined;
+    sawError = false;
+    // No `userMessage`: nobody typed this one. The agent woke itself up.
+    projector.ingest({ type: 'turn_start' });
+  };
   try {
     for await (const event of events) {
+      const raw = toRawSessionEvent(event);
+      // Checked BEFORE the latches below so the reopen's reset cannot be undone
+      // by the very event that caused it (content events carry neither a
+      // terminal reason nor an error, so this is belt-and-braces).
+      if (raw !== null && !turnOpen && TURN_REOPENING_EVENT_TYPES.has(raw.type)) reopenTurn();
       const reason = readTerminalReason(event);
       if (reason !== undefined) terminalReason = reason;
       if (event.type === 'error') sawError = true;
       if (event.type === 'done') {
         closeTurn();
-        ended = true;
         continue;
       }
-      const raw = toRawSessionEvent(event);
       if (raw !== null) projector.ingest(raw);
     }
   } finally {
-    // Defensive: a stream that ends without an explicit `done` still closes the
-    // turn so the projection does not stay `streaming` forever.
-    if (!ended) closeTurn();
+    // Defensive: a stream that ends with a window still open — no `done` at all,
+    // or a reopened continuation the runtime never terminated — still closes it
+    // so the projection does not stay `streaming` forever.
+    closeTurn();
   }
 }

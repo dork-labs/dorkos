@@ -129,6 +129,39 @@ export interface SessionStreamState {
    * screen, and dropped with it.
    */
   carriedSigninFlowIds: string[];
+  /**
+   * Background children this projection has watched START and not yet watched
+   * finish, by `taskId` (DOR-1100).
+   *
+   * Exists because a background task OUTLIVES the turn that launched it, and the
+   * only per-turn record of it does not: `inProgressTurn` is wiped by the
+   * turn-end reconcile's history reload, so a fold over it reports zero running
+   * children about a second after the turn closes — while the children are still
+   * working. That is the exact window this session state is for. Holding the ids
+   * at the session level rather than the turn level is what makes
+   * {@link SessionStatus.runningSubagentCount} stay true across a turn boundary,
+   * in parity with the server projector, which has always tracked its own set
+   * that way.
+   *
+   * Bounded by construction: an id enters when it starts and leaves when it
+   * reaches any terminal status.
+   */
+  runningSubagentIds: string[];
+  /**
+   * Children the SERVER counted at hydration that this projection cannot name.
+   *
+   * A cold snapshot carries the count but not the ids of children started in an
+   * earlier turn, so those cannot go in {@link runningSubagentIds}. Counting them
+   * separately is what keeps the total honest in both directions: without this
+   * field a mid-background-work refresh would report zero (dropping the server's
+   * own count), and folding them INTO the id list would double-count the next
+   * progress report for a child the client can in fact name.
+   *
+   * Decremented — never below zero — when a terminal update arrives for an id
+   * this projection never saw start, because that is what one of these finishing
+   * looks like from here.
+   */
+  unnamedRunningSubagents: number;
 }
 
 /** Default state for an un-hydrated session. */
@@ -146,6 +179,8 @@ export const DEFAULT_SESSION_STREAM_STATE: SessionStreamState = {
   triggerPending: false,
   hydrationGeneration: 0,
   carriedSigninFlowIds: [],
+  runningSubagentIds: [],
+  unnamedRunningSubagents: 0,
 };
 
 /** `SessionEvent` member discriminants that map onto a {@link PendingInteractionDTO}. */
@@ -505,6 +540,66 @@ function deriveTurnEndLifecycle(
   return hasPendingInteractions ? 'blocked' : 'idle';
 }
 
+/**
+ * Re-derive `status.runningSubagentCount` from the two things that know: the
+ * children this projection can name, and the ones the server counted before it
+ * arrived.
+ */
+function syncRunningSubagentCount(session: SessionStreamState): void {
+  if (!session.status) return;
+  session.status.runningSubagentCount =
+    session.runningSubagentIds.length + session.unnamedRunningSubagents;
+}
+
+/**
+ * Fold one `subagent_update` into the session-level running set (DOR-1100).
+ *
+ * Mirrors the server projector's `applySubagentUpdate`, with one extra case it
+ * does not need: a terminal update for an id this projection never saw start is
+ * one of the {@link SessionStreamState.unnamedRunningSubagents} finishing, so it
+ * decrements that instead of doing nothing. Without that arm, a session hydrated
+ * mid-background-work would report those children as running forever.
+ *
+ * @param session - The session projection to mutate.
+ * @param taskId - The child's runtime-assigned id.
+ * @param status - Its reported lifecycle; only `running` is still in flight.
+ */
+function applyRunningSubagent(
+  session: SessionStreamState,
+  taskId: string,
+  status: 'running' | 'complete' | 'error' | 'stopped'
+): void {
+  const known = session.runningSubagentIds.includes(taskId);
+  if (status === 'running') {
+    // Progress reports repeat `running` for a child already counted — adding it
+    // again would inflate the tally with every tool the child uses.
+    if (!known) session.runningSubagentIds.push(taskId);
+  } else if (known) {
+    session.runningSubagentIds = session.runningSubagentIds.filter((id) => id !== taskId);
+  } else {
+    session.unnamedRunningSubagents = Math.max(0, session.unnamedRunningSubagents - 1);
+  }
+  syncRunningSubagentCount(session);
+}
+
+/**
+ * Name every child a snapshot's in-progress turn shows as still running.
+ *
+ * A snapshot carries the server's COUNT plus the current turn's events, so the
+ * children of that turn can be named from the events and the rest cannot. The
+ * caller books the difference as {@link SessionStreamState.unnamedRunningSubagents}.
+ *
+ * @param events - The snapshot's `inProgressTurn`, in seq order.
+ */
+function nameRunningSubagents(events: readonly SessionEvent[]): string[] {
+  const byTask = new Map<string, boolean>();
+  for (const event of events) {
+    if (event.type !== 'subagent_update') continue;
+    byTask.set(event.taskId, event.status === 'running');
+  }
+  return [...byTask].filter(([, running]) => running).map(([taskId]) => taskId);
+}
+
 /** Fold a single event into a session's projection (assumes seq already gated). */
 function projectEvent(session: SessionStreamState, event: SessionEvent): void {
   switch (event.type) {
@@ -588,6 +683,15 @@ function projectEvent(session: SessionStreamState, event: SessionEvent): void {
       session.pendingInteractions = session.pendingInteractions.filter((i) => i.id !== event.id);
       session.inProgressTurn.push(event);
       break;
+    case 'subagent_update':
+      // Explicit case rather than the default arm: the event both rides the turn
+      // — so the turn's own subagent fold still draws it — AND maintains the
+      // session-level running set, which is the only reading that survives the
+      // turn it started in (DOR-1100). Server-projector parity: the same
+      // add-on-running / drop-on-terminal rule `applySubagentUpdate` applies.
+      session.inProgressTurn.push(event);
+      applyRunningSubagent(session, event.taskId, event.status);
+      break;
     default:
       if (TURN_EVENT_TYPES.has(event.type)) session.inProgressTurn.push(event);
       break;
@@ -646,6 +750,16 @@ export const useSessionStreamStore: SessionStreamStore = create<
             // authority never sent, and erasing a live card is worse than showing
             // a finished one a turn longer.
             session.carriedSigninFlowIds = [];
+            // Re-baseline the live-children set against the server's own answer
+            // (DOR-1100). The snapshot names the current turn's children and
+            // counts all of them, so anything the count covers and the events do
+            // not is a child from an earlier turn — still running, still worth
+            // reporting, just not nameable from here.
+            session.runningSubagentIds = nameRunningSubagents(session.inProgressTurn);
+            session.unnamedRunningSubagents = Math.max(
+              0,
+              snapshot.status.runningSubagentCount - session.runningSubagentIds.length
+            );
             session.lastAppliedSeq = snapshot.cursor;
             session.lastEventAt = Date.now();
             session.streamReadyCursor = snapshot.cursor;

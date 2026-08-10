@@ -961,3 +961,96 @@ describe('useSessionListStore', () => {
     expect(state.unseen['other-session']).toBe('/p');
   });
 });
+
+// DOR-1100: a background task outlives the turn that started it, so the count
+// this store reports has to outlive that turn's events. The turn-end reconcile
+// wipes `inProgressTurn` seconds after the turn closes, which is exactly when
+// the session looks finished and is not.
+describe('useSessionStreamStore — live background children', () => {
+  const store = useSessionStreamStore;
+
+  /** A `subagent_update` on the durable stream. */
+  function child(seq: number, taskId: string, status: string): SessionEvent {
+    return { type: 'subagent_update', seq, taskId, status } as SessionEvent;
+  }
+
+  beforeEach(() => {
+    store.setState({ sessions: {}, sessionAccessOrder: [], pinnedSessionId: null });
+  });
+
+  it('keeps the count after the turn that started the children is reloaded away', () => {
+    store.getState().applySnapshot(SID, snapshot({ cursor: 0 }));
+    store.getState().applyEvent(SID, { type: 'turn_start', seq: 1 });
+    store.getState().applyEvent(SID, child(2, 'bt1', 'running'));
+    store.getState().applyEvent(SID, child(3, 'bt2', 'running'));
+    store.getState().applyEvent(SID, { type: 'turn_end', seq: 4 });
+    expect(store.getState().sessions[SID]?.status?.runningSubagentCount).toBe(2);
+
+    // What the turn-end reconcile does: canonical history replaces the turn.
+    store.getState().setHistoryMessages(SID, [MESSAGE]);
+
+    expect(store.getState().sessions[SID]?.inProgressTurn).toEqual([]);
+    expect(store.getState().sessions[SID]?.status?.runningSubagentCount).toBe(2);
+    expect(store.getState().sessions[SID]?.status?.lifecycle).toBe('idle');
+  });
+
+  it('does not double-count a child that keeps reporting progress', () => {
+    store.getState().applySnapshot(SID, snapshot({ cursor: 0 }));
+    store.getState().applyEvent(SID, child(1, 'bt1', 'running'));
+    store.getState().applyEvent(SID, child(2, 'bt1', 'running'));
+    store.getState().applyEvent(SID, child(3, 'bt1', 'running'));
+    expect(store.getState().sessions[SID]?.status?.runningSubagentCount).toBe(1);
+  });
+
+  it('drops a child from the count when it finishes', () => {
+    store.getState().applySnapshot(SID, snapshot({ cursor: 0 }));
+    store.getState().applyEvent(SID, child(1, 'bt1', 'running'));
+    store.getState().applyEvent(SID, child(2, 'bt2', 'running'));
+    store.getState().applyEvent(SID, child(3, 'bt1', 'complete'));
+    expect(store.getState().sessions[SID]?.status?.runningSubagentCount).toBe(1);
+    store.getState().applyEvent(SID, child(4, 'bt2', 'error'));
+    expect(store.getState().sessions[SID]?.status?.runningSubagentCount).toBe(0);
+  });
+
+  // A refresh mid-background-work: the snapshot counts two children and names
+  // neither (they belong to a turn that already closed). Both facts have to
+  // survive — the total, and the fact that finishing one leaves one.
+  it('carries a snapshot count for children it cannot name, and drains it', () => {
+    store.getState().applySnapshot(
+      SID,
+      snapshot({
+        cursor: 10,
+        status: { ...STATUS, runningSubagentCount: 2 },
+      })
+    );
+    expect(store.getState().sessions[SID]?.status?.runningSubagentCount).toBe(2);
+    expect(store.getState().sessions[SID]?.unnamedRunningSubagents).toBe(2);
+
+    store.getState().applyEvent(SID, child(11, 'bt-from-before', 'complete'));
+    expect(store.getState().sessions[SID]?.status?.runningSubagentCount).toBe(1);
+
+    // A child this projection CAN name starts alongside them.
+    store.getState().applyEvent(SID, child(12, 'bt-new', 'running'));
+    expect(store.getState().sessions[SID]?.status?.runningSubagentCount).toBe(2);
+    store.getState().applyEvent(SID, child(13, 'bt-new', 'complete'));
+    expect(store.getState().sessions[SID]?.status?.runningSubagentCount).toBe(1);
+  });
+
+  // The snapshot names what it can, so a child already visible in the current
+  // turn must not be counted twice when its next progress report arrives.
+  it('names the snapshot turn’s running children instead of counting them twice', () => {
+    store.getState().applySnapshot(
+      SID,
+      snapshot({
+        cursor: 10,
+        status: { ...STATUS, runningSubagentCount: 1 },
+        inProgressTurn: [{ type: 'turn_start', seq: 8 }, child(9, 'bt1', 'running')],
+      })
+    );
+    expect(store.getState().sessions[SID]?.runningSubagentIds).toEqual(['bt1']);
+    expect(store.getState().sessions[SID]?.unnamedRunningSubagents).toBe(0);
+
+    store.getState().applyEvent(SID, child(11, 'bt1', 'running'));
+    expect(store.getState().sessions[SID]?.status?.runningSubagentCount).toBe(1);
+  });
+});

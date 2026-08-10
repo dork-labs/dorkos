@@ -1,7 +1,12 @@
 import { describe, it, expect, vi } from 'vitest';
 import type { StreamEvent } from '@dorkos/shared/types';
 import type { RawSessionEvent } from '../index.js';
-import { toRawSessionEvent, feedProjector } from '../session-event-normalizer.js';
+import {
+  toRawSessionEvent,
+  feedProjector,
+  TURN_REOPENING_EVENT_TYPES,
+} from '../session-event-normalizer.js';
+import { mapResultEvent } from '../../runtimes/claude-code/sdk/event-mappers/result-event-mapper.js';
 import { SessionStateProjector, CAPABILITY_HOLD_PAUSE_GRACE_MS } from '../index.js';
 
 describe('toRawSessionEvent', () => {
@@ -943,5 +948,271 @@ describe('in-conversation MCP sign-in round-trip (DOR-1004)', () => {
         data: { flowId: 'flow-1', outcome: 'connected' },
       } as unknown as StreamEvent)
     ).toEqual({ type: 'mcp_signin_resolved', flowId: 'flow-1', outcome: 'connected' });
+  });
+});
+
+// The turn WINDOW contract (spec `persistent-session-runtime` P0/task 0.1 + DOR-1100).
+//
+// A `done` closes the window that is open; a `done` with no open window does
+// nothing; a content event arriving after a close opens a new window so the
+// agent's continuation work is visible, streamed and persisted.
+describe('feedProjector — turn windows', () => {
+  // P0/F5: a stream carrying two `done`s is one logical turn with one close.
+  // The second `done` is the SDK's second `result`, which arrives once the CLI
+  // keeps a query alive past the first — the persistent pump's day-one shape.
+  it('emits exactly one turn_end for two consecutive done events', async () => {
+    const projector = new SessionStateProjector('win-1');
+    const ingestSpy = vi.spyOn(projector, 'ingest');
+
+    async function* turn(): AsyncIterable<StreamEvent> {
+      yield { type: 'text_delta', data: { text: 'working' } };
+      yield { type: 'done', data: { sessionId: 'win-1' } };
+      yield { type: 'done', data: { sessionId: 'win-1' } };
+    }
+
+    await feedProjector(projector, turn());
+
+    const types = ingestSpy.mock.calls.map((c) => c[0].type);
+    expect(types).toEqual(['turn_start', 'text_delta', 'turn_end']);
+    expect(projector.getStatus().lifecycle).toBe('idle');
+  });
+
+  // The second `done` must not OVERWRITE the first close either: it carries a
+  // reason that belongs to whatever the runtime did next, not to this turn.
+  it('keeps the first close’s terminalReason when a second done carries another', async () => {
+    const projector = new SessionStateProjector('win-2');
+    const ingestSpy = vi.spyOn(projector, 'ingest');
+
+    async function* turn(): AsyncIterable<StreamEvent> {
+      yield { type: 'session_status', data: { sessionId: 'win-2', terminalReason: 'completed' } };
+      yield { type: 'done', data: { sessionId: 'win-2' } };
+      yield { type: 'done', data: { sessionId: 'win-2', terminalReason: 'max_turns' } };
+    }
+
+    await feedProjector(projector, turn());
+
+    const turnEnds = ingestSpy.mock.calls.map((c) => c[0]).filter((e) => e.type === 'turn_end');
+    expect(turnEnds).toEqual([{ type: 'turn_end', terminalReason: 'completed' }]);
+  });
+
+  // DOR-1100: the agent wakes on a background-task notification and keeps
+  // working. That work opens its own window, so the cockpit stops reading idle
+  // while text is still arriving.
+  it('reopens a window when content arrives after the turn closed', async () => {
+    const projector = new SessionStateProjector('win-3');
+    const ingestSpy = vi.spyOn(projector, 'ingest');
+
+    async function* turn(): AsyncIterable<StreamEvent> {
+      yield { type: 'text_delta', data: { text: 'first half' } };
+      yield { type: 'done', data: { sessionId: 'win-3' } };
+      // The CLI drains the queued background-task notification and the agent
+      // carries on: more prose, another tool, then its own result.
+      yield { type: 'text_delta', data: { text: 'and now the rest' } };
+      yield {
+        type: 'tool_call_start',
+        data: { toolCallId: 't9', toolName: 'Read', status: 'running' },
+      };
+      yield { type: 'done', data: { sessionId: 'win-3' } };
+    }
+
+    await feedProjector(projector, turn());
+
+    expect(ingestSpy.mock.calls.map((c) => c[0].type)).toEqual([
+      'turn_start',
+      'text_delta',
+      'turn_end',
+      'turn_start',
+      'text_delta',
+      'tool_call',
+      'turn_end',
+    ]);
+    expect(projector.getStatus().lifecycle).toBe('idle');
+  });
+
+  // The reopened window is a real turn: while it runs the session reads
+  // `streaming`, which is the whole point — the busy bar comes back to life.
+  it('puts the lifecycle back to streaming while the reopened window runs', async () => {
+    const projector = new SessionStateProjector('win-4');
+    const seen: string[] = [];
+
+    async function* turn(): AsyncIterable<StreamEvent> {
+      yield { type: 'done', data: { sessionId: 'win-4' } };
+      seen.push(`after-done:${projector.getStatus().lifecycle}`);
+      yield { type: 'text_delta', data: { text: 'awake again' } };
+      seen.push(`after-reopen:${projector.getStatus().lifecycle}`);
+    }
+
+    await feedProjector(projector, turn());
+
+    expect(seen).toEqual(['after-done:idle', 'after-reopen:streaming']);
+    expect(projector.getStatus().lifecycle).toBe('idle');
+  });
+
+  // A reopened window that the runtime never terminates is closed by the
+  // `finally`, so a woken agent whose stream dies cannot strand the session at
+  // `streaming` forever.
+  it('closes a reopened window from the finally when the stream ends without a done', async () => {
+    const projector = new SessionStateProjector('win-5');
+    const ingestSpy = vi.spyOn(projector, 'ingest');
+
+    async function* turn(): AsyncIterable<StreamEvent> {
+      yield { type: 'done', data: { sessionId: 'win-5' } };
+      yield { type: 'text_delta', data: { text: 'awake' } };
+    }
+
+    await feedProjector(projector, turn());
+
+    expect(ingestSpy.mock.calls.map((c) => c[0].type)).toEqual([
+      'turn_start',
+      'turn_end',
+      'turn_start',
+      'text_delta',
+      'turn_end',
+    ]);
+    expect(projector.getStatus().lifecycle).toBe('idle');
+  });
+
+  // The reopened window starts clean. The closed turn's failure belonged to the
+  // closed turn; carrying it forward would settle brand-new work as an error
+  // before it produced anything.
+  it('does not carry the closed window’s error latch into the reopened one', async () => {
+    const projector = new SessionStateProjector('win-6');
+    const ingestSpy = vi.spyOn(projector, 'ingest');
+
+    async function* turn(): AsyncIterable<StreamEvent> {
+      yield { type: 'error', data: { message: 'a tool blew up' } };
+      yield { type: 'done', data: { sessionId: 'win-6' } };
+      yield { type: 'text_delta', data: { text: 'recovered, carrying on' } };
+      yield { type: 'done', data: { sessionId: 'win-6' } };
+    }
+
+    await feedProjector(projector, turn());
+
+    const turnEnds = ingestSpy.mock.calls.map((c) => c[0]).filter((e) => e.type === 'turn_end');
+    expect(turnEnds).toEqual([{ type: 'turn_end', terminalReason: 'error' }, { type: 'turn_end' }]);
+    expect(projector.getStatus().lifecycle).toBe('idle');
+  });
+
+  // Only the FIRST window is the caller's turn. `trigger-turn`/the room runner
+  // treat the reported seq as the identity of the turn they started, so a
+  // runtime-initiated continuation must never re-announce over it.
+  it('reports onTurnStart for the first window only', async () => {
+    const projector = new SessionStateProjector('win-7');
+    const reported: number[] = [];
+
+    async function* turn(): AsyncIterable<StreamEvent> {
+      yield { type: 'done', data: { sessionId: 'win-7' } };
+      yield { type: 'text_delta', data: { text: 'awake' } };
+      yield { type: 'done', data: { sessionId: 'win-7' } };
+    }
+
+    await feedProjector(projector, turn(), { onTurnStart: (seq) => reported.push(seq) });
+
+    expect(reported).toEqual([1]);
+  });
+
+  // The bookkeeping that legitimately trails a `result` must NOT reopen. Each of
+  // these is a real post-`done` emission: the phantom-cancellation notice
+  // (DOR-1087) is yielded after its message's mapped events on purpose, a
+  // background child's lifecycle keeps reporting after the agent stops talking,
+  // and a `rate_limit_event` can land at any time.
+  it('does not reopen on trailing bookkeeping events', async () => {
+    const projector = new SessionStateProjector('win-8');
+    const ingestSpy = vi.spyOn(projector, 'ingest');
+
+    async function* turn(): AsyncIterable<StreamEvent> {
+      yield { type: 'text_delta', data: { text: 'all done' } };
+      yield { type: 'done', data: { sessionId: 'win-8' } };
+      yield { type: 'system_status', data: { message: 'A background task finished.' } };
+      yield { type: 'background_task_done', data: { taskId: 'bt1', status: 'completed' } };
+      yield {
+        type: 'session_status',
+        data: { sessionId: 'win-8', usage: { kind: 'pay-as-you-go', costUsd: 0.02 } },
+      };
+      yield { type: 'task_update', data: { action: 'snapshot', tasks: [] } };
+    }
+
+    await feedProjector(projector, turn());
+
+    const types = ingestSpy.mock.calls.map((c) => c[0].type);
+    expect(types.filter((t) => t === 'turn_start')).toHaveLength(1);
+    expect(types.filter((t) => t === 'turn_end')).toHaveLength(1);
+    expect(projector.getStatus().lifecycle).toBe('idle');
+  });
+});
+
+// The crux of DOR-1100: reopening must not grow a second, empty window onto
+// every ordinary turn. This pins the NORMAL turn's real shape by generating its
+// tail from `mapResultEvent` itself rather than from a hand-written guess at the
+// order — the guess is the thing that would rot.
+describe('feedProjector — a normal turn grows no ghost window', () => {
+  /** A minimal successful SDK `result` message, as the CLI sends it. */
+  const RESULT_MESSAGE = {
+    type: 'result',
+    subtype: 'success',
+    model: 'claude-test',
+    total_cost_usd: 0.0123,
+    modelUsage: { 'claude-test': { inputTokens: 100, outputTokens: 20, contextWindow: 200_000 } },
+  } as unknown as Parameters<typeof mapResultEvent>[0];
+
+  it('emits one turn_start and one turn_end for a real result tail', async () => {
+    const projector = new SessionStateProjector('normal-1');
+    const ingestSpy = vi.spyOn(projector, 'ingest');
+    const session = {
+      lastRequestUsage: {
+        inputTokens: 100,
+        outputTokens: 20,
+        cacheReadTokens: 10,
+        cacheCreationTokens: 5,
+      },
+    } as unknown as Parameters<typeof mapResultEvent>[1];
+
+    async function* turn(): AsyncIterable<StreamEvent> {
+      yield { type: 'thinking_delta', data: { text: 'considering' } };
+      yield {
+        type: 'tool_call_start',
+        data: { toolCallId: 't1', toolName: 'Read', status: 'running' },
+      };
+      yield {
+        type: 'tool_result',
+        data: { toolCallId: 't1', toolName: 'Read', result: 'ok', status: 'complete' },
+      };
+      yield { type: 'text_delta', data: { text: 'here is the answer' } };
+      // Everything the result mapper emits, in its real order, `done` included.
+      yield* mapResultEvent(RESULT_MESSAGE, session, 'normal-1');
+    }
+
+    await feedProjector(projector, turn(), { userMessage: 'do the thing' });
+
+    const types = ingestSpy.mock.calls.map((c) => c[0].type);
+    expect(types.filter((t) => t === 'turn_start')).toHaveLength(1);
+    expect(types.filter((t) => t === 'turn_end')).toHaveLength(1);
+    // …and the close is the LAST thing on the stream: nothing the mapper emits
+    // after the content trails `done`.
+    expect(types[types.length - 1]).toBe('turn_end');
+    expect(projector.getStatus().lifecycle).toBe('idle');
+  });
+
+  // `mapResultEvent` puts `done` last within the result, and emits nothing that
+  // normalizes into a reopening type. Those two facts are what make the reopen
+  // rule safe, so they are pinned here directly: if the mapper ever reorders,
+  // this fails and names the reason rather than leaving the window test to fail
+  // for a cause nobody can see.
+  it('pins done as the last event the result mapper yields, ahead of no reopeners', async () => {
+    const emitted: StreamEvent[] = [];
+    for await (const event of mapResultEvent(
+      RESULT_MESSAGE,
+      {} as unknown as Parameters<typeof mapResultEvent>[1],
+      'normal-2'
+    )) {
+      emitted.push(event);
+    }
+
+    expect(emitted[emitted.length - 1]?.type).toBe('done');
+    const reopeners = emitted.filter((event) => {
+      const raw = toRawSessionEvent(event);
+      return raw !== null && TURN_REOPENING_EVENT_TYPES.has(raw.type);
+    });
+    expect(reopeners).toEqual([]);
   });
 });
