@@ -30,13 +30,7 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
 } from '@/layers/shared/ui';
-import {
-  useAppStore,
-  useSettingsDeepLink,
-  useSlotContributions,
-  useTheme,
-  type Theme,
-} from '@/layers/shared/model';
+import { useAppStore, useSlotContributions, useTheme, type Theme } from '@/layers/shared/model';
 import { cn, formatShortcutKey, openLink, SHORTCUTS } from '@/layers/shared/lib';
 import { useConfig } from '@/layers/entities/config';
 import { AccountMenuContainer } from '@/layers/features/profile';
@@ -59,7 +53,6 @@ const THEME_LABELS: Record<Theme, string> = {
 export function SidebarFooterMenu() {
   const contributions = useSlotContributions('sidebar.footer');
   const { theme, setTheme } = useTheme();
-  const { open: openSettings } = useSettingsDeepLink();
   const { devtoolsOpen, routerDevtoolsOpen, toggleDevtools, toggleRouterDevtools } = useAppStore();
   const { data: config } = useConfig();
   const version = config?.version;
@@ -113,10 +106,13 @@ export function SidebarFooterMenu() {
             the roster names somebody, so the embed gets no dead block. BC-43
             gives the face a home of its own in the header block; this fold is
             what keeps its items reachable until then. */}
-        {/* Settings comes from the `sidebar.footer` slot a few rows down, and
-            the browser showed the two side by side: one menu, two rows, one
-            dialog. The account block yields it. */}
-        <AccountMenuContainer variant="rows" showSettings={false} />
+        {/* Both of the account block's doors yield to the header block, which
+            BC-43 gives "Workspace settings" and "Account". Two menus offering
+            one dialog under two different names is the same defect as one menu
+            doing it, with more distance between the rows to make it harder to
+            notice. What stays is what the header menu does NOT carry: who you
+            are signed in as, and how to stop being. */}
+        <AccountMenuContainer variant="rows" showSettings={false} showViewProfile={false} />
         <DropdownMenuSeparator />
         {rows.map((button) => {
           const Icon = button.icon;
@@ -137,9 +133,8 @@ export function SidebarFooterMenu() {
               </DropdownMenuItem>
             );
           }
-          const onSelect = button.id === 'settings' ? () => openSettings() : button.onClick;
           return (
-            <DropdownMenuItem key={button.id} onSelect={onSelect}>
+            <DropdownMenuItem key={button.id} onSelect={button.onClick}>
               <Icon className="size-(--size-icon-sm)" />
               {button.label}
             </DropdownMenuItem>

@@ -15,6 +15,8 @@ import '@testing-library/jest-dom/vitest';
 import type { TeamMember } from '@dorkos/shared/team-schemas';
 import { MOCK_TEAM_ROSTER } from '@/dev/mock-samples';
 import { AccountMenu } from '../ui/AccountMenu';
+import { ResponsiveDropdownMenu, ResponsiveDropdownMenuContent } from '@/layers/shared/ui';
+import { AccountMenuRows } from '../ui/AccountMenuRows';
 
 const SELF = MOCK_TEAM_ROSTER.find((member) => member.isSelf)!;
 
@@ -28,6 +30,34 @@ function renderMenu(overrides: Partial<React.ComponentProps<typeof AccountMenu>>
     ...overrides,
   };
   render(<AccountMenu {...props} />);
+  return props;
+}
+
+/**
+ * The rows variant, in a menu root.
+ *
+ * `AccountMenuRows` renders menu items, which throw outside a menu — it is a
+ * fragment of a menu rather than a component that owns one, and the fold that
+ * consumes it supplies the root. So does this.
+ *
+ * @param overrides - Props to vary; the rest are stubs.
+ */
+function renderRows(overrides: Partial<React.ComponentProps<typeof AccountMenuRows>> = {}) {
+  const props = {
+    member: SELF,
+    canSignOut: true,
+    onViewProfile: vi.fn(),
+    onOpenSettings: vi.fn(),
+    onSignOut: vi.fn(),
+    ...overrides,
+  };
+  render(
+    <ResponsiveDropdownMenu open>
+      <ResponsiveDropdownMenuContent>
+        <AccountMenuRows {...props} />
+      </ResponsiveDropdownMenuContent>
+    </ResponsiveDropdownMenu>
+  );
   return props;
 }
 
@@ -54,6 +84,27 @@ describe('AccountMenu', () => {
     expect(screen.getByText('View profile')).toBeInTheDocument();
     expect(screen.getByText('Settings')).toBeInTheDocument();
     expect(screen.queryByText('Sign out')).not.toBeInTheDocument();
+  });
+
+  it('yields the two doors the sidebar header block carries, and keeps the rest', () => {
+    // BC-43 gives "Workspace settings" and "Account" a home in the sidebar's
+    // header block, so the footer fold that also draws these rows hides both
+    // rather than offering one dialog under two names in two menus. What it
+    // keeps is what the header menu does not carry: who you are signed in as,
+    // and how to stop being.
+    renderRows({ showSettings: false, showViewProfile: false });
+
+    // Observable: the block rendered and still says who you are.
+    expect(screen.getByText(SELF.displayName)).toBeInTheDocument();
+    expect(screen.getByText('Sign out')).toBeInTheDocument();
+    expect(screen.queryByText('View profile')).not.toBeInTheDocument();
+    expect(screen.queryByText('Settings')).not.toBeInTheDocument();
+  });
+
+  it('draws both doors by default, so the hiding above is a choice and not the shape', () => {
+    renderRows();
+    expect(screen.getByText('View profile')).toBeInTheDocument();
+    expect(screen.getByText('Settings')).toBeInTheDocument();
   });
 
   it('answers your pointer with your own colour, never by dimming your face', () => {

@@ -163,12 +163,14 @@ describe('AC-7 — one create surface', () => {
       /\buseAgentCreationStore\b/,
       [
         'ui/NewMenu.tsx',
-        // The day-one invitation, not a create surface: a computed
-        // Getting-started suggestion that appears once, when the Library has
-        // nothing in it at all, and retires the moment it does (§8). It opens
-        // the SAME flow this menu's "Agent" item opens — one destination, and
-        // the id it stands for is in the vocabulary above. P2.2 owns the zone
-        // it will live in.
+        // Not create surfaces: both are computed Getting-started suggestions —
+        // the day-one invitation drawn when the Library holds nothing at all,
+        // and P2.2's `suggestion:add-agent` row, which retires the moment it is
+        // done (§8). Each opens the SAME flow this menu's "Agent" item opens,
+        // and the id each stands for is in the vocabulary above. A suggestion
+        // is a thing the sidebar computed for you once; a create surface is a
+        // control that is always there.
+        'ui/SidebarChrome.tsx',
         'ui/SidebarZones.tsx',
       ],
     ],
@@ -212,6 +214,23 @@ describe('DOR-329 — a menu that opens something does not blur it on the way ou
    */
   const OWN_MENU_CONTENT = ['ui/NewMenu.tsx', 'ui/SidebarHeaderBlock.tsx'];
 
+  /**
+   * The rule is about the mechanism, not the file.
+   *
+   * `useGuardedMenuNodes` guards NODES — `armOpensInput` wraps every node whose
+   * `opensInput` says it mounts something. A menu that hand-writes its
+   * `DropdownMenuItem`s has no nodes to guard, so it is out of scope by
+   * construction rather than by exemption: `SidebarFooterMenu` is exactly that,
+   * and it opens Radix dialogs and route navigations, which claim focus for
+   * themselves rather than depending on a menu not stealing it back.
+   *
+   * So the population is "modules rendering `SidebarMenuNodes` into their own
+   * content", which is checkable, and not "modules containing the string
+   * `DropdownMenuContent`", which would have swept the footer fold in and
+   * forced a judgement call into a source scan.
+   */
+  const RENDERS_NODE_LISTS = /<SidebarMenuNodes\b/;
+
   /** How many times `pattern` appears in `text`. */
   const count = (text: string, pattern: RegExp): number =>
     [...text.matchAll(new RegExp(pattern, 'g'))].length;
@@ -230,11 +249,10 @@ describe('DOR-329 — a menu that opens something does not blur it on the way ou
     expect(text).toMatch(/useGuardedMenuNodes/);
   });
 
-  it('finds no unguarded menu content anywhere else in the feature', () => {
-    const withOwnContent = filesMatching(/<DropdownMenuContent/);
-    // If a third menu appears, it lands here and has to be added above — with
-    // the guard, or with a reason it does not need one.
-    expect(withOwnContent).toEqual([...OWN_MENU_CONTENT].sort());
+  it('finds no unguarded node list anywhere else in the feature', () => {
+    // If a third menu renders a node list into its own content, it lands here
+    // and has to be added above — with the guard armed.
+    expect(filesMatching(RENDERS_NODE_LISTS)).toEqual([...OWN_MENU_CONTENT].sort());
   });
 });
 
@@ -256,49 +274,53 @@ describe('BC-44 — the version number leaves the chrome', () => {
     /v\$\{[^}]*[Vv]ersion\b[^}]*\}|v\{[^}]*[Vv]ersion\b[^}]*\}|<Version[A-Za-z]*[\s/>]/;
 
   /**
-   * Every module in the sidebar still allowed to draw a version number.
+   * Every module in the sidebar allowed to put a version number anywhere.
    *
-   * **This list is three entries too long, and says so.** BC-44 puts the
-   * version in the header block's menu and in DorkBot's seeded context, and
-   * nowhere else. The three below all live in the footer strip, which P2.4's
-   * disjoint-file guarantee forbids touching — P2.5 owns retiring that strip,
-   * and BC-44 replaces its two update cards with one transient "Update ready —
-   * Restart" pill. Until then a reader genuinely sees a version number in more
-   * than one place, and an assertion scoped so it could not notice would be the
-   * more expensive lie.
+   * **Nothing here is owed any more.** The previous three entries — the footer
+   * bar's version row and the two update cards — were marked OWED BY P2.5, and
+   * P2.5 deleted all three. This guard is exact-equality in both directions, so
+   * it went red for the stale entries the moment `main` moved, which is the
+   * property it was written for.
    *
-   * **Two of these were invisible to the first version of this guard**, whose
-   * pattern matched only the two literal spellings this feature happened to
-   * use. Widening it to any `v`-prefixed render of a `*version` identifier
-   * found the update cards immediately — which is the argument for a pattern
-   * that is looser than the code you wrote it against.
+   * What is left is what BC-44 actually permits, plus one thing that is not a
+   * render at all:
    *
-   * Written as an exact list rather than a "not more than" so P2.5 cannot
-   * silently leave an entry behind: deleting a row without deleting its line
-   * here fails this test.
+   * - the header block's menu — the version's one home in the chrome;
+   * - the footer strip's transient "Update ready — v…" pill, which BC-44 names
+   *   itself and which exists only while an update is waiting;
+   * - "Copy Debug Info", which puts the version on the CLIPBOARD. Nothing is
+   *   drawn. The pattern below cannot tell a rendered string from a copied one,
+   *   so the exception is recorded here rather than papered over by narrowing
+   *   the pattern until it stops noticing.
+   *
+   * Written as an exact list rather than a "not more than", so a module that
+   * stops drawing a version fails this too and the list cannot rot.
    */
   const ALLOWED = [
     'dashboard-sidebar/ui/header-block-menu.ts',
-    // OWED BY P2.5 (BC-47): all three go with the footer strip. The two cards
-    // become BC-44's single transient update pill.
-    'session-list/ui/DesktopUpdateCard.tsx',
-    'session-list/ui/SidebarFooterBar.tsx',
-    'session-list/ui/SidebarUpgradeCard.tsx',
+    'dashboard-sidebar/ui/SidebarFooterMenu.tsx',
+    'dashboard-sidebar/ui/SidebarFooterStrip.tsx',
   ];
 
-  it('scans both halves of the sidebar — the claim is about the panel, not a directory', () => {
-    // Without this, the exact list below could pass on a scan that never
-    // reached the footer at all.
+  it('scans every sidebar implementation, not just the one this task owns', () => {
+    // Without this, the exact list below could pass on a scan that reached only
+    // the directory the allowlist happens to name. The Obsidian embed keeps its
+    // own sidebar in `session-list`, so the scan still spans two features even
+    // though P2.5 moved the footer into this one.
     const scanned = [...SIDEBAR_SOURCE.keys()];
-    expect(scanned).toContain('session-list/ui/SidebarFooterBar.tsx');
     expect(scanned).toContain('dashboard-sidebar/ui/header-block-menu.ts');
+    expect(scanned).toContain('dashboard-sidebar/ui/SidebarFooterStrip.tsx');
+    expect(scanned).toContain('session-list/ui/EmbedSidebar.tsx');
   });
 
-  it('draws a version number only where it is still allowed to', () => {
+  it('puts a version number only where it is still allowed to', () => {
     expect(sidebarFilesMatching(VERSION_RENDER)).toEqual([...ALLOWED].sort());
   });
 
-  it('keeps this feature’s own half of the promise — one module, the header menu', () => {
-    expect(filesMatching(VERSION_RENDER)).toEqual(['ui/header-block-menu.ts']);
+  it('draws the RUNNING version in exactly one place — the header block’s menu', () => {
+    // The footer's two are a different number and a different job: the pill
+    // names the version you could move TO, and Copy Debug Info writes to the
+    // clipboard. "Which version am I running" has one answer, in one menu.
+    expect(filesMatching(/v\$\{model\.version\}/)).toEqual(['ui/header-block-menu.ts']);
   });
 });

@@ -21,6 +21,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ChevronDown } from 'lucide-react';
 import { toast } from 'sonner';
 import { OPERATOR_FALLBACK_DISPLAY_NAME } from '@dorkos/shared/team-schemas';
+import { isNewer } from '@/layers/shared/lib';
 import { useProfileDeepLink, useSettingsDeepLink, useTransport } from '@/layers/shared/model';
 import {
   DropdownMenu,
@@ -31,7 +32,6 @@ import {
   useGuardedMenuNodes,
 } from '@/layers/shared/ui';
 import { useTeamRoster } from '@/layers/entities/team';
-import { isNewer } from '@/layers/features/status';
 import { buildHeaderBlockMenuNodes } from './header-block-menu';
 import { NewMenu } from './NewMenu';
 import { SidebarSearchPill } from './SidebarSearchPill';
