@@ -273,6 +273,13 @@ export const PROTECTIVE_CARRYOVERS: readonly ProtectiveCarryover[] = [
       'Welcome-back posts default ON. Someone who stopped their agents greeting them should not be greeted again by a wipe — and a greeting that carries a next-step offer spends a model turn.',
   },
   {
+    path: 'welcomeBack.offersEnabled',
+    direction: 'boolean',
+    protectiveValue: false,
+    reason:
+      'Next-step offers default ON, and they are the one welcome-back leaf that spends a model turn. Turning them off is somebody declining a cost; a wipe that landed back on the default would start billing them again, and they would find out from the invoice rather than from the app. Carried separately from `welcomeBack.enabled` because the two are separate refusals — "greet me, but do not run anything" is a real position, and losing only the second half of it is the failure that would go unnoticed longest.',
+  },
+  {
     path: 'welcomeBack.maxPosts',
     direction: 'lower',
     reason:

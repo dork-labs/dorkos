@@ -10,7 +10,9 @@
  * spends money. Notes are free — they are read off session state — so that
  * switch is about noise. An OFFER cannot be known about without asking the
  * agent, which runs it for a turn, so its own row says that in the sentence
- * rather than leaving it to the docs, and it ships off.
+ * rather than leaving it to the docs. It ships ON, which is what makes that
+ * sentence load-bearing rather than decorative: it is where a person meets the
+ * cost, and the switch beside it is how they decline it.
  *
  * The offers row is hidden while the notes are off, because there is nothing for
  * an offer to ride on: a switch that cannot do anything is a switch that should

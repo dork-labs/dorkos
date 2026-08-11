@@ -1118,21 +1118,25 @@ export const UserConfigSchema = z.object({
        * Whether a greeting may also carry a next-step offer — and with it, the
        * one model turn per agent that finding out costs.
        *
-       * **Off by default, and that is the whole point of it being separate.**
-       * Everything else in this block is derived from session state and costs
-       * nothing, so leaving it on is free. An offer is not: the only honest way
-       * to learn whether an agent has a next step worth your decision is to ask
-       * it, which runs it for a turn. Turning this on says yes to that spend,
-       * for at most the same agents `maxPosts` already let speak — never for
-       * every agent, and never for one with no news.
+       * **On by default, and still its own switch, which is the point.** A note
+       * that ends in "want me to open the PR?" is the part of coming back that
+       * is worth reading, so an install where nobody ever finds that switch is
+       * an install that never sees the feature. Everything else in this block is
+       * derived from session state and costs nothing; an offer is not — the only
+       * honest way to learn whether an agent has a next step worth your decision
+       * is to ask it, which runs it for a turn. So the spend is bounded to the
+       * agents `maxPosts` already let speak (never every agent, never one with
+       * no news), the switch itself states the cost in the sentence beside it,
+       * and turning it off is one click that this feature never takes back:
+       * nothing — no upgrade, no migration, no config wipe — flips it on again.
        */
-      offersEnabled: z.boolean().default(false),
+      offersEnabled: z.boolean().default(true),
     })
     .default(() => ({
       enabled: true,
       absenceThresholdMinutes: 240,
       maxPosts: 3,
-      offersEnabled: false,
+      offersEnabled: true,
     })),
   onboarding: OnboardingStateSchema.default(() => ({
     completedSteps: [],

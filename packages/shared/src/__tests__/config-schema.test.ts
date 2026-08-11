@@ -68,7 +68,7 @@ describe('UserConfigSchema', () => {
         enabled: true,
         absenceThresholdMinutes: 240,
         maxPosts: 3,
-        offersEnabled: false,
+        offersEnabled: true,
       },
       onboarding: {
         completedSteps: [],
@@ -406,7 +406,7 @@ describe('USER_CONFIG_DEFAULTS', () => {
         enabled: true,
         absenceThresholdMinutes: 240,
         maxPosts: 3,
-        offersEnabled: false,
+        offersEnabled: true,
       },
       onboarding: {
         completedSteps: [],

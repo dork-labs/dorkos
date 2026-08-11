@@ -875,7 +875,7 @@ describe('GET /api/config', () => {
         enabled: true,
         absenceThresholdMinutes: 240,
         maxPosts: 3,
-        offersEnabled: false,
+        offersEnabled: true,
       });
     });
 
@@ -893,7 +893,7 @@ describe('GET /api/config', () => {
         enabled: false,
         absenceThresholdMinutes: 720,
         maxPosts: 3,
-        offersEnabled: false,
+        offersEnabled: true,
       });
     });
 
@@ -915,18 +915,20 @@ describe('GET /api/config', () => {
       expect(res.body.welcomeBack.maxPosts).toBe(1);
     });
 
-    it('round-trips the offers switch, which ships off', async () => {
+    it('round-trips the offers switch, which ships on and can be turned off', async () => {
       const before = await request(server).get('/api/config').expect(200);
-      expect(before.body.welcomeBack.offersEnabled).toBe(false);
+      expect(before.body.welcomeBack.offersEnabled).toBe(true);
 
       await request(server)
         .patch('/api/config')
-        .send({ welcomeBack: { offersEnabled: true } })
+        .send({ welcomeBack: { offersEnabled: false } })
         .expect(200);
 
       const res = await request(server).get('/api/config').expect(200);
 
-      expect(res.body.welcomeBack.offersEnabled).toBe(true);
+      // The direction that matters now: offers ship on, so the write worth
+      // proving is the refusal, and it has to survive the read (DOR-1121).
+      expect(res.body.welcomeBack.offersEnabled).toBe(false);
       // The switch a person already had is untouched by the one they just flipped.
       expect(res.body.welcomeBack.enabled).toBe(true);
     });

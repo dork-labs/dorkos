@@ -1635,10 +1635,29 @@ export function backfillRoomsDefaults(store: {
  * no post cap at all — and, since DOR-1046, with no answer at all to whether a
  * greeting may spend a model turn on a next-step offer.
  *
- * `offersEnabled` seeds `false`, which is the only safe direction: it is the one
- * leaf in this block that costs money, so an upgrade must never be the thing
- * that turns it on. It is filled the same way as its siblings, so somebody who
- * turned offers ON keeps them.
+ * `offersEnabled` seeds `true` (DOR-1121, reversing the `false` this key was
+ * first written with hours earlier under DOR-1046). It is the one leaf in this
+ * block that costs money, so the direction is a real decision rather than a
+ * default falling out of a schema, and it was taken deliberately: an offer is
+ * the part of coming back that is worth reading, and a switch nobody finds is a
+ * feature nobody has. The spend it says yes to is bounded by `maxPosts` — at
+ * most one turn each for the agents already allowed to speak — the switch beside
+ * it names that cost in words, and the release notes say it changed.
+ *
+ * Seeding the SHIPPED value is also what keeps an upgraded install honest: every
+ * other leaf here is filled with what a fresh install gets, and seeding `false`
+ * under a schema that now defaults `true` would leave upgraded installs silently
+ * different from new ones forever, with nothing on any surface saying why.
+ *
+ * What it must never do is override a person, and the `=== undefined` fill is
+ * exactly that guarantee, in both directions: somebody who turned offers ON
+ * keeps them, and somebody who turned offers OFF keeps that too — an explicit
+ * `false` is a value, not an absence, so this never writes over it. Amending
+ * this key rather than appending a new one is what makes the guarantee reachable
+ * at all: `'0.59.0'` is still unreleased (the newest tag is `v0.58.0`), so no
+ * install has run it, and none can have a seeded `false` to be re-seeded from. A
+ * follow-up key could not tell a seeded `false` from a chosen one and would take
+ * the choice away from whoever had made it.
  *
  * Nothing depends on this having run: every leaf carries a Zod default, so an
  * install that skips the migration (a dev tree resolves `SERVER_VERSION` to
@@ -1655,7 +1674,7 @@ export function backfillWelcomeBackDefaults(store: {
     enabled: true,
     absenceThresholdMinutes: 240,
     maxPosts: 3,
-    offersEnabled: false,
+    offersEnabled: true,
   };
   const stored = store.get('welcomeBack');
   if (stored == null || typeof stored !== 'object') {
@@ -2424,11 +2443,18 @@ export const CONFIG_MIGRATIONS = {
     // The `welcomeBack` section (what agents may say when you come back after
     // being away; spec `team-room-home`, D5.2). Seeds the shipped defaults, so
     // an upgraded install gets the same caps a fresh one does — including
-    // `offersEnabled: false` (DOR-1046), which is folded into this key rather
-    // than given one of its own for the reason the sidebar body below states:
-    // it ships in this same still-unreleased window (`v0.58.0` is the newest
-    // tag), so a key above it would be one more version boundary for a leaf
-    // whose whole job is to seed OFF.
+    // `offersEnabled` (DOR-1046), which is folded into this key rather than
+    // given one of its own for the reason the sidebar body below states: it
+    // ships in this same still-unreleased window (`v0.58.0` is the newest tag),
+    // so a key above it would be one more version boundary for a leaf that has
+    // never reached a single install.
+    //
+    // That leaf now seeds ON (DOR-1121), reversing the OFF this key carried for
+    // a few hours. Amending an unreleased body is the whole reason the reversal
+    // can be clean: nobody has run it, so nothing has a seeded `false` on disk,
+    // and the fill-if-absent rule keeps an OFF somebody chose. A second key
+    // re-seeding `true` could not tell those two apart and would spend money for
+    // somebody who had said no — see the body's docs.
     backfillWelcomeBackDefaults(store);
     // `ui.composer` (whether the message box shows formatting as you type,
     // DOR-948). Added-with-defaults, so this is a no-op anchor in the same sense

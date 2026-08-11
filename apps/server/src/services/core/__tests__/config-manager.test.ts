@@ -1854,7 +1854,7 @@ describe('backfillWelcomeBackDefaults migration (team-room-home D5.2)', () => {
       enabled: true,
       absenceThresholdMinutes: 240,
       maxPosts: 3,
-      offersEnabled: false,
+      offersEnabled: true,
     });
   });
 
@@ -1866,7 +1866,7 @@ describe('backfillWelcomeBackDefaults migration (team-room-home D5.2)', () => {
       enabled: true,
       absenceThresholdMinutes: 240,
       maxPosts: 3,
-      offersEnabled: false,
+      offersEnabled: true,
     });
   });
 
@@ -1880,7 +1880,7 @@ describe('backfillWelcomeBackDefaults migration (team-room-home D5.2)', () => {
       enabled: false,
       absenceThresholdMinutes: 720,
       maxPosts: 1,
-      offersEnabled: false,
+      offersEnabled: true,
     });
   });
 
@@ -1894,7 +1894,7 @@ describe('backfillWelcomeBackDefaults migration (team-room-home D5.2)', () => {
       enabled: false,
       absenceThresholdMinutes: 240,
       maxPosts: 3,
-      offersEnabled: false,
+      offersEnabled: true,
     });
   });
 
@@ -1905,7 +1905,7 @@ describe('backfillWelcomeBackDefaults migration (team-room-home D5.2)', () => {
       enabled: true,
       absenceThresholdMinutes: 240,
       maxPosts: 0,
-      offersEnabled: false,
+      offersEnabled: true,
     });
   });
 
@@ -1925,6 +1925,23 @@ describe('backfillWelcomeBackDefaults migration (team-room-home D5.2)', () => {
     });
   });
 
+  it('never turns offers back ON for somebody who switched them off (DOR-1121)', () => {
+    // The mirror, and the one that matters now that the seed is `true`: an
+    // explicit `false` is a value, not an absence, so the fill-if-missing rule
+    // must not see a gap where a refusal is. Getting this wrong would bill
+    // somebody who had said no, once per return, and the only signal would be
+    // offers reappearing.
+    const store = createMockStore({ welcomeBack: { offersEnabled: false } });
+    backfillWelcomeBackDefaults(store);
+    backfillWelcomeBackDefaults(store);
+    expect(store.data.welcomeBack).toEqual({
+      enabled: true,
+      absenceThresholdMinutes: 240,
+      maxPosts: 3,
+      offersEnabled: false,
+    });
+  });
+
   it('fills only the missing keys of a block written by an earlier build', () => {
     // conf merges top-level defaults SHALLOWLY, so a `welcomeBack` block already
     // on disk never gains a new nested key on its own. Without this, an install
@@ -1936,7 +1953,7 @@ describe('backfillWelcomeBackDefaults migration (team-room-home D5.2)', () => {
       enabled: true,
       absenceThresholdMinutes: 240,
       maxPosts: 3,
-      offersEnabled: false,
+      offersEnabled: true,
     });
   });
 });
@@ -1983,7 +2000,7 @@ describe('welcomeBack on a config written before it existed (real conf + Ajv)', 
       enabled: true,
       absenceThresholdMinutes: 240,
       maxPosts: 3,
-      offersEnabled: false,
+      offersEnabled: true,
     });
     expect(manager.validate()).toEqual({ valid: true });
   });
@@ -2007,7 +2024,7 @@ describe('welcomeBack on a config written before it existed (real conf + Ajv)', 
       enabled: true,
       absenceThresholdMinutes: 240,
       maxPosts: 3,
-      offersEnabled: false,
+      offersEnabled: true,
     });
     expect(new ConfigManager(dir).validate()).toEqual({ valid: true });
   });
