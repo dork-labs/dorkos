@@ -4,11 +4,31 @@
  * @vitest-environment jsdom
  */
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, screen, cleanup } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
+import { render, screen, cleanup, fireEvent } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { PresenceStrip } from '../ui/PresenceStrip';
 import type { PresenceRow } from '../lib/presence-rows';
+
+/**
+ * Clicks a chip the way these tests mean it: the action only, no hover on the
+ * way in.
+ *
+ * Every chip is a Radix `HoverCard` trigger, and `userEvent.click` opens with a
+ * `pointerenter` (plus a `focus`) before it presses. Each of those arms the
+ * card's 300ms open-delay `setTimeout`, and Radix overwrites its own timer ref
+ * on the second without clearing the first — so one open timer is orphaned,
+ * and unmount cleanup cancels only the latest ref, never it. On the real clock
+ * that orphan fires 300ms later, after this file's jsdom `window` is torn down,
+ * and `setOpen(true)` reaches into the gone `window`: an unhandled
+ * `ReferenceError: window is not defined` that Vitest blames on the whole run
+ * and that reddened unrelated PRs intermittently (DOR-1116). `fireEvent.click`
+ * dispatches the bare click these cases actually assert on — following on
+ * press — so the hover card's timer is never armed and nothing is left ticking
+ * past teardown.
+ */
+function clickChip(button: HTMLElement): void {
+  fireEvent.click(button);
+}
 
 /** A row as `buildPresenceRows` produces one, overridable per case. */
 function row(overrides: Partial<PresenceRow> = {}): PresenceRow {
@@ -74,19 +94,17 @@ describe('PresenceStrip', () => {
     expect(buttons[0]).toHaveAccessibleName('Watch tangerines — replying in #release-train');
   });
 
-  it('follows a room claim into its room', async () => {
+  it('follows a room claim into its room', () => {
     const onFollow = vi.fn();
-    const user = userEvent.setup();
     render(<PresenceStrip rows={[row()]} onFollow={onFollow} />);
 
-    await user.click(screen.getByRole('button'));
+    clickChip(screen.getByRole('button'));
 
     expect(onFollow).toHaveBeenCalledWith({ kind: 'room', roomId: 'room-1' });
   });
 
-  it('follows a session claim into that session, in the directory it runs in', async () => {
+  it('follows a session claim into that session, in the directory it runs in', () => {
     const onFollow = vi.fn();
-    const user = userEvent.setup();
     render(
       <PresenceStrip
         rows={[
@@ -103,7 +121,7 @@ describe('PresenceStrip', () => {
       />
     );
 
-    await user.click(screen.getByRole('button'));
+    clickChip(screen.getByRole('button'));
 
     expect(onFollow).toHaveBeenCalledWith({
       kind: 'session',
