@@ -119,12 +119,26 @@ export function usePaletteCommandCenter(
     [streamed, agents]
   );
 
-  // Every session record the palette can see, the stream's map first. It is
-  // what tells Continue an id's ORIGIN, and the stream is where a run that
-  // started after the last fetch exists at all — reading origin off the query's
-  // window alone would let a just-triggered room turn into Continue for the
-  // thirty seconds before the window catches up, which is the whole window in
-  // which anyone is looking at it.
+  // Every session record the palette can see, from both sources, so Continue
+  // can read an id's origin off whichever one carries it.
+  //
+  // **Order does not matter here, and it is worth saying so.**
+  // `humanOriginSessionIds` collects the AUTOMATED ids across all the records it
+  // is given, so one record marking a session automated excludes it however many
+  // unmarked copies sit beside it. Automated wins regardless of order — the safe
+  // direction — and the concatenation is only about coverage.
+  //
+  // **What each source does and does not know.** The query's window is where
+  // `origin` is authoritative: `applyRoomOriginOverlay` runs on the REST routes
+  // and nowhere else, so a room turn is marked there and NOT on the stream
+  // (DOR-1141). The stream's map is where a run that started after the last
+  // fetch exists at all, and it supplies that session's title and cwd. So for a
+  // just-triggered room turn there is a gap — it is unmarked until the recent
+  // query refetches, which the global stream triggers on the next session-set
+  // change rather than on the 30s stale timer. Continue counts it as human for
+  // that round trip, which is the documented direction: unknown is not
+  // automated.
+  //
   // `data` whole rather than its one field, for the same React Compiler reason
   // the Recent memo below spells out.
   const knownSessions = useMemo(() => [...streamed, ...(data?.sessions ?? [])], [streamed, data]);

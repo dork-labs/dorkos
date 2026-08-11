@@ -20,6 +20,7 @@ import {
 import type { AgentRosterEntry, SidebarState } from '../sidebar-state';
 import { muteIndex, type MuteIndex } from './apply-mute-rules';
 import { agentRow, roomLibraryRow } from './library-rows';
+import { liveSessionIdsForPath } from './live-sessions';
 import { rollUpCollapsedSection } from './roll-up-collapsed-section';
 import { rowKey } from './targets';
 
@@ -51,6 +52,39 @@ export const GROUP_AFFORDANCE_MIN_AGENTS = 8;
 export function offersGroupAffordances(agents: readonly { runtime: string }[]): boolean {
   if (agents.length >= GROUP_AFFORDANCE_MIN_AGENTS) return true;
   return new Set(agents.map((agent) => agent.runtime)).size >= 2;
+}
+
+/**
+ * Whether one row's subject is streaming right now — the answer a folded
+ * section's "N agents working" counts (BC-31).
+ *
+ * **Asked of the source, never of the row's dot.** A row carries one status and
+ * `needs-you` outranks `working`, so an agent that is both blocked and running
+ * reads `needs-you` — and a folded section that counted dots lost the working
+ * signal for exactly the members most worth knowing about (DOR-1137).
+ *
+ * An agent's answer comes from {@link liveSessionIdsForPath}, so it is the same
+ * human-origin list Now's "N working" counts (§18). A room's comes from the
+ * `working` field its summary already carries, which is a server-side count of
+ * agents mid-turn in that room and has no origin dimension to apply — a room
+ * turn IS the room's work.
+ *
+ * @param state - The snapshot.
+ * @param rooms - The non-archived rooms, by id.
+ */
+function rowIsWorking(
+  state: SidebarState,
+  rooms: Map<string, RoomSummary>
+): (row: SidebarRowModel) => boolean {
+  return (row) => {
+    if (row.target.kind === 'agent') {
+      return liveSessionIdsForPath(state, row.target.path).length > 0;
+    }
+    if (row.target.kind === 'room') {
+      return (rooms.get(row.target.roomId)?.working ?? 0) > 0;
+    }
+    return false;
+  };
 }
 
 /**
@@ -181,6 +215,7 @@ function orderLibraryRows(
  * @param state - The snapshot.
  * @param reason - Its provenance.
  * @param subsections - Its group sub-headers, when it has any.
+ * @param isWorking - Whether a row's subject is streaming ({@link rowIsWorking}).
  */
 function section(
   id: LibrarySectionId,
@@ -188,13 +223,14 @@ function section(
   rows: SidebarRowModel[],
   state: SidebarState,
   reason: string,
+  isWorking: (row: SidebarRowModel) => boolean,
   subsections?: SidebarSectionModel[]
 ): SidebarSectionModel | null {
   if (rows.length === 0 && (subsections?.length ?? 0) === 0) return null;
   const prefs = state.prefs.sections[id];
   const collapsed = prefs?.collapsed ?? false;
   const all = [...rows, ...(subsections ?? []).flatMap((sub) => sub.rows)];
-  const rollup = collapsed ? rollUpCollapsedSection(all) : undefined;
+  const rollup = collapsed ? rollUpCollapsedSection(all, isWorking) : undefined;
   return {
     id,
     label,
@@ -232,13 +268,15 @@ function section(
  * @param mutes - The resolved mute sets.
  * @param byPath - The roster, by path.
  * @param rooms - Every room, by id.
+ * @param isWorking - Whether a row's subject is streaming ({@link rowIsWorking}).
  */
 function groupSection(
   group: SidebarGroup,
   state: SidebarState,
   mutes: MuteIndex,
   byPath: Map<string, AgentRosterEntry>,
-  rooms: Map<string, RoomSummary>
+  rooms: Map<string, RoomSummary>,
+  isWorking: (row: SidebarRowModel) => boolean
 ): SidebarSectionModel {
   const rows: SidebarRowModel[] = [];
   if (group.kind === 'smart' && group.rules) {
@@ -287,7 +325,7 @@ function groupSection(
     label: group.name,
     collapsible: true,
     collapsed: group.collapsed ?? false,
-    ...(group.collapsed ? { rollup: rollUpCollapsedSection(ordered) } : {}),
+    ...(group.collapsed ? { rollup: rollUpCollapsedSection(ordered, isWorking) } : {}),
     rows: ordered,
     reason: 'library:group',
   };
@@ -378,8 +416,9 @@ export function buildLibrarySections(state: SidebarState): SidebarSectionModel[]
     row.target.kind === 'agent' ? (byPath.get(row.target.path)?.lastActivityAt ?? null) : null
   );
   const reveal = revealRow(filtered.hidden, filtered.hiddenLabel);
+  const isWorking = rowIsWorking(state, rooms);
   const groups = state.prefs.groups.map((group) =>
-    groupSection(group, state, mutes, byPath, rooms)
+    groupSection(group, state, mutes, byPath, rooms, isWorking)
   );
 
   // What each of the four sections holds, keyed by id. A `Record` over
@@ -418,6 +457,7 @@ export function buildLibrarySections(state: SidebarState): SidebarSectionModel[]
       content[id].rows,
       state,
       content[id].reason,
+      isWorking,
       content[id].subsections
     )
   ).filter((entry): entry is SidebarSectionModel => entry !== null);

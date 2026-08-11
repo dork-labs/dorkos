@@ -19,6 +19,7 @@ import { roomKeys, useRooms, useRoomPresenceEverywhere } from '@/layers/entities
 import { useSessionListStore } from '@/layers/entities/session';
 import { useTransport } from '@/layers/shared/model';
 import { buildPresenceRows, type PresenceRow, type WorkingSession } from '../lib/presence-rows';
+import { selectWorkingSessions } from '../lib/working-sessions';
 
 /** One shared empty answer, so a quiet cockpit never re-renders its reader. */
 const NOBODY: PresenceRow[] = [];
@@ -42,19 +43,22 @@ const RECORD = '\u0001';
  * spans the fleet (`useAgentAttentionMap` reads it the same way, for the same
  * reason).
  *
- * `statusCwds` is the honest gate: it holds a session only once its runtime
- * reported a working directory for it. A runtime that projects a lifecycle
- * without one leaves a session nothing can attribute, and an unattributable
- * turn is not presence — it is a fact about the machine with nobody's name on
- * it, so it never reaches a row.
+ * WHICH of them count is {@link selectWorkingSessions}' decision, and it is a
+ * pure function so the rule can be asserted beside the sidebar's and ⌘K's
+ * answers to the same question. What is left here is memoisation.
  */
 function useWorkingSessions(): readonly WorkingSession[] {
   // Raw slices, folded outside the selector — the shape `useAgentAttentionMap`
-  // documents: immer only replaces these two references when they actually
-  // change, whereas a set built inside a zustand selector would mint a new
-  // reference on every store tick and re-render on all of them.
+  // documents: immer only replaces these references when they actually change,
+  // whereas a set built inside a zustand selector would mint a new reference on
+  // every store tick and re-render on all of them.
   const statuses = useSessionListStore(useCallback((held) => held.statuses, []));
   const statusCwds = useSessionListStore(useCallback((held) => held.statusCwds, []));
+  // The metadata map, read for one field: `origin`. Its churn is absorbed by
+  // the signature below — a session's `updatedAt` moves constantly while its
+  // origin never does, so the extra memo runs produce a byte-identical string
+  // and nothing downstream rebuilds.
+  const sessions = useSessionListStore(useCallback((held) => held.sessions, []));
 
   // The working set as one sorted string, and the array memoised on THAT.
   //
@@ -64,19 +68,16 @@ function useWorkingSessions(): readonly WorkingSession[] {
   // it, new rows, new faces, a new hover card) twenty times for twenty events
   // that said nothing new. The signature changes only when a session starts
   // streaming, stops, or moves.
-  const signature = useMemo(() => {
-    const parts: string[] = [];
-    for (const [sessionId, cwd] of Object.entries(statusCwds)) {
-      // `streaming` only. `blocked` is an agent WAITING on a person — the
-      // opposite of working, and already the triage header's subject two lines
-      // up; `error` and `interrupted` are turns that have stopped.
-      if (statuses[sessionId]?.lifecycle !== 'streaming') continue;
-      parts.push(`${sessionId}${FIELD}${cwd}`);
-    }
-    // Sorted so that a store whose key order changed — immer rebuilds objects —
-    // cannot pass for a change in who is working.
-    return parts.sort().join(RECORD);
-  }, [statuses, statusCwds]);
+  const signature = useMemo(
+    () =>
+      selectWorkingSessions(statuses, statusCwds, sessions)
+        .map((session) => `${session.sessionId}${FIELD}${session.cwd}`)
+        // Sorted so that a store whose key order changed — immer rebuilds
+        // objects — cannot pass for a change in who is working.
+        .sort()
+        .join(RECORD),
+    [statuses, statusCwds, sessions]
+  );
 
   return useMemo(() => {
     if (signature.length === 0) return NO_SESSIONS;

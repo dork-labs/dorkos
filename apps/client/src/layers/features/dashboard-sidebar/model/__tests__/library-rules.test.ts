@@ -149,7 +149,7 @@ describe('BC-31 — a folded section keeps its signal', () => {
   });
 
   it('says nothing at all when there is nothing to say', () => {
-    expect(rollUpCollapsedSection([])).toBeUndefined();
+    expect(rollUpCollapsedSection([], () => false)).toBeUndefined();
   });
 
   describe('a member that starts working while the section is folded', () => {
@@ -200,6 +200,32 @@ describe('BC-31 — a folded section keeps its signal', () => {
       const agents = library(state).find((section) => section.id === 'agents');
       expect(buildWorkingRollup(state)?.primary).toBe('1 working');
       expect(agents?.rollup?.workingCount).toBe(1);
+    });
+
+    it('keeps counting a member that is blocked AND working (BC-31)', () => {
+      // The reviewer's pair, and the sharper half of the defect: a row draws one
+      // dot and `deriveRowStatus` ranks needs-you above streaming, so counting
+      // dots did not undercount here — with nothing else set in the section the
+      // rollup went to `undefined` and the folded header lost its signal
+      // ALTOGETHER, which is the one thing BC-31 says folding never does.
+      const state = folded({ liveSessionCwds: { 'ses-brand-new': SAFFRON } });
+      const control = library(state).find((section) => section.id === 'agents');
+      // The control: saffron is streaming and not blocked, and is counted.
+      expect(control?.rollup?.workingCount).toBe(1);
+
+      // The probe: the same streaming session, and saffron now also needs you.
+      const probe = library({
+        ...state,
+        agents: state.agents.map((entry) =>
+          entry.path === SAFFRON ? { ...entry, attention: 'needs-attention' as const } : entry
+        ),
+      }).find((section) => section.id === 'agents');
+
+      // The row honestly draws the hotter dot — that part was never wrong…
+      expect(probe?.rows.find((row) => row.key === `agent:${SAFFRON}`)?.status).toBe('needs-you');
+      // …and the folded header still says somebody is working, because they are.
+      expect(probe?.rollup).toBeDefined();
+      expect(probe?.rollup?.workingCount).toBe(1);
     });
 
     it('counts no automated run, folded or not (§18)', () => {

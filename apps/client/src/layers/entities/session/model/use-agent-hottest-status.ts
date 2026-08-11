@@ -3,6 +3,9 @@ import { useReducedMotion } from 'motion/react';
 import { useSessionChatStore } from './session-chat-store';
 import { useSessionStreamStore } from './session-stream-store';
 import { useSessionListStore } from './session-list-store';
+// Same-slice sibling rather than the barrel: `entities/session`'s own index
+// re-exports React components, and this module is imported by every agent row.
+import { humanOriginSessionIds } from '../lib/partition-sessions-by-origin';
 import {
   borderKindFromLifecycle,
   type SessionBorderKind,
@@ -55,7 +58,15 @@ function hotter(result: SessionBorderKind, candidate: SessionBorderKind | null):
  *    match is what lets a COLLAPSED agent row light up: the sidebar only
  *    fetches session metadata for the active agent (`sessionIds` is empty
  *    otherwise), but the status fan-out carries every live session's cwd
- *    regardless.
+ *    regardless. Its `streaming` contribution is human-origin only (§18); its
+ *    blocked/error/unseen contributions are not, and must not be.
+ *
+ * **This hook, not the model's row, is what an agent row draws.**
+ * `SidebarModelRow` hands `AgentListItem` no sessions and no status, so the
+ * badge is computed here from the live store — deliberately, because the store
+ * is seconds fresher than the row's snapshot. That makes this the place the
+ * origin rule has to hold; a rule applied only to `SidebarRowModel.status`
+ * would be a rule applied to something nothing renders.
  *
  * @param sessionIds - Session IDs to check (from the agent's session list)
  * @param agentPath - The agent's working directory; enables fleet-wide cwd matching
@@ -125,9 +136,25 @@ export function useAgentHottestStatus(
           if (id in s.unseen) result = hotter(result, 'unseen');
         }
         if (agentPath) {
+          // Who counts as WORKING here — human-origin sessions only
+          // (`design-decisions.md` §18). Everything else this fold produces is
+          // attention rather than liveness and is deliberately left alone: a
+          // scheduled run that is blocked, wedged or errored still lights this
+          // row, because "an automated session that needs you enters Now like
+          // anything else" (BC-19). Only `streaming` is filtered.
+          //
+          // Without this the row disagreed with itself: `agentRow`'s "N live"
+          // chip and Now's "N working" both excluded a nightly task while this
+          // badge, which is what the row actually draws, called it Working
+          // (DOR-1137).
+          const human = new Set(
+            humanOriginSessionIds(Object.keys(s.statusCwds), Object.values(s.sessions))
+          );
           for (const [id, cwd] of Object.entries(s.statusCwds)) {
             if (cwd !== agentPath) continue;
-            result = hotter(result, borderKindFromLifecycle(s.statuses[id]?.lifecycle));
+            const kind = borderKindFromLifecycle(s.statuses[id]?.lifecycle);
+            if (kind === 'streaming' && !human.has(id)) continue;
+            result = hotter(result, kind);
           }
           // Unseen settles carry their own cwd (the live status — and with it
           // `statusCwds` — is pruned on settle), so a COLLAPSED agent row can

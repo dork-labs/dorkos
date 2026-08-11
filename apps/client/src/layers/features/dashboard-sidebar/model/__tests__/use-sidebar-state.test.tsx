@@ -103,6 +103,9 @@ vi.mock('@/layers/entities/config', async (importOriginal) => {
 });
 
 import { useSidebarState } from '../use-sidebar-state';
+// Imported after the mocks like the hook itself, so the rules see the same
+// mocked module graph the hook does.
+import { buildLibrarySections } from '../rules/build-library-sections';
 
 /** A `session_status` projection with a lifecycle and, optionally, a verb. */
 function status(lifecycle: SessionStatus['lifecycle'], toolName?: string): SessionStatus {
@@ -177,6 +180,57 @@ describe('useSidebarState — referential stability (spec §H)', () => {
 
     expect(result.current).not.toBe(before);
     expect(result.current.workingSessionIds).toEqual([]);
+  });
+
+  it('carries each live session’s DIRECTORY out of the store, not just its id', () => {
+    // The one line Defect C rests on (`liveSessionCwds ← statusCwds`), which
+    // shipped with no coverage at all: every model test builds its own
+    // `SidebarState` literal, so replacing this selector with a stable empty
+    // record left 10,809 tests green (DOR-1137 review, B1).
+    act(() => {
+      useSessionListStore.getState().setSessionStatus('s1', status('streaming'), '/projects/alpha');
+    });
+    const { result } = renderHook(() => useSidebarState());
+    expect(result.current.liveSessionCwds).toEqual({ s1: '/projects/alpha' });
+  });
+
+  it('closes the folding gap end to end — store, hook, rules', () => {
+    // The field arriving is necessary and not sufficient: what BC-31 promises is
+    // that a folded section still says a member is working, and the only proof
+    // of that is the real hook's snapshot going through the real rules. The
+    // session is deliberately absent from the recent-sessions window (`RECENT`
+    // is empty above), which is precisely the 30-second state the fix is about.
+    act(() => {
+      useSessionListStore.getState().setSessionStatus('s1', status('streaming'), '/projects/alpha');
+    });
+    const { result } = renderHook(() => useSidebarState());
+    expect(result.current.sessions).toEqual([]);
+
+    const agents = buildLibrarySections({
+      ...result.current,
+      prefs: { ...result.current.prefs, sections: { agents: { collapsed: true } } },
+    }).find((entry) => entry.id === 'agents');
+
+    expect(agents?.collapsed).toBe(true);
+    expect(agents?.rollup?.workingCount).toBe(1);
+  });
+
+  it('says nothing about a live session the server could not place', () => {
+    // The sibling that stops the pair above from passing on an inert path: same
+    // streaming status, no directory on the event, so no entry — omission
+    // rather than a guess — and no section can claim it.
+    act(() => {
+      useSessionListStore.getState().setSessionStatus('s2', status('streaming'));
+    });
+    const { result } = renderHook(() => useSidebarState());
+    expect(result.current.workingSessionIds).toEqual(['s2']);
+    expect(result.current.liveSessionCwds).toEqual({});
+
+    const agents = buildLibrarySections({
+      ...result.current,
+      prefs: { ...result.current.prefs, sections: { agents: { collapsed: true } } },
+    }).find((entry) => entry.id === 'agents');
+    expect(agents?.rollup?.workingCount ?? 0).toBe(0);
   });
 
   it('carries lifecycle and nothing else out of the status map', () => {

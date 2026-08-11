@@ -16,15 +16,21 @@ import type { SidebarRowModel, SidebarSectionModel } from '../build-sidebar-mode
  * unread and none has directed unread, which is the same two-tier rule a row
  * follows.
  *
- * **The working count is the members', and the members read Now's own source.**
- * This sums row statuses, which is what makes "N agents working" a count of
- * MEMBERS rather than of sessions — but it can only ever be as true as the rows
- * are, and for a while they were not: an agent row would not call itself working
- * until the session also turned up in the last-ten REST window, so folding a
- * section 30 seconds after a turn began silently dropped the signal BC-31 says
- * folding never loses (DOR-1137, audit D5). `agentRow` now derives its status
- * from `liveSessionIds` — the same list Now counts — and this arithmetic became
- * honest without changing.
+ * **The working count is asked, not read off the dot** — and that is the whole
+ * of `isWorking`. A row draws ONE status, and `deriveRowStatus` ranks
+ * `needs-you` above `streaming`, so an agent that is both blocked and streaming
+ * reports `needs-you`. Counting `status === 'working'` therefore did not merely
+ * undercount such a member: with nothing else set in the section, `workingCount`
+ * fell to zero, this function returned `undefined`, and **the folded header lost
+ * its rollup entirely** — the exact thing BC-31 says folding never does. BC-31's
+ * text is "members currently streaming", and streaming is a fact about the
+ * session, not a slot in a dot's priority order. A blocked-and-working agent is
+ * still working, and a folded header may say both.
+ *
+ * The predicate is the caller's because the caller is where the truth is:
+ * `buildLibrarySections` holds the snapshot and the room index, so it can put
+ * an agent row's answer through `liveSessionIds` — the same list Now counts —
+ * rather than through a status the row had already collapsed.
  *
  * A live session whose directory nothing knows is in Now's number and in no
  * section's, because it is a member of nothing. That is a gap in attribution,
@@ -34,9 +40,12 @@ import type { SidebarRowModel, SidebarSectionModel } from '../build-sidebar-mode
  * an empty rollup that renders as a `0`.
  *
  * @param rows - The section's rows, including any subsection's.
+ * @param isWorking - Whether one row's subject is streaming right now,
+ *   independent of the dot that row draws.
  */
 export function rollUpCollapsedSection(
-  rows: readonly SidebarRowModel[]
+  rows: readonly SidebarRowModel[],
+  isWorking: (row: SidebarRowModel) => boolean
 ): SidebarSectionModel['rollup'] {
   let count = 0;
   let anyActivity = false;
@@ -44,7 +53,7 @@ export function rollUpCollapsedSection(
   for (const row of rows) {
     if (row.unread.tier === 'directed') count += row.unread.count ?? 0;
     if (row.unread.tier === 'activity') anyActivity = true;
-    if (row.status === 'working') workingCount += 1;
+    if (isWorking(row)) workingCount += 1;
   }
   if (count === 0 && !anyActivity && workingCount === 0) return undefined;
   return {

@@ -1,29 +1,35 @@
+// @vitest-environment jsdom
 /**
- * One definition of "live", pinned across the three surfaces that draw it
+ * One definition of "live", pinned across the five surfaces that draw it
  * (DOR-1137, `design-decisions.md` §18).
  *
- * Now's "N working" line, a folded Library section's "N agents working" header
- * and ⌘K's Continue list are three renderings of one fact, and they each used
- * to compute it themselves: Continue filtered on lifecycle alone, so a room
- * turn triggered from `#team` was a first-class Continue row while the sidebar
- * — correctly — showed nothing; an agent row demanded the session also appear
- * in the last-ten REST window, so folding a section lost the working signal for
- * the thirty seconds before that window caught up.
+ * Now's "N working" line, a folded Library section's "N agents working" header,
+ * ⌘K's Continue list, the presence strip Now's rollup NAVIGATES to, and the
+ * badge an agent row actually draws are five renderings of one fact, and every
+ * one of them used to compute it alone.
  *
  * **This test exists to catch the next drift as a set.** Each surface has its
  * own unit tests for its own rules; what none of them could see is two surfaces
  * given the same store state and answering differently. So one scenario is
  * built here — statuses, directories and session records, exactly as the
- * session-list store holds them — and driven through all three at once.
+ * session-list store holds them — and driven through all five at once.
+ *
+ * **Every answer comes from the shipped code**, including the two that live
+ * behind hooks: the real `useSessionListStore` is seeded and the real
+ * `useAgentHottestStatus` is rendered against it. Re-deriving a surface's rule
+ * here would produce a test that agrees with itself while the product drifts —
+ * which is the failure this file is named after.
  *
  * It lives outside `layers/` on purpose: reaching into two sibling features is
  * something the app shell may do and a feature may not (FSD).
  *
  * @module __tests__/one-live-definition
  */
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { cleanup, renderHook } from '@testing-library/react';
 import type { SessionStatus } from '@dorkos/shared/session-stream';
 import type { Session } from '@dorkos/shared/types';
+import { useAgentHottestStatus, useSessionListStore } from '@/layers/entities/session';
 import { selectContinueEntries } from '@/layers/features/command-palette/model/palette-recent';
 import { buildSidebarModel } from '@/layers/features/dashboard-sidebar/model/build-sidebar-model';
 import { buildWorkingRollup } from '@/layers/features/dashboard-sidebar/model/rules/build-working-rollup';
@@ -34,6 +40,12 @@ import {
   session,
 } from '@/layers/features/dashboard-sidebar/model/fixtures';
 import type { SidebarState } from '@/layers/features/dashboard-sidebar/model/sidebar-state';
+import { selectWorkingSessions } from '@/layers/features/presence-strip/lib/working-sessions';
+
+vi.mock('motion/react', async () => {
+  const actual = await vi.importActual<typeof import('motion/react')>('motion/react');
+  return { ...actual, useReducedMotion: () => false };
+});
 
 /** The one agent every scenario's sessions belong to. */
 const CWD = '/Users/dev/code/tangerine';
@@ -102,10 +114,59 @@ function whatEachSurfaceSays(state: StoreState) {
     continueIds: selectContinueEntries(state.statuses, state.records).map(
       (entry) => entry.sessionId
     ),
+    /**
+     * The presence strip's working half — where Now's rollup NAVIGATES, which
+     * is why it belongs in this set rather than in a suite of its own
+     * (`SidebarChrome` routes `rollup: 'working'` to the home surface).
+     */
+    stripWorking: selectWorkingSessions(state.statuses, state.statusCwds, recordsById(state))
+      .map((entry) => entry.sessionId)
+      .sort(),
+    /**
+     * What an agent row actually DRAWS. `agentRow`'s status is not rendered —
+     * `SidebarModelRow` hands `AgentListItem` no status and no sessions, so the
+     * badge comes from the live store through `useAgentHottestStatus`. A set
+     * that omitted it would pin four surfaces and leave the visible one free to
+     * drift (DOR-1137 review, B3).
+     */
+    rowBadge: agentBadgeKind(state),
   };
 }
 
-describe('§18 — three surfaces, one definition of live', () => {
+/** The store's session-metadata map, as the scenario's records. */
+function recordsById(state: StoreState): Record<string, Session> {
+  return Object.fromEntries(state.records.map((record) => [record.id, record]));
+}
+
+/**
+ * The badge an agent row draws for {@link CWD}, from the real hook over the
+ * real store.
+ *
+ * Seeded and rendered rather than re-derived: a rule that lives inside a hook
+ * cannot be checked by writing the rule out a second time, which is the exact
+ * shape of the drift this file is named after.
+ *
+ * @param state - The store state to seed.
+ */
+function agentBadgeKind(state: StoreState): string {
+  useSessionListStore.setState({
+    statuses: state.statuses,
+    statusCwds: state.statusCwds,
+    sessions: recordsById(state),
+    unseen: {},
+  });
+  const { result, unmount } = renderHook(() => useAgentHottestStatus([], CWD));
+  const kind = result.current.kind;
+  unmount();
+  return kind;
+}
+
+describe('§18 — five surfaces, one definition of live', () => {
+  beforeEach(() => {
+    useSessionListStore.setState({ sessions: {}, statuses: {}, statusCwds: {}, unseen: {} });
+  });
+  afterEach(() => cleanup());
+
   it('agree that a human conversation is running', () => {
     // The control. Every assertion below is about something being ABSENT, and
     // an absence proves nothing unless the same machinery can produce a
@@ -117,7 +178,13 @@ describe('§18 — three surfaces, one definition of live', () => {
         records: [session({ id: 'ses-human', title: 'Wire the model', cwd: CWD })],
       })
     );
-    expect(said).toEqual({ nowWorking: 1, foldedWorking: 1, continueIds: ['ses-human'] });
+    expect(said).toEqual({
+      nowWorking: 1,
+      foldedWorking: 1,
+      continueIds: ['ses-human'],
+      stripWorking: ['ses-human'],
+      rowBadge: 'streaming',
+    });
   });
 
   it('agree that an automated run is not', () => {
@@ -131,7 +198,13 @@ describe('§18 — three surfaces, one definition of live', () => {
         records: [session({ id: 'ses-room', title: '#team turn', cwd: CWD, origin: 'room' })],
       })
     );
-    expect(said).toEqual({ nowWorking: 0, foldedWorking: 0, continueIds: [] });
+    expect(said).toEqual({
+      nowWorking: 0,
+      foldedWorking: 0,
+      continueIds: [],
+      stripWorking: [],
+      rowBadge: 'idle',
+    });
   });
 
   it('pick out the same one from a mixed set', () => {
@@ -146,7 +219,13 @@ describe('§18 — three surfaces, one definition of live', () => {
         ],
       })
     );
-    expect(said).toEqual({ nowWorking: 1, foldedWorking: 1, continueIds: ['ses-human'] });
+    expect(said).toEqual({
+      nowWorking: 1,
+      foldedWorking: 1,
+      continueIds: ['ses-human'],
+      stripWorking: ['ses-human'],
+      rowBadge: 'streaming',
+    });
   });
 
   it('agree about a turn the recent window has never seen', () => {
@@ -157,7 +236,13 @@ describe('§18 — three surfaces, one definition of live', () => {
     const said = whatEachSurfaceSays(
       store({ statuses: { 'ses-new': streaming }, statusCwds: { 'ses-new': CWD } })
     );
-    expect(said).toEqual({ nowWorking: 1, foldedWorking: 1, continueIds: ['ses-new'] });
+    expect(said).toEqual({
+      nowWorking: 1,
+      foldedWorking: 1,
+      continueIds: ['ses-new'],
+      stripWorking: ['ses-new'],
+      rowBadge: 'streaming',
+    });
   });
 
   it('leave a running session nobody can place out of the SECTION only', () => {
@@ -165,7 +250,15 @@ describe('§18 — three surfaces, one definition of live', () => {
     // it. Now still says it is running, which is the honest half — a gap in
     // attribution is not a reason to tell the operator nothing is happening.
     const said = whatEachSurfaceSays(store({ statuses: { 'ses-nowhere': streaming } }));
-    expect(said).toEqual({ nowWorking: 1, foldedWorking: 0, continueIds: ['ses-nowhere'] });
+    // The strip and the badge need a directory to draw anything at all, so both
+    // are silent here for the same reason the section is.
+    expect(said).toEqual({
+      nowWorking: 1,
+      foldedWorking: 0,
+      continueIds: ['ses-nowhere'],
+      stripWorking: [],
+      rowBadge: 'idle',
+    });
   });
 
   it('differ only where a documented rule says they should: blocked', () => {
@@ -191,6 +284,16 @@ describe('§18 — three surfaces, one definition of live', () => {
       ...state,
       records: [session({ id: 'ses-blocked', title: 'Nightly digest', cwd: CWD, origin: 'task' })],
     });
-    expect(automated).toEqual({ nowWorking: 0, foldedWorking: 0, continueIds: [] });
+    // …except the badge, and that is the carve-out working: liveness excludes
+    // automation, attention does not. A wedged nightly task still lights the
+    // row it belongs to (BC-19), while contributing to no count of what is
+    // running.
+    expect(automated).toEqual({
+      nowWorking: 0,
+      foldedWorking: 0,
+      continueIds: [],
+      stripWorking: [],
+      rowBadge: 'pendingApproval',
+    });
   });
 });
