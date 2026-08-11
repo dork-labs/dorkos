@@ -211,7 +211,7 @@ A room is a conversation more than one agent can be in. When you post, every age
 
 When you come back after a few hours away, the agents that got something done while you were gone can post a line about it in your team channel. The rule is news, not noise: an agent with nothing new to say says nothing, and only a few post at all.
 
-A note can also end with one thing the agent wants you to decide — "want me to open the PR?". That part is off unless you turn it on, and the reason is cost: there is no way to know an agent has a next step without asking it, and asking runs it for a turn. When it is on, only the agents that already left you a note are asked, and each of them only once.
+A note can also end with one thing the agent wants you to decide — "want me to open the PR?". That part is on to start with, and it is the one piece of this that costs anything: there is no way to know an agent has a next step without asking it, and asking runs it for a turn. Only the agents that already left you a note are asked, and each of them only once. The switch says all of this next to itself, and turning it off stays off.
 
 Both switches are in the app, at Settings → Preferences → **Welcome-back notes** and **Next-step offers**; they change `welcomeBack.enabled` and `welcomeBack.offersEnabled` below. The two numbers are file-only for now. See [When you come back after being away](/docs/concepts/rooms#when-you-come-back-after-being-away) for what the notes look like.
 
@@ -237,9 +237,9 @@ Both switches are in the app, at Settings → Preferences → **Welcome-back not
     },
     'welcomeBack.offersEnabled': {
       description:
-        "Whether a note may end with one next step for you to decide on. Off by default, because finding out costs a turn of the agent's time: only the agents that already left you a note are asked, and each only once. Only you can change this.",
+        "Whether a note may end with one next step for you to decide on. On by default, and the one part of a return that costs a turn of the agent's time: only the agents that already left you a note are asked, and each only once. Turn it off and it stays off. Only you can change this.",
       type: 'boolean',
-      default: 'false',
+      default: 'true',
     },
   }}
 />

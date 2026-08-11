@@ -3078,7 +3078,7 @@ export const ServerConfigSchema = z
         }),
         offersEnabled: z.boolean().openapi({
           description:
-            'Whether a greeting may also carry a next-step offer. Writable from the cockpit, and off by default: an offer is the one part of a return that costs a model turn, because asking the agent is the only honest way to learn whether it has one',
+            'Whether a greeting may also carry a next-step offer. Writable from the cockpit, and on by default: an offer is the one part of a return that costs a model turn, because asking the agent is the only honest way to learn whether it has one, so the switch states that cost and turning it off is never undone by an upgrade or a reset',
         }),
         absenceThresholdMinutes: z.number().int().openapi({
           description:

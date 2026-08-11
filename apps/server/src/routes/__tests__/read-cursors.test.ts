@@ -118,7 +118,7 @@ describe('PUT /api/read-cursors/:kind/:id', () => {
         enabled: true,
         absenceThresholdMinutes: 240,
         maxPosts: 3,
-        offersEnabled: false,
+        offersEnabled: true,
       }),
       teamRoomId: () => null,
       work: { since: () => Promise.resolve([]) },

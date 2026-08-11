@@ -84,9 +84,10 @@ const DEFAULTS: WelcomeBack = {
   enabled: true,
   absenceThresholdMinutes: 240,
   maxPosts: 3,
-  // Offers ship OFF: they are the one part of a greeting that spends a model
-  // turn, so the shipped posture says no to a cost nobody agreed to (DOR-1046).
-  offersEnabled: false,
+  // Offers ship ON (DOR-1121): the offer is the part of a greeting worth
+  // reading. It is still the one preference on this tab that spends a model
+  // turn, which is why the row states that cost and why turning it off sticks.
+  offersEnabled: true,
 };
 
 beforeEach(() => {
@@ -135,18 +136,27 @@ describe('PreferencesTab — welcome-back switch', () => {
     expect(screen.queryByText(/4 hours/)).not.toBeInTheDocument();
   });
 
-  it('shows the offers switch off, and says what turning it on costs', async () => {
+  it('shows the offers switch on, and still says what it costs', async () => {
     const { Wrapper } = setup(DEFAULTS);
     render(<PreferencesTab />, { wrapper: Wrapper });
 
     const toggle = await screen.findByLabelText('Next-step offers');
-    expect(toggle).toHaveAttribute('data-state', 'unchecked');
-    // The cost is stated on the switch itself, not buried in docs: this is the
-    // one preference on the tab that spends money when it is on.
+    expect(toggle).toHaveAttribute('data-state', 'checked');
+    // The cost is stated on the switch itself, not buried in docs — and now that
+    // the switch ships ON, that sentence is the only place a person meets the
+    // spend before it happens (DOR-1121).
     expect(screen.getByText(/runs that agent for a turn/)).toBeInTheDocument();
   });
 
-  it('writes welcomeBack.offersEnabled and nothing else when switched on', async () => {
+  it('shows the offers switch off when a person turned it off', async () => {
+    const { Wrapper } = setup({ ...DEFAULTS, offersEnabled: false });
+    render(<PreferencesTab />, { wrapper: Wrapper });
+
+    const toggle = await screen.findByLabelText('Next-step offers');
+    expect(toggle).toHaveAttribute('data-state', 'unchecked');
+  });
+
+  it('writes welcomeBack.offersEnabled and nothing else when switched off', async () => {
     const user = userEvent.setup();
     const { transport, Wrapper } = setup(DEFAULTS);
     render(<PreferencesTab />, { wrapper: Wrapper });
@@ -155,7 +165,7 @@ describe('PreferencesTab — welcome-back switch', () => {
 
     await waitFor(() => {
       expect(transport.updateConfig).toHaveBeenCalledWith({
-        welcomeBack: { offersEnabled: true },
+        welcomeBack: { offersEnabled: false },
       });
     });
   });

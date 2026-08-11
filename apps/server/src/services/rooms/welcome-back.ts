@@ -34,14 +34,16 @@
  * **Cost discipline.** The status lines here are derived from session state and
  * cost nothing: no agent is woken to say what it did, and above all none is
  * woken to say it is still working. Exactly one thing in this module can spend a
- * model turn, and it is off unless somebody turns it on.
+ * model turn, it is a switch of its own, and that switch names its cost where a
+ * person can read it.
  *
  * **The offer, and why asking is the honest way to find out.** A greeting is
  * worth more when it ends in a decision you can make ("Want me to open the
  * PR?"). This install has no signal that says an agent HAS such a next step —
  * so the choice is to guess, or to ask. Guessing was rejected; asking costs a
- * turn, so it is a setting (`welcomeBack.offersEnabled`, default OFF) rather
- * than a default. When it is on, the bound is code and not a sentence in a
+ * turn, so it is a switch of its own (`welcomeBack.offersEnabled`, ON by
+ * default since DOR-1121, and stating that cost beside itself in Settings).
+ * While it is on, the bound is code and not a sentence in a
  * prompt: the ONLY candidates are the agents {@link planWelcomeBack} already
  * chose to greet with — after the `maxPosts` cap, and never an agent with no
  * news — and each one is asked at most once per return. An agent that answers

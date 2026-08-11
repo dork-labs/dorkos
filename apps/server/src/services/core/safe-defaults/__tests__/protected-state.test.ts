@@ -207,6 +207,25 @@ describe('salvageProtectedState', () => {
     expect(salvaged.leaves['welcomeBack.absenceThresholdMinutes']).toBeUndefined();
   });
 
+  it('carries a refusal to spend on next-step offers (DOR-1121)', () => {
+    // Offers ship ON, so OFF is somebody declining a per-agent model turn. A
+    // wipe landing back on the default would start billing them again with no
+    // prompt anywhere — the invoice would be how they found out. Carried
+    // independently of `enabled`, because "greet me, but do not run anything" is
+    // a position a person can hold.
+    const salvaged = salvageProtectedState(
+      { welcomeBack: { enabled: true, offersEnabled: false } },
+      fresh
+    );
+    expect(salvaged.leaves['welcomeBack.offersEnabled']).toBe(false);
+    expect(salvaged.leaves['welcomeBack.enabled']).toBeUndefined();
+  });
+
+  it('does not carry offers that were left on, which is the permissive side', () => {
+    const salvaged = salvageProtectedState({ welcomeBack: { offersEnabled: true } }, fresh);
+    expect(salvaged.leaves['welcomeBack.offersEnabled']).toBeUndefined();
+  });
+
   it('leaves a fresh install alone — an untouched threshold carries nothing', () => {
     const salvaged = salvageProtectedState(
       { welcomeBack: { enabled: true, absenceThresholdMinutes: 240, maxPosts: 3 } },

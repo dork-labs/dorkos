@@ -254,9 +254,15 @@ export const CONFIG_WRITE_POLICY = {
   // of the line the two room WAITS above sit on, for the reason the engaged
   // window does: they decide whether a turn RUNS and how many run, not how long
   // a room waits for one that was already going to. An agent that could lower
-  // the threshold, raise the cap, or switch the feature on for itself would be
-  // voting itself a greeting the person never asked for — and a greeting with a
-  // next-step offer costs a model turn.
+  // the threshold or raise the cap would be voting itself a greeting the person
+  // never asked for.
+  //
+  // `offersEnabled` is the sharpest of the four, and the direction of the risk
+  // moved when it started shipping ON (DOR-1121). The danger is no longer an
+  // agent switching a spend on for itself; it is an agent switching one back on
+  // after a person turned it OFF — undoing the only refusal in this block that
+  // costs money, on the surface where the person would least look for it.
+  // Operator-only is what makes that off final.
   'welcomeBack.enabled': 'operator-only',
   'welcomeBack.absenceThresholdMinutes': 'operator-only',
   'welcomeBack.maxPosts': 'operator-only',

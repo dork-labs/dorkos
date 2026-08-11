@@ -6,7 +6,8 @@
  * whether agents may leave a note at all; it costs nothing either way, because
  * the notes are read off session state. The second says whether a note may end
  * in a next-step offer, and that one spends a model turn per agent — so it is
- * separate, it is off by default, and the surface that renders it has to say so.
+ * separate, and the surface that renders it has to say what it costs. It is on
+ * by default (DOR-1121), which is exactly why that sentence has to be there.
  *
  * The two numbers behind them — how long an absence has to be, and how many
  * posts one return may produce — stay in the config file for now, because they
@@ -80,14 +81,21 @@ export function useWelcomeBack(): WelcomeBackSetting {
   );
 
   return {
-    // The fallbacks are never SHOWN: a caller that respects `isAvailable`
-    // renders nothing while they apply. They exist so the shape is stable.
+    // These three are never SHOWN: `isAvailable` keys off the whole block, so a
+    // caller that respects it renders nothing whenever they apply. They exist so
+    // the shape is stable.
     enabled: welcomeBack?.enabled ?? false,
     absenceThresholdMinutes: welcomeBack?.absenceThresholdMinutes ?? 0,
     maxPosts: welcomeBack?.maxPosts ?? 0,
-    // `false` is also the right fallback for an OLDER server that reports the
-    // block without this field: a switch nothing behind it can honour must read
-    // as off rather than as a spend somebody never agreed to.
+    // This one is NOT covered by that argument, so it gets its own. `isAvailable`
+    // asks whether the block is present, not whether this field is, so a server
+    // reporting the block WITHOUT the field would render a live switch on this
+    // fallback rather than hide it. No such server exists — the field shipped in
+    // the same change as the block (DOR-1046) and no release carries one without
+    // the other — so the case is unreachable rather than handled. `false` is
+    // still the right value for it if it ever became reachable: there would be
+    // no offers feature behind the switch to honour, and a switch nothing can
+    // act on must read as off rather than as a spend somebody never agreed to.
     offersEnabled: welcomeBack?.offersEnabled ?? false,
     setEnabled,
     setOffersEnabled,

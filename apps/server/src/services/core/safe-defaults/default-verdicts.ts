@@ -227,10 +227,6 @@ export const SAFE_DEFAULTS: Readonly<Record<string, unknown>> = {
   // tightening it means RAISING it (`direction: 'higher'`).
   'welcomeBack.absenceThresholdMinutes': 240,
   'welcomeBack.maxPosts': 3,
-  // Next-step offers ship OFF, and off is the safe value in the strongest sense
-  // this table has: it is the only leaf of the block that spends a model turn,
-  // so the default answers "no" to a cost the person has not agreed to.
-  'welcomeBack.offersEnabled': false,
   // Upload size and count caps are real limits at their defaults.
   'uploads.maxFileSize': 10485760,
   'uploads.maxFiles': 10,
@@ -342,6 +338,11 @@ export const PERMISSIVE_DEFAULTS: Readonly<Record<string, PermissiveDefault>> = 
     value: true,
     reason:
       'Agents may greet you on your return by default, because a coordination layer whose agents worked all night and said nothing about it has not coordinated anything. The permissive side is bounded rather than open: only agents with a real change to report qualify, at most `maxPosts` of them speak, an absence has to pass `absenceThresholdMinutes` to count, and the posts ride the ordinary room path, so the cascade guard and both automatic-turn spend caps hold them like any other turn.',
+  },
+  'welcomeBack.offersEnabled': {
+    value: true,
+    reason:
+      'The only default in this table that spends money on its own, and it is listed here rather than argued away: an offer runs an agent for a turn, and shipping ON says yes to that before the person does. The case for it is that the offer is the part of a return worth reading — a note saying what happened is history, a note ending in "want me to open the PR?" is the next thing you would have had to go and ask for — and a spend switch nobody ever finds is a feature nobody has. The relaxation is bounded rather than open: only agents that already earned a note are asked, at most `maxPosts` of them, at most one turn each per return, and every offer rides the ordinary room path, so both automatic-turn caps hold it like any other turn. It is also the most visible one here — the switch states the cost in the sentence beside it, turning it off is one click, and PROTECTIVE_CARRYOVERS keeps that off through a wipe.',
   },
   'harness.autoSync': {
     value: true,
