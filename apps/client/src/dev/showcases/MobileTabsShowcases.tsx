@@ -21,8 +21,11 @@
  * @module dev/showcases/MobileTabsShowcases
  */
 import { useState } from 'react';
+import { BellOff, FolderInput, FolderPlus, ListFilter, Trash2 } from 'lucide-react';
+import { SidebarMenuNodes, type SidebarMenuNode } from '@/layers/shared/ui';
 import { buildSidebarModel } from '@/layers/features/dashboard-sidebar/model/build-sidebar-model';
 import { SIDEBAR_FIXTURES } from '@/layers/features/dashboard-sidebar/model/fixtures';
+import { CatchUpAction } from '@/layers/features/dashboard-sidebar/ui/TodayZone';
 import { MobileTabBar, type MobileTabId } from '@/layers/widgets/mobile-tabs';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
@@ -85,6 +88,144 @@ export function MobileTabBarShowcase() {
         &ldquo;N working&rdquo; rollup, which reports rather than asks. In <b>power</b> Now is
         capped at five rows while seven things need you. Both numbers come off the model, so the
         badge and the screen reader can never disagree.
+      </p>
+    </PlaygroundSection>
+  );
+}
+
+/**
+ * The list the long-press sheet is drawn from — one of every node kind it has
+ * to walk.
+ *
+ * The same shape a room row hands the surface: a couple of verbs, a submenu the
+ * "⋮" would hide behind a hover, a radio over a setting, and one destructive
+ * item. Flattened here, because a sheet has no second level and putting one
+ * over a 390px screen would be a surface to dismiss before the first one is
+ * usable.
+ */
+const SHEET_NODES: SidebarMenuNode[] = [
+  { kind: 'action', id: 'mute', label: 'Mute channel', icon: BellOff, run: () => {} },
+  {
+    kind: 'submenu',
+    id: 'move-to-group',
+    label: 'Move to group',
+    icon: FolderInput,
+    items: [
+      { kind: 'choice', id: 'group-a', label: 'Clients', checked: true, run: () => {} },
+      { kind: 'choice', id: 'group-b', label: 'Experiments', checked: false, run: () => {} },
+      { kind: 'separator', id: 'move-sep' },
+      {
+        kind: 'action',
+        id: 'new-group',
+        label: 'New group',
+        icon: FolderPlus,
+        opensInput: true,
+        run: () => {},
+      },
+    ],
+  },
+  {
+    kind: 'radio',
+    id: 'sort',
+    label: 'Sort by',
+    icon: ListFilter,
+    value: 'recent',
+    options: [
+      { value: 'name', label: 'Name' },
+      { value: 'recent', label: 'Recently used' },
+    ],
+    onChange: () => {},
+  },
+  { kind: 'separator', id: 'sep' },
+  {
+    kind: 'action',
+    id: 'archive',
+    label: 'Archive channel',
+    icon: Trash2,
+    destructive: true,
+    opensInput: true,
+    run: () => {},
+  },
+];
+
+/**
+ * The third menu renderer, drawn flat so both themes can be read at once (P4.2).
+ *
+ * The sheet itself is a `Drawer`, and a drawer in a playground column would
+ * cover the page it is meant to be compared against — so this draws its
+ * CONTENTS, which is the part that has a design. The gesture that opens it, and
+ * the sheet's own frame, are covered where only a browser can see them
+ * (`apps/e2e/tests/dashboard-sidebar/mobile-touch.spec.ts`).
+ */
+export function MobileLongPressSheetShowcase() {
+  return (
+    <PlaygroundSection
+      title="Mobile Long-press Menu"
+      description="Hover does not exist on a phone, so a press held for half a second opens the row's menu as a sheet. It walks the SAME node list the right-click menu and the ⋮ walk — one model, three renderers — so the three can never offer different things. A submenu is flattened into a labelled run of rows: a sheet has no second level, and every row is 44px."
+    >
+      <div
+        className="border-border/50 bg-background overflow-hidden rounded-xl border py-2"
+        style={{ maxWidth: PHONE_WIDTH }}
+      >
+        <div className="text-sidebar-foreground/70 px-4 pt-2 pb-1 text-xs font-medium">
+          #general actions
+        </div>
+        <SidebarMenuNodes variant="sheet" nodes={SHEET_NODES} />
+      </div>
+      <p className="text-muted-foreground max-w-prose text-sm">
+        Every row here is 44px tall. The <b>Move to group</b> and <b>Sort by</b> headings are
+        labels, not controls — their contents are already on screen, which is what makes the
+        flattening honest: the sheet offers exactly the leaves the &ldquo;⋮&rdquo; hides.
+      </p>
+    </PlaygroundSection>
+  );
+}
+
+/**
+ * Catch up, over the journeys that have something to clear (P4 AC-4).
+ *
+ * Drawn from the real model: the count is the number of DISTINCT rooms Today is
+ * holding, which is not the number of unread rows — a thread and its channel
+ * share one read cursor and are therefore one write.
+ */
+export function MobileCatchUpShowcase() {
+  return (
+    <PlaygroundSection
+      title="Mobile Catch Up"
+      description="One action at the top of Today that marks everything read, on a phone only — per-item triage is a desktop behaviour. It writes through the read cursors the sidebar otherwise only reads, and keeps no watermark of its own."
+    >
+      <div className="flex flex-col gap-3">
+        {SIDEBAR_FIXTURES.map(({ name, state }) => {
+          const rows =
+            buildSidebarModel(state)
+              .zones.find((zone) => zone.id === 'today')
+              ?.sections.find((section) => section.id === 'today')?.rows ?? [];
+          const roomIds = [
+            ...new Set(
+              rows
+                .filter((row) => row.unread.tier !== 'none' && row.target.kind === 'room')
+                .map((row) => (row.target.kind === 'room' ? row.target.roomId : ''))
+            ),
+          ];
+          return (
+            <div key={name} className="space-y-1">
+              <ShowcaseLabel>{`${name} — ${roomIds.length} to clear`}</ShowcaseLabel>
+              <div
+                className="border-border/50 bg-sidebar overflow-hidden rounded-xl border py-1"
+                style={{ maxWidth: PHONE_WIDTH }}
+              >
+                {/* Renders nothing at all when there is nothing to clear, which
+                    is what a journey with a quiet Today shows here. */}
+                <CatchUpAction roomIds={roomIds} />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      <p className="text-muted-foreground max-w-prose text-sm">
+        Absent under a pointer and absent with nothing to clear — chrome appears by data volume,
+        never by a setting. A journey with a quiet Today draws an empty box here, which is the
+        point.
       </p>
     </PlaygroundSection>
   );

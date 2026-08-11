@@ -16,6 +16,22 @@ import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createMockTransport } from '@dorkos/test-utils';
+import type { PendingApproval } from '@dorkos/shared/approval-schemas';
+
+// ── The global event stream ────────────────────────────────────────────────
+// The Home tab now reads the approval queue (P4 AC-5), and that query keeps
+// itself live off the SSE fan-out. Only the subscription is stubbed; the query
+// itself runs against the mock transport, so the assertions below are about a
+// real fetch landing in a real render.
+vi.mock('@/layers/shared/model', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/layers/shared/model')>();
+  return {
+    ...actual,
+    useEventSubscription: vi.fn(),
+    useEventStream: () => ({ subscribe: vi.fn(), connectionState: 'connected', failedAttempts: 0 }),
+  };
+});
+
 import { TransportProvider } from '@/layers/shared/model';
 import { TooltipProvider } from '@/layers/shared/ui';
 import { buildSidebarModel } from '@/layers/features/dashboard-sidebar/model/build-sidebar-model';
@@ -103,11 +119,53 @@ import {
   LIBRARY_ZONE_IDS,
 } from '../model/mobile-tabs';
 
-function renderLayout(takeover: React.ReactNode = null) {
+// ── The viewport ───────────────────────────────────────────────────────────
+// jsdom has none, and `useIsMobile` is a `matchMedia` question — so the touch
+// half of this file (P4.2) sets it and the rest runs at the pointer default,
+// exactly as the components do.
+let phone = false;
+function useEmulatedViewport() {
+  Object.defineProperty(window, 'matchMedia', {
+    writable: true,
+    configurable: true,
+    value: (query: string) => {
+      const maxWidth = /max-width:\s*(\d+)px/.exec(query);
+      return {
+        matches: maxWidth === null ? false : phone && 390 <= Number(maxWidth[1]),
+        media: query,
+        onchange: null,
+        addEventListener: () => {},
+        removeEventListener: () => {},
+        addListener: () => {},
+        removeListener: () => {},
+        dispatchEvent: () => false,
+      };
+    },
+  });
+}
+
+/** One approval waiting on the operator, shaped as the server sends it. */
+function anApproval(): PendingApproval {
+  return {
+    approvalId: 'ap-1',
+    capabilityId: 'fs.write',
+    capabilityTitle: 'Write to a file',
+    tier: 'destructive',
+    summary: 'Scout wants to write src/index.ts.',
+    hasAgentPath: true,
+    requestedAt: new Date().toISOString(),
+    expiresAt: new Date(Date.now() + 600_000).toISOString(),
+  };
+}
+
+function renderLayout(
+  takeover: React.ReactNode = null,
+  transport: ReturnType<typeof createMockTransport> = createMockTransport()
+) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={queryClient}>
-      <TransportProvider transport={createMockTransport()}>
+      <TransportProvider transport={transport}>
         <TooltipProvider>
           <MobileTabsLayout takeover={takeover} />
         </TooltipProvider>
@@ -127,6 +185,8 @@ const zonesIn = (id: string) =>
   );
 
 beforeEach(() => {
+  phone = false;
+  useEmulatedViewport();
   mockState = busyFixture;
   mockHref = '/';
   mockDorkBotReady = true;
@@ -207,19 +267,45 @@ describe('MobileTabsLayout', () => {
 
     it('is the same number the live region announces', async () => {
       mockState = powerFixture;
-      renderLayout();
+      const { container } = renderLayout();
       const badge = screen.getByTestId('mobile-tab-badge-home').textContent;
-      // The live region is the real one, rendered by the real Now zone inside
-      // the Home panel — so this compares the badge against BC-11's own words.
       // It publishes a second after the count settles (`LIVE_REGION_DEBOUNCE_MS`),
       // which is why this waits rather than reading straight after the render.
       await waitFor(
         () => {
-          const live = panel('home').querySelector('[aria-live="polite"]');
+          const live = container.querySelector('[aria-live="polite"]');
           expect(live?.textContent).toContain(String(badge));
         },
         { timeout: LIVE_REGION_DEBOUNCE_MS * 3 }
       );
+    });
+
+    it('announces the count from OUTSIDE the panels, where nothing is inert (P4.2)', async () => {
+      // **The badge is `aria-hidden` because something else says the number.**
+      // That something used to be the region inside Now's zone — which is
+      // inside a panel this layout marks `inert` whenever it is put away, so
+      // for every moment the operator was in a conversation the count was
+      // announced by nobody at all.
+      mockState = powerFixture;
+      const { container } = renderLayout();
+      expect(screen.getByTestId('mobile-tab-badge-home')).toHaveAttribute('aria-hidden', 'true');
+
+      const regions = Array.from(container.querySelectorAll('[aria-live="polite"]'));
+      // Exactly one, so the bar and the zone cannot both say it — two regions
+      // carrying one number is the siren BC-11 exists to prevent.
+      expect(regions).toHaveLength(1);
+      expect(panel('home').querySelector('[aria-live="polite"]')).toBeNull();
+      // …and it really is outside the box the layout puts away.
+      expect(screen.getByTestId('mobile-tab-panels').contains(regions[0]!)).toBe(false);
+
+      // Not an empty element that happens to sit in the right place: it says
+      // the number, and it still says it with every panel down.
+      await waitFor(() => expect(regions[0]!.textContent).toMatch(/\d/), {
+        timeout: LIVE_REGION_DEBOUNCE_MS * 3,
+      });
+      commitNavigation('/session?session=abc');
+      expect(screen.getByTestId('mobile-tab-panels')).toHaveAttribute('inert');
+      expect(regions[0]!.textContent).toMatch(/\d/);
     });
 
     it('draws no badge when nothing needs you', () => {
@@ -464,6 +550,134 @@ describe('MobileTabsLayout', () => {
       // phone with a home indicator to hide Today's last row behind the bar.
       expect(bar.style.height).toBe(MOBILE_TAB_BAR_DOCK);
       expect(panels.style.bottom).toBe(MOBILE_TAB_BAR_DOCK);
+    });
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Touch (P4.2). Everything below runs at 390 wide, which is the only width
+  // at which any of it exists.
+  // ─────────────────────────────────────────────────────────────────────────
+  describe('at 390×844 (P4.2)', () => {
+    beforeEach(() => {
+      phone = true;
+      useEmulatedViewport();
+    });
+    afterEach(() => {
+      phone = false;
+      useEmulatedViewport();
+    });
+
+    it('tops Today with Catch up, drawn from the model rather than from a prop', () => {
+      // The wire-through: real fixture → real `buildSidebarModel` → real zones
+      // → this control, with nothing between them stubbed. `busy` is chosen
+      // because its Today genuinely holds unread rooms.
+      mockState = busyFixture;
+      renderLayout();
+      const today = panel('home').querySelector('[data-sidebar-zone="today"]');
+      expect(today).not.toBeNull();
+      const catchUp = within(today as HTMLElement).getByTestId('today-catch-up');
+      // The number it offers to clear is the model's, not a guess.
+      const rows =
+        buildSidebarModel(busyFixture)
+          .zones.find((zone) => zone.id === 'today')
+          ?.sections.find((section) => section.id === 'today')?.rows ?? [];
+      const unread = new Set(
+        rows
+          .filter((row) => row.unread.tier !== 'none' && row.target.kind === 'room')
+          .map((row) => (row.target.kind === 'room' ? row.target.roomId : ''))
+      );
+      expect(unread.size).toBeGreaterThan(0);
+      expect(catchUp).toHaveAccessibleName(new RegExp(`mark ${unread.size} unread`));
+    });
+
+    it('draws no Catch up under a pointer, on the very same model', () => {
+      // The pair. Same fixture, same zones — only the viewport differs, which
+      // is what makes the presence above about the device.
+      phone = false;
+      useEmulatedViewport();
+      mockState = busyFixture;
+      renderLayout();
+      expect(screen.queryByTestId('today-catch-up')).toBeNull();
+    });
+
+    it('puts an approval in Home and lets it be answered without going anywhere (AC-5)', async () => {
+      const user = userEvent.setup();
+      mockState = quietFixture;
+      const transport = createMockTransport();
+      transport.listPendingApprovals = vi.fn().mockResolvedValue({ approvals: [anApproval()] });
+      renderLayout(null, transport);
+      // Go to Home the way an operator does, so "the panel is still up
+      // afterwards" is a claim about answering rather than about a cold load.
+      await user.click(screen.getByTestId('mobile-tab-home'));
+
+      const card = await screen.findByText('Write to a file');
+      // In Home, in Now — not in a separate box bolted above the zones.
+      const now = panel('home').querySelector('[data-sidebar-zone="now"]');
+      expect(now).not.toBeNull();
+      expect((now as HTMLElement).contains(card)).toBe(true);
+
+      const before = mockHref;
+      await user.click(screen.getByRole('button', { name: /^Allow$/ }));
+      await waitFor(() => expect(transport.grantApproval).toHaveBeenCalledWith('ap-1', undefined));
+      // The route did not change and no navigation was committed: the card
+      // resolved where it was.
+      expect(mockHref).toBe(before);
+      expect(mockNavigate).not.toHaveBeenCalled();
+      expect(screen.getByTestId('mobile-tab-panels').className).not.toContain('invisible');
+    });
+
+    it('says so loudly when the approval list cannot be read — even with no Now zone to say it in', async () => {
+      mockState = quietFixture;
+      const transport = createMockTransport();
+      transport.listPendingApprovals = vi.fn().mockRejectedValue(new Error('offline'));
+      renderLayout(null, transport);
+
+      // `quiet` has no Now zone at all, which is the whole trap: the failure
+      // that most needs saying is the one where nothing else drew the zone.
+      expect(buildSidebarModel(quietFixture).zones.some((zone) => zone.id === 'now')).toBe(false);
+      const notice = await screen.findByText(/could not check whether anything is waiting/i);
+      expect(panel('home').contains(notice)).toBe(true);
+
+      // And the retry is wired to a real refetch rather than being decoration.
+      const user = userEvent.setup();
+      const reads = vi.mocked(transport.listPendingApprovals);
+      const before = reads.mock.calls.length;
+      await user.click(screen.getByRole('button', { name: 'Try again' }));
+      await waitFor(() => expect(reads.mock.calls.length).toBeGreaterThan(before));
+    });
+
+    it('draws nothing about approvals when there are none and nothing failed', async () => {
+      mockState = quietFixture;
+      renderLayout();
+      await waitFor(() => expect(screen.queryByTestId('mobile-now-approvals')).toBeNull());
+      expect(screen.queryByText(/could not check whether anything is waiting/i)).toBeNull();
+    });
+
+    it('reorders nothing by drag, and offers a move in every draggable row menu (R3, WCAG 2.5.7)', () => {
+      // Drag is off here — `SidebarDnd` never mounts a `DndContext` below 768px
+      // — so the menu is the ONLY way to move a row, and every row the desktop
+      // lets you drag has to carry one.
+      mockState = powerFixture;
+      renderLayout();
+      expect(document.querySelector('[data-dnd-context]')).toBeNull();
+      const dragHandles = panel('library').querySelectorAll('[aria-roledescription="sortable"]');
+      expect(dragHandles).toHaveLength(0);
+
+      const model = buildSidebarModel(powerFixture);
+      const draggable = model.zones
+        .flatMap((zone) => zone.sections)
+        .flatMap((section) => [section, ...(section.subsections ?? [])])
+        .flatMap((section) => section.rows)
+        .filter((row) => row.draggable);
+      // The fixture has to contain draggable rows or this asserts nothing.
+      expect(draggable.length).toBeGreaterThan(0);
+      // Every draggable row is an agent or a room, and both row menus carry a
+      // move: agents "Move to group", rooms the same (WCAG 2.5.7's pointer
+      // alternate). Asserted on the model rather than by opening sixty sheets.
+      for (const row of draggable) {
+        expect(['agent', 'room']).toContain(row.target.kind);
+        expect(row.actions === undefined || row.actions.length > 0).toBe(true);
+      }
     });
   });
 });

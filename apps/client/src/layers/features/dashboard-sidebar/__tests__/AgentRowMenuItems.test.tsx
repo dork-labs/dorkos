@@ -115,6 +115,8 @@ function model(overrides: Partial<RowMenuModel> = {}): RowMenuModel {
     onTogglePin: vi.fn(),
     onToggleMute: vi.fn(),
     onOpenProfile: vi.fn(),
+    onOpenSessions: vi.fn(),
+    onViewProfile: vi.fn(),
     onNewSession: vi.fn(),
     onMoveToGroup: vi.fn(),
     onNewGroup: vi.fn(),
@@ -195,6 +197,8 @@ describe('buildRowMenuNodes', () => {
 const props = {
   path: '/agents/api-server',
   onOpenProfile: vi.fn(),
+  onOpenSessions: vi.fn(),
+  onViewProfile: vi.fn(),
   onNewSession: vi.fn(),
   onRequestNewGroup: vi.fn(),
 };
@@ -266,7 +270,12 @@ describe('AgentRowMenuItems variant parity', () => {
         'Pin agent',
         'Mute agent',
         'Move to group',
+        // The two acts that are satellites of the row on a pointer device — the
+        // "N live" chip and the face — and have no target big enough to draw
+        // under a thumb, so the menu is where a phone reaches them (P4.2).
+        'Switch session…',
         'Agent hub',
+        'View profile…',
         'New session',
         // Submenu contents:
         'Clients',
@@ -317,6 +326,8 @@ function AgentRowMenuSurface({ onRequestNewGroup }: { onRequestNewGroup: () => v
   const nodes = useAgentRowMenuNodes({
     path: '/agents/api-server',
     onOpenProfile: () => {},
+    onOpenSessions: () => {},
+    onViewProfile: () => {},
     onNewSession: () => {},
     onRequestNewGroup,
   });

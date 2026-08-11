@@ -14,10 +14,28 @@
  *
  * @module shared/ui/sidebar-menu-node
  */
-import { useMemo, type ElementType, type ReactNode } from 'react';
-import { MoreVertical, type LucideIcon } from 'lucide-react';
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useMemo,
+  useRef,
+  useState,
+  type ElementType,
+  type PointerEvent as ReactPointerEvent,
+  type MouseEvent as ReactMouseEvent,
+  type ReactNode,
+} from 'react';
+import { Check, MoreVertical, type LucideIcon } from 'lucide-react';
 import { cn } from '@/layers/shared/lib';
-import { SIDEBAR_ACTIONS_ATTRIBUTE, useMenuCloseFocusGuard } from '@/layers/shared/model';
+import {
+  SIDEBAR_ACTIONS_ATTRIBUTE,
+  useIsMobile,
+  useLongPress,
+  useMenuCloseFocusGuard,
+} from '@/layers/shared/model';
+import { Drawer, DrawerContent, DrawerTitle } from './drawer';
+import { TOUCH_TARGET_MIN_H } from './touch-target';
 import {
   ContextMenu,
   ContextMenuCheckboxItem,
@@ -45,8 +63,17 @@ import {
   DropdownMenuTrigger,
 } from './dropdown-menu';
 
-/** Which Radix menu family a node list is being rendered into. */
-export type SidebarMenuVariant = 'context' | 'dropdown';
+/**
+ * Which renderer a node list is being walked into.
+ *
+ * Three, and they are the three ways a person reaches a menu: right-click
+ * (`context`), the "⋮" (`dropdown`), and a long press on a touch screen
+ * (`sheet`). All three walk the SAME list through the SAME function — only the
+ * slot table below differs — which is what makes "the long-press menu offers
+ * what the kebab offers" a property of the code rather than of somebody's
+ * diligence (P4 AC-3).
+ */
+export type SidebarMenuVariant = 'context' | 'dropdown' | 'sheet';
 
 /** One thing you can do to the row or section this menu belongs to. */
 export interface SidebarMenuActionNode {
@@ -167,6 +194,190 @@ interface SidebarMenuSlots {
   RadioItem: ElementType;
 }
 
+/** Shared geometry for every activatable row in the sheet. */
+const SHEET_ROW_CLASS = cn(
+  'flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm transition-colors',
+  TOUCH_TARGET_MIN_H,
+  'active:bg-sidebar-accent disabled:pointer-events-none disabled:opacity-50'
+);
+
+/**
+ * How a chosen sheet row puts the sheet away.
+ *
+ * A drawer has no Radix machinery closing itself when an item runs — that is a
+ * menu behaviour, and this is a dialog — so the close travels down here rather
+ * than being remembered at each of the five slots that need it.
+ */
+const SheetCloseContext = createContext<() => void>(() => {});
+
+/**
+ * The value a `radio` node's options are being compared against, and where a
+ * chosen one writes back to.
+ *
+ * The Radix families carry this for us; a sheet's plain buttons have nowhere to
+ * put it, and threading it through {@link renderNodes} would mean the walk knew
+ * which renderer it was in — the one thing this module exists to avoid.
+ */
+const SheetRadioContext = createContext<{ value: string; onChange: (value: string) => void }>({
+  value: '',
+  onChange: () => {},
+});
+
+/** One activatable row in the sheet. */
+function SheetItem({
+  children,
+  onClick,
+  variant,
+  disabled,
+  ...rest
+}: {
+  children?: ReactNode;
+  onClick?: () => void;
+  variant?: 'destructive';
+  disabled?: boolean;
+}) {
+  const close = useContext(SheetCloseContext);
+  return (
+    <button
+      type="button"
+      role="menuitem"
+      disabled={disabled}
+      className={cn(SHEET_ROW_CLASS, variant === 'destructive' && 'text-destructive')}
+      onClick={() => {
+        onClick?.();
+        close();
+      }}
+      {...rest}
+    >
+      {children}
+    </button>
+  );
+}
+
+/** A `choice` node in the sheet: the same row, with a tick when it is the current one. */
+function SheetCheckboxItem({
+  children,
+  checked = false,
+  onClick,
+  ...rest
+}: {
+  children?: ReactNode;
+  checked?: boolean;
+  onClick?: () => void;
+}) {
+  const close = useContext(SheetCloseContext);
+  return (
+    <button
+      type="button"
+      role="menuitemcheckbox"
+      aria-checked={checked}
+      className={SHEET_ROW_CLASS}
+      onClick={() => {
+        onClick?.();
+        close();
+      }}
+      {...rest}
+    >
+      <Check className={cn('size-4 shrink-0', !checked && 'invisible')} />
+      {children}
+    </button>
+  );
+}
+
+/** A rule between two runs of rows. */
+function SheetSeparator() {
+  return <div aria-hidden className="bg-sidebar-border/70 mx-4 my-1 h-px" />;
+}
+
+/**
+ * A submenu, flattened.
+ *
+ * **A sheet has no second level, and inventing one would be the defect.** A
+ * nested popup over a bottom sheet on a 390px screen is a second surface to
+ * dismiss before the first one is usable — the exact complaint the drawer this
+ * cockpit retired was built on. So a submenu becomes a labelled run of rows in
+ * the same list: every leaf the "⋮" hides behind a hover is directly under the
+ * thumb, and the ACTION SET is identical because it is the same list walked by
+ * the same function.
+ */
+function SheetGroup({ children }: { children?: ReactNode }) {
+  return <div role="group">{children}</div>;
+}
+
+/**
+ * A flattened submenu's heading — a label, never a control.
+ *
+ * **It answers to a different attribute on purpose.** The walk stamps
+ * `data-menu-item-id` on a submenu TRIGGER, which is what it is in the two
+ * Radix renderings: a thing you press to see more. Flattened, it is a heading
+ * over rows that are already on screen, and keeping the item attribute would
+ * make it count as an entry — so a parity check between the sheet and the "⋮"
+ * would find one extra here and one extra there, and could never balance.
+ */
+function SheetGroupLabel({
+  children,
+  'data-menu-item-id': id,
+}: {
+  children?: ReactNode;
+  'data-menu-item-id'?: string;
+}) {
+  return (
+    <div
+      data-menu-group-id={id}
+      className="text-sidebar-foreground/60 flex items-center gap-2 px-4 pt-3 pb-1 text-[11px] font-medium"
+    >
+      {children}
+    </div>
+  );
+}
+
+/** A flattened submenu's rows. `className` is the Radix width, which a full-width sheet ignores. */
+function SheetGroupBody({ children }: { children?: ReactNode; className?: string }) {
+  return <div>{children}</div>;
+}
+
+/** A `radio` node's options, holding the current value for the rows below it. */
+function SheetRadioGroup({
+  children,
+  value = '',
+  onValueChange,
+}: {
+  children?: ReactNode;
+  value?: string;
+  onValueChange?: (value: string) => void;
+}) {
+  const onChange = useCallback((next: string) => onValueChange?.(next), [onValueChange]);
+  const bound = useMemo(() => ({ value, onChange }), [value, onChange]);
+  return (
+    <SheetRadioContext.Provider value={bound}>
+      <div role="group">{children}</div>
+    </SheetRadioContext.Provider>
+  );
+}
+
+/** One option of a `radio` node. */
+function SheetRadioItem({ children, value, ...rest }: { children?: ReactNode; value: string }) {
+  const group = useContext(SheetRadioContext);
+  const close = useContext(SheetCloseContext);
+  const checked = group.value === value;
+  return (
+    <button
+      type="button"
+      role="menuitemradio"
+      aria-checked={checked}
+      className={SHEET_ROW_CLASS}
+      onClick={() => {
+        group.onChange(value);
+        close();
+      }}
+      {...rest}
+    >
+      <Check className={cn('size-4 shrink-0', !checked && 'invisible')} />
+      {children}
+    </button>
+  );
+}
+
 const VARIANT_SLOTS: Record<SidebarMenuVariant, SidebarMenuSlots> = {
   context: {
     Item: ContextMenuItem,
@@ -187,6 +398,16 @@ const VARIANT_SLOTS: Record<SidebarMenuVariant, SidebarMenuSlots> = {
     SubContent: DropdownMenuSubContent,
     RadioGroup: DropdownMenuRadioGroup,
     RadioItem: DropdownMenuRadioItem,
+  },
+  sheet: {
+    Item: SheetItem,
+    CheckboxItem: SheetCheckboxItem,
+    Separator: SheetSeparator,
+    Sub: SheetGroup,
+    SubTrigger: SheetGroupLabel,
+    SubContent: SheetGroupBody,
+    RadioGroup: SheetRadioGroup,
+    RadioItem: SheetRadioItem,
   },
 };
 
@@ -212,7 +433,15 @@ function renderNodes(nodes: SidebarMenuNode[], slots: SidebarMenuSlots): ReactNo
       }
       case 'choice':
         return (
-          <CheckboxItem key={node.id} checked={node.checked} onClick={node.run}>
+          <CheckboxItem
+            key={node.id}
+            // Stamped like an action's, for the same two readers: a browser
+            // test that must not address a row by its wording, and the parity
+            // assertion that compares one renderer's entries against another's.
+            data-menu-item-id={node.id}
+            checked={node.checked}
+            onClick={node.run}
+          >
             {node.label}
           </CheckboxItem>
         );
@@ -227,7 +456,15 @@ function renderNodes(nodes: SidebarMenuNode[], slots: SidebarMenuSlots): ReactNo
             <SubContent className="w-44">
               <RadioGroup value={node.value} onValueChange={node.onChange}>
                 {node.options.map((option) => (
-                  <RadioItem key={option.value} value={option.value}>
+                  <RadioItem
+                    key={option.value}
+                    // Derived rather than declared: an option is a VALUE of the
+                    // setting, so its id is the setting's id and that value —
+                    // which is stable without asking every radio node to invent
+                    // ids for its options.
+                    data-menu-item-id={`${node.id}:${option.value}`}
+                    value={option.value}
+                  >
                     {option.label}
                   </RadioItem>
                 ))}
@@ -325,14 +562,24 @@ interface SidebarMenuSurfaceProps {
    * the menu that opened it.
    */
   hideActionsTrigger?: boolean;
-  /** Always show the "⋮" instead of revealing it on hover / `focus-visible` (touch). */
-  alwaysShowActions?: boolean;
 }
 
 /**
- * The sidebar's one menu surface: a right-click `ContextMenu` and a
- * hover/`focus-visible`-revealed vertical kebab (⋮) `DropdownMenu`, both
- * rendered from the SAME node list.
+ * How wide a gutter the "⋮" needs, by pointer.
+ *
+ * Two numbers because the control is two sizes: 20px in a 28px gutter under a
+ * mouse, 44px in a 44px one under a thumb (P4 AC-4). Exported so the row and
+ * the section header — which own their own right padding and their own trailing
+ * satellites — spell the same numbers this surface positions against, instead of
+ * three files agreeing by luck.
+ */
+export const SIDEBAR_MENU_GUTTER = { fine: 'pr-7', coarse: 'pr-11' } as const;
+
+/**
+ * The sidebar's one menu surface, in its three renderings: a right-click
+ * `ContextMenu`, a hover/`focus-visible`-revealed vertical kebab (⋮)
+ * `DropdownMenu`, and — on a touch screen — a long-press bottom sheet. All
+ * three come from the SAME node list.
  *
  * **A vertical kebab, in a narrow gutter, hidden at rest.** The horizontal
  * meatball this replaces read as "more of this row"; the vertical one reads as
@@ -342,6 +589,24 @@ interface SidebarMenuSurfaceProps {
  * unreachable from a keyboard, and on a device with no right-click the kebab is
  * the *only* way the menu exists at all (WCAG — R2's "hover-revealed chrome
  * always has two other paths").
+ *
+ * **On touch the kebab stays and long-press joins it.** Two paths, not a swap:
+ * a gesture nobody can see is not an affordance, and the visible "⋮" is also
+ * what a switch or a screen reader reaches. This surface decides that itself
+ * from `useIsMobile()` — it used to be an `alwaysShowActions` prop that
+ * `SidebarRow` passed and `SectionHeader` did not, which is exactly why a
+ * section's menu was unreachable by finger for a release (DOR-1083). "Is there
+ * a hover here" is a fact about the device, so it is answered in the one place
+ * that draws the control.
+ *
+ * **The right-click menu is not mounted on touch, and that is load-bearing.**
+ * Radix's own `ContextMenuTrigger` carries a 700ms touch long-press of its own
+ * (verified in `@radix-ui/react-context-menu@2.3.1`'s source), which cancels on
+ * ANY pointer movement and opens a floating panel of 32px rows at the finger.
+ * Left mounted underneath this one, a press held past 700ms would open two
+ * menus from one gesture. So on a phone the surface is the sheet, and the
+ * ContextMenu — a thing a device with no right-click cannot ask for — is not
+ * rendered at all.
  *
  * The close-focus guard is armed here, once, rather than at every call site: an
  * item that `opensInput` mounts an editor or a dialog, and Radix's close-time
@@ -358,12 +623,100 @@ export function SidebarMenuSurface({
   menuWidth = 'w-48',
   kebabClassName,
   hideActionsTrigger = false,
-  alwaysShowActions = false,
 }: SidebarMenuSurfaceProps) {
   const { nodes: guarded, onCloseAutoFocus } = useGuardedMenuNodes(nodes);
+  const isMobile = useIsMobile();
+  const [sheetOpen, setSheetOpen] = useState(false);
+  // **Whether the press that is ending opened the sheet.** A long press ends
+  // with a `pointerup` on the row, and the browser follows that with a `click`
+  // — so without this the one gesture would both open the menu and navigate to
+  // whatever the row points at, which is every complaint about long-press
+  // menus ever filed. Cleared on the next press rather than only on the click,
+  // so a gesture that never produces one (the finger lifts over the sheet) does
+  // not swallow the tap after it.
+  const openedByPress = useRef(false);
+  const longPress = useLongPress({
+    onLongPress: useCallback(() => {
+      openedByPress.current = true;
+      setSheetOpen(true);
+    }, []),
+  });
+  const onPointerDown = useCallback(
+    (event: ReactPointerEvent) => {
+      openedByPress.current = false;
+      longPress.onPointerDown(event);
+    },
+    [longPress]
+  );
+  const onClickCapture = useCallback((event: ReactMouseEvent) => {
+    if (!openedByPress.current) return;
+    openedByPress.current = false;
+    event.preventDefault();
+    event.stopPropagation();
+  }, []);
 
   if (nodes.length === 0) {
     return <Root className={cn('relative', className)}>{children}</Root>;
+  }
+
+  const kebab = hideActionsTrigger ? null : (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          aria-label={actionsLabel}
+          onClick={(e) => e.stopPropagation()}
+          // A satellite of its row, never a Tab stop of its own: the
+          // roving-focus hook stamps this `-1` and hands it the keyboard
+          // via ArrowRight from the row. Left in the tab order, a
+          // 60-agent Library would be 121 Tab presses rather than one.
+          {...{ [SIDEBAR_ACTIONS_ATTRIBUTE]: '' }}
+          className={cn(
+            'text-sidebar-foreground/60 hover:text-sidebar-foreground hover:bg-sidebar-accent focus-visible:ring-sidebar-ring',
+            'absolute top-1/2 flex -translate-y-1/2 items-center justify-center rounded-md outline-hidden transition-opacity',
+            'group-hover/sidebar-menu:opacity-100 focus-visible:opacity-100 focus-visible:ring-2 data-[state=open]:opacity-100',
+            // A thumb's target, not a pointer's: 44px of button in the wider
+            // gutter its caller is paying for, with the same 16px glyph inside.
+            isMobile ? 'right-0 size-11 opacity-100' : 'right-1 size-5 opacity-0',
+            kebabClassName
+          )}
+        >
+          <MoreVertical className="size-4" />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent
+        side="right"
+        align="start"
+        className={menuWidth}
+        onCloseAutoFocus={onCloseAutoFocus}
+      >
+        <SidebarMenuNodes variant="dropdown" nodes={guarded} />
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+
+  if (isMobile) {
+    return (
+      <Root
+        className={cn('group/sidebar-menu relative', className)}
+        onPointerDown={onPointerDown}
+        onPointerMove={longPress.onPointerMove}
+        onPointerUp={longPress.onPointerUp}
+        onPointerLeave={longPress.onPointerLeave}
+        onPointerCancel={longPress.onPointerCancel}
+        onClickCapture={onClickCapture}
+      >
+        {children}
+        {kebab}
+        <SidebarMenuSheet
+          open={sheetOpen}
+          onOpenChange={setSheetOpen}
+          nodes={guarded}
+          title={actionsLabel}
+          onCloseAutoFocus={onCloseAutoFocus}
+        />
+      </Root>
+    );
   }
 
   return (
@@ -371,45 +724,69 @@ export function SidebarMenuSurface({
       <ContextMenuTrigger asChild>
         <Root className={cn('group/sidebar-menu relative', className)}>
           {children}
-          {!hideActionsTrigger && (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <button
-                  type="button"
-                  aria-label={actionsLabel}
-                  onClick={(e) => e.stopPropagation()}
-                  // A satellite of its row, never a Tab stop of its own: the
-                  // roving-focus hook stamps this `-1` and hands it the keyboard
-                  // via ArrowRight from the row. Left in the tab order, a
-                  // 60-agent Library would be 121 Tab presses rather than one.
-                  {...{ [SIDEBAR_ACTIONS_ATTRIBUTE]: '' }}
-                  className={cn(
-                    'text-sidebar-foreground/60 hover:text-sidebar-foreground hover:bg-sidebar-accent focus-visible:ring-sidebar-ring',
-                    'absolute top-1/2 right-1 flex size-5 -translate-y-1/2 items-center justify-center rounded-md outline-hidden transition-opacity',
-                    'group-hover/sidebar-menu:opacity-100 focus-visible:opacity-100 focus-visible:ring-2 data-[state=open]:opacity-100',
-                    alwaysShowActions ? 'opacity-100' : 'opacity-0',
-                    kebabClassName
-                  )}
-                >
-                  <MoreVertical className="size-4" />
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent
-                side="right"
-                align="start"
-                className={menuWidth}
-                onCloseAutoFocus={onCloseAutoFocus}
-              >
-                <SidebarMenuNodes variant="dropdown" nodes={guarded} />
-              </DropdownMenuContent>
-            </DropdownMenu>
-          )}
+          {kebab}
         </Root>
       </ContextMenuTrigger>
       <ContextMenuContent className={menuWidth} onCloseAutoFocus={onCloseAutoFocus}>
         <SidebarMenuNodes variant="context" nodes={guarded} />
       </ContextMenuContent>
     </ContextMenu>
+  );
+}
+
+/** Props for {@link SidebarMenuSheet}. */
+interface SidebarMenuSheetProps {
+  /** Whether the sheet is up. */
+  open: boolean;
+  /** Told when it opens or closes. */
+  onOpenChange: (open: boolean) => void;
+  /** The same guarded list the other two renderers walk. */
+  nodes: SidebarMenuNode[];
+  /** What the sheet is about — the row or section it acts on. */
+  title: string;
+  /** The close-focus guard's handler, shared with the other renderings. */
+  onCloseAutoFocus: (event: Event) => void;
+}
+
+/**
+ * The third rendering: the node list as a bottom sheet, opened by a long press.
+ *
+ * **It names what it acts on.** A menu that appears at the pointer needs no
+ * title; a sheet that rises from the bottom of the screen has left the row
+ * behind, so it says whose actions these are — which is also the dialog title
+ * assistive tech needs.
+ *
+ * `max-h-[85vh]` with one scrolling region inside, per `drawer.tsx`: a phone
+ * with eight groups to move an agent into would otherwise grow the sheet off
+ * the top of the screen, taking its first rows with it.
+ */
+function SidebarMenuSheet({
+  open,
+  onOpenChange,
+  nodes,
+  title,
+  onCloseAutoFocus,
+}: SidebarMenuSheetProps) {
+  const close = useCallback(() => onOpenChange(false), [onOpenChange]);
+  return (
+    <Drawer open={open} onOpenChange={onOpenChange}>
+      <DrawerContent
+        data-testid="sidebar-menu-sheet"
+        className="max-h-[85vh]"
+        onCloseAutoFocus={onCloseAutoFocus}
+      >
+        <DrawerTitle className="text-sidebar-foreground/70 px-4 pt-4 pb-1 text-xs font-medium">
+          {title}
+        </DrawerTitle>
+        {/* A real `menu`, so its rows are `menuitem`s a screen reader can walk
+            and a test can compare against the other two renderings by role. */}
+        <div role="menu" aria-label={title} className="overflow-y-auto pb-2">
+          <SheetCloseContext.Provider value={close}>
+            <SidebarMenuNodes variant="sheet" nodes={nodes} />
+          </SheetCloseContext.Provider>
+        </div>
+      </DrawerContent>
+    </Drawer>
   );
 }
 

@@ -17,6 +17,8 @@ import {
   FolderMinus,
   BellOff,
   Bell,
+  MessagesSquare,
+  UserRound,
 } from 'lucide-react';
 import type { SidebarMenuNode } from '@/layers/shared/ui';
 import type { SidebarItemRef } from '@dorkos/shared/config-schema';
@@ -58,6 +60,30 @@ export interface RowMenuModel {
   /** Toggle this agent's individual mute state. */
   onToggleMute: () => void;
   onOpenProfile: () => void;
+  /**
+   * Open the session switcher on this agent — BC-35's third door.
+   *
+   * BC-35 names three: the row's "N live" chip, ⌘K, and "a long-press on
+   * mobile". This is that third one, and it is a menu item rather than a second
+   * meaning for the gesture: one press already opens the menu, and a gesture
+   * that does two things depending on what it is over is a gesture nobody
+   * trusts. On a phone it is also the ONLY door of the three that is there — the
+   * chip is a satellite the row stops drawing under a thumb, and ⌘K needs a
+   * keyboard.
+   */
+  onOpenSessions: () => void;
+  /**
+   * Open this agent's identity profile — the drawer its face opens on desktop —
+   * or `null` when the mesh cannot name it and there is no profile to open.
+   *
+   * The face is an 18px overlay, which is half a touch target and cannot grow
+   * without eating the row's own title, so the row does not draw it under a
+   * thumb (`SidebarRow.glyphAction`). This is where the act goes instead, and it
+   * is offered on every device rather than only on the one that needs it — a
+   * menu that changes its contents with the viewport is a menu whose two
+   * renderings cannot be compared.
+   */
+  onViewProfile: (() => void) | null;
   onNewSession: () => void;
   onMoveToGroup: (groupId: string | null) => void;
   onNewGroup: () => void;
@@ -134,6 +160,17 @@ export function buildRowMenuNodes(model: RowMenuModel): RowMenuNode[] {
     { kind: 'separator', id: 'sep-1' },
     {
       kind: 'action',
+      id: 'sessions',
+      label: 'Switch session',
+      icon: MessagesSquare,
+      // Opens the switcher dialog, which is what earns the ellipsis and what
+      // arms the close-focus guard: Radix restores focus one commit after the
+      // menu closes, and would pull it back out of the dialog (DOR-329).
+      opensInput: true,
+      run: model.onOpenSessions,
+    },
+    {
+      kind: 'action',
       id: 'profile',
       // Named for what it opens, not for what it used to be called: the row's
       // own face opens the profile DRAWER now (DOR-957), and two controls that
@@ -144,6 +181,20 @@ export function buildRowMenuNodes(model: RowMenuModel): RowMenuNode[] {
       opensInput: false,
       run: model.onOpenProfile,
     },
+    ...(model.onViewProfile === null
+      ? []
+      : [
+          {
+            kind: 'action' as const,
+            id: 'view-profile',
+            label: 'View profile',
+            icon: UserRound,
+            // The identity drawer, which is a surface the menu's focus restore
+            // would otherwise blur its way out of.
+            opensInput: true,
+            run: model.onViewProfile,
+          },
+        ]),
     { kind: 'separator', id: 'sep-2' },
     {
       kind: 'action',
@@ -162,6 +213,10 @@ export interface AgentRowMenuParams {
   path: string;
   /** Open the agent's profile in the right-panel hub. */
   onOpenProfile: () => void;
+  /** Open the session switcher on this agent (BC-35's third door). */
+  onOpenSessions: () => void;
+  /** Open the agent's identity drawer, or `null` when the mesh cannot name it. */
+  onViewProfile: (() => void) | null;
   /** Start a new session for this agent. */
   onNewSession: () => void;
   /** Open the inline group-create flow, moving this agent into the new group on commit. */
@@ -183,6 +238,8 @@ export interface AgentRowMenuParams {
 export function useAgentRowMenuNodes({
   path,
   onOpenProfile,
+  onOpenSessions,
+  onViewProfile,
   onNewSession,
   onRequestNewGroup,
 }: AgentRowMenuParams): RowMenuNode[] {
@@ -203,6 +260,8 @@ export function useAgentRowMenuNodes({
     onTogglePin: () => update((prev) => (isPinned ? unpinItem(prev, ref) : pinItem(prev, ref))),
     onToggleMute: () => update((prev) => (isMuted ? unmuteItem(prev, ref) : muteItem(prev, ref))),
     onOpenProfile,
+    onOpenSessions,
+    onViewProfile,
     onNewSession,
     onMoveToGroup: (groupId) => update((prev) => moveToGroup(prev, ref, groupId)),
     onNewGroup: () => onRequestNewGroup(ref),

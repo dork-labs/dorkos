@@ -14,9 +14,9 @@
  * @module features/dashboard-sidebar/ui/SidebarSearchPill
  */
 import { Search } from 'lucide-react';
-import { formatShortcutKey, SHORTCUTS } from '@/layers/shared/lib';
-import { useAppStore } from '@/layers/shared/model';
-import { Kbd } from '@/layers/shared/ui';
+import { cn, formatShortcutKey, SHORTCUTS } from '@/layers/shared/lib';
+import { useAppStore, useIsMobile } from '@/layers/shared/model';
+import { Kbd, TOUCH_TARGET_MIN_H } from '@/layers/shared/ui';
 
 /**
  * The command-palette pill.
@@ -27,13 +27,18 @@ import { Kbd } from '@/layers/shared/ui';
  */
 export function SidebarSearchPill() {
   const setGlobalPaletteOpen = useAppStore((s) => s.setGlobalPaletteOpen);
+  const isMobile = useIsMobile();
 
   return (
     <button
       type="button"
       data-testid="sidebar-search-pill"
       onClick={() => setGlobalPaletteOpen(true)}
-      className="bg-sidebar-accent/40 text-sidebar-foreground/60 hover:bg-sidebar-accent/70 hover:text-sidebar-foreground focus-visible:ring-sidebar-ring flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-[13px] outline-hidden transition-colors duration-150 focus-visible:ring-2"
+      className={cn(
+        'bg-sidebar-accent/40 text-sidebar-foreground/60 hover:bg-sidebar-accent/70 hover:text-sidebar-foreground focus-visible:ring-sidebar-ring flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-[13px] outline-hidden transition-colors duration-150 focus-visible:ring-2',
+        // 33px measured at 390×844, under the 40px bar (P4 AC-4).
+        isMobile && TOUCH_TARGET_MIN_H
+      )}
     >
       <Search className="size-(--size-icon-sm) shrink-0" />
       <span className="truncate">Jump to anything…</span>

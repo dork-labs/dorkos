@@ -21,7 +21,7 @@
  * @module features/dashboard-sidebar/ui/SidebarFooterMenu
  */
 import { useCallback, useMemo } from 'react';
-import { Check, Copy, ExternalLink, LayoutGrid, MoreHorizontal } from 'lucide-react';
+import { Check, Copy, ExternalLink, LayoutGrid, MoreHorizontal, UserRound } from 'lucide-react';
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -29,12 +29,40 @@ import {
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
+  TOUCH_TARGET_MIN_H,
 } from '@/layers/shared/ui';
 import { useAppStore, useSlotContributions, useTheme, type Theme } from '@/layers/shared/model';
 import { cn, formatShortcutKey, openLink, SHORTCUTS } from '@/layers/shared/lib';
 import { useConfig } from '@/layers/entities/config';
 import { AccountMenuContainer } from '@/layers/features/profile';
 import { HelpMenuItems } from '@/layers/features/report-issue';
+
+/**
+ * The shape a footer control takes when the You tab gives it a whole row:
+ * full width, named, and 44px tall.
+ *
+ * **The height is the whole reason it is named.** In the desktop footer these
+ * controls are 28px unlabelled glyphs whose only names are tooltips — fine at
+ * 272px beside a pointer, and neither a target nor a name on a phone (P4 AC-4,
+ * design-system §Hover Pattern Mobile Alternatives).
+ *
+ * It lives here rather than in the strip because the strip already imports this
+ * module: putting it the other way round would make the pair a cycle for the
+ * sake of a string.
+ */
+export const FOOTER_LABELLED_ROW = cn(
+  'flex w-full items-center gap-2.5 rounded-md px-2.5 text-[13px]',
+  TOUCH_TARGET_MIN_H
+);
+
+/**
+ * What the fold is called once it has room for a name.
+ *
+ * Named for what is behind it rather than for the fact that it is a fold: your
+ * account first, then Settings, the theme, help and feedback. "More" is what a
+ * control is called when nobody has decided what it holds.
+ */
+const ACCOUNT_MENU_LABEL = 'Account and settings';
 
 /** The cycle the theme item walks. */
 const THEME_ORDER: Theme[] = ['light', 'dark', 'system'];
@@ -46,11 +74,29 @@ const THEME_LABELS: Record<Theme, string> = {
   system: 'System',
 };
 
+/** Props for {@link SidebarFooterMenu}. */
+export interface SidebarFooterMenuProps {
+  /**
+   * Draw the trigger as a named, thumb-sized row instead of a "⋯" glyph — the
+   * You tab.
+   *
+   * **The glyph's only name was a tooltip, and touch screens have no hover.**
+   * On a phone that made the operator's own account a 28px unlabelled dot: the
+   * one thing in this panel that is about them, behind a mark that says
+   * nothing. The fold itself stays — the list genuinely is long — but it is
+   * named for what is behind it (P4 AC-4, and the reason it is a fold at all is
+   * a 272px panel this tab does not have).
+   */
+  labelled?: boolean;
+}
+
 /**
  * Everything the strip folds away: your account, the `sidebar.footer` slot, the
  * query inspectors in development, and help and feedback.
+ *
+ * @param props - Whether the trigger is a named row or a "⋯" glyph.
  */
-export function SidebarFooterMenu() {
+export function SidebarFooterMenu({ labelled = false }: SidebarFooterMenuProps) {
   const contributions = useSlotContributions('sidebar.footer');
   const { theme, setTheme } = useTheme();
   const { devtoolsOpen, routerDevtoolsOpen, toggleDevtools, toggleRouterDevtools } = useAppStore();
@@ -94,10 +140,21 @@ export function SidebarFooterMenu() {
       <DropdownMenuTrigger asChild>
         <button
           type="button"
-          aria-label="More"
-          className="text-sidebar-foreground/60 hover:text-sidebar-foreground hover:bg-sidebar/50 focus-ring rounded-md p-1 transition-colors duration-150"
+          aria-label={labelled ? ACCOUNT_MENU_LABEL : 'More'}
+          data-testid="sidebar-footer-menu-trigger"
+          className={cn(
+            'hover:text-sidebar-foreground hover:bg-sidebar/50 focus-ring transition-colors duration-150',
+            labelled
+              ? cn(FOOTER_LABELLED_ROW, 'text-sidebar-foreground/80')
+              : 'text-sidebar-foreground/60 rounded-md p-1'
+          )}
         >
-          <MoreHorizontal className="size-(--size-icon-sm)" />
+          {labelled ? (
+            <UserRound className="size-(--size-icon-sm) shrink-0" />
+          ) : (
+            <MoreHorizontal className="size-(--size-icon-sm)" />
+          )}
+          {labelled && ACCOUNT_MENU_LABEL}
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent side="top" align="end" className="w-56">
