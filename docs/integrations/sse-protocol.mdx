@@ -201,6 +201,11 @@ Interactive events carry server-authoritative countdown fields, `startedAt` (ms 
       type: "{ mode: 'select' | 'synthesize', memories: MemoryEntry[] }",
       description: "Memories surfaced into the turn by the SDK's memory supervisor",
     },
+    queue_update: {
+      type: '{ queue: QueuedMessage[], outcome?: MessageDeliveryOutcome }',
+      description:
+        "The session's message queue changed. Carries the whole queue every time, never a diff — a client that missed an update is corrected by the next one. `outcome` is present when the sender's own message caused this update.",
+    },
   }}
 />
 

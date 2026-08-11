@@ -11,7 +11,10 @@ Two interactive tools exist today:
 
 The pattern is designed to be extensible. Any new tool that requires user interaction mid-stream can follow the same architecture.
 
-A separate but related system -- **Agent UI Control** -- lets agents control the client UI without blocking the SDK. See the [Agent UI Control](#agent-ui-control) section below.
+Two more systems are separate but related, each with its own section below:
+
+- **Agent UI Control** lets agents control the client UI without blocking the SDK. See [Agent UI Control](#agent-ui-control).
+- **Capability Approval Holds** pause one of DorkOS's own destructive MCP tools in-session, independent of the SDK's `canUseTool` callback entirely. See [Capability Approval Holds](#capability-approval-holds).
 
 ## Architecture
 
@@ -839,6 +842,24 @@ This two-way channel -- `uiState` in (client tells agent what is visible) and `u
 | `apps/server/src/services/runtimes/claude-code/mcp-tools/ui-tools.ts` | `control_ui` and `get_ui_state` MCP tool handlers                        |
 | `apps/client/src/layers/shared/lib/ui-action-dispatcher.ts`           | `executeUiCommand()` -- pure dispatcher, no React dependencies           |
 | `apps/client/src/layers/features/chat/model/stream-event-handler.ts`  | Processes `ui_command` SSE events and dispatches to `executeUiCommand()` |
+
+## Capability Approval Holds
+
+A third, separate system covers DorkOS's own destructive MCP tools -- the ones the [action approvals](../docs/guides/action-approvals.mdx) guide describes for end users, such as `tasks_delete`, `mesh_unregister`, `config_patch`, and `marketplace.uninstall`, gated by `services/core/capabilities/tier-enforcement.ts`. It shares nothing with the SDK's `canUseTool` pattern above: there is no `pendingInteractions` entry and no deferred promise on the session.
+
+Before DOR-939, a held capability call returned `approval_required` immediately and ended the turn -- the operator approved on the dashboard, then had to tell the agent to retry. Now the call can HOLD instead (`capability-approval-hold.ts`, spec `approvals-resume-inline`): it pushes the same `PendingApproval` the dashboard renders as a `capability_approval_required` event onto the session, waits up to ten minutes for the operator's decision, and on a grant resumes the held call and returns the real result in the SAME turn -- no retry needed.
+
+The client folds `capability_approval_required`/`capability_approval_resolved` into an inline `capability_approval` message part (`capability-approval-fold.ts`), so approving the request from the chat transcript, the top bar, or Home all resolve the SAME `approvalId`. A `timeout` outcome (the hold's ten minutes ran out before the operator answered) is the one case the card does NOT retire on resolution -- it stays as a terminal note, because the request is still sitting in the approvals list and retiring the card would delete the only thing on screen pointing at a decision still owed (`CapabilityApprovalTimedOut.tsx`).
+
+### Implementation Files
+
+| File                                                                             | Purpose                                                                                                |
+| -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `apps/server/src/services/core/capabilities/capability-approval-hold.ts`         | In-session hold-and-await: pushes the inline card, awaits the decision, resumes the held call on grant |
+| `apps/server/src/services/core/capabilities/tier-enforcement.ts`                 | Which capabilities are gated at which tier                                                             |
+| `packages/shared/src/approval-schemas.ts`                                        | `PendingApproval` schema shared by the dashboard card and the inline card                              |
+| `apps/client/src/layers/features/chat/model/stream/capability-approval-fold.ts`  | Folds the hold's events into the inline `capability_approval` message part                             |
+| `apps/client/src/layers/features/chat/ui/message/CapabilityApprovalTimedOut.tsx` | Terminal note rendered when the hold's ten minutes run out unanswered                                  |
 
 ## Key Patterns
 
