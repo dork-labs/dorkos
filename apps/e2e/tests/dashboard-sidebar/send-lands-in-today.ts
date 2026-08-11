@@ -97,11 +97,16 @@ export function registerSendLandsInTodayTests({ apiUrl, agentDir }: SendLandsInT
      * Two things about this path are load-bearing. **The deep link records
      * nothing** — no sidebar row is clicked, no palette entry picked — so what
      * Today knows afterwards it learned from the send. And **the id is minted
-     * here**, rather than left to `?dir=` alone, for two reasons: `?dir=`
-     * resumes that directory's most recent conversation instead of starting one,
-     * so two calls would write into a single session; and a client-minted id is
-     * the case the runtime re-keys, which is the half of this feature that has
-     * to carry the record onto the canonical id.
+     * here** rather than left to `?dir=` alone, because `?dir=` resumes that
+     * directory's most recent conversation instead of starting one — so two
+     * calls would write both sentences into a single session and the ordering
+     * case below would have nothing to order.
+     *
+     * A client-minted id is also what a runtime re-keys, but **this leg never
+     * exercises that**: `retiredSessionId` is emitted by claude-code's message
+     * sender alone, and `TestModeRuntime` keeps the id it was given. The carry
+     * onto a canonical id is covered in units instead — both routes, each with
+     * its own case, in `features/chat/__tests__/send-records-interaction`.
      *
      * @param page - The page to drive.
      * @param text - The sentence to send. It becomes the session's title, which

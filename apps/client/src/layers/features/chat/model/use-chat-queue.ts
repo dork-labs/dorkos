@@ -207,15 +207,22 @@ export function useChatQueue({
     // them again. See {@link enqueueInFlightRef}.
     if (enqueueInFlightRef.current === trimmed) return;
     enqueueInFlightRef.current = trimmed;
-    // Queued at the KEYSTROKE, and recorded at the keystroke (DOR-1156). The
-    // flush records again when it eventually triggers, which is correct and
-    // costs nothing — `recordOpened` is last-write-wins on one timestamp — but
-    // it can be minutes later, or never, if the turn runs long or the person
-    // clears the queue. The ruling is about the operator's act of writing, and
-    // this is when they wrote it.
+    // **Queued at the KEYSTROKE, and recorded at the keystroke — the only
+    // instant in this message's life that belongs to the operator** (DOR-1156).
     //
-    // Below the duplicate-Enter latch on purpose: a second Enter on the same
-    // words is one act, and recording above it would count it twice.
+    // Nothing records when the message is finally said. The SERVER dispatches
+    // the queue now (`persistent-session-runtime`), and it dispatches when the
+    // running turn ends — the agent's moment, not the person's. A record made
+    // then would time this row's place in Today to the instant an agent stopped
+    // talking, which is the one thing BC-16 forbids: "a `session_status` event,
+    // a tool call or an agent's post changes nothing here, because none of them
+    // is an input." Pressing Enter is the submission; what happens afterwards is
+    // the system's business.
+    //
+    // Below the duplicate-Enter latch on purpose. `recordOpened` advances a use
+    // COUNT as well as an instant (P3.3), so recording above the latch would
+    // rank a conversation by how impatient somebody was with one message.
+
     useInteractionStore.getState().recordOpened('session', sessionId);
     if (selectedCwd) useInteractionStore.getState().recordOpened('agent', selectedCwd);
     // The composer keeps the words until the server has them. That is the whole

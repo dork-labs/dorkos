@@ -222,9 +222,20 @@ export function useSessionSubmit({
       // does, so one act updates both the conversation's place in Today and the
       // agent's frecency — a thing you write in is a thing you use.
       //
-      // The kickoff is excluded, and that is the honesty seam it is everywhere
-      // else in this hook: nobody typed it, so nothing it does is evidence of
-      // the operator's attention.
+      // The kickoff is the one send excluded, because nobody performed an act:
+      // it is DorkOS-injected, so nothing it does is evidence of the operator's
+      // attention. That is the honesty seam this hook applies everywhere else.
+      //
+      // **A queued message cannot reach this function at all**, and that is
+      // worth saying out loud because it used to and had to be excluded by
+      // hand. The queue is the server's now (`persistent-session-runtime`):
+      // {@link enqueueContent} posts with `disposition: 'queue'` and the server
+      // dispatches when the running turn ends. So the only callers left are the
+      // operator's own — `handleSubmit`, `retryMessage` — plus the kickoff.
+      // Were a flush ever routed back through here, it would advance Today's
+      // order key at the instant an AGENT finished talking, which BC-16 forbids
+      // outright; the enqueue site records instead, at the keystroke
+      // (`useChatQueue.handleQueue`).
       if (!opts.kickoff) {
         useInteractionStore.getState().recordOpened('session', targetSessionId);
         if (cwd) useInteractionStore.getState().recordOpened('agent', cwd);

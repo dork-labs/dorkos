@@ -601,18 +601,21 @@
         "apps/client/src/layers/features/dashboard-sidebar/model/use-live-sessions.ts"
       ],
       "lastModified": ""
+    },
+    "send-lands-in-today": {
+      "specFile": "tests/dashboard-sidebar/send-lands-in-today.ts",
+      "feature": "dashboard-sidebar",
+      "description": "a conversation you only wrote in is still in Today after you walk away, Today is ordered by when you wrote, newest first",
+      "lastRun": "2026-08-11T16:10:25.567Z",
+      "lastStatus": "passed",
+      "runCount": 1,
+      "passCount": 1,
+      "failCount": 0,
+      "relatedCode": [],
+      "lastModified": ""
     }
   },
   "runHistory": [
-    {
-      "id": "2026-07-30T10-58-13",
-      "timestamp": "2026-07-30T10:58:13.929Z",
-      "total": 21,
-      "passed": 21,
-      "failed": 0,
-      "skipped": 0,
-      "duration": 41299
-    },
     {
       "id": "2026-07-30T10-59-39",
       "timestamp": "2026-07-30T10:59:39.001Z",
@@ -1503,6 +1506,15 @@
       "failed": 0,
       "skipped": 0,
       "duration": 137436
+    },
+    {
+      "id": "2026-08-11T16-10-25",
+      "timestamp": "2026-08-11T16:10:25.567Z",
+      "total": 2,
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0,
+      "duration": 98004
     }
   ]
 }
