@@ -389,6 +389,15 @@ Each contract is stated so a test can fail. Fixture names refer to the four jour
   only working session is the active conversation, the rollup is suppressed, because the anchor
   already shows it live and Now must not restate where the user already is. (Interpretation,
   reasoned from §4's rule that the anchor is deliberately not a Now item.)
+
+  > Amended 2026-08-10. "N working" counts human-origin sessions only. Automated sessions —
+  > task, channel, room, agent and external origins — never enter the count, per §18's table
+  > row ("Automated session activity → Nothing. No bold, no badge."). BC-9's own text carried
+  > no exclusion; this was settled as a ruling in review of P2.2, together with the identical
+  > defect in the session switcher's "N live" chip (BC-35). The carve-out in that same §18 row
+  > survives unchanged: a _blocked_ automated session still enters Now as an attention item —
+  > "Blocking states go to Now like the rest."
+
 - **BC-10 — Idle nudges are dismissible, permanently for that episode.** Dismissal is stored in
   an in-memory Zustand store keyed by episode id, **not** persisted config: an episode id does
   not survive a restart meaningfully, and persisting it would accumulate garbage in
