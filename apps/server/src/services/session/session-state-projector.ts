@@ -1679,6 +1679,34 @@ export function getOrCreateProjector(
 }
 
 /**
+ * The current status of every live projector — the standing counterpart to
+ * {@link onProjectorStatusChange}.
+ *
+ * That listener reports TRANSITIONS, which is all a client that was connected
+ * the whole time needs. A client that connects afterwards has witnessed none of
+ * them, so it needs the state those transitions left behind; this answers that,
+ * off the same registry and in the same {@link ProjectorStatusUpdate} shape, so
+ * a reader cannot tell a snapshot entry from a live one and no second
+ * projection can drift from the first.
+ *
+ * `retiredSessionId` is deliberately never set here: a retirement is an edge
+ * ("stop holding state under this id"), not a state, and re-announcing one to a
+ * client that never held the retired id says nothing.
+ *
+ * **In-memory and therefore bounded.** A projector lives until its session is
+ * evicted (claude-code: `SESSIONS.TIMEOUT_MS`, 30 minutes idle) or the server
+ * restarts, so this answers for the recent fleet, not for all history. That is
+ * the same bound the live fan-out has always had.
+ */
+export function listProjectorStatuses(): ProjectorStatusUpdate[] {
+  return [...projectors.entries()].map(([sessionId, projector]) => ({
+    sessionId,
+    cwd: projector.cwd,
+    status: projector.getStatus(),
+  }));
+}
+
+/**
  * Every session with a live projector, for the diagnostic read surface.
  *
  * The registry is a module-private `Map` and there has never been a way to ask

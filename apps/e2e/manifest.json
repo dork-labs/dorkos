@@ -112,10 +112,10 @@
       "specFile": "tests/chat-mock.spec.ts",
       "feature": "chat-mock.spec.ts",
       "description": "scenario endpoint rejects unknown scenario names, renders tool call card for tool-call scenario, renders streamed text response from simple-text scenario",
-      "lastRun": "2026-08-08T21:25:32.483Z",
+      "lastRun": "2026-08-11T04:00:18.244Z",
       "lastStatus": "passed",
-      "runCount": 18,
-      "passCount": 6,
+      "runCount": 19,
+      "passCount": 7,
       "failCount": 11,
       "relatedCode": [],
       "lastModified": ""
@@ -566,7 +566,19 @@
       "specFile": "tests/chat/session-read-state.ts",
       "feature": "chat",
       "description": "reading to the end on one device takes the rule down on the other, a device opening cold lands the rule where the other one stopped",
-      "lastRun": "2026-08-10T21:04:34.690Z",
+      "lastRun": "2026-08-11T04:00:18.244Z",
+      "lastStatus": "passed",
+      "runCount": 2,
+      "passCount": 2,
+      "failCount": 0,
+      "relatedCode": [],
+      "lastModified": ""
+    },
+    "now-survives-reload": {
+      "specFile": "tests/dashboard-sidebar/now-survives-reload.ts",
+      "feature": "dashboard-sidebar",
+      "description": "an errored session is still in Now after a reload, a session waiting on a permission answer is still in Now after a reload, the Ask DorkBot seed still names the errored session after a reload",
+      "lastRun": "2026-08-11T04:00:18.244Z",
       "lastStatus": "passed",
       "runCount": 1,
       "passCount": 1,
@@ -592,33 +604,6 @@
     }
   },
   "runHistory": [
-    {
-      "id": "2026-07-30T10-55-58",
-      "timestamp": "2026-07-30T10:55:58.276Z",
-      "total": 1,
-      "passed": 1,
-      "failed": 0,
-      "skipped": 0,
-      "duration": 19470
-    },
-    {
-      "id": "2026-07-30T10-56-22",
-      "timestamp": "2026-07-30T10:56:22.051Z",
-      "total": 1,
-      "passed": 1,
-      "failed": 0,
-      "skipped": 0,
-      "duration": 18133
-    },
-    {
-      "id": "2026-07-30T10-57-23",
-      "timestamp": "2026-07-30T10:57:23.581Z",
-      "total": 27,
-      "passed": 26,
-      "failed": 1,
-      "skipped": 0,
-      "duration": 50454
-    },
     {
       "id": "2026-07-30T10-58-13",
       "timestamp": "2026-07-30T10:58:13.929Z",
@@ -1491,6 +1476,33 @@
       "failed": 0,
       "skipped": 0,
       "duration": 132649
+    },
+    {
+      "id": "2026-08-11T02-19-04",
+      "timestamp": "2026-08-11T02:19:04.110Z",
+      "total": 2,
+      "passed": 0,
+      "failed": 0,
+      "skipped": 0,
+      "duration": 376162
+    },
+    {
+      "id": "2026-08-11T02-23-46",
+      "timestamp": "2026-08-11T02:23:46.120Z",
+      "total": 1,
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "duration": 137978
+    },
+    {
+      "id": "2026-08-11T04-00-18",
+      "timestamp": "2026-08-11T04:00:18.244Z",
+      "total": 28,
+      "passed": 28,
+      "failed": 0,
+      "skipped": 0,
+      "duration": 137436
     }
   ]
 }

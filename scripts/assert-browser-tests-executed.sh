@@ -137,17 +137,24 @@ FILTERED_SPECS=(
 # renamed — fails exactly as loudly as a spec that stops being collected, which
 # is the guarantee this gate exists for.
 #
-# And each must NOT be named `*.spec.ts`. That is not tidiness: `tests/chat/` is
-# a COCKPIT-leg directory, so the extension is the only thing keeping a
-# test-mode module off the leg that drives a real, billable runtime. A rename
-# would both put it there and double-count it here; refusing the name keeps the
-# two facts from drifting apart.
+# And each must NOT be named `*.spec.ts`. That is not tidiness: every directory
+# these modules live in is also a COCKPIT-leg directory, so the extension is the
+# only thing keeping a test-mode module off the leg that drives a real, billable
+# runtime. A rename would both put it there and double-count it here; refusing
+# the name keeps the two facts from drifting apart.
 #
 #   chat/session-read-state.ts — cross-device read state for chat sessions
 #     (DOR-1040). Registered into chat-mock.spec.ts, which is what puts it on
 #     that file's worker and out of reach of its own beforeEach resets.
+#   dashboard-sidebar/now-survives-reload.ts — the sidebar's Now zone surviving a
+#     page load (DOR-1136). Registered into chat-mock.spec.ts for both reasons at
+#     once: it drives the `error` and `demo-approval` scenarios, which exist only
+#     behind DORKOS_TEST_RUNTIME, and it needs a session to outlive that file's
+#     `POST /api/test/reset`. Its neighbours in tests/dashboard-sidebar/ are
+#     ordinary cockpit specs, which is exactly why the extension matters here.
 REGISTERED_MODULES=(
   'chat/session-read-state.ts'
+  'dashboard-sidebar/now-survives-reload.ts'
 )
 
 fail() {
@@ -188,9 +195,10 @@ Remove it from REGISTERED_MODULES in this script, or restore the file."
   case "$entry" in
   *.spec.ts) fail "a registered module is named like a spec file: $entry
 REGISTERED_MODULES is for modules a spec IMPORTS, which must not be collected as
-specs themselves — under tests/chat/ that is what keeps a test-mode suite off the
-billable cockpit leg. Either rename it back to a plain .ts module, or drop it
-from this list because it is now an ordinary spec." ;;
+specs themselves — in a cockpit-leg directory that is what keeps a test-mode
+suite off the leg that drives a real, billable runtime. Either rename it back to
+a plain .ts module, or drop it from this list because it is now an ordinary
+spec." ;;
   esac
 done
 

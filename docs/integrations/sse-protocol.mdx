@@ -290,6 +290,23 @@ This single persistent connection multiplexes all background events, distinguish
 
 These session-list events keep sidebars and dashboards live without polling `GET /api/sessions`.
 
+### What you get when you connect
+
+Shortly after connecting you receive one `session_status` event for every session the server
+currently sees as working, waiting on a person, or stopped with an error. Sessions that are idle
+send nothing, because there is nothing to say about them. Treat these as ordinary `session_status`
+events — same shape, same handler, no special ordering to wait for.
+
+This is what lets a page that opened five minutes late still know that a session is stuck: the
+transitions themselves happened while you were not connected, so only the state they left behind
+can tell you. The next real transition replaces whatever these told you.
+
+They are read from what the server is holding in memory right now, so they are a picture of the
+live fleet rather than of all history: a restart clears it, and Claude Code sessions are also
+forgotten after about half an hour of quiet. Nothing else expires on a timer today, so a session
+left waiting on a person — or one whose turn never finished — keeps being announced on every
+connect until it moves again. Reconnecting is not what clears it.
+
 <Callout type="info">
   The DorkOS client uses a single `GET /api/events` connection for all background state. The older
   per-resource SSE endpoints (`/api/relay/stream`, `/api/tunnel/stream`) still exist for backward

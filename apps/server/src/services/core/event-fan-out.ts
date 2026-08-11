@@ -55,6 +55,27 @@ export interface FanOutClient {
 }
 
 /**
+ * Render one event into both wire formats.
+ *
+ * Exported because a frame does not always go to everyone: a client that has
+ * just connected is sent its own connect preamble — the `connected` frame and
+ * the fleet's current lifecycles — which nobody else needs and which would be
+ * duplicate noise on every other open connection. Those writes go through the
+ * same {@link FanOutClient.send} port as a broadcast, so they need the same
+ * encoding, and there must be exactly one encoder or the two paths drift.
+ *
+ * @param eventName - The event name, e.g. `session_status`.
+ * @param data - The payload; serialized once per format.
+ */
+export function encodeBroadcast(eventName: string, data: unknown): EncodedBroadcast {
+  return {
+    event: eventName,
+    json: encodeStreamFrame({ event: eventName, data }),
+    sse: `event: ${eventName}\ndata: ${JSON.stringify(data)}\n\n`,
+  };
+}
+
+/**
  * A listener on the in-process half of the global event stream.
  *
  * Deliberately not exported: the one subscriber passes an inline arrow, and an
@@ -183,12 +204,7 @@ class EventFanOut {
         });
       }
     }
-    const json = JSON.stringify(data);
-    const broadcast: EncodedBroadcast = {
-      event: eventName,
-      json: encodeStreamFrame({ event: eventName, data }),
-      sse: `event: ${eventName}\ndata: ${json}\n\n`,
-    };
+    const broadcast = encodeBroadcast(eventName, data);
     for (const client of this.clients) {
       if (client.gone) {
         this.clients.delete(client);

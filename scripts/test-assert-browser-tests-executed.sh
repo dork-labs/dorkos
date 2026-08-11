@@ -24,21 +24,27 @@ fail=0
 # Build a synthetic workspace.
 #   $1 — root to build under
 # Creates two ordinary specs, the opt-in auth spec, the grep-filtered
-# @integration spec, and the registered module (a plain .ts a spec imports —
-# see REGISTERED_MODULES in the subject). The report has both ordinary specs and
-# the module running, the auth spec skipped, and the @integration spec absent
-# entirely (grepInvert drops it from collection, so it never reaches the
+# @integration spec, and EVERY registered module (plain .ts files a spec imports
+# — see REGISTERED_MODULES in the subject). The report has both ordinary specs
+# and the modules running, the auth spec skipped, and the @integration spec
+# absent entirely (grepInvert drops it from collection, so it never reaches the
 # report). That is the known-good run every case below bends exactly one thing
 # about.
+#
+# The module list here MIRRORS the subject's, and must: the subject refuses a
+# REGISTERED_MODULES entry that is not on disk, so a module added there and not
+# here fails every case at once for a reason that has nothing to do with the
+# thing each case is bending.
 make_workspace() {
   local root=$1
   mkdir -p "$root/apps/e2e/tests/settings" "$root/apps/e2e/tests/chat" \
-    "$root/apps/e2e/test-results"
+    "$root/apps/e2e/tests/dashboard-sidebar" "$root/apps/e2e/test-results"
   : >"$root/apps/e2e/tests/alpha.spec.ts"
   : >"$root/apps/e2e/tests/beta.spec.ts"
   : >"$root/apps/e2e/tests/settings/auth-login.spec.ts"
   : >"$root/apps/e2e/tests/chat/send-message.spec.ts"
   : >"$root/apps/e2e/tests/chat/session-read-state.ts"
+  : >"$root/apps/e2e/tests/dashboard-sidebar/now-survives-reload.ts"
   cat >"$root/apps/e2e/test-results/results.json" <<'JSON'
 {
   "suites": [
@@ -51,12 +57,15 @@ make_workspace() {
     { "title": "chat/session-read-state.ts", "file": "chat/session-read-state.ts",
       "specs": [ { "title": "the module's suite runs", "file": "chat/session-read-state.ts",
                    "tests": [ { "status": "expected" } ] } ] },
+    { "title": "dashboard-sidebar/now-survives-reload.ts", "file": "dashboard-sidebar/now-survives-reload.ts",
+      "specs": [ { "title": "the second module's suite runs", "file": "dashboard-sidebar/now-survives-reload.ts",
+                   "tests": [ { "status": "expected" } ] } ] },
     { "title": "settings", "file": "settings/auth-login.spec.ts", "specs": [],
       "suites": [ { "title": "Auth", "file": "settings/auth-login.spec.ts",
                     "specs": [ { "title": "auth runs", "file": "settings/auth-login.spec.ts",
                                  "tests": [ { "status": "skipped" } ] } ] } ] }
   ],
-  "stats": { "expected": 3, "unexpected": 0, "flaky": 0, "skipped": 1 }
+  "stats": { "expected": 4, "unexpected": 0, "flaky": 0, "skipped": 1 }
 }
 JSON
 }
@@ -95,7 +104,10 @@ trap 'rm -rf "$tmp"' EXIT
 # The known-good run. If this case ever fails, every refusal below is meaningless
 # because the script is rejecting healthy input.
 make_workspace "$tmp/healthy"
-check 'a healthy run passes' "$tmp/healthy" 0 '3 test(s) executed'
+# The count is the FIXTURE's, not the real suite's — two ordinary specs plus one
+# test per registered module — so it moves when make_workspace does and never
+# because somebody added a browser test.
+check 'a healthy run passes' "$tmp/healthy" 0 '4 test(s) executed'
 
 # A spec on disk that the run never collected — the testIgnore/testMatch hole.
 make_workspace "$tmp/uncollected"

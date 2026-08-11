@@ -14,8 +14,8 @@
  * @module routes/events-socket
  */
 import type { WebSocket } from 'ws';
-import { encodeStreamFrame } from '@dorkos/shared/stream-socket';
-import { eventFanOut, type FanOutClient } from '../services/core/event-fan-out.js';
+import { eventFanOut, encodeBroadcast, type FanOutClient } from '../services/core/event-fan-out.js';
+import { sendSessionStatusSnapshot } from '../services/session/session-list-broadcaster.js';
 import { DurableStreamSocket } from '../services/core/streams/stream-socket.js';
 import type { UpgradeDecision, UpgradeRoute } from '../services/core/streams/upgrade-router.js';
 
@@ -71,14 +71,16 @@ export const globalEventsRoute: UpgradeRoute = {
         // Heartbeats and close teardown come from the shared socket wrapper; the
         // fan-out only ever pushes, so nothing here drives a send loop.
         const socket = new DurableStreamSocket(ws);
-        const unsubscribe = eventFanOut.addClient(fanOutClient(ws));
+        const client = fanOutClient(ws);
+        const unsubscribe = eventFanOut.addClient(client);
         socket.signal.addEventListener('abort', unsubscribe, { once: true });
-        ws.send(
-          encodeStreamFrame({
-            event: 'connected',
-            data: { connectedAt: new Date().toISOString() },
-          })
-        );
+        // The connect preamble: `connected`, then the fleet's current
+        // lifecycles, so a window that opened after a session errored or
+        // blocked still learns about it (DOR-1136). Registration first and no
+        // await in between, so a live transition cannot land ahead of the
+        // snapshot it supersedes.
+        client.send(encodeBroadcast('connected', { connectedAt: new Date().toISOString() }));
+        sendSessionStatusSnapshot(client);
       },
     };
   },

@@ -6,6 +6,7 @@ import { BasePage } from '../pages/BasePage.js';
 import { ChatPage } from '../pages/ChatPage.js';
 import { caretOffset, composerText, expectComposerText } from '../pages/composer-probe.js';
 import { registerSessionReadStateTests } from './chat/session-read-state.js';
+import { registerNowSurvivesReloadTests } from './dashboard-sidebar/now-survives-reload.js';
 
 /**
  * Browser simulation tests using TestModeRuntime.
@@ -878,6 +879,12 @@ test.describe('the chat composer with formatting on', () => {
 // transcript to survive a minute of browser work has to be on this file's
 // worker rather than beside it. See the module header for the full argument.
 registerSessionReadStateTests({ apiUrl: API_URL, agentDir: () => agentDir });
+
+// The sidebar's Now zone surviving a page load (DOR-1136). Registered here for
+// the same reason as the suite above — it needs the `error` scenario, which only
+// this leg has — and because the defect is about what a FRESH page connection is
+// told, which no unit test can observe.
+registerNowSurvivesReloadTests({ apiUrl: API_URL, agentDir: () => agentDir });
 /**
  * Conversations in ⌘K (spec `sidebar-now-today-library` P3, §15).
  *

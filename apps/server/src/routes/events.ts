@@ -18,7 +18,8 @@ import type { Response } from 'express';
 import { Router } from 'express';
 import { SSE } from '../config/constants.js';
 import { initSSEStream } from '../services/core/streams/stream-adapter.js';
-import { eventFanOut, type FanOutClient } from '../services/core/event-fan-out.js';
+import { eventFanOut, encodeBroadcast, type FanOutClient } from '../services/core/event-fan-out.js';
+import { sendSessionStatusSnapshot } from '../services/session/session-list-broadcaster.js';
 
 /**
  * Adapt an Express response to the fan-out's {@link FanOutClient} port.
@@ -42,7 +43,10 @@ function sseFanOutClient(res: Response): FanOutClient {
 
 const router = Router();
 
-/** GET / — Open a unified SSE stream for all real-time events. */
+/**
+ * GET / — Open a unified SSE stream for all real-time events, opening with the
+ * `connected` frame and the fleet's current session lifecycles.
+ */
 router.get('/', (req, res) => {
   // Answer BEFORE sending SSE headers, so a server at capacity returns a
   // readable 503 rather than a 200 that immediately fails.
@@ -52,12 +56,12 @@ router.get('/', (req, res) => {
   }
 
   initSSEStream(res);
-  const unsubscribe = eventFanOut.addClient(sseFanOutClient(res));
-
-  // Send initial connected event
-  res.write(
-    `event: connected\ndata: ${JSON.stringify({ connectedAt: new Date().toISOString() })}\n\n`
-  );
+  const client = sseFanOutClient(res);
+  // Registration comes BEFORE the preamble below, and that ordering is the one
+  // that matters: it is what makes it impossible to MISS a transition that
+  // fires while the connect is being served. The reverse — snapshot, then
+  // register — has a window in which a transition reaches nobody.
+  const unsubscribe = eventFanOut.addClient(client);
 
   // Keepalive heartbeat to prevent proxies/browsers from closing the connection
   const heartbeat = setInterval(() => {
@@ -76,6 +80,14 @@ router.get('/', (req, res) => {
     clearInterval(heartbeat);
     unsubscribe();
   });
+
+  // The connect preamble: `connected`, then the fleet's current lifecycles.
+  //
+  // Written LAST so the teardown above is already armed: a preamble is the one
+  // place this handler writes more than a single frame, and it should not be
+  // the one stretch with no close handler behind it.
+  client.send(encodeBroadcast('connected', { connectedAt: new Date().toISOString() }));
+  sendSessionStatusSnapshot(client);
 });
 
 export default router;
