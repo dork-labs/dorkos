@@ -1,6 +1,7 @@
 import path from 'path';
 import { createApp, finalizeApp } from './app.js';
 import { ClaudeCodeRuntime } from './services/runtimes/claude-code/claude-code-runtime.js';
+import { shutdownSessionPumps } from './services/runtimes/claude-code/sessions/session-pump-registry.js';
 import {
   CodexRuntime,
   CodexThreadMap,
@@ -2878,6 +2879,10 @@ async function shutdownServices() {
   // Kill the managed OpenCode sidecar (SIGTERM, then SIGKILL after a grace
   // window) so shutdown never leaves an orphan. No-op when it never booted.
   await openCodeServerManager.shutdown();
+  // Same for any warm claude-code process: close stdin so it drains, then close
+  // the query so the CLI child actually dies. No-op when none was ever warmed,
+  // which is every server until the persistent path is opted into.
+  await shutdownSessionPumps();
   await tunnelManager.stop();
   getCloudLinkManager().stop();
   // Flush and tear down debug tracing last so late spans are written. No-op

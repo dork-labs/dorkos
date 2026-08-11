@@ -34,6 +34,7 @@ import type {
   SessionSettingsPort,
   McpAppServerConnection,
   ToolDecisionOptions,
+  SessionWarmth,
 } from '@dorkos/shared/agent-runtime';
 import type {
   SessionSnapshot,
@@ -52,6 +53,7 @@ import { withClaudeConfigDir } from './claude-config-env-lock.js';
 import { logger } from '../../../lib/logger.js';
 import { DEFAULT_CWD } from '../../../lib/resolve-root.js';
 import { TranscriptReader } from './sessions/transcript-reader.js';
+import { SessionPumpRegistry } from './sessions/session-pump-registry.js';
 import { CommandRegistryService } from './tooling/command-registry.js';
 import { executeSdkQuery } from './messaging/message-sender.js';
 import { watchSessionList } from './sessions/session-list-watcher.js';
@@ -84,6 +86,13 @@ export class ClaudeCodeRuntime implements AgentRuntime {
   private readonly cache: RuntimeCache;
   private readonly transcriptReader: TranscriptReader;
   private readonly lockManager = new SessionLockManager();
+  /**
+   * The warm SDK processes this runtime holds (spec `persistent-session-runtime`
+   * §4). Empty on every server today: nothing launches a pump until the
+   * per-session opt-in lands (task 3.8), so every session reads `cold` and every
+   * reap is a no-op — which is the truth, not a stub.
+   */
+  private readonly pumps = new SessionPumpRegistry();
   private commandRegistries = new Map<string, CommandRegistryService>();
   private static readonly MAX_COMMAND_REGISTRIES = 50;
 
@@ -658,6 +667,16 @@ export class ClaudeCodeRuntime implements AgentRuntime {
   /** @inheritdoc */
   async interruptQuery(sessionId: string): Promise<boolean> {
     return this.sessionStore.interruptQuery(sessionId);
+  }
+
+  /** @inheritdoc */
+  getSessionWarmth(sessionId: string): SessionWarmth {
+    return this.pumps.warmth(sessionId);
+  }
+
+  /** @inheritdoc */
+  async reapSession(sessionId: string): Promise<void> {
+    await this.pumps.reap(sessionId);
   }
 
   // ---------------------------------------------------------------------------
