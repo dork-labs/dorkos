@@ -52,11 +52,10 @@ import { runtimeRegistry } from '../core/runtime-registry.js';
 import { DEFAULT_CWD } from '../../lib/resolve-root.js';
 import { logger } from '../../lib/logger.js';
 import {
+  dispatchMessage,
   getOrCreateProjector,
   peekProjector,
   persistenceModeFor,
-  rekeyProjector,
-  triggerTurn,
 } from '../session/index.js';
 
 /**
@@ -155,7 +154,7 @@ export async function resumeAfterMcpSignin(event: McpSigninConnectedEvent): Prom
     const cwd = event.originCwd ?? peekProjector(sessionId)?.cwd ?? DEFAULT_CWD;
     // The live session map empties on restart and on eviction, while a sign-in
     // outlives both — a person can take minutes in a browser. A stored session
-    // cold-starts through `triggerTurn`; one that exists nowhere is gone for
+    // cold-starts through the dispatcher; one that exists nowhere is gone for
     // good and there is nothing to resume.
     if (!runtime.hasSession(sessionId)) {
       if (!(await runtime.getSession(cwd, sessionId))) {
@@ -182,22 +181,13 @@ export async function resumeAfterMcpSignin(event: McpSigninConnectedEvent): Prom
     });
     projector.cwd = cwd;
 
-    const result = await triggerTurn({
+    const result = await dispatchMessage({
       sessionId,
       clientId: `mcp-signin-${event.flowId}`,
       content,
       cwd,
       projector,
-      deps: {
-        acquireLock: (sid, cid, lifecycle, token) =>
-          runtime.acquireLock(sid, cid, lifecycle, token),
-        releaseLock: (sid, cid, token) => runtime.releaseLock(sid, cid, token),
-        sendMessage: (sid, text, opts) => runtime.sendMessage(sid, text, opts),
-        interruptQuery: (sid) => runtime.interruptQuery(sid),
-        getInternalSessionId: (sid) => runtime.getInternalSessionId(sid),
-        rekeyProjector: (oldId, newId) => rekeyProjector(oldId, newId),
-        getCapabilities: () => runtime.getCapabilities(),
-      },
+      runtime,
       onError: (err) => {
         logger.warn('[mcp-signin-resume] detached turn error', {
           sessionId,

@@ -297,7 +297,7 @@ describe('resumeAfterMcpSignin', () => {
     ingest?: (event: unknown) => void;
   }) {
     vi.resetModules();
-    const triggerTurn = vi.fn().mockResolvedValue({ accepted: options.accepted });
+    const dispatchMessage = vi.fn().mockResolvedValue({ accepted: options.accepted });
     // The logger is how "declined quietly" is told apart from "blew up and was
     // swallowed": this module never rejects, so without watching which LEVEL it
     // logged at, a throw on the busy path is indistinguishable from the intended
@@ -321,14 +321,13 @@ describe('resumeAfterMcpSignin', () => {
     }));
     const getOrCreateProjector = vi.fn((_id: string, _cwd?: string) => ({ cwd: SESSION_CWD }));
     vi.doMock('../../session/index.js', () => ({
-      triggerTurn,
+      dispatchMessage,
       getOrCreateProjector,
       peekProjector: () => ({ cwd: SESSION_CWD, ingest: options.ingest ?? (() => {}) }),
       persistenceModeFor: () => 'record',
-      rekeyProjector: vi.fn(),
     }));
     const { resumeAfterMcpSignin } = await import('../mcp-signin-resume.js');
-    return { resumeAfterMcpSignin, triggerTurn, getOrCreateProjector, runtime, warn, info };
+    return { resumeAfterMcpSignin, dispatchMessage, getOrCreateProjector, runtime, warn, info };
   }
 
   afterEach(() => {
@@ -340,7 +339,7 @@ describe('resumeAfterMcpSignin', () => {
 
   it('settles the session’s card into a receipt, then resumes the agent', async () => {
     const ingested: unknown[] = [];
-    const { resumeAfterMcpSignin, triggerTurn } = await loadWithMocks({
+    const { resumeAfterMcpSignin, dispatchMessage } = await loadWithMocks({
       accepted: true,
       ingest: (event) => ingested.push(event),
     });
@@ -350,8 +349,8 @@ describe('resumeAfterMcpSignin', () => {
     expect(ingested).toEqual([
       { type: 'mcp_signin_resolved', flowId: 'flow-1', outcome: 'connected', toolCount: 7 },
     ]);
-    expect(triggerTurn).toHaveBeenCalledTimes(1);
-    const content = triggerTurn.mock.calls[0][0].content as string;
+    expect(dispatchMessage).toHaveBeenCalledTimes(1);
+    const content = dispatchMessage.mock.calls[0][0].content as string;
     expect(content).toContain('Continue the task');
     expect(content).toContain('Do not describe or narrate');
     expect(content).toContain(SERVER);
@@ -363,7 +362,7 @@ describe('resumeAfterMcpSignin', () => {
     // checkout, silently — which is the same bug `/ui-action` threads its request
     // cwd to avoid. The mocks deliberately report a directory that is NOT the
     // default, so a dropped hop cannot pass by coincidence.
-    const { resumeAfterMcpSignin, triggerTurn, getOrCreateProjector, runtime } =
+    const { resumeAfterMcpSignin, dispatchMessage, getOrCreateProjector, runtime } =
       await loadWithMocks({ accepted: true, hasSession: false });
 
     await resumeAfterMcpSignin(EVENT);
@@ -373,20 +372,20 @@ describe('resumeAfterMcpSignin', () => {
     // …the projector the turn is flushed through…
     expect(getOrCreateProjector.mock.calls[0][1]).toBe(SESSION_CWD);
     // …and the trigger itself.
-    expect(triggerTurn.mock.calls[0][0].cwd).toBe(SESSION_CWD);
+    expect(dispatchMessage.mock.calls[0][0].cwd).toBe(SESSION_CWD);
   });
 
   it('settles quietly when the session is locked — one attempt, no fault', async () => {
     // A lock means a turn is already running, usually the agent doing the very
     // work this would ask for. The server's tools inject on its next turn anyway,
     // so this is a note, not a failure — and it is tried exactly once.
-    const { resumeAfterMcpSignin, triggerTurn, warn, info } = await loadWithMocks({
+    const { resumeAfterMcpSignin, dispatchMessage, warn, info } = await loadWithMocks({
       accepted: false,
     });
 
     await expect(resumeAfterMcpSignin(EVENT)).resolves.toBeUndefined();
 
-    expect(triggerTurn).toHaveBeenCalledTimes(1);
+    expect(dispatchMessage).toHaveBeenCalledTimes(1);
     // Declined, not faulted: this module swallows everything it catches, so the
     // LEVEL is the only thing that tells the two apart.
     expect(warn).not.toHaveBeenCalled();
@@ -398,10 +397,10 @@ describe('resumeAfterMcpSignin', () => {
     // The counterpart that makes the assertion above mean something: a path that
     // really did break must NOT read the same as a busy session. Both are
     // swallowed — only the level distinguishes them.
-    const { resumeAfterMcpSignin, triggerTurn, warn, info } = await loadWithMocks({
+    const { resumeAfterMcpSignin, dispatchMessage, warn, info } = await loadWithMocks({
       accepted: true,
     });
-    triggerTurn.mockRejectedValue(new Error('boom'));
+    dispatchMessage.mockRejectedValue(new Error('boom'));
 
     await expect(resumeAfterMcpSignin(EVENT)).resolves.toBeUndefined();
 
@@ -417,7 +416,7 @@ describe('resumeAfterMcpSignin', () => {
     // wrong checkout, silently, for every session rooted anywhere else (DOR-981).
     vi.resetModules();
     const FLOW_CWD = '/projects/recorded-at-signin';
-    const triggerTurn = vi.fn().mockResolvedValue({ accepted: true });
+    const dispatchMessage = vi.fn().mockResolvedValue({ accepted: true });
     const getSession = vi.fn(async () => ({ id: SESSION_ID }));
     vi.doMock('../../../lib/logger.js', () => ({ logger: { warn: vi.fn(), info: vi.fn() } }));
     vi.doMock('../../core/runtime-registry.js', () => ({
@@ -436,12 +435,11 @@ describe('resumeAfterMcpSignin', () => {
     }));
     const getOrCreateProjector = vi.fn((_id: string, _cwd?: string) => ({ cwd: '' }));
     vi.doMock('../../session/index.js', () => ({
-      triggerTurn,
+      dispatchMessage,
       getOrCreateProjector,
       // No projector at all — the restart took it with the rest of the map.
       peekProjector: () => undefined,
       persistenceModeFor: () => 'record',
-      rekeyProjector: vi.fn(),
     }));
     const { resumeAfterMcpSignin } = await import('../mcp-signin-resume.js');
 
@@ -450,12 +448,12 @@ describe('resumeAfterMcpSignin', () => {
     // Every hop that takes a cwd gets the flow's, not `DEFAULT_CWD`.
     expect(getSession).toHaveBeenCalledWith(FLOW_CWD, SESSION_ID);
     expect(getOrCreateProjector.mock.calls[0]![1]).toBe(FLOW_CWD);
-    expect(triggerTurn.mock.calls[0]![0].cwd).toBe(FLOW_CWD);
+    expect(dispatchMessage.mock.calls[0]![0].cwd).toBe(FLOW_CWD);
   });
 
   it('does not resume a session that no longer exists anywhere', async () => {
     vi.resetModules();
-    const triggerTurn = vi.fn().mockResolvedValue({ accepted: true });
+    const dispatchMessage = vi.fn().mockResolvedValue({ accepted: true });
     vi.doMock('../../core/runtime-registry.js', () => ({
       runtimeRegistry: {
         resolveForSession: async () => ({
@@ -466,16 +464,15 @@ describe('resumeAfterMcpSignin', () => {
       },
     }));
     vi.doMock('../../session/index.js', () => ({
-      triggerTurn,
+      dispatchMessage,
       getOrCreateProjector: () => ({ cwd: '/projects/test' }),
       peekProjector: () => undefined,
       persistenceModeFor: () => 'record',
-      rekeyProjector: vi.fn(),
     }));
     const { resumeAfterMcpSignin } = await import('../mcp-signin-resume.js');
 
     await expect(resumeAfterMcpSignin(EVENT)).resolves.toBeUndefined();
-    expect(triggerTurn).not.toHaveBeenCalled();
+    expect(dispatchMessage).not.toHaveBeenCalled();
   });
 
   it('never rejects when the runtime itself throws', async () => {
@@ -488,11 +485,10 @@ describe('resumeAfterMcpSignin', () => {
       },
     }));
     vi.doMock('../../session/index.js', () => ({
-      triggerTurn: vi.fn(),
+      dispatchMessage: vi.fn(),
       getOrCreateProjector: () => ({ cwd: '/projects/test' }),
       peekProjector: () => undefined,
       persistenceModeFor: () => 'record',
-      rekeyProjector: vi.fn(),
     }));
     const { resumeAfterMcpSignin } = await import('../mcp-signin-resume.js');
 

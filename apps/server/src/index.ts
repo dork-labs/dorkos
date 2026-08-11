@@ -266,9 +266,12 @@ import {
 } from './services/observability/index.js';
 import { sessionListBroadcaster } from './services/session/session-list-broadcaster.js';
 import {
+  MessageQueueStore,
   SessionEventStore,
+  setMessageQueueStore,
   setSessionEventStore,
   onProjectorRekey,
+  sweepOrphanedMessageQueues,
 } from './services/session/index.js';
 import { aggregateSessionList } from './services/session/aggregate-session-list.js';
 import { env } from './env.js';
@@ -455,6 +458,11 @@ async function start() {
   // server restart (DOR-189). Wired before any runtime registers so the first
   // turn/subscribe of a log-backed session persists and hydrates.
   setSessionEventStore(new SessionEventStore(db));
+
+  // The durable message queue, wired on the same beat and for the same reason:
+  // a message somebody typed and was told was accepted must outlive the request
+  // that accepted it, a second window, a failed turn and a restart.
+  setMessageQueueStore(new MessageQueueStore(db));
 
   // Inject the DB handle into the runtime registry so session-scoped resolution
   // (resolveForSession / persistSessionRuntime / getSessionRuntimeType) can read
@@ -2761,12 +2769,13 @@ async function start() {
     logger.info('[Tasks] Scheduler started');
   }
 
-  // Run session health check periodically — only ClaudeCodeRuntime needs this.
-  if (claudeRuntime) {
-    healthCheckInterval = setInterval(() => {
-      claudeRuntime!.checkSessionHealth();
-    }, INTERVALS.HEALTH_CHECK_MS);
-  }
+  // Run session health check periodically. Only ClaudeCodeRuntime needs the
+  // eviction half, but the queue sweep is runtime-neutral and rides the same
+  // cadence rather than adding a second timer, so it runs either way.
+  healthCheckInterval = setInterval(() => {
+    claudeRuntime?.checkSessionHealth();
+    sweepOrphanedMessageQueues();
+  }, INTERVALS.HEALTH_CHECK_MS);
 
   // Start ngrok tunnel if enabled. The exposure guard (task 1.3) also gates the
   // boot-time autostart: skip (and log) rather than expose without a login.

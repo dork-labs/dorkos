@@ -87,7 +87,9 @@ describe('createEmbeddedTurnTrigger', () => {
       content: 'hi',
     });
 
-    expect(result).toEqual({ accepted: false });
+    // `toMatchObject`, not `toEqual`: a refusal now also carries the delivery
+    // outcome the dispatcher minted for it. The refusal itself is unchanged.
+    expect(result).toMatchObject({ accepted: false });
     expect(runtime.sendMessage).not.toHaveBeenCalled();
     // The projector exists (created before the lock check) but ingested nothing.
     expect(peekProjector(id)?.getCursor()).toBe(0);
@@ -108,7 +110,7 @@ describe('createEmbeddedTurnTrigger', () => {
       content: 'hi',
     });
 
-    expect(result).toEqual({ accepted: true, canonicalId: 'sdk-canonical-id' });
+    expect(result).toMatchObject({ accepted: true, canonicalId: 'sdk-canonical-id' });
   });
 
   it('stamps the caller cwd authoritatively over an earlier subscribe-path stamp', async () => {

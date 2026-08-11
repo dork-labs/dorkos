@@ -8,7 +8,7 @@
  * (which resolves a runtime interaction the agent is already blocked on), a
  * widget action starts a FRESH turn — so this mirrors `/messages` exactly: it
  * validates, formats a runtime-neutral `<ui_action>` block as the user message,
- * and hands it to `triggerTurn` (trigger-only, 202; the turn streams solely over
+ * and hands it to the message dispatcher (trigger-only, 202; the turn streams over
  * `/events`, ADR-0264). Like `/messages`, a session absent from the live map
  * but present in runtime storage cold-starts (the map empties on restart and
  * eviction — DOR-302); unlike `/messages`, this route never CREATES sessions,
@@ -26,11 +26,10 @@ import { parseSessionId, sendError } from '../lib/route-utils.js';
 import { DEFAULT_CWD } from '../lib/resolve-root.js';
 import { logger } from '../lib/logger.js';
 import {
+  dispatchMessage,
   getOrCreateProjector,
   peekProjector,
   persistenceModeFor,
-  rekeyProjector,
-  triggerTurn,
 } from '../services/session/index.js';
 
 /**
@@ -56,7 +55,7 @@ export async function sessionUiActionHandler(req: Request, res: Response): Promi
   const runtime = await runtimeRegistry.resolveForSession(sessionId);
   // The live session map is process-local: it empties on a server restart and
   // on session eviction, while the widget the user is clicking outlives both
-  // (DOR-302). Mirror /messages: `triggerTurn` → `sendMessage` cold-starts a
+  // (DOR-302). Mirror /messages: the dispatcher → `sendMessage` cold-starts a
   // map-less session from runtime storage, so a stored session proceeds. Only
   // a session that exists NOWHERE — no live entry AND no stored session — is a
   // client bug worth a 404 (a widget can only exist because a session rendered
@@ -87,21 +86,13 @@ export async function sessionUiActionHandler(req: Request, res: Response): Promi
   });
   if (cwd !== undefined) projector.cwd = cwd;
 
-  const result = await triggerTurn({
+  const result = await dispatchMessage({
     sessionId,
     clientId,
     content,
     cwd,
     projector,
-    deps: {
-      acquireLock: (sid, cid, lifecycle, token) => runtime.acquireLock(sid, cid, lifecycle, token),
-      releaseLock: (sid, cid, token) => runtime.releaseLock(sid, cid, token),
-      sendMessage: (sid, text, opts) => runtime.sendMessage(sid, text, opts),
-      interruptQuery: (sid) => runtime.interruptQuery(sid),
-      getInternalSessionId: (sid) => runtime.getInternalSessionId(sid),
-      rekeyProjector: (oldId, newId) => rekeyProjector(oldId, newId),
-      getCapabilities: () => runtime.getCapabilities(),
-    },
+    runtime,
     onError: (err) => {
       logger.warn('[POST /ui-action] detached turn error', {
         sessionId,

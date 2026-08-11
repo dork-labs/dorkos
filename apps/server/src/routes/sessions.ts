@@ -40,8 +40,7 @@ import {
   countSessionsPerDay,
   getOrCreateProjector,
   persistenceModeFor,
-  rekeyProjector,
-  triggerTurn,
+  dispatchMessage,
   applyTaskOriginOverlay,
   applyRoomOriginOverlay,
   overlayStoredSettings,
@@ -691,17 +690,17 @@ router.post('/:id/messages', async (req, res) => {
   // (stable across the new-session remap, since the projector registry and
   // `/events` both resolve by it); the canonical id is captured for the body.
   //
-  // **The scope wraps `triggerTurn`, and that placement is the whole phase.**
-  // `triggerTurn` CONSTRUCTS the detached generator chain and then awaits only
+  // **The scope wraps `dispatchMessage`, and that placement is the whole phase.**
+  // The dispatcher CONSTRUCTS the detached generator chain and then awaits only
   // the canonical-id race, so entering the dispatch here binds the context to
   // the chain itself — an async generator created inside an ALS scope keeps
   // that scope for its whole life. The turn therefore stays correlated long
   // after this `await` resolves and the 202 has been sent (ADR-0264's `void
-  // turn;`). A scope placed around the awaited race INSIDE `triggerTurn` would
+  // turn;`). A scope placed around the awaited race INSIDE the dispatcher would
   // expire at the 202 and correlate nothing; see
   // `__tests__/sessions-dispatch-correlation.test.ts`, which fails if it moves.
   const result = await runInDispatch({ dispatchId, origin: 'session' }, () =>
-    triggerTurn({
+    dispatchMessage({
       sessionId,
       clientId,
       content,
@@ -712,16 +711,7 @@ router.post('/:id/messages', async (req, res) => {
       // byte for byte, and the seed is stripped from every rendered transcript.
       ...(seedContext ? { seedContext } : {}),
       projector,
-      deps: {
-        acquireLock: (sid, cid, lifecycle, token) =>
-          runtime.acquireLock(sid, cid, lifecycle, token),
-        releaseLock: (sid, cid, token) => runtime.releaseLock(sid, cid, token),
-        sendMessage: (sid, text, opts) => runtime.sendMessage(sid, text, opts),
-        interruptQuery: (sid) => runtime.interruptQuery(sid),
-        getInternalSessionId: (sid) => runtime.getInternalSessionId(sid),
-        rekeyProjector: (oldId, newId) => rekeyProjector(oldId, newId),
-        getCapabilities: () => runtime.getCapabilities(),
-      },
+      runtime,
       onError: (err) => {
         logger.warn('[POST /messages] detached turn error', {
           sessionId,
@@ -876,7 +866,7 @@ router.post('/:id/submit-answers', async (req, res) => {
 // POST /api/sessions/:id/ui-action — Generative-UI widget interactivity channel
 // (spec gen-ui-tier1 §3). The handler lives in `session-ui-action-handler.ts`
 // so this route file stays under the file-size rule, mirroring `/:id/events`.
-// Semantics: mirrors /messages (fresh turn via triggerTurn, 202, turn streams
+// Semantics: mirrors /messages (fresh turn via the dispatcher, 202, turn streams
 // over /events; busy → 409 SESSION_LOCKED) — see the handler's module doc.
 router.post('/:id/ui-action', sessionUiActionHandler);
 

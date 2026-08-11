@@ -357,7 +357,48 @@ export class SessionListBroadcaster {
     // The SSE event name is the schema-constrained discriminator, so there is no
     // stringly-typed drift: clients filter on the same `type` values.
     const outgoing = this.withStoredSettings(validated);
+    if (outgoing.type === 'session_removed') notifySessionRemoved(outgoing.sessionId);
     eventFanOut.broadcast(outgoing.type, outgoing);
+  }
+}
+
+/** A subscriber notified when a runtime reports a session gone for good. */
+type SessionRemovedListener = (sessionId: string) => void;
+
+/** Observers of `session_removed`; see {@link onSessionRemoved}. */
+const sessionRemovedListeners = new Set<SessionRemovedListener>();
+
+/**
+ * Subscribe to a session VANISHING — a runtime reporting that the conversation
+ * no longer exists at all.
+ *
+ * This is the orphaning signal, and it is deliberately not the same thing as
+ * eviction. A session evicted from memory is still perfectly real and comes
+ * back the moment somebody opens it; a removed one is gone. Server-side state
+ * that outlives a session — the durable message queue is the first — reclaims
+ * itself from here.
+ *
+ * @param listener - Invoked with the id of each removed session.
+ * @returns An unsubscribe function.
+ */
+export function onSessionRemoved(listener: SessionRemovedListener): () => void {
+  sessionRemovedListeners.add(listener);
+  return () => {
+    sessionRemovedListeners.delete(listener);
+  };
+}
+
+/** Tell every removal observer, without letting one of them break the fan-out. */
+function notifySessionRemoved(sessionId: string): void {
+  for (const listener of sessionRemovedListeners) {
+    try {
+      listener(sessionId);
+    } catch (err) {
+      logger.warn('[SessionListBroadcaster] a session-removed observer threw', {
+        sessionId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
   }
 }
 

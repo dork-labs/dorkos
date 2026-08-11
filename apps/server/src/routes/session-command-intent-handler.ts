@@ -11,7 +11,7 @@
  * `capabilities.commandIntents[intent].supported`: an unsupported runtime is an
  * HONEST `422` (the adapter is NEVER called), never a silent no-op. When
  * supported, it drives `runtime.executeCommandIntent` through the durable
- * projector + session lock via {@link triggerCommandIntent} (trigger-only, `202`;
+ * projector + session lock via the message dispatcher (trigger-only, `202`;
  * the compaction is delivered solely over `/events`, e.g. a `compact_boundary`).
  * A lock held by another turn `409`s SESSION_LOCKED, exactly like `/messages`.
  * The session must already exist (a compact operates on live context): mirroring
@@ -29,10 +29,10 @@ import { parseSessionId, sendError } from '../lib/route-utils.js';
 import { DEFAULT_CWD } from '../lib/resolve-root.js';
 import { logger } from '../lib/logger.js';
 import {
+  dispatchCommandIntent,
   getOrCreateProjector,
   persistenceModeFor,
   peekProjector,
-  triggerCommandIntent,
 } from '../services/session/index.js';
 
 /**
@@ -135,20 +135,14 @@ export async function sessionCommandIntentHandler(req: Request, res: Response): 
     persist: persistenceModeFor(caps),
   });
 
-  const result = await triggerCommandIntent({
+  const result = await dispatchCommandIntent({
     sessionId,
     clientId,
     intent,
     cwd,
     instructions,
     projector,
-    deps: {
-      acquireLock: (sid, cid, lifecycle, token) => runtime.acquireLock(sid, cid, lifecycle, token),
-      releaseLock: (sid, cid, token) => runtime.releaseLock(sid, cid, token),
-      executeCommandIntent: (sid, i, o) => runtime.executeCommandIntent(sid, i, o),
-      interruptQuery: (sid) => runtime.interruptQuery(sid),
-      getInternalSessionId: (sid) => runtime.getInternalSessionId(sid),
-    },
+    runtime,
     onError: (err) => {
       logger.warn('[POST /command-intents] detached run error', {
         sessionId,
