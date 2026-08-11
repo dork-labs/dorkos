@@ -420,21 +420,86 @@ delegating session — and the metadata's own `parentSessionId`. Not reachable a
 failure mode if it ever were is total: the turn would route down the child path, where its text is
 dropped, its completion is misread as progress, and its `session.idle` never ends it.
 
+### Live verification, 2026-08-11 (DOR-1125) — everything above is now observed, not inferred
+
+The mapping was originally scripted from the compiled binary because no provider was authenticated
+here. It has since been driven end to end against a **local Ollama** model (the provider injected
+into the sidecar through `OPENCODE_CONFIG_CONTENT`; parent `qwen2.5-coder:7b`, subagent
+`gemma4:latest`), capturing the raw `/global/event` stream through a full delegation, a delegation
+whose child ran its own tools, and a user stop. Three captures are committed verbatim as
+`__tests__/fixtures/live-*.jsonl` and replayed through the real mapper by
+`__tests__/live-capture-replay.test.ts`.
+
+Every wire shape claimed above was confirmed: the `task` part's `pending → running → completed/error`
+progression, `state.metadata.{parentSessionId, sessionId, model}`, the child session created with
+`parentID`, `Tool execution aborted` alongside `metadata.interrupted: true` on a stop, and the child's
+own tool parts arriving in its own session. Two details the binary read did not predict:
+
+- **The model may fill the optional `command` parameter with junk.** One capture carries
+  `input: {command: "N/A", description, prompt, subagent_type}`. Harmless — the mapper reads only
+  `description` — but do not assume the input bag holds exactly the documented keys.
+- **A completed part gains `metadata.truncated`** (`false` in the capture). Undocumented, unread.
+
 ### Known limits (honest, and none of them regressions)
 
-- **Progress beats can be missed.** The child session id is learned by the mapper, which sees events
-  only after the demux admits them, so a child event that arrives before the mapper drains the
-  metadata snapshot is dropped. Start and terminal are unaffected — they ride the parent session,
-  which is always admitted.
+- **Progress beats can be missed — but the window is narrower than it looks.** The child session id is
+  learned by the mapper, which sees events only after the demux admits them. In all three captures the
+  metadata is already on the FIRST `running` snapshot — the same snapshot that opens the run — so the
+  child is admitted from the moment it exists and no beat was actually lost. The gap is real but
+  requires the child to act before its parent's `running` snapshot lands. Start and terminal are
+  unaffected: they ride the parent session, which is always admitted.
 - **No `summary` on the terminal.** The task tool's output is the `<task …><task_result>` envelope,
   not a short summary; forwarding it verbatim would put a wall of text where claude-code puts a line.
 - **A subagent's own permission prompts are still invisible.** They are raised against the child
   session, and the child path drops them. Pre-existing (the child session was dropped entirely
   before this change); surfacing them is a separate decision about whose card owns the prompt.
-- **Not observed end-to-end against a real model.** No provider is authenticated on this machine
-  (`~/.local/share/opencode/auth.json` is absent) and the local sidecar store had no historical
-  subagent run to replay, so the mapping is scripted from the implementation above rather than from a
-  captured wire log. Everything degrades to "no subagent shown", never to a wrong turn: if the
-  metadata key ever moves, no child is admitted and only start/done are reported; if the `task` part
-  shape moves, the tool card still renders as before; and a `sessionId` naming the parent — the one
-  shape that COULD have broken a turn — is refused rather than admitted.
+
+### A stopped subagent's terminal arrives AFTER the turn's (DOR-1146)
+
+The stop ordering, captured twice and identical both times (`fixtures/live-cancel.jsonl`):
+
+1. child `session.error` — `MessageAbortedError`
+2. child `session.idle` — dropped by the child path, as designed
+3. parent `session.error` — `MessageAbortedError`, suppressed (an abort is not a failure)
+4. **parent `session.idle` → the turn's terminal `done`**
+5. parent `task` part: `status: "error"`, `error: "Tool execution aborted"`,
+   `metadata.interrupted: true` — the ONLY event carrying the subagent's outcome
+
+`mapOpenCodeTurn` returns at step 4, so step 5 was never mapped and no `background_task_done` was
+ever emitted. The session normalizer's end-of-stream sweep then retired the child as `untracked`
+(DOR-1108) — "DorkOS lost sight of this" — when DorkOS had in fact watched the user stop it. The
+subagent card drew the muted dash and its "we don't know how this ended" explainer instead of the
+plain stopped ending.
+
+**The fix** (`closeOpenSubagents`, `subagent-mapper.ts`, called from `mapOpenCodeTurn`): on the
+parent's `session.idle`, and only there,
+every `subagentRuns` entry still open is closed with `background_task_done{status:'stopped'}`, yielded
+BEFORE the terminal `done` so it settles inside the turn window rather than trailing it.
+
+Three things make that a claim rather than a guess:
+
+- `session.idle` is published only once upstream's runner has drained, `failUnsettledTools` included,
+  and a `task` call blocks its parent's tool loop — so a parent cannot reach idle while a subagent is
+  genuinely working. A run still open here was torn down; its terminal snapshot merely raced or was
+  lost. The happy-path capture proves the other half: there the `task` part reaches `completed` long
+  before the parent's idle, so this closes nothing.
+- Every other way a turn ends — a thrown stream error, an AbortError, a stream that simply stops —
+  means DorkOS stopped WATCHING, not that the turn finished. Nothing is synthesized on those paths,
+  and the normalizer's sweep still gets to say `untracked`, which remains the honest answer there.
+- `background_task_*` is not model speech, so it could not have reopened the turn either way
+  (`TURN_REOPENING_STREAM_EVENT_TYPES`) — but emitting before the terminal means the question never
+  arises.
+
+`durationMs` is deliberately omitted from a synthesized terminal: the wire never said when the child
+stopped, and the normalizer drops the field anyway.
+
+**Why the old test missed it.** The synthetic cancel test fed the aborted `task` part BEFORE the
+parent's `session.idle` — an ordering the real sidecar never produces. Hand-written event orderings
+are exactly what the committed captures now exist to stop.
+
+### Degradation, if any of this shifts underneath us
+
+Everything degrades to "no subagent shown", never to a wrong turn: if the metadata key moves, no child
+is admitted and only start/done are reported; if the `task` part shape moves, the tool card still
+renders as before; and a `sessionId` naming the parent — the one shape that COULD have broken a turn —
+is refused rather than admitted.

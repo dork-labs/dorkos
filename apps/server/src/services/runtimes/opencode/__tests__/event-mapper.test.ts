@@ -1060,4 +1060,107 @@ describe('mapOpenCodeTurn', () => {
     const events = await drain(aborting());
     expect(events.map((e) => e.type)).toEqual(['done']);
   });
+
+  /**
+   * The live wire delivers an aborted `task` part AFTER the parent's
+   * `session.idle` — past the terminal the mapper returns on — so a stopped
+   * subagent's only outcome event is never read (DOR-1146). The end-to-end
+   * proof is `live-capture-replay.test.ts`, which replays the captured stop;
+   * these pin the rule that fix turns on.
+   */
+  describe('closing subagents the wire left open', () => {
+    const input = taskToolInput();
+
+    /** A turn that opens `count` subagents and then hits the given tail. */
+    function delegating(count: number, ...tail: OpenCodeWireEvent[]): OpenCodeWireEvent[] {
+      const opens = Array.from({ length: count }, (_, index) =>
+        partUpdated(
+          taskToolPart(
+            OC,
+            `call_task_${index}`,
+            toolStateRunning(input),
+            taskToolMetadata(`ses_child000${index}`)
+          )
+        )
+      );
+      return [...opens, ...tail];
+    }
+
+    it('reports a subagent still open at session.idle as stopped, before the done', async () => {
+      const events = await drain(delegating(1, sessionIdle(OC)));
+      expect(events.map((e) => e.type)).toEqual([
+        'tool_call_start',
+        'background_task_started',
+        'background_task_done',
+        'done',
+      ]);
+      expect(events[2]!.data).toEqual({ taskId: 'call_task_0', status: 'stopped' });
+      expect(StreamEventSchema.safeParse(events[2]).success).toBe(true);
+    });
+
+    it('closes every open subagent, carrying the tool count each one reported', async () => {
+      const ctx = makeContext();
+      const events = await drain(
+        [
+          ...delegating(2),
+          partUpdated(toolPart('ses_child0001', 'child_1', 'grep', toolStateRunning({}))),
+          sessionIdle(OC),
+        ],
+        ctx
+      );
+      const closed = events.filter((e) => e.type === 'background_task_done').map((e) => e.data);
+      expect(closed).toEqual([
+        { taskId: 'call_task_0', status: 'stopped' },
+        { taskId: 'call_task_1', status: 'stopped', toolUses: 1 },
+      ]);
+    });
+
+    it('leaves a subagent that already terminated alone', async () => {
+      const events = await drain(opencodeSubagentTurn(OC));
+      expect(events.filter((e) => e.type === 'background_task_done')).toHaveLength(1);
+      expect(events.find((e) => e.type === 'background_task_done')!.data).toMatchObject({
+        status: 'completed',
+      });
+    });
+
+    it('claims nothing when the stream ends without a session.idle', async () => {
+      // No turn terminal means DorkOS stopped watching, not that the turn ended
+      // — the child may still be working, so the normalizer's end-of-stream
+      // sweep gets to call it `untracked` (DOR-1108) instead of `stopped`.
+      const events = await drain(delegating(1));
+      expect(events.map((e) => e.type)).toEqual([
+        'tool_call_start',
+        'background_task_started',
+        'done',
+      ]);
+    });
+
+    it('claims nothing when the sidecar dies mid-turn', async () => {
+      const ctx = makeContext();
+      async function* crashing(): AsyncGenerator<OpenCodeWireEvent> {
+        for (const event of delegating(1)) yield event;
+        throw new Error('sidecar exited unexpectedly');
+      }
+      const events = await drain(crashing(), ctx);
+      expect(events.map((e) => e.type)).toEqual([
+        'tool_call_start',
+        'background_task_started',
+        'error',
+        'done',
+      ]);
+    });
+
+    it('claims nothing when the subscription is torn down (AbortError)', async () => {
+      async function* aborting(): AsyncGenerator<OpenCodeWireEvent> {
+        for (const event of delegating(1)) yield event;
+        throw new DOMException('Aborted', 'AbortError');
+      }
+      const events = await drain(aborting());
+      expect(events.map((e) => e.type)).toEqual([
+        'tool_call_start',
+        'background_task_started',
+        'done',
+      ]);
+    });
+  });
 });

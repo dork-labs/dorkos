@@ -203,6 +203,60 @@ export function mapSubagentTaskPart(part: ToolPart, state: OpenCodeSubagentState
 }
 
 /**
+ * Close every subagent this turn opened and never terminated, reporting each as
+ * `stopped`. The turn mapper calls this ONLY on the authoritative turn terminal
+ * — the parent's `session.idle` — and yields the result before it, so the card
+ * settles inside the turn window rather than trailing its `done` (DOR-1146).
+ *
+ * ## Why a run can still be open when the parent goes idle
+ *
+ * The stop ordering is on the wire, captured live twice (`__tests__/fixtures/
+ * live-cancel.jsonl`): child `session.error{MessageAbortedError}` → child
+ * `session.idle` → parent `session.error` → **parent `session.idle`** → the
+ * parent's `task` part finally arriving as `status:"error"`,
+ * `metadata.interrupted:true`. The only event that carries the subagent's
+ * outcome lands AFTER the terminal the turn mapper returns on, so it was never
+ * read and the card was left running until something else retired it.
+ *
+ * ## Why `stopped` is a claim and not a guess
+ *
+ * `session.idle` is published by upstream's `SessionStatus.set(...,{idle})`
+ * only once the runner has drained — including `failUnsettledTools`, which
+ * settles every tool part the turn still owns. A `task` call blocks its parent's
+ * tool loop, so the parent cannot reach idle while a subagent is genuinely
+ * working; a run still open here was torn down, and its terminal snapshot merely
+ * raced or was lost. The happy path proves the other half: there the `task` part
+ * reaches `completed` long before the parent's idle, so this closes nothing.
+ *
+ * ## Why only on `session.idle`
+ *
+ * The other terminals — a thrown stream error, an AbortError, a stream that
+ * simply ends — mean DorkOS STOPPED WATCHING, not that the turn finished. A
+ * child may well still be running behind them, so nothing is emitted and the
+ * normalizer's end-of-stream sweep retires it as `untracked` instead: "we lost
+ * sight of this", the strongest claim that evidence supports (DOR-1108).
+ *
+ * `durationMs` is deliberately omitted — the wire never told us when the child
+ * stopped, and the field is dropped in normalization anyway.
+ *
+ * @param state - The turn's subagent bookkeeping (mutated)
+ */
+export function* closeOpenSubagents(state: OpenCodeSubagentState): Generator<StreamEvent> {
+  for (const [taskId, run] of state.subagentRuns) {
+    if (run.ended) continue;
+    run.ended = true;
+    yield {
+      type: 'background_task_done',
+      data: {
+        taskId,
+        status: 'stopped',
+        ...(run.toolCallIds.size > 0 ? { toolUses: run.toolCallIds.size } : {}),
+      },
+    };
+  }
+}
+
+/**
  * Report a tool part from a subagent's child session on its parent task card —
  * one `background_task_progress` beat per distinct call, mirroring
  * claude-code's `task_progress` cadence. Everything else the child emits (text,

@@ -62,7 +62,7 @@ import {
   mapSessionStatus,
   mapTodos,
 } from './session-event-mapper.js';
-import { mapSubagentChildToolPart } from './subagent-mapper.js';
+import { closeOpenSubagents, mapSubagentChildToolPart } from './subagent-mapper.js';
 
 /** Everything the v1.17.13 wire can carry: the SDK union + the undeclared delta event. */
 export type OpenCodeWireEvent = Event | EventMessagePartDelta;
@@ -258,7 +258,8 @@ export function mapOpenCodeEvent(
  * Map a whole demuxed per-session event stream, guaranteeing the conformance
  * invariant that exactly one terminal `done` ends the StreamEvent stream:
  *
- * - after `done` (`session.idle`) the generator returns without pulling more;
+ * - after `done` (`session.idle`) the generator returns without pulling more,
+ *   closing any subagent the wire left open first ({@link closeOpenSubagents});
  * - an AbortError (subscription torn down mid-turn) ends the turn with a
  *   plain `done` — user-initiated, not an error;
  * - any other thrown error (e.g. the sidecar dying) becomes a typed `error`
@@ -276,8 +277,12 @@ export async function* mapOpenCodeTurn(
   try {
     for await (const event of events) {
       for (const mapped of mapOpenCodeEvent(event, ctx)) {
+        if (mapped.type === 'done') {
+          yield* closeOpenSubagents(ctx);
+          yield mapped;
+          return;
+        }
         yield mapped;
-        if (mapped.type === 'done') return;
       }
     }
   } catch (err) {
