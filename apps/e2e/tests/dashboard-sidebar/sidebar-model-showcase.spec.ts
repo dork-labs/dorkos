@@ -308,7 +308,14 @@ test.describe('Sidebar model showcase @smoke', () => {
    * number rather than a looser threshold. Raised for the Today states panel
    * (P2.3), which added four more 272px panels below Heads up's four.
    */
-  test.use({ viewport: { width: 1600, height: 8800 } });
+  // **The viewport is the page's height, not a round number.** axe reports
+  // success for a page it never looked at, so this suite asserts coverage
+  // before correctness (`expectPageFitsViewport`) — which means the viewport
+  // has to grow with the page. It went from 8800 to 10400 when P4.2 added the
+  // long-press-menu and Catch-up showcases; raising it is the fix the guard's
+  // own failure message names, and lowering the threshold is the one it
+  // forbids.
+  test.use({ viewport: { width: 1600, height: 10400 } });
 
   // The per-test default is 30s, which is under the cold cost of the first
   // navigation to `/dev` — see PLAYGROUND_COLD_START_MS. A locator ceiling
@@ -595,11 +602,19 @@ test.describe('Sidebar model showcase @smoke', () => {
       // unread badge tripping axe's "content is too short to be text" heuristic;
       // anything else appearing here is a hole in the gate that somebody has to
       // decide about rather than inherit.
+      //
+      // **Matched on what makes it an unread badge, not on which component
+      // drew it, and read off the node axe reported rather than off a selector
+      // resolved again.** The allowance used to name the showcase's own
+      // stand-in (`sidebar-model-directed-badge`) and look it up by
+      // `querySelector` — which silently answers `null` for a target axe
+      // reports as more than one selector, so the filter counted nothing and
+      // the gate failed with no explanation. `node.html` is the element itself,
+      // as axe saw it.
       const undecided = results.incomplete.flatMap((rule) => rule.nodes);
-      // The one-digit count badges axe declines to judge, enumerated. Both trip
-      // the same heuristic for the same reason, and each is a DECISION recorded
-      // here rather than an exemption inherited: the panel's directed-unread
-      // mark since P1, and P4's mobile Home badge.
+      // The one-digit counts axe declines to judge, enumerated. Each is a
+      // DECISION recorded here rather than an exemption inherited: the panel's
+      // directed-unread mark since P1, and P4's mobile Home badge.
       //
       // **The mobile badge was measured before it was pinned, and the measuring
       // changed it.** As drawn first — white on amber-500 — it was 2.15:1, a
@@ -608,23 +623,24 @@ test.describe('Sidebar model showcase @smoke', () => {
       // amber-500 now: 6.97:1, in both themes, since the pill carries its own
       // background. Anything NEW appearing here still has to be measured the
       // same way before it earns a line.
-      const COUNT_BADGES = [
-        '[data-slot="sidebar-model-directed-badge"]',
-        '[data-testid^="mobile-tab-badge-"]',
-      ];
-      const badges = await page.evaluate(
-        ({ targets, selectors }) =>
-          targets.filter((target) => {
-            const node = document.querySelector(target);
-            return node !== null && selectors.some((selector) => node.closest(selector) !== null);
-          }).length,
-        { targets: undecided.map((node) => node.target.join(' ')), selectors: COUNT_BADGES }
-      );
+      //
+      // **Matched on the node axe reported, not on a selector resolved again.**
+      // `document.querySelector` silently answers `null` for a target axe
+      // reports as more than one selector — which is most of them once this
+      // page grew past its first fold — so a `closest()` filter counted nothing
+      // and the gate failed naming elements it had in fact been handed.
+      const isCountBadge = (text: string) =>
+        /data-slot="sidebar-model-directed-badge"/.test(text) ||
+        /aria-label="\d+ unread"/.test(text) ||
+        /data-testid="mobile-tab-badge-/.test(text);
+      const badges = undecided.filter(
+        (node) => isCountBadge(node.html) || isCountBadge(node.target.join(' '))
+      ).length;
       expect(
         undecided.length - badges,
         `axe could not judge something new in the ${theme} theme: ${undecided
-          .map((node) => node.target.join(' '))
-          .join(', ')}`
+          .map((node) => `${node.target.join(' ')} :: ${node.html}`)
+          .join(' | ')}`
       ).toBe(0);
 
       // **What the pin above costs, paid back.** Forgiving a badge from the

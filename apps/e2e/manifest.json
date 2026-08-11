@@ -5,11 +5,11 @@
       "specFile": "tests/dashboard-sidebar/sidebar-model-showcase.spec.ts",
       "feature": "dashboard-sidebar",
       "description": "renders all four journeys, and asks the server for nothing, draws the zones each journey earns, and never an empty box, caps Heads up at three, and overflows only when there is more than three, says why every row it drew is there, meets 4.5:1 on the zone tint in the light theme, meets 4.5:1 on the zone tint in the dark theme",
-      "lastRun": "2026-08-10T00:43:42.662Z",
+      "lastRun": "2026-08-11T21:57:02.054Z",
       "lastStatus": "passed",
-      "runCount": 1,
-      "passCount": 1,
-      "failCount": 0,
+      "runCount": 19,
+      "passCount": 2,
+      "failCount": 17,
       "relatedCode": [
         "apps/client/src/dev/showcases/SidebarModelShowcases.tsx",
         "apps/client/src/layers/features/dashboard-sidebar/model/build-sidebar-model.ts"
@@ -398,10 +398,10 @@
       "specFile": "tests/dashboard-sidebar/mobile-sidebar-navigation.spec.ts",
       "feature": "dashboard-sidebar",
       "description": "tapping a channel closes the sidebar and lands on the room, a top-level nav link closes it too, picking inside the New message sheet dismisses nothing until the conversation starts",
-      "lastRun": "2026-08-11T20:59:39.006Z",
+      "lastRun": "2026-08-11T21:57:02.054Z",
       "lastStatus": "passed",
-      "runCount": 6,
-      "passCount": 6,
+      "runCount": 9,
+      "passCount": 9,
       "failCount": 0,
       "relatedCode": [],
       "lastModified": ""
@@ -422,10 +422,10 @@
       "specFile": "tests/dashboard-sidebar/sidebar-groups.spec.ts",
       "feature": "dashboard-sidebar",
       "description": "creates a group, drags an agent into it, and persists across reload",
-      "lastRun": "2026-08-09T00:06:19.907Z",
+      "lastRun": "2026-08-11T21:57:02.054Z",
       "lastStatus": "passed",
-      "runCount": 5,
-      "passCount": 4,
+      "runCount": 8,
+      "passCount": 7,
       "failCount": 1,
       "relatedCode": [],
       "lastModified": ""
@@ -590,11 +590,11 @@
       "specFile": "tests/dashboard-sidebar/session-switcher.spec.ts",
       "feature": "dashboard-sidebar",
       "description": "groups an agent’s sessions Live now / Recent / Automated, with Automated collapsed, is a dialog on the desktop and a bottom sheet on a phone, each footer key does what the footer says it does, opens from the agent row’s \"N live\" chip, and the chip clears the row’s text, the chip belongs to its row — it rides the drag, and right-click opens the row’s menu, opens from the agent sub-menu, tags the open session, and forks with ⇧↵, clicking the agent row opens the conversation, not the room-triggered run (BC-34)",
-      "lastRun": "2026-08-10T22:12:32.585Z",
+      "lastRun": "2026-08-11T21:57:02.054Z",
       "lastStatus": "passed",
-      "runCount": 1,
-      "passCount": 1,
-      "failCount": 0,
+      "runCount": 7,
+      "passCount": 4,
+      "failCount": 3,
       "relatedCode": [
         "apps/client/src/layers/features/dashboard-sidebar/ui/SessionSwitcher.tsx",
         "apps/client/src/layers/features/dashboard-sidebar/ui/AgentListItem.tsx",
@@ -606,178 +606,40 @@
       "specFile": "tests/dashboard-sidebar/mobile-touch.spec.ts",
       "feature": "dashboard-sidebar",
       "description": "long-press on a row opens the same menu the \"⋮\" opens, a scroll that begins on a row never opens a menu, every row and every control a thumb can reach is at least 40px, You reads as a nav with names on it, not a row of unlabelled glyphs, the phone cockpit and its long-press sheet in the light theme, the phone cockpit and its long-press sheet in the dark theme",
-      "lastRun": "2026-08-11T21:11:50.869Z",
+      "lastRun": "2026-08-11T21:57:02.054Z",
       "lastStatus": "passed",
-      "runCount": 9,
-      "passCount": 6,
+      "runCount": 12,
+      "passCount": 9,
       "failCount": 3,
+      "relatedCode": [],
+      "lastModified": ""
+    },
+    "sidebar-row-gutter": {
+      "specFile": "tests/dashboard-sidebar/sidebar-row-gutter.spec.ts",
+      "feature": "dashboard-sidebar",
+      "description": "really reserves the gutter it declares, keeps the gutter even when a caller passes padding of its own, keeps the ⋮ inside the gutter rather than over the row’s words, truncates a long title with an ellipsis instead of running it under the chip, parks the trailing control exactly on the width the row really reserved, walks the row’s lane with the arrow keys, ending on the ⋮, leaves the section one Tab stop however far out the lane focus has walked, carries the trailing control with the row under a drag transform, looks right in both themes, at the cockpit width and narrowed",
+      "lastRun": "2026-08-11T21:57:02.054Z",
+      "lastStatus": "passed",
+      "runCount": 3,
+      "passCount": 3,
+      "failCount": 0,
+      "relatedCode": [],
+      "lastModified": ""
+    },
+    "sidebar-today": {
+      "specFile": "tests/dashboard-sidebar/sidebar-today.spec.ts",
+      "feature": "dashboard-sidebar",
+      "description": "the conversation you have open is Today’s first row, on every switch, lights the thread you opened, not the channel it lives in, scrolls the anchor into view on a switch, and on nothing else, never opens a folded Library section to reach the same conversation, jumps to the anchor instead of travelling to it",
+      "lastRun": "2026-08-11T21:57:02.054Z",
+      "lastStatus": "passed",
+      "runCount": 3,
+      "passCount": 3,
+      "failCount": 0,
       "relatedCode": [],
       "lastModified": ""
     }
   },
   "runHistory": [
-    {
-      "id": "2026-07-30T17-04-59",
-      "timestamp": "2026-07-30T17:04:59.622Z",
-      "total": 10,
-      "passed": 10,
-      "failed": 0,
-      "skipped": 0,
-      "duration": 34813
-    },
-    {
-      "id": "2026-07-30T18-01-05",
-      "timestamp": "2026-07-30T18:01:05.531Z",
-      "total": 2,
-      "passed": 1,
-      "failed": 1,
-      "skipped": 0,
-      "duration": 23806
-    },
-    {
-      "id": "2026-07-30T18-02-41",
-      "timestamp": "2026-07-30T18:02:41.587Z",
-      "total": 2,
-      "passed": 1,
-      "failed": 1,
-      "skipped": 0,
-      "duration": 31037
-    },
-    {
-      "id": "2026-07-30T18-05-20",
-      "timestamp": "2026-07-30T18:05:20.221Z",
-      "total": 10,
-      "passed": 10,
-      "failed": 0,
-      "skipped": 0,
-      "duration": 127454
-    },
-    {
-      "id": "2026-07-30T23-28-20",
-      "timestamp": "2026-07-30T23:28:20.126Z",
-      "total": 45,
-      "passed": 45,
-      "failed": 0,
-      "skipped": 0,
-      "duration": 138277
-    },
-    {
-      "id": "2026-07-31T01-44-10",
-      "timestamp": "2026-07-31T01:44:10.880Z",
-      "total": 14,
-      "passed": 12,
-      "failed": 2,
-      "skipped": 0,
-      "duration": 256020
-    },
-    {
-      "id": "2026-07-31T01-45-37",
-      "timestamp": "2026-07-31T01:45:37.291Z",
-      "total": 14,
-      "passed": 14,
-      "failed": 0,
-      "skipped": 0,
-      "duration": 59416
-    },
-    {
-      "id": "2026-07-31T02-09-04",
-      "timestamp": "2026-07-31T02:09:04.792Z",
-      "total": 20,
-      "passed": 20,
-      "failed": 0,
-      "skipped": 0,
-      "duration": 36969
-    },
-    {
-      "id": "2026-07-31T02-51-26",
-      "timestamp": "2026-07-31T02:51:26.021Z",
-      "total": 1,
-      "passed": 1,
-      "failed": 0,
-      "skipped": 0,
-      "duration": 14437
-    },
-    {
-      "id": "2026-07-31T02-51-53",
-      "timestamp": "2026-07-31T02:51:53.752Z",
-      "total": 1,
-      "passed": 0,
-      "failed": 1,
-      "skipped": 0,
-      "duration": 19188
-    },
-    {
-      "id": "2026-07-31T02-52-39",
-      "timestamp": "2026-07-31T02:52:39.524Z",
-      "total": 21,
-      "passed": 21,
-      "failed": 0,
-      "skipped": 0,
-      "duration": 38933
-    },
-    {
-      "id": "2026-07-31T02-59-57",
-      "timestamp": "2026-07-31T02:59:57.287Z",
-      "total": 21,
-      "passed": 21,
-      "failed": 0,
-      "skipped": 0,
-      "duration": 64463
-    },
-    {
-      "id": "2026-07-31T03-45-36",
-      "timestamp": "2026-07-31T03:45:36.041Z",
-      "total": 21,
-      "passed": 19,
-      "failed": 2,
-      "skipped": 0,
-      "duration": 38928
-    },
-    {
-      "id": "2026-07-31T03-45-58",
-      "timestamp": "2026-07-31T03:45:58.671Z",
-      "total": 1,
-      "passed": 0,
-      "failed": 1,
-      "skipped": 0,
-      "duration": 13991
-    },
-    {
-      "id": "2026-07-31T03-46-35",
-      "timestamp": "2026-07-31T03:46:35.211Z",
-      "total": 2,
-      "passed": 1,
-      "failed": 1,
-      "skipped": 0,
-      "duration": 15626
-    },
-    {
-      "id": "2026-07-31T03-47-40",
-      "timestamp": "2026-07-31T03:47:40.348Z",
-      "total": 21,
-      "passed": 20,
-      "failed": 1,
-      "skipped": 0,
-      "duration": 45383
-    },
-    {
-      "id": "2026-07-31T03-48-05",
-      "timestamp": "2026-07-31T03:48:05.474Z",
-      "total": 1,
-      "passed": 0,
-      "failed": 1,
-      "skipped": 0,
-      "duration": 19620
-    },
-    {
-      "id": "2026-07-31T03-49-20",
-      "timestamp": "2026-07-31T03:49:20.921Z",
-      "total": 1,
-      "passed": 0,
-      "failed": 1,
-      "skipped": 0,
-      "duration": 40005
-    },
     {
       "id": "2026-07-31T03-51-16",
       "timestamp": "2026-07-31T03:51:16.202Z",
@@ -1515,6 +1377,168 @@
       "failed": 0,
       "skipped": 0,
       "duration": 89982
+    },
+    {
+      "id": "2026-08-11T21-32-14",
+      "timestamp": "2026-08-11T21:32:14.319Z",
+      "total": 45,
+      "passed": 42,
+      "failed": 3,
+      "skipped": 0,
+      "duration": 190693
+    },
+    {
+      "id": "2026-08-11T21-33-48",
+      "timestamp": "2026-08-11T21:33:48.398Z",
+      "total": 16,
+      "passed": 13,
+      "failed": 3,
+      "skipped": 0,
+      "duration": 75387
+    },
+    {
+      "id": "2026-08-11T21-35-22",
+      "timestamp": "2026-08-11T21:35:22.056Z",
+      "total": 16,
+      "passed": 13,
+      "failed": 3,
+      "skipped": 0,
+      "duration": 87108
+    },
+    {
+      "id": "2026-08-11T21-37-38",
+      "timestamp": "2026-08-11T21:37:38.892Z",
+      "total": 16,
+      "passed": 14,
+      "failed": 2,
+      "skipped": 0,
+      "duration": 81410
+    },
+    {
+      "id": "2026-08-11T21-38-16",
+      "timestamp": "2026-08-11T21:38:16.981Z",
+      "total": 1,
+      "passed": 0,
+      "failed": 1,
+      "skipped": 0,
+      "duration": 20784
+    },
+    {
+      "id": "2026-08-11T21-41-12",
+      "timestamp": "2026-08-11T21:41:12.499Z",
+      "total": 9,
+      "passed": 7,
+      "failed": 2,
+      "skipped": 0,
+      "duration": 55864
+    },
+    {
+      "id": "2026-08-11T21-41-48",
+      "timestamp": "2026-08-11T21:41:48.856Z",
+      "total": 1,
+      "passed": 0,
+      "failed": 1,
+      "skipped": 0,
+      "duration": 23898
+    },
+    {
+      "id": "2026-08-11T21-42-44",
+      "timestamp": "2026-08-11T21:42:44.406Z",
+      "total": 1,
+      "passed": 0,
+      "failed": 1,
+      "skipped": 0,
+      "duration": 25801
+    },
+    {
+      "id": "2026-08-11T21-43-48",
+      "timestamp": "2026-08-11T21:43:48.430Z",
+      "total": 1,
+      "passed": 0,
+      "failed": 1,
+      "skipped": 0,
+      "duration": 31978
+    },
+    {
+      "id": "2026-08-11T21-45-35",
+      "timestamp": "2026-08-11T21:45:35.696Z",
+      "total": 9,
+      "passed": 7,
+      "failed": 2,
+      "skipped": 0,
+      "duration": 51385
+    },
+    {
+      "id": "2026-08-11T21-46-14",
+      "timestamp": "2026-08-11T21:46:14.619Z",
+      "total": 1,
+      "passed": 0,
+      "failed": 1,
+      "skipped": 0,
+      "duration": 28020
+    },
+    {
+      "id": "2026-08-11T21-49-40",
+      "timestamp": "2026-08-11T21:49:40.244Z",
+      "total": 45,
+      "passed": 43,
+      "failed": 2,
+      "skipped": 0,
+      "duration": 175644
+    },
+    {
+      "id": "2026-08-11T21-50-22",
+      "timestamp": "2026-08-11T21:50:22.254Z",
+      "total": 1,
+      "passed": 0,
+      "failed": 1,
+      "skipped": 0,
+      "duration": 27278
+    },
+    {
+      "id": "2026-08-11T21-51-47",
+      "timestamp": "2026-08-11T21:51:47.654Z",
+      "total": 9,
+      "passed": 7,
+      "failed": 2,
+      "skipped": 0,
+      "duration": 47069
+    },
+    {
+      "id": "2026-08-11T21-52-24",
+      "timestamp": "2026-08-11T21:52:24.682Z",
+      "total": 1,
+      "passed": 0,
+      "failed": 1,
+      "skipped": 0,
+      "duration": 28783
+    },
+    {
+      "id": "2026-08-11T21-53-36",
+      "timestamp": "2026-08-11T21:53:36.249Z",
+      "total": 9,
+      "passed": 7,
+      "failed": 2,
+      "skipped": 0,
+      "duration": 52164
+    },
+    {
+      "id": "2026-08-11T21-54-14",
+      "timestamp": "2026-08-11T21:54:14.313Z",
+      "total": 1,
+      "passed": 0,
+      "failed": 1,
+      "skipped": 0,
+      "duration": 29734
+    },
+    {
+      "id": "2026-08-11T21-57-02",
+      "timestamp": "2026-08-11T21:57:02.054Z",
+      "total": 45,
+      "passed": 45,
+      "failed": 0,
+      "skipped": 0,
+      "duration": 141596
     }
   ]
 }

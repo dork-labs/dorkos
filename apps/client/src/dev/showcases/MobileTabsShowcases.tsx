@@ -167,10 +167,18 @@ export function MobileLongPressSheetShowcase() {
         className="border-border/50 bg-background overflow-hidden rounded-xl border py-2"
         style={{ maxWidth: PHONE_WIDTH }}
       >
-        <div className="text-sidebar-foreground/70 px-4 pt-2 pb-1 text-xs font-medium">
+        <div
+          id="showcase-sheet-title"
+          className="text-sidebar-foreground/70 px-4 pt-2 pb-1 text-xs font-medium"
+        >
           #general actions
         </div>
-        <SidebarMenuNodes variant="sheet" nodes={SHEET_NODES} />
+        {/* The `menu` the real sheet's `DrawerContent` provides. Rendered here
+            too, because its rows are `menuitem`s and a `menuitem` outside a
+            menu is what axe calls `aria-required-parent`. */}
+        <div role="menu" aria-labelledby="showcase-sheet-title">
+          <SidebarMenuNodes variant="sheet" nodes={SHEET_NODES} />
+        </div>
       </div>
       <p className="text-muted-foreground max-w-prose text-sm">
         Every row here is 44px tall. The <b>Move to group</b> and <b>Sort by</b> headings are

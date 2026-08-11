@@ -242,7 +242,16 @@ function SheetItem({
       type="button"
       role="menuitem"
       disabled={disabled}
-      className={cn(SHEET_ROW_CLASS, variant === 'destructive' && 'text-destructive')}
+      className={cn(
+        SHEET_ROW_CLASS,
+        // **`--status-error-fg`, not `--destructive`.** The destructive token is
+        // a FILL, tuned for white text on a red button; as text on the sheet's
+        // own background it measures 3.6:1 in the light theme, under the 4.5:1
+        // the design system requires (measured by the showcase's axe gate). The
+        // status ramp has a foreground value for exactly this, and it is what
+        // every other danger LABEL in the cockpit already wears.
+        variant === 'destructive' && 'text-status-error-fg'
+      )}
       onClick={() => {
         onClick?.();
         close();
