@@ -72,13 +72,26 @@ function setAgentPaths(paths: string[]): void {
 
 describe('GET /api/sessions/recent', () => {
   let runtime: FakeAgentRuntime;
+  // Two more runtimes, registered for EVERY test rather than inside the one
+  // that needs them: the registry is process-global with no unregister, so a
+  // test-local registration would leak into whatever ran next.
+  let quiet: FakeAgentRuntime;
+  let broken: FakeAgentRuntime;
 
   beforeEach(() => {
     const db = createTestDb();
     runtime = new FakeAgentRuntime('fake-a');
+    quiet = new FakeAgentRuntime('fake-b');
+    broken = new FakeAgentRuntime('fake-c');
     runtimeRegistry.setDb(db);
     runtimeRegistry.register(runtime);
+    runtimeRegistry.register(quiet);
+    runtimeRegistry.register(broken);
     runtimeRegistry.setDefault('fake-a');
+    // Silent unless a test says otherwise, so they contribute no rows and no
+    // warnings to the cases that are not about them.
+    quiet.listSessions.mockResolvedValue([]);
+    broken.listSessions.mockResolvedValue([]);
     setAgentPaths([]);
   });
 
@@ -203,6 +216,44 @@ describe('GET /api/sessions/recent', () => {
     // keeps ordinary conversations in the list.
     const loose = res.body.sessions.find((s: Session) => s.id === 's2');
     expect(loose.origin).toBeUndefined();
+  });
+
+  // BC-16's server half. The point of the field is that it survives the whole
+  // aggregation path — merge, sort, trim, three overlays, JSON serialization —
+  // as a real instant from ONE runtime and as nothing at all from another, in
+  // the same response, while a third runtime is down.
+  it('carries lastUserMessageAt from the runtime that can say, omits it for the one that cannot, and still degrades', async () => {
+    setAgentPaths(['/p1']);
+
+    // The person wrote at 09:00; the agent kept working until 11:00, which is
+    // what `updatedAt` records. A relabelled `updatedAt` fails this.
+    runtime.listSessions.mockResolvedValue([
+      {
+        ...makeSession('s-knows', '2026-03-01T11:00:00.000Z', '/p1'),
+        lastUserMessageAt: '2026-03-01T09:00:00.000Z',
+      },
+    ]);
+    quiet.listSessions.mockResolvedValue([
+      { ...makeSession('s-quiet', '2026-03-01T10:00:00.000Z', '/p1'), runtime: 'fake-b' },
+    ]);
+    broken.listSessions.mockRejectedValue(new Error('backend down'));
+
+    const res = await request(app).get('/api/sessions/recent');
+
+    expect(res.status).toBe(200);
+    const knows = res.body.sessions.find((s: Session) => s.id === 's-knows');
+    expect(knows.lastUserMessageAt).toBe('2026-03-01T09:00:00.000Z');
+    expect(Date.parse(knows.lastUserMessageAt)).toBeLessThan(Date.parse(knows.updatedAt));
+
+    // Omission, never a guess: the key is absent from the JSON body entirely —
+    // not null, not an empty string, not this row's updatedAt.
+    const quietRow = res.body.sessions.find((s: Session) => s.id === 's-quiet');
+    expect(quietRow).toBeDefined();
+    expect('lastUserMessageAt' in quietRow).toBe(false);
+
+    // …and the runtime that could not answer at all is still reported as
+    // degraded rather than silently shrinking the list (ADR-0310).
+    expect(res.body.warnings.map((w: { runtime: string }) => w.runtime)).toContain('fake-c');
   });
 
   it('lets a scheduled task that posts into a room still read as the task', async () => {

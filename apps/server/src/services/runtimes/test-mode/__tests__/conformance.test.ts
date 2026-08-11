@@ -41,4 +41,10 @@ runtimeConformance(() => new TestModeRuntime(), {
   // through the same projector the trigger path feeds.
   presenceTurn: (runtime, sessionId, content, probes) =>
     drivePresenceTurn(runtime, sessionId, content, '/projects/conformance', probes),
+  // BC-16: test-mode keeps session metadata in memory for one process lifetime
+  // and writes no transcript, so it has nothing durable to read a person's last
+  // message back out of — and being the fixture that omits the field is what
+  // keeps the omission half of this contract exercised.
+  lastUserMessageAtOmittedReason:
+    'test-mode holds session metadata in memory for a single process lifetime and keeps no transcript, so there is nothing durable to derive the person’s last message from',
 });

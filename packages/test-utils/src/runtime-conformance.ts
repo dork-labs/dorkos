@@ -39,7 +39,7 @@ import {
   SessionListEventSchema,
   type SessionListEvent,
 } from '@dorkos/shared/session-stream';
-import type { HistoryMessage, PermissionMode, StreamEvent } from '@dorkos/shared/types';
+import type { HistoryMessage, PermissionMode, Session, StreamEvent } from '@dorkos/shared/types';
 
 /**
  * Tuning knobs for legitimate cross-runtime differences. Defaults describe
@@ -156,6 +156,35 @@ export interface RuntimeConformanceOpts {
    * in a sentence, rather than inheriting a silent pass they never chose.
    */
   sessionListSilentReason?: string;
+  /**
+   * Produces a Session this runtime reports for a conversation a PERSON has
+   * written to and an AGENT has worked on SINCE — the presence half of the
+   * `Session.lastUserMessageAt` contract (spec `sidebar-now-today-library`
+   * BC-16).
+   *
+   * **The "and an agent has worked on since" is the whole point.** The suite
+   * asserts the reported timestamp is strictly EARLIER than the session's own
+   * `updatedAt`, which is the only assertion that can tell a real derivation
+   * apart from `updatedAt` returned under a second name. A probe whose fixture
+   * ends on the person's message satisfies nothing and will fail here.
+   *
+   * Wire this, or declare {@link lastUserMessageAtOmittedReason}. A runtime that
+   * supplies neither fails the case rather than skipping it: "nobody decided"
+   * is not one of the two honest answers.
+   */
+  lastUserMessageAtSession?: (runtime: AgentRuntime) => Promise<Session>;
+  /**
+   * Why this runtime can never say when the person last wrote, in a sentence
+   * somebody wrote — required rather than a boolean for the same reason as
+   * {@link autonomyDefaultReason}, and whitespace declares nothing.
+   *
+   * Declaring it does not buy silence: the suite then asserts the field is
+   * strictly ABSENT on a session that has just received a user message, so an
+   * omitting runtime cannot quietly start emitting a placeholder, a null, or
+   * its `updatedAt`. Implementing the field means DELETING this reason and
+   * wiring {@link lastUserMessageAtSession}.
+   */
+  lastUserMessageAtOmittedReason?: string;
 }
 
 /**
@@ -242,6 +271,109 @@ export async function evaluateSessionListStream(
   return (
     `subscribeSessionList produced an event that fails SessionListEventSchema ` +
     `(SessionListBroadcaster would silently drop it): ${parsed.error.message}`
+  );
+}
+
+/**
+ * Which of the two honest answers this runtime signed up for, if either.
+ *
+ * Exported and separate from the assertions below for the same reason
+ * {@link evaluateSessionListStream} is: the suite only ever meets adapters that
+ * are supposed to pass, so a green run is no evidence these rules fired.
+ * `runtime-conformance-last-user-message.test.ts` drives them directly.
+ *
+ * @param supplies - Whether {@link RuntimeConformanceOpts.lastUserMessageAtSession} was wired.
+ * @param omittedReason - The runtime's {@link RuntimeConformanceOpts.lastUserMessageAtOmittedReason}.
+ * @returns Null when the runtime picked an arm, else the failure message.
+ */
+export function chooseLastUserMessageAtArm(
+  supplies: boolean,
+  omittedReason: string | undefined
+): string | null {
+  const declared = (omittedReason ?? '').trim().length > 0;
+  if (supplies && declared) {
+    return (
+      'this runtime both supplies Session.lastUserMessageAt and declares it cannot ' +
+      '(lastUserMessageAtSession + lastUserMessageAtOmittedReason). Pick one — the ' +
+      'reason string exists to be DELETED when the field is implemented.'
+    );
+  }
+  if (supplies || declared) return null;
+  return (
+    'a runtime must either supply Session.lastUserMessageAt (wire lastUserMessageAtSession) ' +
+    'or declare in a sentence why it cannot (lastUserMessageAtOmittedReason). Choosing ' +
+    'neither leaves the sidebar ordering Today on a field nobody decided about, and ' +
+    'whitespace declares nothing.'
+  );
+}
+
+/**
+ * The presence half of the `Session.lastUserMessageAt` contract, applied to one
+ * probe session (spec `sidebar-now-today-library` BC-16).
+ *
+ * The probe's fixture must have agent activity AFTER the person's last message,
+ * so `lastUserMessageAt < updatedAt` is what separates a real derivation from
+ * `updatedAt` handed back under a second name. A fixture that ends on the
+ * person's turn cannot discriminate and is rejected here rather than passing.
+ *
+ * @param session - The Session the runtime's probe produced.
+ * @returns Null when the reading satisfies the contract, else the failure message.
+ */
+export function evaluateLastUserMessageAtPresence(session: Session): string | null {
+  const reported = session.lastUserMessageAt;
+  if (reported === undefined) {
+    return (
+      'this runtime declares it can say when the person last wrote, but its probe ' +
+      'session reports nothing'
+    );
+  }
+  const at = Date.parse(reported);
+  if (Number.isNaN(at)) return `lastUserMessageAt '${reported}' is not a date`;
+  const updated = Date.parse(session.updatedAt);
+  if (Number.isNaN(updated)) return `updatedAt '${session.updatedAt}' is not a date`;
+  if (at >= updated) {
+    return (
+      `lastUserMessageAt (${reported}) is not EARLIER than updatedAt (${session.updatedAt}). ` +
+      'Either the probe fixture has no agent activity after the last human message — in ' +
+      'which case it cannot discriminate — or this runtime is reporting updatedAt under a ' +
+      'second name.'
+    );
+  }
+  return null;
+}
+
+/**
+ * The omission half: a runtime that declared it cannot say when the person last
+ * wrote must report NOTHING even after a person has written.
+ *
+ * `undefined` is the only accepted answer. A null, an empty string or a
+ * placeholder all reach the client as a value it would order Today on, which is
+ * precisely the guess the contract forbids.
+ *
+ * A null session is a FAILURE, not a pass: the turn completed, so a runtime that
+ * cannot resolve the session it just ran gives this case nothing to look at and
+ * would report green having asserted nothing.
+ *
+ * @param session - What the runtime reported for a session that just took a user
+ *   message.
+ * @param omittedReason - The declared reason, quoted back in the failure.
+ * @returns Null when the runtime honestly said nothing, else the failure message.
+ */
+export function evaluateLastUserMessageAtOmission(
+  session: Session | null,
+  omittedReason: string | undefined
+): string | null {
+  if (session === null) {
+    return (
+      'getSession returned null for a session that had just completed a turn, so this ' +
+      'case had no reported field to look at and asserted nothing.'
+    );
+  }
+  if (session.lastUserMessageAt === undefined) return null;
+  return (
+    `this runtime declared it cannot say when the person last wrote ("${omittedReason}") ` +
+    `but reported ${JSON.stringify(session.lastUserMessageAt)} after a user message. ` +
+    'Implementing the field means deleting that reason and wiring lastUserMessageAtSession.'
   );
 }
 
@@ -591,6 +723,8 @@ export function runtimeConformance(
     presenceTurn,
     autonomyDefaultReason,
     sessionListSilentReason,
+    lastUserMessageAtSession,
+    lastUserMessageAtOmittedReason,
   } = opts;
 
   /**
@@ -750,9 +884,45 @@ export function runtimeConformance(
           if (session.lastAutoCompactAt !== undefined) {
             expect(typeof session.lastAutoCompactAt).toBe('string');
           }
+          if (session.lastUserMessageAt !== undefined) {
+            expect(typeof session.lastUserMessageAt).toBe('string');
+          }
         }
 
         await expect(runtime.getSession(projectDir, nextSessionId())).resolves.toBeNull();
+      });
+
+      it('says when the person last wrote, or says why it cannot (BC-16)', async () => {
+        // Purpose: `Session.lastUserMessageAt` is half the sidebar's Today
+        // order key, and the contract is "omission, never a guess". Two honest
+        // answers exist — a real timestamp, or nothing — and a runtime that
+        // picked neither is the third, which this case exists to prevent. The
+        // rules live in the exported evaluators so a proof-of-failure test can
+        // drive them with sessions no shipped runtime would produce.
+        expect(
+          chooseLastUserMessageAtArm(
+            lastUserMessageAtSession !== undefined,
+            lastUserMessageAtOmittedReason
+          )
+        ).toBeNull();
+
+        if (lastUserMessageAtSession !== undefined) {
+          const session = await lastUserMessageAtSession(makeRuntime());
+          expect(evaluateLastUserMessageAtPresence(session)).toBeNull();
+          return;
+        }
+
+        // The omission half: a runtime that declared it cannot say must report
+        // NOTHING even once a person has written — never a null, an empty
+        // string, or the row's own updatedAt.
+        const runtime = makeRuntime();
+        const sessionId = nextSessionId();
+        runtime.ensureSession(sessionId, sessionOpts(runtime));
+        await drainTurn(runtime, sessionId);
+        const session = await runtime.getSession(projectDir, sessionId);
+        expect(
+          evaluateLastUserMessageAtOmission(session, lastUserMessageAtOmittedReason)
+        ).toBeNull();
       });
 
       it('subscribeSessionList emits only events that satisfy SessionListEventSchema (DOR-851)', async () => {

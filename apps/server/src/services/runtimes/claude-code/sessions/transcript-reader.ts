@@ -9,7 +9,12 @@ import type {
   TaskItem,
   SessionListWarning,
 } from '@dorkos/shared/types';
-import { parseTranscript, extractTextContent, stripSystemTags } from './transcript-parser.js';
+import {
+  parseTranscript,
+  extractTextContent,
+  isPersonAuthoredUserRecord,
+  stripSystemTags,
+} from './transcript-parser.js';
 import type { TranscriptLine } from './transcript-parser.js';
 import { classifyOrigin } from './classify-origin.js';
 import { deriveSessionTitle } from '../../shared/derive-title.js';
@@ -379,9 +384,16 @@ export class TranscriptReader {
 
   /**
    * Read the tail of a JSONL file to get the most recent model, permissionMode,
-   * context tokens, and auto-compaction marker. Reads the last ~16KB which
-   * typically contains the final assistant messages and any recent
-   * `compact_boundary` record.
+   * context tokens, auto-compaction marker, and the time the person last wrote.
+   * Reads the last ~16KB which typically contains the final assistant messages
+   * and any recent `compact_boundary` record.
+   *
+   * `lastUserMessageAt` rides this SAME pass on purpose: the session list is
+   * read on every cockpit boot, and re-reading transcripts to answer "when did
+   * the person last write" would turn a bounded tail read into a whole-file
+   * scan per session. The cost of the extra answer is one
+   * {@link isPersonAuthoredUserRecord} call per `user` record already parsed
+   * here — no additional open, read, or stat.
    *
    * @param filePath - Absolute path of the transcript file.
    * @param fileSize - The transcript's byte size from the caller's existing
@@ -396,6 +408,7 @@ export class TranscriptReader {
     permissionMode?: PermissionMode;
     contextTokens?: number;
     lastAutoCompactAt?: string;
+    lastUserMessageAt?: string;
   }> {
     const TAIL_SIZE = TRANSCRIPT.TAIL_BUFFER_BYTES;
     try {
@@ -411,6 +424,7 @@ export class TranscriptReader {
         let permissionMode: PermissionMode | undefined;
         let contextTokens: number | undefined;
         let lastAutoCompactAt: string | undefined;
+        let lastUserMessageAt: string | undefined;
 
         // Iterate forward — last occurrence wins
         for (const line of lines) {
@@ -436,6 +450,12 @@ export class TranscriptReader {
             // permissive one.
             permissionMode = normalizeTranscriptPermissionMode(parsed.permissionMode) ?? 'default';
           }
+          // When the PERSON last wrote (BC-16). A record with no timestamp is
+          // skipped rather than dated from the file's mtime — that would be
+          // `updatedAt` wearing this field's name.
+          if (parsed.timestamp && isPersonAuthoredUserRecord(parsed)) {
+            lastUserMessageAt = parsed.timestamp;
+          }
           // Auto-triggered compaction is a context-pressure signal; a manual
           // compaction is user-driven and deliberately ignored. The top-level
           // record timestamp is the marker's "as of" time.
@@ -449,7 +469,7 @@ export class TranscriptReader {
           }
         }
 
-        return { model, permissionMode, contextTokens, lastAutoCompactAt };
+        return { model, permissionMode, contextTokens, lastAutoCompactAt, lastUserMessageAt };
       } finally {
         await fileHandle.close();
       }
@@ -620,6 +640,7 @@ export class TranscriptReader {
     if (tailStatus.permissionMode) session.permissionMode = tailStatus.permissionMode;
     if (tailStatus.contextTokens) session.contextTokens = tailStatus.contextTokens;
     if (tailStatus.lastAutoCompactAt) session.lastAutoCompactAt = tailStatus.lastAutoCompactAt;
+    if (tailStatus.lastUserMessageAt) session.lastUserMessageAt = tailStatus.lastUserMessageAt;
 
     // Set conditionally like the readings above, so an unattributable path leaves
     // the field absent (an honest "unknown") rather than carrying a derived guess.

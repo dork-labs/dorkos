@@ -181,6 +181,49 @@ writeFileSync(
   }) + '\n'
 );
 
+// A second seeded transcript, this one UNDER the suite's own working directory,
+// for the `lastUserMessageAt` probe (BC-16). It is written as a conversation
+// that CONTINUED after the person stopped typing — one human turn, then an
+// assistant turn, then a tool_result record (which arrives on the `user` role
+// but nobody wrote), then another assistant turn. A reader that counted every
+// `user` record, or that handed back the file's mtime, lands on the wrong
+// instant here.
+const probeSessionId = randomUUID();
+const probeUserWroteAt = '2026-01-01T09:00:00.000Z';
+const probeProjectDir = join(account.root, 'projects', '-projects-conformance');
+mkdirSync(probeProjectDir, { recursive: true });
+writeFileSync(
+  join(probeProjectDir, `${probeSessionId}.jsonl`),
+  [
+    {
+      type: 'user',
+      message: { role: 'user', content: 'ship the ordering fix' },
+      timestamp: probeUserWroteAt,
+      cwd: '/projects/conformance',
+    },
+    {
+      type: 'assistant',
+      message: { role: 'assistant', content: [{ type: 'text', text: 'on it' }], model: 'probe' },
+      timestamp: '2026-01-01T09:01:00.000Z',
+    },
+    {
+      type: 'user',
+      message: {
+        role: 'user',
+        content: [{ type: 'tool_result', tool_use_id: 'tool-1', content: 'ok' }],
+      },
+      timestamp: '2026-01-01T09:02:00.000Z',
+    },
+    {
+      type: 'assistant',
+      message: { role: 'assistant', content: [{ type: 'text', text: 'done' }], model: 'probe' },
+      timestamp: '2026-01-01T09:03:00.000Z',
+    },
+  ]
+    .map((line) => JSON.stringify(line))
+    .join('\n') + '\n'
+);
+
 afterAll(() => {
   rmSync(account.root, { recursive: true, force: true });
 });
@@ -213,6 +256,15 @@ runtimeConformance(
     // not persist, DOR-189), which is exactly what `drivePresenceTurn` does.
     presenceTurn: (runtime, sessionId, content, probes) =>
       drivePresenceTurn(runtime, sessionId, content, '/projects/conformance', probes),
+    // Claude-code CAN say when the person last wrote: it rides the transcript
+    // tail read the session list already performs. The probe hands back the
+    // seeded conversation above, whose last human message precedes both the
+    // agent's later turns and the file's mtime.
+    lastUserMessageAtSession: async (runtime) => {
+      const session = await runtime.getSession('/projects/conformance', probeSessionId);
+      if (session === null) throw new Error('probe transcript was not readable');
+      return session;
+    },
     // One-shot failing turn: the SDK stream ends in a non-success result
     // (error_during_execution), driving the result-event-mapper's typed error
     // + terminal done path. mockImplementationOnce takes precedence over the

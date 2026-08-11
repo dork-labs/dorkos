@@ -316,6 +316,30 @@ export const SessionSchema = z
      * registered accounts in `GET /api/config`.
      */
     account: z.string().optional(),
+    /**
+     * ISO-8601 timestamp of the last message the PERSON sent in this session —
+     * the server half of the sidebar's interaction-recency order key
+     * (`lastInteractionAt = max(lastUserMessageAt, userLastOpenedAt)`, spec
+     * `sidebar-now-today-library` BC-16).
+     *
+     * Deliberately NOT {@link Session.updatedAt}: `updatedAt` moves every time
+     * the AGENT writes (for claude-code it is the transcript's mtime), which is
+     * exactly the signal Today must not reorder on. This field moves only when
+     * a person writes, so a row whose agent has been working for an hour keeps
+     * its place.
+     *
+     * ABSENT means this runtime cannot say — omission, never a guess, and the
+     * client then orders that row by its local `userLastOpenedAt` alone. Absent
+     * today for codex, opencode and test-mode (see each adapter's conformance
+     * declaration for why), and absent for a claude-code session whose last
+     * human message has scrolled past the readable transcript tail.
+     *
+     * Best-effort and never a security boundary: it is derived from durable
+     * transcript markers, and a message DorkOS itself delivers on a person's
+     * behalf (a relay hand-off, a scheduled task) is excluded by the same
+     * marker rules the transcript renderer uses.
+     */
+    lastUserMessageAt: z.string().datetime().optional(),
     cwd: z.string().optional(),
   })
   .openapi('Session');

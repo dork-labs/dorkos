@@ -193,6 +193,74 @@ export function stripRelayContext(text: string): string | null {
 }
 
 /**
+ * Whether a transcript record is a message the PERSON sent.
+ *
+ * The JSONL `user` role is a wire role, not an author: tool results, resume
+ * bootstraps, skill expansions, compaction summaries, relay hand-offs and
+ * DorkOS's own corrective notes all arrive as `type: 'user'`. This answers the
+ * different question "did a human write this?", which is what
+ * `Session.lastUserMessageAt` (BC-16) has to be derived from — a field that
+ * counted tool results would move on every agent step and be `updatedAt` under
+ * a new name.
+ *
+ * The rules are the ones {@link parseTranscript} already applies when it decides
+ * to render a `user` bubble, with two deliberate differences, both because the
+ * question is authorship rather than what to draw:
+ *
+ * - A slash-command record (`<command-name>`) COUNTS. The renderer turns it into
+ *   its own bubble kind rather than a user message, but the person typed it, so
+ *   it is an interaction.
+ * - A compaction summary does NOT count. The renderer shows it (it is real
+ *   history); nobody wrote it.
+ *
+ * @param line - One parsed transcript record.
+ * @returns True when a person authored this record.
+ */
+export function isPersonAuthoredUserRecord(line: TranscriptLine): boolean {
+  if (line.type !== 'user' || !line.message) return false;
+  // CLI-internal records: resume bootstrap, prompt expansions, caveats.
+  if (line.isMeta) return false;
+  // A subagent's own turn, not this conversation's.
+  if (line.isSidechain) return false;
+  // Written by the compactor, not by anyone.
+  if (line.isCompactSummary) return false;
+
+  const content = line.message.content;
+
+  if (Array.isArray(content)) {
+    // A record carrying tool_result blocks is the harness answering the model.
+    // Any text blocks alongside them are SDK-internal (same rule as the
+    // renderer), so the whole record is not the person's.
+    if (content.some((block) => block.type === 'tool_result')) return false;
+    return stripSystemTags(extractTextContent(content)).trim().length > 0;
+  }
+
+  let text = typeof content === 'string' ? content : '';
+  if (text.startsWith('<task-notification>')) return false;
+  // DorkOS-steered corrective notes (DOR-1087) are runtime speech.
+  if (text.startsWith('<dorkos-system-note>')) return false;
+  // A local command's captured stdout/stderr, echoed back into the thread.
+  if (text.startsWith('<local-command')) return false;
+  if (text.startsWith('This session is being continued')) return false;
+
+  if (text.startsWith(`<${CONTEXT_TAG.relay_context}>`)) {
+    // A relay record is another agent's hand-off; only the operator content
+    // trailing the block (if any) was written by a person.
+    const userContent = stripRelayContext(text);
+    if (!userContent) return false;
+    text = userContent;
+  }
+
+  // The person typed a slash command — an interaction, even though the renderer
+  // draws it as a command row rather than a message.
+  if (text.startsWith('<command-message>') || text.startsWith('<command-name>')) {
+    return extractCommandMeta(text) !== null;
+  }
+
+  return stripSystemTags(text).trim().length > 0;
+}
+
+/**
  * Apply a tool_result block to the matching HistoryToolCall and ToolCallPart entries.
  *
  * Mutates `tc` and `tcPart` in place with `result` and, for AskUserQuestion,

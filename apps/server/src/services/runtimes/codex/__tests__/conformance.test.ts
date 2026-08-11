@@ -129,6 +129,14 @@ runtimeConformance(
     // through the same projector the trigger path feeds.
     presenceTurn: (runtime, sessionId, content, probes) =>
       drivePresenceTurn(runtime, sessionId, content, projectDir, probes),
+    // BC-16: the Codex SDK exposes no thread read or listing API, so the only
+    // durable record of a codex session is its own `codex_threads` row — and
+    // that row's `updatedAt` is already bumped by nothing except the person's
+    // message. A `lastUserMessageAt` here would be that same instant under a
+    // second name for sessions this process observed, and absent for every
+    // session hydrated after a restart: churn, with no new fact in it.
+    lastUserMessageAtOmittedReason:
+      'the Codex SDK exposes no thread read API, so a codex session’s only durable metadata is its codex_threads row, whose updatedAt already moves solely on the person’s message',
     // A deterministic failed turn cannot be scripted against the live binary,
     // so the turn-failure gate runs only in mocked mode: the one-shot selector
     // makes the next minted thread stream `turn.failed`.
