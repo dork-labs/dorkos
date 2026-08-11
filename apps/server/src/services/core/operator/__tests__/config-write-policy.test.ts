@@ -111,6 +111,19 @@ describe('CONFIG_WRITE_POLICY drift guard', () => {
     ]);
   });
 
+  it('stays unambiguous once the `[]` markers come off', () => {
+    // The matcher compares paths with their array markers stripped (DOR-1113),
+    // which is only safe while no two policy keys collapse onto the same plain
+    // path — a collision would file one field's verdict under another's name.
+    // Nothing in the schema can produce one (a field is an array of objects or
+    // an object, never both), so this asserts the property rather than trusting
+    // it: a `foo[].bar` added beside an existing `foo.bar` goes red here.
+    const plain = Object.keys(CONFIG_WRITE_POLICY).map((path) => path.replaceAll('[]', ''));
+    const seen = new Set<string>();
+    const collisions = plain.filter((path) => (seen.has(path) ? true : (seen.add(path), false)));
+    expect(collisions).toEqual([]);
+  });
+
   it('withholds from writing everything it also withholds from reading', () => {
     // A field too sensitive to show an untrusted caller is certainly too
     // sensitive for that caller to overwrite. Asserted rather than assumed, so
@@ -261,6 +274,287 @@ describe('findOperatorOnlyPaths', () => {
 });
 
 /**
+ * Build a patch that writes one policy dot-path, materializing every `[]`
+ * segment as a one-element array — so `connectors.rawMcpServers[].url` becomes
+ * `{ connectors: { rawMcpServers: [{ url: … }] } }`, which is the shape a caller
+ * actually sends.
+ *
+ * @param dotPath - A policy path, `[]` segments included.
+ * @param leaf - The value to write at the end of it.
+ * @returns The patch object.
+ */
+function patchForPath(dotPath: string, leaf: unknown = 'x'): Record<string, unknown> {
+  const segments = dotPath.split('.');
+  let node: unknown = leaf;
+  for (let i = segments.length - 1; i >= 0; i--) {
+    const segment = segments[i]!;
+    const isArray = segment.endsWith('[]');
+    const key = isArray ? segment.slice(0, -2) : segment;
+    node = { [key]: isArray ? [node] : node };
+  }
+  return node as Record<string, unknown>;
+}
+
+describe('findOperatorOnlyPaths — settings that live inside a list (DOR-1113)', () => {
+  it('catches a whole-list replacement of the raw MCP servers', () => {
+    // The reproduction. A raw-MCP server is an outbound tool endpoint pointed
+    // wherever the writer likes, and the guard used to stop at
+    // `connectors.rawMcpServers` — a path no policy key equals, because every
+    // policy key for it names an element field — so the write went through.
+    expect(
+      findOperatorOnlyPaths({
+        connectors: {
+          rawMcpServers: [
+            {
+              slug: 'evil',
+              displayName: 'Evil',
+              url: 'https://evil.example.com/mcp',
+              transport: 'http',
+            },
+          ],
+        },
+      })
+    ).toEqual([
+      'connectors.rawMcpServers[].displayName',
+      'connectors.rawMcpServers[].slug',
+      'connectors.rawMcpServers[].transport',
+      'connectors.rawMcpServers[].url',
+    ]);
+  });
+
+  it('catches a whole-list replacement of the Claude account roster', () => {
+    // The same hole on the credential axis: an account directory carries its own
+    // sign-in, so writing the roster moves whose subscription the work bills to.
+    expect(
+      findOperatorOnlyPaths({
+        runtimes: { claudeCode: { accounts: [{ path: '/tmp/evil', label: 'mine' }] } },
+      })
+    ).toEqual(['runtimes.claudeCode.accounts[].label', 'runtimes.claudeCode.accounts[].path']);
+  });
+
+  it('names only the element fields the patch actually writes', () => {
+    expect(
+      findOperatorOnlyPaths({ connectors: { rawMcpServers: [{ url: 'https://evil.test/mcp' }] } })
+    ).toEqual(['connectors.rawMcpServers[].url']);
+  });
+
+  it('names a field any element writes, not just the first', () => {
+    expect(
+      findOperatorOnlyPaths({
+        connectors: { rawMcpServers: [{ slug: 'a' }, { url: 'https://evil.test/mcp' }] },
+      })
+    ).toEqual(['connectors.rawMcpServers[].slug', 'connectors.rawMcpServers[].url']);
+  });
+
+  it('catches emptying the list, which is a write to it too', () => {
+    // `[]` carries no element to descend into, so it has to be caught as an
+    // ancestor of the element fields — the same way `{ auth: {} }` is.
+    expect(findOperatorOnlyPaths({ connectors: { rawMcpServers: [] } })).toEqual([
+      'connectors.rawMcpServers[].displayName',
+      'connectors.rawMcpServers[].slug',
+      'connectors.rawMcpServers[].transport',
+      'connectors.rawMcpServers[].url',
+    ]);
+    expect(findOperatorOnlyPaths({ runtimes: { claudeCode: { accounts: [] } } })).toEqual([
+      'runtimes.claudeCode.accounts[].label',
+      'runtimes.claudeCode.accounts[].path',
+    ]);
+  });
+
+  it('catches a patch that stops SHORT of the list', () => {
+    expect(findOperatorOnlyPaths({ connectors: {} })).toEqual([
+      'connectors.rawMcpServers[].displayName',
+      'connectors.rawMcpServers[].slug',
+      'connectors.rawMcpServers[].transport',
+      'connectors.rawMcpServers[].url',
+    ]);
+    expect(findOperatorOnlyPaths({ connectors: true })).toEqual([
+      'connectors.rawMcpServers[].displayName',
+      'connectors.rawMcpServers[].slug',
+      'connectors.rawMcpServers[].transport',
+      'connectors.rawMcpServers[].url',
+    ]);
+  });
+
+  it('leaves the lists an agent may write alone, descent or no descent', () => {
+    // Descending into arrays must not spray refusals over the sidebar, whose
+    // element fields are all `agent-writable` on purpose. This is the case the
+    // module doc called "harmless only because every verdict below is
+    // agent-writable" — it stays harmless, now for a checked reason.
+    expect(
+      findOperatorOnlyPaths({
+        ui: {
+          sidebar: {
+            pinned: [{ kind: 'room', roomId: 'r1' }],
+            muted: [{ kind: 'path', path: '/tmp' }],
+            groups: [
+              {
+                id: 'g1',
+                name: 'Work',
+                kind: 'manual',
+                collapsed: false,
+                items: [{ kind: 'room', roomId: 'r1' }],
+                rules: { runtimes: ['codex'], pathPrefix: '/tmp' },
+              },
+            ],
+          },
+          statusBar: { pins: ['runtime'] },
+        },
+      })
+    ).toEqual([]);
+  });
+
+  it('still catches a list classified whole, element shape or not', () => {
+    // These four are guarded at the PARENT path rather than per element, and the
+    // descent must not lose them.
+    expect(findOperatorOnlyPaths({ mesh: { scanRoots: ['/'] } })).toEqual(['mesh.scanRoots']);
+    expect(findOperatorOnlyPaths({ extensions: { approvedToRun: ['evil-ext'] } })).toEqual([
+      'extensions.approvedToRun',
+    ]);
+    expect(findOperatorOnlyPaths({ extensions: { enabled: ['evil-ext'] } })).toEqual([
+      'extensions.enabled',
+    ]);
+    expect(findOperatorOnlyPaths({ harness: { approvedHooks: ['evil-pkg'] } })).toEqual([
+      'harness.approvedHooks',
+    ]);
+    // Emptying one of them is still a write to it.
+    expect(findOperatorOnlyPaths({ mesh: { scanRoots: [] } })).toEqual(['mesh.scanRoots']);
+  });
+
+  it('gives the same answer for a list of one and a list of thousands', () => {
+    // The descent makes the walk scale with element COUNT, so the matcher dedupes
+    // the touched paths before matching them (a 1MB list otherwise blocks the
+    // event loop for over a second on a route that runs this before any authority
+    // check). Deduping cannot change a verdict — a repeated path only re-adds hits
+    // already in the set — and this is what says so out loud, at a size where a
+    // quadratic matcher would be obvious rather than subtle.
+    const server = { slug: 'a', url: 'https://a.test/mcp' };
+    const one = findOperatorOnlyPaths({ connectors: { rawMcpServers: [server] } });
+    const many = findOperatorOnlyPaths({
+      connectors: { rawMcpServers: Array.from({ length: 3000 }, () => ({ ...server })) },
+    });
+    expect(many).toEqual(one);
+    expect(many).toEqual(['connectors.rawMcpServers[].slug', 'connectors.rawMcpServers[].url']);
+  });
+
+  it('catches EVERY operator-only path that lives inside a list', () => {
+    // The drift guard for the gap class, not for the two families that happened
+    // to be found. A future `[]` family added to the table is caught here on the
+    // day it ships, whether or not anybody remembers this bug.
+    const insideLists = OPERATOR_ONLY_CONFIG_PATHS.filter((path) => path.includes('[]'));
+    expect(insideLists.length).toBeGreaterThan(0);
+    for (const path of insideLists) {
+      expect(findOperatorOnlyPaths(patchForPath(path)), `unguarded: ${path}`).toContain(path);
+    }
+  });
+});
+
+/**
+ * The path matcher exactly as it stood before DOR-1113 taught it to descend into
+ * arrays. Kept here, in the test, as the reference the new behavior is compared
+ * against: the fix had to close the `[]` gap without moving a single verdict on
+ * any other path, and "identical to the old code" is the only honest way to say
+ * that.
+ *
+ * @param value - The patch node being walked.
+ * @param prefix - Internal accumulator for the current path.
+ * @returns Dot-paths for every leaf and every empty branch, treating an array as
+ *   a leaf.
+ */
+function legacyPatchPaths(value: unknown, prefix = ''): string[] {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    return prefix ? [prefix] : [];
+  }
+  const entries = Object.entries(value as Record<string, unknown>);
+  if (entries.length === 0) return prefix ? [prefix] : [];
+  return entries.flatMap(([key, child]) =>
+    legacyPatchPaths(child, prefix ? `${prefix}.${key}` : key)
+  );
+}
+
+/**
+ * {@link findOperatorOnlyPaths} as it behaved before the array descent.
+ *
+ * @param patch - The raw patch a caller supplied.
+ * @returns The offending policy paths under the old matcher.
+ */
+function legacyFindOperatorOnlyPaths(patch: unknown): string[] {
+  const hits = new Set<string>();
+  for (const path of legacyPatchPaths(patch)) {
+    for (const guarded of OPERATOR_ONLY_CONFIG_PATHS) {
+      if (path === guarded || path.startsWith(`${guarded}.`) || guarded.startsWith(`${path}.`)) {
+        hits.add(guarded);
+      }
+    }
+  }
+  return [...hits].sort();
+}
+
+describe('the array descent changes no other verdict (DOR-1113)', () => {
+  /** Every policy path that names no array element — the whole table minus `[]`. */
+  const plainPaths = Object.keys(CONFIG_WRITE_POLICY).filter((path) => !path.includes('['));
+
+  /**
+   * Every patch worth comparing for one path: the leaf itself in four value
+   * shapes (scalar, list of scalars, list of objects, empty object), plus each
+   * ancestor of it written short — which is where the two-directional matching
+   * lives, and so where a change would hide.
+   *
+   * @param dotPath - The policy path to build patches for.
+   * @returns Patches, each exercising the same path a different way.
+   */
+  function patchesFor(dotPath: string): unknown[] {
+    const segments = dotPath.split('.');
+    const ancestors = segments
+      .slice(0, -1)
+      .map((_, index) => segments.slice(0, index + 1).join('.'));
+    return [
+      patchForPath(dotPath, 'a-value'),
+      patchForPath(dotPath, ['a-value']),
+      patchForPath(dotPath, [{ nested: 'a-value' }]),
+      patchForPath(dotPath, {}),
+      patchForPath(dotPath, []),
+      ...ancestors.flatMap((ancestor) => [
+        patchForPath(ancestor, true),
+        patchForPath(ancestor, {}),
+      ]),
+    ];
+  }
+
+  it('agrees with the pre-fix matcher on every path outside a list', () => {
+    expect(plainPaths.length).toBeGreaterThan(50);
+    for (const dotPath of plainPaths) {
+      for (const patch of patchesFor(dotPath)) {
+        expect(findOperatorOnlyPaths(patch), `${dotPath}: ${JSON.stringify(patch)}`).toEqual(
+          legacyFindOperatorOnlyPaths(patch)
+        );
+      }
+    }
+  });
+
+  it('agrees with the pre-fix matcher on the login bar too', () => {
+    // `findLoginRequiredPaths` shares the matcher and guards no `[]` path, so it
+    // must come out of this change completely unmoved.
+    for (const dotPath of plainPaths) {
+      for (const patch of patchesFor(dotPath)) {
+        const legacy = legacyFindOperatorOnlyPaths(patch).filter((path) =>
+          REQUIRES_LOGIN_CONFIG_PATHS.includes(path)
+        );
+        expect(findLoginRequiredPaths(patch), `${dotPath}`).toEqual(legacy);
+      }
+    }
+  });
+
+  it('is the ONLY thing that changed: the pre-fix matcher missed the list paths entirely', () => {
+    // The bug, pinned as a fact about the old code rather than a story about it.
+    for (const path of OPERATOR_ONLY_CONFIG_PATHS.filter((p) => p.includes('[]'))) {
+      expect(legacyFindOperatorOnlyPaths(patchForPath(path))).toEqual([]);
+      expect(findOperatorOnlyPaths(patchForPath(path))).toContain(path);
+    }
+  });
+});
+
+/**
  * The stake clause a refusal used for one path: the words between the previous
  * sentence and the `: <path>.` that lists it. Read back out of the finished
  * message on purpose, so these tests judge what an agent actually receives
@@ -375,6 +669,28 @@ describe('describeOperatorOnlyRefusal', () => {
     );
     expect(message).toContain('What leaves this machine: telemetry.usage.');
     expect(message).toContain('welcomeBack.enabled.');
+  });
+
+  it('reaches the stake copy for a list the caller replaced wholesale (DOR-1113)', () => {
+    // Written the long way round — patch in, refusal out — because until DOR-1113
+    // the matcher never returned a `[]` path, so the clause filed for these four
+    // was DEAD: correct, tested against a hand-written path list, and impossible
+    // for a real caller to ever read.
+    const refusedServers = findOperatorOnlyPaths({
+      connectors: { rawMcpServers: [{ slug: 'evil', url: 'https://evil.test/mcp' }] },
+    });
+    expect(describeOperatorOnlyRefusal(refusedServers)).toContain(
+      'Which code this server runs, and which outside tools it attaches to: ' +
+        'connectors.rawMcpServers[].slug, connectors.rawMcpServers[].url.'
+    );
+
+    const refusedAccounts = findOperatorOnlyPaths({
+      runtimes: { claudeCode: { accounts: [{ path: '/tmp/evil' }] } },
+    });
+    expect(describeOperatorOnlyRefusal(refusedAccounts)).toContain(
+      'Which account and keys the work runs on, and who pays for it: ' +
+        'runtimes.claudeCode.accounts[].path.'
+    );
   });
 
   it('stays honest about a path with no stake on file', () => {

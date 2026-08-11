@@ -113,6 +113,30 @@
  * - `version` — a `z.literal(1)`, so the only value that validates is the one
  *   already stored.
  *
+ * ## Settings that live inside a list
+ *
+ * Some settings are not fields of an object but fields of an object inside an
+ * ARRAY: a raw-MCP server's `url`, a Claude account's `path`. The table names
+ * them with a `[]` segment, the same convention `CONFIG_DISCLOSURE` uses, and
+ * {@link patchPaths} descends into arrays so the enforcement covers exactly what
+ * the classification says.
+ *
+ * It did not always, and the failure is worth remembering because it was silent:
+ * the matcher compared `connectors.rawMcpServers` against keys carrying a `[]`
+ * segment, so a patch replacing the whole list matched nothing and was found
+ * CLEAN. Both call sites gate on "did we find anything", so finding nothing was
+ * indistinguishable from being allowed, and six operator-only fields were
+ * unenforced from the day they were classified (DOR-1113). A guard that reads a
+ * table and a walk that cannot reach part of it is the shape to watch for.
+ *
+ * One consequence to know before you "fix" it: a payload whose SHAPE does not
+ * match the schema — `{ rawMcpServers: { '0': {…} } }`, an array of arrays —
+ * walks to paths no policy key matches, so this guard returns nothing and Zod
+ * refuses the write with a 400. That is the layering working, not a hole: the
+ * guard answers "may this caller write this setting", validation answers "is
+ * this even a config", and teaching the matcher to guess at malformed shapes
+ * would add complexity in front of a bar that already holds.
+ *
  * @module services/core/operator/config-write-policy
  */
 
@@ -164,9 +188,25 @@ export const CONFIG_WRITE_POLICY = {
   // A sidebar group is an object inside an array, so each of its fields carries
   // its own verdict (the `[]` descent, same convention as `CONFIG_DISCLOSURE`).
   // A property added to a group is unclassified, so the guard fails until someone
-  // decides. If one of these ever becomes `operator-only`, `patchPaths` must learn
-  // to descend into arrays first — today it stops at `ui.sidebar.groups`, which is
-  // harmless only because every verdict below is `agent-writable`.
+  // decides.
+  //
+  // ## KEEP EVERY LIST VERDICT-UNIFORM
+  //
+  // `patchPaths` descends into arrays, so classifying an element field
+  // `operator-only` does enforce every patch that NAMES it (DOR-1113). That is
+  // not the same as protecting it, and the difference bites on a MIXED list.
+  // `deepMerge` REPLACES arrays rather than merging them, so a whole-list write
+  // that names only the agent-writable fields is a clean patch by every check
+  // here — and it still drops the operator-only field off every element, because
+  // the elements it wrote are the elements that survive. Reproduced on this list
+  // by making `muted` operator-only: the patch passed the guard and deleted
+  // `muted: true`.
+  //
+  // So a list whose fields do not share one verdict needs whole-list writes
+  // refused outright, which nothing here does today. Every list is currently
+  // verdict-uniform, which is what makes the residual theoretical — keep it that
+  // way. If a fifth group property has to be operator-only, that refusal is part
+  // of the work, not a follow-up.
   'ui.sidebar.groups[].id': 'agent-writable',
   'ui.sidebar.groups[].name': 'agent-writable',
   'ui.sidebar.groups[].items[].kind': 'agent-writable',
@@ -685,24 +725,100 @@ export const REQUIRES_LOGIN_CONFIG_ERROR = 'Standing permissions need Require lo
 
 /**
  * Every dot-path a patch object touches, including a path that ends at an empty
- * object.
+ * object or an empty array, and including the fields inside a LIST it writes.
  *
  * Deliberately not `flattenConfigKeys` (which drops `{ auth: {} }` entirely): a
  * guard should see every branch the caller reached for, not only the ones that
  * carry a value.
  *
+ * ## Why it descends into arrays (DOR-1113)
+ *
+ * The policy table classifies a list's fields one per element — the `[]`
+ * convention `CONFIG_DISCLOSURE` uses — so `connectors.rawMcpServers[].url` is
+ * the only key that exists for a raw-MCP server's URL. A walk that stopped at
+ * the array reported `connectors.rawMcpServers`, which equals no policy key and
+ * is a prefix of none either, because the `[]` sits between them.
+ *
+ * Removing that marker at match time ({@link withoutArrayMarkers}) is what closes
+ * the hole; this descent is what makes the refusal HONEST. Without it the whole
+ * list is one opaque path, so every element field is named whatever the caller
+ * wrote — a patch touching only `url` would be refused in the name of `slug`,
+ * `displayName` and `transport` too, and the refusal text lands in a model's
+ * context as a claim about what it just tried to do (DOR-1044).
+ *
+ * So an array is a segment, not a leaf: its elements are walked under a `[]`
+ * marker. An EMPTY array carries no element to descend into and stays a leaf —
+ * caught as an ancestor of the element fields, the way `{ auth: {} }` is, because
+ * emptying a list is a write to it.
+ *
+ * A top-level array is not a patch at all (`applyConfigPatch` rejects the shape),
+ * and touching nothing is the honest answer for it.
+ *
  * @param value - The patch node being walked.
  * @param prefix - Internal accumulator for the current path; omit at call sites.
- * @returns Dot-paths for every leaf and every empty branch.
+ * @returns Dot-paths for every leaf and every empty branch, `[]` marking each
+ *   descent through array elements.
  */
 function patchPaths(value: unknown, prefix = ''): string[] {
-  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+  if (Array.isArray(value)) {
+    if (!prefix) return [];
+    if (value.length === 0) return [prefix];
+    return value.flatMap((element) => patchPaths(element, `${prefix}[]`));
+  }
+  if (value === null || typeof value !== 'object') {
     return prefix ? [prefix] : [];
   }
   const entries = Object.entries(value as Record<string, unknown>);
   if (entries.length === 0) return prefix ? [prefix] : [];
   return entries.flatMap(([key, child]) => patchPaths(child, prefix ? `${prefix}.${key}` : key));
 }
+
+/**
+ * Drop the `[]` array markers from a dot-path, leaving the plain segment chain
+ * both sides of a match are compared on.
+ *
+ * Comparing without the marker is what lets one policy key cover both shapes a
+ * caller can use: `{ rawMcpServers: [{ url }] }` reaches the field through an
+ * element, `{ rawMcpServers: [] }` and `{ connectors: {} }` stop above it, and
+ * all three have to hit `connectors.rawMcpServers[].url`. It cannot merge two
+ * distinct policy keys into one, because a field is either an array of objects
+ * or an object, never both — pinned by a test that strips the whole table and
+ * asserts the result still has no duplicates.
+ *
+ * @param path - A dot-path, with or without `[]` segments.
+ * @returns The same path with every `[]` removed.
+ */
+function withoutArrayMarkers(path: string): string {
+  return path.replaceAll('[]', '');
+}
+
+/** One guarded policy path, paired with the marker-stripped form it matches on. */
+interface GuardedPath {
+  /** The policy key itself, `[]` markers intact — what a refusal names. */
+  readonly path: string;
+  /** The same key with its `[]` markers removed — what the comparison uses. */
+  readonly plain: string;
+}
+
+/**
+ * Pair each guarded path with its marker-stripped form, once.
+ *
+ * Called at module scope for both tables rather than per request: they are
+ * constants, `PATCH /api/config` runs the matcher twice on every call, and
+ * re-deriving 60-odd strings each time buys nothing.
+ *
+ * @param paths - A guarded policy path list.
+ * @returns The same paths, each carrying its plain form.
+ */
+function prepareGuardedPaths(paths: readonly string[]): readonly GuardedPath[] {
+  return paths.map((path) => ({ path, plain: withoutArrayMarkers(path) }));
+}
+
+/** {@link OPERATOR_ONLY_CONFIG_PATHS}, prepared for matching. */
+const OPERATOR_ONLY_GUARDED = prepareGuardedPaths(OPERATOR_ONLY_CONFIG_PATHS);
+
+/** {@link REQUIRES_LOGIN_CONFIG_PATHS}, prepared for matching. */
+const REQUIRES_LOGIN_GUARDED = prepareGuardedPaths(REQUIRES_LOGIN_CONFIG_PATHS);
 
 /**
  * Find which of a guarded set of dot-paths a patch tries to write.
@@ -712,18 +828,37 @@ function patchPaths(value: unknown, prefix = ''): string[] {
  * exactly, `{ auth: true }` hits it as an ancestor, and
  * `{ providers: { anthropic: '…' } }` hits the `providers` record as a descendant.
  *
+ * Both sides are compared with their `[]` markers removed, so a field inside a
+ * list matches however the caller reached it (see {@link withoutArrayMarkers}).
+ * The RETURNED paths are the policy keys themselves, markers intact, because
+ * they are what the refusal names and what `OPERATOR_ONLY_STAKES` is keyed on.
+ *
+ * ## The touched paths are DEDUPED first, and that is not a micro-optimization
+ *
+ * Descending into arrays makes the walk's output scale with element COUNT, not
+ * with the number of distinct settings: a 1MB patch holding one long list emits
+ * hundreds of thousands of identical strings, and each one was matched against
+ * every guarded path. That is over a SECOND of blocked event loop for a single
+ * request (measured against this table at 2174ms on a flat list, 1160ms on a
+ * nested one, both ~1MB) — and `PATCH /api/config` runs this BEFORE any
+ * authority check, so in the login-off posture anything that can reach the port
+ * can spend it. Deduping first took the same payloads to 201ms and 236ms.
+ *
+ * It cannot change a verdict: a repeated path can only re-add hits already in
+ * the set.
+ *
  * @param patch - The raw patch a caller supplied.
- * @param guardedPaths - The policy paths to match against.
+ * @param guarded - The prepared policy paths to match against.
  * @returns The offending policy paths, sorted, each named once.
  */
-function findGuardedPaths(patch: unknown, guardedPaths: readonly string[]): string[] {
-  const touched = patchPaths(patch);
+function findGuardedPaths(patch: unknown, guarded: readonly GuardedPath[]): string[] {
+  const touched = new Set(patchPaths(patch).map(withoutArrayMarkers));
   const hits = new Set<string>();
 
   for (const path of touched) {
-    for (const guarded of guardedPaths) {
-      if (path === guarded || path.startsWith(`${guarded}.`) || guarded.startsWith(`${path}.`)) {
-        hits.add(guarded);
+    for (const { path: guardedPath, plain } of guarded) {
+      if (path === plain || path.startsWith(`${plain}.`) || plain.startsWith(`${path}.`)) {
+        hits.add(guardedPath);
       }
     }
   }
@@ -740,7 +875,7 @@ function findGuardedPaths(patch: unknown, guardedPaths: readonly string[]): stri
  *   patch is clean.
  */
 export function findOperatorOnlyPaths(patch: unknown): string[] {
-  return findGuardedPaths(patch, OPERATOR_ONLY_CONFIG_PATHS);
+  return findGuardedPaths(patch, OPERATOR_ONLY_GUARDED);
 }
 
 /**
@@ -757,7 +892,7 @@ export function findOperatorOnlyPaths(patch: unknown): string[] {
  *   patch touches none of them.
  */
 export function findLoginRequiredPaths(patch: unknown): string[] {
-  return findGuardedPaths(patch, REQUIRES_LOGIN_CONFIG_PATHS);
+  return findGuardedPaths(patch, REQUIRES_LOGIN_GUARDED);
 }
 
 /**
