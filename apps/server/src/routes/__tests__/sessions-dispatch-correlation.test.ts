@@ -71,7 +71,6 @@ import {
 import { currentDispatch, currentDispatchId } from '../../lib/dispatch-context.js';
 import {
   recentDispatches,
-  recentRefusals,
   resetDispatchBuffers,
 } from '../../services/observability/dispatch-buffers.js';
 
@@ -184,32 +183,55 @@ describe('the dispatch id survives the detached turn', () => {
     expect(isDispatchId(reads[0])).toBe(true);
   });
 
-  it('closes the dispatch and correlates the refusal when the session is locked', async () => {
-    // A 409 is the most common interactive refusal, and it is the one path
-    // where `onSettled` can never fire — no turn started. Left alone the row
-    // sat open forever, and the refusal line was written AFTER `runInDispatch`
-    // returned, so the ambient id was already gone.
+  it('keeps one dispatch open across the wait, and closes it with the turn it eventually runs', async () => {
+    // A queued message replaced the 409 this case used to pin (DOR-1131), and it
+    // is now the interesting one for correlation: acceptance and the turn are
+    // minutes apart, so the id minted when the person pressed send has to be the
+    // id the turn ends under. In between, the row is legitimately open — the
+    // message has not gone anywhere, it is waiting.
     resetDispatchBuffers();
-    fakeRuntime.acquireLock.mockReturnValue(false);
-    fakeRuntime.getLockInfo.mockReturnValue({ clientId: 'someone-else', acquiredAt: Date.now() });
+    let open!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      open = resolve;
+    });
+    fakeRuntime.withScenarios([
+      async function* () {
+        yield { type: 'text_delta', data: { text: 'working' } } as StreamEvent;
+        await gate;
+        yield { type: 'done', data: {} } as StreamEvent;
+      },
+      async function* () {
+        yield { type: 'done', data: {} } as StreamEvent;
+      },
+    ]);
 
-    const res = await request(app)
+    const running = await request(app)
       .post(`/api/sessions/${SESSION_ID}/messages`)
-      .send({ content: 'Hello' });
-    expect(res.status).toBe(409);
+      .set('X-Client-Id', 'client-a')
+      .send({ content: 'the long turn' });
+    expect(running.status).toBe(202);
 
-    const [row] = recentDispatches(10);
-    expect(row).toBeDefined();
-    expect(row.outcome).toBe('refused');
-    expect(row.endedAt).not.toBeNull();
+    const queued = await request(app)
+      .post(`/api/sessions/${SESSION_ID}/messages`)
+      .set('X-Client-Id', 'client-b')
+      .send({ content: 'queued behind it' });
+    expect(queued.status).toBe(202);
 
-    const [refusal] = recentRefusals(10);
-    expect(refusal).toBeDefined();
-    expect(refusal.reason).toBe('session_locked');
-    // The whole point: the refusal names the dispatch it refused, so one filter
-    // finds both the trigger line and the reason it went nowhere.
-    expect(refusal.dispatchId).toBe(row.dispatchId);
-    expect(isDispatchId(refusal.dispatchId as string)).toBe(true);
+    // Newest first: the waiting message's own dispatch, still open.
+    const [waiting] = recentDispatches(10);
+    expect(waiting).toBeDefined();
+    expect(isDispatchId(waiting.dispatchId)).toBe(true);
+    expect(waiting.outcome).toBeNull();
+    expect(waiting.endedAt).toBeNull();
+
+    open();
+
+    // It closes under its OWN id when its turn finally runs and settles.
+    await vi.waitFor(() => {
+      const row = recentDispatches(10).find((d) => d.dispatchId === waiting.dispatchId);
+      expect(row?.outcome).toBe('answered');
+      expect(row?.endedAt).not.toBeNull();
+    });
   });
 
   it('gives two concurrent turns two different ids', async () => {

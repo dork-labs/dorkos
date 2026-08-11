@@ -74,7 +74,6 @@ export {
   dispatchCommandIntent,
   emitQueueUpdate,
   listQueuedMessages,
-  linkSessionId,
   noteSessionOrphaned,
   noteTurnBoundary,
   sweepOrphanedMessageQueues,
@@ -85,7 +84,11 @@ export type {
   DispatchMessageOpts,
   DispatchCommandIntentOpts,
   MessageDispatchResult,
+  WhenBusy,
 } from './message-dispatcher.js';
+export { linkSessionId } from './session-key-registry.js';
+export { cancelQueuedMessage, editQueuedMessage } from './queued-message-edits.js';
+export type { QueuedMessageEdit } from './queued-message-edits.js';
 export {
   MessageQueueStore,
   QUEUE_POSITION_STEP,

@@ -38,6 +38,10 @@ import {
   UpdateSessionRequestSchema,
   SendMessageRequestSchema,
   SendMessageResponseSchema,
+  SessionTriggerResponseSchema,
+  SessionQueueResponseSchema,
+  UpdateQueuedMessageRequestSchema,
+  UpdateQueuedMessageResponseSchema,
   ApprovalRequestSchema,
   SubmitAnswersRequestSchema,
   UiActionRequestSchema,
@@ -630,15 +634,21 @@ registry.registerPath({
   method: 'post',
   path: '/api/sessions/{id}/messages',
   tags: ['Sessions'],
-  summary: 'Send message (trigger-only)',
+  summary: 'Send message (accept-only)',
   description:
-    'TRIGGERS a turn and returns immediately — it does NOT stream tokens (ADR-0264). ' +
-    'The turn runs server-side and its events are delivered solely on the durable ' +
-    '`GET /api/sessions/{id}/events` stream (the single delivery path). The `202` body ' +
-    'carries the CANONICAL session id: for a brand-new session this is the real id ' +
-    'assigned during the turn (it differs from the client-supplied id), so the client ' +
-    're-keys its URL and `/events` subscription to it. To avoid missing the turn, a ' +
-    'client should be subscribed to `/events` before (or concurrently with) this POST.',
+    'ACCEPTS a message and returns immediately — it does NOT stream tokens (ADR-0264) ' +
+    'and does NOT wait for the session to be free. If the session is idle the turn ' +
+    'starts now; if a turn is already running the message joins the session queue and ' +
+    'runs when that turn ends. Either way the events are delivered solely on the ' +
+    'durable `GET /api/sessions/{id}/events` stream (the single delivery path), and the ' +
+    '`202` body says which happened: `outcome` carries the requested and applied ' +
+    'disposition, `queuePosition` is 1 when nothing was ahead of it. A busy session is ' +
+    'never a `409` here — read and edit what is waiting through ' +
+    '`/api/sessions/{id}/queue`. The `202` also carries the CANONICAL session id: for a ' +
+    'brand-new session this is the real id assigned during the turn (it differs from ' +
+    'the client-supplied id), so the client re-keys its URL and `/events` subscription ' +
+    'to it. To avoid missing the turn, a client should be subscribed to `/events` ' +
+    'before (or concurrently with) this POST.',
   request: {
     params: z.object({ id: z.string().uuid() }),
     body: {
@@ -647,7 +657,7 @@ registry.registerPath({
   },
   responses: {
     202: {
-      description: 'Turn accepted and started; body carries the canonical session id',
+      description: 'Message accepted; body carries the canonical session id and the receipt',
       content: {
         'application/json': { schema: SendMessageResponseSchema },
       },
@@ -656,8 +666,84 @@ registry.registerPath({
       description: 'Validation error',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
-    409: {
-      description: 'Session locked by another client',
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/sessions/{id}/queue',
+  tags: ['Sessions'],
+  summary: 'List the messages waiting on a session',
+  description:
+    'The messages accepted for this session that have not run yet, head first. The ' +
+    'same list rides the session snapshot on `GET /api/sessions/{id}/events`, so a ' +
+    'cockpit never needs this route; it is here for integrations and debugging.',
+  request: { params: z.object({ id: z.string().uuid() }) },
+  responses: {
+    200: {
+      description: "The session's queue, in dispatch order",
+      content: { 'application/json': { schema: SessionQueueResponseSchema } },
+    },
+    400: {
+      description: 'Invalid session id',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'patch',
+  path: '/api/sessions/{id}/queue/{messageId}',
+  tags: ['Sessions'],
+  summary: 'Edit or move a waiting message',
+  description:
+    "Changes a waiting message's words, its place in the queue, or both. A move names " +
+    'another message to land before or after rather than an index, because an index ' +
+    'means something different to every window the moment anybody else edits the ' +
+    'queue. The queue belongs to the SESSION: any client may edit any message on it, ' +
+    'whichever client enqueued it.',
+  request: {
+    params: z.object({ id: z.string().uuid(), messageId: z.string() }),
+    body: {
+      content: { 'application/json': { schema: UpdateQueuedMessageRequestSchema } },
+    },
+  },
+  responses: {
+    200: {
+      description: 'The edited message and the queue around it',
+      content: { 'application/json': { schema: UpdateQueuedMessageResponseSchema } },
+    },
+    400: {
+      description: 'Invalid ids, or a body that asks for no change',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    404: {
+      description: 'No such message on this queue (dispatched, removed, or never here)',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+  },
+});
+
+registry.registerPath({
+  method: 'delete',
+  path: '/api/sessions/{id}/queue/{messageId}',
+  tags: ['Sessions'],
+  summary: 'Remove a waiting message',
+  description:
+    'Takes a waiting message off the queue; it will not run. Any client may remove any ' +
+    "message on the session's queue.",
+  request: { params: z.object({ id: z.string().uuid(), messageId: z.string() }) },
+  responses: {
+    200: {
+      description: 'The queue as it now stands',
+      content: { 'application/json': { schema: SessionQueueResponseSchema } },
+    },
+    400: {
+      description: 'Invalid ids',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
+    404: {
+      description: 'No such message on this queue',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
   },
@@ -699,7 +785,7 @@ registry.registerPath({
     202: {
       description: 'Intent accepted and started; body carries the session id',
       content: {
-        'application/json': { schema: SendMessageResponseSchema },
+        'application/json': { schema: SessionTriggerResponseSchema },
       },
     },
     400: {
@@ -825,7 +911,7 @@ registry.registerPath({
     202: {
       description: 'Action accepted; the turn is delivered over /events',
       content: {
-        'application/json': { schema: SendMessageResponseSchema },
+        'application/json': { schema: SessionTriggerResponseSchema },
       },
     },
     400: {

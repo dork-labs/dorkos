@@ -73,9 +73,11 @@ describe('createEmbeddedTurnTrigger', () => {
     });
   });
 
-  it('rejects when the session lock is held — the turn never starts', async () => {
-    // Real failure mode: a second embedded send during an active turn must be
-    // refused exactly like the HTTP 409, not silently run concurrently.
+  it('starts no turn while the session lock is held, and queues the message instead', async () => {
+    // Real failure mode: a second embedded send during an active turn must not
+    // run concurrently. What changed with DOR-1131 is the ANSWER — the embedded
+    // host mirrors the HTTP route, so the message is accepted and waits rather
+    // than coming back as a refusal the person has to retype.
     const runtime = new FakeAgentRuntime();
     runtime.acquireLock.mockReturnValue(false);
     const trigger = createEmbeddedTurnTrigger(runtime);
@@ -87,11 +89,9 @@ describe('createEmbeddedTurnTrigger', () => {
       content: 'hi',
     });
 
-    // `toMatchObject`, not `toEqual`: a refusal now also carries the delivery
-    // outcome the dispatcher minted for it. The refusal itself is unchanged.
-    expect(result).toMatchObject({ accepted: false });
+    expect(result).toMatchObject({ accepted: true, queued: true });
     expect(runtime.sendMessage).not.toHaveBeenCalled();
-    // The projector exists (created before the lock check) but ingested nothing.
+    // The projector exists (created before the dispatch) but ingested nothing.
     expect(peekProjector(id)?.getCursor()).toBe(0);
   });
 

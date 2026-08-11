@@ -29,7 +29,6 @@ import { assertBoundary, parseSessionId, sendError } from '../lib/route-utils.js
 import { DEFAULT_CWD } from '../lib/resolve-root.js';
 import { logError, logger } from '../lib/logger.js';
 import { runInDispatch } from '../lib/dispatch-context.js';
-import { logRefusal } from '../services/observability/refusals.js';
 import {
   recordDispatchEnd,
   recordDispatchStart,
@@ -47,6 +46,11 @@ import {
 } from '../services/session/index.js';
 import type { ResolveTaskOrigins, ResolveRoomOrigins } from '../services/session/index.js';
 import { sessionUiActionHandler } from './session-ui-action-handler.js';
+import {
+  sessionQueueListHandler,
+  sessionQueueRemoveHandler,
+  sessionQueueUpdateHandler,
+} from './session-queue-handler.js';
 import { sessionEventsHandler } from './session-events-handler.js';
 import { sessionCommandIntentHandler } from './session-command-intent-handler.js';
 import { sessionDevtoolsIngestHandler } from './session-devtools.js';
@@ -567,18 +571,26 @@ async function resolveRuntimeTypeForNewSession(opts: {
   return runtimeRegistry.getDefaultType();
 }
 
-// POST /api/sessions/:id/messages — Trigger a turn (trigger-only, ADR-0264).
+// POST /api/sessions/:id/messages — Accept a message (trigger-only, ADR-0264;
+// accept-only, spec `persistent-session-runtime` §3.3).
 //
-// This endpoint NO LONGER streams tokens in-band. It validates, acquires the
-// session write-lock, and STARTS the turn server-side, feeding the runtime's
-// `sendMessage` generator into the per-session projector (the single delivery
-// path). It then responds `202 Accepted` with the CANONICAL session id and
-// returns — the turn runs detached, delivering its tokens solely on
-// `GET /:id/events`. The lock is bound to the turn's real duration (not the
-// 202) and released on completion AND on error; a detached failure is surfaced
-// INTO the projector so `/events` consumers see it. See
-// `services/session/trigger-turn.ts` for the orchestration and the lock/error
-// invariants.
+// This endpoint NO LONGER streams tokens in-band, and no longer waits for the
+// session to be free. It validates and hands the message to the dispatcher,
+// which either starts the turn now or puts it on the session's durable queue,
+// then answers `202 Accepted` with the canonical session id, the message id, the
+// delivery outcome and the queue position. Everything after that — the turn
+// starting, its tokens, its end — arrives on `GET /:id/events`, the single
+// delivery path.
+//
+// **There is no `409` here.** A busy session used to refuse a second window;
+// now it queues, and the person can edit or remove what is waiting through the
+// queue routes below. The write-lock still exists — it is the mutex one turn
+// window holds, and its inactivity TTL still reclaims a turn that went dark
+// (DOR-782) — but it is no longer an answer this route can give. The lock is
+// bound to the turn's real duration and released on completion AND on error; a
+// detached failure is surfaced INTO the projector so `/events` consumers see it.
+// See `services/session/message-dispatcher.ts` and `trigger-turn.ts` for the
+// orchestration and the lock/error invariants.
 router.post('/:id/messages', async (req, res) => {
   const sessionId = parseSessionId(req.params.id);
   if (!sessionId) return sendError(res, 400, 'Invalid session ID', 'INVALID_SESSION_ID');
@@ -596,6 +608,7 @@ router.post('/:id/messages', async (req, res) => {
     workspaceKey,
     workspaceProvider,
     seedContext,
+    disposition,
   } = parsed.data;
 
   // Opt-in workspace binding (DOR-84). When a workspaceKey is supplied, the
@@ -710,6 +723,9 @@ router.post('/:id/messages', async (req, res) => {
       // context bag, never `content`: the prompt stays the person's message
       // byte for byte, and the seed is stripped from every rendered transcript.
       ...(seedContext ? { seedContext } : {}),
+      // Absent means `queue`, which is also what every disposition resolves to
+      // until the native rungs land (P4). The receipt says which it was.
+      ...(disposition ? { disposition } : {}),
       projector,
       runtime,
       onError: (err) => {
@@ -726,37 +742,30 @@ router.post('/:id/messages', async (req, res) => {
     })
   );
 
-  if (!result.accepted) {
-    const lockInfo = runtime.getLockInfo(sessionId);
-    // A refused trigger still opened a dispatch above, and `onSettled` fires
-    // only for a turn that STARTED — so nothing else will ever close this one.
-    // Left open, the most common interactive refusal sat at the top of
-    // `GET /api/debug/dispatches` reading as a turn still running.
-    recordDispatchEnd(dispatchId, 'refused');
-    // `shown`, so `info`: the caller gets a 409 naming the holder, which is a
-    // refusal the person can see and act on. It is deliberately not a `warn` —
-    // the level is reserved for refusals that left no other trace.
-    //
-    // The id is passed explicitly because this line runs AFTER `runInDispatch`
-    // has returned: the scope that would have supplied it ambiently is gone by
-    // the time the 409 is written.
-    logRefusal('[POST /messages] session locked', {
-      reason: 'session_locked',
-      visibility: 'shown',
-      dispatchId,
+  if (result.queued) {
+    logger.info('[POST /messages] queued behind the running turn', {
       sessionId,
-      detail: { lockedBy: lockInfo?.clientId ?? 'unknown' },
-    });
-    return res.status(409).json({
-      error: 'Session locked',
-      code: 'SESSION_LOCKED',
-      lockedBy: lockInfo?.clientId ?? 'unknown',
-      lockedAt: lockInfo ? new Date(lockInfo.acquiredAt).toISOString() : new Date().toISOString(),
+      dispatchId,
+      messageId: result.outcome.messageId,
+      queuePosition: result.queuePosition,
     });
   }
 
-  res.status(202).json({ sessionId: result.canonicalId });
+  res.status(202).json({
+    sessionId: result.canonicalId,
+    messageId: result.outcome.messageId,
+    outcome: result.outcome,
+    queuePosition: result.queuePosition,
+  });
 });
+
+// GET|PATCH|DELETE /api/sessions/:id/queue — the messages waiting on a session.
+// Handlers live in `session-queue-handler.ts` so this file stays under the size
+// rule. The queue is per SESSION: any window may edit or remove any message on
+// it, whichever window typed it. See the handler's module doc.
+router.get('/:id/queue', sessionQueueListHandler);
+router.patch('/:id/queue/:messageId', sessionQueueUpdateHandler);
+router.delete('/:id/queue/:messageId', sessionQueueRemoveHandler);
 
 // POST /api/sessions/:id/approve - Approve pending tool call
 router.post('/:id/approve', async (req, res) => {
@@ -866,8 +875,11 @@ router.post('/:id/submit-answers', async (req, res) => {
 // POST /api/sessions/:id/ui-action — Generative-UI widget interactivity channel
 // (spec gen-ui-tier1 §3). The handler lives in `session-ui-action-handler.ts`
 // so this route file stays under the file-size rule, mirroring `/:id/events`.
-// Semantics: mirrors /messages (fresh turn via the dispatcher, 202, turn streams
-// over /events; busy → 409 SESSION_LOCKED) — see the handler's module doc.
+// Semantics: fresh turn via the dispatcher, 202, turn streams over /events. A
+// busy session still answers 409 SESSION_LOCKED here — unlike /messages, which
+// now queues: a widget action is answered by the turn it was clicked in, so
+// running it against whatever a later turn leaves behind is not the same action.
+// See the handler's module doc.
 router.post('/:id/ui-action', sessionUiActionHandler);
 
 // POST /api/sessions/:id/command-intents/:intent — Runtime-fulfilled command

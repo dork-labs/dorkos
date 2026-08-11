@@ -836,7 +836,14 @@ describe('Sessions Routes', () => {
 
       expect(res.status).toBe(202);
       expect(res.type).toBe('application/json');
-      expect(res.body).toEqual({ sessionId: S1 });
+      // The whole body: the canonical id plus the queue receipt, and no turn
+      // frames — the turn is delivered on /events and nowhere else.
+      expect(res.body).toEqual({
+        sessionId: S1,
+        messageId: expect.any(String),
+        outcome: { messageId: expect.any(String), requested: 'queue', applied: 'queue' },
+        queuePosition: 1,
+      });
       // The turn's tokens are NOT delivered on the POST response.
       expect(res.text).not.toContain('text_delta');
     });
@@ -867,7 +874,9 @@ describe('Sessions Routes', () => {
       );
     });
 
-    it('returns 409 when session is locked by another client', async () => {
+    it('accepts and queues when the session is locked by another client', async () => {
+      // There is no 409 on this route any more (DOR-1131): a session somebody
+      // else is writing to takes the message and runs it when it can.
       fakeRuntime.acquireLock.mockReturnValue(false);
       fakeRuntime.getLockInfo.mockReturnValue({
         clientId: 'other-client',
@@ -878,13 +887,13 @@ describe('Sessions Routes', () => {
         .post(`/api/sessions/${S1}/messages`)
         .send({ content: 'hi' });
 
-      expect(res.status).toBe(409);
+      expect(res.status).toBe(202);
       expect(res.body).toMatchObject({
-        error: 'Session locked',
-        code: 'SESSION_LOCKED',
-        lockedBy: 'other-client',
+        sessionId: expect.any(String),
+        messageId: expect.any(String),
+        queuePosition: 1,
+        outcome: { requested: 'queue', applied: 'queue' },
       });
-      expect(res.body.lockedAt).toBeDefined();
     });
 
     it('releases the lock even when the detached turn errors', async () => {
