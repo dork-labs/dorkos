@@ -5,6 +5,7 @@ import {
   useAppStore,
   useFavicon,
   useDocumentTitle,
+  useIsMobile,
   useSlotContributions,
 } from '@/layers/shared/model';
 import { useElectronNavigate } from './app/use-electron-navigate';
@@ -64,11 +65,11 @@ import {
   Sidebar,
   SidebarProvider,
   SidebarInset,
-  SidebarMobileNavigationClose,
   SidebarTrigger,
   SidebarFooter,
   SidebarRail,
 } from '@/layers/shared/ui';
+import { MobileTabsLayout } from '@/layers/widgets/mobile-tabs';
 import {
   AppTabBar,
   APP_TAB_PANEL_ID,
@@ -100,6 +101,16 @@ interface SidebarSlot {
   body: React.ReactNode;
   /** Slide direction: 1 = slide in from right (drilling in), -1 = slide in from left (backing out) */
   direction: 1 | -1;
+  /**
+   * Whether {@link SidebarSlot.body} is a contributed `sidebar.body` takeover
+   * rather than the built-in roster.
+   *
+   * The two widths spend a takeover differently: on desktop it replaces the
+   * whole body, and on a phone it replaces the Library tab and leaves Home
+   * standing (P4). So the shell has to say which kind of body this is, rather
+   * than the mobile layout guessing from a key string.
+   */
+  isTakeover: boolean;
 }
 
 interface HeaderSlot {
@@ -156,10 +167,11 @@ function useSidebarSlot(): SidebarSlot {
         </SidebarBodyErrorBoundary>
       ),
       direction: 1,
+      isTakeover: true,
     };
   }
 
-  return { key: 'dashboard', body: <DashboardSidebar />, direction: -1 };
+  return { key: 'dashboard', body: <DashboardSidebar />, direction: -1, isTakeover: false };
 }
 
 /**
@@ -257,6 +269,12 @@ function useHeaderSlot({
  */
 export function AppShell() {
   const { sidebarOpen, setSidebarOpen } = useAppStore();
+  // **The one call site that decides which cockpit this is** (spec §9, P4).
+  // Below 768px the sidebar is not a narrower sidebar — it is four destinations
+  // along the bottom of the screen and no drawer at all. Reverting this one
+  // choice restores the off-canvas sheet, which stays in `shared/ui/sidebar.tsx`
+  // for the Obsidian embed either way.
+  const isMobile = useIsMobile();
   const [activeSessionId] = useSessionId();
   // Live route pathname threaded into the right panel so its tab `visibleWhen`
   // predicates re-evaluate on navigation. The container itself is router-free
@@ -432,7 +450,15 @@ export function AppShell() {
                 <SidebarProvider
                   open={sidebarOpen}
                   onOpenChange={setSidebarOpen}
-                  className="flex-1 overflow-hidden"
+                  // `min-h-0` on a phone, and it is load-bearing. The provider's
+                  // own wrapper carries `min-h-svh`, which was free while it was
+                  // the only child of this `h-dvh` column. The bottom bar is a
+                  // second child, so the two together demand 56px more than the
+                  // screen has and the flex column resolves that by pushing its
+                  // first child UP — measured at 390×844, the inset started at
+                  // -56 and the route's own header (the room name) sat off the
+                  // top of the screen. `min-h-0` lets `flex-1` shrink instead.
+                  className={cn('flex-1 overflow-hidden', isMobile && 'min-h-0')}
                   // **The visible panel is 272px** (design-decisions §11;
                   // 20rem was 320, which the design-system guide's own
                   // "240–280px" line had already contradicted).
@@ -445,14 +471,19 @@ export function AppShell() {
                   // the gutter it floats in.
                   style={{ '--sidebar-width': 'calc(272px + 1rem)' } as React.CSSProperties}
                 >
-                  {/* On a phone the sidebar is a sheet over the whole screen,
-                      so it has to get out of the way once a row has taken you
-                      somewhere (DOR-610). Mounted here rather than folded into
-                      the provider because this is where the router is. */}
-                  <SidebarMobileNavigationClose />
-                  <Sidebar variant="inset">
-                    <TitlebarDragStrip />
-                    {/* ── The header block: persistent chrome ──
+                  {/* ── The panel, on anything wider than a phone ──
+                        Not rendered at all below 768px, which is what makes
+                        "no drawer, no sheet" structural rather than styled:
+                        the Radix Sheet lives INSIDE `<Sidebar>`, so a phone
+                        has no sheet to open and nothing to dismiss. The router
+                        subscription that used to close it after every
+                        navigation (`SidebarMobileNavigationClose`) retired with
+                        it — with four destinations along the bottom there is
+                        nothing to put away (P4). */}
+                  {!isMobile && (
+                    <Sidebar variant="inset">
+                      <TitlebarDragStrip />
+                      {/* ── The header block: persistent chrome ──
                           The mount point for the workspace switcher, the New
                           button and the ⌘K pill (spec BC-43→46, task P2.4). It
                           belongs OUTSIDE the body-swap wrapper below, so a
@@ -465,8 +496,8 @@ export function AppShell() {
                           implementation and this block is only what it says it
                           is: whose cockpit this is, one New button, one ⌘K
                           pill (BC-43 → BC-46). */}
-                    <SidebarHeaderBlock />
-                    {/* ── Dynamic sidebar body with directional slide ──
+                      <SidebarHeaderBlock />
+                      {/* ── Dynamic sidebar body with directional slide ──
                           This wrapper is the clip boundary for the body swap. The
                           slide transform lives on the motion.div below, so the
                           motion.div's own `overflow-hidden` can only clip its
@@ -476,52 +507,53 @@ export function AppShell() {
                           slides within the sidebar shell seam, so mid-flight content
                           can't spill past the sidebar's edge. The footer and rail are
                           siblings of this wrapper, so they stay outside the clip. */}
-                    <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
-                      <AnimatePresence mode="wait" initial={false} custom={sidebarSlot.direction}>
-                        <motion.div
-                          key={sidebarSlot.key}
-                          data-testid="sidebar-body-swap"
-                          custom={sidebarSlot.direction}
-                          initial="enter"
-                          animate="center"
-                          exit="exit"
-                          variants={{
-                            enter: (dir: number) => ({ x: `${dir * 100}%`, opacity: 0 }),
-                            center: { x: 0, opacity: 1 },
-                            exit: (dir: number) => ({ x: `${dir * -100}%`, opacity: 0 }),
-                          }}
-                          transition={{ duration: 0.2, ease: [0.4, 0, 0.2, 1] }}
-                          className="flex min-h-0 flex-1 flex-col overflow-hidden"
-                        >
-                          {/* Contributed takeover bodies arrive pre-wrapped in
+                      <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
+                        <AnimatePresence mode="wait" initial={false} custom={sidebarSlot.direction}>
+                          <motion.div
+                            key={sidebarSlot.key}
+                            data-testid="sidebar-body-swap"
+                            custom={sidebarSlot.direction}
+                            initial="enter"
+                            animate="center"
+                            exit="exit"
+                            variants={{
+                              enter: (dir: number) => ({ x: `${dir * 100}%`, opacity: 0 }),
+                              center: { x: 0, opacity: 1 },
+                              exit: (dir: number) => ({ x: `${dir * -100}%`, opacity: 0 }),
+                            }}
+                            transition={{ duration: 0.2, ease: [0.4, 0, 0.2, 1] }}
+                            className="flex min-h-0 flex-1 flex-col overflow-hidden"
+                          >
+                            {/* Contributed takeover bodies arrive pre-wrapped in
                                 SidebarBodyErrorBoundary + Suspense at the slot
                                 seam (useSidebarSlot); the built-in dashboard/
                                 session bodies are eager and never suspend. */}
-                          {sidebarSlot.body}
-                        </motion.div>
-                      </AnimatePresence>
-                    </div>
+                            {sidebarSlot.body}
+                          </motion.div>
+                        </AnimatePresence>
+                      </div>
 
-                    {/* ── Static footer — never animates ── */}
-                    {/* No hairline above the footer either — the footer is one
+                      {/* ── Static footer — never animates ── */}
+                      {/* No hairline above the footer either — the footer is one
                         slim tinted strip, and the scroll-edge shadow on the body
                         above is what says content continues under it (spec R1). */}
-                    <SidebarFooter className="px-2 py-3">
-                      {shouldShowGettingStarted && (
-                        <div className="mb-2">
-                          <ProgressCard onDismiss={dismissOnboarding} />
-                        </div>
-                      )}
-                      {/* One-time role prompt for users who onboarded before the
+                      <SidebarFooter className="px-2 py-3">
+                        {shouldShowGettingStarted && (
+                          <div className="mb-2">
+                            <ProgressCard onDismiss={dismissOnboarding} />
+                          </div>
+                        )}
+                        {/* One-time role prompt for users who onboarded before the
                           profile beat existed. Self-gating (renders null unless
                           its whole show condition holds, including "ProgressCard
                           is not visible"), so mounting it unconditionally is
                           safe — never two cards. */}
-                      <ProfilePromptCard />
-                      <SidebarFooterStrip />
-                    </SidebarFooter>
-                    <SidebarRail />
-                  </Sidebar>
+                        <ProfilePromptCard />
+                        <SidebarFooterStrip />
+                      </SidebarFooter>
+                      <SidebarRail />
+                    </Sidebar>
+                  )}
                   <SidebarInset className="overflow-hidden">
                     {/* ── Window tabs — the inset's top band, above the page
                           header (DOR-540). Desktop app only (DOR-568): a browser
@@ -555,8 +587,16 @@ export function AppShell() {
                       className="app-drag-region relative flex h-9 shrink-0 items-center gap-2 border-b px-2 transition-[border-color] duration-300"
                       style={headerSlot.borderStyle}
                     >
-                      <SidebarTrigger className="-ml-0.5" />
-                      <Separator orientation="vertical" className="mr-1 h-4" />
+                      {/* A phone has no panel to toggle, so it gets no toggle.
+                          A hamburger that opens nothing is worse than no
+                          hamburger — and the four destinations it used to reach
+                          are along the bottom of the screen now (P4). */}
+                      {!isMobile && (
+                        <>
+                          <SidebarTrigger className="-ml-0.5" />
+                          <Separator orientation="vertical" className="mr-1 h-4" />
+                        </>
+                      )}
                       {/* ── Dynamic header content with cross-fade ── */}
                       <AnimatePresence mode="wait" initial={false}>
                         <motion.div
@@ -605,6 +645,15 @@ export function AppShell() {
                     </main>
                   </SidebarInset>
                 </SidebarProvider>
+                {/* ── The phone cockpit: four destinations, no drawer ──
+                      A sibling of the provider rather than a child of it, so
+                      the bar reserves its own room at the bottom of the shell
+                      and no routed page has to know it exists to avoid being
+                      covered by it. Its panels are what Now, Today and Library
+                      look like when they get the whole screen. */}
+                {isMobile && (
+                  <MobileTabsLayout takeover={sidebarSlot.isTakeover ? sidebarSlot.body : null} />
+                )}
               </div>
             </motion.div>
           )}
