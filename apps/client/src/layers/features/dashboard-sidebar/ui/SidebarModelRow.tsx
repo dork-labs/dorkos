@@ -194,19 +194,11 @@ function AgentRowFromModel({
       displayName={row.primary}
       visual={visual}
       isActive={isActive}
-      // The inline three-session panel is retired by BC-34; P2.6 lands the
-      // session switcher that replaces it and deletes the panel with it. Until
-      // then it stays wired shut rather than half-open.
-      isExpanded={false}
       isMuted={row.muted}
       onSelect={() => chrome.openTarget(row.target)}
-      onToggleExpand={() => chrome.openTarget(row.target)}
       onOpenProfile={() => chrome.openHub(path)}
       onViewProfile={chrome.viewProfileFor(path)}
       onRequestNewGroup={chrome.requestNewGroup}
-      sessions={[]}
-      isLoadingSessions={false}
-      activeSessionId={null}
       onSessionClick={(sessionId) =>
         chrome.openTarget({ kind: 'session', sessionId, agentPath: path, cwd: path })
       }

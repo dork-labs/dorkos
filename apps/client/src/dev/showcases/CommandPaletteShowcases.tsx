@@ -234,6 +234,7 @@ function SubMenuStates() {
               onOpenNewTab={() => {}}
               onOpenNewWindow={() => {}}
               onNewSession={() => {}}
+              onBrowseSessions={() => {}}
               onSelectSession={() => {}}
               onEditSettings={() => {}}
               recentSessions={MOCK_SESSIONS}
@@ -252,6 +253,7 @@ function SubMenuStates() {
               onOpenNewTab={() => {}}
               onOpenNewWindow={() => {}}
               onNewSession={() => {}}
+              onBrowseSessions={() => {}}
               onSelectSession={() => {}}
               onEditSettings={() => {}}
               recentSessions={[]}
@@ -358,6 +360,7 @@ function EdgeCases() {
               onOpenNewTab={() => {}}
               onOpenNewWindow={() => {}}
               onNewSession={() => {}}
+              onBrowseSessions={() => {}}
               onSelectSession={() => {}}
               onEditSettings={() => {}}
               recentSessions={[

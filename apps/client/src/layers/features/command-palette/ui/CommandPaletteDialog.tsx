@@ -26,6 +26,11 @@ import { PaletteRootPage } from './PaletteRootPage';
 import { usePreviewData } from '../model/use-preview-data';
 import { dialogVariants } from './palette-constants';
 import { useAgentHubStore } from '@/layers/features/agent-hub';
+import { resolveAgentVisual } from '@/layers/entities/agent';
+// Composition across features, which the layer rules permit for UI: the
+// switcher is the sidebar's component, and ⌘K is one of the three doors BC-35
+// says it opens from.
+import { SessionSwitcher } from '@/layers/features/dashboard-sidebar';
 import type { AgentPathEntry } from '@dorkos/shared/mesh-schemas';
 import type { FuseResultMatch } from 'fuse.js';
 
@@ -50,6 +55,10 @@ export function CommandPaletteDialog() {
   const [pages, setPages] = useState<string[]>([]);
   // The agent that was drilled into (set when navigating to 'agent-actions' page)
   const [subMenuAgent, setSubMenuAgent] = useState<AgentPathEntry | null>(null);
+  // The agent whose session switcher is up, or `null`. Held OUTSIDE the palette
+  // dialog's own state: "Browse sessions…" closes the palette, and the surface
+  // it opens has to outlive the one it was launched from.
+  const [switcherAgent, setSwitcherAgent] = useState<AgentPathEntry | null>(null);
   const page = pages[pages.length - 1];
   // staggerKey drives the stagger entrance animation: incremented on dialog open
   // and page transitions, but NOT on search keystrokes.
@@ -367,7 +376,7 @@ export function CommandPaletteDialog() {
     return rooms.dms.filter((room) => visibleDmIds.has(room.id));
   }, [rooms.dms, visibleDmIds]);
 
-  return (
+  const palette = (
     <ResponsiveDialog open={globalPaletteOpen} onOpenChange={handleOpenChange}>
       <ResponsiveDialogContent
         className={cn(
@@ -572,6 +581,20 @@ export function CommandPaletteDialog() {
                           setRightPanelOpen(true);
                           closePalette();
                         }}
+                        // Offered only when there is something to browse. The
+                        // count is already in hand here, and a row that opens a
+                        // dialog saying "no conversations yet" is a dead end
+                        // dressed as a destination — "New Session" above it is
+                        // what that operator actually wants.
+                        onBrowseSessions={
+                          previewData.sessionCount > 0
+                            ? () => {
+                                setSwitcherAgent(subMenuAgent);
+                                recordUsage(subMenuAgent.id);
+                                closePalette();
+                              }
+                            : undefined
+                        }
                         recentSessions={previewData.recentSessions}
                         // The AGENT's directory, not the one on screen: the
                         // durable stream resolves a session's history from
@@ -599,5 +622,29 @@ export function CommandPaletteDialog() {
         </motion.div>
       </ResponsiveDialogContent>
     </ResponsiveDialog>
+  );
+
+  // ⌘K's door into the switcher (BC-35). A sibling of the palette rather than
+  // a child of it: the palette closes on select, and a surface nested inside it
+  // would be torn down in the same commit that opened it. Rendering a sibling
+  // feature's component is composition, which is the one cross-feature reach the
+  // layer rules allow.
+  return (
+    <>
+      {palette}
+      {switcherAgent !== null && (
+        <SessionSwitcher
+          agentPath={switcherAgent.projectPath}
+          agentName={switcherAgent.displayName ?? switcherAgent.name}
+          agentVisual={resolveAgentVisual(switcherAgent)}
+          open
+          onOpenChange={(open) => {
+            if (!open) setSwitcherAgent(null);
+          }}
+          onSelectSession={(sessionId) => handleSessionSelect(sessionId, switcherAgent.projectPath)}
+          onNewSession={() => startNewSession(switcherAgent.projectPath)}
+        />
+      )}
+    </>
   );
 }

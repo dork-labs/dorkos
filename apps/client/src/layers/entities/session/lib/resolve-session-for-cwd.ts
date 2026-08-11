@@ -33,6 +33,7 @@ import { reportClientError } from '@/layers/shared/lib';
 // avoid a self-referential barrel import within this slice.
 import { sessionKeys } from '../api/query-keys';
 import { sessionListQueryOptions } from '../api/session-list-query';
+import { partitionSessionsByOrigin } from './partition-sessions-by-origin';
 
 /**
  * What every surface says when it could not find out which conversation an
@@ -82,8 +83,9 @@ export interface ResolvedSession {
 }
 
 /**
- * The most recent session for `cwd`, or a freshly minted id when that directory
- * genuinely has none.
+ * The most recent CONVERSATION for `cwd`, or a freshly minted id when that
+ * directory has never held one (see {@link mostRecentConversation} — sessions
+ * that started without a person are not conversations, BC-34).
  *
  * Answers from cache when the list is there and still believable, and asks the
  * server otherwise — the server's answer is then cached under the same key
@@ -109,10 +111,45 @@ export async function resolveSessionForCwd(
 ): Promise<ResolvedSession | null> {
   const sessions = trustedSessionsForCwd(deps.queryClient, cwd) ?? (await askServer(deps, cwd));
   if (sessions === null) return null;
-  const mostRecent = sessions[0];
+  const mostRecent = mostRecentConversation(sessions);
   return mostRecent
     ? { sessionId: mostRecent.id, isNew: false }
     : { sessionId: crypto.randomUUID(), isNew: true };
+}
+
+/**
+ * The newest conversation a PERSON had here, or `undefined` when there has
+ * never been one.
+ *
+ * **The most recent session and the most recent conversation are not the same
+ * thing, and BC-34 asks for the second.** Clicking an agent opens "its most
+ * recent human conversation" — but the raw list is every session that ran in
+ * this directory, newest first, including the ones that started without you.
+ * Taking `sessions[0]` therefore landed the operator inside a room-triggered
+ * run the moment they `@`-mentioned an agent in a channel: reproduced by posting
+ * `@tangerines …` in `#team` and clicking the `tangerines` row.
+ *
+ * That failure compounds rather than merely surprising. BC-19 keeps automated
+ * sessions out of Today, so the conversation the operator was just dropped into
+ * is one the sidebar then refuses to name — no anchor row, no way back except
+ * the switcher.
+ *
+ * The definition of "human" is `partitionSessionsByOrigin`'s, shared with the
+ * session switcher's "Live now" group and the agent row's "N live" chip, so all
+ * three agree about what a conversation is. That an ABSENT origin means `user`
+ * comes from the field itself — `SessionSchema.origin` in
+ * `packages/shared/src/schemas.ts`, whose contract is "ABSENT means
+ * user-initiated, the unmarked default" — and not from any design decision.
+ *
+ * **No conversation means a FRESH one, not the newest automated run** — BC-34's
+ * own else-branch. An agent that has only ever run scheduled tasks opens on an
+ * empty composer, which is the honest answer to "take me to where we were
+ * talking": we never were.
+ *
+ * @param sessions - The directory's sessions, newest first.
+ */
+function mostRecentConversation(sessions: Session[]): Session | undefined {
+  return partitionSessionsByOrigin(sessions).conversations[0];
 }
 
 /**
@@ -125,12 +162,19 @@ export async function resolveSessionForCwd(
  * its URL and let the `/session` loader resolve it properly on arrival, never
  * mint an id of its own.
  *
+ * **The same human-conversation rule as {@link resolveSessionForCwd}**, and it
+ * has to be: this builds the `href` a row is rendered with while that resolves
+ * the click. Filtering in one and not the other would give a link that points
+ * somewhere its own click does not go — and "no cached CONVERSATION" answers
+ * `null` here, which is already the honest "let the loader work it out".
+ *
  * @param queryClient - Query client holding the cached session lists.
  * @param cwd - The target working directory, or `null` for the default one.
- * @returns The most recent known session id, or `null` when none is cached.
+ * @returns The most recent known conversation id, or `null` when none is cached.
  */
 export function cachedSessionForCwd(queryClient: QueryClient, cwd: string | null): string | null {
-  return trustedSessionsForCwd(queryClient, cwd)?.[0]?.id ?? null;
+  const sessions = trustedSessionsForCwd(queryClient, cwd);
+  return sessions === null ? null : (mostRecentConversation(sessions)?.id ?? null);
 }
 
 /**

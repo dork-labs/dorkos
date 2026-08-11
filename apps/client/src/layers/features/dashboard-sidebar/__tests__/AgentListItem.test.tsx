@@ -2,7 +2,6 @@
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
-import type { Session } from '@dorkos/shared/types';
 import { AgentListItem } from '../ui/AgentListItem';
 import { SidebarProvider, TooltipProvider } from '@/layers/shared/ui';
 
@@ -39,57 +38,31 @@ const mockAgentStatus = vi.fn<() => MockAgentStatus>(() => ({
 }));
 
 vi.mock('@/layers/entities/session', async (importOriginal) => {
-  // Extend the real module rather than replacing it wholesale: this file
-  // depends on the real `partitionSessionsByOrigin` (session-origin-legibility)
-  // to exercise conversations/automated splitting the same way production does.
   const actual = await importOriginal<typeof import('@/layers/entities/session')>();
   return {
     ...actual,
     useAgentHottestStatus: () => mockAgentStatus(),
     usePulseMotion: () => ({ animate: undefined, transition: undefined }),
-    SessionRow: ({
-      session,
-      isActive,
-      onClick,
-      onFork,
-      onRename,
-    }: {
-      variant: string;
-      session: { id: string; title: string };
-      isActive: boolean;
-      onClick: () => void;
-      onFork?: (sessionId: string) => void;
-      onRename?: (sessionId: string, title: string) => void;
-    }) => (
-      <button
-        type="button"
-        data-testid={`session-${session.id}`}
-        data-active={isActive}
-        data-has-fork={!!onFork}
-        data-has-rename={!!onRename}
-        onClick={onClick}
-      >
-        {session.title}
-        {onFork && (
-          <button
-            type="button"
-            data-testid={`fork-${session.id}`}
-            onClick={() => onFork(session.id)}
-          >
-            Fork
-          </button>
-        )}
-        {onRename && (
-          <button
-            type="button"
-            data-testid={`rename-${session.id}`}
-            onClick={() => onRename(session.id, 'New name')}
-          >
-            Rename
-          </button>
-        )}
-      </button>
-    ),
+  };
+});
+
+const mockLiveCount = vi.fn<() => number>(() => 0);
+
+vi.mock('../model/use-live-sessions', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../model/use-live-sessions')>();
+  return { ...actual, useLiveSessionCount: () => mockLiveCount() };
+});
+
+// The switcher is `SessionSwitcher.test.tsx`'s subject. Here it is a marker, so
+// these cases assert that the chip OPENS it without standing up a transport, a
+// query client and a Radix portal to do it. `LiveSessionsChip` stays real: the
+// row draws it twice and the two copies must be the same width.
+vi.mock('../ui/SessionSwitcher', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../ui/SessionSwitcher')>();
+  return {
+    ...actual,
+    SessionSwitcher: ({ open, agentPath }: { open: boolean; agentPath: string }) =>
+      open ? <div data-testid="session-switcher">{agentPath}</div> : null,
   };
 });
 
@@ -142,34 +115,15 @@ afterEach(() => {
 // Helpers
 // ---------------------------------------------------------------------------
 
-function mockSession(id: string, title: string, overrides: Partial<Session> = {}) {
-  return {
-    id,
-    title,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-    permissionMode: 'default' as const,
-    runtime: 'claude-code',
-    ...overrides,
-  };
-}
-
-const MOCK_SESSIONS = [mockSession('s1', 'Session 1'), mockSession('s2', 'Session 2')];
-
 function buildProps(overrides: Partial<Parameters<typeof AgentListItem>[0]> = {}) {
   return {
     path: '/agents/test-agent',
     agent: null,
     visual: { color: '#aaaaaa', emoji: '🤖' },
     isActive: false,
-    isExpanded: false,
     onSelect: vi.fn(),
-    onToggleExpand: vi.fn(),
     onOpenProfile: vi.fn(),
     onRequestNewGroup: vi.fn(),
-    sessions: [],
-    isLoadingSessions: false,
-    activeSessionId: null,
     onSessionClick: vi.fn(),
     onNewSession: vi.fn(),
     ...overrides,
@@ -188,6 +142,10 @@ function renderItem(overrides: Partial<Parameters<typeof AgentListItem>[0]> = {}
   return { ...result, props };
 }
 
+function row() {
+  return screen.getByTestId('agent-identity').closest('[data-slot="agent-list-item"]')!;
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -201,6 +159,7 @@ describe('AgentListItem', () => {
       pulse: false,
       label: 'Idle',
     });
+    mockLiveCount.mockReturnValue(0);
   });
 
   // --- Rendering ---
@@ -231,207 +190,83 @@ describe('AgentListItem', () => {
     expect(screen.queryByTestId('activity-badge')).not.toBeInTheDocument();
   });
 
-  // --- Row click behavior ---
+  // --- Row click behavior (BC-34) ---
 
-  it('calls onSelect when clicking an inactive row', () => {
+  it('opens the conversation on click, whether or not the agent is already active', () => {
     const { props } = renderItem({ isActive: false });
-    fireEvent.click(screen.getByTestId('agent-identity').closest('[data-slot="agent-list-item"]')!);
+    fireEvent.click(row());
     expect(props.onSelect).toHaveBeenCalledTimes(1);
-    expect(props.onToggleExpand).not.toHaveBeenCalled();
+
+    cleanup();
+    const active = renderItem({ isActive: true });
+    fireEvent.click(row());
+    // An agent is a teammate, not a folder: the row has no expanded state to
+    // toggle into, so the second press does the same thing as the first.
+    expect(active.props.onSelect).toHaveBeenCalledTimes(1);
   });
 
-  it('calls onToggleExpand when clicking an active row', () => {
-    const { props } = renderItem({ isActive: true });
-    fireEvent.click(screen.getByTestId('agent-identity').closest('[data-slot="agent-list-item"]')!);
-    expect(props.onToggleExpand).toHaveBeenCalledTimes(1);
+  it('renders no expansion panel — there is nothing to unfold', () => {
+    const { container } = renderItem({ isActive: true });
+    const listItem = container.querySelector('[data-slot="agent-list-item"]')!.closest('li')!;
+    // The row's own wrapper is the only child. A panel would be a second one.
+    expect(listItem.children).toHaveLength(1);
+  });
+
+  // --- The "N live" chip (BC-35) ---
+
+  it('shows no chip while fewer than two sessions are live', () => {
+    mockLiveCount.mockReturnValue(1);
+    renderItem();
+    expect(screen.queryByRole('button', { name: /session switcher/i })).not.toBeInTheDocument();
+  });
+
+  it('shows the chip with its count once two sessions run concurrently', () => {
+    mockLiveCount.mockReturnValue(2);
+    renderItem();
+    const chip = screen.getByRole('button', { name: /session switcher/i });
+    expect(chip).toHaveAccessibleName(expect.stringContaining('2 live sessions'));
+    expect(chip).toHaveTextContent('2 live');
+  });
+
+  it('the chip replaces the activity dot rather than doubling it', () => {
+    mockAgentStatus.mockReturnValue({
+      kind: 'streaming',
+      color: 'rgb(34,197,94)',
+      pulse: true,
+      label: 'Working',
+    });
+    mockLiveCount.mockReturnValue(3);
+    renderItem();
+    expect(screen.getByRole('button', { name: /session switcher/i })).toBeInTheDocument();
+    expect(screen.queryByTestId('activity-badge')).not.toBeInTheDocument();
+  });
+
+  it('opens the switcher from the chip, and only from the chip', () => {
+    mockLiveCount.mockReturnValue(2);
+    const { props } = renderItem();
+    expect(screen.queryByTestId('session-switcher')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /session switcher/i }));
+    expect(screen.getByTestId('session-switcher')).toHaveTextContent('/agents/test-agent');
+    // The chip is a satellite, not a nested button: pressing it must not also
+    // fire the row underneath.
     expect(props.onSelect).not.toHaveBeenCalled();
   });
 
-  // --- Expanded state ---
-
-  it('does not render session preview when collapsed', () => {
-    renderItem({ isActive: true, isExpanded: false, sessions: MOCK_SESSIONS });
-    expect(screen.queryByText('Session 1')).not.toBeInTheDocument();
-  });
-
-  it('renders session previews when active and expanded', () => {
-    renderItem({ isActive: true, isExpanded: true, sessions: MOCK_SESSIONS });
-    expect(screen.getByText('Session 1')).toBeInTheDocument();
-    expect(screen.getByText('Session 2')).toBeInTheDocument();
-  });
-
-  it('limits preview to MAX_PREVIEW_SESSIONS (3)', () => {
-    const manySessions = Array.from({ length: 5 }, (_, i) => mockSession(`s${i}`, `Session ${i}`));
-    renderItem({ isActive: true, isExpanded: true, sessions: manySessions });
-    expect(screen.getByText('Session 0')).toBeInTheDocument();
-    expect(screen.getByText('Session 2')).toBeInTheDocument();
-    expect(screen.queryByText('Session 3')).not.toBeInTheDocument();
-  });
-
-  it('calls onSessionClick when a session preview is clicked', () => {
-    const { props } = renderItem({
-      isActive: true,
-      isExpanded: true,
-      sessions: MOCK_SESSIONS,
-    });
-    fireEvent.click(screen.getByTestId('session-s1'));
-    expect(props.onSessionClick).toHaveBeenCalledWith('s1');
-  });
-
-  it('marks the active session in preview', () => {
-    renderItem({
-      isActive: true,
-      isExpanded: true,
-      sessions: MOCK_SESSIONS,
-      activeSessionId: 's2',
-    });
-    expect(screen.getByTestId('session-s2')).toHaveAttribute('data-active', 'true');
-    expect(screen.getByTestId('session-s1')).toHaveAttribute('data-active', 'false');
-  });
-
-  // --- Expanded action buttons ---
-
-  it('renders "New session" button when sessions exist', () => {
-    renderItem({ isActive: true, isExpanded: true, sessions: MOCK_SESSIONS });
-    expect(screen.getByText('New session')).toBeInTheDocument();
-  });
-
-  it('hides "New session" button when no sessions exist', () => {
-    renderItem({ isActive: true, isExpanded: true, sessions: [] });
-    expect(screen.queryByText('New session')).not.toBeInTheDocument();
-  });
-
-  it('calls onNewSession from expanded new session button', () => {
-    const { props } = renderItem({ isActive: true, isExpanded: true, sessions: MOCK_SESSIONS });
-    fireEvent.click(screen.getByText('New session'));
-    expect(props.onNewSession).toHaveBeenCalledTimes(1);
-  });
-
-  // --- Origin partition: conversations preview + automated reveal (session-origin-legibility) ---
-
-  it('shows only conversations (user-origin sessions) in the initial preview', () => {
-    const mixed = [
-      mockSession('u1', 'User session 1'),
-      mockSession('a1', 'Agent session', { origin: 'agent', originLabel: 'warden (agent)' }),
-      mockSession('u2', 'User session 2'),
-    ];
-    renderItem({ isActive: true, isExpanded: true, sessions: mixed });
-    expect(screen.getByText('User session 1')).toBeInTheDocument();
-    expect(screen.getByText('User session 2')).toBeInTheDocument();
-    expect(screen.queryByText('Agent session')).not.toBeInTheDocument();
-  });
-
-  it('renders the + N automated reveal row with the correct count', () => {
-    const mixed = [
-      mockSession('u1', 'User session 1'),
-      mockSession('a1', 'Agent session', { origin: 'agent' }),
-      mockSession('c1', 'Channel session', { origin: 'channel' }),
-    ];
-    renderItem({ isActive: true, isExpanded: true, sessions: mixed });
-    expect(screen.getByText('+ 2 automated')).toBeInTheDocument();
-  });
-
-  it('renders the "New session" button for an all-automated agent (empty conversations)', () => {
-    const automatedOnly = [mockSession('t1', 'Task session', { origin: 'task' })];
-    renderItem({ isActive: true, isExpanded: true, sessions: automatedOnly });
-    expect(screen.getByText('New session')).toBeInTheDocument();
-  });
-
-  it('hides the automated reveal row when there are no automated sessions', () => {
-    renderItem({ isActive: true, isExpanded: true, sessions: MOCK_SESSIONS });
-    expect(screen.queryByText(/automated/)).not.toBeInTheDocument();
-  });
-
-  it('reveals automated sessions when the reveal row is clicked', () => {
-    const mixed = [
-      mockSession('u1', 'User session 1'),
-      mockSession('a1', 'Agent session', { origin: 'agent' }),
-    ];
-    renderItem({ isActive: true, isExpanded: true, sessions: mixed });
-    expect(screen.queryByText('Agent session')).not.toBeInTheDocument();
-
-    fireEvent.click(screen.getByText('+ 1 automated'));
-    expect(screen.getByText('Agent session')).toBeInTheDocument();
-    expect(screen.getByText('Hide')).toBeInTheDocument();
-
-    fireEvent.click(screen.getByText('Hide'));
-    expect(screen.queryByText('Agent session')).not.toBeInTheDocument();
-  });
-
-  it('shows the reveal row instead of "First session" when conversations are empty but automated sessions exist', () => {
-    const automatedOnly = [mockSession('t1', 'Task session', { origin: 'task' })];
-    renderItem({ isActive: true, isExpanded: true, sessions: automatedOnly });
-    expect(screen.queryByText('First session')).not.toBeInTheDocument();
-    expect(screen.getByText('+ 1 automated')).toBeInTheDocument();
-  });
-
-  it('still shows "First session" for an agent with zero sessions of any origin', () => {
-    renderItem({ isActive: true, isExpanded: true, sessions: [] });
-    expect(screen.getByText('First session')).toBeInTheDocument();
-    expect(screen.queryByText(/automated/)).not.toBeInTheDocument();
+  it('withholds the chip from a muted agent even while its work is live', () => {
+    mockLiveCount.mockReturnValue(4);
+    renderItem({ isMuted: true });
+    expect(screen.queryByRole('button', { name: /session switcher/i })).not.toBeInTheDocument();
   });
 
   // --- Accessibility ---
 
   it('does not nest interactive role="button" elements', () => {
-    const { container } = renderItem({ isActive: true, isExpanded: true });
-    const row = container.querySelector('[data-slot="agent-list-item"]')!;
-    expect(row).not.toHaveAttribute('role', 'button');
-  });
-
-  // --- Rename/Fork propagation ---
-
-  it('passes onForkSession to SessionRow when provided', () => {
-    renderItem({
-      isActive: true,
-      isExpanded: true,
-      sessions: MOCK_SESSIONS,
-      onForkSession: vi.fn(),
-    });
-    expect(screen.getByTestId('session-s1')).toHaveAttribute('data-has-fork', 'true');
-  });
-
-  it('passes onRenameSession to SessionRow when provided', () => {
-    renderItem({
-      isActive: true,
-      isExpanded: true,
-      sessions: MOCK_SESSIONS,
-      onRenameSession: vi.fn(),
-    });
-    expect(screen.getByTestId('session-s1')).toHaveAttribute('data-has-rename', 'true');
-  });
-
-  it('does not pass fork to SessionRow when omitted', () => {
-    renderItem({
-      isActive: true,
-      isExpanded: true,
-      sessions: MOCK_SESSIONS,
-    });
-    expect(screen.getByTestId('session-s1')).toHaveAttribute('data-has-fork', 'false');
-  });
-
-  it('calls onForkSession with session ID when fork is triggered', () => {
-    const onForkSession = vi.fn();
-    renderItem({
-      isActive: true,
-      isExpanded: true,
-      sessions: MOCK_SESSIONS,
-      onForkSession,
-    });
-    fireEvent.click(screen.getByTestId('fork-s1'));
-    expect(onForkSession).toHaveBeenCalledWith('s1');
-  });
-
-  it('calls onRenameSession with session ID and title when rename is triggered', () => {
-    const onRenameSession = vi.fn();
-    renderItem({
-      isActive: true,
-      isExpanded: true,
-      sessions: MOCK_SESSIONS,
-      onRenameSession,
-    });
-    fireEvent.click(screen.getByTestId('rename-s1'));
-    expect(onRenameSession).toHaveBeenCalledWith('s1', 'New name');
+    mockLiveCount.mockReturnValue(2);
+    const { container } = renderItem({ isActive: true });
+    const rowButton = container.querySelector('[data-slot="agent-list-item"]')!;
+    expect(rowButton).not.toHaveAttribute('role', 'button');
+    expect(rowButton.querySelector('button')).toBeNull();
   });
 
   // --- Mute (DOR-339) ---
@@ -470,9 +305,7 @@ describe('AgentListItem', () => {
 
     it('the row stays clickable while muted', () => {
       const { props } = renderItem({ isMuted: true, isActive: false });
-      fireEvent.click(
-        screen.getByTestId('agent-identity').closest('[data-slot="agent-list-item"]')!
-      );
+      fireEvent.click(row());
       expect(props.onSelect).toHaveBeenCalledTimes(1);
     });
   });

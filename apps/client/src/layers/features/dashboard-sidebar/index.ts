@@ -26,6 +26,10 @@ export { useNewSessionShortcut } from './model/use-new-session-shortcut';
 // mounts THIS at both widths for the reason it always mounted that.
 export { SidebarFooterStrip } from './ui/SidebarFooterStrip';
 export { AgentListItem } from './ui/AgentListItem';
+// Where an agent's depth lives (BC-35). Exported because the command palette
+// renders it too — a sibling feature composing this one's UI, which is the one
+// cross-feature import the layer rules allow.
+export { SessionSwitcher } from './ui/SessionSwitcher';
 export { AgentActivityBadge } from './ui/AgentActivityBadge';
 export { AgentOnboardingCard } from './ui/AgentOnboardingCard';
 export { GroupCreateInput } from './ui/GroupCreateInput';
