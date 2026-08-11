@@ -30,7 +30,6 @@
  */
 import type { OpencodeClient, ProviderListResponse } from '@opencode-ai/sdk';
 import type {
-  ApprovalEvent,
   StreamEvent,
   PermissionMode,
   EffortLevel,
@@ -76,7 +75,7 @@ import {
   matchesOpenCodeSubagentSession,
   type OpenCodeWireEvent,
 } from './event-mapper.js';
-import { mapOpenCodeTodos, type OpenCodePermissionState } from './session-event-mapper.js';
+import { mapOpenCodeTodos } from './session-event-mapper.js';
 import {
   OpenCodeSessionMapper,
   unwrap,
@@ -85,7 +84,13 @@ import {
 } from './session-mapper.js';
 import { OpenCodeGlobalEventHub, TurnEventQueue } from './global-event-hub.js';
 import { OpenCodeSessionRegistry } from './session-registry.js';
-import { PendingApprovalStore, resolveApprovalDecision } from './approvals.js';
+import {
+  enforceApprovals,
+  PendingApprovalStore,
+  respondPermission,
+  type ApprovalGateDeps,
+  type ApprovalRouting,
+} from './approvals.js';
 import { OPENCODE_CAPABILITIES, STREAM_LIVE_TIMEOUT_MS } from './runtime-constants.js';
 import { buildOpenCodeParts, parseModelSelection } from './turn-input.js';
 import { projectModelOptions } from './models.js';
@@ -113,21 +118,6 @@ interface ActiveTurn {
   cwd: string;
 }
 
-/**
- * Everything one turn needs to enforce and answer its permission requests.
- *
- * `ocSessionId` is the turn's own OpenCode session; `permissions` is where the
- * mapper recorded which session each individual ask came from, because a
- * subagent raises its prompts in its own CHILD session and only that session
- * can take the answer (DOR-1126).
- */
-interface ApprovalRouting {
-  sessionId: string;
-  ocSessionId: string;
-  cwd: string;
-  permissions: OpenCodePermissionState;
-}
-
 /** Sleep helper for the stream-liveness race. */
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -145,6 +135,8 @@ export class OpenCodeRuntime implements AgentRuntime {
   private readonly registry = new OpenCodeSessionRegistry();
   private readonly locks = new SessionLockManager();
   private readonly approvals = new PendingApprovalStore();
+  /** What {@link enforceApprovals} reaches into on every mapped turn event. */
+  private readonly approvalGate: ApprovalGateDeps;
   /** One record per in-flight turn (interrupt target). */
   private readonly activeTurns = new Map<string, ActiveTurn>();
   /** In-flight OpenCode session creations, deduped per DorkOS session id. */
@@ -160,6 +152,11 @@ export class OpenCodeRuntime implements AgentRuntime {
     this.mapper = new OpenCodeSessionMapper(options.provider, options.sessionMap);
     this.hub = new OpenCodeGlobalEventHub(options.provider);
     this.mcp = new OpenCodeMcpManager(options.provider);
+    this.approvalGate = {
+      provider: options.provider,
+      approvals: this.approvals,
+      registry: this.registry,
+    };
   }
 
   // --- Session lifecycle ---
@@ -389,7 +386,7 @@ export class OpenCodeRuntime implements AgentRuntime {
 
       const routing: ApprovalRouting = { sessionId, ocSessionId, cwd, permissions: ctx };
       for await (const event of mapOpenCodeTurn(queue, ctx)) {
-        yield* this.enforceApprovals(routing, event);
+        yield* enforceApprovals(this.approvalGate, routing, event);
       }
     } finally {
       subscription.unsubscribe();
@@ -438,121 +435,6 @@ export class OpenCodeRuntime implements AgentRuntime {
     };
   }
 
-  /**
-   * Permission-mode enforcement on the mapped turn stream (NOTES.md §2):
-   * auto-approvable requests are answered `once` and SUPPRESSED (the user
-   * never sees a card); forwarded requests are tracked with an auto-deny
-   * timer; `permission.replied` echoes (`interaction_cancelled`) clear the
-   * pending record so the timer cannot deny an already-answered request.
-   * The mode is read live from the registry so a mid-turn PATCH applies to
-   * the very next request.
-   *
-   * Every answer — auto-approve, auto-deny, and the record `approveTool()`
-   * later resolves — is addressed to the session that ASKED, which for a
-   * subagent's prompt is its child session rather than the turn's (DOR-1126).
-   *
-   * @param turn - The turn's approval routing (see {@link ApprovalRouting})
-   * @param event - One mapped StreamEvent from this turn
-   */
-  private async *enforceApprovals(
-    turn: ApprovalRouting,
-    event: StreamEvent
-  ): AsyncGenerator<StreamEvent> {
-    const { sessionId, cwd } = turn;
-    if (event.type === 'approval_required') {
-      // StreamEvent's `type`/`data` are not a discriminated pair; the mapper
-      // guarantees an ApprovalEvent body under this type.
-      const approval = event.data as ApprovalEvent;
-      // Cast, not proven by this file: `resolveApprovalDecision` below
-      // compares `mode` against LITERAL enum names (`'bypassPermissions'`,
-      // `'acceptEdits'`) to decide auto-approval, and does derive meaning from
-      // the name — unlike the display-only narrowings elsewhere in this file.
-      // The actual invariant that keeps this registry holding only opencode's
-      // own enum-shaped ids is enforced remotely, in
-      // `routes/sessions.ts`'s `rejectUndeclaredPermissionMode` gate on
-      // `PATCH /api/sessions/:id` — NOT by anything in this registry or this
-      // adapter. `resolveApprovalDecision`'s own literal-name fallback (any
-      // unmatched mode asks) is what keeps an id that gate never checked from
-      // silently escalating here, so this stays safe even if the invariant
-      // above is ever violated. It CAN be: the `DirectTransport` seam
-      // (`apps/client/src/layers/shared/lib/direct/session-methods.ts`, used
-      // by embedded hosts) calls `runtime.updateSession` straight through with
-      // no equivalent server-side check — it trusts the CLIENT's own picker to
-      // offer only declared ids, a materially weaker guarantee than the HTTP
-      // route's.
-
-      // The session that raised THIS ask. A subagent's prompt belongs to its
-      // child session, and `POST /session/{id}/permissions/{permissionID}` is
-      // per-session — the turn's own id would not find it. The fallback keeps a
-      // request the mapper never recorded (a recovery path, a shape change)
-      // answerable on the turn's own session rather than dropping it.
-      const askedIn =
-        turn.permissions.pendingPermissionSessions.get(approval.toolCallId) ?? turn.ocSessionId;
-      const mode = this.registry.get(sessionId)?.permissionMode as PermissionMode | undefined;
-      if (resolveApprovalDecision(mode, approval.toolName) === 'auto-approve') {
-        try {
-          await this.respondPermission(askedIn, cwd, approval.toolCallId, 'once');
-          return; // Auto-answered — never surfaces as a card.
-        } catch (err) {
-          // Degrade safely: a failed auto-approve falls back to asking the
-          // user rather than leaving the turn blocked on a ghost permission.
-          logger.warn(
-            '[OpenCodeRuntime] auto-approve failed — forwarding to the user',
-            logError(err)
-          );
-        }
-      }
-      this.approvals.register(sessionId, approval.toolCallId, { ocSessionId: askedIn, cwd }, () => {
-        void this.respondPermission(askedIn, cwd, approval.toolCallId, 'reject').catch(
-          (err: unknown) =>
-            logger.warn('[OpenCodeRuntime] approval auto-deny failed', logError(err))
-        );
-      });
-      yield event;
-      return;
-    }
-    if (event.type === 'interaction_cancelled') {
-      const cancelled = event.data as { interactionId: string; reason?: string };
-      this.approvals.take(sessionId, cancelled.interactionId);
-      // An auto-deny is answered by the sidecar exactly like a person's
-      // rejection, so the echo comes back indistinguishable from one. Restore
-      // the reason here, where it is still known: downstream, `timeout` is what
-      // separates an interaction that EXPIRED — an answer the system gave on
-      // the person's behalf, and a receipt worth keeping — from one that was
-      // withdrawn before anybody could answer it.
-      if (this.approvals.consumeExpired(sessionId, cancelled.interactionId)) {
-        yield { ...event, data: { ...cancelled, reason: 'timeout' } };
-        return;
-      }
-    }
-    yield event;
-  }
-
-  /**
-   * Answer one permission request on the sidecar (`once` approve / `reject`
-   * deny). `POST /session/{id}/permissions/{permissionID}` is the route the
-   * SDK client exposes, and 1.18.15 still serves it: a live approve and a live
-   * deny were both accepted (200) and both echoed back as `permission.replied`
-   * (2026-08-11, DOR-1147). The sidecar has since grown a second spelling
-   * (`POST /permission/{requestID}/reply`, also verified working) that the SDK
-   * does not expose yet — no reason to hand-roll it while this one answers.
-   */
-  private async respondPermission(
-    ocSessionId: string,
-    cwd: string,
-    permissionID: string,
-    response: 'once' | 'reject'
-  ): Promise<void> {
-    const client = await this.provider.getClient(cwd);
-    const result = await client.postSessionIdPermissionsPermissionId({
-      path: { id: ocSessionId, permissionID },
-      body: { response },
-    });
-    if (result.error !== undefined) {
-      throw new Error(`OpenCode permission respond failed: ${JSON.stringify(result.error)}`);
-    }
-  }
-
   // --- Interactive flows ---
 
   /**
@@ -587,13 +469,8 @@ export class OpenCodeRuntime implements AgentRuntime {
     const pending = this.approvals.take(sessionId, toolCallId);
     if (!pending) return false;
     peekProjector(sessionId)?.resolveInteraction(toolCallId, approved ? 'approved' : 'denied');
-    void this.respondPermission(
-      pending.ocSessionId,
-      pending.cwd,
-      toolCallId,
-      approved ? 'once' : 'reject'
-    ).catch((err: unknown) =>
-      logger.warn('[OpenCodeRuntime] permission respond failed', logError(err))
+    void respondPermission(this.provider, pending, toolCallId, approved ? 'once' : 'reject').catch(
+      (err: unknown) => logger.warn('[OpenCodeRuntime] permission respond failed', logError(err))
     );
     return true;
   }
