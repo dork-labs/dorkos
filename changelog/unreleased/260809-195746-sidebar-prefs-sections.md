@@ -1,6 +1,7 @@
 ---
 covers:
   - 'refactor(config): sidebar prefs move to a sections record, with a migration that loses nothing (DOR-1065, task 2.8)'
+  - 'refactor(config): sidebar prefs move to a sections record, with a migration that loses nothing (P2.8, DOR-1065)'
   - 'fix(config): an unknown sidebar section id is dropped on read, not refused (DOR-1065 review)'
   - 'refactor(sidebar): one declaration of the prefs view, and a render order that cannot name a section that is gone (DOR-1065)'
 ---

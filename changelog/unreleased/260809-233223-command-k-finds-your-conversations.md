@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(client): ⌘K finds your conversations, and opens on what is live (DOR-1073)'
+  - 'feat(client): ⌘K finds your conversations, and opens on what is live (P3.1, DOR-1073)'
   - 'test(e2e): ⌘K finds a conversation by title and lands in it, in a browser'
   - 'docs(client): say why ⌘K warms its corpus at boot, and make the budget test discriminate'
   - 'fix(client): an agent whose only conversation is live is no longer offered twice'
