@@ -415,6 +415,16 @@ export interface TriggerTurnOpts {
    * that outranks what the person set on the session.
    */
   settings?: Pick<SessionSettings, 'model' | 'effort'>;
+  /**
+   * The dispatcher's id for this message, handed to the runtime so a `result`
+   * can be correlated back to the message that caused it.
+   *
+   * Correlation is by id and NEVER positional: a runtime that coalesces a
+   * dequeued batch answers several dispatched ids with ONE result, so counting
+   * results against sends silently mismatches. Absent for a caller that has not
+   * been through the dispatcher (there is none in production).
+   */
+  messageId?: string;
   /** The projector for `sessionId` (keyed by the client-facing id, which is stable). */
   projector: SessionStateProjector;
   deps: TriggerTurnDeps;
@@ -634,7 +644,12 @@ export async function triggerTurn(opts: TriggerTurnOpts): Promise<TriggerTurnRes
       nativeContext: deps.getCapabilities().nativeContext,
     });
     const tapped = tapEachEvent(
-      deps.sendMessage(sessionId, content, { cwd, additionalContext, ...settings }),
+      deps.sendMessage(sessionId, content, {
+        cwd,
+        additionalContext,
+        ...(opts.messageId !== undefined ? { messageId: opts.messageId } : {}),
+        ...settings,
+      }),
       () => {
         signalFirstEvent();
         tryRekey();

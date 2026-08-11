@@ -7,14 +7,14 @@
  *
  * Two decisions worth reading before changing anything here:
  *
- * - **The turn runs through {@link triggerTurn}, not the runtime directly.**
+ * - **The turn runs through {@link dispatchMessage}, not the runtime directly.**
  *   Going straight to `runtime.sendMessage` would be shorter and would make the
  *   agent's work invisible: nothing would feed the per-session projector, so
  *   opening that session in the cockpit would show an empty transcript while
  *   the agent was mid-answer. Everything a room triggers is a normal session
  *   turn, visible on `GET /api/sessions/:id/events` like any other (ADR-0264).
  *
- * - **The reply is read off the projector, not the generator.** `triggerTurn`
+ * - **The reply is read off the projector, not the generator.** The dispatcher
  *   detaches the turn deliberately (the HTTP 202 must not wait on a model), so
  *   the only way to learn what the agent said is to subscribe to the same
  *   stream a client would. Subscribing from the cursor taken BEFORE the trigger
@@ -45,12 +45,11 @@ import { projectRoomAttachments } from './attachments/attachment-projection.js';
 import { getRoomAttachmentStore } from './index.js';
 import { runtimeRegistry } from '../core/runtime-registry.js';
 import {
+  dispatchMessage,
   getOrCreateProjector,
   persistenceModeFor,
-  rekeyProjector,
   readAgentExecutionDefaults,
   resolveSessionDefaults,
-  triggerTurn,
   type SessionStateProjector,
 } from '../session/index.js';
 import type {
@@ -82,7 +81,7 @@ const ROOM_CLIENT_ID = 'dorkos-room';
  * tidy.
  *
  * **`ceilingMs` is the hard stop on the subscription.** The stall watchdog
- * inside `triggerTurn` already ends any turn whose runtime goes quiet, so
+ * inside the dispatched turn already ends any turn whose runtime goes quiet, so
  * reaching this means a turn producing events and never closing. The room stops
  * listening and says the turn failed, which is true, rather than holding one
  * live subscription per trigger forever.
@@ -206,7 +205,7 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
       // Take the cursor BEFORE triggering. Everything the turn emits has a seq
       // above it, so the collector cannot miss the opening of a fast turn — and
       // which of the turns above it is OURS is settled by identity, not by the
-      // cursor: `triggerTurn` reports the seq it stamps this turn's `turn_start`
+      // cursor: the dispatcher reports the seq it stamps this turn's `turn_start`
       // with, and the collector reads for exactly that one.
       //
       // The prompt IS the message, byte for byte. Everything else the agent
@@ -234,7 +233,7 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
       });
 
       const waitMs = readWaitMs();
-      // The turn's identity, filled in by `triggerTurn` the instant this turn's
+      // The turn's identity, filled in by the dispatcher the instant this turn's
       // `turn_start` is stamped and read by the collector to tell that event
       // from every other turn's. It is a shared box rather than a promise on
       // purpose: the collector must never AWAIT it, because a turn that is
@@ -263,7 +262,7 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
         graceMs: readGraceMs(),
       });
 
-      const result = await triggerTurn({
+      const result = await dispatchMessage({
         sessionId,
         clientId: ROOM_CLIENT_ID,
         content: prompt,
@@ -271,18 +270,9 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
         roomContext: request.roomContext,
         settings: seed,
         projector,
+        runtime,
         onTurnStart: (seq) => {
           ownTurn.startSeq = seq;
-        },
-        deps: {
-          acquireLock: (sid, cid, lifecycle, token) =>
-            runtime.acquireLock(sid, cid, lifecycle, token),
-          releaseLock: (sid, cid, token) => runtime.releaseLock(sid, cid, token),
-          sendMessage: (sid, text, opts) => runtime.sendMessage(sid, text, opts),
-          interruptQuery: (sid) => runtime.interruptQuery(sid),
-          getInternalSessionId: (sid) => runtime.getInternalSessionId(sid),
-          rekeyProjector: (oldId, newId) => rekeyProjector(oldId, newId),
-          getCapabilities: () => runtime.getCapabilities(),
         },
         onError: (err) => {
           logger.warn('[rooms] triggered turn errored', {

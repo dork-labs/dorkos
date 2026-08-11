@@ -1,7 +1,7 @@
 /**
  * The production runner: a room trigger becomes a real session turn.
  *
- * `triggerTurn` is the only thing stubbed, and only because a real one needs a
+ * The dispatcher is the only thing stubbed, and only because a real one needs a
  * model. The projector is the REAL projector — which is the point, because the
  * claim this file checks is that a room reads the agent's answer off the same
  * stream a client renders from, gap-free from a cursor taken before the turn.
@@ -93,7 +93,7 @@ interface TestProjector {
   ingest: (event: Record<string, unknown>) => { seq: number };
 }
 
-/** Everything the runner hands `triggerTurn`, as this file inspects it. */
+/** Everything the runner hands the dispatcher, as this file inspects it. */
 interface TriggerCall {
   sessionId: string;
   projector: TestProjector;
@@ -101,10 +101,10 @@ interface TriggerCall {
   roomContext?: RoomContextData;
   /** The execution settings the runner resolved for this turn (model, effort). */
   settings?: Record<string, unknown>;
-  /** The runtime port the real `triggerTurn` resolves the canonical id through. */
-  deps: { getInternalSessionId: (sessionId: string) => string | undefined };
+  /** The runtime the real dispatcher resolves the canonical id through. */
+  runtime: { getInternalSessionId: (sessionId: string) => string | undefined };
   /**
-   * How the real `triggerTurn` tells the room which `turn_start` is its own.
+   * How the real dispatcher tells the room which `turn_start` is its own.
    *
    * Every stub here has to call it, exactly as the real one does, because the
    * collector now matches on that identity rather than on the trigger text. A
@@ -114,18 +114,18 @@ interface TriggerCall {
   onTurnStart?: (seq: number) => void;
 }
 
-/** What the stubbed `triggerTurn` does with the projector it is handed. */
+/** What the stubbed dispatch does with the projector it is handed. */
 let turnBehaviour: (opts: TriggerCall) => {
   accepted: boolean;
   canonicalId?: string;
 };
 
-/** Every `triggerTurn` this file's runner made, in order. */
+/** Every dispatch this file's runner made, in order. */
 const triggered: TriggerCall[] = [];
 
 vi.mock('../../session/index.js', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../session/index.js')>()),
-  triggerTurn: (opts: never) => {
+  dispatchMessage: (opts: never) => {
     triggered.push(opts);
     return Promise.resolve(turnBehaviour(opts));
   },
@@ -232,7 +232,7 @@ function request(
 /**
  * Open the turn the runner is waiting for, telling it which turn is its own.
  *
- * The real `triggerTurn` reports the `turn_start`'s seq the instant it stamps
+ * The real dispatcher reports the `turn_start`'s seq the instant it stamps
  * it; a stub that skips this is opening a turn the room did not start, which is
  * how `readsSomebodyElsesTurn` below models the case that used to be
  * indistinguishable.
@@ -249,17 +249,17 @@ function openTurn(opts: TriggerCall, userMessage?: string): void {
 
 /**
  * A turn that streams `parts` and closes cleanly, resolving its canonical id
- * the way the real `triggerTurn` does — off the runtime, not off the request.
+ * the way the real dispatcher does — off the runtime, not off the request.
  * Echoing the requested id back unconditionally is what let a whole class of
  * id-drift bug hide in this suite.
  */
 function saysAndCloses(...parts: string[]): typeof turnBehaviour {
   return (opts) => {
-    const { sessionId, projector, deps } = opts;
+    const { sessionId, projector, runtime } = opts;
     openTurn(opts);
     for (const text of parts) projector.ingest({ type: 'text_delta', text });
     projector.ingest({ type: 'turn_end' });
-    return { accepted: true, canonicalId: deps.getInternalSessionId(sessionId) ?? sessionId };
+    return { accepted: true, canonicalId: runtime.getInternalSessionId(sessionId) ?? sessionId };
   };
 }
 
@@ -272,7 +272,7 @@ describe('createSessionRoomTurnRunner', () => {
 
   it('has the files on disk BEFORE the turn is triggered', async () => {
     // Ordering, not just the end state: the context handed to the model names
-    // these paths, so a projection that landed after `triggerTurn` would be a
+    // these paths, so a projection that landed after the dispatch would be a
     // window in which the agent could read a path that was not yet there
     // (ADR 260807-233816).
     const dorkHome = await mkdtemp(path.join(tmpdir(), 'dorkos-runner-home-'));

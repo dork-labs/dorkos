@@ -44,6 +44,7 @@ import { EventLog } from './event-log.js';
 import { RingBuffer } from './ring-buffer.js';
 import { devtoolsCaptureStore } from './devtools-capture-store.js';
 import type { SessionEventStore } from './session-event-store.js';
+import { getMessageQueueStore } from './message-queue-store.js';
 import {
   RECORDED_EVENT_TYPES,
   type ProjectorPersistence,
@@ -493,6 +494,9 @@ export class SessionStateProjector {
       this.announceActivityNow();
     } else if (this.status.activity !== activityBefore) {
       this.scheduleActivityFanOut();
+    }
+    if (event.type === 'turn_end' || event.type === 'interaction_resolved') {
+      notifyTurnBoundary(this._sessionId);
     }
     return event;
   }
@@ -1819,6 +1823,12 @@ export function rekeyProjector(oldId: string, newId: string): void {
   // Failure costs the older receipts, never the rename.
   try {
     sessionEventStore?.rekeySession(oldId, newId);
+    // The queue moves on the same beat, and it is the half that CANNOT be lost:
+    // a person is told their message was accepted, and a row left behind at the
+    // pre-rename id is invisible to every window and to the dispatcher, so their
+    // words would evaporate on the session's very first turn. One call site,
+    // beside the receipts, because both are "durable rows keyed by session id".
+    getMessageQueueStore()?.rekeySession(oldId, newId);
   } catch (err) {
     logger.warn('[SessionStateProjector] durable rows not carried across rekey', {
       oldId,
@@ -1836,6 +1846,51 @@ export function rekeyProjector(oldId: string, newId: string): void {
   // connector attach set) so they can move it across the same rekey. Kept as an
   // observer list so this session-core module never imports those domains.
   for (const listener of rekeyListeners) listener(oldId, newId);
+}
+
+/** A subscriber notified when a session reaches a turn boundary. */
+type TurnBoundaryListener = (sessionId: string) => void;
+
+/** Observers of `turn_end` / `interaction_resolved`; see {@link onProjectorTurnBoundary}. */
+const turnBoundaryListeners = new Set<TurnBoundaryListener>();
+
+/**
+ * Subscribe to the two moments that can free a session for the message waiting
+ * behind it: a turn that ENDED (`turn_end`), and an interaction a person
+ * ANSWERED (`interaction_resolved`).
+ *
+ * The message dispatcher is the subscriber. The list is exactly those two events
+ * and that is the whole contract — in particular a bare `result` is **not** a
+ * turn boundary. A turn can produce a result and keep going, and dequeuing on
+ * one is how a queued message fires into work that is still running (the
+ * failure mode named in spec `persistent-session-runtime` §3.4).
+ *
+ * This is not the reopen predicate and must not be confused with it: a closed
+ * turn still reopens only on raw model-speech StreamEvents (#909). This observes
+ * a turn closing; it never reopens one.
+ *
+ * @param listener - Invoked with the session id at each boundary.
+ * @returns An unsubscribe function.
+ */
+export function onProjectorTurnBoundary(listener: TurnBoundaryListener): () => void {
+  turnBoundaryListeners.add(listener);
+  return () => {
+    turnBoundaryListeners.delete(listener);
+  };
+}
+
+/** Tell every boundary observer, without letting one of them break an ingest. */
+function notifyTurnBoundary(sessionId: string): void {
+  for (const listener of turnBoundaryListeners) {
+    try {
+      listener(sessionId);
+    } catch (err) {
+      logger.warn('[SessionStateProjector] a turn-boundary observer threw', {
+        sessionId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
 }
 
 /** A subscriber notified when a projector is rekeyed to its canonical id. */

@@ -40,6 +40,38 @@ import { logger } from '../../lib/logger.js';
 export const QUEUE_POSITION_STEP = 1000;
 
 /**
+ * How many session ids one `DELETE ... IN (...)` may carry.
+ *
+ * SQLite compiles in a ceiling on bound variables (~32k) and every id spends
+ * one, so a caller with more sessions than that would lose the whole delete
+ * rather than part of it. 500 is far under the ceiling and still one statement
+ * per 500 sessions.
+ */
+const DELETE_CHUNK_SIZE = 500;
+
+/**
+ * The process-wide queue, injected once from the composition root so the
+ * modules that must carry a queue across a session rename — the projector's
+ * rekey — can reach it without importing the dispatcher and closing a cycle.
+ */
+let sharedStore: MessageQueueStore | undefined;
+
+/**
+ * Inject the durable message queue, called once from `apps/server/src/index.ts`
+ * after `createDb()`. Passing `undefined` clears it (test isolation).
+ *
+ * @param store - The shared store, or `undefined` to disable queueing.
+ */
+export function setMessageQueueStore(store: MessageQueueStore | undefined): void {
+  sharedStore = store;
+}
+
+/** The injected durable message queue, or `undefined` when none is wired. */
+export function getMessageQueueStore(): MessageQueueStore | undefined {
+  return sharedStore;
+}
+
+/**
  * A stored queue row: the {@link QueuedMessage} every client sees, plus the two
  * fields that stay server-side — its ordering key and the client context
  * captured when it was accepted.
@@ -321,14 +353,23 @@ export class MessageQueueStore {
    * that evicts dead sessions calls this so an abandoned session cannot hold
    * queue rows for the life of the install.
    *
+   * Chunked at {@link DELETE_CHUNK_SIZE}: every id is one bound SQL variable,
+   * and a list past SQLite's compiled-in ceiling would fail the whole delete
+   * rather than part of it. The chunking lives here rather than at the caller so
+   * no future caller has to remember it.
+   *
    * @param sessionIds - The sessions to clear out; an empty list does nothing
    */
   deleteForSessions(sessionIds: string[]): number {
-    if (sessionIds.length === 0) return 0;
-    return this.db
-      .delete(sessionMessageQueue)
-      .where(inArray(sessionMessageQueue.sessionId, sessionIds))
-      .run().changes;
+    let removed = 0;
+    for (let i = 0; i < sessionIds.length; i += DELETE_CHUNK_SIZE) {
+      const chunk = sessionIds.slice(i, i + DELETE_CHUNK_SIZE);
+      removed += this.db
+        .delete(sessionMessageQueue)
+        .where(inArray(sessionMessageQueue.sessionId, chunk))
+        .run().changes;
+    }
+    return removed;
   }
 
   /** One session's rows, ordered head-first. */

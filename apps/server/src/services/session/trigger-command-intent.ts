@@ -38,6 +38,7 @@ import {
   tapEachEvent,
 } from './trigger-turn.js';
 import { SESSIONS } from '../../config/constants.js';
+import { logError, logger } from '../../lib/logger.js';
 
 /** The collaborators {@link triggerCommandIntent} needs, narrowed to a runtime-neutral port. */
 export interface TriggerCommandIntentDeps {
@@ -93,6 +94,21 @@ export interface TriggerCommandIntentOpts {
   queueWaitMs?: number;
   /** Records a detached-turn failure (logging is the caller's concern). */
   onError?(err: unknown): void;
+  /**
+   * Fired once when the DETACHED run settles, however it settles.
+   *
+   * The 202 resolves long before this. The dispatcher needs it for the same
+   * reason it needs {@link import('./trigger-turn').TriggerTurnOpts.onSettled}:
+   * a compact holds the session's single writer, and without a settle signal
+   * the dispatcher would go on believing the session busy after the compaction
+   * had finished — and every message queued behind it would wait for a turn
+   * that had already ended.
+   *
+   * A throw here is caught and logged rather than allowed to escape; this runs
+   * on the run's own settlement path, where an unhandled rejection would take
+   * down work that has already succeeded.
+   */
+  onSettled?(): void;
 }
 
 /** Outcome of a {@link triggerCommandIntent} attempt. */
@@ -212,7 +228,19 @@ export async function triggerCommandIntent(
   // rejection so the detached promise never becomes an unhandled rejection.
   void feedProjector(projector, guarded)
     .catch((err: unknown) => opts.onError?.(err))
-    .finally(() => releaseOnce());
+    .finally(() => {
+      releaseOnce();
+      // Contained, exactly as `triggerTurn` contains its own: this is the run's
+      // settlement path, where a throw becomes an unhandled rejection.
+      try {
+        opts.onSettled?.();
+      } catch (err) {
+        logger.warn('[trigger-command-intent] a run-settled observer threw', {
+          sessionId,
+          ...logError(err),
+        });
+      }
+    });
 
   return { accepted: true };
 }

@@ -68,6 +68,28 @@ export {
   type AgentExecutionDefaults,
 } from './resolve-session-defaults.js';
 export { triggerCommandIntent } from './trigger-command-intent.js';
+export {
+  dispatchMessage,
+  dispatchCommandIntent,
+  listQueuedMessages,
+  linkSessionId,
+  noteSessionOrphaned,
+  noteTurnBoundary,
+  sweepOrphanedMessageQueues,
+  withDispatchMutex,
+} from './message-dispatcher.js';
+export type {
+  DispatchMessageOpts,
+  DispatchCommandIntentOpts,
+  MessageDispatchResult,
+} from './message-dispatcher.js';
+export {
+  MessageQueueStore,
+  QUEUE_POSITION_STEP,
+  getMessageQueueStore,
+  setMessageQueueStore,
+} from './message-queue-store.js';
+export type { EnqueueInput, MoveTarget, QueuedMessageRecord } from './message-queue-store.js';
 export type {
   TriggerCommandIntentDeps,
   TriggerCommandIntentOpts,

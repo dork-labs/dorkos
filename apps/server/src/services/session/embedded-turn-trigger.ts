@@ -4,7 +4,7 @@
  * The Obsidian plugin embeds the runtime directly — there is no Express layer,
  * so `DirectTransport.postMessage` cannot reach `POST /api/sessions/:id/messages`.
  * This factory packages the SAME orchestration that route performs ({@link
- * triggerTurn} + projector registry) into a single in-process bridge the plugin
+ * dispatchMessage} + projector registry) into a single in-process bridge the plugin
  * wires into `DirectTransportServices.turnTrigger`, so embedded sends follow the
  * identical trigger-only contract (ADR-0264): the turn runs detached, feeding
  * the per-session projector, and delivery happens solely over the runtime's
@@ -16,11 +16,10 @@ import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
 import type { ClientContext } from '@dorkos/shared/additional-context';
 import type { RuntimeCommandIntentId } from '@dorkos/shared/command-intents';
 import { logger } from '../../lib/logger.js';
-import { getOrCreateProjector, rekeyProjector } from './session-state-projector.js';
+import { getOrCreateProjector } from './session-state-projector.js';
 import { persistenceModeFor } from './projector-persistence.js';
-import { triggerTurn } from './trigger-turn.js';
-import type { TriggerTurnResult } from './trigger-turn.js';
-import { triggerCommandIntent } from './trigger-command-intent.js';
+import { dispatchCommandIntent, dispatchMessage } from './message-dispatcher.js';
+import type { MessageDispatchResult } from './message-dispatcher.js';
 import type { TriggerCommandIntentResult } from './trigger-command-intent.js';
 
 /** Inputs for a single embedded turn trigger. */
@@ -44,7 +43,7 @@ export interface EmbeddedTriggerOpts {
 /** The in-process trigger bridge `DirectTransport.postMessage` calls. */
 export interface EmbeddedTurnTrigger {
   /** Trigger a detached turn; resolves with the lock outcome and canonical id. */
-  trigger(opts: EmbeddedTriggerOpts): Promise<TriggerTurnResult>;
+  trigger(opts: EmbeddedTriggerOpts): Promise<MessageDispatchResult>;
 }
 
 /**
@@ -64,7 +63,7 @@ export function createEmbeddedTurnTrigger(runtime: AgentRuntime): EmbeddedTurnTr
       });
       if (cwd !== undefined) projector.cwd = cwd;
 
-      return triggerTurn({
+      return dispatchMessage({
         sessionId,
         clientId,
         content,
@@ -72,16 +71,7 @@ export function createEmbeddedTurnTrigger(runtime: AgentRuntime): EmbeddedTurnTr
         context,
         ...(seedContext ? { seedContext } : {}),
         projector,
-        deps: {
-          acquireLock: (sid, cid, lifecycle, token) =>
-            runtime.acquireLock(sid, cid, lifecycle, token),
-          releaseLock: (sid, cid, token) => runtime.releaseLock(sid, cid, token),
-          sendMessage: (sid, text, opts) => runtime.sendMessage(sid, text, opts),
-          interruptQuery: (sid) => runtime.interruptQuery(sid),
-          getInternalSessionId: (sid) => runtime.getInternalSessionId(sid),
-          rekeyProjector: (oldId, newId) => rekeyProjector(oldId, newId),
-          getCapabilities: () => runtime.getCapabilities(),
-        },
+        runtime,
         onError: (err) => {
           logger.warn('[EmbeddedTurnTrigger] detached turn error', {
             sessionId,
@@ -138,21 +128,14 @@ export function createEmbeddedCommandIntentTrigger(
       });
       if (cwd !== undefined) projector.cwd = cwd;
 
-      return triggerCommandIntent({
+      return dispatchCommandIntent({
         sessionId,
         clientId,
         intent,
         cwd,
         instructions,
         projector,
-        deps: {
-          acquireLock: (sid, cid, lifecycle, token) =>
-            runtime.acquireLock(sid, cid, lifecycle, token),
-          releaseLock: (sid, cid, token) => runtime.releaseLock(sid, cid, token),
-          executeCommandIntent: (sid, i, o) => runtime.executeCommandIntent(sid, i, o),
-          interruptQuery: (sid) => runtime.interruptQuery(sid),
-          getInternalSessionId: (sid) => runtime.getInternalSessionId(sid),
-        },
+        runtime,
         onError: (err) => {
           logger.warn('[EmbeddedCommandIntentTrigger] detached run error', {
             sessionId,
