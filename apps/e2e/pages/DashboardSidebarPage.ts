@@ -120,6 +120,54 @@ export class DashboardSidebarPage {
     );
   }
 
+  /**
+   * One zone's `<section>`, by the id the model gave it.
+   *
+   * @param id - `now`, `getting-started`, `today` or `library`.
+   */
+  zone(id: 'now' | 'getting-started' | 'today' | 'library'): Locator {
+    return this.page.locator(`[data-sidebar-zone="${id}"]`);
+  }
+
+  /** Every row inside Today, in the order it is drawn. */
+  get todayRows(): Locator {
+    return this.zone('today').locator('[data-sidebar-row]');
+  }
+
+  /**
+   * Today's anchor — the conversation the operator has open, which BC-21 pins
+   * to the top of the zone.
+   *
+   * Matched on `aria-current="page"` inside Today rather than on "the first
+   * row", so the assertion is about the row the panel CLAIMS is open rather
+   * than about a position that would be true of whatever happened to sort
+   * first.
+   */
+  get todayAnchor(): Locator {
+    return this.zone('today').locator('[data-sidebar-row][aria-current="page"]');
+  }
+
+  /**
+   * One Library section's fold toggle, by the label on its header.
+   *
+   * @param label - `Channels`, `Direct messages`, `Agents` or `Pins`.
+   */
+  librarySectionToggle(label: string): Locator {
+    return this.zone('library')
+      .locator('h3')
+      .filter({ hasText: label })
+      .locator('[data-sidebar-section-toggle]');
+  }
+
+  /**
+   * A row anywhere in the sidebar whose text contains `text`.
+   *
+   * @param text - Part of the row's visible sentence.
+   */
+  rowWithText(text: string): Locator {
+    return this.rows.filter({ hasText: text });
+  }
+
   /** A group's header toggle button — shows the group name, expands/collapses. */
   groupHeader(name: string): Locator {
     return this.page.getByRole('button', { name, exact: true });

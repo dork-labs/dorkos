@@ -46,6 +46,7 @@ export {
   GROUPS_HINT_SUGGESTION_ID,
   isSuggestionRetired,
   retireSuggestion,
+  markDigestShown,
   setGroupDisplayFilter,
   setGroupMuted,
   setGroupRules,

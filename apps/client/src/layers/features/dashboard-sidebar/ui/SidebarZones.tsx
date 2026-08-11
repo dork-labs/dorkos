@@ -23,6 +23,7 @@ import {
 import { useAllClearBeat } from '../model/use-all-clear-beat';
 import { AgentOnboardingCard } from './AgentOnboardingCard';
 import { SidebarZone } from './SidebarZone';
+import { TodayZone } from './TodayZone';
 
 /**
  * The zone the all-clear beat draws in, once the model has stopped emitting one.
@@ -92,9 +93,16 @@ export function SidebarZones({ model }: SidebarZonesProps) {
       {beating && !nowSlotTaken && (
         <SidebarZone zone={ALL_CLEAR_ZONE} onToggleAll={onToggleAll} allClear />
       )}
-      {model.zones.map((zone) => (
-        <SidebarZone key={zone.id} zone={zone} onToggleAll={onToggleAll} />
-      ))}
+      {model.zones.map((zone) =>
+        // Today is the one zone whose rows react to where the operator's
+        // pointer and focus are (BC-17, BC-36), so it gets a wrapper of its own.
+        // Every other zone is the plain renderer.
+        zone.id === 'today' ? (
+          <TodayZone key={zone.id} zone={zone} onToggleAll={onToggleAll} />
+        ) : (
+          <SidebarZone key={zone.id} zone={zone} onToggleAll={onToggleAll} />
+        )
+      )}
       {/* "Is there anything at all yet?" — a presence check on the model, not a
           membership rule. Library is absent only when there is no agent, no room
           and no pin to put in it, which is the one moment the invitation belongs

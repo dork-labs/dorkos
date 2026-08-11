@@ -226,6 +226,19 @@ export interface SidebarState {
    * absent from this map has no mentions the client knows about.
    */
   mentions: Readonly<Record<string, number>>;
+  /**
+   * Whether the operator has unfolded Today's "+ N automated" reveal (BC-19).
+   *
+   * **Optional, and absent means folded** — the state every session starts in.
+   * It is optional rather than required because the four journey fixtures are
+   * read by several tasks at once and are never edited, and a fold that begins
+   * closed has nothing to say by being absent.
+   *
+   * A per-tab fact and deliberately not a preference: it is where the operator
+   * has scrolled to in a thought, not something they configured, so it does not
+   * follow them to another machine.
+   */
+  todayAutomatedExpanded?: boolean;
   /** What the operator has open right now, from the router. `null` off-route. */
   activeTarget: SidebarTarget | null;
   /** How far along this operator is (BC-12). */

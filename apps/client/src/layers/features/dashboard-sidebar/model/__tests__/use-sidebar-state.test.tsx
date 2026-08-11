@@ -62,6 +62,24 @@ vi.mock('@/layers/entities/attention', () => ({ useAttentionSignals: () => ATTEN
 /** The prefs writer, hoisted so its identity never moves the snapshot's. */
 const UPDATE_PREFS = { update: vi.fn(), updateAsync: vi.fn(), isPending: false, isError: false };
 
+/**
+ * The welcome-back setting, hoisted for the same reason.
+ *
+ * The real hook reads the shared config query, which needs a transport this
+ * suite does not stand up. Only the digest reads it (BC-22), and the digest's
+ * own gates are asserted where they live, in `use-digest-facts.test.tsx`.
+ */
+const WELCOME_BACK = {
+  enabled: false,
+  absenceThresholdMinutes: 240,
+  maxPosts: 3,
+  offersEnabled: false,
+  setEnabled: vi.fn(),
+  setOffersEnabled: vi.fn(),
+  isAvailable: true,
+  isPending: false,
+};
+
 vi.mock('@/layers/entities/agent', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/layers/entities/agent')>()),
   useResolvedAgents: () => ({ data: MANIFESTS, isSuccess: true }),
@@ -99,7 +117,12 @@ vi.mock('@/layers/entities/config', async (importOriginal) => {
   // TanStack mutation over the transport, and Getting started's retirement
   // (BC-13) calls it from inside the hook under test. Its behaviour has its own
   // suite; here it only has to exist.
-  return { ...actual, useSidebarPrefs: () => PREFS, useUpdateSidebarPrefs: () => UPDATE_PREFS };
+  return {
+    ...actual,
+    useSidebarPrefs: () => PREFS,
+    useUpdateSidebarPrefs: () => UPDATE_PREFS,
+    useWelcomeBack: () => WELCOME_BACK,
+  };
 });
 
 import { useSidebarState } from '../use-sidebar-state';

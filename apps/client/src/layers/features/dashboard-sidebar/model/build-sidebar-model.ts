@@ -34,6 +34,7 @@ import type {
   SidebarDisplayFilter,
   SidebarSectionId as PersistedSectionId,
 } from '@dorkos/shared/config-schema';
+import type { SessionLifecycle } from '@dorkos/shared/session-stream';
 import type { IdentityStatus } from '@/layers/shared/ui';
 import { applyMuteRules, muteIndex } from './rules/apply-mute-rules';
 import { archiveOvernight } from './rules/archive-overnight';
@@ -46,7 +47,7 @@ import { orderToday } from './rules/order-today';
 import { pinActiveAnchor } from './rules/pin-active-anchor';
 import { rankNowItems } from './rules/rank-now-items';
 import { selectNowItems } from './rules/select-now-items';
-import { selectTodayItems } from './rules/select-today-items';
+import { revealAutomated, selectTodayItems } from './rules/select-today-items';
 import { anchorKey } from './rules/targets';
 import type { SidebarState } from './sidebar-state';
 
@@ -202,7 +203,23 @@ export type SidebarActionId =
 /** What clicking a row does. The only discriminated union in the model. */
 export type SidebarTarget =
   | { kind: 'session'; sessionId: string; agentPath: string; cwd: string | null }
-  | { kind: 'room'; roomId: string; roomKind: 'channel' | 'dm' | 'thread' }
+  | {
+      kind: 'room';
+      roomId: string;
+      roomKind: 'channel' | 'dm' | 'thread';
+      /**
+       * The entry a thread hangs off (`ThreadSummary.rootEntryId`) — a thread
+       * row's address inside its room, present only when `roomKind` is
+       * `'thread'`.
+       *
+       * Without it a thread row could only open the room it lives in, which is
+       * a different place: a thread is a relation between entries in one room's
+       * log (ADR 260728-022013), and `/channels` addresses it as `?thread=`.
+       * Deliberately not part of the row's key or its interaction key — the
+       * thread reads the ROOM's cursor, and one place has one record.
+       */
+      rootEntryId?: string;
+    }
   | { kind: 'agent'; path: string }
   | { kind: 'attention'; signalId: string; deepLink: string }
   | { kind: 'rollup'; rollup: 'now-overflow' | 'working' | 'automated' | 'section-count' }
@@ -248,6 +265,22 @@ export interface SidebarRowModel {
   status: IdentityStatus;
   /** True when the row reserves a second line for a live verb (BC-24). */
   reservesVerbLine: boolean;
+  /**
+   * The session's coarse phase, on a session row — what the leaf verb line
+   * needs to know, and nothing more.
+   *
+   * **This is not the verb, and the distinction is the whole design.** A
+   * lifecycle changes when a turn starts and stops; the verb changes every
+   * couple of seconds while one runs. The model already reads this to derive
+   * {@link SidebarRowModel.status} and
+   * {@link SidebarRowModel.reservesVerbLine}, so carrying it costs nothing and
+   * spares `SessionVerbLine` a second subscription to churn the model exists to
+   * absorb (spec R1, BC-37).
+   *
+   * Absent on every row that is not a session, and on a session whose runtime
+   * has reported no status — omission, never a guess.
+   */
+  lifecycle?: SessionLifecycle;
   /** One-line preview when there is one worth showing and no verb line. */
   preview?: string;
   /** Trailing origin mark; absent = human↔agent chat. */
@@ -381,21 +414,35 @@ export function buildSidebarModel(state: SidebarState): SidebarModel {
 
   // Now and Getting started share one slot: real signals always win, and the
   // day-one zone is what fills the space until there are any (BC-4).
+  //
+  // **"Any" includes the working rollup, and getting that wrong lost it.** The
+  // rollup is a Now row — BC-8 counts it in Now's five-row ceiling and BC-9
+  // makes it unconditional ("when ≥1 session is streaming, one row reads N
+  // working") — but BC-4 phrases the slot rule as "if `selectNowItems` returns
+  // any row", and `selectNowItems` never returns the rollup. Read literally
+  // that put Getting started in the slot and dropped the rollup on the floor:
+  // an operator who had not retired all five suggestions could never be told
+  // anything was working. Design-decisions §2 settles it — "real signals always
+  // win" — so Now takes the slot whenever it has a row of any kind.
+  //
+  // The accepted cost is that Getting started steps aside while a turn streams
+  // and comes back when it ends. That is the same behaviour a permission
+  // prompt already produces, and it is the direction the design record points.
   const attentionRows = rankNowItems(selectNowItems(state));
   const workingRollup = buildWorkingRollup(state);
+  const nowRows = [...capNowItems(attentionRows), ...(workingRollup ? [workingRollup] : [])];
 
-  if (attentionRows.length > 0) {
-    const rows = [...capNowItems(attentionRows), ...(workingRollup ? [workingRollup] : [])];
-    const zone = bodyZone('now', rows, 'zone:now');
+  if (nowRows.length > 0) {
+    const zone = bodyZone('now', nowRows, 'zone:now');
     if (zone) {
+      // Counts what NEEDS the operator, never what is merely busy (BC-11): a
+      // rollup appearing must not announce "1 agent needs you".
       zone.liveRegionText = liveRegionText(attentionRows.length);
       zones.push(zone);
     }
   } else {
     const suggestions = buildGettingStarted(state);
-    const zone = suggestions.length
-      ? bodyZone('getting-started', suggestions, 'zone:getting-started')
-      : bodyZone('now', workingRollup ? [workingRollup] : [], 'zone:now');
+    const zone = bodyZone('getting-started', suggestions, 'zone:getting-started');
     if (zone) zones.push(zone);
   }
 
@@ -419,7 +466,9 @@ export function buildSidebarModel(state: SidebarState): SidebarModel {
   // The digest sits below the anchor, never above it: it is a door into
   // yesterday, and where the operator is standing comes first.
   if (digestRow) today.splice(today[0]?.reason === 'anchor:active-session' ? 1 : 0, 0, digestRow);
-  const todayZone = bodyZone('today', today, 'zone:today');
+  // Last of all, because the reveal's contents hang off the bottom of the
+  // finished list and must not be sorted, capped or archived with it (BC-19).
+  const todayZone = bodyZone('today', revealAutomated(today, state), 'zone:today');
   if (todayZone) zones.push(todayZone);
 
   const librarySections = buildLibrarySections(state);

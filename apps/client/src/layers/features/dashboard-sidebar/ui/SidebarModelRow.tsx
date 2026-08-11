@@ -30,6 +30,7 @@ import type { SidebarItemRef } from '@dorkos/shared/config-schema';
 import { SidebarRow, type SidebarRowMenu } from '@/layers/shared/ui';
 import { AgentAvatar, useAgentVisual } from '@/layers/entities/agent';
 import { dismissIdleNudge } from '@/layers/entities/attention';
+import { SessionVerbLine } from '@/layers/entities/session';
 import type { SidebarIconId, SidebarRowModel, SidebarTarget } from '../model/build-sidebar-model';
 import { AgentListItem } from './AgentListItem';
 import { RoomRow } from './rooms/RoomRow';
@@ -282,6 +283,19 @@ function GenericRowFromModel({
       emphasized={row.unread.tier !== 'none'}
       muted={row.muted}
       {...(row.reservesVerbLine ? { reservesVerbLine: true } : {})}
+      {...(row.target.kind === 'session'
+        ? {
+            // **The words, subscribed to at the leaf** (BC-37, spec R1). The
+            // model says whether there IS a second line; this node says what is
+            // in it, and it is the only thing in the panel that watches a
+            // session's tool activity. A row that reserved the line and was
+            // handed no node held an empty 16px gap open under every streaming
+            // conversation while the chat strip beside it read "Working…".
+            secondLine: (
+              <SessionVerbLine sessionId={row.target.sessionId} lifecycle={row.lifecycle} />
+            ),
+          }
+        : {})}
       {...(row.preview === undefined ? {} : { preview: row.preview })}
       onSelect={() => chrome.openTarget(row.target)}
       {...(drag ? { drag } : {})}

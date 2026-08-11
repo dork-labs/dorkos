@@ -496,9 +496,9 @@ export const SidebarPrefsSchema = z.object({
   /**
    * The welcome-back digest's memory: the local date (`YYYY-MM-DD`) it was last
    * shown on, so it appears at most once a day (BC-22). Absent until the first
-   * digest is shown, and nothing writes it yet — the digest row itself lands in
-   * P2, and the field is here so it lands on a schema that already has room for
-   * it rather than needing a second migration.
+   * digest is shown; written by the client's `markDigestShown` the moment the
+   * row renders. Server-held rather than local, so the moment is once per day
+   * per account and not once per device.
    */
   digest: z.object({ lastShownDate: z.string().optional() }).default(() => ({})),
 });

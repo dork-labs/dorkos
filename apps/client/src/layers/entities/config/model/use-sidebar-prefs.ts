@@ -518,6 +518,24 @@ export function retireSuggestion(prev: SidebarPrefs, suggestionId: string): Side
   };
 }
 
+/**
+ * Record that the welcome-back digest has been shown on a local calendar day
+ * (idempotent).
+ *
+ * **Once per day per ACCOUNT, not per device** (BC-22). That is the whole
+ * reason the date lives in server-held config rather than in localStorage: a
+ * person who reads the digest on a laptop and then opens the cockpit on a
+ * desktop has already had the moment, and a second one is the product
+ * repeating itself.
+ *
+ * @param prev - The prefs to patch.
+ * @param date - The local calendar day, `YYYY-MM-DD`.
+ */
+export function markDigestShown(prev: SidebarPrefs, date: string): SidebarPrefs {
+  if (prev.digest.lastShownDate === date) return prev;
+  return { ...prev, digest: { lastShownDate: date } };
+}
+
 // ---------------------------------------------------------------------------
 // Display filter + mute (DOR-339) — additive on the DOR-329 shape above.
 // ---------------------------------------------------------------------------
