@@ -81,7 +81,9 @@ describe('permission.asked → approval_required', () => {
   });
 
   it('drops a payload missing a field the approval depends on', () => {
-    expect(mapPermissionAsked({ sessionID: 'ses_1', permission: 'bash' }, permissions())).toEqual([]);
+    expect(mapPermissionAsked({ sessionID: 'ses_1', permission: 'bash' }, permissions())).toEqual(
+      []
+    );
     expect(mapPermissionAsked(undefined, permissions())).toEqual([]);
   });
 
