@@ -18,6 +18,11 @@ export { HighlightedText } from './ui/HighlightedText';
 export { PaletteCommandCenter } from './ui/PaletteCommandCenter';
 export { PaletteFooter } from './ui/PaletteFooter';
 export { PalettePrefixLegend } from './ui/PalettePrefixLegend';
+// The scope chip and the heading a scoped list carries, for the Dev
+// Playground's scoped showcase — the same "render the shipped component"
+// rule the ranked-results showcase follows.
+export { PaletteScopeChip } from './ui/PaletteScopeChip';
+export { scopeHeading, type PaletteScope } from './model/palette-scope';
 export { RoomCommandItem } from './ui/RoomCommandItem';
 export { SessionCommandItem } from './ui/SessionCommandItem';
 

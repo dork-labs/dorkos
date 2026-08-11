@@ -252,7 +252,7 @@ reason: 'today:interaction-recency',
    }
    ```
 
-4. **Obey the two purity limits.** Value imports may only be relative siblings, `@dorkos/shared/smart-groups`, or `@/layers/entities/session`; anything else must be `import type`. Read time only from `state.now` — the only legal `Date` shapes are `new Date(<argument>)` and `Date.parse(`.
+4. **Obey the two purity limits.** Value imports may only be relative siblings, `@dorkos/shared/smart-groups`, `@/layers/entities/session`, or `@/layers/shared/lib/overnight-boundary` — the day boundary, reached by its leaf path because the `shared/lib` barrel is still banned; anything else must be `import type`. Read time only from `state.now` — the only legal `Date` shapes are `new Date(<argument>)` and `Date.parse(`. The whitelist itself lives in `build-sidebar-model.contracts.test.ts`, which also asserts that leaf really imports nothing.
 
 5. **Stamp a `reason`** on every node you create, matching `/^[a-z-]+:[a-z-]+$/`. Reuse an existing namespace from the table above unless your rule genuinely introduces a new kind of provenance.
 

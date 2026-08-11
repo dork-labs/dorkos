@@ -86,11 +86,16 @@ export interface PaletteCommandCenter {
  * @param agents - Every agent the cockpit can see, for session attribution.
  * @param rooms - Every room, archived included, for the Recent mix.
  * @param unreadRoomIds - Rooms with something waiting, which lead Recent.
+ * @param archivedBefore - The cockpit's day boundary, epoch ms. Conversations
+ *   older than it are labelled archived. Passed in rather than derived here
+ *   because it changes once a day: a clock read on this line would rebuild the
+ *   whole corpus — and the Fuse index over it — every minute the app is open.
  */
 export function usePaletteCommandCenter(
   agents: readonly AgentPathEntry[],
   rooms: readonly RoomSummary[],
-  unreadRoomIds: ReadonlySet<string>
+  unreadRoomIds: ReadonlySet<string>,
+  archivedBefore: number
 ): PaletteCommandCenter {
   // Asked for at BOOT, not when the palette opens — and that is a decision, not
   // an oversight.
@@ -120,13 +125,13 @@ export function usePaletteCommandCenter(
   const streamed = useSessionListStore(useShallow((s) => Object.values(s.sessions)));
 
   const sessions = useMemo(
-    () => toPaletteSessionItems(data?.sessions ?? [], agents),
-    [data?.sessions, agents]
+    () => toPaletteSessionItems(data?.sessions ?? [], agents, archivedBefore),
+    [data?.sessions, agents, archivedBefore]
   );
 
   const streamedSessions = useMemo(
-    () => toPaletteSessionItems(streamed, agents),
-    [streamed, agents]
+    () => toPaletteSessionItems(streamed, agents, archivedBefore),
+    [streamed, agents, archivedBefore]
   );
 
   // Every session record the palette can see, from both sources, so Continue

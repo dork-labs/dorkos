@@ -3,6 +3,7 @@ import { CommandGroup, CommandItem, CommandSeparator } from '@/layers/shared/ui'
 import type { RoomSummary } from '@/layers/entities/room';
 import { PaletteCommandCenter } from './PaletteCommandCenter';
 import { PaletteResultRow } from './PaletteResultRow';
+import { PaletteSearchHandoffRow } from './PaletteSearchHandoffRow';
 import { PalettePrefixLegend } from './PalettePrefixLegend';
 import {
   BEST_MATCH_HEADING,
@@ -46,6 +47,14 @@ interface PaletteRootPageProps {
   rows: RankedRow<SearchResult>[];
   /** The whole room list, for its load state. */
   rooms: PaletteRooms;
+  /**
+   * The hand-off to the surface that searches what was said, or `null`.
+   *
+   * `null` is the shipping state and it means the row is ABSENT — no disabled
+   * row, no placeholder. Only a cockpit that actually serves a message-search
+   * page produces one (`model/search-surface`).
+   */
+  searchHandoff: { term: string; onSelect: () => void } | null;
   onFeatureAction: (action: string) => void;
   onQuickAction: (action: string) => void;
   onGoToAgentActions: (agent: AgentPathEntry) => void;
@@ -85,6 +94,7 @@ export function PaletteRootPage({
   bestMatch,
   rows,
   rooms,
+  searchHandoff,
   onFeatureAction,
   onQuickAction,
   onGoToAgentActions,
@@ -219,6 +229,23 @@ export function PaletteRootPage({
           <CommandItem disabled value="rooms-status" className="text-muted-foreground text-sm">
             {channelStatus}
           </CommandItem>
+        </CommandGroup>
+      )}
+
+      {/*
+       * The boundary of what ⌘K can answer, drawn last and only when there is
+       * somewhere to send the question. Until a message-search surface exists
+       * this is nothing at all — the list simply ends at its last result, which
+       * is the truth about what this cockpit can find (§15).
+       *
+       * No `isZeroQuery` guard, deliberately: the hand-off is already `null`
+       * whenever nothing has been typed, because a row offering to search for
+       * "" is not a row. A second condition here would be one that can never
+       * decide anything.
+       */}
+      {searchHandoff && (
+        <CommandGroup>
+          <PaletteSearchHandoffRow term={searchHandoff.term} onSelect={searchHandoff.onSelect} />
         </CommandGroup>
       )}
 

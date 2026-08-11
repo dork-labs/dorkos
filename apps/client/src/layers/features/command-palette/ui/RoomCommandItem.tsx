@@ -5,6 +5,7 @@
  */
 import { CommandItem } from '@/layers/shared/ui';
 import { RoomAvatar, RoomTitle, hasUnread, type RoomSummary } from '@/layers/entities/room';
+import { ArchivedMark } from './ArchivedMark';
 import { paletteRoomKeywords } from '../model/palette-rooms';
 
 export interface RoomCommandItemProps {
@@ -30,11 +31,8 @@ export interface RoomCommandItemProps {
  * room", which is not `0` ("you are in it and caught up") — so a room the
  * operator has only ever looked at carries no badge rather than a zero.
  *
- * **An archived room says so.** The palette is the only surface that lists one
- * at all (DOR-1051), so nothing else on screen explains why a channel you
- * thought was closed is in front of you. The word is plain text rather than a
- * badge with a hidden label: it is part of what the row is called, and a person
- * skimming a search result needs it in the same glance as the name.
+ * **An archived room says so**, in the same words a retired conversation does
+ * ({@link ArchivedMark}).
  *
  * The row is named by its parts: the mark is decorative, the name contributes
  * `#general`, the badge contributes `3 unread`. Nothing names the room twice.
@@ -57,11 +55,7 @@ export function RoomCommandItem({ room, onSelect }: RoomCommandItemProps) {
       ) : (
         <RoomTitle room={room} className="min-w-0 flex-1 text-sm" />
       )}
-      {room.archived && (
-        <span className="text-muted-foreground border-border shrink-0 rounded-full border px-1.5 py-0.5 text-[10px] font-medium">
-          Archived
-        </span>
-      )}
+      {room.archived && <ArchivedMark />}
       {unread && (
         <span
           className="bg-brand/15 text-brand shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium tabular-nums"

@@ -3,6 +3,9 @@ import { useMeshAgentPaths } from '@/layers/entities/mesh';
 import { useCommands } from '@/layers/entities/command';
 import { useSessions, selectAgentSessions } from '@/layers/entities/session';
 import { useSlotContributions } from '@/layers/shared/model';
+// Deep, because the day boundary is off the `shared/lib` barrel on purpose —
+// see that barrel's note beside it.
+import { overnightBoundary } from '@/layers/shared/lib/overnight-boundary';
 import { hasUnread, roomDisplayTitle, type RoomSummary } from '@/layers/entities/room';
 import { interactionKey } from '@/layers/entities/interactions';
 import { roomIdsByOriginLabel, scopesOfSession } from './palette-scope';
@@ -131,8 +134,12 @@ function roomRanking(room: RoomSummary) {
  * by CommandPaletteDialog.
  *
  * @param activeCwd - Current working directory to identify the active agent and pin it first
+ * @param now - The instant to reason about time from, epoch ms — the caller's
+ *   clock, never this module's. Only the day boundary is derived from it, and
+ *   that changes once a day, so a corpus built here survives the minute ticks
+ *   the ranker needs.
  */
-export function usePaletteItems(activeCwd: string | null): PaletteItems {
+export function usePaletteItems(activeCwd: string | null, now: number): PaletteItems {
   const { data: agentPathsData, isLoading: agentsLoading } = useMeshAgentPaths();
   const rooms = usePaletteRooms();
   const { sessions: cwdSessions } = useSessions();
@@ -183,10 +190,16 @@ export function usePaletteItems(activeCwd: string | null): PaletteItems {
   // prefixes, which address them differently on purpose.
   const allRooms = useMemo(() => [...rooms.channels, ...rooms.dms], [rooms.channels, rooms.dms]);
 
+  // When "today" last began, so a conversation older than it can say so. One
+  // number for the whole corpus, and it holds still for a day — see the
+  // parameter's own doc for why that matters more than it looks.
+  const archivedBefore = useMemo(() => overnightBoundary(now), [now]);
+
   const { sessions, continueRows, recent, agentActivity } = usePaletteCommandCenter(
     allAgents,
     allRooms,
-    unreadRoomIds
+    unreadRoomIds,
+    archivedBefore
   );
 
   // Every room this cockpit can see, keyed by the label the server stamps on a
@@ -236,6 +249,12 @@ export function usePaletteItems(activeCwd: string | null): PaletteItems {
         usageKey: interactionKey('session', session.id),
         lastActivityAt: session.lastActivityAt,
         waiting: false,
+        // Not even when it is archived, and that is the deliberate difference
+        // from a room. `demoted` is a hard partition below EVERY live row of
+        // every kind; applied to conversations it would put yesterday's work
+        // under today's slash commands. An archived conversation is labelled
+        // and left in the ranking, where recency already seats it below an
+        // equally-relevant live one (`PaletteSessionItem.archived`).
         demoted: false,
         // The only rows a scope chip admits: a conversation is what lives
         // inside an agent and inside the channel that started it.
