@@ -292,7 +292,7 @@ export function SidebarChrome({ activeTarget, children }: SidebarChromeProps) {
           // the sidebar is a request to READ, and on a phone the difference is
           // whether a keyboard opens over what you came to look at.
           if (target.rootEntryId !== undefined) {
-            useRoomOpenThreadStore.getState().openThread(target.roomId, target.rootEntryId);
+            useRoomOpenThreadStore.getState().openThread(target.roomId, target.rootEntryId, false);
           }
           navigate({
             to: '/channels',
