@@ -29,7 +29,8 @@ import {
 import { Composer } from '@/layers/features/composer';
 import { PersonalityPicker } from '@/layers/features/agent-hub';
 import { useDefaultAgentSession } from '@/layers/entities/config';
-import { useUpdateAgent } from '@/layers/entities/agent';
+import { useUpdateAgent, useResolvedAgents } from '@/layers/entities/agent';
+import { useMeshAgentPaths } from '@/layers/entities/mesh';
 import { useRuntimeRequirements, selectRuntimeReadiness } from '@/layers/entities/runtime';
 import { chooseDefaultRuntime } from '../model/use-onboarding-runtime-default';
 import { useOnboarding } from '../model/use-onboarding';
@@ -48,6 +49,54 @@ const FIRST_LIGHT_MS = 1500;
 /** How long the dissolve celebration runs before it is force-stopped. */
 const CELEBRATION_MAX_MS = 4000;
 
+/**
+ * DorkBot's slug — the identity key its lines group under before the registry
+ * has named the system agent, and the `name` on every birth record here.
+ */
+const DORKBOT_SLUG = 'dorkbot';
+
+/** What every scripted line in this conversation calls the speaker. */
+const DORKBOT_NAME = 'DorkBot';
+
+/**
+ * The disc colour DorkBot's surfaces wear until the registry names the system
+ * agent — and the reason is the whole point of this screen's identity work.
+ *
+ * DorkBot's manifest id is a ULID and its manifest carries neither colour nor
+ * icon, so its entire face is hashed from that id. The only id available before
+ * the registry answers is the slug, which hashes to a face DorkBot wears in no
+ * other surface — and which would visibly swap the moment the real one lands.
+ *
+ * **Deliberate for BOTH ways this screen can lack a face**, and they are named
+ * where they are computed: the queries still *pending*, and the queries
+ * *settled with an error*. A confident-but-wrong face is equally wrong whether
+ * the answer is late or never coming, so both take this placeholder. There is
+ * no retry: a face is not worth a second request, and the surfaces beneath stay
+ * fully usable without one.
+ *
+ * A theme token rather than a colour literal, which the two consumers survive
+ * differently and on purpose:
+ *
+ * - `MessageAuthorAvatar` cannot contrast-check a `var()`, so it steps its disc
+ *   back to `tint` and draws the initial.
+ * - `AgentAvatar` (first light) has no such step and fills with it outright.
+ *   That is safe: `readableForeground` treats a colour it cannot parse as a
+ *   dark background and returns its near-white foreground, and
+ *   {@link PENDING_IDENTITY_EMOJI} leaves no glyph to read anyway.
+ */
+const PENDING_IDENTITY_COLOR = 'var(--color-muted-foreground)';
+
+/**
+ * The emoji a pending face carries: none.
+ *
+ * Explicitly empty rather than omitted, because `resolveAgentVisual` HASHES an
+ * emoji from the id whenever `icon` is absent — so omitting it is exactly what
+ * would put a slug-hashed face on first light, the defect this all exists to
+ * remove. `??` preserves an empty string, so this passes through that resolver
+ * untouched and the disc falls back to no glyph at all.
+ */
+const PENDING_IDENTITY_EMOJI = '';
+
 /** Props for {@link OnboardingConversation}. */
 export interface OnboardingConversationProps {
   /** Called on dissolve — hides the overlay for the session (set by the app shell). */
@@ -65,8 +114,37 @@ export function OnboardingConversation({ onComplete }: OnboardingConversationPro
   const { config, completeStep, skipStep, completeOnboarding } = useOnboarding();
   const updateAgent = useUpdateAgent();
   // The default agent's REGISTERED absolute path — the registry is the only
-  // thing that proves DorkBot is where the path says it is.
+  // thing that proves DorkBot is where the path says it is. Used for the
+  // session directory ONLY; the face below comes from somewhere stricter.
   const { defaultAgentDir } = useDefaultAgentSession();
+
+  // DorkBot is the SYSTEM agent, and `isSystem` on the manifest is the only
+  // thing on the wire that says so — the same lookup the sidebar makes
+  // (`SidebarChrome`), and deliberately NOT "whichever agent is configured as
+  // the default". Those coincide on a fresh install but an install is free to
+  // point the default elsewhere, and this screen's script is DorkBot's
+  // specifically: its name is written into every line and its traits are saved
+  // to the dorkbot directory. A face from a different agent would contradict
+  // the words beside it.
+  const { data: meshData } = useMeshAgentPaths();
+  const agentPaths = useMemo(
+    () => (meshData?.agents ?? []).map((entry) => entry.projectPath),
+    [meshData]
+  );
+  const { data: manifests } = useResolvedAgents(agentPaths);
+
+  // One face, read by every surface on this screen, so first light and the
+  // message gutter cannot resolve differently. `null` covers both no-face
+  // branches named on {@link PENDING_IDENTITY_COLOR}: still PENDING (either
+  // query out, or the system agent not yet in the answer) and SETTLED-ERROR
+  // (a query failed, leaving no manifests to search). Both take the
+  // placeholder, deliberately.
+  const dorkbotFace = useMemo(() => {
+    const manifest = agentPaths.map((path) => manifests?.[path]).find((m) => m?.isSystem === true);
+    if (!manifest) return null;
+    const { color, emoji } = resolveAgentVisual(manifest);
+    return { id: manifest.id, color, emoji };
+  }, [agentPaths, manifests]);
   // The runtime the first session will ACTUALLY start on. It was written here as
   // the literal `'claude-code'` twice, which was true only until somebody set a
   // different default — and then the birth certificate named a runtime the
@@ -128,9 +206,14 @@ export function OnboardingConversation({ onComplete }: OnboardingConversationPro
       const newSessionId = crypto.randomUUID();
       const record: Omit<AgentBirthRecord, 'fired'> = {
         kind: 'first-message',
-        name: 'dorkbot',
-        displayName: 'DorkBot',
-        agentId: 'dorkbot',
+        name: DORKBOT_SLUG,
+        displayName: DORKBOT_NAME,
+        // The same face the conversation drew from, so the mark beside the
+        // user's first real turn is the one they just spent three screens
+        // talking to.
+        agentId: dorkbotFace?.id ?? DORKBOT_SLUG,
+        icon: dorkbotFace?.emoji ?? PENDING_IDENTITY_EMOJI,
+        color: dorkbotFace?.color ?? PENDING_IDENTITY_COLOR,
         bornAt: new Date().toISOString(),
         path: defaultAgentDir,
         // The certificate says what this session RUNS on, so it names the same
@@ -214,26 +297,41 @@ export function OnboardingConversation({ onComplete }: OnboardingConversationPro
       }
     : {};
 
-  // DorkBot speaks every scripted line, so the list's identity gutter names it
-  // and wears the same avatar first light just showed — not the resolver's
-  // anonymous fallback.
-  const dorkbotAuthor = useMemo<MessageAuthorAgent>(() => {
-    const { color, emoji } = resolveAgentVisual({ id: 'dorkbot' });
-    return { id: 'dorkbot', displayName: 'DorkBot', emoji, color };
-  }, []);
+  // DorkBot speaks every scripted line, so the list's identity gutter wears the
+  // face the sidebar will show. No emoji while the face is unresolved: the
+  // avatar then draws the initial over the neutral disc, which reads as "still
+  // loading" rather than as somebody else.
+  const dorkbotAuthor = useMemo<MessageAuthorAgent>(
+    () =>
+      dorkbotFace
+        ? {
+            id: dorkbotFace.id,
+            displayName: DORKBOT_NAME,
+            emoji: dorkbotFace.emoji,
+            color: dorkbotFace.color,
+          }
+        : { id: DORKBOT_SLUG, displayName: DORKBOT_NAME, color: PENDING_IDENTITY_COLOR },
+    [dorkbotFace]
+  );
 
+  // First light draws the same face at 48px. It reads the record's `icon` and
+  // `color` as OVERRIDES and hashes from `agentId` for anything missing, which
+  // is why the pending branch supplies both explicitly rather than omitting
+  // them — see {@link PENDING_IDENTITY_EMOJI}.
   const dorkbotArrival = useMemo<AgentBirthRecord>(
     () => ({
-      name: 'dorkbot',
-      displayName: 'DorkBot',
-      agentId: 'dorkbot',
+      name: DORKBOT_SLUG,
+      displayName: DORKBOT_NAME,
+      agentId: dorkbotFace?.id ?? DORKBOT_SLUG,
+      icon: dorkbotFace?.emoji ?? PENDING_IDENTITY_EMOJI,
+      color: dorkbotFace?.color ?? PENDING_IDENTITY_COLOR,
       bornAt: new Date().toISOString(),
       path: defaultAgentDir,
       runtime: defaultRuntime,
       kickoffMessage: '',
       fired: false,
     }),
-    [defaultAgentDir, defaultRuntime]
+    [dorkbotFace, defaultAgentDir, defaultRuntime]
   );
 
   if (convo.isFirstLight) {

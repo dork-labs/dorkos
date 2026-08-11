@@ -8,6 +8,7 @@ import {
   STORAGE_KEYS,
   resolveAgentVisual,
 } from '@/layers/shared/lib';
+import { IdentityAvatar } from './identity-avatar';
 import { PathBreadcrumb } from './path-breadcrumb';
 import {
   ResponsiveDialog,
@@ -341,11 +342,19 @@ export function DirectoryPicker({
                   >
                     {agent ? (
                       <>
-                        <span
-                          className="size-2 flex-shrink-0 rounded-full"
-                          style={{ backgroundColor: color }}
+                        {/* `IdentityAvatar` told `kind="agent"`, not the
+                            `AgentAvatar` wrapper: this file is `shared/ui`,
+                            which may not import `entities/`. The shared disc
+                            derives the same square/fill/Bot face from `kind`,
+                            which is exactly why that prop exists. */}
+                        <IdentityAvatar
+                          aria-hidden
+                          kind="agent"
+                          color={color}
+                          emoji={emoji}
+                          size="xs"
+                          className="shrink-0"
                         />
-                        <span className="text-sm">{emoji}</span>
                         <span className="min-w-0 flex-1 truncate text-sm font-medium">
                           {getAgentDisplayName(agent)}
                         </span>

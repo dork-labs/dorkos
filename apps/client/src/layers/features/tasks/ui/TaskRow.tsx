@@ -4,6 +4,7 @@ import cronstrue from 'cronstrue';
 import { MoreHorizontal, Pencil, Play, Trash2, AlertCircle, Shield } from 'lucide-react';
 import { toast } from 'sonner';
 import { useUpdateTask, useTriggerTask, useDeleteTask } from '@/layers/entities/tasks';
+import { AgentAvatar } from '@/layers/entities/agent';
 import {
   Badge,
   Switch,
@@ -141,11 +142,12 @@ export function TaskRow({
             <div className="flex items-center gap-1.5">
               {shouldShowAgent && agent ? (
                 <>
-                  <span
-                    className="inline-block size-2 shrink-0 rounded-full"
-                    style={{ backgroundColor: agentVisual!.color }}
+                  <AgentAvatar
+                    color={agentVisual!.color}
+                    emoji={agentVisual!.emoji}
+                    size="xs"
+                    className="shrink-0"
                   />
-                  <span className="text-xs leading-none">{agentVisual!.emoji}</span>
                   <span className="text-sm font-medium">{getAgentDisplayName(agent)}</span>
                   {isSystem && (
                     <Badge variant="outline" className="px-1 py-0 text-[10px] leading-tight">

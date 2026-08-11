@@ -33,6 +33,7 @@ vi.mock('@/layers/shared/lib', () => ({
   shortenHomePath: (p: string) => p.replace('/home/user', '~'),
   STORAGE_KEYS: { PICKER_VIEW: 'dorkos-picker-view' },
   resolveAgentVisual: () => ({ color: 'hsl(200, 60%, 50%)', emoji: '🤖' }),
+  getAgentDisplayName: (a: { displayName?: string; name: string }) => a.displayName ?? a.name,
 }));
 
 beforeAll(() => {
@@ -53,7 +54,13 @@ beforeAll(() => {
 
 let mockTransport: Transport;
 
-function renderPicker(props: { onSelect?: (path: string) => void; initialPath?: string } = {}) {
+function renderPicker(
+  props: {
+    onSelect?: (path: string) => void;
+    initialPath?: string;
+    resolvedAgents?: Record<string, unknown>;
+  } = {}
+) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
@@ -66,6 +73,7 @@ function renderPicker(props: { onSelect?: (path: string) => void; initialPath?: 
           onOpenChange={vi.fn()}
           onSelect={onSelect}
           initialPath={props.initialPath ?? '/home/user'}
+          resolvedAgents={props.resolvedAgents as never}
         />
       </TransportProvider>
     </QueryClientProvider>
@@ -146,6 +154,28 @@ describe('DirectoryPicker', () => {
     fireEvent.click(screen.getByText('~/project-a'));
 
     expect(onSelect).toHaveBeenCalledWith('/home/user/project-a');
+  });
+
+  it('draws a recent folder’s agent as an agent, not a bare colour dot', () => {
+    renderPicker({
+      resolvedAgents: {
+        '/home/user/project-a': { id: 'agent-1', name: 'api-bot', runtime: 'claude-code' },
+        '/home/user/project-b': null,
+      },
+    });
+
+    // The dialog renders in a portal, so the row is reached from its own text.
+    const row = screen.getByText('api-bot').closest('button');
+    // The shared disc told `kind="agent"` — this file is `shared/ui` and may
+    // not reach `entities/agent`, so `kind` is how it says "agent" at all.
+    const disc = row?.querySelector('[data-slot="identity-avatar"]');
+    expect(disc).toBeTruthy();
+    expect(disc?.className).toContain('rounded-md');
+    expect(disc?.className).not.toContain('rounded-full');
+    // Filled with the agent's own colour, and wearing the Bot mark — the two
+    // things the hand-rolled `<span>` dot could not say.
+    expect(disc?.getAttribute('style')).toContain('hsl(200, 60%, 50%)');
+    expect(disc?.querySelector('[data-slot="identity-badge"]')).toBeTruthy();
   });
 
   // --- New Folder tests ---

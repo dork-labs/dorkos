@@ -6,6 +6,7 @@ import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/re
 import { DORKBOT_ONBOARDING_LINES } from '@dorkos/shared/dorkbot-templates';
 import { ROLE_CANON } from '@dorkos/shared/profile-recommendations';
 import { useAgentBirthStore, useAppStore } from '@/layers/shared/model';
+import { hashToHslColor, hashToEmoji, resolveAgentVisual } from '@/layers/shared/lib';
 
 // Instant reveals so the scripted lines land synchronously.
 vi.mock('motion/react', () => ({ useReducedMotion: () => true }));
@@ -13,13 +14,59 @@ vi.mock('motion/react', () => ({ useReducedMotion: () => true }));
 const mockNavigate = vi.fn();
 vi.mock('@tanstack/react-router', () => ({ useNavigate: () => mockNavigate }));
 
+/**
+ * DorkBot's manifest id. A ULID, because `ensureDorkBot` mints one with
+ * `ulid()` — never the slug `'dorkbot'`, which is what every face on this
+ * screen used to be drawn from.
+ */
+const DORKBOT_ID = '01JQZ8XKF3M0000000000DBOT';
+
+/** DorkBot's own workspace path, as the mesh registry reports it. */
+const DORKBOT_PATH = '/home/kai/.dork/agents/dorkbot';
+
+/**
+ * How the agents queries answer. `resolved` is the happy path; `pending` is
+ * either query still out; `error` is settled-with-a-failure. The last two are
+ * separate names for the same placeholder on purpose — the component treats
+ * them alike and says so.
+ */
+let mockAgentsState: 'resolved' | 'pending' | 'error' = 'resolved';
+
+/**
+ * DorkBot's manifest as the registry returns it — carrying NO colour and NO
+ * icon, exactly as `ensureDorkBot` writes it, so its face is hashed wholly
+ * from the ULID. A test that supplied a colour here would pass while the
+ * production face stayed broken.
+ */
+const DORKBOT_MANIFEST: {
+  id: string;
+  name: string;
+  isSystem: boolean;
+  icon?: string;
+  color?: string;
+} = { id: DORKBOT_ID, name: 'dorkbot', isSystem: true };
+
+/** What the registry returns for DorkBot — swapped by the stored-face test. */
+let mockDorkbotManifest = DORKBOT_MANIFEST;
+
+/** A second, non-system agent, listed FIRST — the lookup must not pick it. */
+const OTHER_MANIFEST = { id: 'other-ulid', name: 'api-bot', isSystem: false };
+
 const mockMutateAsync = vi.fn().mockResolvedValue({});
 vi.mock('@/layers/entities/agent', () => ({
   useUpdateAgent: () => ({ mutateAsync: mockMutateAsync }),
+  useResolvedAgents: () => ({
+    data:
+      mockAgentsState === 'resolved'
+        ? { '/home/kai/projects/api': OTHER_MANIFEST, [DORKBOT_PATH]: mockDorkbotManifest }
+        : undefined,
+  }),
 }));
 
 // The registered ABSOLUTE path (never the literal tilde) — the client can stream it.
-const REGISTERED_DIR = '/home/kai/.dork/agents/dorkbot';
+const REGISTERED_DIR = DORKBOT_PATH;
+// The session DIRECTORY only. The face no longer comes from here, deliberately:
+// the configured default agent may be some other agent entirely.
 vi.mock('@/layers/entities/config', () => ({
   useDefaultAgentSession: () => ({ defaultAgentDir: REGISTERED_DIR, startSession: vi.fn() }),
 }));
@@ -77,7 +124,17 @@ vi.mock('@/layers/entities/discovery', () => ({
   BulkAddBar: () => null,
 }));
 
-vi.mock('@/layers/entities/mesh', () => ({ useRegisterAgent: () => ({ mutate: vi.fn() }) }));
+vi.mock('@/layers/entities/mesh', () => ({
+  useRegisterAgent: () => ({ mutate: vi.fn() }),
+  useMeshAgentPaths: () => ({
+    // `pending` and `error` both answer with no data — the component cannot
+    // tell them apart from the outside, and treats them alike on purpose.
+    data:
+      mockAgentsState === 'resolved'
+        ? { agents: [{ projectPath: '/home/kai/projects/api' }, { projectPath: DORKBOT_PATH }] }
+        : undefined,
+  }),
+}));
 
 /**
  * What the requirements scan says, for the one question this screen asks it:
@@ -98,13 +155,61 @@ vi.mock('@/layers/entities/runtime', () => ({
   }),
 }));
 
+/**
+ * The chat surfaces, stubbed down to the identity they were handed — the real
+ * disc is `IdentityAvatar`'s job and is covered where it lives. What this screen
+ * owns is WHICH identity reaches it, so the stubs publish exactly that.
+ */
 vi.mock('@/layers/features/chat', () => ({
-  MessageItem: ({ message }: { message: { content: string } }) => (
-    <div data-testid="msg">{message.content}</div>
+  MessageItem: ({
+    message,
+    author,
+  }: {
+    message: { content: string };
+    author: { id: string; color?: string; emoji?: string };
+  }) => (
+    <div
+      data-testid="msg"
+      data-author-id={author.id}
+      data-author-color={author.color ?? ''}
+      data-author-emoji={author.emoji ?? ''}
+    >
+      {message.content}
+    </div>
   ),
-  resolveMessageAuthor: () => ({ kind: 'agent', id: 'dorkbot', displayName: 'DorkBot' }),
+  // Mirrors the real resolver's branch order for the two roles this screen
+  // produces: a `user` message is the HUMAN, never the agent. Collapsing that
+  // branch would let an assertion about DorkBot's face pass on the user's own
+  // bubble.
+  resolveMessageAuthor: (
+    message: { role: string },
+    ctx: { agent: Record<string, unknown>; humanName?: string | null }
+  ) =>
+    message.role === 'user'
+      ? { kind: 'human', id: 'human', displayName: ctx.humanName?.trim() || 'You' }
+      : { kind: 'agent', ...ctx.agent },
   TypingDots: () => <div data-testid="typing" />,
-  FirstLight: () => <div data-testid="first-light" />,
+  // Mirrors the REAL FirstLight's one load-bearing line: it resolves the record
+  // through `resolveAgentVisual`, which HASHES an emoji and colour from
+  // `agentId` whenever `icon`/`color` are absent. Publishing the record's raw
+  // fields instead would make an absent icon indistinguishable from an
+  // explicitly empty one — and that difference IS the bug, so the stub would
+  // have reported green over it.
+  FirstLight: ({ record }: { record: { agentId: string; icon?: string; color?: string } }) => {
+    const visual = resolveAgentVisual({
+      id: record.agentId,
+      icon: record.icon,
+      color: record.color,
+    });
+    return (
+      <div
+        data-testid="first-light"
+        data-agent-id={record.agentId}
+        data-icon={visual.emoji}
+        data-color={visual.color}
+      />
+    );
+  },
 }));
 
 vi.mock('@/layers/features/composer', () => ({
@@ -186,6 +291,8 @@ describe('OnboardingConversation', () => {
     };
     useAgentBirthStore.setState({ records: {} });
     useAppStore.setState({ requestedTour: null });
+    mockAgentsState = 'resolved';
+    mockDorkbotManifest = DORKBOT_MANIFEST;
   });
 
   afterEach(() => cleanup());
@@ -443,5 +550,97 @@ describe('OnboardingConversation', () => {
     const navDir = mockNavigate.mock.calls[0][0].search.dir as string;
     expect(navDir).not.toContain('~');
     expect(onComplete).toHaveBeenCalled();
+  });
+
+  describe("DorkBot's face", () => {
+    /** Drive the dissolve and hand back the birth record it registered. */
+    async function dissolveIntoSession() {
+      await reachDiscovery();
+      fireEvent.click(screen.getByText('Not now'));
+      await screen.findByTestId('composer');
+      fireEvent.change(screen.getByTestId('composer'), { target: { value: 'hi' } });
+      fireEvent.click(screen.getByTestId('send'));
+      return Object.values(useAgentBirthStore.getState().records)[0];
+    }
+
+    it('is drawn from the SYSTEM agent’s manifest id, not from the name "dorkbot"', async () => {
+      render(<OnboardingConversation onComplete={vi.fn()} />);
+      await screen.findByTestId('pick-personality');
+
+      const [bubble] = screen.getAllByTestId('msg');
+      expect(bubble.getAttribute('data-author-id')).toBe(DORKBOT_ID);
+      // The whole defect in one assertion: hashing the slug is a face DorkBot
+      // wears in no other surface, because its manifest id is a ULID.
+      expect(bubble.getAttribute('data-author-color')).toBe(hashToHslColor(DORKBOT_ID));
+      expect(bubble.getAttribute('data-author-color')).not.toBe(hashToHslColor('dorkbot'));
+      expect(bubble.getAttribute('data-author-emoji')).toBe(hashToEmoji(DORKBOT_ID));
+      expect(bubble.getAttribute('data-author-emoji')).not.toBe(hashToEmoji('dorkbot'));
+    });
+
+    it('picks the system agent even though another agent is registered first', async () => {
+      render(<OnboardingConversation onComplete={vi.fn()} />);
+      await screen.findByTestId('pick-personality');
+
+      // `OTHER_MANIFEST` sits ahead of DorkBot in the registry answer, so a
+      // lookup that took the first agent rather than the `isSystem` one would
+      // put a different agent's face on DorkBot's script.
+      expect(screen.getAllByTestId('msg')[0].getAttribute('data-author-id')).not.toBe(
+        OTHER_MANIFEST.id
+      );
+      expect(screen.getAllByTestId('msg')[0].getAttribute('data-author-id')).toBe(DORKBOT_ID);
+    });
+
+    it.each(['pending', 'error'] as const)(
+      'shows a neutral placeholder rather than a slug face while the agents query is %s',
+      async (state) => {
+        mockAgentsState = state;
+        render(<OnboardingConversation onComplete={vi.fn()} />);
+
+        // FIRST LIGHT is the surface most likely to see this: it is the very
+        // first thing rendered, and its 48px disc is the largest face on screen.
+        const firstLight = screen.getByTestId('first-light');
+        expect(firstLight.getAttribute('data-agent-id')).not.toBe(DORKBOT_ID);
+        // Explicitly EMPTY, not absent: `resolveAgentVisual` hashes an emoji
+        // from the id whenever `icon` is missing, so an omitted icon is exactly
+        // how a slug-hashed face reaches first light.
+        expect(firstLight.getAttribute('data-icon')).toBe('');
+        expect(firstLight.getAttribute('data-color')).toContain('var(');
+        expect(firstLight.getAttribute('data-color')).not.toBe(hashToHslColor('dorkbot'));
+
+        await screen.findByTestId('pick-personality');
+        const [bubble] = screen.getAllByTestId('msg');
+        expect(bubble.getAttribute('data-author-emoji')).toBe('');
+        expect(bubble.getAttribute('data-author-color')).toContain('var(');
+        expect(bubble.getAttribute('data-author-color')).not.toBe(hashToHslColor('dorkbot'));
+      }
+    );
+
+    it('is the same face at first light and in the birth record it hands the session', async () => {
+      render(<OnboardingConversation onComplete={vi.fn()} />);
+      const firstLight = screen.getByTestId('first-light');
+      expect(firstLight.getAttribute('data-agent-id')).toBe(DORKBOT_ID);
+      expect(firstLight.getAttribute('data-icon')).toBe(hashToEmoji(DORKBOT_ID));
+
+      const record = await dissolveIntoSession();
+      expect(record.agentId).toBe(DORKBOT_ID);
+      expect(record.icon).toBe(hashToEmoji(DORKBOT_ID));
+      expect(record.color).toBe(hashToHslColor(DORKBOT_ID));
+    });
+
+    it('carries a STORED icon and colour through to the birth records', async () => {
+      // DorkBot ships with neither, so the hash is what every other assertion
+      // here sees — which means nothing else would notice if the manifest's own
+      // face stopped being passed through. A user who picks a face gets this.
+      mockDorkbotManifest = { ...DORKBOT_MANIFEST, icon: '🛰️', color: '#123456' };
+      render(<OnboardingConversation onComplete={vi.fn()} />);
+
+      const firstLight = screen.getByTestId('first-light');
+      expect(firstLight.getAttribute('data-icon')).toBe('🛰️');
+      expect(firstLight.getAttribute('data-color')).toBe('#123456');
+
+      const record = await dissolveIntoSession();
+      expect(record.icon).toBe('🛰️');
+      expect(record.color).toBe('#123456');
+    });
   });
 });
