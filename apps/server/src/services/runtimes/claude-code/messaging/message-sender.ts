@@ -31,6 +31,7 @@ import {
   PHANTOM_CORRECTIONS_MAX_PER_TURN,
 } from './phantom-cancellation.js';
 import { mapSdkMessage } from '../sdk/sdk-event-mapper.js';
+import { createTurnSegments } from './turn-segments.js';
 import { createHeldUserPrompt } from '../sdk/sdk-utils.js';
 import { fetchContextBreakdown } from '../sdk/context-usage.js';
 import { fetchSubscriptionUsage } from '../sdk/subscription-usage.js';
@@ -802,11 +803,14 @@ export async function* executeSdkQuery(
   let lastMainAssistantUuid: string | undefined;
   let retriedViaRecursion = false;
   // Corrective notes steered into this turn after phantom cancellations
-  // (DOR-1087) — capped so the correction can never feed itself, and never
-  // sent once a `result` has been seen (a post-result note would start a NEW
-  // turn rather than correct this one).
+  // (DOR-1087) — capped so the correction can never feed itself. There is no
+  // separate post-`result` gate: the held prompt being OPEN is the whole
+  // condition, because a turn with background tasks outstanding continues past
+  // its first `result` (see `turn-segments.ts`) and a note pushed then lands in
+  // the segment that is still running. Once the stream is closed for good,
+  // `push()` refuses on its own (DOR-1149).
   let phantomCorrections = 0;
-  let sawResult = false;
+  const segments = createTurnSegments();
   const streamStart = Date.now();
   const toolState = createToolState();
 
@@ -851,23 +855,26 @@ export async function* executeSdkQuery(
         lastMainAssistantUuid = result.value.uuid;
       }
 
+      // Background-task lifecycle drives BOTH decisions below: whether a
+      // `result` ends the turn or only a segment of it, and therefore whether a
+      // corrective note still has a live channel (DOR-1149).
+      segments.observe(result.value);
+
       // Phantom cancellation (DOR-1087): the CLI cancelled pending tool calls
       // because a task-notification was queued, writing a sentinel that reads
       // as a user refusal. Tell the model it wasn't the user (main thread only
-      // — a subagent's input stream is not ours to write to; and never after
-      // `result`, when a steered note would START a new turn instead of
-      // correcting this one) and surface a status line for the operator. The
-      // notice event carries NO `status` field (the client strip drops any
-      // system_status that has one) and is yielded AFTER this message's mapped
-      // events below — yielded here, the same message's tool_result events
-      // would re-derive the strip and wipe it in the same frame.
+      // — a subagent's input stream is not ours to write to) and surface a
+      // status line for the operator. The notice event carries NO `status`
+      // field (the client strip drops any system_status that has one) and is
+      // yielded AFTER this message's mapped events below — yielded here, the
+      // same message's tool_result events would re-derive the strip and wipe it
+      // in the same frame.
       const phantoms = detectPhantomCancellations(result.value, session);
       let phantomNotice: string | undefined;
       if (phantoms.length > 0) {
         const steerableIds = phantoms.filter((p) => p.mainThread).map((p) => p.toolUseId);
         const steered =
           steerableIds.length > 0 &&
-          !sawResult &&
           phantomCorrections < PHANTOM_CORRECTIONS_MAX_PER_TURN &&
           heldPrompt.push(buildPhantomCorrectionNote(steerableIds));
         if (steered) phantomCorrections++;
@@ -882,14 +889,14 @@ export async function* executeSdkQuery(
         phantomNotice = `A background task finished at the wrong moment and cancelled ${plural}. That was a system glitch, not you. The agent has been told.`;
       }
 
-      // The `result` message marks turn completion. The subprocess is still alive
-      // (the prompt stream is held open), so fetch the authoritative context-usage
-      // breakdown AND the current subscription utilization now — before this
-      // message maps to `done`, so the resulting `context_usage` event precedes
-      // `done` and the terminal `session_status` carries `usage` (DOR-99) —
-      // then release stdin so the process drains its trailing messages and exits.
-      if (result.value.type === 'result') sawResult = true;
-
+      // The `result` message marks the end of a SEGMENT — which is the end of
+      // the turn only when no background task still owes a notification
+      // (DOR-1149). The subprocess is alive either way (the prompt stream is
+      // held open), so fetch the authoritative context-usage breakdown AND the
+      // current subscription utilization now — before this message maps to
+      // `done`, so the resulting `context_usage` event precedes `done` and the
+      // terminal `session_status` carries `usage` (DOR-99).
+      //
       // This frame's OWN query, never the session's shared slot (DOR-1088): an
       // overlapping turn can have replaced `activeQuery`, and the usage
       // breakdown has to come from the subprocess that produced THIS result.
@@ -915,7 +922,12 @@ export async function* executeSdkQuery(
         // session, fetch failure) keeps the last known value — the item must
         // never flicker back to cost-only between turns.
         if (subscriptionUsage) session.lastSubscriptionUsage = subscriptionUsage;
-        heldPrompt.close();
+        // Release stdin so the process drains its trailing messages and exits —
+        // unless the CLI still owes us a queued-notification segment, in which
+        // case closing here would strand the steering channel for the rest of
+        // the turn (DOR-1149). The `finally` closes unconditionally, so a
+        // deferral can never leak the subprocess.
+        if (!segments.holdOpenAtResult()) heldPrompt.close();
       }
 
       // A mid-session `commands_changed` push carries the full, authoritative

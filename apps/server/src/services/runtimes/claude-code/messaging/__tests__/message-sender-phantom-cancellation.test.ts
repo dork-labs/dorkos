@@ -110,6 +110,31 @@ function resultMsg(): SDKMessage {
   } as unknown as SDKMessage;
 }
 
+/** A background task starting — the CLI will deliver its notification later. */
+function taskStartedMsg(taskId: string): SDKMessage {
+  return {
+    type: 'system',
+    subtype: 'task_started',
+    task_id: taskId,
+    description: 'background work',
+    session_id: `subagent-${taskId}`,
+    uuid: `task-started-${taskId}`,
+  } as unknown as SDKMessage;
+}
+
+/** The background task reporting in — after this, no more segments are owed. */
+function taskNotificationMsg(taskId: string): SDKMessage {
+  return {
+    type: 'system',
+    subtype: 'task_notification',
+    task_id: taskId,
+    status: 'completed',
+    summary: 'done',
+    session_id: `subagent-${taskId}`,
+    uuid: `task-note-${taskId}`,
+  } as unknown as SDKMessage;
+}
+
 /**
  * Drive one turn and capture (a) every StreamEvent yielded and (b) every user
  * message that traveled the held prompt stream (the steering channel).
@@ -205,7 +230,7 @@ describe('executeSdkQuery — phantom cancellation mitigation (DOR-1087)', () =>
     expect(notes[0]).toContain('toolu_C');
   });
 
-  it('surfaces but does NOT steer a phantom arriving after the result message', async () => {
+  it('surfaces but does NOT steer a post-result phantom when no background task is owed', async () => {
     const { events, promptMessages } = await runTurn(makeSession(), [
       resultMsg(),
       sentinelMsg('toolu_late'),
@@ -236,6 +261,53 @@ describe('executeSdkQuery — phantom cancellation mitigation (DOR-1087)', () =>
     const { events } = await runTurn(session, [sentinelMsg('toolu_new_turn'), resultMsg()]);
 
     expect(events.some(isPhantomStatus)).toBe(true);
+  });
+
+  // A turn that spawns background tasks is MULTI-SEGMENT: the CLI ends a segment
+  // with a `result`, then delivers each queued task-notification as a new segment
+  // in the SAME stream. Phantoms happen in those later segments — which is exactly
+  // where steering used to be dead, because the first `result` both tripped the
+  // gate and closed the held prompt (DOR-1149).
+  describe('multi-segment turns (DOR-1149)', () => {
+    it('steers a post-result phantom while a background task is still owed', async () => {
+      const { events, promptMessages } = await runTurn(makeSession(), [
+        taskStartedMsg('task-1'),
+        resultMsg(),
+        sentinelMsg('toolu_second_segment'),
+        taskNotificationMsg('task-1'),
+        resultMsg(),
+      ]);
+
+      expect(events.some(isPhantomStatus)).toBe(true);
+      const note = promptMessages.find((m) => m.includes('toolu_second_segment'));
+      expect(note).toBeDefined();
+      expect(note).toContain('not by the user');
+    });
+
+    it('stops steering once every background task has reported', async () => {
+      const { promptMessages } = await runTurn(makeSession(), [
+        taskStartedMsg('task-1'),
+        taskNotificationMsg('task-1'),
+        resultMsg(),
+        sentinelMsg('toolu_after_all_tasks'),
+      ]);
+
+      expect(promptMessages).toEqual(['hello']);
+    });
+
+    it('releases the held prompt once the last segment ends, even after deferring', async () => {
+      // `runTurn` awaits the prompt generator to completion, so this test can
+      // only pass if the held prompt was closed — a deferral that never resolved
+      // would hang the turn (and this test) instead of leaking silently.
+      const { events } = await runTurn(makeSession(), [
+        taskStartedMsg('task-1'),
+        resultMsg(),
+        taskNotificationMsg('task-1'),
+        resultMsg(),
+      ]);
+
+      expect(events.some((e) => e.type === 'done')).toBe(true);
+    });
   });
 
   it('caps steered corrections per turn but keeps surfacing status events', async () => {

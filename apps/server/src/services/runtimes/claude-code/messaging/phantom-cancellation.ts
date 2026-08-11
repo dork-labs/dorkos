@@ -3,13 +3,18 @@
  *
  * The Claude Code CLI treats any message queued mid-turn as a user
  * interruption. When a background-task `<task-notification>` is sitting in the
- * CLI's internal queue at the moment the model issues a tool call that needs a
- * permission ask, the CLI cancels the call and writes its interrupt sentinel —
- * "The user doesn't want to take this action right now. STOP …" — as the
- * tool_result, then delivers the queued notification. The model reads that as
- * a human stop/deny; in a multi-subagent session it fires constantly and
- * agents abandon finished work (observed 2026-08-09, eight phantoms in one
- * session, zero real denies).
+ * CLI's internal queue, the CLI cancels whatever tool call is pending and
+ * writes its interrupt sentinel — "The user doesn't want to take this action
+ * right now. STOP …" — as the tool_result, then delivers the queued
+ * notification. The model reads that as a human stop/deny; in a multi-subagent
+ * session it fires constantly and agents abandon finished work (observed
+ * 2026-08-09, eight phantoms in one session, zero real denies).
+ *
+ * A pending PERMISSION ASK is not what makes a call vulnerable — this module
+ * used to say it was. Session `32d40230` ran under `bypassPermissions`, where
+ * `canUseTool` is skipped entirely and nothing is ever waiting on the operator,
+ * and the CLI still cancelled a main-thread `Write` mid-turn (2026-08-11).
+ * Anything in flight when the queue must be drained is fair game.
  *
  * DorkOS can tell a phantom from the real thing because every REAL operator
  * decision flows through this server: a UI deny writes `User denied tool
