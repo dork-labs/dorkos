@@ -31,7 +31,7 @@ import {
   PHANTOM_CORRECTIONS_MAX_PER_TURN,
 } from './phantom-cancellation.js';
 import { mapSdkMessage } from '../sdk/sdk-event-mapper.js';
-import { createTurnSegments, DEFERRED_CLOSE_IDLE_TIMEOUT_MS } from './turn-segments.js';
+import { createTurnSegments, DEFERRED_CLOSE_TIMEOUT_MS } from './turn-segments.js';
 import { createHeldUserPrompt } from '../sdk/sdk-utils.js';
 import { fetchContextBreakdown } from '../sdk/context-usage.js';
 import { fetchSubscriptionUsage } from '../sdk/subscription-usage.js';
@@ -809,10 +809,26 @@ export async function* executeSdkQuery(
   // its first `result` (see `turn-segments.ts`) and a note pushed then lands in
   // the segment that is still running. Once the stream is closed for good,
   // `push()` refuses on its own (DOR-1149).
-  let phantomCorrections = 0;
+  // Separate budgets, because they compete for different reasons (DOR-1150).
+  // Subagent phantoms arrive in bursts — one misbehaving helper produced four in
+  // the 2026-08-11 session — and a shared pool let them spend every note before
+  // the coordinator's OWN cancellation, the one where the recipient is the
+  // victim, ever got a correction.
+  let mainThreadCorrections = 0;
+  let subagentCorrections = 0;
   const segments = createTurnSegments();
-  /** True while a `result`'s stdin close is being held back for a later segment. */
-  let closeDeferred = false;
+  /**
+   * Deadline promise for a held-back stdin close, armed at the deferring
+   * `result` and cleared the moment the close actually happens.
+   */
+  let deferredCloseDeadline: Promise<'expired'> | undefined;
+  let deferredCloseTimer: NodeJS.Timeout | undefined;
+  /** Drop an armed deadline — the close it guarded is happening now. */
+  const releaseDeferredClose = (): void => {
+    if (deferredCloseTimer) clearTimeout(deferredCloseTimer);
+    deferredCloseTimer = undefined;
+    deferredCloseDeadline = undefined;
+  };
   const streamStart = Date.now();
   const toolState = createToolState();
 
@@ -839,32 +855,23 @@ export async function* executeSdkQuery(
         pendingSdkPromise = sdkIterator.next().then((result) => ({ sdk: true as const, result }));
       }
 
-      // While a close is deferred, a stalled stream must not be able to wedge
-      // the turn: the CLI waits on stdin, we wait on the CLI, and neither the
-      // deferral cap nor the `finally` is ever reached. Re-armed each iteration,
-      // so any message at all resets the silence (DOR-1149).
-      let idleTimer: NodeJS.Timeout | undefined;
-      const idlePromise =
-        closeDeferred &&
-        new Promise<'idle'>((resolve) => {
-          idleTimer = setTimeout(() => resolve('idle'), DEFERRED_CLOSE_IDLE_TIMEOUT_MS);
-          // Never let this timer alone hold the process open.
-          idleTimer.unref?.();
-        });
-
+      // A deferred close must not be able to wedge the turn: while it is held,
+      // the CLI waits on stdin and we wait on the CLI, so neither the deferral
+      // cap nor the `finally` is ever reached. The deadline is armed ONCE per
+      // deferral (see `DEFERRED_CLOSE_TIMEOUT_MS`) rather than re-armed each
+      // iteration, so a chatty stream cannot push it back for ever (DOR-1149).
       const winner = await Promise.race(
-        idlePromise
-          ? [queuePromise, pendingSdkPromise, idlePromise]
+        deferredCloseDeadline
+          ? [queuePromise, pendingSdkPromise, deferredCloseDeadline]
           : [queuePromise, pendingSdkPromise]
       );
-      if (idleTimer) clearTimeout(idleTimer);
 
-      if (winner === 'idle') {
-        logger.warn('[sendMessage] deferred close timed out; releasing input stream', {
+      if (winner === 'expired') {
+        logger.warn('[sendMessage] deferred close expired; releasing input stream', {
           session: sessionId,
-          outstandingBackgroundTasks: segments.outstandingCount(),
+          owedNotifications: segments.owedCount(),
         });
-        closeDeferred = false;
+        releaseDeferredClose();
         heldPrompt.close();
         continue;
       }
@@ -910,11 +917,17 @@ export async function* executeSdkQuery(
       const phantoms = detectPhantomCancellations(result.value, session);
       let phantomNotice: string | undefined;
       if (phantoms.length > 0) {
+        // A batch is uniformly one or the other: `parent_tool_use_id` is a
+        // message-level field (see `detectPhantomCancellations`).
         const mainThread = phantoms.some((p) => p.mainThread);
+        const spent = mainThread ? mainThreadCorrections : subagentCorrections;
         const steered =
-          phantomCorrections < PHANTOM_CORRECTIONS_MAX_PER_TURN &&
+          spent < PHANTOM_CORRECTIONS_MAX_PER_TURN &&
           heldPrompt.push(buildPhantomCorrectionNote(phantoms));
-        if (steered) phantomCorrections++;
+        if (steered) {
+          if (mainThread) mainThreadCorrections++;
+          else subagentCorrections++;
+        }
         logger.warn('[sendMessage] phantom tool-call cancellation detected', {
           session: sessionId,
           toolUseIds: phantoms.map((p) => p.toolUseId),
@@ -965,8 +978,18 @@ export async function* executeSdkQuery(
         // case closing here would strand the steering channel for the rest of
         // the turn (DOR-1149). The `finally` closes unconditionally, so a
         // deferral can never leak the subprocess.
-        closeDeferred = segments.holdOpenAtResult();
-        if (!closeDeferred) heldPrompt.close();
+        if (segments.holdOpenAtResult()) {
+          // Arm the deadline for THIS deferral. Any earlier one has already been
+          // released, so there is never more than one live timer.
+          deferredCloseDeadline = new Promise<'expired'>((resolve) => {
+            deferredCloseTimer = setTimeout(() => resolve('expired'), DEFERRED_CLOSE_TIMEOUT_MS);
+            // Never let this timer alone hold the process open.
+            deferredCloseTimer.unref?.();
+          });
+        } else {
+          releaseDeferredClose();
+          heldPrompt.close();
+        }
       }
 
       // A mid-session `commands_changed` push carries the full, authoritative
@@ -1130,6 +1153,9 @@ export async function* executeSdkQuery(
   } finally {
     // Always release the held input stream so the subprocess can never leak if we
     // exit before the result message (error, interrupt, empty stream). Idempotent.
+    // Clearing the deadline here also covers the path where the race THREW —
+    // otherwise a rejected SDK promise would leave a live timer behind.
+    releaseDeferredClose();
     heldPrompt.close();
     // Preserve the query reference for post-stream control methods (e.g.
     // reloadPlugins) — but only when this frame still OWNS the active query

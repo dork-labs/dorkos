@@ -1,19 +1,21 @@
 /**
  * Phantom-cancellation mitigation (DOR-1087) at the send-loop seam.
  *
- * The CLI cancels a pending tool call when a task-notification is queued
- * mid-turn, writing its interrupt sentinel as the tool_result — a message the
- * model reads as a user refusal. The loop must (1) steer a corrective note
- * into the held prompt stream so the model learns it was not the user, and
- * (2) yield a `system_status` event so the operator sees what happened. A
- * subagent's phantom (parent_tool_use_id set) is surfaced but never steered,
- * and a REAL operator deny must trigger neither.
+ * The CLI writes its interrupt sentinel as a tool_result when it cancels a call
+ * the model had pending — a message the model reads as a user refusal. (What
+ * triggers that cancellation is not settled; see `phantom-cancellation.ts`.) The
+ * loop must (1) steer a corrective note into the held prompt stream so the model
+ * learns it was not the user, and (2) yield a `system_status` event so the
+ * operator sees what happened. A subagent's phantom cannot be corrected inside
+ * the subagent, so its note goes to the coordinator instead (DOR-1150). A REAL
+ * operator deny must trigger neither.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { executeSdkQuery, type MessageSenderOpts } from '../message-sender.js';
 import type { AgentSession } from '../../agent-types.js';
 import { CLI_INTERRUPT_SENTINEL } from '../phantom-cancellation.js';
-import { DEFERRED_CLOSE_IDLE_TIMEOUT_MS } from '../turn-segments.js';
+import { DEFERRED_CLOSE_TIMEOUT_MS } from '../turn-segments.js';
+import { logger } from '../../../../../lib/logger.js';
 import { query, type SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import type { StreamEvent } from '@dorkos/shared/types';
 
@@ -111,20 +113,11 @@ function resultMsg(): SDKMessage {
   } as unknown as SDKMessage;
 }
 
-/** A background task starting — the CLI will deliver its notification later. */
-function taskStartedMsg(taskId: string): SDKMessage {
-  return {
-    type: 'system',
-    subtype: 'task_started',
-    task_id: taskId,
-    description: 'background work',
-    session_id: `subagent-${taskId}`,
-    uuid: `task-started-${taskId}`,
-  } as unknown as SDKMessage;
-}
-
-/** The background task reporting in — after this, no more segments are owed. */
-function taskNotificationMsg(taskId: string): SDKMessage {
+/**
+ * A background task settling. The CLI queues its notification here and delivers
+ * it in a LATER segment — it does not arrive with this message.
+ */
+function taskSettledMsg(taskId: string): SDKMessage {
   return {
     type: 'system',
     subtype: 'task_notification',
@@ -132,7 +125,21 @@ function taskNotificationMsg(taskId: string): SDKMessage {
     status: 'completed',
     summary: 'done',
     session_id: `subagent-${taskId}`,
-    uuid: `task-note-${taskId}`,
+    uuid: `task-settled-${taskId}`,
+  } as unknown as SDKMessage;
+}
+
+/** The queued notification arriving as a user message — the delivery segment. */
+function taskDeliveredMsg(taskId: string): SDKMessage {
+  return {
+    type: 'user',
+    uuid: `task-delivered-${taskId}`,
+    session_id: 'sdk-1',
+    parent_tool_use_id: null,
+    message: {
+      role: 'user',
+      content: `<task-notification><task-id>${taskId}</task-id><status>completed</status></task-notification>`,
+    },
   } as unknown as SDKMessage;
 }
 
@@ -271,46 +278,49 @@ describe('executeSdkQuery — phantom cancellation mitigation (DOR-1087)', () =>
     expect(events.some(isPhantomStatus)).toBe(true);
   });
 
-  // A turn that spawns background tasks is MULTI-SEGMENT: the CLI ends a segment
-  // with a `result`, then delivers each queued task-notification as a new segment
-  // in the SAME stream. Phantoms happen in those later segments — which is exactly
-  // where steering used to be dead, because the first `result` both tripped the
-  // gate and closed the held prompt (DOR-1149).
+  // A turn that runs background tasks is MULTI-SEGMENT: a task settles, the CLI
+  // ends the segment with a `result`, and only THEN delivers the queued
+  // `<task-notification>` as a new segment in the same stream. Phantoms land in
+  // that delivery segment — where steering used to be dead, because the first
+  // `result` both tripped the gate and closed the held prompt (DOR-1149).
   describe('multi-segment turns (DOR-1149)', () => {
-    it('steers a post-result phantom while a background task is still owed', async () => {
+    it('steers a phantom in the delivery segment of a SINGLE background task', async () => {
+      // The shape that matters most, and the one an earlier attempt at this fix
+      // missed: the task settles BEFORE the segment-ending result, so keying on
+      // "tasks still running" left nothing outstanding at the deferring result.
       const { events, promptMessages } = await runTurn(makeSession(), [
-        taskStartedMsg('task-1'),
+        taskSettledMsg('task-1'),
         resultMsg(),
-        sentinelMsg('toolu_second_segment'),
-        taskNotificationMsg('task-1'),
+        taskDeliveredMsg('task-1'),
+        sentinelMsg('toolu_in_delivery_segment'),
         resultMsg(),
       ]);
 
       expect(events.some(isPhantomStatus)).toBe(true);
-      const note = promptMessages.find((m) => m.includes('toolu_second_segment'));
+      const note = promptMessages.find((m) => m.includes('toolu_in_delivery_segment'));
       expect(note).toBeDefined();
       expect(note).toContain('not by the user');
     });
 
-    it('stops steering once every background task has reported', async () => {
+    it('stops steering once the owed notification has been delivered', async () => {
       const { promptMessages } = await runTurn(makeSession(), [
-        taskStartedMsg('task-1'),
-        taskNotificationMsg('task-1'),
+        taskSettledMsg('task-1'),
+        taskDeliveredMsg('task-1'),
         resultMsg(),
-        sentinelMsg('toolu_after_all_tasks'),
+        sentinelMsg('toolu_after_delivery'),
       ]);
 
       expect(promptMessages).toEqual(['hello']);
     });
 
-    it('releases the input stream when a deferred stream stalls, instead of wedging', async () => {
-      // The pathological case the deferral cap CANNOT reach: a background task
-      // that never reports and no further `result`. The fake CLI below models
-      // the real one — it only finishes once stdin is closed — so if the idle
-      // guard did not fire, this turn would never end.
+    it('releases the input stream when a deferred delivery never arrives', async () => {
+      // The pathological case the deferral cap cannot reach on its own: a
+      // notification that settles, defers a close, and is never delivered, with
+      // no further `result` to re-check the cap. The fake CLI models the real
+      // one — it only finishes once stdin closes — so without the deadline this
+      // turn would never end.
       vi.useFakeTimers();
       try {
-        const promptMessages: string[] = [];
         let stdinClosed!: () => void;
         const stdinClosedPromise = new Promise<void>((resolve) => {
           stdinClosed = resolve;
@@ -318,12 +328,14 @@ describe('executeSdkQuery — phantom cancellation mitigation (DOR-1087)', () =>
         vi.mocked(query).mockImplementation((args) => {
           const prompt = args.prompt as AsyncIterable<{ message: { content: string } }>;
           void (async () => {
-            for await (const m of prompt) promptMessages.push(m.message.content);
+            for await (const _m of prompt) {
+              /* drain */
+            }
             stdinClosed();
           })();
           return {
             [Symbol.asyncIterator]: async function* () {
-              yield taskStartedMsg('task-that-never-reports');
+              yield taskSettledMsg('task-that-never-delivers');
               yield resultMsg();
               // The CLI now waits on stdin, exactly as it does in production.
               await stdinClosedPromise;
@@ -331,35 +343,54 @@ describe('executeSdkQuery — phantom cancellation mitigation (DOR-1087)', () =>
           } as unknown as ReturnType<typeof query>;
         });
 
-        const events: StreamEvent[] = [];
         const turn = (async () => {
-          for await (const e of executeSdkQuery('s1', 'hello', makeSession(), makeOpts())) {
-            events.push(e);
+          for await (const _e of executeSdkQuery('s1', 'hello', makeSession(), makeOpts())) {
+            /* drain */
           }
         })();
 
-        await vi.advanceTimersByTimeAsync(DEFERRED_CLOSE_IDLE_TIMEOUT_MS + 1_000);
+        await vi.advanceTimersByTimeAsync(DEFERRED_CLOSE_TIMEOUT_MS + 1_000);
         await turn;
 
-        expect(events.some((e) => e.type === 'done')).toBe(true);
+        // The turn completing at all is the primary evidence; the warning is
+        // what distinguishes "the deadline fired" from "it never deferred".
+        expect(vi.mocked(logger.warn).mock.calls.map((c) => c[0])).toContain(
+          '[sendMessage] deferred close expired; releasing input stream'
+        );
       } finally {
         vi.useRealTimers();
       }
     });
 
-    it('releases the held prompt once the last segment ends, even after deferring', async () => {
-      // `runTurn` awaits the prompt generator to completion, so this test can
-      // only pass if the held prompt was closed — a deferral that never resolved
-      // would hang the turn (and this test) instead of leaking silently.
+    it('releases the held prompt once the delivery segment ends', async () => {
+      // `runTurn` awaits the prompt generator to completion, so this can only
+      // pass if the held prompt was closed rather than left open.
       const { events } = await runTurn(makeSession(), [
-        taskStartedMsg('task-1'),
+        taskSettledMsg('task-1'),
         resultMsg(),
-        taskNotificationMsg('task-1'),
+        taskDeliveredMsg('task-1'),
         resultMsg(),
       ]);
 
       expect(events.some((e) => e.type === 'done')).toBe(true);
     });
+  });
+
+  it('keeps a budget for the main thread when helper phantoms arrive in a burst', async () => {
+    // Subagent phantoms outnumbered main-thread ones 14 to 10 in the 2026-08-11
+    // session, and one helper alone produced four. On a shared budget that burst
+    // spent every note before the coordinator's OWN cancellation — the one where
+    // the recipient is the victim — could be corrected (DOR-1150).
+    const burst = ['a', 'b', 'c', 'd'].map((s) => sentinelMsg(`toolu_sub_${s}`, 'toolu_parent'));
+    const { promptMessages } = await runTurn(makeSession(), [
+      ...burst,
+      sentinelMsg('toolu_main_thread'),
+      resultMsg(),
+    ]);
+
+    const mainNote = promptMessages.find((m) => m.includes('toolu_main_thread'));
+    expect(mainNote).toBeDefined();
+    expect(mainNote).toContain('did NOT deny');
   });
 
   it('caps steered corrections per turn but keeps surfacing status events', async () => {

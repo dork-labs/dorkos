@@ -1,61 +1,64 @@
 /**
  * Multi-segment turn tracking (DOR-1149).
  *
- * A turn that spawns background tasks does not end at its first `result`. The
- * CLI closes the segment it was working on, then delivers each queued
- * `<task-notification>` as a fresh segment in the SAME query stream — which is
- * why one production turn ran for nine minutes across four cancellations
- * (session `32d40230`, 2026-08-11). Treating that first `result` as the end of
- * the turn is what killed phantom steering exactly where phantoms happen: the
- * corrective note's only channel is the held prompt stream, and closing it at
- * the first `result` makes every later `push()` a no-op.
+ * A turn that runs background tasks does not end at its first `result`. When a
+ * task settles, the CLI queues its `<task-notification>`, closes the segment it
+ * was working on, and then delivers that notification as a NEW segment in the
+ * SAME query stream. Phantom cancellations land in those delivery segments —
+ * which is why steering was dead exactly where it was needed: closing the held
+ * prompt at the first `result` makes every later `push()` a no-op.
  *
- * This module answers the one question the send loop needs: does the CLI still
- * owe us a segment? It counts background tasks from their SDK lifecycle
- * messages — `task_started` opens one, `task_notification` (completed / failed
- * / stopped) closes it — so a `result` arriving while any task is unreported is
- * a segment boundary, not the end of the turn.
+ * What this module counts is the thing that has to survive: **notifications
+ * owed a delivery**. A `system/task_notification` says a task settled, so a
+ * delivery is now owed; the `<task-notification>` user message that follows is
+ * that delivery arriving. Between those two the input stream must stay open.
+ *
+ * Counting RUNNING TASKS instead — opening on `task_started`, closing on
+ * `task_notification` — looks equivalent and is not. The settle precedes the
+ * segment-ending `result` (observed 6 ms before it in session `32d40230`), so a
+ * turn with a single background task would have zero tasks outstanding at the
+ * very `result` that needed deferring, and the fix would miss the commonest
+ * shape entirely. It also inherited a failure this keying does not have: a task
+ * that starts and never reports (a killed helper, a detached `nohup`) would
+ * have pinned the stream open, whereas a task that never settles simply never
+ * owes a delivery here. That is also why `task_updated` / `killed` needs no
+ * handling, and why the SDK's `background_tasks_changed` level signal — the
+ * right tool for "is background work running" — is not what this needs.
  *
  * @module services/runtimes/claude-code/messaging/turn-segments
  */
 import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 
 /**
- * How many times one turn may keep the input stream open past a `result`.
+ * How many times one turn may hold its input stream open past a `result`.
  *
- * The deferral is bounded because the alternative failure is a deadlock, not a
- * leak: the send loop only reaches the `finally` that force-closes the stream
- * once the subprocess exits, and the subprocess only exits once the stream is
- * closed. A background task that never reports at all (a killed helper, a
- * crashed subagent) would otherwise hold both sides open forever. In practice a
- * turn owes one segment per task it spawned; on hitting this cap the loop
- * degrades to the old close-at-first-result behavior, which is survivable.
+ * A deferral resolves as soon as the owed notification is delivered, which is
+ * normally immediate. This bounds the pathological case — a notification that
+ * settles but is never delivered — so a turn can never defer without end.
  */
 export const MAX_DEFERRED_SEGMENT_CLOSES = 8;
 
 /**
- * How long a deferred-close stream may go completely silent before the input
- * stream is released anyway.
+ * Deadline for a single deferral, measured from the `result` that deferred.
  *
- * {@link MAX_DEFERRED_SEGMENT_CLOSES} alone does not make the deferral safe: it
- * is only re-examined when ANOTHER `result` arrives, so the case it cannot
- * reach is the one that matters — a background task that never reports and no
- * further message ever comes. The CLI would sit waiting on stdin while the send
- * loop sits waiting on the CLI, and neither the cap nor the `finally` is ever
- * reached.
+ * A DEADLINE, deliberately, not an idle timer. An idle timer is re-armed by any
+ * message, so unrelated `task_progress` frames from other still-running tasks
+ * would keep pushing it back and the bound it was supposed to provide would
+ * never arrive. Measured from the deferral, the wait is bounded no matter how
+ * chatty the stream is.
  *
- * Silence is a usable signal because a live background task is not silent: the
- * CLI streams `task_progress` for it. So this fires on a stream that has truly
- * stalled, and firing early costs only the steering opportunity — the turn then
- * behaves exactly as it did before DOR-1149.
+ * The window this protects is normally sub-second — the gap between a task
+ * settling and its notification being delivered. Expiring early costs only the
+ * steering opportunity: the turn then behaves exactly as it did before
+ * DOR-1149, never worse.
  */
-export const DEFERRED_CLOSE_IDLE_TIMEOUT_MS = 120_000;
+export const DEFERRED_CLOSE_TIMEOUT_MS = 30_000;
 
-/** Tracks whether a turn's stream still owes segments. */
+/** Tracks whether a turn's stream still owes a queued-notification segment. */
 export interface TurnSegments {
   /**
-   * Feed every SDK message as it streams. Ignores everything that is not a
-   * background-task lifecycle message.
+   * Feed every SDK message as it streams. Ignores everything that is neither a
+   * task settling nor a notification being delivered.
    */
   observe: (message: SDKMessage) => void;
   /**
@@ -66,42 +69,75 @@ export interface TurnSegments {
    * Records the deferral, so call it EXACTLY ONCE per `result` message.
    */
   holdOpenAtResult: () => boolean;
-  /** How many background tasks have started but not yet reported. @internal Exported for testing only. */
-  outstandingCount: () => number;
+  /** How many settled notifications have not yet been delivered. */
+  owedCount: () => number;
 }
 
-/** Lifecycle subtype that opens a background task. */
-const TASK_STARTED = 'task_started';
-/** Lifecycle subtype that closes one, whatever its outcome. */
+/** Lifecycle subtype announcing that a background task has settled. */
 const TASK_NOTIFICATION = 'task_notification';
+
+/** Opening tag of the notification the CLI injects as a user message. */
+const NOTIFICATION_TAG = '<task-notification>';
+
+/** Pulls every `<task-id>…</task-id>` out of a delivered notification. */
+const TASK_ID_RE = /<task-id>([^<]+)<\/task-id>/g;
+
+/**
+ * Flatten an SDK message's content to text. The CLI's notification arrives as
+ * plain text on some paths and as text blocks on others.
+ */
+function contentText(content: unknown): string {
+  if (typeof content === 'string') return content;
+  if (!Array.isArray(content)) return '';
+  return content
+    .map((block) =>
+      typeof block === 'object' &&
+      block !== null &&
+      (block as { type?: string }).type === 'text' &&
+      typeof (block as { text?: unknown }).text === 'string'
+        ? (block as { text: string }).text
+        : ''
+    )
+    .join('\n');
+}
 
 /**
  * Create a per-turn segment tracker. One instance belongs to one
- * `executeSdkQuery` frame — background tasks never outlive their turn's stream.
+ * `executeSdkQuery` frame — a turn's owed deliveries never outlive its stream.
  */
 export function createTurnSegments(): TurnSegments {
-  const outstanding = new Set<string>();
+  const owed = new Set<string>();
   let deferrals = 0;
 
   return {
     observe: (message) => {
-      if (message.type !== 'system' || !('subtype' in message)) return;
-      const { subtype } = message;
-      if (subtype !== TASK_STARTED && subtype !== TASK_NOTIFICATION) return;
-      // A lifecycle message without a task id tells us nothing to count; the
-      // alternative — counting it under a placeholder key — would let one
-      // malformed message pin the stream open to the cap.
-      const taskId = (message as { task_id?: unknown }).task_id;
-      if (typeof taskId !== 'string') return;
-      if (subtype === TASK_STARTED) outstanding.add(taskId);
-      else outstanding.delete(taskId);
+      if (
+        message.type === 'system' &&
+        'subtype' in message &&
+        message.subtype === TASK_NOTIFICATION
+      ) {
+        const taskId = (message as { task_id?: unknown }).task_id;
+        // An unidentifiable settle cannot be matched to its delivery, so
+        // counting it would only risk deferring to the deadline for nothing.
+        if (typeof taskId === 'string') owed.add(taskId);
+        return;
+      }
+      if (message.type !== 'user' || owed.size === 0) return;
+      const text = contentText((message as { message?: { content?: unknown } }).message?.content);
+      if (!text.includes(NOTIFICATION_TAG)) return;
+      const delivered = [...text.matchAll(TASK_ID_RE)].map((m) => m[1]);
+      // A delivery whose id we cannot parse still proves the queue drained, so
+      // clear the whole set rather than wait out the deadline on a wording
+      // change upstream.
+      if (delivered.length === 0) owed.clear();
+      else for (const id of delivered) owed.delete(id);
     },
     holdOpenAtResult: () => {
-      if (outstanding.size === 0) return false;
+      if (owed.size === 0) return false;
       if (deferrals >= MAX_DEFERRED_SEGMENT_CLOSES) return false;
       deferrals++;
       return true;
     },
-    outstandingCount: () => outstanding.size,
+    owedCount: () => owed.size,
   };
 }

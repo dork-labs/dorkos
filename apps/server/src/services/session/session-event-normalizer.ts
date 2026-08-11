@@ -785,9 +785,11 @@ export async function feedProjector(
     //
     // The stream, not the turn, is the right boundary — verified in the
     // claude-code runtime rather than assumed. `executeSdkQuery` releases stdin
-    // at the `result` and keeps reading, so the subprocess stays alive exactly
-    // as long as it has queued background work to drain; that is what lets a
-    // finished task wake the agent for another window in the first place. When
+    // at a `result` — holding it open across the gap between a background task
+    // settling and its notification being delivered (DOR-1149) — and keeps
+    // reading, so the subprocess stays alive exactly as long as it has queued
+    // background work to drain; that is what lets a finished task wake the agent
+    // for another window in the first place. When
     // the iterator finally ends the process is gone, and no `task_notification`
     // can ever follow. The same holds for the paths that end a stream early — a
     // stop escalating to `query.close()`, a crash, an abandoned generator —

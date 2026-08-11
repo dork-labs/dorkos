@@ -207,9 +207,12 @@ function callSubject(toolUseIds: string[]): string {
  */
 export function buildPhantomCorrectionNote(phantoms: PhantomCancellation[]): string {
   const toolUseIds = phantoms.map((p) => p.toolUseId);
+  // `!= null`, matching how `mainThread` itself is derived — a truthiness test
+  // would disagree with it on an empty-string parent id and silently render the
+  // main-thread wording for a subagent's cancellation.
   const subagentTask = phantoms.find((p) => !p.mainThread)?.parentToolUseId;
 
-  if (subagentTask) {
+  if (subagentTask != null) {
     return (
       `<dorkos-system-note>${callSubject(toolUseIds)} cancelled by the runtime, not by the user. ` +
       `They ran inside the subagent you dispatched as ${subagentTask}. The runtime stopped them ` +
