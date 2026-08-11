@@ -104,21 +104,23 @@ describe('roomIdsByOriginLabel picks one room per label, deterministically', () 
     // are legal at once and both are in the palette (archived rooms are
     // findable, DOR-1051).
     //
-    // Seeded LIVE-first on purpose: plain iteration would let the archived room
-    // overwrite it, so only the precedence rule can produce this answer.
+    // Seeded ARCHIVED-first on purpose: the map is first-write-wins, so plain
+    // iteration would hand the label to the archived room — only the
+    // precedence sort can produce this answer.
     const map = roomIdsByOriginLabel([
-      makeRoom({ id: 'room-shipping-live' }),
       makeRoom({ id: 'room-shipping-old', archived: true }),
+      makeRoom({ id: 'room-shipping-live' }),
     ]);
     expect(map.get('#shipping')).toBe('room-shipping-live');
   });
 
   it('never lets a direct message take a channel’s label', () => {
-    // Nothing stops a DM being titled `#general`. Seeded CHANNEL-first, for the
-    // same reason: plain iteration would hand the label to the DM.
+    // Nothing stops a DM being titled `#general`. Seeded DM-first, for the
+    // same reason: first-write-wins iteration would hand the label to the DM —
+    // only the precedence sort keeps it with the channel.
     const map = roomIdsByOriginLabel([
-      makeRoom({ id: 'room-general', slug: 'general', title: 'General' }),
       makeRoom({ id: 'room-dm', kind: 'dm', slug: null, title: '#general' }),
+      makeRoom({ id: 'room-general', slug: 'general', title: 'General' }),
     ]);
     expect(map.get('#general')).toBe('room-general');
   });
