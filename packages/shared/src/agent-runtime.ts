@@ -612,6 +612,22 @@ export interface RuntimeCapabilities {
   features: Record<string, unknown>;
 }
 
+/**
+ * How warm a session's backing process is, for a runtime that keeps one alive
+ * between turns (spec `persistent-session-runtime` §4.1).
+ *
+ * - `cold` — no process. Either none was ever started, or it was given back;
+ *   the two are indistinguishable to a person, because the next message resumes
+ *   the conversation either way.
+ * - `warming` — a process is booting and cannot take a message yet.
+ * - `warm` — a process is up with no turn open. This is the state the whole
+ *   idea exists for, and it reports presence `idle`, never `streaming`.
+ * - `running` — a turn is open on the warm process.
+ * - `crashed` — the process died on its own; the next message starts a fresh
+ *   one and resumes.
+ */
+export type SessionWarmth = 'cold' | 'warming' | 'warm' | 'running' | 'crashed';
+
 /** Options for creating or resuming a session. */
 export interface SessionOpts extends SessionSettings {
   /**
@@ -862,6 +878,41 @@ export interface AgentRuntime {
    * @returns true if the query was interrupted, false if no active query
    */
   interruptQuery(sessionId: string): Promise<boolean>;
+
+  /**
+   * How warm this session's backing process is, for a runtime that keeps one
+   * alive between turns.
+   *
+   * Optional: a runtime that starts fresh work every turn has no warm concept
+   * and simply omits it, which reads as `'cold'` everywhere. A runtime that
+   * implements it must answer `'cold'` for a session it holds no process for,
+   * including one it has never heard of.
+   *
+   * Warmth is invisible to the person by design — it changes how fast a turn
+   * starts, never what happens — so this exists for conformance and diagnostics
+   * rather than for the UI. In particular, a WARM session is `idle`, never
+   * `streaming`: it is not a turn and has nothing in progress.
+   *
+   * @param sessionId - Session to report on
+   */
+  getSessionWarmth?(sessionId: string): SessionWarmth;
+
+  /**
+   * Close a session's warm process without touching the session record or its
+   * transcript.
+   *
+   * Idempotent, and a no-op when the session is not warm. Invisible to the
+   * person: the next message resumes the conversation exactly as if the process
+   * had still been there, only slower.
+   *
+   * **Never call it while a pending interaction is open.** A reaped process
+   * cannot answer the approval the person comes back to, and
+   * `INTERACTION_TIMEOUT_MS` (10 min) outlasts the warm idle window (5 min), so
+   * that race is real rather than theoretical.
+   *
+   * @param sessionId - Session whose process should be given back
+   */
+  reapSession?(sessionId: string): Promise<void>;
 
   // --- Session queries (storage) ---
 
