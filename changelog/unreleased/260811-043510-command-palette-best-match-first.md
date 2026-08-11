@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(client): ⌘K answers with one ranked list, best match first (P3.2, DOR-1074)'
+  - 'fix(client): ⌘K withholds "Best match" when nothing was typed, and its constants say what they control (P3.2 review, DOR-1074)'
 ---
 
 ### Changed
