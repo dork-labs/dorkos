@@ -36,6 +36,87 @@ async function openShowcaseSwitcher(page: Page): Promise<void> {
   await expect(page.locator(ROW).first()).toBeVisible();
 }
 
+/**
+ * Every chipped row keeps its chip on its reservation and off its own title.
+ *
+ * **Each measurement is proved to exist before anything is derived from it.**
+ * The first version of this read `[data-testid="agent-identity"]`, which only
+ * the jsdom mock stamps — the real DOM uses `data-slot` — so `titleRight` was
+ * `null`, the comparison became `chip.left >= -1`, and the assertion could not
+ * fail however far the chip strayed. A missing element must fail loudly here,
+ * not quietly widen the tolerance to infinity.
+ *
+ * **And it measures the CLIP box, not the name.** `AgentIdentity` is laid out at
+ * its natural width inside the row's `truncate` wrapper, so a long name's own
+ * rect reports 105px past the chip while the wrapper clips it to an ellipsis
+ * long before that — `getBoundingClientRect()` on an overflowing child describes
+ * layout, not paint. The wrapper's right edge is where the text visibly stops,
+ * which is the only edge this claim is about.
+ *
+ * @param page - The page under test.
+ * @param width - The viewport width, named in failures so the offending size is
+ *   obvious.
+ */
+async function assertChipGeometry(page: Page, width: number): Promise<void> {
+  const rows = await page.evaluate(() =>
+    Array.from(document.querySelectorAll<HTMLElement>('[data-sidebar-trailing-action]')).map(
+      (button) => {
+        const item = button.closest('li')!;
+        const reservation = item.querySelector<HTMLElement>(
+          '[data-slot="sidebar-row-trailing-reservation"]'
+        );
+        const identity = item.querySelector<HTMLElement>('[data-slot="agent-identity"]');
+        // The row's own title cell — the element that clips the name.
+        const clip = identity?.parentElement ?? null;
+        const chipBox = button.getBoundingClientRect();
+        return {
+          name: identity?.textContent?.trim() ?? null,
+          foundReservation: reservation !== null,
+          foundTitle: identity !== null,
+          // Proof the clip box is the right node, not just some ancestor.
+          clipTruncates: clip === null ? null : clip.classList.contains('truncate'),
+          chipLeft: chipBox.left,
+          chipRight: chipBox.right,
+          reservedLeft: reservation?.getBoundingClientRect().left ?? null,
+          reservedRight: reservation?.getBoundingClientRect().right ?? null,
+          clipRight: clip?.getBoundingClientRect().right ?? null,
+          titleTruncated: clip === null ? null : clip.scrollWidth > clip.clientWidth,
+        };
+      }
+    )
+  );
+
+  // The fixtures put a chip on a short name and on one long enough to truncate.
+  // Both must be present, or this is measuring a case that cannot fail.
+  expect(rows.length).toBeGreaterThanOrEqual(2);
+  expect(rows.some((row) => row.titleTruncated === true)).toBe(true);
+
+  for (const row of rows) {
+    const at = `${row.name ?? 'unnamed'} @${width}px`;
+    // Positive first: the elements this claim is about really are on screen.
+    expect({ at, reservation: row.foundReservation, title: row.foundTitle }).toEqual({
+      at,
+      reservation: true,
+      title: true,
+    });
+    expect({ at, clipTruncates: row.clipTruncates }).toEqual({ at, clipTruncates: true });
+    // The overlay sits on its reservation, within a pixel.
+    expect({ at, dx: Math.round(Math.abs(row.chipRight - row.reservedRight!)) }).toEqual({
+      at,
+      dx: 0,
+    });
+    expect({ at, dx: Math.round(Math.abs(row.chipLeft - row.reservedLeft!)) }).toEqual({
+      at,
+      dx: 0,
+    });
+    // And nothing is painted over the agent's own name. Measured at 6px of
+    // clearance on both rows at both widths, so parking the chip against the
+    // row's SOURCE gutter — 20px further left, the defect this replaced — puts
+    // it under the text and turns this red.
+    expect({ at, overlaps: row.chipLeft < row.clipRight! - 1 }).toEqual({ at, overlaps: false });
+  }
+}
+
 /** The group headings on screen, in DOM order. */
 async function groupOrder(page: Page): Promise<string[]> {
   return page
@@ -159,35 +240,14 @@ test.describe('session switcher @smoke', () => {
     );
     expect(nested).toBe(false);
 
-    // The row reserves the chip's width and the overlay lands on it. Placement
-    // belongs to `SidebarRow` now (DOR-1111), so this asserts the OUTCOME the
-    // slot exists to guarantee — overlay on reservation, neither over the text —
-    // rather than a padding this call site used to guess and got wrong.
-    const geometry = await page.evaluate(() => {
-      const button = document.querySelector<HTMLElement>('button[aria-label*="session switcher"]')!;
-      const item = button.closest('li')!;
-      const reservation = item.querySelector<HTMLElement>(
-        '[data-slot="sidebar-row-trailing-reservation"]'
-      );
-      const title = item.querySelector<HTMLElement>('[data-testid="agent-identity"]');
-      const box = (element: HTMLElement | null) => element?.getBoundingClientRect() ?? null;
-      const chipBox = button.getBoundingClientRect();
-      const reservedBox = box(reservation);
-      const titleBox = box(title);
-      return {
-        hasReservation: reservation !== null,
-        chip: { left: chipBox.left, right: chipBox.right },
-        reserved: reservedBox && { left: reservedBox.left, right: reservedBox.right },
-        titleRight: titleBox?.right ?? null,
-      };
-    });
-    // The row really did reserve room for it — the slot's own contract.
-    expect(geometry.hasReservation).toBe(true);
-    // The overlay sits on its reservation, within a pixel.
-    expect(Math.abs(geometry.chip.right - geometry.reserved!.right)).toBeLessThanOrEqual(1);
-    expect(Math.abs(geometry.chip.left - geometry.reserved!.left)).toBeLessThanOrEqual(1);
-    // And nothing is painted over the agent's name.
-    expect(geometry.chip.left).toBeGreaterThanOrEqual(geometry.titleRight! - 1);
+    // At both widths, because the mobile sheet is a narrower row and narrower is
+    // where a title first reaches the chip.
+    for (const width of [1280, 390]) {
+      await page.setViewportSize({ width, height: 900 });
+      await expect(chip.first()).toBeVisible();
+      await assertChipGeometry(page, width);
+    }
+    await page.setViewportSize({ width: 1280, height: 900 });
 
     await chip.first().click();
     await expect(page.locator(ROW).first()).toBeVisible();
@@ -265,18 +325,40 @@ test.describe('session switcher @smoke', () => {
  * Not `@smoke` — it drives the app rather than a playground page.
  */
 test.describe('session switcher, from ⌘K', () => {
+  /**
+   * Two sessions with EXPLICIT, distinct recency.
+   *
+   * They used to take `updatedAt` from `Date.now()` at construction — two calls,
+   * one per fixture. `selectAgentSessions` sorts newest first, so whenever those
+   * calls landed in the same millisecond the order was whatever `sort` happened
+   * to do with a tie, and whenever they straddled one the SECOND session became
+   * `ROW.first()`. The `⇧↵` case then forked the wrong id and failed on a run
+   * nothing had changed — a coin-flip in the merge queue.
+   *
+   * Minutes apart, and written down, so "the first row" is a fact of the fixture
+   * rather than of the clock.
+   */
   const AGENT_SESSIONS = [
-    sessionFixture('11111111-1111-4111-8111-111111111111', 'Dashboard overhaul'),
-    sessionFixture('22222222-2222-4222-8222-222222222222', 'Release notes draft'),
+    sessionFixture('11111111-1111-4111-8111-111111111111', 'Dashboard overhaul', 5),
+    sessionFixture('22222222-2222-4222-8222-222222222222', 'Release notes draft', 30),
   ];
 
-  /** A session row as the list endpoint would return it. */
-  function sessionFixture(id: string, title: string, cwd = '') {
+  /**
+   * A session row as the list endpoint would return it.
+   *
+   * @param id - The session id.
+   * @param title - Its display title.
+   * @param minutesAgo - How long ago it was last touched, which is what decides
+   *   its position in the list.
+   * @param cwd - The agent directory it belongs to.
+   */
+  function sessionFixture(id: string, title: string, minutesAgo: number, cwd = '') {
+    const updatedAt = new Date(Date.now() - minutesAgo * 60_000);
     return {
       id,
       title,
-      createdAt: new Date(Date.now() - 3_600_000).toISOString(),
-      updatedAt: new Date(Date.now() - 300_000).toISOString(),
+      createdAt: new Date(updatedAt.getTime() - 3_600_000).toISOString(),
+      updatedAt: updatedAt.toISOString(),
       permissionMode: 'default',
       runtime: 'claude-code',
       cwd,
@@ -308,7 +390,7 @@ test.describe('session switcher, from ⌘K', () => {
         await route.fulfill({
           status: 200,
           contentType: 'application/json',
-          body: JSON.stringify(sessionFixture('99999999-9999-4999-8999-999999999999', 'Fork')),
+          body: JSON.stringify(sessionFixture('99999999-9999-4999-8999-999999999999', 'Fork', 0)),
         });
         return;
       }
@@ -372,20 +454,19 @@ test.describe('session switcher, from ⌘K', () => {
     // The reported shape: `@`-mentioning an agent in a channel leaves a
     // room-origin run as the NEWEST session in its directory. Clicking the row
     // used to land there — inside a conversation BC-19 then keeps out of Today.
+    // One minute vs thirty: the room run is unambiguously the newest, which is
+    // the whole premise — the resolver has to look PAST it.
     const roomRun = {
-      ...sessionFixture('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'Room run', agent.projectPath),
-      updatedAt: new Date(Date.now() - 60_000).toISOString(),
+      ...sessionFixture('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'Room run', 1, agent.projectPath),
       origin: 'room',
       originLabel: '#team',
     };
-    const conversation = {
-      ...sessionFixture(
-        'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
-        'Our conversation',
-        agent.projectPath
-      ),
-      updatedAt: new Date(Date.now() - 1_800_000).toISOString(),
-    };
+    const conversation = sessionFixture(
+      'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+      'Our conversation',
+      30,
+      agent.projectPath
+    );
 
     await page.route('**/api/sessions**', async (route) => {
       const request = route.request();

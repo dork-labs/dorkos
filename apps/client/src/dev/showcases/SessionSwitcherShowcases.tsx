@@ -28,6 +28,40 @@ import { MOCK_AGENTS, minutesAgo } from './agent-sidebar-fixtures';
 const SWITCHER_AGENT = MOCK_AGENTS[0];
 
 /**
+ * The long-named agent, given a chip of its own.
+ *
+ * It exists so the roster has a row whose title actually reaches the trailing
+ * reservation — the case the chip's placement has to survive, and the one a
+ * short name can never exercise.
+ */
+const LONG_NAME_AGENT = MOCK_AGENTS[3];
+
+/**
+ * Two live conversations for {@link LONG_NAME_AGENT} — the minimum the chip
+ * needs, since one live session is not a choice and draws no chip.
+ */
+const LONG_NAME_SESSIONS: Session[] = [
+  {
+    id: 'sw-long-1',
+    title: 'Reconcile August stock counts',
+    createdAt: minutesAgo(90),
+    updatedAt: minutesAgo(1),
+    permissionMode: 'default',
+    runtime: 'claude-code',
+    cwd: LONG_NAME_AGENT.path,
+  },
+  {
+    id: 'sw-long-2',
+    title: 'Chase the missing pallet',
+    createdAt: minutesAgo(80),
+    updatedAt: minutesAgo(6),
+    permissionMode: 'default',
+    runtime: 'claude-code',
+    cwd: LONG_NAME_AGENT.path,
+  },
+];
+
+/**
  * The sessions the switcher showcase runs on — three concurrent live turns, two
  * settled conversations, and two automated runs wearing different origin marks.
  *
@@ -133,8 +167,29 @@ export function useSwitcherFixture(): void {
   const queryClient = useQueryClient();
   useEffect(() => {
     queryClient.setQueryData(sessionKeys.list(SWITCHER_AGENT.path), SWITCHER_SESSIONS);
+    queryClient.setQueryData(sessionKeys.list(LONG_NAME_AGENT.path), LONG_NAME_SESSIONS);
     const store = useSessionListStore.getState();
-    for (const session of SWITCHER_SESSIONS) store.upsertSession(session);
+    for (const session of [...SWITCHER_SESSIONS, ...LONG_NAME_SESSIONS]) {
+      store.upsertSession(session);
+    }
+    for (const session of LONG_NAME_SESSIONS) {
+      store.setSessionStatus(
+        session.id,
+        {
+          contextUsage: null,
+          cost: null,
+          usage: null,
+          cacheStats: null,
+          model: null,
+          permissionMode: 'default',
+          todoCounts: null,
+          runningSubagentCount: 0,
+          lifecycle: 'streaming',
+          lastError: null,
+        },
+        LONG_NAME_AGENT.path
+      );
+    }
     for (const { id, toolName, target } of SWITCHER_LIVE) {
       store.setSessionStatus(
         id,
@@ -157,8 +212,11 @@ export function useSwitcherFixture(): void {
     return () => {
       // `removeSession` drops the metadata, the status and the cwd together, so
       // every session seeded above is swept whether or not it was ever live.
-      for (const { id } of SWITCHER_SESSIONS) useSessionListStore.getState().removeSession(id);
+      for (const { id } of [...SWITCHER_SESSIONS, ...LONG_NAME_SESSIONS]) {
+        useSessionListStore.getState().removeSession(id);
+      }
       queryClient.removeQueries({ queryKey: sessionKeys.list(SWITCHER_AGENT.path) });
+      queryClient.removeQueries({ queryKey: sessionKeys.list(LONG_NAME_AGENT.path) });
     };
   }, [queryClient]);
 }

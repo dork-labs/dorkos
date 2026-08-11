@@ -211,7 +211,7 @@
     "connections": {
       "specFile": "tests/connections/connections.spec.ts",
       "feature": "connections",
-      "description": "walks unconfigured \u2192 key saved \u2192 connect Gmail twice with custody disclosed before every auth step, attaches Gmail (work) to a session, shows it with exposure state, and detaches",
+      "description": "walks unconfigured → key saved → connect Gmail twice with custody disclosed before every auth step, attaches Gmail (work) to a session, shows it with exposure state, and detaches",
       "lastRun": "2026-08-07T02:12:57.019Z",
       "lastStatus": "passed",
       "runCount": 12,
@@ -235,7 +235,7 @@
     "room-entry-actions": {
       "specFile": "tests/rooms/room-entry-actions.spec.ts",
       "feature": "rooms",
-      "description": "the toolbar appears on hover and offers what can be done to the message, the toolbar encloses the buttons it is drawn around, the toolbar straddles a message, and covers no word of one at rest, the toolbar rides the viewport edge on a message taller than the window, right-click offers the same actions as the toolbar, the keyboard alone reaches the actions and lands in the composer, a room costs one Tab per message, not one per action, a message is announced before the things you can do to it, Page Down crosses the room a message at a time, whatever each one carries, Page Down crosses the thread, and Ctrl+End lands in the thread\u2019s own composer, a reply lands in the panel beside the room, and a reply to a reply joins it, a reply row opens the thread it counts, and Escape closes it again, a reply that arrives after you last looked wears the accent, a thread has an address, and a reload lands back on it, a long press opens the drawer, and a short one or a drag does not, the thread takes the whole screen, and Back returns to the room",
+      "description": "the toolbar appears on hover and offers what can be done to the message, the toolbar encloses the buttons it is drawn around, the toolbar straddles a message, and covers no word of one at rest, the toolbar rides the viewport edge on a message taller than the window, right-click offers the same actions as the toolbar, the keyboard alone reaches the actions and lands in the composer, a room costs one Tab per message, not one per action, a message is announced before the things you can do to it, Page Down crosses the room a message at a time, whatever each one carries, Page Down crosses the thread, and Ctrl+End lands in the thread’s own composer, a reply lands in the panel beside the room, and a reply to a reply joins it, a reply row opens the thread it counts, and Escape closes it again, a reply that arrives after you last looked wears the accent, a thread has an address, and a reload lands back on it, a long press opens the drawer, and a short one or a drag does not, the thread takes the whole screen, and Back returns to the room",
       "lastRun": "2026-08-09T00:06:19.907Z",
       "lastStatus": "passed",
       "runCount": 49,
@@ -409,7 +409,7 @@
     "pulse-panel": {
       "specFile": "tests/pulse/pulse-panel.spec.ts",
       "feature": "pulse",
-      "description": "opens on the dashboard to Pulse with its attention + activity sections, opens on a session to the contextual default (Agent Profile), not Pulse, the attention badge is honest \u2014 hidden when nothing needs the operator",
+      "description": "opens on the dashboard to Pulse with its attention + activity sections, opens on a session to the contextual default (Agent Profile), not Pulse, the attention badge is honest — hidden when nothing needs the operator",
       "lastRun": "2026-08-09T00:06:19.907Z",
       "lastStatus": "passed",
       "runCount": 3,
@@ -457,7 +457,7 @@
     "room-reactions": {
       "specFile": "tests/rooms/room-reactions.spec.ts",
       "feature": "rooms",
-      "description": "a reaction from the capsule becomes a pill, and pressing the pill takes it back, a reaction made outside this page arrives on the stream, with no reload, the picker finds an emoji the quick row does not hold, the keyboard alone reaches the quick row, reacts, and then reaches the pill, a room that has stopped listening stops offering reactions, the long-press drawer opens with a reaction row on top, the drawer\u2019s \ud83d\ude42+ opens the same picker inline",
+      "description": "a reaction from the capsule becomes a pill, and pressing the pill takes it back, a reaction made outside this page arrives on the stream, with no reload, the picker finds an emoji the quick row does not hold, the keyboard alone reaches the quick row, reacts, and then reaches the pill, a room that has stopped listening stops offering reactions, the long-press drawer opens with a reaction row on top, the drawer’s 🙂+ opens the same picker inline",
       "lastRun": "2026-08-09T00:06:19.907Z",
       "lastStatus": "passed",
       "runCount": 3,
@@ -481,7 +481,7 @@
     "mcp-oauth-signin": {
       "specFile": "tests/connections/mcp-oauth-signin.spec.ts",
       "feature": "connections",
-      "description": "add \u2192 needs sign-in \u2192 Sign in \u2192 approve \u2192 connected with N tools",
+      "description": "add → needs sign-in → Sign in → approve → connected with N tools",
       "lastRun": "2026-08-07T09:53:20.277Z",
       "lastStatus": "passed",
       "runCount": 4,
@@ -505,7 +505,7 @@
     "home-shell": {
       "specFile": "tests/home-surface/home-shell.spec.ts",
       "feature": "home-surface",
-      "description": "the tab bar is Home, Activity, Scheduled, Workspaces \u2014 and Home is lit on /, the retired home sections are gone, not hidden, each tab goes to the address it has always had, the sidebar has four places and a Search row \u2014 nothing else, a filtered Activity deep link keeps its filter, and survives leaving and coming back, the tab bar takes the overflow, and the page never scrolls sideways",
+      "description": "the tab bar is Home, Activity, Scheduled, Workspaces — and Home is lit on /, the retired home sections are gone, not hidden, each tab goes to the address it has always had, the sidebar has four places and a Search row — nothing else, a filtered Activity deep link keeps its filter, and survives leaving and coming back, the tab bar takes the overflow, and the page never scrolls sideways",
       "lastRun": "2026-08-09T00:06:19.907Z",
       "lastStatus": "passed",
       "runCount": 4,
@@ -529,7 +529,7 @@
     "team-room": {
       "specFile": "tests/home-surface/team-room.spec.ts",
       "feature": "home-surface",
-      "description": "`/` opens the room: its masthead, its feed, its composer, typing here reaches your default agent, and nobody else piles on, naming an agent stands the default agent down, nothing waiting draws nothing \u2014 no empty box, no border, an approval can be answered from home, and the card resolves where it stands, an attention deep link still opens its sheet on /, somebody working elsewhere shows up, and clicking follows them, home offers to bring it back, and does not do it behind your back",
+      "description": "`/` opens the room: its masthead, its feed, its composer, typing here reaches your default agent, and nobody else piles on, naming an agent stands the default agent down, nothing waiting draws nothing — no empty box, no border, an approval can be answered from home, and the card resolves where it stands, an attention deep link still opens its sheet on /, somebody working elsewhere shows up, and clicking follows them, home offers to bring it back, and does not do it behind your back",
       "lastRun": "2026-08-09T00:06:19.907Z",
       "lastStatus": "passed",
       "runCount": 7,
@@ -577,7 +577,7 @@
     "session-switcher": {
       "specFile": "tests/dashboard-sidebar/session-switcher.spec.ts",
       "feature": "dashboard-sidebar",
-      "description": "groups an agent\u2019s sessions Live now / Recent / Automated, with Automated collapsed, is a dialog on the desktop and a bottom sheet on a phone, opens from the agent row\u2019s \"N live\" chip, and the chip clears the row\u2019s text, each footer key does what the footer says it does, opens from the agent sub-menu, tags the open session, and forks with \u21e7\u21b5",
+      "description": "groups an agent’s sessions Live now / Recent / Automated, with Automated collapsed, is a dialog on the desktop and a bottom sheet on a phone, each footer key does what the footer says it does, opens from the agent row’s \"N live\" chip, and the chip clears the row’s text, the chip belongs to its row — it rides the drag, and right-click opens the row’s menu, opens from the agent sub-menu, tags the open session, and forks with ⇧↵, clicking the agent row opens the conversation, not the room-triggered run (BC-34)",
       "lastRun": "2026-08-10T22:12:32.585Z",
       "lastStatus": "passed",
       "runCount": 1,

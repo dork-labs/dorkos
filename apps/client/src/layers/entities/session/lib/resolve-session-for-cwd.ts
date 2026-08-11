@@ -136,8 +136,10 @@ export async function resolveSessionForCwd(
  *
  * The definition of "human" is `partitionSessionsByOrigin`'s, shared with the
  * session switcher's "Live now" group and the agent row's "N live" chip, so all
- * three agree about what a conversation is (design-decisions §18; unmarked
- * origin means `user`).
+ * three agree about what a conversation is. That an ABSENT origin means `user`
+ * comes from the field itself — `SessionSchema.origin` in
+ * `packages/shared/src/schemas.ts`, whose contract is "ABSENT means
+ * user-initiated, the unmarked default" — and not from any design decision.
  *
  * **No conversation means a FRESH one, not the newest automated run** — BC-34's
  * own else-branch. An agent that has only ever run scheduled tasks opens on an

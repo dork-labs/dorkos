@@ -4,6 +4,7 @@ covers:
   - 'fix(client): the "N live" chip counts what the switcher shows, and lands where it reserved (P2.6 review, DOR-1071)'
   - 'fix(client): clicking an agent opens the conversation you were having, never the run it did without you (DOR-1071)'
   - 'refactor(client): the "N live" chip moves onto SidebarRow''s trailingAction slot (DOR-1071)'
+  - 'test(client,e2e): give the chip-geometry guard a subject it can fail on, and take the clock out of the fork fixture (DOR-1071)'
 ---
 
 ### Fixed
