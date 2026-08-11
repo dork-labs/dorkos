@@ -7,6 +7,8 @@ Anti-patterns and hard-won lessons discovered during test creation. Read this be
 - Avoid `getByText()` on dynamic content that changes between runs (timestamps, session IDs, message previews)
 - Sidebar session items re-render on SSE updates; grab locators fresh after any navigation that triggers a sync
 - **An agent's streamed words are in the DOM TWICE while the turn is live**: once in the message, and once in the transcript's screen-reader announcer (`[data-testid="transcript-announcer"]`, a `role="log"` region that mirrors each new sentence and empties itself a few seconds later). A bare `page.getByText(/…/)` on assistant text therefore resolves to two elements and fails the strict-mode check. Scope it to where you mean — `page.getByTestId('transcript-feed').getByText(…)` for what the reader sees, the announcer for what a screen reader hears.
+  - **And it fails on the first poll, not after the timeout.** Playwright treats a strict-mode violation as non-retriable, so the assertion never waits the announcer out — a `timeout: 10_000` buys you nothing here.
+  - **Your machine will not show you this.** The announcer only picks up a message it sees _arriving_, and locally a mock turn lands in one batch with the streaming flag already down, so the region stays empty and a bare `getByText` passes. CI is slow enough to render the turn across several frames, the announcer adopts, and the same line fails there and only there. Scope the locator on the way in; do not wait for a green local run to tell you it was needed.
 
 ## Multi-window / connection-budget tests
 
