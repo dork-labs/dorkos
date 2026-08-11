@@ -7,6 +7,7 @@ import { render as rtlRender, screen, fireEvent, cleanup, waitFor } from '@testi
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import '@testing-library/jest-dom/vitest';
 import { createMockTransport } from '@dorkos/test-utils';
+import { useInteractionStore } from '@/layers/entities/interactions';
 import { CommandPaletteDialog } from '../ui/CommandPaletteDialog';
 import type { AgentPathEntry } from '@dorkos/shared/mesh-schemas';
 
@@ -168,8 +169,10 @@ vi.mock('@/layers/entities/session', async (importOriginal) => ({
   useDirectoryState: () => [mockSelectedCwd, mockSetDir],
 }));
 
-// --- Use REAL useAgentFrecency (tests localStorage integration) ---
-// No mock for '../model/use-agent-frecency' — the real hook is used.
+// --- The REAL interaction store, so these are localStorage claims ---
+// Nothing mocks `entities/interactions`: the palette records into the same
+// durable store the sidebar reads, and that is what the frecency cases below
+// assert against.
 
 // --- Mock usePaletteItems with configurable agents ---
 
@@ -226,7 +229,6 @@ vi.mock('../model/use-palette-items', () => ({
         isLoading: false,
         isError: false,
       },
-      recentAgents: mockPaletteRecentAgents,
       allAgents: mockPaletteAllAgents,
       features,
       commands,
@@ -315,10 +317,21 @@ vi.mock('motion/react', () => ({
   LayoutGroup: ({ children }: { children?: React.ReactNode }) => children,
 }));
 
+/**
+ * What the durable store has recorded, read back from the store itself.
+ *
+ * The store is a module singleton that hydrated once when this file was
+ * imported, so clearing `localStorage` does not empty it — the `reset()` in
+ * `beforeEach` is what does, and these read the state that write goes to.
+ */
+const storedCounts = () => useInteractionStore.getState().counts;
+const storedOpened = () => useInteractionStore.getState().opened;
+
 describe('Command Palette Integration', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     localStorage.clear();
+    useInteractionStore.getState().reset();
     mockGlobalPaletteOpen = true;
     mockSelectedCwd = '/projects/current';
     mockTheme = 'light';
@@ -401,16 +414,11 @@ describe('Command Palette Integration', () => {
     // Should close the palette
     expect(mockSetGlobalPaletteOpen).toHaveBeenCalledWith(false);
 
-    // Should record frecency in localStorage (real hook)
+    // And record the open in the durable store, keyed by DIRECTORY.
     // Frecency lands only after the agent actually opens (DOR-928), so this
     // waits for the write rather than reading straight after the click.
-    await waitFor(() => expect(localStorage.getItem('dorkos:agent-frecency-v2')).not.toBeNull());
-    const stored = localStorage.getItem('dorkos:agent-frecency-v2');
-    expect(stored).toBeTruthy();
-    const entries = JSON.parse(stored!);
-    expect(entries).toEqual(
-      expect.arrayContaining([expect.objectContaining({ agentId: 'agent-1', totalCount: 1 })])
-    );
+    await waitFor(() => expect(storedCounts()['agent:/projects/auth']).toBe(1));
+    expect(storedOpened()['agent:/projects/auth']).toBeDefined();
   });
 
   it('records frecency correctly for the active agent via Open Here', async () => {
@@ -427,15 +435,10 @@ describe('Command Palette Integration', () => {
 
     expect(mockSetDir).toHaveBeenCalledWith('/projects/current', expect.anything());
 
-    // Frecency recorded for agent-3
+    // Frecency recorded for the active agent's own directory.
     // Frecency lands only after the agent actually opens (DOR-928), so this
     // waits for the write rather than reading straight after the click.
-    await waitFor(() => expect(localStorage.getItem('dorkos:agent-frecency-v2')).not.toBeNull());
-    const stored = localStorage.getItem('dorkos:agent-frecency-v2');
-    const entries = JSON.parse(stored!);
-    expect(entries).toEqual(
-      expect.arrayContaining([expect.objectContaining({ agentId: 'agent-3', totalCount: 1 })])
-    );
+    await waitFor(() => expect(storedCounts()['agent:/projects/current']).toBe(1));
   });
 
   it('increments frecency count on repeated agent selection via Open Here', async () => {
@@ -457,11 +460,7 @@ describe('Command Palette Integration', () => {
 
     // Frecency lands only after the agent actually opens (DOR-928), so this
     // waits for the write rather than reading straight after the click.
-    await waitFor(() => expect(localStorage.getItem('dorkos:agent-frecency-v2')).not.toBeNull());
-    const stored = localStorage.getItem('dorkos:agent-frecency-v2');
-    const entries = JSON.parse(stored!);
-    const authEntry = entries.find((e: { agentId: string }) => e.agentId === 'agent-1');
-    expect(authEntry.totalCount).toBe(2);
+    await waitFor(() => expect(storedCounts()['agent:/projects/auth']).toBe(2));
   });
 
   // --- @ prefix mode ---
@@ -514,12 +513,7 @@ describe('Command Palette Integration', () => {
 
     // Frecency lands only after the agent actually opens (DOR-928), so this
     // waits for the write rather than reading straight after the click.
-    await waitFor(() => expect(localStorage.getItem('dorkos:agent-frecency-v2')).not.toBeNull());
-    const stored = localStorage.getItem('dorkos:agent-frecency-v2');
-    const entries = JSON.parse(stored!);
-    expect(entries).toEqual(
-      expect.arrayContaining([expect.objectContaining({ agentId: 'agent-2' })])
-    );
+    await waitFor(() => expect(storedCounts()['agent:/projects/gateway']).toBe(1));
   });
 
   // --- Feature opening ---
@@ -680,15 +674,15 @@ describe('Command Palette Integration', () => {
     unmount();
 
     // Verify localStorage has data
-    await waitFor(() => expect(localStorage.getItem('dorkos:agent-frecency-v2')).not.toBeNull());
-    const storedBefore = localStorage.getItem('dorkos:agent-frecency-v2');
-    expect(storedBefore).toBeTruthy();
+    await waitFor(() => expect(localStorage.getItem('dorkos:interactions-v1')).not.toBeNull());
+    const storedBefore = localStorage.getItem('dorkos:interactions-v1');
+    expect(storedBefore).toContain('agent:/projects/auth');
 
     // Second render: data should still be in localStorage
     mockGlobalPaletteOpen = true;
     render(<CommandPaletteDialog />);
 
-    const storedAfter = localStorage.getItem('dorkos:agent-frecency-v2');
+    const storedAfter = localStorage.getItem('dorkos:interactions-v1');
     expect(storedAfter).toBe(storedBefore);
   });
 });

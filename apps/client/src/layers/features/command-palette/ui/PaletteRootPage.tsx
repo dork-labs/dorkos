@@ -11,6 +11,7 @@ import {
   itemVariants,
 } from './palette-constants';
 import { groupRankedRows, type RankedRow } from '../model/palette-ranking';
+import { scopeEmptyMessage, scopeHeading, type PaletteScope } from '../model/palette-scope';
 import type { PaletteRooms } from '../model/use-palette-rooms';
 import type { PaletteRecentEntry } from '../model/palette-recent';
 import type { PaletteSessionItem } from '../model/palette-sessions';
@@ -27,6 +28,10 @@ interface PaletteRootPageProps {
   isZeroQuery: boolean;
   /** Whether the `#` prefix is active, scoping the palette to channels. */
   isRoomMode: boolean;
+  /** The chip the palette is scoped to, or `null`. */
+  scope: PaletteScope | null;
+  /** Whether the operator has actually typed something to match. */
+  hasQuery: boolean;
   selectedCwd: string | null;
   selectedValue: string;
   /** Live conversations, for the zero-query Continue group. */
@@ -70,6 +75,8 @@ export function PaletteRootPage({
   staggerKey,
   isZeroQuery,
   isRoomMode,
+  scope,
+  hasQuery,
   selectedCwd,
   selectedValue,
   continueRows,
@@ -99,7 +106,26 @@ export function PaletteRootPage({
           : null
     : null;
 
-  const groups = groupRankedRows(rows, (row) => RESULT_GROUP_LABEL[row.item.item.type]);
+  // Under a chip, the one heading a scoped list can carry names the scope
+  // rather than the kind: every row is a conversation, so "Conversations" says
+  // nothing the list does not, and "Conversations with DorkOS" is what the
+  // person asked for read back to them (design-decisions §15).
+  const groups = groupRankedRows(rows, (row) =>
+    scope ? scopeHeading(scope) : RESULT_GROUP_LABEL[row.item.item.type]
+  );
+
+  // A chip that admits nothing has to say so, or it reads as a palette that
+  // broke. Same shape as the channel status below, and for the same reason: a
+  // scope is the only thing on screen, so nothing else explains the emptiness.
+  //
+  // **Only when nothing was typed**, because otherwise it answers the wrong
+  // question. "No conversations with Orbit yet." is a claim about the SCOPE; an
+  // empty list under a typed query is a fact about the QUERY, and cmdk's own
+  // "No results found." says that correctly. Without this gate the two states
+  // were one sentence, and a person who mistyped inside a busy scope was told
+  // the agent had no conversations at all.
+  const scopeStatus =
+    scope && !hasQuery && rows.length === 0 && !bestMatch ? scopeEmptyMessage(scope) : null;
 
   // The stagger runs down the WHOLE list rather than restarting inside each
   // heading, because the list is one list — rows arriving in two overlapping
@@ -173,6 +199,14 @@ export function PaletteRootPage({
             ))}
           </CommandGroup>
         ))}
+
+      {scopeStatus && (
+        <CommandGroup heading={scope ? scopeHeading(scope) : undefined}>
+          <CommandItem disabled value="scope-status" className="text-muted-foreground text-sm">
+            {scopeStatus}
+          </CommandItem>
+        </CommandGroup>
+      )}
 
       {/*
        * Why the channel list has a status row and no other kind does: `#` is a

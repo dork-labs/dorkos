@@ -5,7 +5,11 @@ import type { PaletteSearchOptions, SearchableItem } from '../use-palette-search
 import type { AgentPathEntry } from '@dorkos/shared/mesh-schemas';
 
 /** Nothing used, nothing fresh — so these tests read relevance and nothing else. */
-const NEUTRAL: PaletteSearchOptions = { usage: {}, now: Date.parse('2026-08-10T12:00:00.000Z') };
+const NEUTRAL: PaletteSearchOptions = {
+  usage: {},
+  now: Date.parse('2026-08-10T12:00:00.000Z'),
+  scope: null,
+};
 
 /** The ranking fields of a row with no history behind it. */
 const UNRANKED = {
@@ -13,6 +17,7 @@ const UNRANKED = {
   lastActivityAt: null,
   waiting: false,
   demoted: false,
+  scopes: [],
 } as const;
 
 const mockItems: SearchableItem[] = [
@@ -194,6 +199,7 @@ describe('the ranking the hook actually feeds', () => {
     const { result } = renderHook(() =>
       usePaletteSearch(twins, 'deploy', {
         now,
+        scope: null,
         usage: { 'agent:/b': { lastUsedAt: now - 60_000, useCount: 12 } },
       })
     );

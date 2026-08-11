@@ -39,6 +39,7 @@ const UNUSED_ROW = {
   lastActivityAt: null,
   waiting: false,
   demoted: false,
+  scopes: [],
 } as const;
 
 /**

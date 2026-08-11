@@ -35,7 +35,7 @@ This guide covers state management patterns in DorkOS. Zustand manages complex c
 | Simple UI state            | React useState                                    | Modal open/close, toggle visibility                                  | Scoped to component, no persistence needed                                             |
 | URL state (standalone)     | TanStack Router search params                     | `?session=` ID, `?dir=` working directory                            | Shareable links, browser history, bookmarkable                                         |
 | URL state (Obsidian)       | Zustand                                           | Session ID, working directory                                        | No URL bar in Obsidian; Zustand replaces router search params                          |
-| Persistent client state    | localStorage + useSyncExternalStore               | Agent frecency scores (Slack bucket system)                          | Survives page reloads, reactive updates via subscribe/getSnapshot                      |
+| Persistent client state    | Zustand + `persist` middleware                    | What you opened and how often (`entities/interactions`)              | Survives page reloads; one store two features read, no second key beside it            |
 | Dialog-scoped state        | React useState                                    | Pages stack in CommandPaletteDialog                                  | Resets when dialog closes, no persistence needed                                       |
 | Debounced derived state    | useDeferredValue                                  | Preview panel data during rapid navigation                           | Defers expensive fetches without state management overhead                             |
 | Multi-source derived state | TanStack Query + `useMemo`                        | Feature flags + entity data combined                                 | Each source stays in TanStack Query; derivation happens in a custom hook via `useMemo` |
@@ -172,48 +172,68 @@ export function useSessionId(): [string | null, (id: string | null) => void] {
 
 In Obsidian embedded mode, the same hooks use Zustand instead of TanStack Router (no URL bar available). The `?dir=` parameter is omitted when using the server's default directory to keep URLs clean.
 
-### Persistent Client State with useSyncExternalStore
+### Persistent Client State with Zustand `persist`
 
-For persistent client state that needs external subscription semantics (e.g., localStorage-backed frecency scores), use React's `useSyncExternalStore`:
+Client state that has to survive a reload — and that more than one feature
+reads — is a Zustand store with the `persist` middleware, keyed by a versioned
+localStorage name. The worked example is `entities/interactions`, the one memory
+of what THIS person opened, which the sidebar orders Today by and ⌘K ranks by:
 
 ```typescript
-// apps/client/src/layers/features/command-palette/model/use-agent-frecency.ts
-import { useSyncExternalStore } from 'react';
-
-const STORAGE_KEY = 'dorkos:agent-frecency-v2';
-
-interface FrecencyRecord {
-  agentId: string;
-  timestamps: number[]; // epoch ms, most recent first, max 10
-  totalCount: number;
-}
-
-// Singleton storage manager with subscribe/getSnapshot pattern
-let listeners = new Set<() => void>();
-let snapshot: FrecencyRecord[] = loadFromStorage();
-
-function subscribe(listener: () => void) {
-  listeners.add(listener);
-  return () => listeners.delete(listener);
-}
-
-function getSnapshot() {
-  return snapshot;
-}
-
-function recordVisit(agentId: string) {
-  // ... update record, persist to localStorage
-  snapshot = [...updatedRecords];
-  listeners.forEach((l) => l()); // Notify React
-}
-
-export function useAgentFrecency() {
-  const data = useSyncExternalStore(subscribe, getSnapshot);
-  return { data, recordVisit };
-}
+// apps/client/src/layers/entities/interactions/model/interaction-store.ts
+export const useInteractionStore = create<InteractionState & InteractionActions>()(
+  persist(
+    (set) => ({
+      opened: {}, // key → ISO-8601, "when"
+      counts: {}, // key → number,  "how often"
+      recordOpened: (kind, id, at) => set((state) => /* … */),
+      mergeUsage: (records) => set((state) => /* … */),
+      reset: () => set({ opened: {}, counts: {} }),
+    }),
+    {
+      name: 'dorkos:interactions-v1',
+      storage: createJSONStorage(() => guardedLocalStorage),
+      partialize: (state) => ({ opened: state.opened, counts: state.counts }),
+    }
+  )
+);
 ```
 
-**When to use**: Client state that needs external subscribers (localStorage observers), custom unsubscribe semantics, or synchronization with non-React state systems.
+Three things about it are load-bearing, and each cost something to learn:
+
+- **The storage adapter is guarded.** `persist` writes inside the `set` call, so
+  an unguarded `QuotaExceededError` propagates out of whatever triggered it —
+  here, clicking a row. Wrap `getItem`/`setItem`/`removeItem` in `try/catch` and
+  degrade to memory-only for the session rather than failing the interaction.
+- **The version lives in the key name** (`…-v1`), not in `persist`'s own
+  `version:` / `migrate:` pair — no persisted client store in this repo uses
+  those. Do not read that as "the word `migrate` is unused": the server's SQLite
+  schema migrates through Drizzle in `packages/db`, and
+  `shared/model/agent-birth/agent-birth-store.ts` has a `migrate` ACTION that
+  re-keys a record when an agent's id changes. Neither is `persist`'s
+  version-upgrade hook, which is what this bullet is about.
+- **Retiring an old key is its own module**, not a line inside a component. It
+  reads the old key once, folds what it held into the store with an action that
+  takes the LARGER of each field (so two tabs racing converge instead of
+  double-counting), and deletes the key. See
+  `entities/interactions/model/legacy-frecency-migration.ts`, which retired ⌘K's
+  agent-only `dorkos:agent-frecency-v2`, and
+  `features/dashboard-sidebar/model/use-legacy-pin-migration.ts`, which retired
+  `dorkos-pinned-agents` into server config. Both use a `useRef` latch so they
+  run once per session.
+
+  **Deleting the key is the last step, not the first**, and both modules have a
+  path that returns before reaching it: the pin migration waits for the config
+  query to answer, and the frecency one waits for the agent roster, because a
+  key it cannot translate yet is a key it must not delete. Removal happens on
+  every path that READS — including a payload that turns out to be malformed —
+  and on no path that gives up early. Getting that backwards is how a migration
+  becomes data loss.
+
+**When to use**: state that is a per-device fact by definition (what this
+browser has opened), that must survive a reload, and that no server should hold.
+Anything that should follow a person between machines belongs in server config
+(`entities/config`) instead.
 
 ### Debouncing with useDeferredValue
 

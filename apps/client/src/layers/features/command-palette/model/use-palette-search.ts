@@ -10,6 +10,7 @@ import {
   type RankCandidate,
   type RankedRow,
 } from './palette-ranking';
+import { scopeKey, type PaletteScope } from './palette-scope';
 import type { PaletteUsage } from './use-palette-usage';
 import type { FeatureItem, CommandItemData, QuickActionItem } from './use-palette-items';
 
@@ -34,6 +35,17 @@ interface SearchableItemBase {
   waiting: boolean;
   /** Findable but not live — an archived room. Ranks below everything live. */
   demoted: boolean;
+  /**
+   * Which scope chips admit this row, as {@link scopeKey} values.
+   *
+   * Empty for every row that belongs to nothing a person can scope to, which is
+   * most of them: an agent, a channel, an action and a slash command are all
+   * things you scope BY rather than things inside a scope. Required rather than
+   * optional, for the same reason {@link SearchableItemBase.usageKey} is — a new
+   * kind of palette item has to answer the question rather than silently
+   * vanishing the moment somebody picks a chip.
+   */
+  scopes: readonly string[];
 }
 
 /**
@@ -81,6 +93,8 @@ export interface PaletteSearchOptions {
   usage: PaletteUsage;
   /** The instant to rank against, epoch ms — the caller's clock, never this module's. */
   now: number;
+  /** The chip the palette is scoped to, or `null` when it is scoped to nothing. */
+  scope: PaletteScope | null;
 }
 
 /** One ranked palette list, and the query that produced it. */
@@ -106,29 +120,56 @@ export interface PaletteSearchResult {
  * conversation with Ana beside Ana herself (spec `rooms` §13.2). Prefix `>`
  * filters commands only. No prefix searches all categories.
  *
- * **The prefixes filter and the ranker orders — in that order, and they never
- * swap jobs.** A row a prefix excluded is gone before scoring, so no score can
- * bring it back; a row a prefix admitted is ordered by what it is worth rather
+ * A scope chip narrows it further and differently: the prefixes select a KIND
+ * of row, a chip selects the rows that belong to one particular agent or
+ * channel (`palette-scope`).
+ *
+ * **The filters admit and the ranker orders — in that order, and they never
+ * swap jobs.** A row a filter excluded is gone before scoring, so no score can
+ * bring it back; a row a filter admitted is ordered by what it is worth rather
  * than by which group it belongs to (design-decisions §15).
  *
  * @param items - All searchable items across categories
  * @param search - Raw search string from the input (may include prefix)
- * @param options - The usage history and the clock to rank against
+ * @param options - The scope, the usage history and the clock to rank against
  */
 export function usePaletteSearch(
   items: SearchableItem[],
   search: string,
   options: PaletteSearchOptions
 ): PaletteSearchResult {
-  const { usage, now } = options;
-  const { prefix, term } = useMemo(() => parsePrefix(search), [search]);
+  const { usage, now, scope } = options;
+
+  // **Under a chip there are no prefixes**, and the whole search string is the
+  // term. A prefix picks a KIND of row, and a chip has already fixed the kind:
+  // everything a scope admits is a conversation. So `#` inside a scope is a
+  // character in a title, not a mode switch.
+  //
+  // Without this, all three prefixes emptied every scoped list — each one asks
+  // for a kind the scope does not contain — and the palette answered with the
+  // same "No conversations with X yet." it shows when the scope is genuinely
+  // empty. One character, two different meanings, one message. Removing the
+  // state is better than adding a second message to explain it.
+  const { prefix, term } = useMemo(
+    () => (scope === null ? parsePrefix(search) : { prefix: null, term: search }),
+    [search, scope]
+  );
+
+  // The chip cuts first, because it is the coarser statement: a person who
+  // picked one has said what they are looking INSIDE, and a prefix is only a
+  // way of narrowing what comes back from there.
+  const filteredByScope = useMemo(() => {
+    if (scope === null) return items;
+    const key = scopeKey(scope);
+    return items.filter((item) => item.scopes.includes(key));
+  }, [items, scope]);
 
   const filteredByPrefix = useMemo(() => {
-    if (prefix === '#') return items.filter((i) => i.type === 'room');
-    if (prefix === '@') return items.filter((i) => i.type === 'agent' || i.type === 'dm');
-    if (prefix === '>') return items.filter((i) => i.type === 'command');
-    return items;
-  }, [items, prefix]);
+    if (prefix === '#') return filteredByScope.filter((i) => i.type === 'room');
+    if (prefix === '@') return filteredByScope.filter((i) => i.type === 'agent' || i.type === 'dm');
+    if (prefix === '>') return filteredByScope.filter((i) => i.type === 'command');
+    return filteredByScope;
+  }, [filteredByScope, prefix]);
 
   const fuse = useMemo(() => new Fuse(filteredByPrefix, FUSE_OPTIONS), [filteredByPrefix]);
 

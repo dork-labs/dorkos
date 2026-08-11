@@ -245,21 +245,35 @@ function FooterStates() {
       <ShowcaseLabel>Root page — no agent selected</ShowcaseLabel>
       <ShowcaseDemo>
         <div className="overflow-hidden rounded-lg border">
-          <PaletteFooter page={undefined} hasAgentSelected={false} />
+          <PaletteFooter
+            page={undefined}
+            hasAgentSelected={false}
+            canScope={false}
+            isScoped={false}
+          />
         </div>
       </ShowcaseDemo>
 
       <ShowcaseLabel>Root page — agent selected</ShowcaseLabel>
       <ShowcaseDemo>
         <div className="overflow-hidden rounded-lg border">
-          <PaletteFooter page={undefined} hasAgentSelected />
+          <PaletteFooter page={undefined} hasAgentSelected canScope={false} isScoped={false} />
         </div>
       </ShowcaseDemo>
 
       <ShowcaseLabel>Agent sub-menu page</ShowcaseLabel>
       <ShowcaseDemo>
         <div className="overflow-hidden rounded-lg border">
-          <PaletteFooter page="agent-actions" hasAgentSelected />
+          <PaletteFooter page="agent-actions" hasAgentSelected canScope={false} isScoped={false} />
+        </div>
+      </ShowcaseDemo>
+
+      {/* Offered, then active — the second names Backspace's caret rule. */}
+      <ShowcaseLabel>Root page — scoping</ShowcaseLabel>
+      <ShowcaseDemo>
+        <div className="divide-y overflow-hidden rounded-lg border">
+          <PaletteFooter page={undefined} hasAgentSelected canScope isScoped={false} />
+          <PaletteFooter page={undefined} hasAgentSelected={false} canScope={false} isScoped />
         </div>
       </ShowcaseDemo>
     </div>
@@ -370,8 +384,9 @@ function LivePaletteTrigger() {
           from sub-menus.
         </p>
         <p>
-          <strong>Frecency:</strong> Recently used agents appear first, scored with Slack-style
-          time-decay buckets.
+          <strong>Ranking and scope:</strong> one list across every kind, blending match, use and
+          freshness from the store the sidebar reads too. Tab turns an agent or channel into a chip;
+          Backspace at the start of the query puts it down.
         </p>
       </div>
     </div>

@@ -79,7 +79,7 @@ vi.mock('@/layers/entities/mesh', () => ({
 
 // Every test below `await import()`s the module under test rather than a
 // static top-level import, matching this directory's convention for suites
-// that `vi.mock(..., importOriginal)` (see use-agent-frecency.test.ts,
+// that `vi.mock(..., importOriginal)` (see use-palette-items.test.ts,
 // use-palette-items.test.ts): only the FIRST import pays real module-transform
 // cost, later ones resolve from cache. Under severe cross-process CPU
 // contention (several concurrent package suites on one box) that cold

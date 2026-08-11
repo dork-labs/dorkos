@@ -1,4 +1,4 @@
-import type { Page } from '@playwright/test';
+import type { Locator, Page } from '@playwright/test';
 
 /**
  * Open one of the cockpit's dialogs the way a person does: through the command
@@ -41,4 +41,88 @@ export async function openFromCommandPalette(page: Page, item: string): Promise<
   await search.waitFor({ state: 'visible' });
   await search.fill(item);
   await page.getByRole('option', { name: item, exact: true }).first().click();
+}
+
+/** The parts of the palette a spec drives, all scoped to its cmdk root. */
+export interface CommandPalette {
+  /** The cmdk root — every other locator hangs off it. */
+  root: Locator;
+  /** The search field. By test id, never by placeholder: see {@link openFromCommandPalette}. */
+  input: Locator;
+  /** The rows, as the accessibility tree sees them — what Down walks and Enter acts on. */
+  options: Locator;
+  /**
+   * The scope chip, when one is up (design-decisions §15).
+   *
+   * By test id rather than by the agent's name: the chip draws that name, so a
+   * name-based locator would also match the row the chip was made from and the
+   * two are different assertions.
+   */
+  chip: Locator;
+}
+
+/**
+ * Every part of the command palette, once it is open.
+ *
+ * Not exported: `openCommandPalette` is how a spec gets one, because a palette
+ * nobody opened has no rows and every locator on it would wait out its timeout.
+ *
+ * @param page - The page the palette is on.
+ */
+function commandPalette(page: Page): CommandPalette {
+  const root = page.locator('[cmdk-root]');
+  return {
+    root,
+    input: page.getByTestId('command-palette-input'),
+    options: root.getByRole('option'),
+    chip: page.getByTestId('palette-scope-chip'),
+  };
+}
+
+/**
+ * Open the palette with the shortcut a person uses, and wait for it.
+ *
+ * @param page - The page to drive.
+ */
+export async function openCommandPalette(page: Page): Promise<CommandPalette> {
+  await page.keyboard.press('ControlOrMeta+k');
+  const palette = commandPalette(page);
+  await palette.input.waitFor({ state: 'visible' });
+  return palette;
+}
+
+/**
+ * Scope the palette to a thing, the way a person does: type enough of its name,
+ * put the highlight on it, press Tab.
+ *
+ * The highlight is moved with `ArrowDown` from the top rather than by hovering,
+ * because hover and keyboard selection are two different code paths in cmdk and
+ * only one of them is what a keyboard user gets. It walks down until the row it
+ * was asked for is the selected one, so it cannot silently scope to whatever
+ * happened to be first.
+ *
+ * @param palette - The open palette.
+ * @param query - What to type to bring the row up, prefix included (`@dork`, `#ship`).
+ * @param rowText - Text that identifies the row to scope to.
+ * @param maxRows - How far down the list to look before giving up.
+ */
+export async function scopePaletteTo(
+  palette: CommandPalette,
+  query: string,
+  rowText: string,
+  maxRows = 12
+): Promise<void> {
+  await palette.input.fill(query);
+  const target = palette.options.filter({ hasText: rowText }).first();
+  await target.waitFor({ state: 'visible' });
+
+  for (let step = 0; step < maxRows; step += 1) {
+    if ((await target.getAttribute('data-selected')) === 'true') break;
+    await palette.input.press('ArrowDown');
+  }
+  if ((await target.getAttribute('data-selected')) !== 'true') {
+    throw new Error(`could not put the highlight on a row containing "${rowText}"`);
+  }
+  await palette.input.press('Tab');
+  await palette.chip.waitFor({ state: 'visible' });
 }

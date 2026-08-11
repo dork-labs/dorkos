@@ -72,6 +72,102 @@ describe('useInteractionStore', () => {
   });
 });
 
+describe('how often, beside when', () => {
+  beforeEach(() => {
+    useInteractionStore.getState().reset();
+  });
+
+  it('counts every open, for every kind — not agents alone', () => {
+    const { recordOpened } = useInteractionStore.getState();
+    recordOpened('session', 's1', 1_000);
+    recordOpened('session', 's1', 2_000);
+    recordOpened('room', 'r1', 3_000);
+    recordOpened('agent', '/repos/a', 4_000);
+
+    expect(useInteractionStore.getState().counts).toEqual({
+      'session:s1': 2,
+      'room:r1': 1,
+      'agent:/repos/a': 1,
+    });
+  });
+
+  it('leaves the timestamp map exactly as the sidebar has always read it', () => {
+    // The regression this whole extension is measured against: Today's order
+    // key is `opened`, and it must be byte-identical to what it was before
+    // counts existed. A count leaking into it would parse to NaN and collapse
+    // Today to alphabetical order with nothing thrown.
+    const { recordOpened } = useInteractionStore.getState();
+    recordOpened('session', 's1', 1_700_000_000_000);
+    recordOpened('session', 's1', 1_700_000_060_000);
+
+    expect(useInteractionStore.getState().opened).toEqual({
+      'session:s1': '2023-11-14T22:14:20.000Z',
+    });
+  });
+
+  it('persists the counts, so how often survives a reload', () => {
+    useInteractionStore.getState().recordOpened('agent', '/repos/a', 42);
+    const raw = window.localStorage.getItem('dorkos:interactions-v1') ?? '';
+    expect(JSON.parse(raw).state.counts).toEqual({ 'agent:/repos/a': 1 });
+  });
+
+  it('starts a store that has never counted at zero, rather than undefined', () => {
+    // What a browser holding a pre-counts payload rehydrates into. `persist`
+    // merges the stored object over the initial state, so the absent field
+    // keeps its `{}` — an agent with a timestamp and no count reads as
+    // "opened once, long ago" instead of throwing on a property of undefined.
+    expect(useInteractionStore.getState().counts).toEqual({});
+  });
+});
+
+describe('mergeUsage', () => {
+  beforeEach(() => {
+    useInteractionStore.getState().reset();
+  });
+
+  it('adds history the store has never seen', () => {
+    useInteractionStore
+      .getState()
+      .mergeUsage([{ key: 'agent:/repos/a', lastUsedAt: 5_000, useCount: 9 }]);
+
+    expect(useInteractionStore.getState().opened['agent:/repos/a']).toBe(
+      new Date(5_000).toISOString()
+    );
+    expect(useInteractionStore.getState().counts['agent:/repos/a']).toBe(9);
+  });
+
+  it('takes the larger of each field, so running it twice changes nothing', () => {
+    const merge = () =>
+      useInteractionStore
+        .getState()
+        .mergeUsage([{ key: 'agent:/repos/a', lastUsedAt: 5_000, useCount: 9 }]);
+    merge();
+    const afterFirst = useInteractionStore.getState();
+    merge();
+
+    // The claim, and its control: the second merge is a no-op on the VALUES,
+    // and a sum would have made this 18.
+    expect(useInteractionStore.getState().counts['agent:/repos/a']).toBe(9);
+    expect(useInteractionStore.getState().opened).toEqual(afterFirst.opened);
+  });
+
+  it('never moves a record backwards', () => {
+    useInteractionStore.getState().recordOpened('agent', '/repos/a', 9_000);
+    useInteractionStore
+      .getState()
+      .mergeUsage([{ key: 'agent:/repos/a', lastUsedAt: 5_000, useCount: 0 }]);
+
+    expect(Date.parse(useInteractionStore.getState().opened['agent:/repos/a'] ?? '')).toBe(9_000);
+    expect(useInteractionStore.getState().counts['agent:/repos/a']).toBe(1);
+  });
+
+  it('is a no-op for an empty list, down to the state identity', () => {
+    const before = useInteractionStore.getState().opened;
+    useInteractionStore.getState().mergeUsage([]);
+    expect(useInteractionStore.getState().opened).toBe(before);
+  });
+});
+
 describe('growth is bounded', () => {
   beforeEach(() => {
     useInteractionStore.getState().reset();
@@ -98,6 +194,19 @@ describe('growth is bounded', () => {
     expect(kept['session:s9']).toBeUndefined();
     expect(kept['session:s10']).toBeDefined();
     expect(kept[`session:s${MAX_INTERACTION_RECORDS + 9}`]).toBeDefined();
+  });
+
+  it('evicts a record from BOTH maps, never leaving a count behind', () => {
+    // A count whose timestamp was evicted would rank a row the store no longer
+    // claims to know — and it could never be evicted again, because eviction
+    // reads timestamps. The two maps are one record split in two.
+    const { recordOpened } = useInteractionStore.getState();
+    for (let index = 0; index < MAX_INTERACTION_RECORDS + 10; index += 1) {
+      recordOpened('session', `s${index}`, 1_000 + index);
+    }
+    const { opened, counts } = useInteractionStore.getState();
+    expect(Object.keys(counts).sort()).toEqual(Object.keys(opened).sort());
+    expect(counts['session:s0']).toBeUndefined();
   });
 });
 

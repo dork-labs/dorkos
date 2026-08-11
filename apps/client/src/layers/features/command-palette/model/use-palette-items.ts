@@ -5,7 +5,7 @@ import { useSessions, selectAgentSessions } from '@/layers/entities/session';
 import { useSlotContributions } from '@/layers/shared/model';
 import { hasUnread, roomDisplayTitle, type RoomSummary } from '@/layers/entities/room';
 import { interactionKey } from '@/layers/entities/interactions';
-import { useAgentFrecency } from './use-agent-frecency';
+import { roomIdsByOriginLabel, scopesOfSession } from './palette-scope';
 import { usePaletteRooms, type PaletteRooms } from './use-palette-rooms';
 import { usePaletteCommandCenter, type PaletteContinueRow } from './use-palette-command-center';
 import { paletteRoomKeywords } from './palette-rooms';
@@ -42,7 +42,6 @@ export interface CommandItemData {
 }
 
 export interface PaletteItems {
-  recentAgents: AgentPathEntry[];
   allAgents: AgentPathEntry[];
   /**
    * The cockpit's own creation actions, for the zero-query "New" group. A
@@ -69,14 +68,13 @@ export interface PaletteItems {
   isLoading: boolean;
 }
 
-const MAX_RECENT_AGENTS = 5;
-
 /**
  * The ranking fields of a row nothing keeps a history for.
  *
  * Actions and slash commands are not places you have been: nothing records
- * opening one, they have no last activity, nothing waits inside them and none
- * of them is archived. So they rank on relevance alone.
+ * opening one, they have no last activity, nothing waits inside them, none of
+ * them is archived, and none of them lives inside an agent or a channel. So
+ * they rank on relevance alone.
  *
  * **Say the cost out loud: this is a structural handicap, not a neutral
  * default.** Every boost is multiplicative on top of relevance, so a row with no
@@ -88,15 +86,19 @@ const MAX_RECENT_AGENTS = 5;
  * launching. It is worth revisiting the day the palette becomes somebody's main
  * way of running actions.
  *
- * The cheap escape, if it ever needs one, is to start recording action opens
- * under the same key space — task 3.3 owns that store and could add a fourth
- * {@link InteractionKind} without any change here beyond a `usageKey`.
+ * **The cheap escape was considered and rejected**, so nobody has to re-derive
+ * it: recording action opens in the same key space would ALSO put them in front
+ * of the sidebar's "While you were away…" digest, which dissolves on the newest
+ * record of any kind — toggling the theme from ⌘K would put away a summary of
+ * the night's work. The reasoning lives beside the store's own
+ * {@link InteractionKind}, which is where the next person will look.
  */
 const UNTRACKED = {
   usageKey: null,
   lastActivityAt: null,
   waiting: false,
   demoted: false,
+  scopes: [],
 } as const;
 
 /**
@@ -115,6 +117,9 @@ function roomRanking(room: RoomSummary) {
     lastActivityAt: room.lastActivityAt,
     waiting: hasUnread(room),
     demoted: room.archived,
+    // A room is a thing you scope BY, never a thing inside a scope — so
+    // picking `#shipping` does not leave `#shipping` itself in the list.
+    scopes: [],
   };
 }
 
@@ -130,7 +135,6 @@ function roomRanking(room: RoomSummary) {
 export function usePaletteItems(activeCwd: string | null): PaletteItems {
   const { data: agentPathsData, isLoading: agentsLoading } = useMeshAgentPaths();
   const rooms = usePaletteRooms();
-  const { getSortedAgentIds } = useAgentFrecency();
   const { sessions: cwdSessions } = useSessions();
 
   /**
@@ -185,28 +189,10 @@ export function usePaletteItems(activeCwd: string | null): PaletteItems {
     unreadRoomIds
   );
 
-  const recentAgents = useMemo(() => {
-    if (allAgents.length === 0) return [];
-
-    const agentMap = new Map(allAgents.map((a) => [a.id, a]));
-    const sortedIds = getSortedAgentIds(allAgents.map((a) => a.id));
-
-    // Pin active agent first
-    const activeAgent = activeCwd ? allAgents.find((a) => a.projectPath === activeCwd) : null;
-
-    const recentList: AgentPathEntry[] = [];
-    if (activeAgent) recentList.push(activeAgent);
-
-    for (const id of sortedIds) {
-      if (recentList.length >= MAX_RECENT_AGENTS) break;
-      const agent = agentMap.get(id);
-      if (agent && agent.id !== activeAgent?.id) {
-        recentList.push(agent);
-      }
-    }
-
-    return recentList;
-  }, [allAgents, getSortedAgentIds, activeCwd]);
+  // Every room this cockpit can see, keyed by the label the server stamps on a
+  // conversation that room started. Built once here rather than per session,
+  // because the corpus below turns it inside out for every row.
+  const roomIdByOriginLabel = useMemo(() => roomIdsByOriginLabel(allRooms), [allRooms]);
 
   const commands: CommandItemData[] = useMemo(() => {
     if (!commandsData) return [];
@@ -232,6 +218,8 @@ export function usePaletteItems(activeCwd: string | null): PaletteItems {
         lastActivityAt: agentActivity[agent.projectPath] ?? null,
         waiting: false,
         demoted: false,
+        // An agent is a thing you scope BY, not a thing inside a scope.
+        scopes: [],
         data: agent,
       });
     }
@@ -249,6 +237,9 @@ export function usePaletteItems(activeCwd: string | null): PaletteItems {
         lastActivityAt: session.lastActivityAt,
         waiting: false,
         demoted: false,
+        // The only rows a scope chip admits: a conversation is what lives
+        // inside an agent and inside the channel that started it.
+        scopes: scopesOfSession(session, roomIdByOriginLabel),
         data: session,
       });
     }
@@ -320,10 +311,10 @@ export function usePaletteItems(activeCwd: string | null): PaletteItems {
     quickActions,
     rooms.channels,
     rooms.dms,
+    roomIdByOriginLabel,
   ]);
 
   return {
-    recentAgents,
     allAgents,
     newActions,
     rooms,

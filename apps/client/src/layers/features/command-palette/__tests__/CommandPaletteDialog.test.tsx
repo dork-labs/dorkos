@@ -9,6 +9,7 @@ import { sessionKeys } from '@/layers/entities/session';
 import type { Session } from '@dorkos/shared/types';
 import '@testing-library/jest-dom/vitest';
 import { createMockTransport } from '@dorkos/test-utils';
+import { useInteractionStore } from '@/layers/entities/interactions';
 import { CommandPaletteDialog } from '../ui/CommandPaletteDialog';
 import { registerTabOpener } from '@/layers/shared/lib';
 import { enterDesktopShell, leaveDesktopShell } from '@/test-helpers/desktop-shell';
@@ -53,7 +54,24 @@ beforeEach(() => {
       dispatchEvent: vi.fn(),
     })),
   });
+  useInteractionStore.getState().reset();
 });
+
+/**
+ * Every agent directory this person has opened, from the ONE store that records
+ * them.
+ *
+ * These claims used to be made against a `recordUsage` spy on ⌘K's own frecency
+ * hook, which is gone: the palette keeps no memory of its own now, so the only
+ * honest way to ask "was this open recorded" is to ask the store the sidebar
+ * reads too. Keyed by directory, not mesh id — that is what the corpus ranks
+ * agents under, and a record under any other key would rank nothing.
+ */
+function openedAgents(): string[] {
+  return Object.keys(useInteractionStore.getState().opened)
+    .filter((key) => key.startsWith('agent:'))
+    .map((key) => key.slice('agent:'.length));
+}
 
 const tabCleanups: (() => void)[] = [];
 
@@ -196,15 +214,6 @@ vi.mock('motion/react', () => ({
   LayoutGroup: ({ children }: { children?: React.ReactNode }) => children,
 }));
 
-const mockRecordUsage = vi.fn();
-vi.mock('../model/use-agent-frecency', () => ({
-  useAgentFrecency: () => ({
-    entries: [],
-    recordUsage: mockRecordUsage,
-    getSortedAgentIds: (ids: string[]) => ids,
-  }),
-}));
-
 const mockOpenHub = vi.fn();
 vi.mock('@/layers/features/agent-hub', () => ({
   useAgentHubStore: Object.assign(() => ({}), {
@@ -249,7 +258,6 @@ const unranked = {
 vi.mock('../model/use-palette-items', () => ({
   usePaletteItems: () => ({
     rooms: noRooms,
-    recentAgents: [mockAgents[2], mockAgents[0]],
     allAgents: mockAgents,
     features: [
       { id: 'tasks', label: 'Tasks Scheduler', icon: 'Clock', action: 'openTasks' },
@@ -482,7 +490,7 @@ describe('CommandPaletteDialog', () => {
     expect(target.searchParams.get('session')).not.toBe('session-in-progress');
     // A tab is not a window.
     expect(openSpy).not.toHaveBeenCalled();
-    expect(mockRecordUsage).toHaveBeenCalledWith('agent-3');
+    expect(openedAgents()).toContain('/projects/current');
 
     openSpy.mockRestore();
   });
@@ -526,7 +534,7 @@ describe('CommandPaletteDialog', () => {
     expect(target.origin).toBe(window.location.origin);
     expect(target.pathname).toBe('/session');
     expect(target.searchParams.get('dir')).toBe('/projects/current');
-    expect(mockRecordUsage).toHaveBeenCalledWith('agent-3');
+    expect(openedAgents()).toContain('/projects/current');
 
     openSpy.mockRestore();
   });
@@ -564,7 +572,7 @@ describe('CommandPaletteDialog', () => {
     openSpy.mockRestore();
   });
 
-  it('calls recordUsage and setDir when Open Here is clicked in sub-menu', async () => {
+  it('records the agent and switches directory when Open Here is clicked in sub-menu', async () => {
     render(<CommandPaletteDialog />);
     // Click agent to enter sub-menu
     const item = screen.getAllByText('Worker')[0].closest('[data-slot="command-item"]');
@@ -575,7 +583,7 @@ describe('CommandPaletteDialog', () => {
     expect(mockSetDir).toHaveBeenCalledWith('/projects/current', expect.anything());
     // Frecency waits for the agent to actually open (DOR-928): a failed or
     // overtaken lookup must not rank an agent you never reached.
-    await waitFor(() => expect(mockRecordUsage).toHaveBeenCalledWith('agent-3'));
+    await waitFor(() => expect(openedAgents()).toContain('/projects/current'));
   });
 
   it('starts a BRAND-NEW conversation from New Session, not the agent’s latest', async () => {
@@ -598,7 +606,7 @@ describe('CommandPaletteDialog', () => {
         ),
       },
     });
-    await waitFor(() => expect(mockRecordUsage).toHaveBeenCalledWith('agent-3'));
+    await waitFor(() => expect(openedAgents()).toContain('/projects/current'));
   });
 
   it('closes palette after Open Here is clicked in sub-menu', () => {

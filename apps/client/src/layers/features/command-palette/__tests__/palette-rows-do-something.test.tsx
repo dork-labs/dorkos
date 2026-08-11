@@ -16,6 +16,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import '@testing-library/jest-dom/vitest';
 import { createMockTransport } from '@dorkos/test-utils';
 import { sessionKeys, useSessionChatStore } from '@/layers/entities/session';
+import { useInteractionStore } from '@/layers/entities/interactions';
 // Reaching into another feature, as only a test may: the claim is an agreement
 // between the palette and the chat send funnel, and an agreement asserted
 // against a re-typed copy of the rule is not asserted at all.
@@ -138,7 +139,6 @@ vi.mock('@/layers/entities/session', async (importOriginal) => ({
 vi.mock('../model/use-palette-items', () => ({
   usePaletteItems: () => ({
     rooms: { channels: [], dms: [], unread: [], isLoading: false, isError: false },
-    recentAgents: agents,
     allAgents: agents,
     features: [],
     // `/compact` beside the generic one because it is a command the send funnel
@@ -281,6 +281,7 @@ beforeEach(() => {
     })),
   });
   useSessionChatStore.setState({ sessions: {}, sessionAccessOrder: [] });
+  useInteractionStore.getState().reset();
 });
 
 afterEach(cleanup);
@@ -315,6 +316,12 @@ describe('a slash command row', () => {
     // Typed in, not sent: a global palette must not fire `/clear` at an agent
     // on one keystroke. The trailing space puts the caret where an argument goes.
     expect(draftFor('session-current')).toBe('/deploy ');
+    // And it leaves the same memory the conversation rows do — this row lands a
+    // person IN a conversation, so ranking has to know it happened. Recorded
+    // AFTER the resolve, never before: a lookup that failed is not an open.
+    const { opened } = useInteractionStore.getState();
+    expect(opened['session:session-current']).toBeDefined();
+    expect(opened[`agent:${ACTIVE_CWD}`]).toBeDefined();
   });
 
   it('still produces a RUNNABLE command when the composer already had text', async () => {
