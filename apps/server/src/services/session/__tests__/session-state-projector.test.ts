@@ -314,6 +314,50 @@ describe('SessionStateProjector', () => {
     expect(p.listRunningSubagents()).toEqual(['live']);
   });
 
+  // The same duplicate trap on the OTHER drain (DOR-1120). `markInterrupted`
+  // retires through `ingest`, and `ingest` re-enters the sweep on its way in, so
+  // a half-emptied set is what lets that sweep retire the ids the loop has not
+  // reached yet — a second time. It has to empty the set BEFORE it ingests any of
+  // them, for the same reason the sweep does. The state that reaches it: lifecycle
+  // `streaming` with NO turn open passes markInterrupted's guard while leaving the
+  // sweep's own turn guard open, which is why this cannot lean on the turn check.
+  it('emits exactly one retirement per child when markInterrupted drains a stale set', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(8_000_000);
+    const p = new SessionStateProjector('interrupt-drain');
+    p.ingest({ type: 'turn_start' } as RawSessionEvent);
+    for (const taskId of ['bt1', 'bt2', 'bt3']) {
+      p.ingest({ type: 'subagent_update', taskId, status: 'running' } as RawSessionEvent);
+    }
+    p.ingest({ type: 'turn_end' } as RawSessionEvent);
+
+    // Streaming without a turn, set BEFORE the clock moves: a status_change is an
+    // `ingest`, and one arriving past the bound would spend the sweep early.
+    p.ingest({ type: 'status_change', status: { lifecycle: 'streaming' } } as RawSessionEvent);
+
+    // Silence past the bound with the armed sweep cancelled, so the children are
+    // stale AND still tracked when markInterrupted runs — let the timer retire
+    // them first and this proves nothing.
+    p.cancelTimers();
+    vi.advanceTimersByTime(SUBAGENT_SILENCE_TIMEOUT_MS);
+    expect(p.listRunningSubagents()).toEqual(['bt1', 'bt2', 'bt3']);
+
+    const ingestSpy = vi.spyOn(p, 'ingest');
+    p.markInterrupted();
+
+    // The list, not the count: zero is reached either way, and the damage is the
+    // extra copies. Each one lands on the client's fold as an id it no longer
+    // knows, which is the arm that discounts children still alive.
+    expect(ingestSpy.mock.calls.map((c) => c[0])).toEqual([
+      { type: 'subagent_update', taskId: 'bt1', status: 'untracked' },
+      { type: 'subagent_update', taskId: 'bt2', status: 'untracked' },
+      { type: 'subagent_update', taskId: 'bt3', status: 'untracked' },
+    ]);
+    expect(p.getStatus().lifecycle).toBe('interrupted');
+    expect(p.getStatus().runningSubagentCount).toBe(0);
+    expect(p.listRunningSubagents()).toEqual([]);
+  });
+
   // The bound is on SILENCE, not on age: a child that keeps reporting keeps its
   // place however long it runs. Without this the fix would cap every background
   // task at the window and cut real work off mid-flight.
