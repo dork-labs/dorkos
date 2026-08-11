@@ -11,6 +11,7 @@ import {
   useOpenRoomWorking,
 } from '@/layers/entities/room';
 import { Button } from '@/layers/shared/ui';
+import { useRoomAgentDirectory } from '../model/agent-info-context';
 
 interface RoomHeaderProps {
   /** The room on screen, with its roster resolved. */
@@ -40,6 +41,11 @@ export function RoomHeader({ room, onOpenMembers }: RoomHeaderProps) {
   // The open room carries its whole roster, so a DM's mark here comes from the
   // same place the sidebar's does — the members, not a hash of the room id.
   const participants = useMemo(() => room.members.map((member) => member.author), [room.members]);
+  // The masthead is a widget, so it can do the one thing `MemberList` cannot:
+  // ask the fleet what each agent actually looks like. Without this the roster
+  // stack falls to the author row's cache, which almost no agent fills — and
+  // the same agent wearing its face in the sidebar wore a letter up here.
+  const agents = useRoomAgentDirectory();
   const working = useOpenRoomWorking(room.id);
   const halt = useHaltRoom();
 
@@ -112,6 +118,7 @@ export function RoomHeader({ room, onOpenMembers }: RoomHeaderProps) {
       <MemberList
         members={room.members}
         onClick={onOpenMembers}
+        facesByRef={agents.faces}
         // Says what pressing it does, then what it is about. "5 members" alone
         // would name the thing and never the action.
         label={`Members of ${roomDisplayTitle(room)}`}

@@ -3,7 +3,12 @@ import { useMemo } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { agentAuthorRef, type RoomEntry } from '@dorkos/shared/room-schemas';
 import { MentionPill, IdentityHoverCard } from '@/layers/shared/ui';
-import { AgentInfoProvider, RoomEntryRow, type RosterAgentInfo } from '@/layers/widgets/room-view';
+import {
+  AgentInfoProvider,
+  RoomEntryRow,
+  type RoomAgentDirectory,
+  type RosterAgentInfo,
+} from '@/layers/widgets/room-view';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
 import { ShowcaseDemo } from '../ShowcaseDemo';
@@ -73,8 +78,26 @@ const WARDEN_REF = agentAuthorRef(WARDEN_PATH);
  * room itself does not hold for an agent.
  */
 const BENCH_AGENT_INFO: ReadonlyMap<string, RosterAgentInfo> = new Map([
-  [WARDEN_REF, { manifestId: 'agent-warden-manifest', runtime: 'Claude Code', model: 'opus' }],
+  [
+    WARDEN_REF,
+    {
+      manifestId: 'agent-warden-manifest',
+      // The face the real join would have resolved off Warden's manifest.
+      visual: { color: '#6d5ae0', emoji: '🛡️' },
+      runtime: 'Claude Code',
+      model: 'opus',
+    },
+  ],
 ]);
+
+/**
+ * The same answer in the shape the room's own provider hands down: how each
+ * agent runs, and the face every disc and pill in the subtree draws it with.
+ */
+const BENCH_DIRECTORY: RoomAgentDirectory = {
+  info: BENCH_AGENT_INFO,
+  faces: new Map([...BENCH_AGENT_INFO].map(([ref, agent]) => [ref, agent.visual])),
+};
 
 const BENCH_TEXT = 'can you take a look at the failing build, @warden?';
 
@@ -144,7 +167,8 @@ const BENCH_AUTHORS = new Map([
  * so it can look right while the join is broken — which is exactly what shipped
  * before DOR-954.
  *
- * `AgentInfoProvider` stands in for the room's own `RoomAgentInfoProvider`: the
+ * `AgentInfoProvider` is fed by hand here; the routed app feeds it
+ * `useRoomAgentDirectory`. The
  * pill reads the runtime from CONTEXT (Streamdown's top-level memo comparator
  * does not include `components`, so a prop cannot reach an already-drawn pill),
  * and without a provider above it the bench could only ever show a bare card.
@@ -167,7 +191,7 @@ function MentionInAMessageSection() {
       </ShowcaseLabel>
       <ShowcaseDemo>
         <QueryClientProvider client={client}>
-          <AgentInfoProvider known={BENCH_AGENT_INFO}>
+          <AgentInfoProvider known={BENCH_DIRECTORY}>
             <RoomEntryRow
               roomId="bench-room"
               entry={BENCH_ENTRY}

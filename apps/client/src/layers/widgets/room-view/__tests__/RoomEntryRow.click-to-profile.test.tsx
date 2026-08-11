@@ -29,7 +29,7 @@ import {
 import { TooltipProvider } from '@/layers/shared/ui';
 import type { RosterAgentInfo } from '../lib/agent-details';
 import type { RosterAuthor } from '../lib/room-timeline';
-import { AgentInfoProvider } from '../model/agent-info-context';
+import { AgentInfoProvider, type RoomAgentDirectory } from '../model/agent-info-context';
 import { RoomEntryRow } from '../ui/RoomEntryRow';
 
 beforeAll(() => {
@@ -92,12 +92,26 @@ const AUTHORS = new Map<string, RosterAuthor>([
 ]);
 
 /** The fleet, as the room's own provider would have resolved it. */
-const FLEET: ReadonlyMap<string, RosterAgentInfo> = new Map([
-  [WARDEN_REF, { manifestId: WARDEN_MANIFEST_ID, runtime: 'Claude Code', model: 'opus' }],
+const FLEET_INFO: ReadonlyMap<string, RosterAgentInfo> = new Map([
+  [
+    WARDEN_REF,
+    {
+      manifestId: WARDEN_MANIFEST_ID,
+      visual: { color: '#6d5ae0', emoji: '🛡️' },
+      runtime: 'Claude Code',
+      model: 'opus',
+    },
+  ],
 ]);
 
+/** The same answer in the shape the provider takes: how each agent runs, and its face. */
+const FLEET: RoomAgentDirectory = {
+  info: FLEET_INFO,
+  faces: new Map([...FLEET_INFO].map(([ref, agent]) => [ref, agent.visual])),
+};
+
 /** A fleet that answered nothing — an unreachable mesh, or a manifest that would not read. */
-const NO_FLEET: ReadonlyMap<string, RosterAgentInfo> = new Map();
+const NO_FLEET: RoomAgentDirectory = { info: new Map(), faces: new Map() };
 
 function entry(text: string, mentionSpans: MentionSpan[]): RoomEntry {
   return {
@@ -126,11 +140,7 @@ function spanFor(text: string, needle: string, authorId: string): MentionSpan {
   return { offset, length: needle.length, authorId };
 }
 
-function renderMention(
-  text: string,
-  spans: MentionSpan[],
-  fleet: ReadonlyMap<string, RosterAgentInfo> = FLEET
-) {
+function renderMention(text: string, spans: MentionSpan[], fleet: RoomAgentDirectory = FLEET) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });

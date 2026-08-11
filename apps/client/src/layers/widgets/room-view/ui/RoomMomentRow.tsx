@@ -27,7 +27,7 @@ import type { RoomEntry } from '@/layers/entities/room';
 import { MessageAuthorAvatar } from '@/layers/features/chat';
 import { formatAbsoluteTime, formatTime } from '../lib/entry-time';
 import { toMessageAuthor, type RosterAuthor } from '../lib/room-timeline';
-import { useAgentInfo } from '../model/agent-info-context';
+import { useAgentInfo, useRoomAgentFaces } from '../model/agent-info-context';
 
 /** The one mark every moment carries — see `@dorkos/icons` for why there is only one. */
 const MomentMark = icons.moment;
@@ -94,7 +94,9 @@ export function RoomMomentRow({
   // resolve off the roster when it is about somebody else. One rule, so a
   // subject the roster has forgotten degrades exactly as a departed member's
   // old post does rather than disappearing.
-  const subject = subjectId === entry.authorId ? author : toMessageAuthor(subjectId, authors);
+  const faces = useRoomAgentFaces();
+  const subject =
+    subjectId === entry.authorId ? author : toMessageAuthor(subjectId, authors, faces);
   const subjectRef = authors.get(subjectId);
   // How that agent runs, when the room's provider could find out — the same
   // context every mention pill in this room reads.

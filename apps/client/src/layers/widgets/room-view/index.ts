@@ -51,11 +51,13 @@ export { RoomPendingRow } from './ui/RoomPendingRow';
  */
 export { RoomEntryAttachments } from './ui/RoomEntryAttachments';
 /**
- * Seeds "how each agent runs" for a subtree, exported for the Dev Playground's
- * identity bench — a mention pill's hover card reads it from context (see
+ * Seeds what a room knows about its agents — how each one runs, and the face
+ * each one wears — for a subtree, exported for the Dev Playground's identity
+ * bench. A mention pill's hover card reads it from context (see
  * `agent-info-context`), so a benched `RoomEntryRow` needs one above it or its
- * cards can only ever be shown bare. The routed app mounts
- * `RoomAgentInfoProvider` instead, which reads the real fleet.
+ * cards can only ever be shown bare. The routed app feeds it
+ * `useRoomAgentDirectory`, which reads the real fleet.
  */
 export { AgentInfoProvider } from './model/agent-info-context';
+export type { RoomAgentDirectory } from './model/agent-info-context';
 export type { RosterAgentInfo } from './lib/agent-details';

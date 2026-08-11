@@ -14,6 +14,11 @@
  */
 import { agentAuthorRef } from '@dorkos/shared/room-schemas';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
+import {
+  resolveAgentVisual,
+  type AgentVisual,
+  type IdentityFaceOverride,
+} from '@/layers/shared/lib';
 import { formatRuntimeIdentity } from '@/layers/entities/runtime';
 
 /**
@@ -37,6 +42,17 @@ export interface RosterAgentInfo {
    * the runtime label does.
    */
   manifestId: string;
+  /**
+   * The agent's face, resolved the way every other surface resolves it.
+   *
+   * `resolveAgentVisual` on the MANIFEST, so the emoji is hashed from the
+   * manifest id — the same id the sidebar, the team roster and the member sheet
+   * hash. That is the whole reason a room's faces have to come through here
+   * rather than off the roster: a room entry carries an AUTHOR id, a different
+   * ULID entirely, and hashing that would draw a confident face matching
+   * nothing else on screen.
+   */
+  visual: AgentVisual;
   /** Runtime display label, e.g. `'Claude Code'`. */
   runtime: string;
   /**
@@ -60,7 +76,8 @@ export interface RosterAgentInfo {
  * @param paths - The project directories of every registered agent, from mesh.
  * @param manifests - Manifests keyed by that same path, as `resolveAgents`
  *   returns them; a `null` value is a path that resolved to no agent.
- * @returns `agentRef` → how that agent runs, for every path that resolved.
+ * @returns `agentRef` → what this room knows about that agent, for every path
+ *   that resolved.
  */
 export function agentInfoByRef(
   paths: readonly string[],
@@ -75,9 +92,38 @@ export function agentInfoByRef(
     const identity = formatRuntimeIdentity({ runtime: manifest.runtime, model: manifest.model });
     byRef.set(agentAuthorRef(path), {
       manifestId: manifest.id,
+      // The manifest, never the path: `resolveAgentVisual({ id: path })` would
+      // hash a directory and land somewhere the sidebar never lands.
+      visual: resolveAgentVisual(manifest),
       runtime: identity.label,
       ...(identity.modelLabel !== null && { model: identity.modelLabel }),
     });
   }
   return byRef;
+}
+
+/**
+ * Just the faces, keyed the same way — what a disc needs and nothing else.
+ *
+ * A projection rather than a second join, so the face a mention pill's hover
+ * card reads and the face the masthead's roster draws cannot come from
+ * different passes over the fleet. The value is an {@link AgentVisual}, which
+ * IS an `IdentityFaceOverride` structurally: it carries a colour and an emoji
+ * an agent's own manifest answered for, which is exactly what outranks the
+ * render cache on an author row.
+ *
+ * Surfaces below the roster take this map rather than a single face because
+ * they resolve one author at a time and the join key is on the author, not on
+ * the row: `MemberList` walks five members, and the timeline walks a page of
+ * messages.
+ *
+ * @param info - What the room knows about its agents, from {@link agentInfoByRef}.
+ * @returns `agentRef` → that agent's face.
+ */
+export function agentFacesByRef(
+  info: ReadonlyMap<string, RosterAgentInfo>
+): Map<string, IdentityFaceOverride> {
+  const faces = new Map<string, IdentityFaceOverride>();
+  for (const [ref, agent] of info) faces.set(ref, agent.visual);
+  return faces;
 }
