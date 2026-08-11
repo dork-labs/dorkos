@@ -15,6 +15,8 @@ Accepted — 2026-06-11 (implemented by spec: chat-stream-reconnection; updated 
 
 (2026-08-06 audit) Amended by 260805-041016: the cockpit now rides WebSockets; SSE remains the public integration contract. The snapshot → gap-free replay → live contract is unchanged.
 
+(2026-08-11) Amended by 260811-184735: the 202 body described below as `202 { sessionId }` now also carries `messageId`, `outcome` and `queuePosition`, because an accepted message is no longer necessarily a started turn — a message arriving while a turn is open joins the session's durable queue. Trigger-only, the single delivery path, and everything about the projector, buffers, replay and epoch cursor are unchanged. `409 SESSION_LOCKED` is retired from `POST /:id/messages`; the turn-bound write lock described here survives as the internal dispatch mutex.
+
 ## Context
 
 Live token streaming was bound to the lifecycle of the `POST /api/sessions/:id/messages` request, so a hard refresh or second window mid-turn had nothing to reattach to. The only reconnection stream (`GET /:id/stream`) was gated behind an off-by-default toggle and carried only `sync_update`/pending re-emits — not the in-flight turn. There was no gap-free way to hydrate current state and continue streaming. This generalizes the DOR-73 / ADR-0262 pending-interaction recovery to all event classes.

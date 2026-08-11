@@ -76,12 +76,21 @@ returns `202 Accepted` immediately, and the actual response streams over the ses
 event stream, `GET /api/sessions/:id/events`. That stream carries text deltas, tool calls,
 approval requests, and task-progress updates in real time.
 
-### Session locking
+The `202` means the server has your message. If the session was already working, the message waits
+on the session's queue and runs when the current turn ends; the response says which happened, and
+`queuePosition` is 1 when nothing was ahead of it.
 
-DorkOS acquires an exclusive lock on a session using the requesting client's ID, sent via the
-`X-Client-Id` header. If a second client tries to write to the same session, it gets back a `409`
-conflict response naming the current lock holder. The lock releases when the turn finishes or
-errors, and auto-expires after 5 minutes as a backstop.
+### One turn at a time
+
+A session runs one turn at a time, and the server keeps a queue of what is waiting. Anything sent
+to a session that is already working joins that queue instead of being refused, whichever window or
+client sent it. The queue lives on the server, so every client sees the same one, any of them can
+reword or withdraw a message before it runs, and nothing is lost to a page refresh or a restart.
+
+The `X-Client-Id` header identifies a client across reconnects and labels the messages it queued.
+A write lock still guards a session so two turns cannot run on it at once, but it is internal now:
+it is bound to the turn, released when the turn finishes or errors, and expires after 5 minutes of
+inactivity as a backstop.
 
 ### Storage
 

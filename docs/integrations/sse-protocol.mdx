@@ -38,18 +38,32 @@ X-Client-Id: your-client-uuid
 { "content": "Hello, Claude", "cwd": "/path/to/project" }
 ```
 
-`X-Client-Id` is optional. Omit it and the server generates a UUID for you, but then it can't tell your own reconnects apart from a fresh client, so you lose precise write-lock ownership tracking across a page reload. Send a stable id if your integration reconnects.
+`X-Client-Id` is optional. Omit it and the server generates a UUID for you, but then it can't tell your own reconnects apart from a fresh client, so you lose track of which queued messages are yours across a page reload. Send a stable id if your integration reconnects.
 
-The endpoint is trigger-only. It validates the request, acquires the session write-lock, starts the turn server-side, and responds immediately:
+The endpoint is trigger-only, and it never waits: it validates the request, gives the message to the session, and responds straight away whether or not the turn can start yet.
 
 ```
 202 Accepted
-{ "sessionId": "canonical-session-id" }
+{
+  "sessionId": "canonical-session-id",
+  "messageId": "0d5e...",
+  "outcome": { "messageId": "0d5e...", "requested": "queue", "applied": "queue" },
+  "queuePosition": 1
+}
 ```
+
+**A `202` means the server has your message, not that a turn is running.** If the session was idle, the turn started. If a turn was already in flight, your message joined the session's queue and runs when that turn ends. `queuePosition` tells you which happened: `1` means nothing was ahead of it. If you previously treated the 202 as "the turn has begun" — starting a timer, or polling from that moment — take the real start from the `turn_start` event instead.
+
+`messageId` is the server's id for this message, and it is what the queue is keyed by. Keep it if you want to reword or withdraw the message before it runs. `outcome` reports what the server did with it: `requested` is what you asked for, `applied` is what happened, and a `degradedBecause` appears only when the two differ. Today every runtime handles a message the same way, so `applied` is always `queue`.
 
 For a brand-new session the returned `sessionId` is the canonical id assigned by the runtime during the turn: it may differ from the id you supplied. Use it for all subsequent requests. The turn's tokens are delivered solely on `GET /api/sessions/:id/events`; if you are not already subscribed, open the stream before (or right after) the POST.
 
-If another client holds the write lock, the server returns `409` with `{ code: "SESSION_LOCKED", lockedBy, lockedAt }`. See [Session Write Coordination](#session-write-coordination).
+<Callout type="warn">
+  **This endpoint no longer returns `409 SESSION_LOCKED`.** A session that was already working used
+  to refuse a second message; now it accepts it and queues it. Retry-on-409 logic against this route
+  is dead code, and the retry it stood in for is the server's job now. See [The Message
+  Queue](#the-message-queue).
+</Callout>
 
 ## Session Event Stream
 
@@ -61,13 +75,13 @@ GET /api/sessions/:id/events
 
 The stream has three phases:
 
-1. **Snapshot.** On a cold connect the server emits a single `snapshot` event carrying the completed message history (`messages`), the in-progress turn (`inProgressTurn`, or `null` when idle), the server-held `status`, any `pendingInteractions` awaiting your response, and a `cursor` (the highest event sequence number the snapshot reflects).
+1. **Snapshot.** On a cold connect the server emits a single `snapshot` event carrying the completed message history (`messages`), the in-progress turn (`inProgressTurn`, or `null` when idle), the server-held `status`, any `pendingInteractions` awaiting your response, the messages waiting to run (`queuedMessages`, empty when nothing is), and a `cursor` (the highest event sequence number the snapshot reflects). Those five fields are the whole of a session's live state: hydrate from them and you are exactly as correct as a client that has been connected all along.
 2. **Replay.** On reconnect, the browser (or your SSE client) echoes the last received `id:` back as `Last-Event-ID`. The server skips the snapshot and replays only the events you missed, gap-free. If the cursor can no longer be served (e.g., the server restarted), the stream falls back to a fresh snapshot: you never silently miss events.
 3. **Live.** Events stream as the turn produces them. Every event carries a per-session monotonic `seq`, and every SSE frame carries an `id:` line of the form `<sessionId>-<epoch>-<seq>` for resumption.
 
 ```
 event: snapshot
-data: {"messages":[...],"inProgressTurn":null,"status":{...},"pendingInteractions":[],"cursor":42}
+data: {"messages":[...],"inProgressTurn":null,"status":{...},"pendingInteractions":[],"queuedMessages":[],"cursor":42}
 
 id: abc123-1760000000000-43
 event: turn_start
@@ -204,7 +218,7 @@ Interactive events carry server-authoritative countdown fields, `startedAt` (ms 
     queue_update: {
       type: '{ queue: QueuedMessage[], outcome?: MessageDeliveryOutcome }',
       description:
-        "The session's message queue changed. Carries the whole queue every time, never a diff — a client that missed an update is corrected by the next one. `outcome` is present when the sender's own message caused this update.",
+        "The session's message queue changed. Carries the whole queue every time, never a diff — a client that missed an update is corrected by the next one. `outcome` is present when the sender's own message caused this update. See [The Message Queue](#the-message-queue).",
     },
   }}
 />
@@ -274,6 +288,70 @@ Content-Type: application/json
 
 </Tabs>
 
+## The Message Queue
+
+Every session has one queue, and the server holds it. A message sent while a turn is running lands there and runs when that turn ends; a message sent to an idle session runs immediately and never appears. The queue belongs to the session rather than to whoever filled it, so a message queued by the cockpit is visible to your integration, and one queued by your integration is visible in every open browser window. It survives a dropped connection, a reconnect, and a server restart.
+
+You learn the queue two ways, and they carry the same list:
+
+- **`queuedMessages` on the snapshot**, so a cold connect starts out knowing what is waiting.
+- **`queue_update` on the stream**, on every change: a message accepted, dispatched, reworded, moved, or removed, by any client.
+
+`queue_update` always carries the **whole** queue, head first, never a diff. Replace your copy with it rather than merging into one. That is deliberate: a client that missed an update is fully corrected by the next one, so there is no incremental state to get wrong. Like every other event it carries a `seq`, so apply it under the same watermark rule as the rest — an event at or below the highest `seq` you have already applied is a duplicate, and dropping it is correct.
+
+`outcome` is present when the update was caused by a message being accepted, and it is the same receipt the `202` returned. Use it to tell "my own send landed" from "someone else changed the queue".
+
+Every entry in `queue` and in `queuedMessages` is a `QueuedMessage`:
+
+<TypeTable
+  type={{
+    id: {
+      type: 'string',
+      description:
+        'Server-minted id for this message — the same id the 202 returned, and what the queue routes address it by.',
+    },
+    content: {
+      type: 'string',
+      description: "The sender's words, unchanged.",
+    },
+    disposition: {
+      type: "'queue' | 'steer' | 'stage'",
+      description:
+        'What the sender asked for, not what was applied. Read `outcome` for what happened.',
+    },
+    enqueuedAt: {
+      type: 'number',
+      description: 'When the server accepted it, in milliseconds since the epoch.',
+    },
+    enqueuedBy: {
+      type: 'string',
+      description:
+        'The `X-Client-Id` of whoever queued it. There so you can mark which entries are your own; it is not a permission — any client may edit any message on the queue.',
+    },
+  }}
+/>
+
+Three routes read and change it. Each answers with the queue as it now stands, so you do not need to wait for the stream to catch up:
+
+| Route                                       | Body                                                                  | Answers              |
+| ------------------------------------------- | --------------------------------------------------------------------- | -------------------- |
+| `GET /api/sessions/:id/queue`               | —                                                                     | `{ queue }`          |
+| `PATCH /api/sessions/:id/queue/:messageId`  | `{ content?, move? }` — `move` is `{ before: id }` or `{ after: id }` | `{ message, queue }` |
+| `DELETE /api/sessions/:id/queue/:messageId` | —                                                                     | `{ queue }`          |
+
+`GET` is redundant with the snapshot on purpose: opening a stream to read one small list is a poor trade for a script or a debugging session.
+
+A move names another message to land before or after, never an index. An index means something different to every client the moment anyone else edits the queue, and two clients editing one queue is exactly what this surface is for. A `PATCH` that names neither `content` nor `move` is refused as `400`; an id this queue does not hold — including a move anchored to one — is `404 QUEUED_MESSAGE_NOT_FOUND`.
+
+Removing a message removes its pending run with it, so a message you withdraw does not surface later.
+
+<Callout type="warn">
+  Two clients editing the same message race, and the last write wins. Both the `PATCH` response and
+  the `queue_update` event carry the whole queue, so the losing client is corrected rather than
+  merged — an edit in flight can be overwritten by someone else's. Render from the last queue you
+  received rather than from what you sent.
+</Callout>
+
 ## Global Events Stream
 
 For the session list, relay activity, tunnel status, and extension events, subscribe to the unified global stream:
@@ -321,7 +399,7 @@ connect until it moves again. Reconnecting is not what clears it.
 
 ## Session Write Coordination
 
-`POST /api/sessions/:id/messages` prevents concurrent writes via client IDs.
+Several clients may write to one session at the same time. Their messages do not collide, and none of them is turned away: the queue puts them in one order and every client watches that order change on the stream.
 
 <TypeTable
   type={{
@@ -332,9 +410,9 @@ connect until it moves again. Reconnecting is not what clears it.
   }}
 />
 
-- If another client holds the write lock, the server returns `409` with `{ error: "Session locked", code: "SESSION_LOCKED", lockedBy, lockedAt }`
-- The lock is bound to the turn: it is released when the turn completes or errors, not when the HTTP response ends
-- Locks auto-expire after 5 minutes as a backstop
+- `X-Client-Id` identifies you across reconnects and labels the messages you queued (`enqueuedBy`). It is not a claim on the session and it is never checked for permission.
+- A write lock still exists, and it is now entirely internal: it is what guarantees only one turn runs on a session at a time. It is bound to the turn rather than to the HTTP request, released when the turn completes or errors, and expires after 5 minutes of inactivity as a backstop against a turn that went dark.
+- Because the queue answers the "someone else is writing" case, the lock is no longer an answer any endpoint gives you. `409 SESSION_LOCKED` is gone from `POST /api/sessions/:id/messages`.
 
 ## Connection Lifecycle
 
@@ -343,14 +421,14 @@ connect until it moves again. Reconnecting is not what clears it.
 <Step>
 ### Open the session event stream
 
-Connect to `GET /api/sessions/:id/events`. Process the `snapshot` event to hydrate your UI: history, in-progress turn, status, and pending interactions.
+Connect to `GET /api/sessions/:id/events`. Process the `snapshot` event to hydrate your UI: history, in-progress turn, status, pending interactions, and queued messages.
 
 </Step>
 
 <Step>
 ### Trigger a turn
 
-Send `POST /api/sessions/:id/messages`. On `202`, record the returned canonical `sessionId`. The turn's events arrive on the stream you already hold.
+Send `POST /api/sessions/:id/messages`. On `202`, record the returned canonical `sessionId` and `messageId`, and read `queuePosition` to know whether the turn started now or the message is waiting. Either way its events arrive on the stream you already hold.
 
 </Step>
 

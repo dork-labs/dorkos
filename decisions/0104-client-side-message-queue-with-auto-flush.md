@@ -1,17 +1,19 @@
 ---
 number: 104
 title: Client-Side Message Queue with Auto-Flush
-status: accepted
+status: superseded
 created: 2026-03-10
 spec: chat-input-always-editable
-superseded-by: null
+superseded-by: 260811-184735
 ---
 
 # 0104. Client-Side Message Queue with Auto-Flush
 
 ## Status
 
-Accepted
+Superseded by ADR 260811-184735 (2026-08-11, spec `persistent-session-runtime` P2): the queue moved out of the browser and onto the server, where it is persisted, visible to every window, and editable from any of them.
+
+Replaced for durability and multi-window reach, not out of dissatisfaction. A client-only queue was the correct trade when this was written — it needed no server change and it shipped — and the shell-history editing model it introduced is the model the server-owned queue keeps. What ended it is that all four of its own Negative consequences are properties of living in a tab: ephemerality, no server awareness, a flush lifecycle only the client could see, and a client API that could not be reached from a second window.
 
 ## Context
 
