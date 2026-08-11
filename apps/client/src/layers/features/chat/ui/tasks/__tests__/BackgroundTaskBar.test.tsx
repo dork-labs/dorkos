@@ -22,7 +22,10 @@ vi.mock('motion/react', () => ({
   useReducedMotion: () => false,
 }));
 
-// Mock child components to isolate BackgroundTaskBar logic
+// Mock child components to isolate BackgroundTaskBar logic. The stub runner
+// only echoes the status it was handed, so nothing here can see what the runner
+// actually draws — that lives in AgentRunner.test.tsx, which drives the real
+// component and was what a mock like this hid for a whole release (DOR-1119).
 vi.mock('../AgentRunner', () => ({
   AgentRunner: ({ agent }: { agent: { taskId: string; description: string; status: string } }) => (
     <div data-testid={`agent-runner-${agent.taskId}`} data-status={agent.status}>
