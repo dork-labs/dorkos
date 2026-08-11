@@ -6,6 +6,7 @@ import { MentionPill, IdentityHoverCard } from '@/layers/shared/ui';
 import {
   AgentInfoProvider,
   RoomEntryRow,
+  agentFacesByRef,
   type RoomAgentDirectory,
   type RosterAgentInfo,
 } from '@/layers/widgets/room-view';
@@ -96,7 +97,7 @@ const BENCH_AGENT_INFO: ReadonlyMap<string, RosterAgentInfo> = new Map([
  */
 const BENCH_DIRECTORY: RoomAgentDirectory = {
   info: BENCH_AGENT_INFO,
-  faces: new Map([...BENCH_AGENT_INFO].map(([ref, agent]) => [ref, agent.visual])),
+  faces: agentFacesByRef(BENCH_AGENT_INFO),
 };
 
 const BENCH_TEXT = 'can you take a look at the failing build, @warden?';

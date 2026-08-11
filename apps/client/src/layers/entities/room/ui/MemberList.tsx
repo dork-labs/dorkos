@@ -72,12 +72,13 @@ export interface MemberListProps {
  * **This component still cannot reach the fleet, and that has not changed —
  * what changed is that it no longer has to.** It is an entity and may not
  * import `entities/agent`, so it is handed the faces rather than going looking,
- * exactly as `roomIdentityMark` is handed manifests. That closes the last
- * divergence in a room: the same agent now draws one emoji and one colour in
- * the masthead stack, in the member sheet, in the message gutter and in the
- * sidebar. An agent the fleet could not resolve keeps the honest letter instead
- * of an invented face — see `resolveIdentityFace` for why the ladder's last
- * rung stops where it does.
+ * exactly as `roomIdentityMark` is handed manifests. With the room's masthead
+ * supplying them, one agent now draws one emoji and one colour across every
+ * disc a room has: this stack, the room's own mark for a direct message, the
+ * member sheet's rows, each message's disc in the gutter, and the hover card a
+ * mention opens — the same face the sidebar and `/team` draw. An agent the
+ * fleet could not resolve keeps the honest letter instead of an invented face —
+ * see `resolveIdentityFace` for why the ladder's last rung stops where it does.
  *
  * **Two shapes, chosen by whether it is pressable.** Read-only it is a labelled
  * list, each disc a tooltip trigger. Given an `onClick` it is a single button —

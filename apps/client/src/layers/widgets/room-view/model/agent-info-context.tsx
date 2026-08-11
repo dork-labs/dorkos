@@ -5,7 +5,7 @@
  * @module widgets/room-view/model/agent-info-context
  */
 import { createContext, useContext, useMemo, type ReactNode } from 'react';
-import type { IdentityFaceOverride } from '@/layers/shared/lib';
+import type { AgentVisual } from '@/layers/shared/lib';
 import { useResolvedAgents } from '@/layers/entities/agent';
 import { useMeshAgentPaths } from '@/layers/entities/mesh';
 import { agentFacesByRef, agentInfoByRef, type RosterAgentInfo } from '../lib/agent-details';
@@ -21,7 +21,7 @@ export interface RoomAgentDirectory {
    * Each agent's face, keyed by `agentRef` — the override a disc takes over
    * whatever the author row cached.
    */
-  faces: ReadonlyMap<string, IdentityFaceOverride>;
+  faces: ReadonlyMap<string, AgentVisual>;
 }
 
 /** One shared empty answer, so a room with no provider above it costs nothing. */
@@ -65,9 +65,10 @@ export function AgentInfoProvider({
  * Read the fleet once for a whole room: how its agents run, and what they look
  * like.
  *
- * **Both halves come from one pass**, so the face on a room's masthead, the one
- * in its message gutter and the one on a mention's hover card cannot be
- * resolved differently — that divergence is what DOR-1002 closes, and one
+ * **Both halves come from one pass**, so the four faces a room draws for one
+ * agent — its roster stack, the room's own mark for a direct message, every
+ * message's disc in the gutter, and the hover card a mention opens — cannot be
+ * resolved differently. That divergence is what DOR-1002 closes, and one
  * derivation is what keeps it closed.
  *
  * **One query pair per surface, never one per row.** Both reads are the shared
@@ -124,6 +125,6 @@ export function useAgentInfo(agentRef: string | undefined): RosterAgentInfo | un
  * read; both mean the same thing to a caller — leave the lower rungs of the
  * ladder to answer — which is why they are one answer rather than two.
  */
-export function useRoomAgentFaces(): ReadonlyMap<string, IdentityFaceOverride> {
+export function useRoomAgentFaces(): ReadonlyMap<string, AgentVisual> {
   return useContext(AgentInfoContext).faces;
 }

@@ -27,7 +27,7 @@ import {
   type ProfileDeepLinkHarness,
 } from '@/test-helpers/profile-deep-link';
 import { TooltipProvider } from '@/layers/shared/ui';
-import type { RosterAgentInfo } from '../lib/agent-details';
+import { agentFacesByRef, type RosterAgentInfo } from '../lib/agent-details';
 import type { RosterAuthor } from '../lib/room-timeline';
 import { AgentInfoProvider, type RoomAgentDirectory } from '../model/agent-info-context';
 import { RoomEntryRow } from '../ui/RoomEntryRow';
@@ -107,7 +107,7 @@ const FLEET_INFO: ReadonlyMap<string, RosterAgentInfo> = new Map([
 /** The same answer in the shape the provider takes: how each agent runs, and its face. */
 const FLEET: RoomAgentDirectory = {
   info: FLEET_INFO,
-  faces: new Map([...FLEET_INFO].map(([ref, agent]) => [ref, agent.visual])),
+  faces: agentFacesByRef(FLEET_INFO),
 };
 
 /** A fleet that answered nothing — an unreachable mesh, or a manifest that would not read. */

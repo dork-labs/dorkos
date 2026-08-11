@@ -61,3 +61,12 @@ export { RoomEntryAttachments } from './ui/RoomEntryAttachments';
 export { AgentInfoProvider } from './model/agent-info-context';
 export type { RoomAgentDirectory } from './model/agent-info-context';
 export type { RosterAgentInfo } from './lib/agent-details';
+/**
+ * The faces half of a {@link RoomAgentDirectory}, projected from its info half.
+ *
+ * Exported so a caller seeding the provider builds the two halves the way the
+ * real hook does rather than rebuilding the map by hand — a hand-rolled one can
+ * key faces differently from the info beside it, which is precisely the
+ * divergence this directory exists to prevent.
+ */
+export { agentFacesByRef } from './lib/agent-details';

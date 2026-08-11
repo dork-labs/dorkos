@@ -7,6 +7,7 @@ import {
   RoomAvatar,
   RoomTitle,
   roomDisplayTitle,
+  rosterAgentFaces,
   useHaltRoom,
   useOpenRoomWorking,
 } from '@/layers/entities/room';
@@ -38,20 +39,30 @@ interface RoomHeaderProps {
  * seconds after opening a room mid-turn, before the stream republishes.
  */
 export function RoomHeader({ room, onOpenMembers }: RoomHeaderProps) {
-  // The open room carries its whole roster, so a DM's mark here comes from the
-  // same place the sidebar's does — the members, not a hash of the room id.
+  // The open room carries its whole roster, so a DM's mark here is drawn from
+  // the members rather than from a hash of the room id — the fallback the mark
+  // lands on when the fleet cannot name anybody in the room.
   const participants = useMemo(() => room.members.map((member) => member.author), [room.members]);
-  // The masthead is a widget, so it can do the one thing `MemberList` cannot:
-  // ask the fleet what each agent actually looks like. Without this the roster
-  // stack falls to the author row's cache, which almost no agent fills — and
-  // the same agent wearing its face in the sidebar wore a letter up here.
+  // The masthead is a widget, so it can do the one thing `MemberList` and
+  // `RoomAvatar` cannot: ask the fleet what each agent actually looks like.
+  // Without this both fall to the author row's render cache, which almost no
+  // agent fills — and the same agent wearing its face in the sidebar wore a
+  // letter up here, twice over.
   const agents = useRoomAgentDirectory();
+  // The room mark and the roster stack take the SAME faces, so a DM cannot show
+  // an agent's emoji in one and a hashed letter in the other 200px away. The
+  // projection lives in the room entity beside `roomIdentityMark`, which is the
+  // sidebar's entry point into the same join.
+  const markFaces = useMemo(
+    () => rosterAgentFaces(room.members, agents.faces),
+    [room.members, agents.faces]
+  );
   const working = useOpenRoomWorking(room.id);
   const halt = useHaltRoom();
 
   return (
     <header className="flex items-center gap-3 border-b px-4 py-3">
-      <RoomAvatar room={room} participants={participants} size="sm" />
+      <RoomAvatar room={room} participants={participants} visuals={markFaces} size="sm" />
       <div className="flex min-w-0 flex-1 flex-col">
         <h1 className="flex items-center gap-2 text-sm font-medium">
           <RoomTitle room={room} />

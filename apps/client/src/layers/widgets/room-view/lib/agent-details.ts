@@ -14,11 +14,7 @@
  */
 import { agentAuthorRef } from '@dorkos/shared/room-schemas';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
-import {
-  resolveAgentVisual,
-  type AgentVisual,
-  type IdentityFaceOverride,
-} from '@/layers/shared/lib';
+import { resolveAgentVisual, type AgentVisual } from '@/layers/shared/lib';
 import { formatRuntimeIdentity } from '@/layers/entities/runtime';
 
 /**
@@ -107,10 +103,15 @@ export function agentInfoByRef(
  *
  * A projection rather than a second join, so the face a mention pill's hover
  * card reads and the face the masthead's roster draws cannot come from
- * different passes over the fleet. The value is an {@link AgentVisual}, which
- * IS an `IdentityFaceOverride` structurally: it carries a colour and an emoji
- * an agent's own manifest answered for, which is exactly what outranks the
- * render cache on an author row.
+ * different passes over the fleet.
+ *
+ * **The value stays an {@link AgentVisual} rather than widening to
+ * `IdentityFaceOverride` here.** An `AgentVisual` IS one structurally — a colour
+ * and an emoji the agent's own manifest answered for, exactly what outranks an
+ * author row's render cache — so every override slot still takes this map. But
+ * `RoomAvatar` asks for `AgentVisual` specifically, and widening at the source
+ * would leave the room's own DM mark unable to use the very faces resolved for
+ * it. Narrow at the source, widen at the slot.
  *
  * Surfaces below the roster take this map rather than a single face because
  * they resolve one author at a time and the join key is on the author, not on
@@ -122,8 +123,8 @@ export function agentInfoByRef(
  */
 export function agentFacesByRef(
   info: ReadonlyMap<string, RosterAgentInfo>
-): Map<string, IdentityFaceOverride> {
-  const faces = new Map<string, IdentityFaceOverride>();
+): Map<string, AgentVisual> {
+  const faces = new Map<string, AgentVisual>();
   for (const [ref, agent] of info) faces.set(ref, agent.visual);
   return faces;
 }
