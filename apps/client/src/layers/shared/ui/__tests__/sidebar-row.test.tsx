@@ -2,6 +2,7 @@
  * @vitest-environment jsdom
  */
 import { describe, it, expect, vi, beforeAll, afterEach } from 'vitest';
+import type { ReactNode } from 'react';
 import { render, screen, cleanup, fireEvent } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { readFileSync } from 'node:fs';
@@ -14,6 +15,11 @@ import {
   ROW_TRAILING_CLASS,
   ROW_WHO_CLASS,
 } from '@/layers/shared/lib/row-grammar';
+import {
+  SIDEBAR_ACTIONS_ATTRIBUTE,
+  SIDEBAR_ROW_ATTRIBUTE,
+  SIDEBAR_TRAILING_ACTION_ATTRIBUTE,
+} from '@/layers/shared/model/use-roving-focus';
 
 beforeAll(() => {
   global.ResizeObserver = class ResizeObserver {
@@ -202,6 +208,210 @@ describe('SidebarRow — state and chrome', () => {
     render(<SidebarRow title="#general" onSelect={onSelect} />);
     fireEvent.click(row());
     expect(onSelect).toHaveBeenCalledOnce();
+  });
+});
+
+describe('SidebarRow — the trailing action slot (DOR-1111)', () => {
+  /** A menu with one item, so the row really has a context menu to open. */
+  const MENU = {
+    menuNodes: [{ kind: 'action' as const, id: 'pin', label: 'Pin', icon: Pin, run: vi.fn() }],
+    actionsLabel: 'Scout actions',
+  };
+
+  /** Drag bindings shaped like dnd-kit's, carrying a transform we can look for. */
+  const DRAGGED = {
+    setNodeRef: () => {},
+    handleProps: {},
+    style: { transform: 'translate3d(0px, 60px, 0px)' },
+    isDragging: true,
+    isOver: false,
+  };
+
+  /** The trailing action as the row renders it. */
+  function action(): HTMLElement {
+    return screen.getByRole('button', { name: '3 live sessions' });
+  }
+
+  function renderRow(extra: Record<string, unknown> = {}) {
+    return render(
+      <SidebarRow
+        title="a very long agent name that has to truncate"
+        trailingAction={{
+          content: <span>3 live</span>,
+          onClick: vi.fn(),
+          label: '3 live sessions',
+        }}
+        {...MENU}
+        {...extra}
+      />
+    );
+  }
+
+  it('renders the control as a SIBLING of the row, never a button inside it', () => {
+    // Queried from the rendered DOM rather than reasoned about from the JSX: a
+    // `<button>` inside a `<button>` is invalid HTML that assistive tech
+    // announces unpredictably, and it is what the trailing slot itself would
+    // produce, since that slot renders inside the row's own button.
+    const { container } = renderRow();
+    expect(container.querySelector('button button')).toBeNull();
+    expect(action().closest(`[${SIDEBAR_ROW_ATTRIBUTE}]`)).toBeNull();
+  });
+
+  it('rides the drag transform with the row', () => {
+    // The defect this slot replaces: mounted on `expansion`, the satellite was
+    // a sibling of the drag wrapper, so it was positioned against the list item
+    // and stayed put while the row moved 60px down under it — floating at full
+    // opacity over whichever row took the slot. Asserted as containment,
+    // because jsdom computes no layout; the browser spec measures the pixels.
+    const { container } = renderRow({ drag: DRAGGED });
+    const dragged = container.querySelector<HTMLElement>('[style*="translate3d"]');
+    expect(dragged).not.toBeNull();
+    expect(dragged?.contains(action())).toBe(true);
+  });
+
+  it('comes before the ⋮ in tab order', () => {
+    // Both are satellites the roving-focus hook stamps `-1`, so "tab order"
+    // here is DOM order — which is what decides the sequence a reader walks
+    // and where a screen reader announces the control relative to the menu.
+    const { container } = renderRow();
+    const kebab = container.querySelector<HTMLElement>(`[${SIDEBAR_ACTIONS_ATTRIBUTE}]`);
+    expect(kebab).not.toBeNull();
+    expect(
+      action().compareDocumentPosition(kebab!) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
+  });
+
+  it('sits inside the row’s own menu surface, so right-clicking it opens the row’s menu', async () => {
+    // Outside the surface — which is where the `expansion` escape hatch put it
+    // — a right-click on the control opened no menu at all, and the operator
+    // got the browser's instead.
+    renderRow();
+    fireEvent.contextMenu(action());
+    expect(await screen.findByRole('menuitem', { name: 'Pin' })).toBeInTheDocument();
+  });
+
+  it('holds the control’s own width open in the trailing slot', () => {
+    // The reservation is what makes a long title ellipsize BEFORE the control
+    // rather than sliding under it, and the row owns it so no call site can get
+    // the two out of alignment. Invisible, not hidden: it still takes up the
+    // line. And `aria-hidden`, so the control is not announced twice.
+    const { container } = renderRow();
+    const reservation = container.querySelector<HTMLElement>(
+      `[${SIDEBAR_ROW_ATTRIBUTE}] .invisible`
+    );
+    expect(reservation?.textContent).toBe('3 live');
+    expect(reservation).toHaveAttribute('aria-hidden');
+    expect(screen.getAllByText('3 live')).toHaveLength(2);
+  });
+
+  it('does not let the control also fire the row', () => {
+    const onTrailing = vi.fn();
+    const onSelect = vi.fn();
+    render(
+      <SidebarRow
+        title="Scout"
+        onSelect={onSelect}
+        trailingAction={{ content: <span>3 live</span>, onClick: onTrailing, label: '3 live' }}
+      />
+    );
+    fireEvent.click(screen.getByRole('button', { name: '3 live' }));
+    expect(onTrailing).toHaveBeenCalledOnce();
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  it('withdraws the control while an inline editor is up', () => {
+    // Same rule the glyph control follows: the row it belongs to is gone, so a
+    // control parked over where the row used to be has nothing to act on.
+    renderRow({ editor: <input aria-label="Rename Scout" /> });
+    expect(screen.queryByRole('button', { name: '3 live sessions' })).not.toBeInTheDocument();
+  });
+
+  it('marks the control so the roving-focus hook can reach it', () => {
+    const { container } = renderRow();
+    expect(container.querySelector(`[${SIDEBAR_TRAILING_ACTION_ATTRIBUTE}]`)).toBe(action());
+  });
+
+  it('names the reservation, so a caller’s spec can tell the two copies apart', () => {
+    // Without a mark of its own, `getByText('3 live')` resolves twice and every
+    // consumer spec throws a strict-mode violation on a row that is working
+    // perfectly.
+    const { container } = renderRow();
+    const reservation = container.querySelector<HTMLElement>(
+      '[data-slot="sidebar-row-trailing-reservation"]'
+    );
+    expect(reservation?.textContent).toBe('3 live');
+    expect(reservation?.contains(action())).toBe(false);
+  });
+});
+
+describe('SidebarRow — the reservation refuses interactive content (DOR-1111)', () => {
+  /**
+   * The rule the slot cannot express in its types.
+   *
+   * `content` is drawn twice, and the invisible copy sits INSIDE the row's own
+   * `<button>`. So a caller whose chip is a link, or is wrapped in a tooltip
+   * trigger, ships a button nested in a button on every row at once — the exact
+   * defect `trailingAction` exists to prevent, arriving through the one door the
+   * slot leaves open.
+   *
+   * The structural test above cannot see this: it renders its own fixture
+   * content, so `querySelector('button button')` only ever reports on what the
+   * TEST passed. This asks the question a caller can actually get wrong.
+   */
+  /**
+   * Render a row with the given trailing content and hand back what the GUARD
+   * said, and what the DOM ended up looking like.
+   *
+   * Filtered to this component's own messages, and restored in a `finally`.
+   * React 19 emits its own nested-`<button>` warning down the same channel, so
+   * counting every `console.error` would both mistake React's complaint for the
+   * guard's and, on a failing assertion, leave the spy installed to poison the
+   * next test.
+   */
+  function renderContent(content: ReactNode): { complaints: string[]; nested: boolean } {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const { container } = render(
+        <SidebarRow
+          title="Scout"
+          trailingAction={{ content, onClick: vi.fn(), label: '3 live sessions' }}
+        />
+      );
+      return {
+        complaints: spy.mock.calls
+          .map((call) => String(call[0]))
+          .filter((message) => message.startsWith('SidebarRow:')),
+        nested: container.querySelector('button button') !== null,
+      };
+    } finally {
+      spy.mockRestore();
+    }
+  }
+
+  it('shouts, and names the row, when a caller’s content brings its own button', () => {
+    const { complaints, nested } = renderContent(<button type="button">3 live</button>);
+    // The defect really is in the DOM — this is what the guard is for.
+    expect(nested).toBe(true);
+    expect(complaints).toHaveLength(1);
+    expect(complaints[0]).toContain('3 live sessions');
+  });
+
+  it('catches a link too, which React’s own warning does not', () => {
+    // "Interactive" is every focusable, not the one tag that prompted the rule.
+    // React only polices a handful of nesting pairs and `<a>` inside `<button>`
+    // is not one of them, so without this guard an anchored chip would ship a
+    // focusable inside the row button with nothing said at all.
+    const { complaints } = renderContent(<a href="/team">3 live</a>);
+    expect(complaints).toHaveLength(1);
+    expect(complaints[0]).toContain('<a>');
+  });
+
+  it('says nothing about content that is only ever drawn', () => {
+    // The other half of a check that discriminates: a guard that fires on
+    // everything is a guard nobody reads.
+    const { complaints, nested } = renderContent(<span>3 live</span>);
+    expect(complaints).toEqual([]);
+    expect(nested).toBe(false);
   });
 });
 

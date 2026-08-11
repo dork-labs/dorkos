@@ -12,8 +12,9 @@
  * is exactly how the first version of this hook shipped a 60-agent Library at
  * 61 stops rather than 1. The set is therefore "every focusable in the
  * container", and the traversal is two-dimensional: `ArrowDown`/`ArrowUp` walk
- * the header and rows, `ArrowRight` steps sideways onto a row's "⋮", and
- * `ArrowLeft` steps back.
+ * the header and rows, and `ArrowLeft`/`ArrowRight` walk a row's own LANE — its
+ * glyph control, the row, a control in its right gutter, its "⋮" — so every
+ * control a pointer would reveal has a keyboard path to it.
  *
  * **Managed through the DOM rather than through per-row props.** The sidebar's
  * rows are rendered by half a dozen section components and a shared
@@ -38,6 +39,9 @@ export const SIDEBAR_ACTIONS_ATTRIBUTE = 'data-sidebar-actions';
 /** The mark an interactive glyph carries — the other satellite, on the row's other side. */
 export const SIDEBAR_GLYPH_ACTION_ATTRIBUTE = 'data-sidebar-glyph-action';
 
+/** The mark a control in the row's right gutter carries, between the row and its "⋮". */
+export const SIDEBAR_TRAILING_ACTION_ATTRIBUTE = 'data-sidebar-trailing-action';
+
 /**
  * Everything in a section that a browser would otherwise put in the tab order.
  *
@@ -50,6 +54,7 @@ const FOCUSABLE = [
   `[${SIDEBAR_ROW_ATTRIBUTE}]`,
   `[${SIDEBAR_ACTIONS_ATTRIBUTE}]`,
   `[${SIDEBAR_GLYPH_ACTION_ATTRIBUTE}]`,
+  `[${SIDEBAR_TRAILING_ACTION_ATTRIBUTE}]`,
   'a[href]',
   'button',
   'input',
@@ -57,6 +62,28 @@ const FOCUSABLE = [
   'textarea',
   '[tabindex]',
 ].join(',');
+
+/**
+ * A stop's satellites, in the order they sit on screen, with `null` marking
+ * where the stop itself falls between them.
+ *
+ * Left to right: the glyph control, the row, the trailing control, the "⋮".
+ * Spelling the lane out as a list is what lets one `±1` step serve every
+ * sideways move — the version before this hard-coded "ArrowRight means the ⋮",
+ * which had no room for a third satellite and left any control in the right
+ * gutter reachable by pointer only.
+ */
+const LANE = [
+  SIDEBAR_GLYPH_ACTION_ATTRIBUTE,
+  null,
+  SIDEBAR_TRAILING_ACTION_ATTRIBUTE,
+  SIDEBAR_ACTIONS_ATTRIBUTE,
+] as const;
+
+/** Anything in a lane that is not the stop at its centre. */
+const SATELLITE_SELECTOR = LANE.filter((mark) => mark !== null)
+  .map((mark) => `[${mark}]`)
+  .join(',');
 
 /** Props to spread onto the element wrapping one section's header and rows. */
 export interface RovingFocusProps {
@@ -86,13 +113,41 @@ function stopsIn(container: HTMLElement): HTMLElement[] {
   );
 }
 
-/** One of a stop's satellites — its "⋮" on the right, its glyph control on the left. */
+/**
+ * One of a stop's satellites, found among its own siblings.
+ *
+ * **The stop's PARENT, and nothing wider.** `SidebarMenuSurface` is the parent
+ * of both a row and every satellite it owns, so one lookup finds them all. This
+ * used to fall back to searching the whole `[data-slot="sidebar-menu-item"]`,
+ * which was already unreachable — no surface puts a satellite outside its own
+ * root — and would have started claiming the wrong element the day an expansion
+ * panel held a row with satellites of its own. A stop can only own what sits
+ * beside it.
+ *
+ * @param stop - The row or header the satellite belongs to.
+ * @param mark - The attribute that identifies which satellite to find.
+ */
 function satelliteFor(stop: HTMLElement, mark: string): HTMLElement | null {
-  return (
-    stop.parentElement?.querySelector<HTMLElement>(`[${mark}]`) ??
-    stop.closest('[data-slot="sidebar-menu-item"]')?.querySelector<HTMLElement>(`[${mark}]`) ??
-    null
+  return stop.parentElement?.querySelector<HTMLElement>(`[${mark}]`) ?? null;
+}
+
+/**
+ * A stop and its satellites as one left-to-right lane, skipping the ones this
+ * particular row does not have.
+ *
+ * @param stop - The row or header the lane belongs to.
+ */
+function laneFor(stop: HTMLElement): HTMLElement[] {
+  return LANE.map((mark) => (mark === null ? stop : satelliteFor(stop, mark))).filter(
+    (element): element is HTMLElement => element !== null
   );
+}
+
+/** Which way a sideways key moves along a lane, or `0` for a key that does not. */
+function laneStep(key: string): number {
+  if (key === 'ArrowLeft') return -1;
+  if (key === 'ArrowRight') return 1;
+  return 0;
 }
 
 /**
@@ -103,7 +158,8 @@ function satelliteFor(stop: HTMLElement, mark: string): HTMLElement | null {
  * the ends are the ends, and `Tab` is how you leave), `Home` / `End` jump to
  * them. `ArrowLeft` / `ArrowRight` on the header collapse or expand it, which
  * is the Tree pattern's own contract and the reason a keyboard reader never has
- * to hunt for a chevron; on a row they step onto and off its "⋮".
+ * to hunt for a chevron; on a row they walk its lane — out through any control
+ * in the right gutter to the "⋮", and back through the row to its glyph.
  *
  * Spread the returned props onto the element that contains the section's header
  * AND its list — the header's two keys are dead if it sits outside.
@@ -176,10 +232,17 @@ export function useRovingFocus(options?: {
     [sync]
   );
 
-  /** Park the stop on `next` and move focus there. */
+  /**
+   * Park the Tab stop on `park` and put focus on `next`.
+   *
+   * The two are the same element for a move within the list. They differ when
+   * focus steps out along a row's lane: the stop stays on the ROW, because a
+   * satellite is a visit — Tabbing away and back should return the reader to
+   * the list rather than to a control they were only passing through.
+   */
   const moveTo = useCallback(
-    (container: HTMLElement, next: HTMLElement) => {
-      parkedRef.current = next;
+    (park: HTMLElement, next: HTMLElement) => {
+      parkedRef.current = park;
       sync();
       next.focus();
     },
@@ -196,25 +259,25 @@ export function useRovingFocus(options?: {
       const stops = stopsIn(container);
       if (stops.length === 0) return;
 
-      // ── Sideways: a row and its two satellites ──
-      // A satellite hands the keyboard straight back to its row, whichever side
-      // it sits on — a reader who stepped out to a control steps back in.
-      const satellite = target.closest<HTMLElement>(
-        `[${SIDEBAR_ACTIONS_ATTRIBUTE}],[${SIDEBAR_GLYPH_ACTION_ATTRIBUTE}]`
-      );
+      /** Step one place along `owner`'s lane from `from`, if there is one to step to. */
+      const stepAlongLane = (owner: HTMLElement, from: HTMLElement, step: number): boolean => {
+        const lane = laneFor(owner);
+        const next = lane[lane.indexOf(from) + step];
+        if (next === undefined) return false;
+        moveTo(owner, next);
+        return true;
+      };
+
+      // ── Sideways: a row and its satellites ──
+      // A satellite steps back towards its row, and past it to the control on
+      // the far side — a reader who stepped out to one steps back in.
+      const satellite = target.closest<HTMLElement>(SATELLITE_SELECTOR);
       if (satellite) {
-        const onKebab = satellite.hasAttribute(SIDEBAR_ACTIONS_ATTRIBUTE);
-        if (event.key !== (onKebab ? 'ArrowLeft' : 'ArrowRight')) return;
-        const owner = stops.find(
-          (stop) =>
-            satelliteFor(
-              stop,
-              onKebab ? SIDEBAR_ACTIONS_ATTRIBUTE : SIDEBAR_GLYPH_ACTION_ATTRIBUTE
-            ) === satellite
-        );
+        const step = laneStep(event.key);
+        if (step === 0) return;
+        const owner = stops.find((stop) => laneFor(stop).includes(satellite));
         if (!owner) return;
-        event.preventDefault();
-        moveTo(container, owner);
+        if (stepAlongLane(owner, satellite, step)) event.preventDefault();
         return;
       }
 
@@ -239,21 +302,10 @@ export function useRovingFocus(options?: {
           return;
         }
         // On a row, the arrows step onto its satellites — the keyboard path to
-        // controls otherwise revealed by a pointer it does not have: the glyph
-        // (a face that opens a profile) to the left, the "⋮" to the right.
-        const own = satelliteFor(
-          stop,
-          event.key === 'ArrowRight' ? SIDEBAR_ACTIONS_ATTRIBUTE : SIDEBAR_GLYPH_ACTION_ATTRIBUTE
-        );
-        if (!own) return;
-        event.preventDefault();
-        // The stop stays PARKED ON THE ROW while focus sits on its "⋮": the
-        // kebab is a satellite, so Tabbing away and back should return the
-        // reader to the list rather than to a menu trigger they were only
-        // visiting.
-        parkedRef.current = stop;
-        sync();
-        own.focus();
+        // controls a pointer would reveal and a keyboard otherwise could not
+        // reach: the glyph (a face that opens a profile) to the left, then the
+        // trailing control and the "⋮" to the right.
+        if (stepAlongLane(stop, stop, laneStep(event.key))) event.preventDefault();
         return;
       }
 
@@ -282,9 +334,9 @@ export function useRovingFocus(options?: {
       event.preventDefault();
       const destination = stops[next];
       if (!destination) return;
-      moveTo(container, destination);
+      moveTo(destination, destination);
     },
-    [moveTo, sync]
+    [moveTo]
   );
 
   return { ref, onKeyDown };

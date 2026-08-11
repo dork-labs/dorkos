@@ -132,6 +132,8 @@ export type { MenuCloseFocusGuard } from './use-menu-close-focus-guard';
 export {
   useRovingFocus,
   SIDEBAR_ACTIONS_ATTRIBUTE,
+  SIDEBAR_GLYPH_ACTION_ATTRIBUTE,
   SIDEBAR_ROW_ATTRIBUTE,
   SIDEBAR_SECTION_TOGGLE_ATTRIBUTE,
+  SIDEBAR_TRAILING_ACTION_ATTRIBUTE,
 } from './use-roving-focus';

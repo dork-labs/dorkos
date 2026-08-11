@@ -7,8 +7,10 @@ import '@testing-library/jest-dom/vitest';
 import {
   useRovingFocus,
   SIDEBAR_ACTIONS_ATTRIBUTE,
+  SIDEBAR_GLYPH_ACTION_ATTRIBUTE,
   SIDEBAR_ROW_ATTRIBUTE,
   SIDEBAR_SECTION_TOGGLE_ATTRIBUTE,
+  SIDEBAR_TRAILING_ACTION_ATTRIBUTE,
 } from '../use-roving-focus';
 
 afterEach(() => cleanup());
@@ -201,6 +203,89 @@ describe('useRovingFocus — the ⋮ is a satellite, not a stop', () => {
     expect(onExpand).toHaveBeenCalledOnce();
     // And the header keeps focus — folding a section is not leaving it.
     expect(onCollapse).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
+ * A row wearing all three satellites, as `SidebarRow` renders them: the glyph
+ * control to the left of the row, then the trailing control and the "⋮" in the
+ * right gutter.
+ */
+function LoadedRow() {
+  const roving = useRovingFocus();
+  return (
+    <div {...roving}>
+      <li data-slot="sidebar-menu-item" className="relative">
+        <button type="button" {...{ [SIDEBAR_GLYPH_ACTION_ATTRIBUTE]: '' }}>
+          face
+        </button>
+        <button type="button" {...{ [SIDEBAR_ROW_ATTRIBUTE]: '' }}>
+          Scout
+        </button>
+        <button type="button" {...{ [SIDEBAR_TRAILING_ACTION_ATTRIBUTE]: '' }}>
+          3 live
+        </button>
+        <button type="button" {...{ [SIDEBAR_ACTIONS_ATTRIBUTE]: '' }}>
+          Scout actions
+        </button>
+      </li>
+    </div>
+  );
+}
+
+describe('useRovingFocus — the row’s lane of satellites', () => {
+  /** Press a sideways arrow on whatever currently has focus. */
+  function arrow(key: 'ArrowLeft' | 'ArrowRight') {
+    fireEvent.keyDown(document.activeElement as HTMLElement, { key });
+  }
+
+  it('walks out along the right gutter — row, then the control, then the ⋮', () => {
+    // A control in the right gutter used to be reachable by pointer ONLY:
+    // ArrowRight was hard-coded to mean "the ⋮", so anything between the row
+    // and the kebab was skipped and a keyboard reader could never press it.
+    render(<LoadedRow />);
+    screen.getByText('Scout').focus();
+
+    arrow('ArrowRight');
+    expect(document.activeElement).toBe(screen.getByText('3 live'));
+    arrow('ArrowRight');
+    expect(document.activeElement).toBe(screen.getByText('Scout actions'));
+    // And no further — the end of the lane is the end of it.
+    arrow('ArrowRight');
+    expect(document.activeElement).toBe(screen.getByText('Scout actions'));
+  });
+
+  it('walks back in the same order, and on past the row to the glyph', () => {
+    render(<LoadedRow />);
+    screen.getByText('Scout actions').focus();
+
+    arrow('ArrowLeft');
+    expect(document.activeElement).toBe(screen.getByText('3 live'));
+    arrow('ArrowLeft');
+    expect(document.activeElement).toBe(screen.getByText('Scout'));
+    arrow('ArrowLeft');
+    expect(document.activeElement).toBe(screen.getByText('face'));
+    arrow('ArrowLeft');
+    expect(document.activeElement).toBe(screen.getByText('face'));
+  });
+
+  it('keeps the Tab stop on the ROW however far out the lane focus has walked', () => {
+    // Each satellite is a visit, not a destination: Tab out and back should
+    // return the reader to the list rather than to a control they were passing.
+    render(<LoadedRow />);
+    screen.getByText('Scout').focus();
+    arrow('ArrowRight');
+    expect(tabStops()).toEqual(['Scout']);
+    arrow('ArrowRight');
+    expect(tabStops()).toEqual(['Scout']);
+  });
+
+  it('leaves a row with no trailing control walking straight to its ⋮', () => {
+    // The lane skips what a row does not have, so the sidebar's existing rows
+    // keep exactly the two-satellite behaviour they shipped with.
+    render(<Section rows={ROWS} />);
+    fireEvent.keyDown(screen.getByText('two'), { key: 'ArrowRight' });
+    expect(document.activeElement).toBe(screen.getByText('two actions'));
   });
 });
 

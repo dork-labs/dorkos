@@ -10,10 +10,15 @@
  *
  * @module shared/ui/sidebar-row
  */
-import { useState } from 'react';
-import type { CSSProperties, HTMLAttributes, ReactNode, Ref } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import type { CSSProperties, HTMLAttributes, ReactNode, Ref, RefObject } from 'react';
 import { cn } from '@/layers/shared/lib';
-import { useIsMobile } from '@/layers/shared/model';
+import {
+  useIsMobile,
+  SIDEBAR_GLYPH_ACTION_ATTRIBUTE,
+  SIDEBAR_ROW_ATTRIBUTE,
+  SIDEBAR_TRAILING_ACTION_ATTRIBUTE,
+} from '@/layers/shared/model';
 import {
   ROW_TITLE_CLASS,
   ROW_TRAILING_CLASS,
@@ -22,16 +27,106 @@ import {
   composeRowLabel,
   hasSecondLine,
 } from '@/layers/shared/lib/row-grammar';
-import {
-  SIDEBAR_GLYPH_ACTION_ATTRIBUTE,
-  SIDEBAR_ROW_ATTRIBUTE,
-} from '@/layers/shared/model/use-roving-focus';
 import { IDENTITY_MARK_GROUP } from './identity-avatar';
 import { SidebarMenuItem } from './sidebar';
 import { SidebarMenuSurface, type SidebarMenuNode } from './sidebar-menu-node';
 
 /** The horizontal inset every sidebar row pays, and the only place it is paid. */
 export const SIDEBAR_ROW_INSET = 'px-2';
+
+/**
+ * The right gutter a row keeps clear for its satellites — the "⋮" and any
+ * {@link SidebarRowProps.trailingAction}.
+ *
+ * **It must be the LAST padding class in the row's `cn()`, and the reason is
+ * narrower than it looks.** `cn()` is tailwind-merge, and a shorthand only wins
+ * when it comes *after* the longhand it would swallow. Measured:
+ *
+ * ```
+ * twMerge('pr-7 px-2')       → 'px-2'        ← the bug (DOR-1115)
+ * twMerge('px-2 pr-7')       → 'px-2 pr-7'   ← both survive
+ * twMerge('px-2 pr-7 px-6')  → 'px-6'        ← a later shorthand still eats it
+ * ```
+ *
+ * So tailwind-merge is what BROKE the gutter, not what protects it. Once the
+ * order is right, both classes reach the DOM and it is Tailwind's own stylesheet
+ * emission order that makes `pr-7` beat `px-2`'s right side. Nothing in the type
+ * system holds that together, which is why this constant comes last of all —
+ * after {@link SIDEBAR_ROW_INSET} *and* after the caller's `className`, so no
+ * call site can reopen the defect by passing a `px-*` of its own.
+ *
+ * The row shipped for months measuring 8px of right padding: the title ran on
+ * under the "⋮" with no ellipsis, and anything positioning itself against the
+ * gutter landed 20px inside the text. Nothing in the source looked wrong, which
+ * is why it survived — so the browser test that guards it asserts COMPUTED
+ * padding, never the class string, because both classes are in the source
+ * either way.
+ *
+ * 28px, against a "⋮" that is 20px wide sitting 4px off the edge — the gutter
+ * clears it exactly, and {@link SIDEBAR_ROW_TRAILING_ACTION_OFFSET} parks the
+ * trailing satellite on the same line.
+ */
+const SIDEBAR_ROW_GUTTER = 'pr-7';
+
+/**
+ * Where a {@link SidebarRowProps.trailingAction} sits: flush against the inside
+ * edge of {@link SIDEBAR_ROW_GUTTER}, which is exactly where the row reserves
+ * its width. The two are one number spelled twice, and a browser test pins them
+ * together by measurement rather than by name.
+ */
+const SIDEBAR_ROW_TRAILING_ACTION_OFFSET = 'right-7';
+
+/**
+ * What may never appear inside a trailing action's width reservation.
+ *
+ * The reservation is an invisible copy of the control drawn INSIDE the row's own
+ * `<button>`, so a caller whose `content` brings its own `<button>`, link or
+ * tooltip trigger ships a button nested in a button on every row at once — the
+ * exact defect `trailingAction` exists to prevent, arriving through the one door
+ * the slot leaves open. Everything a browser would put in the tab order, because
+ * "interactive" is not a property this can otherwise ask about.
+ */
+const RESERVATION_FORBIDS = 'a[href],button,input,select,textarea,[tabindex]';
+
+/**
+ * Shout, in development, when a caller's trailing-action content brings an
+ * interactive element into the reservation.
+ *
+ * **Loud rather than documented.** The "presentational only" rule cannot be
+ * expressed in the type system — `ReactNode` is `ReactNode` — and a rule nothing
+ * enforces is a rule that gets broken by the next call site. `console.error` at
+ * the moment it happens names the offending row, so the person who wrote the
+ * chip finds out rather than the person who ships the release.
+ *
+ * Gated on `import.meta.env.DEV`, which Vite folds to a literal, so the whole
+ * check leaves the production bundle. It runs on every commit rather than on a
+ * dependency list: the content is a node, and a node's contents can change
+ * without any prop this could key on changing with it.
+ *
+ * @param reservation - Ref to the reservation span, or a ref holding `null` for
+ *   a row that has no trailing action.
+ * @param label - The control's accessible name, used to name the offender.
+ */
+function useReservationGuard(
+  reservation: RefObject<HTMLSpanElement | null>,
+  label: string | undefined
+): void {
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    const node = reservation.current;
+    if (node === null) return;
+    const offender = node.querySelector(RESERVATION_FORBIDS);
+    if (offender === null) return;
+    // A development-only contract breach, and silence is how the nested-button
+    // defect shipped in the first place.
+    console.error(
+      `SidebarRow: the trailingAction "${label ?? 'unnamed'}" renders a <${offender.tagName.toLowerCase()}>. ` +
+        'Its content is drawn twice — once invisibly inside the row button to reserve width — so anything ' +
+        'interactive in it becomes a button nested in a button. Pass presentational content and put the ' +
+        'behaviour on trailingAction.onClick.'
+    );
+  });
+}
 
 /**
  * The welcome-back beat, as a class (BC-49).
@@ -137,8 +232,49 @@ export interface SidebarRowProps {
   /**
    * The trailing meta slot — a timestamp, an unread badge, an origin mark, a
    * project chip. Never shrunk and never pushed off the line (BC-25).
+   *
+   * **Read-only, always.** It renders INSIDE the row's `<button>`, so anything
+   * interactive in here is a `<button>` inside a `<button>` — invalid HTML that
+   * assistive tech announces unpredictably. A control that belongs at the end of
+   * the row goes in {@link trailingAction} instead.
    */
   trailing?: ReactNode;
+  /**
+   * A control at the end of the row — a chip that opens a session switcher, a
+   * count that opens what it counts.
+   *
+   * **Rendered as a SIBLING of the row button, not inside it** — the same shape
+   * {@link glyphAction} takes on the row's other side, and for the same reason:
+   * the row is a real `<button>` and nesting one inside it is invalid HTML. It
+   * is an overlay parked on the inside edge of the row's right gutter, so it
+   * sits exactly over the space the row reserves for it.
+   *
+   * **The row reserves that space itself.** `content` is drawn twice: once
+   * invisibly at the end of {@link trailing} — the
+   * `[data-slot="sidebar-row-trailing-reservation"]` span, which takes part in
+   * the CSS truncation budget and makes a long title ellipsize before it reaches
+   * the control — and once for real in the overlay above it. Every call site
+   * that hand-rolled this satellite got the two out of alignment and painted the
+   * control over the row's own text, which is the defect this slot exists to
+   * make unrepeatable (DOR-1111).
+   *
+   * **`content` must therefore be presentational.** It mounts twice, so it may
+   * own no state, effect or subscription: two copies free to diverge, and 120 of
+   * them on a 60-agent Library. And the invisible copy sits inside the row's own
+   * `<button>`, so anything focusable in it is a button nested in a button.
+   *
+   * The second half of that is enforced — development `console.error`s and names
+   * the row the moment a focusable turns up in the reservation. The first half
+   * is not, and cannot be from here: a node that subscribes to a store looks
+   * exactly like one that does not. Read it as the rule the checked half is a
+   * proxy for.
+   *
+   * It is a satellite like the "⋮": `ArrowRight` from the row reaches it and
+   * `ArrowRight` again continues to the "⋮", it is never a Tab stop of its own,
+   * it rides the drag transform with the row, and a right-click on it opens the
+   * row's own menu.
+   */
+  trailingAction?: { content: ReactNode; onClick: () => void; label: string };
   /**
    * The second line. Renders only when the row earns one: a live verb
    * ({@link reservesVerbLine}) or a {@link preview} worth showing (BC-24).
@@ -202,7 +338,16 @@ export interface SidebarRowProps {
    * second door back into itself.
    */
   editor?: ReactNode;
-  /** Rendered under the row, inside the same list item — an expansion panel. */
+  /**
+   * Rendered under the row, inside the same list item — an expansion panel.
+   *
+   * **A panel in the flow, never an overlay.** It is a sibling of the drag
+   * wrapper, so absolutely-positioned content mounted here is positioned
+   * against the list item and does not move with the row: dragging leaves it
+   * behind at full opacity, floating over whichever row takes the slot. It also
+   * sits outside the row's menu surface and lands after the "⋮" in DOM order. A
+   * control that wants the row's right gutter goes in {@link trailingAction}.
+   */
   expansion?: ReactNode;
   /** Stamped on the row button, for tests and page objects. */
   dataSlot?: string;
@@ -245,6 +390,7 @@ export function SidebarRow({
   title,
   titleText,
   trailing,
+  trailingAction,
   secondLine,
   reservesVerbLine,
   welcomeBack = false,
@@ -293,6 +439,10 @@ export function SidebarRow({
   // read as already-played on the second, and the glow would never appear in
   // development. See {@link SidebarRowProps.welcomeBack}.
   const [glowOnce] = useState(() => welcomeBack);
+  // The reservation, watched in development for the one thing it must not
+  // contain. See {@link useReservationGuard}.
+  const reservationRef = useRef<HTMLSpanElement>(null);
+  useReservationGuard(reservationRef, trailingAction?.label);
 
   const row =
     editor !== undefined ? (
@@ -316,7 +466,7 @@ export function SidebarRow({
           // line and `py-1` is what keeps a one-line row on it exactly. A row
           // that earned a second line grows past it, which is the point —
           // height carries meaning here.
-          'focus-visible:ring-sidebar-ring flex min-h-7 w-full rounded-md py-1 pr-7 text-left text-[13px] outline-hidden transition-colors duration-100 focus-visible:ring-2 active:scale-[0.98]',
+          'focus-visible:ring-sidebar-ring flex min-h-7 w-full rounded-md py-1 text-left text-[13px] outline-hidden transition-colors duration-100 focus-visible:ring-2 active:scale-[0.98]',
           SIDEBAR_ROW_INSET,
           showSecondLine ? 'items-start py-1.5' : 'items-center',
           isActive
@@ -326,7 +476,12 @@ export function SidebarRow({
           // BC-49. `motion-safe:` is the whole reduced-motion contract — the
           // utility is not applied at all, so there is no glow to suppress.
           glowOnce && WELCOME_BACK_GLOW,
-          className
+          className,
+          // LAST, deliberately — after the caller's `className` too. This is the
+          // one property a call site may not have: the gutter is what holds the
+          // "⋮" off the row's own words, and a caller's `px-*` landing after it
+          // would silently take it back. See {@link SIDEBAR_ROW_GUTTER}.
+          SIDEBAR_ROW_GUTTER
         )}
       >
         {srLabel !== undefined && <span className="sr-only">{srLabel}</span>}
@@ -353,9 +508,24 @@ export function SidebarRow({
               </>
             ) : null}
             <span className={ROW_TITLE_CLASS}>{title}</span>
-            {trailing !== undefined && (
+            {(trailing !== undefined || trailingAction !== undefined) && (
               <span className={cn('flex items-center gap-1.5', ROW_TRAILING_CLASS)}>
                 {trailing}
+                {/* The trailing action's own width, held open for it. Invisible
+                    rather than hidden, so it still occupies the line: this is
+                    what makes a long title ellipsize BEFORE the control instead
+                    of sliding under it. Last in the slot, because the overlay
+                    above it is parked against the row's right gutter. */}
+                {trailingAction !== undefined && (
+                  <span
+                    ref={reservationRef}
+                    data-slot="sidebar-row-trailing-reservation"
+                    aria-hidden
+                    className="invisible"
+                  >
+                    {trailingAction.content}
+                  </span>
+                )}
               </span>
             )}
           </span>
@@ -411,6 +581,27 @@ export function SidebarRow({
                 showSecondLine ? 'top-1.5' : 'top-1/2 -translate-y-1/2'
               )}
             />
+          )}
+          {trailingAction !== undefined && editor === undefined && (
+            <button
+              type="button"
+              aria-label={trailingAction.label}
+              // The row underneath opens the conversation; this opens whatever
+              // the control is for. The stop is what keeps one press from doing
+              // both.
+              onClick={(event) => {
+                event.stopPropagation();
+                trailingAction.onClick();
+              }}
+              {...{ [SIDEBAR_TRAILING_ACTION_ATTRIBUTE]: '' }}
+              className={cn(
+                'focus-ring absolute cursor-pointer rounded-full transition-[scale] active:scale-[0.94]',
+                SIDEBAR_ROW_TRAILING_ACTION_OFFSET,
+                showSecondLine ? 'top-1.5' : 'top-1/2 -translate-y-1/2'
+              )}
+            >
+              {trailingAction.content}
+            </button>
           )}
         </SidebarMenuSurface>
       </div>
