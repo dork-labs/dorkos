@@ -16,13 +16,18 @@
  * before it reaches the wire; an invalid event is dropped and logged rather than
  * crashing the iteration loop.
  *
+ * A stream of transitions is only complete for a client that was connected when
+ * each one fired, so this module also owns the other half:
+ * {@link sendSessionStatusSnapshot} tells a client that has JUST connected what
+ * state the transitions it missed left behind (DOR-1136).
+ *
  * @module services/session/session-list-broadcaster
  */
 import type { AgentRuntime, SessionOpts } from '@dorkos/shared/agent-runtime';
 import { SessionListEventSchema } from '@dorkos/shared/session-stream';
-import type { SessionListEvent } from '@dorkos/shared/session-stream';
-import { eventFanOut } from '../core/event-fan-out.js';
-import { onProjectorStatusChange } from './session-state-projector.js';
+import type { SessionLifecycle, SessionListEvent } from '@dorkos/shared/session-stream';
+import { eventFanOut, encodeBroadcast, type FanOutClient } from '../core/event-fan-out.js';
+import { listProjectorStatuses, onProjectorStatusChange } from './session-state-projector.js';
 import {
   overlayStoredSettings,
   type SessionSettingsOverlayPort,
@@ -37,6 +42,86 @@ import { logger } from '../../lib/logger.js';
  * portable, side-effect-free choice (mirrors the durable events route).
  */
 const GLOBAL_CTX_PERMISSION_MODE = 'default' as const;
+
+/**
+ * Validate one session-list event, or drop it.
+ *
+ * Module-level rather than a method so the connect snapshot below and the live
+ * broadcast above pass through the SAME gate. A snapshot that skipped it would
+ * be the one path on which a malformed status reached a client, and the two
+ * would be free to disagree about what a valid event is.
+ *
+ * @param event - The candidate event.
+ * @returns The parsed event, or `undefined` when it failed the schema.
+ */
+function validateListEvent(event: SessionListEvent): SessionListEvent | undefined {
+  const parsed = SessionListEventSchema.safeParse(event);
+  if (!parsed.success) {
+    logger.warn('[SessionListBroadcaster] dropping invalid session-list event', {
+      error: parsed.error.message,
+    });
+    return undefined;
+  }
+  return parsed.data;
+}
+
+/**
+ * Lifecycles worth telling a newly connected client about.
+ *
+ * `idle` says nothing — it is the absence of a signal, and the client's list
+ * store prunes it on arrival anyway. `interrupted` is pruned by the same rule:
+ * it settles a turn, and a settled turn is not something waiting on anybody.
+ * What remains is the three states an operator can act on, and the three the
+ * sidebar's Now zone is built from: work in flight, work waiting on a person,
+ * and work that stopped badly.
+ */
+const SNAPSHOT_LIFECYCLES: ReadonlySet<SessionLifecycle> = new Set<SessionLifecycle>([
+  'streaming',
+  'blocked',
+  'error',
+]);
+
+/**
+ * Send a newly connected client the fleet's current lifecycles, as ordinary
+ * `session_status` events.
+ *
+ * ## Why this exists
+ *
+ * The global stream carries transitions and nothing else — it opens with
+ * `connected` and then relays only what happens NEXT. That is complete for a
+ * client that was attached when each transition fired and empty for one that
+ * was not, so every page load forgot every session that had already errored or
+ * already blocked. The sidebar's Now zone reads exactly those lifecycles, so
+ * "open the app with something waiting" showed nothing at all until the session
+ * moved again — which, for a session that has stopped, is never (DOR-1136).
+ *
+ * ## Why it is not stale
+ *
+ * These are not remembered events being replayed; they are read from the live
+ * projector registry at the instant of the connect, which is the same object
+ * the live fan-out reports transitions from. A `streaming` here means the
+ * projector believes that turn is open right now — the identical claim the live
+ * path makes — so this adds no class of staleness the stream did not already
+ * have, and the next real transition overwrites it exactly as it would any
+ * other `session_status`.
+ *
+ * Sent to ONE client rather than broadcast: every other reader either already
+ * holds these lifecycles or does not want them re-asserted.
+ *
+ * @param client - The client that has just registered with the fan-out.
+ */
+export function sendSessionStatusSnapshot(client: FanOutClient): void {
+  for (const update of listProjectorStatuses()) {
+    if (!SNAPSHOT_LIFECYCLES.has(update.status.lifecycle)) continue;
+    const event = validateListEvent({
+      type: 'session_status',
+      sessionId: update.sessionId,
+      cwd: update.cwd,
+      status: update.status,
+    });
+    if (event) client.send(encodeBroadcast(event.type, event));
+  }
+}
 
 /**
  * Subscribes to every registered runtime's global session-list stream and fans
@@ -224,13 +309,8 @@ export class SessionListBroadcaster {
    *   fan-out), which have no owning runtime and need no retirement check.
    */
   private broadcast(event: SessionListEvent, runtime?: AgentRuntime): void {
-    const parsed = SessionListEventSchema.safeParse(event);
-    if (!parsed.success) {
-      logger.warn('[SessionListBroadcaster] dropping invalid session-list event', {
-        error: parsed.error.message,
-      });
-      return;
-    }
+    const validated = validateListEvent(event);
+    if (!validated) return;
     // Suppress an upsert for an id the runtime has RETIRED, matching
     // `aggregateSessionList`'s drop. Both produce client-visible session rows,
     // so if only one applied the rule they would disagree about whether a
@@ -238,13 +318,13 @@ export class SessionListBroadcaster {
     // one layer up. A `session_removed` for such an id is deliberately still
     // forwarded: telling a client to drop a row it should not be holding is
     // always safe.
-    if (parsed.data.type === 'session_upserted' && runtime) {
-      const canonical = runtime.getInternalSessionId(parsed.data.session.id);
-      if (canonical !== undefined && canonical !== parsed.data.session.id) return;
+    if (validated.type === 'session_upserted' && runtime) {
+      const canonical = runtime.getInternalSessionId(validated.session.id);
+      if (canonical !== undefined && canonical !== validated.session.id) return;
     }
     // The SSE event name is the schema-constrained discriminator, so there is no
     // stringly-typed drift: clients filter on the same `type` values.
-    const outgoing = this.withStoredSettings(parsed.data);
+    const outgoing = this.withStoredSettings(validated);
     eventFanOut.broadcast(outgoing.type, outgoing);
   }
 }

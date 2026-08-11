@@ -573,27 +573,21 @@
       "failCount": 0,
       "relatedCode": [],
       "lastModified": ""
+    },
+    "now-survives-reload": {
+      "specFile": "tests/dashboard-sidebar/now-survives-reload.ts",
+      "feature": "dashboard-sidebar",
+      "description": "an errored session is still in Now after a reload, the Ask DorkBot seed still names the errored session after a reload",
+      "lastRun": "2026-08-11T02:23:46.120Z",
+      "lastStatus": "passed",
+      "runCount": 2,
+      "passCount": 1,
+      "failCount": 0,
+      "relatedCode": [],
+      "lastModified": ""
     }
   },
   "runHistory": [
-    {
-      "id": "2026-07-30T10-55-58",
-      "timestamp": "2026-07-30T10:55:58.276Z",
-      "total": 1,
-      "passed": 1,
-      "failed": 0,
-      "skipped": 0,
-      "duration": 19470
-    },
-    {
-      "id": "2026-07-30T10-56-22",
-      "timestamp": "2026-07-30T10:56:22.051Z",
-      "total": 1,
-      "passed": 1,
-      "failed": 0,
-      "skipped": 0,
-      "duration": 18133
-    },
     {
       "id": "2026-07-30T10-57-23",
       "timestamp": "2026-07-30T10:57:23.581Z",
@@ -1475,6 +1469,24 @@
       "failed": 0,
       "skipped": 0,
       "duration": 132649
+    },
+    {
+      "id": "2026-08-11T02-19-04",
+      "timestamp": "2026-08-11T02:19:04.110Z",
+      "total": 2,
+      "passed": 0,
+      "failed": 0,
+      "skipped": 0,
+      "duration": 376162
+    },
+    {
+      "id": "2026-08-11T02-23-46",
+      "timestamp": "2026-08-11T02:23:46.120Z",
+      "total": 1,
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "duration": 137978
     }
   ]
 }

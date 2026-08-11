@@ -15,7 +15,12 @@ vi.mock('../../services/core/config-manager.js', () => ({
 }));
 
 const mockUnsubscribe = vi.fn();
-vi.mock('../../services/core/event-fan-out.js', () => ({
+// Only the SINGLETON is doubled. `encodeBroadcast` stays real: it is a pure
+// function that renders a frame into the two wire formats, and the assertions
+// below are about the bytes a connecting client receives — a stub for it would
+// be asserting the stub.
+vi.mock('../../services/core/event-fan-out.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../services/core/event-fan-out.js')>()),
   eventFanOut: {
     hasCapacity: vi.fn(() => true),
     addClient: vi.fn(() => mockUnsubscribe),

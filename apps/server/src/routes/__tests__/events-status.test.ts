@@ -33,6 +33,7 @@ import { SessionListBroadcaster } from '../../services/session/session-list-broa
 import {
   getOrCreateProjector,
   disposeProjector,
+  type RawSessionEvent,
 } from '../../services/session/session-state-projector.js';
 
 let server: http.Server;
@@ -414,5 +415,160 @@ describe('SessionListBroadcaster lifecycle', () => {
     expect(() => broadcaster.start([runtime])).not.toThrow();
     expect(runtime.subscribeSessionList).toHaveBeenCalledTimes(2);
     await broadcaster.stop();
+  });
+});
+
+/**
+ * The connect snapshot (DOR-1136).
+ *
+ * Every test here transitions a projector while NO client is connected — which
+ * is exactly what a page reload looks like from the server's side — and then
+ * opens a stream. The live fan-out cannot help by construction: the broadcaster
+ * is never started, so nothing in these tests is capable of emitting a
+ * transition. Anything that arrives arrived because the connect said it.
+ */
+describe('GET /api/events — connect snapshot', () => {
+  const ERRORED_ID = '44444444-4444-4444-8444-444444444444';
+  const BLOCKED_ID = '55555555-5555-4555-8555-555555555555';
+  const IDLE_ID = '66666666-6666-4666-8666-666666666666';
+  const STREAMING_ID = '77777777-7777-4777-8777-777777777777';
+
+  afterEach(() => {
+    for (const id of [ERRORED_ID, BLOCKED_ID, IDLE_ID, STREAMING_ID]) disposeProjector(id);
+  });
+
+  /** Every `data:` payload carried under `eventName`, in arrival order. */
+  function parseAllEventData(body: string, eventName: string): unknown[] {
+    return body
+      .split('\n\n')
+      .filter((frame) => frame.includes(`event: ${eventName}`))
+      .flatMap((frame) => {
+        const line = frame.split('\n').find((l) => l.startsWith('data: '));
+        return line ? [JSON.parse(line.replace('data: ', ''))] : [];
+      });
+  }
+
+  /** Drive a projector to a finished-with-an-error turn. */
+  function errorSession(sessionId: string, cwd: string): void {
+    const projector = getOrCreateProjector(sessionId, cwd);
+    projector.ingest({ type: 'turn_start' });
+    projector.ingest({ type: 'turn_end', terminalReason: 'error' } as RawSessionEvent);
+    expect(projector.getStatus().lifecycle).toBe('error');
+  }
+
+  /** Drive a projector to a turn waiting on a permission prompt. */
+  function blockSession(sessionId: string, cwd: string): void {
+    const projector = getOrCreateProjector(sessionId, cwd);
+    projector.ingest({ type: 'turn_start' });
+    projector.ingest({
+      type: 'approval_required',
+      id: 'tool-1',
+      startedAt: Date.now(),
+      remainingMs: 60_000,
+      toolName: 'Bash',
+      input: '{}',
+      hasSuggestions: false,
+    } as RawSessionEvent);
+    expect(projector.getStatus().lifecycle).toBe('blocked');
+  }
+
+  // The headline repro: error a session, reload the page, and the sidebar's Now
+  // zone must still say so. The reload is the second connect, and before this
+  // the server told it nothing — the transition had already happened.
+  it('announces a session that errored while nothing was connected', async () => {
+    errorSession(ERRORED_ID, '/work/alpha');
+
+    const stream = openEventStream();
+    const body = await stream.waitFor((b) => b.includes('event: session_status'));
+    stream.close();
+
+    expect(parseAllEventData(body, 'session_status')).toContainEqual(
+      expect.objectContaining({
+        type: 'session_status',
+        sessionId: ERRORED_ID,
+        cwd: '/work/alpha',
+        status: expect.objectContaining({ lifecycle: 'error' }),
+      })
+    );
+  });
+
+  // Two assertions that need each other. "Idle is not announced" is worthless
+  // on its own — a snapshot that sent nothing at all would pass it — so the
+  // blocked session in the same connect is what proves the snapshot ran.
+  it('announces a blocked session and stays silent about an idle one', async () => {
+    blockSession(BLOCKED_ID, '/work/beta');
+    // Idle by construction: a turn that started and finished cleanly.
+    const idle = getOrCreateProjector(IDLE_ID, '/work/gamma');
+    idle.ingest({ type: 'turn_start' });
+    idle.ingest({ type: 'turn_end', terminalReason: 'completed' } as RawSessionEvent);
+    expect(idle.getStatus().lifecycle).toBe('idle');
+
+    const stream = openEventStream();
+    const body = await stream.waitFor((b) => b.includes(BLOCKED_ID));
+    stream.close();
+
+    const statuses = parseAllEventData(body, 'session_status');
+    expect(statuses).toContainEqual(
+      expect.objectContaining({
+        sessionId: BLOCKED_ID,
+        status: expect.objectContaining({ lifecycle: 'blocked' }),
+      })
+    );
+    expect(statuses).not.toContainEqual(expect.objectContaining({ sessionId: IDLE_ID }));
+  });
+
+  // The staleness contract. A snapshot is a claim about the moment of connect;
+  // the moment it stops being true, the live path says so and the client's last
+  // frame wins. A snapshot that could outlive reality would be worse than none.
+  it('is superseded by the next live transition', async () => {
+    const projector = getOrCreateProjector(STREAMING_ID, '/work/delta');
+    projector.ingest({ type: 'turn_start' });
+    expect(projector.getStatus().lifecycle).toBe('streaming');
+
+    const stream = openEventStream();
+    const snapshotBody = await stream.waitFor((b) => b.includes(STREAMING_ID));
+    expect(parseAllEventData(snapshotBody, 'session_status')).toContainEqual(
+      expect.objectContaining({
+        sessionId: STREAMING_ID,
+        status: expect.objectContaining({ lifecycle: 'streaming' }),
+      })
+    );
+
+    // Now the turn ends, with a client attached this time.
+    const broadcaster = new SessionListBroadcaster();
+    const runtime = new FakeAgentRuntime();
+    runtime.subscribeSessionList.mockReturnValue(controllableSessionList().iterable);
+    broadcaster.start([runtime]);
+    projector.ingest({ type: 'turn_end', terminalReason: 'error' } as RawSessionEvent);
+
+    const body = await stream.waitFor((b) => b.includes('"error"'));
+    stream.close();
+    await broadcaster.stop();
+
+    const statuses = parseAllEventData(body, 'session_status') as {
+      status: { lifecycle: string };
+    }[];
+    expect(statuses.at(-1)?.status.lifecycle).toBe('error');
+  });
+
+  // Sent to the connecting client only. Broadcasting it instead would look
+  // identical in a one-window test and re-assert every lifecycle on every other
+  // open window each time a tab opened.
+  it('reaches the connecting client and no one else', async () => {
+    const first = openEventStream();
+    await first.waitFor((b) => b.includes('event: connected'));
+
+    errorSession(ERRORED_ID, '/work/alpha');
+
+    const second = openEventStream();
+    const secondBody = await second.waitFor((b) => b.includes(ERRORED_ID));
+    expect(parseAllEventData(secondBody, 'session_status')).toContainEqual(
+      expect.objectContaining({ sessionId: ERRORED_ID })
+    );
+
+    const firstBody = await first.waitFor(() => true);
+    first.close();
+    second.close();
+    expect(firstBody).not.toContain('event: session_status');
   });
 });

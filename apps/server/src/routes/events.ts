@@ -18,7 +18,8 @@ import type { Response } from 'express';
 import { Router } from 'express';
 import { SSE } from '../config/constants.js';
 import { initSSEStream } from '../services/core/streams/stream-adapter.js';
-import { eventFanOut, type FanOutClient } from '../services/core/event-fan-out.js';
+import { eventFanOut, encodeBroadcast, type FanOutClient } from '../services/core/event-fan-out.js';
+import { sendSessionStatusSnapshot } from '../services/session/session-list-broadcaster.js';
 
 /**
  * Adapt an Express response to the fan-out's {@link FanOutClient} port.
@@ -42,7 +43,10 @@ function sseFanOutClient(res: Response): FanOutClient {
 
 const router = Router();
 
-/** GET / — Open a unified SSE stream for all real-time events. */
+/**
+ * GET / — Open a unified SSE stream for all real-time events, opening with the
+ * `connected` frame and the fleet's current session lifecycles.
+ */
 router.get('/', (req, res) => {
   // Answer BEFORE sending SSE headers, so a server at capacity returns a
   // readable 503 rather than a 200 that immediately fails.
@@ -52,12 +56,18 @@ router.get('/', (req, res) => {
   }
 
   initSSEStream(res);
-  const unsubscribe = eventFanOut.addClient(sseFanOutClient(res));
+  const client = sseFanOutClient(res);
+  const unsubscribe = eventFanOut.addClient(client);
 
-  // Send initial connected event
-  res.write(
-    `event: connected\ndata: ${JSON.stringify({ connectedAt: new Date().toISOString() })}\n\n`
-  );
+  // The connect preamble: `connected`, then the fleet's current lifecycles.
+  //
+  // Registration comes FIRST and the whole preamble is synchronous, so no
+  // broadcast can slip between the two: an event that fires while this runs is
+  // queued behind it on the same socket and therefore lands AFTER the snapshot
+  // it supersedes. A preamble written before `addClient` would have the
+  // opposite (and wrong) ordering.
+  client.send(encodeBroadcast('connected', { connectedAt: new Date().toISOString() }));
+  sendSessionStatusSnapshot(client);
 
   // Keepalive heartbeat to prevent proxies/browsers from closing the connection
   const heartbeat = setInterval(() => {
