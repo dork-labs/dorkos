@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(client): things you write in show up in Today, whatever door you came through (DOR-1156)'
+  - "fix(client,ci): the queue flush is the agent's moment, not yours (DOR-1156)"
 ---
 
 ### Fixed
