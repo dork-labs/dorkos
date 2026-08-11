@@ -138,8 +138,25 @@ export const SESSIONS = {
 } as const;
 
 export const TRANSCRIPT = {
-  /** Bytes to read from file tail for latest status. */
-  TAIL_BUFFER_BYTES: 16384,
+  /**
+   * Bytes to read from a transcript's tail for its latest status.
+   *
+   * Sized by the field with the FARTHEST-BACK answer: `userLastMessageAt`, the
+   * time the person last wrote (BC-16). The other readings this window feeds —
+   * model, permission mode, context tokens — sit in the last few records and
+   * were satisfied by 16 KB; the person's last turn is a whole agent work
+   * session further back. Measured over 474 real transcripts, the distance from
+   * EOF to the last person-authored record is p50 27 KB / p75 47 KB, so 16 KB
+   * answered only 11% of conversations (5.6% of those touched in the last week)
+   * while 64 KB answers 84% (89.7% in the last week).
+   *
+   * Growing it is safe for the other readings by construction: every one of
+   * them is last-occurrence-wins, so a wider window can never change which
+   * record is last — it can only find one that was previously out of reach.
+   * `lastAutoCompactAt` is the one that gains from that, and gaining coverage
+   * is what its own doc already calls the disclosed limitation.
+   */
+  TAIL_BUFFER_BYTES: 65536,
   /** Bytes to read from file head for metadata. */
   HEAD_BUFFER_BYTES: 8192,
   /** Max characters for session title. */

@@ -1,4 +1,5 @@
 import type { Session } from '@dorkos/shared/types';
+import { dropUserLastMessageAtWithoutOperator } from './user-last-message-origin.js';
 
 /** Batched Pulse task-origin lookup, injected from the composition root. */
 export type ResolveTaskOrigins = (sessionIds: string[]) => Map<string, { taskName: string }>;
@@ -22,6 +23,11 @@ export function applyTaskOriginOverlay(
     if (match) {
       session.origin = 'task';
       session.originLabel = `Scheduled task · ${match.taskName}`;
+      // A scheduled run sends `task.prompt` as plain user text, so a cron task
+      // would otherwise bump the reading on every fire with nobody present
+      // (BC-16). This overlay catches the direct-branch runs the transcript-head
+      // classifier misses.
+      dropUserLastMessageAtWithoutOperator(session);
     }
   }
 }

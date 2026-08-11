@@ -128,12 +128,15 @@ export { countSessionsPerDay } from './session-daily-counts.js';
 export { SessionListBroadcaster, sessionListBroadcaster } from './session-list-broadcaster.js';
 
 // --- Pulse task-origin overlay (session-origin-legibility) ---
-export { applyTaskOriginOverlay } from './task-origin-overlay.js';
-export type { ResolveTaskOrigins } from './task-origin-overlay.js';
+export { applyTaskOriginOverlay } from './origin/task-origin-overlay.js';
+export type { ResolveTaskOrigins } from './origin/task-origin-overlay.js';
 
 // --- Room-origin overlay (team-room-home §D2.3, ADR 260808-140954) ---
-export { applyRoomOriginOverlay } from './room-origin-overlay.js';
-export type { ResolveRoomOrigins } from './room-origin-overlay.js';
+export { applyRoomOriginOverlay } from './origin/room-origin-overlay.js';
+export type { ResolveRoomOrigins } from './origin/room-origin-overlay.js';
+
+// --- "Nobody typed here" gate on userLastMessageAt (BC-16, DOR-1081) ---
+export { dropUserLastMessageAtWithoutOperator } from './origin/user-last-message-origin.js';
 
 // --- Persisted per-session settings overlay (ADR-0260, DOR-463) ---
 export { overlayStoredSettings, resolveSettingsKey } from './session-settings-overlay.js';

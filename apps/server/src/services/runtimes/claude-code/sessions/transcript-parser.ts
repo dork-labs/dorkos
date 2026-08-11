@@ -11,6 +11,7 @@ import type {
 import { SDK_TOOL_NAMES } from '@dorkos/shared/constants';
 import { CONTEXT_TAG } from '@dorkos/shared/additional-context';
 import { mapSdkAnswersToIndices, parseQuestionAnswers } from './question-answers.js';
+import { classifyOrigin } from './classify-origin.js';
 
 export interface TranscriptLine {
   type: string;
@@ -190,6 +191,125 @@ export function stripRelayContext(text: string): string | null {
   if (idx === -1) return null; // Malformed, no closing tag
   const content = text.slice(idx + closingTag.length).trim();
   return content || null; // Empty content = pure metadata
+}
+
+/**
+ * Whether a `<relay_context>` record was published by a PERSON.
+ *
+ * Relay is agent-to-agent plumbing far more often than it is a person: the
+ * block's `From:` line names the caller, and `classifyOrigin` already knows how
+ * to read it — `relay.human.console*` is the operator, a bridged chat
+ * (Telegram/Slack/webhook) is a person on the other end of a connection, and
+ * `relay.agent.*` / `relay.session.*` / `relay.system.tasks.*` / `a2a-gateway`
+ * are machines. That classifier is the single source of truth for the mapping;
+ * nothing here re-derives it.
+ *
+ * @param text - Raw text of a record beginning with the relay block.
+ */
+function relayRecordIsFromAPerson(text: string): boolean {
+  const { origin } = classifyOrigin(text);
+  // Absent origin is the operator's own console (the unmarked default);
+  // `channel` is a person writing from Telegram/Slack/a webhook. Everything
+  // else the classifier names — agent, task, external — is not a person.
+  return origin === undefined || origin === 'channel';
+}
+
+/**
+ * The text a PERSON wrote in one `user` record's content, or null when nobody
+ * did. Shared by both content shapes so the string and array branches of
+ * {@link isPersonAuthoredUserRecord} can never drift on which wrappers mean
+ * "not a person" — the array shape carries none of these wrappers in any
+ * transcript observed so far, and that is exactly why the guard belongs in one
+ * place rather than in the branch that happens to need it today.
+ *
+ * @param text - Extracted text of the record.
+ * @returns What the person wrote, or null.
+ */
+function personAuthoredText(text: string): string | null {
+  if (text.startsWith('<task-notification>')) return null;
+  // DorkOS-steered corrective notes (DOR-1087) are runtime speech.
+  if (text.startsWith('<dorkos-system-note>')) return null;
+  // A local command's captured stdout/stderr, echoed back into the thread.
+  if (text.startsWith('<local-command')) return null;
+  // Bash-mode OUTPUT is the machine talking. The matching `<bash-input>` is the
+  // person's typed command and deliberately still counts.
+  if (text.startsWith('<bash-stdout>') || text.startsWith('<bash-stderr>')) return null;
+  if (text.startsWith('This session is being continued')) return null;
+
+  let body = text;
+  if (body.startsWith(`<${CONTEXT_TAG.relay_context}>`)) {
+    if (!relayRecordIsFromAPerson(body)) return null;
+    // Even from a person, only the content trailing the block is theirs.
+    const trailing = stripRelayContext(body);
+    if (!trailing) return null;
+    body = trailing;
+  }
+
+  // The person typed a slash command — an interaction, even though the renderer
+  // draws it as a command row rather than a message.
+  if (body.startsWith('<command-message>') || body.startsWith('<command-name>')) {
+    return extractCommandMeta(body) === null ? null : body;
+  }
+
+  const clean = stripSystemTags(body).trim();
+  return clean.length > 0 ? clean : null;
+}
+
+/**
+ * Whether a transcript record is a message the PERSON sent.
+ *
+ * The JSONL `user` role is a wire role, not an author, and DorkOS itself is one
+ * of the things that writes on it. Tool results, resume bootstraps, skill
+ * expansions, compaction summaries, background-task notifications, DorkOS's own
+ * corrective notes, relay hand-offs from other agents, scheduled-task prompts
+ * and room posts by other agents all arrive as `type: 'user'`. This answers the
+ * different question "did a human write this?", which is what
+ * `Session.userLastMessageAt` (BC-16) has to be derived from — a field that
+ * counted any of them would move whenever a MACHINE acted, which is precisely
+ * the reordering BC-16 exists to prevent.
+ *
+ * The rules are the ones {@link parseTranscript} already applies when it decides
+ * to render a `user` bubble, plus the authorship questions a renderer never has
+ * to ask:
+ *
+ * - A slash-command record (`<command-name>`) COUNTS. The renderer turns it into
+ *   its own bubble kind rather than a user message, but the person typed it.
+ * - A compaction summary does NOT count. The renderer shows it (it is real
+ *   history); nobody wrote it.
+ * - A relay record counts only when its `From:` names a person
+ *   ({@link relayRecordIsFromAPerson}).
+ *
+ * **It cannot answer for every path, and the session-level gate is the other
+ * half.** A scheduled task's prompt and a room post written by another agent
+ * both reach the transcript as plain, unmarked user text — nothing in the
+ * record distinguishes them from something you typed. `userLastMessageAt` is
+ * therefore suppressed for whole sessions whose `origin` is `agent`, `task` or
+ * `room` (`services/session/origin/user-last-message-origin.ts`), which covers those
+ * two paths without guessing at content.
+ *
+ * @param line - One parsed transcript record.
+ * @returns True when a person authored this record.
+ */
+export function isPersonAuthoredUserRecord(line: TranscriptLine): boolean {
+  if (line.type !== 'user' || !line.message) return false;
+  // CLI-internal records: resume bootstrap, prompt expansions, caveats.
+  if (line.isMeta) return false;
+  // A subagent's own turn, not this conversation's.
+  if (line.isSidechain) return false;
+  // Written by the compactor, not by anyone.
+  if (line.isCompactSummary) return false;
+
+  const content = line.message.content;
+
+  if (Array.isArray(content)) {
+    // A record carrying tool_result blocks is the harness answering the model.
+    // Any text blocks alongside them are SDK-internal (same rule as the
+    // renderer), so the whole record is not the person's.
+    if (content.some((block) => block.type === 'tool_result')) return false;
+    return personAuthoredText(extractTextContent(content)) !== null;
+  }
+
+  return personAuthoredText(typeof content === 'string' ? content : '') !== null;
 }
 
 /**
