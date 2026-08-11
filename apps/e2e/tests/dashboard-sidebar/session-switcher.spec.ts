@@ -159,33 +159,103 @@ test.describe('session switcher @smoke', () => {
     );
     expect(nested).toBe(false);
 
-    // It sits over the space the trailing slot reserved, not over the name.
-    // `sidebar-row.tsx` writes `pr-7` and then `px-2`, and tailwind-merge keeps
-    // the second — so a chip positioned against the SOURCE gutter lands 20px
-    // left of its reservation and paints over the truncated agent name.
+    // The row reserves the chip's width and the overlay lands on it. Placement
+    // belongs to `SidebarRow` now (DOR-1111), so this asserts the OUTCOME the
+    // slot exists to guarantee — overlay on reservation, neither over the text —
+    // rather than a padding this call site used to guess and got wrong.
     const geometry = await page.evaluate(() => {
       const button = document.querySelector<HTMLElement>('button[aria-label*="session switcher"]')!;
-      const row = button
-        .closest('li')!
-        .querySelector<HTMLElement>('[data-slot="agent-list-item"]')!;
-      const title = row.querySelector<HTMLElement>('[data-testid], span')!;
+      const item = button.closest('li')!;
+      const reservation = item.querySelector<HTMLElement>(
+        '[data-slot="sidebar-row-trailing-reservation"]'
+      );
+      const title = item.querySelector<HTMLElement>('[data-testid="agent-identity"]');
+      const box = (element: HTMLElement | null) => element?.getBoundingClientRect() ?? null;
+      const chipBox = button.getBoundingClientRect();
+      const reservedBox = box(reservation);
+      const titleBox = box(title);
       return {
-        rowRight: row.getBoundingClientRect().right,
-        rowPaddingRight: getComputedStyle(row).paddingRight,
-        chipLeft: button.getBoundingClientRect().left,
-        chipRight: button.getBoundingClientRect().right,
-        titleRight: title.getBoundingClientRect().right,
+        hasReservation: reservation !== null,
+        chip: { left: chipBox.left, right: chipBox.right },
+        reserved: reservedBox && { left: reservedBox.left, right: reservedBox.right },
+        titleRight: titleBox?.right ?? null,
       };
     });
-    // The chip's right edge sits exactly one row-padding in from the row's edge.
-    const padding = Number.parseFloat(geometry.rowPaddingRight);
-    expect(Math.round(geometry.rowRight - geometry.chipRight)).toBe(Math.round(padding));
-    // And it never overlaps the row's own text.
-    expect(geometry.chipLeft).toBeGreaterThanOrEqual(geometry.titleRight - 1);
+    // The row really did reserve room for it — the slot's own contract.
+    expect(geometry.hasReservation).toBe(true);
+    // The overlay sits on its reservation, within a pixel.
+    expect(Math.abs(geometry.chip.right - geometry.reserved!.right)).toBeLessThanOrEqual(1);
+    expect(Math.abs(geometry.chip.left - geometry.reserved!.left)).toBeLessThanOrEqual(1);
+    // And nothing is painted over the agent's name.
+    expect(geometry.chip.left).toBeGreaterThanOrEqual(geometry.titleRight! - 1);
 
     await chip.first().click();
     await expect(page.locator(ROW).first()).toBeVisible();
     expect(await groupOrder(page)).toEqual(['Live now', 'Recent', 'Automated']);
+  });
+
+  test('the chip belongs to its row — it rides the drag, and right-click opens the row’s menu', async ({
+    page,
+  }) => {
+    // The three consequences of the old hand-rolled satellite, now that the row
+    // owns the slot. Each was a real defect while the chip lived in `expansion`:
+    // it stayed behind when the row moved, had no menu of its own, and sat after
+    // the "⋮" in the keyboard lane.
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.goto(SHOWCASE_PATH);
+    const chip = page.getByRole('button', { name: /live sessions — open the session switcher/ });
+    await expect(chip.first()).toBeVisible();
+
+    // 1. It rides the transform. Applied to the same node dnd-kit moves, so a
+    //    chip parked outside the drag wrapper would stay put while the row left.
+    const ridesDrag = await page.evaluate(() => {
+      const button = document.querySelector<HTMLElement>('button[aria-label*="session switcher"]')!;
+      const item = button.closest('li')!;
+      const wrapper = item.firstElementChild as HTMLElement;
+      const before = button.getBoundingClientRect().top;
+      wrapper.style.transform = 'translate3d(0, 60px, 0)';
+      const after = button.getBoundingClientRect().top;
+      wrapper.style.transform = '';
+      return { before, after, moved: Math.round(after - before) };
+    });
+    expect(ridesDrag.moved).toBe(60);
+
+    // 2. It is inside the row's menu surface, so a right-click on the chip opens
+    //    the row's own context menu rather than the browser's.
+    await chip.first().click({ button: 'right' });
+    await expect(page.getByRole('menu')).toBeVisible();
+    await page.keyboard.press('Escape');
+
+    // 3. It is enrolled in the row's keyboard lane as a satellite, in the right
+    //    place: row → chip → "⋮", and never a Tab stop of its own.
+    //
+    //    **Enrolment and order, not traversal.** The arrow keys belong to
+    //    `useRovingFocus`, which the real sidebar container mounts and this
+    //    playground page does not — pressing ArrowRight here moves nothing, so
+    //    an assertion about traversal would be testing the harness, not the
+    //    wiring. What this call site is responsible for is that the chip goes
+    //    through the slot at all: the primitive stamps it
+    //    `data-sidebar-trailing-action` — one of the selectors the lane walks —
+    //    and parks it between the row and the "⋮" in DOM order, which is the
+    //    order the lane then reads. Tab-stop management is `useRovingFocus`
+    //    stamping `tabIndex` at runtime, so there is no attribute to assert
+    //    here and doing so would be testing the harness.
+    const lane = await page.evaluate(() => {
+      const chipButton = document.querySelector<HTMLElement>('[data-sidebar-trailing-action]')!;
+      const item = chipButton.closest('li')!;
+      return Array.from(
+        item.querySelectorAll(
+          '[data-slot="agent-list-item"],[data-sidebar-trailing-action],[data-sidebar-actions]'
+        )
+      ).map((element) =>
+        element.hasAttribute('data-sidebar-trailing-action')
+          ? 'chip'
+          : element.hasAttribute('data-sidebar-actions')
+            ? 'actions'
+            : 'row'
+      );
+    });
+    expect(lane).toEqual(['row', 'chip', 'actions']);
   });
 });
 

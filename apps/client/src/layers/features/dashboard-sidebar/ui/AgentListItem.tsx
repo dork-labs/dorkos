@@ -196,57 +196,36 @@ export function AgentListItem({
             {isMuted && (
               <BellOff className="text-sidebar-foreground/50 size-3" aria-label="Muted" />
             )}
-            {showChip ? (
-              // Invisible, and load-bearing: it reserves EXACTLY the width of the
-              // chip drawn over it below, so a long agent name truncates before it
-              // reaches the chip instead of sliding underneath it. The dot the
-              // badge would have drawn rides inside the chip, so the two never
-              // both appear.
-              <span aria-hidden className="invisible">
-                <LiveSessionsChip count={liveCount} />
-              </span>
-            ) : (
+            {/*
+              No chip here: `trailingAction` below draws it, and reserves its own
+              width inside this slot. The dot and the chip are still mutually
+              exclusive — the chip carries a dot of its own, so showing both
+              would say "working" twice in two vocabularies.
+            */}
+            {!showChip && (
               <AgentActivityBadge status={agentStatus.kind} label={agentStatus.label} />
             )}
           </>
         }
-        // A satellite, not a panel — the same shape `SidebarRow` already uses for
-        // the face: an overlay button on the row's own positioning context,
-        // sitting exactly over the space the trailing slot reserved. The row is a
-        // real `<button>` and a `<button>` inside one is invalid HTML that
-        // assistive tech announces unpredictably, so the chip cannot live in the
-        // trailing slot it is measured by.
+        // The row's own trailing satellite (DOR-1111). It replaces a hand-rolled
+        // overlay this call site used to park in the `expansion` slot, which had
+        // to guess the row's right gutter — and guessed it from the source
+        // rather than the DOM, so the chip landed 20px inside its own
+        // reservation and painted over the truncated agent name.
         //
-        // **`right-2`, matching the row's MEASURED padding, not its source.**
-        // `sidebar-row.tsx` writes `cn('… pr-7 …', SIDEBAR_ROW_INSET)` with
-        // `SIDEBAR_ROW_INSET = 'px-2'`, and tailwind-merge resolves that to
-        // `px-2` — the `pr-7` never reaches the DOM. Positioning at `right-7`
-        // against a gutter that is really 8px put the chip 20px left of the
-        // space the trailing slot reserved, painting it over the truncated agent
-        // name. Measured, not assumed; a test pins the two together.
-        //
-        // **Known limitation, and it belongs to the slot rather than to this
-        // call site**: `{expansion}` is a sibling of the drag wrapper, so this
-        // satellite does not ride the drag transform (dragging an agent leaves
-        // the chip behind at full opacity), sits outside `SidebarMenuSurface`
-        // (no context menu of its own), and lands after the "⋮" in tab order.
-        // `SidebarRow` has no trailing-action slot; the fix is a
-        // `trailingAction` twin of `glyphAction` (DOR-1111), over the `cn()`
-        // merge-order bug that ate the `pr-7` above (DOR-1115). Both live in a
-        // file this task does not own, and a workaround here would only hide
-        // the seam rather than close it.
+        // The row now owns placement AND reservation: it draws `content` twice,
+        // once invisibly inside `trailing` so the title ellipsizes before it
+        // reaches the chip, once as the overlay. Which is also why the chip is a
+        // plain span — the invisible copy lives inside the row's `<button>`, and
+        // a focusable in there is a button nested in a button. The primitive
+        // `console.error`s in development if that rule is broken.
         {...(showChip
           ? {
-              expansion: (
-                <button
-                  type="button"
-                  aria-label={`${liveCount} live sessions — open the session switcher for ${displayName}`}
-                  onClick={openSwitcher}
-                  className="focus-ring absolute top-1/2 right-2 -translate-y-1/2 cursor-pointer rounded-full transition-[scale] active:scale-[0.94]"
-                >
-                  <LiveSessionsChip count={liveCount} />
-                </button>
-              ),
+              trailingAction: {
+                content: <LiveSessionsChip count={liveCount} />,
+                onClick: openSwitcher,
+                label: `${liveCount} live sessions — open the session switcher for ${displayName}`,
+              },
             }
           : {})}
       />

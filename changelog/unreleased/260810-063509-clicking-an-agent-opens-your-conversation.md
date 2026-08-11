@@ -3,6 +3,7 @@ covers:
   - 'feat(client): clicking an agent opens your conversation, and the session switcher holds the rest (P2.6, DOR-1071)'
   - 'fix(client): the "N live" chip counts what the switcher shows, and lands where it reserved (P2.6 review, DOR-1071)'
   - 'fix(client): clicking an agent opens the conversation you were having, never the run it did without you (DOR-1071)'
+  - 'refactor(client): the "N live" chip moves onto SidebarRow''s trailingAction slot (DOR-1071)'
 ---
 
 ### Fixed

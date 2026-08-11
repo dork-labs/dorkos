@@ -2,8 +2,6 @@ import { useState } from 'react';
 import {
   SectionHeader,
   SidebarProvider,
-  Sidebar,
-  SidebarContent,
   SidebarMenu,
   SidebarMenuSurface,
 } from '@/layers/shared/ui';
@@ -68,13 +66,17 @@ const ALL_STATUSES: { status: SessionBorderKind; label: string }[] = [
  * Renders a narrow sidebar-like container without full app chrome.
  */
 function SidebarShell({ children }: { children: React.ReactNode }) {
+  // A sidebar-shaped BOX, not a `<Sidebar>`. The real component turns into an
+  // off-canvas Sheet below 768px and renders nothing until something opens it —
+  // so every row in this file simply vanished at phone width, and a showcase
+  // that disappears on the surface it is meant to demonstrate cannot be used to
+  // check anything there. `SidebarProvider` stays because the rows read its
+  // context; the chrome around it was never what these showcases are about.
   return (
     <SidebarProvider defaultOpen>
-      <Sidebar variant="inset" className="relative h-auto min-h-0 w-64 shrink-0 border-none">
-        <SidebarContent className="p-2">
-          <SidebarMenu>{children}</SidebarMenu>
-        </SidebarContent>
-      </Sidebar>
+      <div className="bg-sidebar text-sidebar-foreground w-64 max-w-full rounded-lg p-2">
+        <SidebarMenu>{children}</SidebarMenu>
+      </div>
     </SidebarProvider>
   );
 }

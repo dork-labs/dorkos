@@ -128,20 +128,22 @@ describe('the inline session panel is gone', () => {
     }
   });
 
-  it('the agent row draws no list of anything', () => {
-    // The structural half, and the one that survives a rename. A panel is a
-    // LIST: whatever it is built from, it has to iterate. The row does not, and
-    // the "N live" chip it does render is a single element.
+  it('the agent row uses no expansion slot at all, and draws no list', () => {
+    // Two structural claims, and the first one got STRONGER when `SidebarRow`
+    // grew its `trailingAction` slot (DOR-1111). The "N live" chip used to ride
+    // `expansion` as a hand-rolled satellite — the only sibling slot the row
+    // published — so this could only bound `expansion` to one occurrence. The
+    // row now owns the trailing satellite, the chip moved into it, and the panel
+    // slot is free to be banned outright: the row has nothing to unfold.
     //
-    // This is what stands in for banning `expansion` outright. The chip cannot
-    // live in the trailing slot — that slot is inside the row's `<button>`, and
-    // a `<button>` inside a `<button>` is invalid HTML — so it rides the
-    // `expansion` slot as an absolutely-positioned satellite, the same shape
-    // `SidebarRow` already uses for the face. A panel would announce itself by
-    // iterating; the satellite never does.
+    // The second claim survives any rename. A panel is a LIST: whatever it is
+    // built from, it has to iterate. The row does not.
+    // Matched as a PROP (`expansion=` in JSX, `expansion:` in a spread), not as
+    // a bare word — the comment above the chip explains what the slot used to
+    // hold, and prose about a defect is not the defect.
     const row = readFileSync(AGENT_ROW, 'utf8');
+    expect(row).not.toMatch(/\bexpansion\s*[:=]/);
     expect(row).not.toMatch(/\.map\(/);
-    expect(row.match(/expansion:/g) ?? []).toHaveLength(1);
   });
 
   it('no sidebar row component renders a SessionRow', () => {
