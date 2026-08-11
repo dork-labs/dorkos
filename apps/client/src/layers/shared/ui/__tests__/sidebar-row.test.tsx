@@ -2,6 +2,7 @@
  * @vitest-environment jsdom
  */
 import { describe, it, expect, vi, beforeAll, afterEach } from 'vitest';
+import type { ReactNode } from 'react';
 import { render, screen, cleanup, fireEvent } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { readFileSync } from 'node:fs';
@@ -328,6 +329,89 @@ describe('SidebarRow — the trailing action slot (DOR-1111)', () => {
   it('marks the control so the roving-focus hook can reach it', () => {
     const { container } = renderRow();
     expect(container.querySelector(`[${SIDEBAR_TRAILING_ACTION_ATTRIBUTE}]`)).toBe(action());
+  });
+
+  it('names the reservation, so a caller’s spec can tell the two copies apart', () => {
+    // Without a mark of its own, `getByText('3 live')` resolves twice and every
+    // consumer spec throws a strict-mode violation on a row that is working
+    // perfectly.
+    const { container } = renderRow();
+    const reservation = container.querySelector<HTMLElement>(
+      '[data-slot="sidebar-row-trailing-reservation"]'
+    );
+    expect(reservation?.textContent).toBe('3 live');
+    expect(reservation?.contains(action())).toBe(false);
+  });
+});
+
+describe('SidebarRow — the reservation refuses interactive content (DOR-1111)', () => {
+  /**
+   * The rule the slot cannot express in its types.
+   *
+   * `content` is drawn twice, and the invisible copy sits INSIDE the row's own
+   * `<button>`. So a caller whose chip is a link, or is wrapped in a tooltip
+   * trigger, ships a button nested in a button on every row at once — the exact
+   * defect `trailingAction` exists to prevent, arriving through the one door the
+   * slot leaves open.
+   *
+   * The structural test above cannot see this: it renders its own fixture
+   * content, so `querySelector('button button')` only ever reports on what the
+   * TEST passed. This asks the question a caller can actually get wrong.
+   */
+  /**
+   * Render a row with the given trailing content and hand back what the GUARD
+   * said, and what the DOM ended up looking like.
+   *
+   * Filtered to this component's own messages, and restored in a `finally`.
+   * React 19 emits its own nested-`<button>` warning down the same channel, so
+   * counting every `console.error` would both mistake React's complaint for the
+   * guard's and, on a failing assertion, leave the spy installed to poison the
+   * next test.
+   */
+  function renderContent(content: ReactNode): { complaints: string[]; nested: boolean } {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const { container } = render(
+        <SidebarRow
+          title="Scout"
+          trailingAction={{ content, onClick: vi.fn(), label: '3 live sessions' }}
+        />
+      );
+      return {
+        complaints: spy.mock.calls
+          .map((call) => String(call[0]))
+          .filter((message) => message.startsWith('SidebarRow:')),
+        nested: container.querySelector('button button') !== null,
+      };
+    } finally {
+      spy.mockRestore();
+    }
+  }
+
+  it('shouts, and names the row, when a caller’s content brings its own button', () => {
+    const { complaints, nested } = renderContent(<button type="button">3 live</button>);
+    // The defect really is in the DOM — this is what the guard is for.
+    expect(nested).toBe(true);
+    expect(complaints).toHaveLength(1);
+    expect(complaints[0]).toContain('3 live sessions');
+  });
+
+  it('catches a link too, which React’s own warning does not', () => {
+    // "Interactive" is every focusable, not the one tag that prompted the rule.
+    // React only polices a handful of nesting pairs and `<a>` inside `<button>`
+    // is not one of them, so without this guard an anchored chip would ship a
+    // focusable inside the row button with nothing said at all.
+    const { complaints } = renderContent(<a href="/team">3 live</a>);
+    expect(complaints).toHaveLength(1);
+    expect(complaints[0]).toContain('<a>');
+  });
+
+  it('says nothing about content that is only ever drawn', () => {
+    // The other half of a check that discriminates: a guard that fires on
+    // everything is a guard nobody reads.
+    const { complaints, nested } = renderContent(<span>3 live</span>);
+    expect(complaints).toEqual([]);
+    expect(nested).toBe(false);
   });
 });
 

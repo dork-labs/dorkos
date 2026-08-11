@@ -113,13 +113,22 @@ function stopsIn(container: HTMLElement): HTMLElement[] {
   );
 }
 
-/** One of a stop's satellites — its "⋮" on the right, its glyph control on the left. */
+/**
+ * One of a stop's satellites, found among its own siblings.
+ *
+ * **The stop's PARENT, and nothing wider.** `SidebarMenuSurface` is the parent
+ * of both a row and every satellite it owns, so one lookup finds them all. This
+ * used to fall back to searching the whole `[data-slot="sidebar-menu-item"]`,
+ * which was already unreachable — no surface puts a satellite outside its own
+ * root — and would have started claiming the wrong element the day an expansion
+ * panel held a row with satellites of its own. A stop can only own what sits
+ * beside it.
+ *
+ * @param stop - The row or header the satellite belongs to.
+ * @param mark - The attribute that identifies which satellite to find.
+ */
 function satelliteFor(stop: HTMLElement, mark: string): HTMLElement | null {
-  return (
-    stop.parentElement?.querySelector<HTMLElement>(`[${mark}]`) ??
-    stop.closest('[data-slot="sidebar-menu-item"]')?.querySelector<HTMLElement>(`[${mark}]`) ??
-    null
-  );
+  return stop.parentElement?.querySelector<HTMLElement>(`[${mark}]`) ?? null;
 }
 
 /**
@@ -149,7 +158,8 @@ function laneStep(key: string): number {
  * the ends are the ends, and `Tab` is how you leave), `Home` / `End` jump to
  * them. `ArrowLeft` / `ArrowRight` on the header collapse or expand it, which
  * is the Tree pattern's own contract and the reason a keyboard reader never has
- * to hunt for a chevron; on a row they step onto and off its "⋮".
+ * to hunt for a chevron; on a row they walk its lane — out through any control
+ * in the right gutter to the "⋮", and back through the row to its glyph.
  *
  * Spread the returned props onto the element that contains the section's header
  * AND its list — the header's two keys are dead if it sits outside.
@@ -326,7 +336,7 @@ export function useRovingFocus(options?: {
       if (!destination) return;
       moveTo(destination, destination);
     },
-    [moveTo, sync]
+    [moveTo]
   );
 
   return { ref, onKeyDown };

@@ -16,6 +16,7 @@ import {
   SidebarRow,
   type RowDragBindings,
 } from '@/layers/shared/ui';
+import { useRovingFocus } from '@/layers/shared/model';
 
 // ---------------------------------------------------------------------------
 // Mock data
@@ -241,6 +242,47 @@ function SidebarRowShowcase() {
         </RowFrame>
       </ShowcaseDemo>
 
+      <ShowcaseLabel>
+        Keyboard — the arrows walk the row&rsquo;s lane: face, row, chip, then the ⋮
+      </ShowcaseLabel>
+      <ShowcaseDemo>
+        <RowFrame width={COCKPIT_SIDEBAR_WIDTH} testId="keyboard">
+          <SidebarRow
+            glyph={<Hash className="text-sidebar-foreground/60 size-3.5" aria-hidden />}
+            glyphAction={{ onClick: () => {}, label: 'Open the demo profile' }}
+            title={LONG_TITLE}
+            dataSlot="sidebar-row-demo"
+            menuNodes={ROW_MENU}
+            actionsLabel="Demo row actions"
+            trailingAction={{
+              content: <LiveChip />,
+              onClick: () => {},
+              label: '3 live sessions',
+            }}
+          />
+        </RowFrame>
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>
+        A caller passing its own padding — the gutter still wins (DOR-1115)
+      </ShowcaseLabel>
+      <ShowcaseDemo>
+        <RowFrame width={COCKPIT_SIDEBAR_WIDTH} testId="override">
+          <SidebarRow
+            glyph={<Hash className="text-sidebar-foreground/60 size-3.5" aria-hidden />}
+            title={LONG_TITLE}
+            dataSlot="sidebar-row-demo"
+            menuNodes={ROW_MENU}
+            actionsLabel="Demo row actions"
+            // Deliberately hostile: `px-6` lands after every other padding class
+            // the row writes, and tailwind-merge would let it swallow the gutter
+            // outright. The gutter is applied last for exactly this reason, and
+            // a browser test measures that it survives.
+            className="px-6"
+          />
+        </RowFrame>
+      </ShowcaseDemo>
+
       <ShowcaseLabel>No trailing action — the gutter is still kept clear for the ⋮</ShowcaseLabel>
       <ShowcaseDemo>
         <RowFrame width={COCKPIT_SIDEBAR_WIDTH} testId="bare">
@@ -287,7 +329,14 @@ function SidebarRowShowcase() {
   );
 }
 
-/** One row at a fixed width, on the sidebar's own background. */
+/**
+ * One row at a fixed width, on the sidebar's own background, inside a real
+ * roving-focus container.
+ *
+ * The container is not decoration. In production every row lives in one, and it
+ * is what makes the arrow keys move along a row's lane at all — a frame without
+ * it would draw a row whose keyboard behaviour no browser test could reach.
+ */
 function RowFrame({
   width,
   testId,
@@ -297,12 +346,14 @@ function RowFrame({
   testId: string;
   children: React.ReactNode;
 }) {
+  const roving = useRovingFocus();
   return (
     <div
       data-slot="sidebar-row-frame"
       data-frame={testId}
       className="bg-sidebar rounded-md py-1"
       style={{ width }}
+      {...roving}
     >
       <SidebarMenu className="gap-0">{children}</SidebarMenu>
     </div>

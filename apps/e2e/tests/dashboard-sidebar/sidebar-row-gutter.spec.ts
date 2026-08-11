@@ -33,6 +33,9 @@ const PLAYGROUND_COLD_START_MS = 90_000;
  */
 const GUTTER_PX = 28;
 
+/** Every frame the showcase draws, in the order it draws them. */
+const FRAMES = ['cockpit', 'narrow', 'keyboard', 'override', 'bare', 'dragged'] as const;
+
 /** One of the showcase's fixed-width frames. */
 function frame(page: Page, name: string): Locator {
   return page.locator(`[data-slot="sidebar-row-frame"][data-frame="${name}"]`);
@@ -45,8 +48,22 @@ function frame(page: Page, name: string): Locator {
  */
 async function openShowcase(page: Page): Promise<void> {
   await page.goto(SHOWCASE_PATH);
-  await expect(page.locator('[data-slot="sidebar-row-frame"]')).toHaveCount(4, {
+  await expect(page.locator('[data-slot="sidebar-row-frame"]')).toHaveCount(FRAMES.length, {
     timeout: PLAYGROUND_COLD_START_MS,
+  });
+}
+
+/**
+ * The accessible name of whatever currently has focus, or the row's own
+ * `data-slot` when the row itself does.
+ *
+ * @param page - The page under test.
+ */
+function focused(page: Page): Promise<string> {
+  return page.evaluate(() => {
+    const element = document.activeElement;
+    if (element === null) return '(nothing)';
+    return element.getAttribute('aria-label') ?? element.getAttribute('data-slot') ?? '(unnamed)';
   });
 }
 
@@ -82,11 +99,29 @@ test.describe('SidebarRow — the reserved right gutter @smoke', () => {
   test('really reserves the gutter it declares', async ({ page }) => {
     await openShowcase(page);
 
-    for (const name of ['cockpit', 'narrow', 'bare', 'dragged']) {
+    for (const name of FRAMES) {
       const row = frame(page, name).locator('[data-slot="sidebar-row-demo"]');
       const padding = await row.evaluate((node) => getComputedStyle(node).paddingRight);
       expect(padding, `the ${name} row lost its right gutter`).toBe(`${GUTTER_PX}px`);
     }
+  });
+
+  test('keeps the gutter even when a caller passes padding of its own', async ({ page }) => {
+    await openShowcase(page);
+
+    // The `override` frame passes `className="px-6"`. Measured with tailwind-merge:
+    // `twMerge('px-2 pr-7 px-6')` → `'px-6'` — a caller's shorthand landing after
+    // the gutter swallows it whole and reopens DOR-1115 from the outside. The row
+    // applies the gutter LAST, after `className`, which is what this pins.
+    const row = frame(page, 'override').locator('[data-slot="sidebar-row-demo"]');
+    const padding = await row.evaluate((node) => ({
+      right: getComputedStyle(node).paddingRight,
+      left: getComputedStyle(node).paddingLeft,
+    }));
+    expect(padding.right, 'a caller’s px-* took the gutter back').toBe(`${GUTTER_PX}px`);
+    // …and the caller still got what it asked for everywhere the row does not
+    // reserve, so this is a targeted refusal rather than className being ignored.
+    expect(padding.left).toBe('24px');
   });
 
   test('keeps the ⋮ inside the gutter rather than over the row’s words', async ({ page }) => {
@@ -141,19 +176,82 @@ test.describe('SidebarRow — the reserved right gutter @smoke', () => {
     }
   });
 
-  test('parks the trailing control exactly on the width the row reserved for it', async ({
+  test('parks the trailing control exactly on the width the row really reserved', async ({
     page,
   }) => {
     await openShowcase(page);
 
     // `right-7` and `pr-7` are one number spelled twice, and nothing in the type
     // system holds them together. This does: the control's right edge and the
-    // row's content-box right edge are the same line. Positioned against the 8px
-    // the row really had, the control landed 20px inside the title box.
-    const holder = frame(page, 'cockpit');
-    const rowBox = await box(holder.locator('[data-slot="sidebar-row-demo"]'));
-    const chipBox = await box(holder.getByRole('button', { name: '3 live sessions' }));
-    expect(chipBox.x + chipBox.width).toBeCloseTo(rowBox.x + rowBox.width - GUTTER_PX, 0);
+    // row's content-box right edge are the same line.
+    //
+    // Measured from the row's REAL padding, not from `GUTTER_PX`. Against the
+    // constant this compared the control to what the row was *supposed* to
+    // reserve, so it stayed green through the original class-order bug — it
+    // pinned `right-7` and nothing else. Reading the padding makes it the
+    // coupling test its name claims: with the row at 8px the control sits 20px
+    // adrift, which is exactly how it came to be painted over the title.
+    for (const name of ['cockpit', 'narrow'] as const) {
+      const holder = frame(page, name);
+      const row = holder.locator('[data-slot="sidebar-row-demo"]');
+      const rowBox = await box(row);
+      const padding = await row.evaluate((node) => parseFloat(getComputedStyle(node).paddingRight));
+      const chipBox = await box(holder.getByRole('button', { name: '3 live sessions' }));
+      expect(
+        chipBox.x + chipBox.width,
+        `the ${name} control is not on the line the row reserved`
+      ).toBeCloseTo(rowBox.x + rowBox.width - padding, 0);
+    }
+  });
+
+  test('walks the row’s lane with the arrow keys, ending on the ⋮', async ({ page }) => {
+    await openShowcase(page);
+
+    // The path the consuming branch depends on, in a real browser. The jsdom
+    // test proves the hook's arithmetic; this proves the marks, the DOM shape
+    // and the roving container agree in the app the operator actually uses —
+    // `SidebarRow` stamps the attribute, `SidebarMenuSurface` makes the control
+    // a sibling, and the section hands it the keyboard.
+    const holder = frame(page, 'keyboard');
+    await holder.locator('[data-slot="sidebar-row-demo"]').focus();
+    expect(await focused(page)).toBe('sidebar-row-demo');
+
+    // Out along the right gutter: the control first, the "⋮" after it. Before
+    // the lane existed, ArrowRight meant "the ⋮" and skipped the control
+    // entirely — it was reachable by pointer only.
+    await page.keyboard.press('ArrowRight');
+    expect(await focused(page), 'ArrowRight skipped the trailing control').toBe('3 live sessions');
+    await page.keyboard.press('ArrowRight');
+    expect(await focused(page)).toBe('Demo row actions');
+
+    // …and back in the same order, on through the row to the glyph control.
+    await page.keyboard.press('ArrowLeft');
+    expect(await focused(page)).toBe('3 live sessions');
+    await page.keyboard.press('ArrowLeft');
+    expect(await focused(page)).toBe('sidebar-row-demo');
+    await page.keyboard.press('ArrowLeft');
+    expect(await focused(page)).toBe('Open the demo profile');
+  });
+
+  test('leaves the section one Tab stop however far out the lane focus has walked', async ({
+    page,
+  }) => {
+    await openShowcase(page);
+
+    const holder = frame(page, 'keyboard');
+    await holder.locator('[data-slot="sidebar-row-demo"]').focus();
+    await page.keyboard.press('ArrowRight');
+    await page.keyboard.press('ArrowRight');
+
+    // Focus is on the "⋮", two steps out. The Tab stop is still the row, so
+    // leaving and coming back returns the reader to the list rather than to a
+    // menu trigger they were only visiting.
+    const stops = await holder.evaluate((node) =>
+      [...node.querySelectorAll<HTMLElement>('a[href],button,input,select,textarea,[tabindex]')]
+        .filter((element) => element.tabIndex === 0)
+        .map((element) => element.getAttribute('data-slot') ?? element.getAttribute('aria-label'))
+    );
+    expect(stops).toEqual(['sidebar-row-demo']);
   });
 
   test('carries the trailing control with the row under a drag transform', async ({ page }) => {
@@ -210,7 +308,7 @@ test.describe('SidebarRow — the reserved right gutter @smoke', () => {
 
     for (const theme of ['light', 'dark'] as const) {
       await setTheme(page, theme);
-      for (const name of ['cockpit', 'narrow'] as const) {
+      for (const name of ['cockpit', 'narrow', 'override'] as const) {
         await info.attach(`sidebar-row-${name}-${theme}`, {
           body: await frame(page, name).screenshot(),
           contentType: 'image/png',
