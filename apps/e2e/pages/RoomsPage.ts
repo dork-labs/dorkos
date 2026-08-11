@@ -1,4 +1,5 @@
 import type { Page, Locator } from '@playwright/test';
+import { NewMenuPage } from './NewMenuPage';
 
 /**
  * The text a sighted reader actually sees inside `element`.
@@ -94,8 +95,16 @@ export class RoomsPage {
   /** Ask a stalled room to reconnect. */
   readonly reconnectButton: Locator;
 
+  /**
+   * The one create surface (BC-45). A channel and a direct message are both
+   * made here now; the section `+` beside each is a deep link into it rather
+   * than a handler of its own.
+   */
+  readonly newMenu: NewMenuPage;
+
   constructor(page: Page) {
     this.page = page;
+    this.newMenu = new NewMenuPage(page);
     this.channels = this.section('channels');
     this.directMessages = this.section('dms');
     this.roomHeader = page
@@ -231,7 +240,11 @@ export class RoomsPage {
    *   takes the deliberate "Create it without agents" path.
    */
   async createChannel(name: string, agents: string[] = []): Promise<void> {
-    await this.channels.getByRole('button', { name: 'New channel' }).click();
+    // Two steps, because the Channels "+" no longer runs a handler of its own:
+    // it deep-links into the one New menu with "Channel" picked out (BC-45).
+    // Going through the "+" rather than the New button is deliberate — it is
+    // the only path that proves the deep link still leads somewhere.
+    await this.newMenu.chooseFromSectionPlus('New channel', 'new-channel');
     const dialog = this.page.getByRole('dialog');
     await dialog.waitFor({ state: 'visible' });
     await dialog.getByRole('textbox', { name: 'Channel name' }).fill(name);
@@ -261,20 +274,19 @@ export class RoomsPage {
   /**
    * Open the direct-message picker, from whichever door this install has.
    *
-   * There are two, and which one exists is a property of the data: the Direct
-   * messages section carries a "+", and BC-32 withholds that section entirely
-   * until a conversation exists — so on a fresh install the way in is the
-   * Agents header's "+" menu instead. (Both are interim: the single New button
-   * subsumes them in P2.4.) A page object that knew only the first one turned
-   * "this operator has no conversations yet" into a timeout.
+   * Both doors land in the same place now (BC-45). The Direct messages section
+   * carries a `+`, and BC-32 withholds that section entirely until a
+   * conversation exists — so on a fresh install the way in is the New button
+   * itself, which is always there. Preferring the `+` when it exists keeps the
+   * deep link under test; falling back to the New button is what stops "this
+   * operator has no conversations yet" becoming a timeout.
    */
   async openDirectMessagePicker(): Promise<void> {
-    const sectionPlus = this.directMessages.getByRole('button', { name: 'New message' });
+    const sectionPlus = this.newMenu.sectionPlus('New direct message');
     if ((await sectionPlus.count()) > 0) {
-      await sectionPlus.first().click();
+      await this.newMenu.chooseFromSectionPlus('New direct message', 'new-message');
     } else {
-      await this.page.getByRole('button', { name: 'Add agent' }).click();
-      await this.page.getByRole('button', { name: 'New message…' }).click();
+      await this.newMenu.choose('new-message');
     }
     await this.agentSearch.waitFor({ state: 'visible' });
   }

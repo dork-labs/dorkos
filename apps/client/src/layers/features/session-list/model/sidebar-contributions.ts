@@ -1,25 +1,21 @@
-import { Settings, Sun, Bug } from 'lucide-react';
+import { Sun, Bug } from 'lucide-react';
 import type { SidebarFooterContribution } from '@/layers/shared/model';
 
 /**
  * Built-in sidebar footer buttons.
  *
- * Note: The `settings` and `theme` buttons use no-op `onClick` placeholders —
- * the rendering component (`SidebarFooterStrip`) overrides click behavior for
- * these IDs because their handlers require React hooks (URL deep-link navigation
- * for settings; theme state for theme cycling) that can't run outside a component.
+ * Note: The `theme` button uses a no-op `onClick` placeholder — the rendering
+ * component overrides click behavior for that ID because its handler requires
+ * React hooks (theme state) that can't run outside a component.
+ *
+ * **`settings` is deliberately not here.** The settings dialog has one door in
+ * this panel now: "Workspace settings" in the header block's menu (BC-43). It
+ * was contributed here while the header block did not exist, and P2.5's own
+ * comment recorded the fold as its home "until then" — so it goes with the
+ * arrival of P2.4 rather than leaving one dialog behind two differently-named
+ * rows in two different menus.
  */
 export const SIDEBAR_FOOTER_BUTTONS: SidebarFooterContribution[] = [
-  {
-    id: 'settings',
-    icon: Settings,
-    label: 'Settings',
-    onClick: () => {
-      // Overridden in SidebarFooterStrip — the actual handler calls
-      // `useSettingsDeepLink().open()` which requires the router context.
-    },
-    priority: 2,
-  },
   {
     id: 'theme',
     icon: Sun,

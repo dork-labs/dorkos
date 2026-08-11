@@ -1,10 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import type { SmartGroupCandidate } from '@dorkos/shared/smart-groups';
-import {
-  meetsSmartGroupDisclosureThreshold,
-  activeNowPreset,
-  byRuntimePresets,
-} from '../smart-group-presets';
+import { offersGroupAffordances } from '../rules/build-library-sections';
+import { activeNowPreset, byRuntimePresets } from '../smart-group-presets';
 
 function candidate(overrides: Partial<SmartGroupCandidate> = {}): SmartGroupCandidate {
   return {
@@ -17,15 +14,20 @@ function candidate(overrides: Partial<SmartGroupCandidate> = {}): SmartGroupCand
   };
 }
 
-describe('meetsSmartGroupDisclosureThreshold', () => {
+// The presets used to carry their own copy of this gate
+// (`meetsSmartGroupDisclosureThreshold`, eight agents or two runtimes).
+// `offersGroupAffordances` is the same predicate over the same numbers, and
+// since P2.4 both are asked by the one New menu about the one "Agent group"
+// item — so the copy is gone and the cases below moved onto the survivor.
+describe('the gate the presets appear behind', () => {
   it('is false for a small, single-runtime fleet', () => {
     const candidates = Array.from({ length: 3 }, (_, i) => candidate({ projectPath: `/${i}` }));
-    expect(meetsSmartGroupDisclosureThreshold(candidates)).toBe(false);
+    expect(offersGroupAffordances(candidates)).toBe(false);
   });
 
   it('is true once the fleet reaches 8 agents, even with one runtime', () => {
     const candidates = Array.from({ length: 8 }, (_, i) => candidate({ projectPath: `/${i}` }));
-    expect(meetsSmartGroupDisclosureThreshold(candidates)).toBe(true);
+    expect(offersGroupAffordances(candidates)).toBe(true);
   });
 
   it('is true with 2+ distinct runtimes regardless of fleet size', () => {
@@ -33,12 +35,12 @@ describe('meetsSmartGroupDisclosureThreshold', () => {
       candidate({ projectPath: '/a', runtime: 'codex' }),
       candidate({ projectPath: '/b', runtime: 'claude-code' }),
     ];
-    expect(meetsSmartGroupDisclosureThreshold(candidates)).toBe(true);
+    expect(offersGroupAffordances(candidates)).toBe(true);
   });
 
   it('is false just under both thresholds', () => {
     const candidates = Array.from({ length: 7 }, (_, i) => candidate({ projectPath: `/${i}` }));
-    expect(meetsSmartGroupDisclosureThreshold(candidates)).toBe(false);
+    expect(offersGroupAffordances(candidates)).toBe(false);
   });
 });
 

@@ -47,6 +47,15 @@ export interface AccountMenuRowsProps {
    * button right below these rows. Two rows into one dialog is one row too many.
    */
   showSettings?: boolean;
+  /**
+   * Draw "View profile", or leave it out for a menu whose surface already
+   * offers the profile drawer somewhere else.
+   *
+   * The sidebar's footer fold is that case: BC-43 gives "Account" a home in the
+   * header block, so the fold keeps the identity it displays and the sign-out
+   * only it offers, and yields the door.
+   */
+  showViewProfile?: boolean;
 }
 
 /**
@@ -65,6 +74,7 @@ export function AccountMenuRows({
   onOpenSettings,
   onSignOut,
   showSettings = true,
+  showViewProfile = true,
 }: AccountMenuRowsProps) {
   const face = teamMemberFace(member);
 
@@ -91,9 +101,11 @@ export function AccountMenuRows({
         </div>
       </div>
       <ResponsiveDropdownMenuSeparator />
-      <ResponsiveDropdownMenuItem icon={UserRound} onSelect={onViewProfile}>
-        View profile
-      </ResponsiveDropdownMenuItem>
+      {showViewProfile && (
+        <ResponsiveDropdownMenuItem icon={UserRound} onSelect={onViewProfile}>
+          View profile
+        </ResponsiveDropdownMenuItem>
+      )}
       {showSettings && (
         <ResponsiveDropdownMenuItem icon={Settings} onSelect={onOpenSettings}>
           Settings

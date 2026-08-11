@@ -1,4 +1,5 @@
 import { expect, type Page, type Locator } from '@playwright/test';
+import { NewMenuPage } from './NewMenuPage';
 
 /** dnd-kit's `PointerSensor` arms only after the pointer travels this far. */
 const DND_ACTIVATION_PX = 8;
@@ -31,25 +32,19 @@ export class DashboardSidebarPage {
   readonly newSessionButton: Locator;
 
   /**
-   * The roster's "+" add-agent trigger (opens New agent… / Bring in a
-   * project / Browse Marketplace / New group…). Scoped to the shadcn
-   * `sidebar-group-action` slot so it never collides with
-   * `AgentOnboardingCard`'s plain "Add agent" button, which matches the same
-   * accessible name at small fleet sizes.
+   * The one create surface (BC-45).
+   *
+   * The Agents section's `+` used to open its own popover with New agent… /
+   * Bring in a project / New group… in it. That popover is gone: the `+` is a
+   * deep link into the New menu now, so anything this page object used to make
+   * from it, it makes from here.
    */
-  readonly addAgentButton: Locator;
+  readonly newMenu: NewMenuPage;
 
   constructor(page: Page) {
     this.page = page;
     this.newSessionButton = page.getByRole('button', { name: /new session/i });
-    // Scoped by `data-sidebar`, not `data-slot`. The trigger is a Radix
-    // `PopoverTrigger asChild`, and Radix's own `data-slot="popover-trigger"`
-    // wins over the one `SidebarGroupAction` sets — so the `data-slot` form of
-    // this selector matched nothing. `data-sidebar` is ours alone, and it keeps
-    // the scoping this locator exists for.
-    this.addAgentButton = page.locator(
-      'button[data-sidebar="group-action"][aria-label="Add agent"]'
-    );
+    this.newMenu = new NewMenuPage(page);
   }
 
   /** Start a new session via the roster's per-agent "New session" action. */
@@ -168,8 +163,10 @@ export class DashboardSidebarPage {
    * it instead).
    */
   async createGroup(name: string) {
-    await this.addAgentButton.click();
-    await this.page.getByRole('button', { name: 'New group…' }).click();
+    // Two steps now, and they are the product's: the New menu's "Agent group"
+    // is a submenu — by hand, or from rules — and "Empty group" is the by-hand
+    // entry that mounts the inline editor Library ▸ Agents draws (BC-45).
+    await this.newMenu.chooseGroupSubmenu('new-group-empty');
     const input = this.page.getByRole('textbox', { name: 'New group name' });
     await input.fill(name);
     await input.press('Enter');

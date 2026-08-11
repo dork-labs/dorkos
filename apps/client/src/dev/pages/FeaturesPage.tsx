@@ -1,6 +1,7 @@
 import { PlaygroundPageLayout } from '../PlaygroundPageLayout';
 import { FEATURES_SECTIONS } from '../playground-registry';
 import { AgentSidebarShowcases } from '../showcases/AgentSidebarShowcases';
+import { SidebarChromeShowcases } from '../showcases/SidebarChromeShowcases';
 import { JumpBackInShowcases } from '../showcases/JumpBackInShowcases';
 import { AgentFleetShowcases } from '../showcases/AgentFleetShowcases';
 import { RelayShowcases } from '../showcases/RelayShowcases';
@@ -25,6 +26,7 @@ export function FeaturesPage() {
       sections={FEATURES_SECTIONS}
     >
       <PersonalityPickerShowcases />
+      <SidebarChromeShowcases />
       <AgentSidebarShowcases />
       <JumpBackInShowcases />
       <AgentFleetShowcases />

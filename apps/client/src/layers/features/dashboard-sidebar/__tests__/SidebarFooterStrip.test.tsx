@@ -76,7 +76,6 @@ vi.mock('@/layers/shared/model/extension-registry', () => ({
       onClick: mockAgentDialog,
       priority: 1,
     },
-    { id: 'settings', icon: MockIcon, label: 'Settings', onClick: () => {}, priority: 2 },
     { id: 'theme', icon: MockIcon, label: 'Toggle Theme', onClick: () => {}, priority: 3 },
     {
       id: 'devtools',
@@ -284,12 +283,18 @@ describe('SidebarFooterStrip', () => {
     expect(screen.getByTestId('account-menu-rows')).toBeInTheDocument();
   });
 
-  it('opens settings through the URL deep link', async () => {
+  it('offers no Settings row of its own — the header block’s menu is the one door', async () => {
+    // P2.4's header block carries "Workspace settings" (BC-43), so the built-in
+    // `settings` contribution retired rather than leaving one dialog behind two
+    // differently-named rows in two menus. Deleting the assertion would have
+    // been the cheap way out; this one fails if the row comes back.
     renderStrip();
 
     await userEvent.click(screen.getByLabelText('More'));
-    await userEvent.click(await screen.findByText('Settings'));
-    expect(mockOpenSettings).toHaveBeenCalled();
+    // Observable: the fold really did open and really does have rows.
+    expect(await screen.findByTestId('help-menu-items')).toBeInTheDocument();
+    expect(screen.queryByText('Settings')).not.toBeInTheDocument();
+    expect(mockOpenSettings).not.toHaveBeenCalled();
   });
 
   it.each([

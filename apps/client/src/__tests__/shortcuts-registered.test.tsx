@@ -40,6 +40,7 @@ import { SHORTCUTS, getShortcutsGrouped, type ShortcutDef } from '@/layers/share
 import { useRightPanelShortcut, useAgentProfileShortcut } from '@/layers/features/right-panel';
 import { useAppTabShortcuts } from '@/layers/features/app-tabs';
 import { useSessionPopoverShortcut } from '@/layers/features/status';
+import { useNewSessionShortcut } from '@/layers/features/dashboard-sidebar';
 import { SidebarProvider } from '@/layers/shared/ui';
 import { enterDesktopShell, leaveDesktopShell } from '@/test-helpers/desktop-shell';
 
@@ -101,6 +102,10 @@ const PROVED: Record<string, Prover> = {
   'session-details': () => {
     renderHook(() => useSessionPopoverShortcut(() => {}));
     return press({ key: '.', code: 'Period', metaKey: true, shiftKey: true });
+  },
+  'new-session': () => {
+    renderHook(() => useNewSessionShortcut(() => {}));
+    return press({ key: 'n', code: 'KeyN', metaKey: true });
   },
   'new-tab': () => {
     renderHook(() => useAppTabShortcuts());

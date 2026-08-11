@@ -31,6 +31,12 @@ export interface AccountMenuContainerProps {
    * See {@link AccountMenuRowsProps.showSettings}.
    */
   showSettings?: boolean;
+  /**
+   * Rows variant only.
+   *
+   * See {@link AccountMenuRowsProps.showViewProfile}.
+   */
+  showViewProfile?: boolean;
 }
 
 /**
@@ -52,6 +58,7 @@ export interface AccountMenuContainerProps {
 export function AccountMenuContainer({
   variant = 'trigger',
   showSettings = true,
+  showViewProfile = true,
 }: AccountMenuContainerProps = {}) {
   const roster = useTeamRoster();
   const { open: openProfile } = useProfileDeepLink();
@@ -97,7 +104,7 @@ export function AccountMenuContainer({
   };
 
   return variant === 'rows' ? (
-    <AccountMenuRows {...props} showSettings={showSettings} />
+    <AccountMenuRows {...props} showSettings={showSettings} showViewProfile={showViewProfile} />
   ) : (
     <AccountMenu {...props} />
   );
