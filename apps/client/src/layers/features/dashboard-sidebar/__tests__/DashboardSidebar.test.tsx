@@ -13,6 +13,7 @@ import {
 import { toast } from 'sonner';
 import { resolveAgentVisual } from '@/layers/shared/lib';
 import { useInteractionStore } from '@/layers/entities/interactions';
+import { useRoomOpenThreadStore } from '@/layers/entities/room';
 import { useIdleNudgeStore } from '@/layers/entities/attention';
 import { useDiscoveryStore } from '@/layers/entities/discovery';
 import { useAgentCreationStore } from '@/layers/shared/model';
@@ -760,7 +761,12 @@ describe('DashboardSidebar', () => {
     await waitFor(() => expect(agentRowButton('alpha')).toBeInTheDocument());
     expect(agentRowButton('alpha')).toHaveAttribute('aria-current', 'page');
     expect(agentRowButton('beta')).not.toHaveAttribute('aria-current');
-    expect(within(todayZone()!).getAllByRole('button').length).toBeGreaterThan(0);
+    // Both copies are the SAME conversation, which is what makes the dual
+    // presence readable rather than confusing: Today's row is `s1` under
+    // alpha's name, and the Library row is alpha itself.
+    const anchor = within(todayZone()!).getByRole('button', { current: 'page' });
+    expect(anchor.getAttribute('title')).toContain('alpha');
+    expect(anchor).not.toBe(agentRowButton('alpha'));
   });
 
   // ── P2 AC-9 (this task's half): keyboard only ──
@@ -2103,6 +2109,94 @@ describe('Today — what you were doing, and it holds still', () => {
       mountSidebar();
       expect(todayOrder()).not.toContainEqual(expect.stringContaining('Nightly digest'));
       expect(todayOrder()).toContainEqual(expect.stringContaining('+ 1 automated'));
+    });
+  });
+
+  describe('BC-15 / BC-33 — a thread and the room it lives in are two rows', () => {
+    /** A channel with one thread hanging off an entry in it. */
+    function seedThreadedChannel() {
+      mockRooms.mockReturnValue([channel('c1', 'general')]);
+      mockThreads.mockReturnValue([
+        {
+          roomId: 'c1',
+          roomKind: 'channel',
+          roomSlug: 'general',
+          roomTitle: 'general',
+          rootEntryId: 'entry-77',
+          rootAuthorId: 'a1',
+          rootPreview: 'Anything else to check?',
+          replyCount: 2,
+          unreadCount: 0,
+          lastActivityAt: new Date(Date.now() - 60_000).toISOString(),
+        },
+      ]);
+      act(() => {
+        useInteractionStore.getState().recordOpened('room', 'c1', Date.now() - 10_000);
+      });
+    }
+
+    /** Put the router on a room, optionally inside one of its threads. */
+    function openRoom(roomId: string, thread?: string) {
+      mockPathname = '/channels';
+      mockLocation = {
+        pathname: '/channels',
+        search: { id: roomId, ...(thread === undefined ? {} : { thread }) },
+      };
+    }
+
+    it('lights exactly one of them when the ROOM is open', async () => {
+      seedThreadedChannel();
+      openRoom('c1');
+      mountSidebar();
+      await waitFor(() => expect(todayOrder().join('|')).toContain('Anything else'));
+
+      const active = todayRowNodes().filter(
+        (row) => row.getAttribute('aria-current') === 'page'
+      );
+      expect(active).toHaveLength(1);
+      expect(active[0]?.getAttribute('title')).not.toContain('Anything else');
+    });
+
+    it('lights the THREAD, and only the thread, when the thread is open', async () => {
+      seedThreadedChannel();
+      openRoom('c1', 'entry-77');
+      const view = mountSidebar();
+      await waitFor(() => expect(todayOrder().join('|')).toContain('Anything else'));
+      view.refresh();
+
+      const active = todayRowNodes().filter(
+        (row) => row.getAttribute('aria-current') === 'page'
+      );
+      // Two rows carry `roomId: 'c1'`. Exactly one of them is what the operator
+      // opened, and `aria-current="page"` has to stay unique or scroll-to-active
+      // has no anchor to find (BC-36).
+      expect(active).toHaveLength(1);
+      expect(active[0]?.getAttribute('title')).toContain('Anything else');
+      // BC-21: and it is Today's first row, not its parent channel.
+      expect(todayOrder()[0]).toContain('Anything else');
+    });
+
+    it('opens the thread panel rather than only the room it lives in', async () => {
+      seedThreadedChannel();
+      openRoom('c1');
+      mountSidebar();
+      await waitFor(() => expect(todayOrder().join('|')).toContain('Anything else'));
+
+      const threadRow = todayRowNodes().find((row) =>
+        row.getAttribute('title')?.includes('Anything else')
+      );
+      expect(threadRow, 'no thread row in Today').toBeDefined();
+      fireEvent.click(threadRow!);
+      expect(mockNavigate).toHaveBeenCalledWith({
+        to: '/channels',
+        search: { id: 'c1', thread: 'entry-77' },
+      });
+      // And the STORE, which is what the room widget actually draws from. The
+      // URL alone gets mirrored away a frame later when the reader is already
+      // in that room (`use-thread-url-sync.ts`), so the click would open
+      // nothing — which is exactly what the browser found.
+      expect(useRoomOpenThreadStore.getState().open.c1?.rootEntryId).toBe('entry-77');
+      expect(useRoomOpenThreadStore.getState().open.c1?.focusComposer).toBe(false);
     });
   });
 

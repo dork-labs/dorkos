@@ -27,7 +27,7 @@ import type { SidebarRowModel } from './build-sidebar-model';
  * @param rows - This frame's rows, in the order the model wants.
  * @param heldKeys - The row keys in the order the panel is currently showing.
  */
-export function applyHeldOrder(
+function applyHeldOrder(
   rows: readonly SidebarRowModel[],
   heldKeys: readonly string[]
 ): SidebarRowModel[] {

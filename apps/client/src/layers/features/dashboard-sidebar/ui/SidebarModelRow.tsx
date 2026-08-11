@@ -32,6 +32,7 @@ import { AgentAvatar, useAgentVisual } from '@/layers/entities/agent';
 import { dismissIdleNudge } from '@/layers/entities/attention';
 import { SessionVerbLine } from '@/layers/entities/session';
 import type { SidebarIconId, SidebarRowModel, SidebarTarget } from '../model/build-sidebar-model';
+import { sameTarget } from '../model/rules/targets';
 import { AgentListItem } from './AgentListItem';
 import { RoomRow } from './rooms/RoomRow';
 import { Sortable, sidebarDndData, sidebarRowDndId } from './dnd/SidebarDndPrimitives';
@@ -58,7 +59,12 @@ export function isRowActive(target: SidebarTarget, active: SidebarTarget | null)
     return active.kind === 'session' && active.cwd === target.path;
   }
   if (target.kind === 'room') {
-    return active.kind === 'room' && active.roomId === target.roomId;
+    // **Compared through the row key, never through `roomId`.** A thread and
+    // the room it lives in are two rows carrying the same `roomId`, so an id
+    // comparison lights both — two active tints, and an `aria-current="page"`
+    // that is no longer unique, which is exactly the handle scroll-to-active
+    // finds the anchor by (BC-36).
+    return sameTarget(target, active);
   }
   return false;
 }
@@ -151,7 +157,12 @@ function SidebarModelRowBody({
     return <AgentRowFromModel path={target.path} row={row} isActive={isActive} drag={drag} />;
   }
 
-  if (target.kind === 'room') {
+  // **A thread is deliberately NOT routed here.** `RoomRow` draws the room —
+  // its `#slug`, its roster, its menu — so a thread sent through it comes out
+  // as a second copy of its channel, with the root message it hangs off
+  // nowhere on the row. It goes to the generic row instead, which draws what
+  // the model actually gave it: `general › Anything else to check?` (BC-23).
+  if (target.kind === 'room' && target.roomKind !== 'thread') {
     const room = chrome.roomsById.get(target.roomId);
     // The index and this map are built from the same query, so a room row
     // always has its room. Drawing nothing rather than throwing keeps a torn

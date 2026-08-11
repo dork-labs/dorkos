@@ -107,22 +107,37 @@ function countFinishedWhileAway(
 /**
  * The digest's content and the date the rule judges it against.
  *
- * **Four gates, and every one of them can say no.**
+ * **Five gates, and every one of them can say no.**
  *
  * 1. The install has to have the welcome-back setting and have it switched on.
  *    A person who turned "greet me when I get back" off has answered this
  *    question already, and the sidebar is not a second place to ask it.
- * 2. This device has to have seen the operator before, or there is no absence
+ * 2. It has to allow at least one post. `maxPosts: 0` is a legitimate value the
+ *    server honours (`planWelcomeBack` slices to it), and it means no note will
+ *    be written — so a row promising one would be a door onto an empty room.
+ * 3. This device has to have seen the operator before, or there is no absence
  *    to measure — only a first visit.
- * 3. The absence has to clear the same threshold the greeting uses
+ * 4. The absence has to clear the same threshold the greeting uses
  *    (`welcomeBack.absenceThresholdMinutes`), so lunch is not a homecoming.
- * 4. Something has to actually have finished. A "while you were away" that
+ * 5. Something has to actually have finished. A "while you were away" that
  *    reports nothing is a product inventing an event to have a moment about.
  *
  * The write happens in an effect, once, the first time a real count survives
- * all four — and the value the rule reads stays latched at what this tab loaded
+ * all five — and the value the rule reads stays latched at what this tab loaded
  * with, so the row survives its own memory being written. See
  * {@link DigestFacts.lastShownDate}.
+ *
+ * **The dismissal is narrower than BC-22's words, deliberately and for now.**
+ * "It dissolves when the user opens any conversation" is implemented as "the
+ * newest interaction record moved", and only `SidebarChrome.openTarget` writes
+ * one — so opening a conversation from ⌘K or from the home surface does not put
+ * the row away within this browser session. It still goes on the next load,
+ * because `lastShownDate` was written the moment it rendered, so the failure is
+ * one stale row for one session rather than a repeated moment. Widening it
+ * means every open path recording an interaction, which is P3's job: it retires
+ * `dorkos:agent-frecency-v2` into this same store and makes ⌘K a writer
+ * (`entities/interactions`, module note). Doing it here would put a write into
+ * three sibling features this task does not own.
  *
  * @param input - The clock, the sessions, the interactions and stored prefs.
  */
@@ -148,6 +163,7 @@ export function useDigestFacts(input: UseDigestFactsInput): DigestFacts {
   const digest = useMemo<DigestState>(() => {
     if (dissolved) return { finishedWhileAwayCount: 0 };
     if (!welcomeBack.isAvailable || !welcomeBack.enabled) return { finishedWhileAwayCount: 0 };
+    if (welcomeBack.maxPosts <= 0) return { finishedWhileAwayCount: 0 };
     if (seen === null) return { finishedWhileAwayCount: 0 };
     if (now - seen < welcomeBack.absenceThresholdMinutes * 60_000) {
       return { finishedWhileAwayCount: 0 };
@@ -160,6 +176,7 @@ export function useDigestFacts(input: UseDigestFactsInput): DigestFacts {
     welcomeBack.isAvailable,
     welcomeBack.enabled,
     welcomeBack.absenceThresholdMinutes,
+    welcomeBack.maxPosts,
     seen,
     now,
     sessions,

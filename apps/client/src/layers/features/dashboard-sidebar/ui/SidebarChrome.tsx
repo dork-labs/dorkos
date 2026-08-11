@@ -40,7 +40,7 @@ import {
 } from '@/layers/entities/config';
 import { useInteractionStore } from '@/layers/entities/interactions';
 import { useMeshAgentPaths, useMeshMemberIds } from '@/layers/entities/mesh';
-import { useRooms } from '@/layers/entities/room';
+import { useRooms, useRoomOpenThreadStore } from '@/layers/entities/room';
 import {
   beginSessionNavigation,
   notifySessionLookupFailed,
@@ -276,12 +276,24 @@ export function SidebarChrome({ activeTarget, children }: SidebarChromeProps) {
           openAgent(target.path);
           return;
         case 'room':
-          // A thread row opens its thread PANEL, beside the room it lives in —
-          // `?thread=` is the entry it hangs off, which the model carries for
-          // exactly this. The interaction is recorded against the room, because
-          // a thread reads the room's own cursor (ADR 260728-022013) and one
-          // place has one record.
+          // The interaction is recorded against the room, because a thread
+          // reads the room's own cursor (ADR 260728-022013) and one place has
+          // one record.
           useInteractionStore.getState().recordOpened('room', target.roomId);
+          // **A thread row opens the PANEL, and the STORE is what opens it.**
+          // Navigating with `?thread=` alone is not enough: the room widget
+          // treats its own store as the source of truth and mirrors it back out
+          // (`use-thread-url-sync.ts`), seeding from the URL only on the way
+          // INTO a room. So a thread opened while already reading that room had
+          // its param wiped a frame later and the click did nothing. Writing
+          // the store is the same act a reply row in the timeline performs; the
+          // URL then follows from it, which is also what makes the address
+          // survive a reload. `focusComposer` stays false — clicking a row in
+          // the sidebar is a request to READ, and on a phone the difference is
+          // whether a keyboard opens over what you came to look at.
+          if (target.rootEntryId !== undefined) {
+            useRoomOpenThreadStore.getState().openThread(target.roomId, target.rootEntryId);
+          }
           navigate({
             to: '/channels',
             search: {

@@ -87,6 +87,38 @@ async function seedChannel(roomsApi: RoomsApi, slug: string): Promise<SeededRoom
   return room;
 }
 
+/**
+ * What a thread row prints after its `›`.
+ *
+ * A thread's row shows the ROOT it hangs off (`ThreadSummary.rootPreview`), not
+ * its newest reply — so this is the root's own words, and it is deliberately
+ * unlike anything else this suite posts.
+ */
+const THREAD_ROOT_TEXT = 'The message this thread hangs off.';
+
+/**
+ * A channel with a thread hanging off its first entry.
+ *
+ * The threaded case is what makes the "exactly one anchor" assertions
+ * discriminate: a thread row and its channel row carry the same `roomId`, so a
+ * sidebar that compared ids rather than row keys lights both — and the count-1
+ * check below passes trivially on a channel that has no thread.
+ *
+ * @param roomsApi - This test's seeder, which also puts the room away again.
+ * @param slug - The channel's slug, unique to this run.
+ */
+async function seedThreadedChannel(
+  roomsApi: RoomsApi,
+  slug: string
+): Promise<{ room: SeededRoom; rootEntryId: string }> {
+  const room = await roomsApi.createChannel(slug);
+  await roomsApi.postEntries(room.id, [THREAD_ROOT_TEXT]);
+  const [rootEntryId] = await roomsApi.entryIds(room.id);
+  if (rootEntryId === undefined) throw new Error(`${slug} stored no entry to hang a thread off`);
+  await roomsApi.postThreadReply(room.id, rootEntryId, 'And here is a reply under it.');
+  return { room, rootEntryId };
+}
+
 test.describe('Dashboard Sidebar — Today @smoke', () => {
   test.describe.configure({ mode: 'serial', timeout: 120_000 });
 
@@ -122,6 +154,37 @@ test.describe('Dashboard Sidebar — Today @smoke', () => {
     // BC-21's whole point: the row that was first a moment ago is not first now,
     // and the one the operator opened is.
     await expect(dashboardSidebar.todayRows.first()).toContainText(second);
+  });
+
+  test('lights the thread you opened, not the channel it lives in', async ({
+    basePage,
+    dashboardSidebar,
+    roomsApi,
+  }) => {
+    const slug = `e2e-today-thread-${roomsApi.runId}`;
+    await seedThreadedChannel(roomsApi, slug);
+
+    await basePage.goto();
+    await basePage.waitForAppReady();
+    await basePage.ensureSidebarOpen();
+
+    await expect(dashboardSidebar.rowWithText(slug)).toBeVisible({ timeout: SERVER_ROUND_TRIP_MS });
+    await dashboardSidebar.rowWithText(slug).first().click();
+
+    // Both rows are on screen now — the channel, and the thread inside it.
+    const threadRow = dashboardSidebar.todayRows.filter({ hasText: THREAD_ROOT_TEXT });
+    await expect(threadRow).toHaveCount(1, { timeout: SERVER_ROUND_TRIP_MS });
+    // The CHANNEL is what is open, so the channel is the one that is lit.
+    await expect(dashboardSidebar.todayAnchor).toHaveCount(1);
+    await expect(dashboardSidebar.todayAnchor).not.toContainText(THREAD_ROOT_TEXT);
+
+    // Open the thread. It is a different place, so the tint and the anchor move
+    // to it — and `aria-current="page"` stays unique, which is the handle
+    // scroll-to-active finds the anchor by.
+    await threadRow.first().click();
+    await expect(dashboardSidebar.todayAnchor).toHaveCount(1);
+    await expect(dashboardSidebar.todayAnchor).toContainText(THREAD_ROOT_TEXT);
+    await expect(dashboardSidebar.todayRows.first()).toContainText(THREAD_ROOT_TEXT);
   });
 
   test('scrolls the anchor into view on a switch, and on nothing else', async ({

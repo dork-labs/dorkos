@@ -210,6 +210,31 @@ describe('BC-19 / BC-20 — automated sessions and the soft cap', () => {
     expect(rows.find((row) => row.key === 'session:ses-auto-1')?.reason).toBe('today:automated');
   });
 
+  it('draws a revealed run ONCE when the operator has that very run open', () => {
+    // The ordinary flow, and the collision it used to produce: press the
+    // reveal, click a run. The anchor branch draws it at the top because the
+    // conversations loop filtered it out, and the reveal used to append it
+    // again — two rows keyed `session:ses-auto-1` inside one section, which is
+    // a duplicate React key rather than a cosmetic repeat.
+    const state: SidebarState = {
+      ...busyFixture,
+      todayAutomatedExpanded: true,
+      activeTarget: {
+        kind: 'session',
+        sessionId: 'ses-auto-1',
+        agentPath: '/Users/dev/code/tangerine',
+        cwd: '/Users/dev/code/tangerine',
+      },
+    };
+    const keys = todayKeys(state);
+    expect(keys.filter((key) => key === 'session:ses-auto-1')).toHaveLength(1);
+    expect(new Set(keys).size).toBe(keys.length);
+    // Still at the top, and still revealed beside its sibling — the dedupe
+    // keeps the anchor, not the copy underneath.
+    expect(keys[0]).toBe('session:ses-auto-1');
+    expect(keys).toContain('session:ses-auto-2');
+  });
+
   it('says how to put them away again once they are open', () => {
     const row = todayRows({ ...busyFixture, todayAutomatedExpanded: true }).find(
       (entry) => entry.key === 'rollup:automated'

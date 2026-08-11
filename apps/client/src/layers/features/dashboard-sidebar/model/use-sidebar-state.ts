@@ -113,16 +113,30 @@ function useActiveTarget(
   roomKindOf: (roomId: string) => 'channel' | 'dm' | 'thread'
 ): SidebarTarget | null {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
-  const search = useSearch({ strict: false }) as { id?: string; dir?: string; session?: string };
+  const search = useSearch({ strict: false }) as {
+    id?: string;
+    dir?: string;
+    session?: string;
+    thread?: string;
+  };
   const sessionId = pathname === '/session' ? (search.session ?? null) : null;
   const cwd = pathname === '/session' ? (search.dir ?? null) : null;
   const roomId = pathname === '/channels' ? (search.id ?? null) : null;
+  // **`?thread=` is part of what is open, not decoration.** A thread row now
+  // navigates to it, so a reader that ignored it would answer "the room" for a
+  // click on the thread — and the anchor, the active tint and the scroll would
+  // all land on a different row from the one pressed. `?thread=` is the ROOT
+  // ENTRY a thread hangs off, which is also what keys the row (`rowKey`).
+  const rootEntryId = pathname === '/channels' ? (search.thread ?? null) : null;
   const roomKind = roomId === null ? null : roomKindOf(roomId);
   return useMemo(() => {
     if (sessionId !== null) return { kind: 'session', sessionId, agentPath: cwd ?? '', cwd };
-    if (roomId !== null && roomKind !== null) return { kind: 'room', roomId, roomKind };
-    return null;
-  }, [sessionId, cwd, roomId, roomKind]);
+    if (roomId === null || roomKind === null) return null;
+    if (rootEntryId !== null) {
+      return { kind: 'room', roomId, roomKind: 'thread', rootEntryId };
+    }
+    return { kind: 'room', roomId, roomKind };
+  }, [sessionId, cwd, roomId, roomKind, rootEntryId]);
 }
 
 /**

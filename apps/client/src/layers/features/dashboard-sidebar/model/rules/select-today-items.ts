@@ -39,10 +39,10 @@ const ORIGIN_MARK: Partial<Record<SessionOrigin, SidebarOriginMark>> = {
  * unmarked default — a human talking to an agent.
  *
  * Every origin in the table above is one `partitionSessionsByOrigin` classes as
- * automated, and BC-19 keeps automated sessions off Today's top level — so the
- * only session rows Today builds at the top level are user-origin ones, which
- * draw no mark. The rows that DO carry one are the ones
- * {@link revealAutomated} unfolds behind the "+ N automated" row.
+ * automated, and there are exactly two ways such a session gets a row: behind
+ * the "+ N automated" reveal ({@link revealAutomated}), and as the anchor when
+ * the operator has opened one by hand ({@link anchorRow}). An ordinary Today
+ * row is user-origin and draws no mark at all.
  *
  * @param origin - The session's origin, absent for a session nobody marked.
  */
@@ -201,10 +201,7 @@ function threadRow(thread: ThreadSummary, state: SidebarState, mutes: MuteIndex)
   } as const;
   const muted = mutes.rooms.has(thread.roomId);
   return {
-    // Keyed on the thread's root entry rather than through `rowKey`, which
-    // would answer with the ROOM's key: a room and a thread inside it are two
-    // rows pointing at one place, and two rows may not share a React key.
-    key: `thread:${thread.rootEntryId}`,
+    key: rowKey(target),
     target,
     glyph: { kind: 'hash' },
     primary: thread.roomSlug ?? thread.roomTitle,
@@ -272,9 +269,10 @@ function automatedRow(count: number, expanded: boolean): SidebarRowModel {
  *    lists; it does not stop somebody reading it.
  * 3. **Nothing on the wire answers to it at all** — a deep link, a reload, or
  *    the first paint before the queries land. The router still knows the
- *    session's id and its directory, so the row says who the conversation is
- *    with and stops there. **No title is invented**: the row grows one the
- *    moment the session list arrives, under the same key, so nothing moves.
+ *    session's id and its directory, or the thread's room and root entry, so
+ *    the row says which conversation it is and stops there. **No title is
+ *    invented**: the row grows one the moment the list arrives, under the same
+ *    key, so nothing moves.
  *
  * @param state - The snapshot.
  * @param mutes - The resolved mute sets.
@@ -289,6 +287,29 @@ function anchorRow(
   if (active === null) return null;
 
   if (active.kind === 'room') {
+    // A thread is its own row, keyed on its root entry — never the room's row
+    // wearing the thread's key, which would put one place on screen twice under
+    // two names.
+    if (active.roomKind === 'thread') {
+      const thread = state.threads.find((entry) => entry.rootEntryId === active.rootEntryId);
+      if (thread !== undefined) return threadRow(thread, state, mutes);
+      const room = state.rooms.find((entry) => entry.id === active.roomId);
+      const muted = mutes.rooms.has(active.roomId);
+      return {
+        key: rowKey(active),
+        target: active,
+        glyph: { kind: 'hash' },
+        primary: room === undefined ? 'Thread' : (room.slug ?? room.title),
+        status: 'idle',
+        reservesVerbLine: false,
+        origin: 'thread',
+        unread: { tier: 'none' },
+        muted,
+        draggable: false,
+        actions: ['open'],
+        reason: 'today:open-conversation',
+      };
+    }
     const room = state.rooms.find((entry) => entry.id === active.roomId);
     return room === undefined ? null : roomRow(room, state, mutes, previews.get(rowKey(active)));
   }
@@ -337,11 +358,18 @@ export function selectTodayItems(state: SidebarState): SidebarRowModel[] {
   const previews = previewIndex(state);
   const mutes = muteIndex(state.prefs);
   const anchor = anchorKey(state);
+  // The room an open THREAD lives in, which is a different key from the thread's
+  // own. A thread is keyed on its root entry (`rowKey`), so a deep link into one
+  // would otherwise leave its channel out of Today entirely — the operator would
+  // be reading `#design › …` with no `#design` anywhere on the panel.
+  const active = state.activeTarget;
+  const anchorRoom = active !== null && active.kind === 'room' ? `room:${active.roomId}` : null;
   // The anchor is eligible whatever else is true: the conversation the operator
   // has open is by definition one they are interacting with, even on the first
   // paint after a deep link, before anything has been recorded about it.
   const touched = (key: string) =>
     key === anchor ||
+    key === anchorRoom ||
     state.interactions[key] !== undefined ||
     state.userLastMessageAt[key] !== undefined;
 
@@ -418,10 +446,17 @@ export function revealAutomated(
 
   const mutes = muteIndex(state.prefs);
   const previews = previewIndex(state);
+  // **Whatever is already on the list stays off it.** Exactly one row can be in
+  // both places and it is the ordinary flow: press the reveal, click a run, and
+  // that run is now the conversation the operator has open — so the anchor
+  // branch of {@link selectTodayItems} has already drawn it at the top. Without
+  // this filter it is drawn twice, and both copies key `session:<id>`, which is
+  // a duplicate React key inside one section rather than a cosmetic repeat.
+  const drawn = new Set(rows.map((row) => row.key));
   const { automated } = partitionSessionsByOrigin([...state.sessions]);
   const revealed = automated
     .map((session) => sessionRow(session, state, mutes, previews.get(`session:${session.id}`)))
-    .filter((row) => !row.muted)
+    .filter((row) => !row.muted && !drawn.has(row.key))
     .map((row) => ({ ...row, reason: 'today:automated' }));
   return [...rows, ...revealed];
 }

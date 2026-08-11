@@ -2,6 +2,7 @@
 covers:
   - 'feat(client): the sidebar Today zone is what you were doing, in the order you did it (P2.3, DOR-1068)'
   - 'fix(client): the Today showcase draws the digest row it says it draws (DOR-1068)'
+  - 'fix(client): a thread in the sidebar is its own row, and opening one opens the thread (DOR-1068)'
 ---
 
 ### Added
@@ -13,12 +14,14 @@ covers:
 - The conversation you have open is always Today's first row, and it shows what that agent is
   doing right there. When you switch conversations it scrolls into view; it will not scroll for
   anything else, and it never opens a section you folded away.
-- Rows also refuse to move while your pointer is inside Today or a row has your keyboard focus.
-  If something legitimately changed order while you were reading, it applies the moment you
-  move away — so nothing shifts under a cursor that is about to click.
+- Rows also refuse to **reorder** while your pointer is inside Today or a row has your keyboard
+  focus. If the order legitimately changed while you were reading, it applies the moment you
+  move away — so the row under your cursor is still the row you meant to click.
 - Scheduled runs, room turns and other work you did not start sit behind one **+ N automated**
   row. Press it to see them, press it again to put them away. If one of them needs you, it
   still appears in **Now** like anything else.
+- Threads sit in Today as conversations of their own, showing the message they hang off, and
+  clicking one opens that thread beside its channel rather than just the channel.
 - After you have been away, Today can open with a single **While you were away…** row that
   takes you to what your agents got done. It appears at most once a day, only when something
   actually finished, and only if you have welcome-back notes switched on. Opening any

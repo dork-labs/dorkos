@@ -17,6 +17,13 @@ import type { SidebarState } from '../sidebar-state';
  * `suggestion:ask-dorkbot` because the same string is its `reason` and its
  * retirement token — so they are used verbatim rather than doubled up.
  *
+ * **A thread is keyed by its root entry, not by its room.** A thread and the
+ * room it lives in are two rows pointing at one place (BC-15), and two rows may
+ * not share a key: they would collide as React children, and — because the
+ * active row is found by key — opening one would tint both. Its INTERACTION key
+ * is still the room's ({@link interactionKeyOf}), because a thread reads the
+ * room's read cursor. Identity and read state are different questions.
+ *
  * @param target - What the row points at.
  */
 export function rowKey(target: SidebarTarget): string {
@@ -24,7 +31,9 @@ export function rowKey(target: SidebarTarget): string {
     case 'session':
       return `session:${target.sessionId}`;
     case 'room':
-      return `room:${target.roomId}`;
+      return target.roomKind === 'thread' && target.rootEntryId !== undefined
+        ? `thread:${target.rootEntryId}`
+        : `room:${target.roomId}`;
     case 'agent':
       return `agent:${target.path}`;
     case 'attention':
