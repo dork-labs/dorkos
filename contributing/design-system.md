@@ -207,7 +207,7 @@ Animation should feel like physics, not decoration. Things should move because t
 
 **Sidebar toggle:** Width transition 200ms, content fades.
 
-**Command palette:** Spring entrance (scale 0.96 + y: -8, stiffness: 500, damping: 35). Sliding selection indicator via `layoutId`. Stagger items on open (first 8 only, 40ms per item). Directional x-axis page transitions (150ms ease-out). Item hover nudge (2px rightward). Preview panel width spring (stiffness: 400, damping: 35). Dialog width animates from 480px to 720px when preview panel appears.
+**Command palette:** Spring entrance (scale 0.96 + y: -8, stiffness: 500, damping: 35). Sliding selection indicator via `layoutId`. Stagger items on open (first 8 only, 40ms per item). Directional x-axis page transitions (150ms ease-out). Item hover nudge (2px rightward). Preview panel width spring (stiffness: 400, damping: 35). Dialog width animates from 480px to 640px when preview panel appears.
 
 **Streaming cursor:** 2px wide block, 1.1em tall, `blink-cursor` keyframe at 1s step-end infinite. Appended via `::after` on the last text element inside Streamdown's DOM using a `:last-child` chain. Fades in on appearance (`cursor-fade-in`, 150ms ease-out). Only the deepest matching element renders it; shallower matches use `display: none` to prevent duplicates.
 
@@ -287,25 +287,24 @@ Built on **Shadcn Sidebar** (`layers/shared/ui/sidebar.tsx`) with `collapsible="
 - **Toggle**: `Cmd+B` / `Ctrl+B` (Shadcn built-in `SIDEBAR_KEYBOARD_SHORTCUT`)
 - **SidebarRail**: Invisible hover-target strip at sidebar edge for mouse-over toggle
 - **SidebarTrigger**: Toggle button in `SidebarInset` header (outside the sidebar itself)
-- **Temporal grouping**: Sessions grouped by Today / Yesterday / Previous 7 Days / Previous 30 Days / Older using `SidebarGroup` / `SidebarGroupLabel`
-- **Session items**: `SidebarMenuButton` with relative time + truncated title
-- **Active session**: `isActive` prop on `SidebarMenuButton`
-- **"New chat" button**: In `SidebarHeader`, below `AgentHeader`
+- **Zones, not temporal grouping**: rows are grouped into Now, Getting started, Today and Library — see [Zones and Sections](#zones-and-sections) below — never by session date.
+- **Rows**: `SidebarModelRow` draws each row from `buildSidebarModel`'s output; `isActive` highlights whichever row matches the current route.
+- **Header block**: `SidebarHeaderBlock`, mounted in `Sidebar` above the body-swap region — persistent chrome that survives a `sidebar.body` takeover (spec BC-43→46). A button named after the operator ("Dorian's team"), opening Workspace settings / Account / a quiet version line; the `NewMenu` (Session, Channel, Direct message, Agent…, Agent group — every create surface in the sidebar, and nowhere else); and `SidebarSearchPill`, the ⌘K pill.
 - **Footer**: `SidebarFooter` contains `ProgressCard` (onboarding) and `SidebarFooterStrip` — one slim tinted row of destinations (Home, Team, Marketplace, Connections), a `⋯` menu holding the `sidebar.footer` slot, and ✦ Ask DorkBot. No logo, no version line, no `border-t`: separation is a step up the `--sidebar-accent` ramp (spec `sidebar-now-today-library` BC-47, R1)
-- **Empty state**: Centered "No conversations yet" message
 - **Dialogs**: All 6 dialogs (Settings, DirectoryPicker, Tasks, Relay, ServerRestartOverlay, ShapeSwitcher) registered in `DialogHost` at the app root level, outside `SidebarProvider` (`layers/widgets/app-layout/model/dialog-contributions.ts`). `OnboardingFlow` renders directly from `AppShell.tsx`, not via `DialogHost`.
 
 ### Separation by tint, not by borders
 
-Nav panels separate their levels with tint and whitespace, not hairlines. Add no `border-b` under a header, no `border-t` above a footer, and none between sections; where an edge needs to read at all, it is a scroll-edge shadow that appears only once content scrolls under the header or footer. The sidebar's remaining `border-t` on `SidebarFooter` (`AppShell.tsx`) is the last one and goes as the redesign's primitives land — do not add more, and remove any you pass.
+Nav panels separate their levels with tint and whitespace, not hairlines. Add no `border-b` under a header, no `border-t` above a footer, and none between sections; where an edge needs to read at all, it is a scroll-edge shadow that appears only once content scrolls under the header or footer. `SidebarFooter` (`AppShell.tsx`) already carries no `border-t` — do not add one back. That is not the last hairline in the app's nav panels, though: `MarketplaceSidebar.tsx`'s `SidebarHeader` still has a `border-b`, not yet migrated to this rule — remove it when that panel's turn comes, and remove any other hairline you pass.
 
 Every level of separation comes off **one ramp**, `--sidebar-accent`, and no new colour is introduced:
 
-| Level      | Class                                                  | What it does                          |
-| ---------- | ------------------------------------------------------ | ------------------------------------- |
-| Zone card  | `bg-sidebar-accent/40`                                 | recessive tint, ~2–3% effective delta |
-| Row hover  | `bg-sidebar-accent/70`                                 | reads on top of the zone tint         |
-| Row active | `bg-sidebar-accent` + `text-sidebar-accent-foreground` | the strongest step                    |
+| Level        | Class                                                  | What it does                          |
+| ------------ | ------------------------------------------------------ | ------------------------------------- |
+| Zone card    | `bg-sidebar-accent/40`                                 | recessive tint, ~2–3% effective delta |
+| Footer strip | `bg-sidebar-accent/60`                                 | separates the footer from the panel   |
+| Row hover    | `bg-sidebar-accent/70`                                 | reads on top of the zone tint         |
+| Row active   | `bg-sidebar-accent` + `text-sidebar-accent-foreground` | the strongest step                    |
 
 **Never use `--muted` inside the sidebar.** It inverts direction between themes. `--sidebar` is 91% light and 10% dark, while `--muted` is 96% light and 9% dark — so a zone tinted with `--muted` is _lighter_ than its panel in light mode and _darker_ in dark mode. `--sidebar-accent` is 86% light (−5%) and 16% dark (+6%): it moves away from the panel in the same perceptual direction in both themes, at the 5–10% delta this system asks for.
 
@@ -341,14 +340,14 @@ Dimming is the wrong mechanism and it is not a tuning problem. `SidebarRow` dims
 
 A nav panel has two levels of grouping, and they behave differently:
 
-- **Zone** — a landmark heading (Now, Today, Library). It orients; it is **not** a collapse control.
+- **Zone** — a landmark heading (Now, Getting started, Today, Library). It orients; it is **not** a collapse control.
 - **Section** — a collapsible group inside a zone (Channels, Agents, DMs). Only sections collapse.
 
 Never nest accordions, and keep nav trees to **one indent level** — depth past two stops helping wayfinding. Section labels are sentence case, 12px medium, muted; ALL-CAPS with letterspacing reads dated at small sizes.
 
 #### Accessibility contract
 
-This is the whole contract a zoned nav panel must meet. **It is what to build, not a description of what is already built** — the sidebar has no zones yet, so none of the markup below exists in `apps/client/src` today. It is acceptance criteria for the zones as they land, not a later pass.
+This is the whole contract a zoned nav panel must meet, and it is what shipped: `SidebarZone.tsx`, `SidebarSection.tsx` and `use-live-region-text.ts` implement it, and `DashboardSidebar.tsx` composes them. Treat it as the spec those components are checked against, not a future one.
 
 - **Landmarks.** The panel root is `<nav aria-label="Sidebar">`. Each zone is `<section aria-labelledby="sidebar-zone-{id}">` with a visible `<h2>` label. **Collapsible** sections are `<h3>` containing a `<button aria-expanded aria-controls>`; group sub-headers are `<h4>`. A headerless body — Now's and Today's single section — has no header element at all and therefore no button. Zone labels are headings, never buttons.
 - **Roving tabindex, per section.** Each section exposes exactly one tab stop — the active row if the section holds it, otherwise the first row. `ArrowDown`/`ArrowUp` move within the section, `Home`/`End` jump to its ends, and `ArrowLeft`/`ArrowRight` on a section header collapse or expand it. `Tab` moves between sections and zones, so a 60-agent Library is four tab stops rather than sixty.
@@ -419,7 +418,7 @@ Searchable combobox from `shared/ui/command.tsx`. Used with Popover for dropdown
 
 Pattern: `Popover` > `PopoverTrigger` > `PopoverContent` > `Command` > `CommandInput` + `CommandList` > `CommandGroup` > `CommandItem`.
 
-**Global command palette**: The `features/command-palette/` module uses cmdk with `shouldFilter={false}` to disable built-in filtering, delegating all search to Fuse.js (`use-palette-search.ts`). Category prefixes: `@` for agents, `>` for commands. The palette uses a `pages` array state for sub-menu drill-down with breadcrumb navigation. List height transitions use the `--cmdk-list-height` CSS variable with a `max-height` cap:
+**Global command palette**: The `features/command-palette/` module uses cmdk with `shouldFilter={false}` to disable built-in filtering, delegating all search to Fuse.js (`use-palette-search.ts`). Category prefixes: `#` for channels, `@` for agents and DMs, `>` for commands. The palette uses a `pages` array state for sub-menu drill-down with breadcrumb navigation. List height transitions use the `--cmdk-list-height` CSS variable with a `max-height` cap:
 
 ```css
 [cmdk-list] {
@@ -429,7 +428,7 @@ Pattern: `Popover` > `PopoverTrigger` > `PopoverContent` > `Command` > `CommandI
 }
 ```
 
-**Split-pane layout**: The palette dialog uses a flex-row container. `CommandList` takes remaining width; `AgentPreviewPanel` (60%) appears when an agent item is keyboard-selected. The `ResponsiveDialogContent` transitions between `max-w-[480px]` and `max-w-[720px]` via a CSS `transition-[max-width] duration-200`. On mobile (`useIsMobile()`), the preview panel is hidden entirely.
+**Split-pane layout**: The palette dialog uses a flex-row container. `CommandList` takes remaining width; `AgentPreviewPanel` (60%) appears when an agent item is keyboard-selected. The `ResponsiveDialogContent` transitions between `max-w-[480px]` and `max-w-[640px]` via a CSS `transition-[max-width] duration-200`. On mobile (`useIsMobile()`), the preview panel is hidden entirely.
 
 **Character highlighting**: `HighlightedText` renders Fuse.js match indices as `<mark>` elements with `bg-transparent text-foreground font-semibold`. All content passes through React's createElement pipeline (no raw HTML).
 
@@ -735,11 +734,11 @@ Subtle. 150ms transition. A background tint step of 5-10% — the same mechanism
 
 ```css
 .interactive:hover {
-  background-color: hsl(var(--muted) / 0.5);
+  background-color: hsl(var(--accent) / 0.5);
 }
 ```
 
-Hover and grouping share one tool on purpose: if a zone is separated by tint rather than a rule, a hover tint is already the vocabulary the surface speaks. Reach for a border only after whitespace and tint have both failed.
+Hover and grouping share one tool on purpose: if a zone is separated by tint rather than a rule, a hover tint is already the vocabulary the surface speaks. Reach for a border only after whitespace and tint have both failed. Inside the sidebar specifically, hover uses the `--sidebar-accent` ramp (`bg-sidebar-accent/70` — see [Separation by tint, not by borders](#separation-by-tint-not-by-borders)), not `--muted`: `--muted` is banned there because it inverts direction between light and dark themes.
 
 **Nothing renders at rest.** Row and section actions — `+`, kebab, drag handles — are invisible until hover or `focus-visible`. Every one needs a keyboard twin (`focus-visible` reveals it) and a touch path (visible under `[@media(hover:hover)]: none`, or long-press / context menu); anything draggable needs a non-drag alternative per WCAG 2.2 §2.5.7. Row overflow uses the vertical kebab (⋮); the horizontal one (⋯) belongs in toolbars and tables. See [Hover Pattern Mobile Alternatives](#hover-pattern-mobile-alternatives) for the shipped touch equivalents.
 
@@ -793,8 +792,6 @@ Status indicators that depend on both per-entity configuration and global featur
 | `enabled`            | Full color, normal opacity             | Feature is active for this agent        |
 | `disabled-by-agent`  | Muted/dimmed appearance (`opacity-50`) | Agent manifest has explicitly opted out |
 | `disabled-by-server` | Hidden (not rendered)                  | Feature is disabled server-wide         |
-
-In the embedded shell's sidebar, this pattern surfaces as badge indicators on the tab bar (schedule count badge, connections status dot) — the `SessionSidebar` strip shows a badge only when the corresponding feature is active.
 
 ### 3-State Toggle Pattern (CapabilitiesTab)
 
@@ -879,11 +876,12 @@ Usage:
 
 ### Hover Pattern Mobile Alternatives
 
-| Pattern                | Desktop                | Mobile                            |
-| ---------------------- | ---------------------- | --------------------------------- |
-| Message timestamps     | Hidden, shown on hover | Always visible at 40% opacity     |
-| Session expand chevron | Hidden, shown on hover | Hidden; tap session row to expand |
-| Table action icons     | Hidden, shown on hover | Always visible at 60% opacity     |
+| Pattern                     | Desktop                | Mobile                                                                        |
+| --------------------------- | ---------------------- | ----------------------------------------------------------------------------- |
+| Message timestamps          | Hidden, shown on hover | Always visible at 40% opacity                                                 |
+| Session expand chevron      | Hidden, shown on hover | Hidden; tap session row to expand                                             |
+| Table action icons          | Hidden, shown on hover | Always visible at 60% opacity                                                 |
+| Sidebar row/section actions | Hidden, shown on hover | Always visible — `alwaysShowActions={isMobile}` (`shared/ui/sidebar-row.tsx`) |
 
 ### Safe Area Classes
 
