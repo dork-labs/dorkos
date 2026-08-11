@@ -28,6 +28,8 @@ The sections below follow `writing-developer-guides`, with one deliberate insert
 | The same fixtures, in a browser            | `apps/e2e/tests/dashboard-sidebar/sidebar-model-showcase.spec.ts`                                         |
 | "When did I last open this?"               | `apps/client/src/layers/entities/interactions/`                                                           |
 | The snapshot's one assembly hook           | `apps/client/src/layers/features/dashboard-sidebar/model/use-sidebar-state.ts`                            |
+| Today's two hand-behaviours                | `model/use-today-order-hold.ts`, `model/use-scroll-to-active.ts`, drawn by `ui/TodayZone.tsx`             |
+| The digest's content and its one write     | `apps/client/src/layers/features/dashboard-sidebar/model/use-digest-facts.ts`                             |
 | The one call that builds the model         | `apps/client/src/layers/features/dashboard-sidebar/model/use-sidebar-model.ts`                            |
 | The behavioural contracts (BC-\*)          | `specs/sidebar-now-today-library/02-specification.md` §B                                                  |
 | The locked design decisions                | `specs/sidebar-now-today-library/design-decisions.md`                                                     |
@@ -104,7 +106,7 @@ Every zone, section and row carries `reason`, formatted `<namespace>:<rule>` —
 | `zone:`            | a zone                              | `zone:now`, `zone:getting-started`, `zone:today`, `zone:library`                                                                                                                                                 |
 | `now:`             | Now's body section, and its rows    | `now:body`; then `now:permission-prompt`, `now:question`, `now:error`, `now:idle-timeout`                                                                                                                        |
 | `getting-started:` | the day-one body section            | `getting-started:body`                                                                                                                                                                                           |
-| `today:`           | Today's body section, and most rows | `today:body`; `today:interaction-recency` (you touched it); `today:digest`                                                                                                                                       |
+| `today:`           | Today's body section, and most rows | `today:body`; `today:interaction-recency` (you touched it); `today:digest`; `today:automated` (unfolded behind the reveal)                                                                                       |
 | `anchor:`          | one Today row                       | `anchor:active-session` — first because you have it open                                                                                                                                                         |
 | `rollup:`          | a row standing for other rows       | `rollup:working`, `rollup:now-overflow`, `rollup:automated`                                                                                                                                                      |
 | `suggestion:`      | a Getting-started row               | the suggestion's own id, e.g. `suggestion:agents-found`, `suggestion:ask-dorkbot`                                                                                                                                |
@@ -134,9 +136,13 @@ const today = pinActiveAnchor(
   ),
   state
 );
+// … the digest is spliced in below the anchor, and then:
+revealAutomated(today, state); // the runs, if the operator opened the reveal
 ```
 
 Who is eligible → what mute removes → what the overnight boundary removes → what order the rest come in → and only then which one is pinned first. The anchor is exempted at every step before the last, so nothing can mute, archive or cap the conversation you have open out of first place.
+
+`revealAutomated` runs after every one of them, and that is the point: an automated run put into the candidate list would be sorted by an interaction recency it does not have, measured for a staleness it does not have, and would spend places from the soft cap that belong to the conversations the operator was actually in. It appends, so the runs hang off the bottom of the finished list.
 
 **Pass the exemption arguments or the promise silently stops being true.** `applyMuteRules`' `exemptKey` and `archiveOvernight`'s third argument are the only mechanisms that spare the anchor — `archive-overnight.ts` filters on `row.key === exemptions.anchorKey` and nothing else. Both parameters are optional (`exemptions: ArchiveExemptions = {}`), so a composition that omits them compiles, passes typecheck, and quietly archives the conversation the operator is looking at.
 
@@ -324,6 +330,21 @@ Note that `FIXTURE_NOW` is a **local** instant (09:15 on 9 August 2026), not a f
 
 **Cause**: almost always a unit mismatch. `state.interactions` and `state.userLastMessageAt` hold ISO-8601 strings; epoch milliseconds satisfy the `string` type, parse to `NaN`, and are read as "never opened".
 **Fix**: emit ISO. `__tests__/interaction-seam.test.ts` is the test that proves both directions of this.
+
+### A Today row moved while somebody was reading it
+
+**Cause**: the zone was drawn by `SidebarZone` directly rather than by `TodayZone`, so nothing held the order (BC-17), or a wrapper was added between them that swallowed the pointer and focus handlers.
+**Fix**: `SidebarZones` routes `zone.id === 'today'` to `TodayZone`, which owns the wrapper the handlers sit on. Hold the ORDER only — the rows themselves are this frame's, so a badge clearing and a verb starting still land while the hold is on.
+
+### The panel scrolled when nothing was opened
+
+**Cause**: `useScrollToActive` gained a dependency beyond the anchor's key. It has exactly one on purpose: a verb, an unread change or a whole model rebuild must move nothing (BC-36).
+**Fix**: keep the effect keyed on `anchorKey` alone, and keep the mount-time latch that stops arriving on a page from counting as a switch.
+
+### The digest appeared for a moment and vanished
+
+**Cause**: the model was handed the LIVE `prefs.digest.lastShownDate`. Rendering the row writes today's date (BC-22), and reading that write back makes the rule refuse the row on the very next rebuild.
+**Fix**: `useSidebarState` hands the model the date this tab loaded with (`useDigestFacts().lastShownDate`) and nothing else touches that one field.
 
 ### The build-budget test fails
 

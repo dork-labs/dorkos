@@ -35,7 +35,7 @@ import { disambiguateDisplayNames, useResolvedAgents } from '@/layers/entities/a
 import { createGroup, moveToGroup, useUpdateSidebarPrefs } from '@/layers/entities/config';
 import { useInteractionStore } from '@/layers/entities/interactions';
 import { useMeshAgentPaths, useMeshMemberIds } from '@/layers/entities/mesh';
-import { useRooms } from '@/layers/entities/room';
+import { useRooms, useRoomOpenThreadStore } from '@/layers/entities/room';
 import {
   beginSessionNavigation,
   notifySessionLookupFailed,
@@ -47,6 +47,7 @@ import type { SidebarTarget, SuggestionId } from '../model/build-sidebar-model';
 import { useCreateFlowStore, type GroupCreationState } from '../model/create-flow-store';
 import { NOW_OVERFLOW_HREF } from '../model/rules/cap-now-items';
 import { buildSidebarItems, type SidebarItemVisual } from '../model/sidebar-item';
+import { toggleTodayAutomated } from '../model/today-reveal-store';
 
 /** Everything a row needs that the model does not carry. */
 export interface SidebarChromeValue {
@@ -271,12 +272,31 @@ export function SidebarChrome({ activeTarget, children }: SidebarChromeProps) {
           openAgent(target.path);
           return;
         case 'room':
-          // A thread row lands in its ROOM, not in its panel. `SidebarTarget`'s
-          // room branch carries only `roomId`, so the root entry a thread hangs
-          // off is not reachable from here — the model would have to grow a
-          // field for it (noted for P2.3, which owns Today's thread rows).
+          // The interaction is recorded against the room, because a thread
+          // reads the room's own cursor (ADR 260728-022013) and one place has
+          // one record.
           useInteractionStore.getState().recordOpened('room', target.roomId);
-          navigate({ to: '/channels', search: { id: target.roomId } });
+          // **A thread row opens the PANEL, and the STORE is what opens it.**
+          // Navigating with `?thread=` alone is not enough: the room widget
+          // treats its own store as the source of truth and mirrors it back out
+          // (`use-thread-url-sync.ts`), seeding from the URL only on the way
+          // INTO a room. So a thread opened while already reading that room had
+          // its param wiped a frame later and the click did nothing. Writing
+          // the store is the same act a reply row in the timeline performs; the
+          // URL then follows from it, which is also what makes the address
+          // survive a reload. `focusComposer` stays false — clicking a row in
+          // the sidebar is a request to READ, and on a phone the difference is
+          // whether a keyboard opens over what you came to look at.
+          if (target.rootEntryId !== undefined) {
+            useRoomOpenThreadStore.getState().openThread(target.roomId, target.rootEntryId, false);
+          }
+          navigate({
+            to: '/channels',
+            search: {
+              id: target.roomId,
+              ...(target.rootEntryId && { thread: target.rootEntryId }),
+            },
+          });
           return;
         case 'attention':
           // A raw href, because a deep link is a string the signal supplies
@@ -298,11 +318,20 @@ export function SidebarChrome({ activeTarget, children }: SidebarChromeProps) {
           if (target.rollup === 'now-overflow' || target.rollup === 'working') {
             void navigate({ to: NOW_OVERFLOW_HREF });
           }
+          // Today's "+ N automated" is a fold, not a destination: the runs it
+          // stands for open underneath it (BC-19). Pressing it again puts them
+          // away.
+          if (target.rollup === 'automated') toggleTodayAutomated();
+          return;
+        case 'digest':
+          // "While you were away…" is a door into the welcome-back note, and
+          // that note is a post in #team — which IS the home surface
+          // (team-room-home §D3.2). So the row goes where the words already
+          // are rather than to a summary written a second time.
+          void navigate({ to: '/' });
           return;
         default:
-          // The `automated` rollup and the `digest` row are Today's, and their
-          // destinations land with that zone (P2.3). Doing nothing is the honest
-          // placeholder — a guess would navigate somewhere wrong.
+          // Nothing else the union carries is clickable from a Today row.
           return;
       }
     },

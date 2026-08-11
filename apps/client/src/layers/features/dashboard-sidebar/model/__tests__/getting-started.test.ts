@@ -141,3 +141,66 @@ describe('BC-14 — the zone leaves when everything is retired', () => {
     expect(ids).not.toContain('getting-started');
   });
 });
+
+describe('BC-4 / BC-9 — the slot Getting started shares with Now', () => {
+  /**
+   * Day one, with a turn streaming.
+   *
+   * **The pairing no fixture covered**, and the reason the defect it names
+   * shipped: `first-run` has unretired suggestions and no working session, and
+   * `busy` has a working session and every suggestion retired, so the two
+   * halves of the collision never met in one snapshot. Built with a spread, not
+   * an edit to either file.
+   */
+  const dayOneAndWorking: SidebarState = {
+    ...firstRunFixture,
+    sessions: [
+      {
+        id: 'ses-first',
+        title: 'First session',
+        createdAt: new Date(firstRunFixture.now - 60_000).toISOString(),
+        updatedAt: new Date(firstRunFixture.now).toISOString(),
+        permissionMode: 'default',
+        runtime: 'claude-code',
+        cwd: '/Users/dev/.dork/agents/dorkbot',
+      },
+    ],
+    workingSessionIds: ['ses-first'],
+  };
+
+  /** Every row of the zone occupying Now's slot. */
+  function slotRows(state: SidebarState): string[] {
+    const zone = buildSidebarModel(state).zones.find(
+      (entry) => entry.id === 'now' || entry.id === 'getting-started'
+    );
+    return zone?.sections.flatMap((section) => section.rows.map((row) => row.reason)) ?? [];
+  }
+
+  it('tells the operator something is working, even on day one', () => {
+    // BC-9 is unconditional: one session streaming means one row saying so.
+    // Before this was fixed, an operator with any unretired suggestion could
+    // never be told anything was working at all.
+    expect(slotRows(dayOneAndWorking)).toContain('rollup:working');
+  });
+
+  it('gives the slot to Now, not to Getting started, while it is working', () => {
+    const zones = buildSidebarModel(dayOneAndWorking).zones.map((zone) => zone.id);
+    expect(zones).toContain('now');
+    expect(zones).not.toContain('getting-started');
+  });
+
+  it('hands the slot straight back when the turn ends', () => {
+    // The other half — without it, "Now wins" would also be satisfied by a
+    // model that had simply deleted Getting started.
+    const quiet: SidebarState = { ...dayOneAndWorking, workingSessionIds: [] };
+    expect(buildSidebarModel(quiet).zones.map((zone) => zone.id)).toContain('getting-started');
+  });
+
+  it('does not announce a working rollup as something that needs you', () => {
+    // BC-11: the live region carries the count of things NEEDING the operator.
+    // A rollup is not one of them, and a zone that now renders for the rollup
+    // alone must not start speaking.
+    const zone = buildSidebarModel(dayOneAndWorking).zones.find((entry) => entry.id === 'now');
+    expect(zone?.liveRegionText).toBeUndefined();
+  });
+});

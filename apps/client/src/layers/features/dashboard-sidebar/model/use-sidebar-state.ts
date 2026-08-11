@@ -40,9 +40,11 @@ import {
   useSessionListStore,
 } from '@/layers/entities/session';
 import type { SidebarTarget } from './build-sidebar-model';
+import { useDigestFacts } from './use-digest-facts';
 import { useGettingStartedRetirement } from './use-getting-started-retirement';
 import { useJourneyFacts } from './use-journey-facts';
-import type { AgentRosterEntry, SidebarState } from './sidebar-state';
+import { useTodayRevealStore } from './today-reveal-store';
+import type { AgentRosterEntry, SidebarModelPrefs, SidebarState } from './sidebar-state';
 
 /**
  * How coarse the model's clock is, in milliseconds.
@@ -111,24 +113,39 @@ function useActiveTarget(
   roomKindOf: (roomId: string) => 'channel' | 'dm' | 'thread'
 ): SidebarTarget | null {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
-  const search = useSearch({ strict: false }) as { id?: string; dir?: string; session?: string };
+  const search = useSearch({ strict: false }) as {
+    id?: string;
+    dir?: string;
+    session?: string;
+    thread?: string;
+  };
   const sessionId = pathname === '/session' ? (search.session ?? null) : null;
   const cwd = pathname === '/session' ? (search.dir ?? null) : null;
   const roomId = pathname === '/channels' ? (search.id ?? null) : null;
+  // **`?thread=` is part of what is open, not decoration.** A thread row now
+  // navigates to it, so a reader that ignored it would answer "the room" for a
+  // click on the thread — and the anchor, the active tint and the scroll would
+  // all land on a different row from the one pressed. `?thread=` is the ROOT
+  // ENTRY a thread hangs off, which is also what keys the row (`rowKey`).
+  const rootEntryId = pathname === '/channels' ? (search.thread ?? null) : null;
   const roomKind = roomId === null ? null : roomKindOf(roomId);
   return useMemo(() => {
     if (sessionId !== null) return { kind: 'session', sessionId, agentPath: cwd ?? '', cwd };
-    if (roomId !== null && roomKind !== null) return { kind: 'room', roomId, roomKind };
-    return null;
-  }, [sessionId, cwd, roomId, roomKind]);
+    if (roomId === null || roomKind === null) return null;
+    if (rootEntryId !== null) {
+      return { kind: 'room', roomId, roomKind: 'thread', rootEntryId };
+    }
+    return { kind: 'room', roomId, roomKind };
+  }, [sessionId, cwd, roomId, roomKind, rootEntryId]);
 }
 
 /**
  * Everything the sidebar is a function of, as one memoized snapshot.
  *
- * `digest` is the last field still waiting for its source: it is Today's
- * morning row (BC-22), and P2.3 fills it from `prefs.digest` and
- * team-room-home's welcome-back data.
+ * One field is still waiting for a source and says so where it is filled:
+ * `userLastMessageAt`, the server half of Today's order key, which no route
+ * carries yet. Its absence is the specified behaviour rather than a gap — the
+ * operator's own interaction record governs alone (BC-16).
  */
 export function useSidebarState(): SidebarState {
   const now = useNow(SIDEBAR_CLOCK_TICK_MS);
@@ -200,9 +217,30 @@ export function useSidebarState(): SidebarState {
     [rawPaths, manifests]
   );
 
+  // ── What the operator opened, and when ──
+  // Read before prefs because the digest is a function of it (BC-22), and the
+  // digest is what the prefs handed to the model are adjusted for.
+  const interactions = useInteractionTimestamps();
+
   // ── Preferences, and the recents list they filter ──
   const storedPrefs = useSidebarPrefs();
-  const prefs = useMemo(() => toSidebarModelPrefs(storedPrefs), [storedPrefs]);
+  const storedModelPrefs = useMemo(() => toSidebarModelPrefs(storedPrefs), [storedPrefs]);
+  const digestFacts = useDigestFacts({
+    now,
+    sessions,
+    workingSessionIds,
+    interactions,
+    storedLastShownDate: storedModelPrefs.digest.lastShownDate,
+  });
+  // **The one field of prefs the model does not read live.** Everything else
+  // here is the stored value; `digest.lastShownDate` is the value this tab
+  // loaded with, because writing it is what makes the row appear at most once a
+  // day and reading the write back is what would make it vanish on sight. See
+  // {@link DigestFacts.lastShownDate}.
+  const prefs = useMemo<SidebarModelPrefs>(
+    () => ({ ...storedModelPrefs, digest: { lastShownDate: digestFacts.lastShownDate } }),
+    [storedModelPrefs, digestFacts.lastShownDate]
+  );
   const mutedRooms = useMemo(() => mutedRoomIds(storedPrefs), [storedPrefs]);
   const jumpBackIn = useJumpBackIn({ mutedRoomIds: mutedRooms });
   // Today derives its OWN membership and order (BC-15, BC-16). What it takes
@@ -213,8 +251,6 @@ export function useSidebarState(): SidebarState {
     [jumpBackIn.items, jumpBackIn.automated]
   );
 
-  // ── What the operator opened, and when ──
-  const interactions = useInteractionTimestamps();
   const roomKinds = useMemo(() => {
     const map = new Map<string, 'channel' | 'dm'>();
     for (const room of rooms) map.set(room.id, room.kind === 'dm' ? 'dm' : 'channel');
@@ -225,6 +261,9 @@ export function useSidebarState(): SidebarState {
     [roomKinds]
   );
   const activeTarget = useActiveTarget(roomKindOf);
+
+  // ── Whether Today's automated runs are unfolded (BC-19) ──
+  const todayAutomatedExpanded = useTodayRevealStore((s) => s.automatedExpanded);
 
   // ── What needs the operator (BC-5) ──
   // The only source Now draws from, normalized once in `entities/attention` so
@@ -278,9 +317,10 @@ export function useSidebarState(): SidebarState {
       // cannot say has no entry — omission, never a guess (BC-16, BC-40).
       userLastMessageAt: {},
       mentions: {},
+      todayAutomatedExpanded,
       activeTarget,
       journey: journey.facts,
-      digest: { finishedWhileAwayCount: 0 },
+      digest: digestFacts.digest,
       projects,
     }),
     [
@@ -297,8 +337,10 @@ export function useSidebarState(): SidebarState {
       recents,
       prefs,
       interactions,
+      todayAutomatedExpanded,
       activeTarget,
       journey.facts,
+      digestFacts.digest,
       projects,
     ]
   );

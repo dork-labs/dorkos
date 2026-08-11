@@ -196,6 +196,79 @@ describe('BC-19 / BC-20 — automated sessions and the soft cap', () => {
     expect(row?.primary).toBe('+ 2 automated');
   });
 
+  it('unfolds the runs underneath the reveal when the operator opens it', () => {
+    const rows = todayRows({ ...busyFixture, todayAutomatedExpanded: true });
+    const keys = rows.map((row) => row.key);
+    expect(keys).toContain('session:ses-auto-1');
+    expect(keys).toContain('session:ses-auto-2');
+    // Underneath, never above: the reveal is the thing they hang off.
+    expect(keys.indexOf('session:ses-auto-1')).toBeGreaterThan(keys.indexOf('rollup:automated'));
+    expect(keys.indexOf('session:ses-auto-2')).toBeGreaterThan(keys.indexOf('rollup:automated'));
+    // Origin-marked (BC-19), which is the whole reason they are legible as runs
+    // rather than as conversations somebody had.
+    expect(rows.find((row) => row.key === 'session:ses-auto-1')?.origin).toBeDefined();
+    expect(rows.find((row) => row.key === 'session:ses-auto-1')?.reason).toBe('today:automated');
+  });
+
+  it('draws a revealed run ONCE when the operator has that very run open', () => {
+    // The ordinary flow, and the collision it used to produce: press the
+    // reveal, click a run. The anchor branch draws it at the top because the
+    // conversations loop filtered it out, and the reveal used to append it
+    // again — two rows keyed `session:ses-auto-1` inside one section, which is
+    // a duplicate React key rather than a cosmetic repeat.
+    const state: SidebarState = {
+      ...busyFixture,
+      todayAutomatedExpanded: true,
+      activeTarget: {
+        kind: 'session',
+        sessionId: 'ses-auto-1',
+        agentPath: '/Users/dev/code/tangerine',
+        cwd: '/Users/dev/code/tangerine',
+      },
+    };
+    const keys = todayKeys(state);
+    expect(keys.filter((key) => key === 'session:ses-auto-1')).toHaveLength(1);
+    expect(new Set(keys).size).toBe(keys.length);
+    // Still at the top, and still revealed beside its sibling — the dedupe
+    // keeps the anchor, not the copy underneath.
+    expect(keys[0]).toBe('session:ses-auto-1');
+    expect(keys).toContain('session:ses-auto-2');
+  });
+
+  it('says how to put them away again once they are open', () => {
+    const row = todayRows({ ...busyFixture, todayAutomatedExpanded: true }).find(
+      (entry) => entry.key === 'rollup:automated'
+    );
+    expect(row?.primary).toBe('Hide automated');
+  });
+
+  it('spends none of the soft cap on the unfolded runs', () => {
+    const capped = (state: SidebarState) =>
+      todayRows(state).filter((row) => row.reason === 'today:interaction-recency').length;
+    expect(capped({ ...busyFixture, todayAutomatedExpanded: true })).toBe(capped(busyFixture));
+  });
+
+  it('unfolds nothing when there is no reveal row to unfold from', () => {
+    const state: SidebarState = {
+      ...busyFixture,
+      sessions: busyFixture.sessions.filter((session) => session.origin === undefined),
+      todayAutomatedExpanded: true,
+    };
+    expect(todayKeys(state)).not.toContain('rollup:automated');
+    expect(todayKeys(state).filter((key) => key.startsWith('session:ses-auto'))).toEqual([]);
+  });
+
+  it('keeps a muted agent’s runs folded away even when the reveal is open', () => {
+    const automated = busyFixture.sessions.find((entry) => entry.id === 'ses-auto-1');
+    expect(automated?.cwd).toBeDefined();
+    const state: SidebarState = {
+      ...busyFixture,
+      todayAutomatedExpanded: true,
+      prefs: prefs({ muted: [{ kind: 'agent', path: automated?.cwd ?? '' }] }),
+    };
+    expect(todayKeys(state)).not.toContain('session:ses-auto-1');
+  });
+
   it('emits no reveal row when nothing is automated', () => {
     const state = {
       ...busyFixture,
@@ -434,7 +507,14 @@ describe('selectTodayItems — membership', () => {
   it('renders a thread as a conversation with a thread origin mark', () => {
     const thread = selectTodayItems(busyFixture).find((row) => row.key.startsWith('thread:'));
     expect(thread?.origin).toBe('thread');
-    expect(thread?.target).toEqual({ kind: 'room', roomId: 'room-design', roomKind: 'thread' });
+    // The root entry rides along so the row can open the thread PANEL rather
+    // than only the room it lives in — `/channels?thread=` is its address.
+    expect(thread?.target).toEqual({
+      kind: 'room',
+      roomId: 'room-design',
+      roomKind: 'thread',
+      rootEntryId: 'entry-77',
+    });
   });
 
   it('BC-15 — that thread actually reaches Today, not just the selection rule', () => {

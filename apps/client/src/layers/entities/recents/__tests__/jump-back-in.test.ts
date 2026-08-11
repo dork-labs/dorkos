@@ -313,3 +313,72 @@ describe('mergeJumpBackIn', () => {
     expect(items[0]!.summary).toBeNull();
   });
 });
+
+describe('mergeJumpBackIn — the operator’s own attention orders the list (BC-16)', () => {
+  it('puts the thread YOU touched last first, whatever the agents have been doing', () => {
+    const { items } = mergeJumpBackIn({
+      sessions: [session({ id: 's1', updatedAt: '2026-08-01T12:00:00.000Z' })],
+      rooms: [channel('c1', 'general', { lastActivityAt: '2026-08-01T23:00:00.000Z' })],
+      // The channel is the busiest place on the machine and the session is the
+      // one this person was actually in.
+      interactions: {
+        'session:s1': '2026-08-02T09:00:00.000Z',
+        'room:c1': '2026-08-01T08:00:00.000Z',
+      },
+    });
+    expect(keysOf(items)).toEqual(['session:s1', 'channel:c1']);
+  });
+
+  it('proves the check can fail — reverse the two records and the list reverses', () => {
+    const { items } = mergeJumpBackIn({
+      sessions: [session({ id: 's1', updatedAt: '2026-08-01T12:00:00.000Z' })],
+      rooms: [channel('c1', 'general', { lastActivityAt: '2026-08-01T23:00:00.000Z' })],
+      interactions: {
+        'session:s1': '2026-08-01T08:00:00.000Z',
+        'room:c1': '2026-08-02T09:00:00.000Z',
+      },
+    });
+    expect(keysOf(items)).toEqual(['channel:c1', 'session:s1']);
+  });
+
+  it('keys a direct message under `room:`, exactly as the read cursors do', () => {
+    const { items } = mergeJumpBackIn({
+      sessions: [session({ id: 's1', updatedAt: '2026-08-01T23:00:00.000Z' })],
+      rooms: [dm('d1', 'Ana', { lastActivityAt: '2026-08-01T12:00:00.000Z' })],
+      interactions: { 'room:d1': '2026-08-02T09:00:00.000Z' },
+    });
+    expect(keysOf(items)).toEqual(['dm:d1', 'session:s1']);
+  });
+
+  it('falls back to activity for a thread this device has no record of', () => {
+    const { items } = mergeJumpBackIn({
+      sessions: [session({ id: 's-old', updatedAt: '2026-08-01T09:00:00.000Z' })],
+      rooms: [channel('c1', 'general', { lastActivityAt: '2026-08-01T12:00:00.000Z' })],
+      interactions: {},
+    });
+    // Nobody has opened anything here — a fresh browser — and the list is the
+    // activity ordering it has always been rather than empty or alphabetical.
+    expect(keysOf(items)).toEqual(['channel:c1', 'session:s-old']);
+  });
+
+  it('ranks a thread the operator opened above one they never have', () => {
+    const { items } = mergeJumpBackIn({
+      sessions: [session({ id: 's-touched', updatedAt: '2026-01-01T00:00:00.000Z' })],
+      rooms: [channel('c1', 'general', { lastActivityAt: '2026-08-01T12:00:00.000Z' })],
+      interactions: { 'session:s-touched': '2026-08-02T09:00:00.000Z' },
+    });
+    expect(keysOf(items)).toEqual(['session:s-touched', 'channel:c1']);
+  });
+
+  it('orders the automated list the same way', () => {
+    const { automated } = mergeJumpBackIn({
+      sessions: [
+        session({ id: 'a1', origin: 'task', updatedAt: '2026-08-01T09:00:00.000Z' }),
+        session({ id: 'a2', origin: 'task', updatedAt: '2026-08-01T12:00:00.000Z' }),
+      ],
+      rooms: [],
+      interactions: { 'session:a1': '2026-08-02T09:00:00.000Z' },
+    });
+    expect(keysOf(automated)).toEqual(['session:a1', 'session:a2']);
+  });
+});

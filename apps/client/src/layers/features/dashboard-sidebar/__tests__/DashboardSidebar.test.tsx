@@ -13,6 +13,7 @@ import {
 import { toast } from 'sonner';
 import { resolveAgentVisual } from '@/layers/shared/lib';
 import { useInteractionStore } from '@/layers/entities/interactions';
+import { useRoomOpenThreadStore } from '@/layers/entities/room';
 import { useIdleNudgeStore } from '@/layers/entities/attention';
 import { useDiscoveryStore } from '@/layers/entities/discovery';
 import { useAgentCreationStore } from '@/layers/shared/model';
@@ -20,6 +21,7 @@ import { useCreateFlowStore } from '../model/create-flow-store';
 import { DashboardSidebar } from '../ui/DashboardSidebar';
 import { ALL_CLEAR_BEAT_MS } from '../model/use-all-clear-beat';
 import { LIVE_REGION_DEBOUNCE_MS } from '../model/use-live-region-text';
+import { useTodayRevealStore } from '../model/today-reveal-store';
 import { SidebarProvider, TooltipProvider } from '@/layers/shared/ui';
 import type { SidebarPrefs, SidebarGroup, SidebarItemRef } from '@dorkos/shared/config-schema';
 import type { PendingApproval } from '@dorkos/shared/approval-schemas';
@@ -365,6 +367,12 @@ vi.mock('@/layers/entities/session', async (importOriginal) => ({
   useSessionStreamStore: (await importOriginal<typeof import('@/layers/entities/session')>())
     .useSessionStreamStore,
   sessionDisplayTitle: (t: string) => t,
+  // **Real, not stubbed.** It is the whole of the sidebar's live verb (BC-37,
+  // spec R1) and it reads the real `useSessionListStore` above, so the rows in
+  // this file say what a row in the app says. A stub would make every
+  // assertion about a second line an assertion about the stub.
+  SessionVerbLine: (await importOriginal<typeof import('@/layers/entities/session')>())
+    .SessionVerbLine,
   SessionRow: () => null,
   SessionOriginMark: () => null,
   // Real, not stubbed. Both are pure functions over a list, and this file used
@@ -762,9 +770,20 @@ describe('DashboardSidebar', () => {
     mockPathname = '/session';
     mockLocation = { pathname: '/session', search: { session: 's1', dir: '/projects/alpha' } };
     renderWithProviders(<DashboardSidebar />);
-    await screen.findByText('alpha');
+    // **Two rows say "alpha" now, and that is BC-33 itself.** The conversation
+    // is Today's anchor and its agent is a Library member, so it renders in
+    // both places — a deep link puts a row in Today even before the session
+    // list has answered (BC-21). This case is about the LIBRARY copy taking the
+    // tint, so it waits for that one by name.
+    await waitFor(() => expect(agentRowButton('alpha')).toBeInTheDocument());
     expect(agentRowButton('alpha')).toHaveAttribute('aria-current', 'page');
     expect(agentRowButton('beta')).not.toHaveAttribute('aria-current');
+    // Both copies are the SAME conversation, which is what makes the dual
+    // presence readable rather than confusing: Today's row is `s1` under
+    // alpha's name, and the Library row is alpha itself.
+    const anchor = within(todayZone()!).getByRole('button', { current: 'page' });
+    expect(anchor.getAttribute('title')).toContain('alpha');
+    expect(anchor).not.toBe(agentRowButton('alpha'));
   });
 
   // ── P2 AC-9 (this task's half): keyboard only ──
@@ -1600,5 +1619,665 @@ describe('Getting started — Now’s first life stage (BC-4, BC-12 → BC-14)',
 
     fireEvent.click(rows[0]!);
     expect(useAgentCreationStore.getState().isOpen).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Today — the zone whose whole promise is that it holds still (BC-15 → BC-22,
+// BC-36, BC-41)
+// ---------------------------------------------------------------------------
+
+/** The Today zone's `<section>`, or `null` when the model emitted none. */
+function todayZone(): HTMLElement | null {
+  return document.querySelector('[data-sidebar-zone="today"]');
+}
+
+/** Today's row elements, in DOM order. */
+function todayRowNodes(): HTMLElement[] {
+  const zone = todayZone();
+  if (zone === null) return [];
+  return Array.from(zone.querySelectorAll('[data-sidebar-row]'));
+}
+
+/**
+ * What Today is showing, in DOM order, as one stable label per row.
+ *
+ * Read off the DOM rather than off the model on purpose: BC-17 is a claim about
+ * what MOVED on screen, and a model diff cannot see a deferral that the
+ * renderer applied.
+ *
+ * The `title` attribute rather than the row's text, and that matters: the text
+ * includes the second line, so a live verb changing from "Reading…" to
+ * "Editing…" would look exactly like a row that moved. `composeRowLabel` builds
+ * this from the who and the title, both of which are what the row IS.
+ */
+function todayOrder(): string[] {
+  return todayRowNodes().map((row) => row.getAttribute('title') ?? row.textContent?.trim() ?? '');
+}
+
+/** The element the operator's pointer and focus enter — the zone's wrapper. */
+function todayWrapper(): HTMLElement {
+  const zone = todayZone();
+  expect(zone, 'no Today zone rendered').not.toBeNull();
+  const wrapper = zone!.parentElement;
+  expect(wrapper, 'Today has no wrapper to hold pointer state').not.toBeNull();
+  return wrapper as HTMLElement;
+}
+
+/** Put the router on a session, exactly as opening one does. */
+function openRoute(sessionId: string, cwd = '/projects/alpha') {
+  mockPathname = '/session';
+  mockLocation = { pathname: '/session', search: { session: sessionId, dir: cwd } };
+}
+
+/**
+ * Mount the sidebar with a `refresh` that keeps its providers.
+ *
+ * RTL's own `rerender` replaces the WHOLE tree with what it is handed, so
+ * `rerender(<DashboardSidebar />)` would drop the query client the panel reads
+ * through — the router is mocked at module scope here, so a route change needs
+ * a re-render to be seen, and it must be a re-render of the same tree.
+ */
+function mountSidebar() {
+  const view = renderWithProviders(<DashboardSidebar />);
+  const refresh = () =>
+    view.rerender(
+      <QueryClientProvider client={view.queryClient}>
+        <TooltipProvider>
+          <SidebarProvider>
+            <DashboardSidebar />
+          </SidebarProvider>
+        </TooltipProvider>
+      </QueryClientProvider>
+    );
+  return { ...view, refresh };
+}
+
+describe('Today — what you were doing, and it holds still', () => {
+  /** Every `scrollIntoView` this test's rows received. */
+  let scrolls: { node: Element; options: ScrollIntoViewOptions | undefined }[];
+  let originalScrollIntoView: typeof Element.prototype.scrollIntoView;
+
+  afterEach(() => {
+    cleanup();
+    Element.prototype.scrollIntoView = originalScrollIntoView;
+  });
+
+  beforeEach(() => {
+    localStorage.clear();
+    useInteractionStore.getState().reset();
+    useSessionListStore.getState().resetStatuses();
+    useIdleNudgeStore.getState().reset();
+    mockReducedMotion = false;
+    mockMeshPaths.mockReset();
+    mockMeshPaths.mockReturnValue(['~/.dork/agents/dorkbot', '/projects/alpha', '/projects/beta']);
+    mockResolvedAgents.mockReset();
+    mockResolvedAgents.mockReturnValue({});
+    mockSidebarPrefs.mockReset();
+    mockSidebarPrefs.mockReturnValue(makePrefs({ gettingStarted: { retired: ALL_SUGGESTIONS } }));
+    mockUpdateSidebar.mockReset();
+    mockRecent.mockReset();
+    mockRecent.mockReturnValue({
+      data: { sessions: [], agentActivity: {} },
+      isLoading: false,
+      isSuccess: true,
+    });
+    mockApprovals.mockReset();
+    mockApprovals.mockReturnValue([]);
+    mockRooms.mockReset();
+    mockRooms.mockReturnValue([]);
+    mockThreads.mockReset();
+    mockThreads.mockReturnValue([]);
+    mockNavigate.mockReset();
+    mockAttentionMap.mockReset();
+    mockAttentionMap.mockImplementation((paths: string[]) =>
+      Object.fromEntries(paths.map((p) => [p, 'active']))
+    );
+    mockSelectedCwd = null;
+    mockPathname = '/';
+    mockLocation = { pathname: '/', search: {} };
+    useTodayRevealStore.getState().reset();
+
+    // jsdom implements no scrolling at all, so the method has to exist before
+    // anything can be said about how it was called.
+    scrolls = [];
+    originalScrollIntoView = Element.prototype.scrollIntoView;
+    Element.prototype.scrollIntoView = function scrollIntoViewSpy(
+      options?: boolean | ScrollIntoViewOptions
+    ) {
+      scrolls.push({ node: this, options: options as ScrollIntoViewOptions | undefined });
+    };
+  });
+
+  /** Three conversations, opened in a known order, oldest touch first. */
+  function seedThreeConversations() {
+    seedSessions([
+      { session: recentSession('ses-a', { title: 'Alpha work' }), lifecycle: 'idle' },
+      { session: recentSession('ses-b', { title: 'Beta work' }), lifecycle: 'idle' },
+      { session: recentSession('ses-c', { title: 'Gamma work' }), lifecycle: 'idle' },
+    ]);
+    act(() => {
+      useInteractionStore.getState().recordOpened('session', 'ses-a', Date.now() - 30_000);
+      useInteractionStore.getState().recordOpened('session', 'ses-b', Date.now() - 20_000);
+      useInteractionStore.getState().recordOpened('session', 'ses-c', Date.now() - 10_000);
+    });
+  }
+
+  describe('BC-21 / P2 AC-3 — the anchor', () => {
+    it('is Today’s first row on every route change', () => {
+      seedThreeConversations();
+      // `ses-a` is the OLDEST touch, so anything but the anchor rule puts it last.
+      openRoute('ses-a');
+      const view = mountSidebar();
+      expect(todayOrder()[0]).toContain('Alpha work');
+
+      openRoute('ses-b');
+      view.refresh();
+      expect(todayOrder()[0]).toContain('Beta work');
+
+      openRoute('ses-c');
+      view.refresh();
+      expect(todayOrder()[0]).toContain('Gamma work');
+    });
+
+    it('never appears in Now', () => {
+      seedThreeConversations();
+      openRoute('ses-a');
+      mountSidebar();
+      expect(zoneRows(nowZone())).not.toContainEqual(expect.stringContaining('Alpha work'));
+    });
+  });
+
+  describe('BC-17 — rows never move under a cursor that is about to click', () => {
+    it('withholds a legitimate reorder while the pointer is inside, and applies it on leave', () => {
+      seedThreeConversations();
+      mountSidebar();
+      const before = todayOrder();
+      expect(before[0]).toContain('Gamma work');
+
+      fireEvent.pointerEnter(todayWrapper());
+
+      // A real reorder: this operator touched `ses-a` on another device, which
+      // is the one thing that legitimately moves a Today row.
+      act(() => {
+        useInteractionStore.getState().recordOpened('session', 'ses-a', Date.now() + 60_000);
+      });
+      expect(todayOrder()).toEqual(before);
+
+      // The paired half — without it, "did not move" would also pass on a
+      // sidebar that never reorders at all.
+      fireEvent.pointerLeave(todayWrapper());
+      expect(todayOrder()[0]).toContain('Alpha work');
+    });
+
+    it('does the same for a focused row, and releases on blur', () => {
+      seedThreeConversations();
+      mountSidebar();
+      const before = todayOrder();
+
+      fireEvent.focus(todayRowNodes()[0]!);
+      act(() => {
+        useInteractionStore.getState().recordOpened('session', 'ses-a', Date.now() + 60_000);
+      });
+      expect(todayOrder()).toEqual(before);
+
+      fireEvent.blur(todayRowNodes()[0]!);
+      expect(todayOrder()[0]).toContain('Alpha work');
+    });
+
+    it('still lets a row’s CONTENT change while its place is held', () => {
+      // The hold is about position, not about freezing the panel: a row that
+      // went quiet under the pointer must still stop saying it is working.
+      seedThreeConversations();
+      mountSidebar();
+      fireEvent.pointerEnter(todayWrapper());
+      act(() => {
+        useSessionListStore.getState().setSessionStatus('ses-c', {
+          lifecycle: 'streaming',
+        } as never);
+      });
+      const streaming = todayRowNodes()[0]!;
+      expect(streaming.querySelector('[data-slot="sidebar-row-second-line"]')).not.toBeNull();
+    });
+
+    it('lets the operator’s own conversation switch through immediately', () => {
+      // The hold defers reorders nobody asked for. Switching conversations IS
+      // the ask (BC-21), and a pointer resting in the zone must not out-vote it.
+      seedThreeConversations();
+      const view = mountSidebar();
+      fireEvent.pointerEnter(todayWrapper());
+      openRoute('ses-a');
+      view.refresh();
+      expect(todayOrder()[0]).toContain('Alpha work');
+    });
+  });
+
+  describe('BC-36 — scroll-to-active, and its guardrails', () => {
+    it('scrolls on a conversation switch, and not on an activity event', () => {
+      seedThreeConversations();
+      openRoute('ses-a');
+      const view = mountSidebar();
+      expect(scrolls, 'arriving on a page is not a switch').toHaveLength(0);
+
+      act(() => {
+        useSessionListStore.getState().setSessionStatus('ses-b', {
+          lifecycle: 'streaming',
+          activity: { kind: 'tool', toolName: 'Read', at: new Date().toISOString() },
+        } as never);
+      });
+      view.refresh();
+      expect(scrolls, 'an agent working is not a reason to move the panel').toHaveLength(0);
+
+      openRoute('ses-b');
+      view.refresh();
+      expect(scrolls).toHaveLength(1);
+      expect(scrolls[0]!.node.getAttribute('aria-current')).toBe('page');
+      expect(todayZone()!.contains(scrolls[0]!.node)).toBe(true);
+    });
+
+    it('does not scroll on an unread change', async () => {
+      seedThreeConversations();
+      mockRooms.mockReturnValue([channel('c1', 'general')]);
+      act(() => {
+        useInteractionStore.getState().recordOpened('room', 'c1', Date.now() - 5_000);
+      });
+      openRoute('ses-a');
+      const view = mountSidebar();
+      // The room list is a real query over the mocked transport, so the row it
+      // draws arrives a tick later. Without this wait the case would assert
+      // "nothing scrolled" about a panel that had no room in it.
+      await waitFor(() => expect(todayOrder()).toContainEqual(expect.stringContaining('general')));
+      scrolls.length = 0;
+
+      mockRooms.mockReturnValue([{ ...channel('c1', 'general'), unreadCount: 4 }]);
+      await view.queryClient.invalidateQueries();
+      await waitFor(() =>
+        expect(
+          todayRowNodes().find((row) => row.textContent?.includes('general'))?.className
+        ).toContain('font-medium')
+      );
+      expect(scrolls).toHaveLength(0);
+
+      // Paired: the same tree DOES scroll when the conversation changes.
+      openRoute('ses-b');
+      view.refresh();
+      expect(scrolls).toHaveLength(1);
+    });
+
+    it('does not scroll on a model rebuild that changed no conversation', () => {
+      seedThreeConversations();
+      openRoute('ses-a');
+      const view = mountSidebar();
+      scrolls.length = 0;
+      view.refresh();
+      view.refresh();
+      expect(scrolls).toHaveLength(0);
+    });
+
+    it('jumps instantly under a reduced-motion preference', () => {
+      mockReducedMotion = true;
+      seedThreeConversations();
+      openRoute('ses-a');
+      const view = mountSidebar();
+      openRoute('ses-b');
+      view.refresh();
+      expect(scrolls[0]?.options?.behavior).toBe('auto');
+    });
+
+    it('travels when motion is allowed — the other half of the same switch', () => {
+      seedThreeConversations();
+      openRoute('ses-a');
+      const view = mountSidebar();
+      openRoute('ses-b');
+      view.refresh();
+      expect(scrolls[0]?.options?.behavior).toBe('smooth');
+    });
+
+    it('never opens a collapsed Library section to reach the same conversation', () => {
+      seedThreeConversations();
+      mockSidebarPrefs.mockReturnValue(
+        makePrefs({
+          gettingStarted: { retired: ALL_SUGGESTIONS },
+          sections: { agents: { collapsed: true } },
+        })
+      );
+      openRoute('ses-a');
+      const view = mountSidebar();
+      expect(sectionToggle('Agents').getAttribute('aria-expanded')).toBe('false');
+
+      openRoute('ses-b');
+      view.refresh();
+      expect(scrolls).toHaveLength(1);
+      expect(sectionToggle('Agents').getAttribute('aria-expanded')).toBe('false');
+      expect(mockUpdateSidebar).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('P2 AC-2 — a hundred activity events move nothing and redraw nothing', () => {
+    it('changes no row’s position and touches only the row the events belong to', () => {
+      seedThreeConversations();
+      mountSidebar();
+
+      // All three streaming first: STARTING a turn is a lifecycle change and is
+      // allowed to redraw — it is what `reservesVerbLine` is derived from. What
+      // follows is activity, and only activity.
+      const ids = ['ses-a', 'ses-b', 'ses-c'];
+      act(() => {
+        for (const id of ids) {
+          useSessionListStore.getState().setSessionStatus(id, { lifecycle: 'streaming' } as never);
+        }
+      });
+
+      const before = todayOrder();
+      expect(before.length).toBeGreaterThan(2);
+      const rowFor = (title: string) => {
+        const row = todayRowNodes().find((node) => node.getAttribute('title')?.includes(title));
+        expect(row, `no Today row for ${title}`).toBeDefined();
+        return row!;
+      };
+      const gamma = rowFor('Gamma work');
+      const alpha = rowFor('Alpha work');
+
+      // Every DOM change inside Today, at the finest grain the browser reports.
+      const observer = new MutationObserver(() => {});
+      observer.observe(todayZone()!, {
+        subtree: true,
+        childList: true,
+        characterData: true,
+        attributes: true,
+      });
+
+      const tools = ['Read', 'Edit', 'Bash', 'Grep', 'Write'];
+      act(() => {
+        for (let event = 0; event < 100; event += 1) {
+          useSessionListStore.getState().setSessionStatus('ses-c', {
+            lifecycle: 'streaming',
+            activity: {
+              kind: 'tool',
+              toolName: `${tools[event % tools.length]}-${event}`,
+              at: new Date().toISOString(),
+            },
+          } as never);
+        }
+      });
+      const touched = observer.takeRecords();
+
+      // Half one: nothing moved.
+      expect(todayOrder()).toEqual(before);
+
+      // Half two: only the row those events belong to was redrawn, and only its
+      // verb line. A model that carried the verb would have rebuilt every row.
+      expect(touched.length, 'a hundred activity events redrew nothing at all').toBeGreaterThan(0);
+      const strays = touched
+        .map((record) => record.target)
+        .filter((node) => !gamma.contains(node) && gamma !== node);
+      expect(strays, 'an activity event redrew a row it had nothing to do with').toEqual([]);
+      expect(
+        touched.every((record) => gamma.contains(record.target)),
+        'the verb line is where the words live'
+      ).toBe(true);
+
+      // The counter-proof: the observer CAN see another row change.
+      act(() => {
+        useSessionListStore.getState().setSessionStatus('ses-a', {
+          lifecycle: 'streaming',
+          activity: { kind: 'tool', toolName: 'Read', at: new Date().toISOString() },
+        } as never);
+      });
+      const second = observer.takeRecords();
+      observer.disconnect();
+      expect(
+        second.some((record) => alpha.contains(record.target)),
+        'the observer was blind — it saw no change in a row that demonstrably changed'
+      ).toBe(true);
+    });
+  });
+
+  describe('BC-21 / BC-37 — the anchor carries live status', () => {
+    it('says what the open conversation is doing, and shows its preview when it is not', () => {
+      seedSessions([
+        {
+          session: recentSession('ses-a', {
+            title: 'Alpha work',
+            lastMessagePreview: 'Left off on the parser.',
+          }),
+          lifecycle: 'idle',
+        },
+      ]);
+      act(() => {
+        useInteractionStore.getState().recordOpened('session', 'ses-a', Date.now() - 10_000);
+      });
+      openRoute('ses-a');
+      const view = mountSidebar();
+
+      // Idle: the preview, which is the line the row earned.
+      const secondLine = () =>
+        todayRowNodes()[0]?.querySelector('[data-slot="sidebar-row-second-line"]')?.textContent;
+      expect(secondLine()).toBe('Left off on the parser.');
+
+      // Streaming with a tool reading: the verb, from the leaf subscription.
+      act(() => {
+        useSessionListStore.getState().setSessionStatus('ses-a', {
+          lifecycle: 'streaming',
+          activity: {
+            kind: 'tool',
+            toolName: 'Read',
+            target: 'parser.ts',
+            at: new Date().toISOString(),
+          },
+        } as never);
+      });
+      view.refresh();
+      expect(secondLine()).toMatch(/parser\.ts/);
+
+      // Streaming with no reading yet: the honest floor of the ladder, never a
+      // blank line held open (BC-37).
+      act(() => {
+        useSessionListStore.getState().setSessionStatus('ses-a', {
+          lifecycle: 'streaming',
+        } as never);
+      });
+      view.refresh();
+      expect(secondLine()).toBe('Working…');
+    });
+  });
+
+  describe('BC-21 / D6 — the anchor survives a deep link and a reload', () => {
+    it('draws the open conversation even when no session list has arrived', () => {
+      // Exactly a reload mid-conversation: the router knows the session and the
+      // directory, and nothing else does yet.
+      mockRecent.mockReturnValue({
+        data: { sessions: [], agentActivity: {} },
+        isLoading: false,
+        isSuccess: true,
+      });
+      openRoute('ses-deep', '/projects/alpha');
+      mountSidebar();
+
+      expect(todayZone(), 'a reload left the operator with no Today at all').not.toBeNull();
+      expect(todayOrder()[0]).toContain('alpha');
+      expect(todayRowNodes()[0]?.getAttribute('aria-current')).toBe('page');
+    });
+
+    it('draws an automated session the operator opened by hand', () => {
+      // BC-19 keeps runs off Today's top level because they are work nobody
+      // asked for. Opening one is asking for it.
+      seedSessions([
+        {
+          session: recentSession('ses-run', { title: 'Nightly digest', origin: 'task' }),
+          lifecycle: 'idle',
+        },
+      ]);
+      openRoute('ses-run');
+      mountSidebar();
+      expect(todayOrder()[0]).toContain('Nightly digest');
+      expect(todayRowNodes()[0]?.getAttribute('aria-current')).toBe('page');
+    });
+
+    it('still keeps an automated session nobody opened off the top level', () => {
+      // The paired half — without it the case above would also pass on a model
+      // that had simply stopped filtering runs.
+      seedSessions([
+        { session: recentSession('ses-a', { title: 'Alpha work' }), lifecycle: 'idle' },
+        {
+          session: recentSession('ses-run', { title: 'Nightly digest', origin: 'task' }),
+          lifecycle: 'idle',
+        },
+      ]);
+      act(() => {
+        useInteractionStore.getState().recordOpened('session', 'ses-a', Date.now() - 10_000);
+      });
+      openRoute('ses-a');
+      mountSidebar();
+      expect(todayOrder()).not.toContainEqual(expect.stringContaining('Nightly digest'));
+      expect(todayOrder()).toContainEqual(expect.stringContaining('+ 1 automated'));
+    });
+  });
+
+  describe('BC-15 / BC-33 — a thread and the room it lives in are two rows', () => {
+    /** A channel with one thread hanging off an entry in it. */
+    function seedThreadedChannel() {
+      mockRooms.mockReturnValue([channel('c1', 'general')]);
+      mockThreads.mockReturnValue([
+        {
+          roomId: 'c1',
+          roomKind: 'channel',
+          roomSlug: 'general',
+          roomTitle: 'general',
+          rootEntryId: 'entry-77',
+          rootAuthorId: 'a1',
+          rootPreview: 'Anything else to check?',
+          replyCount: 2,
+          unreadCount: 0,
+          lastActivityAt: new Date(Date.now() - 60_000).toISOString(),
+        },
+      ]);
+      act(() => {
+        useInteractionStore.getState().recordOpened('room', 'c1', Date.now() - 10_000);
+      });
+    }
+
+    /** Put the router on a room, optionally inside one of its threads. */
+    function openRoom(roomId: string, thread?: string) {
+      mockPathname = '/channels';
+      mockLocation = {
+        pathname: '/channels',
+        search: { id: roomId, ...(thread === undefined ? {} : { thread }) },
+      };
+    }
+
+    it('lights exactly one of them when the ROOM is open', async () => {
+      seedThreadedChannel();
+      openRoom('c1');
+      mountSidebar();
+      await waitFor(() => expect(todayOrder().join('|')).toContain('Anything else'));
+
+      const active = todayRowNodes().filter((row) => row.getAttribute('aria-current') === 'page');
+      expect(active).toHaveLength(1);
+      expect(active[0]?.getAttribute('title')).not.toContain('Anything else');
+    });
+
+    it('lights the THREAD, and only the thread, when the thread is open', async () => {
+      seedThreadedChannel();
+      openRoom('c1', 'entry-77');
+      const view = mountSidebar();
+      await waitFor(() => expect(todayOrder().join('|')).toContain('Anything else'));
+      view.refresh();
+
+      const active = todayRowNodes().filter((row) => row.getAttribute('aria-current') === 'page');
+      // Two rows carry `roomId: 'c1'`. Exactly one of them is what the operator
+      // opened, and `aria-current="page"` has to stay unique or scroll-to-active
+      // has no anchor to find (BC-36).
+      expect(active).toHaveLength(1);
+      expect(active[0]?.getAttribute('title')).toContain('Anything else');
+      // BC-21: and it is Today's first row, not its parent channel.
+      expect(todayOrder()[0]).toContain('Anything else');
+    });
+
+    it('opens the thread panel rather than only the room it lives in', async () => {
+      seedThreadedChannel();
+      openRoom('c1');
+      mountSidebar();
+      await waitFor(() => expect(todayOrder().join('|')).toContain('Anything else'));
+
+      const threadRow = todayRowNodes().find((row) =>
+        row.getAttribute('title')?.includes('Anything else')
+      );
+      expect(threadRow, 'no thread row in Today').toBeDefined();
+      fireEvent.click(threadRow!);
+      expect(mockNavigate).toHaveBeenCalledWith({
+        to: '/channels',
+        search: { id: 'c1', thread: 'entry-77' },
+      });
+      // And the STORE, which is what the room widget actually draws from. The
+      // URL alone gets mirrored away a frame later when the reader is already
+      // in that room (`use-thread-url-sync.ts`), so the click would open
+      // nothing — which is exactly what the browser found.
+      expect(useRoomOpenThreadStore.getState().open.c1?.rootEntryId).toBe('entry-77');
+      expect(useRoomOpenThreadStore.getState().open.c1?.focusComposer).toBe(false);
+    });
+  });
+
+  describe('BC-19 — the automated reveal', () => {
+    function seedAutomated() {
+      seedSessions([
+        { session: recentSession('ses-a', { title: 'Alpha work' }), lifecycle: 'idle' },
+        {
+          session: recentSession('ses-run', { title: 'Nightly digest', origin: 'task' }),
+          lifecycle: 'idle',
+        },
+      ]);
+      act(() => {
+        useInteractionStore.getState().recordOpened('session', 'ses-a', Date.now() - 10_000);
+      });
+    }
+
+    it('keeps automated runs off Today until the operator asks for them', () => {
+      seedAutomated();
+      mountSidebar();
+      expect(todayOrder()).not.toContainEqual(expect.stringContaining('Nightly digest'));
+      expect(todayOrder()).toContainEqual(expect.stringContaining('+ 1 automated'));
+    });
+
+    it('unfolds them where they are, and folds them back', () => {
+      seedAutomated();
+      mountSidebar();
+      const reveal = todayRowNodes().find((row) => row.textContent?.includes('+ 1 automated'));
+      expect(reveal).toBeDefined();
+
+      fireEvent.click(reveal!);
+      expect(todayOrder()).toContainEqual(expect.stringContaining('Nightly digest'));
+      expect(todayOrder()).toContainEqual(expect.stringContaining('Hide automated'));
+      // A reveal is not a navigation.
+      expect(mockNavigate).not.toHaveBeenCalled();
+
+      const hide = todayRowNodes().find((row) => row.textContent?.includes('Hide automated'));
+      fireEvent.click(hide!);
+      expect(todayOrder()).not.toContainEqual(expect.stringContaining('Nightly digest'));
+    });
+  });
+
+  describe('BC-41 — the sidebar reads read state and never writes its own', () => {
+    it('writes no watermark of its own when a conversation is opened', async () => {
+      seedThreeConversations();
+      mockRooms.mockReturnValue([channel('c1', 'general')]);
+      act(() => {
+        useInteractionStore.getState().recordOpened('room', 'c1', Date.now() - 5_000);
+      });
+      mountSidebar();
+      await waitFor(() => expect(todayOrder()).toContainEqual(expect.stringContaining('general')));
+      localStorage.clear();
+
+      const roomRow = todayRowNodes().find((row) => row.textContent?.includes('general'));
+      expect(roomRow, 'no room row in Today to open').toBeDefined();
+      fireEvent.click(roomRow!);
+
+      // Opening records WHEN you opened it — Today's order key — and nothing
+      // about what you have read. A read watermark in local storage is the bug
+      // BC-41 forbids: the cursors are cross-device and server-held.
+      const keys = Object.keys(localStorage);
+      expect(keys).toEqual(['dorkos:interactions-v1']);
+      expect(JSON.stringify(localStorage)).not.toMatch(/read|unread|cursor|seq|watermark/i);
+    });
   });
 });

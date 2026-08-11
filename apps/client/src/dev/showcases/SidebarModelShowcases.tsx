@@ -822,12 +822,127 @@ export function SidebarNowStatesShowcase() {
   );
 }
 
+/**
+ * The four states Today passes through, side by side.
+ *
+ * Today is the zone the 40-rows-down problem disappears into, and its states
+ * are hard to catch in the running app for the ordinary reason: they depend on
+ * a clock, on an absence, and on where the operator has been. They are drawn
+ * here from spreads over the shipped fixtures — never edits to them — so a
+ * reviewer can compare all four against the mockups in both themes.
+ *
+ * The two behaviours that are NOT here are the two that need hands: the order
+ * holding still under a pointer (BC-17) and the anchor scrolling into view on a
+ * conversation switch (BC-36). Both are asserted against the real
+ * `DashboardSidebar` in `DashboardSidebar.test.tsx`, because a static page
+ * cannot show a row refusing to move.
+ */
+export function SidebarTodayStatesShowcase() {
+  const [showReasons, setShowReasons] = useState(true);
+
+  const busy = SIDEBAR_FIXTURES.find((f) => f.name === 'busy')!.state;
+
+  // Anchored: exactly the shipped `busy` journey, which already has a session
+  // open — this is what an operator sees while working with one agent.
+  const anchored = busy;
+  // With the digest. TWO things stand between `busy` and a morning after an
+  // absence, and the screenshot pass is what found the second: the fixture's
+  // own `lastShownDate` is already today, so content alone draws nothing
+  // (BC-22's second condition). Both are moved, or the panel is a copy of the
+  // one beside it.
+  const withDigest: SidebarState = {
+    ...busy,
+    digest: { finishedWhileAwayCount: 4 },
+    prefs: { ...busy.prefs, digest: { lastShownDate: '2026-08-08' } },
+  };
+  // The reveal, open. The runs hang off the bottom of the finished list,
+  // origin-marked, spending none of the soft cap.
+  const revealed: SidebarState = { ...busy, todayAutomatedExpanded: true };
+  // The morning after. `now` moved past 04:00 with nothing touched since, so
+  // everything but the anchor and the directed unread has left the zone.
+  const archived: SidebarState = { ...busy, now: busy.now + 24 * 60 * 60 * 1000 };
+
+  const states: { name: string; caption: string; state: SidebarState }[] = [
+    { name: 'anchored', caption: 'The conversation you have open', state: anchored },
+    { name: 'digest', caption: 'A morning after an absence', state: withDigest },
+    { name: 'automated', caption: 'The reveal, opened', state: revealed },
+    { name: 'archived', caption: 'A day later, untouched', state: archived },
+  ];
+
+  return (
+    <PlaygroundSection
+      title="Sidebar Today States"
+      description="Today is what you were doing, in the order YOU last touched it — never the order your agents last did something. Four states: the conversation you have open pinned to the top with live status, the once-a-day welcome-back row below it, the automated runs unfolded behind their reveal, and the morning after, when everything untouched since 4am has quietly left."
+    >
+      <div className="flex items-center gap-2">
+        <Switch
+          id="sidebar-today-states-reasons"
+          checked={showReasons}
+          onCheckedChange={setShowReasons}
+        />
+        <label htmlFor="sidebar-today-states-reasons" className="text-muted-foreground text-xs">
+          Show the reason on every zone, section and row
+        </label>
+      </div>
+
+      <ShowcaseLabel>Anchored, with the digest, runs revealed, the morning after</ShowcaseLabel>
+      <div className="border-border/50 bg-muted/30 overflow-x-auto rounded-lg border border-dashed p-4">
+        {/* Wraps rather than scrolls, for the same reason the Now states do: a
+            panel clipped by a horizontal scroller is one axe declines to
+            measure. */}
+        <div className="flex flex-wrap items-start gap-4">
+          {states.map(({ name, caption, state }) => (
+            <div key={name} className="flex shrink-0 flex-col gap-2" style={{ width: PANEL_WIDTH }}>
+              <div className="flex flex-col gap-0.5">
+                <span
+                  id={`sidebar-today-state-${name}`}
+                  className="text-foreground text-xs font-medium"
+                >
+                  {name}
+                </span>
+                <span className="text-muted-foreground text-xs">{caption}</span>
+              </div>
+              <nav
+                data-slot="sidebar-today-state"
+                data-state-name={name}
+                aria-label={`Today (${name})`}
+                className="bg-sidebar text-sidebar-foreground flex flex-col gap-1.5 rounded-lg p-2"
+              >
+                {buildSidebarModel(state)
+                  .zones.filter((zone) => zone.id === 'today')
+                  .map((zone) => (
+                    <ModelZone
+                      key={zone.id}
+                      zone={zone}
+                      state={state}
+                      activeKey={anchorKey(state)}
+                      showReasons={showReasons}
+                      fixtureName={`today-${name}`}
+                      panelLabelId={`sidebar-today-state-${name}`}
+                    />
+                  ))}
+              </nav>
+            </div>
+          ))}
+        </div>
+      </div>
+      <p className="text-muted-foreground text-xs">
+        The first row of every panel is the anchor — the conversation the operator has open. It is
+        pinned there while it is open, carries the live status, and is exempt from the soft cap and
+        from the overnight boundary, which is why it is still the first row in the fourth panel a
+        day later.
+      </p>
+    </PlaygroundSection>
+  );
+}
+
 /** Every showcase on the Sidebar Model page. */
 export function SidebarModelShowcases() {
   return (
     <>
       <SidebarModelJourneysShowcase />
       <SidebarNowStatesShowcase />
+      <SidebarTodayStatesShowcase />
       <SidebarUnreadTiersShowcase />
     </>
   );

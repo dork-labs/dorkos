@@ -302,8 +302,13 @@ test.describe('Sidebar model showcase @smoke', () => {
    * injected 1.7:1 label went undetected: a gate that could not fail. At 5200px
    * the whole page is inside the grid, 300+ nodes are evaluated, and the same
    * injected failure is caught. Do not shrink this below the page's own height.
+   *
+   * It grows with the page, which is the point: `expectPageFitsViewport` reds
+   * the moment a new showcase pushes the column past it, and the fix is this
+   * number rather than a looser threshold. Raised for the Today states panel
+   * (P2.3), which added four more 272px panels below Now's four.
    */
-  test.use({ viewport: { width: 1600, height: 7600 } });
+  test.use({ viewport: { width: 1600, height: 8800 } });
 
   // The per-test default is 30s, which is under the cold cost of the first
   // navigation to `/dev` — see PLAYGROUND_COLD_START_MS. A locator ceiling

@@ -5,6 +5,7 @@
  */
 import { useMemo } from 'react';
 import type { SessionListWarning } from '@dorkos/shared/types';
+import { useInteractionTimestamps } from '@/layers/entities/interactions';
 import { useRooms } from '@/layers/entities/room';
 import { useRecentSessions } from '@/layers/entities/session';
 // Same-slice import via the sibling module rather than the slice barrel, which
@@ -84,13 +85,24 @@ export function useJumpBackIn({
     enabled,
   });
   const roomsQuery = useRooms({ enabled });
+  // The list is ordered by the operator's own attention (BC-16). Read from the
+  // store rather than taken as an option, so every surface that shows this list
+  // is ordered the same way without each caller having to remember to pass it.
+  const interactions = useInteractionTimestamps();
 
   const sessions = recentQuery.data?.sessions;
   const rooms = roomsQuery.data;
 
   const model = useMemo(
-    () => mergeJumpBackIn({ sessions: sessions ?? [], rooms: rooms ?? [], mutedRoomIds, limit }),
-    [sessions, rooms, mutedRoomIds, limit]
+    () =>
+      mergeJumpBackIn({
+        sessions: sessions ?? [],
+        rooms: rooms ?? [],
+        mutedRoomIds,
+        interactions,
+        limit,
+      }),
+    [sessions, rooms, mutedRoomIds, interactions, limit]
   );
 
   return {

@@ -12,6 +12,7 @@
  */
 import type { RoomSummary } from '@dorkos/shared/room-schemas';
 import type { Session } from '@dorkos/shared/types';
+import { interactionKey, type InteractionTimestamps } from '@/layers/entities/interactions';
 import { hasUnread, roomDisplayTitle } from '@/layers/entities/room';
 import { partitionSessionsByOrigin, sessionDisplayTitle } from '@/layers/entities/session';
 
@@ -82,7 +83,10 @@ export type JumpBackInItem = JumpBackInSessionItem | JumpBackInRoomItem;
 
 /** The merged model: what to show, and what is deliberately tucked away. */
 export interface JumpBackInModel {
-  /** The rows, most recently active first, deduped and capped. */
+  /**
+   * The rows, most recently touched by the OPERATOR first (see
+   * {@link recencyMs}), deduped and capped.
+   */
   items: JumpBackInItem[];
   /**
    * Sessions somebody else started — a room's own turn, a scheduled run, a
@@ -115,6 +119,15 @@ export interface MergeJumpBackInInput {
    * dimmed, exactly as before.
    */
   mutedRoomIds?: ReadonlySet<string>;
+  /**
+   * When the operator themselves last opened each thread, keyed `<kind>:<id>`
+   * (`entities/interactions`). The list's ordering key (BC-16).
+   *
+   * Absent means "nothing recorded on this device", which is the honest state
+   * of a browser that has never been used here — and the list then falls back
+   * to activity recency rather than coming back empty. See {@link recencyMs}.
+   */
+  interactions?: InteractionTimestamps;
   /** Row cap. Defaults to {@link MAX_JUMP_BACK_IN}. */
   limit?: number;
 }
@@ -179,26 +192,74 @@ function roomItem(room: RoomSummary): JumpBackInRoomItem {
 }
 
 /**
- * When a row was last active, as a number a sort can use.
+ * An ISO-8601 instant as a number a sort can use, or `null` when there is
+ * nothing parseable.
  *
  * Parsed rather than string-compared: a session's `updatedAt` and a room's
  * `lastActivityAt` are both ISO-8601 but are produced by different code paths,
  * and comparing `2026-08-08T10:00:00Z` against `2026-08-08T10:00:00.000+00:00`
- * as strings answers with whichever spelling sorts first. An unparseable
- * timestamp sorts last rather than throwing — one bad row must not empty the
- * list.
+ * as strings answers with whichever spelling sorts first.
  */
-function activityMs(item: JumpBackInItem): number {
-  const parsed = Date.parse(item.lastActivityAt);
-  return Number.isNaN(parsed) ? Number.NEGATIVE_INFINITY : parsed;
+function epochMs(iso: string | undefined): number | null {
+  if (iso === undefined) return null;
+  const parsed = Date.parse(iso);
+  return Number.isNaN(parsed) ? null : parsed;
+}
+
+/**
+ * The interaction-store key for one row: a session is `session:<id>`, and both
+ * room kinds are `room:<id>`.
+ *
+ * A direct message is a room whose `kind` is `'dm'`, so it is keyed exactly
+ * like a channel — the same rule the read cursors follow. Inventing a `dm:`
+ * namespace here would split one conversation's history across two keys that
+ * each look right.
+ *
+ * @param item - The row.
+ */
+function interactionKeyOf(item: JumpBackInItem): string {
+  return item.kind === 'session'
+    ? interactionKey('session', item.id)
+    : interactionKey('room', item.id);
+}
+
+/**
+ * The instant this row is ordered by — **when the OPERATOR last touched it**
+ * (BC-16), falling back to when it was last active.
+ *
+ * The fallback is the honest half, not a loophole. A row the operator has never
+ * opened on this device has no interaction record, and ordering every such row
+ * as "never" would show a person who has just switched machines an
+ * alphabetical-by-tiebreak list of their own work. So a row with a record is
+ * placed by the record — an agent posting in a channel cannot move it — and a
+ * row without one keeps the activity ordering this list has always used.
+ *
+ * The other half of BC-16's key, `userLastMessageAt`, has no source on the wire
+ * yet (spec §F makes it an additive, optional field on `GET
+ * /api/sessions/recent`). When it arrives it joins the `Math.max` here; until
+ * then the interaction record alone governs — omission, never a guess.
+ *
+ * An unparseable timestamp sorts last rather than throwing: one bad row must
+ * not empty the list.
+ *
+ * @param item - The row.
+ * @param interactions - When the operator last opened each thread.
+ */
+function recencyMs(item: JumpBackInItem, interactions: InteractionTimestamps): number {
+  const opened = epochMs(interactions[interactionKeyOf(item)]);
+  if (opened !== null) return opened;
+  return epochMs(item.lastActivityAt) ?? Number.NEGATIVE_INFINITY;
 }
 
 /**
  * Most recent first, with the id breaking a tie descending — the same direction
  * the sort itself runs, so two rows that tie never swap places between renders.
+ *
+ * @param interactions - When the operator last opened each thread.
  */
-function byRecency(a: JumpBackInItem, b: JumpBackInItem): number {
-  return activityMs(b) - activityMs(a) || b.id.localeCompare(a.id);
+function byRecency(interactions: InteractionTimestamps) {
+  return (a: JumpBackInItem, b: JumpBackInItem): number =>
+    recencyMs(b, interactions) - recencyMs(a, interactions) || b.id.localeCompare(a.id);
 }
 
 /** Drop repeats, keeping the first (most recent) occurrence of each thread. */
@@ -263,16 +324,18 @@ export function mergeJumpBackIn({
   sessions,
   rooms,
   mutedRoomIds = new Set<string>(),
+  interactions = {},
   limit = MAX_JUMP_BACK_IN,
 }: MergeJumpBackInInput): JumpBackInModel {
   const { conversations, automated } = partitionSessionsByOrigin([...sessions]);
+  const order = byRecency(interactions);
   const merged = [
     ...conversations.map(sessionItem),
     ...rooms.filter((room) => isJumpBackInRoom(room, mutedRoomIds)).map(roomItem),
-  ].sort(byRecency);
+  ].sort(order);
 
   return {
     items: dedupe(merged).slice(0, limit),
-    automated: automated.map(sessionItem).sort(byRecency).slice(0, limit),
+    automated: automated.map(sessionItem).sort(order).slice(0, limit),
   };
 }

@@ -38,15 +38,11 @@ const ORIGIN_MARK: Partial<Record<SessionOrigin, SidebarOriginMark>> = {
  * The trailing mark one session's origin draws, or `undefined` for the
  * unmarked default — a human talking to an agent.
  *
- * **Exported because it is not reachable through this module's own rows yet,
- * and that is a fact worth being honest about rather than hiding.** Every
- * origin in the table above is one `partitionSessionsByOrigin` classes as
- * automated, and BC-19 keeps automated sessions off Today's top level — so the
- * only session rows Today builds today are user-origin ones, which draw no
- * mark. The consumer that will exercise this is P2.3's "+ N automated"
- * expansion. Testing it at its own boundary now is what keeps it correct until
- * then; testing it through a path that cannot reach it would only look like
- * coverage.
+ * Every origin in the table above is one `partitionSessionsByOrigin` classes as
+ * automated, and there are exactly two ways such a session gets a row: behind
+ * the "+ N automated" reveal ({@link revealAutomated}), and as the anchor when
+ * the operator has opened one by hand ({@link anchorRow}). An ordinary Today
+ * row is user-origin and draws no mark at all.
  *
  * @param origin - The session's origin, absent for a session nobody marked.
  */
@@ -121,6 +117,12 @@ function sessionRow(
     secondary: session.title,
     status: deriveRowStatus({ lifecycle: streaming ? 'streaming' : lifecycle }),
     reservesVerbLine: streaming,
+    // The phase, for the leaf that says the words (BC-37). `workingSessionIds`
+    // wins over the status map for the same reason `status` reads it first: it
+    // is the list the model's own working rules are computed from, so a row
+    // cannot reserve a verb line and then be handed a lifecycle that says
+    // nothing is happening.
+    ...(streaming ? { lifecycle: 'streaming' as const } : lifecycle ? { lifecycle } : {}),
     ...(preview !== undefined && !streaming ? { preview } : {}),
     ...(origin ? { origin } : {}),
     unread: { tier: 'none' },
@@ -191,13 +193,15 @@ function roomRow(
  * @param mutes - The resolved mute sets.
  */
 function threadRow(thread: ThreadSummary, state: SidebarState, mutes: MuteIndex): SidebarRowModel {
-  const target = { kind: 'room', roomId: thread.roomId, roomKind: 'thread' } as const;
+  const target = {
+    kind: 'room',
+    roomId: thread.roomId,
+    roomKind: 'thread',
+    rootEntryId: thread.rootEntryId,
+  } as const;
   const muted = mutes.rooms.has(thread.roomId);
   return {
-    // Keyed on the thread's root entry rather than through `rowKey`, which
-    // would answer with the ROOM's key: a room and a thread inside it are two
-    // rows pointing at one place, and two rows may not share a React key.
-    key: `thread:${thread.rootEntryId}`,
+    key: rowKey(target),
     target,
     glyph: { kind: 'hash' },
     primary: thread.roomSlug ?? thread.roomTitle,
@@ -226,15 +230,21 @@ function threadRow(thread: ThreadSummary, state: SidebarState, mutes: MuteIndex)
  * were doing. If one of them needs the operator it enters Now like anything
  * else, which is the only way it reaches the top of the panel.
  *
+ * **It is a reveal, not a count.** Pressing it unfolds the runs themselves
+ * ({@link revealAutomated}), so the row says how to put them away again once
+ * they are open — a "+ 3 automated" that stayed "+ 3 automated" after opening
+ * would be a control with no visible off switch.
+ *
  * @param count - How many automated sessions are folded behind it.
+ * @param expanded - Whether they are currently unfolded.
  */
-function automatedRow(count: number): SidebarRowModel {
+function automatedRow(count: number, expanded: boolean): SidebarRowModel {
   const target = { kind: 'rollup', rollup: 'automated' } as const;
   return {
     key: rowKey(target),
     target,
     glyph: { kind: 'icon', icon: 'automated' },
-    primary: `+ ${count} automated`,
+    primary: expanded ? 'Hide automated' : `+ ${count} automated`,
     status: 'idle',
     reservesVerbLine: false,
     unread: { tier: 'none' },
@@ -242,6 +252,92 @@ function automatedRow(count: number): SidebarRowModel {
     draggable: false,
     actions: ['open'],
     reason: 'rollup:automated',
+  };
+}
+
+/**
+ * The row for the conversation the operator has open, when nothing else in
+ * Today is going to draw it (BC-21).
+ *
+ * Three cases, in the order they are cheapest to answer:
+ *
+ * 1. **The session is on the wire but was filtered out.** An automated-origin
+ *    session the operator opened by hand is still the conversation they are
+ *    looking at, and BC-19's "automated runs never claim a top-level row" is
+ *    about runs they did not start. Opening one is starting it.
+ * 2. **The room is on the wire but archived.** Archiving hides a room from the
+ *    lists; it does not stop somebody reading it.
+ * 3. **Nothing on the wire answers to it at all** — a deep link, a reload, or
+ *    the first paint before the queries land. The router still knows the
+ *    session's id and its directory, or the thread's room and root entry, so
+ *    the row says which conversation it is and stops there. **No title is
+ *    invented**: the row grows one the moment the list arrives, under the same
+ *    key, so nothing moves.
+ *
+ * @param state - The snapshot.
+ * @param mutes - The resolved mute sets.
+ * @param previews - The one-line summaries, by row key.
+ */
+function anchorRow(
+  state: SidebarState,
+  mutes: MuteIndex,
+  previews: Map<string, string>
+): SidebarRowModel | null {
+  const active = state.activeTarget;
+  if (active === null) return null;
+
+  if (active.kind === 'room') {
+    // A thread is its own row, keyed on its root entry — never the room's row
+    // wearing the thread's key, which would put one place on screen twice under
+    // two names.
+    if (active.roomKind === 'thread') {
+      const thread = state.threads.find((entry) => entry.rootEntryId === active.rootEntryId);
+      if (thread !== undefined) return threadRow(thread, state, mutes);
+      const room = state.rooms.find((entry) => entry.id === active.roomId);
+      const muted = mutes.rooms.has(active.roomId);
+      return {
+        key: rowKey(active),
+        target: active,
+        glyph: { kind: 'hash' },
+        primary: room === undefined ? 'Thread' : (room.slug ?? room.title),
+        status: 'idle',
+        reservesVerbLine: false,
+        origin: 'thread',
+        unread: { tier: 'none' },
+        muted,
+        draggable: false,
+        actions: ['open'],
+        reason: 'today:open-conversation',
+      };
+    }
+    const room = state.rooms.find((entry) => entry.id === active.roomId);
+    return room === undefined ? null : roomRow(room, state, mutes, previews.get(rowKey(active)));
+  }
+  if (active.kind !== 'session') return null;
+
+  const session = state.sessions.find((entry) => entry.id === active.sessionId);
+  if (session !== undefined) {
+    return sessionRow(session, state, mutes, previews.get(rowKey(active)));
+  }
+
+  const agentPath = active.cwd ?? '';
+  const lifecycle = state.sessionStatuses[active.sessionId];
+  const streaming = state.workingSessionIds.includes(active.sessionId);
+  return {
+    key: rowKey(active),
+    target: active,
+    glyph: agentPath
+      ? { kind: 'agent-avatar', agentPath }
+      : { kind: 'icon', icon: 'session' as const },
+    primary: state.displayNames[agentPath] ?? (agentPath ? basename(agentPath) : 'Session'),
+    status: deriveRowStatus({ lifecycle: streaming ? 'streaming' : lifecycle }),
+    reservesVerbLine: streaming,
+    ...(streaming ? { lifecycle: 'streaming' as const } : lifecycle ? { lifecycle } : {}),
+    unread: { tier: 'none' },
+    muted: agentPath !== '' && mutes.agents.has(agentPath),
+    draggable: false,
+    actions: ['open'],
+    reason: 'today:open-conversation',
   };
 }
 
@@ -262,11 +358,18 @@ export function selectTodayItems(state: SidebarState): SidebarRowModel[] {
   const previews = previewIndex(state);
   const mutes = muteIndex(state.prefs);
   const anchor = anchorKey(state);
+  // The room an open THREAD lives in, which is a different key from the thread's
+  // own. A thread is keyed on its root entry (`rowKey`), so a deep link into one
+  // would otherwise leave its channel out of Today entirely — the operator would
+  // be reading `#design › …` with no `#design` anywhere on the panel.
+  const active = state.activeTarget;
+  const anchorRoom = active !== null && active.kind === 'room' ? `room:${active.roomId}` : null;
   // The anchor is eligible whatever else is true: the conversation the operator
   // has open is by definition one they are interacting with, even on the first
   // paint after a deep link, before anything has been recorded about it.
   const touched = (key: string) =>
     key === anchor ||
+    key === anchorRoom ||
     state.interactions[key] !== undefined ||
     state.userLastMessageAt[key] !== undefined;
 
@@ -288,12 +391,72 @@ export function selectTodayItems(state: SidebarState): SidebarRowModel[] {
     if (!touched(`room:${thread.roomId}`)) continue;
     rows.push(threadRow(thread, state, mutes));
   }
+  // **BC-21 says "always", and the three loops above cannot keep that on their
+  // own.** Each one walks a list, so a conversation the operator has OPEN but
+  // that is missing from every list gets no row at all — and there are three
+  // ordinary ways to be missing. A deep link or a reload lands on a session
+  // older than the recent window the cockpit fetched. An automated-origin
+  // session opened by hand is filtered out by BC-19 before `touched` is ever
+  // asked. And on the very first paint every list is still empty because the
+  // queries have not answered. In all three the operator is looking at a
+  // conversation the sidebar says they do not have.
+  if (anchor !== null && !rows.some((row) => row.key === anchor)) {
+    const missing = anchorRow(state, mutes, previews);
+    if (missing !== null) rows.push(missing);
+  }
   // The reveal stands FOR the list; it is not a list of its own. Appended
   // unconditionally it could be Today's only row — a heading and one inert
   // "+ 3 automated" on a fresh install where nothing has been opened yet — and
   // BC-1's "no empty zone" cannot see that, because the zone is not empty.
   // Automated runs are not what the operator was doing (BC-19), so with nothing
   // else in Today there is nothing to reveal them beside.
-  if (automated.length > 0 && rows.length > 0) rows.push(automatedRow(automated.length));
+  if (automated.length > 0 && rows.length > 0) {
+    rows.push(automatedRow(automated.length, state.todayAutomatedExpanded === true));
+  }
   return rows;
+}
+
+/**
+ * Today's rows with the automated runs unfolded underneath their reveal row
+ * (BC-19).
+ *
+ * Runs last, on the composed list, and appends rather than merges — which is
+ * the whole reason it is a rule of its own rather than another branch of
+ * {@link selectTodayItems}. An automated run put into the candidate list would
+ * be sorted by the operator's interaction recency (it has none), archived by
+ * the overnight boundary (it has no staleness to measure), and above all would
+ * spend places from the soft cap that belong to the conversations the operator
+ * was actually in.
+ *
+ * Muted runs stay folded away: mute kills Today eligibility (BC-40), and a
+ * reveal is not a way around that.
+ *
+ * @param rows - Today's composed rows, reveal row included.
+ * @param state - The snapshot.
+ */
+export function revealAutomated(
+  rows: readonly SidebarRowModel[],
+  state: SidebarState
+): SidebarRowModel[] {
+  if (state.todayAutomatedExpanded !== true) return [...rows];
+  // No reveal row means there is nothing to reveal FROM: the list is empty, or
+  // Today had no top-level row to hang it under. Unfolding into that would put
+  // automated runs at Today's top level, which is the one thing BC-19 forbids.
+  if (!rows.some((row) => row.reason === 'rollup:automated')) return [...rows];
+
+  const mutes = muteIndex(state.prefs);
+  const previews = previewIndex(state);
+  // **Whatever is already on the list stays off it.** Exactly one row can be in
+  // both places and it is the ordinary flow: press the reveal, click a run, and
+  // that run is now the conversation the operator has open — so the anchor
+  // branch of {@link selectTodayItems} has already drawn it at the top. Without
+  // this filter it is drawn twice, and both copies key `session:<id>`, which is
+  // a duplicate React key inside one section rather than a cosmetic repeat.
+  const drawn = new Set(rows.map((row) => row.key));
+  const { automated } = partitionSessionsByOrigin([...state.sessions]);
+  const revealed = automated
+    .map((session) => sessionRow(session, state, mutes, previews.get(`session:${session.id}`)))
+    .filter((row) => !row.muted && !drawn.has(row.key))
+    .map((row) => ({ ...row, reason: 'today:automated' }));
+  return [...rows, ...revealed];
 }
