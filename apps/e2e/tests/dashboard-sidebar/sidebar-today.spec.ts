@@ -148,9 +148,10 @@ test.describe('Dashboard Sidebar — Today @smoke', () => {
     await clearScrolls(page);
 
     // An unread change — a real model rebuild, and one the operator did not ask
-    // for. The panel must not move under them.
+    // for. The panel must not move under them. Two, not one: `seedChannel`'s own
+    // entry is already unread, so this is the second.
     await roomsApi.postEntries(quiet.id, ['Something happened over here.']);
-    await roomsApi.waitForUnread(quiet.id, 1);
+    await roomsApi.waitForUnread(quiet.id, 2);
     await expect(dashboardSidebar.rowWithText(second).first()).toBeVisible();
     expect(await scrolls(page), 'an unread badge is not a reason to move the panel').toEqual([]);
 
@@ -183,8 +184,14 @@ test.describe('Dashboard Sidebar — Today @smoke', () => {
     await expect(dashboardSidebar.rowWithText(first)).toBeVisible({
       timeout: SERVER_ROUND_TRIP_MS,
     });
+    // BOTH opened, so both have a Today row of their own. Today's membership is
+    // "conversations you have been in" (BC-15), and a channel the operator has
+    // never opened lives only in Library — folding that away would leave nothing
+    // to click and the case would time out rather than assert anything.
     await dashboardSidebar.rowWithText(first).first().click();
     await expect(dashboardSidebar.todayAnchor).toContainText(first);
+    await dashboardSidebar.rowWithText(second).first().click();
+    await expect(dashboardSidebar.todayAnchor).toContainText(second);
 
     // Fold Channels away. Both conversations still have a Today row; only their
     // Library copies are hidden (BC-33).
@@ -194,13 +201,20 @@ test.describe('Dashboard Sidebar — Today @smoke', () => {
     await expect(channels).toHaveAttribute('aria-expanded', 'false');
     await clearScrolls(page);
 
-    await dashboardSidebar.todayRows.filter({ hasText: second }).first().click();
-    await expect(dashboardSidebar.todayAnchor).toContainText(second);
+    await dashboardSidebar.todayRows.filter({ hasText: first }).first().click();
+    await expect(dashboardSidebar.todayAnchor).toContainText(first);
     expect((await scrolls(page)).length, 'the switch still brings the anchor over').toBe(1);
     await expect(channels, 'scrolling opened a section the operator folded').toHaveAttribute(
       'aria-expanded',
       'false'
     );
+
+    // Put it back. The fold is server-held prefs on a server this whole suite
+    // shares, so leaving Channels folded hides every channel row from whatever
+    // runs next — which is how the reduced-motion case below failed for a
+    // reason that had nothing to do with it.
+    await channels.click();
+    await expect(channels).toHaveAttribute('aria-expanded', 'true');
   });
 });
 

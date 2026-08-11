@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(client): the sidebar Today zone is what you were doing, in the order you did it (P2.3, DOR-1068)'
+  - 'fix(client): the Today showcase draws the digest row it says it draws (DOR-1068)'
 ---
 
 ### Added

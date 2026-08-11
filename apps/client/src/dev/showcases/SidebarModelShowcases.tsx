@@ -845,9 +845,16 @@ export function SidebarTodayStatesShowcase() {
   // Anchored: exactly the shipped `busy` journey, which already has a session
   // open — this is what an operator sees while working with one agent.
   const anchored = busy;
-  // With the digest. `finishedWhileAwayCount` is the only thing standing
-  // between `busy` and a morning after an absence.
-  const withDigest: SidebarState = { ...busy, digest: { finishedWhileAwayCount: 4 } };
+  // With the digest. TWO things stand between `busy` and a morning after an
+  // absence, and the screenshot pass is what found the second: the fixture's
+  // own `lastShownDate` is already today, so content alone draws nothing
+  // (BC-22's second condition). Both are moved, or the panel is a copy of the
+  // one beside it.
+  const withDigest: SidebarState = {
+    ...busy,
+    digest: { finishedWhileAwayCount: 4 },
+    prefs: { ...busy.prefs, digest: { lastShownDate: '2026-08-08' } },
+  };
   // The reveal, open. The runs hang off the bottom of the finished list,
   // origin-marked, spending none of the soft cap.
   const revealed: SidebarState = { ...busy, todayAutomatedExpanded: true };
