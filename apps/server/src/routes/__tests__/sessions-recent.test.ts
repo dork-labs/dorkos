@@ -222,7 +222,7 @@ describe('GET /api/sessions/recent', () => {
   // aggregation path — merge, sort, trim, three overlays, JSON serialization —
   // as a real instant from ONE runtime and as nothing at all from another, in
   // the same response, while a third runtime is down.
-  it('carries lastUserMessageAt from the runtime that can say, omits it for the one that cannot, and still degrades', async () => {
+  it('carries userLastMessageAt from the runtime that can say, omits it for the one that cannot, and still degrades', async () => {
     setAgentPaths(['/p1']);
 
     // The person wrote at 09:00; the agent kept working until 11:00, which is
@@ -230,7 +230,7 @@ describe('GET /api/sessions/recent', () => {
     runtime.listSessions.mockResolvedValue([
       {
         ...makeSession('s-knows', '2026-03-01T11:00:00.000Z', '/p1'),
-        lastUserMessageAt: '2026-03-01T09:00:00.000Z',
+        userLastMessageAt: '2026-03-01T09:00:00.000Z',
       },
     ]);
     quiet.listSessions.mockResolvedValue([
@@ -242,18 +242,45 @@ describe('GET /api/sessions/recent', () => {
 
     expect(res.status).toBe(200);
     const knows = res.body.sessions.find((s: Session) => s.id === 's-knows');
-    expect(knows.lastUserMessageAt).toBe('2026-03-01T09:00:00.000Z');
-    expect(Date.parse(knows.lastUserMessageAt)).toBeLessThan(Date.parse(knows.updatedAt));
+    expect(knows.userLastMessageAt).toBe('2026-03-01T09:00:00.000Z');
+    expect(Date.parse(knows.userLastMessageAt)).toBeLessThan(Date.parse(knows.updatedAt));
 
     // Omission, never a guess: the key is absent from the JSON body entirely —
     // not null, not an empty string, not this row's updatedAt.
     const quietRow = res.body.sessions.find((s: Session) => s.id === 's-quiet');
     expect(quietRow).toBeDefined();
-    expect('lastUserMessageAt' in quietRow).toBe(false);
+    expect('userLastMessageAt' in quietRow).toBe(false);
 
     // …and the runtime that could not answer at all is still reported as
     // degraded rather than silently shrinking the list (ADR-0310).
     expect(res.body.warnings.map((w: { runtime: string }) => w.runtime)).toContain('fake-c');
+  });
+
+  // The session-level half of BC-16, through the real route. A room turn and a
+  // scheduled run both reach the transcript as ordinary user text, so a runtime
+  // legitimately reports a reading for them — and the route, which is the only
+  // place that knows what they are, must take it back off.
+  it('drops userLastMessageAt for the room and task rows the overlays identify', async () => {
+    setAgentPaths(['/p1']);
+    const wrote = '2026-03-01T09:00:00.000Z';
+    runtime.listSessions.mockResolvedValue([
+      { ...makeSession('s-room', '2026-03-01T11:00:00.000Z', '/p1'), userLastMessageAt: wrote },
+      { ...makeSession('s-task', '2026-03-01T10:30:00.000Z', '/p1'), userLastMessageAt: wrote },
+      { ...makeSession('s-yours', '2026-03-01T10:00:00.000Z', '/p1'), userLastMessageAt: wrote },
+    ]);
+    app.locals.resolveRoomOrigins = () =>
+      new Map([['s-room', { roomLabel: '#general', roomId: 'room-1' }]]);
+    app.locals.resolveTaskOrigins = () => new Map([['s-task', { taskName: 'nightly-sync' }]]);
+
+    const res = await request(app).get('/api/sessions/recent');
+
+    expect(res.status).toBe(200);
+    const byId = new Map(res.body.sessions.map((s: Session) => [s.id, s]));
+    expect('userLastMessageAt' in (byId.get('s-room') as object)).toBe(false);
+    expect('userLastMessageAt' in (byId.get('s-task') as object)).toBe(false);
+    // …and the conversation the operator actually typed in keeps its reading,
+    // which is what makes this a gate rather than a blanket strip.
+    expect((byId.get('s-yours') as Session).userLastMessageAt).toBe(wrote);
   });
 
   it('lets a scheduled task that posts into a room still read as the task', async () => {

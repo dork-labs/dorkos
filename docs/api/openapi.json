@@ -192,7 +192,7 @@
           "account": {
             "type": "string"
           },
-          "lastUserMessageAt": {
+          "userLastMessageAt": {
             "type": "string",
             "format": "date-time"
           },

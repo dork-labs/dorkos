@@ -19,7 +19,7 @@ export interface SessionOriginPartition {
  * turn is an engine run under a thread the reader can already see (ADR
  * 260808-140954): the room row IS that conversation, so listing the run beside
  * it lists one thing twice. The origin is assigned server-side from the
- * `room_sessions` binding (`services/session/room-origin-overlay.ts`), because
+ * `room_sessions` binding (`services/session/origin/room-origin-overlay.ts`), because
  * nothing in a room turn's transcript says where it came from.
  * Pure and synchronous; callers slice each bucket to their own row cap
  * (MAX_JUMP_BACK_IN in the recents model) AFTER partitioning, not before —

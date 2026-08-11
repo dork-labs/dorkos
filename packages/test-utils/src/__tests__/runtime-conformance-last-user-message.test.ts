@@ -1,5 +1,5 @@
 /**
- * Proof that the conformance suite's `Session.lastUserMessageAt` gate can FAIL.
+ * Proof that the conformance suite's `Session.userLastMessageAt` gate can FAIL.
  *
  * The suite only ever runs against adapters that are supposed to pass, so a
  * green conformance run is no evidence these rules fired — the same blind spot
@@ -15,9 +15,9 @@
 import { describe, expect, it } from 'vitest';
 import type { Session } from '@dorkos/shared/types';
 import {
-  chooseLastUserMessageAtArm,
-  evaluateLastUserMessageAtOmission,
-  evaluateLastUserMessageAtPresence,
+  chooseUserLastMessageAtArm,
+  evaluateUserLastMessageAtOmission,
+  evaluateUserLastMessageAtPresence,
 } from '../runtime-conformance.js';
 
 /** The conversation shape the presence probe must produce: person, then agent. */
@@ -33,42 +33,42 @@ function session(overrides: Partial<Session> = {}): Session {
     updatedAt: AGENT_STOPPED_AT,
     permissionMode: 'default',
     runtime: 'fake',
-    lastUserMessageAt: PERSON_WROTE_AT,
+    userLastMessageAt: PERSON_WROTE_AT,
     ...overrides,
   };
 }
 
 describe('choosing an arm', () => {
   it('accepts a runtime that supplies the field', () => {
-    expect(chooseLastUserMessageAtArm(true, undefined)).toBeNull();
+    expect(chooseUserLastMessageAtArm(true, undefined)).toBeNull();
   });
 
   it('accepts a runtime that declares in a sentence why it cannot', () => {
-    expect(chooseLastUserMessageAtArm(false, 'the SDK exposes no thread read API')).toBeNull();
+    expect(chooseUserLastMessageAtArm(false, 'the SDK exposes no thread read API')).toBeNull();
   });
 
   it('rejects a runtime that chose neither', () => {
-    expect(chooseLastUserMessageAtArm(false, undefined)).toMatch(/must either supply/);
+    expect(chooseUserLastMessageAtArm(false, undefined)).toMatch(/must either supply/);
   });
 
   it('rejects whitespace as a declaration', () => {
     // Same rule as autonomyDefaultReason: the waiver is a sentence somebody
     // wrote, not a flag somebody flipped.
-    expect(chooseLastUserMessageAtArm(false, '   \n ')).toMatch(/must either supply/);
+    expect(chooseUserLastMessageAtArm(false, '   \n ')).toMatch(/must either supply/);
   });
 
   it('rejects a runtime that both supplies the field and claims it cannot', () => {
-    expect(chooseLastUserMessageAtArm(true, 'no thread read API')).toMatch(/Pick one/);
+    expect(chooseUserLastMessageAtArm(true, 'no thread read API')).toMatch(/Pick one/);
   });
 });
 
 describe('the presence half', () => {
   it('accepts a real instant that precedes the agent’s last write', () => {
-    expect(evaluateLastUserMessageAtPresence(session())).toBeNull();
+    expect(evaluateUserLastMessageAtPresence(session())).toBeNull();
   });
 
   it('rejects a runtime that reports nothing after declaring it can', () => {
-    expect(evaluateLastUserMessageAtPresence(session({ lastUserMessageAt: undefined }))).toMatch(
+    expect(evaluateUserLastMessageAtPresence(session({ userLastMessageAt: undefined }))).toMatch(
       /reports nothing/
     );
   });
@@ -78,13 +78,13 @@ describe('the presence half', () => {
     // mtime moves every time the AGENT writes, which is exactly the reordering
     // BC-16 forbids.
     expect(
-      evaluateLastUserMessageAtPresence(session({ lastUserMessageAt: AGENT_STOPPED_AT }))
+      evaluateUserLastMessageAtPresence(session({ userLastMessageAt: AGENT_STOPPED_AT }))
     ).toMatch(/not EARLIER than updatedAt/);
   });
 
   it('rejects a reading LATER than updatedAt', () => {
     expect(
-      evaluateLastUserMessageAtPresence(session({ lastUserMessageAt: '2026-03-01T12:00:00.000Z' }))
+      evaluateUserLastMessageAtPresence(session({ userLastMessageAt: '2026-03-01T12:00:00.000Z' }))
     ).toMatch(/not EARLIER than updatedAt/);
   });
 
@@ -92,14 +92,14 @@ describe('the presence half', () => {
     // Not a runtime defect but a test-design one: such a fixture cannot tell a
     // real derivation apart from a rename, so it fails rather than passing.
     expect(
-      evaluateLastUserMessageAtPresence(
-        session({ lastUserMessageAt: PERSON_WROTE_AT, updatedAt: PERSON_WROTE_AT })
+      evaluateUserLastMessageAtPresence(
+        session({ userLastMessageAt: PERSON_WROTE_AT, updatedAt: PERSON_WROTE_AT })
       )
     ).toMatch(/not EARLIER than updatedAt/);
   });
 
   it('rejects a value that is not a date', () => {
-    expect(evaluateLastUserMessageAtPresence(session({ lastUserMessageAt: 'recently' }))).toMatch(
+    expect(evaluateUserLastMessageAtPresence(session({ userLastMessageAt: 'recently' }))).toMatch(
       /is not a date/
     );
   });
@@ -110,20 +110,20 @@ describe('the omission half', () => {
 
   it('accepts a runtime that says nothing', () => {
     expect(
-      evaluateLastUserMessageAtOmission(session({ lastUserMessageAt: undefined }), reason)
+      evaluateUserLastMessageAtOmission(session({ userLastMessageAt: undefined }), reason)
     ).toBeNull();
   });
 
   it('rejects a placeholder from a runtime that declared it cannot answer', () => {
-    expect(evaluateLastUserMessageAtOmission(session({ lastUserMessageAt: '' }), reason)).toMatch(
+    expect(evaluateUserLastMessageAtOmission(session({ userLastMessageAt: '' }), reason)).toMatch(
       /but reported/
     );
   });
 
   it('rejects a null smuggled in where the field should be absent', () => {
     expect(
-      evaluateLastUserMessageAtOmission(
-        session({ lastUserMessageAt: null as unknown as undefined }),
+      evaluateUserLastMessageAtOmission(
+        session({ userLastMessageAt: null as unknown as undefined }),
         reason
       )
     ).toMatch(/but reported/);
@@ -131,11 +131,11 @@ describe('the omission half', () => {
 
   it('rejects `updatedAt` quietly filling the gap', () => {
     expect(
-      evaluateLastUserMessageAtOmission(session({ lastUserMessageAt: AGENT_STOPPED_AT }), reason)
+      evaluateUserLastMessageAtOmission(session({ userLastMessageAt: AGENT_STOPPED_AT }), reason)
     ).toMatch(/but reported/);
   });
 
   it('rejects a null session — a completed turn it cannot resolve asserts nothing', () => {
-    expect(evaluateLastUserMessageAtOmission(null, reason)).toMatch(/asserted nothing/);
+    expect(evaluateUserLastMessageAtOmission(null, reason)).toMatch(/asserted nothing/);
   });
 });

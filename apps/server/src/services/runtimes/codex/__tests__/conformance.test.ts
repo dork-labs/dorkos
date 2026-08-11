@@ -129,14 +129,16 @@ runtimeConformance(
     // through the same projector the trigger path feeds.
     presenceTurn: (runtime, sessionId, content, probes) =>
       drivePresenceTurn(runtime, sessionId, content, projectDir, probes),
-    // BC-16: the Codex SDK exposes no thread read or listing API, so the only
-    // durable record of a codex session is its own `codex_threads` row — and
-    // that row's `updatedAt` is already bumped by nothing except the person's
-    // message. A `lastUserMessageAt` here would be that same instant under a
-    // second name for sessions this process observed, and absent for every
-    // session hydrated after a restart: churn, with no new fact in it.
-    lastUserMessageAtOmittedReason:
-      'the Codex SDK exposes no thread read API, so a codex session’s only durable metadata is its codex_threads row, whose updatedAt already moves solely on the person’s message',
+    // BC-16: the Codex SDK exposes no thread read or listing API, so everything
+    // a codex session knows about itself is what DorkOS wrote down. Its
+    // in-memory registry does see each delivered message — but `recordMessage`
+    // fires for relay hand-offs, scheduled runs and room turns exactly as it
+    // does for something you typed, so the registry cannot tell whose message it
+    // was. (Claude-code answers that from transcript markers plus the session's
+    // origin; codex has neither.) And the one durable store, `codex_threads`,
+    // has no column for it. Both halves would have to be built; neither is free.
+    userLastMessageAtOmittedReason:
+      'the Codex SDK exposes no thread read API: the in-memory registry cannot tell a person’s message from a relay, task or room one (recordMessage fires for all of them) and the durable codex_threads row has no column for it',
     // A deterministic failed turn cannot be scripted against the live binary,
     // so the turn-failure gate runs only in mocked mode: the one-shot selector
     // makes the next minted thread stream `turn.failed`.

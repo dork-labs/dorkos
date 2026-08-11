@@ -182,7 +182,7 @@ writeFileSync(
 );
 
 // A second seeded transcript, this one UNDER the suite's own working directory,
-// for the `lastUserMessageAt` probe (BC-16). It is written as a conversation
+// for the `userLastMessageAt` probe (BC-16). It is written as a conversation
 // that CONTINUED after the person stopped typing — one human turn, then an
 // assistant turn, then a tool_result record (which arrives on the `user` role
 // but nobody wrote), then another assistant turn. A reader that counted every
@@ -257,12 +257,15 @@ runtimeConformance(
     presenceTurn: (runtime, sessionId, content, probes) =>
       drivePresenceTurn(runtime, sessionId, content, '/projects/conformance', probes),
     // Claude-code CAN say when the person last wrote: it rides the transcript
-    // tail read the session list already performs. The probe hands back the
-    // seeded conversation above, whose last human message precedes both the
-    // agent's later turns and the file's mtime.
-    lastUserMessageAtSession: async (runtime) => {
-      const session = await runtime.getSession('/projects/conformance', probeSessionId);
-      if (session === null) throw new Error('probe transcript was not readable');
+    // tail read the session list already performs. Read back through
+    // `listSessions` rather than `getSession`, because the recents LIST is the
+    // path the sidebar calls and the one this field exists for. The probe
+    // transcript's last human message precedes both the agent's later turns and
+    // the file's mtime.
+    userLastMessageAtSession: async (runtime) => {
+      const listed = await runtime.listSessions('/projects/conformance');
+      const session = listed.find((s) => s.id === probeSessionId);
+      if (!session) throw new Error('probe transcript did not reach the session list');
       return session;
     },
     // One-shot failing turn: the SDK stream ends in a non-success result

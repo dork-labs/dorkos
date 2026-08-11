@@ -54,4 +54,22 @@ describe('applyTaskOriginOverlay', () => {
     expect(() => applyTaskOriginOverlay(sessions, undefined)).not.toThrow();
     expect(sessions[0].origin).toBeUndefined();
   });
+
+  // BC-16. A scheduled run sends `task.prompt` as plain user text, so a cron
+  // task firing hourly would otherwise bump the sidebar's order key with nobody
+  // present — the exact churn the order key exists to avoid. This overlay
+  // catches the direct-branch runs the transcript-head classifier cannot see.
+  it('takes back the userLastMessageAt reading a cron fire would have bumped', () => {
+    const sessions = [
+      createMockSession({ id: 'scheduled', userLastMessageAt: '2026-03-01T09:00:00.000Z' }),
+      createMockSession({ id: 'yours', userLastMessageAt: '2026-03-01T09:00:00.000Z' }),
+    ];
+    applyTaskOriginOverlay(sessions, (ids) =>
+      ids.includes('scheduled') ? new Map([['scheduled', { taskName: 'nightly-sync' }]]) : new Map()
+    );
+
+    expect(sessions[0]!.userLastMessageAt).toBeUndefined();
+    expect('userLastMessageAt' in sessions[0]!).toBe(false);
+    expect(sessions[1]!.userLastMessageAt).toBe('2026-03-01T09:00:00.000Z');
+  });
 });

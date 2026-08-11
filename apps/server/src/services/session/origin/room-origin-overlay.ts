@@ -1,4 +1,5 @@
 import type { Session } from '@dorkos/shared/types';
+import { dropUserLastMessageAtWithoutOperator } from './user-last-message-origin.js';
 
 /**
  * Batched room-binding lookup, injected from the composition root.
@@ -43,6 +44,11 @@ export function applyRoomOriginOverlay(
     if (match) {
       session.origin = 'room';
       session.originLabel = match.roomLabel;
+      // A room turn's prompt IS another agent's post, byte for byte
+      // (`room-turn-runner.ts`), so nothing in the transcript can tell it from
+      // something the operator typed. Only this binding knows, so the reading
+      // is dropped here (BC-16).
+      dropUserLastMessageAtWithoutOperator(session);
     }
   }
 }

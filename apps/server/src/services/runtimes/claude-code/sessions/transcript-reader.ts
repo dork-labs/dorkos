@@ -31,6 +31,7 @@ import { TRANSCRIPT } from '../../../../config/constants.js';
 // session-transcript surface uses the agents-subtree seam. It still rejects
 // dork-home siblings like the encrypted credential store and boundary-external paths.
 import { validateBoundaryOrDorkHome } from '../../../../lib/boundary.js';
+import { dropUserLastMessageAtWithoutOperator } from '../../../session/origin/user-last-message-origin.js';
 import { logger } from '../../../../lib/logger.js';
 
 export type { HistoryMessage, HistoryToolCall };
@@ -385,10 +386,11 @@ export class TranscriptReader {
   /**
    * Read the tail of a JSONL file to get the most recent model, permissionMode,
    * context tokens, auto-compaction marker, and the time the person last wrote.
-   * Reads the last ~16KB which typically contains the final assistant messages
-   * and any recent `compact_boundary` record.
+   * Reads the last {@link TRANSCRIPT.TAIL_BUFFER_BYTES} (64 KB), which holds the
+   * final assistant messages, any recent `compact_boundary` record, and — for
+   * ~90% of conversations touched in the last week — the person's own last turn.
    *
-   * `lastUserMessageAt` rides this SAME pass on purpose: the session list is
+   * `userLastMessageAt` rides this SAME pass on purpose: the session list is
    * read on every cockpit boot, and re-reading transcripts to answer "when did
    * the person last write" would turn a bounded tail read into a whole-file
    * scan per session. The cost of the extra answer is one
@@ -408,7 +410,7 @@ export class TranscriptReader {
     permissionMode?: PermissionMode;
     contextTokens?: number;
     lastAutoCompactAt?: string;
-    lastUserMessageAt?: string;
+    userLastMessageAt?: string;
   }> {
     const TAIL_SIZE = TRANSCRIPT.TAIL_BUFFER_BYTES;
     try {
@@ -424,7 +426,7 @@ export class TranscriptReader {
         let permissionMode: PermissionMode | undefined;
         let contextTokens: number | undefined;
         let lastAutoCompactAt: string | undefined;
-        let lastUserMessageAt: string | undefined;
+        let userLastMessageAt: string | undefined;
 
         // Iterate forward — last occurrence wins
         for (const line of lines) {
@@ -454,7 +456,7 @@ export class TranscriptReader {
           // skipped rather than dated from the file's mtime — that would be
           // `updatedAt` wearing this field's name.
           if (parsed.timestamp && isPersonAuthoredUserRecord(parsed)) {
-            lastUserMessageAt = parsed.timestamp;
+            userLastMessageAt = parsed.timestamp;
           }
           // Auto-triggered compaction is a context-pressure signal; a manual
           // compaction is user-driven and deliberately ignored. The top-level
@@ -469,7 +471,7 @@ export class TranscriptReader {
           }
         }
 
-        return { model, permissionMode, contextTokens, lastAutoCompactAt, lastUserMessageAt };
+        return { model, permissionMode, contextTokens, lastAutoCompactAt, userLastMessageAt };
       } finally {
         await fileHandle.close();
       }
@@ -480,11 +482,12 @@ export class TranscriptReader {
 
   /**
    * Extract session metadata from a JSONL file. Reads the first ~8KB for
-   * title/permissionMode/timestamps, then folds in a single tail read (~16KB)
+   * title/permissionMode/timestamps, then folds in a single tail read (64KB)
    * so both the list path and {@link getSession} carry the latest model, a
-   * best-effort `contextTokens` reading, and any auto-compaction marker — the
-   * enriched result is what {@link listSessionsInDir} caches under the file
-   * mtime, so an unchanged transcript pays for neither read again.
+   * best-effort `contextTokens` reading, any auto-compaction marker, and the
+   * time the person last wrote — the enriched result is what
+   * {@link listSessionsInDir} caches under the file mtime, so an unchanged
+   * transcript pays for neither read again.
    *
    * Also decides `hidden`, the list-noise verdict {@link listSessionsInDir}
    * filters on: true when the transcript is a whole-file sidechain (subagent)
@@ -640,7 +643,13 @@ export class TranscriptReader {
     if (tailStatus.permissionMode) session.permissionMode = tailStatus.permissionMode;
     if (tailStatus.contextTokens) session.contextTokens = tailStatus.contextTokens;
     if (tailStatus.lastAutoCompactAt) session.lastAutoCompactAt = tailStatus.lastAutoCompactAt;
-    if (tailStatus.lastUserMessageAt) session.lastUserMessageAt = tailStatus.lastUserMessageAt;
+    if (tailStatus.userLastMessageAt) session.userLastMessageAt = tailStatus.userLastMessageAt;
+    // …and take it straight back off a session no operator ever wrote in. An
+    // agent hand-off's or a scheduled run's prompt reaches the transcript as
+    // plain user text with nothing in the record to mark it, so the session's
+    // own origin is what answers (BC-16). The `room` case has no transcript
+    // marker at all and is handled by the route overlay that knows the binding.
+    dropUserLastMessageAtWithoutOperator(session);
 
     // Set conditionally like the readings above, so an unattributable path leaves
     // the field absent (an honest "unknown") rather than carrying a derived guess.

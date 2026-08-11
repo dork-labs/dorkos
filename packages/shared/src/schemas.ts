@@ -285,7 +285,7 @@ export const SessionSchema = z
      * visible in the session's readable transcript tail (claude-code only;
      * codex has no compaction, opencode reports it live-only). ABSENT means no
      * auto-compaction is visible in the tail — either the session never
-     * auto-compacted, or the boundary has scrolled past the ~16 KB tail window
+     * auto-compacted, or the boundary has scrolled past the 64 KB tail window
      * as the session grew (an honest, disclosed limitation; durable recency is
      * a deferred follow-up). Drives the row's discreet "auto-compacted" marker.
      */
@@ -317,10 +317,13 @@ export const SessionSchema = z
      */
     account: z.string().optional(),
     /**
-     * ISO-8601 timestamp of the last message the PERSON sent in this session —
+     * ISO-8601 timestamp of the last message a PERSON sent in this session —
      * the server half of the sidebar's interaction-recency order key
-     * (`lastInteractionAt = max(lastUserMessageAt, userLastOpenedAt)`, spec
-     * `sidebar-now-today-library` BC-16).
+     * (`lastInteractionAt = max(userLastMessageAt, userLastOpenedAt)`, spec
+     * `sidebar-now-today-library` BC-16). The name matches BC-16 and the
+     * client's own key rather than the `last…At` shape of its neighbours here,
+     * because one name across the wire and the consumer is worth more than
+     * local symmetry.
      *
      * Deliberately NOT {@link Session.updatedAt}: `updatedAt` moves every time
      * the AGENT writes (for claude-code it is the transcript's mtime), which is
@@ -328,18 +331,32 @@ export const SessionSchema = z
      * a person writes, so a row whose agent has been working for an hour keeps
      * its place.
      *
-     * ABSENT means this runtime cannot say — omission, never a guess, and the
-     * client then orders that row by its local `userLastOpenedAt` alone. Absent
-     * today for codex, opencode and test-mode (see each adapter's conformance
-     * declaration for why), and absent for a claude-code session whose last
-     * human message has scrolled past the readable transcript tail.
+     * ABSENT means nobody can honestly say — omission, never a guess, and the
+     * client then orders that row by its local `userLastOpenedAt` alone. It is
+     * absent in four situations, and the last two are the interesting ones:
      *
-     * Best-effort and never a security boundary: it is derived from durable
-     * transcript markers, and a message DorkOS itself delivers on a person's
-     * behalf (a relay hand-off, a scheduled task) is excluded by the same
-     * marker rules the transcript renderer uses.
+     * 1. **The runtime cannot derive it.** Codex, opencode and test-mode all
+     *    omit it; each says why in its conformance declaration.
+     * 2. **The person's last turn is out of reach.** Claude-code reads it from
+     *    the transcript tail it already reads (64 KB), which covered ~90% of
+     *    conversations touched in the last week when measured over 474 real
+     *    transcripts. A longer agent monologue pushes the turn out of the
+     *    window and the row honestly says nothing.
+     * 3. **Nobody wrote the message.** The `user` role is a wire role, not an
+     *    author: tool results, resume bootstraps, compaction summaries, DorkOS's
+     *    own corrective notes and relay hand-offs from other agents all arrive
+     *    on it, and none of them count.
+     * 4. **Nobody wrote in the SESSION.** A scheduled task's prompt and a room
+     *    post by another agent arrive as plain, unmarked user text that no
+     *    content rule can tell from something you typed — so a session whose
+     *    `origin` is `agent`, `task` or `room` reports nothing at all. A
+     *    `channel` session still reports: that IS a person, writing from
+     *    Telegram or Slack.
+     *
+     * Best-effort and never a security boundary — the markers it reads are the
+     * same advisory ones {@link Session.origin} is derived from.
      */
-    lastUserMessageAt: z.string().datetime().optional(),
+    userLastMessageAt: z.string().datetime().optional(),
     cwd: z.string().optional(),
   })
   .openapi('Session');

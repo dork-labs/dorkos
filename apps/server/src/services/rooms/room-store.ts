@@ -1361,7 +1361,7 @@ export class RoomStore {
    * Which of these session ids are room turns, and what to call the room.
    *
    * The read behind the session-origin room overlay
-   * (`services/session/room-origin-overlay.ts`). Scoped to the ids asked about —
+   * (`services/session/origin/room-origin-overlay.ts`). Scoped to the ids asked about —
    * unlike {@link RoomStore.listRoomSessions}, which is the unscoped whole-table
    * read a hand-run health check can afford — because this one runs on every
    * session list a person loads.

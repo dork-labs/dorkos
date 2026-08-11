@@ -62,6 +62,28 @@ describe('applyRoomOriginOverlay', () => {
     expect(asked).toEqual([['a', 'b']]);
   });
 
+  // BC-16. A room turn's prompt IS another agent's post, byte for byte
+  // (`room-turn-runner.ts`), so a reading derived from the transcript is that
+  // agent's activity wearing the operator's name. Only this binding knows.
+  it('takes back the userLastMessageAt reading it just proved nobody wrote', () => {
+    const sessions = [
+      createMockSession({ id: 'bound', userLastMessageAt: '2026-03-01T09:00:00.000Z' }),
+      createMockSession({ id: 'loose', userLastMessageAt: '2026-03-01T09:00:00.000Z' }),
+    ];
+    applyRoomOriginOverlay(sessions, (ids) =>
+      ids.includes('bound')
+        ? new Map([['bound', { roomLabel: '#general', roomId: 'r1' }]])
+        : new Map()
+    );
+
+    // Absent, and absent as a MISSING KEY — a client asking
+    // `'userLastMessageAt' in session` must not see it either.
+    expect(sessions[0]!.userLastMessageAt).toBeUndefined();
+    expect('userLastMessageAt' in sessions[0]!).toBe(false);
+    // …and the ordinary conversation beside it keeps its reading.
+    expect(sessions[1]!.userLastMessageAt).toBe('2026-03-01T09:00:00.000Z');
+  });
+
   // Ordering is a product decision, not an accident of import order: a
   // scheduled task that posts into a room is still the task somebody scheduled.
   it('yields to the Pulse overlay, which runs after it at every call site', () => {

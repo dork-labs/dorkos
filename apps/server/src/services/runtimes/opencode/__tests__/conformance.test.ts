@@ -226,7 +226,7 @@ runtimeConformance(
     // ADR-0308 forbids reading its store directly, so the person's last message
     // could only be found by fetching every session's full message history —
     // one whole-conversation read per row, on every cockpit boot.
-    lastUserMessageAtOmittedReason:
+    userLastMessageAtOmittedReason:
       'the OpenCode sidecar’s session list carries only created/updated times, and finding the person’s last message would cost a full message-history fetch per session on the listing path',
     // A deterministic failure cannot be scripted against a live sidecar, so
     // the turn-failure gate runs only in mocked mode: `session.error`
