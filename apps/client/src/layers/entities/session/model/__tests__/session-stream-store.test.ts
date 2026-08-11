@@ -758,7 +758,7 @@ describe('useSessionStreamStore', () => {
     });
   });
 
-  describe('queue_update (the server\'s queue, projected)', () => {
+  describe("queue_update (the server's queue, projected)", () => {
     it('hydrates the queue from the snapshot, so a refresh shows what is waiting', () => {
       useSessionStreamStore
         .getState()

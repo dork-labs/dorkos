@@ -86,6 +86,20 @@ export function useChatQueue({
   // Draft ref preserves the user's in-progress composition when they navigate into the queue
   const draftRef = useRef('');
 
+  // The words currently making the round trip to the server's queue, or `null`.
+  //
+  // The composer deliberately keeps the text until the server confirms it has it
+  // (DOR-480), and that reopened a double-submit the old synchronous clear used
+  // to close: with the words still in the box, a second Enter during the request
+  // queued the SAME message again, and the agent said it twice. Same guard the
+  // composer already gives the other two Enter modes — `commandPending` for a
+  // dispatched command, `!isUploading` for a send mid-upload.
+  //
+  // Keyed by the text rather than a plain boolean, so typing something else and
+  // pressing Enter still queues: only a repeat of the message already in flight
+  // is refused.
+  const enqueueInFlightRef = useRef<string | null>(null);
+
   // The composer's context key. Everything that has to move in lockstep with the
   // editing cursor keys off this, not off `sessionId` alone: a coarser key
   // reopens the duplicate send, because a cwd-only change would reset the cursor
@@ -99,6 +113,7 @@ export function useChatQueue({
   // server, and each window only ever watches one).
   useEffect(() => {
     draftRef.current = '';
+    enqueueInFlightRef.current = null;
   }, [contextKey]);
 
   const messageQueue = useMessageQueue({ sessionId, waiting, onEnqueue });
@@ -187,11 +202,20 @@ export function useChatQueue({
       }
       return;
     }
+    // These exact words are already on their way; a second Enter must not send
+    // them again. See {@link enqueueInFlightRef}.
+    if (enqueueInFlightRef.current === trimmed) return;
+    enqueueInFlightRef.current = trimmed;
     // The composer keeps the words until the server has them. That is the whole
     // of "nothing typed is ever lost" now: the old queue dequeued optimistically
     // and needed an undo handle for every refusal path (DOR-480), and a message
     // that was never taken out of the composer cannot fail to be put back.
-    clearComposerOnConfirmed(sessionId, trimmed, messageQueue.addToQueue(trimmed));
+    const accepted = messageQueue.addToQueue(trimmed);
+    void accepted.finally(() => {
+      // Only clear the latch this call set — a newer enqueue owns it now.
+      if (enqueueInFlightRef.current === trimmed) enqueueInFlightRef.current = null;
+    });
+    clearComposerOnConfirmed(sessionId, trimmed, accepted);
   }, [input, messageQueue, sessionId, setInput, tryNativeCommand]);
 
   const handleQueueEdit = useCallback(

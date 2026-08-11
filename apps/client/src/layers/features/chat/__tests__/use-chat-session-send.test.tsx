@@ -132,7 +132,6 @@ describe('useChatSession — launch-runtime handoff (opencode connect → first 
   });
 });
 
-
 describe('useChatSession — enqueueContent (a message that waits its turn)', () => {
   it('posts the message with the queue disposition and the queued signal', async () => {
     const postMessage = vi

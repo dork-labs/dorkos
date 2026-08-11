@@ -172,6 +172,50 @@ describe('useChatQueue', () => {
     expect(queuedIn(SESSION_ID)).toEqual([]);
   });
 
+  it('a second Enter during the round trip does not queue the same words twice', async () => {
+    // The composer holds the text until the server confirms (DOR-480), so for
+    // one round trip an impatient second Enter still finds the message in the
+    // box. The old local queue cleared synchronously and could not do this; the
+    // server-backed one has to say no itself.
+    const view = mount(useHarness, {});
+
+    act(() => view.result.current.setInput('only once please'));
+    act(() => {
+      view.result.current.handleQueue();
+      view.result.current.handleQueue();
+    });
+    await settle(view);
+
+    expect(queuedIn(SESSION_ID)).toEqual(['only once please']);
+    expect(view.result.current.input).toBe('');
+  });
+
+  it('still queues a DIFFERENT message typed while the first is in flight', async () => {
+    // The guard is keyed by the words in flight, not by "an enqueue is open" —
+    // typing the next message straight after the last is the normal way to line
+    // three of them up, and refusing that would be worse than the bug.
+    const view = mount(useHarness, {});
+
+    act(() => view.result.current.setInput('first message'));
+    act(() => view.result.current.handleQueue());
+    act(() => view.result.current.setInput('second message'));
+    act(() => view.result.current.handleQueue());
+    await settle(view);
+
+    expect(queuedIn(SESSION_ID)).toEqual(['first message', 'second message']);
+  });
+
+  it('lets the same words be queued again once the first has landed', async () => {
+    // The latch is for one round trip, not forever: "ok" twice in a row is a
+    // thing people type.
+    const view = mount(useHarness, {});
+
+    await queueText(view, 'ok');
+    await queueText(view, 'ok');
+
+    expect(queuedIn(SESSION_ID)).toEqual(['ok', 'ok']);
+  });
+
   it('editing by id loads the item and parks the draft; cancelling restores it', async () => {
     const view = mount(useHarness, {});
 

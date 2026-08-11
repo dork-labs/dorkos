@@ -11,4 +11,5 @@ covers:
   message you did not queue yourself is marked as coming from another window, so you can
   tell at a glance which are yours (DOR-1133)
 - Nothing you type can be lost on the way to the line: your words stay in the message box
-  until the agent has them, so a dropped connection leaves them right where you wrote them
+  until they are safely in the queue, so a dropped connection leaves them right where you
+  wrote them

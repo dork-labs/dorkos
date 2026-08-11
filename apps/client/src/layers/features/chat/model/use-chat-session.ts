@@ -224,21 +224,21 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
     submitKickoff,
     markToolCallResponded,
   } = useSessionSubmit({
-      sessionId,
-      input,
-      status,
-      transport,
-      queryClient,
-      selectedCwd,
-      onSessionIdChangeReplace: options.onSessionIdChangeReplace,
-      transformContent: options.transformContent,
-      launchRuntime: options.launchRuntime,
-      takeSeedContext: options.takeSeedContext,
-      setInput,
-      setError,
-      setSessionBusy,
-      tryNativeCommand: native.tryRun,
-    });
+    sessionId,
+    input,
+    status,
+    transport,
+    queryClient,
+    selectedCwd,
+    onSessionIdChangeReplace: options.onSessionIdChangeReplace,
+    transformContent: options.transformContent,
+    launchRuntime: options.launchRuntime,
+    takeSeedContext: options.takeSeedContext,
+    setInput,
+    setError,
+    setSessionBusy,
+    tryNativeCommand: native.tryRun,
+  });
 
   // Whether the durable stream snapshot has landed for this session. Gates the
   // kickoff mid-stream failure flip AND the first-light waking state (both must
