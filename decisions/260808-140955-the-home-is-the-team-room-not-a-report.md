@@ -1,7 +1,7 @@
 ---
 id: 260808-140955
 title: The home is the #team room, not a report
-status: draft
+status: accepted
 created: 2026-08-08
 spec: team-room-home
 superseded-by: null
@@ -12,7 +12,7 @@ amends: null
 
 ## Status
 
-Draft (extracted from spec: team-room-home)
+Accepted — supersedes [260722-120728](260722-120728-the-dashboard-is-an-action-surface.md)
 
 ## Context
 

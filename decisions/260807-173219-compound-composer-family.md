@@ -1,7 +1,7 @@
 ---
 id: 260807-173219
 title: One compound composer family shared by chat, rooms, and dashboard
-status: draft
+status: accepted
 created: 2026-08-07
 spec: composer-parity
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Draft (auto-extracted from spec: composer-parity)
+Accepted
 
 ## Context
 

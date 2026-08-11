@@ -1,17 +1,18 @@
 ---
 id: 260722-120728
 title: The dashboard is an action surface, not an observability report
-status: accepted
+status: superseded
 created: 2026-07-22
 spec: dashboard-with-hands
-superseded-by: null
+superseded-by: 260808-140955
 ---
 
 # 260722-120728. The dashboard is an action surface, not an observability report
 
 ## Status
 
-Accepted
+Superseded by [260808-140955](260808-140955-the-home-is-the-team-room-not-a-report.md) — the
+report-style dashboard this ADR shaped was deleted when `/` became the #team room.
 
 ## Context
 
