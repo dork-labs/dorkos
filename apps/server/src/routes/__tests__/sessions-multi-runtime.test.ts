@@ -712,7 +712,14 @@ describe('sessions route — multi-runtime routing (real registry + real DB)', (
       expect(testModeSpy).toHaveBeenCalled();
       expect(claudeSpy).not.toHaveBeenCalled();
       expect(res.status).toBe(202);
-      expect(res.body).toEqual({ sessionId: TEST_MODE_SESSION });
+      // The whole body: the canonical id plus the queue receipt, and no turn
+      // frames — the turn is delivered on /events and nowhere else.
+      expect(res.body).toEqual({
+        sessionId: TEST_MODE_SESSION,
+        messageId: expect.any(String),
+        outcome: { messageId: expect.any(String), requested: 'queue', applied: 'queue' },
+        queuePosition: 1,
+      });
 
       // Wait for the detached turn to settle so the cold connect below gets a
       // deterministic post-turn snapshot.

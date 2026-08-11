@@ -535,7 +535,14 @@ describe('GET /api/sessions — multi-runtime aggregation (real registry + real 
         .send({ content: 'Hello codex', runtime: 'codex' });
 
       expect(res.status).toBe(202);
-      expect(res.body).toEqual({ sessionId: CODEX_SESSION });
+      // The whole body: the canonical id plus the queue receipt, and no turn
+      // frames — the turn is delivered on /events and nowhere else.
+      expect(res.body).toEqual({
+        sessionId: CODEX_SESSION,
+        messageId: expect.any(String),
+        outcome: { messageId: expect.any(String), requested: 'queue', applied: 'queue' },
+        queuePosition: 1,
+      });
 
       await vi.waitFor(() => {
         expect(peekProjector(CODEX_SESSION)?.getStatus().lifecycle).toBe('idle');
@@ -650,7 +657,14 @@ describe('GET /api/sessions — multi-runtime aggregation (real registry + real 
         .send({ content: 'Hello opencode', runtime: 'opencode' });
 
       expect(res.status).toBe(202);
-      expect(res.body).toEqual({ sessionId: OPENCODE_SESSION });
+      // The whole body: the canonical id plus the queue receipt, and no turn
+      // frames — the turn is delivered on /events and nowhere else.
+      expect(res.body).toEqual({
+        sessionId: OPENCODE_SESSION,
+        messageId: expect.any(String),
+        outcome: { messageId: expect.any(String), requested: 'queue', applied: 'queue' },
+        queuePosition: 1,
+      });
 
       await vi.waitFor(() => {
         expect(peekProjector(OPENCODE_SESSION)?.getStatus().lifecycle).toBe('idle');

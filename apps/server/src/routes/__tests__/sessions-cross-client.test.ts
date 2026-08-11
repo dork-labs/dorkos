@@ -9,22 +9,29 @@
  *    end at the same cursor with the same reconstructed content, gap-free.
  * 2. An interaction resolved from a second surface drops as
  *    `interaction_resolved` on EVERY consumer's stream (other windows included).
- * 3. A second client's mid-turn POST conflicts (409 SESSION_LOCKED, naming the
- *    holder) for as long as the first turn is alive, and is ACCEPTED (202) only
- *    once that turn has gone dark past the lock TTL.
+ * 3. A second client's mid-turn POST is ACCEPTED (202) and queued: both windows
+ *    see the same waiting message, and it runs when the first turn ends.
  *
- *    This clause CHANGED in DOR-782, and the old expectation is worth naming
- *    because it read like a feature. The lock TTL was measured from acquisition,
- *    so ANY turn outliving five minutes — which a room turn does routinely, and
- *    a tool-heavy one often — was stealable while it was visibly streaming. The
- *    acceptance run's "mid-turn 202 steer" was that: not a designed takeover, a
- *    live turn losing its lock. The test pinned it because it was what happened,
- *    not because it was wanted. The TTL now measures INACTIVITY (see
- *    `LockActivity`), so a working turn keeps its lock however long it runs and
- *    an abandoned one is still reclaimed a TTL later. What the SDK does with a
- *    second resume (deliver as a steer) is Claude-CLI behavior and not pinnable
- *    here; the route-level contract is. DOR-82 will replace this incidental
- *    semantics with explicit queue/steer/interrupt dispositions.
+ *    This clause has been rewritten twice, and both lessons are worth keeping
+ *    because each one read like a feature at the time.
+ *
+ *    DOR-782: the lock TTL used to be measured from ACQUISITION, so any turn
+ *    outliving five minutes — which a room turn does routinely, and a tool-heavy
+ *    one often — was stealable while it was visibly streaming. The acceptance
+ *    run's "mid-turn 202 steer" was that: not a designed takeover, a live turn
+ *    losing its lock. The TTL now measures INACTIVITY (see `LockActivity`), so a
+ *    working turn keeps its lock however long it runs and an abandoned one is
+ *    still reclaimed a TTL later. **That machinery is unchanged by the rewrite
+ *    below and is still the only thing that reclaims a dark turn.**
+ *
+ *    DOR-1131: what changed is the ANSWER a second window gets. It used to be
+ *    409 SESSION_LOCKED — the person's words bounced back at them because the
+ *    agent was busy, which is the one moment somebody most wants to say
+ *    something. The message is now accepted onto the session's queue, and the
+ *    lock stops being "who may send" and becomes the mutex one turn window
+ *    holds. The old clause also required the first turn to go DARK before a
+ *    second message could be accepted; that is no longer a precondition for
+ *    anything, so it is gone rather than adapted.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import type { StreamEvent } from '@dorkos/shared/types';
@@ -86,15 +93,20 @@ vi.mock('../../services/core/config-manager.js', () => ({
 vi.mock('@dorkos/shared/manifest', () => ({ readManifest: vi.fn(async () => null) }));
 
 import request from 'supertest';
+import { createTestDb } from '@dorkos/test-utils/db';
 import { listeningServer } from '@dorkos/test-utils/listening-server';
 import { createApp, finalizeApp } from '../../app.js';
-import { SESSIONS } from '../../config/constants.js';
 import {
   getOrCreateProjector,
   peekProjector,
   disposeProjector,
 } from '../../services/session/session-state-projector.js';
 import { SessionLockManager } from '../../services/session/session-lock.js';
+import {
+  MessageQueueStore,
+  setMessageQueueStore,
+} from '../../services/session/message-queue-store.js';
+import { resetMessageDispatcher } from '../../services/session/message-dispatcher.js';
 import type { LockActivity } from '../../services/session/session-lock.js';
 import { attachEventStream } from './helpers/trigger-turn-helpers.js';
 
@@ -128,6 +140,9 @@ function expectConsecutiveFrom(seqs: number[], start: number): void {
 }
 
 beforeEach(() => {
+  // The real store, because "both windows see the same queue" is the promise and
+  // an in-memory stand-in would be asserting it against itself.
+  setMessageQueueStore(new MessageQueueStore(createTestDb()));
   fakeRuntime = new FakeAgentRuntime();
   vi.clearAllMocks();
   fakeRuntime.acquireLock.mockReturnValue(true);
@@ -144,6 +159,8 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  resetMessageDispatcher();
+  setMessageQueueStore(undefined);
   disposeProjector(SESSION_ID);
 });
 
@@ -293,13 +310,15 @@ describe('cross-client: two consumers on one session', () => {
 });
 
 describe('cross-client: second-client POST during an open turn', () => {
-  it('conflicts (409, naming the holder) for as long as the turn is alive; accepted once it goes dark', async () => {
-    // Real lock semantics (not a canned mock): the route + triggerTurn
-    // composition against the actual SessionLockManager, including its expiry.
+  it('accepts it, queues it where both windows can see it, and runs it when the first turn ends', async () => {
+    // Real lock semantics (not a canned mock): the route + dispatcher +
+    // triggerTurn composition against the actual SessionLockManager. The lock is
+    // still here and still does its job — it is simply no longer an answer this
+    // route gives anybody.
     const lockManager = new SessionLockManager();
-    // The holder the turn acquires with is triggerTurn's DetachedTurnLifecycle,
-    // which is also the lock's liveness witness. Capturing it is how the test
-    // can make the turn "go dark" without waiting five real minutes.
+    // triggerTurn's DetachedTurnLifecycle, which is also the lock's liveness
+    // witness (DOR-782). Held so this test can assert the first turn NEVER lost
+    // its lock while it was working.
     let holder: (SseResponse & Partial<LockActivity>) | undefined;
     fakeRuntime.acquireLock.mockImplementation((sid, cid, res, token) => {
       const acquired = lockManager.acquireLock(sid, cid, res, token);
@@ -324,9 +343,9 @@ describe('cross-client: second-client POST during an open turn', () => {
         await gate;
         yield { type: 'done', data: {} } as StreamEvent;
       },
-      // The takeover turn (client B) after the TTL lapses.
+      // The queued message's turn (client B), once the first one ends.
       async function* () {
-        yield { type: 'text_delta', data: { text: 'takeover reply' } } as StreamEvent;
+        yield { type: 'text_delta', data: { text: 'queued reply' } } as StreamEvent;
         yield { type: 'done', data: {} } as StreamEvent;
       },
     ]);
@@ -337,65 +356,54 @@ describe('cross-client: second-client POST during an open turn', () => {
       .send({ content: 'long turn' });
     expect(first.status).toBe(202);
 
-    // Fresh lock → the second client conflicts, told WHO holds it.
-    const conflict = await request(server)
+    // The second window, mid-turn. Accepted — with a receipt naming the message
+    // and where it sits — rather than refused. That this request SETTLES AT ALL
+    // is half the point: the turn ahead of it is parked on a gate this test has
+    // not opened, so an answer that waited for it could not arrive here.
+    const second = await request(server)
       .post(`/api/sessions/${SESSION_ID}/messages`)
       .set('X-Client-Id', 'client-b')
       .send({ content: 'second client message' });
-    expect(conflict.status).toBe(409);
-    expect(conflict.body.code).toBe('SESSION_LOCKED');
-    expect(conflict.body.lockedBy).toBe('client-a');
+    expect(second.status).toBe(202);
+    expect(second.body.messageId).toEqual(expect.any(String));
+    expect(second.body.queuePosition).toBe(1);
+    expect(second.body.outcome).toMatchObject({ requested: 'queue', applied: 'queue' });
+    // Queued, not started: the first turn is still the only one running.
     expect(fakeRuntime.sendMessage).toHaveBeenCalledTimes(1);
-
-    // Age the ACQUISITION past the TTL. Before DOR-782 this alone handed the
-    // session to the second client. It must not now: the turn is still open and
-    // proved liveness when it streamed, so the lock is still its.
-    const locks = (lockManager as unknown as { locks: Map<string, { acquiredAt: number }> }).locks;
-    locks.get(SESSION_ID)!.acquiredAt -= SESSIONS.LOCK_TTL_MS + 1;
-
-    const stillHeld = await request(server)
-      .post(`/api/sessions/${SESSION_ID}/messages`)
-      .set('X-Client-Id', 'client-b')
-      .send({ content: 'steer while alive' });
-    expect(stillHeld.status).toBe(409);
-    expect(stillHeld.body.lockedBy).toBe('client-a');
-    expect(fakeRuntime.sendMessage).toHaveBeenCalledTimes(1);
-
-    // Now the turn goes DARK — its last proof of life recedes past the TTL, the
-    // shape of a client that vanished. The reclaim path must still work, or a
-    // crashed turn would lock the session forever.
-    //
-    // The dark instant is PINNED, not recomputed per probe. `() => Date.now() -
-    // TTL - 1` reads like the same thing and is not: the manager samples `now`
-    // first and calls the probe a moment later, so the probe answered
-    // `now + drift - TTL - 1` and the lock looked expired only while `drift` was
-    // 0. One millisecond boundary crossing between those two reads — routine on
-    // a loaded CI runner — put the holder exactly ON the TTL, which is not past
-    // it, and the takeover below came back 409 (DOR-801). A fixed instant can
-    // only recede further as the test runs, so the answer no longer depends on
-    // when the clock is read. It is also the truer model: a turn that went dark
-    // does not keep refreshing its own last-seen time.
+    // And the first turn kept its lock throughout (DOR-782): nothing about
+    // accepting a second message takes the session away from the turn that has
+    // it. `lastActivityAt` is the witness the lock consults.
     expect(holder?.lastActivityAt).toBeTypeOf('function');
-    const wentDarkAt = Date.now() - SESSIONS.LOCK_TTL_MS - 1;
-    holder!.lastActivityAt = () => wentDarkAt;
+    expect(lockManager.getLockInfo(SESSION_ID)?.clientId).toBe('client-a');
 
-    // Abandoned lock → the second client's POST is ACCEPTED and its message is
-    // dispatched to the runtime. (The Claude CLI delivers such a
-    // resume-during-active-turn as a steer; that half lives outside the server.)
-    const takeover = await request(server)
-      .post(`/api/sessions/${SESSION_ID}/messages`)
-      .set('X-Client-Id', 'client-b')
-      .send({ content: 'steer content' });
-    expect(takeover.status).toBe(202);
+    // ONE queue, both windows. Either client reads the same waiting message,
+    // and neither reads it as "theirs" or "not theirs" — `enqueuedBy` says who
+    // typed it and nothing refuses the other window.
+    for (const clientId of ['client-a', 'client-b']) {
+      const queue = await request(server)
+        .get(`/api/sessions/${SESSION_ID}/queue`)
+        .set('X-Client-Id', clientId);
+      expect(queue.status).toBe(200);
+      expect(queue.body.queue).toMatchObject([
+        { id: second.body.messageId, content: 'second client message', enqueuedBy: 'client-b' },
+      ]);
+    }
+
+    // The first turn ends. THAT is what releases the queue — and the message
+    // runs without anybody sending it again.
+    releaseTurn();
     await vi.waitFor(() => expect(fakeRuntime.sendMessage).toHaveBeenCalledTimes(2));
     expect(fakeRuntime.sendMessage).toHaveBeenLastCalledWith(
       SESSION_ID,
-      'steer content',
+      'second client message',
       expect.anything()
     );
+    await vi.waitFor(async () => {
+      const queue = await request(server).get(`/api/sessions/${SESSION_ID}/queue`);
+      expect(queue.body.queue).toEqual([]);
+    });
 
     // Drain both detached turns so the afterEach dispose finds them settled.
-    releaseTurn();
     await vi.waitFor(() => expect(fakeRuntime.releaseLock).toHaveBeenCalledTimes(2));
   });
 });

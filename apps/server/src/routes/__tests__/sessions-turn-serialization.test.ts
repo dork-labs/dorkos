@@ -9,11 +9,13 @@
  * and the second POST from that tab walked through a lock its own first turn was
  * holding.
  *
- * These tests pin both halves of the answer at the seam a person actually hits:
- * a second POST from the SAME client waits and then runs (its message is not
- * refused and not lost), and a second CLIENT still gets the unchanged 409 rather
- * than a silent wait. The lock is the real `SessionLockManager`, not a canned
- * mock, so the queue and the lock have to agree.
+ * These tests pin the answer at the seam a person actually hits: a second POST
+ * waits and then runs, its message neither refused nor lost, whether it came
+ * from the same window or another one. DOR-1131 removed the one asymmetry that
+ * was left here — a second CLIENT used to be told 409 instead of waiting — so
+ * both cases now read the same way, which is what the person sees. The lock is
+ * the real `SessionLockManager`, not a canned mock, so the queue and the lock
+ * have to agree.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import type { StreamEvent } from '@dorkos/shared/types';
@@ -81,6 +83,7 @@ import {
   disposeProjector,
 } from '../../services/session/session-state-projector.js';
 import { SessionLockManager } from '../../services/session/session-lock.js';
+import { resetMessageDispatcher } from '../../services/session/message-dispatcher.js';
 import { sessionTurnQueue } from '../../services/session/trigger-turn.js';
 
 const app = createApp();
@@ -123,6 +126,10 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  // The dispatcher outlives one case: a message left waiting here would still be
+  // in line when the next case posts, and would make ITS first message queue
+  // behind a turn from a test that has already finished.
+  resetMessageDispatcher();
   disposeProjector(SESSION_ID);
   disposeProjector(CANONICAL_ID);
 });
@@ -197,10 +204,12 @@ describe('POST /api/sessions/:id/messages — same-client turn serialization', (
     await vi.waitFor(() => expect(sessionTurnQueue.size).toBe(0));
   });
 
-  it('still refuses a SECOND CLIENT with 409 instead of queueing it', async () => {
-    // Waiting is for the client that owns the turn. A different client's POST is
-    // a conflict it can see and act on, and turning that into a silent hang
-    // would also delete the abandoned-lock takeover the cross-client suite pins.
+  it('makes a SECOND CLIENT wait exactly as the first one does (DOR-1131)', async () => {
+    // Waiting used to be only for the client that owned the turn; a different
+    // client got a 409 it could see and act on. Acting on it meant retyping,
+    // which is why it is gone: the second window's message now waits in the same
+    // queue and runs on the same signal, and the lock it used to bounce off is
+    // now just the mutex the running turn holds.
     const first = gate();
     fakeRuntime.withScenarios([
       async function* () {
@@ -208,22 +217,33 @@ describe('POST /api/sessions/:id/messages — same-client turn serialization', (
         await first.wait;
         yield { type: 'done', data: {} } as StreamEvent;
       },
+      async function* () {
+        yield { type: 'text_delta', data: { text: 'the other window’s reply' } } as StreamEvent;
+        yield { type: 'done', data: {} } as StreamEvent;
+      },
     ]);
 
     expect((await postMessage(TAB, 'long turn')).status).toBe(202);
 
-    const conflict = await request(server)
+    const fromElsewhere = await request(server)
       .post(`/api/sessions/${SESSION_ID}/messages`)
       .set('X-Client-Id', 'another-tab')
       .send({ content: 'from elsewhere' });
-    expect(conflict.status).toBe(409);
-    expect(conflict.body.code).toBe('SESSION_LOCKED');
-    expect(conflict.body.lockedBy).toBe(TAB);
+    expect(fromElsewhere.status).toBe(202);
+    expect(fromElsewhere.body.messageId).toEqual(expect.any(String));
+    // Waiting, not running beside it: still one stream on this session.
     expect(fakeRuntime.sendMessage).toHaveBeenCalledTimes(1);
+    // And the running turn kept the lock while the second message waited.
+    expect(fakeRuntime.getLockInfo(SESSION_ID)?.clientId).toBe(TAB);
 
-    // Drain the turn so the afterEach dispose finds it settled.
     first.open();
-    await vi.waitFor(() => expect(fakeRuntime.releaseLock).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() => expect(fakeRuntime.sendMessage).toHaveBeenCalledTimes(2));
+    expect(fakeRuntime.sendMessage).toHaveBeenLastCalledWith(
+      SESSION_ID,
+      'from elsewhere',
+      expect.anything()
+    );
+    await vi.waitFor(() => expect(fakeRuntime.releaseLock).toHaveBeenCalledTimes(2));
     await vi.waitFor(() => expect(sessionTurnQueue.size).toBe(0));
   });
 });

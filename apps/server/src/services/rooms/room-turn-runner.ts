@@ -271,6 +271,11 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
         settings: seed,
         projector,
         runtime,
+        // Skip rather than wait, unlike a person's own message. The reasoning is
+        // the same one the skip notice below carries: a room turn queued behind
+        // somebody else's work would answer the room with whatever THAT turn
+        // left behind, long after the room moved on.
+        whenBusy: 'refuse',
         onTurnStart: (seq) => {
           ownTurn.startSeq = seq;
         },

@@ -3571,10 +3571,25 @@
           "sessionId": {
             "type": "string",
             "description": "Canonical session id; differs from the request id for a new session"
+          },
+          "messageId": {
+            "type": "string",
+            "description": "Server-minted id for this message; the queue is keyed by it"
+          },
+          "outcome": {
+            "$ref": "#/components/schemas/MessageDeliveryOutcome"
+          },
+          "queuePosition": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "description": "1-based place in the session queue at acceptance; 1 means nothing was ahead of it"
           }
         },
         "required": [
-          "sessionId"
+          "sessionId",
+          "messageId",
+          "outcome",
+          "queuePosition"
         ]
       },
       "SendMessageRequest": {
@@ -3625,6 +3640,9 @@
             "type": "string",
             "minLength": 1,
             "maxLength": 10000
+          },
+          "disposition": {
+            "$ref": "#/components/schemas/MessageDisposition"
           }
         },
         "required": [
@@ -3744,6 +3762,90 @@
           "panels",
           "sidebar",
           "agent"
+        ]
+      },
+      "SessionQueueResponse": {
+        "type": "object",
+        "properties": {
+          "queue": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/QueuedMessage"
+            }
+          }
+        },
+        "required": [
+          "queue"
+        ]
+      },
+      "UpdateQueuedMessageResponse": {
+        "type": "object",
+        "properties": {
+          "message": {
+            "$ref": "#/components/schemas/QueuedMessage"
+          },
+          "queue": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/QueuedMessage"
+            }
+          }
+        },
+        "required": [
+          "message",
+          "queue"
+        ]
+      },
+      "UpdateQueuedMessageRequest": {
+        "type": "object",
+        "properties": {
+          "content": {
+            "type": "string",
+            "minLength": 1
+          },
+          "move": {
+            "$ref": "#/components/schemas/QueueMoveTarget"
+          }
+        }
+      },
+      "QueueMoveTarget": {
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "before": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "before"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "after": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "after"
+            ],
+            "additionalProperties": false
+          }
+        ]
+      },
+      "SessionTriggerResponse": {
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "string",
+            "description": "Canonical session id; differs from the request id for a new session"
+          }
+        },
+        "required": [
+          "sessionId"
         ]
       },
       "ApprovalRequest": {
@@ -7814,8 +7916,8 @@
         "tags": [
           "Sessions"
         ],
-        "summary": "Send message (trigger-only)",
-        "description": "TRIGGERS a turn and returns immediately — it does NOT stream tokens (ADR-0264). The turn runs server-side and its events are delivered solely on the durable `GET /api/sessions/{id}/events` stream (the single delivery path). The `202` body carries the CANONICAL session id: for a brand-new session this is the real id assigned during the turn (it differs from the client-supplied id), so the client re-keys its URL and `/events` subscription to it. To avoid missing the turn, a client should be subscribed to `/events` before (or concurrently with) this POST.",
+        "summary": "Send message (accept-only)",
+        "description": "ACCEPTS a message and returns immediately — it does NOT stream tokens (ADR-0264) and does NOT wait for the session to be free. If the session is idle the turn starts now; if a turn is already running the message joins the session queue and runs when that turn ends. Either way the events are delivered solely on the durable `GET /api/sessions/{id}/events` stream (the single delivery path), and the `202` body says which happened: `outcome` carries the requested and applied disposition, `queuePosition` is 1 when nothing was ahead of it. A busy session is never a `409` here — read and edit what is waiting through `/api/sessions/{id}/queue`. The `202` also carries the CANONICAL session id: for a brand-new session this is the real id assigned during the turn (it differs from the client-supplied id), so the client re-keys its URL and `/events` subscription to it. To avoid missing the turn, a client should be subscribed to `/events` before (or concurrently with) this POST.",
         "parameters": [
           {
             "schema": {
@@ -7838,7 +7940,7 @@
         },
         "responses": {
           "202": {
-            "description": "Turn accepted and started; body carries the canonical session id",
+            "description": "Message accepted; body carries the canonical session id and the receipt",
             "content": {
               "application/json": {
                 "schema": {
@@ -7849,16 +7951,6 @@
           },
           "400": {
             "description": "Validation error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Session locked by another client",
             "content": {
               "application/json": {
                 "schema": {
@@ -9050,6 +9142,175 @@
         }
       }
     },
+    "/api/sessions/{id}/queue": {
+      "get": {
+        "tags": [
+          "Sessions"
+        ],
+        "summary": "List the messages waiting on a session",
+        "description": "The messages accepted for this session that have not run yet, head first. The same list rides the session snapshot on `GET /api/sessions/{id}/events`, so a cockpit never needs this route; it is here for integrations and debugging.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The session's queue, in dispatch order",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionQueueResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid session id",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/sessions/{id}/queue/{messageId}": {
+      "patch": {
+        "tags": [
+          "Sessions"
+        ],
+        "summary": "Edit or move a waiting message",
+        "description": "Changes a waiting message's words, its place in the queue, or both. A move names another message to land before or after rather than an index, because an index means something different to every window the moment anybody else edits the queue. The queue belongs to the SESSION: any client may edit any message on it, whichever client enqueued it.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "messageId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateQueuedMessageRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The edited message and the queue around it",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UpdateQueuedMessageResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid ids, or a body that asks for no change",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such message on this queue (dispatched, removed, or never here)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Sessions"
+        ],
+        "summary": "Remove a waiting message",
+        "description": "Takes a waiting message off the queue; it will not run. Any client may remove any message on the session's queue.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "messageId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The queue as it now stands",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionQueueResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid ids",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such message on this queue",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/sessions/{id}/command-intents/{intent}": {
       "post": {
         "tags": [
@@ -9101,7 +9362,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/SendMessageResponse"
+                  "$ref": "#/components/schemas/SessionTriggerResponse"
                 }
               }
             }
@@ -9386,7 +9647,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/SendMessageResponse"
+                  "$ref": "#/components/schemas/SessionTriggerResponse"
                 }
               }
             }

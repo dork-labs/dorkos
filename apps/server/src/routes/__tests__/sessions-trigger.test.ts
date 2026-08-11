@@ -155,7 +155,14 @@ describe('POST /api/sessions/:id/messages — trigger-only contract', () => {
     const elapsed = Date.now() - started;
 
     expect(res.status).toBe(202);
-    expect(res.body).toEqual({ sessionId: SESSION_ID });
+    // The whole body: the canonical id plus the queue receipt, and no turn
+    // frames — the turn is delivered on /events and nowhere else.
+    expect(res.body).toEqual({
+      sessionId: SESSION_ID,
+      messageId: expect.any(String),
+      outcome: { messageId: expect.any(String), requested: 'queue', applied: 'queue' },
+      queuePosition: 1,
+    });
     expect(res.type).toBe('application/json');
     // No StreamEvent leaked onto the POST response.
     expect(res.text).not.toContain('text_delta');
@@ -180,7 +187,14 @@ describe('POST /api/sessions/:id/messages — trigger-only contract', () => {
       .send({ content: 'Hello' });
 
     expect(res.status).toBe(202);
-    expect(res.body).toEqual({ sessionId: CANONICAL_ID });
+    // The whole body: the canonical id plus the queue receipt, and no turn
+    // frames — the turn is delivered on /events and nowhere else.
+    expect(res.body).toEqual({
+      sessionId: CANONICAL_ID,
+      messageId: expect.any(String),
+      outcome: { messageId: expect.any(String), requested: 'queue', applied: 'queue' },
+      queuePosition: 1,
+    });
   });
 
   it('delivers the triggered turn EXACTLY ONCE on GET /:id/events', async () => {
@@ -309,8 +323,11 @@ describe('POST /api/sessions/:id/messages — trigger-only contract', () => {
     expect(snap.status.lifecycle).toBe('interrupted');
   });
 
-  it('does not start a turn when the session is locked by another client', async () => {
-    // Lock contention: a 409 short-circuits before sendMessage.
+  it('does not start a turn when the write-lock is held, and does not refuse the message either', async () => {
+    // Lock contention no longer short-circuits with a 409 (DOR-1131). The turn
+    // does not start — that half is unchanged — but the message is accepted onto
+    // the session's queue and runs when the lock frees up, so nobody's words
+    // bounce back at them for arriving while the agent was busy.
     fakeRuntime.acquireLock.mockReturnValue(false);
     fakeRuntime.isLocked.mockReturnValue(true);
     fakeRuntime.getLockInfo.mockReturnValue({ clientId: 'other', acquiredAt: Date.now() });
@@ -319,8 +336,9 @@ describe('POST /api/sessions/:id/messages — trigger-only contract', () => {
       .post(`/api/sessions/${SESSION_ID}/messages`)
       .send({ content: 'Hello' });
 
-    expect(res.status).toBe(409);
-    expect(res.body.code).toBe('SESSION_LOCKED');
+    expect(res.status).toBe(202);
+    expect(res.body.messageId).toEqual(expect.any(String));
+    expect(res.body.outcome).toMatchObject({ requested: 'queue', applied: 'queue' });
     expect(fakeRuntime.sendMessage).not.toHaveBeenCalled();
     expect(fakeRuntime.releaseLock).not.toHaveBeenCalled();
   });
@@ -350,7 +368,14 @@ describe('POST /api/sessions/:id/messages — trigger-only contract', () => {
       .post(`/api/sessions/${SESSION_ID}/messages`)
       .send({ content: 'Hello' });
     expect(post.status).toBe(202);
-    expect(post.body).toEqual({ sessionId: CANONICAL_ID });
+    // The whole body: the canonical id plus the queue receipt, and no turn
+    // frames — the turn is delivered on /events and nowhere else.
+    expect(post.body).toEqual({
+      sessionId: CANONICAL_ID,
+      messageId: expect.any(String),
+      outcome: { messageId: expect.any(String), requested: 'queue', applied: 'queue' },
+      queuePosition: 1,
+    });
 
     // The turn finished; the rekeyed projector lives under the canonical id now.
     await vi.waitFor(() => expect(peekProjector(CANONICAL_ID)?.getStatus().lifecycle).toBe('idle'));
@@ -393,7 +418,14 @@ describe('POST /api/sessions/:id/messages — trigger-only contract', () => {
     expect(post.status).toBe(202);
     // The 202 raced the init and carries the request id — that is best-effort
     // by design; registry correctness must not depend on it.
-    expect(post.body).toEqual({ sessionId: SESSION_ID });
+    // The whole body: the canonical id plus the queue receipt, and no turn
+    // frames — the turn is delivered on /events and nowhere else.
+    expect(post.body).toEqual({
+      sessionId: SESSION_ID,
+      messageId: expect.any(String),
+      outcome: { messageId: expect.any(String), requested: 'queue', applied: 'queue' },
+      queuePosition: 1,
+    });
 
     // The per-event retry still moved the projector to the canonical id.
     await vi.waitFor(() => expect(peekProjector(CANONICAL_ID)?.getStatus().lifecycle).toBe('idle'));

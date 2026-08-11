@@ -395,74 +395,6 @@ export type ReloadPluginsResult = z.infer<typeof ReloadPluginsResultSchema>;
  */
 export const SEED_CONTEXT_MAX_LENGTH = 10_000;
 
-export const SendMessageRequestSchema = z
-  .object({
-    content: z.string().min(1, 'content is required'),
-    cwd: z.string().optional(),
-    correlationId: z.string().uuid().optional(),
-    clientMessageId: z.string().optional(),
-    /** Neutral client-sourced context signals (ui_state, queued). Server derives git_status/env. */
-    context: z.lazy(() => ClientContextSchema).optional(),
-    /**
-     * Explicit runtime hint for session ownership. Used on the first message
-     * only — subsequent calls for the same `sessionId` ignore this field (the
-     * stored `session_metadata` row wins). Priority: `runtime` > agent-manifest
-     * `runtime` field > server default. See ADR 0255.
-     */
-    runtime: z.string().optional(),
-    /**
-     * Path to the agent directory whose `.dork/agent.json` manifest seeded this
-     * session. Recorded on first message for provenance. Ignored on subsequent
-     * calls (session ownership is immutable).
-     */
-    agentPath: z.string().optional(),
-    /**
-     * Opt-in (DOR-84): bind this turn to a server-managed workspace keyed by this
-     * unit-of-work id (issue id / spec slug). When set, the server
-     * provisions-or-reuses the workspace from the supplied `cwd` (the source repo)
-     * and runs the turn with `cwd = workspace.path` and the allocated port block.
-     * Absent → behavior is unchanged (the supplied `cwd` is used directly).
-     */
-    workspaceKey: z.string().optional(),
-    /** Provider for a newly-provisioned workspace; defaults to server config. */
-    workspaceProvider: z.enum(['worktree', 'clone']).optional(),
-    /**
-     * Background for THIS turn that the agent reads and the person never sees —
-     * see `SeedContextData` in `additional-context.ts` for what it is for and
-     * what it is not.
-     *
-     * It rides the neutral context bag (ADR-0273), never `content`: the prompt
-     * is the person's message byte for byte, so anything DorkOS or a launching
-     * surface has to say about it belongs out-of-band. Every runtime delivers it
-     * and every runtime keeps it out of rendered history.
-     *
-     * Empty is a caller bug, not "inject nothing" — the block would still be
-     * rendered and would still cost the model attention, so it is refused.
-     */
-    seedContext: z.string().min(1).max(SEED_CONTEXT_MAX_LENGTH).optional(),
-  })
-  .openapi('SendMessageRequest');
-
-export type SendMessageRequest = z.infer<typeof SendMessageRequestSchema>;
-
-/**
- * The `202 Accepted` body for `POST /api/sessions/:id/messages` (ADR-0264).
- * The POST is trigger-only: it starts the turn server-side and returns the
- * CANONICAL session id; the turn's tokens are delivered solely on
- * `GET /:id/events`. For a brand-new session this `sessionId` is the real SDK
- * id assigned during the turn (it differs from the client-supplied id), so the
- * client re-keys its URL and its `/events` subscription to it (DOR-74).
- */
-export const SendMessageResponseSchema = z
-  .object({
-    sessionId: z
-      .string()
-      .describe('Canonical session id; differs from the request id for a new session'),
-  })
-  .openapi('SendMessageResponse');
-
-export type SendMessageResponse = z.infer<typeof SendMessageResponseSchema>;
-
 // === Message disposition & the server-owned queue ===
 
 /**
@@ -555,6 +487,177 @@ export const QueuedMessageSchema = z
 
 /** One message waiting on a session's queue. See {@link QueuedMessageSchema}. */
 export type QueuedMessage = z.infer<typeof QueuedMessageSchema>;
+
+export const SendMessageRequestSchema = z
+  .object({
+    content: z.string().min(1, 'content is required'),
+    cwd: z.string().optional(),
+    correlationId: z.string().uuid().optional(),
+    clientMessageId: z.string().optional(),
+    /** Neutral client-sourced context signals (ui_state, queued). Server derives git_status/env. */
+    context: z.lazy(() => ClientContextSchema).optional(),
+    /**
+     * Explicit runtime hint for session ownership. Used on the first message
+     * only — subsequent calls for the same `sessionId` ignore this field (the
+     * stored `session_metadata` row wins). Priority: `runtime` > agent-manifest
+     * `runtime` field > server default. See ADR 0255.
+     */
+    runtime: z.string().optional(),
+    /**
+     * Path to the agent directory whose `.dork/agent.json` manifest seeded this
+     * session. Recorded on first message for provenance. Ignored on subsequent
+     * calls (session ownership is immutable).
+     */
+    agentPath: z.string().optional(),
+    /**
+     * Opt-in (DOR-84): bind this turn to a server-managed workspace keyed by this
+     * unit-of-work id (issue id / spec slug). When set, the server
+     * provisions-or-reuses the workspace from the supplied `cwd` (the source repo)
+     * and runs the turn with `cwd = workspace.path` and the allocated port block.
+     * Absent → behavior is unchanged (the supplied `cwd` is used directly).
+     */
+    workspaceKey: z.string().optional(),
+    /** Provider for a newly-provisioned workspace; defaults to server config. */
+    workspaceProvider: z.enum(['worktree', 'clone']).optional(),
+    /**
+     * Background for THIS turn that the agent reads and the person never sees —
+     * see `SeedContextData` in `additional-context.ts` for what it is for and
+     * what it is not.
+     *
+     * It rides the neutral context bag (ADR-0273), never `content`: the prompt
+     * is the person's message byte for byte, so anything DorkOS or a launching
+     * surface has to say about it belongs out-of-band. Every runtime delivers it
+     * and every runtime keeps it out of rendered history.
+     *
+     * Empty is a caller bug, not "inject nothing" — the block would still be
+     * rendered and would still cost the model attention, so it is refused.
+     */
+    seedContext: z.string().min(1).max(SEED_CONTEXT_MAX_LENGTH).optional(),
+    /**
+     * What to do when the session is already working. Absent means `queue`, the
+     * disposition every runtime supports because the server owns the queue.
+     */
+    disposition: MessageDispositionSchema.optional(),
+  })
+  .openapi('SendMessageRequest');
+
+export type SendMessageRequest = z.infer<typeof SendMessageRequestSchema>;
+
+/**
+ * The `202 Accepted` body for `POST /api/sessions/:id/messages` (ADR-0264,
+ * spec `persistent-session-runtime` §3.3).
+ *
+ * The POST is trigger-only AND accept-only: it never waits for the turn ahead
+ * of it, so a `202` means "the server has this message", not "the turn is
+ * running". Which of the two it was is on `outcome` and `queuePosition`, and the
+ * turn itself is announced on `GET /:id/events` like everything else.
+ *
+ * `sessionId` is the CANONICAL session id, best effort: for a brand-new session
+ * it is the real id assigned during the turn (it differs from the
+ * client-supplied id), so the client re-keys its URL and its `/events`
+ * subscription to it (DOR-74). A message accepted onto the queue is answered
+ * before any turn of its own has run, so this is whatever id the runtime already
+ * resolves to — which for a session with a queue is always the canonical one,
+ * because a queue means a turn has already run.
+ */
+export const SendMessageResponseSchema = z
+  .object({
+    sessionId: z
+      .string()
+      .describe('Canonical session id; differs from the request id for a new session'),
+    messageId: z.string().describe('Server-minted id for this message; the queue is keyed by it'),
+    outcome: MessageDeliveryOutcomeSchema,
+    queuePosition: z
+      .number()
+      .int()
+      .positive()
+      .describe(
+        '1-based place in the session queue at acceptance; 1 means nothing was ahead of it'
+      ),
+  })
+  .openapi('SendMessageResponse');
+
+export type SendMessageResponse = z.infer<typeof SendMessageResponseSchema>;
+
+/**
+ * The `202 Accepted` body for the trigger routes that answer with the session id
+ * alone — `POST /:id/ui-action` and `POST /:id/command-intents/:intent`.
+ *
+ * Deliberately NOT {@link SendMessageResponseSchema}: neither carries a queue
+ * receipt. A command intent is never queued as a person's words (it is not
+ * words), and a widget action still refuses rather than waits.
+ */
+export const SessionTriggerResponseSchema = z
+  .object({
+    sessionId: z
+      .string()
+      .describe('Canonical session id; differs from the request id for a new session'),
+  })
+  .openapi('SessionTriggerResponse');
+
+export type SessionTriggerResponse = z.infer<typeof SessionTriggerResponseSchema>;
+
+/** A session's queue, head first. The body of `GET /api/sessions/:id/queue`. */
+export const SessionQueueResponseSchema = z
+  .object({
+    queue: z.array(QueuedMessageSchema),
+  })
+  .openapi('SessionQueueResponse');
+
+export type SessionQueueResponse = z.infer<typeof SessionQueueResponseSchema>;
+
+/**
+ * Where a queued message should be moved to: immediately before, or immediately
+ * after, another message in the SAME session's queue.
+ *
+ * An anchor rather than an index, because an index means something different to
+ * every window the moment anyone else edits the queue — and two windows editing
+ * one queue is the case this whole surface exists for.
+ */
+export const QueueMoveTargetSchema = z
+  .union([z.object({ before: z.string() }).strict(), z.object({ after: z.string() }).strict()])
+  .openapi('QueueMoveTarget');
+
+export type QueueMoveTarget = z.infer<typeof QueueMoveTargetSchema>;
+
+/**
+ * The body of `PATCH /api/sessions/:id/queue/:messageId` — edit the words, move
+ * the message, or both in one call.
+ *
+ * A body that asks for neither is refused rather than treated as a no-op: it can
+ * only be a caller bug, and answering `200` to it would hide the bug behind a
+ * response that looks like it worked.
+ */
+export const UpdateQueuedMessageRequestSchema = z
+  .object({
+    /** The replacement words, stored pristine. */
+    content: z.string().min(1).optional(),
+    /** Where to move it, relative to another message in the same queue. */
+    move: QueueMoveTargetSchema.optional(),
+  })
+  .refine((body) => body.content !== undefined || body.move !== undefined, {
+    message: 'content or move is required',
+  })
+  .openapi('UpdateQueuedMessageRequest');
+
+export type UpdateQueuedMessageRequest = z.infer<typeof UpdateQueuedMessageRequestSchema>;
+
+/**
+ * The body of a successful queue edit: the message as it now stands, and the
+ * whole queue around it.
+ *
+ * The whole queue, always — the same choice `queue_update` makes on the stream.
+ * A move changes other messages' places, so answering with the edited message
+ * alone would leave the caller holding an order it cannot trust.
+ */
+export const UpdateQueuedMessageResponseSchema = z
+  .object({
+    message: QueuedMessageSchema,
+    queue: z.array(QueuedMessageSchema),
+  })
+  .openapi('UpdateQueuedMessageResponse');
+
+export type UpdateQueuedMessageResponse = z.infer<typeof UpdateQueuedMessageResponseSchema>;
 
 /**
  * Longest deny reason accepted. Generous enough for a couple of sentences of

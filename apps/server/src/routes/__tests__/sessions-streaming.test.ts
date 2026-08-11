@@ -167,9 +167,10 @@ describe('POST /api/sessions/:id/messages (trigger-only)', () => {
     expect(types).toContain('tool_result');
   });
 
-  it('returns 409 when session is locked by another client', async () => {
-    // Purpose: regression — a locked session is rejected with 409 and the lock
-    // info, before any turn is started.
+  it('starts no turn while the session is locked, and queues the message instead', async () => {
+    // Purpose: regression — a locked session starts no turn. What it no longer
+    // does is refuse the message: 409 SESSION_LOCKED is gone from this route
+    // (DOR-1131) and the words wait on the session's queue.
     fakeRuntime.acquireLock.mockReturnValue(false);
     fakeRuntime.isLocked.mockReturnValue(true);
     fakeRuntime.getLockInfo.mockReturnValue({ clientId: 'other-client', acquiredAt: Date.now() });
@@ -178,8 +179,8 @@ describe('POST /api/sessions/:id/messages (trigger-only)', () => {
       .post(`/api/sessions/${SESSION_ID}/messages`)
       .send({ content: 'Hello' });
 
-    expect(res.status).toBe(409);
-    expect(res.body.code).toBe('SESSION_LOCKED');
+    expect(res.status).toBe(202);
+    expect(res.body.messageId).toEqual(expect.any(String));
     expect(fakeRuntime.sendMessage).not.toHaveBeenCalled();
   });
 
@@ -195,7 +196,14 @@ describe('POST /api/sessions/:id/messages (trigger-only)', () => {
       .send({ content: 'test message' });
 
     expect(res.status).toBe(202);
-    expect(res.body).toEqual({ sessionId: SESSION_ID });
+    // The whole body: the canonical id plus the queue receipt, and no turn
+    // frames — the turn is delivered on /events and nowhere else.
+    expect(res.body).toEqual({
+      sessionId: SESSION_ID,
+      messageId: expect.any(String),
+      outcome: { messageId: expect.any(String), requested: 'queue', applied: 'queue' },
+      queuePosition: 1,
+    });
     expect(fakeRuntime.sendMessage).toHaveBeenCalledWith(
       SESSION_ID,
       'test message',
