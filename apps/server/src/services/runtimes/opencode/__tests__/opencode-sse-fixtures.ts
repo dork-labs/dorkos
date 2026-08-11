@@ -35,7 +35,8 @@ import type {
   ToolState,
   UserMessage,
 } from '@opencode-ai/sdk';
-import type { EventMessagePartDelta, OpenCodeWireEvent } from '../event-mapper.js';
+import type { OpenCodeWireEvent } from '../event-mapper.js';
+import type { EventMessagePartDelta } from '../part-event-mapper.js';
 
 /** Directory both scripted sessions live in (proves sessionID-level demux). */
 export const DIRECTORY = '/projects/alpha';
