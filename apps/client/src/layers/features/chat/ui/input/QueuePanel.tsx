@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from 'motion/react';
-import { X, CornerDownLeft } from 'lucide-react';
+import { X, CornerDownLeft, ArrowUp, AppWindow } from 'lucide-react';
 import { cn } from '@/layers/shared/lib';
 import type { QueueItem } from '../../model/use-message-queue';
 
@@ -12,41 +12,40 @@ interface QueuePanelProps {
    * panel at all.
    */
   editingId: string | null;
-  /** Called with the item's stable id — positions shift when the queue auto-flushes. */
+  /** Called with the item's stable id — positions shift as the queue dispatches. */
   onEdit: (id: string) => void;
-  /** Called with the item's stable id — positions shift when the queue auto-flushes. */
+  /** Called with the item's stable id — positions shift as the queue dispatches. */
   onRemove: (id: string) => void;
-  /** Send this message now, ahead of the queue. Called with the item's stable id. */
+  /** Send this message next, ahead of everything else waiting. */
   onSend: (id: string) => void;
+  /** Move this message one place earlier in the line. */
+  onMoveUp: (id: string) => void;
   /**
-   * Why Send-now cannot happen right now, or `null` when it can. Shown as the
-   * disabled control's title so the refusal always says why.
+   * What happens next, in the header beside the count — the answer to "when do
+   * these go out". The server dispatches them itself, so the only thing that
+   * genuinely holds the line is the agent waiting on a person.
    */
-  sendBlockedReason: string | null;
-  /**
-   * What happens next once nothing is blocking the queue — the header's answer
-   * to "when do these go out". Two different truths hide behind an unblocked
-   * queue and only the caller can tell them apart: the flush pump normally
-   * drains it on the streaming→idle edge, but a turn that ended in error never
-   * arms that edge, so the queue sits until someone sends it by hand.
-   */
-  whenUnblocked: string;
+  statusNote: string;
 }
 
 /**
  * Inline queue card list rendered above the chat textarea.
  *
- * Each row is a plain container holding sibling buttons — edit, send-now, and
- * remove. Nesting them inside the edit button would be invalid HTML, so
- * browsers handle it inconsistently and assistive tech only ever sees one
- * control.
+ * Each row is a plain container holding sibling buttons — edit, move-up,
+ * send-next, and remove. Nesting them inside the edit button would be invalid
+ * HTML, so browsers handle it inconsistently and assistive tech only ever sees
+ * one control.
  *
- * Send-now is what keeps a queued message from ever being trapped (DOR-480). The
- * auto-flush pump only arms on the streaming→idle edge, so a turn that ended in
- * failure — or any lock race that put a message back — used to leave the queue
- * frozen with no way out but Edit-then-Remove, which threw the text away. When a
- * send genuinely cannot happen the control is disabled and says why, rather than
- * doing nothing.
+ * **Send-next and move-up are both reorders**, because the server dispatches the
+ * head as soon as the session frees up: "next" is the earliest any message can
+ * go, and moving it to the front is the whole of it. Neither control appears on
+ * the head itself, which is already as far forward as a message gets. Move-up
+ * alone can express any order, which is why there is no fourth button for
+ * move-down.
+ *
+ * A chip another window queued says so, quietly. It stays fully editable — the
+ * queue belongs to the session, not to a window — it just does not pretend to be
+ * yours.
  */
 export function QueuePanel({
   queue,
@@ -54,8 +53,8 @@ export function QueuePanel({
   onEdit,
   onRemove,
   onSend,
-  sendBlockedReason,
-  whenUnblocked,
+  onMoveUp,
+  statusNote,
 }: QueuePanelProps) {
   // Also guarded at the call site, which is what lets AnimatePresence see this
   // panel leave and play the exit below. Kept here too so the component never
@@ -71,11 +70,10 @@ export function QueuePanel({
       className="mb-1.5 overflow-hidden"
     >
       {/* The count alone never said the one thing a person waiting actually
-          wants to know — when these go out. `sendBlockedReason` is exactly that
-          answer, already written for a human, so it says it here too. */}
+          wants to know — when these go out. */}
       <div className="text-muted-foreground mb-1 flex items-baseline gap-1 text-xs">
         <span className="font-medium">Queued ({queue.length})</span>
-        <span className="truncate">&mdash; {sendBlockedReason ?? whenUnblocked}</span>
+        <span className="truncate">&mdash; {statusNote}</span>
       </div>
       <div className="space-y-0.5">
         <AnimatePresence mode="popLayout">
@@ -109,43 +107,52 @@ export function QueuePanel({
                   <span className="text-muted-foreground shrink-0 text-xs font-medium">
                     {i + 1}.
                   </span>
-                  <span className="text-muted-foreground line-clamp-1 flex-1 text-sm">
-                    {item.content}
+                  <span className="min-w-0 flex-1">
+                    <span className="text-muted-foreground line-clamp-1 text-sm">
+                      {item.content}
+                    </span>
+                    {item.notice !== null && (
+                      <span className="text-muted-foreground/70 line-clamp-1 text-xs">
+                        {item.notice}
+                      </span>
+                    )}
                   </span>
-                </button>
-                <button
-                  type="button"
-                  // `aria-disabled`, never `disabled`: a real `disabled` drops the
-                  // button out of the tab order, so the one person who most needs
-                  // the reason — a keyboard user, in the state that is BLOCKED —
-                  // could not reach it to hear one. The click is neutered by the
-                  // guard below instead, and `sendNow` refuses again on its own.
-                  aria-disabled={sendBlockedReason !== null}
-                  onClick={() => {
-                    if (sendBlockedReason === null) onSend(item.id);
-                  }}
-                  title={sendBlockedReason ?? undefined}
-                  // The reason rides the ACCESSIBLE NAME, not `title`: an
-                  // aria-label wins over title, so a title-only reason is
-                  // announced to nobody. Blocked is the common state here — a
-                  // queue mostly exists while a reply is streaming.
-                  aria-label={
-                    sendBlockedReason === null
-                      ? `Send queued message ${i + 1} now`
-                      : `Send queued message ${i + 1} now — unavailable: ${sendBlockedReason}`
-                  }
-                  // Always visible, unlike the tucked-away remove: this is the
-                  // primary action on a queued row and the only way out of a
-                  // stranded queue, so it must not need a hover to be found.
-                  className={cn(
-                    'focus-ring text-muted-foreground flex size-6 shrink-0 items-center justify-center rounded-sm transition-colors',
-                    sendBlockedReason === null
-                      ? 'hover:text-foreground'
-                      : 'cursor-default opacity-40'
+                  {!item.mine && (
+                    <span
+                      className="text-muted-foreground/60 flex shrink-0 items-center"
+                      title="Queued from another window"
+                    >
+                      <AppWindow className="size-3" aria-hidden="true" />
+                      <span className="sr-only">Queued from another window</span>
+                    </span>
                   )}
-                >
-                  <CornerDownLeft className="size-3" />
                 </button>
+                {/* Nothing to reorder on the head — it is already as far forward
+                    as a message gets, and offering a control that cannot do
+                    anything is worse than not offering one. */}
+                {i > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => onMoveUp(item.id)}
+                    className="focus-ring text-muted-foreground hover:text-foreground flex size-6 shrink-0 items-center justify-center rounded-sm opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100 md:focus-visible:opacity-100"
+                    aria-label={`Move queued message ${i + 1} earlier`}
+                  >
+                    <ArrowUp className="size-3" />
+                  </button>
+                )}
+                {i > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => onSend(item.id)}
+                    aria-label={`Send queued message ${i + 1} next`}
+                    // Always visible, unlike the tucked-away reorder and remove:
+                    // this is the primary action on a queued row, so it must not
+                    // need a hover to be found.
+                    className="focus-ring text-muted-foreground hover:text-foreground flex size-6 shrink-0 items-center justify-center rounded-sm transition-colors"
+                  >
+                    <CornerDownLeft className="size-3" />
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => onRemove(item.id)}

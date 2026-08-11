@@ -4,6 +4,39 @@ import { Q3_SCENARIOS } from './q3-contention-scenarios.js';
 
 export type ScenarioFn = (content: string) => AsyncGenerator<StreamEvent>;
 
+/** Heartbeat interval for the working-turn scenarios. */
+const WORKING_TICK_MS = 1_000;
+
+/**
+ * A turn that keeps working for a while — the scenario a browser test needs
+ * when it has to do something to a session that is genuinely BUSY.
+ *
+ * Every other scenario either finishes in one synchronous pass or stops on a
+ * permission prompt, and a prompt swaps the composer for the approval card,
+ * which is the surface a queue test cannot use. This one just streams a slow
+ * heartbeat, so the session is `streaming` with no pending interaction for as
+ * long as it takes.
+ *
+ * Bounded rather than infinite: a turn nothing ever ends would outlive the run
+ * and leave a projector holding it.
+ *
+ * @param ticks - Heartbeats to stream, one a second, before the turn finishes.
+ */
+function workingTurn(ticks: number): ScenarioFn {
+  return async function* () {
+    yield {
+      type: 'session_status',
+      data: { sessionId: 'test-mode', model: 'claude-haiku-4-5' },
+    } as StreamEvent;
+    yield { type: 'text_delta', data: { text: 'Working on it' } } as StreamEvent;
+    for (let tick = 0; tick < ticks; tick += 1) {
+      await new Promise((resolve) => setTimeout(resolve, WORKING_TICK_MS));
+      yield { type: 'text_delta', data: { text: '.' } } as StreamEvent;
+    }
+    yield { type: 'done', data: { sessionId: 'test-mode' } } as StreamEvent;
+  };
+}
+
 /**
  * Built-in scenarios available without explicit configuration. The `demo-*`
  * entries (rich streaming, tool approval, canvas) come from
@@ -15,6 +48,10 @@ export type ScenarioFn = (content: string) => AsyncGenerator<StreamEvent>;
 const BUILT_IN_SCENARIOS: Record<string, ScenarioFn> = {
   ...DEMO_SCENARIOS,
   ...Q3_SCENARIOS,
+  /** A turn that stays busy for three minutes — see {@link workingTurn}. */
+  'long-turn': workingTurn(180),
+  /** A turn that stays busy for a few seconds, then finishes on its own. */
+  'brief-turn': workingTurn(3),
   'simple-text': async function* (content) {
     // session_status data cast needed because data union requires sessionId
     yield {

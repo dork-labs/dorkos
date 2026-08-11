@@ -20,10 +20,18 @@ import type {
   DevtoolsIngest,
   RecentSessionsResponse,
   SessionDailyCountsResponse,
+  MessageDisposition,
+  QueueMoveTarget,
+  QueuedMessage,
+  UpdateQueuedMessageResponse,
+  SessionQueueResponse,
 } from '@dorkos/shared/schemas';
 import {
   RecentSessionsResponseSchema,
   SessionDailyCountsResponseSchema,
+  SendMessageResponseSchema,
+  UpdateQueuedMessageResponseSchema,
+  SessionQueueResponseSchema,
 } from '@dorkos/shared/schemas';
 import type { ClientContext } from '@dorkos/shared/additional-context';
 import type { RuntimeCommandIntentId } from '@dorkos/shared/command-intents';
@@ -169,6 +177,7 @@ export function createSessionMethods(
         context?: ClientContext;
         runtime?: string;
         seedContext?: string;
+        disposition?: MessageDisposition;
       }
     ): Promise<{ sessionId: string }> {
       const body: Record<string, unknown> = { content };
@@ -177,6 +186,7 @@ export function createSessionMethods(
       if (options?.context) body.context = options.context;
       if (options?.runtime) body.runtime = options.runtime;
       if (options?.seedContext) body.seedContext = options.seedContext;
+      if (options?.disposition) body.disposition = options.disposition;
 
       const response = await fetch(`${baseUrl}/sessions/${sessionId}/messages`, {
         method: 'POST',
@@ -189,24 +199,57 @@ export function createSessionMethods(
       });
 
       if (!response.ok) {
-        if (response.status === 409) {
-          const errorData = (await response.json().catch(() => null)) as SessionLockedError | null;
-          if (errorData?.code === 'SESSION_LOCKED') {
-            const error = new Error('Session locked') as Error & SessionLockedError;
-            error.code = 'SESSION_LOCKED';
-            error.lockedBy = errorData.lockedBy;
-            error.lockedAt = errorData.lockedAt;
-            throw error;
-          }
-        }
         throw new Error(`HTTP ${response.status}`);
       }
 
-      // Trigger-only contract: the turn streams over /events. The body carries
-      // the SDK-canonical id (which may differ from the client UUID for a
-      // brand-new session — create-on-first-message).
-      const data = (await response.json().catch(() => ({}))) as { sessionId?: string };
-      return { sessionId: data.sessionId ?? sessionId };
+      // Trigger-only, accept-only contract: the turn (or the queue place) is
+      // announced over /events. The body carries the SDK-canonical id, which
+      // differs from the client UUID for a brand-new session
+      // (create-on-first-message), plus the delivery receipt.
+      //
+      // Validated rather than cast: this is a contract with the server, and a
+      // body that has drifted should say so here rather than as a mystery
+      // three layers up. A body we cannot read is NOT treated as a failed send
+      // though — the server said 202, the message is accepted, and throwing
+      // would put a delivered message back in front of the person as if it had
+      // been lost.
+      const raw: unknown = await response.json().catch(() => null);
+      const parsed = SendMessageResponseSchema.safeParse(raw);
+      if (parsed.success) return { sessionId: parsed.data.sessionId };
+      console.warn('[transport] The server accepted the message with a body DorkOS cannot read');
+      const fallbackId = (raw as { sessionId?: unknown } | null)?.sessionId;
+      return { sessionId: typeof fallbackId === 'string' ? fallbackId : sessionId };
+    },
+
+    // ── Session Queue (the messages waiting behind the running turn) ────────
+
+    async updateQueuedMessage(
+      sessionId: string,
+      messageId: string,
+      edit: { content?: string; move?: QueueMoveTarget }
+    ): Promise<UpdateQueuedMessageResponse> {
+      const data = await fetchJSON<unknown>(
+        baseUrl,
+        `/sessions/${sessionId}/queue/${encodeURIComponent(messageId)}`,
+        {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json', 'X-Client-Id': getClientId() },
+          body: JSON.stringify(edit),
+        }
+      );
+      return UpdateQueuedMessageResponseSchema.parse(data);
+    },
+
+    async removeQueuedMessage(
+      sessionId: string,
+      messageId: string
+    ): Promise<{ queue: QueuedMessage[] }> {
+      const data = await fetchJSON<unknown>(
+        baseUrl,
+        `/sessions/${sessionId}/queue/${encodeURIComponent(messageId)}`,
+        { method: 'DELETE', headers: { 'X-Client-Id': getClientId() } }
+      );
+      return SessionQueueResponseSchema.parse(data) satisfies SessionQueueResponse;
     },
 
     // ── Command-Intent Trigger (202, out-of-band delivery via /events) ─────

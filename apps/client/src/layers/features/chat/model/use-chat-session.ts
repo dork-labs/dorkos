@@ -215,8 +215,15 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
     compact: options.compactIntent,
   });
 
-  const { handleSubmit, submitContent, stop, retryMessage, submitKickoff, markToolCallResponded } =
-    useSessionSubmit({
+  const {
+    handleSubmit,
+    submitContent,
+    enqueueContent,
+    stop,
+    retryMessage,
+    submitKickoff,
+    markToolCallResponded,
+  } = useSessionSubmit({
       sessionId,
       input,
       status,
@@ -249,8 +256,7 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
   // mid-stream token update (harmless given the fire-once guards, but it makes
   // the dependency list meaningless).
   const submitFirstMessage = useCallback(
-    (content: string, cwd?: string) =>
-      submitContent(content, undefined, cwd ? { queued: false, cwd } : undefined),
+    (content: string, cwd?: string) => submitContent(content, cwd ? { cwd } : undefined),
     [submitContent]
   );
 
@@ -301,6 +307,7 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
     setInput,
     handleSubmit,
     submitContent,
+    enqueueContent,
     status,
     error,
     sessionBusy,

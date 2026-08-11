@@ -6,7 +6,6 @@ import type {
   SessionStatus,
   SessionListEvent,
 } from '@dorkos/shared/session-stream';
-import type { SessionLockedError } from '@dorkos/shared/types';
 
 import { DirectTransport, type DirectTransportServices } from '../direct-transport';
 
@@ -180,15 +179,16 @@ describe('DirectTransport.postMessage', () => {
     });
   });
 
-  it('throws a typed SESSION_LOCKED error when the lock is held', async () => {
-    // Real failure mode: callers branch on `code === 'SESSION_LOCKED'` to
-    // restore composer input — a generic error would drop the draft.
+  it('never refuses a busy session — the dispatcher takes the message and holds it', async () => {
+    // Was: "throws a typed SESSION_LOCKED error when the lock is held". The
+    // message path stopped refusing in task 2.4 — the server owns the queue, so
+    // a message sent into a running turn waits behind it instead of bouncing.
+    // The refusal is gone, and with it the composer-restore branch it fed.
     const { transport, turnTrigger } = setup();
-    turnTrigger.trigger.mockResolvedValue({ accepted: false });
+    turnTrigger.trigger.mockResolvedValue({ accepted: true, canonicalId: 'sess-a' });
 
-    const error = await transport.postMessage('sess-a', 'hello').catch((e: unknown) => e);
-
-    expect(error).toBeInstanceOf(Error);
-    expect((error as Error & SessionLockedError).code).toBe('SESSION_LOCKED');
+    await expect(transport.postMessage('sess-a', 'hello')).resolves.toEqual({
+      sessionId: 'sess-a',
+    });
   });
 });

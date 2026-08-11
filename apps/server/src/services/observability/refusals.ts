@@ -65,8 +65,6 @@ export const REFUSAL_REASONS = {
   room_budget: 'the room ran out of automatic turns',
   /** The `(room, agent)` session row could not be written, so no turn started. */
   session_bind_failed: 'the room session could not be bound',
-  /** Another client holds the session write-lock. */
-  session_locked: 'the session was locked by another client',
   /** A prompt only a person can answer expired, and was denied by the clock. */
   interaction_expired: 'nobody answered the prompt in time',
   /** An inbound chat message resolved to no binding at all. */

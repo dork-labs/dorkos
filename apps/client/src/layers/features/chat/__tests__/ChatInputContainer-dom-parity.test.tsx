@@ -56,9 +56,31 @@ import {
  */
 const COMPOSER_CARD_ATTR_DIFF = 'div > div: [attr-added] attribute data-composer-card="" added';
 
-/** The diff, with that one reviewed attribute accounted for. */
+/**
+ * The queue panel's own subtree, which DOR-1133 deliberately rewrote.
+ *
+ * The rows gained a move-earlier control, a note for a message another window
+ * queued, and a slot for a delivery notice; Send-next replaced the old
+ * blocked-with-a-reason Send-now, because the server dispatches the queue and
+ * "next" is the earliest a message can go. Their markup contract lives in
+ * `QueuePanel.test.tsx`, which is where it belongs — this file is about the
+ * COMPOSER's markup.
+ *
+ * The panel's PLACEMENT is still pinned, and by this filter rather than in spite
+ * of it: the prefix is the path the baseline puts the panel at, so a panel that
+ * moved would report its diffs outside the prefix and fail here.
+ */
+const QUEUE_PANEL_SUBTREE = 'div > div > div[2] > div[1]';
+
+/** The diff, with the two reviewed exemptions accounted for. */
 function beyondTheComposerCardAttr(diff: readonly DomDiffEntry[]): string {
-  return formatDomDiff(diff.filter((entry) => formatDomDiff([entry]) !== COMPOSER_CARD_ATTR_DIFF));
+  return formatDomDiff(
+    diff.filter(
+      (entry) =>
+        formatDomDiff([entry]) !== COMPOSER_CARD_ATTR_DIFF &&
+        !entry.path.startsWith(QUEUE_PANEL_SUBTREE)
+    )
+  );
 }
 
 vi.mock('../ui/status/ChatStatusSection', () => ({
@@ -140,7 +162,7 @@ function baseProps(autocomplete = makeAutocomplete()) {
     input: '',
     autocomplete: autocomplete as never,
     handleSubmit: vi.fn(),
-    submitContent: vi.fn(),
+    enqueueContent: vi.fn().mockResolvedValue(true),
     tryNativeCommand: vi.fn(() => ({ handled: false }) as const),
     commandPending: false,
     status: 'idle' as 'idle' | 'streaming' | 'error',
@@ -210,6 +232,41 @@ function mount(props: Props, richText = false) {
   );
 }
 
+/**
+ * Seed the session's queue the way the server does — a `queue_update` on the
+ * durable stream, with the session streaming so the head counts as waiting.
+ */
+function seedQueue(...contents: string[]) {
+  const store = useSessionStreamStore.getState();
+  store.applyEvent(SESSION_ID, {
+    seq: 1,
+    type: 'status_change',
+    status: {
+      contextUsage: null,
+      cost: null,
+      usage: null,
+      cacheStats: null,
+      model: null,
+      permissionMode: 'default',
+      todoCounts: null,
+      runningSubagentCount: 0,
+      lifecycle: 'streaming',
+      lastError: null,
+    },
+  });
+  store.applyEvent(SESSION_ID, {
+    seq: 2,
+    type: 'queue_update',
+    queue: contents.map((content, i) => ({
+      id: `q${i}`,
+      content,
+      disposition: 'queue' as const,
+      enqueuedAt: 1_000,
+      enqueuedBy: 'window-a',
+    })),
+  });
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
 });
@@ -218,7 +275,7 @@ afterEach(() => {
   cleanup();
   // The stream store is module state: a queue seeded by one case must not
   // decide what the next one serializes.
-  useSessionStreamStore.getState().clearQueue(SESSION_ID);
+  useSessionStreamStore.setState({ sessions: {}, sessionAccessOrder: [] });
 });
 
 describe('ChatInputContainer — serialized-DOM parity against the pre-migration baselines', () => {
@@ -236,10 +293,7 @@ describe('ChatInputContainer — serialized-DOM parity against the pre-migration
   it('2. streaming with two queued messages', () => {
     // Seeded through the real store, so the real `useChatQueue` derives the
     // panel the same way a mid-turn Enter does.
-    act(() => {
-      useSessionStreamStore.getState().enqueueMessage(SESSION_ID, 'first queued');
-      useSessionStreamStore.getState().enqueueMessage(SESSION_ID, 'second queued');
-    });
+    act(() => seedQueue('first queued', 'second queued'));
 
     const { container } = mount({ ...baseProps(), status: 'streaming' });
 
@@ -413,10 +467,7 @@ describe('ChatInputContainer — the flag-on reference tree', () => {
   });
 
   it('2. streaming with two queued messages, formatting on', async () => {
-    act(() => {
-      useSessionStreamStore.getState().enqueueMessage(SESSION_ID, 'first queued');
-      useSessionStreamStore.getState().enqueueMessage(SESSION_ID, 'second queued');
-    });
+    act(() => seedQueue('first queued', 'second queued'));
 
     const { container } = await mountRich({ ...baseProps(), status: 'streaming' });
 
@@ -433,7 +484,9 @@ describe('ChatInputContainer — the flag-on reference tree', () => {
       'chat-input-container.rich-text.streaming-queue',
       serializeDom(container)
     );
-    expect(formatDomDiff(diff)).toBe('');
+    // The queue rows are exempt here for the same reviewed reason as in the
+    // flag-off case — see {@link QUEUE_PANEL_SUBTREE}.
+    expect(formatDomDiff(diff.filter((e) => !e.path.startsWith(QUEUE_PANEL_SUBTREE)))).toBe('');
   });
 
   it('3. two pending attachments, one failed, formatting on', async () => {

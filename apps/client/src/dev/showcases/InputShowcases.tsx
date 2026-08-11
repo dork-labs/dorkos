@@ -11,6 +11,7 @@ import { ShowcaseDemo } from '../ShowcaseDemo';
 import {
   SAMPLE_FILES,
   SAMPLE_QUEUE,
+  SAMPLE_QUEUE_MIXED_ORIGINS,
   SAMPLE_COMMANDS,
   SAMPLE_COMMANDS_LONG,
   SAMPLE_FILE_ENTRIES,
@@ -245,8 +246,8 @@ export function InputShowcases() {
             onEdit={() => {}}
             onRemove={() => {}}
             onSend={() => {}}
-            sendBlockedReason={null}
-            whenUnblocked="Will send next"
+            onMoveUp={() => {}}
+            statusNote="Sending one at a time as the agent finishes"
           />
         </ShowcaseDemo>
 
@@ -258,21 +259,21 @@ export function InputShowcases() {
             onEdit={() => {}}
             onRemove={() => {}}
             onSend={() => {}}
-            sendBlockedReason={null}
-            whenUnblocked="Will send next"
+            onMoveUp={() => {}}
+            statusNote="Sending one at a time as the agent finishes"
           />
         </ShowcaseDemo>
 
-        <ShowcaseLabel>Send-now unavailable (a reply is still streaming)</ShowcaseLabel>
+        <ShowcaseLabel>Queued from another window, and a message that was downgraded</ShowcaseLabel>
         <ShowcaseDemo>
           <QueuePanel
-            queue={SAMPLE_QUEUE}
+            queue={SAMPLE_QUEUE_MIXED_ORIGINS}
             editingId={null}
             onEdit={() => {}}
             onRemove={() => {}}
             onSend={() => {}}
-            sendBlockedReason="Waiting for the reply to finish"
-            whenUnblocked="Will send next"
+            onMoveUp={() => {}}
+            statusNote="Waiting for your answer above"
           />
         </ShowcaseDemo>
       </PlaygroundSection>

@@ -37,21 +37,10 @@ import type {
   SessionContextUsage,
   SessionLifecycle,
 } from '@dorkos/shared/session-stream';
+import type { MessageDeliveryOutcome, QueuedMessage } from '@dorkos/shared/schemas';
 
 /** Maximum number of sessions retained before LRU eviction (mirrors the chat store). */
 const MAX_RETAINED_SESSIONS = 20;
-
-/**
- * A single message composed-and-queued while the agent was streaming, awaiting
- * auto-flush on the streaming→idle edge. Stored per session (keyed by the store
- * `sessions` map) so a message queued in session A can never flush into session
- * B after a switch (DOR-81). The `id` gives QueuePanel stable React keys and lets
- * the flush dequeue the exact item it sent.
- */
-export interface QueuedMessage {
-  id: string;
-  content: string;
-}
 
 /**
  * Client-side projection of a single session's server state, hydrated from a
@@ -72,12 +61,25 @@ export interface SessionStreamState {
    */
   optimisticUserMessage: { id: string; content: string } | null;
   /**
-   * Messages composed-and-queued while this session was streaming (DOR-81),
-   * FIFO. Auto-flushed one-at-a-time on the streaming→idle edge by the chat
-   * queue hook. Keyed per session here so a queue can only ever flush into the
-   * session it was composed in — a session switch cannot misdeliver it.
+   * The messages waiting behind this session's running turn, in dispatch order,
+   * exactly as the SERVER holds them (spec `persistent-session-runtime`).
+   *
+   * A projection, never a source of truth: it is replaced wholesale by the
+   * hydration snapshot and by every `queue_update`, and nothing in the client
+   * writes to it. That is the point of the cutover — the queue survives a
+   * refresh, shows up in every window, and outlives a failed turn, because the
+   * server is the one holding it (ADR-0104 superseded).
    */
   queuedMessages: QueuedMessage[];
+  /**
+   * The delivery receipt for each still-waiting message, keyed by message id.
+   *
+   * Only messages whose acceptance said something worth repeating are in here —
+   * a `queue_update` carries an outcome only when an accepted message caused it.
+   * Pruned to the live queue on every update, so a dispatched message takes its
+   * receipt with it.
+   */
+  queueOutcomes: Record<string, MessageDeliveryOutcome>;
   /** Events of the turn in progress; empty when the session is idle. */
   inProgressTurn: SessionEvent[];
   /** Server-held status projection, or `null` before the first hydration. */
@@ -200,6 +202,7 @@ export const DEFAULT_SESSION_STREAM_STATE: SessionStreamState = {
   messages: [],
   optimisticUserMessage: null,
   queuedMessages: [],
+  queueOutcomes: {},
   inProgressTurn: [],
   status: null,
   pendingInteractions: [],
@@ -509,39 +512,22 @@ interface SessionStreamActions {
    * `turn_start`/`turn_end`, and manually on trigger failure or watchdog expiry.
    */
   setTriggerPending: (sessionId: string, pending: boolean) => void;
-  /** Append a composed-while-streaming message to a session's flush queue (DOR-81). */
-  enqueueMessage: (sessionId: string, content: string) => void;
-  /** Replace a queued message's content in place (queue editing). */
-  updateQueuedMessage: (sessionId: string, id: string, content: string) => void;
-  /** Remove a single queued message by id (after flush or operator removal). */
-  removeQueuedMessage: (sessionId: string, id: string) => void;
   /**
-   * Put a dequeued message BACK in the queue at `index` (clamped to the current
-   * length), keeping its original id.
+   * Move a session's client-only continuity state — the optimistic user message
+   * and the trigger latch — to a new id, clearing the source. The
+   * create-on-first-message rekey gives the SAME logical session a second id
+   * (client UUID → canonical), and this state was authored by THIS client
+   * against the old id, so it must follow the session rather than orphan.
+   * Called from both rekey observation points: the 202 response
+   * (`use-session-submit`) and the global stream's retire announce
+   * (`session-stream-binding`).
    *
-   * The flush dequeues a message before the trigger POST resolves, so a refused
-   * trigger — `SESSION_LOCKED` from a still-held turn lock, a network failure —
-   * used to destroy text a person typed (DOR-480). The submit path calls this
-   * instead of dropping it. Idempotent: a no-op when the id is already queued,
-   * so a double restore cannot duplicate the message.
-   */
-  requeueMessage: (sessionId: string, message: QueuedMessage, index: number) => void;
-  /** Clear a session's entire flush queue. */
-  clearQueue: (sessionId: string) => void;
-  /**
-   * Move a session's client-only continuity state — the compose-next queue,
-   * the optimistic user message, and the trigger latch — to a new id, clearing
-   * the source. The create-on-first-message rekey gives the SAME logical
-   * session a second id (client UUID → canonical), and this state was authored
-   * by THIS client against the old id, so it must follow the session rather
-   * than orphan (acceptance run 20260611-145454, NF-2: a queued message
-   * bucketed under the retired UUID was silently lost when the operator
-   * switched to the canonical-id view). Called from both rekey observation
-   * points: the 202 response (`use-session-submit`) and the global stream's
-   * retire announce (`session-stream-binding`). The source's PROJECTION
-   * (messages, in-progress turn, seq watermark) is deliberately left intact —
-   * each id-view hydrates from its own `/events` snapshot, and a still-open
-   * retired-id view keeps rendering until the URL rekeys. No-op when
+   * The QUEUE is deliberately not among the things that move: the server holds
+   * it, follows the rekey itself, and re-announces it to whichever id the
+   * window is watching. The source's PROJECTION (messages, in-progress turn,
+   * seq watermark) is left intact for the same family of reason — each id-view
+   * hydrates from its own `/events` snapshot, and a still-open retired-id view
+   * keeps rendering until the URL rekeys. No-op when
    * `fromSessionId === toSessionId` or the source holds nothing.
    */
   migrateSessionContinuity: (fromSessionId: string, toSessionId: string) => void;
@@ -585,13 +571,14 @@ interface SessionStreamActions {
 /**
  * A fresh default session state. The arrays are fresh instances (not shared with
  * the module-level {@link DEFAULT_SESSION_STREAM_STATE}) so in-place mutation
- * under immer (e.g. `queuedMessages.push`) can never freeze the shared constant.
+ * under immer (e.g. `inProgressTurn.push`) can never freeze the shared constant.
  */
 function freshSessionState(): SessionStreamState {
   return {
     ...DEFAULT_SESSION_STREAM_STATE,
     messages: [],
     queuedMessages: [],
+    queueOutcomes: {},
     inProgressTurn: [],
     pendingInteractions: [],
   };
@@ -608,19 +595,13 @@ function touchAndGet(state: SessionStreamStoreState, sessionId: string): Session
     // session (DOR-298 PIP) — a pinned session showing a completed, non-
     // streaming widget board is exactly the idle-but-must-not-evict case.
     //
-    // A session holding QUEUED MESSAGES is never evictable either (DOR-480):
-    // those are words a person typed that have not been delivered yet, and a
-    // stranded queue is by definition not streaming — so without this guard,
-    // visiting 20 other sessions silently deleted them. The eviction only
-    // reclaims a derived projection; the queue is the only thing in here the
-    // server cannot send again.
+    // Queued messages used to pin a session here too (DOR-480): they were words
+    // a person had typed that lived nowhere else, so eviction destroyed them.
+    // The server holds the queue now, so everything in this entry is a derived
+    // projection the next snapshot rebuilds — there is nothing left in here to
+    // lose.
     const session = state.sessions[id];
-    if (
-      session &&
-      session.inProgressTurn.length === 0 &&
-      session.queuedMessages.length === 0 &&
-      id !== state.pinnedSessionId
-    ) {
+    if (session && session.inProgressTurn.length === 0 && id !== state.pinnedSessionId) {
       delete state.sessions[id];
     }
   }
@@ -827,6 +808,25 @@ function projectEvent(session: SessionStreamState, event: SessionEvent): void {
       session.pendingInteractions = session.pendingInteractions.filter((i) => i.id !== event.id);
       session.inProgressTurn.push(event);
       break;
+    case 'queue_update': {
+      // The whole queue, every time — never a diff. A window that missed an
+      // update is corrected by the next one instead of drifting, which is why
+      // there is no merge to get wrong here.
+      session.queuedMessages = event.queue;
+      const outcomes: Record<string, MessageDeliveryOutcome> = {};
+      for (const queued of event.queue) {
+        const kept = session.queueOutcomes[queued.id];
+        if (kept) outcomes[queued.id] = kept;
+      }
+      // An outcome only rides an update an accepted message caused, so it names
+      // a message that just joined the queue — or one that ran straight away and
+      // is therefore already absent from it.
+      if (event.outcome && event.queue.some((queued) => queued.id === event.outcome?.messageId)) {
+        outcomes[event.outcome.messageId] = event.outcome;
+      }
+      session.queueOutcomes = outcomes;
+      break;
+    }
     case 'subagent_update':
       // Explicit case rather than the default arm: the event both rides the turn
       // — so the turn's own subagent fold still draws it — AND maintains the
@@ -888,6 +888,12 @@ export const useSessionStreamStore: SessionStreamStore = create<
             session.status = snapshot.status;
             session.pendingInteractions = snapshot.pendingInteractions;
             session.inProgressTurn = snapshot.inProgressTurn ?? [];
+            // Hydration replaces the queue wholesale — that is what makes it
+            // survive a refresh and show up in a window that just opened. The
+            // receipts do not survive: they belong to an acceptance this window
+            // was not necessarily present for, and the queue is what matters.
+            session.queuedMessages = snapshot.queuedMessages;
+            session.queueOutcomes = {};
             // The server sends only the sign-in cards it is still carrying, so its
             // answer replaces this projection's grace bookkeeping wholesale
             // (DOR-1004). Keeping stale marks would retire a card the server just
@@ -986,76 +992,15 @@ export const useSessionStreamStore: SessionStreamStore = create<
           'session-stream/setTriggerPending'
         ),
 
-      enqueueMessage: (sessionId, content) =>
-        set(
-          (state) => {
-            const session = touchAndGet(state, sessionId);
-            session.queuedMessages.push({ id: crypto.randomUUID(), content });
-          },
-          false,
-          'session-stream/enqueueMessage'
-        ),
-
-      updateQueuedMessage: (sessionId, id, content) =>
-        set(
-          (state) => {
-            const session = touchAndGet(state, sessionId);
-            const item = session.queuedMessages.find((m) => m.id === id);
-            if (item) item.content = content;
-          },
-          false,
-          'session-stream/updateQueuedMessage'
-        ),
-
-      removeQueuedMessage: (sessionId, id) =>
-        set(
-          (state) => {
-            const session = touchAndGet(state, sessionId);
-            session.queuedMessages = session.queuedMessages.filter((m) => m.id !== id);
-          },
-          false,
-          'session-stream/removeQueuedMessage'
-        ),
-
-      requeueMessage: (sessionId, message, index) =>
-        set(
-          (state) => {
-            const session = touchAndGet(state, sessionId);
-            if (session.queuedMessages.some((m) => m.id === message.id)) return;
-            const at = Math.max(0, Math.min(index, session.queuedMessages.length));
-            session.queuedMessages.splice(at, 0, { ...message });
-          },
-          false,
-          'session-stream/requeueMessage'
-        ),
-
-      clearQueue: (sessionId) =>
-        set(
-          (state) => {
-            const session = touchAndGet(state, sessionId);
-            session.queuedMessages = [];
-          },
-          false,
-          'session-stream/clearQueue'
-        ),
-
       migrateSessionContinuity: (fromSessionId, toSessionId) =>
         set(
           (state) => {
             if (fromSessionId === toSessionId) return;
             const source = state.sessions[fromSessionId];
             if (!source) return;
-            const hasContinuity =
-              source.queuedMessages.length > 0 ||
-              source.optimisticUserMessage !== null ||
-              source.triggerPending;
+            const hasContinuity = source.optimisticUserMessage !== null || source.triggerPending;
             if (!hasContinuity) return;
             const target = touchAndGet(state, toSessionId);
-            // Queued messages append after anything already queued under the
-            // canonical id (both observation points may fire; the second sees
-            // an empty source and no-ops, so no duplication).
-            target.queuedMessages = [...target.queuedMessages, ...source.queuedMessages];
-            source.queuedMessages = [];
             // The optimistic message moves only when the target has none — a
             // target-side optimistic (e.g. a send already re-keyed by the 202
             // path) is newer and wins.
@@ -1255,9 +1200,19 @@ export function useSessionInProgressTurn(sessionId: string): SessionEvent[] {
 /** Stable empty queue so unknown sessions return a referentially-stable value. */
 const EMPTY_QUEUE: QueuedMessage[] = [];
 
-/** Granular selector: this session's composed-while-streaming flush queue (DOR-81). */
+/** Stable empty receipt map, for the same reason as {@link EMPTY_QUEUE}. */
+const EMPTY_QUEUE_OUTCOMES: Record<string, MessageDeliveryOutcome> = {};
+
+/** Granular selector: the messages waiting behind this session's running turn. */
 export function useSessionQueue(sessionId: string): QueuedMessage[] {
   return useSessionStreamStore(
     useCallback((s) => s.sessions[sessionId]?.queuedMessages ?? EMPTY_QUEUE, [sessionId])
+  );
+}
+
+/** Granular selector: the delivery receipts of this session's waiting messages. */
+export function useSessionQueueOutcomes(sessionId: string): Record<string, MessageDeliveryOutcome> {
+  return useSessionStreamStore(
+    useCallback((s) => s.sessions[sessionId]?.queueOutcomes ?? EMPTY_QUEUE_OUTCOMES, [sessionId])
   );
 }
