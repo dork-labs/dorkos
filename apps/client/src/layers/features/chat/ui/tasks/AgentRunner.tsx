@@ -5,6 +5,9 @@ import './agent-runner.css';
 
 type RunnerPhase = 'running' | 'celebrating' | 'done';
 
+/** How long the celebration burst plays before the runner settles into its mark. */
+const SETTLE_DELAY_MS = 350;
+
 /**
  * The states a runner figure can draw.
  *
@@ -98,19 +101,43 @@ function DoneMark({ status, color }: { status: AgentRunnerAgent['status']; color
 /** Animated SVG running figure representing a single background agent. */
 export function AgentRunner({ agent, index }: AgentRunnerProps) {
   const staggerStyle = useMemo(() => ({ animationDelay: `${index * 0.09}s` }), [index]);
-  const [phase, setPhase] = useState<RunnerPhase>('running');
+  // A runner that first appears already finished never ran on screen, so it
+  // opens on its mark instead of miming a run nobody is waiting for.
+  const [phase, setPhase] = useState<RunnerPhase>(agent.status === 'running' ? 'running' : 'done');
   const prevStatusRef = useRef(agent.status);
+  // The settle timer is held in a ref rather than returned as effect cleanup:
+  // the effect's own setPhase used to re-run the effect and tear the timer down
+  // before it fired, so the runner celebrated forever and no finished mark ever
+  // appeared (DOR-1119).
+  const settleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   /* eslint-disable react-hooks/set-state-in-effect -- phase transition on agent completion */
   useEffect(() => {
-    if (prevStatusRef.current === 'running' && agent.status !== 'running' && phase === 'running') {
-      setPhase('celebrating');
-      const checkTimer = setTimeout(() => setPhase('done'), 350);
-      return () => clearTimeout(checkTimer);
-    }
+    const prevStatus = prevStatusRef.current;
     prevStatusRef.current = agent.status;
-  }, [agent.status, phase]);
+
+    if (prevStatus === 'running' && agent.status !== 'running') {
+      setPhase('celebrating');
+      settleTimerRef.current = setTimeout(() => setPhase('done'), SETTLE_DELAY_MS);
+      return;
+    }
+
+    // Running again before it settled: drop the pending mark and keep running.
+    if (prevStatus !== 'running' && agent.status === 'running') {
+      if (settleTimerRef.current) clearTimeout(settleTimerRef.current);
+      settleTimerRef.current = null;
+      setPhase('running');
+    }
+  }, [agent.status]);
   /* eslint-enable react-hooks/set-state-in-effect */
+
+  // Unmount is the only place the settle timer may be cancelled — see above.
+  useEffect(
+    () => () => {
+      if (settleTimerRef.current) clearTimeout(settleTimerRef.current);
+    },
+    []
+  );
 
   if (phase === 'done') {
     return (
