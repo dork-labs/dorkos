@@ -66,7 +66,6 @@ interface UseSessionSubmitParams {
   // Store setters (sourced from useSessionStoreActions)
   setInput: SessionStoreActions['setInput'];
   setError: SessionStoreActions['setError'];
-  setSessionBusy: SessionStoreActions['setSessionBusy'];
   /**
    * Native (client-side) command interceptor. Returns a {@link NativeCommandResult}:
    * `handled` is true when `content` was a registered DorkOS command (the runtime
@@ -98,7 +97,6 @@ export function useSessionSubmit({
   takeSeedContext,
   setInput,
   setError,
-  setSessionBusy,
   tryNativeCommand,
 }: UseSessionSubmitParams) {
   // Refs to avoid stale closures inside the async submit callback.
@@ -135,13 +133,6 @@ export function useSessionSubmit({
     onSessionIdChangeReplaceRef.current = onSessionIdChangeReplace;
   });
 
-  const sessionBusyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(() => {
-    return () => {
-      if (sessionBusyTimerRef.current) clearTimeout(sessionBusyTimerRef.current);
-    };
-  }, []);
-
   // ---------------------------------------------------------------------------
   // Submission
   // ---------------------------------------------------------------------------
@@ -152,7 +143,6 @@ export function useSessionSubmit({
    *
    * @param content - The trimmed message text to send (PRISTINE — never annotated).
    * @param clearInput - When true, clears the input state after triggering.
-   * @param restoreContentOnLock - Content to restore if the session is locked.
    * @param opts - `{ kickoff: true }` for the M4 auto-first-turn: the content is
    *   a DorkOS-injected "introduce yourself" instruction, not a person's typing,
    *   so it skips the native-command funnel, the file/content transform, and —
@@ -170,7 +160,6 @@ export function useSessionSubmit({
     async (
       content: string,
       clearInput: boolean,
-      restoreContentOnLock: string,
       opts: { kickoff?: boolean; cwd?: string } = {}
     ) => {
       // Native (client-side) command: runs locally and must NEVER reach the
@@ -243,7 +232,7 @@ export function useSessionSubmit({
       } catch (err) {
         // Nothing was sent, and the words are still in the composer because
         // `clearInput` has not run yet — the clear used to happen before the
-        // upload and only `SESSION_LOCKED` restored it, so an upload failure on
+        // upload, with nothing to put the words back, so an upload failure on
         // an ordinary send destroyed the message outright (DOR-480).
         if (opts.kickoff) throw err;
         setError({
@@ -394,21 +383,6 @@ export function useSessionSubmit({
         useSessionStreamStore.getState().setOptimisticUserMessage(targetSessionId, null);
         useSessionStreamStore.getState().setTriggerPending(targetSessionId, false);
 
-        if ((err as { code?: string }).code === 'SESSION_LOCKED') {
-          // A locked birth session means a turn is already running — the
-          // greeting rode another trigger. Nothing to restore or retry.
-          if (opts.kickoff) return;
-          if (clearInput) setInput(restoreContentOnLock);
-          setSessionBusy(true);
-          if (sessionBusyTimerRef.current) clearTimeout(sessionBusyTimerRef.current);
-          sessionBusyTimerRef.current = setTimeout(() => {
-            setSessionBusy(false);
-            setError(null);
-            sessionBusyTimerRef.current = null;
-          }, TIMING.SESSION_BUSY_CLEAR_MS);
-          return;
-        }
-
         // A failed kickoff propagates to useAutoKickoff, which retries once and
         // — if that is also spent — surfaces an honest greeting-failed line on
         // the empty session. Deliberately NO "Could not send message" banner:
@@ -424,13 +398,12 @@ export function useSessionSubmit({
         });
       }
     },
-    [sessionId, transport, queryClient, setInput, setError, setSessionBusy, tryNativeCommand]
+    [sessionId, transport, queryClient, setInput, setError, tryNativeCommand]
   );
 
   const handleSubmit = useCallback(async () => {
     if (!input.trim() || status === 'streaming') return;
-    const userContent = input.trim();
-    await executeSubmission(userContent, true, userContent);
+    await executeSubmission(input.trim(), true);
   }, [input, status, executeSubmission]);
 
   /**
@@ -442,7 +415,7 @@ export function useSessionSubmit({
   const submitContent = useCallback(
     async (content: string, opts?: { cwd?: string }) => {
       if (!content.trim() || status === 'streaming') return;
-      await executeSubmission(content.trim(), false, '', {
+      await executeSubmission(content.trim(), false, {
         ...(opts?.cwd ? { cwd: opts.cwd } : {}),
       });
     },
@@ -531,7 +504,7 @@ export function useSessionSubmit({
   const retryMessage = useCallback(
     async (content: string) => {
       setError(null);
-      await executeSubmission(content, false, '');
+      await executeSubmission(content, false);
     },
     [executeSubmission, setError]
   );
@@ -551,7 +524,7 @@ export function useSessionSubmit({
    */
   const submitKickoff = useCallback(
     async (content: string, cwd?: string) => {
-      await executeSubmission(content, false, '', {
+      await executeSubmission(content, false, {
         kickoff: true,
         ...(cwd ? { cwd } : {}),
       });

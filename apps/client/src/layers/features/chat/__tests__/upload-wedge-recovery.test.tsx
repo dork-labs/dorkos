@@ -150,7 +150,6 @@ function Composer({ attachment }: { attachment: File }) {
         tryNativeCommand={vi.fn(() => ({ handled: false }) as never)}
         commandPending={false}
         status="idle"
-        sessionBusy={false}
         stop={vi.fn()}
         sessionId="test-session"
         sessionStatus={null}

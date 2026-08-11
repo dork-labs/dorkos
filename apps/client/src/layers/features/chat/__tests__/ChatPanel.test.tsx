@@ -53,7 +53,6 @@ vi.mock('../model/use-chat-session', () => ({
     submitContent: vi.fn(),
     status: mockChatStatus,
     error: null,
-    sessionBusy: false,
     stop: vi.fn(),
     retryMessage: vi.fn(),
     isLoadingHistory: false,

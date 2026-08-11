@@ -66,7 +66,6 @@ interface ChatInputContainerProps {
    */
   commandPending: boolean;
   status: 'idle' | 'streaming' | 'error';
-  sessionBusy: boolean;
   stop: () => void;
   setInput: (value: string) => void;
   sessionId: string;
@@ -109,7 +108,6 @@ export function ChatInputContainer({
   tryNativeCommand,
   commandPending,
   status,
-  sessionBusy,
   stop,
   setInput,
   sessionId,
@@ -360,7 +358,6 @@ export function ChatInputContainer({
               isUploading={isUploading}
               onCancelUpload={onUploadCancel}
               commandPending={commandPending}
-              sessionBusy={sessionBusy}
               onStop={stop}
               onEscape={autocomplete.dismissPalettes}
               onClear={() => {

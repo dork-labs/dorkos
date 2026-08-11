@@ -1,7 +1,7 @@
 /**
  * Store write actions for a single chat session.
  *
- * Extracts the 12 per-session `useSessionChatStore.updateSession` callbacks from
+ * Extracts the 11 per-session `useSessionChatStore.updateSession` callbacks from
  * `useChatSession` so the orchestrating hook stays focused on wiring.  Each setter
  * is stable across renders (deps: only `sid`).
  */
@@ -25,7 +25,6 @@ export interface SessionStoreActions {
   setInput: (value: string) => void;
   setStatus: (nextStatus: ChatStatus) => void;
   setError: (nextError: TransportErrorInfo | null) => void;
-  setSessionBusy: (busy: boolean) => void;
   setSessionStatus: (s: SessionStatusEvent | null) => void;
   setEstimatedTokens: (tokens: number) => void;
   setStreamStartTime: (time: number | null) => void;
@@ -97,14 +96,6 @@ export function useSessionStoreActions(
     [sid]
   );
 
-  const setSessionBusy = useCallback(
-    (busy: boolean) => {
-      if (!sid) return;
-      useSessionChatStore.getState().updateSession(sid, { sessionBusy: busy });
-    },
-    [sid]
-  );
-
   const setSessionStatus = useCallback(
     (s: SessionStatusEvent | null) => {
       if (!sid) return;
@@ -166,7 +157,6 @@ export function useSessionStoreActions(
     setInput,
     setStatus,
     setError,
-    setSessionBusy,
     setSessionStatus,
     setEstimatedTokens,
     setStreamStartTime,

@@ -54,7 +54,6 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
     input,
     status: legacyStatus,
     error,
-    sessionBusy,
     sessionStatus,
     systemStatus,
     operationProgress,
@@ -129,7 +128,7 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
   // Store write actions
   // ---------------------------------------------------------------------------
 
-  const { setMessages, setInput, setError, setSessionBusy, setSystemStatus, setOperationProgress } =
+  const { setMessages, setInput, setError, setSystemStatus, setOperationProgress } =
     useSessionStoreActions(sid, isAliveRef, mountGenerationMapRef);
 
   // Drive the status strip's operation-progress (compaction) and hook-flash
@@ -236,7 +235,6 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
     takeSeedContext: options.takeSeedContext,
     setInput,
     setError,
-    setSessionBusy,
     tryNativeCommand: native.tryRun,
   });
 
@@ -310,7 +308,6 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
     enqueueContent,
     status,
     error,
-    sessionBusy,
     stop,
     retryMessage,
     isLoadingHistory,
