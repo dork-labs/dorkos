@@ -2,7 +2,7 @@
  * Thirty-two agents, sixty rooms, forty sessions and seven things that need
  * you — the fleet the design has to hold its shape under.
  *
- * What this fixture is for: Now's cap and its "+ N more" row, Library's rollups
+ * What this fixture is for: Heads up's cap and its "+ N more" row, Library's rollups
  * on folded sections, groups (manual and smart) as sub-headers, and the build
  * budget — the model has to produce all of this in under 5ms.
  *
@@ -30,7 +30,7 @@ const ROOM_COUNT = 60;
 /** How many sessions the cockpit can see. */
 const SESSION_COUNT = 40;
 
-/** How many things need them right now — enough to overflow Now's cap of 3. */
+/** How many things need them right now — enough to overflow Heads up's cap of 3. */
 const SIGNAL_COUNT = 7;
 
 /** The runtimes the fleet is spread across. */

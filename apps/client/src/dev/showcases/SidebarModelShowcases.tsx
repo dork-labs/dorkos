@@ -10,7 +10,7 @@
  * (spec `sidebar-now-today-library` §13, `contributing/sidebar-model.md`).
  *
  * **Every node says why it is there.** Each zone, section and row renders its
- * `reason` beside it — **every one of them, including the headerless bodies Now
+ * `reason` beside it — **every one of them, including the headerless bodies Heads up
  * and Today draw**, which have no header element to hang a chip off and so get
  * their own line. So "why is this row here?" is answered by looking rather than
  * by reading `rules/`. The chips can be turned off to see the panel as an
@@ -69,7 +69,10 @@ import type {
   SidebarSectionModel,
   SidebarZoneModel,
 } from '@/layers/features/dashboard-sidebar/model/build-sidebar-model';
-import { buildSidebarModel } from '@/layers/features/dashboard-sidebar/model/build-sidebar-model';
+import {
+  buildSidebarModel,
+  ZONE_LABEL,
+} from '@/layers/features/dashboard-sidebar/model/build-sidebar-model';
 import { SIDEBAR_FIXTURES } from '@/layers/features/dashboard-sidebar/model/fixtures';
 import { SidebarZone } from '@/layers/features/dashboard-sidebar/ui/SidebarZone';
 import { anchorKey } from '@/layers/features/dashboard-sidebar/model/rules/targets';
@@ -413,7 +416,7 @@ function ModelSection({
           <ReasonChip reason={section.reason} show={showReasons} className="mr-1 shrink-0" />
         </div>
       ) : (
-        // A headerless body — Now's and Today's single section — has no header
+        // A headerless body — Heads up's and Today's single section — has no header
         // element at all (R2), so its reason had nowhere to go and was the one
         // kind of node this page did not say "why" about. It gets its own line.
         <div className="flex px-2 pb-0.5">
@@ -686,10 +689,10 @@ export function SidebarUnreadTiersShowcase() {
 }
 
 /**
- * The four states Now passes through, side by side.
+ * The four states Heads up passes through, side by side.
  *
- * Now is the zone the whole redesign is for, and three of its four states are
- * hard to catch in the running app on purpose: an empty one is the calm signal,
+ * Heads up is the zone the whole redesign is for, and three of its four states
+ * are hard to catch in the running app on purpose: an empty one is the calm signal,
  * an overflowing one needs seven things to be waiting at once, and the beat
  * lasts two and a half seconds. They are drawn here from spreads over the
  * shipped fixtures — never edits to them — so a reviewer can look at all four
@@ -698,7 +701,7 @@ export function SidebarUnreadTiersShowcase() {
 /** The zone the beat plays in, exactly as `SidebarZones` synthesizes it. */
 const ALL_CLEAR_ZONE: SidebarZoneModel = {
   id: 'now',
-  label: 'Now',
+  label: ZONE_LABEL.now,
   sections: [],
   reason: 'zone:now',
 };
@@ -738,16 +741,16 @@ export function SidebarNowStatesShowcase() {
 
   return (
     <PlaygroundSection
-      title="Sidebar Now States"
-      description="Now is the first thing on screen and the only zone allowed to interrupt. Four states: nothing waiting (the zone disappears entirely — absence is the calm signal), one thing waiting, seven things waiting (capped at three with an overflow that leads to the home surface), and the day-one Getting started zone that shares the same slot."
+      title="Sidebar Heads Up States"
+      description="Heads up is the first thing on screen and the only zone allowed to interrupt. Four states: nothing waiting (the zone disappears entirely — absence is the calm signal), one thing waiting, seven things waiting (capped at three with an overflow that leads to the home surface), and the day-one Getting started zone that shares the same slot."
     >
       <div className="flex items-center gap-2">
         <Switch
-          id="sidebar-now-states-reasons"
+          id="sidebar-heads-up-states-reasons"
           checked={showReasons}
           onCheckedChange={setShowReasons}
         />
-        <label htmlFor="sidebar-now-states-reasons" className="text-muted-foreground text-xs">
+        <label htmlFor="sidebar-heads-up-states-reasons" className="text-muted-foreground text-xs">
           Show the reason on every zone, section and row
         </label>
       </div>
@@ -777,7 +780,7 @@ export function SidebarNowStatesShowcase() {
               <nav
                 data-slot="sidebar-now-state"
                 data-state-name={name}
-                aria-label={`Now (${name})`}
+                aria-label={`${ZONE_LABEL.now} (${name})`}
                 className="bg-sidebar text-sidebar-foreground flex flex-col gap-1.5 rounded-lg p-2"
               >
                 {buildSidebarModel(state)
@@ -806,7 +809,7 @@ export function SidebarNowStatesShowcase() {
           copy measured a copy, and the copy is what drifted. */}
       <div className="border-border/50 bg-muted/30 rounded-lg border border-dashed p-4">
         <nav
-          aria-label="Now (all clear)"
+          aria-label={`${ZONE_LABEL.now} (all clear)`}
           style={{ width: PANEL_WIDTH }}
           className="bg-sidebar text-sidebar-foreground rounded-lg p-2"
         >
@@ -814,9 +817,9 @@ export function SidebarNowStatesShowcase() {
         </nav>
       </div>
       <p className="text-muted-foreground text-xs">
-        When the last thing needing you resolves, Now settles on this for 2.5 seconds and then folds
-        away — finishing a queue should feel like finishing. Under a reduced-motion preference it
-        never renders at all and the zone simply disappears.
+        When the last thing needing you resolves, Heads up settles on this for 2.5 seconds and then
+        folds away — finishing a queue should feel like finishing. Under a reduced-motion preference
+        it never renders at all and the zone simply disappears.
       </p>
     </PlaygroundSection>
   );
@@ -887,7 +890,7 @@ export function SidebarTodayStatesShowcase() {
 
       <ShowcaseLabel>Anchored, with the digest, runs revealed, the morning after</ShowcaseLabel>
       <div className="border-border/50 bg-muted/30 overflow-x-auto rounded-lg border border-dashed p-4">
-        {/* Wraps rather than scrolls, for the same reason the Now states do: a
+        {/* Wraps rather than scrolls, for the same reason the Heads up states do: a
             panel clipped by a horizontal scroller is one axe declines to
             measure. */}
         <div className="flex flex-wrap items-start gap-4">

@@ -25,12 +25,16 @@ export const SIDEBAR_MODEL_SECTIONS: PlaygroundSection[] = [
     ],
   },
   {
-    id: 'sidebar-now-states',
-    title: 'Sidebar Now States',
+    // This is the PLAYGROUND section's id, which the registry pins to
+    // `slugify(title)` — not the sidebar zone's id, which is still `now`
+    // (DOR-1155). `now` is kept as a keyword so the old word still finds it.
+    id: 'sidebar-heads-up-states',
+    title: 'Sidebar Heads Up States',
     page: 'sidebar-model',
     category: 'Sidebar',
     keywords: [
       'sidebar',
+      'heads up',
       'now',
       'attention',
       'needs you',

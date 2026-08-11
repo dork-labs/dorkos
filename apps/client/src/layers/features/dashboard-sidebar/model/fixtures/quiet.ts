@@ -2,7 +2,7 @@
  * A quiet morning: nothing needs you, the digest has something to say, and one
  * conversation has already slipped past the overnight boundary.
  *
- * What this fixture is for: the absence of Now as the calm signal, the digest's
+ * What this fixture is for: the absence of Heads up as the calm signal, the digest's
  * two conditions both being true, and overnight archival actually removing
  * something (a fixture where the boundary never fires cannot prove it works).
  *

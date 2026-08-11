@@ -2,7 +2,7 @@
  * Attention entity — the one normalized answer to "what needs me right now?"
  * (spec `sidebar-now-today-library` §A1).
  *
- * Two surfaces ask it: the sidebar's Now zone and the home surface's triage
+ * Two surfaces ask it: the sidebar's Heads up zone and the home surface's triage
  * header. Their sources used to live in two sibling feature slices, which meant
  * neither surface could read the other's answer and the sidebar could read
  * neither. The normalization lives here so both read the same list, and the

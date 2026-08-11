@@ -136,7 +136,7 @@ export function SidebarDnd({ children, displayNames, rooms }: SidebarDndProps) {
       });
       return;
     }
-    // Same mechanism, different reason: Now and Today are derived, so a row
+    // Same mechanism, different reason: Heads up and Today are derived, so a row
     // dropped there has no place to be put (R3).
     if (op.kind === 'reject-computed-zone') {
       toast.info(COMPUTED_ZONE_REJECTION, { description: itemName(op.ref) });

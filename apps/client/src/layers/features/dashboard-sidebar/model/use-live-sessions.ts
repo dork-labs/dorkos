@@ -113,8 +113,8 @@ export function useLiveSessionCount(agentPath: string): number {
  * re-litigated by the next reader.
  *
  * **The blocking carve-out is NOT weakened by this.** §353 continues "Blocking
- * states go to Now like the rest": an automated session that blocks still
- * raises an attention item, and it does so in the Now zone, which is a
+ * states go to Heads up like the rest": an automated session that blocks still
+ * raises an attention item, and it does so in the Heads up zone, which is a
  * different surface with a different rule. Only the LIVENESS count excludes
  * automation.
  *

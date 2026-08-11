@@ -425,7 +425,7 @@ export function useSectionChrome(section: SidebarSectionModel): SectionChrome {
     };
   }
 
-  // A headerless body — Now, Today, Getting started. No chrome at all: a zone
+  // A headerless body — Heads up, Today, Getting started. No chrome at all: a zone
   // that cannot fold has nothing to toggle and nothing to create into.
   return base;
 }

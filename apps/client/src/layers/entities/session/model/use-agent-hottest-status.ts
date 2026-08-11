@@ -140,11 +140,11 @@ export function useAgentHottestStatus(
           // (`design-decisions.md` §18). Everything else this fold produces is
           // attention rather than liveness and is deliberately left alone: a
           // scheduled run that is blocked, wedged or errored still lights this
-          // row, because "an automated session that needs you enters Now like
+          // row, because "an automated session that needs you enters Heads up like
           // anything else" (BC-19). Only `streaming` is filtered.
           //
           // Without this the row disagreed with itself: `agentRow`'s "N live"
-          // chip and Now's "N working" both excluded a nightly task while this
+          // chip and Heads up's "N working" both excluded a nightly task while this
           // badge, which is what the row actually draws, called it Working
           // (DOR-1137).
           const human = new Set(

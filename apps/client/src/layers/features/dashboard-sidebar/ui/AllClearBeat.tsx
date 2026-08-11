@@ -1,5 +1,5 @@
 /**
- * "All clear ✓" — what Now says on its way out (BC-50).
+ * "All clear ✓" — what Heads up says on its way out (BC-50).
  *
  * @module features/dashboard-sidebar/ui/AllClearBeat
  */

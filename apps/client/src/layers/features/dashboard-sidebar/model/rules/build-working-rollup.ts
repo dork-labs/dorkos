@@ -13,7 +13,7 @@ import { rowKey } from './targets';
  * when there should be none.
  *
  * **Suppressed when the only working session is the one you are in.** The
- * anchor already shows that turn live at the top of Today, and Now restating
+ * anchor already shows that turn live at the top of Today, and Heads up restating
  * where the operator is standing is exactly how a zone that means "you are
  * needed" gets ignored. With two working sessions the rollup returns, because
  * then it is telling you about something you cannot see.
@@ -21,7 +21,7 @@ import { rowKey } from './targets';
  * Counts sessions, not rows: thirty agents working is one line that says
  * thirty, which is the whole point of the rollup. Which sessions those are is
  * {@link liveSessionIds}' decision, and it is the same decision an agent row
- * makes about its own dot — one definition, so Now and a folded Library section
+ * makes about its own dot — one definition, so Heads up and a folded Library section
  * cannot disagree about what is running (DOR-1137).
  *
  * @param state - The snapshot.

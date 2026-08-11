@@ -12,7 +12,7 @@
  */
 
 /**
- * The only four blockages that may reach the operator's Now zone (BC-5).
+ * The only four blockages that may reach the operator's Heads up zone (BC-5).
  *
  * An allowlist, not a filter over an exclusion list. Mentions, DMs, unread
  * channels, automated-session activity and update-ready notices have no member
@@ -44,7 +44,7 @@ export interface AttentionSignal {
    * mint the same id for different things.
    */
   id: string;
-  /** Which of the four blockages this is. Drives Now's priority order (BC-6). */
+  /** Which of the four blockages this is. Drives Heads up's priority order (BC-6). */
   kind: AttentionSignalKind;
   /** Who needs you — the agent's name where there is one, else what asked. */
   primary: string;

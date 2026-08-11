@@ -2,7 +2,7 @@
  * A working morning: three things need you, three agents are running, and
  * fourteen conversations want the eight rows Today has.
  *
- * What this fixture is for: Now's priority order, the working rollup, the
+ * What this fixture is for: Heads up's priority order, the working rollup, the
  * anchor, the soft cap and its exemptions, mute and its @mention exception, the
  * automated reveal, the project chip — and above all BC-16, the promise that
  * none of the activity in here moves a single row.

@@ -1,5 +1,5 @@
 /**
- * Now and Getting started — membership, priority, the cap, the working rollup,
+ * Heads up and Getting started — membership, priority, the cap, the working rollup,
  * and the one slot the two zones share (BC-4 → BC-14).
  *
  * @module features/dashboard-sidebar/model/__tests__/now-rules
@@ -35,7 +35,7 @@ function zoneRows(state: SidebarState, id: string): SidebarRowModel[] {
   return zone?.sections.flatMap((section) => section.rows) ?? [];
 }
 
-describe('BC-5 — only four things enter Now', () => {
+describe('BC-5 — only four things enter Heads up', () => {
   it('admits the four blockages', () => {
     const state: SidebarState = {
       ...busyFixture,
@@ -196,7 +196,7 @@ describe('BC-9 — the working rollup', () => {
 
   it('counts no automated session — a scheduled run does not need you', () => {
     // The ruling of 2026-08-10 (see `build-working-rollup.ts`): §18's automated
-    // row reads "Automated session activity → Nothing", and Now holds only what
+    // row reads "Automated session activity → Nothing", and Heads up holds only what
     // needs the operator. `busyFixture` already carries two automated sessions
     // — a `task` and a `room` — so this is the real shape rather than a
     // constructed one.
@@ -233,13 +233,13 @@ describe('BC-9 — the working rollup', () => {
     ).toBe('1 working');
   });
 
-  it('still lets an automated session that is BLOCKED into Now (§18’s carve-out)', () => {
+  it('still lets an automated session that is BLOCKED into Heads up (§18’s carve-out)', () => {
     // The other half of the ruling, and the half a reader will look for: only
     // the liveness COUNT excludes automation. A blocked automated session
     // arrives as an ATTENTION signal — `entities/attention` reads no origin,
     // asserted in `entities/attention/__tests__/derive-attention-signals.test.ts`
     // ("puts an automated session that IS blocked in like anything else") — and
-    // Now draws it like anything else.
+    // Heads up draws it like anything else.
     const state: SidebarState = {
       ...busyFixture,
       workingSessionIds: ['ses-auto-1'],
@@ -274,7 +274,7 @@ describe('BC-11 — the live region announces counts only', () => {
   });
 });
 
-describe('BC-4 — Now and Getting started share one slot', () => {
+describe('BC-4 — Heads up and Getting started share one slot', () => {
   it('suppresses Getting started while anything needs you', () => {
     const ids = buildSidebarModel({
       ...firstRunFixture,

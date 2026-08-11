@@ -14,7 +14,7 @@
  * **The version number is gone from the chrome** (BC-44). It lives in the header
  * block's menu and in what DorkBot is told when you ask it something. What is
  * left is the one version fact that is actionable: a transient pill, present
- * only while an update genuinely is ready. Updates never enter Now — Now means
+ * only while an update genuinely is ready. Updates never enter Heads up — Heads up means
  * your agents need you.
  *
  * @module features/dashboard-sidebar/ui/SidebarFooterStrip

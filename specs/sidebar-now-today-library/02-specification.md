@@ -6,7 +6,7 @@ status: specified
 design-session: .dork/visual-companion/19627-1786276365 + .dork/visual-companion/9729-1786282982
 ---
 
-# Sidebar redesign: Now / Today / Library
+# Sidebar redesign: Heads up / Today / Library
 
 **Status:** Approved (design decisions locked 2026-08-09; the four open items of §17 are resolved in this document)
 **Author:** Claude (design session with Dorian, 2026-08-09; specified 2026-08-09)
@@ -16,8 +16,8 @@ design-session: .dork/visual-companion/19627-1786276365 + .dork/visual-companion
 ## Overview
 
 Reorganize the cockpit sidebar from a type-organized list (nav, Jump Back In, Channels, DMs,
-groups, Agents, footer) into three time-and-urgency **zones** — **Now**, **Today**,
-**Library** — plus **Getting started**, which is Now's day-one life stage in the same slot.
+groups, Agents, footer) into three time-and-urgency **zones** — **Heads up**, **Today**,
+**Library** — plus **Getting started**, which is the day-one life stage of Heads up, in the same slot.
 Behind the pixels, the whole panel becomes a **pure model**: one function
 `buildSidebarModel(state) → SidebarModel` decides every zone, row, order, cap, rollup and
 badge, and every row it emits carries a `reason` string saying why it is there. Components
@@ -49,14 +49,14 @@ and nowhere to unit-test the answer.
 
 ## Goals
 
-- Reorganize around **Now / Today / Library** so the first thing on screen is what needs the
+- Reorganize around **Heads up / Today / Library** so the first thing on screen is what needs the
   operator, the second is what they were doing, and the third is the stable structure they
   built themselves (design-decisions §2).
 - Make the sidebar's rules a **pure, tested, single-source model** with per-row provenance
   (§12), so the panel can be reasoned about and shown in the Dev Playground without a server.
 - Collapse three row implementations and two header components into **one `SidebarRow` and
   one `SectionHeader`** encoding the row grammar once (§3, design-meta rules 3–5).
-- **Never reorder the user's structure**: prediction is additive (Now/Today), manual structure
+- **Never reorder the user's structure**: prediction is additive (Heads up/Today), manual structure
   (Library: pins, channels, DMs, agents, groups) stays exactly where it was put (design-meta
   rule 6).
 - One honest **activity verb ladder** and one **avatar signal system** across sidebar, session
@@ -95,7 +95,7 @@ and nowhere to unit-test the answer.
 - **No new grouping model.** Smart groups, manual groups and their rules ship as they are,
   re-homed into Library. Row-level project context does not become a grouping dimension (§17
   resolution R4).
-- **No snooze** (§18) and no per-signal settings knobs. Now clears by resolution.
+- **No snooze** (§18) and no per-signal settings knobs. Heads up clears by resolution.
 - **No community/multi-tenant rows** — the switcher menu is shaped to accept them, and that is
   the whole commitment.
 
@@ -212,7 +212,7 @@ export interface SidebarRowModel {
   liveCount?: number;
   /** Repo/project chip. Present only under BC-38. */
   projectLabel?: string;
-  /** Now-only. Drives priority and the dismiss affordance. */
+  /** Heads up only. Drives priority and the dismiss affordance. */
   attention?: { kind: NowKind; since: string; dismissible: boolean };
   muted: boolean;
   /** False for every row outside Library (BC-35). */
@@ -225,7 +225,7 @@ export interface SidebarRowModel {
 
 export interface SidebarSectionModel {
   id: SidebarSectionId;
-  /** `null` = headerless body (Now and Today each have exactly one). */
+  /** `null` = headerless body (Heads up and Today each have exactly one). */
   label: string | null;
   collapsible: boolean;
   collapsed: boolean;
@@ -242,7 +242,7 @@ export interface SidebarZoneModel {
   id: SidebarZoneId;
   label: string;
   sections: SidebarSectionModel[];
-  /** Visually-hidden text for the zone's polite live region. Now only. */
+  /** Visually-hidden text for the zone's polite live region. Heads up only. */
   liveRegionText?: string;
   reason: string;
 }
@@ -365,14 +365,22 @@ Each contract is stated so a test can fail. Fixture names refer to the four jour
   design-meta micro-convention)
 - **BC-3 — Zone order is fixed**: `getting-started | now` (they share one slot), then `today`,
   then `library`. Order never varies with content.
-- **BC-4 — One slot for Now and Getting started.** If `selectNowItems` returns any row, the
+- **BC-4 — One slot for Heads up and Getting started.** If `selectNowItems` returns any row, the
   `now` zone renders and `getting-started` is suppressed for that build. Getting started only
-  appears when Now is empty. (Interpretation of §2's "same engine, same slot", reconciled with
+  appears when Heads up is empty. (Interpretation of §2's "same engine, same slot", reconciled with
   §8's day-one flow.)
 
-#### Now
+#### Heads up
 
-- **BC-5 — Membership.** Only four things enter Now: permission prompts, agent questions,
+> Amended 2026-08-11 (DOR-1155). This zone's label is **Heads up**; it was "Now" through P1 and
+> P2. Only the label changed — the zone id stays `now` everywhere (`zone:now`,
+> `data-sidebar-zone="now"`, `selectNowItems`, the BC numbers below, this spec's own directory
+> name), because renaming the id costs a config migration and buys the user nothing. The reason:
+> "Now" reads temporally, so the operator looked in this zone for the agent that was _currently
+> running_. The zone actually holds what he should know about — agents waiting on him, plus the
+> rolled-up "N working" line — and "Heads up" covers both honestly.
+
+- **BC-5 — Membership.** Only four things enter Heads up: permission prompts, agent questions,
   wedged/error sessions, idle-timeout nudges. Mentions, DMs, unread channels, automated-session
   activity and update-ready notices are excluded by construction — the model has no branch that
   can put them there. (§18, §7)
@@ -381,22 +389,22 @@ Each contract is stated so a test can fail. Fixture names refer to the four jour
 - **BC-7 — Cap 3 + overflow.** At most 3 attention rows render. When more exist, a single
   `{ kind: 'rollup', rollup: 'now-overflow' }` row reads "+ N more" and navigates to the home
   surface triage header (`/`, the "Waiting on you" group from `specs/team-room-home`
-  §D3.3) — the full list already lives there, so Now never grows a second list.
-- **BC-8 — Now never scrolls.** Max 3 attention rows + 1 overflow row + 1 working rollup = 5
+  §D3.3) — the full list already lives there, so Heads up never grows a second list.
+- **BC-8 — Heads up never scrolls.** Max 3 attention rows + 1 overflow row + 1 working rollup = 5
   rows, a fixed ceiling. (§2)
 - **BC-9 — Working rollup.** When ≥1 session is streaming, one row reads "N working" and opens
   the session switcher scoped to live sessions — never N pulsing rows. **Exception:** when the
   only working session is the active conversation, the rollup is suppressed, because the anchor
-  already shows it live and Now must not restate where the user already is. (Interpretation,
-  reasoned from §4's rule that the anchor is deliberately not a Now item.)
+  already shows it live and Heads up must not restate where the user already is. (Interpretation,
+  reasoned from §4's rule that the anchor is deliberately not a Heads up item.)
 
   > Amended 2026-08-10. "N working" counts human-origin sessions only. Automated sessions —
   > task, channel, room, agent and external origins — never enter the count, per §18's table
   > row ("Automated session activity → Nothing. No bold, no badge."). BC-9's own text carried
   > no exclusion; this was settled as a ruling in review of P2.2, together with the identical
   > defect in the session switcher's "N live" chip (BC-35). The carve-out in that same §18 row
-  > survives unchanged: a _blocked_ automated session still enters Now as an attention item —
-  > "Blocking states go to Now like the rest."
+  > survives unchanged: a _blocked_ automated session still enters Heads up as an attention item —
+  > "Blocking states go to Heads up like the rest."
 
 - **BC-10 — Idle nudges are dismissible, permanently for that episode.** Dismissal is stored in
   an in-memory Zustand store keyed by episode id, **not** persisted config: an episode id does
@@ -449,13 +457,13 @@ Each contract is stated so a test can fail. Fixture names refer to the four jour
   archival is a Today-visibility rule and deletes nothing.
 - **BC-19 — Automated sessions never claim a top-level row.** They sit behind a
   `{ rollup: 'automated' }` reveal row ("+ N automated"), origin-marked, using the existing
-  `partitionSessionsByOrigin` split. If an automated session needs the user, it enters Now like
+  `partitionSessionsByOrigin` split. If an automated session needs the user, it enters Heads up like
   anything else. (§4)
 - **BC-20 — Soft cap ~8** visible rows before the automated reveal, matching
   `MAX_JUMP_BACK_IN = 8`. The anchor and any tier-2 unread row are exempt from the cap.
 - **BC-21 — The active-conversation anchor.** The open conversation is always Today's first
   row (`reason: 'anchor:active-session'`), pinned while open, carrying live status. It is
-  never placed in Now. (§4)
+  never placed in Heads up. (§4)
 - **BC-22 — Morning digest.** One row ("While you were away…") at the top of Today _below_ the
   anchor, at most once per local day: shown when `prefs.digest.lastShownDate !== todayLocal`
   **and** there is real content (work that finished during the absence, per team-room-home
@@ -550,23 +558,23 @@ Each contract is stated so a test can fail. Fixture names refer to the four jour
 > model only emits the tier — so the correction is a doc and comment fix, made
 > before P2 built a renderer against the wrong contract.
 
-| Signal                                      | Model output                                                         |
-| ------------------------------------------- | -------------------------------------------------------------------- |
-| Channel has new messages                    | `unread: { tier: 'activity' }` — bold label only. No badge, no dot.  |
-| Unread DM to you                            | `unread: { tier: 'directed', count }` — numbered amber badge.        |
-| @mention of you (any room)                  | `unread: { tier: 'directed', count }` on that row.                   |
-| Agent working                               | `status: 'working'` + verb line. `unread` untouched.                 |
-| Approval / question / wedged / idle-timeout | A Now row. The only things that enter Now.                           |
-| Automated session activity                  | Nothing. No bold, no badge. Blocking states go to Now like the rest. |
+| Signal                                      | Model output                                                              |
+| ------------------------------------------- | ------------------------------------------------------------------------- |
+| Channel has new messages                    | `unread: { tier: 'activity' }` — bold label only. No badge, no dot.       |
+| Unread DM to you                            | `unread: { tier: 'directed', count }` — numbered amber badge.             |
+| @mention of you (any room)                  | `unread: { tier: 'directed', count }` on that row.                        |
+| Agent working                               | `status: 'working'` + verb line. `unread` untouched.                      |
+| Approval / question / wedged / idle-timeout | A Heads up row. The only things that enter Heads up.                      |
+| Automated session activity                  | Nothing. No bold, no badge. Blocking states go to Heads up like the rest. |
 
-- **BC-39 — Mentions and DMs never enter Now.** An agent asking a question inside a DM enters
-  Now as a _question_, with `target.kind === 'attention'`, not as a DM.
+- **BC-39 — Mentions and DMs never enter Heads up.** An agent asking a question inside a DM enters
+  Heads up as a _question_, with `target.kind === 'attention'`, not as a DM.
 - **BC-40 — Mute** kills bold, badge and Today eligibility. One exception: @mentions pierce mute
   and still render the numbered badge. Muted rooms stay out of recents (already the
   `isJumpBackInRoom` rule; it carries to Today unchanged).
 - **BC-41 — Bold clears on read** through the cross-device read cursors from DOR-1030. The
   sidebar reads cursors; it never writes its own watermark.
-- **BC-42 — No snooze in v1.** Now items clear only by resolution or (idle nudges only) by
+- **BC-42 — No snooze in v1.** Heads up items clear only by resolution or (idle nudges only) by
   dismissal.
 
 #### Chrome
@@ -577,7 +585,7 @@ Each contract is stated so a test can fail. Fixture names refer to the four jour
   become additional rows in this same menu — the menu gets longer, nothing relayouts. (§7)
 - **BC-44 — The version number leaves the chrome.** It lives in that menu and in DorkBot's
   seeded context. Update-ready renders as a **transient footer pill** ("Update ready — Restart")
-  that exists only while true and never enters Now. (§7)
+  that exists only while true and never enters Heads up. (§7)
 - **BC-45 — One New button** is the only create surface: Session (`⌘N`; `↵` = last-used agent),
   Channel, Direct message, Agent…, Agent group. A section's hover `+` deep-links into this same
   menu with the relevant item pre-selected. Every other create entry point in the sidebar is
@@ -599,7 +607,7 @@ Each contract is stated so a test can fail. Fixture names refer to the four jour
 - **BC-49 — Welcome-back glow.** A row whose work finished while the user was away glows amber
   once on first paint (`motion-safe` only; nothing under reduced motion). Absence threshold
   reuses team-room-home's `welcomeBack.absenceThresholdMinutes`.
-- **BC-50 — The all-clear beat.** When Now's last item resolves, the zone shows "All clear ✓"
+- **BC-50 — The all-clear beat.** When the last Heads up item resolves, the zone shows "All clear ✓"
   for 2.5s and then folds away. Under `prefers-reduced-motion` the zone simply disappears.
 - **BC-51 — No tour.** No tour component, no tour anchors added, no "meet your new sidebar"
   copy anywhere. (§1, §10)
@@ -658,7 +666,7 @@ showcase page, which fails on contrast violations rather than being eyeballed.
   collapse/expand. `Tab` moves between sections and zones, so a 60-agent Library is 4 tab stops,
   not 60. Implemented once as `useRovingFocus` in `shared/model`, unit-tested there.
 - **Live region.** One visually-hidden `aria-live="polite" aria-atomic="true"` element inside
-  the Now zone carries `liveRegionText`. It announces **count changes only** ("2 agents need
+  the Heads up zone carries `liveRegionText`. It announces **count changes only** ("2 agents need
   you"), debounced 1s. Verbs, activity and unread changes are never announced — a fleet of
   agents would otherwise turn a screen reader into a siren.
 - **Motion.** Only "working" animates. The dot uses the shared
@@ -685,12 +693,12 @@ showcase page, which fails on contrast violations rather than being eyeballed.
 
 - Draggable: pins (reorder within Pins), group order, membership moves (agent or room into a
   group), reorder within a manual group, reorder within Agents when `sortMode === 'manual'`.
-- **Never draggable: every row in Now, Today and Getting started.** These zones are computed;
+- **Never draggable: every row in Heads up, Today and Getting started.** These zones are computed;
   dragging them would be a lie about what the user controls (design-meta rule 6). Enforced in
   the **model** — `buildSidebarModel` sets `draggable: false` on every row whose zone is not
   `library` — not in the UI, so no future call site can re-enable it by accident.
 - `classifySidebarDrop` gains one rejection reason for a non-Library container, surfaced with
-  the same toast mechanism as the existing smart-group rejection: _"Now and Today are computed —
+  the same toast mechanism as the existing smart-group rejection: _"Heads up and Today are computed —
   pin it to Library to keep it in place."_ The smart-group rejection ("Membership is rule-based —
   edit rules instead.") is unchanged.
 - `resolveSidebarDrop` (the pure prefs reducer) and its 36 existing tests survive intact; the
@@ -826,7 +834,7 @@ AgentListItem's inline session panel (MAX_PREVIEW_SESSIONS et al.)
 
 ### F. API and data-model changes
 
-- **No new server routes.** Now/Today/Library are client-side derivations of data the client
+- **No new server routes.** Heads up/Today/Library are client-side derivations of data the client
   already fetches.
 - `GET /api/sessions/recent` gains `lastUserMessageAt` where a runtime can supply it cheaply
   (BC-16). **If a runtime cannot, the field is omitted and the client's `userLastOpenedAt`
@@ -839,15 +847,15 @@ AgentListItem's inline session panel (MAX_PREVIEW_SESSIONS et al.)
 
 ### G. User Experience
 
-- **Open the app with something waiting** → Now sits at the top: "tangerines needs permission",
+- **Open the app with something waiting** → Heads up sits at the top: "tangerines needs permission",
   "cardamom asked a question", "3 working". Nothing else competes for that space.
-- **Open the app on a quiet morning** → no Now zone at all. Today opens with the welcome-back
+- **Open the app on a quiet morning** → no Heads up zone at all. Today opens with the welcome-back
   digest, then yesterday's conversations. Absence is the calm signal.
 - **Day one** → Getting started: "Meet the 4 agents we found", "Say hi in #team", "Ask DorkBot
-  anything". Each retires as it is done, and the zone becomes Now as real signals arrive.
+  anything". Each retires as it is done, and the zone becomes Heads up as real signals arrive.
 - **Working with one agent** → the conversation is Today's first row, pinned, showing "editing
   RoomRow.tsx" while it works. The 40-rows-down problem disappears without new UI.
-- **Running 30 agents** → Now caps at 3 + "+ 5 more"; Library collapsed rows read "32 · 6
+- **Running 30 agents** → Heads up caps at 3 + "+ 5 more"; Library collapsed rows read "32 · 6
   working". Density scales; chrome does not.
 - **Creating anything** → one New button. **Finding anything** → ⌘K. **Getting help** → ✦ Ask
   DorkBot, which opens a DorkBot session that already knows what page you were on and how many
@@ -860,7 +868,7 @@ AgentListItem's inline session panel (MAX_PREVIEW_SESSIONS et al.)
 ### H. Testing Strategy
 
 - **Model (the bulk).** Table-driven tests over the four fixtures for every BC above:
-  zone presence/absence (BC-1), Now priority and cap (BC-6/7/8), the working-rollup suppression
+  zone presence/absence (BC-1), Heads up priority and cap (BC-6/7/8), the working-rollup suppression
   case (BC-9), suggestion retirement (BC-13), Today order stability under 100 injected activity
   events (BC-16 — the highest-value test in the programme), overnight boundary math with an
   injected `now` (BC-18), archival exemptions, collapsed rollup arithmetic (BC-31), mute
@@ -934,7 +942,7 @@ Nothing here adds a write surface or a data path. Three notes:
 - `contributing/architecture.md`: the `sidebar.body` takeover paragraph gains the persistent-chrome
   rule (header and footer survive a takeover; only the body swaps).
 - `docs/` (Fumadocs, `writing-for-humans` register): a short "your sidebar" concept page — what
-  Now, Today and Library mean, why things move in and out, and where the things that used to be
+  Heads up, Today and Library mean, why things move in and out, and where the things that used to be
   in the sidebar went. This is the substitute for the tour we deliberately cut.
 - Changelog fragment per PR (`changelog/unreleased/<id>-<slug>.md`), and the P2 fragment must
   carry the what-moved-where note for existing users.
@@ -993,7 +1001,7 @@ one release of P1, P1's model layer is reverted rather than left unwired — no 
 ### P2 — Desktop zones and chrome
 
 **Scope.** `SidebarZones` / `SidebarZone` / `SidebarSection` replacing the section list;
-Now (BC-5→11), Getting started (BC-12→14), Today (BC-15→22), Library (BC-28→33); the
+Heads up (BC-5→11), Getting started (BC-12→14), Today (BC-15→22), Library (BC-28→33); the
 active-conversation anchor and scroll-to-active (BC-21, BC-36); the session switcher (BC-35) and
 removal of `AgentListItem`'s inline panel (BC-34); header block + New menu + ⌘K pill
 (BC-43→46); footer strip + version relocation + update pill + Ask DorkBot (BC-44, BC-47, BC-48);
@@ -1005,13 +1013,13 @@ migration.
 (Ask DorkBot); DOR-1030 read cursors (BC-41).
 
 **Work units for DECOMPOSE (parallelizable inside the phase):** P2.1 zones shell + Library;
-P2.2 Now + `entities/attention`; P2.3 Today + anchor + archival + digest; P2.4 header/New/⌘K
+P2.2 Heads up + `entities/attention`; P2.3 Today + anchor + archival + digest; P2.4 header/New/⌘K
 pill; P2.5 footer/update pill/Ask DorkBot; P2.6 session switcher; P2.7 verbs + status wiring;
 P2.8 prefs schema + conf migration.
 
 **Acceptance criteria**
 
-1. On a fixture with no attention items and no working sessions, the Now zone renders **zero
+1. On a fixture with no attention items and no working sessions, the Heads up zone renders **zero
    DOM nodes** (BC-1).
 2. Firing 100 `session_status` activity events changes no Today row's position and re-renders at
    most the rows whose sessions those events belong to (BC-16, R1 perf).
@@ -1020,7 +1028,7 @@ P2.8 prefs schema + conf migration.
    BC-36).
 4. Clicking an agent opens its most recent human conversation; the inline 3-session panel no
    longer exists anywhere in the tree (BC-34).
-5. The Now zone contains no row sourced from a mention, DM, unread channel, automated-session
+5. The Heads up zone contains no row sourced from a mention, DM, unread channel, automated-session
    activity or update-ready state, across all four fixtures (BC-5, BC-39, BC-44).
 6. Every existing user's prefs survive the conf migration with `sections` populated and the eight
    removed keys gone; `migration-safety.test.ts` extended and green (§D).
@@ -1082,10 +1090,10 @@ the store lands in P1/P2 and P3 only extends it.
 ### P4 — Mobile tabs
 
 **Scope, per §9.** The drawer dies: on mobile the cockpit renders a `MobileTabsLayout` widget
-instead of the sidebar Sheet. Four bottom tabs — **Home** (Now + Today; badged with the Now
+instead of the sidebar Sheet. Four bottom tabs — **Home** (Heads up + Today; badged with the Heads up
 count), **Library**, **DorkBot**, **You**. No FAB; New stays in the header. Long-press replaces
 hover for every context menu (the dual-render menu system already guarantees they exist). Rows
-grow to 40–44px. A "Catch up" bulk action tops Today. Approvals render inline in Now
+grow to 40–44px. A "Catch up" bulk action tops Today. Approvals render inline in Heads up
 (approve-from-anywhere). Library carries no badge — it is the calm surface. `sidebar.body`
 takeover contributions render inside the Library tab on mobile.
 
@@ -1095,7 +1103,7 @@ takeover contributions render inside the Library tab on mobile.
 
 1. At 390×844 there is no drawer and no `SidebarProvider` Sheet in the cockpit tree; navigation
    between tabs never unmounts the Home tab's scroll position.
-2. The Home tab badge equals the Now needs-you count exactly (BC-11's number, not a different
+2. The Home tab badge equals the Heads up needs-you count exactly (BC-11's number, not a different
    one); the Library tab has no badge.
 3. Long-press on any row opens the same action set the desktop kebab shows (asserted against the
    shared node list).
@@ -1158,9 +1166,9 @@ All items from §17 are resolved above and none remain open.
   40/70/100; `--muted` is banned inside the sidebar because it inverts direction between themes;
   both-theme screenshots + axe-core contrast are a phase gate.
 - ~~Accessibility spec~~ **(RESOLVED — R2)** `nav`/`section` landmarks with headings; roving
-  tabindex per section; polite live region for Now _count_ changes only; motion-safe rules; keyboard
+  tabindex per section; polite live region for Heads up _count_ changes only; motion-safe rules; keyboard
   and menu alternates for every drag (WCAG 2.5.7).
-- ~~Drag-and-drop scope~~ **(RESOLVED — R3)** Library manual order and pins only; Now/Today/Getting
+- ~~Drag-and-drop scope~~ **(RESOLVED — R3)** Library manual order and pins only; Heads up/Today/Getting
   started never draggable, enforced in the model; existing keyboard announcements preserved verbatim.
 - ~~Obsidian `EmbedSidebar` mapping~~ **(RESOLVED — Non-Goals)** Explicitly deferred with rationale;
   the shared primitives land in `shared/` so the embed can adopt them later; a follow-up item is
@@ -1168,8 +1176,8 @@ All items from §17 are resolved above and none remain open.
 - ~~Multi-project (repo) context in row grammar~~ **(RESOLVED — R4)** Secondary-line chip on session
   rows only, only when the operator has more than one active project, sourced from `cwd`; no grouping
   change; the word "workspace" is not used.
-- ~~Where does "+ N more" in Now lead?~~ **(RESOLVED — BC-7)** The home surface triage header, which
-  already holds the full list; Now never grows a second list.
+- ~~Where does "+ N more" in Heads up lead?~~ **(RESOLVED — BC-7)** The home surface triage header, which
+  already holds the full list; Heads up never grows a second list.
 - ~~What orders Today when the server cannot say when the user last spoke?~~ **(RESOLVED — BC-16)**
   The client-side `userLastOpenedAt` alone; `lastUserMessageAt` is additive and optional, and a
   runtime that cannot supply it omits it rather than guessing.
@@ -1180,7 +1188,7 @@ All items from §17 are resolved above and none remain open.
 
 1. _The sidebar is a pure model rendered by dumb rows_ — `buildSidebarModel` as a convention, the
    mandatory `reason` provenance field, and the standing rule that live verbs never enter the model.
-2. _Zones are computed, structure is manual_ — prediction is additive; Now/Today are never
+2. _Zones are computed, structure is manual_ — prediction is additive; Heads up/Today are never
    draggable and never reorder Library.
 3. _One row grammar primitive for every control surface_ — `SidebarRow`/`SectionHeader` in
    `shared/ui`, and why the primitives (not the model) are what ⌘K and the switcher share.
@@ -1199,7 +1207,7 @@ source of truth).
 - `research/20260809_design-meta-2026-learnings.md` (the ten rules and the audit table)
 - `research/20260716_slack_sidebar_organization_ux.md`,
   `research/20260716_cross_app_sidebar_organization_patterns.md` (NN/g spatial memory)
-- `specs/team-room-home/02-specification.md` (the home triage header Now overflows into; the
+- `specs/team-room-home/02-specification.md` (the home triage header Heads up overflows into; the
   welcome-back data the digest reads; the 7→4 nav shrink this builds on)
 - `specs/message-search/` + DOR-672 (the ⌘K/⌘F split and the hand-off row's precondition)
 - `specs/agent-workspace-binding/` (owns the "workspace" naming consolidation §16 defers to)

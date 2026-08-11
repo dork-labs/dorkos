@@ -1,5 +1,5 @@
 /**
- * The order Now answers in (BC-6).
+ * The order Heads up answers in (BC-6).
  *
  * @module features/dashboard-sidebar/model/rules/rank-now-items
  */
@@ -22,7 +22,7 @@ const TIER: Record<NowKind, number> = {
 };
 
 /**
- * Now's rows, in priority order — by tier, then oldest first inside a tier.
+ * Heads up's rows, in priority order — by tier, then oldest first inside a tier.
  *
  * Oldest first because the thing that has been waiting longest is the thing
  * most likely to have stopped something else. A row with an unparseable `since`
@@ -32,7 +32,7 @@ const TIER: Record<NowKind, number> = {
  * The row key breaks a final tie, so two signals raised in the same millisecond
  * never swap places between renders.
  *
- * @param rows - Now's rows, in any order.
+ * @param rows - Heads up's rows, in any order.
  */
 export function rankNowItems(rows: readonly SidebarRowModel[]): SidebarRowModel[] {
   return [...rows].sort((a, b) => {

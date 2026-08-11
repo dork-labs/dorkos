@@ -367,7 +367,7 @@ describe.each(SIDEBAR_FIXTURES)('$name fixture', ({ state }) => {
     );
   });
 
-  it('BC-5 — Now holds nothing but attention rows and the working rollup', () => {
+  it('BC-5 — Heads up holds nothing but attention rows and the working rollup', () => {
     const now = buildSidebarModel(state).zones.find((zone) => zone.id === 'now');
     for (const row of now?.sections.flatMap((section) => section.rows) ?? []) {
       expect(['attention', 'rollup']).toContain(row.target.kind);
@@ -378,13 +378,13 @@ describe.each(SIDEBAR_FIXTURES)('$name fixture', ({ state }) => {
     }
   });
 
-  it('BC-8 — Now never emits more than five rows', () => {
+  it('BC-8 — Heads up never emits more than five rows', () => {
     const now = buildSidebarModel(state).zones.find((zone) => zone.id === 'now');
     const rows = now?.sections.flatMap((section) => section.rows) ?? [];
     expect(rows.length).toBeLessThanOrEqual(5);
   });
 
-  it('BC-21 — no session row ever appears in Now', () => {
+  it('BC-21 — no session row ever appears in Heads up', () => {
     for (const { zoneId, row } of rowsOf(state)) {
       if (zoneId === 'now') expect(row.target.kind).not.toBe('session');
     }

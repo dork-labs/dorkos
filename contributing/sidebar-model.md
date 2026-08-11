@@ -77,9 +77,9 @@ Four levels, and no more:
 SidebarModel
 └── zones: SidebarZoneModel[]        // getting-started | now, then today, then library
     ├── label                         // a landmark heading; never a collapse control
-    ├── liveRegionText?               // Now only — a count, never a verb
+    ├── liveRegionText?               // Heads up only — a count, never a verb
     └── sections: SidebarSectionModel[]
-        ├── label: string | null      // null = a headerless body (Now and Today)
+        ├── label: string | null      // null = a headerless body (Heads up and Today)
         ├── collapsible / collapsed   // only Library sections may fold
         ├── rollup?                   // the signal that survives folding
         ├── subsections?              // groups inside Agents. One level, never two
@@ -95,22 +95,22 @@ SidebarModel
 Two shapes are worth knowing before you read the code:
 
 - **A zone with nothing to say is absent**, not empty. `bodyZone()` returns `undefined` for an empty body, so no caller can push an empty box into `zones`.
-- **`getting-started` is not a fifth zone.** It is Now's day-one life stage and shares Now's slot, which is why the two are never both present.
+- **`getting-started` is not a fifth zone.** It is the day-one life stage of Heads up and shares its slot, which is why the two are never both present.
 
 ### Reading a `reason`
 
 Every zone, section and row carries `reason`, formatted `<namespace>:<rule>` — lowercase letters and hyphens, exactly one colon, asserted for every node of every fixture. It is the answer to "why is this row here?" in devtools, and it is also the handle tests grab.
 
-| Namespace          | Sits on                             | Values you will see                                                                                                                                                                                              |
-| ------------------ | ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `zone:`            | a zone                              | `zone:now`, `zone:getting-started`, `zone:today`, `zone:library`                                                                                                                                                 |
-| `now:`             | Now's body section, and its rows    | `now:body`; then `now:permission-prompt`, `now:question`, `now:error`, `now:idle-timeout`                                                                                                                        |
-| `getting-started:` | the day-one body section            | `getting-started:body`                                                                                                                                                                                           |
-| `today:`           | Today's body section, and most rows | `today:body`; `today:interaction-recency` (you touched it); `today:digest`; `today:automated` (unfolded behind the reveal)                                                                                       |
-| `anchor:`          | one Today row                       | `anchor:active-session` — first because you have it open                                                                                                                                                         |
-| `rollup:`          | a row standing for other rows       | `rollup:working`, `rollup:now-overflow`, `rollup:automated`                                                                                                                                                      |
-| `suggestion:`      | a Getting-started row               | the suggestion's own id, e.g. `suggestion:agents-found`, `suggestion:ask-dorkbot`                                                                                                                                |
-| `library:`         | Library's sections and rows         | sections `library:pins`, `library:channels`, `library:dms`, `library:agents`, `library:group`; rows `library:pinned`, `library:channel`, `library:dm`, `library:agent`, `library:group-member`, `library:reveal` |
+| Namespace          | Sits on                                 | Values you will see                                                                                                                                                                                              |
+| ------------------ | --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `zone:`            | a zone                                  | `zone:now`, `zone:getting-started`, `zone:today`, `zone:library`                                                                                                                                                 |
+| `now:`             | the Heads up body section, and its rows | `now:body`; then `now:permission-prompt`, `now:question`, `now:error`, `now:idle-timeout`                                                                                                                        |
+| `getting-started:` | the day-one body section                | `getting-started:body`                                                                                                                                                                                           |
+| `today:`           | Today's body section, and most rows     | `today:body`; `today:interaction-recency` (you touched it); `today:digest`; `today:automated` (unfolded behind the reveal)                                                                                       |
+| `anchor:`          | one Today row                           | `anchor:active-session` — first because you have it open                                                                                                                                                         |
+| `rollup:`          | a row standing for other rows           | `rollup:working`, `rollup:now-overflow`, `rollup:automated`                                                                                                                                                      |
+| `suggestion:`      | a Getting-started row                   | the suggestion's own id, e.g. `suggestion:agents-found`, `suggestion:ask-dorkbot`                                                                                                                                |
+| `library:`         | Library's sections and rows             | sections `library:pins`, `library:channels`, `library:dms`, `library:agents`, `library:group`; rows `library:pinned`, `library:channel`, `library:dm`, `library:agent`, `library:group-member`, `library:reveal` |
 
 Two things that look like each other and are not:
 

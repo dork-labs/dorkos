@@ -1,10 +1,10 @@
 /**
- * Now survives a page load (DOR-1136).
+ * Heads up survives a page load (DOR-1136).
  *
  * The spec's first promised experience is "open the app with something waiting
- * → Now sits at the top", and it did not hold: the global event stream carried
+ * → Heads up sits at the top", and it did not hold: the global event stream carried
  * transitions only, so a session that errored before the page loaded was
- * something the new page had simply never heard about. Now rendered zero rows
+ * something the new page had simply never heard about. Heads up rendered zero rows
  * with work genuinely waiting, and the ✦ Ask DorkBot seed lost its recent-errors
  * line on the same reload.
  *
@@ -38,17 +38,17 @@ import { ChatPage } from '../../pages/ChatPage.js';
  */
 const SERVER_ROUND_TRIP_MS = 30_000;
 
-/** The Now zone, however many rows it currently holds. */
+/** The Heads up zone, however many rows it currently holds. */
 function nowZone(page: Page) {
   return page.locator('[data-sidebar-zone="now"]');
 }
 
-/** The Now row a stopped session draws — the copy `select-now-items` gives it. */
+/** The Heads up row a stopped session draws — the copy `select-now-items` gives it. */
 function erroredRow(page: Page) {
   return nowZone(page).getByText('Stopped with an error');
 }
 
-/** The Now row a session waiting on a permission answer draws. */
+/** The Heads up row a session waiting on a permission answer draws. */
 function blockedRow(page: Page) {
   return nowZone(page).getByText('Waiting on you');
 }
@@ -67,7 +67,7 @@ export interface NowSurvivesReloadDeps {
  * @param deps - The host spec's server URL and seeded agent directory.
  */
 export function registerNowSurvivesReloadTests({ apiUrl, agentDir }: NowSurvivesReloadDeps): void {
-  test.describe('Sidebar Now — survives a page load', () => {
+  test.describe('Sidebar Heads up — survives a page load', () => {
     /** Mesh id of the agent this suite registered, for teardown. */
     let meshId: string | null = null;
 
@@ -129,7 +129,7 @@ export function registerNowSurvivesReloadTests({ apiUrl, agentDir }: NowSurvives
       await new BasePage(page).ensureSidebarOpen();
     }
 
-    test('an errored session is still in Now after a reload', async ({ page, request }) => {
+    test('an errored session is still in Heads up after a reload', async ({ page, request }) => {
       await errorASession(page, request);
 
       // Half one: the row exists while this page watched the turn fail. An
@@ -145,10 +145,10 @@ export function registerNowSurvivesReloadTests({ apiUrl, agentDir }: NowSurvives
       await expect(erroredRow(page)).toBeVisible({ timeout: SERVER_ROUND_TRIP_MS });
     });
 
-    // The other lifecycle Now is built from, and the one an operator loses most
+    // The other lifecycle Heads up is built from, and the one an operator loses most
     // by not seeing: a turn parked on a permission answer stays parked, so the
     // transition that announced it is the only one there will ever be.
-    test('a session waiting on a permission answer is still in Now after a reload', async ({
+    test('a session waiting on a permission answer is still in Heads up after a reload', async ({
       page,
       request,
     }) => {

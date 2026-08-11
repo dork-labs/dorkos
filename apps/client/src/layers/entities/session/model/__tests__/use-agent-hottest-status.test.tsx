@@ -157,7 +157,7 @@ describe('useAgentHottestStatus', () => {
     it('still lights it when that same scheduled task is BLOCKED', () => {
       // The carve-out, and the half that must survive: liveness excludes
       // automation, attention does not. "An automated session that needs the
-      // user enters Now like anything else" (BC-19), and a row that went dark
+      // user enters Heads up like anything else" (BC-19), and a row that went dark
       // for a wedged nightly task would hide the one thing worth surfacing.
       upsert('task-session', 'task');
       pushStatus('task-session', 'blocked', AGENT_PATH);

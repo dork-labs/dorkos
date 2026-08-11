@@ -377,7 +377,7 @@ export type SidebarGroup = z.infer<typeof SidebarGroupSchema>;
  * state the person set. They go when the sections that read them do; nothing new
  * should start using them.
  *
- * Zones are deliberately absent: Now, Today and Getting started are computed and
+ * Zones are deliberately absent: Heads up, Today and Getting started are computed and
  * never collapse, so there is no state for them to hold (BC-2).
  */
 export const SidebarSectionIdSchema = z.enum([

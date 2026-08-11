@@ -15,9 +15,9 @@ import { anchorKey } from './targets';
  * it's working"** — and it costs no new UI. The anchor carries live status
  * where the operator is already looking.
  *
- * It is deliberately NOT a Now item. Now means "you are needed"; showing the
+ * It is deliberately NOT a Heads up item. Heads up means "you are needed"; showing the
  * operator the thing they are already looking at is how a person learns that
- * Now can be skimmed past.
+ * Heads up can be skimmed past.
  *
  * Runs last in Today's pipeline so nothing can sort or cap it away — selection,
  * archival and the cap each hold the anchor's key open for exactly this.

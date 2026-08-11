@@ -451,7 +451,7 @@ describe('R3 — a drop into a computed zone', () => {
 
   it('says how to keep the row in place, rather than only refusing', () => {
     expect(COMPUTED_ZONE_REJECTION).toBe(
-      'Now and Today are computed — pin it to Library to keep it in place.'
+      'Heads up and Today are computed — pin it to Library to keep it in place.'
     );
   });
 
@@ -642,7 +642,7 @@ describe('buildSidebarAnnouncements', () => {
     ).toBe(`Can't move api-server there — ${COMPUTED_ZONE_REJECTION}`);
   });
 
-  it('names Now and Today on drag-over', () => {
+  it('names Heads up and Today on drag-over', () => {
     const a = announcements(prefs());
     const hover = (zone: 'now' | 'today') =>
       a.onDragOver({
@@ -650,7 +650,7 @@ describe('buildSidebarAnnouncements', () => {
         over: over({ type: 'container', container: { kind: 'computed', zone } }),
       });
     expect(hover('today')).toBe('Over Today.');
-    expect(hover('now')).toBe('Over Now.');
+    expect(hover('now')).toBe('Over Heads up.');
   });
 
   it('announces the hovered container on drag-over', () => {

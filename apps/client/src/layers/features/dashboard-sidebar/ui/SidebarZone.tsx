@@ -1,5 +1,5 @@
 /**
- * One zone — Now, Getting started, Today or Library.
+ * One zone — Heads up, Getting started, Today or Library.
  *
  * A zone is a **landmark, never an accordion** (BC-2): its label is a heading,
  * it has no collapse state in the model and no toggle in the DOM, and a zone
@@ -56,7 +56,7 @@ export function SidebarZone({ zone, onToggleAll, allClear = false }: SidebarZone
         // room only; separation between zones is tint and whitespace, never a
         // third helping of inset (design-decisions §11, spec R1).
         'rounded-lg py-1',
-        // Now and Getting started carry the one tint that asks for a look; the
+        // Heads up and Getting started carry the one tint that asks for a look; the
         // calm zones sit on the panel itself.
         zone.id === 'now' || zone.id === 'getting-started' ? 'bg-sidebar-accent/40' : undefined
       )}

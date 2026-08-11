@@ -1,5 +1,5 @@
 /**
- * What Now's polite live region says, and how often it is allowed to say it
+ * What Heads up's polite live region says, and how often it is allowed to say it
  * (BC-11, spec R2).
  *
  * @module features/dashboard-sidebar/model/use-live-region-text

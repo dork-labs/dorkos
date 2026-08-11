@@ -3,8 +3,8 @@
  * One definition of "live", pinned across the five surfaces that draw it
  * (DOR-1137, `design-decisions.md` §18).
  *
- * Now's "N working" line, a folded Library section's "N agents working" header,
- * ⌘K's Continue list, the presence strip Now's rollup NAVIGATES to, and the
+ * Heads up's "N working" line, a folded Library section's "N agents working" header,
+ * ⌘K's Continue list, the presence strip Heads up's rollup NAVIGATES to, and the
  * badge an agent row actually draws are five renderings of one fact, and every
  * one of them used to compute it alone.
  *
@@ -106,7 +106,7 @@ function whatEachSurfaceSays(state: StoreState) {
     .zones.find((zone) => zone.id === 'library')
     ?.sections.find((section) => section.id === 'agents');
   return {
-    /** Now's "N working" row — the count it prints, or 0 when there is no row. */
+    /** Heads up's "N working" row — the count it prints, or 0 when there is no row. */
     nowWorking: Number(buildWorkingRollup(snapshot)?.primary.split(' ')[0] ?? 0),
     /** The folded section header's count. */
     foldedWorking: agents?.rollup?.workingCount ?? 0,
@@ -115,7 +115,7 @@ function whatEachSurfaceSays(state: StoreState) {
       (entry) => entry.sessionId
     ),
     /**
-     * The presence strip's working half — where Now's rollup NAVIGATES, which
+     * The presence strip's working half — where Heads up's rollup NAVIGATES, which
      * is why it belongs in this set rather than in a suite of its own
      * (`SidebarChrome` routes `rollup: 'working'` to the home surface).
      */
@@ -247,7 +247,7 @@ describe('§18 — five surfaces, one definition of live', () => {
 
   it('leave a running session nobody can place out of the SECTION only', () => {
     // No directory anywhere: it belongs to no agent, so no section can claim
-    // it. Now still says it is running, which is the honest half — a gap in
+    // it. Heads up still says it is running, which is the honest half — a gap in
     // attribution is not a reason to tell the operator nothing is happening.
     const said = whatEachSurfaceSays(store({ statuses: { 'ses-nowhere': streaming } }));
     // The strip and the badge need a directory to draw anything at all, so both
@@ -264,7 +264,7 @@ describe('§18 — five surfaces, one definition of live', () => {
   it('differ only where a documented rule says they should: blocked', () => {
     // Continue is a list of what to go back to, so it holds what has STOPPED
     // and is waiting on a person as well as what is streaming (BC-6's order).
-    // Now's rollup counts streaming turns and lets `entities/attention` raise
+    // Heads up's rollup counts streaming turns and lets `entities/attention` raise
     // the blocked one as its own item. The origin rule is identical across
     // both, which is what this file is here to hold; the lifecycle set is not,
     // and this is where that is written down.
@@ -278,7 +278,7 @@ describe('§18 — five surfaces, one definition of live', () => {
     expect(said.nowWorking).toBe(0);
 
     // And the origin rule still holds over that difference: an automated
-    // session that is blocked is in none of the three, Now included — it
+    // session that is blocked is in none of the three, Heads up included — it
     // reaches the operator as an attention signal instead.
     const automated = whatEachSurfaceSays({
       ...state,
