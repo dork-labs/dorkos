@@ -16,6 +16,7 @@ import { createMockTransport, createMockSession } from '@dorkos/test-utils';
 import type { Transport } from '@dorkos/shared/transport';
 import type { RoomSummary } from '@dorkos/shared/room-schemas';
 import { SIDEBAR_PREFS_DEFAULTS } from '@dorkos/shared/config-schema';
+import { useInteractionStore } from '@/layers/entities/interactions';
 import { TransportProvider } from '@/layers/shared/model';
 import { useJumpBackInPopover, JUMP_BACK_IN_POPOVER_ROWS } from '../model/use-jump-back-in-popover';
 
@@ -78,6 +79,7 @@ function composerEvent() {
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  useInteractionStore.getState().reset();
 });
 
 describe('useJumpBackInPopover', () => {
@@ -251,6 +253,10 @@ describe('useJumpBackInPopover', () => {
 
     expect(mockNavigate).toHaveBeenCalledWith({ to: '/channels', search: { id: 'c1' } });
     expect(result.current.isOpen).toBe(false);
+    // The panel answers "where were you?" — and now the answer survives acting
+    // on it, because picking a row records the interaction the sidebar's own
+    // rows record (DOR-1156).
+    expect(Object.keys(useInteractionStore.getState().opened)).toEqual(['room:c1']);
   });
 
   it('opens a session at its own directory', async () => {
@@ -274,6 +280,10 @@ describe('useJumpBackInPopover', () => {
       to: '/session',
       search: { dir: '/code/api', session: 'sess-9' },
     });
+    expect(Object.keys(useInteractionStore.getState().opened).sort()).toEqual([
+      'agent:/code/api',
+      'session:sess-9',
+    ]);
   });
 
   it('has nothing to open when the list is empty', async () => {

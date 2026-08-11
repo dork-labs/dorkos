@@ -24,6 +24,7 @@ import {
   useSessionChatStore,
   useSessionStreamStore,
 } from '@/layers/entities/session';
+import { useInteractionStore } from '@/layers/entities/interactions';
 import { TransportProvider } from '@/layers/shared/model';
 import type { Transport } from '@dorkos/shared/transport';
 import type { ComposerInputHandle } from '@/layers/features/composer';
@@ -134,7 +135,11 @@ async function settle(view: { sync: () => void }) {
 beforeEach(() => {
   useSessionStreamStore.setState({ sessions: {}, sessionAccessOrder: [] });
   useSessionChatStore.setState({ sessions: {}, sessionAccessOrder: [] });
+  useInteractionStore.getState().reset();
 });
+
+/** Every key the interaction store holds a record under, sorted. */
+const recordedKeys = () => Object.keys(useInteractionStore.getState().opened).sort();
 
 /** Type `text` and press the queue key, waiting for the server to take it. */
 async function queueText(
@@ -157,6 +162,50 @@ describe('useChatQueue', () => {
 
     expect(view.result.current.queue.map((item) => item.content)).toEqual(['follow-up']);
     expect(view.result.current.input).toBe('');
+  });
+
+  it('records the interaction at the keystroke, not when the server dispatches it (DOR-1156)', async () => {
+    const view = mount(useHarness, {});
+    expect(recordedKeys()).toEqual([]);
+
+    await queueText(view, 'follow-up');
+
+    // The message may sit on the SERVER now, for the length of a turn or until
+    // somebody removes it from another window. Pressing Enter is the operator's
+    // act; the dispatch is the agent's moment, and `use-session-submit` skips
+    // the record for it (BC-16).
+    expect(recordedKeys()).toEqual(['agent:/dir', `session:${SESSION_ID}`]);
+    expect(queuedIn(SESSION_ID)).toEqual(['follow-up']);
+  });
+
+  it('counts one act once, however many times Enter is pressed on it', async () => {
+    // The duplicate-Enter latch is above the record on purpose. Since P3.3
+    // `recordOpened` advances a use COUNT as well as the timestamp, so a record
+    // above the latch would rank a conversation by how impatient the person was
+    // with one message.
+    const view = mount(useHarness, {});
+
+    act(() => view.result.current.setInput('only once please'));
+    act(() => {
+      view.result.current.handleQueue();
+      view.result.current.handleQueue();
+    });
+    await settle(view);
+
+    expect(useInteractionStore.getState().counts[`session:${SESSION_ID}`]).toBe(1);
+  });
+
+  it('records nothing when there was nothing to queue', async () => {
+    const view = mount(useHarness, {});
+
+    // Whitespace alone. The paired control: without it, "the keystroke records"
+    // would also hold for a hook that recorded on every render.
+    act(() => view.result.current.setInput('   '));
+    act(() => view.result.current.handleQueue());
+    await settle(view);
+
+    expect(recordedKeys()).toEqual([]);
+    expect(queuedIn(SESSION_ID)).toEqual([]);
   });
 
   it('keeps the words in the composer when the server refuses them (DOR-480)', async () => {

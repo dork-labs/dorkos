@@ -7,6 +7,7 @@ import { ChatPage } from '../pages/ChatPage.js';
 import { caretOffset, composerText, expectComposerText } from '../pages/composer-probe.js';
 import { registerSessionReadStateTests } from './chat/session-read-state.js';
 import { registerNowSurvivesReloadTests } from './dashboard-sidebar/now-survives-reload.js';
+import { registerSendLandsInTodayTests } from './dashboard-sidebar/send-lands-in-today.js';
 
 /**
  * Browser simulation tests using TestModeRuntime.
@@ -895,6 +896,12 @@ registerSessionReadStateTests({ apiUrl: API_URL, agentDir: () => agentDir });
 // this leg has — and because the defect is about what a FRESH page connection is
 // told, which no unit test can observe.
 registerNowSurvivesReloadTests({ apiUrl: API_URL, agentDir: () => agentDir });
+
+// Writing in a conversation puts it in Today (DOR-1156). Registered here because
+// it drives a real send, which is free and deterministic only on this leg — and
+// because what it asserts happens on the OTHER side of a navigation, which is
+// exactly what a jsdom render cannot walk through.
+registerSendLandsInTodayTests({ apiUrl: API_URL, agentDir: () => agentDir });
 /**
  * Conversations in ⌘K (spec `sidebar-now-today-library` P3, §15).
  *

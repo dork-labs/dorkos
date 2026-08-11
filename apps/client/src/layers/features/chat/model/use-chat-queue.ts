@@ -1,6 +1,7 @@
 import { useRef, useCallback, useEffect } from 'react';
 import type { RefObject } from 'react';
 import { toast } from 'sonner';
+import { useInteractionStore } from '@/layers/entities/interactions';
 import { useSessionChatStore } from '@/layers/entities/session';
 import { useMessageQueue } from './use-message-queue';
 import type { QueueItem } from './use-message-queue';
@@ -206,6 +207,24 @@ export function useChatQueue({
     // them again. See {@link enqueueInFlightRef}.
     if (enqueueInFlightRef.current === trimmed) return;
     enqueueInFlightRef.current = trimmed;
+    // **Queued at the KEYSTROKE, and recorded at the keystroke — the only
+    // instant in this message's life that belongs to the operator** (DOR-1156).
+    //
+    // Nothing records when the message is finally said. The SERVER dispatches
+    // the queue now (`persistent-session-runtime`), and it dispatches when the
+    // running turn ends — the agent's moment, not the person's. A record made
+    // then would time this row's place in Today to the instant an agent stopped
+    // talking, which is the one thing BC-16 forbids: "a `session_status` event,
+    // a tool call or an agent's post changes nothing here, because none of them
+    // is an input." Pressing Enter is the submission; what happens afterwards is
+    // the system's business.
+    //
+    // Below the duplicate-Enter latch on purpose. `recordOpened` advances a use
+    // COUNT as well as an instant (P3.3), so recording above the latch would
+    // rank a conversation by how impatient somebody was with one message.
+
+    useInteractionStore.getState().recordOpened('session', sessionId);
+    if (selectedCwd) useInteractionStore.getState().recordOpened('agent', selectedCwd);
     // The composer keeps the words until the server has them. That is the whole
     // of "nothing typed is ever lost" now: the old queue dequeued optimistically
     // and needed an undo handle for every refusal path (DOR-480), and a message
@@ -216,7 +235,7 @@ export function useChatQueue({
       if (enqueueInFlightRef.current === trimmed) enqueueInFlightRef.current = null;
     });
     clearComposerOnConfirmed(sessionId, trimmed, accepted);
-  }, [input, messageQueue, sessionId, setInput, tryNativeCommand]);
+  }, [input, messageQueue, selectedCwd, sessionId, setInput, tryNativeCommand]);
 
   const handleQueueEdit = useCallback(
     (id: string) => {
