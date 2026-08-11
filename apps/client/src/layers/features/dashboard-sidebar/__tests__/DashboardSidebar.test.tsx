@@ -2042,7 +2042,12 @@ describe('Today — what you were doing, and it holds still', () => {
       act(() => {
         useSessionListStore.getState().setSessionStatus('ses-a', {
           lifecycle: 'streaming',
-          activity: { kind: 'tool', toolName: 'Read', target: 'parser.ts', at: new Date().toISOString() },
+          activity: {
+            kind: 'tool',
+            toolName: 'Read',
+            target: 'parser.ts',
+            at: new Date().toISOString(),
+          },
         } as never);
       });
       view.refresh();
@@ -2150,9 +2155,7 @@ describe('Today — what you were doing, and it holds still', () => {
       mountSidebar();
       await waitFor(() => expect(todayOrder().join('|')).toContain('Anything else'));
 
-      const active = todayRowNodes().filter(
-        (row) => row.getAttribute('aria-current') === 'page'
-      );
+      const active = todayRowNodes().filter((row) => row.getAttribute('aria-current') === 'page');
       expect(active).toHaveLength(1);
       expect(active[0]?.getAttribute('title')).not.toContain('Anything else');
     });
@@ -2164,9 +2167,7 @@ describe('Today — what you were doing, and it holds still', () => {
       await waitFor(() => expect(todayOrder().join('|')).toContain('Anything else'));
       view.refresh();
 
-      const active = todayRowNodes().filter(
-        (row) => row.getAttribute('aria-current') === 'page'
-      );
+      const active = todayRowNodes().filter((row) => row.getAttribute('aria-current') === 'page');
       // Two rows carry `roomId: 'c1'`. Exactly one of them is what the operator
       // opened, and `aria-current="page"` has to stay unique or scroll-to-active
       // has no anchor to find (BC-36).
