@@ -290,4 +290,57 @@ test.describe('session switcher, from ⌘K', () => {
       .poll(() => new URL(page.url()).searchParams.get('session'))
       .toBe('99999999-9999-4999-8999-999999999999');
   });
+  test('clicking the agent row opens the conversation, not the room-triggered run (BC-34)', async ({
+    page,
+    roomsApi,
+    basePage,
+    dashboardSidebar,
+  }) => {
+    const agentName = `E2E BC34 ${Date.now()}`;
+    const agent = await roomsApi.registerAgent(agentName, '🍊', '#f59e0b');
+
+    // The reported shape: `@`-mentioning an agent in a channel leaves a
+    // room-origin run as the NEWEST session in its directory. Clicking the row
+    // used to land there — inside a conversation BC-19 then keeps out of Today.
+    const roomRun = {
+      ...sessionFixture('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'Room run', agent.projectPath),
+      updatedAt: new Date(Date.now() - 60_000).toISOString(),
+      origin: 'room',
+      originLabel: '#team',
+    };
+    const conversation = {
+      ...sessionFixture(
+        'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+        'Our conversation',
+        agent.projectPath
+      ),
+      updatedAt: new Date(Date.now() - 1_800_000).toISOString(),
+    };
+
+    await page.route('**/api/sessions**', async (route) => {
+      const request = route.request();
+      const url = new URL(request.url());
+      if (request.method() === 'GET' && /\/api\/sessions$/.test(url.pathname)) {
+        // Newest first, exactly as the server returns it.
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ sessions: [roomRun, conversation] }),
+        });
+        return;
+      }
+      await route.continue();
+    });
+
+    await basePage.goto();
+    await basePage.waitForAppReady();
+    await basePage.ensureSidebarOpen();
+
+    const row = dashboardSidebar.agentRow(agentName);
+    await expect(row).toBeVisible();
+    await row.click();
+
+    // The older HUMAN conversation, not the newer room run.
+    await expect.poll(() => new URL(page.url()).searchParams.get('session')).toBe(conversation.id);
+  });
 });

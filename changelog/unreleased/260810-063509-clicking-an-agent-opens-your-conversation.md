@@ -2,7 +2,18 @@
 covers:
   - 'feat(client): clicking an agent opens your conversation, and the session switcher holds the rest (P2.6, DOR-1071)'
   - 'fix(client): the "N live" chip counts what the switcher shows, and lands where it reserved (P2.6 review, DOR-1071)'
+  - 'fix(client): clicking an agent opens the conversation you were having, never the run it did without you (DOR-1071)'
 ---
+
+### Fixed
+
+- Clicking an agent no longer drops you into a job it ran on its own. If you
+  `@`-mentioned an agent in a channel, that run became the newest thing in its
+  history — so clicking the agent opened _that_ instead of the conversation you
+  were having with it, and because automatic runs are deliberately kept out of
+  your recent list, there was no row to get you back. DorkOS now opens the last
+  conversation the two of you actually had, and starts a fresh one if you have
+  never spoken (DOR-1071)
 
 ### Changed
 
