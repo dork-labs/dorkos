@@ -59,11 +59,25 @@ function composer(page: Page) {
   return page.getByRole('combobox').first();
 }
 
-/** Type into the composer while the agent works, so the message is queued. */
-async function queueMessage(page: Page, text: string) {
+/**
+ * Type into the composer while the agent works, so the message is queued, and
+ * wait until the server has actually taken it.
+ *
+ * The wait is not politeness, it is the ordering contract. Each Enter is its own
+ * `POST /messages`, and the queue is ordered by the order the SERVER accepted
+ * them — which for three requests issued inside a few milliseconds is not
+ * guaranteed to be the order they were typed in. Firing all three and then
+ * asserting typing order is asserting something the product does not promise,
+ * and it duly came back once as `[tests, PR, docs]`. One at a time is both what
+ * a person does and what the guarantee actually covers.
+ *
+ * @param depth - The number of messages that should be waiting once this lands.
+ */
+async function queueMessage(page: Page, text: string, depth: number) {
   const input = composer(page);
   await input.fill(text);
   await input.press('Enter');
+  await expect(queueHeader(page)).toHaveText(`Queued (${depth})`, { timeout: 15_000 });
 }
 
 test.describe('the queue every window can see', () => {
@@ -113,16 +127,14 @@ test.describe('the queue every window can see', () => {
       });
 
       // Three messages typed while the agent works.
-      await queueMessage(windowA, 'then update the docs');
-      await queueMessage(windowA, 'then run the tests');
-      await queueMessage(windowA, 'then open a PR');
+      await queueMessage(windowA, 'then update the docs', 1);
+      await queueMessage(windowA, 'then run the tests', 2);
+      await queueMessage(windowA, 'then open a PR', 3);
 
-      await expect(queueHeader(windowA)).toHaveText('Queued (3)', { timeout: 10_000 });
-      await expect(chips(windowA)).toHaveText([
-        /then update the docs/,
-        /then run the tests/,
-        /then open a PR/,
-      ]);
+      await expect(chips(windowA)).toHaveText(
+        [/then update the docs/, /then run the tests/, /then open a PR/],
+        { timeout: 15_000 }
+      );
 
       // A second window on the SAME session (trap 3) shows the same three,
       // hydrated from the snapshot rather than from anything this browser
@@ -134,11 +146,10 @@ test.describe('the queue every window can see', () => {
       await new BasePage(windowB).waitForAppReady();
 
       await expect(queueHeader(windowB)).toHaveText('Queued (3)', { timeout: 20_000 });
-      await expect(chips(windowB)).toHaveText([
-        /then update the docs/,
-        /then run the tests/,
-        /then open a PR/,
-      ]);
+      await expect(chips(windowB)).toHaveText(
+        [/then update the docs/, /then run the tests/, /then open a PR/],
+        { timeout: 15_000 }
+      );
 
       // Every chip in B is marked as another window's — B did not type them.
       await expect(windowB.getByText('Queued from another window')).toHaveCount(3);
@@ -159,10 +170,10 @@ test.describe('the queue every window can see', () => {
 
       // Reorder in A; B agrees on the new order.
       await windowA.getByLabel('Send queued message 2 next').click();
-      await expect(chips(windowA)).toHaveText([
-        /then run the tests on staging/,
-        /then update the docs/,
-      ]);
+      await expect(chips(windowA)).toHaveText(
+        [/then run the tests on staging/, /then update the docs/],
+        { timeout: 15_000 }
+      );
       await expect(chips(windowB)).toHaveText(
         [/then run the tests on staging/, /then update the docs/],
         { timeout: 15_000 }
@@ -171,10 +182,10 @@ test.describe('the queue every window can see', () => {
       // A hard refresh of A: the queue is the server's, so it comes back whole.
       await windowA.reload();
       await expect(queueHeader(windowA)).toHaveText('Queued (2)', { timeout: 20_000 });
-      await expect(chips(windowA)).toHaveText([
-        /then run the tests on staging/,
-        /then update the docs/,
-      ]);
+      await expect(chips(windowA)).toHaveText(
+        [/then run the tests on staging/, /then update the docs/],
+        { timeout: 15_000 }
+      );
     } finally {
       await context.close();
     }
@@ -189,29 +200,33 @@ test.describe('the queue every window can see', () => {
       const chatA = new ChatPage(windowA);
       await chatA.goto(sessionId, { dir: agentDir });
 
-      // Turns that finish on their own after a few seconds, so the queue
-      // genuinely drains rather than being drained by anything this test does.
-      await context.request.post(`${API_URL}/api/test/scenario`, {
-        data: { name: 'brief-turn' },
-      });
-
       await chatA.sendMessage('Migrate the auth tokens table');
       await expect(windowA.getByTestId('transcript-feed')).toContainText(/Working on it/, {
         timeout: 20_000,
       });
 
-      await queueMessage(windowA, 'then update the docs');
-      await queueMessage(windowA, 'then run the tests');
-      await expect(queueHeader(windowA)).toHaveText('Queued (2)', { timeout: 10_000 });
+      await queueMessage(windowA, 'then update the docs', 1);
+      await queueMessage(windowA, 'then run the tests', 2);
 
       const windowB = await context.newPage();
       await windowB.goto(windowA.url());
       await new BasePage(windowB).waitForAppReady();
+      // Settle B on the real queue BEFORE anything is asserted about counts.
+      // Nothing can drain underneath this: the turn is a `long-turn` and runs
+      // until this test says otherwise, which is the whole reason the drain has
+      // its own trigger below.
       await expect(queueHeader(windowB)).toHaveText('Queued (2)', { timeout: 20_000 });
 
+      // NOW end the turn — the moment is this test's to choose. The composer's
+      // Stop cannot do it (`TestModeRuntime.interruptQuery` answers `false`:
+      // there is no process to signal), and waiting out a deliberately short
+      // turn instead is what made this case fail on CI, where opening the
+      // second window took longer than the turn it was queued behind.
+      await context.request.post(`${API_URL}/api/test/finish-turn`);
+
       // Nobody presses send. Each turn ends, the head goes, and the panel is
-      // gone from BOTH windows once nothing is waiting — the assertion is
-      // monotone on purpose, so it cannot miss an intermediate count.
+      // gone from BOTH windows once nothing is waiting — monotone on purpose,
+      // so it cannot miss an intermediate count the way an exact one can.
       await expect(queueHeader(windowA)).toHaveCount(0, { timeout: 60_000 });
       await expect(queueHeader(windowB)).toHaveCount(0, { timeout: 60_000 });
 
