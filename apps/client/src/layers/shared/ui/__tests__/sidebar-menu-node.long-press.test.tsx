@@ -280,6 +280,24 @@ describe('the long-press sheet (P4 AC-3)', () => {
     expect(sheetNames).toContain('Recently used');
   });
 
+  it('stands down on the "⋮", which opens its own menu on the way down', () => {
+    // Radix opens a dropdown on `pointerdown`. A press held on the kebab used
+    // to open that at 0ms and this sheet at 500ms — two menus, one gesture.
+    renderSurface();
+    const kebab = screen.getByRole('button', { name: 'Scout actions' });
+    fireEvent.pointerDown(kebab, { button: 0, clientX: 10, clientY: 10 });
+    act(() => {
+      vi.advanceTimersByTime(900);
+    });
+    fireEvent.pointerUp(kebab);
+    expect(sheet()).toBeNull();
+
+    // The pair: the same press one element over — on the row — does open it,
+    // so the silence above is the yield rather than a gesture that never works.
+    press({ holdMs: 900 });
+    expect(sheet()).not.toBeNull();
+  });
+
   it('runs the chosen action and puts itself away', () => {
     renderSurface();
     press({ holdMs: 700 });

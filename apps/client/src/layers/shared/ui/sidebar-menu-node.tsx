@@ -649,6 +649,17 @@ export function SidebarMenuSurface({
       openedByPress.current = true;
       setSheetOpen(true);
     }, []),
+    // **What this press stands down for**, checked against the pointerdown's own
+    // target at press-start, so the timer never even starts.
+    //
+    // The "⋮" is the first entry and it is the whole reason this option exists
+    // here: Radix opens a dropdown on `pointerdown`, so a press HELD on the
+    // kebab opened the dropdown at 0ms and then the sheet at 500ms — two menus
+    // from one gesture, which is the exact defect that keeps Radix's own
+    // ContextMenu unmounted at this width. The inline editors are the second:
+    // a press on a rename field is the reader reaching for the caret, and the
+    // browser's own text-selection gesture already owns it.
+    yieldToSelector: `[${SIDEBAR_ACTIONS_ATTRIBUTE}],input,textarea`,
   });
   const onPointerDown = useCallback(
     (event: ReactPointerEvent) => {

@@ -805,8 +805,15 @@ test.describe('Rooms — a thread on a phone', () => {
     await expect(roomsPage.entries).toHaveCount(0);
     await expect(roomsPage.composer(`#${slug}`)).toHaveCount(0);
 
-    // Full width, and reaching the bottom of the window. Measured against the
-    // viewport rather than against a class.
+    // Full width, and reaching the bottom of the space a phone has. Measured
+    // against the viewport and against the bar rather than against a class.
+    //
+    // **The bottom is the top of the tab bar, not the bottom of the window.**
+    // P4.1 gave the phone four destinations along the bottom, and the bar
+    // reserves its own 56px in the shell column — so a panel that ran to 844
+    // would run its composer underneath the bar, which is the one thing that
+    // layout exists to prevent. Read off the bar's own box, so the two numbers
+    // cannot drift apart.
     //
     // Polled to its resting place first: the push really slides in now (it
     // enters from 16px to the right), so a single measurement taken on the way
