@@ -158,7 +158,13 @@ export function usePaletteSearch(
   }, [fuse, term, filteredByPrefix, usage]);
 
   const ranked = useMemo(() => rankCandidates(candidates, now), [candidates, now]);
-  const { best, rest } = useMemo(() => selectBestMatch(ranked), [ranked]);
+  // The TERM, not the raw search string. `#` on its own is a truthy search that
+  // scopes the list without asking for anything, and a "Best match" over rows
+  // nobody typed a word at is a claim the palette has not earned.
+  const { best, rest } = useMemo(
+    () => selectBestMatch(ranked, { queried: term.length > 0 }),
+    [ranked, term]
+  );
 
   return { bestMatch: best, rows: rest, prefix, term };
 }

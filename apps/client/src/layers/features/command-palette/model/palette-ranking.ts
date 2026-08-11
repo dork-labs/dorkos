@@ -5,7 +5,15 @@
  * were drawn in a fixed group order, so a perfect room match was drawn below a
  * weak agent match every time, and nothing a person typed could change that.
  * This module is what replaces the fixed order — one blend of **relevance ×
- * frecency × recency**, sorted once, across types.
+ * frecency × recency**, sorted once, across types, plus a fourth term §15 does
+ * not name: **waiting**, which carries `specs/rooms` §13.2's unread-first rule
+ * into a list that no longer has a rooms group to keep it in (see
+ * `WAITING_WEIGHT`).
+ *
+ * **Every weight in this file is a chosen free parameter.** The spec asks for a
+ * blend and names no numbers; each constant below documents what it controls and
+ * what moving it costs, because that is what the next person re-tuning this
+ * needs and the spec cannot give them.
  *
  * **It ranks; it never admits.** The prefix filters and the corpus decide what
  * is in the list. Everything here does is decide the order of what it was
@@ -20,35 +28,63 @@
  */
 
 /**
- * The Fuse score at which a match is worth half a perfect one.
+ * The raw Fuse score at which a match is worth half a perfect one.
  *
- * **Relevance is not `1 − score`, and this constant is why.** Fuse's score is a
- * product across the matched keys, each raised to a field-length norm, so real
- * scores are crushed towards zero and spread over four orders of magnitude
- * rather than over `0…1`. Measured against this palette's own corpus: an exact
- * match scores ~1e-30, a one-letter typo ~7e-3, a match starting six characters
- * in ~2e-1. Subtracting those from 1 puts an exact hit and a typo within 1% of
- * each other — far too close for typing to lead, once a usage boost worth up to
- * 2× rides on top.
+ * **This constant is a chosen free parameter, not a number derived from the
+ * spec.** §15 says "blend relevance × frecency × recency" and stops there; every
+ * digit below is a decision made here, and this doc exists so the next person
+ * re-tunes it knowing exactly what it controls.
  *
- * So relevance is `2^(−score / RELEVANCE_HALF_SCORE)`: a smooth halving curve
- * over the range scores actually occupy. Two hundredths sits between "exact"
- * and "one letter off", which is precisely the distinction the palette has to
- * make. It maps the numbers above to 1.0, 0.79 and 0.0002 — an exact hit leads
- * outright, a near-miss stays a real contender that frecency can lift, and a
- * match buried mid-word ranks last, exactly as §15's mockup draws it.
+ * **Why relevance is not `1 − score`.** Fuse's score is a product across the
+ * matched keys, each raised to a field-length norm, so real scores are crushed
+ * towards zero rather than spread over `0…1`. Measured on this palette's own
+ * `FUSE_OPTIONS`, querying `shipping`: an exact `#shipping` scores ~5e-34, a
+ * mid-word `#the-shipping-lane` 8.0e-5, a tail `#fast-shipping` 1.5e-4, and a
+ * one-letter typo `Shopping List` 6.6e-3. Subtract those from 1 and the whole
+ * field sits inside 0.7% — nothing a 2× usage boost would not swallow whole.
+ *
+ * So relevance is `2^(−score / RELEVANCE_HALF_SCORE)`, a smooth halving curve
+ * over the range scores actually occupy. It is **monotone**: it re-spaces Fuse's
+ * ordering and can never reverse it. If Fuse ranks a mid-word hit above a typo —
+ * and on the corpus above it does, by 80× — no value of this constant changes
+ * that, and it is not this constant's job to.
+ *
+ * **What it does control, exactly.** The usage boost is bounded at 2×
+ * ({@link MAX_BOOST}), so usage can overturn relevance only where the relevance
+ * ratio is under 2 — which for this curve means precisely:
+ *
+ * > **Frecency, recency and waiting can only reorder two rows whose raw Fuse
+ * > scores differ by less than `RELEVANCE_HALF_SCORE`.**
+ *
+ * At `0.02` that window admits every shape of match measured above (they span
+ * 6.6e-3) while excluding anything Fuse scores a fifth of the way to its
+ * `threshold`. Raise it and the palette becomes a list of what you use; lower it
+ * and typing decides everything, with the ranking collapsing back to Fuse alone.
  */
 const RELEVANCE_HALF_SCORE = 0.02;
 
 /**
  * How much "something is waiting on you here" is worth.
  *
- * The largest of the three boosts, because it is the only one that is a **fact**
- * rather than a guess: an unread room has a message in it that nobody has read,
- * where frecency and recency are both inferences about what you might want next
- * (spec `rooms` §13.2, kept alive here). Sized to clear the other two combined,
- * so two equally-good matches never resolve "the one with unread messages" below
- * "the one that spoke most recently".
+ * **A fourth term, added here — §15 names three.** It is not in the spec's
+ * "relevance × frecency × recency" and it is not an oversight: `specs/rooms`
+ * §13.2 makes unread-first a rule for rooms in the palette, and one ranked list
+ * has to carry that rule or lose it. Without this term the browser's own
+ * `# lists the channels, unread first` claim inverts — verified by execution: at
+ * `WAITING_WEIGHT = 0` the unread row physically drops below the read one.
+ *
+ * The largest of the four boosts, because it is the only one that is a **fact**
+ * rather than a guess: an unread room has a message in it nobody has read, where
+ * frecency and recency are both inferences about what you might want next.
+ *
+ * It is worth being exact about how it wins, since `0.5` is *equal* to
+ * `FRECENCY_WEIGHT + RECENCY_WEIGHT`, not above them. It does not out-weigh the
+ * other two; it beats them because neither ever reaches its own maximum in
+ * practice — frecency saturates asymptotically in the open count and both decay
+ * with time, so a real row's combined boost from them sits well under 0.5 while
+ * waiting is all-or-nothing. Two comparable matches therefore resolve "the one
+ * with unread messages" above "the one that spoke most recently", which is the
+ * behaviour the rule asks for.
  */
 const WAITING_WEIGHT = 0.5;
 
@@ -98,16 +134,26 @@ const ACTIVITY_HALF_LIFE_MS = 24 * 60 * 60 * 1000;
 /**
  * How far ahead the top row must be before it is called the **Best match**.
  *
- * Fifteen percent of the top score. Below that the two rows are, in substance,
- * the same answer — Fuse's own scores for two comparable matches cluster within
- * a few percent, and a lead built out of that noise is confidence the palette
- * has not earned. Promoting a row to its own section says "this is the one you
- * meant"; saying it wrongly is worse than not saying it, because a person who
- * trusts the section stops reading the list.
+ * Fifteen percent of the top score, and the reasoning has to be done in
+ * **blended-score space** — the space this number actually lives in — because
+ * {@link RELEVANCE_HALF_SCORE}'s curve makes raw-Fuse intuitions useless here.
+ * Two bounds pin it:
  *
- * Fifteen percent is reachable by any of the three signals on its own — a
- * clearly better name match, an unread room, or something you use every day —
- * so the section is not reserved for one kind of certainty.
+ * - **The floor it clears.** With usage equal on both rows, 15% corresponds to a
+ *   raw Fuse gap of `RELEVANCE_HALF_SCORE × log2(1 / 0.85)` ≈ **0.0047** — about
+ *   a quarter of the window usage is allowed to move rows within. So a promotion
+ *   on relevance alone means Fuse separated the two rows by a meaningful
+ *   fraction of that window, not by rounding.
+ * - **The ceiling it stays under.** The most any single usage signal can buy is
+ *   waiting's `1 − 1/1.5` ≈ **33%**, then frecency's ≈ 26% and recency's ≈ 13%.
+ *   Fifteen percent sits below the first two, so a Best match can be earned by
+ *   an unread room or by something you open constantly — not only by a better
+ *   name match — while recency alone can never crown a row on its own.
+ *
+ * Promoting a row to its own section says "this is the one you meant". Saying it
+ * wrongly is worse than not saying it, because a person who trusts the section
+ * stops reading the list — which is why the bar sits above what one weak signal
+ * can produce.
  */
 export const BEST_MATCH_MARGIN = 0.15;
 
@@ -297,8 +343,16 @@ export interface BestMatchSplit<T> {
 /**
  * Pull out the **Best match**, when there is one.
  *
- * Three ways there is not, each for its own reason:
+ * Four ways there is not, each for its own reason:
  *
+ * - **Nothing was typed** (`queried: false`). "Best match" is a claim about what
+ *   a person asked for, and with no query there is nothing for it to be the best
+ *   match FOR. This is a live state, not a hypothetical: a bare prefix (`#`,
+ *   `@`, `>` — the second is reachable straight from the chat header's agent
+ *   chip) scopes the list without a term, every row scores a perfect relevance
+ *   of 1, and the usage signals alone will clear the margin. Measured before the
+ *   guard: `@` alone crowned an unread room at a 30% lead over a quiet one,
+ *   under a heading claiming it matched something nobody typed.
  * - **Fewer than two rows.** A section headed "Best match" over the only result
  *   says nothing the result did not already say.
  * - **The top row is {@link RankCandidate.demoted}.** An archived room can be
@@ -311,11 +365,16 @@ export interface BestMatchSplit<T> {
  * answer either way, and the section is only ever a label on top of it.
  *
  * @param ranked - The output of {@link rankCandidates}.
+ * @param options - Whether a search term was actually typed.
  */
-export function selectBestMatch<T>(ranked: readonly RankedRow<T>[]): BestMatchSplit<T> {
+export function selectBestMatch<T>(
+  ranked: readonly RankedRow<T>[],
+  options: { queried: boolean }
+): BestMatchSplit<T> {
   const rest = [...ranked];
   const top = ranked[0];
   const runnerUp = ranked[1];
+  if (!options.queried) return { best: null, rest };
   if (!top || !runnerUp) return { best: null, rest };
   if (top.demoted || top.score <= 0) return { best: null, rest };
   if ((top.score - runnerUp.score) / top.score < BEST_MATCH_MARGIN) return { best: null, rest };

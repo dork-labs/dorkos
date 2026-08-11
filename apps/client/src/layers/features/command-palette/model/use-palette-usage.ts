@@ -12,6 +12,14 @@
  * source and nothing else changes: the ranker's input shape is already the
  * union of what both provide.
  *
+ * **The asymmetry that leaves, named rather than hidden:** only agents can reach
+ * a full frecency score today. `frecencyScore` averages a how-recently half and
+ * a how-often half, and rooms and conversations can only fill the first — so
+ * however much you use one, its frecency is capped at 0.5 where a heavily-used
+ * agent reaches ~1.0. It is an interim, accepted as such, and **task 3.3 owns
+ * the fix**: one store keyed `type:id` that counts opens for every kind. Nothing
+ * in `palette-ranking` changes when it lands.
+ *
  * @module features/command-palette/model/use-palette-usage
  */
 import { useMemo } from 'react';

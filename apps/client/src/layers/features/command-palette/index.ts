@@ -45,11 +45,15 @@ export {
 } from './model/palette-rooms';
 export { usePaletteSearch, parsePrefix } from './model/use-palette-search';
 export type { SearchableItem, SearchResult } from './model/use-palette-search';
-// `palette-ranking.ts` — the blended relevance × frecency × recency scorer that
-// decides what order ⌘K answers in (design-decisions §15) — is deliberately NOT
-// re-exported here. Nothing outside this slice ranks a palette row, and an
-// export with no caller is surface to maintain for nobody. Its own tests import
-// it by path, as the slice's other internal modules do.
+// The blended ranking (design-decisions §15) and the row it draws. Exported for
+// ONE caller: the Dev Playground's ranked-results showcase, which runs the real
+// scorer over a mock corpus rather than hand-drawing a list that looks like one.
+// A showcase that fakes the order is how a heading can go stale for a month —
+// this way the playground is wrong only when the product is.
+export { rankCandidates, selectBestMatch, groupRankedRows } from './model/palette-ranking';
+export type { RankCandidate, RankedRow } from './model/palette-ranking';
+export { PaletteResultRow } from './ui/PaletteResultRow';
+export { RESULT_GROUP_LABEL, BEST_MATCH_HEADING } from './ui/palette-constants';
 export { usePaletteActions } from './model/use-palette-actions';
 // The writer half of the extension-contributed action dispatch. `main.tsx`
 // hands these to the extension API; the reader (`runPaletteCommandHandler`)

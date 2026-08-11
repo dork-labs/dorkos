@@ -12,45 +12,15 @@ import {
   PalettePrefixLegend,
   SessionCommandItem,
   type PaletteRecentEntry,
-  type PaletteSessionItem,
 } from '@/layers/features/command-palette';
+import { RankedResults } from './RankedResultsShowcase';
 import type { AgentPathEntry } from '@dorkos/shared/mesh-schemas';
+import { MOCK_AGENTS, SESSION_ROWS, minutesAgo } from './command-palette-fixtures';
 import { UNTITLED_SESSION_LABEL } from '@/layers/entities/session';
 
 // ---------------------------------------------------------------------------
 // Mock data
 // ---------------------------------------------------------------------------
-
-const MOCK_AGENTS: AgentPathEntry[] = [
-  {
-    id: 'agent-frontend',
-    name: 'Frontend App',
-    projectPath: '/Users/kai/projects/dork-os/apps/client',
-    icon: '🎨',
-    color: 'hsl(210, 80%, 55%)',
-  },
-  {
-    id: 'agent-backend',
-    name: 'API Server',
-    projectPath: '/Users/kai/projects/dork-os/apps/server',
-    icon: '⚡',
-    color: 'hsl(150, 70%, 45%)',
-  },
-  {
-    id: 'agent-docs',
-    name: 'Documentation',
-    projectPath: '/Users/kai/projects/dork-os/docs',
-    icon: '📚',
-  },
-  { id: 'agent-cli', name: 'CLI Tool', projectPath: '/Users/kai/projects/dork-os/packages/cli' },
-  {
-    id: 'agent-infra',
-    name: 'Infrastructure',
-    projectPath: '/Users/kai/projects/dork-os/infra',
-    icon: '🏗️',
-    color: 'hsl(30, 85%, 55%)',
-  },
-];
 
 const LONG_NAME_AGENT: AgentPathEntry = {
   id: 'agent-long',
@@ -335,7 +305,7 @@ function EdgeCases() {
       <ShowcaseDemo>
         <Command className="rounded-lg border">
           <CommandList className="max-h-[200px]">
-            <CommandGroup heading="All Agents (10)">
+            <CommandGroup heading="Agents (10)">
               {[...MOCK_AGENTS, ...MOCK_AGENTS].map((agent, i) => (
                 <AgentCommandItem
                   key={`${agent.id}-${i}`}
@@ -413,36 +383,6 @@ function LivePaletteTrigger() {
 // ---------------------------------------------------------------------------
 
 /** Minutes ago, as an ISO string — so the rows read as "just now" rather than a date. */
-const minutesAgo = (minutes: number) => new Date(Date.now() - minutes * 60_000).toISOString();
-
-const SESSION_ROWS: PaletteSessionItem[] = [
-  {
-    id: 'sess-live',
-    who: 'Frontend App',
-    title: 'Sidebar zones rewrite',
-    cwd: '/Users/kai/projects/dork-os/apps/client',
-    agent: MOCK_AGENTS[0],
-    lastActivityAt: minutesAgo(1),
-  },
-  {
-    id: 'sess-recent',
-    who: 'API Server',
-    title: 'Rate limiting for the relay',
-    cwd: '/Users/kai/projects/dork-os/apps/server',
-    agent: MOCK_AGENTS[1],
-    lastActivityAt: minutesAgo(35),
-  },
-  {
-    id: 'sess-automated',
-    who: 'Documentation',
-    title: 'Nightly link check',
-    cwd: '/Users/kai/projects/dork-os/docs',
-    agent: MOCK_AGENTS[2],
-    origin: 'task',
-    originLabel: 'Scheduled task · nightly-links',
-    lastActivityAt: minutesAgo(600),
-  },
-];
 
 const RECENT_ROWS: PaletteRecentEntry[] = [
   {
@@ -562,6 +502,13 @@ export function CommandPaletteShowcases() {
         description="Continue → Recent → New → prefix legend. Session rows use the sidebar's row grammar: avatar + Agent › title + origin mark + time, with the live verb on a second line."
       >
         <CommandCenterStates />
+      </PlaygroundSection>
+
+      <PlaygroundSection
+        title="Ranked results (typed query)"
+        description="One list across every kind, blended from relevance × frecency × recency (plus what is waiting). The standout row gets a Best match heading; below the margin it does not, and the list is unchanged. Rendered by the shipped scorer, not by hand."
+      >
+        <RankedResults />
       </PlaygroundSection>
 
       <PlaygroundSection

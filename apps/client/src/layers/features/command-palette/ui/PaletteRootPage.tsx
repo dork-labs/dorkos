@@ -143,10 +143,12 @@ export function PaletteRootPage({
       )}
 
       {/*
-       * The one row the ranking is confident about, said out loud. It is absent
-       * far more often than it is present — see `BEST_MATCH_MARGIN` — and when
-       * it is absent the list below is exactly the list that would have been
-       * drawn anyway, with this row back on top of it.
+       * The one row the ranking is confident about, said out loud. Four things
+       * withhold it — no term typed, a single result, an archived leader, or a
+       * lead under `BEST_MATCH_MARGIN` — and when it is withheld the list below
+       * is exactly the list that would have been drawn anyway, with this row
+       * back on top of it. (How often that happens depends entirely on the
+       * corpus and the query, so this comment does not guess.)
        */}
       {!isZeroQuery && bestMatch && (
         <CommandGroup heading={BEST_MATCH_HEADING}>

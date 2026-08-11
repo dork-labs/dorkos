@@ -76,9 +76,21 @@ const MAX_RECENT_AGENTS = 5;
  *
  * Actions and slash commands are not places you have been: nothing records
  * opening one, they have no last activity, nothing waits inside them and none
- * of them is archived. So they rank on relevance alone, which is the honest
- * answer — you find an action by typing its name, never by having used it
- * yesterday.
+ * of them is archived. So they rank on relevance alone.
+ *
+ * **Say the cost out loud: this is a structural handicap, not a neutral
+ * default.** Every boost is multiplicative on top of relevance, so a row with no
+ * history can never score above `relevance / 2` while a hot unread room reaches
+ * `relevance × 1` — an action whose name you typed in full can lose to a room
+ * that only nearly matched. That is a deliberate trade and it is defensible for
+ * a **recall** front door: the room is where work is actually happening, and
+ * §15's whole premise is that ⌘K is for finding your way back to things, not for
+ * launching. It is worth revisiting the day the palette becomes somebody's main
+ * way of running actions.
+ *
+ * The cheap escape, if it ever needs one, is to start recording action opens
+ * under the same key space — task 3.3 owns that store and could add a fourth
+ * {@link InteractionKind} without any change here beyond a `usageKey`.
  */
 const UNTRACKED = {
   usageKey: null,

@@ -20,6 +20,8 @@ import {
 } from '../palette-ranking';
 
 const NOW = Date.parse('2026-08-10T12:00:00.000Z');
+/** Somebody typed a term — the only state in which a Best match is a claim at all. */
+const QUERIED = { queried: true };
 const HOUR = 60 * 60 * 1000;
 const DAY = 24 * HOUR;
 
@@ -243,7 +245,7 @@ describe('what is waiting, and what is only findable', () => {
       NOW
     );
     expect(ranked[0]!.key).toBe('archived-strong');
-    expect(selectBestMatch(ranked).best).toBeNull();
+    expect(selectBestMatch(ranked, QUERIED).best).toBeNull();
   });
 });
 
@@ -259,7 +261,7 @@ describe('the Best match section', () => {
     const lead = (ranked[0]!.score - ranked[1]!.score) / ranked[0]!.score;
     expect(lead).toBeGreaterThanOrEqual(BEST_MATCH_MARGIN);
 
-    const { best, rest } = selectBestMatch(ranked);
+    const { best, rest } = selectBestMatch(ranked, QUERIED);
     expect(best?.key).toBe('clear-winner');
     // Promoted, not duplicated: a row drawn twice is two rows to a person.
     expect(rest.map((r) => r.key)).toEqual(['also-ran']);
@@ -272,7 +274,7 @@ describe('the Best match section', () => {
     );
     const lead = (ranked[0]!.score - ranked[1]!.score) / ranked[0]!.score;
     expect(lead).toBeLessThan(BEST_MATCH_MARGIN);
-    expect(selectBestMatch(ranked).best).toBeNull();
+    expect(selectBestMatch(ranked, QUERIED).best).toBeNull();
   });
 
   it('leaves the list exactly as ranked when it is absent — no reshuffle to compensate', () => {
@@ -282,7 +284,7 @@ describe('the Best match section', () => {
       candidate({ key: 'third', distance: 0.2 }),
     ];
     const ranked = rankCandidates(corpus, NOW);
-    const { best, rest } = selectBestMatch(ranked);
+    const { best, rest } = selectBestMatch(ranked, QUERIED);
     expect(best).toBeNull();
     expect(rest.map((r) => r.key)).toEqual(ranked.map((r) => r.key));
     expect(rest.map((r) => r.key)).toEqual(['twin-a', 'twin-b', 'third']);
@@ -290,9 +292,50 @@ describe('the Best match section', () => {
 
   it('does not head a one-row list with it', () => {
     const ranked = rankCandidates([candidate({ key: 'only', distance: 0 })], NOW);
-    const { best, rest } = selectBestMatch(ranked);
+    const { best, rest } = selectBestMatch(ranked, QUERIED);
     expect(best).toBeNull();
     expect(rest.map((r) => r.key)).toEqual(['only']);
+  });
+
+  /**
+   * A bare prefix is a truthy search with an empty term: `@` from the chat
+   * header's agent chip, `#`, `>`. Every row then arrives with `distance: null`
+   * and a perfect relevance of 1, so the usage signals are the ONLY thing
+   * separating them — and they clear the margin easily. Measured before the
+   * guard existed: an unread room scored 0.75 against a quiet one's 0.575, a 30%
+   * lead, and the palette crowned a "Best match" for a query nobody had typed.
+   */
+  it('never appears when nothing was typed, however far ahead the top row is', () => {
+    const ranked = rankCandidates(
+      [
+        candidate({ key: 'room:unread', distance: null, waiting: true }),
+        candidate({ key: 'room:quiet-a', distance: null }),
+        candidate({ key: 'room:quiet-b', distance: null }),
+      ],
+      NOW
+    );
+    // The lead is real and large — this is not passing because the rows tie.
+    const lead = (ranked[0]!.score - ranked[1]!.score) / ranked[0]!.score;
+    expect(lead).toBeGreaterThan(BEST_MATCH_MARGIN);
+
+    const { best, rest } = selectBestMatch(ranked, { queried: false });
+    expect(best).toBeNull();
+    // And the list is untouched: withholding the heading never costs a row.
+    expect(rest.map((r) => r.key)).toEqual(ranked.map((r) => r.key));
+  });
+
+  it('appears for that same corpus the moment a term is typed', () => {
+    // The control for the case above: same rows, same scores, `queried` flipped.
+    // Without this, deleting the whole Best match feature would pass it.
+    const ranked = rankCandidates(
+      [
+        candidate({ key: 'room:unread', distance: null, waiting: true }),
+        candidate({ key: 'room:quiet-a', distance: null }),
+        candidate({ key: 'room:quiet-b', distance: null }),
+      ],
+      NOW
+    );
+    expect(selectBestMatch(ranked, QUERIED).best?.key).toBe('room:unread');
   });
 
   it('can be earned by usage alone, not only by a better name match', () => {
@@ -305,7 +348,93 @@ describe('the Best match section', () => {
       ],
       NOW
     );
-    expect(selectBestMatch(ranked).best?.key).toBe('waiting-on-you');
+    expect(selectBestMatch(ranked, QUERIED).best?.key).toBe('waiting-on-you');
+  });
+});
+
+/**
+ * The two numbers the module's own TSDoc claims, executable.
+ *
+ * `RELEVANCE_HALF_SCORE` and `BEST_MATCH_MARGIN` are free parameters — the spec
+ * names no digits — so their docs carry derivations instead of citations. A
+ * derivation in a comment rots silently; these pin both to behaviour, so
+ * re-tuning either constant without updating what it is documented to control
+ * turns this file red.
+ */
+describe('what the tuning constants are documented to control', () => {
+  /** One row's score, with usage either maxed out or entirely absent. */
+  function scoreAt(distance: number, boosted: boolean): number {
+    return scoreCandidate(
+      candidate({
+        key: 'k',
+        distance,
+        waiting: boosted,
+        lastActivityAt: boosted ? NOW : null,
+        usage: boosted ? { lastUsedAt: NOW, useCount: 10_000 } : NO_USAGE,
+      }),
+      NOW
+    ).score;
+  }
+
+  /**
+   * The claim on `RELEVANCE_HALF_SCORE`: usage can only reorder rows whose raw
+   * Fuse scores differ by LESS than it.
+   *
+   * Both sides are asserted. A one-sided test ("usage wins at a small gap")
+   * would pass with the constant at any larger value, which is the whole thing
+   * the number decides.
+   */
+  it('lets usage overturn relevance only inside a raw-score window of 0.02', () => {
+    const HALF = 0.02;
+    // Just inside the window: the maximally-used row wins despite matching worse.
+    expect(scoreAt(HALF * 0.9, true)).toBeGreaterThan(scoreAt(0, false));
+    // Just outside it: no amount of usage is enough.
+    expect(scoreAt(HALF * 1.1, true)).toBeLessThan(scoreAt(0, false));
+  });
+
+  /**
+   * The claim on `BEST_MATCH_MARGIN`: at equal usage, 15% of the top score is a
+   * raw Fuse gap of `RELEVANCE_HALF_SCORE × log2(1 / 0.85)` ≈ 0.0047.
+   *
+   * This is the number that has to be reasoned about in post-transform space —
+   * raw-Fuse intuitions about "noise" do not survive the halving curve.
+   */
+  it('needs a raw-score gap of about 0.0047 to crown a best match on relevance alone', () => {
+    const crown = (gap: number) =>
+      selectBestMatch(
+        rankCandidates(
+          [candidate({ key: 'aa-top', distance: 0 }), candidate({ key: 'zz-next', distance: gap })],
+          NOW
+        ),
+        QUERIED
+      ).best?.key ?? null;
+
+    expect(crown(0.0044)).toBeNull();
+    expect(crown(0.005)).toBe('aa-top');
+  });
+
+  /**
+   * The claim on `WAITING_WEIGHT`: no single usage signal can crown a row unless
+   * it is worth more than the margin, and waiting (33%) and frecency (26%) are,
+   * while recency (13%) is not.
+   */
+  it('lets waiting and frecency earn a best match on their own, and recency not', () => {
+    const leadFrom = (extra: Partial<Parameters<typeof candidate>[0]>) => {
+      const ranked = rankCandidates(
+        [
+          candidate({ key: 'aa-plain', distance: 0.01 }),
+          candidate({ key: 'zz-boosted', distance: 0.01, ...extra }),
+        ],
+        NOW
+      );
+      return (ranked[0]!.score - ranked[1]!.score) / ranked[0]!.score;
+    };
+
+    expect(leadFrom({ waiting: true })).toBeGreaterThan(BEST_MATCH_MARGIN);
+    expect(leadFrom({ usage: { lastUsedAt: NOW, useCount: 10_000 } })).toBeGreaterThan(
+      BEST_MATCH_MARGIN
+    );
+    expect(leadFrom({ lastActivityAt: NOW })).toBeLessThan(BEST_MATCH_MARGIN);
   });
 });
 
