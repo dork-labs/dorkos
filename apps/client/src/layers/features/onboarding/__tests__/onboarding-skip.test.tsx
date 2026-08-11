@@ -66,6 +66,15 @@ vi.mock('@/layers/entities/config', () => ({
   useDefaultAgentSession: () => ({
     defaultAgentDir: '/home/kai/.dork/agents/dorkbot',
     startSession: vi.fn(),
+    // DorkBot's registered identity — a ULID, never the slug, which is what
+    // every face on the conversation screen is drawn from.
+    defaultAgentIdentity: {
+      name: 'dorkbot',
+      displayName: 'DorkBot',
+      agentId: '01JQZ8XKF3M0000000000DBOT',
+      runtime: 'claude-code',
+    },
+    isDefaultAgentResolved: true,
   }),
 }));
 

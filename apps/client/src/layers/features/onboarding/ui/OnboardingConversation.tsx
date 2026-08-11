@@ -48,6 +48,21 @@ const FIRST_LIGHT_MS = 1500;
 /** How long the dissolve celebration runs before it is force-stopped. */
 const CELEBRATION_MAX_MS = 4000;
 
+/**
+ * The disc colour DorkBot's lines wear until the registry says which agent
+ * DorkBot is.
+ *
+ * A theme token rather than a hashed colour, deliberately. The only id this
+ * screen holds before the registry answers is the slug `'dorkbot'`, and
+ * DorkBot's real face is hashed from the ULID its manifest was minted with — so
+ * hashing the slug paints a confident face that matches DorkBot nowhere else in
+ * the cockpit, and swaps under the reader the moment the real id lands.
+ * `MessageAuthorAvatar` cannot read a `var()` colour for contrast, so it steps
+ * the disc back to a tint and draws the initial: a plain grey square wearing the
+ * Bot mark, which is an honest "this face is still loading".
+ */
+const PENDING_IDENTITY_COLOR = 'var(--color-muted-foreground)';
+
 /** Props for {@link OnboardingConversation}. */
 export interface OnboardingConversationProps {
   /** Called on dissolve — hides the overlay for the session (set by the app shell). */
@@ -65,8 +80,13 @@ export function OnboardingConversation({ onComplete }: OnboardingConversationPro
   const { config, completeStep, skipStep, completeOnboarding } = useOnboarding();
   const updateAgent = useUpdateAgent();
   // The default agent's REGISTERED absolute path — the registry is the only
-  // thing that proves DorkBot is where the path says it is.
-  const { defaultAgentDir } = useDefaultAgentSession();
+  // thing that proves DorkBot is where the path says it is — and, from the same
+  // entry, the identity every face on this screen is drawn from. DorkBot's
+  // manifest id is a ULID minted at creation, so the literal `'dorkbot'` this
+  // screen used to hash could never land on the face the sidebar shows.
+  const { defaultAgentDir, defaultAgentIdentity, isDefaultAgentResolved } =
+    useDefaultAgentSession();
+  const { agentId: dorkbotId, icon: dorkbotIcon, color: dorkbotColor } = defaultAgentIdentity;
   // The runtime the first session will ACTUALLY start on. It was written here as
   // the literal `'claude-code'` twice, which was true only until somebody set a
   // different default — and then the birth certificate named a runtime the
@@ -130,7 +150,12 @@ export function OnboardingConversation({ onComplete }: OnboardingConversationPro
         kind: 'first-message',
         name: 'dorkbot',
         displayName: 'DorkBot',
-        agentId: 'dorkbot',
+        // The same registered identity the conversation drew from, so the face
+        // beside the user's first real turn is the one they just spent three
+        // screens talking to.
+        agentId: dorkbotId,
+        icon: dorkbotIcon,
+        color: dorkbotColor,
         bornAt: new Date().toISOString(),
         path: defaultAgentDir,
         // The certificate says what this session RUNS on, so it names the same
@@ -215,25 +240,40 @@ export function OnboardingConversation({ onComplete }: OnboardingConversationPro
     : {};
 
   // DorkBot speaks every scripted line, so the list's identity gutter names it
-  // and wears the same avatar first light just showed — not the resolver's
-  // anonymous fallback.
+  // and wears the same avatar the sidebar and first light show — resolved from
+  // its registered manifest, not hashed from a name.
+  //
+  // A registry answer nobody has yet is never a face: while it is out, the disc
+  // takes a neutral colour and no emoji rather than a stable-looking wrong one.
+  // The window is small and usually empty — the conversation is the third
+  // onboarding screen, and the shell around it has had this query in cache since
+  // boot — but "usually" is not a contract.
   const dorkbotAuthor = useMemo<MessageAuthorAgent>(() => {
-    const { color, emoji } = resolveAgentVisual({ id: 'dorkbot' });
-    return { id: 'dorkbot', displayName: 'DorkBot', emoji, color };
-  }, []);
+    if (!isDefaultAgentResolved) {
+      return { id: dorkbotId, displayName: 'DorkBot', color: PENDING_IDENTITY_COLOR };
+    }
+    const { color, emoji } = resolveAgentVisual({
+      id: dorkbotId,
+      color: dorkbotColor,
+      icon: dorkbotIcon,
+    });
+    return { id: dorkbotId, displayName: 'DorkBot', emoji, color };
+  }, [dorkbotId, dorkbotColor, dorkbotIcon, isDefaultAgentResolved]);
 
   const dorkbotArrival = useMemo<AgentBirthRecord>(
     () => ({
       name: 'dorkbot',
       displayName: 'DorkBot',
-      agentId: 'dorkbot',
+      agentId: dorkbotId,
+      icon: dorkbotIcon,
+      color: dorkbotColor,
       bornAt: new Date().toISOString(),
       path: defaultAgentDir,
       runtime: defaultRuntime,
       kickoffMessage: '',
       fired: false,
     }),
-    [defaultAgentDir, defaultRuntime]
+    [dorkbotId, dorkbotIcon, dorkbotColor, defaultAgentDir, defaultRuntime]
   );
 
   if (convo.isFirstLight) {
