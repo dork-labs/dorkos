@@ -75,8 +75,11 @@ describe('AgentChipPicker faces', () => {
     // The list used to be plain text — every project folder you own, in
     // alphabetical order, with no faces at all, while a picker ten directories
     // away drew the same agents WITH them. A face that could not be resolved
-    // draws a letter rather than a hashed one: an invented face here would be
-    // this agent's only wrong appearance in the whole cockpit.
+    // draws a letter rather than a hashed one, and that survives DOR-1122
+    // letting /team hash an icon-less agent's emoji: /team hashes a real
+    // manifest id, where an unresolved candidate here has no manifest at all.
+    // The only handle left is the directory, and hashing that invents a face
+    // matching nothing — see `AgentPickerCandidate.visual`.
     renderFresh();
 
     expect(within(screen.getByRole('option', { name: 'Ana' })).getByText('🔍')).toBeInTheDocument();
