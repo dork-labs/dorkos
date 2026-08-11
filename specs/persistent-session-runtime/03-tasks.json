@@ -148,7 +148,7 @@
       "priority": "high",
       "dependencies": ["1.1"],
       "parallelWith": ["0.1", "2.1", "2.2"],
-      "issue": null
+      "issue": "DOR-1166"
     },
     {
       "id": "3.2",
@@ -162,7 +162,7 @@
       "priority": "high",
       "dependencies": ["3.1", "2.1"],
       "parallelWith": ["2.3", "2.4"],
-      "issue": null
+      "issue": "DOR-1167"
     },
     {
       "id": "3.3",
@@ -176,7 +176,7 @@
       "priority": "high",
       "dependencies": ["3.2", "0.1"],
       "parallelWith": ["2.5", "2.6"],
-      "issue": null
+      "issue": "DOR-1168"
     },
     {
       "id": "3.4",
@@ -190,7 +190,7 @@
       "priority": "high",
       "dependencies": ["3.2"],
       "parallelWith": ["3.5", "3.6", "2.6"],
-      "issue": null
+      "issue": "DOR-1169"
     },
     {
       "id": "3.5",
@@ -204,7 +204,7 @@
       "priority": "high",
       "dependencies": ["3.2"],
       "parallelWith": ["3.4", "3.6", "2.6"],
-      "issue": null
+      "issue": "DOR-1170"
     },
     {
       "id": "3.6",
@@ -218,7 +218,7 @@
       "priority": "high",
       "dependencies": ["3.2", "2.3"],
       "parallelWith": ["3.4", "3.5"],
-      "issue": null
+      "issue": "DOR-1171"
     },
     {
       "id": "3.7",
@@ -232,7 +232,7 @@
       "priority": "high",
       "dependencies": ["3.3"],
       "parallelWith": ["3.8", "3.9"],
-      "issue": null
+      "issue": "DOR-1172"
     },
     {
       "id": "3.8",
@@ -246,7 +246,7 @@
       "priority": "high",
       "dependencies": ["3.2"],
       "parallelWith": ["3.7", "3.9"],
-      "issue": null
+      "issue": "DOR-1173"
     },
     {
       "id": "3.9",
@@ -260,7 +260,7 @@
       "priority": "high",
       "dependencies": ["3.3"],
       "parallelWith": ["3.7", "3.8"],
-      "issue": null
+      "issue": "DOR-1174"
     },
     {
       "id": "3.10",
@@ -274,7 +274,7 @@
       "priority": "high",
       "dependencies": ["3.4", "3.5", "3.6", "3.7", "3.8", "3.9"],
       "parallelWith": [],
-      "issue": null
+      "issue": "DOR-1175"
     },
     {
       "id": "3.11",
@@ -288,7 +288,7 @@
       "priority": "medium",
       "dependencies": ["3.10"],
       "parallelWith": [],
-      "issue": null
+      "issue": "DOR-1176"
     },
     {
       "id": "4.1",
