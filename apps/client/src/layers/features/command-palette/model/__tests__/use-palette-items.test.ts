@@ -19,7 +19,6 @@ import type { CommandPaletteContribution } from '@/layers/shared/model';
 
 const mockUseMeshAgentPaths = vi.fn();
 const mockUseCommands = vi.fn();
-const mockUseAgentFrecency = vi.fn();
 const mockUseSessions = vi.fn();
 const mockUseRecentSessions = vi.fn();
 const mockSessionListState = vi.fn();
@@ -147,10 +146,6 @@ vi.mock('@/layers/shared/model', () => ({
   useSlotContributions: () => mockUseSlotContributions(),
 }));
 
-vi.mock('../use-agent-frecency', () => ({
-  useAgentFrecency: () => mockUseAgentFrecency(),
-}));
-
 vi.mock('@/layers/shared/lib', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/layers/shared/lib')>();
   return {
@@ -171,9 +166,6 @@ const makeAgent = (overrides: Partial<AgentPathEntry> = {}): AgentPathEntry => (
 const agentA = makeAgent({ id: 'agent-a', name: 'Agent A', projectPath: '/projects/a' });
 const agentB = makeAgent({ id: 'agent-b', name: 'Agent B', projectPath: '/projects/b' });
 const agentC = makeAgent({ id: 'agent-c', name: 'Agent C', projectPath: '/projects/c' });
-const agentD = makeAgent({ id: 'agent-d', name: 'Agent D', projectPath: '/projects/d' });
-const agentE = makeAgent({ id: 'agent-e', name: 'Agent E', projectPath: '/projects/e' });
-const agentF = makeAgent({ id: 'agent-f', name: 'Agent F', projectPath: '/projects/f' });
 
 const makeRoom = (overrides: Partial<RoomSummary> = {}): RoomSummary => ({
   id: 'room-default',
@@ -221,14 +213,6 @@ const unreadButOlder = makeRoom({
   unreadCount: 2,
 });
 
-function makeFrecency(sortedIds: string[]) {
-  return {
-    entries: [],
-    recordUsage: vi.fn(),
-    getSortedAgentIds: (_ids: string[]) => sortedIds,
-  };
-}
-
 describe('usePaletteItems', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -236,7 +220,6 @@ describe('usePaletteItems', () => {
     // Default: no data, not loading
     mockUseMeshAgentPaths.mockReturnValue({ data: undefined, isLoading: false });
     mockUseCommands.mockReturnValue({ data: undefined });
-    mockUseAgentFrecency.mockReturnValue(makeFrecency([]));
     mockUseSessions.mockReturnValue({ sessions: [] });
     mockUseRecentSessions.mockReturnValue({ data: undefined });
     mockSessionListState.mockReturnValue({ statuses: {}, sessions: {} });
@@ -305,11 +288,10 @@ describe('usePaletteItems', () => {
 
   // --- Agent data ---
 
-  it('returns empty recentAgents and allAgents when no agents are registered', () => {
+  it('returns an empty roster when no agents are registered', () => {
     mockUseMeshAgentPaths.mockReturnValue({ data: undefined, isLoading: false });
 
     const { result } = renderHook(() => usePaletteItems(null));
-    expect(result.current.recentAgents).toEqual([]);
     expect(result.current.allAgents).toEqual([]);
   });
 
@@ -318,92 +300,12 @@ describe('usePaletteItems', () => {
       data: { agents: [agentA, agentB, agentC] },
       isLoading: false,
     });
-    mockUseAgentFrecency.mockReturnValue(makeFrecency(['agent-a', 'agent-b', 'agent-c']));
 
     const { result } = renderHook(() => usePaletteItems(null));
     expect(result.current.allAgents).toHaveLength(3);
     expect(result.current.allAgents).toContain(agentA);
     expect(result.current.allAgents).toContain(agentB);
     expect(result.current.allAgents).toContain(agentC);
-  });
-
-  it('recentAgents is limited to at most 5 agents', () => {
-    const agents = [agentA, agentB, agentC, agentD, agentE, agentF];
-    mockUseMeshAgentPaths.mockReturnValue({ data: { agents }, isLoading: false });
-    mockUseAgentFrecency.mockReturnValue(
-      makeFrecency(['agent-a', 'agent-b', 'agent-c', 'agent-d', 'agent-e', 'agent-f'])
-    );
-
-    const { result } = renderHook(() => usePaletteItems(null));
-    expect(result.current.recentAgents.length).toBeLessThanOrEqual(5);
-  });
-
-  it('recentAgents respects frecency order from getSortedAgentIds', () => {
-    mockUseMeshAgentPaths.mockReturnValue({
-      data: { agents: [agentA, agentB, agentC] },
-      isLoading: false,
-    });
-    // frecency says B is most used, then C, then A
-    mockUseAgentFrecency.mockReturnValue(makeFrecency(['agent-b', 'agent-c', 'agent-a']));
-
-    const { result } = renderHook(() => usePaletteItems(null));
-    const ids = result.current.recentAgents.map((a) => a.id);
-    expect(ids[0]).toBe('agent-b');
-    expect(ids[1]).toBe('agent-c');
-    expect(ids[2]).toBe('agent-a');
-  });
-
-  it('active agent is pinned first in recentAgents', () => {
-    mockUseMeshAgentPaths.mockReturnValue({
-      data: { agents: [agentA, agentB, agentC] },
-      isLoading: false,
-    });
-    // frecency says B is most used
-    mockUseAgentFrecency.mockReturnValue(makeFrecency(['agent-b', 'agent-c', 'agent-a']));
-
-    // active cwd matches agentC
-    const { result } = renderHook(() => usePaletteItems('/projects/c'));
-    const ids = result.current.recentAgents.map((a) => a.id);
-    expect(ids[0]).toBe('agent-c'); // active agent pinned first
-  });
-
-  it('active agent is not duplicated in recentAgents', () => {
-    mockUseMeshAgentPaths.mockReturnValue({
-      data: { agents: [agentA, agentB, agentC] },
-      isLoading: false,
-    });
-    mockUseAgentFrecency.mockReturnValue(makeFrecency(['agent-a', 'agent-b', 'agent-c']));
-
-    const { result } = renderHook(() => usePaletteItems('/projects/a'));
-    const ids = result.current.recentAgents.map((a) => a.id);
-    const agentACount = ids.filter((id) => id === 'agent-a').length;
-    expect(agentACount).toBe(1);
-  });
-
-  it('activeCwd with no matching agent does not affect recentAgents ordering', () => {
-    mockUseMeshAgentPaths.mockReturnValue({
-      data: { agents: [agentA, agentB] },
-      isLoading: false,
-    });
-    mockUseAgentFrecency.mockReturnValue(makeFrecency(['agent-b', 'agent-a']));
-
-    const { result } = renderHook(() => usePaletteItems('/projects/does-not-exist'));
-    const ids = result.current.recentAgents.map((a) => a.id);
-    expect(ids[0]).toBe('agent-b');
-    expect(ids[1]).toBe('agent-a');
-  });
-
-  it('null activeCwd means no agent is pinned', () => {
-    mockUseMeshAgentPaths.mockReturnValue({
-      data: { agents: [agentA, agentB, agentC] },
-      isLoading: false,
-    });
-    mockUseAgentFrecency.mockReturnValue(makeFrecency(['agent-c', 'agent-b', 'agent-a']));
-
-    const { result } = renderHook(() => usePaletteItems(null));
-    const ids = result.current.recentAgents.map((a) => a.id);
-    // frecency order with no pinning
-    expect(ids[0]).toBe('agent-c');
   });
 
   // --- Commands ---
@@ -502,7 +404,6 @@ describe('usePaletteItems', () => {
       'isLoading',
       'newActions',
       'recent',
-      'recentAgents',
       'rooms',
       'searchableItems',
       'sessions',
@@ -642,6 +543,8 @@ describe('usePaletteItems', () => {
       lastActivityAt: channel.lastActivityAt,
       waiting: false,
       demoted: false,
+      // A channel is something you scope BY, so it belongs to no scope itself.
+      scopes: [],
       data: channel,
     });
   });

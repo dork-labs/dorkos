@@ -55,7 +55,7 @@ export interface PaletteCommandCenter {
    * Live conversations, waiting-on-you first. Empty when nothing is live.
    *
    * Human-origin only, like every other liveness count in the cockpit (§18) —
-   * an automated run that needs you arrives in Now, not here.
+   * an automated run that needs you arrives in Heads up, not here.
    */
   continueRows: PaletteContinueRow[];
   /** The last things you were in, across sessions, rooms and agents. */

@@ -5,14 +5,14 @@
  *
  * `palette-ranking.test.ts` proves what the scorer does with a corpus. This file
  * proves the scorer is CONNECTED: the real corpus assembly, the real Fuse, the
- * real interaction store and the real agent-frecency key, through a mock
- * `Transport`, ending at the order of rows in the DOM.
+ * real interaction store and the real migration off the retired agent-frecency
+ * key, through a mock `Transport`, ending at the order of rows in the DOM.
  *
  * That split is deliberate and it is the lesson this programme keeps re-learning
  * — a mechanism can be correct in every unit test and never be called. Nothing
  * here stubs `usePaletteSearch`, `usePaletteUsage`, `usePaletteItems` or
- * `useAgentFrecency`; the only fakes are the ports (transport, router, motion)
- * and the browser APIs jsdom lacks.
+ * `useLegacyFrecencyMigration`; the only fakes are the ports (transport,
+ * router, motion) and the browser APIs jsdom lacks.
  */
 import React from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -147,8 +147,8 @@ beforeEach(() => {
     warnings: [],
   });
   mockNavigate.mockClear();
-  // Both usage stores start empty, so each case's seeding is the only history
-  // the ranker can see.
+  // Storage and the store both start empty, so each case's seeding is the only
+  // history the ranker can see.
   localStorage.clear();
   useInteractionStore.getState().reset();
 });
@@ -325,14 +325,6 @@ describe('the interaction store moves rank, through the hook', () => {
 });
 
 describe('how often you use something moves rank, through the hook', () => {
-  /** The shipped agent-frecency key, written the way the real hook writes it. */
-  function seedAgentFrecency(agentId: string, totalCount: number) {
-    localStorage.setItem(
-      'dorkos:agent-frecency-v2',
-      JSON.stringify([{ agentId, timestamps: [Date.now() - HOUR], totalCount }])
-    );
-  }
-
   it('leaves two equally-matching agents in their default order with no history', async () => {
     await search('@runner', 'Runner One', 'Runner Two');
     const at = positions('Runner One', 'Runner Two');
@@ -340,11 +332,86 @@ describe('how often you use something moves rank, through the hook', () => {
   });
 
   it('lifts the agent this person opens all the time', async () => {
-    seedAgentFrecency('agent-runner-two', 25);
+    useInteractionStore
+      .getState()
+      .mergeUsage([
+        { key: 'agent:/projects/runner-two', lastUsedAt: Date.now() - HOUR, useCount: 25 },
+      ]);
 
     await search('@runner', 'Runner One', 'Runner Two');
     const at = positions('Runner One', 'Runner Two');
     expect(at['Runner Two']).toBeLessThan(at['Runner One']!);
+  });
+
+  it('separates two agents on the COUNT alone, when they were opened at the same instant', async () => {
+    // The half of frecency that only landed in P3.3. Both were opened at the
+    // same moment, so `lastUsedAt` cannot order them and only `useCount` can —
+    // which is what makes this red when the count stops reaching the ranker,
+    // where the case above still passes on recency.
+    const sameInstant = Date.now() - HOUR;
+    useInteractionStore.getState().mergeUsage([
+      { key: 'agent:/projects/runner-one', lastUsedAt: sameInstant, useCount: 1 },
+      { key: 'agent:/projects/runner-two', lastUsedAt: sameInstant, useCount: 40 },
+    ]);
+
+    await search('@runner', 'Runner One', 'Runner Two');
+    const at = positions('Runner One', 'Runner Two');
+    expect(at['Runner Two']).toBeLessThan(at['Runner One']!);
+  });
+
+  it('counts an open the palette itself records, without any seeding', async () => {
+    // The whole chain in one case: choose a row, and the store the sidebar
+    // reads is what remembers it. Before P3.3 the count lived in ⌘K's own
+    // localStorage key and only ever counted agents.
+    await search('alpha', 'alpha-two');
+    const row = screen
+      .getAllByRole('option')
+      .find((el) => (el.textContent ?? '').includes('alpha-two'));
+    fireEvent.click(row as Element);
+
+    expect(useInteractionStore.getState().counts[`room:${alphaTwo.id}`]).toBe(1);
+  });
+});
+
+describe('the retired agent-frecency key, migrated on the way in', () => {
+  /** The shipped key, written exactly the way the retired hook wrote it. */
+  function seedLegacyAgentFrecency(agentId: string, totalCount: number) {
+    localStorage.setItem(
+      'dorkos:agent-frecency-v2',
+      JSON.stringify([{ agentId, timestamps: [Date.now() - HOUR], totalCount }])
+    );
+  }
+
+  /**
+   * P3 AC-4, at the DOM.
+   *
+   * `legacy-frecency-migration.test.ts` proves the translation is correct.
+   * This proves it is CONNECTED — the real key, read by the real hook the real
+   * palette mounts, translated onto the real store, scored by the real ranker,
+   * ending at which row is drawn first. Unwire any link in that chain and this
+   * reds; nothing else in the suite would.
+   */
+  it('keeps the rank of an agent this person already used, through the real chain', async () => {
+    seedLegacyAgentFrecency('agent-runner-two', 25);
+
+    await search('@runner', 'Runner One', 'Runner Two');
+
+    const at = positions('Runner One', 'Runner Two');
+    expect(at['Runner Two']).toBeLessThan(at['Runner One']!);
+  });
+
+  it('deletes the key from this browser once it has been read', async () => {
+    seedLegacyAgentFrecency('agent-runner-two', 25);
+    // Present before, so "absent after" is a change rather than a fact about
+    // an empty store.
+    expect(localStorage.getItem('dorkos:agent-frecency-v2')).not.toBeNull();
+
+    await search('@runner', 'Runner One', 'Runner Two');
+
+    expect(localStorage.getItem('dorkos:agent-frecency-v2')).toBeNull();
+    // And the history landed somewhere: the count is on the record the corpus
+    // ranks that agent under.
+    expect(useInteractionStore.getState().counts['agent:/projects/runner-two']).toBe(25);
   });
 });
 

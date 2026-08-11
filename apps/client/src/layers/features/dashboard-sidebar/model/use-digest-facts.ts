@@ -127,17 +127,27 @@ function countFinishedWhileAway(
  * with, so the row survives its own memory being written. See
  * {@link DigestFacts.lastShownDate}.
  *
- * **The dismissal is narrower than BC-22's words, deliberately and for now.**
- * "It dissolves when the user opens any conversation" is implemented as "the
- * newest interaction record moved", and only `SidebarChrome.openTarget` writes
- * one — so opening a conversation from ⌘K or from the home surface does not put
- * the row away within this browser session. It still goes on the next load,
+ * **The dismissal is narrower than BC-22's words, and the gap is now named
+ * rather than open-ended.** "It dissolves when the user opens any conversation"
+ * is implemented as "the newest interaction record moved", so it dissolves for
+ * exactly the surfaces that record one. Two do: the sidebar's own rows
+ * (`SidebarChrome.openTarget`) and ⌘K (`use-palette-actions`, which since P3.3
+ * records the agent, room or conversation every row it offers lands you in —
+ * including the conversation a slash-command row types into). It is a record of
+ * PLACES, not of acts: choosing "Toggle theme" from ⌘K records nothing and
+ * dissolves nothing, which is deliberate and argued at `InteractionKind`. The
+ * rest do not record at all — the home surface, the presence strip, the "Jump
+ * back in" popover, the attention rows, `/team`, and every path through
+ * `useStartNewSession` — so opening a conversation from one of those does not
+ * put the row away within this browser session. It still goes on the next load,
  * because `lastShownDate` was written the moment it rendered, so the failure is
- * one stale row for one session rather than a repeated moment. Widening it
- * means every open path recording an interaction, which is P3's job: it retires
- * `dorkos:agent-frecency-v2` into this same store and makes ⌘K a writer
- * (`entities/interactions`, module note). Doing it here would put a write into
- * three sibling features this task does not own.
+ * one stale row for one session rather than a repeated moment.
+ *
+ * Closing the rest is one write inside `entities/session`'s two navigation
+ * seams (`useStartNewSession` and `useDirectoryState`'s setter, which already
+ * takes an `onOpened` hook ⌘K uses), which would cover most of them at once —
+ * an entity edit that wants its own task with that entity's owner rather than a
+ * quiet addition from a feature.
  *
  * @param input - The clock, the sessions, the interactions and stored prefs.
  */

@@ -1,17 +1,21 @@
 ---
 number: 67
 title: Use Slack Bucket Frecency for Agent Ranking
-status: accepted
+status: superseded
 created: 2026-03-03
 spec: command-palette-10x
-superseded-by: null
+superseded-by: 260811-132754
 ---
 
 # 67. Use Slack Bucket Frecency for Agent Ranking
 
 ## Status
 
-Accepted
+Superseded by
+[260811-132754](260811-132754-one-interaction-store-for-every-kind-replaces-agent-only-bucket-frecency.md),
+which folds this key into `entities/interactions`, replaces the bucket score
+with a continuous decay blended across every kind of row, and migrates the data
+this ADR chose to abandon.
 
 ## Context
 

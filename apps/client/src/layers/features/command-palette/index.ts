@@ -1,8 +1,10 @@
 /**
  * Command palette — global Cmd+K agent switching and feature access.
  *
- * Enhanced with Fuse.js fuzzy search, Slack bucket frecency,
- * and match highlighting via HighlightedText.
+ * Fuse.js fuzzy search, one blended ranking across types, scope chips, and
+ * match highlighting via HighlightedText. It keeps no memory of its own: what
+ * this person uses lives in `entities/interactions`, which the sidebar reads
+ * too.
  *
  * @module features/command-palette
  */
@@ -21,8 +23,6 @@ export { SessionCommandItem } from './ui/SessionCommandItem';
 
 // --- Model hooks ---
 export { useGlobalPalette } from './model/use-global-palette';
-export { useAgentFrecency, calcFrecencyScore } from './model/use-agent-frecency';
-export type { FrecencyRecord } from './model/use-agent-frecency';
 export { usePaletteItems } from './model/use-palette-items';
 export type {
   PaletteItems,

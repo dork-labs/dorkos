@@ -2855,12 +2855,13 @@
       "number": 67,
       "slug": "slack-bucket-frecency-for-agent-ranking",
       "title": "Use Slack Bucket Frecency for Agent Ranking",
-      "status": "accepted",
+      "status": "superseded",
       "created": "2026-03-03",
       "extractedFrom": "command-palette-10x",
       "specSlug": "command-palette-10x",
-      "lastVerified": "2026-08-06",
-      "affects": ["apps/client/src/layers/features/command-palette/model/use-agent-frecency.ts"]
+      "lastVerified": "2026-08-11",
+      "affects": ["apps/client/src/layers/entities/interactions/model/interaction-store.ts"],
+      "supersededBy": "260811-132754"
     },
     {
       "number": 66,
@@ -4375,6 +4376,22 @@
         "apps/server/src/services/session/message-dispatcher.ts",
         "apps/server/src/services/session/message-queue-store.ts",
         "apps/server/src/routes/session-queue-handler.ts"
+      ]
+    },
+    {
+      "id": "260811-132754",
+      "slug": "one-interaction-store-for-every-kind-replaces-agent-only-bucket-frecency",
+      "title": "One interaction store for every kind replaces agent-only bucket frecency",
+      "status": "accepted",
+      "created": "2026-08-11",
+      "extractedFrom": "sidebar-now-today-library",
+      "specSlug": "sidebar-now-today-library",
+      "supersedes": 67,
+      "lastVerified": "2026-08-11",
+      "affects": [
+        "apps/client/src/layers/entities/interactions/model/interaction-store.ts",
+        "apps/client/src/layers/entities/interactions/model/legacy-frecency-migration.ts",
+        "apps/client/src/layers/features/command-palette/model/palette-ranking.ts"
       ]
     }
   ]

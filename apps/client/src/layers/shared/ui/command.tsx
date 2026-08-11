@@ -18,14 +18,23 @@ function Command({ className, ...props }: React.ComponentProps<typeof CommandPri
   );
 }
 
-/** Search input field with icon for filtering command items. */
+/**
+ * Search input field with icon for filtering command items.
+ *
+ * @param leading - Drawn between the magnifier and the caret, on the input's own
+ *   line. It exists for the command palette's scope chip, which has to read as
+ *   part of what you are typing rather than as a row above it — anything else
+ *   put there would be competing with the caret for the same line.
+ */
 function CommandInput({
   className,
+  leading,
   ...props
-}: React.ComponentProps<typeof CommandPrimitive.Input>) {
+}: React.ComponentProps<typeof CommandPrimitive.Input> & { leading?: React.ReactNode }) {
   return (
     <div data-slot="command-input-wrapper" className="flex h-9 items-center gap-2 border-b px-3">
       <SearchIcon className="size-4 shrink-0 opacity-50" />
+      {leading}
       <CommandPrimitive.Input
         data-slot="command-input"
         className={cn(
