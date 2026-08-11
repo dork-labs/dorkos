@@ -58,7 +58,11 @@ test.describe('Team — the roster @smoke', () => {
     await page.getByTestId('nav-agents').click();
 
     await expect(page).toHaveURL(/\/team/);
-    await expect(page.getByRole('button', { name: 'New Agent' })).toBeVisible();
+    // `exact` is load-bearing: the sidebar's Agents-section "+" is labelled
+    // "New agent" (P2.4), and role-name matching is case-insensitive by
+    // default — without it this resolves two buttons and strict mode throws.
+    // Case-sensitive matching pins the PAGE's own button, capital A.
+    await expect(page.getByRole('button', { name: 'New Agent', exact: true })).toBeVisible();
   });
 
   test('/agents redirects to /team, keeping the view', async ({ page, basePage }) => {
@@ -284,10 +288,10 @@ test.describe('Team — the roster @smoke', () => {
     await page.goto('/team');
     await basePage.waitForAppReady();
 
-    await page.locator('header').getByRole('button', { name: 'Table', exact: true }).click();
+    await page.locator('header').getByRole('button', { name: 'Table' }).click();
     await expect(page).toHaveURL(/[?&]view=table/);
 
-    await page.locator('header').getByRole('button', { name: 'Topology', exact: true }).click();
+    await page.locator('header').getByRole('button', { name: 'Topology' }).click();
     await expect(page).toHaveURL(/[?&]view=topology/);
   });
 
