@@ -411,9 +411,7 @@ describe('two chips at once are rejected, by construction', () => {
     // display name for an agent — so this says "no agent and no channel row"
     // in the one place those three are distinguishable.
     const sessionIds = new Set(ALL_SESSIONS.map((session) => session.id));
-    const values = screen
-      .getAllByRole('option')
-      .map((el) => el.getAttribute('data-value') ?? '');
+    const values = screen.getAllByRole('option').map((el) => el.getAttribute('data-value') ?? '');
     expect(values.length).toBeGreaterThan(0);
     expect(values.filter((value) => !sessionIds.has(value))).toEqual([]);
 
