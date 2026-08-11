@@ -143,6 +143,9 @@ test.describe('Mobile tabs — 390×844 @smoke', () => {
     // own.
     await expect(page).toHaveURL(/\/team/, { timeout: SERVER_ROUND_TRIP_MS });
     await expect(page.getByTestId('mobile-tab-bar')).toBeVisible();
+    // The panel yields to the destination — main's original asserted the sheet
+    // hidden after a top-level nav click, and the tab world keeps that claim.
+    await expect(page.getByTestId('mobile-tab-panels')).toBeHidden();
   });
 
   test('picking inside the New message sheet dismisses nothing until the conversation starts', async ({

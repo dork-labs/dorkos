@@ -316,6 +316,9 @@ describe('BC-44 — the version number leaves the chrome', () => {
     expect(scanned).toContain('dashboard-sidebar/ui/header-block-menu.ts');
     expect(scanned).toContain('dashboard-sidebar/ui/SidebarFooterStrip.tsx');
     expect(scanned).toContain('session-list/ui/EmbedSidebar.tsx');
+    // Pins the third SIDEBAR_DIRS entry: deleting it must red this line, not
+    // silently shrink the scan (the review proved the entry was unobservable).
+    expect(scanned).toContain('mobile-tabs/ui/MobileTabBar.tsx');
   });
 
   it('puts a version number only where it is still allowed to', () => {

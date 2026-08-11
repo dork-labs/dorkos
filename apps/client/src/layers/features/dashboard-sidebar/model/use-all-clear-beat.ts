@@ -21,7 +21,7 @@ export const ALL_CLEAR_BEAT_MS = 2_500;
  * **Read off the model, which now publishes it.** This used to walk the zone's
  * rows and count the ones whose target was `attention` — the same question
  * asked a second way, and it answered a subtly different number: the rows are
- * capped at five (BC-8), so a fleet with seven blocked agents counted four.
+ * capped at five (BC-8), so a fleet with seven blocked agents counted three.
  * Only zero-ness is read below, so the two agreed on every transition, but one
  * fact computed twice is one fact that can drift. `needsYouCount` is the
  * uncapped truth and the number BC-11 announces.
