@@ -231,6 +231,21 @@ const noRooms = {
   isError: false,
 };
 
+/**
+ * The ranking fields of a row with no history behind it.
+ *
+ * Every corpus row has to answer them — that is the point of their being
+ * required — and this file's claims are about which rows a query REACHES, not
+ * about the order use and freshness put them in. Those live in
+ * `palette-ranking.test.ts` and in the wire-through file beside it.
+ */
+const unranked = {
+  usageKey: null,
+  lastActivityAt: null,
+  waiting: false,
+  demoted: false,
+} as const;
+
 vi.mock('../model/use-palette-items', () => ({
   usePaletteItems: () => ({
     rooms: noRooms,
@@ -257,24 +272,45 @@ vi.mock('../model/use-palette-items', () => ({
       { id: 'browse', label: 'Browse Filesystem', icon: 'FolderOpen', action: 'browseFilesystem' },
       { id: 'theme', label: 'Toggle Theme', icon: 'Moon', action: 'toggleTheme' },
     ],
+    // The corpus the REAL search and ranking read. `usePaletteSearch` is
+    // deliberately not mocked in this file: it is the thing that decides what
+    // a typed query shows, and a passthrough stub in its place would have left
+    // every assertion below green against a palette that never ranked anything.
     searchableItems: [
       ...mockAgents.map((a) => ({
         id: a.id,
         name: a.name,
         type: 'agent',
         keywords: [a.projectPath],
+        ...unranked,
         data: a,
       })),
-      { id: 'tasks', name: 'Tasks Scheduler', type: 'feature', data: {} },
-      { id: 'relay', name: 'Connections', type: 'feature', data: {} },
-      { id: 'mesh', name: 'Mesh Network', type: 'feature', data: {} },
-      { id: 'settings', name: 'Settings', type: 'feature', data: {} },
-      { id: 'cmd-/hello', name: '/hello', type: 'command', data: {} },
-      { id: 'cmd-/world', name: '/world', type: 'command', data: {} },
-      { id: 'new-session', name: 'New Session', type: 'quick-action', data: {} },
-      { id: 'discover', name: 'Bring in existing projects', type: 'quick-action', data: {} },
-      { id: 'browse', name: 'Browse Filesystem', type: 'quick-action', data: {} },
-      { id: 'theme', name: 'Toggle Theme', type: 'quick-action', data: {} },
+      ...[
+        { id: 'tasks', label: 'Tasks Scheduler', icon: 'Clock', action: 'openTasks' },
+        { id: 'relay', label: 'Connections', icon: 'Radio', action: 'openRelay' },
+        { id: 'mesh', label: 'Mesh Network', icon: 'Globe', action: 'openMesh' },
+        { id: 'settings', label: 'Settings', icon: 'Settings', action: 'openSettings' },
+      ].map((f) => ({ id: f.id, name: f.label, type: 'feature', ...unranked, data: f })),
+      ...[
+        { name: '/hello', description: 'Say hello' },
+        { name: '/world', description: 'Say world' },
+      ].map((c) => ({ id: `cmd-${c.name}`, name: c.name, type: 'command', ...unranked, data: c })),
+      ...[
+        { id: 'new-session', label: 'New Session', icon: 'Plus', action: 'newSession' },
+        {
+          id: 'discover',
+          label: 'Bring in existing projects',
+          icon: 'Search',
+          action: 'discoverAgents',
+        },
+        {
+          id: 'browse',
+          label: 'Browse Filesystem',
+          icon: 'FolderOpen',
+          action: 'browseFilesystem',
+        },
+        { id: 'theme', label: 'Toggle Theme', icon: 'Moon', action: 'toggleTheme' },
+      ].map((q) => ({ id: q.id, name: q.label, type: 'quick-action', ...unranked, data: q })),
     ],
     newActions: [{ id: 'new-session', label: 'New Session', icon: 'Plus', action: 'newSession' }],
     sessions: [],
@@ -297,30 +333,6 @@ vi.mock('../model/use-palette-items', () => ({
     ],
     isLoading: false,
   }),
-}));
-
-// Mock usePaletteSearch: returns all items as unfiltered results (no match highlights).
-// This preserves existing test behavior — all items always pass through — while
-// correctly exposing the prefix so mode-switching tests work.
-vi.mock('../model/use-palette-search', () => ({
-  usePaletteSearch: (items: Array<{ id: string; type: string; name: string }>, search: string) => {
-    const prefix = search.startsWith('@') ? '@' : search.startsWith('>') ? '>' : null;
-    const term = prefix ? search.slice(1) : search;
-    // Filter by prefix when present so @ and > mode tests work correctly
-    const filtered =
-      prefix === '@'
-        ? items.filter((i) => i.type === 'agent')
-        : prefix === '>'
-          ? items.filter((i) => i.type === 'command')
-          : items;
-    const results = filtered.map((item) => ({ item, matches: undefined }));
-    return { results, prefix, term };
-  },
-  parsePrefix: (search: string) => {
-    if (search.startsWith('@')) return { prefix: '@', term: search.slice(1) };
-    if (search.startsWith('>')) return { prefix: '>', term: search.slice(1) };
-    return { prefix: null, term: search };
-  },
 }));
 
 vi.mock('../model/use-global-palette', () => ({
@@ -380,9 +392,9 @@ describe('CommandPaletteDialog', () => {
     expect(screen.queryByText('Commands')).not.toBeInTheDocument();
   });
 
-  it('does not render All Agents group when search is empty', () => {
+  it('does not render the Agents group when search is empty', () => {
     render(<CommandPaletteDialog />);
-    expect(screen.queryByText('All Agents')).not.toBeInTheDocument();
+    expect(screen.queryByText('Agents')).not.toBeInTheDocument();
   });
 
   it('renders "No results found." text when search yields no matches', () => {
@@ -614,10 +626,12 @@ describe('CommandPaletteDialog', () => {
 
   /**
    * Features and quick actions are reached by typing now, so every case below
-   * types first. The mocked search returns everything for a non-prefix query,
-   * which is what keeps these about DISPATCH rather than about matching.
+   * types first — and types the row's own name, the way a person does. Search
+   * and ranking are the real ones here, so a query that happened to match
+   * everything (`'a'`, as this used to pass) would leave the row a case is
+   * about to be found by luck rather than by what was typed.
    */
-  function searchThen(text = 'a') {
+  function searchThen(text: string) {
     render(<CommandPaletteDialog />);
     fireEvent.change(screen.getByPlaceholderText('Search rooms, agents, commands...'), {
       target: { value: text },
@@ -625,7 +639,7 @@ describe('CommandPaletteDialog', () => {
   }
 
   it('opens Tasks dialog and closes palette when Tasks Scheduler is selected', () => {
-    searchThen();
+    searchThen('Tasks Scheduler');
     const item = screen.getByText('Tasks Scheduler').closest('[data-slot="command-item"]');
     if (item) fireEvent.click(item as Element);
     expect(mockSetTasksOpen).toHaveBeenCalledWith(true);
@@ -633,21 +647,21 @@ describe('CommandPaletteDialog', () => {
   });
 
   it('goes to the Connections page when Connections is selected', () => {
-    searchThen();
+    searchThen('Connections');
     const item = screen.getByText('Connections').closest('[data-slot="command-item"]');
     if (item) fireEvent.click(item as Element);
     expect(mockOpenConnections).toHaveBeenCalledWith('messaging');
   });
 
   it('navigates to /agents when Mesh Network is selected', () => {
-    searchThen();
+    searchThen('Mesh Network');
     const item = screen.getByText('Mesh Network').closest('[data-slot="command-item"]');
     if (item) fireEvent.click(item as Element);
     expect(mockNavigate).toHaveBeenCalledWith({ to: '/team' });
   });
 
   it('opens Settings dialog when Settings is selected', () => {
-    searchThen();
+    searchThen('Settings');
     const item = screen.getByText('Settings').closest('[data-slot="command-item"]');
     if (item) fireEvent.click(item as Element);
     expect(mockSetSettingsOpen).toHaveBeenCalledWith(true);
@@ -656,7 +670,7 @@ describe('CommandPaletteDialog', () => {
   // --- Quick action dispatching ---
 
   it('opens the import dialog when Bring in existing projects quick action is selected', () => {
-    searchThen();
+    searchThen('Bring in existing projects');
     const item = screen
       .getByText('Bring in existing projects')
       .closest('[data-slot="command-item"]');
@@ -665,7 +679,7 @@ describe('CommandPaletteDialog', () => {
   });
 
   it('opens directory picker when Browse Filesystem quick action is selected', () => {
-    searchThen();
+    searchThen('Browse Filesystem');
     const item = screen.getByText('Browse Filesystem').closest('[data-slot="command-item"]');
     if (item) fireEvent.click(item as Element);
     expect(mockSetPickerOpen).toHaveBeenCalledWith(true);
@@ -673,13 +687,12 @@ describe('CommandPaletteDialog', () => {
 
   // --- @ prefix (agent-only) mode ---
 
-  it('shows All Agents group and hides Features/Quick Actions/Recent in @ mode', () => {
+  it('shows the Agents group and hides Actions/Recent in @ mode', () => {
     render(<CommandPaletteDialog />);
     const input = screen.getByPlaceholderText('Search rooms, agents, commands...');
     fireEvent.change(input, { target: { value: '@' } });
-    expect(screen.getByText('All Agents')).toBeInTheDocument();
-    expect(screen.queryByText('Features')).not.toBeInTheDocument();
-    expect(screen.queryByText('Quick Actions')).not.toBeInTheDocument();
+    expect(screen.getByText('Agents')).toBeInTheDocument();
+    expect(screen.queryByText('Actions')).not.toBeInTheDocument();
     expect(screen.queryByText('Recent')).not.toBeInTheDocument();
   });
 
@@ -692,11 +705,11 @@ describe('CommandPaletteDialog', () => {
 
   // --- Search reveals All Agents and Commands ---
 
-  it('shows All Agents group when a non-@ search query is entered', () => {
+  it('shows the Agents group when a non-@ search query is entered', () => {
     render(<CommandPaletteDialog />);
     const input = screen.getByPlaceholderText('Search rooms, agents, commands...');
     fireEvent.change(input, { target: { value: 'auth' } });
-    expect(screen.getByText('All Agents')).toBeInTheDocument();
+    expect(screen.getByText('Agents')).toBeInTheDocument();
   });
 
   it('shows Commands group when a non-@ search query is entered', () => {

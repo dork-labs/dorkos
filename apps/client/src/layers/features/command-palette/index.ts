@@ -45,6 +45,11 @@ export {
 } from './model/palette-rooms';
 export { usePaletteSearch, parsePrefix } from './model/use-palette-search';
 export type { SearchableItem, SearchResult } from './model/use-palette-search';
+// `palette-ranking.ts` — the blended relevance × frecency × recency scorer that
+// decides what order ⌘K answers in (design-decisions §15) — is deliberately NOT
+// re-exported here. Nothing outside this slice ranks a palette row, and an
+// export with no caller is surface to maintain for nobody. Its own tests import
+// it by path, as the slice's other internal modules do.
 export { usePaletteActions } from './model/use-palette-actions';
 // The writer half of the extension-contributed action dispatch. `main.tsx`
 // hands these to the extension API; the reader (`runPaletteCommandHandler`)

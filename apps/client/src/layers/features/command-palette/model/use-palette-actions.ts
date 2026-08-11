@@ -21,6 +21,7 @@ import {
   notifySessionLookupFailed,
 } from '@/layers/entities/session';
 import type { RoomSummary } from '@/layers/entities/room';
+import { useInteractionStore } from '@/layers/entities/interactions';
 import { useAgentFrecency } from './use-agent-frecency';
 import { composeCommandDraft } from './palette-command-draft';
 import { runPaletteCommandHandler } from './palette-command-handlers';
@@ -97,6 +98,7 @@ export function usePaletteActions(closePalette: () => void): PaletteActions {
         onOpened: () => {
           if (leaving && leaving !== agent.projectPath) setPreviousCwd(leaving);
           recordUsage(agent.id);
+          useInteractionStore.getState().recordOpened('agent', agent.projectPath);
         },
       });
       closePalette();
@@ -114,12 +116,15 @@ export function usePaletteActions(closePalette: () => void): PaletteActions {
    * `id` is all of it — every room the palette can offer is a room you open
    * directly (ADR 260728-022013).
    *
-   * No frecency is recorded: frecency is keyed on agent ids and the palette
-   * already leads with unread, which is a fact about what is waiting rather
-   * than a guess from history.
+   * The open is recorded, because ranking reads it: a channel you keep coming
+   * back to should be easier to reach the next time you type half its name
+   * (design-decisions §15). It does not displace unread — that stays a separate,
+   * larger signal in the ranker, because a message nobody has read is a fact and
+   * this is only a habit.
    */
   const handleRoomSelect = useCallback(
     (room: RoomSummary) => {
+      useInteractionStore.getState().recordOpened('room', room.id);
       closePalette();
       navigate({ to: '/channels', search: { id: room.id } });
     },
@@ -136,11 +141,16 @@ export function usePaletteActions(closePalette: () => void): PaletteActions {
    * Callers pass the directory the session belongs to — the agent's own, in the
    * sub-menu's case, which is rarely the one on screen.
    *
+   * The open is recorded under `session:<id>`, which is what makes a
+   * conversation you were just in rank above one you have not touched in a week
+   * the next time you go looking for it (design-decisions §15).
+   *
    * @param sessionId - The conversation to open.
    * @param dir - The working directory it belongs to.
    */
   const handleSessionSelect = useCallback(
     (sessionId: string, dir?: string | null) => {
+      useInteractionStore.getState().recordOpened('session', sessionId);
       closePalette();
       navigate({ to: '/session', search: { session: sessionId, dir: dir ?? undefined } });
     },

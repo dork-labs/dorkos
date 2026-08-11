@@ -1,7 +1,7 @@
 import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useQueryClient } from '@tanstack/react-query';
-import { useAppStore, useIsMobile } from '@/layers/shared/model';
+import { useAppStore, useIsMobile, useNow } from '@/layers/shared/model';
 import { cachedSessionForCwd } from '@/layers/entities/session';
 import { cn, openLink, supportsNewTab, supportsSeparateWindow } from '@/layers/shared/lib';
 import {
@@ -16,6 +16,7 @@ import {
 import { usePaletteItems } from '../model/use-palette-items';
 import { useGlobalPalette } from '../model/use-global-palette';
 import { usePaletteSearch } from '../model/use-palette-search';
+import { usePaletteUsage } from '../model/use-palette-usage';
 import { usePaletteActions } from '../model/use-palette-actions';
 import { useLeadingRowPin } from '../model/use-leading-row-pin';
 import { AgentPreviewPanel } from './AgentPreviewPanel';
@@ -32,7 +33,16 @@ import { resolveAgentVisual } from '@/layers/entities/agent';
 // says it opens from.
 import { SessionSwitcher } from '@/layers/features/dashboard-sidebar';
 import type { AgentPathEntry } from '@dorkos/shared/mesh-schemas';
-import type { FuseResultMatch } from 'fuse.js';
+
+/**
+ * How often the ranking re-reads the clock.
+ *
+ * A minute, matching the rows' own relative timestamps. Both of the ranker's
+ * time-based signals halve over days, so a finer tick would repaint the list
+ * without ever changing it — and a coarser one would leave a palette left open
+ * on a second monitor ranking against a stale morning.
+ */
+const RANKING_CLOCK_TICK_MS = 60_000;
 
 /**
  * Global command palette dialog.
@@ -163,9 +173,6 @@ export function CommandPaletteDialog() {
   const {
     recentAgents,
     allAgents,
-    features,
-    commands,
-    quickActions,
     newActions,
     rooms,
     sessions,
@@ -174,71 +181,15 @@ export function CommandPaletteDialog() {
     searchableItems,
   } = usePaletteItems(selectedCwd);
 
-  const { results, prefix } = usePaletteSearch(searchableItems, search);
+  // What this person actually uses, and the clock the ranking is measured
+  // against. Both are read here and passed down: the scorer takes an injected
+  // `now` and reads no store, which is what makes its ordering assertable
+  // against a fixed corpus (`palette-ranking`).
+  const usage = usePaletteUsage(allAgents);
+  const now = useNow(RANKING_CLOCK_TICK_MS);
 
-  // Build lookup maps from search results for efficient access during render
-  const agentMatchMap = useMemo(() => {
-    const map = new Map<string, readonly FuseResultMatch[] | undefined>();
-    for (const result of results) {
-      if (result.item.type === 'agent') {
-        map.set(result.item.id, result.matches);
-      }
-    }
-    return map;
-  }, [results]);
+  const { bestMatch, rows, prefix } = usePaletteSearch(searchableItems, search, { usage, now });
 
-  // Determine which agents/features/commands are visible based on search results
-  const visibleAgentIds = useMemo(() => {
-    if (!search) return null; // null means "use group defaults"
-    return new Set(results.filter((r) => r.item.type === 'agent').map((r) => r.item.id));
-  }, [results, search]);
-
-  const visibleFeatureIds = useMemo(() => {
-    if (!search || prefix === '@' || prefix === '>') return null;
-    return new Set(results.filter((r) => r.item.type === 'feature').map((r) => r.item.id));
-  }, [results, search, prefix]);
-
-  // Use item IDs (format: "cmd-{name}") for command visibility — matches searchableItems
-  const visibleCommandIds = useMemo(() => {
-    if (!search || prefix === '@') return null;
-    return new Set(results.filter((r) => r.item.type === 'command').map((r) => r.item.id));
-  }, [results, search, prefix]);
-
-  const visibleQuickActionIds = useMemo(() => {
-    if (!search || prefix === '@' || prefix === '>') return null;
-    return new Set(results.filter((r) => r.item.type === 'quick-action').map((r) => r.item.id));
-  }, [results, search, prefix]);
-
-  // Which rooms the current query matches. Rooms are two item types, not one:
-  // `#` addresses a channel by its name, `@` a DM by who is in it (spec `rooms`
-  // §13.2), so the visible sets are derived separately and each group filters
-  // its own already-ordered list — which keeps unread first rather than
-  // adopting Fuse's relevance order.
-  const visibleRoomIds = useMemo(() => {
-    if (!search) return null;
-    return new Set(results.filter((r) => r.item.type === 'room').map((r) => r.item.id));
-  }, [results, search]);
-
-  const visibleDmIds = useMemo(() => {
-    if (!search) return null;
-    return new Set(results.filter((r) => r.item.type === 'dm').map((r) => r.item.id));
-  }, [results, search]);
-
-  // Conversations keep Fuse's own relevance order rather than the recency order
-  // they arrived in: a person who typed something is asking "which one is this",
-  // not "which one is newest".
-  const searchSessions = useMemo(() => {
-    if (!search) return [];
-    const byId = new Map(sessions.map((session) => [session.id, session]));
-    return results.flatMap((r) => {
-      if (r.item.type !== 'session') return [];
-      const session = byId.get(r.item.id);
-      return session ? [session] : [];
-    });
-  }, [results, search, sessions]);
-
-  const isAtMode = prefix === '@';
-  const isCommandMode = prefix === '>';
   const isRoomMode = prefix === '#';
 
   // Derive the currently selected agent from the cmdk selected value.
@@ -338,43 +289,8 @@ export function CommandPaletteDialog() {
     resetKey: JSON.stringify([globalPaletteOpen, page ?? null, search]),
   });
 
-  // Zero-query state: show Recent Agents, Features, Quick Actions (default layout)
+  // Zero-query state: the command center, not a ranked list of everything.
   const isZeroQuery = !search;
-
-  // Which agents to show in the All Agents group during search
-  const searchAgents = useMemo(() => {
-    if (!visibleAgentIds) return allAgents;
-    return allAgents.filter((a) => visibleAgentIds.has(a.id));
-  }, [allAgents, visibleAgentIds]);
-
-  // Which features to show during search
-  const searchFeatures = useMemo(() => {
-    if (!visibleFeatureIds) return features;
-    return features.filter((f) => visibleFeatureIds.has(f.id));
-  }, [features, visibleFeatureIds]);
-
-  // Which commands to show during search
-  const searchCommands = useMemo(() => {
-    if (!visibleCommandIds) return commands;
-    return commands.filter((cmd) => visibleCommandIds.has(`cmd-${cmd.name}`));
-  }, [commands, visibleCommandIds]);
-
-  // Which quick actions to show during search
-  const searchQuickActions = useMemo(() => {
-    if (!visibleQuickActionIds) return quickActions;
-    return quickActions.filter((qa) => visibleQuickActionIds.has(qa.id));
-  }, [quickActions, visibleQuickActionIds]);
-
-  // Which channels and DMs to show during search
-  const searchChannels = useMemo(() => {
-    if (!visibleRoomIds) return rooms.channels;
-    return rooms.channels.filter((room) => visibleRoomIds.has(room.id));
-  }, [rooms.channels, visibleRoomIds]);
-
-  const searchDms = useMemo(() => {
-    if (!visibleDmIds) return rooms.dms;
-    return rooms.dms.filter((room) => visibleDmIds.has(room.id));
-  }, [rooms.dms, visibleDmIds]);
 
   const palette = (
     <ResponsiveDialog open={globalPaletteOpen} onOpenChange={handleOpenChange}>
@@ -525,24 +441,15 @@ export function CommandPaletteDialog() {
                       <PaletteRootPage
                         staggerKey={staggerKey}
                         isZeroQuery={isZeroQuery}
-                        isAtMode={isAtMode}
-                        isCommandMode={isCommandMode}
                         isRoomMode={isRoomMode}
-                        search={search}
                         selectedCwd={selectedCwd}
                         selectedValue={selectedValue}
                         continueRows={continueRows}
                         recent={recent}
                         newActions={newActions}
-                        searchAgents={searchAgents}
-                        searchSessions={searchSessions}
-                        searchFeatures={searchFeatures}
-                        searchCommands={searchCommands}
-                        searchQuickActions={searchQuickActions}
+                        bestMatch={bestMatch}
+                        rows={rows}
                         rooms={rooms}
-                        searchChannels={searchChannels}
-                        searchDms={searchDms}
-                        agentMatchMap={agentMatchMap}
                         onFeatureAction={handleFeatureAction}
                         onQuickAction={handleQuickAction}
                         onGoToAgentActions={goToAgentActions}

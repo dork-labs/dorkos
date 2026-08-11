@@ -1,29 +1,32 @@
-import { motion, LayoutGroup } from 'motion/react';
+import { motion } from 'motion/react';
 import { CommandGroup, CommandItem, CommandSeparator } from '@/layers/shared/ui';
-import { getAgentDisplayName } from '@/layers/shared/lib';
 import type { RoomSummary } from '@/layers/entities/room';
-import { AgentCommandItem } from './AgentCommandItem';
 import { PaletteCommandCenter } from './PaletteCommandCenter';
-import { RoomCommandItem } from './RoomCommandItem';
-import { SessionCommandItem } from './SessionCommandItem';
+import { PaletteResultRow } from './PaletteResultRow';
 import { PalettePrefixLegend } from './PalettePrefixLegend';
-import { ICON_MAP, EASE_OUT, listVariants, itemVariants } from './palette-constants';
+import {
+  BEST_MATCH_HEADING,
+  RESULT_GROUP_LABEL,
+  listVariants,
+  itemVariants,
+} from './palette-constants';
+import { groupRankedRows, type RankedRow } from '../model/palette-ranking';
 import type { PaletteRooms } from '../model/use-palette-rooms';
 import type { PaletteRecentEntry } from '../model/palette-recent';
 import type { PaletteSessionItem } from '../model/palette-sessions';
 import type { PaletteContinueRow } from '../model/use-palette-command-center';
+import type { SearchResult } from '../model/use-palette-search';
 import type { AgentPathEntry } from '@dorkos/shared/mesh-schemas';
-import type { FuseResultMatch } from 'fuse.js';
-import type { FeatureItem, QuickActionItem, CommandItemData } from '../model/use-palette-items';
+import type { QuickActionItem } from '../model/use-palette-items';
+
+/** How many rows into the list the stagger entrance keeps animating. */
+const STAGGERED_ROWS = 8;
 
 interface PaletteRootPageProps {
   staggerKey: number;
   isZeroQuery: boolean;
-  isAtMode: boolean;
-  isCommandMode: boolean;
   /** Whether the `#` prefix is active, scoping the palette to channels. */
   isRoomMode: boolean;
-  search: string;
   selectedCwd: string | null;
   selectedValue: string;
   /** Live conversations, for the zero-query Continue group. */
@@ -32,19 +35,12 @@ interface PaletteRootPageProps {
   recent: PaletteRecentEntry[];
   /** The cockpit's own creation actions, for the zero-query New group. */
   newActions: QuickActionItem[];
-  searchAgents: AgentPathEntry[];
-  /** Conversations matching the current query. */
-  searchSessions: PaletteSessionItem[];
-  searchFeatures: FeatureItem[];
-  searchCommands: CommandItemData[];
-  searchQuickActions: QuickActionItem[];
-  /** The whole room list, for its load state and its unread rows. */
+  /** The row that stands clear of the rest, or `null` when none has earned it. */
+  bestMatch: RankedRow<SearchResult> | null;
+  /** Everything the query matched, in one ranked order across types. */
+  rows: RankedRow<SearchResult>[];
+  /** The whole room list, for its load state. */
   rooms: PaletteRooms;
-  /** Channels matching the current query. */
-  searchChannels: RoomSummary[];
-  /** Direct messages matching the current query. */
-  searchDms: RoomSummary[];
-  agentMatchMap: Map<string, readonly FuseResultMatch[] | undefined>;
   onFeatureAction: (action: string) => void;
   onQuickAction: (action: string) => void;
   onGoToAgentActions: (agent: AgentPathEntry) => void;
@@ -55,28 +51,33 @@ interface PaletteRootPageProps {
   onCommandSelect: (command: string) => void;
 }
 
-/** Root page content for the command palette — renders all groups with stagger animation. */
+/**
+ * Root page content for the command palette.
+ *
+ * Two states, and they are different surfaces rather than two densities of the
+ * same one. **Nothing typed** is the command center: Continue, Recent, New, the
+ * prefix legend. **Something typed** is one ranked list across every kind of
+ * thing ⌘K can find — relevance blended with frecency and recency
+ * (`palette-ranking`), with the standout row lifted into its own **Best match**
+ * section when there is one.
+ *
+ * The headings on the ranked list name what a row IS; they do not decide where
+ * it sits. That is the whole change: before this, a group order fixed in this
+ * file drew a perfect room match below a weak agent match, every time, and
+ * nothing a person typed could move it (design-decisions §15).
+ */
 export function PaletteRootPage({
   staggerKey,
   isZeroQuery,
-  isAtMode,
-  isCommandMode,
   isRoomMode,
-  search,
   selectedCwd,
   selectedValue,
   continueRows,
   recent,
   newActions,
-  searchAgents,
-  searchSessions,
-  searchFeatures,
-  searchCommands,
-  searchQuickActions,
+  bestMatch,
+  rows,
   rooms,
-  searchChannels,
-  searchDms,
-  agentMatchMap,
   onFeatureAction,
   onQuickAction,
   onGoToAgentActions,
@@ -97,6 +98,28 @@ export function PaletteRootPage({
           ? 'No channels yet.'
           : null
     : null;
+
+  const groups = groupRankedRows(rows, (row) => RESULT_GROUP_LABEL[row.item.item.type]);
+
+  // The stagger runs down the WHOLE list rather than restarting inside each
+  // heading, because the list is one list — rows arriving in two overlapping
+  // waves would read as two, which is the shape this page just stopped being.
+  // A set of keys rather than a counter mutated inside the map below, so this
+  // component stays a pure function of its props.
+  const staggered = new Set(
+    rows.slice(0, bestMatch ? STAGGERED_ROWS - 1 : STAGGERED_ROWS).map((row) => row.key)
+  );
+
+  const rowProps = {
+    selectedCwd,
+    selectedValue,
+    onFeatureAction,
+    onQuickAction,
+    onGoToAgentActions,
+    onRoomSelect,
+    onSessionSelect,
+    onCommandSelect,
+  };
 
   return (
     <motion.div key={staggerKey} variants={listVariants} initial="hidden" animate="visible">
@@ -120,64 +143,37 @@ export function PaletteRootPage({
       )}
 
       {/*
-       * Conversations lead the typed list. Recall is what ⌘K is for, and a
-       * conversation is the thing people go looking for most and could not find
-       * at all until this shipped. (Task 3.2 replaces this fixed order with one
-       * blended ranking — until then, first is the honest place for it.)
+       * The one row the ranking is confident about, said out loud. It is absent
+       * far more often than it is present — see `BEST_MATCH_MARGIN` — and when
+       * it is absent the list below is exactly the list that would have been
+       * drawn anyway, with this row back on top of it.
        */}
-      {!isZeroQuery && searchSessions.length > 0 && (
-        <CommandGroup heading="Conversations">
-          {searchSessions.map((session, index) => (
-            <motion.div key={session.id} variants={index < 8 ? itemVariants : undefined}>
-              <SessionCommandItem
-                item={session}
-                isSelected={selectedValue === session.id}
-                onSelect={() => onSessionSelect(session)}
-              />
-            </motion.div>
-          ))}
+      {!isZeroQuery && bestMatch && (
+        <CommandGroup heading={BEST_MATCH_HEADING}>
+          <motion.div variants={itemVariants}>
+            <PaletteResultRow row={bestMatch} {...rowProps} />
+          </motion.div>
         </CommandGroup>
       )}
 
-      {/* Search state: All Agents — always shown in @ mode or when searching */}
-      {!isZeroQuery && searchAgents.length > 0 && (
-        <CommandGroup heading="All Agents">
-          <LayoutGroup id="cmd-palette-all">
-            {searchAgents.map((agent, index) => (
-              <motion.div key={agent.id} variants={index < 8 ? itemVariants : undefined}>
-                <AgentCommandItem
-                  agent={agent}
-                  isActive={agent.projectPath === selectedCwd}
-                  isSelected={selectedValue === getAgentDisplayName(agent)}
-                  onSelect={() => onGoToAgentActions(agent)}
-                  nameIndices={
-                    agentMatchMap.get(agent.id)?.find((m) => m.key === 'name')?.indices as
-                      | readonly [number, number][]
-                      | undefined
-                  }
-                />
-              </motion.div>
-            ))}
-          </LayoutGroup>
-        </CommandGroup>
-      )}
-
-      {/* Channels — what `#` addresses, and what a plain query finds beside everything else */}
-      {!isZeroQuery && searchChannels.length > 0 && (
-        <>
-          <CommandSeparator />
-          <CommandGroup heading="Channels">
-            {searchChannels.map((room, index) => (
-              <motion.div key={room.id} variants={index < 8 ? itemVariants : undefined}>
-                <RoomCommandItem room={room} onSelect={() => onRoomSelect(room)} />
+      {!isZeroQuery &&
+        groups.map((group, groupIndex) => (
+          // The label alone is not a key: a kind can head more than one run when
+          // the ranking interleaves types, which is the point of the run.
+          <CommandGroup key={`${group.label}-${groupIndex}`} heading={group.label}>
+            {group.rows.map((row) => (
+              <motion.div
+                key={row.key}
+                variants={staggered.has(row.key) ? itemVariants : undefined}
+              >
+                <PaletteResultRow row={row} {...rowProps} />
               </motion.div>
             ))}
           </CommandGroup>
-        </>
-      )}
+        ))}
 
       {/*
-       * Why the channel list has a status row and no other group does: `#` is a
+       * Why the channel list has a status row and no other kind does: `#` is a
        * scope, so when it holds nothing there is nothing else on screen to
        * explain the emptiness. A disabled CommandItem rather than plain markup,
        * so cmdk counts a row and does not also print "No results found."
@@ -188,100 +184,6 @@ export function PaletteRootPage({
             {channelStatus}
           </CommandItem>
         </CommandGroup>
-      )}
-
-      {/* Direct messages — under `@` beside the agents, because a DM is addressed by who is in it */}
-      {!isZeroQuery && searchDms.length > 0 && (
-        <>
-          <CommandSeparator />
-          <CommandGroup heading="Direct Messages">
-            {searchDms.map((room, index) => (
-              <motion.div key={room.id} variants={index < 8 ? itemVariants : undefined}>
-                <RoomCommandItem room={room} onSelect={() => onRoomSelect(room)} />
-              </motion.div>
-            ))}
-          </CommandGroup>
-        </>
-      )}
-
-      {/* Features — hidden in @ and > mode; shown when searching */}
-      {!isZeroQuery && !isAtMode && !isCommandMode && searchFeatures.length > 0 && (
-        <>
-          <CommandSeparator />
-          <CommandGroup heading="Features">
-            {searchFeatures.map((f, index) => {
-              const Icon = ICON_MAP[f.icon];
-              return (
-                <motion.div key={f.id} variants={index < 8 ? itemVariants : undefined}>
-                  <CommandItem value={f.label} onSelect={() => onFeatureAction(f.action)}>
-                    <motion.div
-                      whileHover={{ x: 2 }}
-                      transition={{ duration: 0.1, ease: EASE_OUT }}
-                      className="flex w-full items-center gap-2"
-                    >
-                      {Icon && <Icon className="size-4" />}
-                      <span>{f.label}</span>
-                      {f.shortcut && (
-                        <span className="text-muted-foreground ml-auto text-xs">{f.shortcut}</span>
-                      )}
-                    </motion.div>
-                  </CommandItem>
-                </motion.div>
-              );
-            })}
-          </CommandGroup>
-        </>
-      )}
-
-      {/* Commands — hidden in @ mode; shown in > mode or when searching */}
-      {!isAtMode && (isCommandMode || search.length > 0) && searchCommands.length > 0 && (
-        <>
-          <CommandSeparator />
-          <CommandGroup heading="Commands">
-            {searchCommands.map((cmd, index) => (
-              <motion.div key={cmd.name} variants={index < 8 ? itemVariants : undefined}>
-                <CommandItem value={cmd.name} onSelect={() => onCommandSelect(cmd.name)}>
-                  <motion.div
-                    whileHover={{ x: 2 }}
-                    transition={{ duration: 0.1, ease: EASE_OUT }}
-                    className="flex w-full items-center gap-2"
-                  >
-                    <span className="font-mono text-xs">{cmd.name}</span>
-                    {cmd.description && (
-                      <span className="text-muted-foreground ml-2 text-xs">{cmd.description}</span>
-                    )}
-                  </motion.div>
-                </CommandItem>
-              </motion.div>
-            ))}
-          </CommandGroup>
-        </>
-      )}
-
-      {/* Quick Actions — hidden in @ and > mode; shown when searching */}
-      {!isZeroQuery && !isAtMode && !isCommandMode && searchQuickActions.length > 0 && (
-        <>
-          <CommandSeparator />
-          <CommandGroup heading="Quick Actions">
-            {searchQuickActions.map((qa, index) => {
-              const Icon = ICON_MAP[qa.icon];
-              return (
-                <motion.div key={qa.id} variants={index < 8 ? itemVariants : undefined}>
-                  <CommandItem value={qa.label} onSelect={() => onQuickAction(qa.action)}>
-                    <motion.div
-                      whileHover={{ x: 2 }}
-                      transition={{ duration: 0.1, ease: EASE_OUT }}
-                      className="flex w-full items-center gap-2"
-                    >
-                      {Icon && <Icon className="size-4" />}
-                      <span>{qa.label}</span>
-                    </motion.div>
-                  </CommandItem>
-                </motion.div>
-              );
-            })}
-          </CommandGroup>
-        </>
       )}
 
       {/*

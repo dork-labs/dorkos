@@ -4,6 +4,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook } from '@testing-library/react';
 import { usePaletteItems } from '../use-palette-items';
+import type {
+  CommandItemData,
+  FeatureItem,
+  PaletteItems,
+  QuickActionItem,
+} from '../use-palette-items';
+import type { SearchableItem } from '../use-palette-search';
 import type { AgentPathEntry } from '@dorkos/shared/mesh-schemas';
 import type { RoomSummary } from '@dorkos/shared/room-schemas';
 import type { CommandPaletteContribution } from '@/layers/shared/model';
@@ -240,20 +247,32 @@ describe('usePaletteItems', () => {
 
   // --- Static content groups ---
 
-  it('features is a static list of 4 items', () => {
+  /**
+   * Every registered contribution of one category, as the corpus carries it.
+   *
+   * Read off `searchableItems` rather than off a list of its own, because that
+   * IS the list now: a typed query is one ranked list across types, so the
+   * corpus is the only route an action has to the screen. Asserting a parallel
+   * array would have gone on passing after the palette stopped reading it.
+   */
+  function corpusOf(items: PaletteItems, type: SearchableItem['type']) {
+    return items.searchableItems.filter((item) => item.type === type);
+  }
+
+  it('offers every registered feature as a searchable row', () => {
     const { result } = renderHook(() => usePaletteItems(null));
-    expect(result.current.features).toHaveLength(4);
-    const ids = result.current.features.map((f) => f.id);
+    const ids = corpusOf(result.current, 'feature').map((f) => f.id);
+    expect(ids).toHaveLength(4);
     expect(ids).toContain('tasks');
     expect(ids).toContain('relay');
     expect(ids).toContain('mesh');
     expect(ids).toContain('settings');
   });
 
-  it('quickActions is a static list of 6 items', () => {
+  it('offers every registered quick action as a searchable row', () => {
     const { result } = renderHook(() => usePaletteItems(null));
-    expect(result.current.quickActions).toHaveLength(6);
-    const ids = result.current.quickActions.map((q) => q.id);
+    const ids = corpusOf(result.current, 'quick-action').map((q) => q.id);
+    expect(ids).toHaveLength(6);
     expect(ids).toContain('dashboard');
     expect(ids).toContain('new-session');
     expect(ids).toContain('create-agent');
@@ -262,20 +281,22 @@ describe('usePaletteItems', () => {
     expect(ids).toContain('theme');
   });
 
-  it('each feature has id, label, icon, and action fields', () => {
+  it('gives every feature row a name and something to run', () => {
     const { result } = renderHook(() => usePaletteItems(null));
-    for (const feature of result.current.features) {
-      expect(feature.id).toBeTruthy();
+    for (const row of corpusOf(result.current, 'feature')) {
+      expect(row.name).toBeTruthy();
+      const feature = row.data as FeatureItem;
       expect(feature.label).toBeTruthy();
       expect(feature.icon).toBeTruthy();
       expect(feature.action).toBeTruthy();
     }
   });
 
-  it('each quickAction has id, label, icon, and action fields', () => {
+  it('gives every quick-action row a name and something to run', () => {
     const { result } = renderHook(() => usePaletteItems(null));
-    for (const qa of result.current.quickActions) {
-      expect(qa.id).toBeTruthy();
+    for (const row of corpusOf(result.current, 'quick-action')) {
+      expect(row.name).toBeTruthy();
+      const qa = row.data as QuickActionItem;
       expect(qa.label).toBeTruthy();
       expect(qa.icon).toBeTruthy();
       expect(qa.action).toBeTruthy();
@@ -390,7 +411,7 @@ describe('usePaletteItems', () => {
   it('commands is empty array when no command data is available', () => {
     mockUseCommands.mockReturnValue({ data: undefined });
     const { result } = renderHook(() => usePaletteItems(null));
-    expect(result.current.commands).toEqual([]);
+    expect(corpusOf(result.current, 'command')).toEqual([]);
   });
 
   it('commands are populated from the commands query', () => {
@@ -417,10 +438,11 @@ describe('usePaletteItems', () => {
     });
 
     const { result } = renderHook(() => usePaletteItems(null));
-    expect(result.current.commands).toHaveLength(2);
-    expect(result.current.commands[0].name).toBe('/hello');
-    expect(result.current.commands[0].description).toBe('Say hello');
-    expect(result.current.commands[1].name).toBe('/world');
+    const rows = corpusOf(result.current, 'command');
+    expect(rows).toHaveLength(2);
+    expect(rows[0].name).toBe('/hello');
+    expect((rows[0].data as CommandItemData).description).toBe('Say hello');
+    expect(rows[1].name).toBe('/world');
   });
 
   it('commands with no description have undefined description', () => {
@@ -440,8 +462,11 @@ describe('usePaletteItems', () => {
     });
 
     const { result } = renderHook(() => usePaletteItems(null));
-    // description is mapped from cmd.description; empty string is falsy but still set
-    expect(result.current.commands[0].name).toBe('/bare');
+    // description is mapped from cmd.description; empty string is falsy, so the
+    // row carries no keywords rather than an empty one.
+    const rows = corpusOf(result.current, 'command');
+    expect(rows[0].name).toBe('/bare');
+    expect(rows[0].keywords).toBeUndefined();
   });
 
   // --- isLoading ---
@@ -465,18 +490,23 @@ describe('usePaletteItems', () => {
 
   // --- Return shape ---
 
-  it('returns every content group the palette draws', () => {
+  it('returns every content group the palette draws, and no list nothing reads', () => {
     const { result } = renderHook(() => usePaletteItems(null));
-    expect(result.current).toHaveProperty('recentAgents');
-    expect(result.current).toHaveProperty('allAgents');
-    expect(result.current).toHaveProperty('features');
-    expect(result.current).toHaveProperty('commands');
-    expect(result.current).toHaveProperty('quickActions');
-    expect(result.current).toHaveProperty('newActions');
-    expect(result.current).toHaveProperty('sessions');
-    expect(result.current).toHaveProperty('continueRows');
-    expect(result.current).toHaveProperty('recent');
-    expect(result.current).toHaveProperty('isLoading');
+    // Exact, not `toHaveProperty` one at a time: a list with no reader is dead
+    // surface, and the three that went (`features`, `commands`, `quickActions`)
+    // went because a typed query is one ranked list now and the corpus is their
+    // only route to the screen.
+    expect(Object.keys(result.current).sort()).toEqual([
+      'allAgents',
+      'continueRows',
+      'isLoading',
+      'newActions',
+      'recent',
+      'recentAgents',
+      'rooms',
+      'searchableItems',
+      'sessions',
+    ]);
   });
 
   // --- The zero-query "New" group ---
@@ -605,8 +635,28 @@ describe('usePaletteItems', () => {
       // The bare slug rides along so `#gen` — which arrives with the prefix
       // already stripped — matches `general` rather than fuzzing past the `#`.
       keywords: ['General chatter', 'general'],
+      // What ranking reads. Asserted as part of the whole object rather than
+      // spot-checked, so a row that stopped carrying them — and so silently
+      // ranked as never-used, never-active and never-waiting — goes red here.
+      usageKey: 'room:room-general',
+      lastActivityAt: channel.lastActivityAt,
+      waiting: false,
+      demoted: false,
       data: channel,
     });
+  });
+
+  it('marks an unread channel as waiting, and an archived one as findable-not-live', () => {
+    const unread = { ...channel, id: 'room-loud', slug: 'loud', unreadCount: 3 };
+    const archived = { ...channel, id: 'room-old', slug: 'old', archived: true };
+    mockUseRooms.mockReturnValue({ data: [unread, archived], isLoading: false, isError: false });
+    const { result } = renderHook(() => usePaletteItems(null));
+
+    const byId = new Map(result.current.searchableItems.map((i) => [i.id, i]));
+    expect(byId.get('room-loud')?.waiting).toBe(true);
+    expect(byId.get('room-loud')?.demoted).toBe(false);
+    expect(byId.get('room-old')?.waiting).toBe(false);
+    expect(byId.get('room-old')?.demoted).toBe(true);
   });
 
   it('puts a direct message under type "dm", not "room", so `@` finds it and `#` does not', () => {
