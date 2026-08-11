@@ -26,6 +26,7 @@ import { createTestDb } from '@dorkos/test-utils/db';
 import { FakeAgentRuntime } from '@dorkos/test-utils';
 import type { StreamEvent } from '@dorkos/shared/types';
 import type { Db } from '@dorkos/db';
+import { isDispatchId } from '@dorkos/shared/dispatch-id';
 
 // The neutral context bag is assembled off the real filesystem (git status);
 // these cases care about dispatch order, not context, so keep it inert.
@@ -34,6 +35,7 @@ vi.mock('../context-assembler.js', () => ({
 }));
 
 import {
+  adoptQueuedMessages,
   dispatchMessage,
   dispatchCommandIntent,
   listQueuedMessages,
@@ -41,6 +43,10 @@ import {
   resetMessageDispatcher,
   sweepOrphanedMessageQueues,
 } from '../message-dispatcher.js';
+import { assembleAdditionalContext } from '../context-assembler.js';
+import type { DispatchContext } from '../../../lib/dispatch-context.js';
+import { currentDispatch, currentDispatchId } from '../../../lib/dispatch-context.js';
+import { recentDispatches, resetDispatchBuffers } from '../../observability/dispatch-buffers.js';
 // The routes' mutation API, driven here because what it changes is what the
 // dispatcher then RUNS — the edit and the turn are one promise, not two.
 import { cancelQueuedMessage, editQueuedMessage } from '../queued-message-edits.js';
@@ -611,5 +617,108 @@ describe('the orphan sweep', () => {
     store.enqueue({ sessionId: untouched, content: 'nobody said this was gone', clientId: TAB });
     expect(sweepOrphanedMessageQueues()).toBe(0);
     expect(store.list(untouched)).toHaveLength(1);
+  });
+});
+
+describe('a row recovered after a restart', () => {
+  it('runs under a dispatch of its own, marked as queue recovery', async () => {
+    // An adopted row has no accepting request behind it — the process that took
+    // it is gone — so before DOR-1159 its turn ran under whatever context the
+    // pump happened to be called from, or under none at all. A turn nobody can
+    // name in the log is a turn nobody can reconstruct during an incident.
+    resetDispatchBuffers();
+    const seen: Array<DispatchContext | undefined> = [];
+    runtime.withScenarios([
+      async function* () {
+        seen.push(currentDispatch());
+        yield { type: 'done', data: {} } as StreamEvent;
+      },
+    ]);
+    // Written straight to the store, with no pending entry behind it: exactly
+    // what a previous process leaves on disk.
+    store.enqueue({ sessionId: session, content: 'survived the restart', clientId: TAB });
+
+    const adopted = adoptQueuedMessages({
+      sessionId: session,
+      projector: getOrCreateProjector(session),
+      runtime,
+    });
+    await settle();
+
+    expect(adopted).toBe(1);
+    expect(runtime.sendMessage).toHaveBeenCalledTimes(1);
+    const context = seen[0];
+    expect(context?.origin).toBe('queue-recovery');
+    expect(isDispatchId(context?.dispatchId ?? '')).toBe(true);
+    // And it is a dispatch the debug buffer knows about, opened and closed.
+    const row = recentDispatches(10).find((d) => d.dispatchId === context?.dispatchId);
+    expect(row?.origin).toBe('queue-recovery');
+    expect(row?.outcome).toBe('answered');
+  });
+
+  it('leaves alone a row whose turn is already on its way', async () => {
+    // The window adoption must not step into: the message has left the pending
+    // set and its turn is assembling context, so the row is on disk with
+    // nothing visibly behind it — indistinguishable from a restart survivor
+    // unless the launch itself is tracked. Adopting here sends the person's
+    // words a second time and reports a recovery on a server that never
+    // restarted, in the very buffer somebody reads during an incident.
+    resetDispatchBuffers();
+    const assembling = gate();
+    vi.mocked(assembleAdditionalContext).mockImplementationOnce(async () => {
+      await assembling.wait;
+      return [];
+    });
+    runtime.withScenarios([quickTurn(), quickTurn()]);
+
+    const sent = send('the one and only message');
+    await settle();
+    const adopted = adoptQueuedMessages({
+      sessionId: session,
+      projector: getOrCreateProjector(session),
+      runtime,
+    });
+    assembling.open();
+    await sent;
+    await settle();
+
+    expect(adopted).toBe(0);
+    expect(runtime.sendMessage).toHaveBeenCalledTimes(1);
+    expect(recentDispatches(10).filter((d) => d.origin === 'queue-recovery')).toEqual([]);
+  });
+
+  it('gives two recovered rows two different dispatch ids', async () => {
+    resetDispatchBuffers();
+    const seen: string[] = [];
+    const held = gate();
+    runtime.withScenarios([
+      async function* () {
+        seen.push(currentDispatchId() ?? 'none');
+        yield { type: 'text_delta', data: { text: 'working' } } as StreamEvent;
+        await held.wait;
+        yield { type: 'done', data: {} } as StreamEvent;
+      },
+      async function* () {
+        seen.push(currentDispatchId() ?? 'none');
+        yield { type: 'done', data: {} } as StreamEvent;
+      },
+    ]);
+    store.enqueue({ sessionId: session, content: 'first', clientId: TAB });
+    store.enqueue({ sessionId: session, content: 'second', clientId: TAB });
+
+    expect(
+      adoptQueuedMessages({
+        sessionId: session,
+        projector: getOrCreateProjector(session),
+        runtime,
+      })
+    ).toBe(2);
+    await settle();
+    held.open();
+    await settle();
+
+    expect(seen).toHaveLength(2);
+    expect(seen[0]).not.toBe(seen[1]);
+    expect(seen.every(isDispatchId)).toBe(true);
   });
 });

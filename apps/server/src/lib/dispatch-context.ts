@@ -20,20 +20,35 @@
  * | The relay bus                        | A new envelope, possibly a new process    | Handled by the envelope's own `dispatchId` field, not by ALS      |
  * | Timers registered at module load     | No scope                                  | Not on the dispatch path                                          |
  *
- * ## The one scoping rule
+ * ## The two scoping rules
  *
- * {@link runInDispatch} must wrap the CONSTRUCTION of a detached async chain,
- * not an `await` that settles before the chain does. An async generator created
- * inside a scope keeps that scope for its whole life, so a turn that outlives
- * its HTTP response stays correlated — but a scope placed around only the
- * awaited part expires at the response and correlates nothing.
+ * 1. {@link runInDispatch} must wrap the CONSTRUCTION of a detached async
+ *    chain, not an `await` that settles before the chain does. An async
+ *    generator created inside a scope keeps that scope for its whole life, so a
+ *    turn that outlives its HTTP response stays correlated — but a scope placed
+ *    around only the awaited part expires at the response and correlates
+ *    nothing.
+ * 2. Work that is STORED now and CALLED later must carry a
+ *    {@link captureDispatchScope} snapshot. ALS follows the call chain, and a
+ *    stored closure's later call chain belongs to whoever invoked it — which,
+ *    for a message waiting behind a running turn, is the turn AHEAD of it. That
+ *    was DOR-1159: three messages, three ids, and every line after the first
+ *    turn logged under the first id.
  *
  * @module lib/dispatch-context
  */
 import { AsyncLocalStorage } from 'node:async_hooks';
 
-/** Where a dispatch came from, for grouping. */
-export type DispatchOrigin = 'room' | 'session' | 'task' | 'relay';
+/**
+ * Where a dispatch came from, for grouping.
+ *
+ * `queue-recovery` is the odd one out and deliberately so: it is not a caller
+ * but the server picking up words a previous process was told it had accepted.
+ * Nobody is waiting on the other end of it, which is exactly why it needs a
+ * label of its own — a turn that started for no visible reason is the hardest
+ * kind to explain during an incident.
+ */
+export type DispatchOrigin = 'room' | 'session' | 'task' | 'relay' | 'queue-recovery';
 
 /** The correlation context carried across one dispatch's async chain. */
 export interface DispatchContext {
@@ -63,6 +78,26 @@ const storage = new AsyncLocalStorage<DispatchContext>();
  */
 export function runInDispatch<T>(ctx: DispatchContext, fn: () => T): T {
   return storage.run(ctx, fn);
+}
+
+/**
+ * Freeze the current async context so work stored now runs inside it later.
+ *
+ * The answer to rule 2 above. A closure parked in a map and called minutes
+ * later by unrelated machinery inherits THAT machinery's context, because ALS
+ * is a property of the call chain and a closure does not carry one. The
+ * snapshot is the missing carrier: taken where the work was accepted, applied
+ * where it finally runs.
+ *
+ * It captures every `AsyncLocalStorage` in play, not only this module's, which
+ * is the point rather than an accident — applying it REPLACES the caller's
+ * context wholesale, so a queued turn cannot inherit stray scope from the turn
+ * that happened to release it either.
+ *
+ * @returns A runner that executes `fn` inside the context captured here.
+ */
+export function captureDispatchScope(): <T>(fn: () => T) => T {
+  return AsyncLocalStorage.snapshot();
 }
 
 /**

@@ -96,6 +96,7 @@ import type { SessionSettings } from '@dorkos/shared/types';
 import type { ClientContext, RoomContextData } from '@dorkos/shared/additional-context';
 import type { RuntimeCommandIntentId } from '@dorkos/shared/command-intents';
 import { COMMAND_INTENT_QUEUE_WAIT_MS } from '@dorkos/shared/command-intents';
+import { newDispatchId } from '@dorkos/shared/dispatch-id';
 import { getMessageQueueStore, toQueuedMessage } from './message-queue-store.js';
 import type { SessionStateProjector } from './session-state-projector.js';
 import {
@@ -117,6 +118,8 @@ import { triggerTurn, type TriggerTurnDeps, type TriggerTurnResult } from './tri
 import { triggerCommandIntent } from './trigger-command-intent.js';
 import { SESSIONS } from '../../config/constants.js';
 import { logger } from '../../lib/logger.js';
+import { captureDispatchScope, runInDispatch } from '../../lib/dispatch-context.js';
+import { recordDispatchEnd, recordDispatchStart } from '../observability/dispatch-buffers.js';
 
 /**
  * How many session ids the orphan sweep hands to one `DELETE ... IN (...)`.
@@ -165,6 +168,20 @@ interface PendingDispatch {
 const inFlight = new Map<string, InFlightTurn>();
 /** Accepted messages waiting to launch, keyed by message id. */
 const pending = new Map<string, PendingDispatch>();
+/**
+ * Messages whose launch is under way: out of {@link pending}, still on the
+ * queue.
+ *
+ * The gap between the two is not instantaneous. A launch leaves `pending`
+ * synchronously and the row leaves the store at `turn_start`, and between those
+ * two moments the turn is awaiting its neutral context bag — real filesystem
+ * work. A row seen in that window is on disk with no pending entry behind it,
+ * which is precisely what {@link adoptQueuedMessages} takes to mean "a previous
+ * process left this", so it would adopt a message that is at this instant being
+ * sent — running somebody's words twice and reporting a queue recovery on a
+ * server that never restarted.
+ */
+const launching = new Set<string>();
 /** Tail of each session's dispatch mutex chain; dropped when it drains. */
 const dispatchMutex = new Map<string, Promise<void>>();
 /** Sessions the fleet has reported gone, awaiting the next sweep. */
@@ -489,7 +506,14 @@ function launchDispatch(
     : Math.max(0, plan.budgetMs - (Date.now() - plan.startedWaitingAt));
   const token = Symbol('dispatcher-turn');
   if (!opts.budgetExhausted) inFlight.set(sessionKey, { clientId, token });
+  // Held from here until this launch is done with the message, whichever way it
+  // ends. Every exit below routes through `clearIfOurs` — the sync throw, the
+  // rejection, the refusal, and the settle — so there is no path that leaves an
+  // id behind, and each of them hands the message back to `pending` (or to
+  // nobody, if it ran) in the same synchronous beat.
+  launching.add(messageId);
   const clearIfOurs = (): void => {
+    launching.delete(messageId);
     if (inFlight.get(sessionKey)?.token === token) inFlight.delete(sessionKey);
     schedulePump(sessionKey);
   };
@@ -566,6 +590,15 @@ function parkDispatch(
   settle: { resolve(result: TriggerTurnResult): void; reject(err: unknown): void },
   opts?: { waitingOnLock?: boolean }
 ): void {
+  // Taken HERE, where the message was accepted, and applied wherever the pump
+  // eventually calls `launch` — which is inside the PREVIOUS turn's scope on
+  // both routes that reach it: the projector's `turn_end`, and the turn handing
+  // its slot back. Correlation follows the call chain, and a parked closure's
+  // call chain is not its own, so without this snapshot a queued turn logs
+  // under the id of the turn it waited behind (DOR-1159). The `setTimeout`
+  // below never had the problem, because a timer captures its creation context;
+  // this makes the two paths agree.
+  const scope = captureDispatchScope();
   const entry: PendingDispatch = {
     messageId: plan.messageId,
     sessionKey: plan.sessionKey,
@@ -574,7 +607,9 @@ function parkDispatch(
     launch: (launchOpts) => {
       if (!pending.delete(plan.messageId)) return;
       clearTimeout(entry.timer);
-      launchDispatch(plan, launchOpts).then(settle.resolve, settle.reject);
+      scope(() => {
+        void launchDispatch(plan, launchOpts).then(settle.resolve, settle.reject);
+      });
     },
     // Bounded for the same reason DOR-1088 bounds its chain: the write-lock has
     // a TTL and a queue does not, so a turn that went dark would otherwise hand
@@ -730,9 +765,13 @@ export interface AdoptQueuedMessagesOpts {
  * would enqueue a fresh row beside every original and hand the person their
  * queue twice, which is the one failure worse than the queue not running at all.
  *
- * Idempotent by construction — a row that already has a pending entry is skipped
- * — so it is safe to call on every dispatch, which is what makes recovery
- * automatic rather than something a caller has to remember.
+ * Idempotent by construction — a row this process is already carrying is
+ * skipped, whether it is waiting ({@link pending}) or already on its way out
+ * ({@link launching}) — so it is safe to call on every dispatch, which is what
+ * makes recovery automatic rather than something a caller has to remember. Both
+ * halves are load-bearing: a row is briefly in NEITHER the pending set nor the
+ * store's rear-view while its turn assembles its context, and adopting there
+ * sends somebody's message twice.
  *
  * Ends by giving the queue a chance to move: an idle session with rows on disk
  * has nothing else coming that would ever start them.
@@ -747,7 +786,14 @@ export function adoptQueuedMessages(opts: AdoptQueuedMessagesOpts): number {
   const rows = store.list(queueKeyOf(opts.sessionId));
   let adopted = 0;
   for (const row of rows) {
-    if (pending.has(row.id)) continue;
+    if (pending.has(row.id) || launching.has(row.id)) continue;
+    // The dispatch that accepted this row belonged to a process that is gone,
+    // and its id went with it. Adoption is a new dispatch — its own id, its own
+    // origin — because the alternative is a turn that appears in the log under
+    // whichever unrelated caller happened to trigger the adoption sweep, or
+    // under nothing at all.
+    const dispatchId = newDispatchId();
+    recordDispatchStart({ dispatchId, origin: 'queue-recovery', sessionId: sessionKey });
     const plan: DispatchPlan = {
       sessionId: opts.sessionId,
       sessionKey,
@@ -764,9 +810,19 @@ export function adoptQueuedMessages(opts: AdoptQueuedMessagesOpts): number {
       turn: {
         ...(opts.cwd !== undefined ? { cwd: opts.cwd } : {}),
         ...(row.context !== null ? { context: row.context } : {}),
+        // Nobody is holding a request open for this one, so the buffer entry
+        // would otherwise never be closed out.
+        onSettled: (outcome) =>
+          recordDispatchEnd(dispatchId, outcome === 'failed' ? 'failed' : 'answered'),
       },
     };
-    parkDispatch(plan, unwatchedSettle(plan));
+    // Parked INSIDE the scope, so the snapshot `parkDispatch` takes is this
+    // recovery dispatch's rather than the caller's — an adoption triggered by
+    // somebody else's `dispatchMessage` must not put its turn under that
+    // person's id.
+    runInDispatch({ dispatchId, origin: 'queue-recovery' }, () =>
+      parkDispatch(plan, unwatchedSettle(plan))
+    );
     adopted += 1;
   }
   if (adopted > 0) schedulePump(sessionKey);
@@ -1036,6 +1092,7 @@ export function resetMessageDispatcher(): void {
   for (const entry of pending.values()) clearTimeout(entry.timer);
   inFlight.clear();
   pending.clear();
+  launching.clear();
   resetSessionKeys();
   dispatchMutex.clear();
   orphanedSessions.clear();

@@ -234,6 +234,64 @@ describe('the dispatch id survives the detached turn', () => {
     });
   });
 
+  it('runs a queued message under its own dispatch, not the one it waited behind', async () => {
+    // The production failure (DOR-1159): three POSTs minted three ids, and every
+    // line after the first turn logged under the FIRST one, because the pump
+    // reaches a parked launch from the PREVIOUS turn's settle — and ALS follows
+    // the call chain, not the closure the launch was written in. Turn boundaries
+    // became unreadable in the log exactly when somebody needed them.
+    resetDispatchBuffers();
+    let open!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      open = resolve;
+    });
+    const seen: Array<{ at: string; id: string | undefined }> = [];
+    let ended!: () => void;
+    const finished = new Promise<void>((resolve) => {
+      ended = resolve;
+    });
+
+    fakeRuntime.withScenarios([
+      async function* () {
+        seen.push({ at: 'running', id: currentDispatchId() });
+        yield { type: 'text_delta', data: { text: 'working' } } as StreamEvent;
+        await gate;
+        yield { type: 'done', data: {} } as StreamEvent;
+      },
+      async function* () {
+        seen.push({ at: 'queued', id: currentDispatchId() });
+        yield { type: 'done', data: {} } as StreamEvent;
+        ended();
+      },
+    ]);
+
+    const running = await request(app)
+      .post(`/api/sessions/${SESSION_ID}/messages`)
+      .set('X-Client-Id', 'client-a')
+      .send({ content: 'the long turn' });
+    expect(running.status).toBe(202);
+    // Newest-first, and the route records the start before it triggers, so the
+    // head of the ring is this request's own id.
+    const runningDispatchId = recentDispatches(10)[0]?.dispatchId;
+
+    const queued = await request(app)
+      .post(`/api/sessions/${SESSION_ID}/messages`)
+      .set('X-Client-Id', 'client-a')
+      .send({ content: 'queued behind it' });
+    expect(queued.status).toBe(202);
+    const queuedDispatchId = recentDispatches(10)[0]?.dispatchId;
+    expect(isDispatchId(queuedDispatchId as string)).toBe(true);
+    expect(queuedDispatchId).not.toBe(runningDispatchId);
+
+    open();
+    await finished;
+
+    expect(seen.find((s) => s.at === 'running')?.id).toBe(runningDispatchId);
+    // The claim: the waiting message's turn is its OWN dispatch, however the
+    // pump got to it.
+    expect(seen.find((s) => s.at === 'queued')?.id).toBe(queuedDispatchId);
+  });
+
   it('gives two concurrent turns two different ids', async () => {
     // One id per dispatch, not one per process: two sessions triggered at once
     // must not share a filter.
