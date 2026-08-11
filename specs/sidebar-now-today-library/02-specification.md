@@ -490,7 +490,7 @@ Each contract is stated so a test can fail. Fixture names refer to the four jour
   counts; `rollup.unread.tier` is `'activity'` when any member is tier-1 and none is tier-2;
   `rollup.workingCount` = members currently streaming. Signal is never lost by folding.
 
-> Amended 2026-08-10 (DOR-1137), on the same ruling that amends BC-9. "Members currently
+> Amended 2026-08-10 (DOR-1137), on the §18 ruling ("Automated session activity → Nothing"); BC-9 carries the matching amendment via PR #926. "Members currently
 > streaming" counts **human-origin sessions only** — `design-decisions.md` §18's table renders
 > automated session activity as "Nothing. No bold, no badge", and a folded header is a badge.
 > One definition of live everywhere.
