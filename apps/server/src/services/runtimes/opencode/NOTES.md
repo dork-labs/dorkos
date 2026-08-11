@@ -394,7 +394,7 @@ if (state.status === 'error') {
 `subagentFailureStatus` mirrors that resolution order (state metadata, then part metadata, then the
 text), which is why a stop reads as `stopped` rather than `failed` even if the wording drifts.
 
-### What DorkOS now maps (`event-mapper.ts`)
+### What DorkOS now maps (`subagent-mapper.ts`, routed by `event-mapper.ts`)
 
 | Wire fact                                 | DorkOS StreamEvent                                                                            |
 | ----------------------------------------- | --------------------------------------------------------------------------------------------- |

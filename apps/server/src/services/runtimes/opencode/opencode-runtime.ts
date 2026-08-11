@@ -72,11 +72,11 @@ import { detectOllama } from './ollama.js';
 import {
   createOpenCodeEventContext,
   mapOpenCodeTurn,
-  mapOpenCodeTodos,
   matchesOpenCodeSession,
   matchesOpenCodeSubagentSession,
   type OpenCodeWireEvent,
 } from './event-mapper.js';
+import { mapOpenCodeTodos } from './session-event-mapper.js';
 import {
   OpenCodeSessionMapper,
   unwrap,
