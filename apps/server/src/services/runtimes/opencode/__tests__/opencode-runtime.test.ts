@@ -787,6 +787,153 @@ describe('OpenCodeRuntime', () => {
     });
   });
 
+  describe("a subagent's approvals (DOR-1126)", () => {
+    /**
+     * Drive a turn to the point where a SUBAGENT's child session is asking for
+     * permission. The ask is pushed only after the subagent has opened, because
+     * the demux admits a child session only once a `task` part has revealed it —
+     * which is the same order the live wire produces (NOTES.md §7).
+     */
+    async function turnWithSubagentPermission(harness: ReturnType<typeof makeRuntime>) {
+      const { runtime } = harness;
+      const sessionId = nextSessionId();
+      runtime.ensureSession(sessionId, { permissionMode: 'default', cwd: DIRECTORY });
+      const consumed = consume(runtime.sendMessage(sessionId, 'delegate it', { cwd: DIRECTORY }));
+      const connection = await openTurn(harness);
+      connection.push(globalEvent(DIRECTORY, statusEvent(OC_SESSION_A, { type: 'busy' })));
+      connection.push(
+        globalEvent(
+          DIRECTORY,
+          partUpdated(
+            taskToolPart(
+              OC_SESSION_A,
+              'call_task',
+              toolStateRunning(taskToolInput()),
+              taskToolMetadata()
+            )
+          )
+        )
+      );
+      await vi.waitFor(() =>
+        expect(consumed.events.some((e) => e.type === 'background_task_started')).toBe(true)
+      );
+      connection.push(
+        globalEvent(
+          DIRECTORY,
+          permissionAsked(
+            permissionRequest(OC_CHILD_SESSION, {
+              id: 'per_child01',
+              permission: 'bash',
+              callID: 'call_child',
+            })
+          )
+        )
+      );
+      return { sessionId, connection, ...consumed };
+    }
+
+    it("puts the child's ask on the parent session's card, named for the subagent", async () => {
+      const harness = makeRuntime();
+      const { connection, events, finished } = await turnWithSubagentPermission(harness);
+
+      await vi.waitFor(() => expect(events.some((e) => e.type === 'approval_required')).toBe(true));
+      expect(events.find((e) => e.type === 'approval_required')!.data).toMatchObject({
+        toolCallId: 'per_child01',
+        toolName: 'bash',
+        title: 'The explore subagent needs permission',
+      });
+
+      connection.push(globalEvent(DIRECTORY, sessionIdle(OC_SESSION_A)));
+      await finished;
+    });
+
+    it('sends the approval to the CHILD session — the only one that can take it', async () => {
+      const harness = makeRuntime();
+      const { runtime, client } = harness;
+      const { sessionId, connection, events, finished } = await turnWithSubagentPermission(harness);
+      await vi.waitFor(() => expect(events.some((e) => e.type === 'approval_required')).toBe(true));
+
+      expect(runtime.approveTool(sessionId, 'per_child01', true)).toBe(true);
+      await vi.waitFor(() =>
+        expect(client.postSessionIdPermissionsPermissionId).toHaveBeenCalledWith({
+          path: { id: OC_CHILD_SESSION, permissionID: 'per_child01' },
+          body: { response: 'once' },
+        })
+      );
+
+      connection.push(globalEvent(DIRECTORY, sessionIdle(OC_SESSION_A)));
+      await finished;
+    });
+
+    it('sends a denial to the child session too', async () => {
+      const harness = makeRuntime();
+      const { runtime, client } = harness;
+      const { sessionId, connection, events, finished } = await turnWithSubagentPermission(harness);
+      await vi.waitFor(() => expect(events.some((e) => e.type === 'approval_required')).toBe(true));
+
+      expect(runtime.approveTool(sessionId, 'per_child01', false)).toBe(true);
+      await vi.waitFor(() =>
+        expect(client.postSessionIdPermissionsPermissionId).toHaveBeenCalledWith({
+          path: { id: OC_CHILD_SESSION, permissionID: 'per_child01' },
+          body: { response: 'reject' },
+        })
+      );
+
+      connection.push(globalEvent(DIRECTORY, sessionIdle(OC_SESSION_A)));
+      await finished;
+    });
+
+    it('auto-denies an unanswered child ask against the child session, so the turn can end', async () => {
+      // The whole failure this fixes: nobody answers, the child's tool blocks,
+      // the parent's `task` call blocks behind it, and the turn waits forever.
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      const harness = makeRuntime();
+      const { client } = harness;
+      const { connection, events, finished } = await turnWithSubagentPermission(harness);
+      await vi.waitFor(() => expect(events.some((e) => e.type === 'approval_required')).toBe(true));
+
+      await vi.advanceTimersByTimeAsync(SESSIONS.INTERACTION_TIMEOUT_MS + 1);
+
+      await vi.waitFor(() =>
+        expect(client.postSessionIdPermissionsPermissionId).toHaveBeenCalledWith({
+          path: { id: OC_CHILD_SESSION, permissionID: 'per_child01' },
+          body: { response: 'reject' },
+        })
+      );
+
+      connection.push(globalEvent(DIRECTORY, sessionIdle(OC_SESSION_A)));
+      await finished;
+    });
+
+    it('withdraws the ask and closes the subagent when the user stops the turn', async () => {
+      const harness = makeRuntime();
+      const { runtime, client } = harness;
+      const { sessionId, connection, events, finished } = await turnWithSubagentPermission(harness);
+      await vi.waitFor(() => expect(events.some((e) => e.type === 'approval_required')).toBe(true));
+
+      // The live stop ordering (fixtures/live-cancel.jsonl): the child dies
+      // first, then the parent.
+      connection.push(globalEvent(DIRECTORY, sessionError(OC_CHILD_SESSION, abortedError())));
+      connection.push(globalEvent(DIRECTORY, sessionIdle(OC_CHILD_SESSION)));
+      connection.push(globalEvent(DIRECTORY, sessionError(OC_SESSION_A, abortedError())));
+      connection.push(globalEvent(DIRECTORY, sessionIdle(OC_SESSION_A)));
+      const all = await finished;
+
+      const cancelled = all.find((e) => e.type === 'interaction_cancelled');
+      expect(cancelled!.data).toMatchObject({ interactionId: 'per_child01' });
+      expect(all.find((e) => e.type === 'background_task_done')!.data).toMatchObject({
+        taskId: 'call_task',
+        status: 'stopped',
+      });
+      // Both settle INSIDE the turn window, before its terminal.
+      const types = all.map((e) => e.type);
+      expect(types.indexOf('interaction_cancelled')).toBeLessThan(types.indexOf('done'));
+      // Nothing is left to answer, and the stopped turn was never answered FOR.
+      expect(runtime.approveTool(sessionId, 'per_child01', true)).toBe(false);
+      expect(client.postSessionIdPermissionsPermissionId).not.toHaveBeenCalled();
+    });
+  });
+
   describe('interrupt', () => {
     it('aborts the in-flight turn via session.abort and the turn ends with a quiet done', async () => {
       const harness = makeRuntime();
