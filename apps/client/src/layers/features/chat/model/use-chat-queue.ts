@@ -1,6 +1,7 @@
 import { useRef, useCallback, useEffect } from 'react';
 import type { RefObject } from 'react';
 import { toast } from 'sonner';
+import { useInteractionStore } from '@/layers/entities/interactions';
 import { useSessionChatStore } from '@/layers/entities/session';
 import { useMessageQueue } from './use-message-queue';
 import type { QueueItem } from './use-message-queue';
@@ -206,6 +207,17 @@ export function useChatQueue({
     // them again. See {@link enqueueInFlightRef}.
     if (enqueueInFlightRef.current === trimmed) return;
     enqueueInFlightRef.current = trimmed;
+    // Queued at the KEYSTROKE, and recorded at the keystroke (DOR-1156). The
+    // flush records again when it eventually triggers, which is correct and
+    // costs nothing — `recordOpened` is last-write-wins on one timestamp — but
+    // it can be minutes later, or never, if the turn runs long or the person
+    // clears the queue. The ruling is about the operator's act of writing, and
+    // this is when they wrote it.
+    //
+    // Below the duplicate-Enter latch on purpose: a second Enter on the same
+    // words is one act, and recording above it would count it twice.
+    useInteractionStore.getState().recordOpened('session', sessionId);
+    if (selectedCwd) useInteractionStore.getState().recordOpened('agent', selectedCwd);
     // The composer keeps the words until the server has them. That is the whole
     // of "nothing typed is ever lost" now: the old queue dequeued optimistically
     // and needed an undo handle for every refusal path (DOR-480), and a message
@@ -216,7 +228,7 @@ export function useChatQueue({
       if (enqueueInFlightRef.current === trimmed) enqueueInFlightRef.current = null;
     });
     clearComposerOnConfirmed(sessionId, trimmed, accepted);
-  }, [input, messageQueue, sessionId, setInput, tryNativeCommand]);
+  }, [input, messageQueue, selectedCwd, sessionId, setInput, tryNativeCommand]);
 
   const handleQueueEdit = useCallback(
     (id: string) => {

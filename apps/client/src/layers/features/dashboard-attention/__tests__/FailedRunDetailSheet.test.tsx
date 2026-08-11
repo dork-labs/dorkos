@@ -67,6 +67,7 @@ vi.mock('@/layers/shared/ui', () => ({
 }));
 
 import { FailedRunDetailSheet } from '../ui/FailedRunDetailSheet';
+import { useInteractionStore } from '@/layers/entities/interactions';
 
 // ---------------------------------------------------------------------------
 // Browser API mocks
@@ -133,6 +134,7 @@ describe('FailedRunDetailSheet', () => {
     vi.clearAllMocks();
     mockUseRun.mockReturnValue({ data: undefined, isLoading: false, isError: false });
     mockUseCancelRun.mockReturnValue({ mutate: vi.fn(), isPending: false });
+    useInteractionStore.getState().reset();
   });
 
   it('renders loading skeletons when isLoading is true', () => {
@@ -272,6 +274,9 @@ describe('FailedRunDetailSheet', () => {
       to: '/session',
       search: { session: 'sess-xyz' },
     });
+    // The other half of the attention section's door (DOR-1156). No directory
+    // here — a run's detail carries the session and nothing else.
+    expect(Object.keys(useInteractionStore.getState().opened)).toEqual(['session:sess-xyz']);
   });
 
   it('renders Cancel button when run status is running', () => {

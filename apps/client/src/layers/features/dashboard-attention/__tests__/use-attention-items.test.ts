@@ -50,6 +50,7 @@ vi.mock('@tanstack/react-router', () => ({
 }));
 
 import { useAttentionItems } from '../model/use-attention-items';
+import { useInteractionStore } from '@/layers/entities/interactions';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -293,6 +294,24 @@ describe('useAttentionItems', () => {
     for (const item of result.current.items) {
       expect(typeof item.action.onClick).toBe('function');
     }
+  });
+
+  it('opening a stalled session records the interaction (DOR-1156)', () => {
+    useInteractionStore.getState().reset();
+    mockSessions.mockReturnValue({
+      sessions: [makeSession({ id: 'sess-stalled', cwd: '/code/api' })],
+    });
+
+    const { result } = renderHook(() => useAttentionItems());
+    expect(Object.keys(useInteractionStore.getState().opened)).toEqual([]);
+    result.current.items[0].action.onClick();
+
+    // Reaching a conversation from here is reaching it — Today has to keep the
+    // row after the operator looks at something else.
+    expect(Object.keys(useInteractionStore.getState().opened).sort()).toEqual([
+      'agent:/code/api',
+      'session:sess-stalled',
+    ]);
   });
 
   it('failed run action navigates with detail search params', () => {

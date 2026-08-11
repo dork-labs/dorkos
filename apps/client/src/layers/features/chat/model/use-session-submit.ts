@@ -37,6 +37,8 @@ import {
   sessionKeys,
 } from '@/layers/entities/session';
 import { useRuntimeCapabilities } from '@/layers/entities/runtime';
+import { useInteractionStore } from '@/layers/entities/interactions';
+import { carryInteractionForward } from '../lib/carry-interaction-forward';
 import { clearComposerOnConfirmed } from '../lib/clear-composer-on-confirmed';
 import type { SessionStoreActions } from './use-session-store-actions';
 import type { NativeCommandResult } from './native-commands';
@@ -207,6 +209,27 @@ export function useSessionSubmit({
       const cwd = opts.cwd ?? selectedCwdRef.current;
       setError(null);
 
+      // **Writing is the strongest thing a person can do to a conversation, so
+      // it is recorded like opening one** (DOR-1156). Today's membership and
+      // order are `max(userLastMessageAt, userLastOpenedAt)` (BC-16), and the
+      // client half of that pair was only ever written by a click on a sidebar
+      // row — so a person could type a paragraph into an agent, walk away, and
+      // find the conversation nowhere in Today. Recorded HERE, at the act,
+      // rather than on the 202: the operator's rule is about what THEY did, and
+      // a message that fails to reach the runtime was still one they wrote.
+      //
+      // The agent gets a record too, exactly as `SidebarChrome.openSession`
+      // does, so one act updates both the conversation's place in Today and the
+      // agent's frecency — a thing you write in is a thing you use.
+      //
+      // The kickoff is excluded, and that is the honesty seam it is everywhere
+      // else in this hook: nobody typed it, so nothing it does is evidence of
+      // the operator's attention.
+      if (!opts.kickoff) {
+        useInteractionStore.getState().recordOpened('session', targetSessionId);
+        if (cwd) useInteractionStore.getState().recordOpened('agent', cwd);
+      }
+
       // Subscribe-first, and BEFORE the upload await. `attachSession` re-targets
       // the single active-session connection, and the only other caller is an
       // effect keyed on (sessionId, cwd) that fires once per switch — so calling
@@ -353,6 +376,13 @@ export function useSessionSubmit({
           // stream fires the same migration when the canonical id resolves only
           // AFTER this 202 (the common Claude path — see session-stream-binding).
           useSessionStreamStore.getState().migrateSessionContinuity(targetSessionId, canonicalId);
+          // The interaction the send above recorded is bucketed under the
+          // throwaway id too, and Today walks the session LIST — so left behind
+          // it names a session no list will ever contain, and the conversation
+          // the operator just started is absent from Today the moment they open
+          // something else. Same migration by the other route in
+          // `useSessionRekeyRedirect`.
+          carryInteractionForward(targetSessionId, canonicalId);
           // Move the newborn-agent birth ceremony (M4) to the canonical id too,
           // for the case the rekey resolves synchronously here (no-op without a
           // birth record; idempotent with the retire-announce migration).

@@ -15,6 +15,7 @@ import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import { agentAuthorRef, type RoomSummary } from '@dorkos/shared/room-schemas';
 import { disambiguateDisplayNames, useResolvedAgents } from '@/layers/entities/agent';
 import { mutedRoomIds, useSidebarPrefs } from '@/layers/entities/config';
+import { useInteractionStore } from '@/layers/entities/interactions';
 import { useMeshAgentPaths } from '@/layers/entities/mesh';
 import { roomIdentityMark, type IdentityMark } from '@/layers/entities/room';
 import { useJumpBackIn, type JumpBackInItem } from '@/layers/entities/recents';
@@ -339,13 +340,22 @@ export function useJumpBackInPopover({
   const selectRow = useCallback(
     (item: JumpBackInItem) => {
       setIsDismissed(true);
+      // Picking a row here is the same act as clicking one in the sidebar, so
+      // it leaves the same record (DOR-1156). The panel answers "where were
+      // you?" — a door that did not write one made Today forget the answer the
+      // moment the operator acted on it.
       if (item.kind === 'session') {
+        useInteractionStore.getState().recordOpened('session', item.session.id);
+        if (item.session.cwd) {
+          useInteractionStore.getState().recordOpened('agent', item.session.cwd);
+        }
         navigate({
           to: '/session',
           search: { dir: item.session.cwd ?? undefined, session: item.session.id },
         });
         return;
       }
+      useInteractionStore.getState().recordOpened('room', item.room.id);
       navigate({ to: '/channels', search: { id: item.room.id } });
     },
     [navigate]

@@ -9,6 +9,7 @@
  */
 import { useCallback, useEffect } from 'react';
 import { useProfileDeepLink, useSafeNavigate, useSettingsDeepLink } from '@/layers/shared/model';
+import { useInteractionStore } from '@/layers/entities/interactions';
 import { findTeamOwner, useTeamRoster } from '@/layers/entities/team';
 import { ProfileDrawer } from './ProfileDrawer';
 
@@ -61,6 +62,13 @@ export function ProfileDrawerContainer({ open, onOpenChange }: ProfileDrawerCont
   const handleOpenSession = useCallback(
     (projectPath: string) => {
       if (!navigate) return;
+      // The /team roster's door into a conversation (DOR-1156). Only the AGENT
+      // is recorded, and that is not a shortfall: this navigation names a
+      // directory, not a session — which conversation it lands in is resolved
+      // afterwards by `useDirectoryState`. The agent record is what the New
+      // menu's "last used" and ⌘K's ranking read, and the session's own record
+      // arrives the moment the operator writes in it.
+      useInteractionStore.getState().recordOpened('agent', projectPath);
       void navigate({ to: '/session', search: { dir: projectPath } });
     },
     [navigate]
