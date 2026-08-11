@@ -170,7 +170,7 @@ Response: 202 { "sessionId": "canonical-id" }
 
 GET /api/sessions/:id/events   (durable SSE — snapshot → replay → live)
 event: snapshot
-data: {"messages":[...],"inProgressTurn":null,"status":{...},"pendingInteractions":[],"cursor":42}
+data: {"messages":[...],"inProgressTurn":null,"status":{...},"pendingInteractions":[],"queuedMessages":[],"cursor":42}
 
 id: <sessionId>-<epoch>-43
 event: text_delta
@@ -190,6 +190,8 @@ Top-of-bubble lifecycle parts (`thinking`, `memory_recall`) share a common contr
 There is no separate sync mechanism: the durable `GET /api/sessions/:id/events` stream IS the sync. Every subscribed client receives the same snapshot, replay, and live events — including turns triggered by other clients or by the CLI — so there is no re-fetch loop and no file-watcher events to handle.
 
 **Pending-interaction recovery is snapshot-based.** The `snapshot` frame carries `pendingInteractions` (tool approvals, questions, MCP elicitations) with server-authoritative `startedAt`/`remainingMs`, so a switched-away, refreshed, or backgrounded client rebuilds its prompt cards on connect and the countdown resumes rather than resetting (ADR-0264 countdown semantics). Live resolution on any client emits `interaction_resolved`, removing the card everywhere. See [interactive-tools.md → Recovering Pending Interactions](./interactive-tools.md#recovering-pending-interactions).
+
+**Queued-message recovery is snapshot-based too.** The `snapshot` frame also carries `queuedMessages` — messages a caller sent while the session was already busy, waiting their turn in dispatch order (spec `persistent-session-runtime`). This is hydration, not a separate fetch: a window that reconnects mid-turn needs to show what's already queued without waiting for the next `queue_update` event to reveal it.
 
 ### Real-Time System Events (Unified SSE Stream)
 
