@@ -207,31 +207,6 @@ describe('useChatSession — send (trigger-only POST → /events)', () => {
     expect(sessions.some((s) => s.id === 'client-uuid')).toBe(false);
   });
 
-  it('on a SESSION_LOCKED error, drops the optimistic message and restores input', async () => {
-    const lockError = Object.assign(new Error('Session locked'), { code: 'SESSION_LOCKED' });
-    const postMessage = vi.fn().mockRejectedValue(lockError);
-    const transport = createMockTransport({ postMessage });
-
-    const { result } = renderHook(() => useChatSession('s1'), {
-      wrapper: createWrapper(transport),
-    });
-
-    await waitFor(() => expect(result.current.status).toBe('idle'));
-
-    act(() => {
-      result.current.setInput('Hello');
-    });
-    await waitFor(() => expect(result.current.input).toBe('Hello'));
-    await act(async () => {
-      await result.current.handleSubmit();
-    });
-
-    // Input restored, optimistic message cleared, session marked busy.
-    await waitFor(() => expect(result.current.input).toBe('Hello'));
-    expect(useSessionStreamStore.getState().getSession('s1').optimisticUserMessage).toBeNull();
-    expect(result.current.sessionBusy).toBe(true);
-  });
-
   it('reconciles on turn_end: reloads canonical history and clears the optimistic message', async () => {
     const postMessage = vi
       .fn()
@@ -750,8 +725,8 @@ describe('useChatSession — send (trigger-only POST → /events)', () => {
   });
 
   it('an upload failure leaves the typed message in the composer', async () => {
-    // The input was cleared before the try, and only SESSION_LOCKED restored
-    // it — so an ordinary send whose attachment failed destroyed the message.
+    // The input was cleared before the try, with nothing to put the words back
+    // — so an ordinary send whose attachment failed destroyed the message.
     const postMessage = vi.fn();
     const transport = createMockTransport({ postMessage });
 
