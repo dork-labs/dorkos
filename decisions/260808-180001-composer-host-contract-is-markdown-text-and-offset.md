@@ -1,7 +1,7 @@
 ---
 id: 260808-180001
 title: The composer's host contract is markdown text and a markdown offset
-status: draft
+status: accepted
 created: 2026-08-08
 spec: composer-rich-text
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Draft (auto-extracted from spec: composer-rich-text)
+Accepted
 
 ## Context
 

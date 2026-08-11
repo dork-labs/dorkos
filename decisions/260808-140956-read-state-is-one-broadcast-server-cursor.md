@@ -1,7 +1,7 @@
 ---
 id: 260808-140956
 title: Read state is one broadcast server-side cursor per user and thread
-status: draft
+status: accepted
 created: 2026-08-08
 spec: team-room-home
 superseded-by: null
@@ -12,7 +12,7 @@ amends: null
 
 ## Status
 
-Draft (extracted from spec: team-room-home)
+Accepted
 
 ## Context
 

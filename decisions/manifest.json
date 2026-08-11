@@ -1346,7 +1346,7 @@
       "extractedFrom": "mesh-panel-consolidation",
       "specSlug": "mesh-panel-consolidation",
       "lastVerified": "2026-08-06",
-      "affects": ["apps/client/src/router.tsx", "apps/client/src/layers/widgets/agents/**"]
+      "affects": ["apps/client/src/router.tsx", "apps/client/src/layers/widgets/team/**"]
     },
     {
       "number": 247,
@@ -1357,7 +1357,7 @@
       "extractedFrom": "mesh-panel-consolidation",
       "specSlug": "mesh-panel-consolidation",
       "lastVerified": "2026-08-06",
-      "affects": ["apps/client/src/layers/widgets/agents/**"]
+      "affects": ["apps/client/src/layers/widgets/team/**"]
     },
     {
       "number": 246,
@@ -3809,12 +3809,12 @@
       "id": "260722-120728",
       "slug": "the-dashboard-is-an-action-surface",
       "title": "The dashboard is an action surface, not an observability report",
-      "status": "accepted",
+      "status": "superseded",
       "created": "2026-07-22",
       "extractedFrom": "dashboard-with-hands",
       "specSlug": "dashboard-with-hands",
       "lastVerified": "2026-08-06",
-      "affects": ["apps/client/src/layers/widgets/dashboard/**"]
+      "supersededBy": "260808-140955"
     },
     {
       "id": "260722-154339",
@@ -4287,7 +4287,7 @@
       "id": "260807-173219",
       "slug": "compound-composer-family",
       "title": "One compound composer family shared by chat, rooms, and dashboard",
-      "status": "draft",
+      "status": "accepted",
       "created": "2026-08-07",
       "specSlug": "composer-parity"
     },
@@ -4320,15 +4320,16 @@
       "id": "260808-140955",
       "slug": "the-home-is-the-team-room-not-a-report",
       "title": "The home is the #team room, not a report",
-      "status": "draft",
+      "status": "accepted",
       "created": "2026-08-08",
-      "specSlug": "team-room-home"
+      "specSlug": "team-room-home",
+      "supersedes": "260722-120728"
     },
     {
       "id": "260808-140956",
       "slug": "read-state-is-one-broadcast-server-cursor",
       "title": "Read state is one broadcast server-side cursor per user and thread",
-      "status": "draft",
+      "status": "accepted",
       "created": "2026-08-08",
       "specSlug": "team-room-home"
     },
@@ -4336,7 +4337,7 @@
       "id": "260808-180001",
       "slug": "composer-host-contract-is-markdown-text-and-offset",
       "title": "The composer's host contract is markdown text and a markdown offset",
-      "status": "draft",
+      "status": "accepted",
       "created": "2026-08-08",
       "extractedFrom": "composer-rich-text",
       "specSlug": "composer-rich-text"
@@ -4345,7 +4346,7 @@
       "id": "260808-180003",
       "slug": "composer-keyboard-ladder-behind-an-editing-surface-port",
       "title": "The composer keyboard ladder is surface-agnostic behind an editing-surface port",
-      "status": "draft",
+      "status": "accepted",
       "created": "2026-08-08",
       "extractedFrom": "composer-rich-text",
       "specSlug": "composer-rich-text"
@@ -4354,7 +4355,7 @@
       "id": "260808-180004",
       "slug": "composer-mentions-are-token-nodes-decorated-from-a-host-roster",
       "title": "Composer mentions are token text nodes decorated from a host-supplied roster",
-      "status": "draft",
+      "status": "accepted",
       "created": "2026-08-08",
       "extractedFrom": "composer-rich-text",
       "specSlug": "composer-rich-text"
