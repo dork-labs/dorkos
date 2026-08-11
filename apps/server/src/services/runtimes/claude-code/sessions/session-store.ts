@@ -369,7 +369,12 @@ export class SessionStore {
     return !!this.findSession(sessionId);
   }
 
-  /** Update mutable session fields. Returns false if the session does not exist. */
+  /**
+   * Update mutable session fields, auto-creating (hydrated from durable
+   * settings) if the session isn't currently in memory. Always resolves
+   * `true` — there is no "session does not exist" case for this runtime,
+   * because the auto-create branch below handles it.
+   */
   async updateSession(
     sessionId: string,
     opts: {
@@ -382,9 +387,23 @@ export class SessionStore {
     let session = this.findSession(sessionId);
     if (!session) {
       // Auto-create with hasStarted=false — sendMessage will check the transcript
-      // on disk before deciding whether to resume.
+      // on disk before deciding whether to resume. Hydrate from the durable
+      // store first (ADR-0260): a PATCH that touches only model/effort/fastMode
+      // (or a title rename, which routes through here unconditionally) can be
+      // the first thing to reach a session whose in-memory state was evicted or
+      // the server restarted since. Without this, the auto-create silently
+      // reset an ENFORCED bypassPermissions/plan session back to 'default'
+      // while the DB row — and the cockpit's display overlay reading it —
+      // kept showing the operator's real choice (DOR-1151). Precedence
+      // mirrors `ensureForMessage`: per-call override → persisted → runtime
+      // default.
+      const persisted = await this.settingsPort?.getSessionSettings(sessionId);
       this.ensureSession(sessionId, {
-        permissionMode: opts.permissionMode ?? this.defaultPermissionMode,
+        permissionMode:
+          opts.permissionMode ?? persisted?.permissionMode ?? this.defaultPermissionMode,
+        model: opts.model ?? persisted?.model,
+        effort: opts.effort ?? persisted?.effort,
+        fastMode: opts.fastMode ?? persisted?.fastMode,
         hasStarted: false,
       });
       session = this.findSession(sessionId)!;
