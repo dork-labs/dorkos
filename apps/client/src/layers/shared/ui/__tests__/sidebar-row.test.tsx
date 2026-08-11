@@ -14,6 +14,11 @@ import {
   ROW_TRAILING_CLASS,
   ROW_WHO_CLASS,
 } from '@/layers/shared/lib/row-grammar';
+import {
+  SIDEBAR_ACTIONS_ATTRIBUTE,
+  SIDEBAR_ROW_ATTRIBUTE,
+  SIDEBAR_TRAILING_ACTION_ATTRIBUTE,
+} from '@/layers/shared/model/use-roving-focus';
 
 beforeAll(() => {
   global.ResizeObserver = class ResizeObserver {
@@ -202,6 +207,127 @@ describe('SidebarRow — state and chrome', () => {
     render(<SidebarRow title="#general" onSelect={onSelect} />);
     fireEvent.click(row());
     expect(onSelect).toHaveBeenCalledOnce();
+  });
+});
+
+describe('SidebarRow — the trailing action slot (DOR-1111)', () => {
+  /** A menu with one item, so the row really has a context menu to open. */
+  const MENU = {
+    menuNodes: [{ kind: 'action' as const, id: 'pin', label: 'Pin', icon: Pin, run: vi.fn() }],
+    actionsLabel: 'Scout actions',
+  };
+
+  /** Drag bindings shaped like dnd-kit's, carrying a transform we can look for. */
+  const DRAGGED = {
+    setNodeRef: () => {},
+    handleProps: {},
+    style: { transform: 'translate3d(0px, 60px, 0px)' },
+    isDragging: true,
+    isOver: false,
+  };
+
+  /** The trailing action as the row renders it. */
+  function action(): HTMLElement {
+    return screen.getByRole('button', { name: '3 live sessions' });
+  }
+
+  function renderRow(extra: Record<string, unknown> = {}) {
+    return render(
+      <SidebarRow
+        title="a very long agent name that has to truncate"
+        trailingAction={{
+          content: <span>3 live</span>,
+          onClick: vi.fn(),
+          label: '3 live sessions',
+        }}
+        {...MENU}
+        {...extra}
+      />
+    );
+  }
+
+  it('renders the control as a SIBLING of the row, never a button inside it', () => {
+    // Queried from the rendered DOM rather than reasoned about from the JSX: a
+    // `<button>` inside a `<button>` is invalid HTML that assistive tech
+    // announces unpredictably, and it is what the trailing slot itself would
+    // produce, since that slot renders inside the row's own button.
+    const { container } = renderRow();
+    expect(container.querySelector('button button')).toBeNull();
+    expect(action().closest(`[${SIDEBAR_ROW_ATTRIBUTE}]`)).toBeNull();
+  });
+
+  it('rides the drag transform with the row', () => {
+    // The defect this slot replaces: mounted on `expansion`, the satellite was
+    // a sibling of the drag wrapper, so it was positioned against the list item
+    // and stayed put while the row moved 60px down under it — floating at full
+    // opacity over whichever row took the slot. Asserted as containment,
+    // because jsdom computes no layout; the browser spec measures the pixels.
+    const { container } = renderRow({ drag: DRAGGED });
+    const dragged = container.querySelector<HTMLElement>('[style*="translate3d"]');
+    expect(dragged).not.toBeNull();
+    expect(dragged?.contains(action())).toBe(true);
+  });
+
+  it('comes before the ⋮ in tab order', () => {
+    // Both are satellites the roving-focus hook stamps `-1`, so "tab order"
+    // here is DOM order — which is what decides the sequence a reader walks
+    // and where a screen reader announces the control relative to the menu.
+    const { container } = renderRow();
+    const kebab = container.querySelector<HTMLElement>(`[${SIDEBAR_ACTIONS_ATTRIBUTE}]`);
+    expect(kebab).not.toBeNull();
+    expect(
+      action().compareDocumentPosition(kebab!) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
+  });
+
+  it('sits inside the row’s own menu surface, so right-clicking it opens the row’s menu', async () => {
+    // Outside the surface — which is where the `expansion` escape hatch put it
+    // — a right-click on the control opened no menu at all, and the operator
+    // got the browser's instead.
+    renderRow();
+    fireEvent.contextMenu(action());
+    expect(await screen.findByRole('menuitem', { name: 'Pin' })).toBeInTheDocument();
+  });
+
+  it('holds the control’s own width open in the trailing slot', () => {
+    // The reservation is what makes a long title ellipsize BEFORE the control
+    // rather than sliding under it, and the row owns it so no call site can get
+    // the two out of alignment. Invisible, not hidden: it still takes up the
+    // line. And `aria-hidden`, so the control is not announced twice.
+    const { container } = renderRow();
+    const reservation = container.querySelector<HTMLElement>(
+      `[${SIDEBAR_ROW_ATTRIBUTE}] .invisible`
+    );
+    expect(reservation?.textContent).toBe('3 live');
+    expect(reservation).toHaveAttribute('aria-hidden');
+    expect(screen.getAllByText('3 live')).toHaveLength(2);
+  });
+
+  it('does not let the control also fire the row', () => {
+    const onTrailing = vi.fn();
+    const onSelect = vi.fn();
+    render(
+      <SidebarRow
+        title="Scout"
+        onSelect={onSelect}
+        trailingAction={{ content: <span>3 live</span>, onClick: onTrailing, label: '3 live' }}
+      />
+    );
+    fireEvent.click(screen.getByRole('button', { name: '3 live' }));
+    expect(onTrailing).toHaveBeenCalledOnce();
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  it('withdraws the control while an inline editor is up', () => {
+    // Same rule the glyph control follows: the row it belongs to is gone, so a
+    // control parked over where the row used to be has nothing to act on.
+    renderRow({ editor: <input aria-label="Rename Scout" /> });
+    expect(screen.queryByRole('button', { name: '3 live sessions' })).not.toBeInTheDocument();
+  });
+
+  it('marks the control so the roving-focus hook can reach it', () => {
+    const { container } = renderRow();
+    expect(container.querySelector(`[${SIDEBAR_TRAILING_ACTION_ATTRIBUTE}]`)).toBe(action());
   });
 });
 

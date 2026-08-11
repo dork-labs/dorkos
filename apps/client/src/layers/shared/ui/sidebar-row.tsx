@@ -25,6 +25,7 @@ import {
 import {
   SIDEBAR_GLYPH_ACTION_ATTRIBUTE,
   SIDEBAR_ROW_ATTRIBUTE,
+  SIDEBAR_TRAILING_ACTION_ATTRIBUTE,
 } from '@/layers/shared/model/use-roving-focus';
 import { IDENTITY_MARK_GROUP } from './identity-avatar';
 import { SidebarMenuItem } from './sidebar';
@@ -32,6 +33,34 @@ import { SidebarMenuSurface, type SidebarMenuNode } from './sidebar-menu-node';
 
 /** The horizontal inset every sidebar row pays, and the only place it is paid. */
 export const SIDEBAR_ROW_INSET = 'px-2';
+
+/**
+ * The right gutter a row keeps clear for its satellites — the "⋮" and any
+ * {@link SidebarRowProps.trailingAction}.
+ *
+ * **Applied AFTER {@link SIDEBAR_ROW_INSET}, and the order is the whole fix.**
+ * `cn()` is tailwind-merge, which keeps the LAST class that writes a property:
+ * the row used to say `cn('… pr-7 …', SIDEBAR_ROW_INSET)`, so `px-2` overwrote
+ * the gutter and the emitted class list carried no `pr-7` at all. The row
+ * measured 8px of right padding, the title ran on under the "⋮" with no
+ * ellipsis, and anything positioning itself against the gutter landed 20px
+ * inside the text (DOR-1115). Nothing in the source looked wrong, which is why
+ * it survived: the browser test that guards it asserts COMPUTED padding, not
+ * the class string, because both classes are in the source either way.
+ *
+ * 28px, against a "⋮" that is 20px wide sitting 4px off the edge — the gutter
+ * clears it exactly, and {@link SIDEBAR_ROW_TRAILING_ACTION_OFFSET} parks the
+ * trailing satellite on the same line.
+ */
+const SIDEBAR_ROW_GUTTER = 'pr-7';
+
+/**
+ * Where a {@link SidebarRowProps.trailingAction} sits: flush against the inside
+ * edge of {@link SIDEBAR_ROW_GUTTER}, which is exactly where the row reserves
+ * its width. The two are one number spelled twice, and a browser test pins them
+ * together by measurement rather than by name.
+ */
+const SIDEBAR_ROW_TRAILING_ACTION_OFFSET = 'right-7';
 
 /**
  * The welcome-back beat, as a class (BC-49).
@@ -137,8 +166,38 @@ export interface SidebarRowProps {
   /**
    * The trailing meta slot — a timestamp, an unread badge, an origin mark, a
    * project chip. Never shrunk and never pushed off the line (BC-25).
+   *
+   * **Read-only, always.** It renders INSIDE the row's `<button>`, so anything
+   * interactive in here is a `<button>` inside a `<button>` — invalid HTML that
+   * assistive tech announces unpredictably. A control that belongs at the end of
+   * the row goes in {@link trailingAction} instead.
    */
   trailing?: ReactNode;
+  /**
+   * A control at the end of the row — a chip that opens a session switcher, a
+   * count that opens what it counts.
+   *
+   * **Rendered as a SIBLING of the row button, not inside it** — the same shape
+   * {@link glyphAction} takes on the row's other side, and for the same reason:
+   * the row is a real `<button>` and nesting one inside it is invalid HTML. It
+   * is an overlay parked on the inside edge of the row's right gutter, so it
+   * sits exactly over the space the row reserves for it.
+   *
+   * **The row reserves that space itself.** {@link content} is drawn twice: once
+   * invisibly at the end of {@link trailing}, where it takes part in the CSS
+   * truncation budget and makes a long title ellipsize before it reaches the
+   * control, and once for real in the overlay above it. Every call site that
+   * hand-rolled this satellite got the two out of alignment and painted the
+   * control over the row's own text, which is the defect this slot exists to
+   * make unrepeatable (DOR-1111). {@link content} must therefore be
+   * presentational — it is rendered twice, so it may not own state or effects.
+   *
+   * It is a satellite like the "⋮": `ArrowRight` from the row reaches it and
+   * `ArrowRight` again continues to the "⋮", it is never a Tab stop of its own,
+   * it rides the drag transform with the row, and a right-click on it opens the
+   * row's own menu.
+   */
+  trailingAction?: { content: ReactNode; onClick: () => void; label: string };
   /**
    * The second line. Renders only when the row earns one: a live verb
    * ({@link reservesVerbLine}) or a {@link preview} worth showing (BC-24).
@@ -202,7 +261,16 @@ export interface SidebarRowProps {
    * second door back into itself.
    */
   editor?: ReactNode;
-  /** Rendered under the row, inside the same list item — an expansion panel. */
+  /**
+   * Rendered under the row, inside the same list item — an expansion panel.
+   *
+   * **A panel in the flow, never an overlay.** It is a sibling of the drag
+   * wrapper, so absolutely-positioned content mounted here is positioned
+   * against the list item and does not move with the row: dragging leaves it
+   * behind at full opacity, floating over whichever row takes the slot. It also
+   * sits outside the row's menu surface and lands after the "⋮" in DOM order. A
+   * control that wants the row's right gutter goes in {@link trailingAction}.
+   */
   expansion?: ReactNode;
   /** Stamped on the row button, for tests and page objects. */
   dataSlot?: string;
@@ -245,6 +313,7 @@ export function SidebarRow({
   title,
   titleText,
   trailing,
+  trailingAction,
   secondLine,
   reservesVerbLine,
   welcomeBack = false,
@@ -316,8 +385,10 @@ export function SidebarRow({
           // line and `py-1` is what keeps a one-line row on it exactly. A row
           // that earned a second line grows past it, which is the point —
           // height carries meaning here.
-          'focus-visible:ring-sidebar-ring flex min-h-7 w-full rounded-md py-1 pr-7 text-left text-[13px] outline-hidden transition-colors duration-100 focus-visible:ring-2 active:scale-[0.98]',
+          'focus-visible:ring-sidebar-ring flex min-h-7 w-full rounded-md py-1 text-left text-[13px] outline-hidden transition-colors duration-100 focus-visible:ring-2 active:scale-[0.98]',
           SIDEBAR_ROW_INSET,
+          // After the inset, never before it — see {@link SIDEBAR_ROW_GUTTER}.
+          SIDEBAR_ROW_GUTTER,
           showSecondLine ? 'items-start py-1.5' : 'items-center',
           isActive
             ? 'bg-sidebar-accent text-sidebar-accent-foreground'
@@ -353,9 +424,19 @@ export function SidebarRow({
               </>
             ) : null}
             <span className={ROW_TITLE_CLASS}>{title}</span>
-            {trailing !== undefined && (
+            {(trailing !== undefined || trailingAction !== undefined) && (
               <span className={cn('flex items-center gap-1.5', ROW_TRAILING_CLASS)}>
                 {trailing}
+                {/* The trailing action's own width, held open for it. Invisible
+                    rather than hidden, so it still occupies the line: this is
+                    what makes a long title ellipsize BEFORE the control instead
+                    of sliding under it. Last in the slot, because the overlay
+                    above it is parked against the row's right gutter. */}
+                {trailingAction !== undefined && (
+                  <span aria-hidden className="invisible">
+                    {trailingAction.content}
+                  </span>
+                )}
               </span>
             )}
           </span>
@@ -411,6 +492,27 @@ export function SidebarRow({
                 showSecondLine ? 'top-1.5' : 'top-1/2 -translate-y-1/2'
               )}
             />
+          )}
+          {trailingAction !== undefined && editor === undefined && (
+            <button
+              type="button"
+              aria-label={trailingAction.label}
+              // The row underneath opens the conversation; this opens whatever
+              // the control is for. The stop is what keeps one press from doing
+              // both.
+              onClick={(event) => {
+                event.stopPropagation();
+                trailingAction.onClick();
+              }}
+              {...{ [SIDEBAR_TRAILING_ACTION_ATTRIBUTE]: '' }}
+              className={cn(
+                'focus-ring absolute cursor-pointer rounded-full transition-[scale] active:scale-[0.94]',
+                SIDEBAR_ROW_TRAILING_ACTION_OFFSET,
+                showSecondLine ? 'top-1.5' : 'top-1/2 -translate-y-1/2'
+              )}
+            >
+              {trailingAction.content}
+            </button>
           )}
         </SidebarMenuSurface>
       </div>

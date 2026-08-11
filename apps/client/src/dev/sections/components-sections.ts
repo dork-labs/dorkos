@@ -147,6 +147,25 @@ export const COMPONENTS_SECTIONS: PlaygroundSection[] = [
   },
   // SidebarShowcases
   {
+    id: 'sidebarrow',
+    title: 'SidebarRow',
+    page: 'components',
+    category: 'Sidebar',
+    keywords: [
+      'sidebar',
+      'row',
+      'gutter',
+      'trailing',
+      'trailing action',
+      'satellite',
+      'truncate',
+      'ellipsis',
+      'chip',
+      'kebab',
+      'drag',
+    ],
+  },
+  {
     id: 'sessionrow',
     title: 'SessionRow',
     page: 'components',

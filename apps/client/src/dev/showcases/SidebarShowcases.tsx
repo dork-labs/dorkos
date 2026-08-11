@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { Hash, Pin } from 'lucide-react';
 import type { Session } from '@dorkos/shared/types';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
@@ -8,7 +9,13 @@ import { SessionsView } from '@/layers/features/session-list';
 import { SidebarFooterStrip } from '@/layers/features/dashboard-sidebar';
 import { configKeys } from '@/layers/entities/config';
 import { useSessionChatStore, useSessionListStore, SessionRow } from '@/layers/entities/session';
-import { SidebarGroup, SidebarMenu, SidebarMenuItem } from '@/layers/shared/ui';
+import {
+  SidebarGroup,
+  SidebarMenu,
+  SidebarMenuItem,
+  SidebarRow,
+  type RowDragBindings,
+} from '@/layers/shared/ui';
 
 // ---------------------------------------------------------------------------
 // Mock data
@@ -133,14 +140,172 @@ const GROUPED_SESSIONS = [
 // Showcases
 // ---------------------------------------------------------------------------
 
-/** Sidebar component showcases: SessionRow, SessionsView, SidebarFooterStrip. */
+/** Sidebar component showcases: SidebarRow, SessionRow, SessionsView, SidebarFooterStrip. */
 export function SidebarShowcases() {
   return (
     <>
+      <SidebarRowShowcase />
       <SessionRowShowcase />
       <SessionsViewShowcase />
       <SidebarFooterStripShowcase />
     </>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// SidebarRow — the gutter and the trailing action
+// ---------------------------------------------------------------------------
+
+/** The real cockpit sidebar's width (`SIDEBAR_WIDTH` is `16rem`). */
+const COCKPIT_SIDEBAR_WIDTH = 256;
+
+/** A sidebar narrowed about as far as anyone drags it before giving up. */
+const NARROWED_SIDEBAR_WIDTH = 200;
+
+/** Long enough to run out of room at either width, so the ellipsis is on show. */
+const LONG_TITLE = 'Refactor the session transport and its reconnect ladder';
+
+const ROW_MENU = [{ kind: 'action' as const, id: 'pin', label: 'Pin', icon: Pin, run: () => {} }];
+
+/** The chip a trailing action draws — presentational, because the row draws it twice. */
+function LiveChip() {
+  return (
+    <span className="bg-brand/15 text-brand rounded-full px-1.5 py-0.5 text-[10px] font-medium tabular-nums">
+      3 live
+    </span>
+  );
+}
+
+/**
+ * `SidebarRow`'s right gutter and the control that lives in it.
+ *
+ * Two things are on show here that no unit test can see, and both are why the
+ * section exists rather than being a screenshot in a PR:
+ *
+ * - The gutter is REAL. It was written as `pr-7` and merged away by a later
+ *   `px-2` for long enough to ship, and only computed style can tell the
+ *   difference (DOR-1115). A long title truncating short of the chip is that
+ *   gutter, visible.
+ * - The trailing control moves WITH the row. "Simulate drag" applies the
+ *   transform dnd-kit applies during a real drag; a satellite mounted outside
+ *   the dragged element stays behind (DOR-1111).
+ */
+function SidebarRowShowcase() {
+  const [dragging, setDragging] = useState(false);
+  const drag: RowDragBindings = {
+    setNodeRef: () => {},
+    handleProps: {},
+    style: dragging ? { transform: 'translate3d(0px, 40px, 0px)' } : {},
+    isDragging: false,
+    isOver: false,
+  };
+
+  return (
+    <PlaygroundSection
+      title="SidebarRow"
+      description="The sidebar's one row: its reserved right gutter, and the trailing action that parks in it."
+    >
+      <ShowcaseLabel>Long title at the cockpit width (256px)</ShowcaseLabel>
+      <ShowcaseDemo>
+        <RowFrame width={COCKPIT_SIDEBAR_WIDTH} testId="cockpit">
+          <SidebarRow
+            glyph={<Hash className="text-sidebar-foreground/60 size-3.5" aria-hidden />}
+            title={LONG_TITLE}
+            dataSlot="sidebar-row-demo"
+            menuNodes={ROW_MENU}
+            actionsLabel="Demo row actions"
+            trailingAction={{
+              content: <LiveChip />,
+              onClick: () => {},
+              label: '3 live sessions',
+            }}
+          />
+        </RowFrame>
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>The same row in a narrowed sidebar (200px)</ShowcaseLabel>
+      <ShowcaseDemo>
+        <RowFrame width={NARROWED_SIDEBAR_WIDTH} testId="narrow">
+          <SidebarRow
+            glyph={<Hash className="text-sidebar-foreground/60 size-3.5" aria-hidden />}
+            title={LONG_TITLE}
+            dataSlot="sidebar-row-demo"
+            menuNodes={ROW_MENU}
+            actionsLabel="Demo row actions"
+            trailingAction={{
+              content: <LiveChip />,
+              onClick: () => {},
+              label: '3 live sessions',
+            }}
+          />
+        </RowFrame>
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>No trailing action — the gutter is still kept clear for the ⋮</ShowcaseLabel>
+      <ShowcaseDemo>
+        <RowFrame width={COCKPIT_SIDEBAR_WIDTH} testId="bare">
+          <SidebarRow
+            glyph={<Hash className="text-sidebar-foreground/60 size-3.5" aria-hidden />}
+            title={LONG_TITLE}
+            dataSlot="sidebar-row-demo"
+            menuNodes={ROW_MENU}
+            actionsLabel="Demo row actions"
+          />
+        </RowFrame>
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>Dragged — the control travels with the row</ShowcaseLabel>
+      <ShowcaseDemo>
+        <div className="space-y-2">
+          <button
+            type="button"
+            onClick={() => setDragging((previous) => !previous)}
+            className="text-muted-foreground hover:text-foreground rounded-md border px-2 py-1 text-xs transition-colors"
+          >
+            {dragging ? 'Drop the row' : 'Simulate drag'}
+          </button>
+          <div className="h-24">
+            <RowFrame width={COCKPIT_SIDEBAR_WIDTH} testId="dragged">
+              <SidebarRow
+                glyph={<Hash className="text-sidebar-foreground/60 size-3.5" aria-hidden />}
+                title={LONG_TITLE}
+                dataSlot="sidebar-row-demo"
+                menuNodes={ROW_MENU}
+                actionsLabel="Demo row actions"
+                drag={drag}
+                trailingAction={{
+                  content: <LiveChip />,
+                  onClick: () => {},
+                  label: '3 live sessions',
+                }}
+              />
+            </RowFrame>
+          </div>
+        </div>
+      </ShowcaseDemo>
+    </PlaygroundSection>
+  );
+}
+
+/** One row at a fixed width, on the sidebar's own background. */
+function RowFrame({
+  width,
+  testId,
+  children,
+}: {
+  width: number;
+  testId: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div
+      data-slot="sidebar-row-frame"
+      data-frame={testId}
+      className="bg-sidebar rounded-md py-1"
+      style={{ width }}
+    >
+      <SidebarMenu className="gap-0">{children}</SidebarMenu>
+    </div>
   );
 }
 
