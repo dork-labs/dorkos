@@ -484,9 +484,9 @@ text), which is why a stop reads as `stopped` rather than `failed` even if the w
 | its `state.metadata.sessionId` appears    | child session admitted to the demux; id attached as `subagentSessionId`                       |
 | a tool part in the CHILD session          | `background_task_progress` (`toolUses` = distinct child callIDs, `lastToolName`)              |
 | a `permission.asked` in the CHILD session | `approval_required` on the PARENT session, titled for the subagent (§2, DOR-1126)             |
-| `task` part reaches `completed` / `error` | `background_task_done` (`completed`; `stopped` for the four stop shapes above, else `failed`) |
+| `task` part reaches `completed` / `error` | `background_task_done` (`completed`; `stopped` for the five stop shapes above, else `failed`) |
 
-The session normalizer turns those three into `subagent_update`, which is what feeds
+The session normalizer turns the three `background_task_*` rows into `subagent_update`, which is what feeds
 `runningSubagentCount`, the status-line hint and the activity feed (runtime-neutral since DOR-1100).
 **No shared-schema change, no new `SessionEvent` member, no client change.** The `task` call also
 keeps its ordinary tool card, exactly as claude-code renders a `Task` tool call beside its

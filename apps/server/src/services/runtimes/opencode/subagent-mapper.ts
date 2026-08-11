@@ -54,8 +54,9 @@ const SUBAGENT_TYPE_INPUT_KEY = 'subagent_type';
 const SUBAGENT_INTERRUPTED_METADATA_KEY = 'interrupted';
 
 /**
- * Tool-error text that means a subagent was STOPPED rather than failed. All
- * four shapes verified against the compiled `opencode-ai@1.18.15` binary:
+ * Tool-error text that means a subagent was STOPPED rather than failed. Four of
+ * the five shapes were read off the compiled `opencode-ai@1.18.15` binary; the
+ * fourth was live-captured, and the binary read had said it could not happen:
  *
  * - `Tool execution aborted` — `SessionProcessor.cleanup` on abort, alongside
  *   `metadata.interrupted: true`. **This is the ordinary user-stop path.**
