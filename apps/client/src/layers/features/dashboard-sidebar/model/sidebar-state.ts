@@ -166,6 +166,24 @@ export interface SidebarState {
   /** The sessions streaming a turn right now (BC-9's "N working"). */
   workingSessionIds: readonly string[];
   /**
+   * Session id → the directory it is running in, for every session the live
+   * stream is currently tracking.
+   *
+   * **Beyond §A2's table, and unavoidable.** BC-31 promises that folding a
+   * section loses no signal, and a section's working count is the sum of its
+   * members' — which cannot be summed without knowing whose each running
+   * session is. `sessions` is the last-ten REST window and is up to thirty
+   * seconds behind, so a turn that started just now has no record there at all:
+   * for that window every agent row read `idle`, every folded section rolled up
+   * a zero, and Now said "1 working" beside them (DOR-1137).
+   *
+   * Straight from the session-list store's `statusCwds`, which the runtime fills
+   * from the same status event that made the session live, and which is pruned
+   * the moment it settles. A session the server could not place has no entry —
+   * omission, never a guess.
+   */
+  liveSessionCwds: Readonly<Record<string, string>>;
+  /**
    * Session id → coarse lifecycle. **Lifecycle only, never `activity`** — the
    * standing rule this whole design rests on.
    */

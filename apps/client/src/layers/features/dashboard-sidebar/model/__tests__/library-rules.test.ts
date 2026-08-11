@@ -20,6 +20,7 @@ import {
   quietFixture,
 } from '../fixtures';
 import { buildLibrarySections, offersGroupAffordances } from '../rules/build-library-sections';
+import { buildWorkingRollup } from '../rules/build-working-rollup';
 import { rollUpCollapsedSection } from '../rules/roll-up-collapsed-section';
 import type { SidebarState } from '../sidebar-state';
 
@@ -148,7 +149,104 @@ describe('BC-31 — a folded section keeps its signal', () => {
   });
 
   it('says nothing at all when there is nothing to say', () => {
-    expect(rollUpCollapsedSection([])).toBeUndefined();
+    expect(rollUpCollapsedSection([], () => false)).toBeUndefined();
+  });
+
+  describe('a member that starts working while the section is folded', () => {
+    // The case no fixture paired until now — a COLLAPSED section whose member
+    // is streaming — which is why the defect shipped (DOR-1137, audit D5).
+    // Everything BC-31's arithmetic was tested against was a room's `working`
+    // field, and rooms carry their count on the summary. Agents do not.
+    const SAFFRON = '/Users/dev/code/saffron';
+
+    /** `busyFixture` with Agents folded and one session running in `cwd`. */
+    function folded(overrides: Partial<SidebarState>): SidebarState {
+      return {
+        ...busyFixture,
+        // Exactly one working session, so "1" can only come from it.
+        workingSessionIds: ['ses-brand-new'],
+        prefs: prefs({ ...busyFixture.prefs, sections: { agents: { collapsed: true } } }),
+        ...overrides,
+      };
+    }
+
+    it('carries the count even though the recent window has never seen the session', () => {
+      // The reproduction: collapse Agents, then start a turn. The status event
+      // arrives at once and carries the directory; `GET /api/sessions/recent`
+      // is up to 30s behind, and for those 30s the header read plain "Agents"
+      // while Now read "1 working" three inches above it.
+      const state = folded({ liveSessionCwds: { 'ses-brand-new': SAFFRON } });
+      expect(state.sessions.some((entry) => entry.id === 'ses-brand-new')).toBe(false);
+
+      const agents = library(state).find((section) => section.id === 'agents');
+      expect(agents?.collapsed).toBe(true);
+      expect(agents?.rollup?.workingCount).toBe(1);
+    });
+
+    it('draws the same session as a working row when the section is open', () => {
+      // The "did it happen at all" half. Without it the assertion above could
+      // be satisfied by a rollup that counts something else entirely.
+      const state = folded({
+        liveSessionCwds: { 'ses-brand-new': SAFFRON },
+        prefs: prefs({ ...busyFixture.prefs, sections: { agents: { collapsed: false } } }),
+      });
+      const agents = library(state).find((section) => section.id === 'agents');
+      expect(agents?.rollup).toBeUndefined();
+      expect(agents?.rows.find((row) => row.key === `agent:${SAFFRON}`)?.status).toBe('working');
+    });
+
+    it('agrees with Now, which counted the same session all along', () => {
+      const state = folded({ liveSessionCwds: { 'ses-brand-new': SAFFRON } });
+      const agents = library(state).find((section) => section.id === 'agents');
+      expect(buildWorkingRollup(state)?.primary).toBe('1 working');
+      expect(agents?.rollup?.workingCount).toBe(1);
+    });
+
+    it('keeps counting a member that is blocked AND working (BC-31)', () => {
+      // The reviewer's pair, and the sharper half of the defect: a row draws one
+      // dot and `deriveRowStatus` ranks needs-you above streaming, so counting
+      // dots did not undercount here — with nothing else set in the section the
+      // rollup went to `undefined` and the folded header lost its signal
+      // ALTOGETHER, which is the one thing BC-31 says folding never does.
+      const state = folded({ liveSessionCwds: { 'ses-brand-new': SAFFRON } });
+      const control = library(state).find((section) => section.id === 'agents');
+      // The control: saffron is streaming and not blocked, and is counted.
+      expect(control?.rollup?.workingCount).toBe(1);
+
+      // The probe: the same streaming session, and saffron now also needs you.
+      const probe = library({
+        ...state,
+        agents: state.agents.map((entry) =>
+          entry.path === SAFFRON ? { ...entry, attention: 'needs-attention' as const } : entry
+        ),
+      }).find((section) => section.id === 'agents');
+
+      // The row honestly draws the hotter dot — that part was never wrong…
+      expect(probe?.rows.find((row) => row.key === `agent:${SAFFRON}`)?.status).toBe('needs-you');
+      // …and the folded header still says somebody is working, because they are.
+      expect(probe?.rollup).toBeDefined();
+      expect(probe?.rollup?.workingCount).toBe(1);
+    });
+
+    it('counts no automated run, folded or not (§18)', () => {
+      // `ses-auto-1` is a scheduled task in tangerine's directory, and it IS in
+      // the recent window — so the row can see it perfectly well and still must
+      // not call itself working. Rolling it up would put automated activity on
+      // a header, which §18's table renders as nothing at all.
+      const TANGERINE = '/Users/dev/code/tangerine';
+      const state = folded({ workingSessionIds: ['ses-auto-1'] });
+      expect(library(state).find((section) => section.id === 'agents')?.rollup).toBeUndefined();
+
+      // And a human session in the very same directory does produce one, so the
+      // `undefined` above is the origin filter rather than a dead path.
+      const human = folded({
+        workingSessionIds: ['ses-brand-new'],
+        liveSessionCwds: { 'ses-brand-new': TANGERINE },
+      });
+      expect(library(human).find((section) => section.id === 'agents')?.rollup?.workingCount).toBe(
+        1
+      );
+    });
   });
 
   it('is absent while the section is open', () => {

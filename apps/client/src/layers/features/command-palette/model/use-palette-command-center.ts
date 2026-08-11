@@ -51,7 +51,12 @@ export interface PaletteContinueRow {
 export interface PaletteCommandCenter {
   /** Every session in the window, automated runs included — the search corpus. */
   sessions: PaletteSessionItem[];
-  /** Live conversations, waiting-on-you first. Empty when nothing is live. */
+  /**
+   * Live conversations, waiting-on-you first. Empty when nothing is live.
+   *
+   * Human-origin only, like every other liveness count in the cockpit (§18) —
+   * an automated run that needs you arrives in Now, not here.
+   */
   continueRows: PaletteContinueRow[];
   /** The last things you were in, across sessions, rooms and agents. */
   recent: PaletteRecentEntry[];
@@ -114,11 +119,35 @@ export function usePaletteCommandCenter(
     [streamed, agents]
   );
 
+  // Every session record the palette can see, from both sources, so Continue
+  // can read an id's origin off whichever one carries it.
+  //
+  // **Order does not matter here, and it is worth saying so.**
+  // `humanOriginSessionIds` collects the AUTOMATED ids across all the records it
+  // is given, so one record marking a session automated excludes it however many
+  // unmarked copies sit beside it. Automated wins regardless of order — the safe
+  // direction — and the concatenation is only about coverage.
+  //
+  // **What each source does and does not know.** The query's window is where
+  // `origin` is authoritative: `applyRoomOriginOverlay` runs on the REST routes
+  // and nowhere else, so a room turn is marked there and NOT on the stream
+  // (DOR-1141). The stream's map is where a run that started after the last
+  // fetch exists at all, and it supplies that session's title and cwd. So for a
+  // just-triggered room turn there is a gap — it is unmarked until the recent
+  // query refetches, which the global stream triggers on the next session-set
+  // change rather than on the 30s stale timer. Continue counts it as human for
+  // that round trip, which is the documented direction: unknown is not
+  // automated.
+  //
+  // `data` whole rather than its one field, for the same React Compiler reason
+  // the Recent memo below spells out.
+  const knownSessions = useMemo(() => [...streamed, ...(data?.sessions ?? [])], [streamed, data]);
+
   const continueRows = useMemo(() => {
     const byId = new Map<string, PaletteSessionItem>();
     for (const item of streamedSessions) byId.set(item.id, item);
     for (const item of sessions) if (!byId.has(item.id)) byId.set(item.id, item);
-    return selectContinueEntries(statuses).flatMap((entry) => {
+    return selectContinueEntries(statuses, knownSessions).flatMap((entry) => {
       const session = byId.get(entry.sessionId);
       // A live session nothing knows the name of gets no row rather than a
       // placeholder one: "Untitled › working…" is a row you cannot act on.
@@ -131,7 +160,7 @@ export function usePaletteCommandCenter(
         },
       ];
     });
-  }, [statuses, streamedSessions, sessions]);
+  }, [statuses, streamedSessions, sessions, knownSessions]);
 
   const recent = useMemo(() => {
     const conversations = new Set(

@@ -15,6 +15,8 @@ import type {
   SessionLifecycle,
   SessionStatus,
 } from '@dorkos/shared/session-stream';
+import type { Session } from '@dorkos/shared/types';
+import { humanOriginSessionIds } from '@/layers/entities/session';
 import type { PaletteSessionItem } from './palette-sessions';
 
 /**
@@ -39,7 +41,16 @@ export interface ContinueEntry {
 }
 
 /**
- * The sessions Continue is about: the ones actually doing something.
+ * The sessions Continue is about: the human ones actually doing something.
+ *
+ * **Human-origin only, from the shared definition** ({@link
+ * humanOriginSessionIds}, `design-decisions.md` §18). A scheduled run or a
+ * room's own turn is an engine run under a thread already listed under its own
+ * name, and Recent has always dropped it for that reason — so a Continue that
+ * promoted the very session Recent suppressed made one dialog give two answers
+ * about what is running (DOR-1137, audit D4). A blocked automated session still
+ * reaches the operator, through Now, which reads no origin at all; what it does
+ * not do is claim a first-class row in a list about where to go back to.
  *
  * Two lifecycles qualify and no others. `blocked` comes first because it is
  * waiting on a person and streaming is not — the same priority Now uses (BC-6)
@@ -52,13 +63,20 @@ export interface ContinueEntry {
  * verb ladder exists to prevent.
  *
  * @param statuses - The session-list store's status map, keyed by session id.
+ * @param sessions - Every session record the palette can see, the live stream's
+ *   own map included. It is what supplies each id's origin; an id no record
+ *   covers is kept, on the same "unknown is not automated" rule the sidebar's
+ *   working rollup follows.
  */
 export function selectContinueEntries(
-  statuses: Record<string, SessionStatus | undefined>
+  statuses: Record<string, SessionStatus | undefined>,
+  sessions: readonly Session[]
 ): ContinueEntry[] {
+  const live = new Set(humanOriginSessionIds(Object.keys(statuses), sessions));
   const entries: ContinueEntry[] = [];
   for (const [sessionId, status] of Object.entries(statuses)) {
     if (!status) continue;
+    if (!live.has(sessionId)) continue;
     if (status.lifecycle !== 'streaming' && status.lifecycle !== 'blocked') continue;
     entries.push({
       sessionId,

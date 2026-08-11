@@ -41,3 +41,38 @@ export function partitionSessionsByOrigin(sessions: Session[]): SessionOriginPar
   }
   return { conversations, automated };
 }
+
+/**
+ * The subset of `ids` that count as live — **the one definition of liveness the
+ * whole cockpit shares** (`design-decisions.md` §18).
+ *
+ * §18's Signal → Rendering table reads "Automated session activity → Nothing.
+ * No bold, no badge", directly under the line naming approval / question /
+ * wedged / idle-timeout as the only things that enter Now. So a scheduled run
+ * or a room's own turn is not in any count of what is running: not the
+ * sidebar's "N working", not an agent row's "N live" chip, not ⌘K's Continue.
+ * Three surfaces reading one function is what stops them from disagreeing,
+ * which is exactly what they did before this existed (DOR-1137).
+ *
+ * **The carve-out is Now, and it is elsewhere.** An automated session that is
+ * blocked — waiting on an approval, asking a question, wedged — still reaches
+ * the operator, as an attention item through `entities/attention`, which reads
+ * no origin at all. Only the liveness COUNT excludes automation.
+ *
+ * **An id with no session record is kept.** Origin lives on the session record
+ * and every caller's record list is a trimmed window, so an unknown id is one
+ * whose origin is unknown rather than one known to be automated — and hiding a
+ * human turn is the worse error of the two.
+ *
+ * @param ids - Candidate session ids, in the caller's own order.
+ * @param sessions - Every session record the caller can see. Duplicates are
+ *   harmless; only the ids of the automated ones are read.
+ */
+export function humanOriginSessionIds(
+  ids: readonly string[],
+  sessions: readonly Session[]
+): readonly string[] {
+  const automated = new Set(partitionSessionsByOrigin([...sessions]).automated.map((s) => s.id));
+  if (automated.size === 0) return ids;
+  return ids.filter((id) => !automated.has(id));
+}

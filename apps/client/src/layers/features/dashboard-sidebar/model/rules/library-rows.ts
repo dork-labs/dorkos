@@ -13,6 +13,7 @@ import type { AgentRosterEntry, SidebarState } from '../sidebar-state';
 import type { MuteIndex } from './apply-mute-rules';
 import { deriveRowStatus } from './derive-row-status';
 import { deriveUnreadSignal } from './derive-unread-signal';
+import { liveSessionIdsForPath } from './live-sessions';
 import { basename, rowKey } from './targets';
 
 /**
@@ -30,6 +31,13 @@ const LIVE_CHIP_MIN = 2;
  * a teammate, not a folder (design-decisions §4) — which is why the row carries
  * no expansion affordance and the depth lives in the session switcher.
  *
+ * **Its liveness is Now's liveness** ({@link liveSessionIdsForPath}): the same
+ * human-origin rule, off the same stream, so the dot, the "N live" chip and —
+ * through `rollUpCollapsedSection`, which sums these rows — the folded section's
+ * "N agents working" all agree with the "N working" line in Now. They did not before
+ * (DOR-1137): this row demanded the session ALSO be in the last-ten REST
+ * window, which a turn started seconds ago is not.
+ *
  * @param agent - The roster entry.
  * @param state - The snapshot.
  * @param mutes - The resolved mute sets.
@@ -42,9 +50,7 @@ export function agentRow(
   reason: string
 ): SidebarRowModel {
   const target = { kind: 'agent', path: agent.path } as const;
-  const live = state.workingSessionIds.filter(
-    (id) => state.sessions.find((session) => session.id === id)?.cwd === agent.path
-  ).length;
+  const live = liveSessionIdsForPath(state, agent.path).length;
   const muted = mutes.agents.has(agent.path);
   return {
     key: rowKey(target),

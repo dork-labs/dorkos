@@ -118,4 +118,66 @@ describe('useAgentHottestStatus', () => {
     const { result } = renderHook(() => useAgentHottestStatus([], AGENT_PATH));
     expect(result.current.kind).toBe('idle');
   });
+
+  describe('§18 — an automated run is not "Working"', () => {
+    /** Record the cwd fold's origin filter reads. */
+    function upsert(sessionId: string, origin?: string) {
+      useSessionListStore.getState().applyListEvent({
+        type: 'session_upserted',
+        session: {
+          id: sessionId,
+          title: 'A run',
+          cwd: AGENT_PATH,
+          createdAt: '2026-08-09T09:00:00.000Z',
+          updatedAt: '2026-08-09T10:00:00.000Z',
+          ...(origin === undefined ? {} : { origin }),
+        } as never,
+      });
+    }
+
+    it('does not light the row for a streaming scheduled task', () => {
+      // This badge is what an agent row actually DRAWS — `SidebarModelRow`
+      // passes no sessions and no status, so `agentRow`'s origin-filtered chip
+      // and this hook disagreed about the same session (DOR-1137 review, B3).
+      upsert('task-session', 'task');
+      pushStatus('task-session', 'streaming', AGENT_PATH);
+      const { result } = renderHook(() => useAgentHottestStatus([], AGENT_PATH));
+      expect(result.current.kind).toBe('idle');
+    });
+
+    it('lights it for the identical session once it is a conversation', () => {
+      // Same id, same cwd, same lifecycle — only `origin` differs, so the
+      // `idle` above cannot be an inert path.
+      upsert('task-session', 'user');
+      pushStatus('task-session', 'streaming', AGENT_PATH);
+      const { result } = renderHook(() => useAgentHottestStatus([], AGENT_PATH));
+      expect(result.current.kind).toBe('streaming');
+    });
+
+    it('still lights it when that same scheduled task is BLOCKED', () => {
+      // The carve-out, and the half that must survive: liveness excludes
+      // automation, attention does not. "An automated session that needs the
+      // user enters Now like anything else" (BC-19), and a row that went dark
+      // for a wedged nightly task would hide the one thing worth surfacing.
+      upsert('task-session', 'task');
+      pushStatus('task-session', 'blocked', AGENT_PATH);
+      const { result } = renderHook(() => useAgentHottestStatus([], AGENT_PATH));
+      expect(result.current.kind).toBe('pendingApproval');
+    });
+
+    it('still lights it when that same scheduled task ERRORS', () => {
+      upsert('task-session', 'task');
+      pushStatus('task-session', 'error', AGENT_PATH);
+      const { result } = renderHook(() => useAgentHottestStatus([], AGENT_PATH));
+      expect(result.current.kind).toBe('error');
+    });
+
+    it('counts a streaming session no record covers — unknown is not automated', () => {
+      // The same asymmetry every other surface has, so the four cannot part
+      // company in the other direction either.
+      pushStatus('never-upserted', 'streaming', AGENT_PATH);
+      const { result } = renderHook(() => useAgentHottestStatus([], AGENT_PATH));
+      expect(result.current.kind).toBe('streaming');
+    });
+  });
 });

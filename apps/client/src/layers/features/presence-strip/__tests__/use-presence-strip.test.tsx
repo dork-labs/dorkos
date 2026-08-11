@@ -287,6 +287,90 @@ describe('usePresenceStrip', () => {
     await waitFor(() => expect(screen.getByTestId('occupied')).toHaveTextContent('false'));
     expect(screen.queryByTestId('presence-strip')).not.toBeInTheDocument();
   });
+
+  it('leaves an automated run out of "working", the way Now does (§18)', async () => {
+    // The fourth surface to count what is running, and the one Now's "N
+    // working" rollup NAVIGATES to (`SidebarChrome`): a nightly task counted
+    // here and not there meant clicking "3 working" landed on a strip saying
+    // four (DOR-1137 review, B2).
+    const { transport } = renderStrip({
+      resolveAgents: vi.fn().mockResolvedValue({
+        [AGENT_PATH]: {
+          id: '01JZAGENT0000000000000001',
+          name: 'tangerines',
+          runtime: 'claude-code',
+        },
+      }),
+    });
+    await waitFor(() => expect(transport.resolveAgents).toHaveBeenCalled());
+
+    useSessionListStore.setState({
+      statuses: { 'sess-task': { lifecycle: 'streaming' } as never },
+      statusCwds: { 'sess-task': AGENT_PATH },
+      sessions: {
+        'sess-task': {
+          id: 'sess-task',
+          title: 'Nightly digest',
+          cwd: AGENT_PATH,
+          origin: 'task',
+          createdAt: '2026-08-09T09:00:00.000Z',
+          updatedAt: '2026-08-09T10:00:00.000Z',
+        } as never,
+      },
+    });
+
+    await waitFor(() => expect(screen.getByTestId('occupied')).toHaveTextContent('false'));
+    expect(screen.queryByTestId('presence-strip')).not.toBeInTheDocument();
+  });
+
+  it('still draws the same session once it is a human conversation', async () => {
+    // The sibling that makes the absence above mean something: identical
+    // status, identical directory, identical everything except `origin`.
+    const { transport } = renderStrip({
+      resolveAgents: vi.fn().mockResolvedValue({
+        [AGENT_PATH]: {
+          id: '01JZAGENT0000000000000001',
+          name: 'tangerines',
+          runtime: 'claude-code',
+        },
+      }),
+    });
+    await waitFor(() => expect(transport.resolveAgents).toHaveBeenCalled());
+
+    useSessionListStore.setState({
+      statuses: { 'sess-task': { lifecycle: 'streaming' } as never },
+      statusCwds: { 'sess-task': AGENT_PATH },
+      sessions: {
+        'sess-task': {
+          id: 'sess-task',
+          title: 'Wire the model',
+          cwd: AGENT_PATH,
+          origin: 'user',
+          createdAt: '2026-08-09T09:00:00.000Z',
+          updatedAt: '2026-08-09T10:00:00.000Z',
+        } as never,
+      },
+    });
+
+    expect(
+      await screen.findByRole('button', { name: 'Watch tangerines — working in a session' })
+    ).toBeInTheDocument();
+  });
+
+  it('never filters the room half — "replying in" is automated by design', async () => {
+    // The carve-out, and the one that would quietly empty the feature: a room
+    // claim IS an agent answering a trigger, so every one of them is
+    // automated-origin. The rule belongs to the working-sessions half alone.
+    const { transport } = renderStrip();
+    await waitFor(() => expect(transport.listRooms).toHaveBeenCalled());
+
+    useRoomPresenceStore.getState().observe(ROOM_ID, progress('working'));
+
+    expect(
+      await screen.findByRole('button', { name: 'Watch tangerines — replying in #release-train' })
+    ).toBeInTheDocument();
+    expect(screen.getByTestId('occupied')).toHaveTextContent('true');
+  });
 });
 
 describe('usePresenceStrip — what a quiet fleet costs', () => {

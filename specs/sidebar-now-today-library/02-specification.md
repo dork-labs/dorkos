@@ -498,6 +498,18 @@ Each contract is stated so a test can fail. Fixture names refer to the four jour
 - **BC-31 — Collapsed sections keep signal.** `rollup.unread.count` = the sum of member tier-2
   counts; `rollup.unread.tier` is `'activity'` when any member is tier-1 and none is tier-2;
   `rollup.workingCount` = members currently streaming. Signal is never lost by folding.
+
+> Amended 2026-08-10 (DOR-1137), on the §18 ruling ("Automated session activity → Nothing"); BC-9 carries the matching amendment via PR #926. "Members currently
+> streaming" counts **human-origin sessions only** — `design-decisions.md` §18's table renders
+> automated session activity as "Nothing. No bold, no badge", and a folded header is a badge.
+> One definition of live everywhere.
+>
+> And "streaming" is read off the session, never off the member's dot. A row draws one status
+> and `needs-you` outranks `working`, so an agent that is both blocked and running reports
+> `needs-you`; counting dots made the rollup vanish for exactly that member — the one thing this
+> contract says folding never does. A blocked-and-working member is still working, and the folded
+> header may say both.
+
 - **BC-32 — Chrome appears by data volume, not settings.** No Direct messages section until a
   DM exists; no Pins section until something is pinned; group affordances (create group, the
   groups hint) appear at ≥8 agents or ≥2 distinct runtimes. No "advanced mode" toggle exists.
