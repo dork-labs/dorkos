@@ -135,7 +135,17 @@ test.describe('TestModeRuntime — mock browser tests', () => {
       'This sentence pads the message so the rendered row wraps well past the height estimate. ';
     for (let i = 1; i <= 3; i++) {
       await chatPage.sendMessage(`Long message ${i}: ${filler.repeat(6)}`);
-      await expect(page.getByText(new RegExp(`Echo: Long message ${i}:`))).toBeVisible({
+      // Scoped to the transcript: the echo is in the DOM twice whenever the
+      // announcer catches the turn arriving (see GOTCHAS), and a bare
+      // `getByText` then resolves to two elements. Playwright treats that
+      // strict-mode violation as non-retriable, so the assertion fails on its
+      // first poll rather than waiting the announcer out — which is exactly how
+      // this failed on CI, where the stream renders across enough frames for the
+      // announcer to adopt the message. Locally the turn lands in one batch and
+      // the announcer stays silent, so only the slower runner ever saw it.
+      await expect(
+        page.getByTestId('transcript-feed').getByText(new RegExp(`Echo: Long message ${i}:`))
+      ).toBeVisible({
         timeout: 10_000,
       });
     }
