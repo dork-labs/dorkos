@@ -112,22 +112,24 @@ const SNAPSHOT_LIFECYCLES: ReadonlySet<SessionLifecycle> = new Set<SessionLifecy
  * ## What bounds it
  *
  * One frame per non-idle projector, and a projector lives until its session is
- * evicted or the server restarts. **Only claude-code and test-mode evict**
- * (`SESSIONS.TIMEOUT_MS`, 30 minutes idle) — codex and opencode both implement
- * `checkSessionHealth` as a no-op because neither holds a per-session process —
- * so on a codex- or opencode-heavy machine this set only grows until a restart.
- * It is small in every realistic fleet, but "small" is not a guarantee, and this
- * is the one place in the stream that writes N frames in a row.
+ * evicted or the server restarts. **Only claude-code evicts on a timer**
+ * (`SESSIONS.TIMEOUT_MS`, 30 minutes idle). Codex, opencode and test-mode all
+ * implement `checkSessionHealth` as a no-op — none of them holds a per-session
+ * process — so their projectors are dropped only by an explicit act
+ * (test-mode's `/api/test/reset`) or by a restart. On a codex- or
+ * opencode-heavy machine this set therefore only grows. It is small in every
+ * realistic fleet, but "small" is not a guarantee, and this is the one place in
+ * the stream that writes N frames in a row.
  *
  * So it stops at the same buffer ceiling the fan-out's own broadcast enforces
  * (`SSE.MAX_BUFFERED_BYTES`), rather than filling process memory for a client
- * that is not reading. It stops
- * instead of dropping the client, which is the opposite of what a broadcast
- * does, and deliberately: a broadcast drops a slow client because it cannot wait
- * for one reader, and the recovery is a reconnect that re-baselines. A client
- * dropped HERE would reconnect straight back into this same function and hit the
- * same ceiling. A partial preamble degrades to the old behaviour for the
- * sessions it did not reach, which is the honest floor.
+ * that is not reading. It STOPS rather than dropping the client, which is the
+ * opposite of what a broadcast does and deliberately so: a broadcast drops a
+ * slow client because it cannot wait for one reader, and the recovery is a
+ * reconnect that re-baselines. A client dropped here would reconnect straight
+ * back into this same function and hit the same ceiling. A partial preamble
+ * degrades to the old behaviour for the sessions it did not reach, which is the
+ * honest floor.
  *
  * @param client - The client that has just registered with the fan-out.
  */

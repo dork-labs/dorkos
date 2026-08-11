@@ -14,13 +14,21 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import type { SessionListEvent } from '@dorkos/shared/session-stream';
 import { FakeAgentRuntime, createMockSession } from '@dorkos/test-utils';
+import { SSE } from '../../../config/constants.js';
 import { eventFanOut } from '../../core/event-fan-out.js';
-import { SessionListBroadcaster } from '../session-list-broadcaster.js';
-import { getOrCreateProjector, disposeProjector } from '../session-state-projector.js';
+import type { EncodedBroadcast, FanOutClient } from '../../core/event-fan-out.js';
+import { SessionListBroadcaster, sendSessionStatusSnapshot } from '../session-list-broadcaster.js';
+import {
+  getOrCreateProjector,
+  disposeProjector,
+  listProjectorStatuses,
+  type RawSessionEvent,
+} from '../session-state-projector.js';
 
 // Sessions carry UUID ids per SessionSchema; non-UUID ids fail validation.
 const SESSION_A = '11111111-1111-4111-8111-111111111111';
 const SESSION_B = '22222222-2222-4222-8222-222222222222';
+const SESSION_C = '33333333-3333-4333-8333-333333333333';
 
 /**
  * A hand-driven async iterable of session-list events. `push()` delivers the
@@ -431,5 +439,97 @@ describe('SessionListBroadcaster — multi-runtime fan-in (ADR-0310)', () => {
         expect.objectContaining({ sessionId: SESSION_A })
       );
     });
+  });
+});
+
+/**
+ * The connect preamble's bound.
+ *
+ * `sendSessionStatusSnapshot` is the one place the global stream writes N frames
+ * in a row, and N is "every non-idle projector" — which on codex and opencode is
+ * a set nothing evicts on a timer. The ceiling is what keeps that from filling
+ * process memory for a client that is not reading, and it is the half of the
+ * function no wire-level test can reach: `routes/__tests__/events-status.test.ts`
+ * drives a real socket, which never congests with a handful of frames.
+ */
+describe('sendSessionStatusSnapshot — the connect preamble', () => {
+  /** A {@link FanOutClient} that records, and whose buffer grows per send. */
+  function recordingClient(bytesPerSend = 0, initialBuffered = 0) {
+    const frames: EncodedBroadcast[] = [];
+    let buffered = initialBuffered;
+    let dropped = false;
+    const client: FanOutClient = {
+      send: (broadcast) => {
+        frames.push(broadcast);
+        buffered += bytesPerSend;
+      },
+      get bufferedBytes() {
+        return buffered;
+      },
+      get gone() {
+        return false;
+      },
+      drop: () => {
+        dropped = true;
+      },
+    };
+    return {
+      client,
+      /** Session ids the client was told about, in order. */
+      sessionIds: () =>
+        frames.map(
+          (frame) => (JSON.parse(frame.sse.split('data: ')[1]!) as { sessionId: string }).sessionId
+        ),
+      wasDropped: () => dropped,
+    };
+  }
+
+  /** Drive a projector to a turn that ended in an error. */
+  function errorProjector(sessionId: string): void {
+    const projector = getOrCreateProjector(sessionId, '/work/alpha');
+    projector.ingest({ type: 'turn_start' });
+    projector.ingest({ type: 'turn_end', terminalReason: 'error' } as RawSessionEvent);
+  }
+
+  // The registry is module-global and this function reads ALL of it, so a
+  // projector another test left behind would land in these counts. Clearing
+  // both ways keeps the assertions about what THIS test created.
+  const clearRegistry = (): void => {
+    for (const entry of listProjectorStatuses()) disposeProjector(entry.sessionId);
+  };
+  beforeEach(clearRegistry);
+  afterEach(clearRegistry);
+
+  it('sends nothing to a client already over the buffer ceiling — and everything to one under it', () => {
+    errorProjector(SESSION_A);
+
+    const congested = recordingClient(0, SSE.MAX_BUFFERED_BYTES + 1);
+    sendSessionStatusSnapshot(congested.client);
+
+    // Paired deliberately: "sent nothing" is worthless on its own, since a
+    // registry with no non-idle projector in it would satisfy it too. The
+    // healthy client is what proves there was something to send.
+    const healthy = recordingClient();
+    sendSessionStatusSnapshot(healthy.client);
+
+    expect(congested.sessionIds()).toEqual([]);
+    expect(healthy.sessionIds()).toEqual([SESSION_A]);
+  });
+
+  it('stops part-way rather than dropping the client', () => {
+    errorProjector(SESSION_A);
+    errorProjector(SESSION_B);
+    errorProjector(SESSION_C);
+
+    // Congested by its own first frame: the ceiling is crossed after one send,
+    // so this walks the loop rather than failing its very first check.
+    const client = recordingClient(SSE.MAX_BUFFERED_BYTES + 1);
+    sendSessionStatusSnapshot(client.client);
+
+    expect(client.sessionIds()).toHaveLength(1);
+    // The opposite of what a broadcast does to a slow client, and deliberately:
+    // one dropped here would reconnect straight into this same function and hit
+    // the same ceiling. A partial preamble is the honest floor.
+    expect(client.wasDropped()).toBe(false);
   });
 });
