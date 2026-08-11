@@ -69,8 +69,10 @@ export {
 } from './resolve-session-defaults.js';
 export { triggerCommandIntent } from './trigger-command-intent.js';
 export {
+  adoptQueuedMessages,
   dispatchMessage,
   dispatchCommandIntent,
+  emitQueueUpdate,
   listQueuedMessages,
   linkSessionId,
   noteSessionOrphaned,
@@ -79,6 +81,7 @@ export {
   withDispatchMutex,
 } from './message-dispatcher.js';
 export type {
+  AdoptQueuedMessagesOpts,
   DispatchMessageOpts,
   DispatchCommandIntentOpts,
   MessageDispatchResult,
@@ -88,6 +91,7 @@ export {
   QUEUE_POSITION_STEP,
   getMessageQueueStore,
   setMessageQueueStore,
+  toQueuedMessage,
 } from './message-queue-store.js';
 export type { EnqueueInput, MoveTarget, QueuedMessageRecord } from './message-queue-store.js';
 export type {

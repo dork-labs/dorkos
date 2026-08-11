@@ -83,6 +83,23 @@ export interface QueuedMessageRecord extends QueuedMessage {
   context: ClientContext | null;
 }
 
+/**
+ * The wire view of a stored row: the five fields a client is told about, and
+ * nothing else.
+ *
+ * {@link QueuedMessageRecord} EXTENDS {@link QueuedMessage}, so handing a record
+ * straight to a snapshot or a `queue_update` would silently ship the ordering
+ * key and the captured client context to every window. One projection, used by
+ * both the snapshot and the event, so the two cannot disagree about what a
+ * queued message is.
+ *
+ * @param record - A row as the store reads it
+ */
+export function toQueuedMessage(record: QueuedMessageRecord): QueuedMessage {
+  const { id, content, disposition, enqueuedAt, enqueuedBy } = record;
+  return { id, content, disposition, enqueuedAt, enqueuedBy };
+}
+
 /** What {@link MessageQueueStore.enqueue} needs to accept a message. */
 export interface EnqueueInput {
   /** The session the message is waiting on — canonical id where one exists. */

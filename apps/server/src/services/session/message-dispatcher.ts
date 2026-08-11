@@ -36,6 +36,21 @@
  *    shared by the write-lock and the stall watchdog; this reuses it rather
  *    than inventing a third notion of "is this session parked on a person".
  *
+ * ## What every window sees (task 2.5)
+ *
+ * A queue nobody can see is not a queue somebody can trust, so every mutation
+ * the dispatcher makes — an acceptance, a dispatch — announces the WHOLE queue
+ * on the session's durable stream through {@link emitQueueUpdate}, and the
+ * snapshot carries the same list on a cold connect. The queue routes announce
+ * theirs the same way. A message therefore appears in the second window the
+ * moment it is accepted, and disappears from it the moment it runs.
+ *
+ * Rows survive a restart; the in-memory entries that pump them do not. That gap
+ * is closed by {@link adoptQueuedMessages}, which recreates the entries around
+ * the surviving rows **by their existing ids** rather than re-offering them
+ * through {@link dispatchMessage} — re-offering would enqueue a duplicate beside
+ * every original and hand the person their queue twice.
+ *
  * ## What it does NOT change (yet)
  *
  * The HTTP contract is untouched by this task. A dispatch still resolves when
@@ -57,11 +72,12 @@ import type {
   MessageDisposition,
   QueuedMessage,
 } from '@dorkos/shared/schemas';
+import type { SessionEvent } from '@dorkos/shared/session-stream';
 import type { SessionSettings } from '@dorkos/shared/types';
 import type { ClientContext, RoomContextData } from '@dorkos/shared/additional-context';
 import type { RuntimeCommandIntentId } from '@dorkos/shared/command-intents';
 import { COMMAND_INTENT_QUEUE_WAIT_MS } from '@dorkos/shared/command-intents';
-import { getMessageQueueStore } from './message-queue-store.js';
+import { getMessageQueueStore, toQueuedMessage } from './message-queue-store.js';
 import type { SessionStateProjector } from './session-state-projector.js';
 import {
   onProjectorRekey,
@@ -131,6 +147,29 @@ const orphanedSessions = new Set<string>();
 /** The id `sessionId`'s dispatcher state is filed under (itself, unless aliased). */
 function primaryOf(sessionId: string): string {
   return sessionAliases.get(sessionId) ?? sessionId;
+}
+
+/**
+ * The id a session's queue ROWS are stored under.
+ *
+ * Deliberately NOT {@link primaryOf}, and the difference is load-bearing. The
+ * dispatcher's in-memory state stays filed under the id a session was born with
+ * so an in-flight turn keeps its slot across the rename; the durable rows go the
+ * other way, moved onto the canonical id by the store's `rekeySession` on the
+ * same beat the projector is re-keyed. Reading them back through the filing id
+ * therefore finds nothing, and — worse — a message enqueued after the rename
+ * would be written under the filing id and land in a SECOND queue nothing lists
+ * and nothing drains. Every store call resolves its key here so there is only
+ * ever one queue per session.
+ *
+ * It is also the key the snapshot reads by, because it resolves to exactly the
+ * id the projector is registered under.
+ *
+ * @param sessionId - Either id a caller might hold (request uuid or canonical)
+ */
+function queueKeyOf(sessionId: string): string {
+  const primary = primaryOf(sessionId);
+  return projectorIds.get(primary) ?? primary;
 }
 
 /**
@@ -227,6 +266,53 @@ function resolveDisposition(
   return { applied: 'queue', degradedBecause: 'unsupported' };
 }
 
+/**
+ * The `queue_update` member as an emitter builds it — the projector stamps the
+ * `seq`. Narrowed out of the union member by member, because a bare
+ * `Omit<SessionEvent, 'seq'>` over a union keeps only the keys every member
+ * shares and would drop `queue` and `outcome` on the floor.
+ */
+type RawQueueUpdate = Omit<Extract<SessionEvent, { type: 'queue_update' }>, 'seq'>;
+
+/**
+ * Announce a session's queue on its durable stream — the one way a queue change
+ * reaches the windows watching it (spec `persistent-session-runtime` §3.2).
+ *
+ * Reads the store and emits the WHOLE queue, never a diff. The queue is small
+ * and bounded, and a full replacement makes every ordering and dedup bug
+ * unrepresentable: a window that missed an update is corrected by the next one
+ * instead of drifting. The event is ingested like any other, so it is stamped
+ * with a `seq`, replayed to a client resuming from `Last-Event-ID`, and covered
+ * by the client's existing idempotent-apply-by-seq with no new rules.
+ *
+ * **Call this after every queue mutation** — enqueue, edit, reorder, remove,
+ * dispatch, clear. The dispatcher calls it for the two mutations it owns; the
+ * queue routes call it for theirs. A mutation that forgets leaves every other
+ * window showing a queue that is no longer true until something else changes.
+ *
+ * A no-op when no queue store is wired (embedded hosts, most unit tests) or when
+ * no projector is registered for the session: with nobody listening there is
+ * nothing to correct, and the next cold connect reads the queue from the store
+ * anyway.
+ *
+ * @param sessionId - Either id a caller might hold (request uuid or canonical)
+ * @param outcome - Present when an accepted message caused this update, so the
+ *   sender's window can say what actually happened to it
+ */
+export function emitQueueUpdate(sessionId: string, outcome?: MessageDeliveryOutcome): void {
+  const store = getMessageQueueStore();
+  if (!store) return;
+  const sessionKey = queueKeyOf(sessionId);
+  const projector = peekProjector(sessionKey);
+  if (!projector) return;
+  const event: RawQueueUpdate = {
+    type: 'queue_update',
+    queue: store.list(sessionKey).map(toQueuedMessage),
+    ...(outcome !== undefined ? { outcome } : {}),
+  };
+  projector.ingest(event);
+}
+
 /** Build the runtime-neutral port `triggerTurn` needs from a resolved runtime. */
 function turnDeps(runtime: AgentRuntime): TriggerTurnDeps {
   return {
@@ -292,6 +378,143 @@ export interface MessageDispatchResult extends TriggerTurnResult {
   queuePosition: number;
 }
 
+/** Everything one accepted message needs to become a running turn. */
+interface DispatchPlan {
+  /** The client-facing session id the turn is triggered under. */
+  sessionId: string;
+  /** The id this session's in-memory dispatcher state is filed under. */
+  sessionKey: string;
+  clientId: string;
+  content: string;
+  /** The server-minted id shared by the queue row, the turn, and the outcome. */
+  messageId: string;
+  projector: SessionStateProjector;
+  runtime: AgentRuntime;
+  /** The whole budget this message may spend waiting for the turns ahead of it. */
+  budgetMs: number;
+  /** When it started spending that budget. */
+  startedWaitingAt: number;
+  /** What the caller passes straight through to the turn. */
+  turn: Pick<
+    DispatchMessageOpts,
+    | 'cwd'
+    | 'context'
+    | 'roomContext'
+    | 'seedContext'
+    | 'settings'
+    | 'stallTimeoutMs'
+    | 'onError'
+    | 'onSettled'
+    | 'onTurnStart'
+  >;
+}
+
+/**
+ * Start one accepted message's turn: claim the session, take the message off the
+ * queue, and hand it to {@link triggerTurn}.
+ *
+ * Shared by the two ways a message reaches this point — accepted onto an idle
+ * session, or released from the queue by the pump (including a row
+ * {@link adoptQueuedMessages} recovered after a restart) — so all of them take
+ * the message off the queue, announce that the queue moved, and hand the
+ * session back the same way however they got here.
+ *
+ * @param plan - The message, its session, and the turn's passthroughs
+ * @param opts.budgetExhausted - The wait bound fired: launch anyway, with no
+ *   budget left and WITHOUT claiming the in-flight slot, so this message meets
+ *   the write-lock exactly as a stranger would rather than telling the pump the
+ *   turn ahead of it had ended
+ */
+function launchDispatch(
+  plan: DispatchPlan,
+  opts: { budgetExhausted: boolean }
+): Promise<TriggerTurnResult> {
+  const { sessionKey, clientId, messageId } = plan;
+  const remainingMs = opts.budgetExhausted
+    ? 0
+    : Math.max(0, plan.budgetMs - (Date.now() - plan.startedWaitingAt));
+  const token = Symbol('dispatcher-turn');
+  if (!opts.budgetExhausted) inFlight.set(sessionKey, { clientId, token });
+  const clearIfOurs = (): void => {
+    if (inFlight.get(sessionKey)?.token === token) inFlight.delete(sessionKey);
+    schedulePump(sessionKey);
+  };
+  // The row goes as the turn starts, and every window is told so in the same
+  // beat — a queue chip that outlives the message it stands for is a lie about
+  // what is still waiting.
+  if (getMessageQueueStore()?.remove(messageId)) emitQueueUpdate(sessionKey);
+  const { turn } = plan;
+  let started: Promise<TriggerTurnResult>;
+  try {
+    started = triggerTurn({
+      sessionId: plan.sessionId,
+      clientId,
+      content: plan.content,
+      ...(turn.cwd !== undefined ? { cwd: turn.cwd } : {}),
+      ...(turn.context ? { context: turn.context } : {}),
+      ...(turn.roomContext ? { roomContext: turn.roomContext } : {}),
+      ...(turn.seedContext ? { seedContext: turn.seedContext } : {}),
+      ...(turn.settings ? { settings: turn.settings } : {}),
+      ...(turn.stallTimeoutMs !== undefined ? { stallTimeoutMs: turn.stallTimeoutMs } : {}),
+      ...(turn.onTurnStart ? { onTurnStart: turn.onTurnStart } : {}),
+      projector: plan.projector,
+      deps: turnDeps(plan.runtime),
+      queueWaitMs: remainingMs,
+      messageId,
+      onError: turn.onError,
+      onSettled: (turnOutcome) => {
+        clearIfOurs();
+        turn.onSettled?.(turnOutcome);
+      },
+    });
+  } catch (err) {
+    clearIfOurs();
+    // Rejected with what was thrown, unchanged: `triggerTurn` throws typed
+    // errors its callers narrow on, and re-wrapping would cost them that.
+    return Promise.reject(err as Error);
+  }
+  return started.then(
+    (result) => {
+      // A refused turn never settles, so nothing else will hand the slot back.
+      if (!result.accepted) clearIfOurs();
+      return result;
+    },
+    (err: unknown) => {
+      clearIfOurs();
+      throw err;
+    }
+  );
+}
+
+/**
+ * Park a message in the pending set until the pump releases it, bounded so a
+ * turn that went dark cannot make it wait forever.
+ *
+ * @param plan - The message and everything its turn will need
+ * @param settle - Receives the launch's result, however it settles
+ */
+function parkDispatch(
+  plan: DispatchPlan,
+  settle: { resolve(result: TriggerTurnResult): void; reject(err: unknown): void }
+): void {
+  const entry: PendingDispatch = {
+    messageId: plan.messageId,
+    sessionKey: plan.sessionKey,
+    clientId: plan.clientId,
+    launch: (launchOpts) => {
+      if (!pending.delete(plan.messageId)) return;
+      clearTimeout(entry.timer);
+      launchDispatch(plan, launchOpts).then(settle.resolve, settle.reject);
+    },
+    // Bounded for the same reason DOR-1088 bounds its chain: the write-lock has
+    // a TTL and a queue does not, so a turn that went dark would otherwise hand
+    // the session to a stranger while its own client's message waited forever.
+    timer: setTimeout(() => entry.launch({ budgetExhausted: true }), plan.budgetMs),
+  };
+  entry.timer.unref?.();
+  pending.set(plan.messageId, entry);
+}
+
 /**
  * Accept a message, decide when it runs, and resolve once its turn has started
  * (or been refused).
@@ -309,10 +532,21 @@ export async function dispatchMessage(opts: DispatchMessageOpts): Promise<Messag
   const requested = opts.disposition ?? 'queue';
   const resolved = resolveDisposition(requested, runtime.getCapabilities());
   const sessionKey = primaryOf(runtime.getInternalSessionId(sessionId) ?? sessionId);
+  const queueKey = queueKeyOf(sessionId);
   const budgetMs = opts.queueWaitMs ?? SESSIONS.LOCK_TTL_MS;
 
+  // Anything a previous server process left queued is picked up first, so this
+  // message joins a queue that is whole rather than jumping a person's own
+  // older words that nothing else would ever run again.
+  adoptQueuedMessages({
+    sessionId,
+    projector,
+    runtime,
+    ...(opts.cwd !== undefined ? { cwd: opts.cwd } : {}),
+  });
+
   const record = getMessageQueueStore()?.enqueue({
-    sessionId: sessionKey,
+    sessionId: queueKey,
     content,
     clientId,
     disposition: requested,
@@ -321,97 +555,121 @@ export async function dispatchMessage(opts: DispatchMessageOpts): Promise<Messag
   const messageId = record?.id ?? crypto.randomUUID();
   const queuePosition = record
     ? (getMessageQueueStore()
-        ?.list(sessionKey)
+        ?.list(queueKey)
         .findIndex((row) => row.id === messageId) ?? 0) + 1
     : 1;
   const outcome: MessageDeliveryOutcome = { messageId, requested, ...resolved };
+  // The acceptance is a queue change like any other, and it carries the outcome:
+  // this is what lets the sender's window say "queued, because Codex cannot take
+  // messages mid-turn" instead of silently doing something else.
+  if (record) emitQueueUpdate(queueKey, outcome);
 
-  const startedWaitingAt = Date.now();
+  const plan: DispatchPlan = {
+    sessionId,
+    sessionKey,
+    clientId,
+    content,
+    messageId,
+    projector,
+    runtime,
+    budgetMs,
+    startedWaitingAt: Date.now(),
+    turn: opts,
+  };
+
   const launched = new Promise<TriggerTurnResult>((resolve, reject) => {
-    const launch = ({ budgetExhausted }: { budgetExhausted: boolean }): void => {
-      const remainingMs = budgetExhausted
-        ? 0
-        : Math.max(0, budgetMs - (Date.now() - startedWaitingAt));
-      const token = Symbol('dispatcher-turn');
-      // Only a launch the pump permitted owns the in-flight slot. One released
-      // by the wait bound is deliberately racing the turn ahead of it: it goes
-      // straight to the write-lock and gets the same answer a stranger would.
-      if (!budgetExhausted) inFlight.set(sessionKey, { clientId, token });
-      const clearIfOurs = (): void => {
-        if (inFlight.get(sessionKey)?.token === token) inFlight.delete(sessionKey);
-        schedulePump(sessionKey);
-      };
-      getMessageQueueStore()?.remove(messageId);
-      let turn: Promise<TriggerTurnResult>;
-      try {
-        turn = triggerTurn({
-          sessionId,
-          clientId,
-          content,
-          ...(opts.cwd !== undefined ? { cwd: opts.cwd } : {}),
-          ...(opts.context ? { context: opts.context } : {}),
-          ...(opts.roomContext ? { roomContext: opts.roomContext } : {}),
-          ...(opts.seedContext ? { seedContext: opts.seedContext } : {}),
-          ...(opts.settings ? { settings: opts.settings } : {}),
-          ...(opts.stallTimeoutMs !== undefined ? { stallTimeoutMs: opts.stallTimeoutMs } : {}),
-          ...(opts.onTurnStart ? { onTurnStart: opts.onTurnStart } : {}),
-          projector,
-          deps: turnDeps(runtime),
-          queueWaitMs: remainingMs,
-          messageId,
-          onError: opts.onError,
-          onSettled: (turnOutcome) => {
-            clearIfOurs();
-            opts.onSettled?.(turnOutcome);
-          },
-        });
-      } catch (err) {
-        clearIfOurs();
-        reject(err);
-        return;
-      }
-      turn.then(
-        (result) => {
-          // A refused turn never settles, so nothing else will hand the slot back.
-          if (!result.accepted) clearIfOurs();
-          resolve(result);
-        },
-        (err: unknown) => {
-          clearIfOurs();
-          reject(err);
-        }
-      );
-    };
-
     // The first attempt is gated only by this client's own open turn. A message
     // from any OTHER client is launched straight away and meets the write-lock,
     // which is the answer that route has always given — deferring it here would
     // turn an immediate refusal into a wait of minutes.
     if (inFlight.get(sessionKey)?.clientId !== clientId) {
-      launch({ budgetExhausted: false });
+      launchDispatch(plan, { budgetExhausted: false }).then(resolve, reject);
       return;
     }
-
-    const entry: PendingDispatch = {
-      messageId,
-      sessionKey,
-      clientId,
-      launch: (launchOpts) => {
-        if (!pending.delete(messageId)) return;
-        clearTimeout(entry.timer);
-        launch(launchOpts);
-      },
-      // Bounded for the same reason DOR-1088 bounds its chain: the write-lock has
-      // a TTL and a queue does not, so a turn that went dark would otherwise hand
-      // the session to a stranger while its own client's message waited forever.
-      timer: setTimeout(() => entry.launch({ budgetExhausted: true }), budgetMs),
-    };
-    entry.timer.unref?.();
-    pending.set(messageId, entry);
+    parkDispatch(plan, { resolve, reject });
   });
 
   const result = await launched;
   return { ...result, outcome, queuePosition };
+}
+
+/** Inputs for {@link adoptQueuedMessages}. */
+export interface AdoptQueuedMessagesOpts {
+  /** Either id a caller might hold for the session (request uuid or canonical). */
+  sessionId: string;
+  /** The session's projector — the gate the pump reads before it releases anything. */
+  projector: SessionStateProjector;
+  /** The runtime an adopted message's turn will run on. */
+  runtime: AgentRuntime;
+  /** Working directory for the recovered turns, when the caller knows it. */
+  cwd?: string;
+}
+
+/**
+ * Take ownership of queue rows this process did not accept, so they run.
+ *
+ * A row that survives a restart is INERT on its own: the row is still there and
+ * a snapshot still reports it, but the in-memory entry the pump releases died
+ * with the old process, and nothing recreates it. The person is shown their
+ * message waiting for a turn that will never come.
+ *
+ * This ADOPTS each surviving row **by its existing id** — same row, same
+ * position, same words, same `enqueuedBy` — and wraps a pending entry around it
+ * so the next turn boundary pumps it exactly as if this process had accepted it.
+ * It deliberately does NOT re-offer them through {@link dispatchMessage}: that
+ * would enqueue a fresh row beside every original and hand the person their
+ * queue twice, which is the one failure worse than the queue not running at all.
+ *
+ * Idempotent by construction — a row that already has a pending entry is skipped
+ * — so it is safe to call on every dispatch, which is what makes recovery
+ * automatic rather than something a caller has to remember.
+ *
+ * Ends by giving the queue a chance to move: an idle session with rows on disk
+ * has nothing else coming that would ever start them.
+ *
+ * @param opts - The session, its projector, and the runtime to run on
+ * @returns How many rows were newly adopted
+ */
+export function adoptQueuedMessages(opts: AdoptQueuedMessagesOpts): number {
+  const store = getMessageQueueStore();
+  if (!store) return 0;
+  const sessionKey = primaryOf(opts.sessionId);
+  const rows = store.list(queueKeyOf(opts.sessionId));
+  let adopted = 0;
+  for (const row of rows) {
+    if (pending.has(row.id)) continue;
+    const plan: DispatchPlan = {
+      sessionId: opts.sessionId,
+      sessionKey,
+      clientId: row.enqueuedBy,
+      content: row.content,
+      messageId: row.id,
+      projector: opts.projector,
+      runtime: opts.runtime,
+      budgetMs: SESSIONS.LOCK_TTL_MS,
+      startedWaitingAt: Date.now(),
+      turn: {
+        ...(opts.cwd !== undefined ? { cwd: opts.cwd } : {}),
+        ...(row.context !== null ? { context: row.context } : {}),
+      },
+    };
+    parkDispatch(plan, {
+      resolve: () => {},
+      // Nobody is awaiting a recovered turn — the request that accepted it
+      // belonged to a process that is gone — so a failure has to be reported
+      // here or it is reported nowhere.
+      reject: (err: unknown) => {
+        logger.warn('[MessageDispatcher] a recovered queued message failed to start', {
+          sessionId: sessionKey,
+          messageId: row.id,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      },
+    });
+    adopted += 1;
+  }
+  if (adopted > 0) schedulePump(sessionKey);
+  return adopted;
 }
 
 /** Inputs for {@link dispatchCommandIntent}. */
@@ -552,7 +810,7 @@ function pumpLocked(sessionKey: string): void {
  * stable, so the two groups interleave predictably rather than by accident.
  */
 function orderedWaiting(sessionKey: string): PendingDispatch[] {
-  const rows = getMessageQueueStore()?.list(sessionKey) ?? [];
+  const rows = getMessageQueueStore()?.list(queueKeyOf(sessionKey)) ?? [];
   const rank = new Map(rows.map((row, index) => [row.id, index]));
   return [...pending.values()]
     .filter((entry) => entry.sessionKey === sessionKey)
@@ -595,6 +853,20 @@ export function noteSessionOrphaned(sessionId: string): void {
 }
 
 /**
+ * Drop the canonical-id bookkeeping for a session that is gone for good, in both
+ * directions: the filing id's forward pointer, and every later id that resolved
+ * back to it.
+ *
+ * @param primary - The id the session's dispatcher state was filed under
+ */
+function forgetSessionAliases(primary: string): void {
+  projectorIds.delete(primary);
+  for (const [alias, target] of sessionAliases) {
+    if (target === primary) sessionAliases.delete(alias);
+  }
+}
+
+/**
  * Delete the queued messages of every session that has gone away, and report
  * how many rows went.
  *
@@ -609,16 +881,21 @@ export function noteSessionOrphaned(sessionId: string): void {
 export function sweepOrphanedMessageQueues(opts?: {
   isLive?: (sessionId: string) => boolean;
 }): number {
-  const store = getMessageQueueStore();
-  if (!store || orphanedSessions.size === 0) return 0;
+  if (orphanedSessions.size === 0) return 0;
   const isLive = opts?.isLive ?? ((id: string) => projectorFor(id) !== undefined);
   const candidates = [...orphanedSessions];
   orphanedSessions.clear();
   const doomed = candidates.filter((id) => !isLive(id) && !inFlight.has(id));
+  const store = getMessageQueueStore();
   let removed = 0;
-  for (let i = 0; i < doomed.length; i += SWEEP_CHUNK_SIZE) {
-    removed += store.deleteForSessions(doomed.slice(i, i + SWEEP_CHUNK_SIZE));
+  for (let i = 0; i < doomed.length && store; i += SWEEP_CHUNK_SIZE) {
+    removed += store.deleteForSessions(doomed.slice(i, i + SWEEP_CHUNK_SIZE).map(queueKeyOf));
   }
+  // The rename bookkeeping goes with them. Two entries are added per renamed
+  // session and nothing has ever removed one, so a long-lived server accumulates
+  // a pair for every session it ever started — small, but unbounded, and the
+  // sweep is the one place that already knows a session is gone for good.
+  for (const id of doomed) forgetSessionAliases(id);
   if (removed > 0) {
     logger.info('[MessageDispatcher] swept queued messages of vanished sessions', {
       sessions: doomed.length,
@@ -634,14 +911,7 @@ export function sweepOrphanedMessageQueues(opts?: {
  * @param sessionId - The session to read
  */
 export function listQueuedMessages(sessionId: string): QueuedMessage[] {
-  const rows = getMessageQueueStore()?.list(primaryOf(sessionId)) ?? [];
-  return rows.map(({ id, content, disposition, enqueuedAt, enqueuedBy }) => ({
-    id,
-    content,
-    disposition,
-    enqueuedAt,
-    enqueuedBy,
-  }));
+  return (getMessageQueueStore()?.list(queueKeyOf(sessionId)) ?? []).map(toQueuedMessage);
 }
 
 /**
