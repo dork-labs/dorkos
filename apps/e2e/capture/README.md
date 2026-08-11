@@ -74,7 +74,7 @@ The safe parallel unit is a whole stack, so each shard gets its own:
 How a sharded record runs (`record.ts`):
 
 1. **Build once.** Server workspace deps are built a single time up front (`buildServerDeps`), then every shard boots from that output — no per-shard rebuild.
-2. **Partition.** Shots are split round-robin by registry order (`partitionShots` in `shots.ts`), except `SHARD_0_PINNED_SHOTS`, which always land on shard 0: the session-**list** surfaces `multi-session` and `mobile-sessions` (their sidebar density accumulates from every earlier session-creating drive in the same stack, so they must ride one stack's state) and `agent-discovery` (driven **last** in its stack — it flips global onboarding state, which every other shot in the same stack needs left dismissed; each shard's own `DORK_HOME` keeps that flip local).
+2. **Partition.** Shots are split round-robin by registry order (`partitionShots` in `shots.ts`), except `SHARD_0_PINNED_SHOTS`, which always land on shard 0: the **sidebar** surfaces `multi-session` and `mobile-sessions` (each mints its own Today rows, but its Now zone counts every turn still running or still blocked anywhere in the same stack, so they must ride one stack's state) and `agent-discovery` (driven **last** in its stack — it flips global onboarding state, which every other shot in the same stack needs left dismissed; each shard's own `DORK_HOME` keeps that flip local).
 3. **Record in parallel.** One `record-shard.ts` worker process per shard prepares its filesystem, boots its stack, seeds it, and captures **only its assigned shots** into the shared run's `raw/` dir (file names never collide — shots are disjoint), writing a partial manifest to `library/<run-id>/shards/`.
 4. **Merge.** Once every shard exits, the orchestrator merges the partials into one `run.json` (assets sorted by file name), points `latest` at it, and prunes — producing exactly the run a serial record would. A failed sharded record removes its partial run dir instead of leaving a `run.json`-less husk in the library.
 
@@ -211,24 +211,24 @@ the same webm + poster.
 
 ## What gets captured
 
-| Surface           | Stills | Loop | Notes                                            |
-| ----------------- | ------ | ---- | ------------------------------------------------ |
-| `cockpit`         | light  | —    | Home: the composer, its tabs, the sidebar roster |
-| `agents`          | light  | —    | Fleet list with identities/runtimes, Active rows |
-| `topology`        | light  | dark | Mesh graph, 6 agents across namespaces           |
-| `tasks`           | light  | —    | Schedules + expanded green run history           |
-| `marketplace`     | light  | —    | In-app browse grid                               |
-| `chat-streaming`  | light  | dark | Mid-stream: markdown + tool-call cards           |
-| `tool-approval`   | light  | —    | Permission prompt awaiting the operator          |
-| `canvas`          | light  | dark | Canvas open beside chat with a file-backed doc   |
-| `canvas-editing`  | light  | dark | Live typing/formatting in the canvas editor      |
-| `subagents`       | light  | dark | Three sub-agents running concurrently, settling  |
-| `multi-session`   | light  | dark | Sidebar alive: four concurrent streams pulsing   |
-| `personality`     | light  | dark | Personality radar morphing through presets       |
-| `agent-discovery` | light  | dark | Onboarding scan finding a mixed existing fleet   |
-| `mobile-sessions` | light  | —    | 390px session-list sheet with working indicators |
-| `mobile-chat`     | light  | dark | 390px streaming session (the mobile loop)        |
-| `mobile-approval` | light  | —    | 390px tool-approval prompt                       |
+| Surface           | Stills | Loop | Notes                                              |
+| ----------------- | ------ | ---- | -------------------------------------------------- |
+| `cockpit`         | light  | —    | Home: the composer, its tabs, the sidebar roster   |
+| `agents`          | light  | —    | Fleet list with identities/runtimes, Active rows   |
+| `topology`        | light  | dark | Mesh graph, 6 agents across namespaces             |
+| `tasks`           | light  | —    | Schedules + expanded green run history             |
+| `marketplace`     | light  | —    | In-app browse grid                                 |
+| `chat-streaming`  | light  | dark | Mid-stream: markdown + tool-call cards             |
+| `tool-approval`   | light  | —    | Permission prompt awaiting the operator            |
+| `canvas`          | light  | dark | Canvas open beside chat with a file-backed doc     |
+| `canvas-editing`  | light  | dark | Live typing/formatting in the canvas editor        |
+| `subagents`       | light  | dark | Three sub-agents running concurrently, settling    |
+| `multi-session`   | light  | dark | Now + Today: four agents' conversations, all live  |
+| `personality`     | light  | dark | Personality radar morphing through presets         |
+| `agent-discovery` | light  | dark | Onboarding scan finding a mixed existing fleet     |
+| `mobile-sessions` | light  | —    | 390px sidebar sheet: one agent working, one asking |
+| `mobile-chat`     | light  | dark | 390px streaming session (the mobile loop)          |
+| `mobile-approval` | light  | —    | 390px tool-approval prompt                         |
 
 Dark PNGs exist only as loop posters, extracted from the loop during
 post-processing (frame 0, or the settled pre-seam frame for

@@ -184,13 +184,15 @@ export function shotTargetDimensions(shot: Shot, kind: ShotKind): Dimensions {
 /**
  * Shots always placed on shard 0 in a parallel record, in registry order:
  *
- * - `multi-session` and `mobile-sessions` are the session-LIST surfaces — their
- *   money is an inhabited sidebar, whose rows accumulate from every earlier
- *   session-creating drive in the same stack. Pinning them to shard 0 keeps
- *   that accumulated density tied to one stack's state instead of letting it
- *   vary with shard placement. (No other shot reads the session list: the
- *   remaining chat surfaces are single-session views, and the cockpit's recent
- *   activity comes from the seeded sessions present in every shard.)
+ * - `multi-session` and `mobile-sessions` are the SIDEBAR surfaces — their money
+ *   is an inhabited Now/Today panel. Each drive mints its own Today rows by
+ *   opening the conversations it started, but the Now zone above them counts
+ *   every turn still running or still stopped for an approval anywhere in the
+ *   same stack. Pinning both to shard 0 keeps that summary tied to one stack's
+ *   state instead of letting it vary with shard placement. (No other shot reads
+ *   the sidebar's zones: the remaining chat surfaces are single-session views,
+ *   and the cockpit's recent activity comes from the seeded sessions present in
+ *   every shard.)
  * - `agent-discovery` flips its stack's global onboarding state, which every
  *   other shot in the same stack needs left dismissed — it stays a singleton on
  *   shard 0, where the record phase drives it dead last (and restores the

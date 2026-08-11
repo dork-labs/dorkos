@@ -283,6 +283,34 @@ export const features: Feature[] = [
 
   // === CONSOLE ===
   {
+    slug: 'team-room',
+    name: 'Team Room',
+    product: 'console',
+    category: 'messaging',
+    tagline: 'Open DorkOS and land in one room with every agent you run',
+    description:
+      'A dashboard of tiles tells you nothing. DorkOS opens on #team, a room holding you and every agent you run, so you start by talking, not hunting.',
+    status: 'ga',
+    benefits: [
+      'Open DorkOS and land in a room with your whole team',
+      'The sidebar leads with whatever is waiting on you',
+      'Press ⌘K to jump to any conversation by name',
+      'One line of news when you come back after hours away',
+      'The room marks real events, like a new agent joining',
+    ],
+    moment:
+      'You come back after a few hours and open DorkOS. The room greets you with one line on what got done while you were gone, and anything waiting on you sits at the top of the sidebar.',
+    media: {
+      surface: 'cockpit',
+      alt: 'The DorkOS Home tab open on the #team room, with every agent listed in the sidebar',
+      crop: 'top',
+    },
+    docsUrl: '/docs/concepts/rooms',
+    relatedFeatures: ['rooms', 'chat-interface', 'agent-identity', 'agent-attribution'],
+    // First in the Console tab: it is the screen you land on.
+    sortOrder: 0,
+  },
+  {
     slug: 'chat-interface',
     name: 'Chat Interface',
     product: 'console',
@@ -530,11 +558,6 @@ export const features: Feature[] = [
     ],
     moment:
       'You open a session for the API project and the right agent is already loaded. You never had to point it at the folder again; the workspace remembered for you.',
-    media: {
-      surface: 'cockpit',
-      alt: 'The DorkOS screen scoped to one project workspace',
-      crop: 'top',
-    },
     docsUrl: '/docs/guides/workspaces',
     relatedFeatures: ['chat-interface', 'multi-runtime-cockpit'],
     sortOrder: 8,
@@ -639,7 +662,12 @@ export const features: Feature[] = [
     moment:
       'You ask a question in your #deploys channel. Two agents pick it up, one answers in a thread, and the whole exchange stays in one place you can read end to end.',
     docsUrl: '/docs/concepts/rooms',
-    relatedFeatures: ['relay-message-bus', 'mesh-agent-discovery', 'agent-attribution'],
+    relatedFeatures: [
+      'relay-message-bus',
+      'team-room',
+      'mesh-agent-discovery',
+      'agent-attribution',
+    ],
     sortOrder: 2,
   },
   {
@@ -768,25 +796,26 @@ export const features: Feature[] = [
     name: 'Agent Identity',
     product: 'mesh',
     category: 'identity',
-    tagline: 'Names, faces, and personalities: a team, not a wall of IDs',
+    tagline: 'Faces, handles, and profiles: a team you recognize, not a wall of IDs',
     description:
-      'Give each agent a name, a face, and a job. Your agents read like a team you assembled, not a wall of IDs you have to decode one by one.',
+      'A wall of IDs tells you nothing. Every person and agent gets a photo and a handle that never changes, plus one profile you can open from anywhere.',
     status: 'ga',
     benefits: [
-      'A name, color, and avatar for every agent',
-      'A short personality profile shapes how each agent responds',
-      'Turns a list of IDs into a team you recognize',
-      'System agents stay protected from accidental changes',
+      'A photo and a lasting @handle for every person and agent',
+      'One profile panel, with its personality, opens from any name',
+      'A Team page listing you and every agent you run',
+      'See who is working, who is quiet, and what runs them',
+      'Agents always look like agents, never mistaken for a person',
     ],
     moment:
-      "Your team isn't a list of IDs. It's Lens on code review, Sentinel on the security watch, and Atlas on architecture, each with a name, a face, and a personality you set.",
-    docsUrl: '/docs/guides/persona',
+      "Your team isn't a list of IDs. It's Lens on code review and Sentinel on the security watch, each with a face, a handle, and a profile you can open from any message.",
+    docsUrl: '/docs/guides/team',
     media: {
       surface: 'personality',
-      alt: "A DorkOS agent's identity panel with its name, avatar, personality, and a short profile chart",
+      alt: "The DorkOS Team page listing every agent, with one agent's profile panel open beside it",
       loop: true,
     },
-    relatedFeatures: ['mesh-agent-discovery', 'mesh-topology'],
+    relatedFeatures: ['mesh-agent-discovery', 'mesh-topology', 'team-room'],
     sortOrder: 3,
   },
 
@@ -810,7 +839,7 @@ export const features: Feature[] = [
     moment:
       'You point Cursor at your DorkOS server once. From then on it can kick off a task or check the agent mesh without you ever opening the DorkOS console.',
     docsUrl: '/docs/integrations/mcp-server',
-    relatedFeatures: ['marketplace', 'task-scheduler', 'relay-message-bus'],
+    relatedFeatures: ['marketplace', 'task-scheduler', 'relay-message-bus', 'mcp-sign-in'],
     sortOrder: 1,
   },
   {
@@ -891,8 +920,29 @@ export const features: Feature[] = [
       'Disconnect an account any time, from one screen',
     ],
     docsUrl: '/docs/connections',
-    relatedFeatures: ['marketplace', 'mcp-server', 'relay-message-bus'],
+    relatedFeatures: ['marketplace', 'mcp-server', 'relay-message-bus', 'mcp-sign-in'],
     sortOrder: 5,
+  },
+  {
+    slug: 'mcp-sign-in',
+    name: 'Tool Server Sign-in',
+    product: 'core',
+    category: 'integration',
+    tagline: 'Sign in to a tool your agent needs, right where it asks',
+    description:
+      'Some of the tool servers your agents use want you to sign in first. DorkOS puts that sign-in in front of you, then keeps you signed in after that.',
+    status: 'ga',
+    benefits: [
+      "Sign in from the chat, or from the server's own row",
+      'An agent can ask for a sign-in while it works',
+      'Your sign-in survives a restart, so you do it once',
+      'Access renews quietly, before it runs out',
+      'Each server says in plain words whether it is ready',
+    ],
+    moment:
+      'Your agent reaches for a tool that needs your permission and stops. A sign-in card appears in the chat, you sign in once, and it carries on.',
+    relatedFeatures: ['mcp-server', 'connections', 'marketplace'],
+    sortOrder: 6,
   },
 ];
 

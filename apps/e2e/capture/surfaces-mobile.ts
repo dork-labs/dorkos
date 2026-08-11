@@ -44,27 +44,67 @@ async function newMobileContext(browser: Browser, options?: { video?: boolean })
   });
 }
 
+/** Pause after a turn is triggered, so the roster can resolve it as that agent's newest. */
+const MOBILE_RESOLVE_MS = 1200;
+
+/** The two agents the phone drive puts to work — the last one opened lands on screen. */
+const MOBILE_FLEET: readonly { agent: string; prompt: string; scenario: string }[] = [
+  { agent: 'scout', prompt: 'Rotate the webhook signing secret', scenario: 'demo-approval' },
+  { agent: 'atlas', prompt: 'Ship the retry-queue fix and rerun CI', scenario: 'demo-coding' },
+];
+
 /**
- * Drive the mobile session list: launch two live turns first (an already-open
- * list does not grow rows for brand-new sessions), then land on the session
- * view and open the sidebar sheet — the full-screen session list a phone user
- * sees, with working/approval indicators pulsing on the live rows.
+ * Slide the sidebar sheet open and wait until it is really up.
+ *
+ * On a phone the sidebar is a sheet (`data-mobile="true"`), and it closes
+ * itself on any navigation — so every pass through the drive has to open it
+ * again rather than assume it stayed.
+ */
+async function openMobileSidebar(page: Page): Promise<void> {
+  await page.locator('[data-sidebar="trigger"]').first().tap();
+  await page.locator('[data-mobile="true"]').first().waitFor({ timeout: WAIT_MS });
+  await sleep(500); // let the sheet finish sliding in
+}
+
+/**
+ * Drive the phone's session sheet: start one agent's turn, open that agent from
+ * the sheet's roster, and repeat — so the sheet ends up showing Now (what is
+ * running, and who stopped to ask) over the two live conversations in Today,
+ * one green and one amber.
+ *
+ * Same two rules as the desktop fleet drive (`driveMultiSession`), for the same
+ * reasons: a conversation only earns a Today row once this person has opened it
+ * from the panel, and each turn is triggered just before its agent is opened so
+ * both rows are still live when the shutter falls. The extra wrinkle here is
+ * that tapping a row navigates, and navigating closes the sheet — so the sheet
+ * is re-opened for each agent, and once more at the end for the shot itself.
  */
 async function driveMobileSessions(page: Page): Promise<void> {
-  const cwd = path.join(FLEET_ROOT, 'atlas');
-  const live = [
-    { id: randomUUID(), prompt: 'Ship the retry-queue fix and rerun CI', scenario: 'demo-coding' },
-    { id: randomUUID(), prompt: 'Rotate the webhook signing secret', scenario: 'demo-approval' },
-  ];
-  for (const s of live) {
-    await post('/api/test/scenario', { name: s.scenario, sessionId: s.id });
-    await post(`/api/sessions/${s.id}/messages`, { content: s.prompt, cwd });
+  await page.goto(url('/'));
+  await page.waitForSelector('[data-testid="app-shell"]', { timeout: WAIT_MS });
+  for (const entry of MOBILE_FLEET) {
+    const id = randomUUID();
+    const cwd = path.join(FLEET_ROOT, entry.agent);
+    await post('/api/test/scenario', { name: entry.scenario, sessionId: id });
+    await post(`/api/sessions/${id}/messages`, { content: entry.prompt, cwd });
+    await sleep(MOBILE_RESOLVE_MS);
+    await openMobileSidebar(page);
+    await page
+      .getByRole('button', { name: `Switch to ${entry.agent}` })
+      .first()
+      .tap({ timeout: WAIT_MS });
+    await page.waitForURL(new RegExp(`session=${id}`), { timeout: WAIT_MS });
+    await sleep(600);
   }
-  await page.goto(url(`/session?session=${live[0]!.id}&dir=${encodeURIComponent(cwd)}`));
-  await page.waitForSelector('[data-testid="chat-panel"]', { timeout: WAIT_MS });
-  await sleep(1200); // let liveness reach the list stores
-  await page.locator('[data-sidebar="trigger"]').first().tap();
-  await page.locator('[data-testid="session-row"]').first().waitFor({ timeout: WAIT_MS });
+  await openMobileSidebar(page);
+  await page
+    .locator('[data-sidebar-zone="today"] [data-sidebar-row]')
+    .nth(MOBILE_FLEET.length - 1)
+    .waitFor({ timeout: WAIT_MS });
+  // Opening a conversation scrolls its Today row into view; put Now back on
+  // top so the sheet reads from the summary down to the rows it summarises.
+  await page.locator('[data-sidebar-zone="now"]').first().scrollIntoViewIfNeeded();
+  await sleep(400);
 }
 
 /** Drive a streaming coding turn on the phone (shared by still and loop). */
@@ -134,10 +174,10 @@ async function recordMobileChatLoop(browser: Browser, rec: RunRecorder): Promise
 }
 
 /**
- * Capture the mobile set: session-list, streaming-chat, and tool-approval light
+ * Capture the mobile set: session-sheet, streaming-chat, and tool-approval light
  * stills, plus the mobile chat loop (whose dark poster is extracted from the
- * loop's own first frame at process time). Runs late so the session list is
- * maximally inhabited.
+ * loop's own first frame at process time). Runs late so the Now zone carries
+ * the whole stack's outstanding work, not just this drive's.
  */
 export async function captureMobile(browser: Browser, rec: RunRecorder): Promise<void> {
   const ctx = await newMobileContext(browser);

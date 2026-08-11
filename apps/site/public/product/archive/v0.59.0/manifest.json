@@ -1,0 +1,94 @@
+{
+  "label": "v0.59.0",
+  "archivedAt": "2026-08-11T12:12:18.121Z",
+  "source": {
+    "schemaVersion": 2,
+    "generatedAt": "2026-08-11T12:11:08.522Z",
+    "runId": "20260811-070149"
+  },
+  "shots": [
+    {
+      "id": "cockpit",
+      "kind": "still",
+      "frame": "desktop",
+      "consumers": ["marketing", "docs"]
+    },
+    {
+      "id": "agents",
+      "kind": "still",
+      "frame": "desktop",
+      "consumers": ["marketing", "docs"]
+    },
+    {
+      "id": "multi-session",
+      "kind": "loop",
+      "frame": "desktop",
+      "consumers": ["marketing"]
+    }
+  ],
+  "count": 5,
+  "totalBytes": 1702639,
+  "assets": [
+    {
+      "source": "auto",
+      "file": "agents-light.png",
+      "surface": "agents",
+      "theme": "light",
+      "kind": "still",
+      "width": 2560,
+      "height": 1600,
+      "bytes": 99580,
+      "runId": "20260811-070149",
+      "capturedAt": "2026-08-11T12:06:26.495Z"
+    },
+    {
+      "source": "auto",
+      "file": "cockpit-light.png",
+      "surface": "cockpit",
+      "theme": "light",
+      "kind": "still",
+      "width": 2560,
+      "height": 1600,
+      "bytes": 68676,
+      "runId": "20260811-070149",
+      "capturedAt": "2026-08-11T12:06:26.495Z"
+    },
+    {
+      "source": "auto",
+      "file": "multi-session-dark.png",
+      "surface": "multi-session",
+      "theme": "dark",
+      "kind": "still",
+      "width": 1280,
+      "height": 800,
+      "bytes": 88092,
+      "runId": "20260811-070149",
+      "capturedAt": "2026-08-11T12:06:26.495Z"
+    },
+    {
+      "source": "auto",
+      "file": "multi-session-dark.webm",
+      "surface": "multi-session",
+      "theme": "dark",
+      "kind": "loop",
+      "width": 1280,
+      "height": 800,
+      "bytes": 1344165,
+      "durationMs": 11635,
+      "runId": "20260811-070149",
+      "capturedAt": "2026-08-11T12:06:26.495Z"
+    },
+    {
+      "source": "auto",
+      "file": "multi-session-light.png",
+      "surface": "multi-session",
+      "theme": "light",
+      "kind": "still",
+      "width": 2560,
+      "height": 1600,
+      "bytes": 102126,
+      "runId": "20260811-070149",
+      "capturedAt": "2026-08-11T12:06:26.495Z"
+    }
+  ]
+}

@@ -160,6 +160,27 @@ async function declineTelemetry(): Promise<void> {
 }
 
 /**
+ * Record what this demo operator does for a living, so the one-time role card
+ * (`ProfilePromptCard`) never covers a capture.
+ *
+ * That card asks people who onboarded before the profile step existed, and it
+ * sits in the sidebar's card slot — roughly half the panel's height. It is the
+ * reason `mobile-sessions` had nowhere left to draw the sheet's session rows,
+ * and it hides the Library roster on every desktop still.
+ *
+ * The same reasoning as {@link declineTelemetry}: seed a real, settled answer
+ * rather than let a first-run prompt sit on top of the product. `roles` holds
+ * canonical ids from `ROLE_CANON`, and "software-development" is the honest one
+ * for an instance whose whole seeded world is five coding agents, a dependency
+ * audit and a rate-limiter design doc.
+ */
+async function seedOperatorProfile(): Promise<void> {
+  await patchJson(`${API_URL}/api/config`, {
+    profile: { roles: ['software-development'] },
+  });
+}
+
+/**
  * Point mutable config at the capture home: the discovery scanner's roots at
  * the seeded projects tree (never the operator's real home directory), and the
  * wizard's agent directory at the capture home's own agents dir (the
@@ -350,9 +371,10 @@ async function seedMarketplaceInstalls(): Promise<boolean> {
 }
 
 /**
- * Post-boot seeding: dismiss onboarding, register the fleet, create tasks + run
- * history, populate completed sessions, and perform the real installs the
- * `marketplace-installed` shot needs. Runs against the live server and returns
+ * Post-boot seeding: settle the first-run prompts (onboarding, telemetry, the
+ * operator's profile), register the fleet, create tasks + run history, populate
+ * completed sessions, and perform the real installs the `marketplace-installed`
+ * shot needs. Runs against the live server and returns
  * the sessions it created plus whether the marketplace installs succeeded.
  */
 export async function seedData(): Promise<{
@@ -361,6 +383,7 @@ export async function seedData(): Promise<{
 }> {
   await dismissOnboarding();
   await declineTelemetry();
+  await seedOperatorProfile();
   await scopeConfigToCaptureHome();
   await seedFleet();
   const scheduleIds = await seedTasks();
