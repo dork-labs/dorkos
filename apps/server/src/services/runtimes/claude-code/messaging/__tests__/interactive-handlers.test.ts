@@ -502,7 +502,7 @@ describe('pending interaction snapshots', () => {
         session,
         'tool-timeout-1',
         'Bash',
-        { command: 'ls' },
+        { command: 'rm -rf /secret-project' },
         context
       );
       vi.advanceTimersByTime(10 * 60 * 1000);
@@ -525,7 +525,8 @@ describe('pending interaction snapshots', () => {
       expect(notice.message).toContain('Bash');
       expect(notice.message).toContain('10 minutes');
       // Never the tool's arguments — they can carry secrets.
-      expect(notice.message).not.toContain('ls');
+      expect(notice.message).not.toContain('rm -rf');
+      expect(notice.message).not.toContain('secret-project');
     } finally {
       vi.useRealTimers();
     }
@@ -714,14 +715,13 @@ describe('operator-facing timeout notice (DOR-1158)', () => {
     }
   });
 
-  it('truncates a long question to roughly 120 characters in the notice', async () => {
+  it('truncates a long question to exactly 120 characters plus an ellipsis', async () => {
     vi.useFakeTimers();
     try {
       const session = makeBareSession();
-      const longQuestion =
-        'This is a deliberately long question that goes on and on well past the ' +
-        'usual length of a question, so the notice has to cut it down to keep ' +
-        'the operator-facing message readable instead of dumping the whole thing.';
+      // No whitespace at the 120-char cut point, so the truncator's trailing
+      // trimEnd() can't shorten it further — the boundary is deterministic.
+      const longQuestion = `Which model wins the bake-off? ${'x'.repeat(200)}`;
       const questions: QuestionItem[] = [
         { header: 'Long', question: longQuestion, multiSelect: false, options: [] },
       ];
@@ -732,11 +732,11 @@ describe('operator-facing timeout notice (DOR-1158)', () => {
 
       const notice = session.eventQueue[2].data as { message: string };
       expect(notice.message).not.toContain(longQuestion);
-      expect(notice.message).toContain(longQuestion.slice(0, 40));
-      // Budget is "roughly 120 chars" for the quoted snippet, not the whole
-      // message — assert the snippet itself stayed well short of the full text.
-      const quoted = notice.message.split('The question was: ')[1] ?? '';
-      expect(quoted.length).toBeLessThan(140);
+      expect(notice.message).toContain('Which model wins the bake-off?');
+      const quoted = notice.message.split('The question was: ')[1];
+      // Exactly 120 characters of the question, then one ellipsis, wrapped in
+      // the message's own quote marks — not "somewhere under a generous bound".
+      expect(quoted).toBe(`"${longQuestion.slice(0, 120)}…"`);
     } finally {
       vi.useRealTimers();
     }
@@ -808,6 +808,33 @@ describe('operator-facing timeout notice (DOR-1158)', () => {
       const notice = session.eventQueue[2].data as { message: string };
       expect(notice.message).toContain('Delete secret project');
       expect(notice.message).not.toContain('Bash');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('falls back to the raw tool name when displayName is blank, not "undefined" or empty', async () => {
+    vi.useFakeTimers();
+    try {
+      const session = makeBareSession();
+      const context: ToolApprovalContext = {
+        signal: new AbortController().signal,
+        toolUseID: 'tool-timeout-blank-display-1',
+        displayName: '   ',
+      };
+
+      const result = handleToolApproval(
+        session,
+        'tool-timeout-blank-display-1',
+        'Bash',
+        { command: 'ls' },
+        context
+      );
+      vi.advanceTimersByTime(10 * 60 * 1000);
+      await result;
+
+      const notice = session.eventQueue[2].data as { message: string };
+      expect(notice.message).toContain('I asked to run Bash and waited');
     } finally {
       vi.useRealTimers();
     }
