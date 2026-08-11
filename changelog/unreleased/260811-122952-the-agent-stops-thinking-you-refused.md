@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(server): the agent stops thinking you refused when a background task interrupts it (DOR-1149)'
+  - 'fix(server): key the segment deferral on notifications owed, not tasks running (DOR-1149)'
 ---
 
 ### Fixed
