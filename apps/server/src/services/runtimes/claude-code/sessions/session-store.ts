@@ -369,7 +369,12 @@ export class SessionStore {
     return !!this.findSession(sessionId);
   }
 
-  /** Update mutable session fields. Returns false if the session does not exist. */
+  /**
+   * Update mutable session fields, auto-creating (hydrated from durable
+   * settings) if the session isn't currently in memory. Always resolves
+   * `true` — there is no "session does not exist" case for this runtime,
+   * because the auto-create branch below handles it.
+   */
   async updateSession(
     sessionId: string,
     opts: {
