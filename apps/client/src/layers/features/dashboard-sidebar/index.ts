@@ -40,12 +40,11 @@ export { useSidebarModel } from './model/use-sidebar-model';
 // operator who only ever opens DorkOS on their phone keeps their old pins
 // forever.
 export { useLegacyPinMigration } from './model/use-legacy-pin-migration';
-export {
-  SIDEBAR_ZONE_IDS,
-  type SidebarModel,
-  type SidebarZoneId,
-  type SidebarZoneModel,
-} from './model/build-sidebar-model';
+// The zone enumeration and one zone's id — what the mobile tabs need to split
+// the panel across two destinations. `SidebarModel` and `SidebarZoneModel` are
+// deliberately NOT here: nothing outside the feature names them, and knip says
+// so.
+export { SIDEBAR_ZONE_IDS, type SidebarZoneId } from './model/build-sidebar-model';
 export { AgentListItem } from './ui/AgentListItem';
 // Where an agent's depth lives (BC-35). Exported because the command palette
 // renders it too — a sibling feature composing this one's UI, which is the one

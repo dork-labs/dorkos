@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, beforeAll, afterEach } from 'vitest';
-import { render, screen, cleanup, within } from '@testing-library/react';
+import { act, render, screen, cleanup, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Transport } from '@dorkos/shared/transport';
@@ -354,6 +354,7 @@ import { AppShell } from '../AppShell';
 import { useExtensionRegistry } from '@/layers/shared/model/extension-registry';
 import type { SidebarBodyContribution } from '@/layers/shared/model/extension-registry';
 import { enterDesktopShell, leaveDesktopShell } from '@/test-helpers/desktop-shell';
+import { useMobilePanelStore } from '@/layers/widgets/mobile-tabs';
 
 // ── Test setup ──
 
@@ -402,6 +403,7 @@ describe('AppShell slot integration', () => {
     mockSearch = {};
     mockOpenRoom = null;
     mockIsMobile = false;
+    useMobilePanelStore.setState({ panelUp: false });
   });
 
   describe('the phone cockpit (P4)', () => {
@@ -445,6 +447,42 @@ describe('AppShell slot integration', () => {
       const outlet = screen.getByTestId('outlet');
       expect(document.querySelector('[data-slot="sidebar-inset"]')).toContainElement(outlet);
       expect(screen.getByTestId('mobile-tab-panels')).not.toContainElement(outlet);
+    });
+
+    // ── review B2 ──
+    describe('the page a panel covers is unreachable, not merely hidden', () => {
+      // Paired, because either half alone is satisfiable by an accident. "The
+      // page is inert" passes on a shell that inerts it always; "the page is
+      // reachable" passes on one that never inerts it. Only the transition
+      // between the two states says the shell is reading the right bit.
+      const inset = () => document.querySelector('[data-slot="sidebar-inset"]');
+
+      it('is reachable while the panels are down — the cold-load state', () => {
+        renderAppShell();
+        expect(useMobilePanelStore.getState().panelUp).toBe(false);
+        expect(inset()).not.toHaveAttribute('inert');
+      });
+
+      it('goes inert the moment a destination is opened, and comes back', () => {
+        renderAppShell();
+        act(() => useMobilePanelStore.getState().raise());
+        // `inert` removes the subtree from the tab order AND the accessibility
+        // tree — both halves of the modality the Radix Sheet used to provide.
+        expect(inset()).toHaveAttribute('inert');
+        expect(inset()).toContainElement(screen.getByTestId('outlet'));
+
+        act(() => useMobilePanelStore.getState().lower());
+        expect(inset()).not.toHaveAttribute('inert');
+      });
+
+      it('never inerts the page at desktop width, whatever the store says', () => {
+        // The store outlives the layout, so a stale raised bit must not reach
+        // through to a width that has no panels at all.
+        mockIsMobile = false;
+        act(() => useMobilePanelStore.getState().raise());
+        renderAppShell();
+        expect(inset()).not.toHaveAttribute('inert');
+      });
     });
 
     it('puts Now and Today in Home and Library in its own destination', () => {

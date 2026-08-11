@@ -37,7 +37,7 @@ const PHONE_WIDTH = 390;
  * @param props - The journey's name and the needs-you count its model produced.
  */
 function BarSample({ name, needsYouCount }: { name: string; needsYouCount: number }) {
-  const [active, setActive] = useState<MobileTabId>('home');
+  const [current, setCurrent] = useState<MobileTabId | null>('home');
   return (
     <div className="space-y-1">
       <ShowcaseLabel>{`${name} — ${needsYouCount} need you`}</ShowcaseLabel>
@@ -48,7 +48,14 @@ function BarSample({ name, needsYouCount }: { name: string; needsYouCount: numbe
         // is a page that scrolls sideways.
         style={{ maxWidth: PHONE_WIDTH }}
       >
-        <MobileTabBar active={active} needsYouCount={needsYouCount} onSelect={setActive} />
+        <MobileTabBar
+          current={current}
+          needsYouCount={needsYouCount}
+          // The showcase has no roster behind it, so DorkBot is shown in the
+          // state the product spends almost all of its time in: ready.
+          dorkBotReady
+          onSelect={setCurrent}
+        />
       </div>
     </div>
   );

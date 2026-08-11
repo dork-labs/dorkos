@@ -28,10 +28,21 @@
  * was proven broken. `inert` keeps a put-away panel out of the accessibility
  * tree and out of the tab order while it is still laid out.
  *
+ * **The panels get out of the way on the navigation COMMIT, never on the URL
+ * changing.** Opening a row is a request to go somewhere, and the layer has to
+ * yield or the destination is behind it. The seam is the router's own
+ * `onBeforeLoad`, which is what the retired `SidebarMobileNavigationClose` used
+ * and for the reason it documented: re-opening the conversation you already
+ * have open is the commonest tap of all — Today pins it as its first row — and
+ * TanStack reports it as an unchanged href. An earlier version of this file
+ * compared hrefs and so did nothing on exactly that tap, leaving a layer with
+ * no way out (review B1). One subscription covers every row, present and
+ * future, instead of a dismissal each new call site has to remember.
+ *
  * @module widgets/mobile-tabs/ui/MobileTabsLayout
  */
-import { useCallback, useState, type ReactNode } from 'react';
-import { useRouterState } from '@tanstack/react-router';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { useRouter } from '@tanstack/react-router';
 import { cn } from '@/layers/shared/lib';
 import { PageContainer } from '@/layers/shared/ui';
 import {
@@ -51,6 +62,7 @@ import {
   MOBILE_TAB_BAR_DOCK,
   type MobileTabId,
 } from '../model/mobile-tabs';
+import { lowerMobilePanels, useMobilePanelStore } from '../model/mobile-panel-store';
 import { MobileTabBar } from './MobileTabBar';
 
 /** Props for {@link MobileTabsLayout}. */
@@ -105,41 +117,52 @@ export function MobileTabsLayout({ takeover }: MobileTabsLayoutProps) {
   useLegacyPinMigration();
   const state = useSidebarState();
   const model = useSidebarModel(state);
-  const { ask: askDorkBot } = useAskDorkBot();
+  const { ask: askDorkBot, ready: dorkBotReady } = useAskDorkBot();
 
   const [active, setActive] = useState<MobileTabId>('home');
-  // Whether a panel is covering the destination the operator opened. There is
-  // no drawer to close and nothing modal here: pressing a row in Home is a
-  // request to go somewhere, and this is the layout getting out of the way of
-  // where you went. The bar and every panel stay mounted, scroll and all.
-  const [panelUp, setPanelUp] = useState(true);
+  // Whether a panel is covering the routed page. Shared with `AppShell`, which
+  // is the only component that can mark that page `inert` while it is covered.
+  const panelUp = useMobilePanelStore((s) => s.panelUp);
+  const raise = useMobilePanelStore((s) => s.raise);
 
-  // **Adjusted during render, not in an effect.** React's own pattern for "reset
-  // some state when a value changes" (react.dev, "You Might Not Need an
-  // Effect"): an effect would paint the panel over the destination for one frame
-  // first, which is exactly the flash the drawer used to have.
-  const href = useRouterState({ select: (s) => s.location.href });
-  const [lastHref, setLastHref] = useState(href);
-  if (lastHref !== href) {
-    setLastHref(href);
-    setPanelUp(false);
-  }
+  // **The seam is the commit, not the URL.** Subscribing rather than diffing is
+  // what makes re-opening the conversation you already have open work: TanStack
+  // reports that as an unchanged href, and it is the row Today pins to the top.
+  // `onBeforeLoad` rather than `onBeforeNavigate` because this cockpit redirects
+  // on the way into `/session`, and those landings need the layer gone too.
+  //
+  // It fires for navigations the operator did not start — an agent's
+  // `control_ui`, the SSE session rekey. That is deliberate and inherited: the
+  // app genuinely moved, so revealing where it went beats holding a layer over
+  // it.
+  const router = useRouter();
+  useEffect(() => router.subscribe('onBeforeLoad', lowerMobilePanels), [router]);
+
+  // The layout is unmounted when the window grows to desktop width. Leaving the
+  // bit raised would mean a phone that came back mid-session opened covered,
+  // which is the cold-load state this deliberately does not have.
+  useEffect(() => lowerMobilePanels, []);
 
   const onSelect = useCallback(
     (id: MobileTabId) => {
       const tab = MOBILE_TABS.find((entry) => entry.id === id);
       if (tab === undefined) return;
-      setActive(id);
       if (tab.kind === 'action') {
         // DorkBot has no panel: pressing it opens a conversation, and the
-        // conversation is the thing you asked for.
-        setPanelUp(false);
+        // conversation is the thing you asked for — so nothing is raised, and
+        // the router subscription above lowers whatever was up. Until the
+        // roster answers there is no DorkBot to open, and a press that quietly
+        // did nothing would be worse than a control that says it is not ready
+        // (the bar disables it; this is the same rule at the seam that acts).
+        if (!dorkBotReady) return;
+        setActive(id);
         askDorkBot();
         return;
       }
-      setPanelUp(true);
+      setActive(id);
+      raise();
     },
-    [askDorkBot]
+    [askDorkBot, dorkBotReady, raise]
   );
 
   // The count BC-11 announces, read off the model rather than counted again
@@ -194,7 +217,17 @@ export function MobileTabsLayout({ takeover }: MobileTabsLayoutProps) {
         </MobileTabPanel>
       </div>
 
-      <MobileTabBar active={active} needsYouCount={needsYouCount} onSelect={onSelect} />
+      {/* **`current` is what is on screen, not what was last pressed.** With a
+          panel down the operator is looking at a conversation, which is not one
+          of the four destinations, so none of them is current — saying
+          otherwise made the bar lie twice in review: DorkBot stayed marked
+          after Back, and Library stayed marked with every panel hidden. */}
+      <MobileTabBar
+        current={panelUp ? active : null}
+        needsYouCount={needsYouCount}
+        dorkBotReady={dorkBotReady}
+        onSelect={onSelect}
+      />
     </SidebarChrome>
   );
 }

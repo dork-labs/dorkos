@@ -16,20 +16,24 @@ import type { SidebarModel } from './build-sidebar-model';
 export const ALL_CLEAR_BEAT_MS = 2_500;
 
 /**
- * How many rows in Heads up are things that actually need the operator.
+ * How many things in Heads up actually need the operator.
  *
- * The working rollup is not one of them: a zone holding only "6 working" has
- * nothing waiting in it, so its rows draining to zero is not a queue being
- * finished and must not produce a beat.
+ * **Read off the model, which now publishes it.** This used to walk the zone's
+ * rows and count the ones whose target was `attention` — the same question
+ * asked a second way, and it answered a subtly different number: the rows are
+ * capped at five (BC-8), so a fleet with seven blocked agents counted four.
+ * Only zero-ness is read below, so the two agreed on every transition, but one
+ * fact computed twice is one fact that can drift. `needsYouCount` is the
+ * uncapped truth and the number BC-11 announces.
+ *
+ * The working rollup is not one of them either way: a zone holding only
+ * "6 working" has nothing waiting in it, so its rows draining to zero is not a
+ * queue being finished and must not produce a beat.
  *
  * @param model - The model as built.
  */
 function needsYouCount(model: SidebarModel): number {
-  const now = model.zones.find((zone) => zone.id === 'now');
-  if (now === undefined) return 0;
-  return now.sections
-    .flatMap((section) => section.rows)
-    .filter((row) => row.target.kind === 'attention').length;
+  return model.zones.find((zone) => zone.id === 'now')?.needsYouCount ?? 0;
 }
 
 /**

@@ -69,7 +69,7 @@ import {
   SidebarFooter,
   SidebarRail,
 } from '@/layers/shared/ui';
-import { MobileTabsLayout } from '@/layers/widgets/mobile-tabs';
+import { MobileTabsLayout, useMobilePanelStore } from '@/layers/widgets/mobile-tabs';
 import {
   AppTabBar,
   APP_TAB_PANEL_ID,
@@ -273,8 +273,16 @@ export function AppShell() {
   // Below 768px the sidebar is not a narrower sidebar — it is four destinations
   // along the bottom of the screen and no drawer at all. Reverting this one
   // choice restores the off-canvas sheet, which stays in `shared/ui/sidebar.tsx`
-  // for the Obsidian embed either way.
+  // as the shared primitive it always was (the Dev Playground and the component
+  // tests mount it). It is NOT kept there for the Obsidian embed, whatever the
+  // comment here used to say: the embed renders `EmbedSidebar`, which never
+  // touches `<Sidebar>`.
   const isMobile = useIsMobile();
+  // Whether a phone's tab panel is covering the routed page. The panels are an
+  // opaque layer, so the page underneath has to be unreachable while they are
+  // up — not merely invisible. Only this component can mark that page `inert`,
+  // and only the layout knows, so the bit travels through the widget's store.
+  const mobilePanelUp = useMobilePanelStore((s) => s.panelUp);
   const [activeSessionId] = useSessionId();
   // Live route pathname threaded into the right panel so its tab `visibleWhen`
   // predicates re-evaluate on navigation. The container itself is router-free
@@ -554,7 +562,19 @@ export function AppShell() {
                       <SidebarRail />
                     </Sidebar>
                   )}
-                  <SidebarInset className="overflow-hidden">
+                  <SidebarInset
+                    className="overflow-hidden"
+                    // **The covered page is unreachable, not merely hidden.**
+                    // A phone's tab panel is an opaque layer over this inset,
+                    // and an opaque layer that leaves 23 focusable elements
+                    // behind it is a keyboard trap in reverse: Tab walks into
+                    // a page nobody can see (review B2). The Radix Sheet got
+                    // this for free from its own modality; the tabs have to
+                    // ask for it. `inert` takes the subtree out of the tab
+                    // order AND out of the accessibility tree, which is both
+                    // halves of what the sheet was doing.
+                    inert={isMobile && mobilePanelUp}
+                  >
                     {/* ── Window tabs — the inset's top band, above the page
                           header (DOR-540). Desktop app only (DOR-568): a browser
                           already has tabs, and a second strip under the real one

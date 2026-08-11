@@ -11,7 +11,7 @@
  * the tabs render a mock.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, cleanup, waitFor, within } from '@testing-library/react';
+import { act, render, screen, cleanup, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -30,11 +30,27 @@ import { SIDEBAR_ZONE_IDS } from '@/layers/features/dashboard-sidebar';
 import { LIVE_REGION_DEBOUNCE_MS } from '@/layers/features/dashboard-sidebar/model/use-live-region-text';
 
 // ── Router ──────────────────────────────────────────────────────────────────
-// The href MOVES, because "the layout gets out of the way of where you went" is
-// a property of the location changing. A mock whose location never moved would
-// make that assertion vacuous.
+// **The subscription is the seam under test, so the mock is a real one.**
+// `commitNavigation()` fires every `onBeforeLoad` listener exactly as TanStack
+// does on a committed load — INCLUDING one that lands on the URL already
+// showing, which is the case the layout used to miss (review B1) and the case
+// the deleted `sidebar-mobile-navigation.test.tsx` covered by name.
 let mockHref = '/';
 const mockNavigate = vi.fn();
+const beforeLoadListeners = new Set<() => void>();
+/**
+ * Commit a navigation to `href`, defaulting to the URL already showing.
+ *
+ * Wrapped in `act` because the listeners are an external subscription, not a
+ * React event: without it the store write lands but nothing re-renders, and
+ * every assertion below would read the previous frame.
+ */
+function commitNavigation(href: string = mockHref) {
+  mockHref = href;
+  act(() => {
+    for (const listener of [...beforeLoadListeners]) listener();
+  });
+}
 vi.mock('@tanstack/react-router', () => ({
   useNavigate: () => mockNavigate,
   useRouter: () => ({
@@ -42,6 +58,11 @@ vi.mock('@tanstack/react-router', () => ({
       get location() {
         return { pathname: mockHref, search: {} };
       },
+    },
+    subscribe: (event: string, listener: () => void) => {
+      if (event !== 'onBeforeLoad') return () => {};
+      beforeLoadListeners.add(listener);
+      return () => beforeLoadListeners.delete(listener);
     },
   }),
   useRouterState: ({ select }: { select: (s: unknown) => unknown }) =>
@@ -67,11 +88,14 @@ vi.mock('@/layers/features/dashboard-sidebar/ui/SidebarHeaderBlock', () => ({
 }));
 vi.mock('@/layers/features/dashboard-sidebar/ui/SidebarFooterStrip', () => ({
   SidebarFooterStrip: () => <div data-testid="sidebar-footer-strip">Footer strip</div>,
-  useAskDorkBot: () => ({ ask: mockAsk, ready: true }),
+  useAskDorkBot: () => ({ ask: mockAsk, ready: mockDorkBotReady }),
 }));
 const mockAsk = vi.fn();
+// Whether the roster has answered with DorkBot's directory yet.
+let mockDorkBotReady = true;
 
 import { MobileTabsLayout } from '../ui/MobileTabsLayout';
+import { useMobilePanelStore } from '../model/mobile-panel-store';
 import {
   MOBILE_TABS,
   MOBILE_TAB_BAR_DOCK,
@@ -105,7 +129,10 @@ const zonesIn = (id: string) =>
 beforeEach(() => {
   mockState = busyFixture;
   mockHref = '/';
+  mockDorkBotReady = true;
   mockAsk.mockClear();
+  beforeLoadListeners.clear();
+  useMobilePanelStore.setState({ panelUp: false });
 });
 afterEach(cleanup);
 
@@ -122,11 +149,35 @@ describe('MobileTabsLayout', () => {
       );
     });
 
-    it('starts on Home, and marks exactly one destination current', () => {
+    // ── review B1: the cold-load state ──
+    it('opens with the panels DOWN, so a cold load can reach the routed page', () => {
+      // `/` is the #team room. Opening with Home over it meant a phone could
+      // not see the home surface at all until it navigated somewhere else.
       renderLayout();
+      expect(screen.getByTestId('mobile-tab-panels').className).toContain('invisible');
+      expect(document.querySelectorAll('[data-mobile-tab][aria-current]')).toHaveLength(0);
+    });
+
+    it('marks exactly one destination current once a panel is up', async () => {
+      const user = userEvent.setup();
+      renderLayout();
+      await user.click(screen.getByTestId('mobile-tab-home'));
       expect(screen.getByTestId('mobile-tab-home')).toHaveAttribute('aria-current', 'page');
-      const current = Array.from(document.querySelectorAll('[data-mobile-tab][aria-current]'));
-      expect(current).toHaveLength(1);
+      expect(document.querySelectorAll('[data-mobile-tab][aria-current]')).toHaveLength(1);
+    });
+
+    // ── review one-liner: aria-current must not describe the last press ──
+    it('marks nothing current while the operator is looking at a conversation', async () => {
+      const user = userEvent.setup();
+      renderLayout();
+      await user.click(screen.getByTestId('mobile-tab-library'));
+      expect(screen.getByTestId('mobile-tab-library')).toHaveAttribute('aria-current', 'page');
+
+      // The observable half: a panel really was current a moment ago, so this
+      // is a transition rather than a state that was never entered.
+      commitNavigation('/session?session=abc');
+      expect(document.querySelectorAll('[data-mobile-tab][aria-current]')).toHaveLength(0);
+      expect(screen.getByTestId('mobile-tab-library')).not.toHaveAttribute('aria-current');
     });
   });
 
@@ -256,6 +307,7 @@ describe('MobileTabsLayout', () => {
     it('shows one panel at a time and unmounts none of them', async () => {
       const user = userEvent.setup();
       renderLayout();
+      await user.click(screen.getByTestId('mobile-tab-home'));
       expect(showing('home')).toBe(true);
       expect(showing('library')).toBe(false);
 
@@ -269,6 +321,7 @@ describe('MobileTabsLayout', () => {
     it('carries Home’s scroll offset through a round trip to Library', async () => {
       const user = userEvent.setup();
       renderLayout();
+      await user.click(screen.getByTestId('mobile-tab-home'));
       // The scroller PageContainer owns, driven the way a thumb drives it.
       const scroller = panel('home').querySelector<HTMLElement>('.overflow-y-auto');
       expect(scroller).not.toBeNull();
@@ -293,27 +346,66 @@ describe('MobileTabsLayout', () => {
     });
   });
 
-  describe('opening a destination from a row', () => {
-    it('yields to where you went, keeping the bar and every panel', () => {
-      const { rerender } = renderLayout();
+  describe('opening a destination from a row (review B1)', () => {
+    it('yields on the navigation commit, keeping the bar and every panel', async () => {
+      const user = userEvent.setup();
+      renderLayout();
+      await user.click(screen.getByTestId('mobile-tab-home'));
       expect(showing('home')).toBe(true);
 
-      mockHref = '/session?session=abc';
-      rerender(
-        <QueryClientProvider client={new QueryClient()}>
-          <TransportProvider transport={createMockTransport()}>
-            <TooltipProvider>
-              <MobileTabsLayout takeover={null} />
-            </TooltipProvider>
-          </TransportProvider>
-        </QueryClientProvider>
-      );
+      commitNavigation('/session?session=abc');
 
-      // The panel layer is put away so the conversation is what you are looking
-      // at, and the bar is still there to bring Home back.
+      // The layer is put away so the conversation is what you are looking at,
+      // and the bar is still there to bring Home back.
       expect(screen.getByTestId('mobile-tab-panels').className).toContain('invisible');
       expect(screen.getByTestId('mobile-tab-bar')).toBeInTheDocument();
       expect(panel('home')).toBeInTheDocument();
+    });
+
+    // ── The case the deleted `sidebar-mobile-navigation.test.tsx` named, and the
+    //    exact defect review B1 measured. Re-opening the conversation you already
+    //    have open is the commonest tap of all — Today pins it as its first row —
+    //    and TanStack reports it as an unchanged href. A layout that diffed hrefs
+    //    did nothing here, leaving a layer with no way out. ──
+    it('yields on a navigation that lands on the URL already showing', async () => {
+      const user = userEvent.setup();
+      renderLayout();
+      await user.click(screen.getByTestId('mobile-tab-home'));
+      const before = mockHref;
+      expect(showing('home')).toBe(true);
+
+      commitNavigation();
+
+      // Same URL, and the layer still got out of the way.
+      expect(mockHref).toBe(before);
+      expect(screen.getByTestId('mobile-tab-panels').className).toContain('invisible');
+    });
+
+    it('marks the covered page reachable again when it comes back', async () => {
+      // Every press has to recover the layer, because navigating away was the
+      // only escape when it did not.
+      const user = userEvent.setup();
+      renderLayout();
+      await user.click(screen.getByTestId('mobile-tab-home'));
+      commitNavigation();
+      expect(screen.getByTestId('mobile-tab-panels').className).toContain('invisible');
+
+      await user.click(screen.getByTestId('mobile-tab-library'));
+      expect(screen.getByTestId('mobile-tab-panels').className).not.toContain('invisible');
+      expect(showing('library')).toBe(true);
+    });
+
+    it('publishes whether a panel covers the page, for the shell to act on', () => {
+      // The bit `AppShell` reads to mark the routed page `inert` (review B2).
+      // Asserted here as well as there, because a store nobody writes is a
+      // shell that silently stops inert-ing.
+      renderLayout();
+      expect(useMobilePanelStore.getState().panelUp).toBe(false);
+      act(() => useMobilePanelStore.getState().raise());
+      expect(useMobilePanelStore.getState().panelUp).toBe(true);
+      expect(screen.getByTestId('mobile-tab-panels').className).not.toContain('invisible');
+      commitNavigation();
+      expect(useMobilePanelStore.getState().panelUp).toBe(false);
     });
   });
 
@@ -326,6 +418,40 @@ describe('MobileTabsLayout', () => {
       // No panel of its own — the conversation is the destination.
       expect(screen.queryByTestId('mobile-tab-panel-dorkbot')).not.toBeInTheDocument();
       expect(screen.getByTestId('mobile-tab-panels').className).toContain('invisible');
+    });
+
+    // ── review one-liner: the hook exports `ready` for exactly this ──
+    it('says it is not ready rather than doing nothing, until the roster answers', async () => {
+      mockDorkBotReady = false;
+      const user = userEvent.setup();
+      renderLayout();
+
+      const dorkbot = screen.getByTestId('mobile-tab-dorkbot');
+      expect(dorkbot).toBeDisabled();
+      await user.click(dorkbot);
+      expect(mockAsk).not.toHaveBeenCalled();
+    });
+
+    it('leaves the panel you were reading alone when it is not ready', async () => {
+      mockDorkBotReady = false;
+      const user = userEvent.setup();
+      renderLayout();
+      await user.click(screen.getByTestId('mobile-tab-library'));
+
+      await user.click(screen.getByTestId('mobile-tab-dorkbot'));
+
+      // The press did nothing, so it took nothing away either.
+      expect(showing('library')).toBe(true);
+      expect(screen.getByTestId('mobile-tab-library')).toHaveAttribute('aria-current', 'page');
+    });
+
+    it('is pressable, and only disabled by the roster', async () => {
+      // The positive half — without it "disabled" above could be permanent.
+      const user = userEvent.setup();
+      renderLayout();
+      expect(screen.getByTestId('mobile-tab-dorkbot')).toBeEnabled();
+      await user.click(screen.getByTestId('mobile-tab-dorkbot'));
+      expect(mockAsk).toHaveBeenCalledTimes(1);
     });
   });
 

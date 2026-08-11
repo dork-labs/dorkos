@@ -30,9 +30,10 @@ vi.mock('@tanstack/react-router', () => ({
       return { location: { pathname: mockPathname, href: mockPathname } };
     },
     history: { subscribe: () => () => {} },
-    // `SidebarMobileNavigationClose` listens for a committed destination so the
-    // mobile sheet gets out of its way (DOR-610). Nothing here navigates, so
-    // the listener is registered and never fired.
+    // The phone cockpit's panels listen for a committed destination so they
+    // get out of its way (P4, formerly `SidebarMobileNavigationClose`/DOR-610).
+    // This suite runs at desktop width and navigates nothing, so the listener
+    // is registered and never fired.
     subscribe: () => () => {},
   }),
   Outlet: () => <div data-testid="outlet">outlet</div>,
