@@ -138,8 +138,10 @@ export interface TeamMemberCardProps {
  * The disc is drawn from `kind` and nothing else — square and filled with a Bot
  * mark for an agent, a circle for a person, a platform mark for someone bridged
  * in from elsewhere — so this card cannot draw an agent as a person by
- * forgetting a prop. The face itself comes from the one shared resolver, which
- * falls back to a letter rather than inventing an emoji: "we don't know this
+ * forgetting a prop. The face comes from `teamMemberFace`, so an agent here
+ * always has one: when it never chose an icon, the emoji is hashed from its
+ * manifest id, which is the same face the sidebar draws for it. A person still
+ * falls back to a letter rather than to an invented emoji — "we don't know this
  * one's face" is a true thing to draw, and a confident-looking wrong face is not.
  *
  * **No liveness dot.** The roster carries `recentlyActive`, which means the mesh

@@ -145,11 +145,25 @@ describe('RoomMemberRow', () => {
       //
       // Red if the colour stops being THIS hash: a different one is worse than
       // no colour, because it looks deliberate. And red if an emoji ever
-      // appears: the letter is the honest "we don't know this one's face".
+      // appears: this row holds an AUTHOR id, not the agent's manifest id, so a
+      // hashed emoji here would be a different face from the one /team and the
+      // sidebar draw for the same agent (DOR-1122 review). The roster invents an
+      // agent's emoji in `teamMemberFace`, which does hold the manifest id; this
+      // row gets one only when the fleet hands it a real `visual`, and DOR-1002
+      // is what threads that here.
       renderRow({ member: member({ kind: 'agent' }), visual: null });
 
       expect(within(disc()).getByText('A')).toBeInTheDocument();
       expect(tint()).toContain(probeColor(hashToHslColor('author-Ana')));
+    });
+
+    it('draws a letter for a person with no face of their own', () => {
+      // The half that stays a letter under every future version of this ladder:
+      // an invented emoji beside a person's name claims a face nobody chose.
+      renderRow({ member: PERSON, visual: null });
+
+      expect(within(disc()).getByText('D')).toBeInTheDocument();
+      expect(tint()).toContain(probeColor(hashToHslColor('me')));
     });
   });
 
