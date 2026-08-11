@@ -366,12 +366,15 @@ vi.mock('@/layers/entities/session', async (importOriginal) => ({
   sessionDisplayTitle: (t: string) => t,
   SessionRow: () => null,
   SessionOriginMark: () => null,
-  // Stubbed rather than imported: mirrors the real partition (session-origin-legibility)
-  // without pulling the real module into this wholesale mock.
-  partitionSessionsByOrigin: (sessions: Array<{ origin?: string }>) => ({
-    conversations: sessions.filter((s) => !s.origin || s.origin === 'user'),
-    automated: sessions.filter((s) => s.origin && s.origin !== 'user'),
-  }),
+  // Real, not stubbed. Both are pure functions over a list, and this file used
+  // to carry a hand-written mirror of the partition — a second spelling of the
+  // one rule that says what counts as automated, in a wholesale mock, which is
+  // precisely the drift DOR-1137 was about. Importing them costs nothing and
+  // cannot disagree with the product.
+  partitionSessionsByOrigin: (await importOriginal<typeof import('@/layers/entities/session')>())
+    .partitionSessionsByOrigin,
+  humanOriginSessionIds: (await importOriginal<typeof import('@/layers/entities/session')>())
+    .humanOriginSessionIds,
 }));
 
 vi.mock('@/layers/features/feature-promos', () => ({ PromoSlot: () => null }));

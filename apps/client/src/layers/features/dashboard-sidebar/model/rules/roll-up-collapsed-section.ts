@@ -16,6 +16,20 @@ import type { SidebarRowModel, SidebarSectionModel } from '../build-sidebar-mode
  * unread and none has directed unread, which is the same two-tier rule a row
  * follows.
  *
+ * **The working count is the members', and the members read Now's own source.**
+ * This sums row statuses, which is what makes "N agents working" a count of
+ * MEMBERS rather than of sessions — but it can only ever be as true as the rows
+ * are, and for a while they were not: an agent row would not call itself working
+ * until the session also turned up in the last-ten REST window, so folding a
+ * section 30 seconds after a turn began silently dropped the signal BC-31 says
+ * folding never loses (DOR-1137, audit D5). `agentRow` now derives its status
+ * from `liveSessionIds` — the same list Now counts — and this arithmetic became
+ * honest without changing.
+ *
+ * A live session whose directory nothing knows is in Now's number and in no
+ * section's, because it is a member of nothing. That is a gap in attribution,
+ * not in signal: the operator is still told something is running.
+ *
  * Returns `undefined` when there is nothing to say, so a caller cannot attach
  * an empty rollup that renders as a `0`.
  *

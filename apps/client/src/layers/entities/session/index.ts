@@ -139,7 +139,10 @@ export type { SessionVerbLineProps } from './ui/SessionVerbLine';
 export { ORIGIN_DESCRIPTORS, getOriginDescriptor } from './config/origin-descriptors';
 export type { OriginDescriptor } from './config/origin-descriptors';
 export { SessionOriginMark } from './ui/SessionOriginMark';
-export { partitionSessionsByOrigin } from './lib/partition-sessions-by-origin';
+export {
+  humanOriginSessionIds,
+  partitionSessionsByOrigin,
+} from './lib/partition-sessions-by-origin';
 export type { SessionOriginPartition } from './lib/partition-sessions-by-origin';
 export { useSessionOrigin } from './model/use-sessions';
 export type { SessionOriginData } from './model/use-sessions';

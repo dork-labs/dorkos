@@ -6,6 +6,7 @@ import { describe, it, expect } from 'vitest';
 import type { AgentPathEntry } from '@dorkos/shared/mesh-schemas';
 import type { RoomSummary } from '@dorkos/shared/room-schemas';
 import type { SessionStatus } from '@dorkos/shared/session-stream';
+import type { Session } from '@dorkos/shared/types';
 import {
   MAX_PALETTE_RECENT,
   buildPaletteRecent,
@@ -16,6 +17,19 @@ import type { PaletteSessionItem } from '../palette-sessions';
 
 function status(overrides: Partial<SessionStatus> = {}): SessionStatus {
   return { lifecycle: 'streaming', ...overrides } as SessionStatus;
+}
+
+/** One session record, as the palette's two sources hand it over. */
+function makeSession(overrides: Partial<Session> & Pick<Session, 'id'>): Session {
+  return {
+    title: 'A conversation',
+    cwd: '/projects/dorkos',
+    createdAt: '2026-08-09T09:00:00.000Z',
+    updatedAt: '2026-08-09T10:00:00.000Z',
+    permissionMode: 'default',
+    runtime: 'claude-code',
+    ...overrides,
+  };
 }
 
 function makeSessionItem(overrides: Partial<PaletteSessionItem> = {}): PaletteSessionItem {
@@ -52,53 +66,112 @@ const agent: AgentPathEntry = { id: 'a', name: 'Warden', projectPath: '/projects
 
 describe('selectContinueEntries', () => {
   it('takes streaming and blocked conversations, and nothing else', () => {
-    const entries = selectContinueEntries({
-      live: status({ lifecycle: 'streaming' }),
-      waiting: status({ lifecycle: 'blocked' }),
-      done: status({ lifecycle: 'idle' }),
-      stopped: status({ lifecycle: 'interrupted' }),
-      broken: status({ lifecycle: 'error' }),
-    });
+    const entries = selectContinueEntries(
+      {
+        live: status({ lifecycle: 'streaming' }),
+        waiting: status({ lifecycle: 'blocked' }),
+        done: status({ lifecycle: 'idle' }),
+        stopped: status({ lifecycle: 'interrupted' }),
+        broken: status({ lifecycle: 'error' }),
+      },
+      []
+    );
 
     expect(entries.map((e) => e.sessionId).sort()).toEqual(['live', 'waiting']);
   });
 
   it('puts what is waiting on a person above what is merely working', () => {
-    const entries = selectContinueEntries({
-      // Named so the id tie-break would sort them the other way if lifecycle
-      // were not consulted first.
-      aaa: status({ lifecycle: 'streaming' }),
-      zzz: status({ lifecycle: 'blocked' }),
-    });
+    const entries = selectContinueEntries(
+      {
+        // Named so the id tie-break would sort them the other way if lifecycle
+        // were not consulted first.
+        aaa: status({ lifecycle: 'streaming' }),
+        zzz: status({ lifecycle: 'blocked' }),
+      },
+      []
+    );
 
     expect(entries.map((e) => e.sessionId)).toEqual(['zzz', 'aaa']);
   });
 
   it('orders identically for the same input, whatever order the keys arrive in', () => {
-    const first = selectContinueEntries({
-      b: status(),
-      a: status(),
-      c: status(),
-    });
-    const second = selectContinueEntries({
-      c: status(),
-      b: status(),
-      a: status(),
-    });
+    const first = selectContinueEntries({ b: status(), a: status(), c: status() }, []);
+    const second = selectContinueEntries({ c: status(), b: status(), a: status() }, []);
     expect(first.map((e) => e.sessionId)).toEqual(['a', 'b', 'c']);
     expect(second.map((e) => e.sessionId)).toEqual(first.map((e) => e.sessionId));
   });
 
   it('carries the tool a conversation is on, so the row can name it', () => {
-    const [entry] = selectContinueEntries({
-      live: status({ activity: { toolName: 'Edit', target: 'strip-state.ts' } }),
-    });
+    const [entry] = selectContinueEntries(
+      { live: status({ activity: { toolName: 'Edit', target: 'strip-state.ts' } }) },
+      []
+    );
     expect(entry.activity).toEqual({ toolName: 'Edit', target: 'strip-state.ts' });
   });
 
   it('reports no activity rather than undefined when the server sent none', () => {
-    const [entry] = selectContinueEntries({ live: status() });
+    const [entry] = selectContinueEntries({ live: status() }, []);
     expect(entry.activity).toBeNull();
+  });
+
+  describe('§18 — automated runs are not "live"', () => {
+    it('offers nothing to continue when the only live session is automated', () => {
+      // The reported defect (DOR-1137, audit D4): a `#team` message triggers a
+      // room turn, the store reports it streaming, and ⌘K promoted it to a
+      // first-class Continue row with a verb — while the sidebar, correctly,
+      // showed nothing, and Recent in the SAME dialog suppressed it.
+      const entries = selectContinueEntries({ 'ses-room': status({ lifecycle: 'streaming' }) }, [
+        makeSession({ id: 'ses-room', origin: 'room' }),
+      ]);
+      expect(entries).toEqual([]);
+    });
+
+    it('offers the human one in the same breath, so the empty answer means something', () => {
+      // The sibling case, in one call: identical statuses, and only the origin
+      // separates them. Without this half, the assertion above passes just as
+      // happily against a function that returns nothing at all.
+      const entries = selectContinueEntries(
+        {
+          'ses-room': status({ lifecycle: 'streaming' }),
+          'ses-human': status({ lifecycle: 'streaming' }),
+        },
+        [
+          makeSession({ id: 'ses-room', origin: 'room' }),
+          makeSession({ id: 'ses-human', origin: 'user' }),
+        ]
+      );
+      expect(entries.map((e) => e.sessionId)).toEqual(['ses-human']);
+    });
+
+    it('drops an automated run that is BLOCKED too — Now is where that surfaces', () => {
+      // The carve-out in §18 ("blocking states go to Now like the rest") is a
+      // rule about Now, and Now reads no origin at all. ⌘K's Continue is a
+      // liveness listing, so it takes the liveness definition whole.
+      const entries = selectContinueEntries({ 'ses-task': status({ lifecycle: 'blocked' }) }, [
+        makeSession({ id: 'ses-task', origin: 'task' }),
+      ]);
+      expect(entries).toEqual([]);
+    });
+
+    it('keeps a live session no record covers — unknown is not automated', () => {
+      // The same asymmetry the sidebar's working rollup is documented to have,
+      // and it has to be the same one or the two surfaces disagree again in the
+      // other direction. A session that started after the last fetch has a
+      // status before it has a record.
+      const entries = selectContinueEntries({ 'ses-new': status({ lifecycle: 'streaming' }) }, [
+        makeSession({ id: 'ses-other' }),
+      ]);
+      expect(entries.map((e) => e.sessionId)).toEqual(['ses-new']);
+    });
+
+    it('reads a session with no origin field as the human default', () => {
+      // Codex and opencode do not stamp an origin. Treating absent as automated
+      // would empty Continue on two of the three runtimes.
+      const entries = selectContinueEntries({ 'ses-codex': status() }, [
+        makeSession({ id: 'ses-codex' }),
+      ]);
+      expect(entries.map((e) => e.sessionId)).toEqual(['ses-codex']);
+    });
   });
 });
 

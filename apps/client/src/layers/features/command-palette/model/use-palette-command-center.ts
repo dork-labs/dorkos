@@ -51,7 +51,12 @@ export interface PaletteContinueRow {
 export interface PaletteCommandCenter {
   /** Every session in the window, automated runs included — the search corpus. */
   sessions: PaletteSessionItem[];
-  /** Live conversations, waiting-on-you first. Empty when nothing is live. */
+  /**
+   * Live conversations, waiting-on-you first. Empty when nothing is live.
+   *
+   * Human-origin only, like every other liveness count in the cockpit (§18) —
+   * an automated run that needs you arrives in Now, not here.
+   */
   continueRows: PaletteContinueRow[];
   /** The last things you were in, across sessions, rooms and agents. */
   recent: PaletteRecentEntry[];
@@ -114,11 +119,21 @@ export function usePaletteCommandCenter(
     [streamed, agents]
   );
 
+  // Every session record the palette can see, the stream's map first. It is
+  // what tells Continue an id's ORIGIN, and the stream is where a run that
+  // started after the last fetch exists at all — reading origin off the query's
+  // window alone would let a just-triggered room turn into Continue for the
+  // thirty seconds before the window catches up, which is the whole window in
+  // which anyone is looking at it.
+  // `data` whole rather than its one field, for the same React Compiler reason
+  // the Recent memo below spells out.
+  const knownSessions = useMemo(() => [...streamed, ...(data?.sessions ?? [])], [streamed, data]);
+
   const continueRows = useMemo(() => {
     const byId = new Map<string, PaletteSessionItem>();
     for (const item of streamedSessions) byId.set(item.id, item);
     for (const item of sessions) if (!byId.has(item.id)) byId.set(item.id, item);
-    return selectContinueEntries(statuses).flatMap((entry) => {
+    return selectContinueEntries(statuses, knownSessions).flatMap((entry) => {
       const session = byId.get(entry.sessionId);
       // A live session nothing knows the name of gets no row rather than a
       // placeholder one: "Untitled › working…" is a row you cannot act on.
@@ -131,7 +146,7 @@ export function usePaletteCommandCenter(
         },
       ];
     });
-  }, [statuses, streamedSessions, sessions]);
+  }, [statuses, streamedSessions, sessions, knownSessions]);
 
   const recent = useMemo(() => {
     const conversations = new Set(
