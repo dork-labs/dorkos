@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(server): something waiting is still shown after you reload the page'
+  - 'fix(server): bound the connect snapshot, and scope what the SSE doc promises'
 ---
 
 ### Fixed
