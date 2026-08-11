@@ -329,14 +329,20 @@ export interface InteractiveSession {
 /**
  * Say that nobody answered, so this was denied.
  *
- * **The only trace an expired prompt leaves.** All three handlers below hand
- * the model a denial after {@link SESSIONS.INTERACTION_TIMEOUT_MS} and, until
- * now, wrote nothing anywhere: the card vanished from any client that happened
- * to be watching, the turn carried on as though a person had refused, and there
- * was no record that the refusal was a clock rather than a decision. On
- * 2026-07-31 two agents hit this twice each, invisibly, inside one forty-one
- * minute silence (DOR-784) — and reconstructing that afterwards took the SDK
- * transcripts, because the server log had nothing.
+ * **The only DURABLE trace an expired prompt leaves.** All three handlers
+ * below hand the model a denial after {@link SESSIONS.INTERACTION_TIMEOUT_MS}
+ * and, until DOR-1158, wrote nothing anywhere: the card vanished from any
+ * client that happened to be watching, the turn carried on as though a person
+ * had refused, and there was no record that the refusal was a clock rather
+ * than a decision. On 2026-07-31 two agents hit this twice each, invisibly,
+ * inside one forty-one minute silence (DOR-784) — and reconstructing that
+ * afterwards took the SDK transcripts, because the server log had nothing.
+ *
+ * DOR-1158 added a companion live notice ({@link notifyInteractionTimeoutNotice})
+ * naming what expired, but it rides the transient status strip: the next turn
+ * event clears it, so it only reaches an operator watching THIS session at THIS
+ * moment. This log line is still what survives for anyone who checks back
+ * later — the durability gap DOR-1158 did not close.
  *
  * `warn`, not `info`: work was thrown away that a person would probably have
  * approved. Nothing from the prompt's INPUT is logged — a tool's arguments are
@@ -354,10 +360,10 @@ function logInteractionTimeout(
 ): void {
   logRefusal('[claude-code] nobody answered in time, so this was denied', {
     reason: 'interaction_expired',
-    // `silent` is the fact this line exists for: no notice is written anywhere
-    // for an expired prompt. The card vanishes from whatever client happened to
-    // be watching, the turn carries on as though a person refused, and nothing
-    // says the refusal was a clock rather than a decision.
+    // `silent` because nothing DURABLE is written for an expired prompt: the
+    // companion live notice (DOR-1158) is best-effort and clears with the next
+    // turn event, so this log line is still the only record an operator who
+    // checks back later can find. See this function's TSDoc.
     visibility: 'silent',
     ...(session.sdkSessionId !== undefined ? { sessionId: session.sdkSessionId } : {}),
     detail: {
@@ -387,6 +393,79 @@ function notifyInteractionCancelled(
     data: { interactionId, reason },
   });
   session.eventQueueNotify?.();
+}
+
+/**
+ * How long an operator has to answer, in whole minutes — for prose that names
+ * the wait (e.g. "waited 10 minutes"), derived from the same constant the
+ * timeout itself uses so the two can never drift apart.
+ */
+const INTERACTION_TIMEOUT_MINUTES = Math.ceil(SESSIONS.INTERACTION_TIMEOUT_MS / 60_000);
+
+/** Shorten a snippet of user-facing prose to roughly `maxLength` characters. */
+function truncateForNotice(text: string, maxLength: number): string {
+  const trimmed = text.trim();
+  return trimmed.length > maxLength ? `${trimmed.slice(0, maxLength).trimEnd()}…` : trimmed;
+}
+
+/**
+ * Push a `system_status` StreamEvent telling the operator what expired
+ * unanswered.
+ *
+ * **Best-effort, not durable.** This rides the same transient channel as the
+ * phantom-cancellation notice in `message-sender.ts`: the client's status
+ * strip shows it only until the next turn event, which — because `resolve`
+ * unblocks the SDK right after this call — typically arrives within one more
+ * server-sent event. It reaches an operator watching THIS session at THIS
+ * moment; it does not persist for one who reconnects later. {@link
+ * logInteractionTimeout} is still the only record that survives that case
+ * (see its TSDoc) — closing that gap would mean a durable receipt, which is
+ * out of scope here.
+ *
+ * **Timeout only.** A person resolving the prompt, or the SDK aborting it
+ * (steer/interrupt), isn't a silence and gets no notice — call this only from
+ * the `setTimeout` branch, never from `resolve`/`reject`/`onAbort`.
+ *
+ * **Ordering.** Always call this AFTER {@link notifyInteractionCancelled} for
+ * the same interaction: both land in the same `eventQueue` frame, and if the
+ * card's removal were pushed second it could be re-derived over this notice
+ * before a client ever sees it — the same hazard the phantom-cancellation
+ * notice in `message-sender.ts` documents for its own ordering.
+ *
+ * **No tool input.** `message` must be built from names and question text
+ * only — never a tool's raw arguments or an elicitation's request body, both
+ * of which can carry secrets.
+ */
+function notifyInteractionTimeoutNotice(session: InteractiveSession, message: string): void {
+  session.eventQueue.push({ type: 'system_status', data: { message } });
+  session.eventQueueNotify?.();
+}
+
+/** The operator-facing notice for an AskUserQuestion that timed out unanswered. */
+function questionTimeoutNotice(questions: QuestionItem[]): string {
+  const base = `I asked you something and waited ${INTERACTION_TIMEOUT_MINUTES} minutes with no answer, so I moved on.`;
+  const first = questions[0]?.question;
+  return first ? `${base} The question was: "${truncateForNotice(first, 120)}"` : base;
+}
+
+/**
+ * The label to name a tool by in operator-facing prose: the SDK's own
+ * `displayName` when it gave a non-blank one, else the raw tool name. Guards
+ * against an empty-string `displayName` producing "I asked to run  and
+ * waited…" — `??` alone only catches `undefined`, not `""`.
+ */
+function toolLabelFor(displayName: string | undefined, toolName: string): string {
+  return displayName?.trim() ? displayName : toolName;
+}
+
+/** The operator-facing notice for a tool approval that timed out unanswered. */
+function approvalTimeoutNotice(toolLabel: string): string {
+  return `I asked to run ${toolLabel} and waited ${INTERACTION_TIMEOUT_MINUTES} minutes with no answer, so I treated it as declined.`;
+}
+
+/** The operator-facing notice for an MCP elicitation that timed out unanswered. */
+function elicitationTimeoutNotice(serverName: string): string {
+  return `${serverName} asked you something and I waited ${INTERACTION_TIMEOUT_MINUTES} minutes with no answer, so I declined on your behalf.`;
 }
 
 /**
@@ -429,6 +508,7 @@ export function handleAskUserQuestion(
       session.pendingInteractions.delete(toolUseId);
       logInteractionTimeout(session, { id: toolUseId, kind: 'question' });
       notifyInteractionCancelled(session, toolUseId, 'timeout');
+      notifyInteractionTimeoutNotice(session, questionTimeoutNotice(questions));
       resolve({ behavior: 'deny', message: 'User did not respond within 10 minutes' });
     }, SESSIONS.INTERACTION_TIMEOUT_MS);
 
@@ -508,6 +588,7 @@ export function handleElicitation(
       session.pendingInteractions.delete(interactionId);
       logInteractionTimeout(session, { id: interactionId, kind: 'elicitation' });
       notifyInteractionCancelled(session, interactionId, 'timeout');
+      notifyInteractionTimeoutNotice(session, elicitationTimeoutNotice(request.serverName));
       decline();
     }, SESSIONS.INTERACTION_TIMEOUT_MS);
 
@@ -728,6 +809,10 @@ export function handleToolApproval(
       session.pendingInteractions.delete(toolUseId);
       logInteractionTimeout(session, { id: toolUseId, kind: 'approval', toolName });
       notifyInteractionCancelled(session, toolUseId, 'timeout');
+      notifyInteractionTimeoutNotice(
+        session,
+        approvalTimeoutNotice(toolLabelFor(context.displayName, toolName))
+      );
       deny(`Tool approval timed out after ${timeoutMinutes} minutes`);
     }, SESSIONS.INTERACTION_TIMEOUT_MS);
 
