@@ -463,6 +463,99 @@ export const SendMessageResponseSchema = z
 
 export type SendMessageResponse = z.infer<typeof SendMessageResponseSchema>;
 
+// === Message disposition & the server-owned queue ===
+
+/**
+ * What a sender wants done with a message while a turn is already running
+ * (spec `persistent-session-runtime`, ADR-0263).
+ *
+ * - `queue` — wait for the running turn to end, then run it. Always available:
+ *   the SERVER owns the queue, so no runtime has to.
+ * - `steer` — hand it to the agent mid-turn, so it changes course now.
+ * - `stage` — put it in front of the agent as context for the turn it is
+ *   already running, without asking it to change course.
+ *
+ * **Ignored when the session is IDLE.** With no turn open there is nothing to
+ * wait behind, steer, or stage into, so every disposition means the same thing:
+ * run it now. A sender never has to check whether the session is busy before
+ * choosing one.
+ *
+ * Defaults to `queue` at every ingress — the route, the dispatcher, and the
+ * store all read an absent disposition as `queue`, so a caller that says
+ * nothing gets the behavior that is always supported.
+ */
+export const MessageDispositionSchema = z
+  .enum(['queue', 'steer', 'stage'])
+  .openapi('MessageDisposition');
+
+/** What a sender asked be done with a message. See {@link MessageDispositionSchema}. */
+export type MessageDisposition = z.infer<typeof MessageDispositionSchema>;
+
+/**
+ * Why a requested {@link MessageDispositionSchema} was not the one applied.
+ *
+ * Carried on {@link MessageDeliveryOutcomeSchema} so the cockpit can say
+ * "queued instead of steered — this runtime cannot steer mid-turn" rather than
+ * quietly doing something other than what was asked.
+ *
+ * - `unsupported` — the session's runtime does not declare the capability.
+ * - `session-idle` — no turn was running, so the message ran immediately. The
+ *   one downgrade worth staying quiet about: "it ran now" is not a loss.
+ * - `no-open-turn` — the turn ended between the request and the delivery.
+ * - `pending-interaction` — the turn is waiting on a person (a permission ask,
+ *   a question), and delivering into that would answer something nobody was
+ *   asked.
+ */
+export const DispositionDowngradeReasonSchema = z
+  .enum(['unsupported', 'session-idle', 'no-open-turn', 'pending-interaction'])
+  .openapi('DispositionDowngradeReason');
+
+/** Why a disposition was downgraded. See {@link DispositionDowngradeReasonSchema}. */
+export type DispositionDowngradeReason = z.infer<typeof DispositionDowngradeReasonSchema>;
+
+/**
+ * What actually happened to an accepted message — the receipt every ingress
+ * returns and every `queue_update` carries.
+ *
+ * `requested` and `applied` are both present, always, even when they match:
+ * a consumer decides whether to say anything by comparing them, never by the
+ * presence of a field.
+ */
+export const MessageDeliveryOutcomeSchema = z
+  .object({
+    /** Server-minted id for the message this outcome is about. */
+    messageId: z.string(),
+    /** What the sender asked for. */
+    requested: MessageDispositionSchema,
+    /** What the server did. Equal to `requested` when nothing was downgraded. */
+    applied: MessageDispositionSchema,
+    /** Why they differ; absent when they do not. */
+    degradedBecause: DispositionDowngradeReasonSchema.optional(),
+  })
+  .openapi('MessageDeliveryOutcome');
+
+/** What happened to an accepted message. See {@link MessageDeliveryOutcomeSchema}. */
+export type MessageDeliveryOutcome = z.infer<typeof MessageDeliveryOutcomeSchema>;
+
+/** One message waiting to be dispatched to a session. */
+export const QueuedMessageSchema = z
+  .object({
+    /** Server-minted id; the same id the delivery outcome correlates on. */
+    id: z.string(),
+    /** The person's words, pristine — context injection never mutates them. */
+    content: z.string(),
+    /** The disposition as REQUESTED, not as applied. */
+    disposition: MessageDispositionSchema,
+    /** Epoch ms the message was accepted. */
+    enqueuedAt: z.number(),
+    /** The client that enqueued it, so a window can tell its own from another's. */
+    enqueuedBy: z.string(),
+  })
+  .openapi('QueuedMessage');
+
+/** One message waiting on a session's queue. See {@link QueuedMessageSchema}. */
+export type QueuedMessage = z.infer<typeof QueuedMessageSchema>;
+
 /**
  * Longest deny reason accepted. Generous enough for a couple of sentences of
  * context and short enough that a paste accident cannot flood the agent's

@@ -50,7 +50,7 @@
       "priority": "high",
       "dependencies": ["0.1"],
       "parallelWith": ["3.1"],
-      "issue": null
+      "issue": "DOR-1128"
     },
     {
       "id": "2.2",
@@ -64,7 +64,7 @@
       "priority": "high",
       "dependencies": ["2.1"],
       "parallelWith": ["3.1", "3.2"],
-      "issue": null
+      "issue": "DOR-1129"
     },
     {
       "id": "2.3",
@@ -78,7 +78,7 @@
       "priority": "high",
       "dependencies": ["2.2", "1.1"],
       "parallelWith": ["3.2"],
-      "issue": null
+      "issue": "DOR-1130"
     },
     {
       "id": "2.4",
@@ -92,7 +92,7 @@
       "priority": "high",
       "dependencies": ["2.3"],
       "parallelWith": ["2.5"],
-      "issue": null
+      "issue": "DOR-1131"
     },
     {
       "id": "2.5",
@@ -106,7 +106,7 @@
       "priority": "high",
       "dependencies": ["2.2", "2.3"],
       "parallelWith": ["2.4"],
-      "issue": null
+      "issue": "DOR-1132"
     },
     {
       "id": "2.6",
@@ -120,7 +120,7 @@
       "priority": "high",
       "dependencies": ["2.4", "2.5"],
       "parallelWith": ["3.4", "3.5"],
-      "issue": null
+      "issue": "DOR-1133"
     },
     {
       "id": "2.7",
@@ -134,7 +134,7 @@
       "priority": "medium",
       "dependencies": ["2.6"],
       "parallelWith": [],
-      "issue": null
+      "issue": "DOR-1134"
     },
     {
       "id": "3.1",

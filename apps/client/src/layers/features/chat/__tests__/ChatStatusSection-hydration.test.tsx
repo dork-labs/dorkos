@@ -177,6 +177,7 @@ function makeSnapshot(): SessionSnapshot {
       lastError: null,
     },
     pendingInteractions: [],
+    queuedMessages: [],
     cursor: 3,
   };
 }

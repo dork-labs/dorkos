@@ -44,6 +44,9 @@ const CLAUDE_CODE_PROFILE: RuntimeCapabilities = {
   supportsManagedMcpServers: true,
   supportsQuestionPrompt: true,
   supportsPlugins: true,
+  supportsPersistentSession: false,
+  supportsSteer: false,
+  supportsContextStaging: false,
   nativeContext: [],
   permissionModes: {
     supported: true,
@@ -105,6 +108,9 @@ const CODEX_PROFILE: RuntimeCapabilities = {
   supportsManagedMcpServers: true,
   supportsQuestionPrompt: false,
   supportsPlugins: false,
+  supportsPersistentSession: false,
+  supportsSteer: false,
+  supportsContextStaging: false,
   nativeContext: [],
   permissionModes: {
     supported: true,
@@ -153,6 +159,9 @@ const OPENCODE_PROFILE: RuntimeCapabilities = {
   supportsManagedMcpServers: false,
   supportsQuestionPrompt: false,
   supportsPlugins: false,
+  supportsPersistentSession: false,
+  supportsSteer: false,
+  supportsContextStaging: false,
   nativeContext: [],
   permissionModes: {
     supported: true,

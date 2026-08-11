@@ -29,6 +29,7 @@ const SNAPSHOT: SessionSnapshot = {
   inProgressTurn: null,
   status: STATUS,
   pendingInteractions: [],
+  queuedMessages: [],
   cursor: 7,
 };
 

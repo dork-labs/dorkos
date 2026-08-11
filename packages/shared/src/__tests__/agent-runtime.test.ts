@@ -37,6 +37,9 @@ describe('RuntimeCapabilities shape', () => {
       supportsToolApproval: true,
       supportsQuestionPrompt: true,
       supportsPlugins: true,
+      supportsPersistentSession: false,
+      supportsSteer: false,
+      supportsContextStaging: false,
       nativeContext: [],
       permissionModes: {
         supported: true,
@@ -101,6 +104,9 @@ describe('RuntimeCapabilities shape', () => {
       supportsToolApproval: false,
       supportsQuestionPrompt: false,
       supportsPlugins: false,
+      supportsPersistentSession: false,
+      supportsSteer: false,
+      supportsContextStaging: false,
       nativeContext: [],
       permissionModes: { supported: false, values: [] },
       settings: { configSection: null, supportsEffort: false, sections: [] },
@@ -123,6 +129,9 @@ describe('RuntimeCapabilities shape', () => {
       supportsToolApproval: false,
       supportsQuestionPrompt: false,
       supportsPlugins: false,
+      supportsPersistentSession: false,
+      supportsSteer: false,
+      supportsContextStaging: false,
       permissionModes: { supported: false, values: [] },
       settings: { configSection: null, supportsEffort: false, sections: [] },
       features: {
@@ -155,11 +164,41 @@ describe('RuntimeCapabilities shape', () => {
       supportsToolApproval: false,
       supportsQuestionPrompt: false,
       supportsPlugins: false,
+      supportsPersistentSession: false,
+      supportsSteer: false,
+      supportsContextStaging: false,
       permissionModes: { supported: false, values: [] },
       features: {},
     };
 
     expect(withoutSettings.type).toBe('forgetful-runtime');
+  });
+
+  it('requires every runtime to declare all three message-delivery capabilities', () => {
+    // Same compile-time forcing, for the flags the dispatcher resolves a
+    // disposition against (spec `persistent-session-runtime`). Optional would
+    // mean `undefined` — an adapter that never said whether it can steer, read
+    // as "cannot" by a falsy check, which is the silent default this repo keeps
+    // refusing. If any of the three becomes optional, the `@ts-expect-error`
+    // turns into an unused-directive error, and that red is the point.
+    // @ts-expect-error supportsPersistentSession / supportsSteer / supportsContextStaging are required
+    const undeclared: RuntimeCapabilities = {
+      type: 'undeclared-delivery-runtime',
+      commandIntents: { compact: { supported: false } },
+      nativeContext: [],
+      supportsResume: false,
+      supportsMcp: false,
+      supportsManagedMcpServers: false,
+      supportsCostTracking: false,
+      supportsToolApproval: false,
+      supportsQuestionPrompt: false,
+      supportsPlugins: false,
+      permissionModes: { supported: false, values: [] },
+      settings: { configSection: null, supportsEffort: false, sections: [] },
+      features: {},
+    };
+
+    expect(undeclared.type).toBe('undeclared-delivery-runtime');
   });
 
   it('requires a PermissionModeDescriptor to say what its mode does', () => {

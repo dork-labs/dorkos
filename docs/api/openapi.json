@@ -1210,6 +1210,12 @@
               "$ref": "#/components/schemas/PendingInteractionDTO"
             }
           },
+          "queuedMessages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/QueuedMessage"
+            }
+          },
           "cursor": {
             "type": "integer",
             "minimum": 0
@@ -1220,6 +1226,7 @@
           "inProgressTurn",
           "status",
           "pendingInteractions",
+          "queuedMessages",
           "cursor"
         ]
       },
@@ -2226,6 +2233,35 @@
               "type",
               "requestId"
             ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "queue_update"
+                ]
+              },
+              "queue": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/QueuedMessage"
+                }
+              },
+              "outcome": {
+                "$ref": "#/components/schemas/MessageDeliveryOutcome"
+              }
+            },
+            "required": [
+              "seq",
+              "type",
+              "queue"
+            ]
           }
         ]
       },
@@ -3198,6 +3234,72 @@
           "emoji",
           "rain",
           "stars"
+        ]
+      },
+      "QueuedMessage": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "content": {
+            "type": "string"
+          },
+          "disposition": {
+            "$ref": "#/components/schemas/MessageDisposition"
+          },
+          "enqueuedAt": {
+            "type": "number"
+          },
+          "enqueuedBy": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "content",
+          "disposition",
+          "enqueuedAt",
+          "enqueuedBy"
+        ]
+      },
+      "MessageDisposition": {
+        "type": "string",
+        "enum": [
+          "queue",
+          "steer",
+          "stage"
+        ]
+      },
+      "MessageDeliveryOutcome": {
+        "type": "object",
+        "properties": {
+          "messageId": {
+            "type": "string"
+          },
+          "requested": {
+            "$ref": "#/components/schemas/MessageDisposition"
+          },
+          "applied": {
+            "$ref": "#/components/schemas/MessageDisposition"
+          },
+          "degradedBecause": {
+            "$ref": "#/components/schemas/DispositionDowngradeReason"
+          }
+        },
+        "required": [
+          "messageId",
+          "requested",
+          "applied"
+        ]
+      },
+      "DispositionDowngradeReason": {
+        "type": "string",
+        "enum": [
+          "unsupported",
+          "session-idle",
+          "no-open-turn",
+          "pending-interaction"
         ]
       },
       "SessionStatus": {
@@ -8836,6 +8938,35 @@
                         "seq",
                         "type",
                         "requestId"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "seq": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "queue_update"
+                          ]
+                        },
+                        "queue": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/QueuedMessage"
+                          }
+                        },
+                        "outcome": {
+                          "$ref": "#/components/schemas/MessageDeliveryOutcome"
+                        }
+                      },
+                      "required": [
+                        "seq",
+                        "type",
+                        "queue"
                       ]
                     }
                   ],

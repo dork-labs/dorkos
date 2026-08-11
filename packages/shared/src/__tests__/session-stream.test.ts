@@ -245,6 +245,66 @@ describe('SessionEventSchema', () => {
   });
 });
 
+describe('SessionEventSchema — queue_update', () => {
+  const queued = {
+    id: 'msg-1',
+    content: 'and check the migration too',
+    disposition: 'queue' as const,
+    enqueuedAt: 1_700_000_000_000,
+    enqueuedBy: 'client-a',
+  };
+
+  it('carries the whole queue and, when a message caused it, the delivery outcome', () => {
+    // Purpose: the frame the cockpit reads to say "queued instead of steered".
+    // Both halves have to survive the wire — a queue with no outcome cannot
+    // explain a downgrade, and an outcome with no queue cannot draw the list.
+    const event = {
+      type: 'queue_update',
+      seq: 9,
+      queue: [queued],
+      outcome: {
+        messageId: 'msg-1',
+        requested: 'steer',
+        applied: 'queue',
+        degradedBecause: 'unsupported',
+      },
+    };
+    expect(SessionEventSchema.parse(event)).toEqual(event);
+  });
+
+  it('accepts an empty queue with no outcome (a dispatch drained the last message)', () => {
+    // Purpose: `outcome` is optional because most updates are not caused by an
+    // accepted message. An emptied queue is the ordinary end of every session.
+    const event = { type: 'queue_update', seq: 10, queue: [] };
+    expect(SessionEventSchema.parse(event)).toEqual(event);
+  });
+
+  it('rejects a frame with no queue — full replacement, never a diff', () => {
+    // Purpose: the whole point of this member is that every frame REPLACES the
+    // queue. An omitted `queue` would read as "no change" to a permissive
+    // parser and as "empty" to a strict one, and those are opposite meanings.
+    expect(() =>
+      SessionEventSchema.parse({
+        type: 'queue_update',
+        seq: 11,
+        outcome: { messageId: 'msg-1', requested: 'queue', applied: 'queue' },
+      })
+    ).toThrow();
+  });
+
+  it('rejects a disposition the contract does not name', () => {
+    // Purpose: `stringly-typed` dispositions are how a typo becomes a silent
+    // "run it now". Only the three the ladder resolves are accepted.
+    expect(() =>
+      SessionEventSchema.parse({
+        type: 'queue_update',
+        seq: 12,
+        queue: [{ ...queued, disposition: 'interrupt' }],
+      })
+    ).toThrow();
+  });
+});
+
 describe('SessionSnapshotSchema', () => {
   it('parses a valid cold snapshot', () => {
     // Purpose: a freshly hydrated, idle session must parse with an empty history.
@@ -253,9 +313,25 @@ describe('SessionSnapshotSchema', () => {
       inProgressTurn: null,
       status: coldStatus,
       pendingInteractions: [],
+      queuedMessages: [],
       cursor: 0,
     };
     expect(SessionSnapshotSchema.parse(snapshot)).toEqual(snapshot);
+  });
+
+  it('requires queuedMessages — hydration must say what is waiting', () => {
+    // Purpose: a snapshot is a reconnecting window's WHOLE picture of the
+    // session. If the queue were optional, a producer that forgot it would be
+    // indistinguishable from a session with nothing queued, and the messages a
+    // person typed would stay invisible until something else changed them.
+    const withoutQueue = {
+      messages: [],
+      inProgressTurn: null,
+      status: coldStatus,
+      pendingInteractions: [],
+      cursor: 0,
+    };
+    expect(() => SessionSnapshotSchema.parse(withoutQueue)).toThrow();
   });
 
   it('accepts the highest seq as the cursor', () => {
@@ -265,6 +341,7 @@ describe('SessionSnapshotSchema', () => {
       inProgressTurn: [{ seq: 42, type: 'text_delta', text: 'mid-turn' }],
       status: coldStatus,
       pendingInteractions: [],
+      queuedMessages: [],
       cursor: 42,
     };
     expect(SessionSnapshotSchema.parse(snapshot).cursor).toBe(42);
@@ -286,6 +363,7 @@ describe('SessionSnapshotSchema', () => {
       inProgressTurn: null,
       status: { ...coldStatus, contextUsage: fullUsage },
       pendingInteractions: [],
+      queuedMessages: [],
       cursor: 0,
     };
     expect(SessionSnapshotSchema.parse(snapshot).status.contextUsage).toEqual(fullUsage);

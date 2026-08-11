@@ -162,6 +162,12 @@ const SESSION_EVENT_TYPES = [
   'turn_end',
   'ui_command',
   'devtools_capture_request',
+  // The session's message queue, whole, on every change (spec
+  // `persistent-session-runtime`). Registered with the contract rather than
+  // with the UI that will read it: a queue frame that never arrives is exactly
+  // the silent drop this list exists to prevent, and the composer's queue view
+  // would be debugged for hours before anyone suspected the allowlist.
+  'queue_update',
 ] as const;
 
 /**

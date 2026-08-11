@@ -19,10 +19,26 @@ import type {
   ReloadPluginsResult,
   SessionSettings,
   SessionListWarning,
+  MessageDisposition,
 } from './types.js';
 import type { AdditionalContext, ContextKind } from './additional-context.js';
 import type { SessionSnapshot, SessionEvent, SessionListEvent } from './session-stream.js';
 import type { RuntimeCommandIntentId } from './command-intents.js';
+
+/**
+ * The message-delivery vocabulary of the runtime contract, re-exported here so
+ * an adapter reads its whole contract from one module.
+ *
+ * Defined once as Zod in `schemas.js` — they are wire types as well as contract
+ * types (they ride the `queue_update` event and the message routes), and a
+ * second hand-written copy of a union is exactly how the two drift apart.
+ */
+export type {
+  MessageDisposition,
+  DispositionDowngradeReason,
+  MessageDeliveryOutcome,
+  QueuedMessage,
+} from './types.js';
 
 /**
  * Where a permission mode sits on the one question the permission surface asks:
@@ -541,6 +557,43 @@ export interface RuntimeCapabilities {
   nativeContext: ContextKind[];
 
   /**
+   * Whether the runtime holds ONE live session open across turns instead of
+   * starting fresh work each time. Required — compile-time forcing per the
+   * `commandIntents` precedent (ADR-0256), so a new adapter cannot silently
+   * omit it and inherit a behavior it never declared.
+   *
+   * The prerequisite for the other two: there is nothing to steer into or stage
+   * onto if each turn is its own subprocess. `false` for every runtime through
+   * P2 of spec `persistent-session-runtime` — the shape lands before any
+   * behavior does.
+   */
+  supportsPersistentSession: boolean;
+
+  /**
+   * Whether a message can be handed to the agent MID-TURN so it changes course
+   * now, rather than waiting for the running turn to finish. Required, same
+   * reason as {@link supportsPersistentSession}.
+   *
+   * `false` does not mean the message is refused: the server's queue always
+   * accepts it, and the sender is told it was queued instead of steered.
+   */
+  supportsSteer: boolean;
+
+  /**
+   * Whether context can be put in front of the agent DURING a turn without
+   * asking it to change course. Required, same reason as
+   * {@link supportsPersistentSession}.
+   *
+   * `false` falls back to folding the text into the next dispatched message as
+   * an additional-context entry, so nothing a person wrote is lost.
+   */
+  supportsContextStaging: boolean;
+
+  // There is deliberately NO `supportsQueue`. The SERVER owns the queue for
+  // every runtime, so queueing is not a capability an adapter declares — it is
+  // true by construction, and a flag saying so could only ever be wrong.
+
+  /**
    * Whether this runtime reconstructs message history from the DorkOS-owned
    * `EventLog` rather than a native transcript (codex, opencode, test-mode).
    * When `true`, the platform persists the runtime's completed-turn event
@@ -589,6 +642,23 @@ export interface MessageOpts extends SessionSettings {
    * Only honored on the first turn — ignored once the session has started.
    */
   title?: string;
+  /**
+   * How this message should reach a session that is ALREADY RUNNING a turn.
+   * Absent means `'queue'`, the disposition every runtime supports. Ignored
+   * when the session is idle — see {@link MessageDisposition}.
+   */
+  disposition?: MessageDisposition;
+  /**
+   * The server-minted id of the message being delivered.
+   *
+   * **Correlation is by id and NEVER positional.** A runtime with a persistent
+   * session coalesces a dequeued batch into ONE turn, so three dispatched ids
+   * can share a single `result` — "the nth result answers the nth message" is
+   * false the first time two messages are dequeued together. Anything that
+   * needs to know which message a piece of output belongs to must carry this id
+   * through and match on it.
+   */
+  messageId?: string;
 }
 
 /**

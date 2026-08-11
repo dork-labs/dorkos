@@ -31,6 +31,9 @@ export const PLAYGROUND_CAPABILITIES: Record<string, RuntimeCapabilities> = {
     supportsManagedMcpServers: true,
     supportsQuestionPrompt: true,
     supportsPlugins: true,
+    supportsPersistentSession: false,
+    supportsSteer: false,
+    supportsContextStaging: false,
     nativeContext: [],
     permissionModes: {
       supported: true,
@@ -98,6 +101,9 @@ export const PLAYGROUND_CAPABILITIES: Record<string, RuntimeCapabilities> = {
     supportsManagedMcpServers: true,
     supportsQuestionPrompt: false,
     supportsPlugins: false,
+    supportsPersistentSession: false,
+    supportsSteer: false,
+    supportsContextStaging: false,
     nativeContext: [],
     logBackedHistory: true,
     permissionModes: {
@@ -146,6 +152,9 @@ export const PLAYGROUND_CAPABILITIES: Record<string, RuntimeCapabilities> = {
     supportsManagedMcpServers: false,
     supportsQuestionPrompt: false,
     supportsPlugins: false,
+    supportsPersistentSession: false,
+    supportsSteer: false,
+    supportsContextStaging: false,
     nativeContext: [],
     logBackedHistory: true,
     permissionModes: {

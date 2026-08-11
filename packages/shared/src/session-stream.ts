@@ -44,6 +44,8 @@ import {
   UsageStatusSchema,
   McpSigninRequiredEventSchema,
   McpSigninResolvedEventSchema,
+  QueuedMessageSchema,
+  MessageDeliveryOutcomeSchema,
   type ToolApprovalOutcome,
 } from './schemas.js';
 
@@ -636,6 +638,25 @@ export const SessionEventSchema = z
       type: z.literal('devtools_capture_request'),
       requestId: z.string(),
     }),
+    // The session's message queue changed — a message was accepted, dispatched,
+    // edited, reordered, removed, or cleared (spec `persistent-session-runtime`).
+    //
+    // Carries the WHOLE queue every time, never a diff. The queue is small and
+    // bounded, and full replacement makes every ordering and dedup bug
+    // unrepresentable — a client that missed an update is corrected by the next
+    // one instead of drifting.
+    z.object({
+      ...seqShape,
+      type: z.literal('queue_update'),
+      /** The whole queue, in dispatch order. Empty means nothing is waiting. */
+      queue: z.array(QueuedMessageSchema),
+      /**
+       * Present when an accepted message caused this update, so the sender's
+       * window can say what actually happened to it. Absent for updates nobody
+       * asked for directly (a dispatch draining the head, a sweep).
+       */
+      outcome: MessageDeliveryOutcomeSchema.optional(),
+    }),
   ])
   .openapi('SessionEvent');
 
@@ -713,6 +734,16 @@ export const SessionSnapshotSchema = z
     status: SessionStatusSchema,
     /** Pending interactions awaiting the operator (ADR-0264). */
     pendingInteractions: z.array(PendingInteractionDTOSchema),
+    /**
+     * Messages waiting to be dispatched to this session, in dispatch order
+     * (spec `persistent-session-runtime`). Empty when nothing is waiting.
+     *
+     * Part of hydration rather than a separate fetch: a window that reconnects
+     * mid-turn has to show what is already queued, and a queue that only
+     * arrived on the next `queue_update` would be invisible until something
+     * changed it.
+     */
+    queuedMessages: z.array(QueuedMessageSchema),
     /** Highest `seq` reflected in this snapshot; the resume point for replay. */
     cursor: z.number().int().nonnegative(),
   })

@@ -204,6 +204,11 @@ export class FakeAgentRuntime implements AgentRuntime {
     supportsManagedMcpServers: false,
     supportsQuestionPrompt: true,
     supportsPlugins: false,
+    // The double declares what every real runtime declares today (spec
+    // `persistent-session-runtime` P2): the contract exists, no behavior does.
+    supportsPersistentSession: false,
+    supportsSteer: false,
+    supportsContextStaging: false,
     nativeContext: [],
     permissionModes: {
       supported: true,
@@ -334,6 +339,7 @@ export class FakeAgentRuntime implements AgentRuntime {
         lastError: null,
       },
       pendingInteractions: [],
+      queuedMessages: [],
       cursor: 0,
     });
   // The 4th parameter mirrors `AgentRuntime.subscribeSession`: a test that
