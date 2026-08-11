@@ -89,7 +89,7 @@ a step change in UI/UX, not just conventional." Relearning cost accepted;
   row's "N live" chip). Groups: Live now (with verbs; multiple concurrent
   sessions are just multiple rows), Recent (with one-line outcomes), Automated
   (collapsed, origin-marked). Current session tagged. Footer: ↵ continue,
-  ⌘↵ new, ⇧ fork.
+  ⌘↵ new, ⇧↵ fork.
 - Agent rows in Library show: avatar + name + status (see §6) + "N live" chip
   when multiple sessions run concurrently.
 - **The active-conversation anchor**: the open conversation is always Today's

@@ -514,7 +514,7 @@ Each contract is stated so a test can fail. Fixture names refer to the four jour
   mobile) reachable from the agent row's "N live" chip, a long-press on mobile, and ⌘K. Groups:
   **Live now** (with verbs; concurrent sessions are simply multiple rows), **Recent** (one-line
   outcomes), **Automated** (collapsed, origin-marked). The current session is tagged. Footer
-  hints: `↵` continue, `⌘↵` new, `⇧` fork. Rows use `SidebarRow`.
+  hints: `↵` continue, `⌘↵` new, `⇧↵` fork. Rows use `SidebarRow`.
 - **BC-36 — Scroll-to-active.** On conversation switch only, the anchor scrolls into view.
   Guardrails: never auto-expand a collapsed section (the Library copy just takes the active tint
   if visible — BC-33); instant jump under `prefers-reduced-motion`; never scroll while the user
