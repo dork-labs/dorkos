@@ -27,6 +27,14 @@ export const CLAUDE_CODE_CAPABILITIES: RuntimeCapabilities = {
   supportsManagedMcpServers: true,
   supportsQuestionPrompt: true,
   supportsPlugins: true,
+  // The SDK can do all three (`streamInput`, `shouldQuery`), but DorkOS does
+  // not yet: every turn still runs its own `query()`. Declared `false` until
+  // the persistent pump lands — a capability is what this adapter DOES, not
+  // what its SDK could (spec `persistent-session-runtime`: P3 flips the first,
+  // P4 the other two).
+  supportsPersistentSession: false,
+  supportsSteer: false,
+  supportsContextStaging: false,
   // Native git is suppressed via `excludeDynamicSections` (ADR-0273 A2), so the
   // server injects all context kinds from the bag — none are runtime-native.
   nativeContext: [],

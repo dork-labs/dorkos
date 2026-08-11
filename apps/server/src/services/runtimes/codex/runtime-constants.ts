@@ -47,6 +47,14 @@ export const CODEX_CAPABILITIES: RuntimeCapabilities = {
   supportsManagedMcpServers: true,
   supportsQuestionPrompt: false,
   supportsPlugins: false,
+  // Every turn is a fresh subprocess (ADR-0309), and the only interrupt
+  // primitive is an `AbortSignal` — there is no live session to steer into or
+  // stage onto. Whether `@openai/codex-sdk` exposes anything like a mid-turn
+  // steer is UNVERIFIED at the pin, so `false` is the honest answer until a
+  // live probe says otherwise (spec `persistent-session-runtime` §2.6).
+  supportsPersistentSession: false,
+  supportsSteer: false,
+  supportsContextStaging: false,
   nativeContext: [],
   // History reconstructs from the DorkOS EventLog (no thread-read API), so the
   // platform persists it to the durable session-event store (DOR-189).

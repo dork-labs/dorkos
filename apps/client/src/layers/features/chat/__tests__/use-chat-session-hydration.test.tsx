@@ -77,6 +77,7 @@ function makeSnapshot(overrides: Partial<SessionSnapshot> = {}): SessionSnapshot
       lastError: null,
     },
     pendingInteractions: [],
+    queuedMessages: [],
     cursor: 5,
     ...overrides,
   };

@@ -74,6 +74,7 @@ const SNAPSHOT: SessionSnapshot = {
   inProgressTurn: null,
   status: STATUS,
   pendingInteractions: [],
+  queuedMessages: [],
   cursor: 0,
 };
 
@@ -418,6 +419,33 @@ describe('StreamManager', () => {
         seq: 8,
         approvalId: 'appr-1',
         outcome: 'granted',
+      } as SessionEvent,
+    ],
+    // The queue frame (spec `persistent-session-runtime`). Registered before
+    // anything renders it, because the drop this list guards is invisible: the
+    // server would emit, the socket would discard, and the queue view would
+    // look like a server bug. The payload carries a full queue AND an outcome
+    // so the frame proven to survive is the one the server actually sends.
+    [
+      'queue_update',
+      {
+        type: 'queue_update',
+        seq: 9,
+        queue: [
+          {
+            id: 'msg-1',
+            content: 'and check the migration too',
+            disposition: 'queue',
+            enqueuedAt: 1_700_000_000_000,
+            enqueuedBy: 'client-a',
+          },
+        ],
+        outcome: {
+          messageId: 'msg-1',
+          requested: 'steer',
+          applied: 'queue',
+          degradedBecause: 'unsupported',
+        },
       } as SessionEvent,
     ],
   ])('dispatches a %s frame to onSessionEvent (previously dropped over HTTP)', (name, event) => {

@@ -34,6 +34,12 @@ export const TEST_MODE_CAPABILITIES: RuntimeCapabilities = {
   supportsQuestionPrompt: false,
   // Capability-gated: asClaudePluginTransport() returns null for this runtime.
   supportsPlugins: false,
+  // `false` while the contract is types only (spec `persistent-session-runtime`
+  // P2). Test-mode exists to exercise the contract deterministically, so it is
+  // the runtime that flips these first once there is behavior to exercise.
+  supportsPersistentSession: false,
+  supportsSteer: false,
+  supportsContextStaging: false,
   // Test-mode injects nothing natively; the assembler bag is rendered verbatim.
   nativeContext: [],
   // Stateless: completed history lives only in the DorkOS EventLog, so the

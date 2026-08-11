@@ -178,6 +178,7 @@ function snapshotWithChildren(
       lastError: null,
     },
     pendingInteractions: [],
+    queuedMessages: [],
     cursor: 3,
   } satisfies SessionSnapshot;
 }

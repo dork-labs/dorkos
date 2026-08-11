@@ -104,6 +104,7 @@ function snapshotWith(lifecycle: SessionStatus['lifecycle'], cursor: number): Se
       lastError: null,
     },
     pendingInteractions: [],
+    queuedMessages: [],
     cursor,
   };
 }

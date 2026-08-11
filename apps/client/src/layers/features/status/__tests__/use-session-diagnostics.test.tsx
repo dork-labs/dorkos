@@ -103,6 +103,7 @@ function snapshot(cursor = 400): SessionSnapshot {
       lastError: null,
     },
     pendingInteractions: [],
+    queuedMessages: [],
     cursor,
   };
 }

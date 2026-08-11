@@ -77,6 +77,9 @@ const CAPS: RuntimeCapabilities = {
   supportsManagedMcpServers: true,
   supportsQuestionPrompt: true,
   supportsPlugins: true,
+  supportsPersistentSession: false,
+  supportsSteer: false,
+  supportsContextStaging: false,
   nativeContext: [],
   permissionModes: {
     supported: true,

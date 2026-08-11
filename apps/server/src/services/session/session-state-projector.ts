@@ -1351,6 +1351,10 @@ export class SessionStateProjector {
       inProgressTurn: this.snapshotInProgressTurn(),
       status: this.getStatus(),
       pendingInteractions: this.getPendingInteractions(),
+      // The queue is owned by the server, not the projector, and nothing writes
+      // to it yet (spec `persistent-session-runtime` P2 is types only). Empty
+      // until the dispatcher fills it.
+      queuedMessages: [],
       cursor: this.counter,
     };
   }

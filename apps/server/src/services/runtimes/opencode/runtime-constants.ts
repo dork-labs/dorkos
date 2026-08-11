@@ -49,6 +49,13 @@ export const OPENCODE_CAPABILITIES: RuntimeCapabilities = {
   supportsManagedMcpServers: true,
   supportsQuestionPrompt: false,
   supportsPlugins: false,
+  // The sidecar (ADR-0308) offers no mid-turn delivery: its only interrupt is
+  // `POST /session/{id}/abort`, and OpenCode's own message queue lives in its
+  // TUI rather than its server (DOR-82 survey). Nothing to steer into or stage
+  // onto (spec `persistent-session-runtime` §2.6).
+  supportsPersistentSession: false,
+  supportsSteer: false,
+  supportsContextStaging: false,
   nativeContext: [],
   // The EventLog is the fallback history source when the native sidecar read
   // fails/unbinds, so the platform persists it durably (DOR-189).
