@@ -48,6 +48,11 @@ function erroredRow(page: Page) {
   return nowZone(page).getByText('Stopped with an error');
 }
 
+/** The Now row a session waiting on a permission answer draws. */
+function blockedRow(page: Page) {
+  return nowZone(page).getByText('Waiting on you');
+}
+
 /** What {@link registerNowSurvivesReloadTests} needs from its host spec. */
 export interface NowSurvivesReloadDeps {
   /** Base URL of the test-mode server, for its `/api/test/*` control routes. */
@@ -129,6 +134,30 @@ export function registerNowSurvivesReloadTests({ apiUrl, agentDir }: NowSurvives
       await new BasePage(page).ensureSidebarOpen();
 
       await expect(erroredRow(page)).toBeVisible({ timeout: SERVER_ROUND_TRIP_MS });
+    });
+
+    // The other lifecycle Now is built from, and the one an operator loses most
+    // by not seeing: a turn parked on a permission answer stays parked, so the
+    // transition that announced it is the only one there will ever be.
+    test('a session waiting on a permission answer is still in Now after a reload', async ({
+      page,
+      request,
+    }) => {
+      // `demo-approval` deliberately never yields `done` — the turn stays
+      // blocked awaiting the operator, which is the state under test.
+      await request.post(`${apiUrl}/api/test/scenario`, { data: { name: 'demo-approval' } });
+      const chatPage = new ChatPage(page);
+      await chatPage.goto(undefined, { dir: agentDir() });
+      await chatPage.sendMessage('Migrate the tokens table');
+      await new BasePage(page).ensureSidebarOpen();
+
+      await expect(blockedRow(page)).toBeVisible({ timeout: SERVER_ROUND_TRIP_MS });
+
+      await page.reload();
+      await new BasePage(page).waitForAppReady();
+      await new BasePage(page).ensureSidebarOpen();
+
+      await expect(blockedRow(page)).toBeVisible({ timeout: SERVER_ROUND_TRIP_MS });
     });
 
     test('the Ask DorkBot seed still names the errored session after a reload', async ({
