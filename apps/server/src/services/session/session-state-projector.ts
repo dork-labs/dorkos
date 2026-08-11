@@ -37,6 +37,7 @@ import type {
   PermissionMode,
   TaskItem,
 } from '@dorkos/shared/types';
+import type { QueuedMessage } from '@dorkos/shared/schemas';
 import { listPendingInteractions } from './pending-interactions.js';
 import type { SessionDebugCounters } from './session-debug-counters.js';
 import { logger } from '../../lib/logger.js';
@@ -44,7 +45,7 @@ import { EventLog } from './event-log.js';
 import { RingBuffer } from './ring-buffer.js';
 import { devtoolsCaptureStore } from './devtools-capture-store.js';
 import type { SessionEventStore } from './session-event-store.js';
-import { getMessageQueueStore } from './message-queue-store.js';
+import { getMessageQueueStore, toQueuedMessage } from './message-queue-store.js';
 import {
   RECORDED_EVENT_TYPES,
   type ProjectorPersistence,
@@ -154,6 +155,30 @@ type StatusChangePayload = Extract<SessionEvent, { type: 'status_change' }>['sta
 
 /** Permission mode used before any `status_change` reports one. */
 const DEFAULT_PERMISSION_MODE: PermissionMode = 'default';
+
+/**
+ * Events that ride the stream but are NOT part of the turn they arrive during.
+ *
+ * `inProgressTurn` is the turn's transcript: it is what a cold hydrate replays
+ * as the live turn, what a log-backed projector persists as history, and what
+ * the client folds into the conversation. Two members belong nowhere near it:
+ *
+ * - **`turn_end`** closes the window rather than joining it (the original rule).
+ * - **`queue_update`** is bookkeeping ABOUT the session, not something the agent
+ *   or the person said in it. Letting it in would persist the queue into a
+ *   runtime's history and — worse — replay a STALE copy of the queue behind the
+ *   snapshot's fresh `queuedMessages` on every reconnect, so a client applying
+ *   the turn would overwrite a correct queue with an older one.
+ *
+ * This is a rule about turn MEMBERSHIP only. It has nothing to do with the
+ * reopen predicate (`TURN_REOPENING_STREAM_EVENT_TYPES`, #909), which acts on
+ * raw runtime StreamEvents inside `feedProjector`: a `queue_update` never
+ * travels that path at all, so it cannot open a window either.
+ */
+const EVENTS_OUTSIDE_THE_TURN: ReadonlySet<SessionEvent['type']> = new Set([
+  'turn_end',
+  'queue_update',
+]);
 
 /**
  * The `turn_end.terminalReason` value the detached-error path attaches (emitted
@@ -656,7 +681,7 @@ export class SessionStateProjector {
 
   /** Fold an event into the live projection. */
   private project(event: SessionEvent): void {
-    if (this.inProgressTurn !== null && event.type !== 'turn_end') {
+    if (this.inProgressTurn !== null && !EVENTS_OUTSIDE_THE_TURN.has(event.type)) {
       this.inProgressTurn.push(event);
     }
     switch (event.type) {
@@ -1355,12 +1380,29 @@ export class SessionStateProjector {
       inProgressTurn: this.snapshotInProgressTurn(),
       status: this.getStatus(),
       pendingInteractions: this.getPendingInteractions(),
-      // The queue is owned by the server, not the projector, and nothing writes
-      // to it yet (spec `persistent-session-runtime` P2 is types only). Empty
-      // until the dispatcher fills it.
-      queuedMessages: [],
+      queuedMessages: this.readQueue(),
       cursor: this.counter,
     };
+  }
+
+  /**
+   * This session's queue, as the snapshot reports it.
+   *
+   * Read THROUGH to the store on every snapshot rather than held as projector
+   * state, which is what makes the restart half of the durability promise free:
+   * a projector re-created after a restart has no memory of anything, but the
+   * rows are still on disk under the id it is registered under, so the first
+   * cold connect after a restart hydrates the queue exactly as the last one
+   * before it did. It is also what keeps a mutation made by another window
+   * (task 2.4's routes write to the store) from needing to reach in here.
+   *
+   * Keyed by {@link sessionId} — the id the projector is registered under
+   * TODAY. The queue's rows move across the canonical-id rename on the same
+   * beat the projector does ({@link rekeyProjector}), so the two keys never
+   * drift apart.
+   */
+  private readQueue(): QueuedMessage[] {
+    return getMessageQueueStore()?.list(this._sessionId).map(toQueuedMessage) ?? [];
   }
 
   /**
