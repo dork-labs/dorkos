@@ -26,6 +26,7 @@
 import type { AgentRuntime, SessionOpts } from '@dorkos/shared/agent-runtime';
 import { SessionListEventSchema } from '@dorkos/shared/session-stream';
 import type { SessionLifecycle, SessionListEvent } from '@dorkos/shared/session-stream';
+import { SSE } from '../../config/constants.js';
 import { eventFanOut, encodeBroadcast, type FanOutClient } from '../core/event-fan-out.js';
 import { listProjectorStatuses, onProjectorStatusChange } from './session-state-projector.js';
 import {
@@ -108,11 +109,40 @@ const SNAPSHOT_LIFECYCLES: ReadonlySet<SessionLifecycle> = new Set<SessionLifecy
  * Sent to ONE client rather than broadcast: every other reader either already
  * holds these lifecycles or does not want them re-asserted.
  *
+ * ## What bounds it
+ *
+ * One frame per non-idle projector, and a projector lives until its session is
+ * evicted or the server restarts. **Only claude-code and test-mode evict**
+ * (`SESSIONS.TIMEOUT_MS`, 30 minutes idle) — codex and opencode both implement
+ * `checkSessionHealth` as a no-op because neither holds a per-session process —
+ * so on a codex- or opencode-heavy machine this set only grows until a restart.
+ * It is small in every realistic fleet, but "small" is not a guarantee, and this
+ * is the one place in the stream that writes N frames in a row.
+ *
+ * So it stops at the same buffer ceiling the fan-out's own broadcast enforces
+ * (`SSE.MAX_BUFFERED_BYTES`), rather than filling process memory for a client
+ * that is not reading. It stops
+ * instead of dropping the client, which is the opposite of what a broadcast
+ * does, and deliberately: a broadcast drops a slow client because it cannot wait
+ * for one reader, and the recovery is a reconnect that re-baselines. A client
+ * dropped HERE would reconnect straight back into this same function and hit the
+ * same ceiling. A partial preamble degrades to the old behaviour for the
+ * sessions it did not reach, which is the honest floor.
+ *
  * @param client - The client that has just registered with the fan-out.
  */
 export function sendSessionStatusSnapshot(client: FanOutClient): void {
   for (const update of listProjectorStatuses()) {
     if (!SNAPSHOT_LIFECYCLES.has(update.status.lifecycle)) continue;
+    if (client.bufferedBytes > SSE.MAX_BUFFERED_BYTES) {
+      logger.warn(
+        '[SessionListBroadcaster] connect snapshot truncated (client buffer over limit)',
+        {
+          bufferedBytes: client.bufferedBytes,
+        }
+      );
+      return;
+    }
     const event = validateListEvent({
       type: 'session_status',
       sessionId: update.sessionId,

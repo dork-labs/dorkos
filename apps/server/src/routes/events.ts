@@ -57,17 +57,11 @@ router.get('/', (req, res) => {
 
   initSSEStream(res);
   const client = sseFanOutClient(res);
+  // Registration comes BEFORE the preamble below, and that ordering is the one
+  // that matters: it is what makes it impossible to MISS a transition that
+  // fires while the connect is being served. The reverse — snapshot, then
+  // register — has a window in which a transition reaches nobody.
   const unsubscribe = eventFanOut.addClient(client);
-
-  // The connect preamble: `connected`, then the fleet's current lifecycles.
-  //
-  // Registration comes FIRST and the whole preamble is synchronous, so no
-  // broadcast can slip between the two: an event that fires while this runs is
-  // queued behind it on the same socket and therefore lands AFTER the snapshot
-  // it supersedes. A preamble written before `addClient` would have the
-  // opposite (and wrong) ordering.
-  client.send(encodeBroadcast('connected', { connectedAt: new Date().toISOString() }));
-  sendSessionStatusSnapshot(client);
 
   // Keepalive heartbeat to prevent proxies/browsers from closing the connection
   const heartbeat = setInterval(() => {
@@ -86,6 +80,14 @@ router.get('/', (req, res) => {
     clearInterval(heartbeat);
     unsubscribe();
   });
+
+  // The connect preamble: `connected`, then the fleet's current lifecycles.
+  //
+  // Written LAST so the teardown above is already armed: a preamble is the one
+  // place this handler writes more than a single frame, and it should not be
+  // the one stretch with no close handler behind it.
+  client.send(encodeBroadcast('connected', { connectedAt: new Date().toISOString() }));
+  sendSessionStatusSnapshot(client);
 });
 
 export default router;

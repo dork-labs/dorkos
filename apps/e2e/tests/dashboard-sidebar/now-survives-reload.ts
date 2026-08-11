@@ -105,10 +105,19 @@ export function registerNowSurvivesReloadTests({ apiUrl, agentDir }: NowSurvives
     });
 
     test.afterEach(async ({ request }) => {
-      // Leaving it registered would put a second agent in every later mock
-      // spec's sidebar, which is not what any of them was written against.
-      if (meshId) await request.delete(`${apiUrl}/api/mesh/agents/${meshId}/data`).catch(() => {});
+      // Unregister, NOT `/data`: the with-data route deletes the agent's `.dork`
+      // directory, and this suite did not create that directory — `seed-agent`
+      // did, and the next test's `beforeEach` re-registers against it. Taking it
+      // out from under the seed route is more than this teardown is owed.
+      //
+      // Asserted rather than swallowed. Leaving the agent registered would put a
+      // second one in every later mock spec's sidebar, and a `.catch(() => {})`
+      // over a 403 or 404 would leave exactly that behind while reporting
+      // nothing — which is the leak this teardown exists to prevent.
+      if (!meshId) return;
+      const res = await request.delete(`${apiUrl}/api/mesh/agents/${meshId}`);
       meshId = null;
+      expect(res.status(), 'the seeded agent must be unregistered again').toBe(200);
     });
 
     /** Drive one session to a turn that ends in an error, and open the sidebar. */
