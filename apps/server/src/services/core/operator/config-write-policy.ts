@@ -129,13 +129,16 @@
  * unenforced from the day they were classified (DOR-1113). A guard that reads a
  * table and a walk that cannot reach part of it is the shape to watch for.
  *
- * One consequence to know before you "fix" it: a payload whose SHAPE does not
- * match the schema — `{ rawMcpServers: { '0': {…} } }`, an array of arrays —
- * walks to paths no policy key matches, so this guard returns nothing and Zod
- * refuses the write with a 400. That is the layering working, not a hole: the
- * guard answers "may this caller write this setting", validation answers "is
- * this even a config", and teaching the matcher to guess at malformed shapes
- * would add complexity in front of a bar that already holds.
+ * One consequence to know before you "fix" it: a malformed shape is still
+ * refused, and by whichever layer it reaches first. An array of arrays —
+ * `{ rawMcpServers: [[{…}]] }` — is caught by THIS guard: `[][]` collapses to
+ * the same plain form as the guarded key, so it matches and fails closed. An
+ * object with numeric keys where a list belongs — `{ rawMcpServers: { '0': {…} } }`
+ * — walks to paths no policy key matches, so the guard returns nothing and Zod
+ * refuses the write with a 400 instead. That is the layering working, not a
+ * hole: the guard answers "may this caller write this setting", validation
+ * answers "is this even a config", and teaching the matcher to guess at
+ * malformed shapes would add complexity in front of a bar that already holds.
  *
  * @module services/core/operator/config-write-policy
  */
