@@ -49,8 +49,20 @@ vi.mock('@/layers/entities/mesh', () => ({
 const mockUseAgentVisual = vi.fn<
   (agent: unknown, cwd: unknown) => { color: string; emoji: string }
 >(() => ({ color: '#ff0000', emoji: '🤖' }));
+// `AgentAvatar` is a marker double, NOT the real disc: this file replaces the
+// whole `shared/ui` barrel above (portals), so the real `IdentityAvatar`
+// underneath it cannot resolve here. What the double can prove is that this row
+// DELEGATES its face, and with which colour and emoji — which is the change.
+// That the disc is then square, filled and Bot-marked is pinned where the real
+// component renders (`identity-avatar.test.tsx`, `TaskRow`, `AgentPreviewPanel`,
+// `DirectoryPicker`), and is deliberately not re-asserted against a stand-in.
 vi.mock('@/layers/entities/agent', () => ({
   useAgentVisual: (agent: unknown, cwd: unknown) => mockUseAgentVisual(agent, cwd),
+  AgentAvatar: ({ color, emoji }: { color: string; emoji: string }) => (
+    <span data-testid="agent-avatar" data-color={color}>
+      {emoji}
+    </span>
+  ),
 }));
 
 // Mock formatRelativeTime to produce predictable output
@@ -305,7 +317,7 @@ describe('OfflineAgentDetailSheet', () => {
     expect(onClose).toHaveBeenCalledOnce();
   });
 
-  it('renders the agent emoji from useAgentVisual', () => {
+  it('draws each agent as an agent, not a bare emoji beside a colour dot', () => {
     mockUseAgentVisual.mockReturnValue({ color: '#00ff00', emoji: '🦾' });
     mockUseTopology.mockReturnValue({
       data: makeTopologyView([{ id: 'a1', name: 'Robo Agent', healthStatus: 'unreachable' }]),
@@ -313,6 +325,11 @@ describe('OfflineAgentDetailSheet', () => {
 
     renderSheet();
 
-    expect(screen.getByText('🦾')).toBeInTheDocument();
+    // The face goes through the identity component carrying BOTH halves of the
+    // visual. The row used to spend them on a loose emoji and an 8px dot, so a
+    // revert to that leaves no `agent-avatar` here at all.
+    const disc = screen.getByTestId('agent-avatar');
+    expect(disc).toHaveTextContent('🦾');
+    expect(disc.getAttribute('data-color')).toBe('#00ff00');
   });
 });

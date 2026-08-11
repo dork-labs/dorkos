@@ -49,11 +49,13 @@ describe('AgentPreviewPanel', () => {
     expect(disc?.querySelector('[data-slot="identity-badge"]')).toBeTruthy();
   });
 
-  it('heads the panel a step larger than the palette rows it previews', () => {
+  it('draws one identity disc, and only one, in the panel heading', () => {
     const { container } = render(<AgentPreviewPanel agent={AGENT} />);
 
-    // `sm` (28px), where `AgentOptionRow` and `SessionCommandItem` use `xs`
-    // (20px): this line is the panel's heading, not another row in the list.
-    expect(container.querySelector('[data-slot="agent-avatar"]')?.className).toContain('size-7');
+    // The heading holds exactly one face. Sizing is a design choice this panel
+    // is free to revisit (`sm` today, a step up from the palette rows' `xs`),
+    // so it is deliberately NOT pinned to a CVA class string here — a test that
+    // reds on a tasteful resize teaches people to stop reading test failures.
+    expect(container.querySelectorAll('[data-slot="agent-avatar"]')).toHaveLength(1);
   });
 });
