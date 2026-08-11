@@ -74,6 +74,11 @@ function wrapper(transport: Transport) {
 /** Every key the interaction store currently holds a record under. */
 const recordedKeys = () => Object.keys(useInteractionStore.getState().opened).sort();
 
+/** The use count under one key — zero when the operator has never opened it. */
+function countOf(kind: 'session' | 'agent' | 'room', id: string): number {
+  return useInteractionStore.getState().counts[interactionKey(kind, id)] ?? 0;
+}
+
 /** The record under one key, as epoch ms, or `null` when there is none. */
 function recordedAt(kind: 'session' | 'agent' | 'room', id: string): number | null {
   const iso = useInteractionStore.getState().opened[interactionKey(kind, id)];
@@ -257,19 +262,56 @@ describe('a rekeyed conversation keeps the interaction', () => {
     expect(recordedAt('session', 'canonical-id')).toBe(at);
   });
 
-  it('never moves a conversation DOWN Today for having been written in twice', () => {
+  it('carries the use count, not just the instant', () => {
+    // Three sends under the request UUID before the announce lands. The count
+    // is half of what ⌘K ranks by (P3.3), so a carry that moved only the
+    // timestamp would leave a conversation the operator used three times
+    // looking like one they had opened once — with the real count stranded on
+    // an id nothing reads.
+    const at = Date.now() - 5_000;
+    for (const n of [2, 1, 0]) {
+      useInteractionStore.getState().recordOpened('session', 'request-uuid', at - n);
+    }
+    expect(countOf('session', 'request-uuid')).toBe(3);
+
+    renderHook(() => useSessionRekeyRedirect('request-uuid', vi.fn()));
+    act(() => announceRekey('request-uuid', 'canonical-id'));
+
+    expect(countOf('session', 'canonical-id')).toBe(3);
+  });
+
+  it('takes the larger of every field, so a carry can never age or shrink a row', () => {
     const older = Date.now() - 10_000;
     const newer = Date.now() - 1_000;
     // The URL rekeyed, a second message was sent under the canonical id, and
-    // only then does the announce arrive. Overwriting with the retired record
-    // would age the row by nine seconds.
+    // only then does the announce arrive. `mergeUsage` max-takes both fields,
+    // so the newer instant survives — overwriting would age the row by nine
+    // seconds — and so does the larger count.
     useInteractionStore.getState().recordOpened('session', 'request-uuid', older);
+    useInteractionStore.getState().recordOpened('session', 'canonical-id', newer);
     useInteractionStore.getState().recordOpened('session', 'canonical-id', newer);
 
     renderHook(() => useSessionRekeyRedirect('request-uuid', vi.fn()));
     act(() => announceRekey('request-uuid', 'canonical-id'));
 
     expect(recordedAt('session', 'canonical-id')).toBe(newer);
+    expect(countOf('session', 'canonical-id')).toBe(2);
+  });
+
+  it('is idempotent — the same announce twice changes nothing', () => {
+    // Both rekey routes can fire for one session (the 202 and the announce),
+    // and two tabs can replay the same migration. `mergeUsage`'s max-take is
+    // what makes that converge instead of double-counting.
+    const at = Date.now() - 5_000;
+    useInteractionStore.getState().recordOpened('session', 'request-uuid', at);
+
+    renderHook(() => useSessionRekeyRedirect('request-uuid', vi.fn()));
+    act(() => announceRekey('request-uuid', 'canonical-id'));
+    const after = countOf('session', 'canonical-id');
+    act(() => announceRekey('request-uuid', 'canonical-id'));
+
+    expect(countOf('session', 'canonical-id')).toBe(after);
+    expect(recordedAt('session', 'canonical-id')).toBe(at);
   });
 
   it('invents nothing for a conversation that was never written in', () => {
