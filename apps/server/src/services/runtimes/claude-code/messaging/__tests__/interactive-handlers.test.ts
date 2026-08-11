@@ -509,14 +509,23 @@ describe('pending interaction snapshots', () => {
 
       await expect(result).resolves.toMatchObject({ behavior: 'deny' });
       expect(session.pendingInteractions.has('tool-timeout-1')).toBe(false);
+      // DOR-1158: a timeout also pushes an operator-facing notice, AFTER
+      // interaction_cancelled so the card's removal can't wipe it in the same
+      // frame (mirrors the phantom-notice ordering in message-sender.ts).
       expect(session.eventQueue.map((e) => e.type)).toEqual([
         'approval_required',
         'interaction_cancelled',
+        'system_status',
       ]);
       expect(session.eventQueue[1].data).toEqual({
         interactionId: 'tool-timeout-1',
         reason: 'timeout',
       });
+      const notice = session.eventQueue[2].data as { message: string };
+      expect(notice.message).toContain('Bash');
+      expect(notice.message).toContain('10 minutes');
+      // Never the tool's arguments — they can carry secrets.
+      expect(notice.message).not.toContain('ls');
     } finally {
       vi.useRealTimers();
     }
@@ -661,5 +670,228 @@ describe('pending interaction snapshots', () => {
       serverName: 'test-mcp',
       message: 'Please authenticate',
     });
+  });
+});
+
+/**
+ * DOR-1158. Before this, an expired interactive prompt left NO operator-visible
+ * trace: the card vanished (`interaction_cancelled`), the model was told "User
+ * did not respond", and a `warn`-level log nobody watches was the only record
+ * (see {@link logInteractionTimeout}'s TSDoc). Happened twice on 2026-08-11 with
+ * the operator active in another session — one was a $15-40 spend decision.
+ *
+ * TIMEOUT is the only trigger: a person resolving the prompt, or the SDK
+ * aborting it (steer/interrupt), is not a silence and gets no notice.
+ */
+describe('operator-facing timeout notice (DOR-1158)', () => {
+  it('names the question and says how long it waited, on question timeout', async () => {
+    vi.useFakeTimers();
+    try {
+      const session = makeBareSession();
+      const questions: QuestionItem[] = [
+        {
+          header: 'Bake-off',
+          question: 'Which model should win the bake-off — GPT-5 or Opus?',
+          multiSelect: false,
+          options: [{ label: 'GPT-5' }, { label: 'Opus' }],
+        },
+      ];
+
+      const result = handleAskUserQuestion(session, 'question-timeout-1', { questions });
+      vi.advanceTimersByTime(10 * 60 * 1000);
+      await result;
+
+      expect(session.eventQueue.map((e) => e.type)).toEqual([
+        'question_prompt',
+        'interaction_cancelled',
+        'system_status',
+      ]);
+      const notice = session.eventQueue[2].data as { message: string };
+      expect(notice.message).toContain('Which model should win the bake-off — GPT-5 or Opus?');
+      expect(notice.message).toContain('10 minutes');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('truncates a long question to roughly 120 characters in the notice', async () => {
+    vi.useFakeTimers();
+    try {
+      const session = makeBareSession();
+      const longQuestion =
+        'This is a deliberately long question that goes on and on well past the ' +
+        'usual length of a question, so the notice has to cut it down to keep ' +
+        'the operator-facing message readable instead of dumping the whole thing.';
+      const questions: QuestionItem[] = [
+        { header: 'Long', question: longQuestion, multiSelect: false, options: [] },
+      ];
+
+      const result = handleAskUserQuestion(session, 'question-timeout-long-1', { questions });
+      vi.advanceTimersByTime(10 * 60 * 1000);
+      await result;
+
+      const notice = session.eventQueue[2].data as { message: string };
+      expect(notice.message).not.toContain(longQuestion);
+      expect(notice.message).toContain(longQuestion.slice(0, 40));
+      // Budget is "roughly 120 chars" for the quoted snippet, not the whole
+      // message — assert the snippet itself stayed well short of the full text.
+      const quoted = notice.message.split('The question was: ')[1] ?? '';
+      expect(quoted.length).toBeLessThan(140);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('does NOT push a notice when a question is answered by a person, not a timeout', async () => {
+    const session = makeBareSession();
+    const questions: QuestionItem[] = [
+      { header: 'Pick', question: 'Which one?', multiSelect: false, options: [{ label: 'A' }] },
+    ];
+
+    const result = handleAskUserQuestion(session, 'question-resolved-1', { questions });
+    const pending = session.pendingInteractions.get('question-resolved-1');
+    if (pending?.type !== 'question') throw new Error('expected a pending question');
+    pending.resolve({ '0': 'A' });
+    await result;
+
+    expect(session.eventQueue.map((e) => e.type)).toEqual(['question_prompt']);
+  });
+
+  it('names the tool and says how long it waited, on approval timeout', async () => {
+    vi.useFakeTimers();
+    try {
+      const session = makeBareSession();
+      const context: ToolApprovalContext = {
+        signal: new AbortController().signal,
+        toolUseID: 'tool-timeout-notice-1',
+      };
+
+      const result = handleToolApproval(
+        session,
+        'tool-timeout-notice-1',
+        'Bash',
+        { command: 'rm -rf /secret-project' },
+        context
+      );
+      vi.advanceTimersByTime(10 * 60 * 1000);
+      await result;
+
+      const notice = session.eventQueue[2].data as { message: string };
+      expect(notice.message).toContain('Bash');
+      // Never the tool's arguments — they can carry secrets.
+      expect(notice.message).not.toContain('secret-project');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('prefers displayName over the raw tool name in the approval timeout notice', async () => {
+    vi.useFakeTimers();
+    try {
+      const session = makeBareSession();
+      const context: ToolApprovalContext = {
+        signal: new AbortController().signal,
+        toolUseID: 'tool-timeout-display-1',
+        displayName: 'Delete secret project',
+      };
+
+      const result = handleToolApproval(
+        session,
+        'tool-timeout-display-1',
+        'Bash',
+        { command: 'rm -rf /secret-project' },
+        context
+      );
+      vi.advanceTimersByTime(10 * 60 * 1000);
+      await result;
+
+      const notice = session.eventQueue[2].data as { message: string };
+      expect(notice.message).toContain('Delete secret project');
+      expect(notice.message).not.toContain('Bash');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('does NOT push a notice when an approval is resolved by a person, not a timeout', async () => {
+    const session = makeBareSession();
+    const context: ToolApprovalContext = {
+      signal: new AbortController().signal,
+      toolUseID: 'tool-resolved-notice-1',
+    };
+
+    const result = handleToolApproval(session, 'tool-resolved-notice-1', 'Bash', {}, context);
+    const pending = session.pendingInteractions.get('tool-resolved-notice-1');
+    if (pending?.type !== 'approval') throw new Error('expected a pending approval');
+    pending.resolve(true);
+    await result;
+
+    expect(session.eventQueue.map((e) => e.type)).toEqual(['approval_required']);
+  });
+
+  it('names the MCP server and says how long it waited, on elicitation timeout', async () => {
+    vi.useFakeTimers();
+    try {
+      const session = makeBareSession();
+      const request: ElicitationRequest = {
+        serverName: 'stripe-mcp',
+        message: 'Confirm the $15-40 charge for the bake-off',
+        mode: 'url',
+      } as ElicitationRequest;
+
+      const result = handleElicitation(session, request, new AbortController().signal);
+      vi.advanceTimersByTime(10 * 60 * 1000);
+      await result;
+
+      expect(session.eventQueue.map((e) => e.type)).toEqual([
+        'elicitation_prompt',
+        'interaction_cancelled',
+        'system_status',
+      ]);
+      const notice = session.eventQueue[2].data as { message: string };
+      expect(notice.message).toContain('stripe-mcp');
+      expect(notice.message).toContain('10 minutes');
+      // Never the elicitation's message body — it can carry sensitive detail.
+      expect(notice.message).not.toContain('$15-40');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('does NOT push a notice when an elicitation is resolved by a person, not a timeout', async () => {
+    const session = makeBareSession();
+    const request: ElicitationRequest = {
+      serverName: 'stripe-mcp',
+      message: 'Confirm the charge',
+      mode: 'url',
+      elicitationId: 'elicit-resolved-1',
+    };
+
+    const result = handleElicitation(session, request, new AbortController().signal);
+    const pending = session.pendingInteractions.get('elicit-resolved-1');
+    if (pending?.type !== 'elicitation') throw new Error('expected a pending elicitation');
+    pending.resolve({ action: 'accept', content: {} });
+    await result;
+
+    expect(session.eventQueue.map((e) => e.type)).toEqual(['elicitation_prompt']);
+  });
+
+  it('does NOT push a notice when an elicitation is aborted, not timed out', async () => {
+    const session = makeBareSession();
+    const abort = new AbortController();
+    const request: ElicitationRequest = {
+      serverName: 'stripe-mcp',
+      message: 'Confirm the charge',
+      mode: 'url',
+    } as ElicitationRequest;
+
+    const result = handleElicitation(session, request, abort.signal);
+    abort.abort();
+    await result;
+
+    expect(session.eventQueue.map((e) => e.type)).toEqual([
+      'elicitation_prompt',
+      'interaction_cancelled',
+    ]);
   });
 });

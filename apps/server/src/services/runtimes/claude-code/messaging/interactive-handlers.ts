@@ -390,6 +390,60 @@ function notifyInteractionCancelled(
 }
 
 /**
+ * How long an operator has to answer, in whole minutes — for prose that names
+ * the wait (e.g. "waited 10 minutes"), derived from the same constant the
+ * timeout itself uses so the two can never drift apart.
+ */
+const INTERACTION_TIMEOUT_MINUTES = Math.ceil(SESSIONS.INTERACTION_TIMEOUT_MS / 60_000);
+
+/** Shorten a snippet of user-facing prose to roughly `maxLength` characters. */
+function truncateForNotice(text: string, maxLength: number): string {
+  const trimmed = text.trim();
+  return trimmed.length > maxLength ? `${trimmed.slice(0, maxLength).trimEnd()}…` : trimmed;
+}
+
+/**
+ * Push a `system_status` StreamEvent telling the operator what expired
+ * unanswered — the trace {@link logInteractionTimeout}'s TSDoc says a warn-level
+ * log alone can't provide, since nobody watches the log while a session runs.
+ *
+ * **Timeout only.** A person resolving the prompt, or the SDK aborting it
+ * (steer/interrupt), isn't a silence and gets no notice — call this only from
+ * the `setTimeout` branch, never from `resolve`/`reject`/`onAbort`.
+ *
+ * **Ordering.** Always call this AFTER {@link notifyInteractionCancelled} for
+ * the same interaction: both land in the same `eventQueue` frame, and if the
+ * card's removal were pushed second it could be re-derived over this notice
+ * before a client ever sees it — the same hazard the phantom-cancellation
+ * notice in `message-sender.ts` documents for its own ordering.
+ *
+ * **No tool input.** `message` must be built from names and question text
+ * only — never a tool's raw arguments or an elicitation's request body, both
+ * of which can carry secrets.
+ */
+function notifyInteractionTimeoutNotice(session: InteractiveSession, message: string): void {
+  session.eventQueue.push({ type: 'system_status', data: { message } });
+  session.eventQueueNotify?.();
+}
+
+/** The operator-facing notice for an AskUserQuestion that timed out unanswered. */
+function questionTimeoutNotice(questions: QuestionItem[]): string {
+  const base = `I asked you something and waited ${INTERACTION_TIMEOUT_MINUTES} minutes with no answer, so I moved on.`;
+  const first = questions[0]?.question;
+  return first ? `${base} The question was: "${truncateForNotice(first, 120)}"` : base;
+}
+
+/** The operator-facing notice for a tool approval that timed out unanswered. */
+function approvalTimeoutNotice(toolLabel: string): string {
+  return `I asked to run ${toolLabel} and waited ${INTERACTION_TIMEOUT_MINUTES} minutes with no answer, so I treated it as declined.`;
+}
+
+/** The operator-facing notice for an MCP elicitation that timed out unanswered. */
+function elicitationTimeoutNotice(serverName: string): string {
+  return `${serverName} asked you something and I waited ${INTERACTION_TIMEOUT_MINUTES} minutes with no answer, so I declined on your behalf.`;
+}
+
+/**
  * Handle an AskUserQuestion tool call — pause, collect answers, inject into input.
  *
  * `signal` is the SDK's per-tool-call abort signal: a mid-turn steered message
@@ -429,6 +483,7 @@ export function handleAskUserQuestion(
       session.pendingInteractions.delete(toolUseId);
       logInteractionTimeout(session, { id: toolUseId, kind: 'question' });
       notifyInteractionCancelled(session, toolUseId, 'timeout');
+      notifyInteractionTimeoutNotice(session, questionTimeoutNotice(questions));
       resolve({ behavior: 'deny', message: 'User did not respond within 10 minutes' });
     }, SESSIONS.INTERACTION_TIMEOUT_MS);
 
@@ -508,6 +563,7 @@ export function handleElicitation(
       session.pendingInteractions.delete(interactionId);
       logInteractionTimeout(session, { id: interactionId, kind: 'elicitation' });
       notifyInteractionCancelled(session, interactionId, 'timeout');
+      notifyInteractionTimeoutNotice(session, elicitationTimeoutNotice(request.serverName));
       decline();
     }, SESSIONS.INTERACTION_TIMEOUT_MS);
 
@@ -728,6 +784,10 @@ export function handleToolApproval(
       session.pendingInteractions.delete(toolUseId);
       logInteractionTimeout(session, { id: toolUseId, kind: 'approval', toolName });
       notifyInteractionCancelled(session, toolUseId, 'timeout');
+      notifyInteractionTimeoutNotice(
+        session,
+        approvalTimeoutNotice(context.displayName ?? toolName)
+      );
       deny(`Tool approval timed out after ${timeoutMinutes} minutes`);
     }, SESSIONS.INTERACTION_TIMEOUT_MS);
 
