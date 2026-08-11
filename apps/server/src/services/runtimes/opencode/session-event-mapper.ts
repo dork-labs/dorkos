@@ -157,6 +157,24 @@ export const PermissionRepliedPropertiesSchema = z.object({
 /** Parsed `permission.replied` properties. */
 export type PermissionRepliedProperties = z.infer<typeof PermissionRepliedPropertiesSchema>;
 
+/**
+ * The slice of a turn's mapping context this module owns: every forwarded ask
+ * that has not been answered yet, and the OpenCode session each one must be
+ * ANSWERED in.
+ *
+ * The reply route is per-session (`POST /session/{id}/permissions/{id}`), and a
+ * subagent raises its prompts in its own CHILD session — so the turn's own
+ * `ses_*` id is the wrong target for those and the adapter has to be told which
+ * one asked (DOR-1126). Entries are dropped when the ask is answered
+ * (`permission.replied`) and swept at the turn terminal
+ * ({@link closeOpenPermissions}), so what is left is always exactly the set of
+ * live questions.
+ */
+export interface OpenCodePermissionState {
+  /** Permission id → the OpenCode session that raised it (the reply's target). */
+  readonly pendingPermissionSessions: Map<string, string>;
+}
+
 /** `permission.asked` as it rides the wire — absent from the SDK's Event union. */
 export interface EventPermissionAsked {
   type: 'permission.asked';
@@ -183,8 +201,18 @@ export interface EventPermissionReplied {
  * request it is handed.
  *
  * @param properties - Raw `permission.asked` properties off the wire
+ * @param state - The turn's permission bookkeeping (mutated: an ask that
+ *   becomes a card records the session its answer must be sent to)
+ * @param title - Header sentence for the card. The subagent path passes one so
+ *   the prompt says who is asking (DOR-1126); a session's own prompts pass
+ *   none, because 1.18.15 sends no prompt sentence and the card reads perfectly
+ *   well from the tool name and its input.
  */
-export function mapPermissionAsked(properties: unknown): StreamEvent[] {
+export function mapPermissionAsked(
+  properties: unknown,
+  state: OpenCodePermissionState,
+  title?: string
+): StreamEvent[] {
   const parsed = PermissionAskedPropertiesSchema.safeParse(properties);
   if (!parsed.success) {
     logger.warn('[OpenCode] unparseable permission.asked — dropped', {
@@ -192,7 +220,8 @@ export function mapPermissionAsked(properties: unknown): StreamEvent[] {
     });
     return [];
   }
-  const { id, permission, patterns, metadata } = parsed.data;
+  const { id, sessionID, permission, patterns, metadata } = parsed.data;
+  state.pendingPermissionSessions.set(id, sessionID);
   // An `edit` request names the file it wants to touch (`metadata.filepath`,
   // live-verified) — the one piece of metadata the approval card has a field for.
   const filepath = metadata['filepath'];
@@ -202,6 +231,7 @@ export function mapPermissionAsked(properties: unknown): StreamEvent[] {
       data: {
         toolCallId: id,
         toolName: permission,
+        ...(title !== undefined ? { title } : {}),
         input: JSON.stringify({ ...(patterns.length > 0 ? { patterns } : {}), ...metadata }),
         timeoutMs: SESSIONS.INTERACTION_TIMEOUT_MS,
         startedAt: Date.now(),
@@ -218,8 +248,13 @@ export function mapPermissionAsked(properties: unknown): StreamEvent[] {
  * an answerable card here.
  *
  * @param properties - Raw `permission.replied` properties off the wire
+ * @param state - The turn's permission bookkeeping (mutated: the answered ask
+ *   is no longer live, so the terminal sweep must not withdraw it a second time)
  */
-export function mapPermissionReplied(properties: unknown): StreamEvent[] {
+export function mapPermissionReplied(
+  properties: unknown,
+  state: OpenCodePermissionState
+): StreamEvent[] {
   const parsed = PermissionRepliedPropertiesSchema.safeParse(properties);
   if (!parsed.success) {
     logger.warn('[OpenCode] unparseable permission.replied — dropped', {
@@ -227,7 +262,36 @@ export function mapPermissionReplied(properties: unknown): StreamEvent[] {
     });
     return [];
   }
+  state.pendingPermissionSessions.delete(parsed.data.requestID);
   return [{ type: 'interaction_cancelled', data: { interactionId: parsed.data.requestID } }];
+}
+
+/**
+ * Withdraw every ask this turn raised and never saw answered, as the turn
+ * terminates. The turn mapper calls this ONLY on the authoritative terminal —
+ * the parent's `session.idle` — and yields the result before it, mirroring
+ * {@link closeOpenSubagents} in `subagent-mapper.ts`.
+ *
+ * A card outstanding here is a ghost, not a question: `session.idle` is
+ * published only once the runner has drained, so a live ask cannot coexist with
+ * it (a gated tool blocks its own session's loop, and a subagent's ask blocks
+ * the parent's `task` call in turn). What CAN reach here is an ask the user
+ * stopped the turn on — the abort kills the request upstream — or one that was
+ * answered so late its echo never landed. Either way the adapter has already
+ * dropped the pending record by the time the card would be clicked, so the
+ * answer would fail; saying "withdrawn" is the honest end.
+ *
+ * Only on `session.idle`, for the same reason `closeOpenSubagents` is: every
+ * other way a turn ends means DorkOS STOPPED WATCHING. There the ask may well
+ * still be live, and its auto-deny timer is the thing that should answer it.
+ *
+ * @param state - The turn's permission bookkeeping (drained)
+ */
+export function* closeOpenPermissions(state: OpenCodePermissionState): Generator<StreamEvent> {
+  for (const permissionId of state.pendingPermissionSessions.keys()) {
+    yield { type: 'interaction_cancelled', data: { interactionId: permissionId } };
+  }
+  state.pendingPermissionSessions.clear();
 }
 
 /**

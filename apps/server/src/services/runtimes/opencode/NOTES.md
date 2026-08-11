@@ -139,6 +139,30 @@ path: { id: sessionID, permissionID }, body: { response: "once" | "always" | "re
 - `permission.v2.asked` / `permission.v2.replied` exist in the OpenAPI document but did NOT fire in any
   observed turn — tool permissions came through the v1 pair every time. Nothing maps them.
 
+### Whose card owns a SUBAGENT's prompt (DOR-1126, live-verified 2026-08-11)
+
+A subagent's prompts are raised against its CHILD session, and the child path used to drop them: the
+card never appeared and the turn simply waited, because a gated tool blocks the child's loop and the
+child blocks the parent's `task` call behind it. **The parent session's prompt surface owns them.**
+
+Two consequences the mapping has to carry, neither of which needed a shared-schema change:
+
+- **The card says who is asking.** The approval's existing optional `title` becomes
+  `The <agent> subagent needs permission`, named from the `task` call's `subagent_type` (its
+  `description` as a fallback). A session's own prompts still send no title — 1.18.15 carries no prompt
+  sentence, and the card reads fine from the tool name and its input.
+- **The answer goes back to the CHILD session.** `POST /session/{id}/permissions/{permissionID}` is
+  per-session, so the turn's own `ses_*` is the wrong target. The mapper records permission id → asking
+  session (`pendingPermissionSessions` on the turn context) and the adapter answers there — for the
+  user's decision, for an auto-approve under `bypassPermissions`/`acceptEdits`, and for the auto-deny
+  timer alike.
+
+An ask still outstanding when the turn terminates is WITHDRAWN (`interaction_cancelled`, yielded before
+the terminal `done`, the same shape and the same `session.idle`-only rule as `closeOpenSubagents`).
+After the turn, `clearSession` has already dropped the pending record, so the card could not be
+answered anyway; on the stop path the request is dead upstream. This applies to a session's own prompts
+too — a turn cannot reach `session.idle` with a live ask, so the only things it retires are ghosts.
+
 ### OpenCode's permission config model (not modes!)
 
 OpenCode has **no session permission mode**. It has a declarative ruleset (`opencode.json` `permission`
@@ -420,14 +444,22 @@ sends directly) does the same thing: it synthesizes a `tool: "task"` part with
 
 Worth stating precisely, because the first cut of this mapping got it wrong: it anchored on
 `"Cancelled"`, which is the ONE shape DorkOS cannot reach, so an ordinary user stop rendered the
-subagent as a failure. Four distinct shapes land in `state.error`:
+subagent as a failure. Five distinct shapes land in `state.error`:
 
 | Producer                             | `state.error`                           | Reachable from DorkOS?          |
 | ------------------------------------ | --------------------------------------- | ------------------------------- |
 | `SessionProcessor.cleanup` (abort)   | `Tool execution aborted`                | **yes — the user-stop path**    |
 | `SessionRunner.failUnsettledTools`   | `Tool execution interrupted`            | yes                             |
-| TaskTool's `Error("Task cancelled")` | `Tool execution failed: Task cancelled` | yes (the runner wraps it)       |
+| TaskTool's `Error("Task cancelled")` | `Tool execution failed: Task cancelled` | yes (when the runner wraps it)  |
+| the same throw, UNWRAPPED            | `Task cancelled`                        | **yes — live-captured**         |
 | `handleSubtask` `onInterrupt`        | `Cancelled`                             | no — needs a `SubtaskPartInput` |
+
+The fourth row was read off the binary as unreachable ("the runner wraps it") and is not: stopping a
+turn while the subagent is HOLDING A PERMISSION produces the bare `Task cancelled`, with no
+`interrupted` flag anywhere on the part, because the task tool settles its own part before the runner
+gets to it (`fixtures/live-child-permission-stop.jsonl`, 2026-08-11, DOR-1126). Until the pattern
+learned that shape, the most ordinary stop there is — you stop a turn parked on a question — reported
+the subagent as `failed`.
 
 The abort path also stamps `metadata: {...previous, interrupted: true}` onto the part, and that flag
 is the STRUCTURAL signal — it is what upstream's own renderer keys on:
@@ -451,6 +483,7 @@ text), which is why a stop reads as `stopped` rather than `failed` even if the w
 | `task` tool part reaches `running`        | `background_task_started` (`taskId` = `callID`, `taskType: 'agent'`, `description`)           |
 | its `state.metadata.sessionId` appears    | child session admitted to the demux; id attached as `subagentSessionId`                       |
 | a tool part in the CHILD session          | `background_task_progress` (`toolUses` = distinct child callIDs, `lastToolName`)              |
+| a `permission.asked` in the CHILD session | `approval_required` on the PARENT session, titled for the subagent (§2, DOR-1126)             |
 | `task` part reaches `completed` / `error` | `background_task_done` (`completed`; `stopped` for the four stop shapes above, else `failed`) |
 
 The session normalizer turns those three into `subagent_update`, which is what feeds
@@ -460,9 +493,10 @@ keeps its ordinary tool card, exactly as claude-code renders a `Task` tool call 
 background-task card.
 
 Child sessions are admitted by `matchesOpenCodeSubagentSession` and routed away from the parent
-mapping entirely: only their tool parts are read, and their text, todos, permissions and
-`session.idle` are dropped. That last one matters — an admitted child `session.idle` reaching the
-parent mapper would end the parent's turn early.
+mapping entirely: their tool parts become progress beats, their permission prompts become approval
+cards on the PARENT session (§2, DOR-1126), and their text, todos and `session.idle` are dropped.
+That last one matters — an admitted child `session.idle` reaching the parent mapper would end the
+parent's turn early.
 
 A `sessionId` that names the PARENT is refused outright (`readSubagentChildSessionId`), checked
 against both `part.sessionID` — the structural truth, since a `task` part always lives in the
@@ -476,9 +510,11 @@ The mapping was originally scripted from the compiled binary because no provider
 here. It has since been driven end to end against a **local Ollama** model (the provider injected
 into the sidecar through `OPENCODE_CONFIG_CONTENT`; parent `qwen2.5-coder:7b`, subagent
 `gemma4:latest`), capturing the raw `/global/event` stream through a full delegation, a delegation
-whose child ran its own tools, and a user stop. Three captures are committed verbatim as
+whose child ran its own tools, and a user stop. Five captures are committed verbatim as
 `__tests__/fixtures/live-*.jsonl` and replayed through the real mapper by
-`__tests__/live-capture-replay.test.ts`.
+`__tests__/live-capture-replay.test.ts` — the last two (`live-child-permission*.jsonl`, DOR-1126)
+were driven through the REAL `OpenCodeRuntime` rather than raw HTTP, so the answer they carry is the
+one `approveTool()` actually sent.
 
 Every wire shape claimed above was confirmed: the `task` part's `pending → running → completed/error`
 progression, `state.metadata.{parentSessionId, sessionId, model}`, the child session created with
@@ -500,9 +536,9 @@ own tool parts arriving in its own session. Two details the binary read did not 
   unaffected: they ride the parent session, which is always admitted.
 - **No `summary` on the terminal.** The task tool's output is the `<task …><task_result>` envelope,
   not a short summary; forwarding it verbatim would put a wall of text where claude-code puts a line.
-- **A subagent's own permission prompts are still invisible.** They are raised against the child
-  session, and the child path drops them. Pre-existing (the child session was dropped entirely
-  before this change); surfacing them is a separate decision about whose card owns the prompt.
+- **A subagent's prompts reach the operator only while the run is open.** They ride the parent's card
+  (§2, DOR-1126); an ask arriving after the `task` part has reported its terminal is dropped, because
+  a card for a finished subagent is one nobody can act on.
 
 ### A stopped subagent's terminal arrives AFTER the turn's (DOR-1146)
 

@@ -41,9 +41,11 @@
  * PARENT session plus the events of the CHILD session it creates (NOTES.md §7).
  * This module admits the child session through
  * {@link matchesOpenCodeSubagentSession} and routes its events away from the
- * parent mapping entirely — only its tool calls are reported, on the parent's
- * background-task card. Child text, todos and terminals are deliberately
- * dropped: only the parent session may write the transcript or end the turn.
+ * parent mapping entirely — its tool calls are reported on the parent's
+ * background-task card, and its permission prompts on the parent's prompt
+ * surface, named for the subagent that raised them (DOR-1126). Child text,
+ * todos and terminals are deliberately dropped: only the parent session may
+ * write the transcript or end the turn.
  *
  * @module services/runtimes/opencode/event-mapper
  */
@@ -56,6 +58,7 @@ import {
   type OpenCodePartState,
 } from './part-event-mapper.js';
 import {
+  closeOpenPermissions,
   mapMessageUpdated,
   mapPermissionAsked,
   mapPermissionReplied,
@@ -64,8 +67,14 @@ import {
   mapTodos,
   type EventPermissionAsked,
   type EventPermissionReplied,
+  type OpenCodePermissionState,
 } from './session-event-mapper.js';
-import { closeOpenSubagents, mapSubagentChildToolPart } from './subagent-mapper.js';
+import {
+  closeOpenSubagents,
+  isSubagentRunning,
+  mapSubagentChildToolPart,
+  subagentPromptTitle,
+} from './subagent-mapper.js';
 
 /**
  * Everything the wire can carry: the SDK union, minus the two permission
@@ -88,7 +97,7 @@ export type OpenCodeWireEvent =
  * per-shape bookkeeping (delta baselines, tool guards, subagent runs) is
  * declared by the sibling modules that own it.
  */
-export interface OpenCodeEventContext extends OpenCodePartState {
+export interface OpenCodeEventContext extends OpenCodePartState, OpenCodePermissionState {
   /**
    * DORKOS session id stamped onto done/session_status events. NOT the
    * OpenCode `ses_*` id — the demux filter matches on that one; the caller
@@ -112,6 +121,7 @@ export function createOpenCodeEventContext(sessionId: string): OpenCodeEventCont
     endedToolCallIds: new Set(),
     subagentRuns: new Map(),
     subagentTaskIdBySession: new Map(),
+    pendingPermissionSessions: new Map(),
   };
 }
 
@@ -232,11 +242,11 @@ export function mapOpenCodeEvent(
     case 'message.updated':
       return mapMessageUpdated(event.properties.info, ctx.sessionId);
     case 'permission.asked':
-      return mapPermissionAsked(event.properties);
+      return mapPermissionAsked(event.properties, ctx);
     case 'permission.replied':
       // Resolution echo (possibly from another client, e.g. the TUI) — clear
       // the pending approval card instead of leaving an answerable ghost.
-      return mapPermissionReplied(event.properties);
+      return mapPermissionReplied(event.properties, ctx);
     case 'session.status':
       return mapSessionStatus(event.properties.status);
     case 'session.idle':
@@ -288,6 +298,7 @@ export async function* mapOpenCodeTurn(
     for await (const event of events) {
       for (const mapped of mapOpenCodeEvent(event, ctx)) {
         if (mapped.type === 'done') {
+          yield* closeOpenPermissions(ctx);
           yield* closeOpenSubagents(ctx);
           yield mapped;
           return;
@@ -327,21 +338,41 @@ function resolveSubagentTaskId(
 }
 
 /**
- * Map one event from a subagent's child session onto its parent task card. Only
- * the child's tool calls are reported; everything else it emits (text,
- * reasoning, todos, permissions, its own terminal) is dropped here — the child
- * is not the turn, and its `session.idle` must never be mistaken for the
- * parent's.
+ * Map one event from a subagent's child session onto its parent's surfaces:
+ * its tool calls become progress beats on the parent's task card, and its
+ * PERMISSION PROMPTS become approval cards on the parent session, labelled with
+ * the subagent's name (DOR-1126) — the parent's prompt surface owns them
+ * because the child session has none of its own.
+ *
+ * Everything else the child emits (text, reasoning, todos, its own terminal) is
+ * dropped: the child is not the turn, and its `session.idle` must never be
+ * mistaken for the parent's.
+ *
+ * A run that already reported its terminal reports nothing more. A prompt from
+ * a finished subagent would be a card nobody can act on, exactly as a late tool
+ * part would be a beat on a card that has settled.
  */
 function mapSubagentChildEvent(
   event: OpenCodeWireEvent,
   taskId: string,
   ctx: OpenCodeEventContext
 ): StreamEvent[] {
-  if (event.type !== 'message.part.updated') return [];
-  const part = event.properties.part;
-  if (part.type !== 'tool') return [];
-  return mapSubagentChildToolPart(part, taskId, ctx);
+  switch (event.type) {
+    case 'permission.asked':
+      if (!isSubagentRunning(ctx, taskId)) return [];
+      return mapPermissionAsked(event.properties, ctx, subagentPromptTitle(ctx, taskId));
+    case 'permission.replied':
+      // The child's own resolution echo — its card lives on the parent session,
+      // so it is cleared exactly like one the parent raised.
+      return mapPermissionReplied(event.properties, ctx);
+    case 'message.part.updated': {
+      const part = event.properties.part;
+      if (part.type !== 'tool') return [];
+      return mapSubagentChildToolPart(part, taskId, ctx);
+    }
+    default:
+      return [];
+  }
 }
 
 /** True when the thrown value is an AbortError (subscription teardown). */

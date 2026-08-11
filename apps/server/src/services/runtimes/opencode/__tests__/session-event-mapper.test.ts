@@ -1,5 +1,9 @@
 import { describe, it, expect, vi } from 'vitest';
-import { mapPermissionAsked, mapPermissionReplied } from '../session-event-mapper.js';
+import {
+  mapPermissionAsked,
+  mapPermissionReplied,
+  type OpenCodePermissionState,
+} from '../session-event-mapper.js';
 import { mapOpenCodeEvent, createOpenCodeEventContext } from '../event-mapper.js';
 import { SESSIONS } from '../../../../config/constants.js';
 import type { ApprovalEvent } from '@dorkos/shared/types';
@@ -17,6 +21,14 @@ vi.mock('../../../../lib/logger.js', () => ({
  * server has never emitted, which is exactly how DOR-1147 shipped a permission
  * path that could not fire.
  */
+/**
+ * A fresh turn's permission bookkeeping. The mapper records which session each
+ * ask must be ANSWERED in here, so every call needs one (DOR-1126).
+ */
+function permissions(): OpenCodePermissionState {
+  return { pendingPermissionSessions: new Map() };
+}
+
 const LIVE_BASH_ASKED = {
   id: 'per_ff0006910001mhtgQCU3N0PfUD',
   sessionID: 'ses_00fffd9b4ffew6F2oOAAHyfTnv',
@@ -45,7 +57,7 @@ const LIVE_REPLIED = {
 
 describe('permission.asked → approval_required', () => {
   it('maps the live bash payload to an approval keyed by the permission id', () => {
-    const [event, ...rest] = mapPermissionAsked(LIVE_BASH_ASKED);
+    const [event, ...rest] = mapPermissionAsked(LIVE_BASH_ASKED, permissions());
     expect(rest).toEqual([]);
     expect(event?.type).toBe('approval_required');
     const data = event?.data as ApprovalEvent;
@@ -61,7 +73,7 @@ describe('permission.asked → approval_required', () => {
   });
 
   it('surfaces the file an edit request wants to touch', () => {
-    const [event] = mapPermissionAsked(LIVE_EDIT_ASKED);
+    const [event] = mapPermissionAsked(LIVE_EDIT_ASKED, permissions());
     const data = event?.data as ApprovalEvent;
     // `edit` is the exact permission key `acceptEdits` auto-approves on.
     expect(data.toolName).toBe('edit');
@@ -69,12 +81,15 @@ describe('permission.asked → approval_required', () => {
   });
 
   it('drops a payload missing a field the approval depends on', () => {
-    expect(mapPermissionAsked({ sessionID: 'ses_1', permission: 'bash' })).toEqual([]);
-    expect(mapPermissionAsked(undefined)).toEqual([]);
+    expect(mapPermissionAsked({ sessionID: 'ses_1', permission: 'bash' }, permissions())).toEqual([]);
+    expect(mapPermissionAsked(undefined, permissions())).toEqual([]);
   });
 
   it('tolerates a request the sidecar sends with no patterns or metadata', () => {
-    const [event] = mapPermissionAsked({ id: 'per_1', sessionID: 'ses_1', permission: 'webfetch' });
+    const [event] = mapPermissionAsked(
+      { id: 'per_1', sessionID: 'ses_1', permission: 'webfetch' },
+      permissions()
+    );
     const data = event?.data as ApprovalEvent;
     expect(data.input).toBe('{}');
   });
@@ -82,7 +97,7 @@ describe('permission.asked → approval_required', () => {
 
 describe('permission.replied → interaction_cancelled', () => {
   it('reads the id off the live field name', () => {
-    expect(mapPermissionReplied(LIVE_REPLIED)).toEqual([
+    expect(mapPermissionReplied(LIVE_REPLIED, permissions())).toEqual([
       { type: 'interaction_cancelled', data: { interactionId: 'per_ff0006910001mhtgQCU3N0PfUD' } },
     ]);
   });
@@ -91,7 +106,10 @@ describe('permission.replied → interaction_cancelled', () => {
     // The SDK's stale declaration spells these `permissionID`/`response`; an
     // echo in that shape names no request and must not be acted on.
     expect(
-      mapPermissionReplied({ sessionID: 'ses_1', permissionID: 'per_1', response: 'once' })
+      mapPermissionReplied(
+        { sessionID: 'ses_1', permissionID: 'per_1', response: 'once' },
+        permissions()
+      )
     ).toEqual([]);
   });
 });

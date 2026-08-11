@@ -76,7 +76,7 @@ import {
   matchesOpenCodeSubagentSession,
   type OpenCodeWireEvent,
 } from './event-mapper.js';
-import { mapOpenCodeTodos } from './session-event-mapper.js';
+import { mapOpenCodeTodos, type OpenCodePermissionState } from './session-event-mapper.js';
 import {
   OpenCodeSessionMapper,
   unwrap,
@@ -111,6 +111,21 @@ export interface OpenCodeRuntimeOptions {
 interface ActiveTurn {
   ocSessionId: string;
   cwd: string;
+}
+
+/**
+ * Everything one turn needs to enforce and answer its permission requests.
+ *
+ * `ocSessionId` is the turn's own OpenCode session; `permissions` is where the
+ * mapper recorded which session each individual ask came from, because a
+ * subagent raises its prompts in its own CHILD session and only that session
+ * can take the answer (DOR-1126).
+ */
+interface ApprovalRouting {
+  sessionId: string;
+  ocSessionId: string;
+  cwd: string;
+  permissions: OpenCodePermissionState;
 }
 
 /** Sleep helper for the stream-liveness race. */
@@ -372,8 +387,9 @@ export class OpenCodeRuntime implements AgentRuntime {
 
       await trigger(client, ocSessionId);
 
+      const routing: ApprovalRouting = { sessionId, ocSessionId, cwd, permissions: ctx };
       for await (const event of mapOpenCodeTurn(queue, ctx)) {
-        yield* this.enforceApprovals(sessionId, ocSessionId, cwd, event);
+        yield* this.enforceApprovals(routing, event);
       }
     } finally {
       subscription.unsubscribe();
@@ -430,13 +446,19 @@ export class OpenCodeRuntime implements AgentRuntime {
    * pending record so the timer cannot deny an already-answered request.
    * The mode is read live from the registry so a mid-turn PATCH applies to
    * the very next request.
+   *
+   * Every answer — auto-approve, auto-deny, and the record `approveTool()`
+   * later resolves — is addressed to the session that ASKED, which for a
+   * subagent's prompt is its child session rather than the turn's (DOR-1126).
+   *
+   * @param turn - The turn's approval routing (see {@link ApprovalRouting})
+   * @param event - One mapped StreamEvent from this turn
    */
   private async *enforceApprovals(
-    sessionId: string,
-    ocSessionId: string,
-    cwd: string,
+    turn: ApprovalRouting,
     event: StreamEvent
   ): AsyncGenerator<StreamEvent> {
+    const { sessionId, cwd } = turn;
     if (event.type === 'approval_required') {
       // StreamEvent's `type`/`data` are not a discriminated pair; the mapper
       // guarantees an ApprovalEvent body under this type.
@@ -458,10 +480,18 @@ export class OpenCodeRuntime implements AgentRuntime {
       // no equivalent server-side check — it trusts the CLIENT's own picker to
       // offer only declared ids, a materially weaker guarantee than the HTTP
       // route's.
+
+      // The session that raised THIS ask. A subagent's prompt belongs to its
+      // child session, and `POST /session/{id}/permissions/{permissionID}` is
+      // per-session — the turn's own id would not find it. The fallback keeps a
+      // request the mapper never recorded (a recovery path, a shape change)
+      // answerable on the turn's own session rather than dropping it.
+      const askedIn =
+        turn.permissions.pendingPermissionSessions.get(approval.toolCallId) ?? turn.ocSessionId;
       const mode = this.registry.get(sessionId)?.permissionMode as PermissionMode | undefined;
       if (resolveApprovalDecision(mode, approval.toolName) === 'auto-approve') {
         try {
-          await this.respondPermission(ocSessionId, cwd, approval.toolCallId, 'once');
+          await this.respondPermission(askedIn, cwd, approval.toolCallId, 'once');
           return; // Auto-answered — never surfaces as a card.
         } catch (err) {
           // Degrade safely: a failed auto-approve falls back to asking the
@@ -472,8 +502,8 @@ export class OpenCodeRuntime implements AgentRuntime {
           );
         }
       }
-      this.approvals.register(sessionId, approval.toolCallId, { ocSessionId, cwd }, () => {
-        void this.respondPermission(ocSessionId, cwd, approval.toolCallId, 'reject').catch(
+      this.approvals.register(sessionId, approval.toolCallId, { ocSessionId: askedIn, cwd }, () => {
+        void this.respondPermission(askedIn, cwd, approval.toolCallId, 'reject').catch(
           (err: unknown) =>
             logger.warn('[OpenCodeRuntime] approval auto-deny failed', logError(err))
         );
