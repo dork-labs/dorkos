@@ -880,7 +880,7 @@ test.describe('the chat composer with formatting on', () => {
 // worker rather than beside it. See the module header for the full argument.
 registerSessionReadStateTests({ apiUrl: API_URL, agentDir: () => agentDir });
 
-// The sidebar's Now zone surviving a page load (DOR-1136). Registered here for
+// The sidebar's Heads up zone surviving a page load (DOR-1136). Registered here for
 // the same reason as the suite above — it needs the `error` scenario, which only
 // this leg has — and because the defect is about what a FRESH page connection is
 // told, which no unit test can observe.

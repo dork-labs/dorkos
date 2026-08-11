@@ -1,5 +1,5 @@
 /**
- * What is allowed into Now — four things, and the model has no branch that can
+ * What is allowed into Heads up — four things, and the model has no branch that can
  * add a fifth (BC-5).
  *
  * @module features/dashboard-sidebar/model/rules/select-now-items
@@ -9,11 +9,11 @@ import type { SidebarState } from '../sidebar-state';
 import { rowKey } from './targets';
 
 /**
- * The only four blockages that may enter Now.
+ * The only four blockages that may enter Heads up.
  *
  * **An allowlist, not a filter on an exclusion list.** Mentions, DMs, unread
  * channels, automated-session activity and update-ready notices are kept out by
- * construction rather than by a rule somebody could relax: diluting Now with
+ * construction rather than by a rule somebody could relax: diluting Heads up with
  * social signals is how a person learns to ignore it (design-decisions §18).
  */
 const NOW_KINDS: readonly NowKind[] = ['permission-prompt', 'question', 'error', 'idle-timeout'];
@@ -35,7 +35,7 @@ const NOW_STATUS = {
 } as const;
 
 /**
- * The rows Now would show if it had no cap — one per thing that needs the
+ * The rows Heads up would show if it had no cap — one per thing that needs the
  * operator, in the order the signals arrived.
  *
  * Every row here has `target.kind === 'attention'`, which is what makes BC-21

@@ -1,5 +1,5 @@
 /**
- * Dashboard sidebar feature — Now, Today and Library, drawn from one pure
+ * Dashboard sidebar feature — Heads up, Today and Library, drawn from one pure
  * model (`model/build-sidebar-model.ts`).
  *
  * Only symbols consumed outside the feature are exported here; the zone

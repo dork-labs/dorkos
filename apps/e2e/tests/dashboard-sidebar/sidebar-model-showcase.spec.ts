@@ -39,9 +39,9 @@ const AXE_CONTEXT = '[data-slot="page-container"]';
  * expectation off the thing it is testing cannot fail. These are the four
  * journeys' answers as `buildSidebarModel` computes them:
  *
- * - `first-run` — Getting started occupies Now's slot, and Today is **absent**
+ * - `first-run` — Getting started occupies Heads up's slot, and Today is **absent**
  *   because nothing has happened yet. BC-1 and BC-4 in one row.
- * - `quiet` — no Now zone AT ALL. The calm signal is the absence of a box, not
+ * - `quiet` — no Heads up zone AT ALL. The calm signal is the absence of a box, not
  *   an empty one.
  * - `busy` / `power` — the full three.
  */
@@ -53,7 +53,7 @@ const EXPECTED_ZONES: Record<string, string[]> = {
 };
 
 /**
- * How many attention rows each journey's Now zone holds, and whether it
+ * How many attention rows each journey's Heads up zone holds, and whether it
  * overflows.
  *
  * **`busy` does not overflow, and that is the point of having both.** It raises
@@ -64,7 +64,7 @@ const EXPECTED_ZONES: Record<string, string[]> = {
  * otherwise, and the model is what this asserts.)
  */
 const EXPECTED_NOW: Record<string, { attention: number; overflow: string | null } | null> = {
-  // No Now zone at all — the row exists so that adding a fifth journey without
+  // No Heads up zone at all — the row exists so that adding a fifth journey without
   // an entry here throws rather than being silently skipped, which is what
   // `Object.entries` over a partial table used to do.
   'first-run': null,
@@ -306,7 +306,7 @@ test.describe('Sidebar model showcase @smoke', () => {
    * It grows with the page, which is the point: `expectPageFitsViewport` reds
    * the moment a new showcase pushes the column past it, and the fix is this
    * number rather than a looser threshold. Raised for the Today states panel
-   * (P2.3), which added four more 272px panels below Now's four.
+   * (P2.3), which added four more 272px panels below Heads up's four.
    */
   test.use({ viewport: { width: 1600, height: 8800 } });
 
@@ -349,7 +349,7 @@ test.describe('Sidebar model showcase @smoke', () => {
 
       // Named separately from the ordered list above, because "absent" is the
       // assertion this phase keeps having to defend: a zone with nothing in it
-      // disappears entirely rather than rendering an empty card (BC-1). Now and
+      // disappears entirely rather than rendering an empty card (BC-1). Heads up and
       // the day-one zone also share one slot, so no journey may show both.
       if (!EXPECTED_ZONES[fixture].includes('now')) {
         await expect(panel.locator('[data-zone="now"]')).toHaveCount(0);
@@ -360,24 +360,26 @@ test.describe('Sidebar model showcase @smoke', () => {
     }
   });
 
-  test('caps Now at three, and overflows only when there is more than three', async ({ page }) => {
+  test('caps Heads up at three, and overflows only when there is more than three', async ({
+    page,
+  }) => {
     await openShowcase(page);
 
     // Driven off FIXTURES, not off EXPECTED_NOW's own keys: a fifth journey with
-    // a Now zone and no entry in the table must throw here rather than be
+    // a Heads up zone and no entry in the table must throw here rather than be
     // skipped by a loop that only ever visits what somebody remembered to write.
     for (const fixture of FIXTURES) {
       const expected = EXPECTED_NOW[fixture];
       expect(
         expected,
-        `${fixture} has no EXPECTED_NOW entry — add one, using null if it draws no Now zone`
+        `${fixture} has no EXPECTED_NOW entry — add one, using null if it draws no Heads up zone`
       ).not.toBeUndefined();
 
       const now = page.locator(
         `[data-slot="sidebar-model-panel"][data-fixture="${fixture}"] [data-zone="now"]`
       );
       if (expected === null) {
-        await expect(now, `${fixture} drew a Now zone it has nothing for`).toHaveCount(0);
+        await expect(now, `${fixture} drew a Heads up zone it has nothing for`).toHaveCount(0);
         continue;
       }
 
@@ -409,11 +411,11 @@ test.describe('Sidebar model showcase @smoke', () => {
     }
   });
 
-  test('never lets Now scroll — five rows is its ceiling (BC-8)', async ({ page }) => {
+  test('never lets Heads up scroll — five rows is its ceiling (BC-8)', async ({ page }) => {
     await openShowcase(page);
 
     // `power` is the worst case the fixtures hold: seven things waiting and six
-    // sessions working, so Now draws its maximum — three attention rows, an
+    // sessions working, so Heads up draws its maximum — three attention rows, an
     // overflow row and the working rollup.
     const now = page.locator(
       '[data-slot="sidebar-model-panel"][data-fixture="power"] [data-zone="now"]'
@@ -424,7 +426,7 @@ test.describe('Sidebar model showcase @smoke', () => {
     // heights, so this assertion is vacuous there and is deliberately here
     // instead: a zone that had grown a scroller would report an overflow.
     const overflow = await now.evaluate((zone) => zone.scrollHeight - zone.clientHeight);
-    expect(overflow, 'the Now zone grew a scroller — it must never scroll').toBe(0);
+    expect(overflow, 'the Heads up zone grew a scroller — it must never scroll').toBe(0);
 
     // And the measurement is live: the same reading over a box that IS
     // scrollable comes back non-zero, so a zero above means "does not scroll"
@@ -441,7 +443,7 @@ test.describe('Sidebar model showcase @smoke', () => {
     expect(proof).toBeGreaterThan(0);
   });
 
-  test('draws Now’s four states, and the beat, on the same page', async ({ page }) => {
+  test('draws Heads up’s four states, and the beat, on the same page', async ({ page }) => {
     await openShowcase(page);
 
     // The states a reviewer cannot catch in the running app: empty, one signal,
@@ -491,7 +493,7 @@ test.describe('Sidebar model showcase @smoke', () => {
       );
       expect(rowsWithoutReason, `${fixture} drew a row that does not say why`).toEqual([]);
 
-      // Zones and sections carry one too, including the headerless bodies Now
+      // Zones and sections carry one too, including the headerless bodies Heads up
       // and Today draw — those used to render no chip at all, so their reasons
       // were never format-checked by the loop below.
       const zones = await panel.locator('[data-slot="sidebar-model-zone"]').count();

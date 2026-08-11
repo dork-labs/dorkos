@@ -4,7 +4,7 @@
     "sidebar-model-showcase": {
       "specFile": "tests/dashboard-sidebar/sidebar-model-showcase.spec.ts",
       "feature": "dashboard-sidebar",
-      "description": "renders all four journeys, and asks the server for nothing, draws the zones each journey earns, and never an empty box, caps Now at three, and overflows only when there is more than three, says why every row it drew is there, meets 4.5:1 on the zone tint in the light theme, meets 4.5:1 on the zone tint in the dark theme",
+      "description": "renders all four journeys, and asks the server for nothing, draws the zones each journey earns, and never an empty box, caps Heads up at three, and overflows only when there is more than three, says why every row it drew is there, meets 4.5:1 on the zone tint in the light theme, meets 4.5:1 on the zone tint in the dark theme",
       "lastRun": "2026-08-10T00:43:42.662Z",
       "lastStatus": "passed",
       "runCount": 1,
@@ -577,7 +577,7 @@
     "now-survives-reload": {
       "specFile": "tests/dashboard-sidebar/now-survives-reload.ts",
       "feature": "dashboard-sidebar",
-      "description": "an errored session is still in Now after a reload, a session waiting on a permission answer is still in Now after a reload, the Ask DorkBot seed still names the errored session after a reload",
+      "description": "an errored session is still in Heads up after a reload, a session waiting on a permission answer is still in Heads up after a reload, the Ask DorkBot seed still names the errored session after a reload",
       "lastRun": "2026-08-11T04:00:18.244Z",
       "lastStatus": "passed",
       "runCount": 1,

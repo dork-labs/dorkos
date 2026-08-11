@@ -73,7 +73,7 @@ function validateListEvent(event: SessionListEvent): SessionListEvent | undefine
  * store prunes it on arrival anyway. `interrupted` is pruned by the same rule:
  * it settles a turn, and a settled turn is not something waiting on anybody.
  * What remains is the three states an operator can act on, and the three the
- * sidebar's Now zone is built from: work in flight, work waiting on a person,
+ * sidebar's Heads up zone is built from: work in flight, work waiting on a person,
  * and work that stopped badly.
  */
 const SNAPSHOT_LIFECYCLES: ReadonlySet<SessionLifecycle> = new Set<SessionLifecycle>([
@@ -92,7 +92,7 @@ const SNAPSHOT_LIFECYCLES: ReadonlySet<SessionLifecycle> = new Set<SessionLifecy
  * `connected` and then relays only what happens NEXT. That is complete for a
  * client that was attached when each transition fired and empty for one that
  * was not, so every page load forgot every session that had already errored or
- * already blocked. The sidebar's Now zone reads exactly those lifecycles, so
+ * already blocked. The sidebar's Heads up zone reads exactly those lifecycles, so
  * "open the app with something waiting" showed nothing at all until the session
  * moved again — which, for a session that has stopped, is never (DOR-1136).
  *

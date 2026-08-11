@@ -81,7 +81,7 @@ export interface AgentRosterEntry {
 export interface SidebarAttentionSignal {
   /** Stable id of the blockage — a permission request id, an episode id. */
   id: string;
-  /** Which of the four blockages this is. Drives Now's priority order (BC-6). */
+  /** Which of the four blockages this is. Drives Heads up's priority order (BC-6). */
   kind: NowKind;
   /** Who needs you — the agent's display name, or the room's. */
   primary: string;
@@ -175,7 +175,7 @@ export interface SidebarState {
    * session is. `sessions` is the last-ten REST window and is up to thirty
    * seconds behind, so a turn that started just now has no record there at all:
    * for that window every agent row read `idle`, every folded section rolled up
-   * a zero, and Now said "1 working" beside them (DOR-1137).
+   * a zero, and Heads up said "1 working" beside them (DOR-1137).
    *
    * Straight from the session-list store's `statusCwds`, which the runtime fills
    * from the same status event that made the session live, and which is pruned
@@ -196,7 +196,7 @@ export interface SidebarState {
   agents: readonly AgentRosterEntry[];
   /** Agent path → the disambiguated name to print. */
   displayNames: Readonly<Record<string, string>>;
-  /** What needs the operator. The only source Now draws from (BC-5). */
+  /** What needs the operator. The only source Heads up draws from (BC-5). */
   attention: readonly SidebarAttentionSignal[];
   /**
    * The shipped "Jump back in" model.

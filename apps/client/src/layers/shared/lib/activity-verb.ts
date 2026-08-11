@@ -49,7 +49,7 @@ export const WAITING_ON_YOU_VERB = 'waiting on you';
  *    that ended is the churn this whole architecture exists to prevent.
  *
  * **`error` deliberately returns `null` rather than a verb.** A wedged session
- * is a Now item — it needs a person, and Now is where things that need a person
+ * is a Heads up item — it needs a person, and Heads up is where things that need a person
  * live (BC-5). Spending the row's second line on it would say the same thing
  * twice, in the weaker of the two places.
  *

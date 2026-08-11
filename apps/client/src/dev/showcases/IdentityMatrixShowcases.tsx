@@ -183,7 +183,7 @@ export function IdentityShapeMatrixShowcase() {
             it is the one mark on the disc that is not aria-hidden, because it
             is the only one whose whole content is a hue. The row under it is
             the second half of that pairing — a status dot always sits beside a
-            verb line, a tooltip or a Now item. */}
+            verb line, a tooltip or a Heads up item. */}
         <div className="grid grid-cols-[8rem_repeat(4,5rem)] items-center gap-x-4 gap-y-3">
           <span />
           {IDENTITY_STATUSES.map(({ status, label }) => (

@@ -1,7 +1,7 @@
 /**
  * "What needs me right now?", answered once for the whole cockpit.
  *
- * The sidebar's Now zone and the home surface's triage header ask the same
+ * The sidebar's Heads up zone and the home surface's triage header ask the same
  * question of the same sources; before this they each assembled their own
  * answer inside a feature the other could not import. This is the shared one.
  *

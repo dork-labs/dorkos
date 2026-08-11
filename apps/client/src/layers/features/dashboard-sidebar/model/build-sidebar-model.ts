@@ -54,8 +54,16 @@ import type { SidebarState } from './sidebar-state';
 /**
  * The four zones, and the only ids one can have.
  *
- * `getting-started` is not a fifth zone: it is Now's day-one life stage and
- * shares Now's slot, which is why they are never both present (BC-4).
+ * `getting-started` is not a fifth zone: it is the day-one life stage of Heads
+ * up and shares its slot, which is why they are never both present (BC-4).
+ *
+ * **`now` is an id, not a label.** The zone a person reads as "Heads up" is
+ * `now` everywhere in code, storage and the DOM. The label was renamed in
+ * DOR-1155 (2026-08-11) — "Now" read temporally, so an operator went looking
+ * for his *running* agent there, when the zone actually holds what he should
+ * *know about*. The id stayed put deliberately: renaming it would cost a
+ * persisted-config migration and buy the user nothing. {@link ZONE_LABEL} is
+ * the single place the two are joined.
  */
 export type SidebarZoneId = 'getting-started' | 'now' | 'today' | 'library';
 
@@ -90,7 +98,7 @@ export type LibrarySectionId = (typeof SIDEBAR_LIBRARY_SECTION_IDS)[number];
 /**
  * Narrow a section id to one that has a place to store its collapse state.
  *
- * Only a Library section does. Now, Today, Getting started and a group
+ * Only a Library section does. Heads up, Today, Getting started and a group
  * sub-header all answer `null`: the first three cannot fold at all (BC-2), and
  * a group's fold already lives on the group. Reading the tuple rather than
  * repeating the four ids, so it stays the one place Library's shape is edited.
@@ -117,7 +125,7 @@ export type SidebarSectionId =
   | 'getting-started'
   | `group:${string}`;
 
-/** What kind of blockage put an item in Now. The only four that may (BC-5). */
+/** What kind of blockage put an item in Heads up. The only four that may (BC-5). */
 export type NowKind = 'permission-prompt' | 'question' | 'error' | 'idle-timeout';
 
 /**
@@ -291,7 +299,7 @@ export interface SidebarRowModel {
   liveCount?: number;
   /** Repo/project chip. Present only under BC-38. */
   projectLabel?: string;
-  /** Now-only. Drives priority and the dismiss affordance. */
+  /** Heads up-only. Drives priority and the dismiss affordance. */
   attention?: { kind: NowKind; since: string; dismissible: boolean };
   /** Whether the operator muted this target (BC-40). */
   muted: boolean;
@@ -307,7 +315,7 @@ export interface SidebarRowModel {
 export interface SidebarSectionModel {
   /** Which section this is. */
   id: SidebarSectionId;
-  /** `null` = headerless body (Now and Today each have exactly one). */
+  /** `null` = headerless body (Heads up and Today each have exactly one). */
   label: string | null;
   /** Whether it can fold at all. Only Library sections can (BC-2). */
   collapsible: boolean;
@@ -333,7 +341,7 @@ export interface SidebarZoneModel {
   label: string;
   /** Its sections, in render order. */
   sections: SidebarSectionModel[];
-  /** Visually-hidden text for the zone's polite live region. Now only (BC-11). */
+  /** Visually-hidden text for the zone's polite live region. Heads up only (BC-11). */
   liveRegionText?: string;
   /** Provenance. */
   reason: string;
@@ -345,16 +353,25 @@ export interface SidebarModel {
   zones: SidebarZoneModel[];
 }
 
-/** The words each zone's heading uses. */
-const ZONE_LABEL: Record<SidebarZoneId, string> = {
+/**
+ * The words each zone's heading uses.
+ *
+ * The one place a zone id becomes a word a person reads — `now` says "Heads
+ * up" here and nowhere else (DOR-1155; see {@link SidebarZoneId}).
+ *
+ * Exported because two callers synthesize a zone the builder never emits — the
+ * all-clear beat's placeholder and the Dev Playground's states panel — and a
+ * second copy of the words is how a rename half-lands.
+ */
+export const ZONE_LABEL: Record<SidebarZoneId, string> = {
   'getting-started': 'Getting started',
-  now: 'Now',
+  now: 'Heads up',
   today: 'Today',
   library: 'Library',
 };
 
 /**
- * What Now's live region says — the COUNT of things needing you, and nothing
+ * What Heads up's live region says — the COUNT of things needing you, and nothing
  * else (BC-11).
  *
  * A verb change or an unread change must never reach a screen reader from here;
@@ -412,18 +429,18 @@ function bodyZone(
 export function buildSidebarModel(state: SidebarState): SidebarModel {
   const zones: SidebarZoneModel[] = [];
 
-  // Now and Getting started share one slot: real signals always win, and the
+  // Heads up and Getting started share one slot: real signals always win, and the
   // day-one zone is what fills the space until there are any (BC-4).
   //
   // **"Any" includes the working rollup, and getting that wrong lost it.** The
-  // rollup is a Now row — BC-8 counts it in Now's five-row ceiling and BC-9
+  // rollup is a Heads up row — BC-8 counts it in Heads up's five-row ceiling and BC-9
   // makes it unconditional ("when ≥1 session is streaming, one row reads N
   // working") — but BC-4 phrases the slot rule as "if `selectNowItems` returns
   // any row", and `selectNowItems` never returns the rollup. Read literally
   // that put Getting started in the slot and dropped the rollup on the floor:
   // an operator who had not retired all five suggestions could never be told
   // anything was working. Design-decisions §2 settles it — "real signals always
-  // win" — so Now takes the slot whenever it has a row of any kind.
+  // win" — so Heads up takes the slot whenever it has a row of any kind.
   //
   // The accepted cost is that Getting started steps aside while a turn streams
   // and comes back when it ends. That is the same behaviour a permission

@@ -31,7 +31,7 @@ const SECTION_LABEL: Record<string, string> = {
  *
  * Pins is its own container; Channels, Direct messages and Agents are all
  * "ungrouped" — landing in any of them takes a row out of its group — and a
- * group is its own. Now, Today and Getting started are `computed`, which the
+ * group is its own. Heads up, Today and Getting started are `computed`, which the
  * drop reducer rejects with a sentence rather than in silence (R3).
  *
  * @param id - The section's id.
@@ -149,7 +149,7 @@ export function SidebarSection({
       data-sidebar-section={section.id}
       {...roving}
     >
-      {/* A headerless body — Now, Today, Getting started — is a zone's single
+      {/* A headerless body — Heads up, Today, Getting started — is a zone's single
           section and carries no label of its own; the zone's <h2> names it. */}
       {section.label === null ? null : groupId !== null ? (
         <Sortable id={`group-header::${groupId}`} data={{ type: 'group', groupId }}>

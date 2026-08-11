@@ -473,7 +473,7 @@ describe('SidebarFooterStrip', () => {
     expect(mockRestart).toHaveBeenCalled();
   });
 
-  it('never puts an update in Now', () => {
+  it('never puts an update in Heads up', () => {
     mockConfigData = {
       version: '1.2.3',
       latestVersion: '1.4.0',
@@ -486,7 +486,7 @@ describe('SidebarFooterStrip', () => {
     expect(screen.getByText('Update ready — v1.4.0')).toBeInTheDocument();
 
     // And the zone model built from the same moment — a fleet that genuinely
-    // has things waiting, so the Now zone is populated and the query below can
+    // has things waiting, so the Heads up zone is populated and the query below can
     // fail — carries nothing about it.
     const model = buildSidebarModel(busyFixture);
     const now = model.zones.find((zone) => zone.id === 'now');
@@ -495,7 +495,7 @@ describe('SidebarFooterStrip', () => {
     const nowText = nowRows.map((r) => `${r.primary} ${r.secondary ?? ''} ${r.reason}`);
     expect(nowText).not.toContain('Update ready — v1.4.0');
     expect(nowText.filter((text) => /update|version|restart/i.test(text))).toEqual([]);
-    // Every Now row is an agent that needs you or a rollup of them, and nothing
+    // Every Heads up row is an agent that needs you or a rollup of them, and nothing
     // else can be (BC-5) — these are the only provenances the model can emit
     // into this zone, so an update could not join them without a new rule.
     expect(nowRows.every((r) => /^(now:|rollup:)/.test(r.reason))).toBe(true);

@@ -288,8 +288,8 @@ describe('usePresenceStrip', () => {
     expect(screen.queryByTestId('presence-strip')).not.toBeInTheDocument();
   });
 
-  it('leaves an automated run out of "working", the way Now does (§18)', async () => {
-    // The fourth surface to count what is running, and the one Now's "N
+  it('leaves an automated run out of "working", the way Heads up does (§18)', async () => {
+    // The fourth surface to count what is running, and the one Heads up's "N
     // working" rollup NAVIGATES to (`SidebarChrome`): a nightly task counted
     // here and not there meant clicking "3 working" landed on a strip saying
     // four (DOR-1137 review, B2).

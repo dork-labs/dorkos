@@ -311,7 +311,7 @@ describe('BC-21 — the active-conversation anchor', () => {
     expect(todayKeys(state)[0]).toBe('session:ses-1');
   });
 
-  it('never appears in Now', () => {
+  it('never appears in Heads up', () => {
     const now = buildSidebarModel(busyFixture).zones.find((zone) => zone.id === 'now');
     const keys = now?.sections.flatMap((section) => section.rows.map((row) => row.key)) ?? [];
     expect(keys).not.toContain('session:ses-1');

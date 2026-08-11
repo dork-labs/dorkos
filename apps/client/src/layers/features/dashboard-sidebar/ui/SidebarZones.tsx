@@ -17,6 +17,7 @@ import {
 } from '@/layers/entities/config';
 import {
   librarySectionId,
+  ZONE_LABEL,
   type SidebarModel,
   type SidebarZoneModel,
 } from '../model/build-sidebar-model';
@@ -35,7 +36,7 @@ import { TodayZone } from './TodayZone';
  */
 const ALL_CLEAR_ZONE: SidebarZoneModel = {
   id: 'now',
-  label: 'Now',
+  label: ZONE_LABEL.now,
   sections: [],
   reason: 'zone:now',
 };
@@ -80,7 +81,7 @@ export function SidebarZones({ model }: SidebarZonesProps) {
     });
   }, [library, update]);
 
-  // BC-50. Drawn before the map so the beat sits in Now's own slot at the top,
+  // BC-50. Drawn before the map so the beat sits in Heads up's own slot at the top,
   // and suppressed the moment anything real wants that slot back — a zone the
   // model is emitting always wins over an animation about one it is not.
   const beating = useAllClearBeat(model);

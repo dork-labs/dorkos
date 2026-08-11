@@ -47,7 +47,7 @@ vi.mock('@tanstack/react-router', () => ({
 
 // The roster can render with zones and without them — P2 AC-8 asks for the
 // takeover to be correct in both states, and "without" is the ordinary quiet
-// morning where Now and Today are both absent (BC-1).
+// morning where Heads up and Today are both absent (BC-1).
 let mockZonesPresent = true;
 vi.mock('@/layers/features/dashboard-sidebar', () => ({
   DashboardSidebar: () => (

@@ -142,7 +142,7 @@ describe('BC-14 — the zone leaves when everything is retired', () => {
   });
 });
 
-describe('BC-4 / BC-9 — the slot Getting started shares with Now', () => {
+describe('BC-4 / BC-9 — the slot Getting started shares with Heads up', () => {
   /**
    * Day one, with a turn streaming.
    *
@@ -168,7 +168,7 @@ describe('BC-4 / BC-9 — the slot Getting started shares with Now', () => {
     workingSessionIds: ['ses-first'],
   };
 
-  /** Every row of the zone occupying Now's slot. */
+  /** Every row of the zone occupying Heads up's slot. */
   function slotRows(state: SidebarState): string[] {
     const zone = buildSidebarModel(state).zones.find(
       (entry) => entry.id === 'now' || entry.id === 'getting-started'
@@ -183,14 +183,14 @@ describe('BC-4 / BC-9 — the slot Getting started shares with Now', () => {
     expect(slotRows(dayOneAndWorking)).toContain('rollup:working');
   });
 
-  it('gives the slot to Now, not to Getting started, while it is working', () => {
+  it('gives the slot to Heads up, not to Getting started, while it is working', () => {
     const zones = buildSidebarModel(dayOneAndWorking).zones.map((zone) => zone.id);
     expect(zones).toContain('now');
     expect(zones).not.toContain('getting-started');
   });
 
   it('hands the slot straight back when the turn ends', () => {
-    // The other half — without it, "Now wins" would also be satisfied by a
+    // The other half — without it, "Heads up wins" would also be satisfied by a
     // model that had simply deleted Getting started.
     const quiet: SidebarState = { ...dayOneAndWorking, workingSessionIds: [] };
     expect(buildSidebarModel(quiet).zones.map((zone) => zone.id)).toContain('getting-started');

@@ -311,7 +311,7 @@ export function SidebarChrome({ activeTarget, children }: SidebarChromeProps) {
           return;
         case 'rollup':
           // "+ N more" goes to the home surface's triage header, which already
-          // holds the full list — Now never grows a second one (BC-7). "N
+          // holds the full list — Heads up never grows a second one (BC-7). "N
           // working" goes to the same place for now: home carries the presence
           // strip of who is working, and P2.6's session switcher scoped to live
           // sessions is what BC-9 actually asks for.

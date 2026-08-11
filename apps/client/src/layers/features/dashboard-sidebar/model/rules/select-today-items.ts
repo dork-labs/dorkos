@@ -227,7 +227,7 @@ function threadRow(thread: ThreadSummary, state: SidebarState, mutes: MuteIndex)
  *
  * Automated sessions never claim a top-level row: a scheduled run or a room
  * turn is work the operator did not start, and Today is a list of what they
- * were doing. If one of them needs the operator it enters Now like anything
+ * were doing. If one of them needs the operator it enters Heads up like anything
  * else, which is the only way it reaches the top of the panel.
  *
  * **It is a reveal, not a count.** Pressing it unfolds the runs themselves

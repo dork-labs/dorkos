@@ -23,7 +23,7 @@ import type { SidebarState } from './sidebar-state';
  *
  * Three things this deliberately does not do:
  *
- * - It does not read the zone. Getting started is suppressed whenever Now has
+ * - It does not read the zone. Getting started is suppressed whenever Heads up has
  *   a real signal (BC-4), so a suggestion "disappearing" from the rendered tree
  *   is not evidence of anything. It reads the rule directly.
  * - It does nothing at all while the journey facts are unresolved, and it

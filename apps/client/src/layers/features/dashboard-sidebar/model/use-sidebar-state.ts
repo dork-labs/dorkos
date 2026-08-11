@@ -266,7 +266,7 @@ export function useSidebarState(): SidebarState {
   const todayAutomatedExpanded = useTodayRevealStore((s) => s.automatedExpanded);
 
   // ── What needs the operator (BC-5) ──
-  // The only source Now draws from, normalized once in `entities/attention` so
+  // The only source Heads up draws from, normalized once in `entities/attention` so
   // the home surface's triage header and this panel read the same list.
   const attention = useAttentionSignals();
 

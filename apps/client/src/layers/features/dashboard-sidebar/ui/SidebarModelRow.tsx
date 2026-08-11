@@ -119,7 +119,7 @@ export interface SidebarModelRowProps {
 /**
  * Draw one row, wrapping it in a drag source when the model says it is one.
  *
- * `row.draggable` is the only gate. R3 puts that decision in the model — Now
+ * `row.draggable` is the only gate. R3 puts that decision in the model — Heads up
  * and Today are computed, so their rows are never drag sources — precisely so
  * that no call site here can re-enable it by accident.
  *
@@ -223,7 +223,7 @@ function AgentRowFromModel({
 /**
  * Every other row — an attention item, a rollup, a suggestion, a session.
  *
- * Built entirely from the model's own fields, which is what makes Now, Today
+ * Built entirely from the model's own fields, which is what makes Heads up, Today
  * and Getting started renderable before P2.2 and P2.3 land their behaviour: the
  * shape is decided already, and those tasks fill in the destinations.
  */
@@ -243,8 +243,8 @@ function GenericRowFromModel({
     agentPath ?? row.key
   );
   const Icon = row.glyph.kind === 'icon' ? ICON[row.glyph.icon] : null;
-  // The only menu a Now row ever has, and only the row that earns it: an idle
-  // nudge is the product being helpful, so it is the one thing in Now the
+  // The only menu a Heads up row ever has, and only the row that earns it: an idle
+  // nudge is the product being helpful, so it is the one thing in Heads up the
   // operator may wave away (BC-10). Everything else clears by being resolved —
   // there is no snooze anywhere in this zone (BC-42).
   const signalId =

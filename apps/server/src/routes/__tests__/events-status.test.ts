@@ -472,7 +472,7 @@ describe('GET /api/events — connect snapshot', () => {
     expect(projector.getStatus().lifecycle).toBe('blocked');
   }
 
-  // The headline repro: error a session, reload the page, and the sidebar's Now
+  // The headline repro: error a session, reload the page, and the sidebar's Heads up
   // zone must still say so. The reload is the second connect, and before this
   // the server told it nothing — the transition had already happened.
   it('announces a session that errored while nothing was connected', async () => {

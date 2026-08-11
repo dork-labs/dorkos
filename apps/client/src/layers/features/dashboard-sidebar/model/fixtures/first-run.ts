@@ -1,7 +1,7 @@
 /**
  * Day one: DorkBot and #team, four agents found on disk, nothing done yet.
  *
- * What this fixture is for: Getting started occupying Now's slot, a Library
+ * What this fixture is for: Getting started occupying Heads up's slot, a Library
  * that is not empty because the install seeded it, and a Today with nothing in
  * it at all.
  *

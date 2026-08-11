@@ -194,7 +194,7 @@ describe('useAttentionSignals', () => {
     rerender();
 
     // A wedged session is not something the operator may wave away — it clears
-    // by being resolved, and nothing in Now offers a snooze.
+    // by being resolved, and nothing in Heads up offers a snooze.
     expect(result.current.map((s) => s.id)).toEqual(['error:ses-1']);
   });
 });
