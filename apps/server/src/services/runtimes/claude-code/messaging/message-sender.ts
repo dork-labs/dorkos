@@ -31,6 +31,7 @@ import {
   PHANTOM_CORRECTIONS_MAX_PER_TURN,
 } from './phantom-cancellation.js';
 import { mapSdkMessage } from '../sdk/sdk-event-mapper.js';
+import { createTurnSegments, DEFERRED_CLOSE_TIMEOUT_MS } from './turn-segments.js';
 import { createHeldUserPrompt } from '../sdk/sdk-utils.js';
 import { fetchContextBreakdown } from '../sdk/context-usage.js';
 import { fetchSubscriptionUsage } from '../sdk/subscription-usage.js';
@@ -802,11 +803,32 @@ export async function* executeSdkQuery(
   let lastMainAssistantUuid: string | undefined;
   let retriedViaRecursion = false;
   // Corrective notes steered into this turn after phantom cancellations
-  // (DOR-1087) — capped so the correction can never feed itself, and never
-  // sent once a `result` has been seen (a post-result note would start a NEW
-  // turn rather than correct this one).
-  let phantomCorrections = 0;
-  let sawResult = false;
+  // (DOR-1087) — capped so the correction can never feed itself. There is no
+  // separate post-`result` gate: the held prompt being OPEN is the whole
+  // condition, because a turn with background tasks outstanding continues past
+  // its first `result` (see `turn-segments.ts`) and a note pushed then lands in
+  // the segment that is still running. Once the stream is closed for good,
+  // `push()` refuses on its own (DOR-1149).
+  // Separate budgets, because they compete for different reasons (DOR-1150).
+  // Subagent phantoms arrive in bursts — one misbehaving helper produced four in
+  // the 2026-08-11 session — and a shared pool let them spend every note before
+  // the coordinator's OWN cancellation, the one where the recipient is the
+  // victim, ever got a correction.
+  let mainThreadCorrections = 0;
+  let subagentCorrections = 0;
+  const segments = createTurnSegments();
+  /**
+   * Deadline promise for a held-back stdin close, armed at the deferring
+   * `result` and cleared the moment the close actually happens.
+   */
+  let deferredCloseDeadline: Promise<'expired'> | undefined;
+  let deferredCloseTimer: NodeJS.Timeout | undefined;
+  /** Drop an armed deadline — the close it guarded is happening now. */
+  const releaseDeferredClose = (): void => {
+    if (deferredCloseTimer) clearTimeout(deferredCloseTimer);
+    deferredCloseTimer = undefined;
+    deferredCloseDeadline = undefined;
+  };
   const streamStart = Date.now();
   const toolState = createToolState();
 
@@ -833,7 +855,26 @@ export async function* executeSdkQuery(
         pendingSdkPromise = sdkIterator.next().then((result) => ({ sdk: true as const, result }));
       }
 
-      const winner = await Promise.race([queuePromise, pendingSdkPromise]);
+      // A deferred close must not be able to wedge the turn: while it is held,
+      // the CLI waits on stdin and we wait on the CLI, so neither the deferral
+      // cap nor the `finally` is ever reached. The deadline is armed ONCE per
+      // deferral (see `DEFERRED_CLOSE_TIMEOUT_MS`) rather than re-armed each
+      // iteration, so a chatty stream cannot push it back for ever (DOR-1149).
+      const winner = await Promise.race(
+        deferredCloseDeadline
+          ? [queuePromise, pendingSdkPromise, deferredCloseDeadline]
+          : [queuePromise, pendingSdkPromise]
+      );
+
+      if (winner === 'expired') {
+        logger.warn('[sendMessage] deferred close expired; releasing input stream', {
+          session: sessionId,
+          owedNotifications: segments.owedCount(),
+        });
+        releaseDeferredClose();
+        heldPrompt.close();
+        continue;
+      }
 
       if (winner === 'queue') {
         continue;
@@ -851,45 +892,62 @@ export async function* executeSdkQuery(
         lastMainAssistantUuid = result.value.uuid;
       }
 
+      // Background-task lifecycle drives BOTH decisions below: whether a
+      // `result` ends the turn or only a segment of it, and therefore whether a
+      // corrective note still has a live channel (DOR-1149).
+      segments.observe(result.value);
+
       // Phantom cancellation (DOR-1087): the CLI cancelled pending tool calls
       // because a task-notification was queued, writing a sentinel that reads
-      // as a user refusal. Tell the model it wasn't the user (main thread only
-      // — a subagent's input stream is not ours to write to; and never after
-      // `result`, when a steered note would START a new turn instead of
-      // correcting this one) and surface a status line for the operator. The
-      // notice event carries NO `status` field (the client strip drops any
-      // system_status that has one) and is yielded AFTER this message's mapped
-      // events below — yielded here, the same message's tool_result events
-      // would re-derive the strip and wipe it in the same frame.
+      // as a user refusal. Tell the model it wasn't the user, and surface a
+      // status line for the operator. The notice event carries NO `status`
+      // field (the client strip drops any system_status that has one) and is
+      // yielded AFTER this message's mapped events below — yielded here, the
+      // same message's tool_result events would re-derive the strip and wipe it
+      // in the same frame.
+      //
+      // A SUBAGENT phantom is steered too (DOR-1150). The note cannot reach the
+      // subagent — its input stream is not ours — so it goes to the coordinator,
+      // which is the party that will otherwise believe the subagent's false "the
+      // user declined" and abandon the work. This does push a message into the
+      // main thread's queue while a subagent runs, which is itself the mechanism
+      // that causes phantoms; `PHANTOM_CORRECTIONS_MAX_PER_TURN` is what stops
+      // that from feeding itself, and a coordinator acting on a false refusal is
+      // the worse of the two failures.
       const phantoms = detectPhantomCancellations(result.value, session);
       let phantomNotice: string | undefined;
       if (phantoms.length > 0) {
-        const steerableIds = phantoms.filter((p) => p.mainThread).map((p) => p.toolUseId);
+        // A batch is uniformly one or the other: `parent_tool_use_id` is a
+        // message-level field (see `detectPhantomCancellations`).
+        const mainThread = phantoms.some((p) => p.mainThread);
+        const spent = mainThread ? mainThreadCorrections : subagentCorrections;
         const steered =
-          steerableIds.length > 0 &&
-          !sawResult &&
-          phantomCorrections < PHANTOM_CORRECTIONS_MAX_PER_TURN &&
-          heldPrompt.push(buildPhantomCorrectionNote(steerableIds));
-        if (steered) phantomCorrections++;
+          spent < PHANTOM_CORRECTIONS_MAX_PER_TURN &&
+          heldPrompt.push(buildPhantomCorrectionNote(phantoms));
+        if (steered) {
+          if (mainThread) mainThreadCorrections++;
+          else subagentCorrections++;
+        }
         logger.warn('[sendMessage] phantom tool-call cancellation detected', {
           session: sessionId,
           toolUseIds: phantoms.map((p) => p.toolUseId),
-          mainThread: steerableIds.length > 0,
+          mainThread,
           steered,
         });
         const plural =
           phantoms.length > 1 ? `${phantoms.length} pending tool calls` : 'a pending tool call';
-        phantomNotice = `A background task finished at the wrong moment and cancelled ${plural}. That was a system glitch, not you. The agent has been told.`;
+        const where = mainThread ? '' : ' inside one of its helpers';
+        phantomNotice = `A background task finished at the wrong moment and cancelled ${plural}${where}. That was a system glitch, not you. The agent has been told.`;
       }
 
-      // The `result` message marks turn completion. The subprocess is still alive
-      // (the prompt stream is held open), so fetch the authoritative context-usage
-      // breakdown AND the current subscription utilization now — before this
-      // message maps to `done`, so the resulting `context_usage` event precedes
-      // `done` and the terminal `session_status` carries `usage` (DOR-99) —
-      // then release stdin so the process drains its trailing messages and exits.
-      if (result.value.type === 'result') sawResult = true;
-
+      // The `result` message marks the end of a SEGMENT — which is the end of
+      // the turn only when no background task still owes a notification
+      // (DOR-1149). The subprocess is alive either way (the prompt stream is
+      // held open), so fetch the authoritative context-usage breakdown AND the
+      // current subscription utilization now — before this message maps to
+      // `done`, so the resulting `context_usage` event precedes `done` and the
+      // terminal `session_status` carries `usage` (DOR-99).
+      //
       // This frame's OWN query, never the session's shared slot (DOR-1088): an
       // overlapping turn can have replaced `activeQuery`, and the usage
       // breakdown has to come from the subprocess that produced THIS result.
@@ -915,7 +973,23 @@ export async function* executeSdkQuery(
         // session, fetch failure) keeps the last known value — the item must
         // never flicker back to cost-only between turns.
         if (subscriptionUsage) session.lastSubscriptionUsage = subscriptionUsage;
-        heldPrompt.close();
+        // Release stdin so the process drains its trailing messages and exits —
+        // unless the CLI still owes us a queued-notification segment, in which
+        // case closing here would strand the steering channel for the rest of
+        // the turn (DOR-1149). The `finally` closes unconditionally, so a
+        // deferral can never leak the subprocess.
+        if (segments.holdOpenAtResult()) {
+          // Arm the deadline for THIS deferral. Any earlier one has already been
+          // released, so there is never more than one live timer.
+          deferredCloseDeadline = new Promise<'expired'>((resolve) => {
+            deferredCloseTimer = setTimeout(() => resolve('expired'), DEFERRED_CLOSE_TIMEOUT_MS);
+            // Never let this timer alone hold the process open.
+            deferredCloseTimer.unref?.();
+          });
+        } else {
+          releaseDeferredClose();
+          heldPrompt.close();
+        }
       }
 
       // A mid-session `commands_changed` push carries the full, authoritative
@@ -1079,6 +1153,9 @@ export async function* executeSdkQuery(
   } finally {
     // Always release the held input stream so the subprocess can never leak if we
     // exit before the result message (error, interrupt, empty stream). Idempotent.
+    // Clearing the deadline here also covers the path where the race THREW —
+    // otherwise a rejected SDK promise would leave a live timer behind.
+    releaseDeferredClose();
     heldPrompt.close();
     // Preserve the query reference for post-stream control methods (e.g.
     // reloadPlugins) — but only when this frame still OWNS the active query
