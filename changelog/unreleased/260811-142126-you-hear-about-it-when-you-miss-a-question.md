@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(server): tell the operator when an unanswered prompt expires (DOR-1158)'
+  - 'fix(server): address review findings on the timeout-notice fix (DOR-1158)'
 ---
 
 ### Fixed
