@@ -818,7 +818,21 @@ test.describe('Rooms — a thread on a phone', () => {
       .toBeLessThanOrEqual(1);
     const panel = (await roomsPage.threadPanel.boundingBox())!;
     expect(panel.width).toBeGreaterThanOrEqual(389);
-    expect(panel.y + panel.height).toBeGreaterThan(844 - 8);
+
+    // **Down to the bottom of the screen, which now has chrome at the bottom of
+    // it.** P4 gave the phone four permanent destinations along the bottom
+    // (`MobileTabsLayout`), so the routed page — and the push inside it — ends
+    // 56px up. The claim is unchanged: nothing between the thread and the
+    // bottom of the window is wasted. It is asserted as a chain rather than
+    // against a bare `844 - 8`, so it still reaches the window: the panel
+    // reaches the bar, and the bar reaches the window's edge. A single relative
+    // assertion would have let a collapsed shell pass.
+    const bar = (await page.getByTestId('mobile-tab-bar').boundingBox())!;
+    expect(bar.y + bar.height).toBeGreaterThan(844 - 8);
+    expect(panel.y + panel.height).toBeGreaterThan(bar.y - 8);
+    // …and the two do not overlap: permanent chrome that covered the thread it
+    // sits under would be worse than chrome that took the room from it.
+    expect(panel.y + panel.height).toBeLessThanOrEqual(bar.y + 1);
 
     // Back rather than close, and it names where it goes — the difference
     // between the two shapes is a promise to the reader, not styling.

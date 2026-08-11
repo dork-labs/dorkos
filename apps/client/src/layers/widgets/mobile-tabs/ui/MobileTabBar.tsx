@@ -35,6 +35,16 @@ export interface MobileTabBarProps {
   dorkBotReady: boolean;
   /** Go somewhere. */
   onSelect: (id: MobileTabId) => void;
+  /**
+   * The navigation landmark's accessible name. Defaults to the product's.
+   *
+   * Configurable because a landmark's name belongs to where it is mounted, not
+   * to the component: the Dev Playground draws four of these bars on one page,
+   * and four `navigation` landmarks sharing a name is an axe `landmark-unique`
+   * violation — a real one, since a screen-reader user landmark-hopping that
+   * page cannot tell them apart. The product mounts exactly one.
+   */
+  label?: string;
 }
 
 /** The bar. */
@@ -43,10 +53,11 @@ export function MobileTabBar({
   needsYouCount,
   dorkBotReady,
   onSelect,
+  label = 'Main',
 }: MobileTabBarProps) {
   return (
     <nav
-      aria-label="Main"
+      aria-label={label}
       data-testid="mobile-tab-bar"
       // The bar reserves its own room in the shell's column rather than
       // floating over it, so no page has to know it exists to avoid being
@@ -79,7 +90,14 @@ export function MobileTabBar({
               'focus-ring relative flex flex-1 flex-col items-center justify-center gap-0.5 text-[11px] font-medium transition-colors duration-150',
               here
                 ? 'text-sidebar-accent-foreground'
-                : 'text-sidebar-foreground/60 hover:text-sidebar-foreground',
+                : // **`/70`, not `/60`, and the number is a measurement.** At 60%
+                  // the label composites to #6b6b6b on the bar's #e8e8e8 in the
+                  // light theme — 4.34:1 at 11px, under the 4.5:1 the design
+                  // system requires of every label. 70% lands at #565656 (5.99:1
+                  // light, 7.84:1 dark), which clears it in both. Caught by the
+                  // showcase page's axe gate once the bar was drawn there, which
+                  // is the same way `SidebarZone` found the same defect at `/50`.
+                  'text-sidebar-foreground/70 hover:text-sidebar-foreground',
               'disabled:pointer-events-none disabled:opacity-50'
             )}
           >
@@ -95,9 +113,20 @@ export function MobileTabBar({
                   // a screen reader into a siren.
                   aria-hidden
                   // Amber, the one colour this product spends on "somebody is
-                  // waiting for you" — the same weight the directed-unread
-                  // badge carries in the panel (design-decisions §18).
-                  className="absolute -top-1.5 -right-2.5 min-w-4 rounded-full bg-amber-500 px-1 text-center text-[10px] leading-4 font-semibold text-white tabular-nums"
+                  // waiting for you" (design-decisions §18).
+                  //
+                  // **`text-amber-950`, not `text-white`, and the number is a
+                  // measurement.** White on amber-500 is 2.15:1 — a serious
+                  // failure that axe reports as *incomplete* rather than as a
+                  // violation, because a one-digit badge trips its "content is
+                  // too short to be text" heuristic. It would have been pinned
+                  // as undecided and shipped. amber-950 on amber-500 is 6.97:1,
+                  // and because the pill carries its own background that holds
+                  // in both themes without a variant. The panel's tinted
+                  // treatment (`bg-brand/15 text-brand`) was the other
+                  // candidate and measures 3.75:1 on the light bar, so it is
+                  // not one.
+                  className="absolute -top-1.5 -right-2.5 min-w-4 rounded-full bg-amber-500 px-1 text-center text-[10px] leading-4 font-semibold text-amber-950 tabular-nums"
                 >
                   {badge}
                 </span>

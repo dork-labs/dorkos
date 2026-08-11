@@ -49,6 +49,11 @@ function BarSample({ name, needsYouCount }: { name: string; needsYouCount: numbe
         style={{ maxWidth: PHONE_WIDTH }}
       >
         <MobileTabBar
+          // One page, four bars: each names its own landmark after the journey
+          // it is drawn from, so a screen-reader user hopping landmarks can
+          // tell them apart — and so the page's axe gate stays green on
+          // `landmark-unique`, which is what caught this.
+          label={`Mobile tabs — ${name}`}
           current={current}
           needsYouCount={needsYouCount}
           // The showcase has no roster behind it, so DorkBot is shown in the
