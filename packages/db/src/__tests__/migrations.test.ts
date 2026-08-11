@@ -23,6 +23,13 @@ const PRE_CASCADE_MIGRATION_IDX = 43;
  */
 const PRE_ATTACHMENT_URL_MIGRATION_IDX = 58;
 
+/**
+ * Journal index of the last migration BEFORE `session_message_queue` existed.
+ * A database built through this index is the shape every install upgrading
+ * into the server-owned queue is coming from — sessions already in it.
+ */
+const PRE_MESSAGE_QUEUE_MIGRATION_IDX = 63;
+
 /** Temp migration folders to remove after each test. */
 const tempMigrationDirs: string[] = [];
 
@@ -174,6 +181,10 @@ describe('Database Migrations', () => {
       // Durable completed-turn event stream for log-backed runtimes
       // (DOR-189, migration 0026).
       'session_events',
+      // Messages typed while a session was busy, waiting their turn — the
+      // server-owned queue that survives a refresh, a second window, and a
+      // restart (spec persistent-session-runtime §3.1, migration 0064).
+      'session_message_queue',
       'session_metadata',
       // The durable claim feed for inbound chats with no binding — metadata
       // only, never a message body (connection-scoping spec §Part 3,
@@ -637,6 +648,61 @@ describe('Database Migrations', () => {
       { id: '01RUNGOOD' },
     ]);
     expect(raw.pragma('foreign_key_check')).toEqual([]);
+  });
+
+  it('migration 0064 adds the message queue to a database that already has sessions in it', () => {
+    // An install upgrading into the server-owned queue is not an empty one: it
+    // has session rows, and losing them to a new table would be the exact
+    // failure the queue exists to prevent. Build the pre-0064 schema, put data
+    // in it, then let the real runMigrations upgrade the same database.
+    const db = createDb(':memory:');
+    migrate(db, { migrationsFolder: migrationsFolderThrough(PRE_MESSAGE_QUEUE_MIGRATION_IDX) });
+    const raw = db.$client;
+
+    raw
+      .prepare(
+        "INSERT INTO session_metadata (session_id, runtime, agent_path, created_at, permission_mode) VALUES ('sess-1', 'claude-code', '/tmp/agent', '2026-08-10T00:00:00Z', 'plan')"
+      )
+      .run();
+    raw
+      .prepare(
+        'INSERT INTO session_events (session_id, seq, payload, created_at) VALUES (\'sess-1\', 1, \'{"type":"turn_end","seq":1}\', \'2026-08-10T00:00:00Z\')'
+      )
+      .run();
+    // The table cannot exist yet, or this migration is not what adds it.
+    expect(
+      raw
+        .prepare(
+          "SELECT name FROM sqlite_master WHERE type='table' AND name = 'session_message_queue'"
+        )
+        .get()
+    ).toBeUndefined();
+
+    expect(() => runMigrations(db)).not.toThrow();
+
+    // The data that was already there is untouched...
+    expect(raw.prepare('SELECT session_id, permission_mode FROM session_metadata').all()).toEqual([
+      { session_id: 'sess-1', permission_mode: 'plan' },
+    ]);
+    expect(raw.prepare('SELECT session_id, seq FROM session_events').all()).toEqual([
+      { session_id: 'sess-1', seq: 1 },
+    ]);
+    // ...and the queue is there, usable, and indexed for ordered per-session reads.
+    raw
+      .prepare(
+        "INSERT INTO session_message_queue (id, session_id, position, content, disposition, client_id, enqueued_at, context_json) VALUES ('msg-1', 'sess-1', 1000, 'run the tests', 'queue', 'window-a', 1786421653118, NULL)"
+      )
+      .run();
+    expect(raw.prepare('SELECT id, position FROM session_message_queue').all()).toEqual([
+      { id: 'msg-1', position: 1000 },
+    ]);
+    expect(
+      raw
+        .prepare(
+          "SELECT name FROM sqlite_master WHERE type='index' AND name = 'session_message_queue_session_idx'"
+        )
+        .get()
+    ).toBeDefined();
   });
 
   it('unique constraint on relay_traces.message_id is enforced', () => {

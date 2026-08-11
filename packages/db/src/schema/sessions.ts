@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer } from 'drizzle-orm/sqlite-core';
+import { sqliteTable, text, integer, index } from 'drizzle-orm/sqlite-core';
 
 // Per-session operational metadata. The row carries two concerns with distinct
 // write semantics:
@@ -33,3 +33,58 @@ export const sessionMetadata = sqliteTable('session_metadata', {
 
 export type SessionMetadata = typeof sessionMetadata.$inferSelect;
 export type NewSessionMetadata = typeof sessionMetadata.$inferInsert;
+
+// A message somebody typed while the session was busy, waiting its turn. The
+// SERVER owns the queue (spec `persistent-session-runtime` §3.1), and it is
+// persisted for one reason: ADR-0264 accepts losing an in-flight TURN on
+// restart, but a message a person was told was accepted is a different and
+// worse promise to break — the loss DOR-480 already ruled unacceptable. Rows
+// therefore survive a refresh, a second window, a failed turn, and a restart.
+//
+// `position` is SPARSE (the store steps by 1000) so a reorder is an UPDATE of
+// one row rather than a rewrite of every row in the session; the store
+// renumbers only when a gap between two neighbours has closed.
+//
+// `session_id` is the CANONICAL session id, which a brand-new session does not
+// have until mid-first-turn — the rows are written under the request UUID and
+// moved with the same rebind that moves the `session_metadata` row above. A
+// queue left behind at the old key is invisible forever.
+//
+// `enqueued_at` is epoch ms rather than the ISO 8601 text the rest of this
+// schema uses, and deliberately so: it is a WIRE field. `QueuedMessage`
+// (packages/shared) types `enqueuedAt` as a number on the SSE contract, so text
+// here would mean a parse on every read of a hot path and a second
+// representation of the same instant to keep honest.
+//
+// `disposition` is what the sender REQUESTED, never what was applied — what
+// actually happened is a `MessageDeliveryOutcome` on the stream, not a stored
+// fact. The enum is a storage-side narrowing for the query types; the
+// authoritative definition is `MessageDispositionSchema` in @dorkos/shared, and
+// the store's row-to-`QueuedMessage` mapping fails to compile if the two drift.
+export const sessionMessageQueue = sqliteTable(
+  'session_message_queue',
+  {
+    // The messageId: server-minted, and the id every delivery outcome
+    // correlates on (correlation is by id and never positional).
+    id: text('id').primaryKey(),
+    sessionId: text('session_id').notNull(),
+    position: integer('position').notNull(),
+    // The person's words, pristine — context assembly never mutates them.
+    content: text('content').notNull(),
+    disposition: text('disposition', { enum: ['queue', 'steer', 'stage'] }).notNull(),
+    // Who enqueued it, so a window can tell its own chips from another's.
+    clientId: text('client_id').notNull(),
+    enqueuedAt: integer('enqueued_at').notNull(),
+    // The `ClientContext` captured at enqueue time, JSON. NULL = none was sent.
+    contextJson: text('context_json'),
+  },
+  (t) => ({
+    // (session_id, position) rather than session_id alone: every read of this
+    // table is one session's queue in order, so the index serves the ORDER BY
+    // as well as the filter.
+    bySession: index('session_message_queue_session_idx').on(t.sessionId, t.position),
+  })
+);
+
+export type SessionMessageQueueRow = typeof sessionMessageQueue.$inferSelect;
+export type NewSessionMessageQueueRow = typeof sessionMessageQueue.$inferInsert;
