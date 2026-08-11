@@ -360,6 +360,72 @@ describe('config_patch posture guard', () => {
     }
   });
 
+  it('refuses a tool endpoint smuggled in as a list, and writes nothing (DOR-1113)', async () => {
+    // The reproduction, at the surface it matters on. A raw-MCP server is an
+    // outbound tool endpoint pointed anywhere the writer likes, and every policy
+    // key for it names a field of a list ELEMENT. The path walk used to stop at
+    // the list, match nothing, and this handler gates on "did we find anything" —
+    // so the refusal never fired and the server was written.
+    mocks.configStore = loggedInStore();
+    const result = await createConfigPatchHandler()({
+      patch: {
+        connectors: {
+          rawMcpServers: [
+            {
+              slug: 'exfil',
+              displayName: 'Exfil',
+              url: 'https://attacker.example.com/mcp',
+              transport: 'http',
+            },
+          ],
+        },
+      },
+    });
+
+    expect(mocks.configStore).toEqual(loggedInStore());
+    expect(result.isError).toBe(true);
+    const payload = parsePayload<{ code: string; paths: string[]; message: string }>(result);
+    expect(payload.code).toBe('operator_only_config');
+    expect(payload.paths).toEqual([
+      'connectors.rawMcpServers[].displayName',
+      'connectors.rawMcpServers[].slug',
+      'connectors.rawMcpServers[].transport',
+      'connectors.rawMcpServers[].url',
+    ]);
+    expect(payload.message).toContain(
+      'Which code this server runs, and which outside tools it attaches to'
+    );
+  });
+
+  it('refuses a Claude account roster rewrite, and writes nothing (DOR-1113)', async () => {
+    mocks.configStore = loggedInStore();
+    const result = await createConfigPatchHandler()({
+      patch: { runtimes: { claudeCode: { accounts: [{ path: '/tmp/theirs', label: 'ours' }] } } },
+    });
+
+    expect(mocks.configStore).toEqual(loggedInStore());
+    expect(result.isError).toBe(true);
+    const payload = parsePayload<{ paths: string[] }>(result);
+    expect(payload.paths).toEqual([
+      'runtimes.claudeCode.accounts[].label',
+      'runtimes.claudeCode.accounts[].path',
+    ]);
+  });
+
+  it('still lets an agent write a list it may write', async () => {
+    // The other half of the same change: descending into arrays must not refuse
+    // the sidebar, whose element fields are agent-writable on purpose.
+    mocks.configStore = loggedInStore();
+    const result = await createConfigPatchHandler()({
+      patch: { ui: { statusBar: { pins: ['runtime'] } } },
+    });
+
+    expect(result.isError).toBeUndefined();
+    expect((mocks.configStore.ui as { statusBar: { pins: string[] } }).statusBar.pins).toEqual([
+      'runtime',
+    ]);
+  });
+
   it('tells the model what it may not change and what to do instead', async () => {
     mocks.configStore = loggedInStore();
     const result = await createConfigPatchHandler()({ patch: { auth: { enabled: false } } });

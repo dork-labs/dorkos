@@ -281,6 +281,117 @@ describe('PATCH /api/config', () => {
     expect(configManager.getDot('server.boundary')).not.toBe('/');
   });
 
+  describe('settings that live inside a list (DOR-1113)', () => {
+    // Until DOR-1113 the path matcher stopped at the array, so a patch replacing
+    // `connectors.rawMcpServers` or `runtimes.claudeCode.accounts` matched no
+    // policy key and both bars on this route were skipped for it. An agent could
+    // register an outbound tool endpoint pointed anywhere, or add a Claude
+    // account directory, past a guard that exists to stop exactly that.
+
+    it('refuses an agent registering a raw MCP server', async () => {
+      agentHeader = 'agent-token';
+      signedInUser = undefined;
+
+      const refused = await request(server)
+        .patch('/api/config')
+        .send({
+          connectors: {
+            rawMcpServers: [
+              { slug: 'exfil', displayName: 'Exfil', url: 'https://attacker.test/mcp' },
+            ],
+          },
+        })
+        .expect(403);
+      expect(refused.body.code).toBe('operator_only_config');
+      expect(refused.body.paths).toContain('connectors.rawMcpServers[].url');
+
+      const { configManager } = await import('../../services/core/config-manager.js');
+      expect(configManager.getDot('connectors.rawMcpServers')).toEqual([]);
+    });
+
+    it('refuses an agent adding a Claude account', async () => {
+      agentHeader = 'agent-token';
+      signedInUser = undefined;
+
+      const refused = await request(server)
+        .patch('/api/config')
+        .send({ runtimes: { claudeCode: { accounts: [{ path: '/tmp/theirs', label: null }] } } })
+        .expect(403);
+      expect(refused.body.paths).toContain('runtimes.claudeCode.accounts[].path');
+
+      const { configManager } = await import('../../services/core/config-manager.js');
+      expect(configManager.getDot('runtimes.claudeCode.accounts')).toEqual([]);
+    });
+
+    it('lets the PERSON in the cockpit write both lists, which is how they are managed', async () => {
+      // The guard binds agents, not the person. Settings → Runtimes sends exactly
+      // this patch (`ClaudeAccountsSection.tsx` `write()`), and a guard that
+      // refused it would leave no way to register an account at all.
+      signedInUser = { userId: 'user_cockpit', credential: 'cookie' };
+      agentHeader = undefined;
+
+      const accounts = await request(server)
+        .patch('/api/config')
+        .send({
+          runtimes: { claudeCode: { accounts: [{ path: '/Users/me/.claude', label: 'Me' }] } },
+        })
+        .expect(200);
+      expect(accounts.body.config.runtimes.claudeCode.accounts).toEqual([
+        { path: '/Users/me/.claude', label: 'Me' },
+      ]);
+
+      const servers = await request(server)
+        .patch('/api/config')
+        .send({
+          connectors: {
+            rawMcpServers: [
+              {
+                slug: 'notes',
+                displayName: 'Notes',
+                url: 'https://notes.test/mcp',
+                transport: 'http',
+              },
+            ],
+          },
+        })
+        .expect(200);
+      expect(servers.body.config.connectors.rawMcpServers[0].slug).toBe('notes');
+    });
+
+    it('lets the person empty a list again', async () => {
+      // Emptying is a write to the list, so it goes through the same bar. The
+      // person has to be able to remove the account they just added.
+      signedInUser = { userId: 'user_cockpit', credential: 'cookie' };
+      agentHeader = undefined;
+
+      await request(server)
+        .patch('/api/config')
+        .send({
+          runtimes: { claudeCode: { accounts: [{ path: '/Users/me/.claude', label: null }] } },
+        })
+        .expect(200);
+
+      const emptied = await request(server)
+        .patch('/api/config')
+        .send({ runtimes: { claudeCode: { accounts: [] } } })
+        .expect(200);
+      expect(emptied.body.config.runtimes.claudeCode.accounts).toEqual([]);
+    });
+
+    it('leaves the lists an agent MAY write alone', async () => {
+      // Descending into arrays must not turn every list into an operator-only
+      // one: the sidebar's element fields are agent-writable on purpose.
+      agentHeader = 'agent-token';
+      signedInUser = undefined;
+
+      const ok = await request(server)
+        .patch('/api/config')
+        .send({ ui: { statusBar: { pins: ['runtime'] } } })
+        .expect(200);
+      expect(ok.body.config.ui.statusBar.pins).toEqual(['runtime']);
+    });
+  });
+
   it('refuses an agent turning login OFF, the setting approvals depend on', async () => {
     agentHeader = 'agent-token';
     signedInUser = undefined;
