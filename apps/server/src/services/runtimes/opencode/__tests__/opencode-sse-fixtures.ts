@@ -25,7 +25,6 @@ import type {
   GlobalEvent,
   Message,
   Part,
-  Permission,
   ReasoningPart,
   Session,
   SessionStatus,
@@ -37,6 +36,7 @@ import type {
 } from '@opencode-ai/sdk';
 import type { OpenCodeWireEvent } from '../event-mapper.js';
 import type { EventMessagePartDelta } from '../part-event-mapper.js';
+import type { PermissionAskedProperties } from '../session-event-mapper.js';
 
 /** Directory both scripted sessions live in (proves sessionID-level demux). */
 export const DIRECTORY = '/projects/alpha';
@@ -237,7 +237,7 @@ export function userMessage(sessionID: string, id = 'msg_0000'): UserMessage {
 // === Event builders ===
 
 /** Wrap a part in a `message.part.updated` event (cumulative snapshot). */
-export function partUpdated(part: Part, delta?: string): Event {
+export function partUpdated(part: Part, delta?: string): OpenCodeWireEvent {
   return {
     type: 'message.part.updated',
     properties: { part, ...(delta !== undefined ? { delta } : {}) },
@@ -260,69 +260,70 @@ export function partDelta(
 }
 
 /** Wrap a message in a `message.updated` event. */
-export function messageUpdated(info: Message): Event {
+export function messageUpdated(info: Message): OpenCodeWireEvent {
   return { type: 'message.updated', properties: { info } };
 }
 
-/** Build a `Permission` payload. */
-export function permission(
+/**
+ * Build a `PermissionRequest` payload — the shape the shipped 1.18.15 sidecar
+ * really sends (`permission` not `type`, `patterns[]` not `pattern`, no title,
+ * no timestamp, tool ids nested). Live-captured 2026-08-11; see
+ * `permission-events.ts`.
+ */
+export function permissionRequest(
   sessionID: string,
   opts: {
     id?: string;
-    type?: string;
-    pattern?: string | string[];
+    permission?: string;
+    patterns?: string[];
     callID?: string;
-    title?: string;
     metadata?: Record<string, unknown>;
   } = {}
-): Permission {
+): PermissionAskedProperties {
   const {
     id = 'per_0001',
-    type = 'bash',
-    pattern,
+    permission = 'bash',
+    patterns = ['rm -rf dist'],
     callID,
-    title = 'Run command: rm -rf dist',
     metadata = { command: 'rm -rf dist' },
   } = opts;
   return {
     id,
-    type,
-    ...(pattern !== undefined ? { pattern } : {}),
     sessionID,
-    messageID: 'msg_0001',
-    ...(callID !== undefined ? { callID } : {}),
-    title,
+    permission,
+    patterns,
     metadata,
-    time: { created: CREATED_AT },
+    always: ['rm *'],
+    ...(callID !== undefined ? { tool: { messageID: 'msg_0001', callID } } : {}),
   };
 }
 
-/** Wrap a Permission in a `permission.updated` event. */
-export function permissionUpdated(perm: Permission): Event {
-  return { type: 'permission.updated', properties: perm };
+/** Wrap a permission request in a `permission.asked` event. */
+export function permissionAsked(request: PermissionAskedProperties): OpenCodeWireEvent {
+  return { type: 'permission.asked', properties: request };
 }
 
 /** Build a `permission.replied` event (resolution echo, possibly from the TUI). */
 export function permissionReplied(
   sessionID: string,
-  permissionID: string,
-  response = 'once'
-): Event {
-  return { type: 'permission.replied', properties: { sessionID, permissionID, response } };
+  requestID: string,
+  reply = 'once'
+): OpenCodeWireEvent {
+  return { type: 'permission.replied', properties: { sessionID, requestID, reply } };
 }
 
 /** Build a `session.status` event. */
-export function statusEvent(sessionID: string, status: SessionStatus): Event {
+export function statusEvent(sessionID: string, status: SessionStatus): OpenCodeWireEvent {
   return { type: 'session.status', properties: { sessionID, status } };
 }
 
 /** Build the `session.idle` turn-terminal event. */
-export function sessionIdle(sessionID: string): Event {
+export function sessionIdle(sessionID: string): OpenCodeWireEvent {
   return { type: 'session.idle', properties: { sessionID } };
 }
 
 /** Build a `session.compacted` event. */
-export function sessionCompacted(sessionID: string): Event {
+export function sessionCompacted(sessionID: string): OpenCodeWireEvent {
   return { type: 'session.compacted', properties: { sessionID } };
 }
 
@@ -330,7 +331,7 @@ export function sessionCompacted(sessionID: string): Event {
 export function sessionError(
   sessionID: string | undefined,
   error?: NonNullable<Extract<Event, { type: 'session.error' }>['properties']['error']>
-): Event {
+): OpenCodeWireEvent {
   return {
     type: 'session.error',
     properties: {
@@ -366,7 +367,7 @@ export function todo(id: string, content: string, status: string, priority = 'me
 }
 
 /** Build a `todo.updated` event. */
-export function todoUpdated(sessionID: string, todos: Todo[]): Event {
+export function todoUpdated(sessionID: string, todos: Todo[]): OpenCodeWireEvent {
   return { type: 'todo.updated', properties: { sessionID, todos } };
 }
 
@@ -383,17 +384,17 @@ export function sessionInfo(sessionID: string, directory = DIRECTORY): Session {
 }
 
 /** Build a `session.updated` bookkeeping event (ignore-list member). */
-export function sessionUpdated(info: Session): Event {
+export function sessionUpdated(info: Session): OpenCodeWireEvent {
   return { type: 'session.updated', properties: { info } };
 }
 
 /** Build a `file.edited` event (ignore-list member). */
-export function fileEdited(file: string): Event {
+export function fileEdited(file: string): OpenCodeWireEvent {
   return { type: 'file.edited', properties: { file } };
 }
 
 /** Build a `server.connected` stream-open event (ignore-list member). */
-export function serverConnected(): Event {
+export function serverConnected(): OpenCodeWireEvent {
   return { type: 'server.connected', properties: {} };
 }
 
@@ -485,7 +486,7 @@ export function opencodeSubagentTurn(
 }
 
 /**
- * A turn that raises a tool approval: `permission.updated` mid-turn, resolved
+ * A turn that raises a tool approval: `permission.asked` mid-turn, resolved
  * (`permission.replied`) before the tool executes and the turn completes.
  */
 export function opencodeApprovalTurn(sessionID: string): OpenCodeWireEvent[] {
@@ -493,7 +494,7 @@ export function opencodeApprovalTurn(sessionID: string): OpenCodeWireEvent[] {
   return [
     statusEvent(sessionID, { type: 'busy' }),
     partUpdated(toolPart(sessionID, 'call_001', 'bash', toolStatePending(input))),
-    permissionUpdated(permission(sessionID, { id: 'per_0001', callID: 'call_001' })),
+    permissionAsked(permissionRequest(sessionID, { id: 'per_0001', callID: 'call_001' })),
     permissionReplied(sessionID, 'per_0001', 'once'),
     partUpdated(toolPart(sessionID, 'call_001', 'bash', toolStateRunning(input))),
     partUpdated(toolPart(sessionID, 'call_001', 'bash', toolStateCompleted(input, ''))),

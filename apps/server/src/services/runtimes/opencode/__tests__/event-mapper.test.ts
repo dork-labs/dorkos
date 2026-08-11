@@ -38,9 +38,9 @@ import {
   outputLengthError,
   partDelta,
   partUpdated,
-  permission,
+  permissionAsked,
   permissionReplied,
-  permissionUpdated,
+  permissionRequest,
   providerAuthError,
   reasoningPart,
   serverConnected,
@@ -94,7 +94,7 @@ describe('extractOpenCodeSessionId', () => {
 
   it('keys deltas, permissions, status, idle, error, and todos by properties.sessionID', () => {
     expect(extractOpenCodeSessionId(partDelta(OC, 'p1', 'x'))).toBe(OC);
-    expect(extractOpenCodeSessionId(permissionUpdated(permission(OC)))).toBe(OC);
+    expect(extractOpenCodeSessionId(permissionAsked(permissionRequest(OC)))).toBe(OC);
     expect(extractOpenCodeSessionId(permissionReplied(OC, 'per_0001'))).toBe(OC);
     expect(extractOpenCodeSessionId(statusEvent(OC, { type: 'busy' }))).toBe(OC);
     expect(extractOpenCodeSessionId(sessionIdle(OC))).toBe(OC);
@@ -636,16 +636,15 @@ describe('mapOpenCodeEvent', () => {
     });
   });
 
-  describe('permission.updated → approval_required', () => {
+  describe('permission.asked → approval_required', () => {
     it('maps the permission to a schema-valid approval keyed by the permission id', () => {
       const events = mapOpenCodeEvent(
-        permissionUpdated(
-          permission(OC, {
+        permissionAsked(
+          permissionRequest(OC, {
             id: 'per_0001',
-            type: 'bash',
-            pattern: 'rm *',
+            permission: 'bash',
+            patterns: ['rm *'],
             callID: 'call_1',
-            title: 'Run command: rm -rf dist',
             metadata: { command: 'rm -rf dist' },
           })
         ),
@@ -657,10 +656,9 @@ describe('mapOpenCodeEvent', () => {
           data: {
             toolCallId: 'per_0001',
             toolName: 'bash',
-            input: '{"pattern":"rm *","command":"rm -rf dist"}',
+            input: '{"patterns":["rm *"],"command":"rm -rf dist"}',
             timeoutMs: SESSIONS.INTERACTION_TIMEOUT_MS,
-            startedAt: CREATED_AT,
-            title: 'Run command: rm -rf dist',
+            startedAt: expect.any(Number),
             hasSuggestions: false,
           },
         },
@@ -668,9 +666,9 @@ describe('mapOpenCodeEvent', () => {
       expect(StreamEventSchema.safeParse(events[0]).success).toBe(true);
     });
 
-    it('omits pattern from input when the permission has none', () => {
+    it('omits patterns from input when the request carries none', () => {
       const events = mapOpenCodeEvent(
-        permissionUpdated(permission(OC, { metadata: { filePath: '/tmp/a' } })),
+        permissionAsked(permissionRequest(OC, { patterns: [], metadata: { filePath: '/tmp/a' } })),
         makeContext()
       );
       expect(events[0]!.data).toMatchObject({ input: '{"filePath":"/tmp/a"}' });

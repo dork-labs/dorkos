@@ -57,15 +57,30 @@ import {
 } from './part-event-mapper.js';
 import {
   mapMessageUpdated,
-  mapPermission,
+  mapPermissionAsked,
+  mapPermissionReplied,
   mapSessionError,
   mapSessionStatus,
   mapTodos,
+  type EventPermissionAsked,
+  type EventPermissionReplied,
 } from './session-event-mapper.js';
 import { closeOpenSubagents, mapSubagentChildToolPart } from './subagent-mapper.js';
 
-/** Everything the v1.17.13 wire can carry: the SDK union + the undeclared delta event. */
-export type OpenCodeWireEvent = Event | EventMessagePartDelta;
+/**
+ * Everything the wire can carry: the SDK union, minus the two permission
+ * members whose generated shapes the shipped server contradicts, plus the
+ * events hand-typed against the live 1.18.15 wire ({@link EventPermissionAsked},
+ * {@link EventPermissionReplied} in `session-event-mapper.ts`, and
+ * {@link EventMessagePartDelta} in `part-event-mapper.ts`). The exclusion is
+ * deliberate — leaving the stale members in would let this mapper compile
+ * against a payload the sidecar has never sent (DOR-1147).
+ */
+export type OpenCodeWireEvent =
+  | Exclude<Event, { type: 'permission.updated' | 'permission.replied' }>
+  | EventMessagePartDelta
+  | EventPermissionAsked
+  | EventPermissionReplied;
 
 /**
  * Per-turn mutable state threaded through the pure mapping functions —
@@ -114,7 +129,7 @@ export function extractOpenCodeSessionId(event: OpenCodeWireEvent): string | und
     case 'message.part.delta':
     case 'message.removed':
     case 'message.part.removed':
-    case 'permission.updated':
+    case 'permission.asked':
     case 'permission.replied':
     case 'session.status':
     case 'session.idle':
@@ -216,17 +231,12 @@ export function mapOpenCodeEvent(
       return mapPartDelta(event.properties, ctx);
     case 'message.updated':
       return mapMessageUpdated(event.properties.info, ctx.sessionId);
-    case 'permission.updated':
-      return mapPermission(event.properties);
+    case 'permission.asked':
+      return mapPermissionAsked(event.properties);
     case 'permission.replied':
       // Resolution echo (possibly from another client, e.g. the TUI) — clear
       // the pending approval card instead of leaving an answerable ghost.
-      return [
-        {
-          type: 'interaction_cancelled',
-          data: { interactionId: event.properties.permissionID },
-        },
-      ];
+      return mapPermissionReplied(event.properties);
     case 'session.status':
       return mapSessionStatus(event.properties.status);
     case 'session.idle':

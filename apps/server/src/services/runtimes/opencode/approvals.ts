@@ -3,12 +3,11 @@
  * `approveTool()`, DorkOS permission-mode enforcement (NOTES.md §2), and the
  * server-side auto-deny timer.
  *
- * The event mapper surfaces every `permission.updated` it is handed; MODE
+ * The event mapper surfaces every `permission.asked` it is handed; MODE
  * enforcement lives here (the facade's job): `bypassPermissions` auto-answers
  * everything, `acceptEdits` auto-answers edit-type permissions, and anything
- * else — including unknown future modes and unknown `Permission.type` strings
- * (a flagged live-verify item) — falls through to the safe default of asking
- * the user.
+ * else — including unknown future modes and permission keys nobody has seen —
+ * falls through to the safe default of asking the user.
  *
  * Every forwarded request arms an auto-deny timer for
  * `SESSIONS.INTERACTION_TIMEOUT_MS` — exactly the `timeoutMs` the mapper
@@ -33,9 +32,9 @@ export type ApprovalDecision = 'ask' | 'auto-approve';
 export type PermissionResponse = 'once' | 'reject';
 
 /**
- * Permission.type values `acceptEdits` auto-approves. Exact strings are a
- * flagged live-verify item (NOTES.md); anything not listed asks the user —
- * the safe default.
+ * Permission keys `acceptEdits` auto-approves. `edit` is the exact string the
+ * 1.18.15 sidecar sends when a write is gated (live-verified 2026-08-11);
+ * anything not listed asks the user — the safe default.
  */
 const EDIT_PERMISSION_TYPES = new Set(['edit']);
 
@@ -45,7 +44,7 @@ const EDIT_PERMISSION_TYPES = new Set(['edit']);
  * fall through to `ask` — never silently escalate.
  *
  * @param mode - The session's effective DorkOS permission mode
- * @param permissionType - `Permission.type` (`bash`, `edit`, `webfetch`, …)
+ * @param permissionType - The request's permission key (`bash`, `edit`, `webfetch`, …)
  */
 export function resolveApprovalDecision(
   mode: PermissionMode | undefined,
