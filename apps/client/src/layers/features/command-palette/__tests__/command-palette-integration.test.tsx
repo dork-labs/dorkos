@@ -182,6 +182,20 @@ const mockAgents: AgentPathEntry[] = [
 let mockPaletteRecentAgents: AgentPathEntry[] = [mockAgents[2], mockAgents[0]];
 let mockPaletteAllAgents: AgentPathEntry[] = mockAgents;
 
+/**
+ * The ranking fields of a corpus row with no history behind it.
+ *
+ * Every row has to answer them — required, so a new kind of palette item cannot
+ * arrive silently unranked — and this file's claims are about dispatch, not
+ * about order.
+ */
+const unranked = {
+  usageKey: null,
+  lastActivityAt: null,
+  waiting: false,
+  demoted: false,
+} as const;
+
 vi.mock('../model/use-palette-items', () => ({
   usePaletteItems: () => {
     const features = [
@@ -217,17 +231,39 @@ vi.mock('../model/use-palette-items', () => ({
       features,
       commands,
       quickActions,
+      // The corpus the REAL search and ranking read — `usePaletteSearch` is not
+      // mocked here, so what a typed query shows is decided by the code that
+      // ships rather than by a passthrough stub.
       searchableItems: [
         ...mockPaletteAllAgents.map((a: AgentPathEntry) => ({
           id: a.id,
           name: a.name,
           type: 'agent',
           keywords: [a.projectPath],
+          ...unranked,
           data: a,
         })),
-        ...features.map((f) => ({ id: f.id, name: f.label, type: 'feature', data: f })),
-        ...commands.map((c) => ({ id: `cmd-${c.name}`, name: c.name, type: 'command', data: c })),
-        ...quickActions.map((q) => ({ id: q.id, name: q.label, type: 'quick-action', data: q })),
+        ...features.map((f) => ({
+          id: f.id,
+          name: f.label,
+          type: 'feature',
+          ...unranked,
+          data: f,
+        })),
+        ...commands.map((c) => ({
+          id: `cmd-${c.name}`,
+          name: c.name,
+          type: 'command',
+          ...unranked,
+          data: c,
+        })),
+        ...quickActions.map((q) => ({
+          id: q.id,
+          name: q.label,
+          type: 'quick-action',
+          ...unranked,
+          data: q,
+        })),
       ],
       newActions: quickActions.filter((q) => q.id === 'new-session'),
       sessions: [],
@@ -241,27 +277,6 @@ vi.mock('../model/use-palette-items', () => ({
       })),
       isLoading: false,
     };
-  },
-}));
-
-// Mock usePaletteSearch: passthrough all items so existing rendering assertions hold.
-// Prefix filtering (@ / >) is preserved so mode-switching tests work correctly.
-vi.mock('../model/use-palette-search', () => ({
-  usePaletteSearch: (items: Array<{ id: string; type: string; name: string }>, search: string) => {
-    const prefix = search.startsWith('@') ? '@' : search.startsWith('>') ? '>' : null;
-    const term = prefix ? search.slice(1) : search;
-    const filtered =
-      prefix === '@'
-        ? items.filter((i) => i.type === 'agent')
-        : prefix === '>'
-          ? items.filter((i) => i.type === 'command')
-          : items;
-    return { results: filtered.map((item) => ({ item, matches: undefined })), prefix, term };
-  },
-  parsePrefix: (search: string) => {
-    if (search.startsWith('@')) return { prefix: '@', term: search.slice(1) };
-    if (search.startsWith('>')) return { prefix: '>', term: search.slice(1) };
-    return { prefix: null, term: search };
   },
 }));
 
@@ -451,28 +466,27 @@ describe('Command Palette Integration', () => {
 
   // --- @ prefix mode ---
 
-  it('entering @ shows All Agents and hides other groups', () => {
+  it('entering @ shows the Agents group and hides every other kind', () => {
     render(<CommandPaletteDialog />);
     const input = screen.getByPlaceholderText('Search rooms, agents, commands...');
     fireEvent.change(input, { target: { value: '@' } });
 
-    // All Agents visible
-    expect(screen.getByText('All Agents')).toBeInTheDocument();
+    expect(screen.getByText('Agents')).toBeInTheDocument();
 
-    // Other groups hidden
-    expect(screen.queryByText('Recent Agents')).not.toBeInTheDocument();
-    expect(screen.queryByText('Features')).not.toBeInTheDocument();
-    expect(screen.queryByText('Quick Actions')).not.toBeInTheDocument();
+    // `@` is a scope, so the kinds it does not address are gone entirely —
+    // the ranking cannot bring back a row the prefix filtered out.
+    expect(screen.queryByText('Recent')).not.toBeInTheDocument();
+    expect(screen.queryByText('Actions')).not.toBeInTheDocument();
     expect(screen.queryByText('Commands')).not.toBeInTheDocument();
   });
 
-  it('@ followed by agent name still shows All Agents group', () => {
+  it('@ followed by agent name still shows the Agents group', () => {
     render(<CommandPaletteDialog />);
     const input = screen.getByPlaceholderText('Search rooms, agents, commands...');
     fireEvent.change(input, { target: { value: '@auth' } });
 
-    expect(screen.getByText('All Agents')).toBeInTheDocument();
-    expect(screen.queryByText('Features')).not.toBeInTheDocument();
+    expect(screen.getByText('Agents')).toBeInTheDocument();
+    expect(screen.queryByText('Actions')).not.toBeInTheDocument();
   });
 
   it('selecting an agent from search mode opens sub-menu; Open Here records frecency and sets dir', async () => {
@@ -482,11 +496,13 @@ describe('Command Palette Integration', () => {
     // Type a search query that matches an agent via cmdk's fuzzy filter
     fireEvent.change(input, { target: { value: 'API Gateway' } });
 
-    // All Agents group should appear when searching
-    expect(screen.getByText('All Agents')).toBeInTheDocument();
+    // The Agents group appears when searching
+    expect(screen.getByText('Agents')).toBeInTheDocument();
 
-    // Click the agent to open sub-menu
-    const item = screen.getByText('API Gateway').closest('[data-slot="command-item"]');
+    // Click the agent to open sub-menu. `getAllByText` because the real search
+    // highlights the matched run — the name is drawn once inside a `<mark>` on
+    // the row and once plainly in the preview panel beside it.
+    const item = screen.getAllByText('API Gateway')[0].closest('[data-slot="command-item"]');
     fireEvent.click(item as Element);
 
     // Sub-menu should appear; click Open Here to complete the switch
@@ -510,10 +526,12 @@ describe('Command Palette Integration', () => {
 
   /**
    * Features and quick actions are reached by TYPING now: the untyped palette
-   * is Continue / Recent / New and nothing else (§15). The mocked search passes
-   * everything through for a non-prefix query, so these stay about dispatch.
+   * is Continue / Recent / New and nothing else (§15). Each case types the name
+   * of the row it is about, the way a person does — search and ranking are the
+   * real ones here, so a query that happened to match everything would let a row
+   * be found by luck rather than by what was typed.
    */
-  function searchThen(text = 'a') {
+  function searchThen(text: string) {
     render(<CommandPaletteDialog />);
     fireEvent.change(screen.getByPlaceholderText('Search rooms, agents, commands...'), {
       target: { value: text },
@@ -521,7 +539,7 @@ describe('Command Palette Integration', () => {
   }
 
   it('selecting Tasks Scheduler opens tasks dialog and closes palette', () => {
-    searchThen();
+    searchThen('Tasks Scheduler');
     const item = screen.getByText('Tasks Scheduler').closest('[data-slot="command-item"]');
     fireEvent.click(item as Element);
 
@@ -530,7 +548,7 @@ describe('Command Palette Integration', () => {
   });
 
   it('selecting Connections goes to the page and closes the palette', () => {
-    searchThen();
+    searchThen('Connections');
     const item = screen.getByText('Connections').closest('[data-slot="command-item"]');
     fireEvent.click(item as Element);
 
@@ -539,7 +557,7 @@ describe('Command Palette Integration', () => {
   });
 
   it('selecting Mesh Network navigates to /agents and closes palette', () => {
-    searchThen();
+    searchThen('Mesh Network');
     const item = screen.getByText('Mesh Network').closest('[data-slot="command-item"]');
     fireEvent.click(item as Element);
 
@@ -548,7 +566,7 @@ describe('Command Palette Integration', () => {
   });
 
   it('selecting Settings opens settings dialog and closes palette', () => {
-    searchThen();
+    searchThen('Settings');
     const item = screen.getByText('Settings').closest('[data-slot="command-item"]');
     fireEvent.click(item as Element);
 
@@ -559,7 +577,7 @@ describe('Command Palette Integration', () => {
   // --- Quick actions ---
 
   it('Bring in existing projects opens the import dialog', () => {
-    searchThen();
+    searchThen('Bring in existing projects');
     const item = screen
       .getByText('Bring in existing projects')
       .closest('[data-slot="command-item"]');
@@ -569,7 +587,7 @@ describe('Command Palette Integration', () => {
   });
 
   it('Browse Filesystem opens directory picker', () => {
-    searchThen();
+    searchThen('Browse Filesystem');
     const item = screen.getByText('Browse Filesystem').closest('[data-slot="command-item"]');
     fireEvent.click(item as Element);
 
@@ -578,7 +596,7 @@ describe('Command Palette Integration', () => {
 
   it('Toggle Theme calls setTheme with opposite theme', () => {
     mockTheme = 'dark';
-    searchThen();
+    searchThen('Toggle Theme');
     const item = screen.getByText('Toggle Theme').closest('[data-slot="command-item"]');
     fireEvent.click(item as Element);
 
@@ -587,14 +605,13 @@ describe('Command Palette Integration', () => {
 
   // --- Search behavior ---
 
-  it('typing a search query reveals Commands and All Agents groups', () => {
+  it('typing a search query reveals the Commands group', () => {
     render(<CommandPaletteDialog />);
     const input = screen.getByPlaceholderText('Search rooms, agents, commands...');
     fireEvent.change(input, { target: { value: 'deploy' } });
 
     expect(screen.getByText('Commands')).toBeInTheDocument();
     expect(screen.getByText('/deploy')).toBeInTheDocument();
-    expect(screen.getByText('All Agents')).toBeInTheDocument();
   });
 
   it('Commands group is hidden when search is empty', () => {
@@ -605,15 +622,18 @@ describe('Command Palette Integration', () => {
   // --- Mesh always-on (no feature flag checks) ---
 
   it('renders agent data without any feature flag gating', () => {
-    searchThen();
+    // `@` scopes to agents, so every registered agent is on screen at once —
+    // which is the claim, and it does not depend on any one name matching a
+    // query. getAllByText because the highlighted agent's name also appears in
+    // the preview panel.
+    render(<CommandPaletteDialog />);
+    fireEvent.change(screen.getByPlaceholderText('Search rooms, agents, commands...'), {
+      target: { value: '@' },
+    });
 
-    // Agents from mesh appear directly without any "mesh disabled" message
-    // getAllByText used because the selected agent name also appears in the preview panel
     expect(screen.getAllByText('Frontend App').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Auth Service').length).toBeGreaterThan(0);
-
-    // Mesh is a feature option in the palette
-    expect(screen.getByText('Mesh Network')).toBeInTheDocument();
+    expect(screen.getAllByText('API Gateway').length).toBeGreaterThan(0);
 
     // No disabled-state messages
     expect(screen.queryByText(/mesh.*disabled/i)).not.toBeInTheDocument();
@@ -626,14 +646,14 @@ describe('Command Palette Integration', () => {
     mockPaletteRecentAgents = [];
     mockPaletteAllAgents = [];
 
-    searchThen();
+    searchThen('Settings');
 
     // Recent group should not appear (empty)
     expect(screen.queryByText('Recent')).not.toBeInTheDocument();
 
-    // Features and Quick Actions still render for a typed query
-    expect(screen.getByText('Features')).toBeInTheDocument();
-    expect(screen.getByText('Quick Actions')).toBeInTheDocument();
+    // Actions still answer a typed query with no agents anywhere.
+    expect(screen.getByText('Actions')).toBeInTheDocument();
+    expect(screen.getByText('Settings')).toBeInTheDocument();
   });
 
   // --- Dialog closed state ---

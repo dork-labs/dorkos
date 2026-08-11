@@ -60,6 +60,16 @@ export interface PaletteCommandCenter {
   continueRows: PaletteContinueRow[];
   /** The last things you were in, across sessions, rooms and agents. */
   recent: PaletteRecentEntry[];
+  /**
+   * Each agent's latest session time, keyed by `projectPath`, ISO-8601 — the
+   * `agentActivity` map `GET /api/sessions/recent` already returns.
+   *
+   * Handed out as well as used, because it is the only freshness an AGENT has:
+   * a conversation and a room each carry their own `lastActivityAt`, and an
+   * agent carries none, so without this the ranker would score every agent as
+   * equally stale (`palette-ranking`'s recency signal).
+   */
+  agentActivity: Readonly<Record<string, string>>;
 }
 
 /**
@@ -183,5 +193,14 @@ export function usePaletteCommandCenter(
     // the same cache with a shape the compiler can keep.
   }, [data, sessions, rooms, unreadRoomIds, agents, continueRows]);
 
-  return { sessions, continueRows, recent };
+  return { sessions, continueRows, recent, agentActivity: data?.agentActivity ?? EMPTY_ACTIVITY };
 }
+
+/**
+ * The empty activity map, as one shared object.
+ *
+ * A fresh `{}` per render would be a new identity every time, and this value
+ * feeds a `useMemo` dependency list in the corpus above — so the corpus would
+ * rebuild on every render for as long as the query has not answered.
+ */
+const EMPTY_ACTIVITY: Readonly<Record<string, string>> = Object.freeze({});

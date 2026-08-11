@@ -3,7 +3,8 @@ import { useMeshAgentPaths } from '@/layers/entities/mesh';
 import { useCommands } from '@/layers/entities/command';
 import { useSessions, selectAgentSessions } from '@/layers/entities/session';
 import { useSlotContributions } from '@/layers/shared/model';
-import { roomDisplayTitle } from '@/layers/entities/room';
+import { hasUnread, roomDisplayTitle, type RoomSummary } from '@/layers/entities/room';
+import { interactionKey } from '@/layers/entities/interactions';
 import { useAgentFrecency } from './use-agent-frecency';
 import { usePaletteRooms, type PaletteRooms } from './use-palette-rooms';
 import { usePaletteCommandCenter, type PaletteContinueRow } from './use-palette-command-center';
@@ -43,13 +44,16 @@ export interface CommandItemData {
 export interface PaletteItems {
   recentAgents: AgentPathEntry[];
   allAgents: AgentPathEntry[];
-  features: FeatureItem[];
-  commands: CommandItemData[];
-  quickActions: QuickActionItem[];
   /**
    * The cockpit's own creation actions, for the zero-query "New" group. A
-   * subset of {@link PaletteItems.quickActions}, in {@link PALETTE_NEW_ACTION_IDS}'
+   * subset of the registered quick actions, in {@link PALETTE_NEW_ACTION_IDS}'
    * order.
+   *
+   * The only list of actions this hook hands out. Features, quick actions and
+   * slash commands used to come back as three lists of their own, for a palette
+   * that drew three groups from them; a typed query is one ranked list now, so
+   * they reach the screen through {@link PaletteItems.searchableItems} and
+   * nowhere else.
    */
   newActions: QuickActionItem[];
   /** Channels, direct messages and what is unread among them (spec `rooms` §13.2). */
@@ -66,6 +70,53 @@ export interface PaletteItems {
 }
 
 const MAX_RECENT_AGENTS = 5;
+
+/**
+ * The ranking fields of a row nothing keeps a history for.
+ *
+ * Actions and slash commands are not places you have been: nothing records
+ * opening one, they have no last activity, nothing waits inside them and none
+ * of them is archived. So they rank on relevance alone.
+ *
+ * **Say the cost out loud: this is a structural handicap, not a neutral
+ * default.** Every boost is multiplicative on top of relevance, so a row with no
+ * history can never score above `relevance / 2` while a hot unread room reaches
+ * `relevance × 1` — an action whose name you typed in full can lose to a room
+ * that only nearly matched. That is a deliberate trade and it is defensible for
+ * a **recall** front door: the room is where work is actually happening, and
+ * §15's whole premise is that ⌘K is for finding your way back to things, not for
+ * launching. It is worth revisiting the day the palette becomes somebody's main
+ * way of running actions.
+ *
+ * The cheap escape, if it ever needs one, is to start recording action opens
+ * under the same key space — task 3.3 owns that store and could add a fourth
+ * {@link InteractionKind} without any change here beyond a `usageKey`.
+ */
+const UNTRACKED = {
+  usageKey: null,
+  lastActivityAt: null,
+  waiting: false,
+  demoted: false,
+} as const;
+
+/**
+ * What ranking needs to know about a room.
+ *
+ * Both facts come from the room itself rather than from the palette's own
+ * lists, so a channel and a direct message answer them the same way. `hasUnread`
+ * decides `waiting` rather than `unreadCount`, because `null` means "you are not
+ * in this room" and is not zero — see its own doc.
+ *
+ * @param room - The room being turned into a searchable row.
+ */
+function roomRanking(room: RoomSummary) {
+  return {
+    usageKey: interactionKey('room', room.id),
+    lastActivityAt: room.lastActivityAt,
+    waiting: hasUnread(room),
+    demoted: room.archived,
+  };
+}
 
 /**
  * Assemble all content groups for the command palette.
@@ -128,7 +179,7 @@ export function usePaletteItems(activeCwd: string | null): PaletteItems {
   // prefixes, which address them differently on purpose.
   const allRooms = useMemo(() => [...rooms.channels, ...rooms.dms], [rooms.channels, rooms.dms]);
 
-  const { sessions, continueRows, recent } = usePaletteCommandCenter(
+  const { sessions, continueRows, recent, agentActivity } = usePaletteCommandCenter(
     allAgents,
     allRooms,
     unreadRoomIds
@@ -174,6 +225,13 @@ export function usePaletteItems(activeCwd: string | null): PaletteItems {
         name: agent.name,
         type: 'agent',
         keywords: [agent.projectPath, agent.id],
+        // Keyed by the DIRECTORY, not the mesh id: that is what the interaction
+        // store records when a person opens an agent anywhere in the cockpit,
+        // and a key nothing writes ranks every agent as never used.
+        usageKey: interactionKey('agent', agent.projectPath),
+        lastActivityAt: agentActivity[agent.projectPath] ?? null,
+        waiting: false,
+        demoted: false,
         data: agent,
       });
     }
@@ -187,12 +245,23 @@ export function usePaletteItems(activeCwd: string | null): PaletteItems {
         name: session.title,
         type: 'session',
         keywords: paletteSessionKeywords(session),
+        usageKey: interactionKey('session', session.id),
+        lastActivityAt: session.lastActivityAt,
+        waiting: false,
+        demoted: false,
         data: session,
       });
     }
 
     for (const f of features) {
-      items.push({ id: f.id, name: f.label, type: 'feature', keywords: f.keywords, data: f });
+      items.push({
+        id: f.id,
+        name: f.label,
+        type: 'feature',
+        keywords: f.keywords,
+        ...UNTRACKED,
+        data: f,
+      });
     }
 
     for (const cmd of commands) {
@@ -201,6 +270,7 @@ export function usePaletteItems(activeCwd: string | null): PaletteItems {
         name: cmd.name,
         type: 'command',
         keywords: cmd.description ? [cmd.description] : undefined,
+        ...UNTRACKED,
         data: cmd,
       });
     }
@@ -211,6 +281,7 @@ export function usePaletteItems(activeCwd: string | null): PaletteItems {
         name: qa.label,
         type: 'quick-action',
         keywords: qa.keywords,
+        ...UNTRACKED,
         data: qa,
       });
     }
@@ -223,6 +294,7 @@ export function usePaletteItems(activeCwd: string | null): PaletteItems {
         name: roomDisplayTitle(room),
         type: 'room',
         keywords: paletteRoomKeywords(room),
+        ...roomRanking(room),
         data: room,
       });
     }
@@ -233,19 +305,26 @@ export function usePaletteItems(activeCwd: string | null): PaletteItems {
         name: room.title,
         type: 'dm',
         keywords: paletteRoomKeywords(room),
+        ...roomRanking(room),
         data: room,
       });
     }
 
     return items;
-  }, [allAgents, sessions, commands, features, quickActions, rooms.channels, rooms.dms]);
+  }, [
+    allAgents,
+    agentActivity,
+    sessions,
+    commands,
+    features,
+    quickActions,
+    rooms.channels,
+    rooms.dms,
+  ]);
 
   return {
     recentAgents,
     allAgents,
-    features,
-    commands,
-    quickActions,
     newActions,
     rooms,
     sessions,

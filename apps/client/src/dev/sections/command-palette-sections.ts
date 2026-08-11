@@ -10,6 +10,23 @@ export const COMMAND_PALETTE_SECTIONS: PlaygroundSection[] = [
     keywords: ['continue', 'recent', 'new', 'zero', 'query', 'session', 'verb', 'row', 'grammar'],
   },
   {
+    id: 'ranked-results-typed-query',
+    title: 'Ranked results (typed query)',
+    page: 'command-palette',
+    category: 'Command Palette',
+    keywords: [
+      'ranking',
+      'best',
+      'match',
+      'relevance',
+      'frecency',
+      'recency',
+      'blended',
+      'order',
+      'query',
+    ],
+  },
+  {
     id: 'agentcommanditem',
     title: 'AgentCommandItem',
     page: 'command-palette',
