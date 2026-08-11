@@ -208,6 +208,7 @@ export function ChatPanel({
     setInput,
     handleSubmit,
     submitContent,
+    enqueueContent,
     status,
     error,
     sessionBusy,
@@ -475,7 +476,7 @@ export function ChatPanel({
         input={input}
         autocomplete={autocomplete}
         handleSubmit={handleSubmit}
-        submitContent={submitContent}
+        enqueueContent={enqueueContent}
         tryNativeCommand={tryNativeCommand}
         commandPending={commandPending}
         status={status}

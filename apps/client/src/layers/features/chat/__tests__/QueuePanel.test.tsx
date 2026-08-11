@@ -24,12 +24,17 @@ afterEach(() => {
   cleanup();
 });
 
-const makeItem = (content: string, index: number): QueueItem => ({
+const makeItem = (content: string, index: number, over: Partial<QueueItem> = {}): QueueItem => ({
   id: `id-${index}`,
   content,
+  mine: true,
+  notice: null,
+  ...over,
 });
 
-/** Renders the panel with send-now enabled unless a case says otherwise. */
+const STATUS_NOTE = 'Sending one at a time as the agent finishes';
+
+/** Renders the panel with the props a plain waiting queue has. */
 function renderPanel(props: Partial<React.ComponentProps<typeof QueuePanel>> = {}) {
   return render(
     <QueuePanel
@@ -38,8 +43,8 @@ function renderPanel(props: Partial<React.ComponentProps<typeof QueuePanel>> = {
       onEdit={vi.fn()}
       onRemove={vi.fn()}
       onSend={vi.fn()}
-      sendBlockedReason={null}
-      whenUnblocked="Will send next"
+      onMoveUp={vi.fn()}
+      statusNote={STATUS_NOTE}
       {...props}
     />
   );
@@ -93,10 +98,13 @@ describe('QueuePanel', () => {
     expect(container.querySelectorAll('button [tabindex]')).toHaveLength(0);
   });
 
-  it('exposes an edit, a send-now and a remove button per item', () => {
-    // Was 4 (edit + remove per row). The count grew because every row gained a
-    // send-now control — the only escape from a queue the auto-flush cannot drain.
+  it('offers no reorder or send-next on the message that is already next', () => {
+    // The head cannot go further forward. A control that can only no-op is
+    // worse than no control, so it is not drawn: row 1 has edit + remove, row 2
+    // has edit + move-up + send-next + remove.
     renderPanel({ queue: [makeItem('First', 0), makeItem('Second', 1)] });
+    expect(screen.queryByLabelText('Send queued message 1 next')).toBeNull();
+    expect(screen.queryByLabelText('Move queued message 1 earlier')).toBeNull();
     expect(screen.getAllByRole('button')).toHaveLength(6);
   });
 
@@ -133,8 +141,8 @@ describe('QueuePanel', () => {
         onEdit={vi.fn()}
         onRemove={vi.fn()}
         onSend={vi.fn()}
-        sendBlockedReason={null}
-        whenUnblocked="Will send next"
+        onMoveUp={vi.fn()}
+        statusNote={STATUS_NOTE}
       />
     );
     expect(rowClasses()).toContain('border-l-2');
@@ -142,30 +150,15 @@ describe('QueuePanel', () => {
   });
 
   it('says when the queued messages will go out, not just how many', () => {
-    // "Queued (2)" answered the one question nobody was asking. The blocked
-    // reason is the answer to the real one, already written for a person.
-    renderPanel({
-      queue: [makeItem('A', 0), makeItem('B', 1)],
-      sendBlockedReason: 'Waiting for the reply to finish',
-    });
+    // "Queued (2)" answered the one question nobody was asking.
+    renderPanel({ queue: [makeItem('A', 0), makeItem('B', 1)] });
     expect(screen.getByText('Queued (2)')).toBeInTheDocument();
-    expect(screen.getByText(/Waiting for the reply to finish/)).toBeInTheDocument();
-  });
-
-  it('says what happens next when nothing is holding the queue back', () => {
-    // The caller decides the words: an unblocked queue normally drains itself,
-    // but after a turn that ended in error it genuinely waits for a person.
-    renderPanel({ queue: [makeItem('A', 0)], sendBlockedReason: null });
-    expect(screen.getByText(/Will send next/)).toBeInTheDocument();
+    expect(screen.getByText(new RegExp(STATUS_NOTE))).toBeInTheDocument();
   });
 
   it('lets the caller say the queue is waiting on a person instead', () => {
-    renderPanel({
-      queue: [makeItem('A', 0)],
-      sendBlockedReason: null,
-      whenUnblocked: 'Ready to send',
-    });
-    expect(screen.getByText(/Ready to send/)).toBeInTheDocument();
+    renderPanel({ queue: [makeItem('A', 0)], statusNote: 'Waiting for your answer above' });
+    expect(screen.getByText(/Waiting for your answer above/)).toBeInTheDocument();
   });
 
   it('remove button is always visible (opacity-100 base class, not standalone opacity-0)', () => {
@@ -179,65 +172,71 @@ describe('QueuePanel', () => {
   });
 });
 
-describe('QueuePanel — send now (a queued message is never trapped)', () => {
-  it('offers a send-now control per row, addressed by the item id', () => {
+describe('QueuePanel — whose message it is, and what happened to it', () => {
+  it('marks a chip another window queued, in words as well as an icon', () => {
+    renderPanel({ queue: [makeItem('Mine', 0), makeItem('Theirs', 1, { mine: false })] });
+    expect(screen.getAllByText('Queued from another window')).toHaveLength(1);
+  });
+
+  it('says nothing at all about this window\u2019s own chips', () => {
+    renderPanel({ queue: [makeItem('Mine', 0), makeItem('Also mine', 1)] });
+    expect(screen.queryByText('Queued from another window')).toBeNull();
+  });
+
+  it('shows a downgrade notice under the message it belongs to', () => {
+    renderPanel({
+      queue: [
+        makeItem('Plain', 0),
+        makeItem('Steered', 1, { notice: 'Queued — this agent cannot take a message mid-task' }),
+      ],
+    });
+    expect(
+      screen.getByText('Queued — this agent cannot take a message mid-task')
+    ).toBeInTheDocument();
+  });
+});
+
+describe('QueuePanel — send next and reorder', () => {
+  it('offers a send-next control per row behind the head, addressed by the item id', () => {
     const onSend = vi.fn();
     renderPanel({ queue: [makeItem('First', 0), makeItem('Second', 1)], onSend });
 
-    fireEvent.click(screen.getByLabelText('Send queued message 2 now'));
+    fireEvent.click(screen.getByLabelText('Send queued message 2 next'));
 
     expect(onSend).toHaveBeenCalledWith('id-1');
   });
 
-  it('send-now is enabled and free of any hover gate when a send can happen', () => {
-    // Discoverability is the whole point: a person recovering a stranded queue
-    // must not have to hover to find the way out. (jsdom reports every element as
-    // 0×0, so this checks the classes that decide visibility, not geometry.)
-    renderPanel({ queue: [makeItem('Test', 0)], sendBlockedReason: null });
-    const sendBtn = screen.getByLabelText('Send queued message 1 now');
+  it('offers a move-earlier control per row behind the head', () => {
+    const onMoveUp = vi.fn();
+    renderPanel({
+      queue: [makeItem('First', 0), makeItem('Second', 1), makeItem('Third', 2)],
+      onMoveUp,
+    });
 
-    expect(sendBtn.getAttribute('aria-disabled')).toBe('false');
+    fireEvent.click(screen.getByLabelText('Move queued message 3 earlier'));
+
+    expect(onMoveUp).toHaveBeenCalledWith('id-2');
+  });
+
+  it('send-next is free of any hover gate — it is the row\u2019s primary action', () => {
+    // Discoverability is the whole point. (jsdom reports every element as 0×0,
+    // so this checks the classes that decide visibility, not geometry.)
+    renderPanel({ queue: [makeItem('First', 0), makeItem('Second', 1)] });
+    const sendBtn = screen.getByLabelText('Send queued message 2 next');
+
+    expect(sendBtn).not.toBeDisabled();
     expect(sendBtn.className).not.toContain('opacity-0');
   });
 
-  it('states the reason in the accessible name when a send cannot happen', () => {
-    // `title` alone was announced to nobody: an aria-label wins the accessible
-    // name outright. And blocked is the COMMON state here — a queue mostly
-    // exists while a reply streams — so this is the reading most people get.
-    const onSend = vi.fn();
-    renderPanel({
-      queue: [makeItem('Test', 0)],
-      onSend,
-      sendBlockedReason: 'Waiting for the reply to finish',
-    });
-
-    const sendBtn = screen.getByLabelText(
-      'Send queued message 1 now — unavailable: Waiting for the reply to finish'
-    );
-    expect(sendBtn.getAttribute('title')).toBe('Waiting for the reply to finish');
-
-    // Refuses the click, but visibly and by its own guard.
-    fireEvent.click(sendBtn);
-    expect(onSend).not.toHaveBeenCalled();
-  });
-
-  it('keeps a blocked send-now reachable by keyboard, so the reason can be heard', () => {
-    // A real `disabled` drops the button out of the tab order — hiding the
-    // explanation from exactly the person who most needs it, in exactly the
-    // state where it applies.
-    renderPanel({ queue: [makeItem('Test', 0)], sendBlockedReason: 'This session is busy' });
-    const sendBtn = screen.getByRole('button', { name: /Send queued message 1 now/ });
-
-    expect(sendBtn).not.toBeDisabled();
-    expect(sendBtn.getAttribute('aria-disabled')).toBe('true');
-    sendBtn.focus();
-    expect(document.activeElement).toBe(sendBtn);
-  });
-
   it('gives every row button a keyboard focus ring', () => {
-    renderPanel({ queue: [makeItem('Test', 0)] });
+    renderPanel({ queue: [makeItem('First', 0), makeItem('Second', 1)] });
 
-    for (const name of [/Test/, /Send queued message 1 now/, /Remove queued message 1/]) {
+    for (const name of [
+      /Second/,
+      /Send queued message 2 next/,
+      /Move queued message 2 earlier/,
+      /Remove queued message 2/,
+    ]) {
       expect(screen.getByRole('button', { name }).className).toContain('focus-ring');
     }
   });

@@ -82,9 +82,10 @@ export {
   useSessionTriggerPending,
   useSessionInProgressTurn,
   useSessionQueue,
+  useSessionQueueOutcomes,
   DEFAULT_SESSION_STREAM_STATE,
 } from './model/session-stream-store';
-export type { SessionStreamState, QueuedMessage } from './model/session-stream-store';
+export type { SessionStreamState } from './model/session-stream-store';
 export {
   useSessionListStore,
   useSessionListSessions,

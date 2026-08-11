@@ -215,23 +215,30 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
     compact: options.compactIntent,
   });
 
-  const { handleSubmit, submitContent, stop, retryMessage, submitKickoff, markToolCallResponded } =
-    useSessionSubmit({
-      sessionId,
-      input,
-      status,
-      transport,
-      queryClient,
-      selectedCwd,
-      onSessionIdChangeReplace: options.onSessionIdChangeReplace,
-      transformContent: options.transformContent,
-      launchRuntime: options.launchRuntime,
-      takeSeedContext: options.takeSeedContext,
-      setInput,
-      setError,
-      setSessionBusy,
-      tryNativeCommand: native.tryRun,
-    });
+  const {
+    handleSubmit,
+    submitContent,
+    enqueueContent,
+    stop,
+    retryMessage,
+    submitKickoff,
+    markToolCallResponded,
+  } = useSessionSubmit({
+    sessionId,
+    input,
+    status,
+    transport,
+    queryClient,
+    selectedCwd,
+    onSessionIdChangeReplace: options.onSessionIdChangeReplace,
+    transformContent: options.transformContent,
+    launchRuntime: options.launchRuntime,
+    takeSeedContext: options.takeSeedContext,
+    setInput,
+    setError,
+    setSessionBusy,
+    tryNativeCommand: native.tryRun,
+  });
 
   // Whether the durable stream snapshot has landed for this session. Gates the
   // kickoff mid-stream failure flip AND the first-light waking state (both must
@@ -249,8 +256,7 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
   // mid-stream token update (harmless given the fire-once guards, but it makes
   // the dependency list meaningless).
   const submitFirstMessage = useCallback(
-    (content: string, cwd?: string) =>
-      submitContent(content, undefined, cwd ? { queued: false, cwd } : undefined),
+    (content: string, cwd?: string) => submitContent(content, cwd ? { cwd } : undefined),
     [submitContent]
   );
 
@@ -301,6 +307,7 @@ export function useChatSession(sessionId: string | null, options: ChatSessionOpt
     setInput,
     handleSubmit,
     submitContent,
+    enqueueContent,
     status,
     error,
     sessionBusy,

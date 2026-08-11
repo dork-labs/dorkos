@@ -126,6 +126,42 @@ function lastChatInputProps() {
   return vi.mocked(Composer.Input).mock.calls.at(-1)![0];
 }
 
+/**
+ * Put messages on the session's queue the way the server does — a `queue_update`
+ * on the durable stream — with the session streaming, because a queue is only
+ * WAITING while there is a turn to wait behind.
+ */
+function seedQueue(...contents: string[]) {
+  const store = useSessionStreamStore.getState();
+  store.applyEvent('test-session', {
+    seq: 1,
+    type: 'status_change',
+    status: {
+      contextUsage: null,
+      cost: null,
+      usage: null,
+      cacheStats: null,
+      model: null,
+      permissionMode: 'default',
+      todoCounts: null,
+      runningSubagentCount: 0,
+      lifecycle: 'streaming',
+      lastError: null,
+    },
+  });
+  store.applyEvent('test-session', {
+    seq: 2,
+    type: 'queue_update',
+    queue: contents.map((content, i) => ({
+      id: `q${i}`,
+      content,
+      disposition: 'queue' as const,
+      enqueuedAt: 1_000,
+      enqueuedBy: 'window-a',
+    })),
+  });
+}
+
 const baseProps = {
   chatInputRef: createRef<null>(),
   input: '',
@@ -144,7 +180,7 @@ const baseProps = {
     activeDescendantId: undefined,
   } as never,
   handleSubmit: vi.fn(),
-  submitContent: vi.fn(),
+  enqueueContent: vi.fn().mockResolvedValue(true),
   tryNativeCommand: vi.fn(() => ({ handled: false }) as const),
   commandPending: false,
   status: 'idle' as const,
@@ -178,7 +214,7 @@ afterEach(() => {
   cleanup();
   // The stream store is module state shared across tests — a queue seeded by one
   // case must not decide whether the panel renders in the next.
-  useSessionStreamStore.getState().clearQueue('test-session');
+  useSessionStreamStore.setState({ sessions: {}, sessionAccessOrder: [] });
 });
 
 describe('ChatInputContainer mode switching', () => {
@@ -334,28 +370,11 @@ describe('ChatInputContainer — a failed attachment blocks the send (DOR-480)',
     expect(lastChatInputProps().canSubmit).toBe(false);
   });
 
-  it('blocks a hand-send from the queue too, and says why', () => {
-    // Without this the click dequeues, the upload throws inside the flush, the
-    // restore fires, and the person gets a generic "Could not send message" for
-    // a cause that was on screen the whole time.
-    useSessionStreamStore.getState().enqueueMessage('test-session', 'queued while busy');
-    render(
-      <ChatInputContainer
-        {...baseProps}
-        fileUpload={{ ...baseProps.fileUpload, hasFailedUpload: true }}
-      />
-    );
-
-    const panelProps = vi.mocked(QueuePanel).mock.calls.at(-1)![0];
-    expect(panelProps.sendBlockedReason).toBe('An attachment did not upload');
-  });
-
   it('gives the composer a real name in the one mode where Enter stops meaning send', () => {
     // Editing returned '' for the placeholder, and that string is the field's
     // aria-label — so in the single mode whose behavior differs (Enter saves)
     // the composer announced nothing at all.
-    useSessionStreamStore.getState().enqueueMessage('test-session', 'first queued');
-    useSessionStreamStore.getState().enqueueMessage('test-session', 'second queued');
+    seedQueue('first queued', 'second queued');
     render(<ChatInputContainer {...baseProps} />);
 
     expect(lastChatInputProps().placeholder).toBe('Send a message...');
@@ -375,7 +394,7 @@ describe('ChatInputContainer — a failed attachment blocks the send (DOR-480)',
     // row's Send-now and Remove buttons (measured in a browser) — the one way
     // out of a queue the flush pump cannot drain. The lane floats above the
     // whole card, so nothing it contains can cover a control.
-    useSessionStreamStore.getState().enqueueMessage('test-session', 'queued while armed');
+    seedQueue('queued while armed');
     const { container } = render(<ChatInputContainer {...baseProps} />);
 
     expect(screen.queryByTestId('clear-armed-hint')).not.toBeInTheDocument();

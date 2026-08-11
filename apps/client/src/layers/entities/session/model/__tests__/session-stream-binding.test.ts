@@ -282,9 +282,13 @@ describe('initSessionStreamBinding', () => {
   it('a retire announce migrates client continuity state to the canonical id (NF-2)', () => {
     // Real failure mode (acceptance run 20260611-145454): the canonical id
     // usually resolves AFTER the trigger 202, so the announce on the global
-    // stream is the only rekey signal this client gets — without this fan-out a
-    // message queued under the request UUID is orphaned and never delivered.
-    useSessionStreamStore.getState().enqueueMessage('request-uuid', 'queued mid-first-turn');
+    // stream is the only rekey signal this client gets — without this fan-out
+    // the message the person can see on screen is orphaned under the request
+    // UUID. (The QUEUE is not in here: the server owns it and follows the rekey
+    // itself.)
+    useSessionStreamStore
+      .getState()
+      .setOptimisticUserMessage('request-uuid', { id: 'opt-1', content: 'first words' });
     manager.connectList();
 
     connections[0]!.push('session_status', {
@@ -295,12 +299,11 @@ describe('initSessionStreamBinding', () => {
     });
 
     expect(
-      useSessionStreamStore
-        .getState()
-        .getSession('canonical-id')
-        .queuedMessages.map((m) => m.content)
-    ).toEqual(['queued mid-first-turn']);
-    expect(useSessionStreamStore.getState().getSession('request-uuid').queuedMessages).toEqual([]);
+      useSessionStreamStore.getState().getSession('canonical-id').optimisticUserMessage?.content
+    ).toBe('first words');
+    expect(
+      useSessionStreamStore.getState().getSession('request-uuid').optimisticUserMessage
+    ).toBeNull();
     // And the retirement is recorded for the URL rekey + cache reconciler.
     expect(useSessionListStore.getState().rekeys['request-uuid']).toBe('canonical-id');
   });

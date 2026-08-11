@@ -166,6 +166,19 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     subscribeSessionList: vi.fn(emptyAsyncIterable),
     getTasks: vi.fn().mockResolvedValue({ tasks: [] }),
     postMessage: vi.fn().mockImplementation((sessionId: string) => Promise.resolve({ sessionId })),
+    updateQueuedMessage: vi.fn().mockImplementation((_sessionId: string, messageId: string) =>
+      Promise.resolve({
+        message: {
+          id: messageId,
+          content: '',
+          disposition: 'queue',
+          enqueuedAt: 0,
+          enqueuedBy: 'test-client',
+        },
+        queue: [],
+      })
+    ),
+    removeQueuedMessage: vi.fn().mockResolvedValue({ queue: [] }),
     runCommandIntent: vi
       .fn()
       .mockImplementation((sessionId: string) => Promise.resolve({ sessionId })),

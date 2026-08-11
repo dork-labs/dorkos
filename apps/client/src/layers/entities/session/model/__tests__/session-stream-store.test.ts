@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import type { HistoryMessage } from '@dorkos/shared/types';
 import type { SessionEvent, SessionSnapshot, SessionStatus } from '@dorkos/shared/session-stream';
+import type { MessageDeliveryOutcome, QueuedMessage } from '@dorkos/shared/schemas';
 
 import { useSessionStreamStore, DEFAULT_SESSION_STREAM_STATE } from '../session-stream-store';
 import { useSessionListStore } from '../session-list-store';
@@ -38,6 +39,18 @@ function snapshot(overrides: Partial<SessionSnapshot> = {}): SessionSnapshot {
     cursor: 5,
     ...overrides,
   };
+}
+
+function queued(id: string, content: string): QueuedMessage {
+  return { id, content, disposition: 'queue', enqueuedAt: 1000, enqueuedBy: 'window-a' };
+}
+
+function queueUpdate(
+  seq: number,
+  queue: QueuedMessage[],
+  outcome?: MessageDeliveryOutcome
+): SessionEvent {
+  return { type: 'queue_update', seq, queue, ...(outcome ? { outcome } : {}) };
 }
 
 function approvalEvent(seq: number, id: string): SessionEvent {
@@ -599,39 +612,35 @@ describe('useSessionStreamStore', () => {
   });
 
   describe('migrateSessionContinuity (rekey follow-through, NF-2)', () => {
-    it('moves the queue, optimistic message, and trigger latch to the canonical id', () => {
-      // Real failure mode (acceptance run 20260611-145454, NF-2): a message
-      // queued under the request UUID was orphaned when the view moved to the
-      // canonical id and never delivered.
+    it('moves the optimistic message and the trigger latch to the canonical id', () => {
       const store = useSessionStreamStore.getState();
-      store.enqueueMessage('request-uuid', 'queued while streaming');
       store.setOptimisticUserMessage('request-uuid', { id: 'opt-1', content: 'first send' });
       store.setTriggerPending('request-uuid', true);
 
       store.migrateSessionContinuity('request-uuid', 'canonical-id');
 
       const target = useSessionStreamStore.getState().getSession('canonical-id');
-      expect(target.queuedMessages.map((m) => m.content)).toEqual(['queued while streaming']);
       expect(target.optimisticUserMessage).toEqual({ id: 'opt-1', content: 'first send' });
       expect(target.triggerPending).toBe(true);
 
       const source = useSessionStreamStore.getState().getSession('request-uuid');
-      expect(source.queuedMessages).toEqual([]);
       expect(source.optimisticUserMessage).toBeNull();
       expect(source.triggerPending).toBe(false);
     });
 
-    it('appends behind messages already queued under the canonical id', () => {
+    it('leaves the queue where it is — the server owns it and follows the rekey itself', () => {
       const store = useSessionStreamStore.getState();
-      store.enqueueMessage('canonical-id', 'already here');
-      store.enqueueMessage('request-uuid', 'migrated');
+      store.applyEvent('request-uuid', queueUpdate(1, [queued('q1', 'queued while streaming')]));
+      store.setTriggerPending('request-uuid', true);
+
       store.migrateSessionContinuity('request-uuid', 'canonical-id');
+
       expect(
-        useSessionStreamStore
-          .getState()
-          .getSession('canonical-id')
-          .queuedMessages.map((m) => m.content)
-      ).toEqual(['already here', 'migrated']);
+        useSessionStreamStore.getState().getSession('canonical-id').queuedMessages
+      ).toHaveLength(0);
+      expect(
+        useSessionStreamStore.getState().getSession('request-uuid').queuedMessages
+      ).toHaveLength(1);
     });
 
     it('a target-side optimistic message wins over the migrated one', () => {
@@ -652,19 +661,20 @@ describe('useSessionStreamStore', () => {
     it('is idempotent — the second observation point finds an empty source and no-ops', () => {
       // Both the 202 path and the retire announce may fire for one rekey.
       const store = useSessionStreamStore.getState();
-      store.enqueueMessage('request-uuid', 'once');
+      store.setOptimisticUserMessage('request-uuid', { id: 'opt-1', content: 'once' });
       store.migrateSessionContinuity('request-uuid', 'canonical-id');
+      store.setOptimisticUserMessage('canonical-id', { id: 'opt-1', content: 'once' });
       store.migrateSessionContinuity('request-uuid', 'canonical-id');
       expect(
-        useSessionStreamStore.getState().getSession('canonical-id').queuedMessages
-      ).toHaveLength(1);
+        useSessionStreamStore.getState().getSession('canonical-id').optimisticUserMessage
+      ).toEqual({ id: 'opt-1', content: 'once' });
     });
 
     it('no-ops on an identity migration and never creates an entry for an empty source', () => {
       const store = useSessionStreamStore.getState();
-      store.enqueueMessage(SID, 'kept');
+      store.setOptimisticUserMessage(SID, { id: 'opt-1', content: 'kept' });
       store.migrateSessionContinuity(SID, SID);
-      expect(useSessionStreamStore.getState().getSession(SID).queuedMessages).toHaveLength(1);
+      expect(useSessionStreamStore.getState().getSession(SID).optimisticUserMessage).not.toBeNull();
       store.migrateSessionContinuity('never-seen', 'canonical-id');
       expect(useSessionStreamStore.getState().sessions['canonical-id']).toBeUndefined();
     });
@@ -672,7 +682,7 @@ describe('useSessionStreamStore', () => {
     it('leaves the source projection (messages, turn, seq) intact for a still-open view', () => {
       const store = useSessionStreamStore.getState();
       store.applySnapshot('request-uuid', snapshot());
-      store.enqueueMessage('request-uuid', 'queued');
+      store.setTriggerPending('request-uuid', true);
       store.migrateSessionContinuity('request-uuid', 'canonical-id');
       const source = useSessionStreamStore.getState().getSession('request-uuid');
       expect(source.messages).toEqual([MESSAGE]);
@@ -733,91 +743,114 @@ describe('useSessionStreamStore', () => {
       expect(useSessionStreamStore.getState().pinnedSessionId).toBeNull();
     });
 
-    it('a session holding queued messages survives eviction (DOR-480)', () => {
-      // Real failure mode: a queue that stranded (a failed turn, a lock race) is
-      // by definition not streaming, so the idle-only guard let it be evicted —
-      // and evicting the entry DELETED the messages. Visiting 20 other sessions
-      // was enough, which one person running ten agents across five projects
-      // does in an ordinary afternoon.
+    it('a session holding queued messages is evictable — the queue is not lost with it', () => {
+      // The queue used to pin a session here (DOR-480), because evicting the
+      // entry DELETED words nobody else was holding. The server holds them now,
+      // so the entry is a pure projection again and the next snapshot brings the
+      // queue straight back.
       const store = useSessionStreamStore.getState();
-      store.enqueueMessage('s-0', 'do the migration next'); // s-0 is now the oldest
+      store.applyEvent('s-0', queueUpdate(1, [queued('q1', 'do the migration next')]));
       seedIdleSessions(store, RETENTION_LIMIT); // s-0 .. s-19, s-0 first in line
 
       store.ensureSession('s-20'); // pushes past the limit
-
-      const after = useSessionStreamStore.getState();
-      expect(after.sessions['s-0']).toBeDefined();
-      expect(after.sessions['s-0']!.queuedMessages.map((m) => m.content)).toEqual([
-        'do the migration next',
-      ]);
-    });
-
-    it('the same session becomes evictable once its queue is empty', () => {
-      // The guard protects undelivered words, not the projection: once the queue
-      // drains there is nothing left in here the server cannot send again.
-      const store = useSessionStreamStore.getState();
-      store.enqueueMessage('s-0', 'still queued');
-      seedIdleSessions(store, RETENTION_LIMIT);
-      store.ensureSession('s-20');
-      expect(useSessionStreamStore.getState().sessions['s-0']).toBeDefined();
-
-      const queuedId = useSessionStreamStore.getState().sessions['s-0']!.queuedMessages[0]!.id;
-      // Draining also touches s-0 to the front of the LRU, so walk past the
-      // retention limit again to make it the oldest entry once more.
-      store.removeQueuedMessage('s-0', queuedId);
-      for (let i = 21; i <= 21 + RETENTION_LIMIT; i++) store.ensureSession(`s-${i}`);
 
       expect(useSessionStreamStore.getState().sessions['s-0']).toBeUndefined();
     });
   });
 
-  describe('requeueMessage (a refused trigger puts the message back — DOR-480)', () => {
-    it('re-inserts at the original position, keeping the id', () => {
-      const store = useSessionStreamStore.getState();
-      for (const content of ['first', 'second', 'third']) store.enqueueMessage(SID, content);
-      const head = useSessionStreamStore.getState().getSession(SID).queuedMessages[0]!;
-
-      // The flush dequeued the head, then the trigger came back refused.
-      store.removeQueuedMessage(SID, head.id);
+  describe("queue_update (the server's queue, projected)", () => {
+    it('hydrates the queue from the snapshot, so a refresh shows what is waiting', () => {
+      useSessionStreamStore
+        .getState()
+        .applySnapshot(SID, snapshot({ queuedMessages: [queued('q1', 'and then the docs')] }));
       expect(
         useSessionStreamStore
           .getState()
           .getSession(SID)
           .queuedMessages.map((m) => m.content)
-      ).toEqual(['second', 'third']);
-
-      store.requeueMessage(SID, head, 0);
-
-      const after = useSessionStreamStore.getState().getSession(SID).queuedMessages;
-      expect(after.map((m) => m.content)).toEqual(['first', 'second', 'third']);
-      expect(after[0]!.id).toBe(head.id);
+      ).toEqual(['and then the docs']);
     });
 
-    it('is idempotent — a double restore cannot duplicate the message', () => {
+    it('replaces the whole queue on every update, never merges', () => {
       const store = useSessionStreamStore.getState();
-      store.enqueueMessage(SID, 'only');
-      const item = useSessionStreamStore.getState().getSession(SID).queuedMessages[0]!;
-      store.removeQueuedMessage(SID, item.id);
+      store.applyEvent(SID, queueUpdate(1, [queued('q1', 'first'), queued('q2', 'second')]));
+      // A reorder in another window: same ids, different order, nothing added.
+      store.applyEvent(SID, queueUpdate(2, [queued('q2', 'second'), queued('q1', 'first')]));
+      expect(
+        useSessionStreamStore
+          .getState()
+          .getSession(SID)
+          .queuedMessages.map((m) => m.id)
+      ).toEqual(['q2', 'q1']);
+    });
 
-      store.requeueMessage(SID, item, 0);
-      store.requeueMessage(SID, item, 0);
-
+    it('an out-of-order or duplicate update is ignored, like every other event', () => {
+      const store = useSessionStreamStore.getState();
+      store.applyEvent(SID, queueUpdate(4, [queued('q1', 'current')]));
+      store.applyEvent(SID, queueUpdate(2, []));
       expect(useSessionStreamStore.getState().getSession(SID).queuedMessages).toHaveLength(1);
     });
 
-    it('clamps an index past the end of a queue that moved on', () => {
-      const store = useSessionStreamStore.getState();
-      store.enqueueMessage(SID, 'survivor');
-      const item = { id: 'dequeued-1', content: 'came back' };
-
-      store.requeueMessage(SID, item, 99);
-
+    it('keeps the receipt of a message that is still waiting', () => {
+      useSessionStreamStore.getState().applyEvent(
+        SID,
+        queueUpdate(1, [queued('q1', 'change course')], {
+          messageId: 'q1',
+          requested: 'steer',
+          applied: 'queue',
+          degradedBecause: 'unsupported',
+        })
+      );
       expect(
-        useSessionStreamStore
-          .getState()
-          .getSession(SID)
-          .queuedMessages.map((m) => m.content)
-      ).toEqual(['survivor', 'came back']);
+        useSessionStreamStore.getState().getSession(SID).queueOutcomes['q1']?.degradedBecause
+      ).toBe('unsupported');
+    });
+
+    it('drops the receipt when its message leaves the queue', () => {
+      const store = useSessionStreamStore.getState();
+      store.applyEvent(
+        SID,
+        queueUpdate(1, [queued('q1', 'change course')], {
+          messageId: 'q1',
+          requested: 'steer',
+          applied: 'queue',
+          degradedBecause: 'unsupported',
+        })
+      );
+      store.applyEvent(SID, queueUpdate(2, []));
+      expect(useSessionStreamStore.getState().getSession(SID).queueOutcomes).toEqual({});
+    });
+
+    it('keeps no receipt for a message that ran instead of queueing', () => {
+      // An outcome can name a message that is already absent from the queue —
+      // it ran straight away. There is no chip for it, so there is nothing to
+      // hang a receipt on.
+      useSessionStreamStore.getState().applyEvent(
+        SID,
+        queueUpdate(1, [], {
+          messageId: 'q1',
+          requested: 'steer',
+          applied: 'queue',
+          degradedBecause: 'session-idle',
+        })
+      );
+      expect(useSessionStreamStore.getState().getSession(SID).queueOutcomes).toEqual({});
+    });
+
+    it('a fresh snapshot replaces the queue and clears the receipts', () => {
+      const store = useSessionStreamStore.getState();
+      store.applyEvent(
+        SID,
+        queueUpdate(1, [queued('q1', 'waiting')], {
+          messageId: 'q1',
+          requested: 'queue',
+          applied: 'queue',
+        })
+      );
+      store.applySnapshot(SID, snapshot({ queuedMessages: [queued('q2', 'from the server')] }));
+      const after = useSessionStreamStore.getState().getSession(SID);
+      expect(after.queuedMessages.map((m) => m.id)).toEqual(['q2']);
+      expect(after.queueOutcomes).toEqual({});
     });
   });
 });

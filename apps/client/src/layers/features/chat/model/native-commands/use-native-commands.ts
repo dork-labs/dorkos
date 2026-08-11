@@ -215,8 +215,8 @@ export function useNativeCommands(
           // `onSuccess`/`onError`: React Query drops those when the component
           // unmounts before the mutation lands, so a queued `/rename` whose
           // composer went away was left neither restored nor confirmed —
-          // permanent limbo, holding its `restoreQueued` closure forever
-          // (DOR-480). `mutateAsync`'s promise is the mutation's own and always
+          // permanent limbo, with the composer never cleared and never handed
+          // its text back (DOR-480). `mutateAsync`'s promise is its own and always
           // settles. The rejection arm is what makes this safe to leave
           // unawaited. Confirm the toast only on success: the shared rename
           // capability already rolls the title back and toasts on failure, so

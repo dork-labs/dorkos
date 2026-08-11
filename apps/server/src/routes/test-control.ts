@@ -7,7 +7,7 @@ import type { AgentManifest, McpServerTransport } from '@dorkos/shared/mesh-sche
 import { getBoundary, validateBoundary } from '../lib/boundary.js';
 import { localDialHost } from '../lib/local-dial-host.js';
 import { env } from '../env.js';
-import { scenarioStore } from '../services/runtimes/test-mode/scenario-store.js';
+import { requestFinishTurn, scenarioStore } from '../services/runtimes/test-mode/scenario-store.js';
 import { runtimeRegistry } from '../services/core/runtime-registry.js';
 import { getRoomService, getBridgeStore, getRoomAuthors } from '../services/rooms/index.js';
 import { readOwnerAccount } from '../services/core/auth/index.js';
@@ -43,6 +43,20 @@ testControlRouter.post('/scenario', (req, res) => {
     return res.status(400).json({ error: err instanceof Error ? err.message : 'Unknown error' });
   }
   res.json({ ok: true, scenario: name });
+});
+
+/**
+ * `POST /api/test/finish-turn` — end every running `long-turn` at its next
+ * heartbeat.
+ *
+ * The lever a browser test needs to decide WHEN a turn ends. Stop cannot do it:
+ * `TestModeRuntime.interruptQuery` answers `false`, because there is no process
+ * to signal. Without this a test has to pick a turn short enough to wait out,
+ * and then races its own setup against it.
+ */
+testControlRouter.post('/finish-turn', (_req, res) => {
+  requestFinishTurn();
+  res.json({ ok: true });
 });
 
 testControlRouter.post('/reset', async (_req, res) => {

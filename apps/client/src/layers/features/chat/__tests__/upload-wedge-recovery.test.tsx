@@ -146,7 +146,7 @@ function Composer({ attachment }: { attachment: File }) {
           onSend();
           void fileUpload.uploadAndGetPaths().catch(() => {});
         }}
-        submitContent={vi.fn()}
+        enqueueContent={vi.fn().mockResolvedValue(true)}
         tryNativeCommand={vi.fn(() => ({ handled: false }) as never)}
         commandPending={false}
         status="idle"
