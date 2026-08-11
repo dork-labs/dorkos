@@ -75,22 +75,69 @@ Inside `server-manager.ts`, keyed by `path.resolve(cwd)`:
 
 ## 2. Permissions: SSE surface, respond flow, and the capabilities descriptor array
 
-### How requests surface
+> **Live-verified 2026-08-11 against the shipped `opencode` 1.18.15 binary** (DOR-1147). Everything in
+> this section is now behaviour that was observed, not source that was read. The paragraphs it replaces
+> were read off the SDK's generated types in 2026-07 and were WRONG for the shipped server — that is
+> the whole bug this section exists to prevent repeating.
 
-- SSE event `permission.updated` (`EventPermissionUpdated`, types.gen.d.ts:384) carries a `Permission`:
+### The SDK's permission types are stale — do not trust them here
+
+`@opencode-ai/sdk@1.18.15` still declares `permission.updated` (carrying a `Permission` with `type`,
+`pattern`, `title`, `time.created`) and `permission.replied` with `{sessionID, permissionID, response}`.
+**The shipped 1.18.15 server emits neither shape.** `permission.updated` does not appear anywhere in the
+binary (zero occurrences); the adapter subscribed to it, so no approval card ever appeared and a gated
+`bash` call hung a turn for 7+ minutes with nothing on screen.
+
+Authoritative source going forward: the sidecar's OWN OpenAPI document, `GET /doc` on a running server
+(schemas `EventPermissionAsked`, `EventPermissionReplied`, `PermissionRequest`). It ships with the
+binary, so it can never drift from it the way a separately-published SDK can. A newer SDK release may
+fix the generated types; nothing in this adapter should wait for one.
+
+### How requests surface (live)
+
+- SSE event **`permission.asked`**, properties = `PermissionRequest`:
   ```ts
-  { id, type: string, pattern?: string | string[], sessionID, messageID, callID?,
-    title: string, metadata: Record<string, unknown>, time: { created } }
+  { id: `per_…`, sessionID: `ses_…`, permission: string, patterns: string[],
+    metadata: Record<string, unknown>, always: string[],
+    tool?: { messageID: string, callID: string } }
   ```
-  `type` is the permission key the request was raised under (`"bash"`, `"edit"`, `"webfetch"`,
-  `"doom_loop"`, …) — e.g. `processor.ts:370` raises `permission.ask({ permission: "doom_loop", … })`.
-  (Exact `type` strings per tool: flagged for live verification.)
-- Resolution echo: `permission.replied` with `{ sessionID, permissionID, response: string }` — use it
-  to clear approval UI when a request is answered elsewhere (e.g. the TUI).
-- Respond: `client.postSessionIdPermissionsPermissionId({ path: { id: sessionID, permissionID }, body: { response: "once" | "always" | "reject" } })`
-  → `POST /session/{id}/permissions/{permissionID}` (types.gen.d.ts:2510). `"always"` persists a rule
-  for that pattern; prefer `"once"` from DorkOS so OpenCode-side state never diverges from DorkOS's
-  own approval model.
+  Captured verbatim:
+  ```json
+  {
+    "type": "permission.asked",
+    "properties": {
+      "id": "per_ff00069…",
+      "sessionID": "ses_00fffd9…",
+      "permission": "bash",
+      "patterns": ["ls -F"],
+      "metadata": { "command": "ls -F" },
+      "always": ["ls *"],
+      "tool": { "messageID": "msg_ff0002659…", "callID": "call_esj3yoqx" }
+    }
+  }
+  ```
+  `permission` (NOT `type`) is the config key the request was raised under. **Live-confirmed strings:**
+  `"bash"` for a shell command, `"edit"` for a file write — so `acceptEdits`' `edit` match in
+  `approvals.ts` is correct. There is no `title` and no timestamp: the adapter stamps `startedAt`
+  itself, since the countdown the operator sees is DorkOS's own auto-deny timer.
+  `metadata` is per-permission: `{command}` for bash, `{filepath, diff}` for edit (the adapter lifts
+  `filepath` into the approval's `blockedPath`).
+- Resolution echo: **`permission.replied`** with `{ sessionID, requestID, reply }` — note `requestID`
+  and `reply`, not the SDK's `permissionID`/`response`. Reading the SDK's names yielded
+  `interactionId: undefined`, i.e. an echo that cancelled nothing and left the card hanging.
+- Respond (live-verified, both an approve and a deny): `client.postSessionIdPermissionsPermissionId({
+path: { id: sessionID, permissionID }, body: { response: "once" | "always" | "reject" } })` →
+  `POST /session/{id}/permissions/{permissionID}`, answers `200 true` and publishes the echo. `"always"`
+  persists a rule in OpenCode's own store; DorkOS only ever sends `once`/`reject` so the two approval
+  models cannot diverge.
+  1.18.15 also serves `POST /permission/{requestID}/reply` with `{reply, message}` (verified working,
+  same effect) plus a v2 family under `/api/…`. The SDK client exposes none of those, and the route we
+  use still works, so there is nothing to migrate to yet.
+- **Denial semantics (live):** rejecting does NOT fail the turn. The tool part goes to
+  `status: "error"` with `"The user rejected permission to use this specific tool call."`, the model
+  carries on, and the session reaches `session.idle` normally. No `session.error` is published.
+- `permission.v2.asked` / `permission.v2.replied` exist in the OpenAPI document but did NOT fire in any
+  observed turn — tool permissions came through the v1 pair every time. Nothing maps them.
 
 ### OpenCode's permission config model (not modes!)
 
@@ -106,14 +153,14 @@ per-pattern object form), values `ask | allow | deny`
 
 Because config is per-sidecar (env at spawn) and DorkOS wants **per-session** modes on ONE sidecar:
 
-1. Spawn the sidecar with a conservative ruleset so every sensitive action raises a `permission.updated`:
+1. Spawn the sidecar with a conservative ruleset so every sensitive action raises a `permission.asked`:
    ```ts
    config: { permission: { edit: 'ask', bash: 'ask', webfetch: 'ask' } }
    ```
    (Reads stay `allow` — mirrors Claude `default` semantics: reads free, mutations gated.)
-2. The adapter (3.6) resolves each `permission.updated` according to the **session's** DorkOS mode:
+2. The adapter resolves each `permission.asked` according to the **session's** DorkOS mode:
    - `default` → forward to DorkOS approval UI; respond with the user's `once`/`reject`.
-   - `acceptEdits` → auto-respond `once` when `type === 'edit'`; forward everything else.
+   - `acceptEdits` → auto-respond `once` when `permission === 'edit'`; forward everything else.
    - `bypassPermissions` → auto-respond `once` to everything.
 
 ### The descriptor array for `OpenCodeRuntime.getCapabilities()`
@@ -244,9 +291,12 @@ Revisit v2 when opencode documents it as the public SDK surface.
 1. Two sessions with different `directory` on ONE `opencode serve`: create + prompt both, confirm tool
    calls execute in the right cwd (the single-instance verdict's end-to-end proof).
 2. `createOpencodeServer({ port: 0 })` resolves a real URL (4096-preferred fallback path).
-3. Exact `Permission.type` string values for edit/bash/webfetch approvals (mapper in 3.6 switches on
-   them).
-4. `permission.updated` arrives on `/global/event` for sessions created via the API (not just `/event`).
+3. ~~Exact permission-key string values for edit/bash/webfetch approvals.~~ **Answered 2026-08-11
+   (DOR-1147):** the event is `permission.asked` and its key field is `permission` — `"bash"` and
+   `"edit"` observed live. See §2.
+4. ~~`permission.updated` arrives on `/global/event` for sessions created via the API.~~ **Answered
+   2026-08-11 (DOR-1147):** `permission.asked` does arrive on `/global/event`;
+   `permission.updated` never arrives, because the shipped server does not have it. See §2.
 5. `opencode auth list` stdout capture through `execFileSync` (clack non-TTY rendering), and the
    env-var-only "0 credentials" false-missing (item 4 above).
 6. Basic-auth round trip: spawn with `OPENCODE_SERVER_PASSWORD`, confirm 401 without header and 200

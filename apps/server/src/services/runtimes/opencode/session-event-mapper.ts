@@ -1,28 +1,51 @@
 /**
  * OpenCode session-scoped event mapping — everything the wire carries that is
  * NOT a message part: assistant usage (`message.updated`), tool approvals
- * (`permission.updated`), retry diagnostics (`session.status`), turn failures
- * (`session.error`) and todos (`todo.updated`). `event-mapper.ts` routes wire
- * events here and holds the adapter-wide SOURCE OF TRUTH notes.
+ * (`permission.asked`/`permission.replied`), retry diagnostics
+ * (`session.status`), turn failures (`session.error`) and todos
+ * (`todo.updated`). `event-mapper.ts` routes wire events here and holds the
+ * adapter-wide SOURCE OF TRUTH notes.
  *
  * Not to be confused with `session-mapper.ts`, which bridges DorkOS session ids
  * to OpenCode's `ses_*` ids; this module maps EVENTS, not identifiers.
  *
- * TOOL APPROVALS: OpenCode supportsToolApproval = TRUE. `permission.updated`
- * maps to `approval_required` with `toolCallId = Permission.id` (the
- * permission id, NOT `callID`): the id the client echoes back through
- * `approveTool()` is exactly what `POST /session/{id}/permissions/
- * {permissionID}` needs, so 3.6's respond wiring is a direct pass-through.
- * `hasSuggestions` is false by design: OpenCode's `"always"` response would
- * persist a rule in OpenCode's own store and diverge from DorkOS's approval
- * model, so DorkOS only offers once/reject (NOTES.md §2).
+ * TOOL APPROVALS: OpenCode supportsToolApproval = TRUE, and the permission
+ * shapes here are the one part of this adapter that the SDK's generated types
+ * get WRONG (DOR-1147, live-verified 2026-08-11 against opencode 1.18.15).
+ * The SDK declares `permission.updated` carrying a `Permission`, and
+ * `permission.replied` carrying `{sessionID, permissionID, response}`. The
+ * shipped server emits neither:
+ *
+ * - it publishes `permission.asked` with a `PermissionRequest`
+ *   (`{id, sessionID, permission, patterns[], metadata, always[], tool?}`) —
+ *   `permission` not `type`, `patterns[]` not `pattern`, no `title`, no
+ *   `time.created`, tool ids nested under `tool`;
+ * - its echo is `permission.replied` with `{sessionID, requestID, reply}`.
+ *
+ * `permission.updated` does not exist in the 1.18.15 binary at all, so
+ * subscribing to it meant no approval card ever appeared and a gated tool hung
+ * the turn forever. The shapes below are hand-typed from the sidecar's OWN
+ * OpenAPI document (`GET /doc`) and confirmed against captured live payloads;
+ * because they describe untyped SSE JSON, every payload is Zod-parsed before
+ * it is trusted — strict on what the mapping needs, indifferent to extras, and
+ * a payload that fails to parse is DROPPED rather than half-mapped (a
+ * malformed ask must not become an answerable card).
+ *
+ * `toolCallId` carries the PERMISSION id (not `callID`): the id the client
+ * echoes back through `approveTool()` is exactly what
+ * `POST /session/{id}/permissions/{permissionID}` needs, so the respond wiring
+ * is a direct pass-through. `hasSuggestions` is false by design: OpenCode's
+ * `"always"` response would persist a rule in OpenCode's own store and diverge
+ * from DorkOS's approval model, so DorkOS only offers once/reject (NOTES.md §2).
  *
  * @module services/runtimes/opencode/session-event-mapper
  */
-import type { AssistantMessage, Event, Permission, SessionStatus, Todo } from '@opencode-ai/sdk';
+import { z } from 'zod';
+import type { AssistantMessage, Event, SessionStatus, Todo } from '@opencode-ai/sdk';
 import type { SessionTaskStatus, StreamEvent, TaskItem } from '@dorkos/shared/types';
 import { detectAuthError } from '@dorkos/shared/runtime-error-classification';
 import { SESSIONS } from '../../../config/constants.js';
+import { logger } from '../../../lib/logger.js';
 
 /** The error name OpenCode stamps on interrupts — suppressed, not surfaced. */
 const ABORT_ERROR_NAME = 'MessageAbortedError';
@@ -103,31 +126,108 @@ export function mapMessageUpdated(
 }
 
 /**
- * permission.updated → `approval_required`. `toolCallId` carries the
- * PERMISSION id (see module doc, TOOL APPROVALS) so the client's echo through
- * `approveTool()` is directly the respond-endpoint path param. The permission
- * mode enforcement (auto-answering under acceptEdits/bypassPermissions) is
- * the facade's job (task 3.6) — the mapper surfaces every request it is
- * handed.
- *
- * @param permission - The permission request from the wire
+ * The live `permission.asked` payload (sidecar OpenAPI `PermissionRequest`).
+ * `always` and `tool` are accepted but unused: DorkOS never sends OpenCode's
+ * `always` response, and the approval is keyed by the PERMISSION id rather
+ * than the tool call id.
  */
-export function mapPermission(permission: Permission): StreamEvent[] {
-  const { pattern, metadata } = permission;
+export const PermissionAskedPropertiesSchema = z.object({
+  id: z.string(),
+  sessionID: z.string(),
+  permission: z.string(),
+  patterns: z.array(z.string()).default([]),
+  metadata: z.record(z.string(), z.unknown()).default({}),
+  always: z.array(z.string()).optional(),
+  tool: z.object({ messageID: z.string(), callID: z.string() }).optional(),
+});
+
+/** Parsed `permission.asked` properties. */
+export type PermissionAskedProperties = z.infer<typeof PermissionAskedPropertiesSchema>;
+
+/**
+ * The live `permission.replied` payload. The SDK's declared field names
+ * (`permissionID`, `response`) are stale — the wire says `requestID`/`reply`.
+ */
+export const PermissionRepliedPropertiesSchema = z.object({
+  sessionID: z.string(),
+  requestID: z.string(),
+  reply: z.string(),
+});
+
+/** Parsed `permission.replied` properties. */
+export type PermissionRepliedProperties = z.infer<typeof PermissionRepliedPropertiesSchema>;
+
+/** `permission.asked` as it rides the wire — absent from the SDK's Event union. */
+export interface EventPermissionAsked {
+  type: 'permission.asked';
+  properties: PermissionAskedProperties;
+}
+
+/** `permission.replied` as it rides the wire — the SDK's declaration is stale. */
+export interface EventPermissionReplied {
+  type: 'permission.replied';
+  properties: PermissionRepliedProperties;
+}
+
+/**
+ * permission.asked → `approval_required` (see module doc, TOOL APPROVALS).
+ *
+ * `startedAt` is stamped here because the payload carries no timestamp of its
+ * own: the countdown the client renders is the server's auto-deny timer, and
+ * that timer starts when the adapter sees the request. `title` is omitted
+ * rather than invented — 1.18.15 sends no prompt sentence, and the card reads
+ * perfectly well from the tool name and its input.
+ *
+ * Permission-mode enforcement (auto-answering under
+ * `acceptEdits`/`bypassPermissions`) is the facade's job — this surfaces every
+ * request it is handed.
+ *
+ * @param properties - Raw `permission.asked` properties off the wire
+ */
+export function mapPermissionAsked(properties: unknown): StreamEvent[] {
+  const parsed = PermissionAskedPropertiesSchema.safeParse(properties);
+  if (!parsed.success) {
+    logger.warn('[OpenCode] unparseable permission.asked — dropped', {
+      issues: parsed.error.issues.map((issue) => `${issue.path.join('.')}: ${issue.message}`),
+    });
+    return [];
+  }
+  const { id, permission, patterns, metadata } = parsed.data;
+  // An `edit` request names the file it wants to touch (`metadata.filepath`,
+  // live-verified) — the one piece of metadata the approval card has a field for.
+  const filepath = metadata['filepath'];
   return [
     {
       type: 'approval_required',
       data: {
-        toolCallId: permission.id,
-        toolName: permission.type,
-        input: JSON.stringify({ ...(pattern !== undefined ? { pattern } : {}), ...metadata }),
+        toolCallId: id,
+        toolName: permission,
+        input: JSON.stringify({ ...(patterns.length > 0 ? { patterns } : {}), ...metadata }),
         timeoutMs: SESSIONS.INTERACTION_TIMEOUT_MS,
-        startedAt: permission.time.created,
-        title: permission.title,
+        startedAt: Date.now(),
+        ...(typeof filepath === 'string' ? { blockedPath: filepath } : {}),
         hasSuggestions: false,
       },
     },
   ];
+}
+
+/**
+ * permission.replied → `interaction_cancelled`, so a request answered
+ * somewhere else (OpenCode's own TUI, another DorkOS client) stops showing as
+ * an answerable card here.
+ *
+ * @param properties - Raw `permission.replied` properties off the wire
+ */
+export function mapPermissionReplied(properties: unknown): StreamEvent[] {
+  const parsed = PermissionRepliedPropertiesSchema.safeParse(properties);
+  if (!parsed.success) {
+    logger.warn('[OpenCode] unparseable permission.replied — dropped', {
+      issues: parsed.error.issues.map((issue) => `${issue.path.join('.')}: ${issue.message}`),
+    });
+    return [];
+  }
+  return [{ type: 'interaction_cancelled', data: { interactionId: parsed.data.requestID } }];
 }
 
 /**

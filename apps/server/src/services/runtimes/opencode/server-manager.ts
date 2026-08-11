@@ -40,10 +40,12 @@ const READY_LINE_PATTERN = /opencode server listening on\s+(https?:\/\/\S+)/;
 /**
  * Conservative sidecar permission ruleset injected via `OPENCODE_CONFIG_CONTENT`.
  * OpenCode's defaults are PERMISSIVE (most keys `allow`), so this ask-config is
- * the safety boundary: every edit/bash/webfetch raises a `permission.updated`
+ * the safety boundary: every edit/bash/webfetch raises a `permission.asked`
  * event that the adapter resolves per the session's DorkOS permission mode
- * (NOTES.md §2, task 3.6). Reads stay `allow`, mirroring Claude `default`
- * semantics — reads free, mutations gated.
+ * (NOTES.md §2). The key names here are the same strings the event's
+ * `permission` field carries, live-verified 2026-08-11 against 1.18.15. Reads
+ * stay `allow`, mirroring Claude `default` semantics — reads free, mutations
+ * gated.
  */
 export const OPENCODE_SIDECAR_CONFIG = {
   permission: { edit: 'ask', bash: 'ask', webfetch: 'ask' },

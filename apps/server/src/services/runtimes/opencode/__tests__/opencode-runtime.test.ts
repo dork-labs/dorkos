@@ -37,8 +37,8 @@ import {
   toolStatePending,
   toolStateRunning,
   toolStateCompleted,
-  permission,
-  permissionUpdated,
+  permissionAsked,
+  permissionRequest,
   permissionReplied,
   opencodeSimpleTurn,
   OC_CHILD_SESSION,
@@ -493,10 +493,10 @@ describe('OpenCodeRuntime', () => {
       connection.push(
         globalEvent(
           DIRECTORY,
-          permissionUpdated(
-            permission(OC_SESSION_A, {
+          permissionAsked(
+            permissionRequest(OC_SESSION_A, {
               id: 'per_0001',
-              type: permissionType,
+              permission: permissionType,
               callID: 'call_001',
             })
           )
@@ -688,8 +688,12 @@ describe('OpenCodeRuntime', () => {
       connection.push(
         globalEvent(
           DIRECTORY,
-          permissionUpdated(
-            permission(OC_SESSION_A, { id: 'per_0001', type: 'bash', callID: 'call_001' })
+          permissionAsked(
+            permissionRequest(OC_SESSION_A, {
+              id: 'per_0001',
+              permission: 'bash',
+              callID: 'call_001',
+            })
           )
         )
       );

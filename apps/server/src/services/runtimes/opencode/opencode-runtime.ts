@@ -20,7 +20,7 @@
  * overlaid because OpenCode has no per-session permission mode of its own.
  *
  * Tool approvals are fully supported: the sidecar's ask-ruleset raises
- * `permission.updated` → `approval_required`, `approveTool()` answers through
+ * `permission.asked` → `approval_required`, `approveTool()` answers through
  * `POST /session/{id}/permissions/{permissionID}` with `once`/`reject` (never
  * `always` — NOTES.md §2), mode enforcement auto-answers under
  * `acceptEdits`/`bypassPermissions`, and every forwarded request carries a
@@ -498,7 +498,15 @@ export class OpenCodeRuntime implements AgentRuntime {
     yield event;
   }
 
-  /** Answer one permission request on the sidecar (`once` approve / `reject` deny). */
+  /**
+   * Answer one permission request on the sidecar (`once` approve / `reject`
+   * deny). `POST /session/{id}/permissions/{permissionID}` is the route the
+   * SDK client exposes, and 1.18.15 still serves it: a live approve and a live
+   * deny were both accepted (200) and both echoed back as `permission.replied`
+   * (2026-08-11, DOR-1147). The sidecar has since grown a second spelling
+   * (`POST /permission/{requestID}/reply`, also verified working) that the SDK
+   * does not expose yet — no reason to hand-roll it while this one answers.
+   */
   private async respondPermission(
     ocSessionId: string,
     cwd: string,
