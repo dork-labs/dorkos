@@ -13,6 +13,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { executeSdkQuery, type MessageSenderOpts } from '../message-sender.js';
 import type { AgentSession } from '../../agent-types.js';
 import { CLI_INTERRUPT_SENTINEL } from '../phantom-cancellation.js';
+import { DEFERRED_CLOSE_IDLE_TIMEOUT_MS } from '../turn-segments.js';
 import { query, type SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import type { StreamEvent } from '@dorkos/shared/types';
 
@@ -206,14 +207,21 @@ describe('executeSdkQuery — phantom cancellation mitigation (DOR-1087)', () =>
     expect(note).toContain('not by the user');
   });
 
-  it('surfaces but does NOT steer a subagent phantom', async () => {
+  // A subagent's input stream is not ours to write to — but its COORDINATOR's
+  // is, and the coordinator is the one about to read a false "the user declined"
+  // in that subagent's report (DOR-1150).
+  it('steers the coordinator a note naming the subagent task on a subagent phantom', async () => {
     const { events, promptMessages } = await runTurn(makeSession(), [
       sentinelMsg('toolu_sub', 'toolu_parent'),
       resultMsg(),
     ]);
 
     expect(events.some(isPhantomStatus)).toBe(true);
-    expect(promptMessages).toEqual(['hello']);
+    const note = promptMessages.find((m) => m.includes('dorkos-system-note'));
+    expect(note).toBeDefined();
+    expect(note).toContain('toolu_sub');
+    expect(note).toContain('toolu_parent');
+    expect(note).toContain('FALSE');
   });
 
   it('covers every parallel cancellation with ONE note naming all ids', async () => {
@@ -293,6 +301,50 @@ describe('executeSdkQuery — phantom cancellation mitigation (DOR-1087)', () =>
       ]);
 
       expect(promptMessages).toEqual(['hello']);
+    });
+
+    it('releases the input stream when a deferred stream stalls, instead of wedging', async () => {
+      // The pathological case the deferral cap CANNOT reach: a background task
+      // that never reports and no further `result`. The fake CLI below models
+      // the real one — it only finishes once stdin is closed — so if the idle
+      // guard did not fire, this turn would never end.
+      vi.useFakeTimers();
+      try {
+        const promptMessages: string[] = [];
+        let stdinClosed!: () => void;
+        const stdinClosedPromise = new Promise<void>((resolve) => {
+          stdinClosed = resolve;
+        });
+        vi.mocked(query).mockImplementation((args) => {
+          const prompt = args.prompt as AsyncIterable<{ message: { content: string } }>;
+          void (async () => {
+            for await (const m of prompt) promptMessages.push(m.message.content);
+            stdinClosed();
+          })();
+          return {
+            [Symbol.asyncIterator]: async function* () {
+              yield taskStartedMsg('task-that-never-reports');
+              yield resultMsg();
+              // The CLI now waits on stdin, exactly as it does in production.
+              await stdinClosedPromise;
+            },
+          } as unknown as ReturnType<typeof query>;
+        });
+
+        const events: StreamEvent[] = [];
+        const turn = (async () => {
+          for await (const e of executeSdkQuery('s1', 'hello', makeSession(), makeOpts())) {
+            events.push(e);
+          }
+        })();
+
+        await vi.advanceTimersByTimeAsync(DEFERRED_CLOSE_IDLE_TIMEOUT_MS + 1_000);
+        await turn;
+
+        expect(events.some((e) => e.type === 'done')).toBe(true);
+      } finally {
+        vi.useRealTimers();
+      }
     });
 
     it('releases the held prompt once the last segment ends, even after deferring', async () => {

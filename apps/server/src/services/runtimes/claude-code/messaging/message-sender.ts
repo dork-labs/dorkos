@@ -31,7 +31,7 @@ import {
   PHANTOM_CORRECTIONS_MAX_PER_TURN,
 } from './phantom-cancellation.js';
 import { mapSdkMessage } from '../sdk/sdk-event-mapper.js';
-import { createTurnSegments } from './turn-segments.js';
+import { createTurnSegments, DEFERRED_CLOSE_IDLE_TIMEOUT_MS } from './turn-segments.js';
 import { createHeldUserPrompt } from '../sdk/sdk-utils.js';
 import { fetchContextBreakdown } from '../sdk/context-usage.js';
 import { fetchSubscriptionUsage } from '../sdk/subscription-usage.js';
@@ -811,6 +811,8 @@ export async function* executeSdkQuery(
   // `push()` refuses on its own (DOR-1149).
   let phantomCorrections = 0;
   const segments = createTurnSegments();
+  /** True while a `result`'s stdin close is being held back for a later segment. */
+  let closeDeferred = false;
   const streamStart = Date.now();
   const toolState = createToolState();
 
@@ -837,7 +839,35 @@ export async function* executeSdkQuery(
         pendingSdkPromise = sdkIterator.next().then((result) => ({ sdk: true as const, result }));
       }
 
-      const winner = await Promise.race([queuePromise, pendingSdkPromise]);
+      // While a close is deferred, a stalled stream must not be able to wedge
+      // the turn: the CLI waits on stdin, we wait on the CLI, and neither the
+      // deferral cap nor the `finally` is ever reached. Re-armed each iteration,
+      // so any message at all resets the silence (DOR-1149).
+      let idleTimer: NodeJS.Timeout | undefined;
+      const idlePromise =
+        closeDeferred &&
+        new Promise<'idle'>((resolve) => {
+          idleTimer = setTimeout(() => resolve('idle'), DEFERRED_CLOSE_IDLE_TIMEOUT_MS);
+          // Never let this timer alone hold the process open.
+          idleTimer.unref?.();
+        });
+
+      const winner = await Promise.race(
+        idlePromise
+          ? [queuePromise, pendingSdkPromise, idlePromise]
+          : [queuePromise, pendingSdkPromise]
+      );
+      if (idleTimer) clearTimeout(idleTimer);
+
+      if (winner === 'idle') {
+        logger.warn('[sendMessage] deferred close timed out; releasing input stream', {
+          session: sessionId,
+          outstandingBackgroundTasks: segments.outstandingCount(),
+        });
+        closeDeferred = false;
+        heldPrompt.close();
+        continue;
+      }
 
       if (winner === 'queue') {
         continue;
@@ -862,31 +892,39 @@ export async function* executeSdkQuery(
 
       // Phantom cancellation (DOR-1087): the CLI cancelled pending tool calls
       // because a task-notification was queued, writing a sentinel that reads
-      // as a user refusal. Tell the model it wasn't the user (main thread only
-      // — a subagent's input stream is not ours to write to) and surface a
+      // as a user refusal. Tell the model it wasn't the user, and surface a
       // status line for the operator. The notice event carries NO `status`
       // field (the client strip drops any system_status that has one) and is
       // yielded AFTER this message's mapped events below — yielded here, the
       // same message's tool_result events would re-derive the strip and wipe it
       // in the same frame.
+      //
+      // A SUBAGENT phantom is steered too (DOR-1150). The note cannot reach the
+      // subagent — its input stream is not ours — so it goes to the coordinator,
+      // which is the party that will otherwise believe the subagent's false "the
+      // user declined" and abandon the work. This does push a message into the
+      // main thread's queue while a subagent runs, which is itself the mechanism
+      // that causes phantoms; `PHANTOM_CORRECTIONS_MAX_PER_TURN` is what stops
+      // that from feeding itself, and a coordinator acting on a false refusal is
+      // the worse of the two failures.
       const phantoms = detectPhantomCancellations(result.value, session);
       let phantomNotice: string | undefined;
       if (phantoms.length > 0) {
-        const steerableIds = phantoms.filter((p) => p.mainThread).map((p) => p.toolUseId);
+        const mainThread = phantoms.some((p) => p.mainThread);
         const steered =
-          steerableIds.length > 0 &&
           phantomCorrections < PHANTOM_CORRECTIONS_MAX_PER_TURN &&
-          heldPrompt.push(buildPhantomCorrectionNote(steerableIds));
+          heldPrompt.push(buildPhantomCorrectionNote(phantoms));
         if (steered) phantomCorrections++;
         logger.warn('[sendMessage] phantom tool-call cancellation detected', {
           session: sessionId,
           toolUseIds: phantoms.map((p) => p.toolUseId),
-          mainThread: steerableIds.length > 0,
+          mainThread,
           steered,
         });
         const plural =
           phantoms.length > 1 ? `${phantoms.length} pending tool calls` : 'a pending tool call';
-        phantomNotice = `A background task finished at the wrong moment and cancelled ${plural}. That was a system glitch, not you. The agent has been told.`;
+        const where = mainThread ? '' : ' inside one of its helpers';
+        phantomNotice = `A background task finished at the wrong moment and cancelled ${plural}${where}. That was a system glitch, not you. The agent has been told.`;
       }
 
       // The `result` message marks the end of a SEGMENT — which is the end of
@@ -927,7 +965,8 @@ export async function* executeSdkQuery(
         // case closing here would strand the steering channel for the rest of
         // the turn (DOR-1149). The `finally` closes unconditionally, so a
         // deferral can never leak the subprocess.
-        if (!segments.holdOpenAtResult()) heldPrompt.close();
+        closeDeferred = segments.holdOpenAtResult();
+        if (!closeDeferred) heldPrompt.close();
       }
 
       // A mid-session `commands_changed` push carries the full, authoritative

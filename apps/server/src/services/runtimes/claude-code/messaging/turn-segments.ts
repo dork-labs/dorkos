@@ -33,6 +33,24 @@ import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
  */
 export const MAX_DEFERRED_SEGMENT_CLOSES = 8;
 
+/**
+ * How long a deferred-close stream may go completely silent before the input
+ * stream is released anyway.
+ *
+ * {@link MAX_DEFERRED_SEGMENT_CLOSES} alone does not make the deferral safe: it
+ * is only re-examined when ANOTHER `result` arrives, so the case it cannot
+ * reach is the one that matters — a background task that never reports and no
+ * further message ever comes. The CLI would sit waiting on stdin while the send
+ * loop sits waiting on the CLI, and neither the cap nor the `finally` is ever
+ * reached.
+ *
+ * Silence is a usable signal because a live background task is not silent: the
+ * CLI streams `task_progress` for it. So this fires on a stream that has truly
+ * stalled, and firing early costs only the steering opportunity — the turn then
+ * behaves exactly as it did before DOR-1149.
+ */
+export const DEFERRED_CLOSE_IDLE_TIMEOUT_MS = 120_000;
+
 /** Tracks whether a turn's stream still owes segments. */
 export interface TurnSegments {
   /**
