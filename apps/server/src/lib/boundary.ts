@@ -129,11 +129,31 @@ export function expandTilde(userPath: string): string {
 
 /**
  * How many dangling-symlink hops {@link resolveThroughExistingAncestor} will
- * follow before giving up. Only reached by a chain of links whose targets do
- * not exist — a chain that resolves, or a cycle among existing links, is
- * `fs.realpath`'s problem and surfaces as ELOOP long before this.
+ * follow before refusing the path outright.
+ *
+ * Only a chain of links whose targets do NOT exist gets here. Such a chain
+ * never resolves, so `fs.realpath` reports ENOENT rather than ELOOP no matter
+ * how long it is — the kernel's own loop limit is never reached, and this is
+ * the only limit standing.
  */
 const MAX_DANGLING_SYMLINK_HOPS = 32;
+
+/**
+ * Join path segments WITHOUT normalizing, so a `..` survives to be resolved
+ * against real directories later.
+ *
+ * `path.join` and `path.resolve` both collapse `..` as text, which is only
+ * correct on a path with no unresolved symlinks left in it. Everywhere this
+ * module still has symlinks ahead of it, segments are concatenated instead and
+ * `fs.realpath` is left to do the collapsing.
+ */
+function joinRaw(base: string, ...segments: string[]): string {
+  let joined = base;
+  for (const segment of segments) {
+    joined = joined.endsWith(path.sep) ? joined + segment : joined + path.sep + segment;
+  }
+  return joined;
+}
 
 /**
  * The link target if `candidate` is a symlink, or `null` if it is anything else
@@ -164,10 +184,17 @@ async function readlinkOrNull(candidate: string): Promise<string | null> {
  * living under `agents/` while pointing anywhere at all).
  *
  * So: climb until an ancestor resolves, canonicalize THAT, and re-append the
- * missing tail. The tail cannot smuggle anything past the caller's containment
- * check — it is normalized before the climb, so it holds no `..` — while every
- * symlink on the existing part is followed, because those are the components a
- * write would actually traverse.
+ * missing tail. Every symlink on the existing part is followed, because those
+ * are the components a write would actually traverse, and the tail is joined
+ * onto a canonical directory — where collapsing `..` as text is finally correct,
+ * there being no symlinks left in it to collapse across.
+ *
+ * Which is why the climb itself never calls `path.resolve`. Collapsing `..`
+ * lexically up front would relocate the path BEFORE any symlink on it were
+ * followed: `{root}/link/../evil` with `link -> /outside` reads as `{root}/evil`
+ * and passes, while the real traversal leaves through `link` first. Stripping
+ * components with `path.dirname` instead leaves a `..` on the existing part for
+ * `fs.realpath` to resolve against the directory the link actually leads to.
  *
  * The first missing component gets one extra question, since "missing" and
  * "dangling symlink" are the same ENOENT: if it is a link, its target is
@@ -175,21 +202,22 @@ async function readlinkOrNull(candidate: string): Promise<string | null> {
  * would still be judged by its name.
  *
  * @param input - Absolute or relative path whose leaf does not exist
- * @param hops - Dangling-symlink hops already taken (loop guard)
+ * @param hops - Dangling-symlink hops already taken (budget guard)
  * @returns The deepest existing ancestor, canonicalized, with the missing tail re-appended
- * @throws BoundaryError on EACCES (`PERMISSION_DENIED`) while climbing
+ * @throws BoundaryError on EACCES (`PERMISSION_DENIED`) while climbing, or when the
+ *   dangling-symlink budget runs out (`OUTSIDE_BOUNDARY`)
  */
 async function resolveThroughExistingAncestor(input: string, hops = 0): Promise<string> {
-  const absolute = path.resolve(input);
+  // Made absolute by concatenation, not `path.resolve` — see the note above.
+  let ancestor = path.isAbsolute(input) ? input : joinRaw(process.cwd(), input);
   const missingTail: string[] = [];
-  let ancestor = absolute;
 
   for (;;) {
     const parent = path.dirname(ancestor);
     // Reached the filesystem root without finding anything real. Nothing to
     // canonicalize against, so the normalized spelling is the best answer —
     // and it is a safe one, since no symlink was skipped to get here.
-    if (parent === ancestor) return absolute;
+    if (parent === ancestor) return path.resolve(ancestor);
 
     missingTail.unshift(path.basename(ancestor));
     ancestor = parent;
@@ -209,14 +237,21 @@ async function resolveThroughExistingAncestor(input: string, hops = 0): Promise<
     // `ancestor` resolves, so the failure was at `missingTail[0]` — either it is
     // absent, or it is a symlink whose target is.
     const [head, ...rest] = missingTail;
-    const linkTarget =
-      hops < MAX_DANGLING_SYMLINK_HOPS ? await readlinkOrNull(path.join(real, head)) : null;
-    if (linkTarget !== null) {
-      const followed = path.resolve(real, linkTarget);
-      return resolveThroughExistingAncestor(path.join(followed, ...rest), hops + 1);
+    const linkTarget = await readlinkOrNull(path.join(real, head));
+    if (linkTarget === null) return path.join(real, ...missingTail);
+
+    // Out of budget with a symlink still unfollowed. REFUSE rather than answer:
+    // returning what the walk had reached would name a location one link short
+    // of the link it gave up on, which is a write target on the far side of
+    // whatever that link points at. An unfinished resolution is not an answer.
+    if (hops >= MAX_DANGLING_SYMLINK_HOPS) {
+      throw new BoundaryError('Access denied: path outside directory boundary', 'OUTSIDE_BOUNDARY');
     }
 
-    return path.join(real, ...missingTail);
+    return resolveThroughExistingAncestor(
+      joinRaw(path.resolve(real, linkTarget), ...rest),
+      hops + 1
+    );
   }
 }
 

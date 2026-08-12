@@ -13,7 +13,6 @@
  */
 import type { Response } from 'express';
 import crypto from 'node:crypto';
-import fs from 'node:fs/promises';
 import path from 'node:path';
 import { validateBoundary, BoundaryError } from './boundary.js';
 

@@ -38,6 +38,18 @@ let OUTSIDE: string;
 let DORK_HOME: string;
 /** The encrypted credential store: a dork-home sibling of `agents/`. */
 let SECRETS: string;
+/** Head of a dangling symlink chain long enough to exhaust the hop budget. */
+let CHAIN_HEAD: string;
+/** Where that chain finally points — outside the boundary, and not yet created. */
+let CHAIN_PAYLOAD: string;
+
+/**
+ * One more link than {@link MAX_DANGLING_SYMLINK_HOPS} in `boundary.ts`, so the
+ * budget runs out with a symlink still unfollowed. Kept as a literal rather than
+ * imported: the point is to pin the behavior AT the cap, and a test that read
+ * the cap from the module could not tell a changed cap from a broken guard.
+ */
+const CHAIN_LENGTH = 33;
 
 const originalDorkHome = process.env.DORK_HOME;
 
@@ -68,6 +80,19 @@ beforeAll(async () => {
   // A DANGLING symlink: its target does not exist, so `realpath` on the link
   // itself throws ENOENT just as a missing file would.
   await fs.symlink(path.join(OUTSIDE, 'not-there'), path.join(PROJECT, 'dangling'));
+
+  // A chain of dangling links, one longer than the hop budget, ending outside
+  // the boundary. `fs.realpath` on the head reports ENOENT rather than ELOOP —
+  // the chain never resolves, so the kernel's own loop limit is never reached —
+  // which is exactly why this lands in the manual walk.
+  const chainDir = path.join(PROJECT, 'chain');
+  await fs.mkdir(chainDir, { recursive: true });
+  CHAIN_HEAD = path.join(chainDir, 'l0');
+  CHAIN_PAYLOAD = path.join(OUTSIDE, 'payload.txt');
+  for (let i = 0; i < CHAIN_LENGTH - 1; i++) {
+    await fs.symlink(path.join(chainDir, `l${i + 1}`), path.join(chainDir, `l${i}`));
+  }
+  await fs.symlink(CHAIN_PAYLOAD, path.join(chainDir, `l${CHAIN_LENGTH - 1}`));
 
   process.env.DORK_HOME = DORK_HOME;
   await initBoundary(BOUNDARY);
@@ -123,6 +148,43 @@ describe('a non-existent path is judged by its target, not its spelling', () => 
 
   it('refuses a non-existent child of a dangling symlink', async () => {
     const probe = path.join(PROJECT, 'dangling', 'deeper.txt');
+
+    await expect(validateBoundary(probe)).rejects.toMatchObject({
+      code: 'OUTSIDE_BOUNDARY',
+    });
+  });
+
+  it('refuses a dangling symlink chain that exhausts the hop budget', async () => {
+    // Running out of budget must REFUSE, not answer. Returning the path it had
+    // reached would hand back a location one link short of a symlink the walk
+    // deliberately stopped following — an answer computed from an unfinished
+    // resolution.
+    await expect(validateBoundary(CHAIN_HEAD)).rejects.toMatchObject({
+      name: 'BoundaryError',
+      code: 'OUTSIDE_BOUNDARY',
+    });
+  });
+
+  it('cannot be used to write outside the boundary via an over-long chain', async () => {
+    // The property underneath the case above, driven the way a caller drives it:
+    // validate, then write to whatever came back. A guard that fails open hands
+    // back `chain/l32`, and this write lands on the far side of the boundary.
+    let resolved: string | null = null;
+    try {
+      resolved = await validateBoundary(CHAIN_HEAD);
+    } catch {
+      // Refused — the write never happens.
+    }
+    if (resolved !== null) await fs.writeFile(resolved, 'pwned');
+
+    await expect(fs.readFile(CHAIN_PAYLOAD, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('refuses a `..` that is spelled after an escaping symlink', async () => {
+    // Collapsing `..` lexically before following symlinks would rewrite this to
+    // `{PROJECT}/evil` — inside the boundary — while the real traversal goes
+    // out through `escape` first and lands beside OUTSIDE.
+    const probe = path.join(PROJECT, 'escape') + '/../evil';
 
     await expect(validateBoundary(probe)).rejects.toMatchObject({
       code: 'OUTSIDE_BOUNDARY',
