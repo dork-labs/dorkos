@@ -34,6 +34,8 @@ import { query, type Options } from '@anthropic-ai/claude-agent-sdk';
 import type { StreamEvent } from '@dorkos/shared/types';
 import { logger } from '../../../../lib/logger.js';
 import type { AgentSession } from '../agent-types.js';
+import { fireLaunchProbes } from '../messaging/launch-probes.js';
+import type { MessageSenderOpts } from '../messaging/message-sender-shared.js';
 import type { DispatchDecision, LaunchFingerprint } from './launch-fingerprint.js';
 import { applyLiveChanges, prepareDispatch } from './launch-live-settings.js';
 import type { PumpControlQuery, PumpLauncher, PumpQuery } from './session-pump-contract.js';
@@ -63,12 +65,14 @@ export interface PumpLaunchPlan {
  * warm process without learning that the pump exists.
  *
  * @param session - The session whose process this launches
+ * @param opts - The runtime's ports, for the per-process capability probes
  * @param currentPlan - Reads the plan of the dispatch that triggered the boot
  * @param onLaunched - Told what the new process is pinned to, so the next
  *   dispatch has something to compare against
  */
 export function createPumpLauncher(
   session: AgentSession,
+  opts: MessageSenderOpts,
   currentPlan: () => PumpLaunchPlan,
   onLaunched: (fingerprint: LaunchFingerprint) => void
 ): PumpLauncher {
@@ -79,6 +83,11 @@ export function createPumpLauncher(
     // existing consumer (`interruptQuery`, `updateSession`'s live setters) reads
     // this field and needs no knowledge of the pump.
     session.activeQuery = live;
+    // What this subprocess supports, asked once per PROCESS — the same probes
+    // the resume path fires, for the same reason. Skipping them here would
+    // leave a warm session's model cache, MCP snapshot, command palette and
+    // subagent list empty for as long as it stayed warm.
+    fireLaunchProbes(live, opts);
     onLaunched(plan.fingerprint);
     logger.debug('[pump-launch] booted a persistent process', {
       sessionId,

@@ -10,8 +10,8 @@
  */
 import { query, type SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import type { StreamEvent, ErrorCategory } from '@dorkos/shared/types';
-import type { MessageOpts, McpAppServerConnection } from '@dorkos/shared/agent-runtime';
-import { toMcpAppConnection } from './message-sender-shared.js';
+import type { MessageOpts } from '@dorkos/shared/agent-runtime';
+import { fireLaunchProbes } from './launch-probes.js';
 import type { AgentSession } from '../agent-types.js';
 import { createToolState } from '../agent-types.js';
 import {
@@ -161,90 +161,10 @@ export async function* executeSdkQuery(
   const agentQuery = query({ prompt: heldPrompt.prompt, options: sdkOptions });
   session.activeQuery = agentQuery;
 
-  // Non-blocking model fetch on first invocation
-  if (opts.onModelsReceived) {
-    agentQuery
-      .supportedModels()
-      // Whole objects, never a field pick — see the SdkReportedModel doc for
-      // the capability-starvation incident a pick here caused.
-      .then((models) => {
-        opts.onModelsReceived!(models);
-      })
-      .catch((err) => {
-        logger.debug('[sendMessage] failed to fetch supported models', { err });
-      });
-  }
-
-  // Non-blocking MCP status snapshot — fires every query, overwrites cache
-  if (opts.onMcpStatusReceived || opts.onMcpServerConfigsReceived) {
-    agentQuery
-      .mcpServerStatus()
-      .then((statuses) => {
-        const external = statuses.filter((s) => s.name !== 'dorkos');
-        opts.onMcpStatusReceived?.(
-          external.map((s) => ({
-            name: s.name,
-            type:
-              s.config?.type === 'sse' || s.config?.type === 'http'
-                ? s.config.type
-                : ('stdio' as const),
-            status: s.status,
-            error: s.error,
-            scope: s.scope,
-          }))
-        );
-        // Capture resolved connection config server-side for MCP App resource
-        // reads (ADR 260708-141143). Kept separate from the client-facing entry.
-        if (opts.onMcpServerConfigsReceived) {
-          const captured: Array<{ name: string; connection: McpAppServerConnection }> = [];
-          for (const s of external) {
-            const connection = toMcpAppConnection(s.config);
-            if (connection) captured.push({ name: s.name, connection });
-          }
-          opts.onMcpServerConfigsReceived(captured);
-        }
-      })
-      .catch((err) => {
-        logger.debug('[sendMessage] failed to fetch MCP server status', { err });
-      });
-  }
-
-  // Non-blocking command discovery — fires on first query, caches on runtime
-  if (opts.onCommandsReceived) {
-    agentQuery
-      .supportedCommands()
-      .then((commands) => {
-        opts.onCommandsReceived!(
-          commands.map((c) => ({
-            name: c.name,
-            description: c.description,
-            argumentHint: c.argumentHint,
-            aliases: c.aliases,
-          }))
-        );
-      })
-      .catch((err) => {
-        logger.debug('[sendMessage] failed to fetch supported commands', { err });
-      });
-  }
-
-  // Non-blocking subagent discovery — fires on first query, caches on runtime
-  if (opts.onSubagentsReceived) {
-    agentQuery
-      .supportedAgents?.()
-      ?.then((agents) => {
-        opts.onSubagentsReceived!(
-          agents.map((a) => ({
-            name: a.name,
-            description: a.description,
-            model: a.model,
-          }))
-        );
-      })
-      .catch((err) => {
-        logger.debug('[sendMessage] failed to fetch supported agents', { err });
-      });
-  }
+  // The per-PROCESS probes: what this subprocess supports, asked once per
+  // launch and never awaited. Shared with the pump, which launches the same
+  // way and owes its session the same answers.
+  fireLaunchProbes(agentQuery, opts);
 
   logger.info('[sendMessage] stream start', {
     session: sessionId,

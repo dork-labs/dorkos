@@ -125,6 +125,19 @@ export interface RuntimeConformanceOpts {
     probes: { midTurn: () => Promise<void>; afterTurn: () => Promise<void> }
   ) => Promise<void>;
   /**
+   * Drives a session to WARM — a completed turn with the process still held —
+   * and hands control back.
+   *
+   * Provided ONLY by runtimes declaring `supportsPersistentSession`. Omit it and
+   * the warmth cases SKIP by name rather than passing on an absence the suite
+   * manufactured: a runtime's `sendMessage` moves no projector, so a warmth
+   * assertion read off it alone would report the same thing for every runtime
+   * and assert nothing. Whatever per-session opt-in the runtime requires is the
+   * driver's job to arrange — the capability says the adapter CAN hold a
+   * process, not that every session does.
+   */
+  warmSession?: (runtime: AgentRuntime, sessionId: string) => Promise<void>;
+  /**
    * Waives the safety invariant that a runtime's DEFAULT permission mode must
    * still stop for the person — one that would need a consent ritual if a person
    * selected it (`needsConsentRitual`) may not be where a session is BORN. The
@@ -731,6 +744,7 @@ export function runtimeConformance(
     makeCompactingRuntime,
     durableHistory,
     presenceTurn,
+    warmSession,
     autonomyDefaultReason,
     sessionListSilentReason,
     userLastMessageAtSession,
@@ -1120,6 +1134,89 @@ export function runtimeConformance(
           assertOperationProgress(event);
         }
       });
+    });
+
+    describe('a session that holds its process open (C4, C5)', () => {
+      const declaresPersistence = (runtime: AgentRuntime): boolean =>
+        runtime.getCapabilities().supportsPersistentSession === true;
+
+      if (warmSession) {
+        it('C4: reports idle with no turn while it sits warm', async () => {
+          // The presence contract already forbids `streaming` with an empty
+          // `inProgressTurn`, because an empty array is absence wearing the
+          // shape of presence. WARM is a NEW way to get that wrong: the process
+          // is alive while nothing at all is running, so a runtime that reported
+          // warmth as activity would pin every idle chat to "working".
+          const runtime = makeRuntime();
+          expect(
+            declaresPersistence(runtime),
+            'a `warmSession` driver was wired by a runtime that does not declare `supportsPersistentSession`'
+          ).toBe(true);
+          const sessionId = nextSessionId();
+          runtime.ensureSession(sessionId, sessionOpts(runtime));
+
+          await warmSession(runtime, sessionId);
+
+          const observation = await observePresence(runtime, sessionId, 'after-turn', projectDir);
+          expect(validatePresenceReport(observation), presenceMessage(observation)).toEqual([]);
+          expect(
+            observation.lifecycle,
+            'a warm session is holding a process, not running a turn'
+          ).not.toBe('streaming');
+          expect(
+            observation.inProgressTurn,
+            'a session with nothing running must report no turn at all'
+          ).toBeNull();
+          // And the warmth itself is reported where warmth belongs. Without
+          // this the case would pass on a runtime that never warmed anything.
+          expect(
+            runtime.getSessionWarmth?.(sessionId),
+            'the driver was supposed to leave this session warm'
+          ).toBe('warm');
+        });
+
+        it('C5: a reap is invisible — the next turn is well formed either way', async () => {
+          const runtime = makeRuntime();
+          const sessionId = nextSessionId();
+          runtime.ensureSession(sessionId, sessionOpts(runtime));
+
+          await warmSession(runtime, sessionId);
+          const onWarmProcess = await drainTurn(runtime, sessionId);
+
+          await runtime.reapSession?.(sessionId);
+          expect(
+            runtime.getSessionWarmth?.(sessionId),
+            'the process was supposed to be given back'
+          ).toBe('cold');
+
+          const afterReap = await drainTurn(runtime, sessionId);
+
+          // Same shape, both times. The reap took the process away and the
+          // person cannot tell: the turn still ends in exactly one terminal and
+          // still carries content, which is the whole promise of a short idle
+          // window being safe.
+          for (const [label, events] of [
+            ['on the warm process', onWarmProcess],
+            ['after the reap', afterReap],
+          ] as const) {
+            for (const event of events) StreamEventSchema.parse(event);
+            expect(
+              events.filter((event) => event.type === 'done'),
+              `the turn ${label} did not end in exactly one terminal`
+            ).toHaveLength(1);
+            expect(
+              events.some((event) => event.type !== 'done'),
+              `the turn ${label} carried nothing but its terminal`
+            ).toBe(true);
+          }
+        });
+      } else {
+        it.skip(
+          'SKIPPED: no `warmSession` driver wired — nothing here proves this runtime ' +
+            'reports a held process truthfully (see RuntimeConformanceOpts.warmSession)',
+          () => {}
+        );
+      }
     });
 
     describe('presence truthfulness (the strip omits rather than lies)', () => {

@@ -236,7 +236,7 @@ export class PersistentDispatch {
       fingerprint: captureLaunchFingerprint(resolved.launch),
     };
 
-    let bundle = this.acquire(sessionId, session);
+    let bundle = this.acquire(sessionId, session, opts);
     // Nothing pinned to the live process may be stale by the time the turn
     // opens. A pin the SDK cannot set live replaces the process outright; the
     // four it can are awaited, never fired blind (`launch-live-settings.ts`).
@@ -247,7 +247,7 @@ export class PersistentDispatch {
         reason: reuse.reason,
       });
       await this.replaceProcess(sessionId);
-      bundle = this.acquire(sessionId, session);
+      bundle = this.acquire(sessionId, session, opts);
     } else if (reuse.action === 'adjust') {
       const control = bundle.pump.controlQuery;
       if (control === undefined) {
@@ -352,7 +352,11 @@ export class PersistentDispatch {
    * object throughout: the launcher writes this session's fingerprint into it,
    * and a copy would mean that write landed somewhere nothing consults.
    */
-  private acquire(sessionId: string, session: AgentSession): SessionBundle {
+  private acquire(
+    sessionId: string,
+    session: AgentSession,
+    opts: MessageSenderOpts
+  ): SessionBundle {
     const existing = this.bundles.get(sessionId);
     // Held to the REGISTRY's answer, not to the map's, because the registry
     // drops pumps this class never hears about: the idle timer reaps one after
@@ -373,6 +377,7 @@ export class PersistentDispatch {
       warmIdleMs: SESSIONS.WARM_IDLE_MS,
       launch: createPumpLauncher(
         session,
+        opts,
         () => {
           const plan = bundle.plan;
           if (plan === undefined) {
