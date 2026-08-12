@@ -363,46 +363,43 @@ export class ClaudeCodeRuntime implements AgentRuntime {
 
     const senderOpts: MessageSenderOpts = {
       cwd: this.cwd,
-        sessionCwd: session.cwd,
-        claudeCliPath: this.claudeCliPath,
-        meshCore: this.meshCore,
-        bindingRouter: this.bindingRouter,
-        bindingStore: this.bindingStore,
-        adapterManager: this.adapterManager,
-        mcpServerFactory: this.mcpServerFactory,
-        ...cacheCallbacks,
-        // Composed over the cache's own handler rather than replacing it: the
-        // per-turn status snapshot is one observation with two readers — the
-        // cache, which answers "what is connected?", and the revocation watch,
-        // which acts on the single status that means "the token you sent me was
-        // refused" (DOR-981). The session id is read when the snapshot ARRIVES,
-        // not now, so a session that was assigned its canonical id mid-turn
-        // reports the id its projector is keyed by.
-        onMcpStatusReceived: (servers) => {
-          cacheCallbacks.onMcpStatusReceived?.(servers);
-          this.reportMcpAuthFailures(session.sdkSessionId || sessionId, cwdKey, servers);
-        },
-        // `sessionId` is the id THIS turn was asked with, which is only a hint:
-        // after the session's first rename it is an alias, not the key the
-        // store holds it under. The store resolves the real key itself.
-        onSdkSessionRebind: (previousSdkSessionId, nextSdkSessionId) =>
-          this.sessionStore.rebindSdkSession(previousSdkSessionId, nextSdkSessionId, sessionId),
-        modelThinkingCapability: modelCapability,
-        modelSupportsAutoMode: modelCapability
-          ? (modelCapability.supportsAutoMode ?? false)
-          : undefined,
-        plugins: this.activatedPlugins,
-        getKnownCommands: async () => {
-          // Cold SDK cache → null: built-ins are unknowable before the first
-          // query for this cwd, so the sender passes command-shaped content
-          // through unverified (DOR-107).
-          if (!this.cache.hasSdkCommands(cwdKey)) return null;
-          const { commands } = await this.cache.getCommands(
-            this.getOrCreateRegistry(cwdKey),
-            cwdKey
-          );
-          return commands.map((c) => c.fullCommand);
-        },
+      sessionCwd: session.cwd,
+      claudeCliPath: this.claudeCliPath,
+      meshCore: this.meshCore,
+      bindingRouter: this.bindingRouter,
+      bindingStore: this.bindingStore,
+      adapterManager: this.adapterManager,
+      mcpServerFactory: this.mcpServerFactory,
+      ...cacheCallbacks,
+      // Composed over the cache's own handler rather than replacing it: the
+      // per-turn status snapshot is one observation with two readers — the
+      // cache, which answers "what is connected?", and the revocation watch,
+      // which acts on the single status that means "the token you sent me was
+      // refused" (DOR-981). The session id is read when the snapshot ARRIVES,
+      // not now, so a session that was assigned its canonical id mid-turn
+      // reports the id its projector is keyed by.
+      onMcpStatusReceived: (servers) => {
+        cacheCallbacks.onMcpStatusReceived?.(servers);
+        this.reportMcpAuthFailures(session.sdkSessionId || sessionId, cwdKey, servers);
+      },
+      // `sessionId` is the id THIS turn was asked with, which is only a hint:
+      // after the session's first rename it is an alias, not the key the
+      // store holds it under. The store resolves the real key itself.
+      onSdkSessionRebind: (previousSdkSessionId, nextSdkSessionId) =>
+        this.sessionStore.rebindSdkSession(previousSdkSessionId, nextSdkSessionId, sessionId),
+      modelThinkingCapability: modelCapability,
+      modelSupportsAutoMode: modelCapability
+        ? (modelCapability.supportsAutoMode ?? false)
+        : undefined,
+      plugins: this.activatedPlugins,
+      getKnownCommands: async () => {
+        // Cold SDK cache → null: built-ins are unknowable before the first
+        // query for this cwd, so the sender passes command-shaped content
+        // through unverified (DOR-107).
+        if (!this.cache.hasSdkCommands(cwdKey)) return null;
+        const { commands } = await this.cache.getCommands(this.getOrCreateRegistry(cwdKey), cwdKey);
+        return commands.map((c) => c.fullCommand);
+      },
     };
 
     // The one branch. A session that already holds a process stays on this path

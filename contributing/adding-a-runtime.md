@@ -337,6 +337,21 @@ So: absence passes, fabrication fails — **the strip omits rather than lies.** 
 
 The rules live in `validatePresenceReport` (`packages/test-utils/src/runtime-conformance.ts`). `packages/test-utils/src/__tests__/runtime-conformance-presence.test.ts` proves the predicate rejects each fabrication; the suite cases themselves were proved by seeding a stuck-`streaming` and an empty-turn defect into `test-mode` and watching them go red.
 
+**If your adapter holds a process open between turns, warmth is a third presence question.** `supportsPersistentSession` says the adapter CAN keep one backend process serving many turns — not that every session does; whether a given session does is normally an operator setting, and claude-code's is `runtimes.claudeCode.persistentSession`, off by default. Declaring the capability commits you to three things:
+
+| Method                       | What it must answer                                                                                                                                |
+| ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `getSessionWarmth(id)`       | `cold` / `warming` / `warm` / `running` / `crashed` — about the PROCESS, never the conversation. A session you hold nothing for is `cold`, always. |
+| `reapSession(id)`            | Close the process and leave the record, the transcript and the conversation untouched. The next message must resume as if nothing happened.        |
+| the presence pair, unchanged | A warm session is `idle` with `inProgressTurn: null`. It is holding a process, not running a turn.                                                 |
+
+That last row is the trap the C4 case exists for. The presence contract already forbids `streaming` with an empty `inProgressTurn`, but warmth is a NEW way to reach the same lie: the process is alive while nothing at all is running, so an adapter that reported warmth as activity would pin every idle chat to "working" forever. Two more rules follow from the same honesty:
+
+- **A reap is invisible or it is a bug.** C5 drives a session warm, reaps it, and dispatches again; both turns must be well formed and indistinguishable. That is what makes a short idle window safe to have at all.
+- **An idle crash reports `crashed` and says NOTHING on the session stream.** The stream's `error` member is a TURN error, so minting a turn for a session where nothing was running would report a failure that never happened.
+
+**The warmth half needs a driver too, and without one it skips.** Wire `warmSession(runtime, sessionId)`: leave the session WARM — a completed turn with the process still held — and hand control back. Turning on whatever per-session opt-in your runtime requires is the driver's job, and so is supplying a backend double that stays alive after its `result`; the one-shot doubles the rest of the suite uses read as a crash the moment their stream ends, so every second turn would test crash recovery instead of warmth (`claude-code/sessions/__tests__/fake-persistent-cli.ts` is the shape). Omit the driver and C4/C5 register as a named skip — codex, opencode and test-mode all take that arm today, because none of them declares the capability yet.
+
 A runtime that declares `logBackedHistory: true` must also pass the `durableHistory` opt — wire it to `driveDurableTurn` (`apps/server/src/services/session/__tests__/durable-turn-harness.ts`), which runs one real turn through the projector → durable store path, drops the projector (the restart analog), and asserts history reconstructs from the store (DOR-189). All three log-backed suites show the wiring.
 
 **The mocking stance (non-negotiable): CI must never require the backend binary.** Mock the SDK with recorded fixture events and mock the dependency probe so nothing spawns. For local end-to-end verification, add an env-gated live smoke in the _same file_, the way Codex does: hoist a `LIVE` flag with `vi.hoisted(() => process.env.DORKOS_<NAME>_LIVE === '1')`, have each `vi.mock` factory return `importOriginal()` when live, switch `projectDir` to a real temp dir, and raise timeouts. The identical assertions then run against real turns:
