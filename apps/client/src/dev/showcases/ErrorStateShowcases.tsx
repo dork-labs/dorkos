@@ -117,8 +117,8 @@ export function ErrorStateShowcases() {
           </div>
         </ShowcaseDemo>
         <p className="text-muted-foreground mt-2 text-xs">
-          Chat-specific error states (TransportErrorBanner, ErrorMessageBlock) are showcased on the
-          Chat page.
+          Chat-specific error states (ErrorMessageBlock, including the transport-error variant) are
+          showcased on the Chat page.
         </p>
       </PlaygroundSection>
     </>

@@ -1,7 +1,5 @@
 import { useState } from 'react';
-import { AlertTriangle } from 'lucide-react';
 import {
-  Button,
   IdentityAvatar,
   TooltipProvider,
   statusDotClass,
@@ -12,6 +10,7 @@ import { cn } from '@/layers/shared/lib';
 import { AgentActivityBadge } from '@/layers/features/dashboard-sidebar';
 import { StreamingText } from '@/layers/features/chat/ui/message/StreamingText';
 import { ChatStatusStrip } from '@/layers/features/chat/ui/status/ChatStatusStrip';
+import { ErrorMessageBlock } from '@/layers/features/chat/ui/message/ErrorMessageBlock';
 import { UsageStatusItem } from '@/layers/features/status';
 import { TaskListPanel } from '@/layers/features/chat/ui/tasks/TaskListPanel';
 import type { TransportErrorInfo } from '@/layers/features/chat/model/chat-types';
@@ -29,29 +28,46 @@ const SIGNALS: readonly { signal: StatusSignal; means: string }[] = [
   { signal: 'unseen', means: 'unseen — output you have not read' },
 ];
 
-/** Replica of the inline transport error banner from ChatPanel for showcase purposes. */
-function TransportErrorBanner({
-  error,
-  onRetry,
-}: {
-  error: TransportErrorInfo;
-  onRetry?: () => void;
-}) {
-  return (
-    <div className="border-destructive/30 bg-destructive/5 flex items-start gap-3 rounded-lg border px-3 py-2">
-      <AlertTriangle className="text-destructive mt-0.5 size-4 shrink-0" />
-      <div className="min-w-0 flex-1">
-        <p className="text-destructive text-sm font-medium">{error.heading}</p>
-        <p className="text-muted-foreground text-sm">{error.message}</p>
-      </div>
-      {error.retryable && (
-        <Button variant="outline" size="sm" onClick={onRetry} className="shrink-0">
-          Retry
-        </Button>
-      )}
-    </div>
-  );
-}
+/**
+ * The four transport-error states ChatPanel can hand to `ErrorMessageBlock`
+ * (`apps/client/src/layers/features/chat/ui/ChatPanel.tsx`), which renders it
+ * with `heading`/`message` from `TransportErrorInfo` and no `category` — the
+ * same shape used here.
+ */
+const TRANSPORT_ERRORS: readonly { label: string; error: TransportErrorInfo }[] = [
+  {
+    label: "Can't reach DorkOS (retryable)",
+    error: {
+      heading: "Can't reach DorkOS",
+      message: 'Could not reach the server. Check your network and try again.',
+      retryable: true,
+    },
+  },
+  {
+    label: 'Server error (retryable)',
+    error: {
+      heading: 'Server error',
+      message: 'The server encountered an error. Try again.',
+      retryable: true,
+    },
+  },
+  {
+    label: 'Request timed out (retryable)',
+    error: {
+      heading: 'Request timed out',
+      message: 'The server took too long to respond. Try again.',
+      retryable: true,
+    },
+  },
+  {
+    label: 'Unknown error (not retryable)',
+    error: {
+      heading: 'Error',
+      message: 'An unexpected error occurred.',
+      retryable: false,
+    },
+  },
+];
 
 const SHORT_TEXT = 'The refactoring is complete. All tests pass.';
 
@@ -74,7 +90,7 @@ npm install jsonwebtoken @types/jsonwebtoken
 npm run test -- --watch
 \`\`\``;
 
-/** Status-related component showcases: StreamingText, ChatStatusStrip, TransportErrorBanner, TaskListPanel. */
+/** Status-related component showcases: StreamingText, ChatStatusStrip, ErrorMessageBlock (transport error), TaskListPanel. */
 export function StatusShowcases() {
   const [taskCollapsed, setTaskCollapsed] = useState(false);
   const [taskCollapsed2, setTaskCollapsed2] = useState(true);
@@ -345,55 +361,23 @@ export function StatusShowcases() {
       </PlaygroundSection>
 
       <PlaygroundSection
-        title="TransportErrorBanner"
-        description="Structured error banner for transport-level failures (network, server, timeout). Shown outside the message stream."
+        title="Transport error (ErrorMessageBlock)"
+        description="ChatPanel's inline transport-error banner (network, server, timeout) — the same ErrorMessageBlock the message stream uses, fed heading/message straight from TransportErrorInfo with no category. Shown outside the message stream."
       >
-        <ShowcaseLabel>Can't reach DorkOS (retryable)</ShowcaseLabel>
-        <ShowcaseDemo responsive>
-          <TransportErrorBanner
-            error={{
-              heading: "Can't reach DorkOS",
-              message: 'Could not reach the server. Check your network and try again.',
-              retryable: true,
-            }}
-            onRetry={() => console.log('[Showcase] Retry clicked')}
-          />
-        </ShowcaseDemo>
-
-        <ShowcaseLabel>Server error (retryable)</ShowcaseLabel>
-        <ShowcaseDemo responsive>
-          <TransportErrorBanner
-            error={{
-              heading: 'Server error',
-              message: 'The server encountered an error. Try again.',
-              retryable: true,
-            }}
-            onRetry={() => console.log('[Showcase] Retry clicked')}
-          />
-        </ShowcaseDemo>
-
-        <ShowcaseLabel>Request timed out (retryable)</ShowcaseLabel>
-        <ShowcaseDemo responsive>
-          <TransportErrorBanner
-            error={{
-              heading: 'Request timed out',
-              message: 'The server took too long to respond. Try again.',
-              retryable: true,
-            }}
-            onRetry={() => console.log('[Showcase] Retry clicked')}
-          />
-        </ShowcaseDemo>
-
-        <ShowcaseLabel>Unknown error (not retryable)</ShowcaseLabel>
-        <ShowcaseDemo responsive>
-          <TransportErrorBanner
-            error={{
-              heading: 'Error',
-              message: 'An unexpected error occurred.',
-              retryable: false,
-            }}
-          />
-        </ShowcaseDemo>
+        {TRANSPORT_ERRORS.map(({ label, error }) => (
+          <div key={label}>
+            <ShowcaseLabel>{label}</ShowcaseLabel>
+            <ShowcaseDemo responsive>
+              <ErrorMessageBlock
+                heading={error.heading}
+                message={error.message}
+                onRetry={
+                  error.retryable ? () => console.log('[Showcase] Retry clicked') : undefined
+                }
+              />
+            </ShowcaseDemo>
+          </div>
+        ))}
       </PlaygroundSection>
 
       <PlaygroundSection
