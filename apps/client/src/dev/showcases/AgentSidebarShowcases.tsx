@@ -17,7 +17,6 @@ import { SessionSwitcherShowcase, useSwitcherFixture } from './SessionSwitcherSh
 import {
   AgentActivityBadge,
   AgentListItem,
-  AgentOnboardingCard,
   GroupCreateInput,
   buildAgentsHeaderMenuNodes,
   buildChannelsHeaderMenuNodes,
@@ -92,7 +91,6 @@ export function AgentSidebarShowcases() {
       <RowMenuSurfaceShowcase />
       <SectionHeaderShowcase />
       <GroupCreateInputShowcase />
-      <AgentOnboardingCardShowcase />
     </>
   );
 }
@@ -347,24 +345,6 @@ function SectionHeaderShowcase() {
               onDisplayFilterChange: () => {},
             })}
           />
-        </div>
-      </ShowcaseDemo>
-    </PlaygroundSection>
-  );
-}
-
-// ── AgentOnboardingCard ──
-
-function AgentOnboardingCardShowcase() {
-  return (
-    <PlaygroundSection
-      title="AgentOnboardingCard"
-      description="Dashed-border onboarding card shown below the agent list when fewer than 3 agents exist. Encourages adding more agents."
-    >
-      <ShowcaseLabel>Default</ShowcaseLabel>
-      <ShowcaseDemo>
-        <div className="max-w-xs">
-          <AgentOnboardingCard onAddAgent={() => {}} />
         </div>
       </ShowcaseDemo>
     </PlaygroundSection>

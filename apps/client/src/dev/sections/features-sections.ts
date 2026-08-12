@@ -274,13 +274,6 @@ export const FEATURES_SECTIONS: PlaygroundSection[] = [
     category: 'Agent',
     keywords: ['sidebar', 'menu', 'context', 'right-click', 'kebab', 'pin', 'profile', 'overflow'],
   },
-  {
-    id: 'agentonboardingcard',
-    title: 'AgentOnboardingCard',
-    page: 'features',
-    category: 'Agent',
-    keywords: ['agent', 'onboarding', 'card', 'empty', 'state', 'sidebar', 'add'],
-  },
   // MeshShowcases
   {
     id: 'meshemptystate',

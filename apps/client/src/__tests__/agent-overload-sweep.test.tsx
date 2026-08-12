@@ -9,11 +9,15 @@
  * The evidence line for the invariant was two sidebar cards that, before this
  * sweep, shipped the IDENTICAL string "Add more agents" for two different
  * concepts: `ProgressCard`'s row opens Settings → Runtimes (runtime sense),
- * while `AgentOnboardingCard`'s row adds a fleet teammate (fleet sense). This
- * file mounts both real components — not a copy of their strings — so a future
- * edit that reintroduces the collision (either by reverting ProgressCard's
- * rename, or by "fixing" AgentOnboardingCard to match it) fails here instead of
- * shipping silently.
+ * while `AgentOnboardingCard`'s row added a fleet teammate (fleet sense).
+ *
+ * **`AgentOnboardingCard` has since been deleted** (DOR-1138): it hung off an
+ * empty-Library branch that `ensureDorkBot` made unreachable, and day-one
+ * guidance moved to the Getting started zone. Only the runtime-sense card is
+ * left, so the collision is now impossible by construction rather than by
+ * agreement — and what still needs guarding is the half that can regress: this
+ * file mounts the real `ProgressCard`, not a copy of its strings, so reverting
+ * its rename fails here instead of shipping silently.
  */
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, cleanup, waitFor } from '@testing-library/react';
@@ -29,7 +33,6 @@ import { z } from 'zod';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createMockTransport } from '@dorkos/test-utils';
 import { mergeDialogSearch, TransportProvider } from '@/layers/shared/model';
-import { AgentOnboardingCard } from '@/layers/features/dashboard-sidebar/ui/AgentOnboardingCard';
 
 vi.mock('motion/react', () => ({
   motion: { div: 'div' },
@@ -54,9 +57,9 @@ vi.mock('@/layers/entities/config', () => ({
 }));
 
 // Imported after the mocks above so ProgressCard picks up the mocked stores.
-// Internal path (not the feature barrel), matching ProgressCard.test.tsx and
-// AgentOnboardingCard.test.tsx — the barrels pull in far more of each feature
-// than this file needs to mount two presentational cards.
+// Internal path (not the feature barrel), matching ProgressCard.test.tsx — the
+// barrel pulls in far more of the feature than this file needs to mount one
+// presentational card.
 import { ProgressCard } from '@/layers/features/onboarding/ui/ProgressCard';
 
 afterEach(cleanup);
@@ -104,26 +107,14 @@ describe('DOR-853: the "agent" overload is resolved to one sense per surface', (
     expect(screen.queryByText(/^Add more agents$/)).not.toBeInTheDocument();
   });
 
-  it('AgentOnboardingCard still says "Add more agents to your fleet" (fleet sense, untouched)', () => {
-    render(<AgentOnboardingCard onAddAgent={vi.fn()} />);
-
-    // The fleet-sense row is CORRECT as written — a bare "agent" here means a
-    // named teammate — and must survive this sweep unchanged.
-    expect(screen.getByText(/Add more agents to your fleet/)).toBeInTheDocument();
-  });
-
-  it('the two cards no longer collide on the same string for different concepts', async () => {
+  it('leaves the fleet sense with no sidebar card to collide with', async () => {
+    // The other half of the original pair is gone, and its absence is the point:
+    // with one card left there is no second surface that could reclaim the
+    // string. Asserted from the runtime-sense card's own render so this is a
+    // fact about what ships, not a note about what was removed.
     await renderProgressCard();
-    const { unmount } = render(<AgentOnboardingCard onAddAgent={vi.fn()} />);
 
-    // Before DOR-853 both cards rendered the exact text "Add more agents" for
-    // two unrelated actions (open Runtimes vs. add a fleet teammate). Now only
-    // the fleet-sense card owns that phrasing; the runtime-sense row uses
-    // distinct, self-describing copy.
-    expect(screen.getByText(/Add more agents to your fleet/)).toBeInTheDocument();
+    expect(screen.queryByText(/Add more agents to your fleet/)).not.toBeInTheDocument();
     expect(screen.getByText('Connect more runtimes')).toBeInTheDocument();
-    expect(screen.queryByText(/^Add more agents$/)).not.toBeInTheDocument();
-
-    unmount();
   });
 });

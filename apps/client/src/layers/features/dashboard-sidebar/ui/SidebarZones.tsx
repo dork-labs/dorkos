@@ -9,7 +9,6 @@
  * @module features/dashboard-sidebar/ui/SidebarZones
  */
 import { useCallback } from 'react';
-import { useAgentCreationStore } from '@/layers/shared/model';
 import {
   setGroupCollapsed,
   setSectionCollapsed,
@@ -24,7 +23,6 @@ import {
 } from '../model/build-sidebar-model';
 import { useAllClearBeat } from '../model/use-all-clear-beat';
 import { useGettingStartedReturn } from '../model/holds/use-getting-started-return';
-import { AgentOnboardingCard } from './AgentOnboardingCard';
 import { SidebarZone } from './SidebarZone';
 import { TodayZone } from './TodayZone';
 
@@ -137,13 +135,11 @@ export function SidebarZones({ model, zoneIds }: SidebarZonesProps) {
             <SidebarZone key={zone.id} zone={zone} onToggleAll={onToggleAll} />
           )
         )}
-      {/* "Is there anything at all yet?" — a presence check on the model, not a
-          membership rule. Library is absent only when there is no agent, no room
-          and no pin to put in it, which is the one moment the invitation belongs
-          on screen. P2.2's Getting started zone takes this over. */}
-      {library === undefined && draws('library') && (
-        <AgentOnboardingCard onAddAgent={() => useAgentCreationStore.getState().open()} />
-      )}
+      {/* There is no empty-Library branch, and there cannot be one: `ensureDorkBot`
+          runs at every server boot, so the fleet is never empty and Library always
+          has at least its Agents section. The `AgentOnboardingCard` that used to
+          hang here was unreachable for that reason; day-one guidance is the
+          Getting started zone's job, at the top of the panel where it is read. */}
     </div>
   );
 }
