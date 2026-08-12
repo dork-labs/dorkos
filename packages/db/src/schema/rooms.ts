@@ -527,6 +527,12 @@ export const roomEntries = sqliteTable(
     // `SELECT DISTINCT room_id` reads the index alone and never touches a row's
     // body. Not partial — there is no predicate to make it one, since every
     // author kind can be the subject of the question.
+    //
+    // **The write side is the cost, and it was accepted rather than overlooked.**
+    // This is a fifth index on `room_entries`, so every message insert — the
+    // hot path, inside the `seq`-allocating transaction — pays one more b-tree
+    // write. Taken because the read it serves runs on every room-list request,
+    // where the alternative is a full scan of the largest table in the schema.
     index('idx_room_entries_author_room').on(table.authorId, table.roomId),
   ]
 );

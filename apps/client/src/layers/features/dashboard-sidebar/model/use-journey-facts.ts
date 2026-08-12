@@ -128,6 +128,12 @@ export function useJourneyFacts(input: JourneyFactsInput): JourneyFactsState {
         // "we cannot say", and a suggestion built on a guess would tell an
         // operator who has been talking in #team for months to go say hello —
         // the same omission-never-a-guess rule the rest of these facts follow.
+        // The standing case, not a hypothetical one: the Obsidian embed's
+        // `DirectTransport` answers `listRooms()` with `[]` (rooms are
+        // server-owned and out of scope there, `embedded-mode-stubs.ts`), so
+        // `team` is permanently undefined on that surface and `?? false` would
+        // give every Obsidian user an undismissable nudge toward a channel their
+        // cockpit cannot open.
         hasPostedInTeam: team?.viewerHasPosted ?? true,
         hasDorkBotSession: dorkBot !== null && agentActivity[dorkBot.path] !== undefined,
       },
