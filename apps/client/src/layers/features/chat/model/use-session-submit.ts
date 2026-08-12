@@ -40,6 +40,7 @@ import { useRuntimeCapabilities } from '@/layers/entities/runtime';
 import { useInteractionStore } from '@/layers/entities/interactions';
 import { carryInteractionForward } from '../lib/carry-interaction-forward';
 import { clearComposerOnConfirmed } from '../lib/clear-composer-on-confirmed';
+import { sequenceEnqueue } from '../lib/enqueue-sequencer';
 import type { SessionStoreActions } from './use-session-store-actions';
 import type { NativeCommandResult } from './native-commands';
 import type { ChatSessionOptions, ChatStatus } from './chat-types';
@@ -485,49 +486,64 @@ export function useSessionSubmit({
   const enqueueContent = useCallback(
     async (content: string): Promise<boolean> => {
       if (!sessionId) return false;
+      const targetSessionId = sessionId;
       const cwd = selectedCwdRef.current;
       setError(null);
 
-      let finalContent: string;
-      try {
-        finalContent = transformContentRef.current
-          ? await transformContentRef.current(content)
-          : content;
-      } catch (err) {
-        setError({
-          heading: 'Could not queue message',
-          message: (err as Error).message || 'The attachment did not upload. Please try again.',
-          retryable: false,
-        });
-        return false;
-      }
+      // Sequence this session's enqueue POSTs so the server accepts them in
+      // keystroke order (DOR-1165). Each queued message is its own POST and the
+      // server orders the queue by acceptance, so two POSTs fired ~20ms apart
+      // (a fast typist, a paste-and-Enter hammer) could be accepted out of order
+      // and transpose what the person typed. The chain claims its slot HERE, at
+      // the synchronous head of the call — before the attachment transform's
+      // await — so ordering follows the order Enter was pressed, not the order
+      // uploads happen to finish. This is request ordering only: no queue state,
+      // no gating on turn status (see enqueue-sequencer).
+      return sequenceEnqueue(targetSessionId, async (): Promise<boolean> => {
+        let finalContent: string;
+        try {
+          finalContent = transformContentRef.current
+            ? await transformContentRef.current(content)
+            : content;
+        } catch (err) {
+          setError({
+            heading: 'Could not queue message',
+            message: (err as Error).message || 'The attachment did not upload. Please try again.',
+            retryable: false,
+          });
+          return false;
+        }
 
-      try {
-        const uiSnapshot = buildUiStateSnapshot(useAppStore.getState(), cwd ?? null);
-        const { uiState, commit: commitUiState } = prepareUiStateForSend(sessionId, uiSnapshot);
-        // `queued: true` becomes the server's `<queue_note>` — the same
-        // out-of-band signal the old client-side flush carried (ADR-0273). The
-        // content itself is never annotated.
-        const context: ClientContext = { ...(uiState ? { uiState } : {}), queued: true };
-        const { sessionId: canonicalId } = await transport.postMessage(
-          sessionId,
-          finalContent,
-          cwd ?? undefined,
-          { context, disposition: 'queue' }
-        );
-        commitUiState(canonicalId);
-        return true;
-      } catch (err) {
-        setError({
-          heading: 'Could not queue message',
-          message: (err as Error).message || 'The request failed. Please try again.',
-          // The words are still in the composer, so the retry is a keystroke
-          // away. A Retry button here would re-send the PREVIOUS user message,
-          // which is not what anyone asked for.
-          retryable: false,
-        });
-        return false;
-      }
+        try {
+          const uiSnapshot = buildUiStateSnapshot(useAppStore.getState(), cwd ?? null);
+          const { uiState, commit: commitUiState } = prepareUiStateForSend(
+            targetSessionId,
+            uiSnapshot
+          );
+          // `queued: true` becomes the server's `<queue_note>` — the same
+          // out-of-band signal the old client-side flush carried (ADR-0273). The
+          // content itself is never annotated.
+          const context: ClientContext = { ...(uiState ? { uiState } : {}), queued: true };
+          const { sessionId: canonicalId } = await transport.postMessage(
+            targetSessionId,
+            finalContent,
+            cwd ?? undefined,
+            { context, disposition: 'queue' }
+          );
+          commitUiState(canonicalId);
+          return true;
+        } catch (err) {
+          setError({
+            heading: 'Could not queue message',
+            message: (err as Error).message || 'The request failed. Please try again.',
+            // The words are still in the composer, so the retry is a keystroke
+            // away. A Retry button here would re-send the PREVIOUS user message,
+            // which is not what anyone asked for.
+            retryable: false,
+          });
+          return false;
+        }
+      });
     },
     [sessionId, transport, setError]
   );
