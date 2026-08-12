@@ -15,11 +15,12 @@
  *
  * @module services/runtimes/claude-code/sessions/__tests__/session-crash-recovery
  */
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeAll } from 'vitest';
 import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import type { SessionEvent } from '@dorkos/shared/session-stream';
 import type { StreamEvent } from '@dorkos/shared/types';
 import { createTestDb } from '@dorkos/test-utils/db';
+import { initBoundary } from '../../../../../lib/boundary.js';
 import { feedProjector } from '../../../../session/session-event-normalizer.js';
 import { SessionStateProjector } from '../../../../session/session-state-projector.js';
 import { MessageQueueStore } from '../../../../session/message-queue-store.js';
@@ -39,6 +40,17 @@ import { FakeQuery, initMessage } from './fake-pump-query.js';
 
 const SESSION_ID = 'sess-1';
 const CLIENT_ID = 'client-1';
+
+/**
+ * The directory every dispatch here runs in — real, and inside the boundary
+ * initialized below, because a dispatch validates it before it sends anything
+ * (task 3.9). A recovery relaunch is gated exactly like any other turn.
+ */
+const CWD = process.cwd();
+
+beforeAll(async () => {
+  await initBoundary(CWD);
+});
 
 /** A `result` that answers `answers` — the ordinary end of a turn. */
 function resultMessage(answers: string): SDKMessage {
@@ -197,7 +209,7 @@ function harness(hooks: HarnessHooks = {}): Harness {
     streamEvents,
     live: () => queries[queries.length - 1]!,
     stream: () => projector.replayFrom(0),
-    dispatch: (batch) => recovery.dispatch(batch),
+    dispatch: (batch) => recovery.dispatch(batch, CWD),
     warm: () => pump.warm(),
     awaitCrash: async (count) => {
       await vi.waitFor(() => expect(crashes.length).toBeGreaterThanOrEqual(count));

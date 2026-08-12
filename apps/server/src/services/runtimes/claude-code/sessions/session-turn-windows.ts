@@ -67,6 +67,7 @@ import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import type { ContextUsage, UsageStatus } from '@dorkos/shared/types';
 import { logger } from '../../../../lib/logger.js';
 import type { TurnOrigin } from '../../../session/session-event-normalizer.js';
+import { validateDispatchBoundary } from '../dispatch-boundary.js';
 import { fetchContextBreakdown } from '../sdk/context-usage.js';
 import { fetchSubscriptionUsage } from '../sdk/subscription-usage.js';
 import {
@@ -303,8 +304,18 @@ export class SessionTurnWindows {
    * the pump's honor-system dispatch mutex enforceable: a caller cannot open a
    * second window while one is open, and a dispatch that arrives while the
    * previous window is still settling its accounting waits for it rather than
-   * racing it. **Task 3.9 validates the turn's boundary here**, on the batch,
-   * before anything is sent.
+   * racing it.
+   *
+   * **The directory boundary is asked here, per dispatch, before anything is
+   * sent** (task 3.9). On the resume-per-message path the same question is
+   * asked at the top of every `executeSdkQuery`, which is per turn only because
+   * every turn is a launch; a warm process is launched once and serves many
+   * turns, so a cwd that moved between two dispatches would never be re-asked.
+   * The relaunch pin list would catch most of those by forcing a new launch,
+   * but a security boundary may not ride on a fingerprint comparison, so this
+   * gate is its own — see `dispatch-boundary.ts`. A refused turn is refused
+   * exactly as a refused pump dispatch is: nothing sent, no window announced,
+   * so the person's queued message is still theirs.
    *
    * The window is REGISTERED before the pump is asked to dispatch but ANNOUNCED
    * only once the dispatch is accepted, and the split is deliberate. Registering
@@ -323,16 +334,34 @@ export class SessionTurnWindows {
    * window.
    *
    * @param batch - The messages dequeued together, to run as one turn
+   * @param cwd - The working directory this turn would run in, resolved by the
+   *   caller for THIS dispatch rather than remembered from the launch
    * @returns The window this dispatch opened
+   * @throws BoundaryError When `cwd` is not a directory the operator allowed
    * @throws PumpRefusedError When the batch is empty, or the pump refuses it
    * @throws IllegalPumpTransitionError When a window is already open
    */
-  async dispatch(batch: readonly PumpDispatch[]): Promise<TurnWindow> {
+  async dispatch(batch: readonly PumpDispatch[], cwd: string): Promise<TurnWindow> {
     if (batch.length === 0) {
       throw new PumpRefusedError(
         'empty-dispatch',
         `session ${this.opts.sessionId} was dispatched an empty batch; there is no turn to open`
       );
+    }
+    // Ahead of the wait below, not after it: a turn that may not run has no
+    // business holding its caller for the length of another window's accounting
+    // fetch. Nothing has been sent and no window exists yet, so the throw leaves
+    // the session exactly as it found it.
+    try {
+      await validateDispatchBoundary(cwd);
+    } catch (err) {
+      // Said out loud, because a refusal nobody can see is how a
+      // misconfigured boundary gets diagnosed as "my agent stopped answering".
+      logger.warn('[SessionTurnWindows] refused a dispatch outside the directory boundary', {
+        sessionId: this.opts.sessionId,
+        cwd,
+      });
+      throw err;
     }
     // A window is not over until its accounting has been fetched, its `result`
     // released, and the pump's turn ended; dispatching into that gap would

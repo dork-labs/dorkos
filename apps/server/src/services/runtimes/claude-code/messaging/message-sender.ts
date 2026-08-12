@@ -43,12 +43,11 @@ import type { BindingRouter } from '../../../relay/binding-router.js';
 import type { BindingStore } from '../../../relay/binding-store.js';
 import type { AdapterManager } from '../../../relay/adapter-manager.js';
 import { resolveToolConfig } from '../tooling/tool-filter.js';
-// A turn runs in the session's working directory, which for the system agent
-// (DorkBot) and marketplace agents is {dorkHome}/agents/* — legitimately outside
-// a narrow DORKOS_BOUNDARY. The turn must be able to run there (the onboarding
-// first message), so this session-turn surface uses the agents-subtree seam;
-// dork-home siblings (credential store) and boundary-external paths stay denied.
-import { validateBoundaryOrDorkHome } from '../../../../lib/boundary.js';
+// The turn path's boundary rule and the refusal it surfaces, shared with the
+// pump's per-dispatch gate so the two cannot drift. Which validator it picks,
+// and why an agent's own home under {dorkHome}/agents/* is allowed while
+// dork-home's siblings are not, is that module's header.
+import { boundaryViolationEvent, validateDispatchBoundary } from '../dispatch-boundary.js';
 import { logger } from '../../../../lib/logger.js';
 import path from 'node:path';
 import { isEditFamilyTool, editToolFilePath } from '@dorkos/shared/diff-tools';
@@ -358,13 +357,10 @@ export async function* executeSdkQuery(
   // fall through empty strings from stale bindings, then fall back to default.
   const effectiveCwd = messageOpts?.cwd || opts.sessionCwd || opts.cwd;
   try {
-    await validateBoundaryOrDorkHome(effectiveCwd);
+    await validateDispatchBoundary(effectiveCwd);
   } catch {
     logger.warn('[sendMessage] boundary violation', { session: sessionId, effectiveCwd });
-    yield {
-      type: 'error',
-      data: { message: `Directory boundary violation: ${effectiveCwd}` },
-    };
+    yield boundaryViolationEvent(effectiveCwd);
     return;
   }
 
