@@ -11,14 +11,21 @@ import { useAppStore } from '../app-store';
 // The snapshot is taken before any test runs, with localStorage untouched, so it
 // holds exactly the defaults the store computes on a clean load — the assertions
 // below ("defaults to null", "starts empty", "defaults autoHideToolCalls to
-// true") are what keep that claim honest. `beforeEach` also clears localStorage,
-// so a test that persisted a preference cannot colour the next one's defaults.
-const INITIAL_STATE = useAppStore.getState();
+// true") are what keep that claim honest. Restoring it is what protects those
+// defaults; clearing localStorage protects the two `localStorage.getItem`
+// assertions and the load-time-migration describe further down, which reads
+// storage that a previous test wrote.
+//
+// The snapshot is frozen and restored as a fresh copy: `setState(snapshot, true)`
+// would make live state identity-equal to it, so one future in-place mutation
+// would poison the snapshot and every later restore would silently restore
+// nothing. Freezing turns that mistake into a loud failure instead.
+const INITIAL_STATE = Object.freeze(useAppStore.getState());
 
 describe('AppStore', () => {
   beforeEach(() => {
     localStorage.clear();
-    useAppStore.setState(INITIAL_STATE, true);
+    useAppStore.setState({ ...INITIAL_STATE }, true);
   });
 
   it('toggleSidebar flips state', () => {
@@ -93,6 +100,11 @@ describe('AppStore', () => {
     expect(useAppStore.getState().autoHideToolCalls).toBe(true);
   });
 
+  it('sets autoHideToolCalls on the store', () => {
+    useAppStore.getState().setAutoHideToolCalls(false);
+    expect(useAppStore.getState().autoHideToolCalls).toBe(false);
+  });
+
   it('persists autoHideToolCalls to localStorage', () => {
     useAppStore.getState().setAutoHideToolCalls(false);
     expect(localStorage.getItem('dorkos-auto-hide-tool-calls')).toBe('false');
@@ -132,6 +144,11 @@ describe('AppStore', () => {
 
   it('defaults enableMessagePolling to false', () => {
     expect(useAppStore.getState().enableMessagePolling).toBe(false);
+  });
+
+  it('sets enableMessagePolling on the store', () => {
+    useAppStore.getState().setEnableMessagePolling(true);
+    expect(useAppStore.getState().enableMessagePolling).toBe(true);
   });
 
   it('persists enableMessagePolling to localStorage', () => {
