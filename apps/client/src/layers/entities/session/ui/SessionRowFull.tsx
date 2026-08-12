@@ -1,30 +1,20 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
-import { motion, AnimatePresence, type TargetAndTransition, type Transition } from 'motion/react';
-import { ChevronDown, Pencil, ShieldOff, GitFork, Hand } from 'lucide-react';
-import type { PermissionMode, Session } from '@dorkos/shared/types';
-import {
-  cn,
-  formatRelativeTime,
-  isBypassPermissionMode,
-  isBypassSemantics,
-  permissionModeLabel,
-} from '@/layers/shared/lib';
-import { CopyButton, Tooltip, TooltipContent, TooltipTrigger } from '@/layers/shared/ui';
-import {
-  RuntimeMark,
-  getRuntimeDescriptor,
-  useCapabilitiesForRuntime,
-} from '@/layers/entities/runtime';
+import { motion, type TargetAndTransition, type Transition } from 'motion/react';
+import { ChevronDown, Pencil, ShieldOff, Hand } from 'lucide-react';
+import type { Session } from '@dorkos/shared/types';
+import { cn, formatRelativeTime } from '@/layers/shared/lib';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/layers/shared/ui';
+import { RuntimeMark } from '@/layers/entities/runtime';
 import { useSessionBorderState, type SessionBorderState } from '../model/use-session-border-state';
-import { useSessionPermissionMode } from '../model/use-session-detail';
+import { useSessionPermissionSummary } from '../model/use-session-permission-summary';
 import { usePulseMotion } from '../model/use-pulse-motion';
 import { sessionDisplayTitle } from '../lib/session-display-title';
 import { useNow } from '@/layers/shared/model';
 import { SessionContextMenu } from './SessionContextMenu';
 import { SessionContextGauge } from './SessionContextGauge';
+import { SessionDetailsPanel } from './SessionDetailsPanel';
 import { SessionOriginMark } from './SessionOriginMark';
 import { AccountMark } from './AccountMark';
-import { getOriginDescriptor } from '../config/origin-descriptors';
 
 interface SessionRowFullProps {
   session: Session;
@@ -33,20 +23,6 @@ interface SessionRowFullProps {
   onFork?: (sessionId: string) => void;
   onRename?: (sessionId: string, title: string) => void;
   isNew?: boolean;
-}
-
-function formatTimestamp(iso: string): string {
-  try {
-    return new Date(iso).toLocaleString([], {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-  } catch {
-    return iso;
-  }
 }
 
 /** Full session row with expandable details, rename, and status border. */
@@ -64,32 +40,7 @@ export function SessionRowFull({
   const renameInputRef = useRef<HTMLInputElement>(null);
   const committedRef = useRef(false);
 
-  // Read-only on purpose. `enabled: false` means a rail of fifty rows subscribes
-  // to the session cache without any of them fetching, and the row still picks up
-  // a mode change the instant it is made in the status line — the list it is
-  // rendered from only refreshes when the server says so.
-  const permissionMode =
-    useSessionPermissionMode(session.id, {
-      enabled: false,
-      // `session.permissionMode` carries any id the session's own runtime
-      // reports (DOR-851; `test-mode`'s ids sit outside the enum on purpose).
-      // Safe to narrow back to `PermissionMode` here — everything below reads
-      // it as an opaque display string (`permissionModeLabel`,
-      // `isBypassPermissionMode`) or against the runtime's own descriptor map,
-      // never against the literal enum.
-      fallback: session.permissionMode as PermissionMode,
-    }) ?? 'default';
-  // What the mode DOES, not what it is called. The row already carries its
-  // session's runtime (`Session.runtime` is required), and the capability map is
-  // one `staleTime: Infinity` query the shell has already mounted — so a rail of
-  // fifty rows shares a single lookup and none of them fetches anything new. The
-  // name fallback still answers for the frames before the map lands, which is the
-  // same answer for every runtime shipped today.
-  const caps = useCapabilitiesForRuntime(session.runtime);
-  const descriptor = caps?.permissionModes.values.find((d) => d.id === permissionMode);
-  const isUnsafe = descriptor
-    ? isBypassSemantics(descriptor)
-    : isBypassPermissionMode(permissionMode);
+  const { isUnsafe } = useSessionPermissionSummary(session);
 
   const now = useNow(60_000);
   const relativeTime = useMemo(
@@ -280,47 +231,12 @@ export function SessionRowFull({
           {borderState.label}
         </TooltipContent>
 
-        <AnimatePresence initial={false}>
-          {expanded && (
-            <motion.div
-              initial={{ height: 0, opacity: 0 }}
-              animate={{ height: 'auto', opacity: 1 }}
-              exit={{ height: 0, opacity: 0 }}
-              transition={{ duration: 0.2, ease: [0, 0, 0.2, 1] }}
-              className="relative z-10 overflow-hidden"
-            >
-              <div className="text-muted-foreground border-border/30 mx-2 space-y-1.5 border-t px-3 pt-2 pb-2 text-[11px]">
-                <DetailRow label="Session ID" value={session.id} copyable />
-                <DetailRow label="Created" value={formatTimestamp(session.createdAt)} />
-                <DetailRow label="Updated" value={formatTimestamp(session.updatedAt)} />
-                <DetailRow label="Runtime" value={getRuntimeDescriptor(session.runtime).label} />
-                <DetailRow
-                  label="Origin"
-                  value={session.originLabel ?? getOriginDescriptor(session.origin)?.label ?? 'You'}
-                />
-                <DetailRow
-                  label="Permissions"
-                  value={permissionModeLabel(permissionMode)}
-                  valueClassName={isUnsafe ? 'text-red-500' : undefined}
-                />
-                {onFork && (
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onFork(session.id);
-                    }}
-                    className="hover:bg-secondary/80 text-muted-foreground/60 hover:text-muted-foreground mt-1 inline-flex items-center gap-1 rounded px-1.5 py-0.5 transition-colors duration-100"
-                    aria-label="Fork session"
-                  >
-                    <GitFork className="size-(--size-icon-xs)" />
-                    <span>Fork</span>
-                  </button>
-                )}
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
+        <SessionDetailsPanel
+          session={session}
+          expanded={expanded}
+          className="border-border/30 border-t"
+          {...(onFork ? { onFork } : {})}
+        />
       </motion.div>
     </Tooltip>
   );
@@ -391,27 +307,4 @@ function useEntryAndPulse({
       transition,
     };
   }, [isNew, borderState.pulse, pulseAnimate, pulseTransition]);
-}
-
-function DetailRow({
-  label,
-  value,
-  copyable = false,
-  valueClassName,
-}: {
-  label: string;
-  value: string;
-  copyable?: boolean;
-  /** Extra classes for the value, e.g. a warning tint on a risky setting. */
-  valueClassName?: string;
-}) {
-  return (
-    <div className="flex items-start gap-2">
-      <span className="text-muted-foreground/60 w-16 flex-shrink-0">{label}</span>
-      <span className={cn('min-w-0 flex-1 truncate font-mono select-all', valueClassName)}>
-        {value}
-      </span>
-      {copyable && <CopyButton value={value} label={`Copy ${label}`} />}
-    </div>
-  );
 }
