@@ -901,7 +901,7 @@ registerNowSurvivesReloadTests({ apiUrl: API_URL, agentDir: () => agentDir });
 // it drives a real send, which is free and deterministic only on this leg — and
 // because what it asserts happens on the OTHER side of a navigation, which is
 // exactly what a jsdom render cannot walk through.
-registerSendLandsInTodayTests({ apiUrl: API_URL, agentDir: () => agentDir });
+registerSendLandsInTodayTests({ agentDir: () => agentDir });
 /**
  * Conversations in ⌘K (spec `sidebar-now-today-library` P3, §15).
  *
@@ -930,37 +930,19 @@ test.describe('conversations in the command palette', () => {
   const TITLE_WORD = 'Zanzibar';
 
   /**
-   * The agent this suite talks to — registered with the MESH, not merely seeded
-   * on disk.
+   * The agent this suite talks to.
    *
-   * That distinction is the whole reason this hook exists. `GET
-   * /api/sessions/recent` fans out over `meshCore.listWithPaths()`, so a
-   * directory the mesh has never heard of contributes no sessions however many
-   * it holds — and the palette's Recent list came up empty with a conversation
-   * plainly on screen. `POST /api/test/seed-agent` writes a manifest to disk and
-   * stops there; registration is a separate act.
+   * There is nothing to set up. `POST /api/test/seed-agent` — which the
+   * file-level `beforeEach` already calls — now registers the agent it seeds
+   * with the mesh as well as writing it to disk (DOR-1142), and
+   * `GET /api/sessions/recent` fans out over `meshCore.listWithPaths()`, so the
+   * conversations started below are visible to the palette by construction.
    *
-   * `runtime: 'codex'` for the same reason `seed-agent` declares it: a manifest
-   * runtime beats the server default whenever this process registers it, and
-   * this server never registers codex — so the session lands on `test-mode`,
-   * which is what makes it free.
+   * This suite used to mint a SECOND agent in a sibling directory and register
+   * it by hand in a `beforeAll` that had no teardown, purely to work around the
+   * seed route stopping at the manifest. That is gone; the shared fixture is
+   * the agent now.
    */
-  let paletteAgentDir: string;
-
-  test.beforeAll(async () => {
-    const ctx = await apiRequest.newContext();
-    const seed = await ctx.post(`${API_URL}/api/test/seed-agent`);
-    const { agentDir: baseDir } = (await seed.json()) as { agentDir: string };
-    paletteAgentDir = `${baseDir}-palette`;
-    await fs.mkdir(paletteAgentDir, { recursive: true });
-    const res = await ctx.post(`${API_URL}/api/mesh/agents`, {
-      data: { path: paletteAgentDir, overrides: { name: 'Palette Test Agent', runtime: 'codex' } },
-    });
-    if (!res.ok()) {
-      throw new Error(`Failed to register the palette agent: ${res.status()}`);
-    }
-    await ctx.dispose();
-  });
 
   /**
    * Start a conversation whose title contains {@link TITLE_WORD}, and answer
@@ -972,7 +954,7 @@ test.describe('conversations in the command palette', () => {
    */
   async function startNamedSession(page: Page): Promise<string> {
     const chatPage = new ChatPage(page);
-    await chatPage.goto(undefined, { dir: paletteAgentDir });
+    await chatPage.goto(undefined, { dir: agentDir });
     await chatPage.sendMessage(`${TITLE_WORD} migration plan`);
     await expect(page.getByTestId('transcript-feed').getByText(/Echo:/)).toBeVisible({
       timeout: 15_000,

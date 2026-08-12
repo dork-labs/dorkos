@@ -39,8 +39,6 @@ const SERVER_ROUND_TRIP_MS = 30_000;
 
 /** What {@link registerSendLandsInTodayTests} needs from its host spec. */
 export interface SendLandsInTodayDeps {
-  /** Base URL of the test-mode server, for its `/api/test/*` control routes. */
-  apiUrl: string;
   /** The seeded agent's directory, read lazily — the host seeds it per test. */
   agentDir: () => string;
 }
@@ -48,49 +46,10 @@ export interface SendLandsInTodayDeps {
 /**
  * Register the "a send puts it in Today" tests on `chat-mock.spec.ts`'s worker.
  *
- * @param deps - The host spec's server URL and seeded agent directory.
+ * @param deps - The host spec's seeded agent directory.
  */
-export function registerSendLandsInTodayTests({ apiUrl, agentDir }: SendLandsInTodayDeps): void {
+export function registerSendLandsInTodayTests({ agentDir }: SendLandsInTodayDeps): void {
   test.describe('Sidebar Today — what you write in shows up', () => {
-    /** Mesh id of the agent this suite registered, for teardown. */
-    let meshId: string | null = null;
-
-    /**
-     * Put the seeded agent in the mesh registry.
-     *
-     * `GET /api/sessions/recent` fans out over `meshCore.listWithPaths()`, and
-     * Today walks that list — so without this the sidebar sees no sessions at
-     * all and the zone under test is empty whatever the store holds. Copied in
-     * shape from `now-survives-reload.ts`, including the `silent` behaviour and
-     * the unregistered `codex` runtime that pushes the session onto this leg's
-     * test-mode default.
-     */
-    test.beforeEach(async ({ request }) => {
-      const res = await request.post(`${apiUrl}/api/mesh/agents`, {
-        data: {
-          path: agentDir(),
-          overrides: {
-            name: 'E2E Test Agent',
-            runtime: 'codex',
-            behavior: { responseMode: 'silent' },
-          },
-        },
-      });
-      if (!res.ok()) {
-        throw new Error(
-          `could not register the seeded agent (${res.status()}): ${await res.text()}`
-        );
-      }
-      meshId = ((await res.json()) as { id: string }).id;
-    });
-
-    test.afterEach(async ({ request }) => {
-      if (!meshId) return;
-      const res = await request.delete(`${apiUrl}/api/mesh/agents/${meshId}`);
-      meshId = null;
-      expect(res.status(), 'the seeded agent must be unregistered again').toBe(200);
-    });
-
     /**
      * Open a brand-new conversation by DEEP LINK and write one sentence in it.
      *

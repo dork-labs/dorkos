@@ -153,13 +153,41 @@ function e2eAgentDir(): string {
 const FIXTURE_AGENT_RUNTIME = 'codex';
 
 /**
- * Seed a test agent at a fixed path inside the directory boundary.
+ * Seed a test agent at a fixed path inside the directory boundary — on disk
+ * AND in the mesh registry.
+ *
  * Overwrites any existing manifest so tests always start with a clean agent.
- * Returns { agentDir } so the test can navigate to /?dir=<agentDir>.
+ * Returns `{ agentDir, agentId }` so the test can navigate to `/?dir=<agentDir>`.
+ *
+ * **Registration is half the job, and it used to be missing (DOR-1142).** This
+ * route wrote a manifest and stopped, which is not the same as having an agent:
+ * `GET /api/sessions/recent` and `GET /api/sessions/daily-counts` both fan out
+ * over `meshCore.listWithPaths()`, so a directory the mesh has never heard of
+ * contributes no sessions however many it holds. Every sidebar zone that is
+ * built from recent sessions — Today, Heads-up — was therefore structurally
+ * empty on the test-mode leg, and three separate suites had grown their own
+ * `beforeEach`/`afterEach` registration dance to work around it. Seeding an
+ * agent nothing can see is a seam with a hole in it, not a fixture.
+ *
+ * **`syncFromDisk`, deliberately, and not `registerByPath`.** The suites'
+ * workaround called `POST /api/mesh/agents`, which does more than register:
+ * it mints a SECOND id distinct from the manifest's own (hence their teardown
+ * having to remember it), rewrites the manifest it was just handed, and fires
+ * `notifyAgentCreated` — whose reaction seats the agent in #team. On a server
+ * the `chromium-team-room` project also drives, that is a cross-project side
+ * effect nobody asked for. `syncFromDisk` is the same path `POST /api/agents`
+ * uses for a manifest already written by hand: it adopts the id on disk, adds
+ * exactly one registry row, and announces nothing.
+ *
+ * **No cleanup is owed, because none accumulates.** The row is keyed to this
+ * one fixed directory and `AgentRegistry.upsert` evicts a different-id row
+ * sitting at the same path before inserting — so re-seeding in a per-test
+ * `beforeEach` replaces the row rather than stacking rows. `POST /api/test/reset`
+ * does not touch mesh, and does not need to.
  *
  * Refuses when {@link FIXTURE_AGENT_RUNTIME} is registered here — see there.
  */
-testControlRouter.post('/seed-agent', async (_req, res) => {
+testControlRouter.post('/seed-agent', async (req, res) => {
   if (runtimeRegistry.has(FIXTURE_AGENT_RUNTIME)) {
     return res.status(500).json({
       error:
@@ -185,7 +213,32 @@ testControlRouter.post('/seed-agent', async (_req, res) => {
   };
   const agentDir = e2eAgentDir();
   await writeManifest(agentDir, manifest);
-  res.json({ ok: true, agentDir });
+
+  // Both refusals below are 500s rather than a quiet `{ ok: true }`. A seed
+  // route that half-worked is what this ticket was: the caller gets a
+  // directory, believes it has an agent, and fails ten assertions later in a
+  // spec about the sidebar. Say it here, where the cause is.
+  const meshCore = req.app.locals.meshCore as
+    | { syncFromDisk(path: string): Promise<'synced' | 'no-manifest' | 'duplicate-id'> }
+    | undefined;
+  if (!meshCore) {
+    return res.status(500).json({
+      error:
+        'seed-agent: this server has no meshCore, so the seeded agent cannot be registered. ' +
+        'Sessions in it would be invisible to GET /api/sessions/recent.',
+    });
+  }
+  const outcome = await meshCore.syncFromDisk(agentDir);
+  if (outcome !== 'synced') {
+    return res.status(500).json({
+      error:
+        `seed-agent: wrote the manifest but the mesh refused it (${outcome}). ` +
+        `'no-manifest' means the write did not land at ${agentDir}; 'duplicate-id' means ` +
+        `another directory holds id ${manifest.id}, which should be impossible for a ` +
+        `freshly minted ULID.`,
+    });
+  }
+  res.json({ ok: true, agentDir, agentId: manifest.id });
 });
 
 const seedBridgeSchema = z.object({

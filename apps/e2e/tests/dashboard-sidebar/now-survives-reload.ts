@@ -68,58 +68,6 @@ export interface NowSurvivesReloadDeps {
  */
 export function registerNowSurvivesReloadTests({ apiUrl, agentDir }: NowSurvivesReloadDeps): void {
   test.describe('Sidebar Heads up — survives a page load', () => {
-    /** Mesh id of the agent this suite registered, for teardown. */
-    let meshId: string | null = null;
-
-    /**
-     * Put the seeded agent in the mesh registry.
-     *
-     * `POST /api/test/seed-agent` only writes a manifest, and `GET
-     * /api/sessions/recent` fans out over `meshCore.listWithPaths()` — so
-     * without this the sidebar sees no sessions at all and every zone below
-     * Library is absent. Nothing about the sidebar can be asserted from a
-     * cockpit whose fleet is empty.
-     *
-     * `runtime: 'codex'` matches the manifest the seed route writes, and it is
-     * deliberately a runtime this leg does NOT register, so the session binds
-     * to the server default (test-mode) instead. `silent` keeps the agent from
-     * answering anything: this suite runs with no model credentials.
-     */
-    test.beforeEach(async ({ request }) => {
-      const res = await request.post(`${apiUrl}/api/mesh/agents`, {
-        data: {
-          path: agentDir(),
-          overrides: {
-            name: 'E2E Test Agent',
-            runtime: 'codex',
-            behavior: { responseMode: 'silent' },
-          },
-        },
-      });
-      if (!res.ok()) {
-        throw new Error(
-          `could not register the seeded agent (${res.status()}): ${await res.text()}`
-        );
-      }
-      meshId = ((await res.json()) as { id: string }).id;
-    });
-
-    test.afterEach(async ({ request }) => {
-      // Unregister, NOT `/data`: the with-data route deletes the agent's `.dork`
-      // directory, and this suite did not create that directory — `seed-agent`
-      // did, and the next test's `beforeEach` re-registers against it. Taking it
-      // out from under the seed route is more than this teardown is owed.
-      //
-      // Asserted rather than swallowed. Leaving the agent registered would put a
-      // second one in every later mock spec's sidebar, and a `.catch(() => {})`
-      // over a 403 or 404 would leave exactly that behind while reporting
-      // nothing — which is the leak this teardown exists to prevent.
-      if (!meshId) return;
-      const res = await request.delete(`${apiUrl}/api/mesh/agents/${meshId}`);
-      meshId = null;
-      expect(res.status(), 'the seeded agent must be unregistered again').toBe(200);
-    });
-
     /** Drive one session to a turn that ends in an error, and open the sidebar. */
     async function errorASession(page: Page, request: Page['request']): Promise<void> {
       await request.post(`${apiUrl}/api/test/scenario`, { data: { name: 'error' } });
@@ -190,7 +138,17 @@ export function registerNowSurvivesReloadTests({ apiUrl, agentDir }: NowSurvives
       /** Press ✦ Ask DorkBot, send once, and answer with the seed that rode it. */
       async function seedFromAskDorkBot(): Promise<string | undefined> {
         seedContext = undefined;
-        await page.getByRole('button', { name: 'Ask DorkBot' }).click();
+        // SCOPED TO THE FOOTER STRIP, which is the ✦ press this test means.
+        // Unscoped, `{ name: 'Ask DorkBot' }` is a substring match and also
+        // catches the Getting-started suggestion row "Ask DorkBot anything",
+        // which the sidebar draws whenever DorkBot has no session yet — true on
+        // every fresh test-mode home. Two matches is a strict-mode violation,
+        // so the unscoped locator was only ever passing by winning a race
+        // against that row appearing.
+        await page
+          .getByTestId('sidebar-footer-strip-row')
+          .getByRole('button', { name: 'Ask DorkBot' })
+          .click();
         const dorkbotChat = new ChatPage(page);
         await dorkbotChat.panel.waitFor({ state: 'visible', timeout: SERVER_ROUND_TRIP_MS });
         await dorkbotChat.sendMessage('What went wrong?');
