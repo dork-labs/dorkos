@@ -23,7 +23,12 @@ vi.mock('@/layers/shared/model', () => ({
     }),
 }));
 
-vi.mock('@/layers/shared/lib', () => ({
+vi.mock('@/layers/shared/lib', async (importOriginal) => ({
+  // `cn` reaches this suite through the sidebar's menu surface now, and a mock
+  // that lists only what a component used to need breaks the moment anything
+  // downstream grows a dependency. Spread the real module and override the one
+  // fact this suite is pinning.
+  ...(await importOriginal<typeof import('@/layers/shared/lib')>()),
   isMac: false,
 }));
 

@@ -2,10 +2,14 @@
  * @vitest-environment jsdom
  */
 import { describe, it, expect, vi, beforeAll, afterEach } from 'vitest';
-import { render, screen, fireEvent, cleanup } from '@testing-library/react';
+import { render, screen, fireEvent, cleanup, renderHook, act } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { ArrowUpDown, FolderInput, Pencil, Trash2 } from 'lucide-react';
-import { SidebarMenuSurface, type SidebarMenuNode } from '../sidebar-menu-node';
+import {
+  SidebarMenuSurface,
+  useGuardedMenuNodes,
+  type SidebarMenuNode,
+} from '../sidebar-menu-node';
 
 // Radix menus rely on pointer events and ResizeObserver — mock both for jsdom.
 beforeAll(() => {
@@ -24,6 +28,7 @@ const onRename = vi.fn();
 const onMove = vi.fn();
 const onSort = vi.fn();
 const onDelete = vi.fn();
+const onView = vi.fn();
 
 /** A list exercising every node kind the walk knows how to render. */
 function nodes(): SidebarMenuNode[] {
@@ -35,6 +40,16 @@ function nodes(): SidebarMenuNode[] {
       icon: Pencil,
       opensInput: true,
       run: onRename,
+    },
+    {
+      kind: 'action',
+      id: 'view',
+      label: 'View profile',
+      icon: Pencil,
+      // Takes focus without asking for anything — the case `opensInput` used to
+      // have to lie about.
+      guardsFocus: true,
+      run: onView,
     },
     {
       kind: 'submenu',
@@ -136,6 +151,19 @@ describe('SidebarMenuSurface', () => {
     expect(screen.getByText('Delete group')).toBeInTheDocument();
   });
 
+  it('spells no ellipsis for a surface that only shows', () => {
+    // **The two halves of what `opensInput` used to mean, pulled apart.** A
+    // drawer that shows a profile takes focus — so Radix's close-time restore
+    // would blur its way back out of it (DOR-329) — but it asks the reader for
+    // nothing, and "View profile…" promised a question that never comes. The
+    // arming half is asserted below, where it can be observed.
+    renderSurface();
+    fireEvent.contextMenu(screen.getByTestId('target'));
+
+    expect(screen.getByText('View profile')).toBeInTheDocument();
+    expect(screen.queryByText('View profile…')).not.toBeInTheDocument();
+  });
+
   it('runs the chosen item’s handler', () => {
     renderSurface();
     fireEvent.contextMenu(screen.getByTestId('target'));
@@ -161,5 +189,33 @@ describe('SidebarMenuSurface', () => {
     expect(screen.queryByLabelText('Clients group actions')).not.toBeInTheDocument();
     fireEvent.contextMenu(screen.getByTestId('target'));
     expect(screen.queryByRole('menuitem')).not.toBeInTheDocument();
+  });
+});
+
+describe('useGuardedMenuNodes — what arms the close-focus guard (DOR-329)', () => {
+  /** Choose the item with this id, then close the menu, and say whether the
+   * restore was prevented. */
+  function armedBy(node: SidebarMenuNode): boolean {
+    const { result } = renderHook(() => useGuardedMenuNodes([node]));
+    const walked = result.current.nodes[0]!;
+    if (walked.kind !== 'action') throw new Error('expected an action');
+    act(() => walked.run());
+    const event = new Event('closeAutoFocus', { cancelable: true });
+    act(() => result.current.onCloseAutoFocus(event));
+    return event.defaultPrevented;
+  }
+
+  const base = { kind: 'action' as const, id: 'x', label: 'X', icon: Pencil, run: () => {} };
+
+  it('arms for an action that only takes focus, without asking for anything', () => {
+    expect(armedBy({ ...base, guardsFocus: true })).toBe(true);
+  });
+
+  it('still arms for an action that asks for more', () => {
+    expect(armedBy({ ...base, opensInput: true })).toBe(true);
+  });
+
+  it('leaves a plain action alone — the pair that makes the two above mean something', () => {
+    expect(armedBy(base)).toBe(false);
   });
 });

@@ -151,17 +151,26 @@ export function AgentListItem({
       ? { onClick: onViewProfile, label: `Open ${displayName}’s profile` }
       : undefined;
 
+  const openSwitcher = useCallback(() => setSwitcherOpen(true), []);
+
   // "New group…" mounts an inline editor and carries `opensInput: true`, which
-  // is what arms the shared surface's close-focus guard (DOR-329) — for both
-  // menus at once, rather than once per Radix family as it used to be.
+  // is what arms the shared surface's close-focus guard (DOR-329) — for all
+  // three renderings at once, rather than once per Radix family as it used to
+  // be.
+  //
+  // The switcher and the profile drawer are in here because a thumb has no
+  // other way to them: both are satellites of the row on desktop — the "N live"
+  // chip and the face — and both are targets a phone cannot make big enough
+  // without eating the row's own words. The menu is the one surface that grows
+  // for free.
   const menuNodes = useAgentRowMenuNodes({
     path,
     onOpenProfile,
+    onOpenSessions: openSwitcher,
+    onViewProfile: onViewProfile ?? null,
     onNewSession,
     onRequestNewGroup,
   });
-
-  const openSwitcher = useCallback(() => setSwitcherOpen(true), []);
 
   return (
     <>

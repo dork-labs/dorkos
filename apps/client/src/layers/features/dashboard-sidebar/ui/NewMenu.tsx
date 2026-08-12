@@ -22,13 +22,14 @@ import { AtSign, Bot, CornerDownLeft, Hash, MessageSquarePlus, Plus, Users } fro
 import { toast } from 'sonner';
 import type { SmartGroupRules } from '@dorkos/shared/config-schema';
 import type { RoomWithRoster } from '@dorkos/shared/room-schemas';
-import { formatShortcutKey, isDesktopShell, SHORTCUTS } from '@/layers/shared/lib';
-import { useAgentCreationStore } from '@/layers/shared/model';
+import { cn, formatShortcutKey, isDesktopShell, SHORTCUTS } from '@/layers/shared/lib';
+import { useAgentCreationStore, useIsMobile } from '@/layers/shared/model';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuTrigger,
   SidebarMenuNodes,
+  TOUCH_TARGET_MIN_H,
   useGuardedMenuNodes,
   type SidebarMenuNode,
 } from '@/layers/shared/ui';
@@ -205,6 +206,7 @@ export function buildNewMenuNodes(model: NewMenuModel): SidebarMenuNode[] {
  * panel's navigation always has.
  */
 export function NewMenu() {
+  const isMobile = useIsMobile();
   const open = useCreateFlowStore((s) => s.menuOpen);
   const preselect = useCreateFlowStore((s) => s.preselect);
   const setMenuOpen = useCreateFlowStore((s) => s.setMenuOpen);
@@ -345,7 +347,12 @@ export function NewMenu() {
           <button
             type="button"
             data-testid="sidebar-new-button"
-            className="bg-sidebar-accent text-sidebar-accent-foreground hover:bg-sidebar-accent/70 focus-visible:ring-sidebar-ring flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-[12px] font-medium outline-hidden transition-colors duration-150 focus-visible:ring-2"
+            className={cn(
+              'bg-sidebar-accent text-sidebar-accent-foreground hover:bg-sidebar-accent/70 focus-visible:ring-sidebar-ring flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-[12px] font-medium outline-hidden transition-colors duration-150 focus-visible:ring-2',
+              // 27px measured at 390×844 — the smallest control in the phone's
+              // Home tab, and the one it exists to be pressed (P4 AC-4).
+              isMobile && cn(TOUCH_TARGET_MIN_H, 'px-3')
+            )}
           >
             <Plus className="size-3.5" />
             New

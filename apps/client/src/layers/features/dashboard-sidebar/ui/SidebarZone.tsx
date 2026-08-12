@@ -8,6 +8,7 @@
  *
  * @module features/dashboard-sidebar/ui/SidebarZone
  */
+import type { ReactNode } from 'react';
 import { cn } from '@/layers/shared/lib';
 import type { SidebarZoneModel } from '../model/build-sidebar-model';
 import { useLiveRegionText } from '../model/use-live-region-text';
@@ -29,6 +30,31 @@ export interface SidebarZoneProps {
    * model cannot see it.
    */
   allClear?: boolean;
+  /**
+   * Content between the zone's heading and its sections — a bulk action that
+   * belongs to the whole zone, or something composed from a layer this one
+   * cannot import.
+   *
+   * A slot rather than two more props, because the two things that need it are
+   * unrelated and both are about the zone as a whole rather than about any row
+   * in it: Today's "Catch up" (P4 AC-4) and Now's inline approvals, which are a
+   * feature this feature may not reach into and so arrive from the widget above
+   * (FSD — `features ← widgets`).
+   */
+  lead?: ReactNode;
+  /**
+   * Something above this zone is already announcing its count, so this zone
+   * must not.
+   *
+   * The phone cockpit is the one caller. Its panels are `inert` whenever they
+   * are put away — which is most of the time, and always while the operator is
+   * in a conversation — so a live region inside one is out of the accessibility
+   * tree exactly when the count changes matter most. The bottom bar's badge is
+   * what carries the number there, and its announcement lives beside it, out in
+   * the open. Two regions saying the same number is the siren BC-11 exists to
+   * prevent, so the inner one stands down rather than being drawn twice.
+   */
+  silenceLiveRegion?: boolean;
 }
 
 /**
@@ -42,7 +68,13 @@ export interface SidebarZoneProps {
  *
  * @param props - The zone and the all-sections toggle.
  */
-export function SidebarZone({ zone, onToggleAll, allClear = false }: SidebarZoneProps) {
+export function SidebarZone({
+  zone,
+  onToggleAll,
+  allClear = false,
+  lead,
+  silenceLiveRegion = false,
+}: SidebarZoneProps) {
   const headingId = `sidebar-zone-${zone.id}`;
   const liveRegionText = useLiveRegionText(zone.liveRegionText);
   return (
@@ -77,9 +109,12 @@ export function SidebarZone({ zone, onToggleAll, allClear = false }: SidebarZone
       {/* Count changes only, held for a second before it is published: a verb or
           an unread change reaching a screen reader from here would turn a fleet
           of thirty agents into a siren (BC-11, R2). */}
-      <span aria-live="polite" aria-atomic="true" className="sr-only">
-        {liveRegionText}
-      </span>
+      {!silenceLiveRegion && (
+        <span aria-live="polite" aria-atomic="true" className="sr-only">
+          {liveRegionText}
+        </span>
+      )}
+      {lead}
       {allClear ? (
         <AllClearBeat />
       ) : (

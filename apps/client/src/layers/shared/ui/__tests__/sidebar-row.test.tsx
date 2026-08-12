@@ -29,7 +29,33 @@ beforeAll(() => {
   };
 });
 
-afterEach(() => cleanup());
+// ── The viewport ───────────────────────────────────────────────────────────
+let phone = false;
+function useEmulatedViewport() {
+  Object.defineProperty(window, 'matchMedia', {
+    writable: true,
+    configurable: true,
+    value: (query: string) => {
+      const maxWidth = /max-width:\s*(\d+)px/.exec(query);
+      return {
+        matches: maxWidth === null ? false : phone && 390 <= Number(maxWidth[1]),
+        media: query,
+        onchange: null,
+        addEventListener: () => {},
+        removeEventListener: () => {},
+        addListener: () => {},
+        removeListener: () => {},
+        dispatchEvent: () => false,
+      };
+    },
+  });
+}
+
+afterEach(() => {
+  phone = false;
+  useEmulatedViewport();
+  cleanup();
+});
 
 /** The row's own button — the element every assertion here is about. */
 function row(): HTMLElement {
@@ -542,5 +568,88 @@ describe('SidebarRow — the welcome-back glow (BC-49)', () => {
     // declaring a name and animating something else.
     const block = css.slice(css.indexOf(`@utility ${utility} {`));
     expect(block.slice(0, block.indexOf('}'))).toMatch(/animation:\s*welcome-back-glow\b/);
+  });
+});
+
+describe('SidebarRow — under a thumb (P4 AC-4)', () => {
+  const menu = [{ kind: 'action' as const, id: 'pin', label: 'Pin', icon: Pin, run: vi.fn() }];
+
+  function renderTouchRow(extra: Record<string, unknown> = {}) {
+    return render(
+      <SidebarRow
+        title="Dashboard overhaul"
+        menuNodes={menu}
+        actionsLabel="Row actions"
+        onSelect={vi.fn()}
+        {...extra}
+      />
+    );
+  }
+
+  /** The row's own button, found by the attribute the roving hook stamps. */
+  const rowButton = () => document.querySelector(`[${SIDEBAR_ROW_ATTRIBUTE}]`) as HTMLElement;
+
+  it('grows the row to 44px and its gutter with it', () => {
+    phone = true;
+    useEmulatedViewport();
+    renderTouchRow();
+    expect(rowButton().className).toContain('min-h-11');
+    // The gutter has to grow WITH the control it clears — a 44px "⋮" in a 28px
+    // gutter lands on the row's own words.
+    expect(rowButton().className).toContain('pr-11');
+    expect(rowButton().className).not.toContain('min-h-7');
+  });
+
+  it('keeps 28px under a pointer, which is the density §11 asks for', () => {
+    renderTouchRow();
+    expect(rowButton().className).toContain('min-h-7');
+    expect(rowButton().className).toContain('pr-7');
+  });
+
+  it('draws no 18px face overlay on touch, because 18px is half a target', () => {
+    const onGlyph = vi.fn();
+    phone = true;
+    useEmulatedViewport();
+    renderTouchRow({
+      glyph: <span>G</span>,
+      glyphAction: { onClick: onGlyph, label: 'Open Scout’s profile' },
+    });
+    expect(screen.queryByRole('button', { name: 'Open Scout’s profile' })).toBeNull();
+  });
+
+  it('does draw it under a pointer, where 18px is a mouse target', () => {
+    // The pair — without it the absence above would also pass against a row
+    // that had lost the control entirely.
+    const onGlyph = vi.fn();
+    renderTouchRow({
+      glyph: <span>G</span>,
+      glyphAction: { onClick: onGlyph, label: 'Open Scout’s profile' },
+    });
+    const control = screen.getByRole('button', { name: 'Open Scout’s profile' });
+    fireEvent.click(control);
+    expect(onGlyph).toHaveBeenCalledTimes(1);
+  });
+
+  it('draws no trailing satellite on touch, and holds no width open for one', () => {
+    phone = true;
+    useEmulatedViewport();
+    renderTouchRow({
+      trailingAction: { content: <span>3 live</span>, onClick: vi.fn(), label: '3 live sessions' },
+    });
+    expect(screen.queryByRole('button', { name: '3 live sessions' })).toBeNull();
+    // A reservation for a control that is not drawn is a title truncated for
+    // nothing — so it goes with it.
+    expect(document.querySelector('[data-slot="sidebar-row-trailing-reservation"]')).toBeNull();
+  });
+
+  it('does draw it under a pointer, reservation and all', () => {
+    renderTouchRow({
+      trailingAction: { content: <span>3 live</span>, onClick: vi.fn(), label: '3 live sessions' },
+    });
+    expect(screen.getByRole('button', { name: '3 live sessions' })).toBeInTheDocument();
+    expect(document.querySelector('[data-slot="sidebar-row-trailing-reservation"]')).not.toBeNull();
+    expect(document.querySelector(`[${SIDEBAR_TRAILING_ACTION_ATTRIBUTE}]`)?.className).toContain(
+      'right-7'
+    );
   });
 });

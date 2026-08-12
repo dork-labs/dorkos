@@ -80,6 +80,37 @@ describe('useLongPress', () => {
     expect(onLongPress).not.toHaveBeenCalled();
   });
 
+  it('drops a press whose element goes away mid-hold', () => {
+    // The surface a press opens can take the pressed row with it — a menu item
+    // that navigates, a model rebuild that drops the row. A timer still running
+    // then calls back into a component that no longer exists, and reports it in
+    // a stack trace naming none of this.
+    const onLongPress = vi.fn();
+    const onPressStateChange = vi.fn();
+    const { result, unmount } = renderHook(() => useLongPress({ onLongPress, onPressStateChange }));
+
+    act(() => result.current.onPointerDown(pointer(10, 10)));
+    expect(onPressStateChange).toHaveBeenLastCalledWith('pressing');
+
+    unmount();
+    act(() => void vi.advanceTimersByTime(HOLD_MS * 3));
+
+    expect(onLongPress).not.toHaveBeenCalled();
+    // …and the press was ended rather than merely muted: a gesture nobody
+    // finished is `cancelled`, which is what a pressed surface springs back on.
+    expect(onPressStateChange).toHaveBeenLastCalledWith('cancelled');
+  });
+
+  it('still fires for a press whose element stays put — the pair for the case above', () => {
+    const onLongPress = vi.fn();
+    const { result } = renderHook(() => useLongPress({ onLongPress }));
+
+    act(() => result.current.onPointerDown(pointer(10, 10)));
+    act(() => void vi.advanceTimersByTime(HOLD_MS * 3));
+
+    expect(onLongPress).toHaveBeenCalledTimes(1);
+  });
+
   describe('yieldToSelector', () => {
     it('never arms when the press starts on the marked element itself', () => {
       const onLongPress = vi.fn();

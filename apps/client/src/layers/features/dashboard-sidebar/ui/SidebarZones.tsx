@@ -8,7 +8,7 @@
  *
  * @module features/dashboard-sidebar/ui/SidebarZones
  */
-import { useCallback } from 'react';
+import { useCallback, type ReactNode } from 'react';
 import { useAgentCreationStore } from '@/layers/shared/model';
 import {
   setGroupCollapsed,
@@ -56,6 +56,31 @@ export interface SidebarZonesProps {
    * Now would be, and the day-one invitation only where Library would be.
    */
   zoneIds?: readonly SidebarZoneId[];
+  /**
+   * Content to draw at the top of Now, above its rows, or `null` for none.
+   *
+   * **The phone's inline approvals arrive here** (P4 AC-5). They are a
+   * composition of `features/approvals`, which this feature may not import —
+   * `shared ← entities ← features ← widgets` — so the widget that owns the
+   * mobile Home tab builds them and hands them down.
+   *
+   * **A non-null slot can bring Now into existence**, and that is the whole
+   * reason it is `ReactNode | null` rather than "render it if you like". Now is
+   * absent from the model when nothing needs the operator (BC-1) — and the one
+   * state where the operator most needs to hear from this slot is exactly that
+   * one: approvals failed to load, so no approval became an attention row, so
+   * there is no Now zone to put the failure in. An approval nobody is shown is
+   * an agent sitting blocked. So the caller passes `null` when it has nothing
+   * to say, and anything else gets a zone.
+   */
+  nowSlot?: ReactNode | null;
+  /**
+   * Something above these zones announces Now's count, so no zone drawn here
+   * may. See {@link SidebarZoneProps.silenceLiveRegion} — the phone cockpit is
+   * the one caller, and its reason is that these panels are `inert` whenever
+   * they are put away.
+   */
+  silenceLiveRegion?: boolean;
 }
 
 /**
@@ -68,7 +93,12 @@ export interface SidebarZonesProps {
  *
  * @param props - The model.
  */
-export function SidebarZones({ model, zoneIds }: SidebarZonesProps) {
+export function SidebarZones({
+  model,
+  zoneIds,
+  nowSlot = null,
+  silenceLiveRegion = false,
+}: SidebarZonesProps) {
   const { update } = useUpdateSidebarPrefs();
   const library = model.zones.find((zone) => zone.id === 'library');
   // "Is this zone mine to draw?" asked once. `undefined` means the whole
@@ -105,11 +135,30 @@ export function SidebarZones({ model, zoneIds }: SidebarZonesProps) {
   const nowSlotTaken = model.zones.some(
     (zone) => zone.id === 'now' || zone.id === 'getting-started'
   );
+  // The slot brings its own zone when the model has none. See
+  // {@link SidebarZonesProps.nowSlot}: this is the loud-failure case, and it
+  // outranks the beat — an animation about work that finished must not be what
+  // the panel says while an approval is sitting unreachable behind a fetch that
+  // failed.
+  const orphanedSlot = nowSlot !== null && !nowSlotTaken && draws('now');
 
   return (
     <div className="flex flex-col gap-1">
-      {beating && !nowSlotTaken && draws('now') && (
-        <SidebarZone zone={ALL_CLEAR_ZONE} onToggleAll={onToggleAll} allClear />
+      {orphanedSlot && (
+        <SidebarZone
+          zone={ALL_CLEAR_ZONE}
+          onToggleAll={onToggleAll}
+          lead={nowSlot}
+          silenceLiveRegion={silenceLiveRegion}
+        />
+      )}
+      {beating && !nowSlotTaken && !orphanedSlot && draws('now') && (
+        <SidebarZone
+          zone={ALL_CLEAR_ZONE}
+          onToggleAll={onToggleAll}
+          allClear
+          silenceLiveRegion={silenceLiveRegion}
+        />
       )}
       {model.zones
         .filter((zone) => draws(zone.id))
@@ -118,9 +167,20 @@ export function SidebarZones({ model, zoneIds }: SidebarZonesProps) {
           // pointer and focus are (BC-17, BC-36), so it gets a wrapper of its own.
           // Every other zone is the plain renderer.
           zone.id === 'today' ? (
-            <TodayZone key={zone.id} zone={zone} onToggleAll={onToggleAll} />
+            <TodayZone
+              key={zone.id}
+              zone={zone}
+              onToggleAll={onToggleAll}
+              silenceLiveRegion={silenceLiveRegion}
+            />
           ) : (
-            <SidebarZone key={zone.id} zone={zone} onToggleAll={onToggleAll} />
+            <SidebarZone
+              key={zone.id}
+              zone={zone}
+              onToggleAll={onToggleAll}
+              silenceLiveRegion={silenceLiveRegion}
+              {...(zone.id === 'now' ? { lead: nowSlot } : {})}
+            />
           )
         )}
       {/* "Is there anything at all yet?" — a presence check on the model, not a
