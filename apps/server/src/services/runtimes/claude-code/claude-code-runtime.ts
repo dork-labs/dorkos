@@ -56,6 +56,8 @@ import { TranscriptReader } from './sessions/transcript-reader.js';
 import { SessionPumpRegistry } from './sessions/session-pump-registry.js';
 import { CommandRegistryService } from './tooling/command-registry.js';
 import { executeSdkQuery } from './messaging/message-sender.js';
+import type { MessageSenderOpts } from './messaging/message-sender-shared.js';
+import { PersistentDispatch } from './sessions/persistent-dispatch.js';
 import { watchSessionList } from './sessions/session-list-watcher.js';
 import { eventFanOut } from '../../core/event-fan-out.js';
 import {
@@ -88,11 +90,18 @@ export class ClaudeCodeRuntime implements AgentRuntime {
   private readonly lockManager = new SessionLockManager();
   /**
    * The warm SDK processes this runtime holds (spec `persistent-session-runtime`
-   * §4). Empty on every server today: nothing launches a pump until the
-   * per-session opt-in lands (task 3.8), so every session reads `cold` and every
-   * reap is a no-op — which is the truth, not a stub.
+   * §4). Empty until a session opts in: with
+   * `runtimes.claudeCode.persistentSession` off — how it ships — nothing
+   * launches a pump, every session reads `cold`, and every reap is a no-op,
+   * which is the truth rather than a stub.
    */
   private readonly pumps = new SessionPumpRegistry();
+  /**
+   * The path a message takes when its session holds its process open. Reads the
+   * opt-in per session and wires the pump, the turn windower and the crash
+   * policy together; see `sessions/persistent-dispatch.ts`.
+   */
+  private readonly persistent = new PersistentDispatch(this.pumps);
   private commandRegistries = new Map<string, CommandRegistryService>();
   private static readonly MAX_COMMAND_REGISTRIES = 50;
 
@@ -352,12 +361,8 @@ export class ClaudeCodeRuntime implements AgentRuntime {
     const modelCapability = this.cache.resolveModelCapability(session.model);
     const cacheCallbacks = this.cache.buildSendCallbacks(cwdKey);
 
-    yield* executeSdkQuery(
-      sessionId,
-      content,
-      session,
-      {
-        cwd: this.cwd,
+    const senderOpts: MessageSenderOpts = {
+      cwd: this.cwd,
         sessionCwd: session.cwd,
         claudeCliPath: this.claudeCliPath,
         meshCore: this.meshCore,
@@ -398,9 +403,26 @@ export class ClaudeCodeRuntime implements AgentRuntime {
           );
           return commands.map((c) => c.fullCommand);
         },
-      },
-      opts
-    );
+    };
+
+    // The one branch. A session that already holds a process stays on this path
+    // whatever the setting says now, and a session that holds none reads the
+    // opt-in here — the asymmetry is `persistent-dispatch.ts`'s module doc, and
+    // P5's comparison runs depend on knowing it. With the flag off and no
+    // process held, the `executeSdkQuery` call below is reached with exactly the
+    // arguments it has always been reached with.
+    if (this.persistent.shouldDispatch(sessionId)) {
+      yield* this.persistent.dispatch({
+        sessionId,
+        content,
+        session,
+        opts: senderOpts,
+        ...(opts !== undefined ? { messageOpts: opts } : {}),
+      });
+      return;
+    }
+
+    yield* executeSdkQuery(sessionId, content, session, senderOpts, opts);
   }
 
   /**
@@ -676,7 +698,11 @@ export class ClaudeCodeRuntime implements AgentRuntime {
 
   /** @inheritdoc */
   async reapSession(sessionId: string): Promise<void> {
-    await this.pumps.reap(sessionId);
+    // A reaped pump is SPENT — the registry drops it, and `SessionPump` refuses
+    // everything asked of it afterwards. Forgetting the wiring in the same beat
+    // is what makes the next message build a fresh one instead of dispatching
+    // into a pump that can only throw.
+    if (await this.pumps.reap(sessionId)) this.persistent.forget(sessionId);
   }
 
   // ---------------------------------------------------------------------------
@@ -1067,8 +1093,15 @@ export class ClaudeCodeRuntime implements AgentRuntime {
       // (spec §4.3). Not awaited, because this sweep is synchronous by contract
       // and a close that takes its grace window must not hold it up — and never
       // bare `void`, because a wedged teardown rejecting would take the server
-      // down with it. A no-op for every session today: nothing warms a pump
-      // until the per-session opt-in lands (task 3.8).
+      // down with it. A no-op for a session that never opted in: nothing warms a
+      // pump unless `runtimes.claudeCode.persistentSession` is on.
+      //
+      // The wiring is forgotten alongside the process, so a session that comes
+      // back builds a fresh pump rather than dispatching into a spent one. Done
+      // FIRST and synchronously: the teardown below is awaited by nobody, and a
+      // message arriving in that window must not find a bundle whose pump is
+      // already on its way out.
+      this.persistent.forget(sessionId);
       this.pumps.evict(sessionId).catch((err: unknown) => {
         logger.warn('[ClaudeCodeRuntime] evicted session failed to give back its process', {
           sessionId,
