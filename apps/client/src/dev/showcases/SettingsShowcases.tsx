@@ -17,7 +17,6 @@ import {
   NavigationLayoutPanel,
   NavigationLayoutPanelHeader,
   NavigationLayoutDialogHeader,
-  ResponsiveDialogTitle,
 } from '@/layers/shared/ui';
 import { SettingsDialog } from '@/layers/features/settings';
 import {
@@ -295,9 +294,17 @@ function MobileDrillInSection() {
         <div className="border-border overflow-hidden rounded-lg border" style={{ height: 480 }}>
           <NavigationLayout value={active} onValueChange={setActive}>
             <NavigationLayoutDialogHeader>
-              <ResponsiveDialogTitle className="text-sm font-medium">
-                Settings
-              </ResponsiveDialogTitle>
+              {/* A plain heading, not `ResponsiveDialogTitle` (DOR-1117).
+                  This header was copied from `tabbed-dialog.tsx`, where it sits
+                  inside a `ResponsiveDialog` — but this demo shows the layout
+                  standalone in a bordered box, with no dialog anywhere. So
+                  `ResponsiveDialogTitle` found no context and threw
+                  "useResponsiveDialog must be used within a <ResponsiveDialog>",
+                  and this whole section had been a red error card for as long
+                  as nothing loaded /dev/settings. On desktop the real component
+                  renders a Radix `DialogTitle`, which is an `h2` — so this is
+                  what it looked like when it worked. */}
+              <h2 className="text-sm font-medium">Settings</h2>
             </NavigationLayoutDialogHeader>
             <NavigationLayoutBody>
               <NavigationLayoutSidebar>
