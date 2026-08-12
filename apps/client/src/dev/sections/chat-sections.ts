@@ -379,16 +379,7 @@ export const CHAT_SECTIONS: PlaygroundSection[] = [
     title: 'TransportErrorBanner',
     page: 'chat',
     category: 'Status',
-    keywords: [
-      'transport',
-      'error',
-      'banner',
-      'connection',
-      'retry',
-      'network',
-      'timeout',
-      'session lock',
-    ],
+    keywords: ['transport', 'error', 'banner', 'connection', 'retry', 'network', 'timeout'],
   },
   {
     id: 'tasklistpanel',
