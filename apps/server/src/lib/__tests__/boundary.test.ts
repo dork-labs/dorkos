@@ -162,19 +162,22 @@ describe('boundary module', () => {
       await expect(boundary.validateBoundary('/some/path')).rejects.toThrow('EIO');
     });
 
-    it('handles ENOENT by falling back to path.resolve (non-existent path)', async () => {
+    it('resolves a non-existent path through its deepest existing ancestor', async () => {
       const enoent = Object.assign(new Error('no such file'), { code: 'ENOENT' });
-      vi.mocked(fs.realpath).mockRejectedValueOnce(enoent);
+      // The leaf is missing and is not a symlink; its parent is real, so the
+      // walk canonicalizes the parent and re-appends `newdir`.
+      vi.mocked(fs.realpath).mockRejectedValueOnce(enoent).mockResolvedValueOnce('/home/user');
+      vi.mocked(fs.lstat).mockRejectedValue(enoent);
 
-      // /home/user/newdir doesn't exist yet — path.resolve keeps it in boundary
       const result = await boundary.validateBoundary('/home/user/newdir');
 
       expect(result).toBe('/home/user/newdir');
     });
 
-    it('rejects a non-existent path outside boundary (ENOENT + path.resolve)', async () => {
+    it('rejects a non-existent path whose existing ancestor is outside boundary', async () => {
       const enoent = Object.assign(new Error('no such file'), { code: 'ENOENT' });
-      vi.mocked(fs.realpath).mockRejectedValueOnce(enoent);
+      vi.mocked(fs.realpath).mockRejectedValueOnce(enoent).mockResolvedValueOnce('/tmp');
+      vi.mocked(fs.lstat).mockRejectedValue(enoent);
 
       await expect(boundary.validateBoundary('/tmp/newdir')).rejects.toMatchObject({
         code: 'OUTSIDE_BOUNDARY',
@@ -380,13 +383,16 @@ describe('boundary module', () => {
       expect(vi.mocked(fs.realpath)).toHaveBeenLastCalledWith(expandedPath);
     });
 
-    it('resolves tilde path that does not exist yet (ENOENT fallback)', async () => {
+    it('resolves a tilde path that does not exist yet', async () => {
       const enoent = Object.assign(new Error('no such file'), { code: 'ENOENT' });
-      vi.mocked(fs.realpath).mockRejectedValueOnce(enoent);
+      // `newbot` is missing; the agents directory it goes in is real.
+      vi.mocked(fs.realpath)
+        .mockRejectedValueOnce(enoent)
+        .mockResolvedValueOnce(`${home}/.dork/agents`);
+      vi.mocked(fs.lstat).mockRejectedValue(enoent);
 
       const result = await boundary.validateBoundary('~/.dork/agents/newbot');
 
-      // path.resolve on the expanded path should keep it within boundary
       expect(result).toBe(`${home}/.dork/agents/newbot`);
     });
   });

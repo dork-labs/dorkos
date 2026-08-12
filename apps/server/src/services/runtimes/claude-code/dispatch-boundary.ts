@@ -38,14 +38,15 @@
  * `..` spelled inside `agents/` nor a symlink planted there escapes it; both
  * are pinned by cases in `sessions/__tests__/session-turn-windows-boundary`.
  *
- * One known edge, inherited from `lib/boundary.ts` and shared with every other
- * caller of these validators: a path that does not exist cannot be
- * realpath'd, so `resolveCanonicalPath` falls back to a LEXICAL
- * `path.resolve` — and a non-existent child of a symlink
- * (`{dorkHome}/agents/<symlink>/nope`) is therefore judged by its spelling and
- * allowed. It is not reachable as a cwd: the directory does not exist, so the
- * launch fails, and nothing in this runtime creates a session's cwd. Fixing it
- * belongs in `lib/boundary.ts`, where it would fix every caller at once.
+ * A cwd that does not exist is judged the same way as one that does, which was
+ * once the gap here and is now the guarantee. `fs.realpath` is all-or-nothing,
+ * so `lib/boundary.ts` used to fall back to a LEXICAL `path.resolve` for a
+ * missing path — and a non-existent child of a symlink
+ * (`{dorkHome}/agents/<symlink>/nope`) passed on its spelling alone. It
+ * resolves through the deepest ancestor that IS on disk instead (DOR-1185), so
+ * the symlink is followed and the escape refused. Fixing it there rather than
+ * here was the point: every caller of both validators got the same guarantee,
+ * and none of them has to know that a not-yet-created path is a special case.
  *
  * @module services/runtimes/claude-code/dispatch-boundary
  */

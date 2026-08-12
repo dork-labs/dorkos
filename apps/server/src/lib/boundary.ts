@@ -128,15 +128,110 @@ export function expandTilde(userPath: string): string {
 }
 
 /**
+ * How many dangling-symlink hops {@link resolveThroughExistingAncestor} will
+ * follow before giving up. Only reached by a chain of links whose targets do
+ * not exist — a chain that resolves, or a cycle among existing links, is
+ * `fs.realpath`'s problem and surfaces as ELOOP long before this.
+ */
+const MAX_DANGLING_SYMLINK_HOPS = 32;
+
+/**
+ * The link target if `candidate` is a symlink, or `null` if it is anything else
+ * (including absent).
+ *
+ * `lstat` rather than `stat` on purpose: the question is whether this path IS a
+ * link, not what it points at, and the caller only asks once `realpath` has
+ * already failed to follow it.
+ */
+async function readlinkOrNull(candidate: string): Promise<string | null> {
+  try {
+    const stats = await fs.lstat(candidate);
+    if (!stats.isSymbolicLink()) return null;
+    return await fs.readlink(candidate);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Resolve a path that does not exist by canonicalizing the part of it that DOES.
+ *
+ * `fs.realpath` is all-or-nothing: one missing component and it throws, telling
+ * you nothing about the components that were real. Falling back to a lexical
+ * `path.resolve` there — which this module did until DOR-1185 — judges the path
+ * by its spelling, so a non-existent CHILD of a symlink escaped every
+ * containment check that followed (`{dorkHome}/agents/<symlink>/nope` read as
+ * living under `agents/` while pointing anywhere at all).
+ *
+ * So: climb until an ancestor resolves, canonicalize THAT, and re-append the
+ * missing tail. The tail cannot smuggle anything past the caller's containment
+ * check — it is normalized before the climb, so it holds no `..` — while every
+ * symlink on the existing part is followed, because those are the components a
+ * write would actually traverse.
+ *
+ * The first missing component gets one extra question, since "missing" and
+ * "dangling symlink" are the same ENOENT: if it is a link, its target is
+ * resolved the same way. Otherwise a link planted at a not-yet-written file
+ * would still be judged by its name.
+ *
+ * @param input - Absolute or relative path whose leaf does not exist
+ * @param hops - Dangling-symlink hops already taken (loop guard)
+ * @returns The deepest existing ancestor, canonicalized, with the missing tail re-appended
+ * @throws BoundaryError on EACCES (`PERMISSION_DENIED`) while climbing
+ */
+async function resolveThroughExistingAncestor(input: string, hops = 0): Promise<string> {
+  const absolute = path.resolve(input);
+  const missingTail: string[] = [];
+  let ancestor = absolute;
+
+  for (;;) {
+    const parent = path.dirname(ancestor);
+    // Reached the filesystem root without finding anything real. Nothing to
+    // canonicalize against, so the normalized spelling is the best answer —
+    // and it is a safe one, since no symlink was skipped to get here.
+    if (parent === ancestor) return absolute;
+
+    missingTail.unshift(path.basename(ancestor));
+    ancestor = parent;
+
+    let real: string;
+    try {
+      real = await fs.realpath(ancestor);
+    } catch (err: unknown) {
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code === 'ENOENT') continue;
+      if (code === 'EACCES') {
+        throw new BoundaryError('Permission denied', 'PERMISSION_DENIED');
+      }
+      throw err;
+    }
+
+    // `ancestor` resolves, so the failure was at `missingTail[0]` — either it is
+    // absent, or it is a symlink whose target is.
+    const [head, ...rest] = missingTail;
+    const linkTarget =
+      hops < MAX_DANGLING_SYMLINK_HOPS ? await readlinkOrNull(path.join(real, head)) : null;
+    if (linkTarget !== null) {
+      const followed = path.resolve(real, linkTarget);
+      return resolveThroughExistingAncestor(path.join(followed, ...rest), hops + 1);
+    }
+
+    return path.join(real, ...missingTail);
+  }
+}
+
+/**
  * Reject null bytes, expand a leading tilde, and resolve symlinks to a
  * canonical path. Shared resolution step for both boundary validators so their
  * null-byte / ENOENT / EACCES behavior stays identical.
  *
- * For non-existent paths (ENOENT), falls back to `path.resolve()` so session
- * creation for new directories still validates.
+ * Paths that do not exist yet still validate — a workspace about to be cloned,
+ * an agent directory about to be created, a workbench file about to be written
+ * — but they are canonicalized as far as they are real rather than judged
+ * lexically. See {@link resolveThroughExistingAncestor}.
  *
  * @param userPath - User-supplied path (absolute or tilde-prefixed)
- * @returns Resolved canonical path (symlinks followed when the path exists)
+ * @returns Resolved canonical path (symlinks followed as far as the path exists)
  * @throws BoundaryError on null bytes (`NULL_BYTE`) or EACCES (`PERMISSION_DENIED`)
  */
 async function resolveCanonicalPath(userPath: string): Promise<string> {
@@ -154,8 +249,7 @@ async function resolveCanonicalPath(userPath: string): Promise<string> {
   } catch (err: unknown) {
     const code = (err as NodeJS.ErrnoException).code;
     if (code === 'ENOENT') {
-      // Path doesn't exist yet (e.g., new session directory) — resolve without symlink follow
-      return path.resolve(expanded);
+      return resolveThroughExistingAncestor(expanded);
     }
     if (code === 'EACCES') {
       throw new BoundaryError('Permission denied', 'PERMISSION_DENIED');
@@ -190,8 +284,11 @@ let cachedDorkHome: { raw: string; resolved: string } | null = null;
  * Resolve DorkOS's data directory to its canonical (symlink-followed) path.
  *
  * Realpath-resolving here mirrors `initBoundary()` so a symlinked dork-home
- * can't be used to spoof the containment check. Falls back to `path.resolve()`
- * when the directory doesn't exist yet (ENOENT).
+ * can't be used to spoof the containment check. When the directory doesn't
+ * exist yet it resolves through its deepest existing ancestor, the same rule
+ * {@link resolveCanonicalPath} applies to the path being validated — otherwise
+ * a dork-home nested under a symlink would be compared against a location
+ * neither side actually reaches.
  */
 async function resolveDorkHomeReal(): Promise<string> {
   const raw = resolveDorkHome();
@@ -201,7 +298,7 @@ async function resolveDorkHomeReal(): Promise<string> {
     resolved = await fs.realpath(raw);
   } catch (err: unknown) {
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
-      resolved = path.resolve(raw);
+      resolved = await resolveThroughExistingAncestor(raw);
     } else {
       throw err;
     }
@@ -214,9 +311,11 @@ async function resolveDorkHomeReal(): Promise<string> {
  * Validate that a path is within the directory boundary.
  *
  * Expands leading `~` to the home directory, then resolves symlinks before
- * checking containment to prevent symlink-based boundary escapes. For
- * non-existent paths (ENOENT), falls back to `path.resolve()` so session
- * creation for new directories still validates.
+ * checking containment to prevent symlink-based boundary escapes. A path that
+ * does not exist yet still validates — session creation, workspace
+ * provisioning and file creation all depend on that — but it is canonicalized
+ * through its deepest existing ancestor, so a symlink on the part that IS real
+ * is followed rather than read as text.
  *
  * @param userPath - User-supplied path to validate (absolute or tilde-prefixed)
  * @param boundary - Optional boundary override (defaults to initialized boundary)
