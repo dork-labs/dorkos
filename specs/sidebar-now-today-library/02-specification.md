@@ -1117,8 +1117,15 @@ takeover contributions render inside the Library tab on mobile.
 long-press, catch-up and inline approval.
 
 **Rollback:** `MobileTabsLayout` is selected by `useIsMobile()` at one call site in `AppShell`;
-reverting that selection restores the Sheet, which stays in `shared/ui/sidebar.tsx` for the
-Obsidian embed regardless.
+reverting that selection restores the Sheet, which stays in `shared/ui/sidebar.tsx` regardless.
+
+> **Corrected at P4.3.** This paragraph and AC-6 above said the Sheet is kept "for the Obsidian
+> embed". It is not, and P4.1 corrected the same claim where it lived as a comment in
+> `AppShell.tsx`. The embed renders `features/session-list/ui/EmbedSidebar.tsx` inside its own
+> drawer in `App.tsx` and never touches `<Sidebar>`; the Sheet stays because `shared/ui/sidebar.tsx`
+> is a shared primitive the Dev Playground and the component tests mount. AC-6 still holds as
+> written — `EmbedSidebar` and its tests were untouched by the whole programme — but the reason it
+> holds is that the embed was never on this code path, not that this phase was careful with it.
 
 ---
 
