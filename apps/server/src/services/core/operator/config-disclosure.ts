@@ -302,6 +302,11 @@ export const CONFIG_DISCLOSURE = {
   // takes none, and the absent row is the honest way to say so.
   'runtimes.claudeCode.defaultModel': 'expose',
   'runtimes.claudeCode.defaultEffort': 'expose',
+  // Whether a Claude Code chat keeps its agent running between messages
+  // (spec `persistent-session-runtime` §P3). Same class again: it describes how
+  // work runs on this machine, names no credential and no person, and an agent
+  // that can see it can say why a session behaves the way it does.
+  'runtimes.claudeCode.persistentSession': 'expose',
   'runtimes.opencode.defaultModel': 'expose',
   'runtimes.codex.defaultModel': 'expose',
   'runtimes.codex.defaultEffort': 'expose',

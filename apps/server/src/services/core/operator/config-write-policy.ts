@@ -447,6 +447,15 @@ export const CONFIG_WRITE_POLICY = {
   // reverse it: the chip on every row says where the value came from.
   'runtimes.claudeCode.defaultModel': 'agent-writable',
   'runtimes.claudeCode.defaultEffort': 'agent-writable',
+  // Whether a Claude Code chat keeps its agent running between messages
+  // (spec `persistent-session-runtime` §P3). A preference about how work runs,
+  // on the same footing as the model and effort leaves above: it spawns the same
+  // executable with the same permissions and the same trust stop, and only
+  // changes how long that process is held. It removes no gate, widens no
+  // boundary — the boundary check runs per dispatch either way — and reaches no
+  // credential. What it can cost is memory: warm processes are bounded by the
+  // warm-session ceiling in code, not by anything an agent can write here.
+  'runtimes.claudeCode.persistentSession': 'agent-writable',
   'runtimes.opencode.defaultModel': 'agent-writable',
   'runtimes.codex.defaultModel': 'agent-writable',
   'runtimes.codex.defaultEffort': 'agent-writable',
