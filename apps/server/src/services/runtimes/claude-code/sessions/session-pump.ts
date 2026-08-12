@@ -177,6 +177,13 @@ export class SessionPump {
    *
    * Concurrent calls share one launch, so two callers cannot boot two processes
    * for one session. Already warm (or running) is a no-op.
+   *
+   * Like {@link dispatch}, this asks nothing about the directory boundary: it
+   * boots a process in whatever cwd the launcher resolves, and no turn runs
+   * until something dispatches. Pre-warming a session whose cwd the boundary
+   * would refuse therefore starts a subprocess that can never be given work —
+   * so whoever adds pre-warming should ask the gate first rather than leave the
+   * refusal to the first dispatch.
    */
   async warm(): Promise<void> {
     this.assertUsable();
@@ -204,6 +211,16 @@ export class SessionPump {
    * a caller bug today (steering into an open turn is task P4's
    * `deliverIntoTurn`, a different verb). The windower is what makes that mutex
    * more than honor-system for pump-driven turns.
+   *
+   * **This method asks nothing about the directory boundary, and that is not an
+   * oversight — it is why `SessionTurnWindows.dispatch` is the only supported
+   * way in.** The boundary gate (task 3.9) lives one layer up, on the windower,
+   * because that is the layer that knows which cwd this turn was resolved for;
+   * a pump takes a batch and no directory at all. Reaching past the windower to
+   * call this directly runs the turn ungated, so production code must not: go
+   * through `SessionTurnWindows.dispatch(batch, cwd)`, or through
+   * `SessionCrashRecovery.dispatch(batch, cwd)`, which delegates to it. Tests
+   * that drive the pump alone are the deliberate exception.
    *
    * @param batch - The messages to run as one turn, in delivery order
    * @throws PumpRefusedError When the batch is empty, when the session is parked

@@ -3,12 +3,17 @@
  * `persistent-session-runtime` §Security, task 3.9).
  *
  * Every case drives the REAL validator against REAL directories — a temporary
- * boundary root, and a dork-home deliberately outside it, exactly the shape a
- * boundary-scoped deployment has. Nothing here mocks `lib/boundary.js`, because
- * two of the five things being proved are which paths that module lets through:
- * a mocked validator would answer whatever the test told it to and certify
- * nothing. Swapping the dispatch gate to the plain `validateBoundary` turns the
- * agents-subtree case red; deleting the gate turns four of the five red.
+ * boundary root, a dork-home deliberately outside it (exactly the shape a
+ * boundary-scoped deployment has), and a real symlink planted inside the
+ * carve-out. Nothing here mocks `lib/boundary.js`, because several of the
+ * things being proved are which paths that module lets through: a mocked
+ * validator would answer whatever the test told it to and certify nothing.
+ *
+ * The three mutations these cases were checked against, all reproduced:
+ * deleting the dispatch gate turns every case red but the agents-subtree one;
+ * swapping the gate to the plain `validateBoundary` turns EXACTLY the
+ * agents-subtree case red; moving the gate below the `closingWindows` wait
+ * times out the ordering case.
  *
  * @module services/runtimes/claude-code/sessions/__tests__/session-turn-windows-boundary
  */
@@ -33,6 +38,10 @@ let OUTSIDE: string;
 let AGENT_HOME: string;
 /** The encrypted credential store: a dork-home sibling of `agents/`. */
 let SECRETS: string;
+/** The credential store reached by a `..` spelled INSIDE the agents subtree. */
+let TRAVERSAL: string;
+/** A SYMLINK living inside `agents/` whose target is the credential store. */
+let SYMLINK_ESCAPE: string;
 
 let tmpRoot: string;
 const originalDorkHome = process.env.DORK_HOME;
@@ -51,6 +60,10 @@ beforeAll(async () => {
   for (const dir of [INSIDE, OUTSIDE, AGENT_HOME, SECRETS]) {
     await fs.mkdir(dir, { recursive: true });
   }
+  // Two ways of spelling the credential store that LOOK like the carve-out.
+  TRAVERSAL = path.join(dorkHome, 'agents', '..', 'extension-secrets');
+  SYMLINK_ESCAPE = path.join(dorkHome, 'agents', 'escape');
+  await fs.symlink(SECRETS, SYMLINK_ESCAPE);
   process.env.DORK_HOME = dorkHome;
   await initBoundary(boundaryRoot);
 });
@@ -105,8 +118,15 @@ interface RealHarness {
   live: () => FakeQuery;
 }
 
-/** A windower over a REAL pump and a scripted subprocess. */
-function realHarness(): RealHarness {
+/**
+ * A windower over a REAL pump and a scripted subprocess.
+ *
+ * @param usageTimeoutMs - How long a close may wait for its accounting. The
+ *   default is short so ordinary cases settle; the ordering case raises it far
+ *   above its own test timeout, because a close that can rescue itself by
+ *   timing out cannot prove anything about what the dispatch waited for.
+ */
+function realHarness(usageTimeoutMs = 500): RealHarness {
   const queries: FakeQuery[] = [];
   const opened: TurnWindow[] = [];
   const ref: { windows?: SessionTurnWindows } = {};
@@ -124,7 +144,7 @@ function realHarness(): RealHarness {
   const windows = new SessionTurnWindows({
     sessionId: SESSION_ID,
     pump,
-    usageTimeoutMs: 500,
+    usageTimeoutMs,
     onWindowOpen: (window) => opened.push(window),
   });
   ref.windows = windows;
@@ -231,4 +251,63 @@ describe('SessionTurnWindows — the boundary is asked per dispatch', () => {
     await vi.waitFor(() => expect(h.pump.state).toBe('warm'));
     expect(h.opened).toHaveLength(2);
   });
+
+  // AC6. The carve-out is a containment check on the RESOLVED path, never a
+  // check on how the path was spelled. A `..` that starts inside `agents/` and
+  // lands on the credential store is the credential store.
+  it('refuses a traversal spelled inside the agents subtree', async () => {
+    const h = recordingHarness();
+
+    await expect(
+      h.windows.dispatch([{ content: 'read the secrets', messageId: 'm1' }], TRAVERSAL)
+    ).rejects.toBeInstanceOf(BoundaryError);
+
+    expect(h.sent).toHaveLength(0);
+    expect(h.opened).toHaveLength(0);
+  });
+
+  // AC7. The same question asked the way an attacker would actually ask it: a
+  // symlink that LIVES in the carve-out and POINTS at the credential store.
+  // Validation resolves symlinks (`fs.realpath`) rather than trusting the
+  // spelling, so the carve-out cannot be escaped by planting one — and if that
+  // resolution is ever dropped as an optimization, this goes red.
+  it('refuses a symlink inside the agents subtree that targets the credential store', async () => {
+    const h = recordingHarness();
+
+    await expect(
+      h.windows.dispatch([{ content: 'follow the link', messageId: 'm1' }], SYMLINK_ESCAPE)
+    ).rejects.toBeInstanceOf(BoundaryError);
+
+    expect(h.sent).toHaveLength(0);
+    expect(h.opened).toHaveLength(0);
+  });
+
+  // AC8. The gate is asked AHEAD of the wait for closing windows, not after it.
+  // A turn that may not run has no business being held for the length of
+  // another window's accounting fetch.
+  //
+  // The accounting here is parked and never released, and the window's own
+  // timeout is set far beyond this test's, so a gate moved below the
+  // `closingWindows` wait cannot settle at all: the case times out instead of
+  // merely being slower. That is what makes it discriminate — verified by
+  // moving the gate and watching this time out at 3s.
+  it('refuses without waiting for a close that is still in flight', async () => {
+    const h = realHarness(60_000);
+    const dispatching = h.windows.dispatch([{ content: 'hello', messageId: 'm1' }], INSIDE);
+    await vi.waitFor(() => expect(h.queries.length).toBe(1));
+    h.live().emit(initMessage());
+    await dispatching;
+
+    h.live().holdControls = true;
+    h.live().emit(resultMessage('m1'));
+    await vi.waitFor(() => expect(h.live().parkedControls).toBeGreaterThan(0));
+
+    await expect(
+      h.windows.dispatch([{ content: 'now escape', messageId: 'm2' }], OUTSIDE)
+    ).rejects.toBeInstanceOf(BoundaryError);
+
+    // The close really was still in flight for the whole refusal.
+    expect(h.live().parkedControls).toBeGreaterThan(0);
+    h.live().releaseControls();
+  }, 3000);
 });

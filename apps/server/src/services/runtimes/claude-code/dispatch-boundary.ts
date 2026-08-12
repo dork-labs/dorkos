@@ -14,9 +14,17 @@
  * than a side effect of a fingerprint comparison. So the pump path asks again,
  * per dispatch, in `SessionTurnWindows.dispatch`.
  *
- * Both paths call the two functions below, which is the point of the module:
- * one rule about which directories a turn may run in, and one refusal a person
- * can be shown, rather than two definitions free to drift apart.
+ * Both paths call {@link validateDispatchBoundary}, which is the point of the
+ * module: one rule about which directories a turn may run in, rather than two
+ * definitions free to drift apart.
+ *
+ * {@link boundaryViolationEvent} is the matching half — one refusal a person
+ * can be shown — but only the turn path yields it today. The pump path THROWS
+ * the validator's `BoundaryError` instead, because a dispatch is a call that
+ * fails, not a stream that emits. Whoever wires the windower into `sendMessage`
+ * must catch that error and yield THIS event, or the same misconfiguration will
+ * read as two different failures depending on which path a person happened to
+ * be on.
  *
  * ## Which validator, and why it is the DorkHome-aware one
  *
@@ -26,7 +34,18 @@
  * directory is legitimate work that the plain boundary would refuse. The
  * allowance stops at that subtree: dork-home's siblings — the encrypted
  * credential store among them — stay out of reach, and so does everything
- * outside both roots.
+ * outside both roots. Containment is judged on the RESOLVED path, so neither a
+ * `..` spelled inside `agents/` nor a symlink planted there escapes it; both
+ * are pinned by cases in `sessions/__tests__/session-turn-windows-boundary`.
+ *
+ * One known edge, inherited from `lib/boundary.ts` and shared with every other
+ * caller of these validators: a path that does not exist cannot be
+ * realpath'd, so `resolveCanonicalPath` falls back to a LEXICAL
+ * `path.resolve` — and a non-existent child of a symlink
+ * (`{dorkHome}/agents/<symlink>/nope`) is therefore judged by its spelling and
+ * allowed. It is not reachable as a cwd: the directory does not exist, so the
+ * launch fails, and nothing in this runtime creates a session's cwd. Fixing it
+ * belongs in `lib/boundary.ts`, where it would fix every caller at once.
  *
  * @module services/runtimes/claude-code/dispatch-boundary
  */

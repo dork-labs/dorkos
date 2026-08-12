@@ -333,9 +333,22 @@ export class SessionTurnWindows {
    * and anything the process managed to say goes back on hold for the next
    * window.
    *
+   * **What the caller owes this gate.** `cwd` is validated as given, and the
+   * pump does not carry a cwd of its own — `PumpLauncher` resolves the real one
+   * behind its seam (`session-pump-contract.ts`). So this checks a directory
+   * the caller NAMES, not the directory the process will actually run in, and
+   * the two are the same only because the caller makes them the same. Whoever
+   * composes this into `sendMessage` must therefore hand it the SAME value the
+   * launcher resolves — `messageOpts?.cwd || opts.sessionCwd || opts.cwd`, the
+   * effective-cwd chain in `messaging/message-sender.ts`, resolved once and
+   * passed to both. Resolve it twice by two routes and the gate answers about
+   * one directory while the turn runs in another, which is a check that only
+   * looks like one.
+   *
    * @param batch - The messages dequeued together, to run as one turn
    * @param cwd - The working directory this turn would run in, resolved by the
-   *   caller for THIS dispatch rather than remembered from the launch
+   *   caller for THIS dispatch rather than remembered from the launch, and
+   *   identical to the value handed to the launcher (see above)
    * @returns The window this dispatch opened
    * @throws BoundaryError When `cwd` is not a directory the operator allowed
    * @throws PumpRefusedError When the batch is empty, or the pump refuses it
