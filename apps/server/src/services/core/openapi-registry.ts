@@ -640,10 +640,13 @@ registry.registerPath({
     'and does NOT wait for the session to be free. If the session is idle the turn ' +
     'starts now; if a turn is already running the message joins the session queue and ' +
     'runs when that turn ends. Either way the events are delivered solely on the ' +
-    'durable `GET /api/sessions/{id}/events` stream (the single delivery path), and the ' +
-    '`202` body says which happened: `outcome` carries the requested and applied ' +
-    'disposition, `queuePosition` is 1 when nothing was ahead of it. A busy session is ' +
-    'never a `409` here — read and edit what is waiting through ' +
+    'durable `GET /api/sessions/{id}/events` stream (the single delivery path) — ' +
+    '`turn_start` there is the only signal that THIS message actually started running. ' +
+    'The `202` body cannot say which of the two happened: `queuePosition` reads `1` ' +
+    'both when the turn started immediately and when the message became the sole entry ' +
+    'in a queue behind a still-running turn, and `outcome` carries the requested and ' +
+    'applied disposition (queue/steer/stage), not whether a turn began. A busy session ' +
+    'is never a `409` here — read and edit what is waiting through ' +
     '`/api/sessions/{id}/queue`. The `202` also carries the CANONICAL session id: for a ' +
     'brand-new session this is the real id assigned during the turn (it differs from ' +
     'the client-supplied id), so the client re-keys its URL and `/events` subscription ' +
@@ -763,8 +766,10 @@ registry.registerPath({
     'response. The client-native intents (`clear`, `context`) are handled entirely ' +
     'client-side and never reach this route. Capability-gated: a runtime that does not ' +
     'support the intent (e.g. Codex) returns `422` and the adapter is never called — ' +
-    'never a silent no-op. Mirrors the message trigger: `409` SESSION_LOCKED when a turn ' +
-    'is already running.',
+    'never a silent no-op. Unlike the message trigger (which queues instead), this ' +
+    'route still answers `409` SESSION_LOCKED when a turn is already running: a ' +
+    "command intent is not a person's words waiting to be said, so it is refused " +
+    'rather than queued.',
   request: {
     params: z.object({ id: z.string().uuid(), intent: z.enum(['compact']) }),
     body: {
@@ -900,7 +905,7 @@ registry.registerPath({
   tags: ['Sessions'],
   summary: 'Dispatch a generative-UI widget agent action',
   description:
-    'A click on an `agent`-kind widget action. Injects a structured `<ui_action>` block as the next user turn (trigger-only, 202; the turn streams over /events). Mirrors the message trigger: 409 SESSION_LOCKED when a turn is already running.',
+    "A click on an `agent`-kind widget action. Injects a structured `<ui_action>` block as the next user turn (trigger-only, 202; the turn streams over /events). Unlike the message trigger (which queues instead), this route still answers 409 SESSION_LOCKED when a turn is already running: a widget click is not a person's words waiting to be said, so it is refused rather than queued.",
   request: {
     params: z.object({ id: z.string().uuid() }),
     body: {

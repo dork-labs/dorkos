@@ -258,6 +258,21 @@ describe('PATCH /api/sessions/:id/queue/:messageId', () => {
     expect((await readQueue()).map((m) => m.id)).toEqual([mine.messageId]);
   });
 
+  it('refuses a reword+move together when the move anchor is bogus, and leaves the words untouched', async () => {
+    // A PATCH that reworded AND moved must not commit the reword before the
+    // move is checked: a refused move that already landed the reword would
+    // answer 404 while quietly changing what the message says (DOR-1178).
+    const mine = await post('original words', 'client-a');
+
+    const res = await request(server)
+      .patch(`/api/sessions/${SESSION_ID}/queue/${mine.messageId}`)
+      .send({ content: 'hijacked words', move: { before: 'no-such-message' } });
+
+    expect(res.status).toBe(404);
+    expect(res.body.code).toBe('QUEUED_MESSAGE_NOT_FOUND');
+    expect((await readQueue())[0]?.content).toBe('original words');
+  });
+
   it('400s a body that asks for nothing, and an empty body', async () => {
     const mine = await post('unchanged', 'client-a');
 
