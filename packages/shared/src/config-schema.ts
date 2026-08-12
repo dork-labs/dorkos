@@ -1475,6 +1475,18 @@ export const UserConfigSchema = z.object({
            * `runtimes.defaultTrustStop`. See {@link DefaultTrustStopSchema}.
            */
           defaultTrustStop: DefaultTrustStopSchema,
+          /**
+           * Whether a Claude Code chat keeps its agent running between your
+           * messages instead of starting it up again for each one. Ships
+           * `false`, which is how DorkOS has always worked: every message gets
+           * its own run.
+           *
+           * Read when a chat's agent starts, so a chat already under way keeps
+           * the way it started until its process is replaced. That is what lets
+           * one machine run chats both ways at the same time and compare them on
+           * the same work (spec `persistent-session-runtime` §P3).
+           */
+          persistentSession: z.boolean().default(false),
         })
         .default(() => ({
           activeAccount: null,
@@ -1482,6 +1494,7 @@ export const UserConfigSchema = z.object({
           defaultModel: null,
           defaultEffort: null,
           defaultTrustStop: null,
+          persistentSession: false,
         })),
       opencode: z
         .object({
@@ -1562,6 +1575,7 @@ export const UserConfigSchema = z.object({
         defaultModel: null,
         defaultEffort: null,
         defaultTrustStop: null,
+        persistentSession: false,
       },
       opencode: {
         enabled: true,
