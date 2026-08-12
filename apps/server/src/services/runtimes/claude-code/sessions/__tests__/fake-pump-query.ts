@@ -34,11 +34,45 @@ export class FakeQuery implements PumpQuery {
   /** How many times each control method was called — the "is it still alive" probe. */
   contextUsageCalls = 0;
   subscriptionUsageCalls = 0;
+  /**
+   * Park every control answer until {@link releaseControls} lets it through.
+   *
+   * `tick()` makes an answer land on a later macrotask, which is enough to catch
+   * an ordering bug inside ONE close but not to decide the order of TWO closes
+   * in flight at once — same-delay timers fire in one batch, so which settle
+   * finishes first is luck. Parking makes that order the test's to choose, which
+   * is the only way to reproduce two overlapping closes deterministically.
+   */
+  holdControls = false;
   /** Messages waiting for the consumer, and the parked consumer's waker. */
   private readonly pending: SDKMessage[] = [];
   private wake: (() => void) | undefined;
   private done = false;
   private failure: unknown;
+  /** Control answers waiting for {@link releaseControls}, in the order they were asked. */
+  private readonly parked: Array<() => void> = [];
+
+  /**
+   * Let parked control answers through, oldest first.
+   *
+   * @param count - How many to release. Defaults to every one waiting.
+   */
+  releaseControls(count = this.parked.length): void {
+    for (const release of this.parked.splice(0, count)) release();
+  }
+
+  /** How many control answers are parked right now. */
+  get parkedControls(): number {
+    return this.parked.length;
+  }
+
+  /** When a control answer arrives: next macrotask, or whenever the test says. */
+  private answer(): Promise<void> {
+    if (!this.holdControls) return tick();
+    return new Promise<void>((resolve) => {
+      this.parked.push(resolve);
+    });
+  }
 
   /** Hand a message to whoever is reading this process's output. */
   emit(message: SDKMessage): void {
@@ -75,7 +109,7 @@ export class FakeQuery implements PumpQuery {
     // A DIFFERENT total on every call, so a test asserting that each window got
     // its own breakdown cannot pass on a stale one left over from the window
     // before it.
-    return tick().then(() => ({
+    return this.answer().then(() => ({
       totalTokens: 1_000 * this.contextUsageCalls,
       maxTokens: 200_000,
       percentage: 0.5,
@@ -90,7 +124,7 @@ export class FakeQuery implements PumpQuery {
   > {
     this.subscriptionUsageCalls += 1;
     if (this.done) return Promise.reject(new Error('the process is gone'));
-    return tick().then(() => ({
+    return this.answer().then(() => ({
       rate_limits_available: true,
       rate_limits: { five_hour: { utilization: 25, resets_at: null } },
     })) as unknown as ReturnType<

@@ -78,6 +78,8 @@ interface Harness {
   live: () => FakeQuery;
   /** Every window the windower opened, in order. */
   opened: TurnWindow[];
+  /** Every window whose close fully settled, in order. */
+  closedWindows: TurnWindow[];
   /** Every window's projection promise, resolved when its stream ends. */
   projected: Promise<void>[];
   usages: WindowUsage[];
@@ -91,6 +93,8 @@ interface Harness {
   streamEvents: StreamEvent[][];
   /** The durable stream so far, grouped into windows. */
   windowsOnStream: () => ProjectedWindow[];
+  /** The durable stream so far, ungrouped. */
+  rawStream: () => SessionEvent[];
   /** Boot the process and open the first window with `messageId`. */
   dispatch: (batch: Array<{ content: string; messageId: string }>) => Promise<TurnWindow>;
 }
@@ -101,9 +105,10 @@ interface Harness {
  * and the accounting seam lands on the session the mapper reads — which is what
  * makes `context_usage` precede `done`.
  */
-function harness(): Harness {
+function harness(hooks: { onWindowClose?: (window: TurnWindow) => void } = {}): Harness {
   const queries: FakeQuery[] = [];
   const opened: TurnWindow[] = [];
+  const closedWindows: TurnWindow[] = [];
   const projected: Promise<void>[] = [];
   const usages: WindowUsage[] = [];
   const seen: SDKMessage[] = [];
@@ -156,6 +161,12 @@ function harness(): Harness {
       opened.push(window);
       projected.push(project(window));
     },
+    onWindowClose: (window) => {
+      closedWindows.push(window);
+      // Recorded BEFORE the hook, so a hook that throws still leaves the
+      // bookkeeping a test needs to reason about what happened.
+      hooks.onWindowClose?.(window);
+    },
     // Exactly what `message-sender` does with the same two fetches today.
     onUsage: (usage) => {
       usages.push(usage);
@@ -171,12 +182,14 @@ function harness(): Harness {
     windows,
     queries,
     opened,
+    closedWindows,
     projected,
     usages,
     seen,
     streamEvents,
     live: () => queries[queries.length - 1]!,
     windowsOnStream: () => groupWindows(projector.replayFrom(0)),
+    rawStream: () => projector.replayFrom(0),
     dispatch: async (batch) => {
       const dispatching = windows.dispatch(batch);
       // The launch parks until the CLI reports itself ready; only the first
@@ -188,6 +201,26 @@ function harness(): Harness {
       return dispatching;
     },
   };
+}
+
+/**
+ * Report whether `work` has settled by the next macrotask.
+ *
+ * The microtask queue drains completely before any macrotask runs, so anything
+ * that was going to resolve without further real work has already done so by the
+ * time this answers — which makes `'pending'` a claim about the code under test
+ * rather than about timing luck.
+ *
+ * @param work - The promise being probed.
+ */
+function settledOrPending(work: Promise<unknown>): Promise<'settled' | 'pending'> {
+  return Promise.race([
+    work.then(
+      () => 'settled' as const,
+      () => 'settled' as const
+    ),
+    new Promise<'pending'>((resolve) => setTimeout(() => resolve('pending'), 0)),
+  ]);
 }
 
 /** Cut the durable stream into windows at its `turn_start`/`turn_end` pairs. */
@@ -551,5 +584,132 @@ describe('SessionTurnWindows — a turn opens on dispatch and closes on its resu
     expect(windows[0]!.events).toContainEqual(
       expect.objectContaining({ type: 'text_delta', text: 'unprompted' })
     );
+  });
+
+  // TWO closes in flight at once, which every other case in this file rules out
+  // by settling between results. The pump's read loop is synchronous, so a stray
+  // result and the real one land back to back, both before either close's
+  // accounting has come back — and a dispatch may not start until BOTH have
+  // finished, `pump.endTurn()` included. Parking the control answers is what
+  // makes the interleaving the test's choice rather than the timer queue's.
+  it('makes a dispatch wait for EVERY in-flight close, not just the newest', async () => {
+    const h = harness();
+    await h.dispatch([{ content: 'the real one', messageId: 'm1' }]);
+    h.live().holdControls = true;
+
+    // Two closes, back to back, exactly as the read loop would deliver them:
+    // a runtime window for the stray, then window A's own close.
+    h.live().emit(resultMessage('m-somebody-elses'));
+    await vi.waitFor(() => expect(h.opened).toHaveLength(2));
+    h.live().emit(resultMessage('m1'));
+    await vi.waitFor(() => expect(h.live().parkedControls).toBe(4));
+
+    // Let ONLY the runtime window's accounting through. Window A's close is
+    // still in flight, so the pump is still RUNNING and its turn is not over.
+    h.live().releaseControls(2);
+    // Wait for that close to be FULLY settled — observed, and its bookkeeping
+    // done — not merely for its answers to be handed over. The single-field
+    // overwrite only bites once the finished close has cleared the field the
+    // unfinished one is parked in.
+    await vi.waitFor(() => expect(h.closedWindows).toHaveLength(1));
+    expect(h.live().parkedControls).toBe(2);
+    expect(h.pump.state).toBe('running');
+
+    // The next turn must be accepted, not refused because a close it could not
+    // see had not reached `endTurn()` yet.
+    const dispatching = h.windows.dispatch([{ content: 'next', messageId: 'm2' }]);
+    // Released on a LATER MACROTASK, and that boundary is the whole experiment.
+    // Node drains every microtask first, so a windower that believes nothing is
+    // closing gets all the way to `pump.dispatch` before this line runs — and a
+    // pump still RUNNING refuses it with IllegalPumpTransitionError. A windower
+    // that waits for every in-flight close is still parked here, and proceeds
+    // once this lets window A finish. Releasing synchronously instead would let
+    // A's `endTurn()` win the race often enough to look green.
+    setTimeout(() => h.live().releaseControls(), 0);
+    await expect(dispatching).resolves.toMatchObject({ ids: ['m2'] });
+    expect(h.pump.state).toBe('running');
+
+    h.live().emit(resultMessage('m2'));
+    await settled(h, 3);
+
+    // Three windows, three closes, none of them doubled.
+    //
+    // Counted on the raw stream rather than grouped into contiguous windows,
+    // because here two windows were genuinely open AT ONCE — the runtime window
+    // for the stray result, and window A — so their events interleave on the one
+    // projector, and A's `turn_end` lands after m2's `turn_start`. That is the
+    // per-window projection lagging, not a window staying open: the windower had
+    // already ended A's stream and the pump's turn before m2 was dispatched,
+    // which is the very thing this test made it wait for. Ordering the projector
+    // sees is the wiring task's (3.10) business; the windower promises the
+    // boundaries, and exactly one close per window is the boundary claim.
+    const types = h.rawStream().map((e) => e.type);
+    expect(types.filter((t) => t === 'turn_start')).toHaveLength(3);
+    expect(types.filter((t) => t === 'turn_end')).toHaveLength(3);
+  });
+
+  // The other half of that invariant: the set of in-flight closes is not a
+  // snapshot taken once. The process keeps talking while a dispatch waits, so a
+  // stray `result` can open and close a whole runtime window in that gap — and
+  // that close has to be waited for too, or the dispatch resumes into it.
+  it('keeps waiting for a close that appears while it is already waiting', async () => {
+    const h = harness();
+    await h.dispatch([{ content: 'the real one', messageId: 'm1' }]);
+    h.live().holdControls = true;
+
+    // Window A's close starts and parks on its accounting.
+    h.live().emit(resultMessage('m1'));
+    await vi.waitFor(() => expect(h.live().parkedControls).toBe(2));
+
+    const dispatching = h.windows.dispatch([{ content: 'next', messageId: 'm2' }]);
+
+    // Mid-wait, the process answers something nobody sent: a second close, and
+    // one this dispatch could not have known about when it started waiting.
+    h.live().emit(resultMessage('m-somebody-elses'));
+    await vi.waitFor(() => expect(h.opened).toHaveLength(2));
+    await vi.waitFor(() => expect(h.live().parkedControls).toBe(4));
+
+    // Let ONLY window A's close finish. The pump is warm again, so a dispatch
+    // that had waited for just that one would sail on from here.
+    h.live().releaseControls(2);
+    await vi.waitFor(() => expect(h.closedWindows).toHaveLength(1));
+    expect(h.pump.state).toBe('warm');
+    await expect(settledOrPending(dispatching)).resolves.toBe('pending');
+
+    // Only once the late close is done too may the turn begin.
+    h.live().releaseControls();
+    await expect(dispatching).resolves.toMatchObject({ ids: ['m2'] });
+
+    h.live().emit(resultMessage('m2'));
+    await settled(h, 3);
+    const types = h.rawStream().map((e) => e.type);
+    expect(types.filter((t) => t === 'turn_end')).toHaveLength(3);
+  });
+
+  // A close that throws is contained where it happens. Letting it reject would
+  // leave a poisoned promise among the in-flight closes, and the NEXT dispatch —
+  // which waits on all of them — would fail with an error belonging to a turn
+  // that was not even its own.
+  it('contains a throwing close instead of failing the next dispatch with it', async () => {
+    const h = harness({
+      onWindowClose: () => {
+        throw new Error('a window observer exploded');
+      },
+    });
+    await h.dispatch([{ content: 'the real one', messageId: 'm1' }]);
+    h.live().holdControls = true;
+
+    h.live().emit(resultMessage('m1'));
+    await vi.waitFor(() => expect(h.live().parkedControls).toBe(2));
+
+    // The dispatch starts waiting while that doomed close is still in flight.
+    const dispatching = h.windows.dispatch([{ content: 'next', messageId: 'm2' }]);
+    setTimeout(() => h.live().releaseControls(), 0);
+
+    await expect(dispatching).resolves.toMatchObject({ ids: ['m2'] });
+    // The throw did not rob the window of its close: the pump's turn ended, and
+    // the observer really was called.
+    expect(h.closedWindows).toHaveLength(1);
+    expect(h.pump.state).toBe('running');
   });
 });

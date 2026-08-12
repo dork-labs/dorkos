@@ -264,8 +264,12 @@ function crashResult(crash: PumpCrash): SDKMessage {
 export class SessionTurnWindows {
   private readonly opts: SessionTurnWindowsOptions;
   private current: WindowRecord | undefined;
-  /** The close in flight: its accounting fetch outlives the `result` that caused it. */
-  private closing: Promise<void> | undefined;
+  /**
+   * Every close in flight — their accounting fetches outlive the `result`s that
+   * caused them, and there can be more than one at a time (see {@link finish}).
+   * A close removes itself once it has fully settled.
+   */
+  private readonly closingWindows = new Set<Promise<void>>();
   /** Messages that arrived with no window open, waiting for the next one. */
   private readonly held: SDKMessage[] = [];
 
@@ -321,10 +325,17 @@ export class SessionTurnWindows {
         `session ${this.opts.sessionId} was dispatched an empty batch; there is no turn to open`
       );
     }
-    // The previous window is not over until its accounting has been fetched and
-    // its `result` released; dispatching into that gap would attribute the tail
-    // of one turn to the next.
-    await this.closing;
+    // A window is not over until its accounting has been fetched, its `result`
+    // released, and the pump's turn ended; dispatching into that gap would
+    // attribute the tail of one turn to the next, or be refused by a pump still
+    // RUNNING the turn nobody told it had finished.
+    //
+    // EVERY close in flight, and looped rather than awaited once: a stray
+    // `result` can open and close a runtime window while we wait here, and that
+    // close has to be waited for too.
+    while (this.closingWindows.size > 0) {
+      await Promise.all([...this.closingWindows]);
+    }
     if (this.current !== undefined) {
       throw new IllegalPumpTransitionError('running', 'running');
     }
@@ -425,11 +436,37 @@ export class SessionTurnWindows {
    * Close a window: fetch its accounting from the still-live process, deliver
    * that, then release the `result` and end the stream. The pump's turn ends
    * last, so the next dispatch cannot start before this window is fully settled.
+   *
+   * **Registered in a SET, because more than one close can be in flight.** The
+   * pump's read loop is synchronous, so a stray `result` — which opens AND
+   * closes a runtime window — can land immediately before the `result` that
+   * closes the dispatched window, with neither one's accounting back yet. A
+   * single field cannot hold both: the second assignment would drop the first,
+   * and whichever finished first would clear the field the other was still
+   * parked in. `dispatch` would then sail past a close that had not reached
+   * `pump.endTurn()`, and the pump would refuse a perfectly legitimate turn.
+   *
+   * A set rather than a chain so the closes stay CONCURRENT. Chaining would be
+   * simpler, but it would make one window's close wait out another's control
+   * fetch — up to the full accounting timeout — for two windows that have
+   * nothing to do with each other.
    */
   private finish(record: WindowRecord, result: SDKMessage): void {
-    this.closing = this.settle(record, result).finally(() => {
-      this.closing = undefined;
-    });
+    const closing = this.settle(record, result)
+      .catch((err: unknown) => {
+        // A close that throws must not take the others with it: the windows
+        // behind it still have to settle, and an unrelated dispatch must never
+        // inherit somebody else's failure.
+        logger.warn('[SessionTurnWindows] a window failed to settle', {
+          sessionId: this.opts.sessionId,
+          ids: record.ids,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      })
+      .finally(() => {
+        this.closingWindows.delete(closing);
+      });
+    this.closingWindows.add(closing);
   }
 
   /** The body of {@link finish}, kept awaitable. */
