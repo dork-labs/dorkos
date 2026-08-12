@@ -540,6 +540,52 @@ describe('RoomStore.listEntriesByAuthor', () => {
   });
 });
 
+describe('RoomStore.roomsPostedInBy', () => {
+  it('names every room an author wrote in, and no room they only sat in', () => {
+    const store = new RoomStore(createTestDb());
+    seedRoom(store);
+    seedRoom(store, 'room-2');
+    seedRoom(store, 'room-3');
+    store.appendEntry(entry({ id: 'a', authorId: 'ana' }));
+    store.appendEntry(entry({ id: 'b', authorId: 'ana', roomId: 'room-2' }));
+    // Somebody else talking in room-3 must not put it in Ana's set.
+    store.appendEntry(entry({ id: 'c', authorId: 'bo', roomId: 'room-3' }));
+
+    expect([...store.roomsPostedInBy('ana')].sort()).toEqual([ROOM_ID, 'room-2']);
+    expect([...store.roomsPostedInBy('bo')]).toEqual(['room-3']);
+  });
+
+  it('is empty for somebody who has never written anywhere', () => {
+    // The fresh-install answer, and the one the sidebar's "say hi" suggestion
+    // turns on — so it must be an empty set rather than an absent one.
+    const store = new RoomStore(createTestDb());
+    seedRoom(store);
+    store.appendEntry(entry({ id: 'a', authorId: 'ana' }));
+
+    expect(store.roomsPostedInBy('bo').size).toBe(0);
+  });
+
+  it('reads the author index instead of scanning the whole log', () => {
+    // The point of `idx_room_entries_author_room`: proving "never posted" is
+    // otherwise a full scan of every room's entries, on a query the sidebar
+    // runs on every room list. A returned value cannot show which, so ask
+    // SQLite. Reds if the index is dropped and the migration with it.
+    const db = createTestDb();
+    const store = new RoomStore(db);
+    seedRoom(store);
+    store.appendEntry(entry({ id: 'a', authorId: 'ana' }));
+
+    const sqlite = (db as unknown as { $client: import('better-sqlite3').Database }).$client;
+    const plan = sqlite
+      .prepare('EXPLAIN QUERY PLAN SELECT DISTINCT room_id FROM room_entries WHERE author_id = ?')
+      .all('ana') as { detail: string }[];
+    const detail = plan.map((row) => row.detail).join('; ');
+
+    expect(detail).toContain('idx_room_entries_author_room');
+    expect(detail).not.toContain('SCAN room_entries');
+  });
+});
+
 describe('RoomStore never trims the log', () => {
   // Deliberately heavy: proving the absence of a trim means writing past the cap
   // through the real append path, which is 5000+ IMMEDIATE transactions. The

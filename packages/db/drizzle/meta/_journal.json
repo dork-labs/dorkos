@@ -463,6 +463,13 @@
       "when": 1786532098873,
       "tag": "0065_same_clea",
       "breakpoints": true
+    },
+    {
+      "idx": 66,
+      "version": "6",
+      "when": 1786541868382,
+      "tag": "0066_lyrical_major_mapleleaf",
+      "breakpoints": true
     }
   ]
 }

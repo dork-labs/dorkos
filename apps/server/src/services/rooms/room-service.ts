@@ -1284,6 +1284,11 @@ export class RoomService {
    * memberships, one for the person's cursors — so a sidebar holding fifty rooms
    * still costs two.
    *
+   * `viewerHasPosted` says whether this viewer has ever written in the room
+   * themselves — one query for the whole list ({@link RoomStore.roomsPostedInBy}),
+   * and the fact that tells a room somebody has merely joined from one they have
+   * taken part in.
+   *
    * `participants` is carried for direct messages and is `null` for everything
    * else, per {@link RoomSummary}. A DM's mark is whoever it is with, so the
    * sidebar cannot draw one without the roster; resolving it here is two
@@ -1307,12 +1312,18 @@ export class RoomService {
     const participants = this.roster.authorsIn(
       visible.filter((room) => room.kind === 'dm').map((room) => room.id)
     );
+    // One query for the whole list, asked once here rather than per room — see
+    // `RoomStore.roomsPostedInBy`. A room absent from the set is one this viewer
+    // has never written in, which is a real `false` and not a missing answer:
+    // the log is right here and it has been read.
+    const postedIn = this.store.roomsPostedInBy(viewerAuthorId);
     return visible.map((room) => {
       const cursor = cursors.get(room.id);
       return {
         ...room,
         unreadCount: cursor === undefined ? null : this.store.countUnread(room.id, cursor),
         participants: participants.get(room.id) ?? null,
+        viewerHasPosted: postedIn.has(room.id),
         // Always a number, `0` included. A dot that only appears once the next
         // republish tick lands would leave a freshly loaded cockpit blind for up
         // to ten seconds about work already running — and an ABSENT count would

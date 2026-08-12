@@ -311,6 +311,7 @@ export function useSidebarState(): SidebarState {
     agents,
     agentActivity,
     sessionCount: sessions.length,
+    rooms,
     rosterResolved:
       meshQuery.isSuccess &&
       recentQuery.isSuccess &&

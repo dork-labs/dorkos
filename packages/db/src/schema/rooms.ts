@@ -510,6 +510,30 @@ export const roomEntries = sqliteTable(
     index('idx_room_entries_thread_root')
       .on(table.roomId, table.threadRootEntryId, table.seq)
       .where(sql`"thread_root_entry_id" IS NOT NULL`),
+    // "Which rooms has this author written in?" — `RoomStore.roomsPostedInBy`,
+    // one query for a whole room list (`RoomSummary.viewerHasPosted`).
+    //
+    // **It leads with `author_id` because the question does.** Every other index
+    // here leads with `room_id`, and none of them can answer this: the primary
+    // key `(room_id, seq)` would have to scan the ENTIRE log of every room to
+    // find one author's rows, and the answer that costs the most to reach is
+    // exactly the one the sidebar asks on a fresh install — "no, never" is only
+    // provable by looking at everything. With this index the scan is bounded by
+    // what that author wrote, which for the operator of a busy install is a
+    // small fraction of a channel agents fill.
+    //
+    // `room_id` is the second column so the index COVERS the query: the rows are
+    // already grouped by author and ordered by room inside that group, so
+    // `SELECT DISTINCT room_id` reads the index alone and never touches a row's
+    // body. Not partial — there is no predicate to make it one, since every
+    // author kind can be the subject of the question.
+    //
+    // **The write side is the cost, and it was accepted rather than overlooked.**
+    // This is a fifth index on `room_entries`, so every message insert — the
+    // hot path, inside the `seq`-allocating transaction — pays one more b-tree
+    // write. Taken because the read it serves runs on every room-list request,
+    // where the alternative is a full scan of the largest table in the schema.
+    index('idx_room_entries_author_room').on(table.authorId, table.roomId),
   ]
 );
 

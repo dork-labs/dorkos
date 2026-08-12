@@ -464,6 +464,42 @@ export class RoomStore {
   }
 
   /**
+   * Every room this author has written in — `RoomSummary.viewerHasPosted` for a
+   * whole list, in one query.
+   *
+   * **Derived from the log, never stored.** There is no "has posted" column to
+   * keep in step with the entries table, which is the same trade
+   * {@link RoomStore.listThreadsForMember} makes: a fact that is a `SELECT` away
+   * cannot drift from the rows it describes, and the write path stays a plain
+   * append.
+   *
+   * **One query for the list, not one per room.** The obvious per-room spelling
+   * is an `EXISTS` against `(room_id, seq)`, and it is the wrong shape twice
+   * over: it is N queries for an N-room sidebar, and each one proves "never"
+   * only by walking that room's entire log. This reads
+   * `idx_room_entries_author_room` instead, whose whole reason to exist is this
+   * question.
+   *
+   * **Every entry under a person's author id is something they wrote.** No
+   * `kind` filter, because there is nothing to filter: a `notice` is authored by
+   * the system author (`RoomService.postNotice`) and so is a milestone the room
+   * mints for somebody, so an entry can only carry this author id if this author
+   * posted it.
+   *
+   * @param authorId - Whose writing to look for.
+   * @returns The ids of the rooms they have posted in. Empty for somebody who
+   *   has never written anywhere, which is the answer a fresh install gives.
+   */
+  roomsPostedInBy(authorId: string): Set<string> {
+    const rows = this.db
+      .selectDistinct({ roomId: roomEntries.roomId })
+      .from(roomEntries)
+      .where(eq(roomEntries.authorId, authorId))
+      .all();
+    return new Set(rows.map((row) => row.roomId));
+  }
+
+  /**
    * Change a membership's response mode.
    *
    * @param roomId - The room.

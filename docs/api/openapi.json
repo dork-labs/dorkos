@@ -6079,6 +6079,10 @@
                 "type": "integer",
                 "minimum": 0,
                 "description": "How many agents are working in this room right now — `0` when nobody is. The server always sends it; it is optional only so a caller that predates it still parses. It is a live read of the dispatcher's claim map at the moment of the request, not stored state, so it is the same fact the `room_presence` stream carries and exists purely so a freshly loaded sidebar draws its dots without waiting for the next republish tick."
+              },
+              "viewerHasPosted": {
+                "type": "boolean",
+                "description": "Whether the viewer has ever written in this room themselves. Derived from the log on every read, so it cannot drift; membership does not imply it and neither does reading. The server always sends it, and it is optional for the same reason `working` is — a caller that predates it still parses. **Absent means \"this source cannot say\", never `false`**: a client reads it to decide whether to nudge somebody to say hello, and a missing field read as \"never posted\" would nudge an operator who has been talking in #team for months."
               }
             },
             "required": [
