@@ -556,7 +556,7 @@ export class SessionTurnWindows {
    */
   private discardHeld(): void {
     if (this.held.length === 0) return;
-    logger.warn('[SessionTurnWindows] dropped a dead process’s unattributed messages', {
+    logger.warn('[SessionTurnWindows] dropped a dead process's unattributed messages', {
       sessionId: this.opts.sessionId,
       dropped: this.held.length,
     });
