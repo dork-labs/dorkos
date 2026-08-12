@@ -596,12 +596,29 @@ test.describe('Sidebar model showcase @smoke', () => {
       // anything else appearing here is a hole in the gate that somebody has to
       // decide about rather than inherit.
       const undecided = results.incomplete.flatMap((rule) => rule.nodes);
+      // The one-digit count badges axe declines to judge, enumerated. Both trip
+      // the same heuristic for the same reason, and each is a DECISION recorded
+      // here rather than an exemption inherited: the panel's directed-unread
+      // mark since P1, and P4's mobile Home badge.
+      //
+      // **The mobile badge was measured before it was pinned, and the measuring
+      // changed it.** As drawn first — white on amber-500 — it was 2.15:1, a
+      // serious failure that would have hidden inside this list precisely
+      // because axe cannot judge two-character text. It is amber-950 on
+      // amber-500 now: 6.97:1, in both themes, since the pill carries its own
+      // background. Anything NEW appearing here still has to be measured the
+      // same way before it earns a line.
+      const COUNT_BADGES = [
+        '[data-slot="sidebar-model-directed-badge"]',
+        '[data-testid^="mobile-tab-badge-"]',
+      ];
       const badges = await page.evaluate(
-        (targets) =>
-          targets.filter((target) =>
-            document.querySelector(target)?.closest('[data-slot="sidebar-model-directed-badge"]')
-          ).length,
-        undecided.map((node) => node.target.join(' '))
+        ({ targets, selectors }) =>
+          targets.filter((target) => {
+            const node = document.querySelector(target);
+            return node !== null && selectors.some((selector) => node.closest(selector) !== null);
+          }).length,
+        { targets: undecided.map((node) => node.target.join(' ')), selectors: COUNT_BADGES }
       );
       expect(
         undecided.length - badges,
@@ -609,6 +626,66 @@ test.describe('Sidebar model showcase @smoke', () => {
           .map((node) => node.target.join(' '))
           .join(', ')}`
       ).toBe(0);
+
+      // **What the pin above costs, paid back.** Forgiving a badge from the
+      // undecided list leaves its colours guarded by nothing — axe declines to
+      // judge two-character text, so "not a violation" says nothing about it.
+      // That is not hypothetical: the mobile badge shipped white-on-amber at
+      // 2.15:1 and this list is where it hid.
+      //
+      // **Scoped to the badge this task pinned**, not to both families. The
+      // panel's own directed badge is translucent (`bg-brand/15`), so judging it
+      // means compositing it over whatever is behind it — a different and
+      // larger job, and it is no less guarded than it was before P4 touched
+      // this pin.
+      //
+      // **Colours are read as pixels, never parsed as text.** Tailwind v4 emits
+      // `oklch()`, and a regex pulling the first three numbers out of
+      // `oklch(0.769 0.188 70.08)` reads them as RGB — which scored
+      // white-on-amber at 19.26:1 and made the first version of this check
+      // incapable of failing. A 1×1 canvas makes the browser do the conversion.
+      const badgeContrast = await page.evaluate((selector) => {
+        const canvas = document.createElement('canvas');
+        canvas.width = canvas.height = 1;
+        const ctx = canvas.getContext('2d')!;
+        const pixel = (value: string): [number, number, number, number] => {
+          ctx.clearRect(0, 0, 1, 1);
+          ctx.fillStyle = value;
+          ctx.fillRect(0, 0, 1, 1);
+          const [r, g, b, a] = ctx.getImageData(0, 0, 1, 1).data;
+          return [r!, g!, b!, a! / 255];
+        };
+        const channel = (v: number) => {
+          const s = v / 255;
+          return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+        };
+        const luminance = ([r, g, b]: number[]) =>
+          0.2126 * channel(r!) + 0.7152 * channel(g!) + 0.0722 * channel(b!);
+        return [...document.querySelectorAll(selector)].map((node) => {
+          const style = getComputedStyle(node);
+          const fg = pixel(style.color);
+          const bg = pixel(style.backgroundColor);
+          const [a, b] = [luminance(fg), luminance(bg)];
+          return {
+            text: node.textContent ?? '',
+            opaque: bg[3] === 1 && fg[3] === 1,
+            ratio: Math.round(((Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05)) * 100) / 100,
+          };
+        });
+      }, '[data-testid^="mobile-tab-badge-"]');
+
+      // Observable half first: there ARE badges on this page, so the bars below
+      // cannot be cleared by a page that happens to draw none.
+      expect(badgeContrast.length, 'no mobile count badges on the page to check').toBeGreaterThan(
+        0
+      );
+      // …and each carries its own opaque background, which is what makes the
+      // ratio above a complete answer rather than one missing a backdrop.
+      expect(badgeContrast.filter((badge) => !badge.opaque)).toEqual([]);
+      expect(
+        badgeContrast.filter((badge) => badge.ratio < 4.5),
+        `a count badge axe could not judge is below 4.5:1 in the ${theme} theme`
+      ).toEqual([]);
     });
   }
 });

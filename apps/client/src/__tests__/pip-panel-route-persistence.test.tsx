@@ -30,9 +30,10 @@ vi.mock('@tanstack/react-router', () => ({
       return { location: { pathname: mockPathname, href: mockPathname } };
     },
     history: { subscribe: () => () => {} },
-    // `SidebarMobileNavigationClose` listens for a committed destination so the
-    // mobile sheet gets out of its way (DOR-610). Nothing here navigates, so
-    // the listener is registered and never fired.
+    // The phone cockpit's panels listen for a committed destination so they
+    // get out of its way (P4, formerly `SidebarMobileNavigationClose`/DOR-610).
+    // This suite runs at desktop width and navigates nothing, so the listener
+    // is registered and never fired.
     subscribe: () => () => {},
   }),
   Outlet: () => <div data-testid="outlet">outlet</div>,
@@ -45,12 +46,28 @@ vi.mock('@tanstack/react-router', () => ({
 
 // ── Mock child components with identifiable test markers ──
 
-vi.mock('@/layers/features/dashboard-sidebar', () => ({
-  DashboardSidebar: () => <div data-testid="dashboard-sidebar">Dashboard</div>,
-  // Persistent chrome: the shell mounts it outside the `sidebar.body` swap.
-  SidebarHeaderBlock: () => <div data-testid="sidebar-header-block">Header block</div>,
-  SidebarFooterStrip: () => <div data-testid="sidebar-footer-strip">Footer strip</div>,
-}));
+vi.mock('@/layers/features/dashboard-sidebar', async () => {
+  // The zone enumeration is the REAL one: the mobile tabs widget reads it at
+  // module load to derive which zones each destination draws, and the shell
+  // imports that widget whatever width this suite runs at.
+  const { SIDEBAR_ZONE_IDS } =
+    await import('@/layers/features/dashboard-sidebar/model/build-sidebar-model');
+  return {
+    SIDEBAR_ZONE_IDS,
+    DashboardSidebar: () => <div data-testid="dashboard-sidebar">Dashboard</div>,
+    // Persistent chrome: the shell mounts it outside the `sidebar.body` swap.
+    SidebarHeaderBlock: () => <div data-testid="sidebar-header-block">Header block</div>,
+    SidebarFooterStrip: () => <div data-testid="sidebar-footer-strip">Footer strip</div>,
+    // The phone cockpit's pieces. This suite runs at desktop width, so the
+    // layout is never mounted — but the module graph is loaded either way.
+    SidebarChrome: ({ children }: React.PropsWithChildren) => <>{children}</>,
+    SidebarZones: () => null,
+    useSidebarState: () => ({ activeTarget: null }),
+    useSidebarModel: () => ({ zones: [] }),
+    useAskDorkBot: () => ({ ask: vi.fn(), ready: true }),
+    useLegacyPinMigration: () => {},
+  };
+});
 
 vi.mock('@/layers/features/top-nav', () => ({
   SessionHeader: () => <div data-testid="session-header">Session</div>,

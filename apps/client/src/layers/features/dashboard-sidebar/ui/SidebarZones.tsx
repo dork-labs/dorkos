@@ -19,6 +19,7 @@ import {
   librarySectionId,
   ZONE_LABEL,
   type SidebarModel,
+  type SidebarZoneId,
   type SidebarZoneModel,
 } from '../model/build-sidebar-model';
 import { useAllClearBeat } from '../model/use-all-clear-beat';
@@ -45,6 +46,16 @@ const ALL_CLEAR_ZONE: SidebarZoneModel = {
 export interface SidebarZonesProps {
   /** The model to draw. */
   model: SidebarModel;
+  /**
+   * Which zones to draw. Omitted = all of them, which is the desktop panel.
+   *
+   * Mobile splits one model across two tabs — Now and Today into Home, Library
+   * into its own tab (P4) — and this is how, so both tabs are the same renderer
+   * reading the same build rather than a second copy of it. The two beats that
+   * belong to a particular zone travel with it: the all-clear plays only where
+   * Now would be, and the day-one invitation only where Library would be.
+   */
+  zoneIds?: readonly SidebarZoneId[];
 }
 
 /**
@@ -57,9 +68,15 @@ export interface SidebarZonesProps {
  *
  * @param props - The model.
  */
-export function SidebarZones({ model }: SidebarZonesProps) {
+export function SidebarZones({ model, zoneIds }: SidebarZonesProps) {
   const { update } = useUpdateSidebarPrefs();
   const library = model.zones.find((zone) => zone.id === 'library');
+  // "Is this zone mine to draw?" asked once. `undefined` means the whole
+  // panel — the desktop case — so nothing about the existing call site changes.
+  const draws = useCallback(
+    (id: SidebarZoneId) => zoneIds === undefined || zoneIds.includes(id),
+    [zoneIds]
+  );
 
   const onToggleAll = useCallback(() => {
     const sections = library?.sections ?? [];
@@ -91,24 +108,26 @@ export function SidebarZones({ model }: SidebarZonesProps) {
 
   return (
     <div className="flex flex-col gap-1">
-      {beating && !nowSlotTaken && (
+      {beating && !nowSlotTaken && draws('now') && (
         <SidebarZone zone={ALL_CLEAR_ZONE} onToggleAll={onToggleAll} allClear />
       )}
-      {model.zones.map((zone) =>
-        // Today is the one zone whose rows react to where the operator's
-        // pointer and focus are (BC-17, BC-36), so it gets a wrapper of its own.
-        // Every other zone is the plain renderer.
-        zone.id === 'today' ? (
-          <TodayZone key={zone.id} zone={zone} onToggleAll={onToggleAll} />
-        ) : (
-          <SidebarZone key={zone.id} zone={zone} onToggleAll={onToggleAll} />
-        )
-      )}
+      {model.zones
+        .filter((zone) => draws(zone.id))
+        .map((zone) =>
+          // Today is the one zone whose rows react to where the operator's
+          // pointer and focus are (BC-17, BC-36), so it gets a wrapper of its own.
+          // Every other zone is the plain renderer.
+          zone.id === 'today' ? (
+            <TodayZone key={zone.id} zone={zone} onToggleAll={onToggleAll} />
+          ) : (
+            <SidebarZone key={zone.id} zone={zone} onToggleAll={onToggleAll} />
+          )
+        )}
       {/* "Is there anything at all yet?" — a presence check on the model, not a
           membership rule. Library is absent only when there is no agent, no room
           and no pin to put in it, which is the one moment the invitation belongs
           on screen. P2.2's Getting started zone takes this over. */}
-      {library === undefined && (
+      {library === undefined && draws('library') && (
         <AgentOnboardingCard onAddAgent={() => useAgentCreationStore.getState().open()} />
       )}
     </div>

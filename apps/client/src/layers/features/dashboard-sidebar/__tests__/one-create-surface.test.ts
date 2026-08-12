@@ -49,6 +49,11 @@ const FEATURE_DIR = join(__dirname, '..');
 const SIDEBAR_DIRS: [label: string, dir: string][] = [
   ['dashboard-sidebar', FEATURE_DIR],
   ['session-list', join(__dirname, '..', '..', 'session-list')],
+  // The third one, since P4: on a phone the panel is four destinations along
+  // the bottom, and it draws the same zones. The banner above says "every
+  // sidebar implementation", so a new one that grew its own create surface or
+  // its own version line has to be inside the scan for that to be true.
+  ['mobile-tabs', join(__dirname, '..', '..', '..', 'widgets', 'mobile-tabs')],
 ];
 
 /** Every source file in the feature, tests excluded — relative to the feature root. */
@@ -311,6 +316,9 @@ describe('BC-44 — the version number leaves the chrome', () => {
     expect(scanned).toContain('dashboard-sidebar/ui/header-block-menu.ts');
     expect(scanned).toContain('dashboard-sidebar/ui/SidebarFooterStrip.tsx');
     expect(scanned).toContain('session-list/ui/EmbedSidebar.tsx');
+    // Pins the third SIDEBAR_DIRS entry: deleting it must red this line, not
+    // silently shrink the scan (the review proved the entry was unobservable).
+    expect(scanned).toContain('mobile-tabs/ui/MobileTabBar.tsx');
   });
 
   it('puts a version number only where it is still allowed to', () => {

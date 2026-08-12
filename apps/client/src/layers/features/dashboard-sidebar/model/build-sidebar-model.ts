@@ -52,7 +52,7 @@ import { anchorKey } from './rules/targets';
 import type { SidebarState } from './sidebar-state';
 
 /**
- * The four zones, and the only ids one can have.
+ * The four zones, in the fixed order they render (BC-3).
  *
  * `getting-started` is not a fifth zone: it is the day-one life stage of Heads
  * up and shares its slot, which is why they are never both present (BC-4).
@@ -64,8 +64,16 @@ import type { SidebarState } from './sidebar-state';
  * *know about*. The id stayed put deliberately: renaming it would cost a
  * persisted-config migration and buy the user nothing. {@link ZONE_LABEL} is
  * the single place the two are joined.
+ *
+ * **The tuple is the enumeration.** Anything that needs to talk about "every
+ * zone" — the mobile tabs deciding which zones are Home's and which are
+ * Library's, {@link ZONE_LABEL} — reads it rather than repeating four strings,
+ * so a fifth zone is one edit here instead of a hunt.
  */
-export type SidebarZoneId = 'getting-started' | 'now' | 'today' | 'library';
+export const SIDEBAR_ZONE_IDS = ['getting-started', 'now', 'today', 'library'] as const;
+
+/** One zone's id — the four above, and only those. */
+export type SidebarZoneId = (typeof SIDEBAR_ZONE_IDS)[number];
 
 /**
  * Library's sections, in the order they render.
@@ -341,6 +349,20 @@ export interface SidebarZoneModel {
   label: string;
   /** Its sections, in render order. */
   sections: SidebarSectionModel[];
+  /**
+   * How many things in this zone NEED the operator (BC-11). Heads up only.
+   *
+   * **Not a row count, and the difference is the whole point.** Heads up also
+   * holds the "N working" rollup, which is a report on what is busy rather
+   * than a thing anyone has to answer; counting rows would badge a quiet
+   * morning with a 1. This is the number
+   * {@link SidebarZoneModel.liveRegionText} is built from, so the sentence a
+   * screen reader hears and the badge a phone draws are the same fact rather
+   * than two recomputations of it (P4 AC-2).
+   *
+   * Absent on every zone that is not Heads up — omission, never a zero.
+   */
+  needsYouCount?: number;
   /** Visually-hidden text for the zone's polite live region. Heads up only (BC-11). */
   liveRegionText?: string;
   /** Provenance. */
@@ -453,8 +475,11 @@ export function buildSidebarModel(state: SidebarState): SidebarModel {
     const zone = bodyZone('now', nowRows, 'zone:now');
     if (zone) {
       // Counts what NEEDS the operator, never what is merely busy (BC-11): a
-      // rollup appearing must not announce "1 agent needs you".
-      zone.liveRegionText = liveRegionText(attentionRows.length);
+      // rollup appearing must not announce "1 agent needs you". Published as a
+      // number as well as a sentence, so the mobile Home badge and this live
+      // region are one fact rather than two (P4 AC-2).
+      zone.needsYouCount = attentionRows.length;
+      zone.liveRegionText = liveRegionText(zone.needsYouCount);
       zones.push(zone);
     }
   } else {

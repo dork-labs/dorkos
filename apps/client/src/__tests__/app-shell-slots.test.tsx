@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, beforeAll, afterEach } from 'vitest';
-import { render, screen, cleanup } from '@testing-library/react';
+import { act, render, screen, cleanup, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Transport } from '@dorkos/shared/transport';
 import { createMockTransport } from '@dorkos/test-utils';
@@ -32,9 +33,9 @@ vi.mock('@tanstack/react-router', () => ({
       return { location: { pathname: mockPathname, href: mockPathname } };
     },
     history: { subscribe: () => () => {} },
-    // `SidebarMobileNavigationClose` listens for a committed destination so the
-    // mobile sheet gets out of its way (DOR-610). Nothing here navigates, so
-    // the listener is registered and never fired.
+    // Kept because the router type carries it and other shell hooks may reach
+    // for it; nothing in the shell subscribes any more, since the mobile
+    // auto-close retired with the drawer (P4).
     subscribe: () => () => {},
   }),
   Outlet: () => <div data-testid="outlet">outlet</div>,
@@ -49,19 +50,39 @@ vi.mock('@tanstack/react-router', () => ({
 // takeover to be correct in both states, and "without" is the ordinary quiet
 // morning where Heads up and Today are both absent (BC-1).
 let mockZonesPresent = true;
-vi.mock('@/layers/features/dashboard-sidebar', () => ({
-  DashboardSidebar: () => (
-    <nav aria-label="Sidebar" data-testid="dashboard-sidebar">
-      {mockZonesPresent && <section data-sidebar-zone="library">Library</section>}
-    </nav>
-  ),
-  // Both are persistent chrome: AppShell mounts them OUTSIDE the
-  // `sidebar.body` swap region, so a contributed takeover replaces the body and
-  // leaves the panel's identity and its navigation standing (spec R2, BC-43,
-  // BC-47).
-  SidebarHeaderBlock: () => <div data-testid="sidebar-header-block">Header block</div>,
-  SidebarFooterStrip: () => <div data-testid="sidebar-footer-strip">Footer strip</div>,
-}));
+vi.mock('@/layers/features/dashboard-sidebar', async () => {
+  // The zone enumeration is the REAL one, imported from the module that owns
+  // it: the mobile tabs derive Home's and Library's zone sets from that tuple,
+  // and a hand-written copy here would let the two drift apart silently.
+  const { SIDEBAR_ZONE_IDS } =
+    await import('@/layers/features/dashboard-sidebar/model/build-sidebar-model');
+  return {
+    SIDEBAR_ZONE_IDS,
+    DashboardSidebar: () => (
+      <nav aria-label="Sidebar" data-testid="dashboard-sidebar">
+        {mockZonesPresent && <section data-sidebar-zone="library">Library</section>}
+      </nav>
+    ),
+    // Both are persistent chrome: AppShell mounts them OUTSIDE the
+    // `sidebar.body` swap region, so a contributed takeover replaces the body and
+    // leaves the panel's identity and its navigation standing (spec R2, BC-43,
+    // BC-47).
+    SidebarHeaderBlock: () => <div data-testid="sidebar-header-block">Header block</div>,
+    SidebarFooterStrip: () => <div data-testid="sidebar-footer-strip">Footer strip</div>,
+    // What the mobile tabs compose. Stubbed at the feature seam so this suite
+    // stays about the SHELL — which cockpit it mounts and where a takeover
+    // lands — while `MobileTabsLayout.test.tsx` drives the real model through
+    // the real zones.
+    SidebarChrome: ({ children }: React.PropsWithChildren) => <>{children}</>,
+    SidebarZones: ({ zoneIds }: { zoneIds?: readonly string[] }) => (
+      <div data-testid={`sidebar-zones-${zoneIds?.join('+') ?? 'all'}`} />
+    ),
+    useSidebarState: () => ({ activeTarget: null }),
+    useSidebarModel: () => ({ zones: [] }),
+    useAskDorkBot: () => ({ ask: vi.fn(), ready: true }),
+    useLegacyPinMigration: () => {},
+  };
+});
 
 vi.mock('@/layers/features/top-nav', () => ({
   SessionHeader: () => <div data-testid="session-header">Session</div>,
@@ -109,6 +130,10 @@ vi.mock('@/layers/widgets/app-banner', async (importOriginal) => {
 // The marker also reads the global stream's connection state, and this suite
 // mounts no EventStreamProvider. Stub that one hook; the rest of the barrel
 // (TransportProvider, the already-stubbed favicon/title submodules) stays real.
+// Which cockpit the shell mounts is one question — `useIsMobile()` — asked at
+// one call site in AppShell, so this flag is the whole of what the mobile cases
+// below change.
+let mockIsMobile = false;
 vi.mock('@/layers/shared/model', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/layers/shared/model')>();
   return {
@@ -118,6 +143,7 @@ vi.mock('@/layers/shared/model', async (importOriginal) => {
       connectionState: 'connected' as const,
       failedAttempts: 0,
     }),
+    useIsMobile: () => mockIsMobile,
   };
 });
 
@@ -328,6 +354,7 @@ import { AppShell } from '../AppShell';
 import { useExtensionRegistry } from '@/layers/shared/model/extension-registry';
 import type { SidebarBodyContribution } from '@/layers/shared/model/extension-registry';
 import { enterDesktopShell, leaveDesktopShell } from '@/test-helpers/desktop-shell';
+import { useMobilePanelStore } from '@/layers/widgets/mobile-tabs';
 
 // ── Test setup ──
 
@@ -375,6 +402,151 @@ describe('AppShell slot integration', () => {
     leaveDesktopShell();
     mockSearch = {};
     mockOpenRoom = null;
+    mockIsMobile = false;
+    useMobilePanelStore.setState({ panelUp: false });
+  });
+
+  describe('the phone cockpit (P4)', () => {
+    beforeEach(() => {
+      mockIsMobile = true;
+      mockPathname = '/';
+    });
+
+    // ── P4 AC-1 ──
+    it('mounts no sidebar panel and no sheet — there is no drawer to open', async () => {
+      renderAppShell();
+      expect(document.querySelector('[data-slot="sidebar"]')).toBeNull();
+      expect(screen.queryByTestId('dashboard-sidebar')).not.toBeInTheDocument();
+
+      // **Asked the only way that can answer.** A Radix Sheet renders NOTHING
+      // while it is closed, so "there is no `[data-mobile="true"]` in the DOM"
+      // is equally true of a mounted-but-shut drawer — it passed with `<Sidebar>`
+      // rendered unconditionally, which is a check that cannot fail. So the
+      // drawer is asked to OPEN first: `SidebarProvider` still owns ⌘B, and on a
+      // phone that gesture is exactly `setOpenMobile(true)`. Nothing opens
+      // because there is nothing mounted to open.
+      await userEvent.keyboard('{Meta>}b{/Meta}');
+      expect(document.querySelector('[data-mobile="true"]')).toBeNull();
+      expect(screen.queryByTestId('dashboard-sidebar')).not.toBeInTheDocument();
+      expect(document.querySelector('[data-slot="sidebar"]')).toBeNull();
+    });
+
+    it('drops the toggle with the panel — no hamburger that opens nothing', () => {
+      renderAppShell();
+      expect(screen.queryByRole('button', { name: 'Toggle Sidebar' })).not.toBeInTheDocument();
+    });
+
+    it('mounts the four destinations along the bottom instead', () => {
+      renderAppShell();
+      expect(screen.getByTestId('mobile-tab-bar')).toBeInTheDocument();
+      expect(screen.getByTestId('mobile-tab-home')).toBeInTheDocument();
+    });
+
+    it('keeps the routed content alongside the tabs, never inside them', () => {
+      renderAppShell();
+      const outlet = screen.getByTestId('outlet');
+      expect(document.querySelector('[data-slot="sidebar-inset"]')).toContainElement(outlet);
+      expect(screen.getByTestId('mobile-tab-panels')).not.toContainElement(outlet);
+    });
+
+    // ── review B2 ──
+    describe('the page a panel covers is unreachable, not merely hidden', () => {
+      // Paired, because either half alone is satisfiable by an accident. "The
+      // page is inert" passes on a shell that inerts it always; "the page is
+      // reachable" passes on one that never inerts it. Only the transition
+      // between the two states says the shell is reading the right bit.
+      const inset = () => document.querySelector('[data-slot="sidebar-inset"]');
+
+      it('is reachable while the panels are down — the cold-load state', () => {
+        renderAppShell();
+        expect(useMobilePanelStore.getState().panelUp).toBe(false);
+        expect(inset()).not.toHaveAttribute('inert');
+      });
+
+      it('goes inert the moment a destination is opened, and comes back', () => {
+        renderAppShell();
+        act(() => useMobilePanelStore.getState().raise());
+        // `inert` removes the subtree from the tab order AND the accessibility
+        // tree — both halves of the modality the Radix Sheet used to provide.
+        expect(inset()).toHaveAttribute('inert');
+        expect(inset()).toContainElement(screen.getByTestId('outlet'));
+
+        act(() => useMobilePanelStore.getState().lower());
+        expect(inset()).not.toHaveAttribute('inert');
+      });
+
+      it('never inerts the page at desktop width, whatever the store says', () => {
+        // The store outlives the layout, so a stale raised bit must not reach
+        // through to a width that has no panels at all.
+        mockIsMobile = false;
+        act(() => useMobilePanelStore.getState().raise());
+        renderAppShell();
+        expect(inset()).not.toHaveAttribute('inert');
+      });
+    });
+
+    it('puts Now and Today in Home and Library in its own destination', () => {
+      renderAppShell();
+      // The zone sets the layout asked for, read off the stub that records them.
+      expect(
+        within(screen.getByTestId('mobile-tab-panel-home')).getByTestId(
+          'sidebar-zones-getting-started+now+today'
+        )
+      ).toBeInTheDocument();
+      expect(
+        within(screen.getByTestId('mobile-tab-panel-library')).getByTestId('sidebar-zones-library')
+      ).toBeInTheDocument();
+    });
+
+    it('carries the four places DorkOS goes into You, so nothing is stranded', () => {
+      renderAppShell();
+      expect(
+        within(screen.getByTestId('mobile-tab-panel-you')).getByTestId('sidebar-footer-strip')
+      ).toBeInTheDocument();
+    });
+
+    describe('a sidebar.body takeover', () => {
+      let unregister: () => void;
+      beforeEach(() => {
+        unregister = useExtensionRegistry.getState().register('sidebar.body', {
+          id: 'marketplace-facets',
+          component: () => <div data-testid="marketplace-sidebar-fake">Marketplace facets</div>,
+          visibleWhen: ({ pathname }) => pathname.startsWith('/marketplace'),
+          priority: 10,
+        });
+      });
+      afterEach(() => unregister?.());
+
+      it('lands inside Library and nowhere else on a phone', () => {
+        mockPathname = '/marketplace';
+        renderAppShell();
+        const takeover = screen.getByTestId('marketplace-sidebar-fake');
+        expect(screen.getByTestId('mobile-tab-panel-library')).toContainElement(takeover);
+        expect(screen.getByTestId('mobile-tab-panel-home')).not.toContainElement(takeover);
+        // …and Home keeps its zones: browsing the marketplace is not a reason
+        // to stop being told what needs you.
+        expect(
+          within(screen.getByTestId('mobile-tab-panel-home')).getByTestId(
+            'sidebar-zones-getting-started+now+today'
+          )
+        ).toBeInTheDocument();
+      });
+    });
+  });
+
+  describe('desktop is unaffected (regression guard for the AppShell edit)', () => {
+    it('still mounts the panel, its chrome and its toggle — and no tab bar', () => {
+      mockPathname = '/';
+      renderAppShell();
+      expect(document.querySelector('[data-slot="sidebar"]')).not.toBeNull();
+      expect(screen.getByTestId('dashboard-sidebar')).toBeInTheDocument();
+      expect(screen.getByTestId('sidebar-header-block')).toBeInTheDocument();
+      expect(screen.getByTestId('sidebar-footer-strip')).toBeInTheDocument();
+      // `getAll`: the rail is a second control with the same name, and the
+      // point here is that the toggle exists at all — not how many there are.
+      expect(screen.getAllByRole('button', { name: 'Toggle Sidebar' }).length).toBeGreaterThan(0);
+      expect(screen.queryByTestId('mobile-tab-bar')).not.toBeInTheDocument();
+    });
   });
 
   describe('sidebar slots', () => {
