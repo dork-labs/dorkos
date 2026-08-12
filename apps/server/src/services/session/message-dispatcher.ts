@@ -310,6 +310,47 @@ export function emitQueueUpdate(sessionId: string, outcome?: MessageDeliveryOutc
   projector.ingest(event);
 }
 
+/**
+ * The `turn_input` member as an emitter builds it — the projector stamps the
+ * `seq`. Narrowed member by member for the same reason {@link RawQueueUpdate}
+ * is: a bare `Omit<SessionEvent, 'seq'>` keeps only the union's shared keys.
+ */
+type RawTurnInput = Omit<Extract<SessionEvent, { type: 'turn_input' }>, 'seq'>;
+
+/**
+ * Carry a delivered steer onto a session's durable stream so it renders inline
+ * in the running turn (spec `persistent-session-runtime` §P4, task 4.3).
+ *
+ * A steer JOINS the open turn — {@link deliverSteer} is the one caller, and it
+ * calls this ONLY once the runtime confirmed delivery — so the person's words
+ * reached the model but produced no turn-shaped events of their own: the
+ * transcript would show the agent changing course with nothing to say why. This
+ * mints the carrier for it. Server-authored and ingested straight onto the
+ * projector, exactly like {@link emitQueueUpdate}: it is not a runtime
+ * `StreamEvent`, so it has no `session-event-normalizer` mapping.
+ *
+ * Ingested (not opening or closing a turn) it rides the OPEN turn — the
+ * projector pushes any non-boundary event onto `inProgressTurn` — so it gets a
+ * `seq`, replays gap-free to a client resuming from `Last-Event-ID`, and folds
+ * inline in reading order. Ordering holds because this runs synchronously the
+ * instant delivery returns, before the model's answer to the steer can stream
+ * back, and under the dispatch mutex {@link deliverSteer} holds so no `turn_end`
+ * can straddle it.
+ *
+ * A no-op when no projector is registered for the session (nobody is listening,
+ * and a delivered steer with no live turn is not a state that reaches here).
+ *
+ * @param sessionKey - The session's primary key (the id its projector is under).
+ * @param content - The person's words, pristine — the same text handed the model.
+ * @param messageId - The steer's server-minted correlation id.
+ */
+function emitTurnInput(sessionKey: string, content: string, messageId: string): void {
+  const projector = projectorFor(sessionKey);
+  if (!projector) return;
+  const event: RawTurnInput = { type: 'turn_input', content, disposition: 'steer', messageId };
+  projector.ingest(event);
+}
+
 /** Build the runtime-neutral port `triggerTurn` needs from a resolved runtime. */
 function turnDeps(runtime: AgentRuntime): TriggerTurnDeps {
   return {
@@ -1005,6 +1046,13 @@ export async function deliverSteer(opts: DeliverSteerOpts): Promise<SteerDeliver
         ? { additionalContext: opts.additionalContext }
         : {}),
     });
+    // A delivered steer reached the model but carries no turn-shaped events of
+    // its own — mint the `turn_input` carrier so the person's words render
+    // inline in the open turn and survive a reconnect and a cold hydrate. Only
+    // on delivery: a degraded or refused steer joined no turn, so there is
+    // nothing to show inside one (task 4.3). Under the same mutex as the lock
+    // check, so the ingest cannot straddle a turn ending.
+    if (result.delivered) emitTurnInput(sessionKey, opts.content, opts.messageId);
     return { authorized: true, ...result };
   });
 }

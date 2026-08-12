@@ -617,6 +617,29 @@ export const SessionEventSchema = z
       type: z.literal('turn_end'),
       terminalReason: TerminalReasonSchema.optional(),
     }),
+    // A person's message delivered INTO a turn that is already running — a steer
+    // (spec `persistent-session-runtime` §P4, task 4.3). It joins the open turn
+    // rather than opening one, so it carries no `turn_start`/`turn_end` of its
+    // own and rides the turn's transcript in reading order at the point it
+    // arrived. `turn_start` carries the single message that OPENED the turn and
+    // has no slot for a second, so without this carrier a steer would change the
+    // agent's course with nothing in the transcript to show why.
+    //
+    // Server-authored, exactly like `queue_update`: it is minted by the
+    // dispatcher when a steer is delivered and ingested straight onto the
+    // projector, never produced by a runtime's `StreamEvent` stream — so it has
+    // no `session-event-normalizer` mapping, and the normalizer would be dead
+    // code if it did. `content` is the person's words, pristine; any context
+    // rode out of band on delivery (ADR-0273). `disposition` is a single-member
+    // literal today because steer is the only delivery that renders inline — a
+    // staged message shows as a quiet transcript note, not a turn message.
+    z.object({
+      ...seqShape,
+      type: z.literal('turn_input'),
+      content: z.string(),
+      disposition: z.literal('steer'),
+      messageId: z.string(),
+    }),
     // An agent-issued imperative UI command (the `control_ui` MCP tool →
     // `ui-tools.ts`). Transient and side-effecting, NOT a durable state
     // projection: the server projector folds no status for it (the `default`

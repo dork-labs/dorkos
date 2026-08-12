@@ -162,6 +162,18 @@ export function reconstructHistoryFromEvents(events: SessionEvent[]): HistoryMes
           messages.push({ id: `user-${event.seq}`, role: 'user', content: event.userMessage });
         }
         break;
+      case 'turn_input':
+        // A steer (`turn_input`) joined this turn — the person spoke again mid-
+        // turn (spec `persistent-session-runtime` §P4). For a log-backed runtime
+        // this stream IS the transcript, so the steer survives only if it is
+        // rebuilt here; a file-backed runtime (claude-code) never uses this
+        // loader, and its own transcript already records the steered input. It
+        // emits a user message at the point it arrived — inline between the
+        // trigger and the assistant reply, the closest this fold expresses to
+        // its true position (the fold already concatenates a turn's text, so
+        // exact interleaving with the assistant output is not represented).
+        messages.push({ id: `steer-${event.messageId}`, role: 'user', content: event.content });
+        break;
       case 'text_delta':
         if (turn) turn.text += event.text;
         break;

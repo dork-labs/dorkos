@@ -309,6 +309,11 @@ const TURN_EVENT_TYPES: ReadonlySet<SessionEvent['type']> = new Set([
   // is off in their browser.
   'mcp_signin_required',
   'mcp_signin_resolved',
+  // A steer delivered into the open turn (spec `persistent-session-runtime` §P4).
+  // Rides `inProgressTurn` so it renders inline where it arrived; the projection
+  // (`projectSessionMessages`) splits the turn at it into an inline user bubble.
+  // It never opens or closes a turn — the default arm just pushes it.
+  'turn_input',
 ]);
 
 /** The two event types that make up a sign-in card and its receipt (DOR-1004). */

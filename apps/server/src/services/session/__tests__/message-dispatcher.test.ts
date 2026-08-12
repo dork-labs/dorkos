@@ -554,6 +554,130 @@ describe('deliverSteer — a steer is a write, authorized like a send (task 4.1)
   });
 });
 
+describe('deliverSteer — a delivered steer emits one turn_input into the open turn (task 4.3)', () => {
+  /** Open a turn and hold it, so the projector has a live turn to steer into. */
+  async function openHeldTurn(): Promise<() => void> {
+    const first = gate();
+    runtime.withScenarios([heldTurn(first.wait)]);
+    await send('long turn');
+    await settle();
+    // Sanity: the turn is genuinely open, so there is something to steer.
+    expect(projectorStatus()).toBe('streaming');
+    return first.open;
+  }
+
+  it('emits exactly one turn_input, riding the OPEN turn, per delivered steer (AC1)', async () => {
+    await openHeldTurn();
+
+    const result = await deliverSteer({
+      sessionId: session,
+      clientId: TAB,
+      content: 'actually, check the tests too',
+      messageId: 'steer-a',
+      runtime,
+    });
+
+    expect(result).toEqual({ authorized: true, delivered: true });
+    const events = getOrCreateProjector(session).replayFrom(0);
+    const inputs = events.filter((e) => e.type === 'turn_input');
+    expect(inputs).toHaveLength(1);
+    expect(inputs[0]).toMatchObject({
+      type: 'turn_input',
+      content: 'actually, check the tests too',
+      disposition: 'steer',
+      messageId: 'steer-a',
+    });
+    // Ingested into the open turn, not opening or closing one: it lands INSIDE
+    // the live window (after turn_start, before any turn_end), which is exactly
+    // what makes it render inline where it arrived.
+    const live = getOrCreateProjector(session).peekInProgressTurn();
+    expect(live?.some((e) => e.type === 'turn_input')).toBe(true);
+    expect(events.some((e) => e.type === 'turn_end')).toBe(false);
+  });
+
+  it('replays the turn_input gap-free from a mid-turn cursor, in position (AC3)', async () => {
+    // A client reconnecting with Last-Event-ID resumes off the durable stream's
+    // replay, which is exactly `projector.replayFrom(cursor)` (the /events route
+    // serves it). A steer ingested mid-turn must replay in its true slot with a
+    // contiguous seq — no gap, no reorder.
+    await openHeldTurn();
+    const projector = getOrCreateProjector(session);
+
+    // Where a client that has seen the turn so far would resume from.
+    const beforeSteer = projector.replayFrom(0);
+    const cursor = beforeSteer[beforeSteer.length - 1]!.seq;
+
+    await deliverSteer({
+      sessionId: session,
+      clientId: TAB,
+      content: 'mid-turn steer',
+      messageId: 'steer-r',
+      runtime,
+    });
+
+    // A cold replay shows it inline, in order, inside the open turn — the steer
+    // sits after the assistant text it followed. (`queue_update` bookkeeping from
+    // the send also rides the stream; it is not part of the turn's transcript.)
+    const turnContent = projector
+      .replayFrom(0)
+      .filter((e) => e.type !== 'queue_update')
+      .map((e) => e.type);
+    expect(turnContent).toEqual(['turn_start', 'text_delta', 'turn_input']);
+    // A mid-turn resume returns only the tail, gap-free: the turn_input's seq is
+    // exactly one past the cursor, nothing skipped.
+    const tail = projector.replayFrom(cursor);
+    expect(tail.map((e) => e.seq)).toEqual(tail.map((_, i) => cursor + 1 + i));
+    expect(tail[0]).toMatchObject({ type: 'turn_input', content: 'mid-turn steer' });
+  });
+
+  it('leaves turn_start and turn_end at one each, however many steers it took (AC2)', async () => {
+    const open = await openHeldTurn();
+
+    for (const id of ['s1', 's2', 's3']) {
+      const r = await deliverSteer({
+        sessionId: session,
+        clientId: TAB,
+        content: `steer ${id}`,
+        messageId: id,
+        runtime,
+      });
+      expect(r.delivered).toBe(true);
+    }
+    // Close the turn: the three steers must not have added or removed a boundary.
+    open();
+    await settle();
+
+    const types = getOrCreateProjector(session)
+      .replayFrom(0)
+      .map((e) => e.type);
+    expect(types.filter((t) => t === 'turn_start')).toHaveLength(1);
+    expect(types.filter((t) => t === 'turn_end')).toHaveLength(1);
+    expect(types.filter((t) => t === 'turn_input')).toHaveLength(3);
+  });
+
+  it('emits NO turn_input when the runtime did not deliver the steer', async () => {
+    await openHeldTurn();
+    // A steer that reached no open window comes back undelivered — the degrade
+    // ladder (task 4.4) queues it instead, so there is nothing to render inside
+    // a turn and no carrier must be minted.
+    runtime.deliverIntoTurn.mockResolvedValue({ delivered: false, reason: 'no-open-turn' });
+
+    const result = await deliverSteer({
+      sessionId: session,
+      clientId: TAB,
+      content: 'this one missed',
+      messageId: 'steer-miss',
+      runtime,
+    });
+
+    expect(result.delivered).toBe(false);
+    const inputs = getOrCreateProjector(session)
+      .replayFrom(0)
+      .filter((e) => e.type === 'turn_input');
+    expect(inputs).toHaveLength(0);
+  });
+});
+
 describe('dispatchCommandIntent — a compact contends like a turn', () => {
   it('waits for the same client’s live turn rather than running beside it', async () => {
     const first = gate();
