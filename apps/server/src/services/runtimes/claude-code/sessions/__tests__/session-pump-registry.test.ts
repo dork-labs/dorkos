@@ -256,6 +256,54 @@ describe('SessionPumpRegistry', () => {
   });
 });
 
+describe('the warm ceiling when the asking session leaves mid-reclaim', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  // Purpose: the reservation's OWN failure mode, and the only place it can
+  // happen. Every other grant is synchronous with a pump the registry still
+  // holds, so `drop` gives the slot back. The reclaim is the exception: it
+  // AWAITS a process closing, and the session that asked can be evicted inside
+  // that window. Granting it a slot then books one nothing will ever release —
+  // and because the reservation counts against the ceiling forever, the host
+  // loses one warm slot per occurrence until it restarts.
+  it('does not book a slot for a session evicted while the reclaim ran', async () => {
+    const queries: FakeQuery[] = [];
+    const registry = new SessionPumpRegistry();
+    // A long drain grace makes the reclaim's await a window this test owns,
+    // rather than a race it would have to sleep on.
+    const slow = launchOpts(queries, { maxWarmSessions: 1, drainGraceMs: 10_000 });
+    await registry.acquire('s1', slow).warm();
+    expect(registry.liveCount()).toBe(1);
+
+    // s2 wants the only slot: the direct grant fails, so it parks inside the
+    // reclaim of s1 while that sits on its drain grace.
+    const s2 = registry.acquire('s2', slow);
+    const refused = expect(s2.warm()).rejects.toMatchObject({ reason: 'process-gone' });
+    await Promise.resolve();
+    await Promise.resolve();
+    // The session record retires while its launch is still parked.
+    await registry.evict('s2');
+    expect(registry.size).toBe(1);
+
+    await vi.advanceTimersByTimeAsync(30_000);
+    await refused;
+
+    // s1 was reclaimed and s2 never booted, so the ceiling of one is free —
+    // and a fresh session has to be able to take it.
+    expect(registry.liveCount()).toBe(0);
+    const fresh = registry.acquire('s3', launchOpts(queries, { maxWarmSessions: 1 }));
+    await expect(fresh.warm()).resolves.toBeUndefined();
+    expect(registry.warmth('s3')).toBe('warm');
+
+    await vi.advanceTimersByTimeAsync(100);
+  });
+});
+
 describe('the warm-session constants', () => {
   // Purpose: the two ceilings are different numbers on purpose, and the ORDER of
   // the three windows is what the whole design rests on. A future edit that

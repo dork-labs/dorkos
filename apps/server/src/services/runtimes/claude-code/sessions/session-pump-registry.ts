@@ -324,11 +324,24 @@ export class SessionPumpRegistry {
    *
    * @param sessionId - The session asking, for the refusal's message
    * @param maxWarmSessions - The ceiling this launch is held to
-   * @throws PumpRefusedError When the ceiling is full and nothing can be reclaimed
+   * @throws PumpRefusedError When the ceiling is full and nothing can be
+   *   reclaimed, or when the asking session left while the reclaim ran
    */
   private async reserveSlot(sessionId: string, maxWarmSessions: number): Promise<void> {
     if (this.slots.grant(sessionId, this.liveCount(), maxWarmSessions)) return;
     const reclaimed = await this.reclaimWarmSlot(sessionId);
+    // The reclaim awaited a process closing, and the asking session can have
+    // LEFT inside that window — evicted, or torn down by shutdown. This is the
+    // one grant that is not synchronous with a pump the registry still holds,
+    // and so the one that can book a slot `drop` will never give back: the
+    // reservation would outlive every pump and shrink the ceiling by one for
+    // the life of the server. Every other exit is safe because `drop` forgets.
+    if (!this.entries.has(sessionId)) {
+      throw new PumpRefusedError(
+        'process-gone',
+        `session ${sessionId} left the registry while it waited for a warm slot`
+      );
+    }
     if (reclaimed && this.slots.grant(sessionId, this.liveCount(), maxWarmSessions)) return;
     throw new PumpRefusedError(
       'warm-ceiling',
