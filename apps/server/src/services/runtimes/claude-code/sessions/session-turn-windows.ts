@@ -53,6 +53,10 @@
  * a session that somehow exceeds it drops its oldest held messages with a warning
  * rather than growing without limit.
  *
+ * The one exception is a CRASH, which drops the hold outright: the words belong
+ * to a process that no longer exists, and the next window belongs to a different
+ * one. {@link SessionTurnWindows.onCrash} carries the reasoning in full.
+ *
  * This deliberately does NOT re-derive the projector's reopen predicate
  * (DOR-1100): a closed window reopens on raw model speech and nothing else, and
  * that rule keeps working unchanged INSIDE each window's stream.
@@ -389,17 +393,27 @@ export class SessionTurnWindows {
    * Task 3.6 owns what happens NEXT (resume, and the queue rows that survive);
    * this owns only the window that was open when the process died.
    *
-   * **Task 3.6 also owns the held buffer across a relaunch.** A crash with NO
-   * window open leaves whatever the dying process said still on hold, and the
-   * next window — belonging to a DIFFERENT process — is where it currently
-   * flushes. That is bounded and never silent, but attributing a dead process's
-   * words to a live process's turn is a call about relaunch semantics, not about
-   * windowing, so 3.6 decides it: carry them, or retire them into a closing
-   * runtime window of their own.
+   * **The held buffer dies with the process** (task 3.6). Whatever the dying
+   * process said outside a window is DROPPED here, with a notice, rather than
+   * flushed into the next window — which would belong to a different process
+   * entirely. Three reasons, in order of weight:
+   *
+   * - Held messages are the process's OUTPUT, not anybody's input. Nothing a
+   *   person typed is at risk: their words are rows in the durable queue, and
+   *   the queue is untouched by a crash.
+   * - Carrying them forward would attribute a dead process's words to a live
+   *   process's turn — a lie about what happened inside that turn, and the hard
+   *   kind to debug, because it reads as though the new process said them.
+   * - Retiring them into a synthetic runtime window instead would put a turn on
+   *   the stream for a session where nothing was running. After an explicit
+   *   `warm()` the hold contains a `system/init` and nothing else, so every
+   *   idle crash would mint a phantom turn — the exact thing task 3.6's
+   *   acceptance forbids.
    *
    * @param crash - What the pump observed
    */
   onCrash(crash: PumpCrash): void {
+    this.discardHeld();
     const record = this.current;
     if (record === undefined) return;
     this.current = undefined;
@@ -534,6 +548,19 @@ export class SessionTurnWindows {
       sessionId: this.opts.sessionId,
       limit: MAX_UNATTRIBUTED_MESSAGES,
     });
+  }
+
+  /**
+   * Let go of everything on hold, because the process that said it is gone.
+   * Never silent — see {@link onCrash} for why dropping is the right answer.
+   */
+  private discardHeld(): void {
+    if (this.held.length === 0) return;
+    logger.warn('[SessionTurnWindows] dropped a dead process’s unattributed messages', {
+      sessionId: this.opts.sessionId,
+      dropped: this.held.length,
+    });
+    this.held.length = 0;
   }
 
   /** Move everything held into the window that just opened. */
