@@ -36,6 +36,7 @@ vi.mock('../context-assembler.js', () => ({
 
 import {
   adoptQueuedMessages,
+  deliverSteer,
   dispatchMessage,
   dispatchCommandIntent,
   listQueuedMessages,
@@ -483,6 +484,73 @@ describe('dispatchMessage — the disposition ladder', () => {
     expect(store.list(session)[0]?.disposition).toBe('steer');
     first.open();
     await second;
+  });
+});
+
+describe('deliverSteer — a steer is a write, authorized like a send (task 4.1)', () => {
+  it('lets the client that OWNS the live write-lock steer it, reaching the runtime', async () => {
+    // The real write-lock is the authority: `isLocked(key, cid)` is false for the
+    // owner. TAB holds it, so TAB may inject into the running turn.
+    runtime.isLocked.mockImplementation((_sid, cid) => cid !== undefined && cid !== TAB);
+
+    const result = await deliverSteer({
+      sessionId: session,
+      clientId: TAB,
+      content: 'also check the tests',
+      messageId: 'steer-1',
+      runtime,
+    });
+
+    expect(result.authorized).toBe(true);
+    expect(runtime.deliverIntoTurn).toHaveBeenCalledWith(
+      session,
+      'also check the tests',
+      expect.objectContaining({ mode: 'steer', messageId: 'steer-1' })
+    );
+    // The FakeAgentRuntime answers `{ delivered: true }`.
+    expect(result.delivered).toBe(true);
+  });
+
+  it('refuses a DIFFERENT client, and never reaches the runtime (AC6)', async () => {
+    // The lock is held by TAB. window-b could not START a turn on this session
+    // now — the lock is held against it, `isLocked(key, 'window-b') === true` —
+    // so it may not steer the running one either. Refused before the runtime is
+    // ever asked.
+    runtime.isLocked.mockImplementation((_sid, cid) => cid !== undefined && cid !== TAB);
+
+    const result = await deliverSteer({
+      sessionId: session,
+      clientId: 'window-b',
+      content: 'let me in',
+      messageId: 'steer-2',
+      runtime,
+    });
+
+    expect(result).toEqual({ authorized: false, delivered: false });
+    expect(runtime.deliverIntoTurn).not.toHaveBeenCalled();
+  });
+
+  it('refuses a non-owner even when inFlight is EMPTY but the lock is held (finding 1)', async () => {
+    // The budget-exhausted hole: a launch that ran past its wait budget holds
+    // the REAL write-lock without ever claiming the dispatcher's `inFlight`
+    // mirror. So `inFlight` is empty here (no dispatch has run in this test) while
+    // a steerable turn is live and owned by TAB. Gating on `inFlight` would see
+    // no owner and authorize ANYONE; gating on the lock refuses window-b. This is
+    // the exact case the lossy mirror got wrong.
+    runtime.isLocked.mockImplementation((_sid, cid) => cid !== undefined && cid !== TAB);
+
+    const result = await deliverSteer({
+      sessionId: session,
+      clientId: 'window-b',
+      content: 'sneak in through the empty mirror',
+      messageId: 'steer-3',
+      runtime,
+    });
+
+    expect(result).toEqual({ authorized: false, delivered: false });
+    expect(runtime.deliverIntoTurn).not.toHaveBeenCalled();
+    // Proof the check consulted the real authority, not the mirror.
+    expect(runtime.isLocked).toHaveBeenCalledWith(session, 'window-b');
   });
 });
 

@@ -40,7 +40,7 @@
  * measurement run that flips the flag off has to reap, evict, or restart before
  * it can claim it is measuring the resume path.
  *
- * ## Why there is no `TurnWindowSignal` here
+ * ## Why there is STILL no `TurnWindowSignal` here — settled by P4's steer
  *
  * Task 3.7 built one, and this composition deliberately does not construct it.
  * The signal exists so a stall watchdog can follow turn windows when ONE
@@ -55,9 +55,17 @@
  * `withStallGuard` is already the only guard on this stream. A second one is
  * the double-guard the P3.7 review warned against.
  *
- * The signal earns its keep the moment a turn's events can arrive on a stream
- * that outlives the turn — P4's `deliverIntoTurn`, where a steer's output lands
- * in a window already open. It stays exactly where it is until then.
+ * P3 named `deliverIntoTurn` as the signal's genuine first caller, on the
+ * expectation that a steer's events would arrive on a stream that OUTLIVES the
+ * turn that opened it. Task 4.1 implemented the steer and that expectation did
+ * not materialize: a steer ({@link PersistentDispatch.steer}) pushes into the
+ * OPEN window's held stream, so its events land in the window already open and
+ * on the same `streamTurnWindow` generator, which still ends at that turn's one
+ * `result`. A steer makes a turn LONGER, not a stream carry more than one turn —
+ * every steered event is activity `withStallGuard` already sees on the one
+ * stream it already guards. So the signal stays unwired and unconstructed; the
+ * shape that would need it (one stream, several concurrently-open turns) still
+ * does not exist on this path.
  *
  * ## Runtime windows are drained, never projected
  *
@@ -76,7 +84,13 @@
  */
 import { randomUUID } from 'node:crypto';
 import type { StreamEvent } from '@dorkos/shared/types';
-import type { MessageOpts } from '@dorkos/shared/agent-runtime';
+import type {
+  DeliverIntoTurnOpts,
+  MessageOpts,
+  RuntimeDeliveryResult,
+} from '@dorkos/shared/agent-runtime';
+import type { AdditionalContext } from '@dorkos/shared/additional-context';
+import { renderContextEntry } from '../messaging/context-builder.js';
 import { SESSIONS } from '../../../../config/constants.js';
 import { logger } from '../../../../lib/logger.js';
 import type { AgentSession } from '../agent-types.js';
@@ -347,6 +361,73 @@ export class PersistentDispatch {
   }
 
   /**
+   * Steer a message into a session's OPEN turn — the claude-code half of P4's
+   * `deliverIntoTurn(mode: 'steer')` (spec §2.3, task 4.1).
+   *
+   * A steer does not open a turn: it pushes into the held input stream of the
+   * one already running, reaching the CLI's own queue so the message is
+   * delivered within the live turn. So this returns a RECEIPT — the resulting
+   * events surface on that turn's already-running stream (`streamTurnWindow`),
+   * which another consumer is already draining, and a second generator here
+   * would be two feeds fighting over one turn.
+   *
+   * `content` is the person's words, PRISTINE. Any `additionalContext` is
+   * rendered out of band and prepended exactly as a normal turn's is
+   * (`launch-resolver.ts`), so the transcript shows the person's text and the
+   * context rides its own strippable tags (ADR-0273).
+   *
+   * **Never throws for an ordinary refusal**, per the `deliverIntoTurn` contract.
+   * Two seams make that non-trivial:
+   *
+   * - **A spent pump.** The registry idle-reaps and warm-ceiling-replaces pumps
+   *   WITHOUT telling this class (see {@link acquire}), and a reaped pump throws
+   *   for everything asked of it (`assertUsable`). So a lingering bundle is used
+   *   only when the registry still points at its pump — the same identity check
+   *   `dispatch` makes through {@link acquire} — and otherwise treated as no live
+   *   process. That keeps a reaped-bundle steer a `no-open-turn` receipt rather
+   *   than a throw.
+   * - **The close gap.** The gate is WINDOW openness, not the pump's `'running'`
+   *   state, because a window is cleared synchronously on its `result` while the
+   *   pump only leaves `RUNNING` after the closing accounting fetch — up to
+   *   `WINDOW_USAGE_TIMEOUT_MS` (~8s) later. In that gap the pump is still
+   *   `'running'` with NO open window; pushing then would open a SECOND turn
+   *   instead of joining one and still report `delivered`. So the window is
+   *   TAGGED first (which both checks it is open and correlates the id): no
+   *   window means `no-open-turn` and nothing is pushed. Only once a window has
+   *   accepted the id does the push follow, in the same synchronous beat so no
+   *   `result` can slip between them.
+   *
+   * @param sessionId - The session to steer; either id a caller might hold
+   * @param content - The user's text, pristine
+   * @param opts - The correlation id and the neutral context bag
+   * @returns Whether the steer reached the process, and why not when it did not
+   */
+  steer(sessionId: string, content: string, opts: DeliverIntoTurnOpts): RuntimeDeliveryResult {
+    const bundle = this.bundles.get(sessionId);
+    // No wiring, or a bundle the registry no longer backs (an idle reap or a
+    // warm-ceiling reclaim this class was never told about): no live process to
+    // join, and touching a spent pump would throw the must-not-throw contract.
+    if (bundle === undefined || this.registry.peek(sessionId) !== bundle.pump) {
+      return { delivered: false, reason: 'no-open-turn' };
+    }
+    // Tag the OPEN window first — this both proves a window is open (the gate)
+    // and teaches it this id so the coalesced `result` still closes it as one
+    // turn. No window means the turn closed under us (the pump may still read
+    // `'running'` in the ~8s accounting gap): report it, push nothing.
+    if (!bundle.windows.steerOpenWindow(opts.messageId)) {
+      return { delivered: false, reason: 'no-open-turn' };
+    }
+    const enriched = enrichSteerContent(content, opts.additionalContext);
+    const outcome = bundle.pump.steer(enriched, opts.messageId);
+    // A push that fails after the tag (the amnesiac stream-closed race) leaves
+    // the id on the window with nothing sent under it — harmless: the window
+    // still closes on its own `result` (or the crash that abandoned the stream),
+    // and an id no `result` ever names correlates nothing.
+    if (outcome !== 'delivered') return { delivered: false, reason: outcome };
+    return { delivered: true };
+  }
+
+  /**
    * Say why a dispatch never reached the process, in words a person can act on.
    *
    * Every one of these leaves the durable queue alone, which is the whole point:
@@ -525,6 +606,24 @@ export class PersistentDispatch {
     await this.registry.evict(sessionId);
     this.forget(sessionId);
   }
+}
+
+/**
+ * Prepend a steer's context bag to its pristine content, the SAME way a normal
+ * turn does it (`launch-resolver.ts`).
+ *
+ * The person's `content` is never mutated: the render produces a separate
+ * enriched string, the context blocks carry their own tags, and the adapter
+ * strips those on render so injected context never shows as user-authored text
+ * (ADR-0273). No context is the identity case — the pristine content, unchanged.
+ *
+ * @param content - The user's text, pristine
+ * @param additionalContext - The neutral context bag, or undefined
+ */
+function enrichSteerContent(content: string, additionalContext?: AdditionalContext): string {
+  const contextBlocks = (additionalContext ?? []).map(renderContextEntry).filter(Boolean);
+  if (contextBlocks.length === 0) return content;
+  return `${contextBlocks.join('\n\n')}\n\n${content}`;
 }
 
 /**

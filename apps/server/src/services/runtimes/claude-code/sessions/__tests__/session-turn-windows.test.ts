@@ -726,3 +726,39 @@ describe('SessionTurnWindows — a turn opens on dispatch and closes on its resu
     expect(h.pump.state).toBe('running');
   });
 });
+
+describe('SessionTurnWindows — a steer joins the open window (task 4.1)', () => {
+  // AC1 + AC4. A steer pushes a second user message into the running turn, which
+  // the CLI coalesces into the SAME turn and answers with ONE result naming the
+  // steer. Unless the open window has learned the steer's id, that result reads
+  // as one this session never sent — a synthetic second turn on the stream, and
+  // the real turn stranded open. Revert `steerOpenWindow` and this window count
+  // goes to two: the red-first proof.
+  it('keeps a steered turn to exactly one turn_start and one turn_end', async () => {
+    const h = harness();
+
+    const window = await h.dispatch([{ content: 'do the thing', messageId: 'm-open' }]);
+    h.live().emit(textDeltaMessage('starting'));
+
+    expect(h.windows.steerOpenWindow('m-steer')).toBe(true);
+    // The id joined the open window's live array.
+    expect(window.ids).toEqual(['m-open', 'm-steer']);
+
+    // ONE result, naming the steer (the last message the CLI read).
+    h.live().emit(resultMessage('m-steer'));
+    await settled(h, 1);
+
+    const windows = h.windowsOnStream();
+    expect(windows).toHaveLength(1);
+    expect(windows[0]!.types.filter((t) => t === 'turn_start')).toHaveLength(1);
+    expect(windows[0]!.types.filter((t) => t === 'turn_end')).toHaveLength(1);
+  });
+
+  // A steer arriving after the turn has closed has nothing to join. The caller
+  // reads this to report `no-open-turn` rather than silently correlating a
+  // closed window.
+  it('returns false when no window is open', () => {
+    const h = harness();
+    expect(h.windows.steerOpenWindow('m-steer')).toBe(false);
+  });
+});

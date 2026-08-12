@@ -302,7 +302,7 @@
       "priority": "high",
       "dependencies": ["3.3", "2.3"],
       "parallelWith": [],
-      "issue": null
+      "issue": "DOR-1193"
     },
     {
       "id": "4.2",
@@ -316,7 +316,7 @@
       "priority": "medium",
       "dependencies": ["4.1"],
       "parallelWith": ["4.3"],
-      "issue": null
+      "issue": "DOR-1194"
     },
     {
       "id": "4.3",
@@ -330,7 +330,7 @@
       "priority": "high",
       "dependencies": ["4.1"],
       "parallelWith": ["4.2"],
-      "issue": null
+      "issue": "DOR-1195"
     },
     {
       "id": "4.4",
@@ -344,7 +344,7 @@
       "priority": "high",
       "dependencies": ["4.1", "4.2"],
       "parallelWith": ["4.3"],
-      "issue": null
+      "issue": "DOR-1196"
     },
     {
       "id": "4.5",
@@ -358,7 +358,7 @@
       "priority": "high",
       "dependencies": ["4.4"],
       "parallelWith": ["4.6"],
-      "issue": null
+      "issue": "DOR-1197"
     },
     {
       "id": "4.6",
@@ -372,7 +372,7 @@
       "priority": "high",
       "dependencies": ["4.3", "4.4", "2.6"],
       "parallelWith": ["4.5"],
-      "issue": null
+      "issue": "DOR-1198"
     },
     {
       "id": "4.7",
@@ -386,7 +386,7 @@
       "priority": "high",
       "dependencies": ["4.6"],
       "parallelWith": [],
-      "issue": null
+      "issue": "DOR-1199"
     },
     {
       "id": "4.8",
@@ -400,7 +400,7 @@
       "priority": "medium",
       "dependencies": ["4.5", "4.7"],
       "parallelWith": [],
-      "issue": null
+      "issue": "DOR-1200"
     },
     {
       "id": "5.1",

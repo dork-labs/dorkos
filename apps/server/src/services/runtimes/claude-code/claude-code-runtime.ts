@@ -35,6 +35,8 @@ import type {
   McpAppServerConnection,
   ToolDecisionOptions,
   SessionWarmth,
+  DeliverIntoTurnOpts,
+  RuntimeDeliveryResult,
 } from '@dorkos/shared/agent-runtime';
 import type {
   SessionSnapshot,
@@ -693,6 +695,24 @@ export class ClaudeCodeRuntime implements AgentRuntime {
     const bootingQuery = this.persistent.bootingQuery(sessionId);
     if (bootingQuery === undefined) return false;
     return this.sessionStore.interruptGivenQuery(sessionId, bootingQuery);
+  }
+
+  /** @inheritdoc */
+  async deliverIntoTurn(
+    sessionId: string,
+    content: string,
+    opts: DeliverIntoTurnOpts
+  ): Promise<RuntimeDeliveryResult> {
+    // `'stage'` is P4 task 4.2's; claude-code declares `supportsContextStaging`
+    // false until then, so the server never routes a stage here — but a runtime
+    // must never throw for a mode it has not built, so this reports it as an
+    // ordinary refusal the ladder degrades around.
+    if (opts.mode === 'stage') return { delivered: false, reason: 'unsupported' };
+    // A steer rides the persistent pump's held input stream. On the resume path
+    // there is no held stream that outlives a turn to reach, so a steer there is
+    // simply "no open turn" — which `PersistentDispatch.steer` returns for a
+    // session it holds no live process for, without special-casing the path.
+    return this.persistent.steer(sessionId, content, opts);
   }
 
   /** @inheritdoc */
