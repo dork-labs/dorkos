@@ -411,10 +411,10 @@ failing, or the PR merging — not one that only knows how to notice success (th
 # emits on the first real failure, the merge, or its own expiry; silent while healthy
 for i in $(seq 1 55); do
   state=$(gh pr view <number> --json state --jq .state)
-  [ "$state" = MERGED ] && { echo MERGED; break; }
-  [ "$state" = CLOSED ] && { echo "CLOSED unmerged"; break; }
+  [ "$state" = MERGED ] && { echo MERGED; exit 0; }
+  [ "$state" = CLOSED ] && { echo "CLOSED unmerged"; exit 0; }
   fails=$(gh pr checks <number> | awk -F'\t' '$2=="fail"{print $1}' | grep -vi '^Vercel')
-  [ -n "$fails" ] && { echo "FAILED: $fails"; break; }
+  [ -n "$fails" ] && { echo "FAILED: $fails"; exit 0; }
   sleep 45
 done
 echo "watcher expired; PR <number> still unmerged — check it directly"
