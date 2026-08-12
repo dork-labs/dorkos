@@ -1,4 +1,4 @@
-import { afterAll, beforeEach, vi } from 'vitest';
+import { afterAll, afterEach, beforeEach, vi } from 'vitest';
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -21,6 +21,17 @@ import { wrapSdkQuery, sdkError, sdkSimpleText, sdkCompaction } from './sdk-scen
  * module scope has created the directory.
  */
 const account = vi.hoisted(() => ({ root: '' }));
+
+/**
+ * The per-session persistent-process opt-in, as this suite drives it.
+ *
+ * Off for every case but the two warmth ones. That is not a convenience: with
+ * it on, every OTHER case would run against a process that outlives its turn,
+ * and the one-shot SDK double below would read as a crash the moment its stream
+ * ended. The warmth cases turn it on themselves, and swap in a double that
+ * behaves like a CLI that stays up.
+ */
+const persistent = vi.hoisted(() => ({ on: false }));
 
 // The account resolver is the ONLY thing standing between this suite and the
 // developer's real Claude Code history, and unmocked it does not stand there at
@@ -91,11 +102,14 @@ vi.mock('../../../tasks/task-state.js', () => ({
 }));
 vi.mock('../../../core/config-manager.js', () => ({
   configManager: {
-    get: vi.fn().mockReturnValue({
-      tasksTools: true,
-      relayTools: true,
-      meshTools: true,
-      adapterTools: true,
+    get: vi.fn((key: string) => {
+      if (key === 'runtimes') return { claudeCode: { persistentSession: persistent.on } };
+      return {
+        tasksTools: true,
+        relayTools: true,
+        meshTools: true,
+        adapterTools: true,
+      };
     }),
   },
 }));
@@ -152,8 +166,10 @@ vi.mock('../tooling/check-dependency.js', () => ({
 }));
 
 import { query } from '@anthropic-ai/claude-agent-sdk';
+import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
 import { ClaudeCodeRuntime } from '../claude-code-runtime.js';
 import { drivePresenceTurn } from '../../../session/__tests__/durable-turn-harness.js';
+import { FakeCli } from '../sessions/__tests__/fake-persistent-cli.js';
 
 const mockedQuery = vi.mocked(query);
 
@@ -228,7 +244,17 @@ afterAll(() => {
   rmSync(account.root, { recursive: true, force: true });
 });
 
+/** Warm processes this file booted, closed after each case so none leaks. */
+let warmCli: FakeCli | undefined;
+
+afterEach(() => {
+  for (const process of warmCli?.processes ?? []) process.endStream();
+  warmCli = undefined;
+  persistent.on = false;
+});
+
 beforeEach(() => {
+  persistent.on = false;
   mockedQuery.mockReset();
   // mockImplementation (not mockReturnValue): every sendMessage turn must get
   // a FRESH generator — a spent one would end the stream with zero events.
@@ -256,6 +282,26 @@ runtimeConformance(
     // not persist, DOR-189), which is exactly what `drivePresenceTurn` does.
     presenceTurn: (runtime, sessionId, content, probes) =>
       drivePresenceTurn(runtime, sessionId, content, '/projects/conformance', probes),
+    // Claude-code declares `supportsPersistentSession`, so it owes the suite a
+    // way to reach WARM. Turning the opt-in on is part of the driver's job: the
+    // capability says this adapter CAN hold a process open, and whether a given
+    // session does is the operator's per-session setting.
+    //
+    // The double is swapped here rather than in `beforeEach` because it is the
+    // opposite of the one every other case needs: this one stays alive after
+    // its `result` and answers the next message on the same process, which is
+    // the only way a turn can leave a session warm.
+    warmSession: async (runtime: AgentRuntime, sessionId: string) => {
+      persistent.on = true;
+      warmCli = new FakeCli();
+      mockedQuery.mockImplementation(warmCli.query as unknown as typeof query);
+      for await (const _event of runtime.sendMessage(sessionId, 'conformance ping', {
+        cwd: '/projects/conformance',
+      })) {
+        // Drained rather than inspected: this driver's job is to LEAVE the
+        // session warm, and the suite makes its own assertions afterwards.
+      }
+    },
     // Claude-code CAN say when the person last wrote: it rides the transcript
     // tail read the session list already performs. Read back through
     // `listSessions` rather than `getSession`, because the recents LIST is the

@@ -317,6 +317,12 @@ You do not have to edit this file. Open Settings and go to Runtimes: you can add
 
 **You can also say which model a new chat should start with, and how hard it should think.** Each runtime has its own pair of settings — `defaultModel` and `defaultEffort` — because a model name only means something to the runtime that offers it. Leave them `null`, which is how they ship, and each runtime keeps picking for itself, exactly as before. Set one and every new chat on that runtime starts there; chats you already have keep what they are running with. Effort is one of `none`, `minimal`, `low`, `medium`, `high`, `max`, or `xhigh`. OpenCode has a model setting but no effort setting: OpenCode gives no way to ask for more or less thinking, so DorkOS does not pretend to offer one. If you edit the file by hand, only add settings that exist — writing one that does not, like `runtimes.opencode.defaultEffort`, makes DorkOS treat the whole file as damaged: it keeps a copy next to it as `config.json.bak` and starts fresh from the defaults. Settings is the safer place to change any of this.
 
+**Claude Code chats can keep their agent running between messages.** Normally, every message you send starts the agent up again, and it shuts down when the reply is finished. Turn on `runtimes.claudeCode.persistentSession` and the agent stays running in between, so your next message reaches an agent that is already awake instead of one that has to start from scratch.
+
+It ships off. When you turn it on, it applies to the next message you send in each chat — nothing you have open changes underneath you. Turning it back off works the same way round, with one wrinkle worth knowing: a chat whose agent is already running keeps it until that agent goes away on its own, which happens after five quiet minutes, when the chat is closed, or when you restart DorkOS. An agent that has been sitting idle is shut down automatically, and you will not notice — your next message simply picks the conversation up where it left off. DorkOS keeps at most twelve of these running at once and gives back the one you have used least when it needs room.
+
+This is new, and it is off by default because it is new. Everything else works the same either way.
+
 **And you can say how much a new chat may do before it checks with you.** That is `runtimes.defaultTrustStop`, and it takes one of three words: `ask` (stop before changing anything), `act` (get on with the work, stop for the risky parts), or `autonomy` (never stop). It ships as `null`, which means every runtime starts where it always did — asking first. One setting covers every runtime, because those three words mean the same thing whichever agent you are talking to; each runtime works out its own equivalent. If you want something different for just one of them, set `defaultTrustStop` inside that runtime's own block and it wins there.
 
 Choosing `autonomy` is the one that asks you first. DorkOS will not save it until you have read what Full autonomy means and confirmed it, and it writes down that you did — after that, every new chat starts without asking and without stopping to check with you again. Settings shows a quiet note while that is on, so you can always find it. Chats you already have keep what they are running with, whatever you change here. This setting is for the chats you open yourself: scheduled runs, integrations, and rooms have their own settings and their own, stricter rules.
@@ -386,6 +392,12 @@ Choosing `autonomy` is the one that asks you first. DorkOS will not save it unti
         'Optional OpenAI-compatible base URL for a Direct provider, injected into the sidecar as `OPENAI_BASE_URL`.',
       type: 'string | null',
       default: 'null',
+    },
+    'runtimes.claudeCode.persistentSession': {
+      description:
+        'Keep a Claude Code chat’s agent running between messages instead of starting it again for each one. Applies to the next message in each chat; a chat whose agent is already running keeps it until that agent is shut down for being idle, the chat is closed, or DorkOS restarts.',
+      type: 'boolean',
+      default: 'false',
     },
     'runtimes.claudeCode.defaultTrustStop': {
       description:

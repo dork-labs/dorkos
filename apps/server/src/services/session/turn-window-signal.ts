@@ -98,6 +98,14 @@ export const MAX_CANCELLED_WINDOWS = 32;
  * and {@link TurnWindowSignal.closed} to its `onWindowClose`, then hand the
  * signal to `withStallGuard` as `windows`. Both are bound methods, so they can
  * be passed straight across as callbacks.
+ *
+ * **Nothing constructs one yet (task 3.10).** The persistent pump was expected
+ * to be the first caller and is not: it runs one turn per `StreamEvent` stream,
+ * so `withStallGuard` already has the turn lifetime it needs and handing it
+ * this signal would only disarm the clock during a launch. The genuine first
+ * caller is P4's `deliverIntoTurn`, where a steer's events arrive on a stream
+ * that outlives the turn that opened it — which is when "which windows are open
+ * right now" stops being answerable from the stream alone.
  */
 export class TurnWindowSignal {
   private readonly open = new Set<object>();

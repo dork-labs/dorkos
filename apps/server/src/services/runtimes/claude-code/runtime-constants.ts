@@ -27,12 +27,27 @@ export const CLAUDE_CODE_CAPABILITIES: RuntimeCapabilities = {
   supportsManagedMcpServers: true,
   supportsQuestionPrompt: true,
   supportsPlugins: true,
-  // The SDK can do all three (`streamInput`, `shouldQuery`), but DorkOS does
-  // not yet: every turn still runs its own `query()`. Declared `false` until
-  // the persistent pump lands — a capability is what this adapter DOES, not
-  // what its SDK could (spec `persistent-session-runtime`: P3 flips the first,
-  // P4 the other two).
-  supportsPersistentSession: false,
+  // This adapter CAN hold one process across many turns: `SessionPump` owns it,
+  // `SessionTurnWindows` cuts the turns out of its output, and
+  // `PersistentDispatch` is the path a message takes to reach it (spec
+  // `persistent-session-runtime` §P3).
+  //
+  // The capability says the adapter is able to, not that every session does.
+  // Whether a given session holds its process is the operator's per-session
+  // opt-in `runtimes.claudeCode.persistentSession`, which ships OFF — so a
+  // default install still starts one process per message, and `getSessionWarmth`
+  // honestly answers `cold` for every session on it.
+  //
+  // Two consequences of how that opt-in is read, both deliberate, both spelled
+  // out in `sessions/persistent-dispatch.ts`: turning it ON takes effect at a
+  // session's next message, and turning it OFF does not take a session that is
+  // already warm back — it keeps its process until the idle reap, an eviction, a
+  // warm-ceiling reclaim, or a restart. A measurement run that flips the flag
+  // off must reap or restart before it can claim it is measuring the other path.
+  supportsPersistentSession: true,
+  // The SDK can do both (`streamInput`, `shouldQuery`) but DorkOS does not yet —
+  // a capability is what this adapter DOES, not what its SDK could. P4 flips
+  // these two.
   supportsSteer: false,
   supportsContextStaging: false,
   // Native git is suppressed via `excludeDynamicSections` (ADR-0273 A2), so the

@@ -125,6 +125,19 @@ export interface RuntimeConformanceOpts {
     probes: { midTurn: () => Promise<void>; afterTurn: () => Promise<void> }
   ) => Promise<void>;
   /**
+   * Drives a session to WARM — a completed turn with the process still held —
+   * and hands control back.
+   *
+   * Provided ONLY by runtimes declaring `supportsPersistentSession`. Omit it and
+   * the warmth cases SKIP by name rather than passing on an absence the suite
+   * manufactured: a runtime's `sendMessage` moves no projector, so a warmth
+   * assertion read off it alone would report the same thing for every runtime
+   * and assert nothing. Whatever per-session opt-in the runtime requires is the
+   * driver's job to arrange — the capability says the adapter CAN hold a
+   * process, not that every session does.
+   */
+  warmSession?: (runtime: AgentRuntime, sessionId: string) => Promise<void>;
+  /**
    * Waives the safety invariant that a runtime's DEFAULT permission mode must
    * still stop for the person — one that would need a consent ritual if a person
    * selected it (`needsConsentRitual`) may not be where a session is BORN. The
@@ -707,6 +720,20 @@ export function validatePresenceReport(observation: PresenceObservation): string
 }
 
 /**
+ * The event types that carry an agent's OWN output, as opposed to bookkeeping.
+ *
+ * Used where a case has to tell "the turn said something" from "the turn
+ * happened": a terminal `done`, a `session_status` and an `error` are all
+ * events, and none of them is the agent answering.
+ */
+const CONTENT_EVENT_TYPES = new Set([
+  'text_delta',
+  'tool_call_start',
+  'tool_result',
+  'thinking_delta',
+]);
+
+/**
  * Register the shared AgentRuntime conformance suite for one runtime.
  *
  * Call at the top level of a Vitest test file. The factory is invoked once
@@ -731,6 +758,7 @@ export function runtimeConformance(
     makeCompactingRuntime,
     durableHistory,
     presenceTurn,
+    warmSession,
     autonomyDefaultReason,
     sessionListSilentReason,
     userLastMessageAtSession,
@@ -1120,6 +1148,118 @@ export function runtimeConformance(
           assertOperationProgress(event);
         }
       });
+    });
+
+    describe('a session that holds its process open (C4, C5)', () => {
+      const declaresPersistence = (runtime: AgentRuntime): boolean =>
+        runtime.getCapabilities().supportsPersistentSession === true;
+
+      // Keyed on the CAPABILITY, not on the driver. Keyed on the driver, a
+      // runtime that declared `supportsPersistentSession: true` and simply
+      // forgot to wire one would skip in silence — the suite would report
+      // "nothing proves this" about the one runtime that most needs proving.
+      // Declaring the capability is what creates the obligation; the driver is
+      // how it is met, and a missing driver is now a failure rather than a skip.
+      it('a runtime declaring persistent sessions wires a `warmSession` driver', () => {
+        const runtime = makeRuntime();
+        if (!declaresPersistence(runtime)) {
+          expect(
+            warmSession,
+            'a `warmSession` driver was wired by a runtime that does not declare `supportsPersistentSession`'
+          ).toBeUndefined();
+          return;
+        }
+        expect(
+          warmSession,
+          'this runtime declares `supportsPersistentSession` but wired no `warmSession` driver, ' +
+            'so C4 and C5 would assert nothing about the capability it claims ' +
+            '(see RuntimeConformanceOpts.warmSession)'
+        ).toBeDefined();
+      });
+
+      if (warmSession) {
+        it('C4: reports idle with no turn while it sits warm', async () => {
+          // The presence contract already forbids `streaming` with an empty
+          // `inProgressTurn`, because an empty array is absence wearing the
+          // shape of presence. WARM is a NEW way to get that wrong: the process
+          // is alive while nothing at all is running, so a runtime that reported
+          // warmth as activity would pin every idle chat to "working".
+          const runtime = makeRuntime();
+          const sessionId = nextSessionId();
+          runtime.ensureSession(sessionId, sessionOpts(runtime));
+
+          await warmSession(runtime, sessionId);
+
+          const observation = await observePresence(runtime, sessionId, 'after-turn', projectDir);
+          expect(validatePresenceReport(observation), presenceMessage(observation)).toEqual([]);
+          expect(
+            observation.lifecycle,
+            'a warm session is holding a process, not running a turn — and not failing one either'
+          ).toBe('idle');
+          expect(
+            observation.inProgressTurn,
+            'a session with nothing running must report no turn at all'
+          ).toBeNull();
+          // And the warmth itself is reported where warmth belongs. Without
+          // this the case would pass on a runtime that never warmed anything.
+          expect(
+            runtime.getSessionWarmth?.(sessionId),
+            'the driver was supposed to leave this session warm'
+          ).toBe('warm');
+        });
+
+        it('C5: a reap is invisible — the next turn is well formed either way', async () => {
+          const runtime = makeRuntime();
+          const sessionId = nextSessionId();
+          runtime.ensureSession(sessionId, sessionOpts(runtime));
+
+          await warmSession(runtime, sessionId);
+          const onWarmProcess = await drainTurn(runtime, sessionId);
+
+          await runtime.reapSession?.(sessionId);
+          expect(
+            runtime.getSessionWarmth?.(sessionId),
+            'the process was supposed to be given back'
+          ).toBe('cold');
+
+          const afterReap = await drainTurn(runtime, sessionId);
+
+          // Same shape, both times. The reap took the process away and the
+          // person cannot tell: each turn ends in exactly one terminal, carries
+          // the agent's actual words, and FAILS AT NEITHER — which is the whole
+          // promise of a short idle window being safe.
+          //
+          // "carried something other than `done`" is deliberately not the test.
+          // An `[error, done]` turn satisfies it, so a relaunch that died on the
+          // way back up would report a failure to the person and still be called
+          // invisible — the exact defect this case exists to catch.
+          for (const [label, events] of [
+            ['on the warm process', onWarmProcess],
+            ['after the reap', afterReap],
+          ] as const) {
+            for (const event of events) StreamEventSchema.parse(event);
+            expect(
+              events.filter((event) => event.type === 'done'),
+              `the turn ${label} did not end in exactly one terminal`
+            ).toHaveLength(1);
+            expect(
+              events.filter((event) => event.type === 'error'),
+              `the turn ${label} failed, so the reap was anything but invisible`
+            ).toHaveLength(0);
+            expect(
+              events.some((event) => CONTENT_EVENT_TYPES.has(event.type)),
+              `the turn ${label} carried none of the agent's own output`
+            ).toBe(true);
+          }
+        });
+      } else {
+        it.skip(
+          'SKIPPED: this runtime does not declare `supportsPersistentSession`, so it holds no ' +
+            'process between turns and there is no warmth to report (a runtime that DOES declare ' +
+            'it fails the case above instead of reaching this skip)',
+          () => {}
+        );
+      }
     });
 
     describe('presence truthfulness (the strip omits rather than lies)', () => {

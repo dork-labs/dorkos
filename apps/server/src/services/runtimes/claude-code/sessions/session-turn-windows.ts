@@ -142,10 +142,16 @@ export interface SessionTurnWindowsOptions {
   /** The pump whose output is being windowed. */
   pump: WindowedPump;
   /**
-   * A window opened. **The stall watchdog arms here** — per window, not per
-   * process, because a WARM session sitting legitimately silent for ten minutes
-   * must not be interrupted for it. Wire it to a `TurnWindowSignal`'s `opened`
-   * and hand that signal to `withStallGuard` (task 3.7).
+   * A window opened.
+   *
+   * Built as the stall watchdog's arm seam — per window, not per process,
+   * because a WARM session sitting legitimately silent for ten minutes must not
+   * be interrupted for it. **No watchdog is wired to it today (task 3.10):** on
+   * the pump path each `sendMessage` generator carries exactly one window, so
+   * `withStallGuard` measures a single turn's silence without being told about
+   * windows at all. The seam is kept for P4's `deliverIntoTurn`, where one
+   * stream will carry several. `PersistentDispatch` uses this to notice a
+   * window nobody dispatched, so it can be drained rather than left buffering.
    */
   onWindowOpen?: (window: TurnWindow) => void;
   /**
