@@ -67,6 +67,13 @@ interface HarnessHooks {
   dieAfterInit?: boolean;
   /** Retire a window's queue rows as it opens — see {@link Harness.store}. */
   store?: MessageQueueStore;
+  /**
+   * Runs when a window closes — including the SYNCHRONOUS close a crash causes.
+   * This is the seam the composition root pumps the queue from.
+   */
+  onWindowClose?: () => void;
+  /** Pin the clock the crash record is stamped from. */
+  now?: () => number;
 }
 
 interface Harness {
@@ -165,6 +172,7 @@ function harness(hooks: HarnessHooks = {}): Harness {
       for (const id of window.ids) hooks.store?.remove(id);
       projected.push(project(window));
     },
+    ...(hooks.onWindowClose === undefined ? {} : { onWindowClose: hooks.onWindowClose }),
   });
 
   const recovery = new SessionCrashRecovery({
@@ -172,6 +180,7 @@ function harness(hooks: HarnessHooks = {}): Harness {
     pump,
     windows,
     onCrashRecorded: (record) => crashes.push(record),
+    ...(hooks.now === undefined ? {} : { now: hooks.now }),
   });
 
   ref.windows = windows;
@@ -387,9 +396,50 @@ describe('SessionCrashRecovery', () => {
     expect(h.launches.map((launch) => launch.resuming)).toEqual([false, true, true]);
   });
 
-  // Operator visibility: what died, where, and how many times in a row.
+  // The ORDER inside `handleCrash` is load-bearing, and this is the case that
+  // proves it. Closing the crashed window calls `onWindowClose` SYNCHRONOUSLY
+  // (`session-turn-windows.ts`), and that is the boundary a composition root
+  // pumps the queue from — so a dispatch fired there runs INSIDE the crash
+  // handler. Record-then-forward means it is already bound by the crash that
+  // caused it; forward-then-record would let it boot a third process on the
+  // count from the first crash.
+  it('counts the crash before closing the window, so a dispatch on that boundary is already bound', async () => {
+    const settled: Array<Promise<unknown>> = [];
+    let armed = false;
+    const ref: { dispatch?: Harness['dispatch'] } = {};
+    const h = harness({
+      dieAfterInit: true,
+      onWindowClose: () => {
+        if (!armed) return;
+        armed = false;
+        // Attach the handlers now, in the same beat, so the refusal is never a
+        // stray unhandled rejection while the test waits.
+        settled.push(
+          ref.dispatch!([{ content: 'next', messageId: 'm-next' }]).then(
+            () => 'launched',
+            (err: unknown) => err
+          )
+        );
+      },
+    });
+    ref.dispatch = h.dispatch;
+
+    await h.dispatch([{ content: 'first', messageId: 'm1' }]);
+    await h.awaitCrash(1);
+    // The next crash is the one that spends the allowance. Fire the boundary
+    // dispatch from inside it.
+    armed = true;
+    await h.dispatch([{ content: 'second', messageId: 'm2' }]);
+    await h.awaitCrash(2);
+
+    await vi.waitFor(() => expect(settled).toHaveLength(1));
+    expect(await settled[0]).toBeInstanceOf(SessionCrashLoopError);
+    expect(h.launches).toHaveLength(2);
+  });
+
+  // Operator visibility: what died, where, when, and how many times in a row.
   it('records every crash with the state it happened in and the run of them', async () => {
-    const h = harness({ dieAfterInit: true });
+    const h = harness({ dieAfterInit: true, now: () => 1_700_000_000_000 });
 
     await h.dispatch([{ content: 'first', messageId: 'm1' }]);
     await h.awaitCrash(1);
@@ -402,6 +452,7 @@ describe('SessionCrashRecovery', () => {
       stateAtCrash: 'running',
       consecutive: 1,
       willAutoResume: true,
+      at: 1_700_000_000_000,
     });
     expect(h.crashes[0]!.message).toContain('the CLI died');
     expect(h.crashes[1]).toMatchObject({ consecutive: 2, willAutoResume: false });
