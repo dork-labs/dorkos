@@ -32,6 +32,18 @@ interface PipMiniBarProps {
  * purpose.) Same ambient semantics as the sheet: `role="complementary"`,
  * `z-40`, below every `z-50` modal surface, no modality machinery.
  *
+ * **The bar never takes the bottom edge from the phone's tab bar** (DOR-1177).
+ * A `fixed` bar at `bottom: 0` paints over the four destinations, which are
+ * in-flow chrome with no z-index — measured at 390×844, `elementFromPoint` over
+ * every one of the four glyphs resolved to this bar, so a docked PIP made the
+ * whole cockpit unreachable. It docks directly ABOVE the bar instead (the
+ * mini-player arrangement this pattern is named for), reading the height the
+ * cockpit publishes as `--mobile-tab-dock` — absent on desktop and in the
+ * Obsidian embed, where the fallback of `0px` keeps the bar on the edge it
+ * always had. The tab bar keeps the bottom edge and with it
+ * `env(safe-area-inset-bottom)`, so the home indicator stays one component's
+ * business.
+ *
  * @param props.content - The descriptor tucked away (supplies the title).
  * @param props.onRestore - Restore handler, wired to `restorePip`.
  * @param props.onClose - Close handler, wired to `closePip`.
@@ -63,8 +75,14 @@ export function PipMiniBar({ content, onRestore, onClose }: PipMiniBarProps): Re
       animate={{ y: 0 }}
       exit={{ y: BAR_HEIGHT }}
       transition={SPRING}
-      style={{ bottom: keyboardInset }}
-      className="bg-background border-border shadow-elevated fixed inset-x-0 bottom-0 z-40 flex h-16 items-center border-t"
+      // **Above whatever else owns the bottom of the screen — the tab bar, or
+      // the keyboard.** `max()` rather than a sum: the two never stack, because
+      // a raised keyboard covers the tab bar, and adding them would float the
+      // bar a tab bar's height clear of the keyboard for no reason.
+      style={{ bottom: `max(var(--mobile-tab-dock, 0px), ${keyboardInset}px)` }}
+      // No `bottom-0` here: the inline style above owns `bottom` in every state,
+      // and a class that is always overridden is a second answer to read.
+      className="bg-background border-border shadow-elevated fixed inset-x-0 z-40 flex h-16 items-center border-t"
     >
       <button
         type="button"

@@ -145,6 +145,22 @@ export function MobileTabsLayout({ takeover }: MobileTabsLayoutProps) {
   // which is the cold-load state this deliberately does not have.
   useEffect(() => lowerMobilePanels, []);
 
+  // **Say how much of the bottom edge is spoken for, so nothing has to guess.**
+  // Anything that docks to the bottom of the screen has to clear the bar, and
+  // the things that do are `fixed` overlays in other layers — the PIP mini-bar
+  // is a `features/` component, which cannot import this widget's constant even
+  // though it must not paint over it (DOR-1177). So the number is published as
+  // a custom property while the bar is on screen and removed with it, the same
+  // shape `PipMiniBar` uses for `--pip-dock` in the other direction. Readers
+  // default to `0px`, which is the truth on desktop and in the Obsidian embed,
+  // where this cockpit is never mounted.
+  useEffect(() => {
+    document.documentElement.style.setProperty('--mobile-tab-dock', MOBILE_TAB_BAR_DOCK);
+    return () => {
+      document.documentElement.style.removeProperty('--mobile-tab-dock');
+    };
+  }, []);
+
   const onSelect = useCallback(
     (id: MobileTabId) => {
       const tab = MOBILE_TABS.find((entry) => entry.id === id);
@@ -203,7 +219,12 @@ export function MobileTabsLayout({ takeover }: MobileTabsLayoutProps) {
           'bg-background fixed inset-x-0 top-0 z-30',
           !panelUp && 'pointer-events-none invisible'
         )}
-        style={{ bottom: MOBILE_TAB_BAR_DOCK }}
+        // The panels stop where the bar starts — and, when a PIP is docked, one
+        // mini-bar higher: the bar is a `fixed` overlay above these panels, so
+        // without this the last row of Today sits under it and cannot be
+        // pressed (DOR-1177). `--pip-dock` is absent whenever no PIP is
+        // minimized, which is what makes the ordinary case cost nothing.
+        style={{ bottom: `calc(${MOBILE_TAB_BAR_DOCK} + var(--pip-dock, 0px))` }}
       >
         <MobileTabPanel id="home" active={active === 'home'}>
           {/* New stays in the header — no FAB (§9). The header block is the
