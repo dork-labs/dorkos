@@ -41,13 +41,17 @@
  *   resolutions of the SAME identity. Pinning the value would force a relaunch
  *   on every dispatch and warmth would never exist. What actually changes the
  *   process's authority is the identity it was minted for, so that is the pin —
- *   and revocation needs no relaunch either way, because a revoked token stops
- *   resolving for the live process too.
+ *   and revocation needs no relaunch either, because the token in the child's
+ *   env is only a lookup key: authority is resolved server-side per request
+ *   against `revokedAt`, so a revoked token stops resolving for the live process
+ *   too. See `claude-code/NOTES.md` for what that does and does not cover.
  * - **In-process MCP servers.** The server factory builds new `McpServer`
  *   objects per launch on purpose (reusing one raises "Already connected to a
- *   transport"), so instance identity says nothing. The pin is the server SET —
- *   names and transports — because reconnecting every server on every dispatch
- *   would be a real cost paid for no change.
+ *   transport"), so instance identity says nothing. The pin is therefore every
+ *   field the config DECLARES, with only the live `instance` dropped — not just
+ *   the names and transports, because an `http` server's `headers` and a `stdio`
+ *   server's `env` carry that connector's credential and a rotated one must
+ *   still reach the warm process.
  *
  * ## Verdict on the SDK's native `WarmQuery` (asked by DOR-1170)
  *
@@ -296,8 +300,33 @@ function serializeEnv(
 }
 
 /**
- * The MCP server set as a comparable descriptor: what each server IS, never the
- * live object it is served by. See the module doc for why instances are ignored.
+ * JSON with object keys in sorted order, so two configs that say the same thing
+ * serialize identically however they were built. `undefined` members are
+ * dropped, because an absent key and an explicitly-undefined one are the same
+ * config to the SDK.
+ */
+function canonicalJson(value: unknown): string {
+  if (value === null || typeof value !== 'object') return JSON.stringify(value) ?? 'null';
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
+  const entries = Object.entries(value as Record<string, unknown>)
+    .filter(([, member]) => member !== undefined)
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+  return `{${entries.map(([key, member]) => `${JSON.stringify(key)}:${canonicalJson(member)}`).join(',')}}`;
+}
+
+/**
+ * The MCP server set as a comparable descriptor: everything each server config
+ * DECLARES, never the live object it is served by.
+ *
+ * Only `instance` is dropped, and only because the factory builds a new
+ * `McpServer` per launch on purpose (see the module doc). Every other field is
+ * compared, which matters most for the ones that carry credentials — an `http`
+ * server's `headers` and a `stdio` server's `env` (`mcp-server-config.ts` fills
+ * both from the session's connector accounts). Comparing name and URL alone let
+ * a rotated bearer token, or a switch to another account's token on the same
+ * toolkit, read as "no change": `setMcpServers` never fired and the warm process
+ * kept talking to the connector with the OLD credential. The declared fields are
+ * hashed rather than spelled so the fingerprint itself stays free of secrets.
  */
 function describeMcpServers(
   servers: Readonly<Record<string, McpServerConfig>> | undefined
@@ -308,11 +337,8 @@ function describeMcpServers(
     .map((name) => {
       const config = servers[name]!;
       const type = config.type ?? 'stdio';
-      if (type === 'sdk') return `${name}:sdk`;
-      if ('url' in config) return `${name}:${type}:${config.url}`;
-      if ('command' in config)
-        return `${name}:${type}:${config.command} ${(config.args ?? []).join(' ')}`;
-      return `${name}:${type}`;
+      const { instance: _instance, ...declared } = config as { instance?: unknown };
+      return `${name}:${type}:${digest(canonicalJson(declared))}`;
     })
     .join(FIELD_SEP);
 }

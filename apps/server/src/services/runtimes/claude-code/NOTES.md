@@ -82,20 +82,51 @@ toggles rarely, and a wrong answer costs a turn that ran in the wrong mode. Fail
 LIVE-VERIFY: `applyFlagSettings({ fastMode })` on a live query, against `Options.settings`.
 Move the pin to `live` only after watching a turn actually change behaviour.
 
-### `mcpServers` is compared by SET, not by instance
+### `mcpServers` is compared by DECLARED CONFIG, not by instance
 
 The MCP server factory builds new `McpServer` objects per launch on purpose ("Already
 connected to a transport" from reusing one), so object identity is meaningless across
-launches. The fingerprint compares names and transports. Without that, `setMcpServers` would
-fire on every dispatch and reconnect every server for no change.
+launches. Without ignoring it, `setMcpServers` would fire on every dispatch and reconnect
+every server for no change.
+
+`instance` is therefore the only field dropped. Everything else the config declares is
+hashed into the descriptor, because two of those fields carry credentials: an `http`/`sse`
+server's `headers` and a `stdio` server's `env`, both filled from the session's connector
+accounts (`mcp-server-config.ts`). An earlier version compared only name, transport and
+URL/command, which meant a refreshed OAuth token — or a switch to a different account on the
+same toolkit, which keeps the server name and URL — compared EQUAL: `setMcpServers` never
+fired and the warm process went on using the old credential. Fields are hashed rather than
+spelled so no secret lands in the fingerprint.
 
 ### The agent identity token is pinned by IDENTITY, not by value
 
-`agent-identity-service.mint()` returns fresh random bytes on every call, so two resolutions
-for the same agent produce different tokens. Pinning the token value would relaunch on every
-single dispatch and warmth would never exist. The pin is the identity the token was minted
-for. Revocation does not need a relaunch either: a revoked token stops resolving for the live
-process too, so the tools it authorizes start failing rather than quietly continuing to work.
+`agent-identity-service.mint()` returns fresh random bytes on every call
+(`randomBytes(16).toString('hex')`), so two resolutions for the same agent produce different
+tokens. Pinning the token value would relaunch on every single dispatch and warmth would
+never exist. The pin is the identity the token was minted for.
+
+**Revocation still bites a live process, and needs no relaunch — on the bearer path.** The
+token in the child's env is only a lookup key; authority is resolved server-side on every
+request. `resolve()` filters on `isNull(revokedAt)` per call and
+`middleware/agent-identity.ts` calls it per request with no cache, so the moment
+`revoke(agentPath)` marks the rows, the very next `dorkos call` from the running process
+stops resolving. Nothing is baked in but the key.
+
+Two precisions, because "stops resolving" is not the same as "stops working":
+
+- A call that does not resolve becomes **unattributed**, not refused. Identity is never
+  required, and the anonymous ceiling is `destructive` by default
+  (`DEFAULT_ANONYMOUS_TIER_CEILING`), so revocation removes attribution and any
+  identity-scoped standing grants — meaning MORE approval prompts — rather than failing the
+  tools outright. It only denies where an operator has lowered `anonymousTierCeiling`.
+- The **in-session** MCP path does not use the token at all: it resolves from the session's
+  cwd via `describeAgent()`, and `createInSessionContextResolver` memoizes for the life of
+  the MCP server instance — which is one per `query()`, i.e. one per PROCESS. Under a pump
+  that is the whole warm lifetime, so a revocation lands only on the next relaunch, where on
+  the resume-per-message path it landed on the next message. That is a property of warmth,
+  not of this pin: `agentPath` does not move when a token is revoked, so no fingerprint row
+  could catch it. Worth a follow-up against the pump — the resolver wants invalidating when a
+  process is reused, not just when it is built.
 
 ---
 
