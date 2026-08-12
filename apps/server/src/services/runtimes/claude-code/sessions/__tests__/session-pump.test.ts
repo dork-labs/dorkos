@@ -320,6 +320,56 @@ describe('SessionPump — the state machine (spec §4.2)', () => {
       { from: 'warm', to: 'running' },
     ]);
   });
+
+  // Purpose: DOR-1187. On the cold path the pump reaches WARM (system/init)
+  // before `dispatch` flips it to RUNNING, and a fast turn's `result` can close
+  // the window in that gap. `endTurn()` is a no-op against a not-yet-RUNNING
+  // pump, so before the fix the pump moved to RUNNING with no window left to
+  // close it and STRANDED there — the next dispatch then threw an illegal
+  // transition. The `fetchUsage` IPC round trip usually orders that close
+  // safely, but a safety that rides on microtask timing is not one.
+  //
+  // Reproduced deterministically by closing the turn the instant the pump
+  // reports WARM during the launch — the same moment a raced `result` would.
+  it('does not strand in RUNNING when a result closes the turn before dispatch opens it', async () => {
+    const queries: FakeQuery[] = [];
+    // A holder breaks the cycle: `onStateChange` needs the pump, which needs
+    // `onStateChange` to be constructed.
+    const ref: { pump?: SessionPump } = {};
+    let closedOnce = false;
+    const pump = new SessionPump({
+      sessionId: 'sess-1',
+      launch: () => {
+        const query = new FakeQuery();
+        queries.push(query);
+        return query;
+      },
+      onStateChange: (change) => {
+        // The window's `result` lands and closes the turn exactly as the pump
+        // reaches WARM, before `dispatch` has opened it — a no-op close today.
+        if (change.to === 'warm' && !closedOnce) {
+          closedOnce = true;
+          ref.pump?.endTurn();
+        }
+      },
+      drainGraceMs: 20,
+    });
+    ref.pump = pump;
+
+    const dispatched = pump.dispatch([{ content: 'fast turn', messageId: 'msg-fast' }]);
+    await vi.waitFor(() => expect(queries.length).toBe(1));
+    queries[0]!.emit(initMessage());
+    await dispatched;
+
+    // The turn ran and closed, so the pump is WARM and ready — not stranded in
+    // RUNNING with a window nothing can close.
+    expect(pump.state).toBe('warm');
+
+    // And the proof it is not stranded: the next turn opens instead of throwing
+    // `IllegalPumpTransitionError('running','running')`.
+    await pump.dispatch([{ content: 'the next turn', messageId: 'msg-next' }]);
+    expect(pump.state).toBe('running');
+  });
 });
 
 describe('SessionPump — guards', () => {

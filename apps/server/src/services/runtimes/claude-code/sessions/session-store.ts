@@ -6,7 +6,7 @@
  *
  * @module services/runtimes/claude-code/session-store
  */
-import { forkSession as sdkForkSession } from '@anthropic-ai/claude-agent-sdk';
+import { forkSession as sdkForkSession, type Query } from '@anthropic-ai/claude-agent-sdk';
 import type {
   PermissionMode,
   EffortLevel,
@@ -529,17 +529,38 @@ export class SessionStore {
   async interruptQuery(sessionId: string): Promise<boolean> {
     const session = this.findSession(sessionId);
     if (!session?.activeQuery) return false;
+    return this.interruptGivenQuery(sessionId, session.activeQuery);
+  }
+
+  /**
+   * Interrupt a SPECIFIC query for a session, escalating to a forceful
+   * `close()` if the graceful `interrupt()` throws.
+   *
+   * Split out of {@link interruptQuery} so the persistent path can stop a turn
+   * that is still BOOTING — one whose live query the pump holds before its
+   * `running` edge has armed `session.activeQuery` (DOR-1191). Same escalation,
+   * same phantom-cancellation stamp, so a Stop during launch behaves exactly as
+   * a Stop on a turn that has already reached the model.
+   *
+   * @param sessionId - The session the query belongs to
+   * @param query - The live query to interrupt
+   * @returns True when the turn was interrupted or the process was closed, false
+   *   when neither path took and the session is unknown
+   */
+  async interruptGivenQuery(sessionId: string, query: Query): Promise<boolean> {
+    const session = this.findSession(sessionId);
+    if (!session) return false;
     // A deliberate stop is about to cancel every pending tool call; stamp it so
     // the phantom-cancellation detector (DOR-1087) treats the resulting CLI
     // interrupt sentinels as legitimate rather than phantoms.
     session.interruptRequestedAt = Date.now();
     try {
-      await session.activeQuery.interrupt();
+      await query.interrupt();
       return true;
     } catch {
       // Interrupt failed — escalate to forceful close
       try {
-        session.activeQuery.close();
+        query.close();
         return true;
       } catch {
         // Neither path stopped the turn — do not blind the phantom detector.

@@ -47,6 +47,15 @@ export class FakeCliProcess {
   ended = false;
   /** How many times the forceful `close()` was reached for. */
   closed = 0;
+  /** How many times the graceful `interrupt()` was reached for. */
+  interrupts = 0;
+  /**
+   * When set, `interrupt()` rejects with this instead of resolving — the SDK's
+   * pre-init failure path, where the control write fails because the process is
+   * already gone (`request()` rejects on a failed `transport.write`). Drives the
+   * escalation-to-`close()` branch a booting Stop can hit (DOR-1191).
+   */
+  interruptRejectsWith: unknown;
   /** The four settable-live pins, in the order they were applied. */
   readonly liveSets: string[] = [];
   /** Every message id this process has READ off its input stream, in order. */
@@ -57,15 +66,34 @@ export class FakeCliProcess {
   private failure: unknown;
   /** When false, a dispatched message is read but deliberately left unanswered. */
   private autoAnswer = true;
+  /** A prompt whose reading waits for {@link reportReady}, so a turn can hang mid-boot. */
+  private deferredPrompt: AsyncIterable<unknown> | undefined;
 
   /**
    * Boot a process around a held prompt.
    *
    * @param options - The SDK options this launch was handed
    * @param prompt - The held input stream the pump owns
+   * @param deferInit - When true, hold `system/init` until {@link reportReady},
+   *   so a test can press Stop while the first turn is still booting (DOR-1191).
    */
-  constructor(options: Options, prompt: AsyncIterable<unknown>) {
+  constructor(options: Options, prompt: AsyncIterable<unknown>, deferInit = false) {
     this.options = options;
+    if (deferInit) {
+      // Nothing is read or answered until the process reports ready: the pump
+      // stays WARMING and its dispatch parks on `system/init`.
+      this.deferredPrompt = prompt;
+      return;
+    }
+    this.emit(initMessage());
+    void this.readPrompt(prompt);
+  }
+
+  /** Emit the held `system/init` and start reading, ending a deferred boot. */
+  reportReady(): void {
+    if (this.deferredPrompt === undefined) return;
+    const prompt = this.deferredPrompt;
+    this.deferredPrompt = undefined;
     this.emit(initMessage());
     void this.readPrompt(prompt);
   }
@@ -185,6 +213,8 @@ export class FakeCliProcess {
   }
 
   interrupt(): Promise<void> {
+    this.interrupts += 1;
+    if (this.interruptRejectsWith !== undefined) return Promise.reject(this.interruptRejectsWith);
     return Promise.resolve();
   }
 
@@ -208,6 +238,12 @@ export class FakeCliProcess {
 /** Every process a run of the fake CLI booted, oldest first. */
 export class FakeCli {
   readonly processes: FakeCliProcess[] = [];
+  /**
+   * When true, the NEXT process booted holds its `system/init` until
+   * {@link FakeCliProcess.reportReady}, so a test can catch a turn mid-boot
+   * (DOR-1191). Reset after it takes, so only the one launch is deferred.
+   */
+  deferNextInit = false;
 
   /**
    * The `query()` implementation to hand `vi.mocked(query).mockImplementation`.
@@ -215,7 +251,9 @@ export class FakeCli {
    * @returns A live process, recorded in {@link processes}
    */
   readonly query = (args: { prompt: AsyncIterable<unknown>; options: Options }): FakeCliProcess => {
-    const process = new FakeCliProcess(args.options, args.prompt);
+    const deferInit = this.deferNextInit;
+    this.deferNextInit = false;
+    const process = new FakeCliProcess(args.options, args.prompt, deferInit);
     this.processes.push(process);
     return process;
   };

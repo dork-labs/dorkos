@@ -320,6 +320,88 @@ describe('Stop reaches a turn, never a process that is merely warm', () => {
     process.answer(process.received[1]!);
     await running;
   });
+
+  // DOR-1191. The first turn of a cold session passes warming -> warm ->
+  // running, and only reaches running once `system/init` arrives — up to
+  // INIT_TIMEOUT_MS later. `session.activeQuery` arms on that running edge, so a
+  // Stop pressed while the process is still booting used to find nothing and do
+  // nothing: exactly when someone Stops a mis-send. It must reach the booting
+  // turn through the live query the pump already holds.
+  it('reaches a first turn that is still booting', async () => {
+    const sessionId = nextSession();
+    // The process boots but holds `system/init`, so the first turn parks in the
+    // launch window rather than reaching the model.
+    cli.deferNextInit = true;
+
+    const booting = turn(sessionId, 'a mis-send, stopped before it lands');
+    const process = await vi.waitFor(() => {
+      expect(cli.launches).toBe(1);
+      return cli.processes[0]!;
+    });
+    // The pump is warming: no turn has reached the model, so warmth is not yet
+    // `running` and the ordinary Stop path (`session.activeQuery`) is empty.
+    expect(runtime.getSessionWarmth(sessionId)).toBe('warming');
+
+    // The person presses Stop while the mis-send is still booting.
+    expect(
+      await runtime.interruptQuery(sessionId),
+      'Stop could not reach a turn that was still booting'
+    ).toBe(true);
+    // And it actually reached the process, through the same graceful interrupt
+    // the running path uses — not a bookkeeping `true` that stopped nothing.
+    expect(process.interrupts).toBe(1);
+
+    // Let the (now-interrupted) boot finish so the hanging turn settles rather
+    // than leaking into the next case.
+    process.reportReady();
+    const events = await booting;
+    expect(events.some((e) => e.type === 'done')).toBe(true);
+  });
+
+  // Pins the interrupt-FAILURE escalation at exactly this seam. `interrupt()`
+  // before `system/init` writes a control request to the subprocess and awaits
+  // the CLI's response, so it HANGS in the healthy case and only REJECTS when
+  // the stdin write fails because the process already died mid-boot (the SDK's
+  // `request()` rejects on a failed `transport.write`; the `Cr` wrapper
+  // re-throws). On that rejection the Stop escalates to a forceful `close()`,
+  // exactly as the running path does — so a booting Stop crashes the pump the
+  // same way a running Stop does when `interrupt()` rejects.
+  //
+  // KNOWN GAP (deferred, owned by the message-dispatcher layer): a boot that
+  // ends here produces error+done with NO `turn_start`, and a queued row retires
+  // ONLY on `turn_start` (`message-dispatcher.ts` `onTurnStart` → `store.remove`).
+  // So the stopped message's durable row is not retired and `adoptQueuedMessages`
+  // re-runs it on the next `dispatchMessage`. That re-run is NOT observable here
+  // (this harness wires no `MessageQueueStore`) and cannot be fixed at the
+  // pump/dispatch seam, which sits below retirement and never sees the queue —
+  // the fix belongs in the retirement/adoption layer and is tracked separately.
+  it('escalates to a forceful close when interrupt fails on a booting turn', async () => {
+    const sessionId = nextSession();
+    cli.deferNextInit = true;
+
+    const booting = turn(sessionId, 'a mis-send during a failing boot');
+    const process = await vi.waitFor(() => {
+      expect(cli.launches).toBe(1);
+      return cli.processes[0]!;
+    });
+    // The graceful interrupt rejects the way a dead-process control write does.
+    process.interruptRejectsWith = new Error('control write failed: the process is gone');
+
+    expect(await runtime.interruptQuery(sessionId)).toBe(true);
+    // Graceful attempted, then escalated to the forceful close — one of each.
+    expect(process.interrupts).toBe(1);
+    expect(process.closed).toBe(1);
+
+    // The close ends the booting process, so the turn settles as a failure
+    // rather than hanging. A first-turn launch rejection surfaces raw at the
+    // runtime layer — `guardTurnErrors` one layer up (`trigger-turn.ts`) turns
+    // it into the error+done pair a person sees, exactly as on any other
+    // first-turn launch failure — so at THIS seam it rejects.
+    await expect(booting).rejects.toMatchObject({ reason: 'process-gone' });
+    // And the pump reports the crash honestly, the same as a running Stop whose
+    // interrupt rejected and escalated to close.
+    expect(runtime.getSessionWarmth(sessionId)).toBe('crashed');
+  });
 });
 
 describe('what a warm process must be re-checked for', () => {

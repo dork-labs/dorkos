@@ -115,6 +115,15 @@ interface SessionBundle {
   fingerprint: LaunchFingerprint | undefined;
   /** The plan of the dispatch currently in flight, read by the launcher. */
   plan: PumpLaunchPlan | undefined;
+  /**
+   * True while a turn is BOOTING on this session — the launch is in flight and
+   * the pump has not yet reached its `running` edge, so `session.activeQuery` is
+   * not armed. This is the one window where a Stop cannot reach the turn through
+   * the ordinary path, so {@link PersistentDispatch.bootingQuery} exposes
+   * {@link SessionBundle.live} to it (DOR-1191). Distinct from a merely-warm
+   * idle process, which is never booting a turn and must never be interrupted.
+   */
+  booting: boolean;
 }
 
 /** What one dispatch needs beyond the session itself. */
@@ -193,6 +202,26 @@ export class PersistentDispatch {
    */
   forget(sessionId: string): void {
     this.bundles.delete(sessionId);
+  }
+
+  /**
+   * The live query of a turn that is still BOOTING on this session, or
+   * `undefined` when none is.
+   *
+   * The runtime's `interruptQuery` reaches for this only after the ordinary Stop
+   * path (`session.activeQuery`) found nothing, so a Stop pressed while a cold
+   * session's first turn is still launching can still reach the process the pump
+   * holds — the `running` edge that would arm `activeQuery` has not fired yet
+   * (DOR-1191). Returns nothing for a merely-warm idle session: `booting` is
+   * only true while a dispatch is opening a turn, so a healthy warm process is
+   * never handed out to be interrupted.
+   *
+   * @param sessionId - The session a Stop is trying to reach
+   */
+  bootingQuery(sessionId: string): Query | undefined {
+    const bundle = this.bundles.get(sessionId);
+    if (bundle === undefined || !bundle.booting) return undefined;
+    return bundle.live;
   }
 
   /**
@@ -290,6 +319,12 @@ export class PersistentDispatch {
     for (const event of plan.statusEvents) yield event;
 
     let window: TurnWindow;
+    // A turn is booting from here until its window opens — the span in which the
+    // pump is warming and `session.activeQuery` is not yet armed, so Stop reaches
+    // the turn only through `bootingQuery` (DOR-1191). Cleared once the window is
+    // open (the `running` edge has armed `activeQuery`) or the dispatch is
+    // refused, in both cases through the `finally`.
+    bundle.booting = true;
     try {
       window = await bundle.recovery.dispatch(
         [{ content: plan.enrichedContent, messageId: messageOpts?.messageId ?? randomUUID() }],
@@ -298,6 +333,8 @@ export class PersistentDispatch {
     } catch (err) {
       yield* this.explainRefusedDispatch(sessionId, err);
       return;
+    } finally {
+      bundle.booting = false;
     }
 
     yield* streamTurnWindow({
@@ -384,6 +421,7 @@ export class PersistentDispatch {
       live: undefined,
       fingerprint: undefined,
       plan: undefined,
+      booting: false,
     } as unknown as SessionBundle;
 
     bundle.pump = this.registry.acquire(sessionId, {

@@ -106,6 +106,15 @@ export class SessionPump {
   private initTimer: ReturnType<typeof setTimeout> | undefined;
   private cachedCapabilities: readonly string[] = [];
   private disposed = false;
+  /**
+   * A `result` closed this turn's window before {@link dispatch} reached
+   * RUNNING. Set by {@link endTurn} — which is a no-op against a pump that is
+   * not yet RUNNING — and consumed by {@link openTurn}, which then settles the
+   * turn to WARM instead of stranding it in RUNNING with no window left to close
+   * it (DOR-1187). Reset at the top of every dispatch, so it can only ever
+   * describe the turn currently opening.
+   */
+  private turnClosedWhileOpening = false;
 
   /**
    * Build a pump for one session. Nothing is booted until it is warmed or
@@ -248,13 +257,16 @@ export class SessionPump {
         `session ${this.sessionId} is waiting on a person; dispatching now would answer nobody`
       );
     }
+    // Fresh for the turn about to open: a tombstone left by a previous close
+    // must not settle this one.
+    this.turnClosedWhileOpening = false;
     if (this.currentState === 'cold' || this.currentState === 'crashed') {
       // The first message rides the launch rather than being pushed after it:
       // it is in the stream from construction, so there is no window in which
       // the process is up and the message is merely "accepted".
       await this.launch(first);
       this.pushRest(rest);
-      this.setState('running');
+      this.openTurn();
       return;
     }
     // A launch somebody else started (an explicit `warm()`) has to finish
@@ -265,7 +277,29 @@ export class SessionPump {
     }
     this.pushOrFail(first);
     this.pushRest(rest);
+    this.openTurn();
+  }
+
+  /**
+   * Flip to RUNNING, then honor a `result` that closed this turn before we got
+   * here.
+   *
+   * On the cold and crashed paths the pump awaits its launch before opening the
+   * turn, and a fast turn's `result` can be answered — and its window closed via
+   * {@link endTurn} — during that await, while the pump is still WARM. `endTurn`
+   * is a no-op against a pump that is not yet RUNNING, so without this the pump
+   * would move to RUNNING here with no window left to close it and strand there;
+   * the next dispatch would then throw an illegal transition. `fetchUsage`'s IPC
+   * round trip is what USUALLY orders that close safely behind this flip, but a
+   * safety that rides on microtask timing is not one — so the settle is made
+   * explicit here instead (DOR-1187).
+   */
+  private openTurn(): void {
     this.setState('running');
+    if (this.turnClosedWhileOpening) {
+      this.turnClosedWhileOpening = false;
+      this.setState('warm');
+    }
   }
 
   /**
@@ -301,8 +335,18 @@ export class SessionPump {
    * makes it.
    */
   endTurn(): void {
-    if (this.currentState !== 'running') return;
-    this.setState('warm');
+    if (this.currentState === 'running') {
+      this.setState('warm');
+      return;
+    }
+    // A close that raced its own dispatch: on the cold and crashed paths a fast
+    // turn's `result` can arrive while the launch is still awaited and the pump
+    // is only WARM. Settling to WARM here would be wrong (there is nothing to
+    // settle yet), so the close is tombstoned for `openTurn` to honor the
+    // instant the turn opens — the robust half of DOR-1187. Bounded to the turn
+    // being opened: `turnClosedWhileOpening` is reset at the top of every
+    // dispatch, so a stray `result` against a settled pump stays a no-op.
+    this.turnClosedWhileOpening = true;
   }
 
   /**
