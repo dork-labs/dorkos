@@ -103,9 +103,12 @@ export function scopeEmptyMessage(scope: PaletteScope): string {
  *
  * An exact mirror of `RoomStore.resolveRoomOrigins`, which builds
  * `originLabel` as `#<slug>` for a channel and the title for a direct message.
- * The wire carries that label and not the room's id, so this string is the only
- * join available between a room and the conversations it started — see
- * {@link roomIdsByOriginLabel} for what that costs.
+ *
+ * The wire now also carries the room's ID (`Session.originRoomId`), which is
+ * what {@link scopesOfSession} joins on. This label remains the FALLBACK, for
+ * one case: a record made before the id existed — a cockpit tab that loaded
+ * against an older server and has not refetched since. See
+ * {@link roomIdsByOriginLabel} for what the fallback still cannot do.
  *
  * **A rename is NOT a problem here**, which is worth saying because it is the
  * first thing it looks like. `resolveRoomOrigins` joins the `rooms` table live
@@ -121,6 +124,11 @@ export function roomOriginLabel(room: RoomSummary): string {
 /**
  * Every room this cockpit can see, keyed by the label a turn it started carries.
  *
+ * **The fallback join, and only the fallback.** A conversation now arrives
+ * carrying the id of the room that started it (`Session.originRoomId`), so this
+ * map answers for one thing: a record made before that field existed — a tab
+ * that loaded against an older server and has not refetched since.
+ *
  * **Two rooms can produce the same label, and the map has to pick one.** The
  * label is a name, and names are not unique here:
  *
@@ -134,16 +142,10 @@ export function roomOriginLabel(room: RoomSummary): string {
  * beats an archived one, and a channel beats a direct message.** First write
  * wins after that. That makes the outcome deterministic and matches which room
  * a person is overwhelmingly likelier to mean — but it does not make it
- * *correct*, and the cost is worth naming plainly: in a collision, turns that
- * really came from the archived `#shipping` are offered under the live one, and
- * scoping to the archived room shows nothing at all.
- *
- * **The fix is a room id on the wire, and it is not this file's to make.** The
- * server already knows exactly which room started each session
- * (`room_sessions`, read by `resolveRoomOrigins`) and puts only the label on
- * `Session.originLabel`. Carrying `originRoomId` beside it turns this whole
- * function into a dictionary lookup that cannot collide. It is filed
- * separately because it crosses into the session-origin overlay.
+ * *correct*: in a collision, turns that really came from the archived
+ * `#shipping` are offered under the live one. That was the whole join before
+ * DOR-1157 and is now the floor a stale record falls back to, which is why the
+ * precedence is kept rather than deleted along with the reason for it.
  *
  * @param rooms - Every room the cockpit can see, in any order.
  */
@@ -169,25 +171,40 @@ export interface ScopableSession {
   origin?: string;
   /** The server's own wording for that origin — for a room turn, the room's label. */
   originLabel?: string;
+  /**
+   * The id of the room that started it — the join this file makes. Absent on a
+   * record that predates the field, which then falls back to the label.
+   */
+  originRoomId?: string;
 }
 
 /**
  * Which scopes one conversation belongs to, as {@link scopeKey} values.
  *
- * Two relations, and they are not equally solid, which is worth saying rather
- * than hiding behind a uniform-looking list:
+ * Two relations, and both are now identity joins:
  *
- * - **The agent relation is an identity join.** A conversation carries the
- *   directory it runs in and an agent IS a directory, so the two cannot drift.
- * - **The room relation is a label join**, because the server puts only
- *   `originLabel` on the wire. Two rooms can share a label, so the map it reads
- *   has to choose between them — see {@link roomIdsByOriginLabel} for which one
- *   it chooses, what that gets wrong, and why the fix lives on the server.
+ * - **The agent relation.** A conversation carries the directory it runs in and
+ *   an agent IS a directory, so the two cannot drift.
+ * - **The room relation.** The server stamps `originRoomId` from its own
+ *   `room_sessions` binding, so a conversation names the exact room that
+ *   started it and two rooms sharing a name cannot be confused for each other.
+ *
+ * The label lookup survives as a fallback for a record made before the id
+ * existed — a tab loaded against an older server that has not refetched. It can
+ * still pick the wrong room in a name collision; see
+ * {@link roomIdsByOriginLabel}.
+ *
+ * An id naming a room this cockpit cannot see (one the reader is not in, one
+ * deleted since the turn ran) is kept rather than filtered: it produces a key
+ * no chip can select, because a chip is built from a room that IS visible. The
+ * label path cannot afford the same generosity — a label it does not recognise
+ * has to be dropped, or the guess would file the conversation under a room it
+ * never came from.
  *
  * @param session - The conversation.
  * @param roomIdByOriginLabel - Every room this cockpit can see, keyed by the
  *   label the server would have stamped on a turn it started
- *   ({@link roomIdsByOriginLabel}).
+ *   ({@link roomIdsByOriginLabel}) — read only for the fallback.
  */
 export function scopesOfSession(
   session: ScopableSession,
@@ -195,9 +212,30 @@ export function scopesOfSession(
 ): string[] {
   const scopes: string[] = [];
   if (session.cwd !== null) scopes.push(interactionKey('agent', session.cwd));
-  if (session.origin === 'room' && session.originLabel !== undefined) {
-    const roomId = roomIdByOriginLabel.get(session.originLabel);
-    if (roomId !== undefined) scopes.push(interactionKey('room', roomId));
-  }
+  const roomId = originRoomIdOf(session, roomIdByOriginLabel);
+  if (roomId !== undefined) scopes.push(interactionKey('room', roomId));
   return scopes;
+}
+
+/**
+ * The room that started a conversation, by id — or `undefined` when none did
+ * and when the fallback cannot name one.
+ *
+ * The `origin === 'room'` guard is what keeps a scheduled run out: the Pulse
+ * overlay runs last on the server and takes `originRoomId` with it when it
+ * wins, so a room-started task reads as a task on both fields at once. Checking
+ * the origin as well costs nothing and makes this file's answer independent of
+ * that overlay ever slipping.
+ *
+ * @param session - The conversation.
+ * @param roomIdByOriginLabel - The fallback map, for records with no id.
+ */
+function originRoomIdOf(
+  session: ScopableSession,
+  roomIdByOriginLabel: ReadonlyMap<string, string>
+): string | undefined {
+  if (session.origin !== 'room') return undefined;
+  if (session.originRoomId !== undefined) return session.originRoomId;
+  if (session.originLabel === undefined) return undefined;
+  return roomIdByOriginLabel.get(session.originLabel);
 }

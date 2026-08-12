@@ -35,6 +35,30 @@ describe('applyRoomOriginOverlay', () => {
     expect(sessions[2].originLabel).toBe('Ana');
   });
 
+  // DOR-1157. A label is a name and names are not unique: an archived and a
+  // live channel can share a slug, and a DM can be titled `#general`. A client
+  // joining conversations to rooms by name had to guess between them.
+  it('names the room by id as well, which is the join a name cannot make', () => {
+    const sessions = [createMockSession({ id: 'bound' })];
+
+    applyRoomOriginOverlay(
+      sessions,
+      () => new Map([['bound', { roomLabel: '#shipping', roomId: 'room-shipping-archived' }]])
+    );
+
+    expect(sessions[0]!.originRoomId).toBe('room-shipping-archived');
+    // The label stays: it is what a person READS, and it tracks renames.
+    expect(sessions[0]!.originLabel).toBe('#shipping');
+  });
+
+  it('leaves no room id on a session no room is answering with', () => {
+    const sessions = [createMockSession({ id: 'loose' })];
+
+    applyRoomOriginOverlay(sessions, () => new Map());
+
+    expect('originRoomId' in sessions[0]!).toBe(false);
+  });
+
   it('leaves a session no room is answering with completely untouched', () => {
     const sessions = [createMockSession({ id: 'loose' })];
 
@@ -102,6 +126,10 @@ describe('applySessionOriginOverlays — the order, stated once', () => {
 
     expect(sessions[0]!.origin).toBe('task');
     expect(sessions[0]!.originLabel).toBe('Scheduled task · digest');
+    // …and it takes the room id with it. `Session.originRoomId` is documented
+    // as present only under `origin: 'room'`; a leftover id would be a room
+    // scope quietly claiming a run the wire calls a scheduled one.
+    expect('originRoomId' in sessions[0]!).toBe(false);
   });
 
   it('marks the room turn when no scheduled run claims the session', () => {
@@ -114,6 +142,7 @@ describe('applySessionOriginOverlays — the order, stated once', () => {
 
     expect(sessions[0]!.origin).toBe('room');
     expect(sessions[0]!.originLabel).toBe('#general');
+    expect(sessions[0]!.originRoomId).toBe('r1');
   });
 
   it('is a safe no-op on an install with both subsystems off', () => {

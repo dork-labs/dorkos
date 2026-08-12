@@ -127,15 +127,10 @@ export { countSessionsPerDay } from './session-daily-counts.js';
 // --- Global session-list discovery → unified SSE fan-out (Task #7, ADR-0265) ---
 export { SessionListBroadcaster, sessionListBroadcaster } from './session-list-broadcaster.js';
 
-// --- Pulse task-origin overlay (session-origin-legibility) ---
-export { applyTaskOriginOverlay } from './origin/task-origin-overlay.js';
-export type { ResolveTaskOrigins } from './origin/task-origin-overlay.js';
-
-// --- Room-origin overlay (team-room-home §D2.3, ADR 260808-140954) ---
-export { applyRoomOriginOverlay } from './origin/room-origin-overlay.js';
-export type { ResolveRoomOrigins } from './origin/room-origin-overlay.js';
-
-// --- Both origin overlays, in the one correct order (DOR-1141) ---
+// --- Session-origin overlays, room then Pulse (session-origin-legibility,
+// team-room-home §D2.3, ADR 260808-140954). The composite is the only seam:
+// the two halves are ordered, and a caller reaching past this for one of them
+// would be choosing an ordering rather than following one (DOR-1141). ---
 export {
   applySessionOriginOverlays,
   sessionOriginResolvers,
