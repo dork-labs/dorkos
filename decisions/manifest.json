@@ -4379,6 +4379,22 @@
       ]
     },
     {
+      "id": "260812-134510",
+      "slug": "persistent-streaming-input-sessions",
+      "title": "Persistent streaming-input sessions for claude-code, with resume as the recovery path",
+      "status": "accepted",
+      "created": "2026-08-12",
+      "extractedFrom": "persistent-session-runtime",
+      "specSlug": "persistent-session-runtime",
+      "affects": [
+        "apps/server/src/services/runtimes/claude-code/sessions/session-pump.ts",
+        "apps/server/src/services/runtimes/claude-code/sessions/persistent-dispatch.ts",
+        "apps/server/src/services/runtimes/claude-code/sessions/launch-fingerprint.ts",
+        "apps/server/src/services/runtimes/claude-code/sessions/session-pump-registry.ts",
+        "apps/server/src/config/constants.ts"
+      ]
+    },
+    {
       "id": "260811-132754",
       "slug": "one-interaction-store-for-every-kind-replaces-agent-only-bucket-frecency",
       "title": "One interaction store for every kind replaces agent-only bucket frecency",
