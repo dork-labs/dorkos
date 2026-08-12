@@ -51,6 +51,16 @@ export class HomeSurfacePage {
   /** Every tab, in DOM order. */
   readonly tabs: Locator;
 
+  /**
+   * The scroll cue over the bar's left edge, drawn only while labels are hidden
+   * behind it (DOR-1180). Absent from the DOM when there is nothing to
+   * advertise, so `toHaveCount(0)` is the honest "no cue" assertion.
+   */
+  readonly tabsFadeStart: Locator;
+
+  /** The same over the right edge — what a phone sees on a cold load. */
+  readonly tabsFadeEnd: Locator;
+
   /** The sidebar's top-level nav block: four destinations plus Search. */
   readonly sidebarNav: Locator;
 
@@ -77,6 +87,10 @@ export class HomeSurfacePage {
     this.page = page;
     this.tabBar = page.getByTestId('home-tabs');
     this.tabs = this.tabBar.getByRole('link');
+    // Siblings of the bar, not children: they are pinned to what the strip
+    // SHOWS, and inside the scroller they would scroll away with its content.
+    this.tabsFadeStart = page.getByTestId('home-tabs-fade-start');
+    this.tabsFadeEnd = page.getByTestId('home-tabs-fade-end');
     this.sidebarNav = page.getByTestId('sidebar-footer-strip-row');
     this.composer = page.getByTestId('home-composer');
     this.composerField = this.composer.getByRole('combobox');

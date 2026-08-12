@@ -1,5 +1,5 @@
 /**
- * Whether a vertical scroller still has content past either edge.
+ * Whether a scroller still has content past either edge, on either axis.
  *
  * @module shared/model/scroll/use-scroll-overflow
  */
@@ -8,28 +8,35 @@ import { useCallback, useEffect, useState, type RefObject } from 'react';
 /**
  * How much scroll range counts as none, in pixels.
  *
- * Fractional layout heights leave a sub-pixel remainder at rest, which would
+ * Fractional layout sizes leave a sub-pixel remainder at rest, which would
  * otherwise pin a cue on permanently at the end of a fully-scrolled list.
  */
 const EDGE_SLACK_PX = 1;
+
+/** Which axis a scroller scrolls on. */
+export type ScrollAxis = 'vertical' | 'horizontal';
 
 /** What {@link useScrollOverflow} hands back. */
 export interface ScrollOverflow {
   /** Wire to the scroller's `onScroll`. */
   onScroll: () => void;
-  /** True when content is hidden above the top edge. */
-  above: boolean;
-  /** True when content is hidden below the bottom edge. */
-  below: boolean;
+  /**
+   * True when content is hidden behind the edge the scroller starts at — the
+   * top of a vertical list, the left of a horizontal one.
+   */
+  start: boolean;
+  /** True when content is hidden behind the far edge — the bottom, or the right. */
+  end: boolean;
 }
 
 /**
  * Watch a scroller and report which edges still have content behind them.
  *
  * The answer a scroll cue is drawn from: a list clipped at a height cap looks
- * exactly like a list that ended, and macOS shows no scrollbar until you have
- * already scrolled — so without this the last row is simply cut in half and
- * nothing says why (DOR-1043).
+ * exactly like a list that ended, a strip of tabs clipped at a phone's width
+ * looks exactly like a word somebody mis-typed, and macOS shows no scrollbar
+ * until you have already scrolled — so without this the last row is simply cut
+ * in half and nothing says why (DOR-1043, DOR-1180).
  *
  * Report only what is really behind the edge. A cue over content that cannot be
  * reached is worse than no cue at all (the rule ADR 260725-004456 set when the
@@ -51,23 +58,31 @@ export interface ScrollOverflow {
  * `react-hooks/refs` is right to refuse, and which suppressing per call site
  * would teach the wrong lesson.
  *
- * @param ref - The element carrying `overflow-y: auto`.
+ * @param ref - The element carrying `overflow-y: auto` or `overflow-x: auto`.
+ * @param axis - Which way it scrolls. Vertical by default.
  */
-export function useScrollOverflow(ref: RefObject<HTMLElement | null>): ScrollOverflow {
-  const [edges, setEdges] = useState({ above: false, below: false });
+export function useScrollOverflow(
+  ref: RefObject<HTMLElement | null>,
+  axis: ScrollAxis = 'vertical'
+): ScrollOverflow {
+  const [edges, setEdges] = useState({ start: false, end: false });
 
   const measure = useCallback(() => {
     const el = ref.current;
     if (!el) return;
-    const max = el.scrollHeight - el.clientHeight;
+    // The same three numbers on either axis, which is the whole of the axis
+    // difference — everything below is about WHEN to read them, not which.
+    const offset = axis === 'vertical' ? el.scrollTop : el.scrollLeft;
+    const visible = axis === 'vertical' ? el.clientHeight : el.clientWidth;
+    const total = axis === 'vertical' ? el.scrollHeight : el.scrollWidth;
     const next = {
-      above: el.scrollTop > EDGE_SLACK_PX,
-      below: el.scrollTop < max - EDGE_SLACK_PX,
+      start: offset > EDGE_SLACK_PX,
+      end: offset < total - visible - EDGE_SLACK_PX,
     };
     // Bail out on an unchanged reading, so the commit-scoped effect below
     // settles after one pass instead of re-rendering forever.
-    setEdges((prev) => (prev.above === next.above && prev.below === next.below ? prev : next));
-  }, [ref]);
+    setEdges((prev) => (prev.start === next.start && prev.end === next.end ? prev : next));
+  }, [axis, ref]);
 
   // No dependency array on purpose — see the note above the hook.
   useEffect(() => {
@@ -76,7 +91,7 @@ export function useScrollOverflow(ref: RefObject<HTMLElement | null>): ScrollOve
 
     const el = ref.current;
     if (!el) return;
-    // The scroller gives `clientHeight`; its children are what `scrollHeight`
+    // The scroller gives the visible size; its children are what the total
     // measures, and they resize on their own — a late web font, a card growing
     // a second line — with the scroll box exactly the size it was.
     const observer = new ResizeObserver(measure);
@@ -85,5 +100,5 @@ export function useScrollOverflow(ref: RefObject<HTMLElement | null>): ScrollOve
     return () => observer.disconnect();
   });
 
-  return { onScroll: measure, above: edges.above, below: edges.below };
+  return { onScroll: measure, start: edges.start, end: edges.end };
 }

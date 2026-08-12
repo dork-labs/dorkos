@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, type ReactNode } from 'react';
 import { X, Puzzle } from 'lucide-react';
 import { cn } from '@/layers/shared/lib';
 import {
@@ -9,7 +9,12 @@ import {
   useRovingTabList,
   type RovingTabProps,
 } from '@/layers/shared/ui';
-import { useAppStore, type RightPanelContribution } from '@/layers/shared/model';
+import {
+  revealInScroller,
+  useAppStore,
+  useScrollOverflow,
+  type RightPanelContribution,
+} from '@/layers/shared/model';
 
 /** DOM id of the right-panel content region the active tab controls. */
 export const RIGHT_PANEL_PANEL_ID = 'right-panel-content';
@@ -128,9 +133,6 @@ export function RightPanelHeader({ contributions, actions }: RightPanelHeaderPro
   );
 }
 
-/** Breathing room left beside a tab that had to be scrolled into view. */
-const REVEAL_MARGIN_PX = 8;
-
 /**
  * The segmented tab control, which scrolls rather than clipping.
  *
@@ -169,17 +171,11 @@ function TabStrip({
 }) {
   const scrollerRef = useRef<HTMLDivElement>(null);
   const tablistRef = useRef<HTMLDivElement>(null);
-  const [edges, setEdges] = useState({ start: false, end: false });
-
-  const measure = useCallback(() => {
-    const el = scrollerRef.current;
-    if (!el) return;
-    // 1px slack: fractional layout widths leave a sub-pixel remainder that would
-    // otherwise pin a fade on permanently at the end of a fully-scrolled strip.
-    const max = el.scrollWidth - el.clientWidth;
-    const next = { start: el.scrollLeft > 1, end: el.scrollLeft < max - 1 };
-    setEdges((prev) => (prev.start === next.start && prev.end === next.end ? prev : next));
-  }, []);
+  // Which edge still has tabs behind it. The same hook the home tab bar and the
+  // pinned triage header draw their cues from — "is anything hidden past this
+  // edge" has one answer in this codebase, and its 1px slack rule and its
+  // re-measure-on-every-commit rule live with it rather than in three copies.
+  const edges = useScrollOverflow(scrollerRef, 'horizontal');
 
   /**
    * Scroll the least distance that puts the selected tab fully inside the strip.
@@ -201,51 +197,48 @@ function TabStrip({
     const el = scrollerRef.current;
     const tab = selectedTab();
     if (!el || !tab) return;
-    const box = el.getBoundingClientRect();
-    const rect = tab.getBoundingClientRect();
-    const pastEnd = rect.right - box.right;
-    const pastStart = box.left - rect.left;
-    // Only one can be positive unless the tab is wider than the strip, in which
-    // case its start is the half worth showing — that is where the label is.
-    if (pastStart > 0) el.scrollLeft -= pastStart + REVEAL_MARGIN_PX;
-    else if (pastEnd > 0) el.scrollLeft += pastEnd + REVEAL_MARGIN_PX;
+    revealInScroller(el, tab);
   }, [selectedTab]);
 
-  // Re-measure on any size change, and re-reveal with it: the panel is resizable,
-  // so a strip that fitted a moment ago can leave the selected tab behind an edge.
+  // Re-reveal on any size change: the panel is resizable, so a strip that fitted
+  // a moment ago can leave the selected tab behind an edge.
   //
-  // Three boxes are observed, because they answer different parts of the question.
-  // The scroller gives `clientWidth`. The tablist inside it is what `scrollWidth`
-  // measures, and it can change on its own — a late web font, a contribution
-  // renaming its tab — with the scroll box the same size. And the selected tab
-  // itself is the box the reveal exists to keep on screen: anything that moves or
-  // resizes it (a sibling tab widening as its label resolves) invalidates a scroll
-  // position that was correct when it was set, which is what left the reveal one
-  // tab's width short of the edge.
+  // **All three boxes, and sharing the fades' observer is not enough.**
+  // `useScrollOverflow` watches the scroller too, but it watches it to answer a
+  // different question and it does not run this. Dropping the scroller from
+  // THIS list left the reveal blind to the one case that resizes only the scroll
+  // box: dragging the panel divider narrower. Measured on the real component —
+  // a tab that fitted at 340px, with the box then narrowed to 200px, stays at
+  // `scrollLeft: 0` with its label half-drawn, which is verbatim one of the
+  // three failures DOR-471 was written for.
+  //
+  // Each box answers its own part. The scroller gives the viewport the reveal
+  // compares against. The tablist is the content, which can change size on its
+  // own — a late web font, a contribution renaming its tab — while the box does
+  // not. And the selected tab itself is what the reveal exists to keep on
+  // screen: anything that moves or resizes it (a sibling tab widening as its
+  // label resolves) invalidates a scroll position that was correct when it was
+  // set, which is what left the reveal one tab's width short of the edge.
   //
   // Keyed on the tab ids, not their count: a route change can swap one
   // contribution for another and leave the count alone, and that is exactly when
   // the strip's content width changes underneath a stale reading.
   const tabIds = contributions.map((c) => c.id).join(',');
   useEffect(() => {
-    const onLayoutChange = () => {
-      revealActiveTab();
-      measure();
-    };
-    onLayoutChange();
+    revealActiveTab();
     if (typeof ResizeObserver === 'undefined') return;
-    const observer = new ResizeObserver(onLayoutChange);
+    const observer = new ResizeObserver(revealActiveTab);
     for (const el of [scrollerRef.current, tablistRef.current, selectedTab()]) {
       if (el) observer.observe(el);
     }
     return () => observer.disconnect();
-  }, [measure, revealActiveTab, selectedTab, tabIds]);
+  }, [revealActiveTab, selectedTab, tabIds]);
 
   return (
     <div className="relative min-w-0 flex-1">
       <div
         ref={scrollerRef}
-        onScroll={measure}
+        onScroll={edges.onScroll}
         // `overflow-y-hidden` is explicit on purpose: with `overflow-x: auto` and a
         // `visible` cross axis, CSS promotes the used `overflow-y` to `auto` too,
         // which clips the active tab's `shadow-sm` and the focus ring against the

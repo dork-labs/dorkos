@@ -68,6 +68,47 @@ function WidgetPipContent({ content }: { content: Extract<PipContent, { kind: 'w
   return <LiveSessionWidget sessionId={content.sessionId} />;
 }
 
+/** The search param {@link useDevPipDeepLink} answers to. */
+const DEV_PIP_PARAM = 'pip';
+
+/** What `?pip=demo` opens. */
+const DEV_PIP_TITLE = 'Demo panel';
+
+/**
+ * Open the demo PIP once on mount when the page was loaded with `?pip=demo`.
+ *
+ * **Why this exists.** Every real way to open a PIP needs a live model turn: an
+ * agent emits a `dorkos-ui` fence or an MCP app and somebody pops it out. So the
+ * one state where PIP touches the rest of the cockpit — a mini-bar docked at the
+ * bottom of a phone, beside four destinations it must not cover — had no way to
+ * be reached in a test at all, and the occlusion it caused was found by reading
+ * CSS rather than by anything red (DOR-1177). A fix with no seam leaves the next
+ * one to be found the same way.
+ *
+ * `demo` is the kind that already exists for exactly this: it renders a static
+ * body, needs no session, and is what the Dev Playground showcase drives.
+ *
+ * **Development only, and structurally so.** `import.meta.env.DEV` is replaced
+ * with `false` at build time, so a production bundle carries a function that
+ * cannot do anything — there is no shipped URL that opens a demo panel. The
+ * browser suite runs against the Vite dev server, which is where it is live.
+ *
+ * Read straight off `window.location` rather than through the router's search
+ * schema: this is a development seam, not a product deep link, and it must work
+ * identically in the router-less Obsidian embed shell, which mounts the same
+ * host.
+ *
+ * @param open - The store's `openPip`.
+ */
+function useDevPipDeepLink(open: (content: PipContent) => void): void {
+  React.useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get(DEV_PIP_PARAM) !== 'demo') return;
+    open({ kind: 'demo', title: DEV_PIP_TITLE });
+  }, [open]);
+}
+
 /** Compute the default bottom-right dock for a panel that has no saved geometry. */
 function defaultGeometry(): FloatingPanelGeometry {
   return {
@@ -213,7 +254,11 @@ export function PipHost(): React.ReactNode {
   const closePip = useAppStore((s) => s.closePip);
   const minimizePip = useAppStore((s) => s.minimizePip);
   const restorePip = useAppStore((s) => s.restorePip);
+  const openPip = useAppStore((s) => s.openPip);
   const isMobile = useIsMobile();
+
+  // Development-only `?pip=demo` seam — see useDevPipDeepLink.
+  useDevPipDeepLink(openPip);
 
   // Desktop→mobile rising edge with content open lands minimized: a rotation
   // or window shrink must never suddenly cover half the screen with the sheet.

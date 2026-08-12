@@ -364,8 +364,8 @@ export function PinnedTriageHeaderView({
               {presence?.node}
             </div>
 
-            {overflow.above && <ScrollEdgeFade edge="top" />}
-            {overflow.below && <ScrollEdgeFade edge="bottom" />}
+            {overflow.start && <ScrollEdgeFade edge="top" />}
+            {overflow.end && <ScrollEdgeFade edge="bottom" />}
           </motion.div>
         )}
       </AnimatePresence>
