@@ -33,7 +33,7 @@
  * rendered composer on a notched phone and NOTHING else in the tree — no
  * attribute, no element, no other class.
  */
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
 import React, { createRef } from 'react';
 import { render, screen, cleanup, fireEvent, act, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -129,6 +129,7 @@ vi.mock('@/layers/entities/session', async (importOriginal) => ({
 
 import { ChatInputContainer } from '../ui/input/ChatInputContainer';
 import { useSessionStreamStore } from '@/layers/entities/session';
+import { configKeys } from '@/layers/entities/config';
 import { TransportProvider } from '@/layers/shared/model';
 import type { ToolCallState } from '../model/chat-types';
 import type { PendingFile } from '@/layers/features/composer';
@@ -211,17 +212,34 @@ type Props = ReturnType<typeof baseProps>;
  * own, so the baselines are untouched by its arrival — which the flag-off five
  * diffing empty against files recorded long before it is the proof of.
  *
+ * ## Why the config is SEEDED and not merely resolved
+ *
+ * The preference is now default-ON (owner decision, 2026-08-12), so a container
+ * that waits for config renders the RICH field first and swaps to the plain one
+ * a tick later. That swap is invisible to a person and fatal to a DOM
+ * photograph: the mount-time auto-focus lands on whichever field existed at
+ * mount, and jsdom cannot focus a `contenteditable`, so the composer's focus
+ * ring — and therefore three class tokens in every baseline — came out
+ * different depending on load ORDER.
+ *
+ * Seeding the answer into the query cache before the first render removes the
+ * swap entirely: each test renders the one field it is about, once. That is
+ * also the honest photograph, because the state being pinned is the resting
+ * state, not the transition.
+ *
  * @param props - The container's props for this state.
  * @param richText - Whether the composer formats as you type. `false` is the
  *   flag-off path the original five baselines pin.
  */
 function mount(props: Props, richText = false) {
+  const config = { ui: { composer: { richText } } };
   const transport = createMockTransport({
-    getConfig: vi.fn().mockResolvedValue({ ui: { composer: { richText } } }),
+    getConfig: vi.fn().mockResolvedValue(config),
   });
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
+  queryClient.setQueryData(configKeys.current(), config);
   return render(
     <QueryClientProvider client={queryClient}>
       <TransportProvider transport={transport}>
@@ -386,9 +404,10 @@ describe('ChatInputContainer — serialized-DOM parity against the pre-migration
 /**
  * Mount with the preference ON and wait for the editor chunk to land.
  *
- * The field is lazy, and the preference arrives from an async `getConfig`, so
- * the composer is briefly the plain textarea twice over. Serializing before
- * both settle would record a flag-OFF tree under a flag-on name.
+ * The field is lazy, so the composer is briefly the Suspense fallback — a plain
+ * textarea. Serializing before it settles would record a flag-OFF tree under a
+ * flag-on name. (The preference itself no longer arrives late: `mount` seeds it,
+ * for the reasons given there.)
  *
  * @param props - The container's props for this state.
  */
@@ -402,6 +421,31 @@ async function mountRich(props: Props) {
 }
 
 /**
+ * Load the editor chunk once, before any flag-on case renders.
+ *
+ * Without this, whether a case ever paints the Suspense fallback depends on
+ * whether an earlier case in this FILE already resolved the lazy import — and
+ * that decides where the mount-time auto-focus lands, which decides whether the
+ * composer card carries its focus-ring classes. The first flag-on case was
+ * therefore photographing a different tree from the other three, for a reason
+ * that lives in module state rather than in the component.
+ *
+ * With the chunk warm, every case here renders the real field on the first
+ * paint. jsdom cannot focus a `contenteditable`, so what these four record is an
+ * UNFOCUSED composer — which is what the container genuinely renders, rather
+ * than a ring inherited from a textarea that existed for one tick and was
+ * replaced.
+ *
+ * Warmed by RENDERING one rather than by reaching for the module: `field/` is
+ * internal to `features/composer` and nothing outside that slice may import a
+ * path inside it, tests included.
+ */
+beforeAll(async () => {
+  await mountRich(baseProps());
+  cleanup();
+});
+
+/**
  * The flag-ON reference tree, and the ONE place in this spec where recording a
  * baseline is legitimate.
  *
@@ -409,8 +453,27 @@ async function mountRich(props: Props) {
  * what gives it its weight. These four have no such ancestor: before DOR-948
  * there was no rich field to photograph. So they were recorded deliberately
  * with `DORKOS_RECORD_DOM_BASELINE=1`, once, and reviewed as the reference —
- * and from here they are as frozen as any other. If one of them starts
+ * and from here they are no less frozen than the rest. If one of them starts
  * diffing, the field moved; fix the field, not the file.
+ *
+ * ## The one amendment since, and exactly what it was (2026-08-12)
+ *
+ * Making rich text default-ON changed which field the container renders FIRST,
+ * and with it where the mount-time auto-focus lands. jsdom cannot focus a
+ * `contenteditable`, so these four had been photographing a focus ring the rich
+ * field never earned — it belonged to a textarea that existed for one tick,
+ * was focused, and was replaced without a `blur` jsdom bothers to fire. All four
+ * now record the composer card as unfocused.
+ *
+ * That was applied as a THREE-TOKEN edit per file (`border-ring`, `ring-[1px]`
+ * and `ring-ring/75` out, `border-input` in) and NOT by re-running the recorder,
+ * deliberately: `DORKOS_RECORD_DOM_BASELINE=1` also rewrites the queue-panel
+ * subtree these baselines carry stale ON PURPOSE (see {@link QUEUE_PANEL_SUBTREE}
+ * — the staleness is what the exemption is exempting), which would have
+ * destroyed evidence while fixing a class list. The measured proof that the ring
+ * was the ONLY difference is that the four cases' diffs, before the edit, were
+ * twelve class-token entries and nothing else — no element, no attribute, no
+ * text.
  *
  * ## The intended deltas from the flag-off tree, enumerated
  *

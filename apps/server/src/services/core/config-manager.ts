@@ -1370,20 +1370,33 @@ export function migrateStatusBarToPins(store: {
 }
 
 /**
- * Migration body: backfill `ui.composer: { richText: false }` onto an EXISTING
+ * Migration body: backfill `ui.composer: { richText: true }` onto an EXISTING
  * `ui` block (the message box's formatting preference, DOR-948). conf merges
  * top-level defaults SHALLOWLY, so a `ui` object already on disk never inherits
  * a newly-added nested section; the whole-`ui`-absent case needs nothing,
  * because the shallow merge brings in the default `ui` with this section already
  * in it. Same shape and same reasoning as {@link migrateStatusBarToPins}.
  *
- * Seeds `false` — the plain markdown box everyone has today. An upgrade must
- * never change what someone's composer does under them; turning it on is the
- * person's choice, in Settings.
+ * Seeds `true`, matching the schema default — chat formats as you type, and the
+ * Settings → Advanced switch turns it off.
+ *
+ * ## Why this body was EDITED rather than superseded by a second key
+ *
+ * It originally seeded `false`, because that was the shipped default. The owner
+ * flipped the default on 2026-08-12, and `0.59.0` had not been tagged
+ * (`v0.58.0` was still the newest `v*` tag) — so this key has run on no
+ * released install. The only machines that ever executed the `false` version
+ * are development trees, where the schema default and this body now agree
+ * again. Stacking a second migration to undo an unreleased one would leave two
+ * keys arguing about one leaf for the life of the file.
+ *
+ * **That argument expires the moment `v0.59.0` is tagged.** After that, this
+ * key has shipped, editing it changes nothing for anybody who already ran it,
+ * and a genuine change of default needs a NEW key above the newest tag.
  *
  * Additive + idempotent: an existing `ui.composer` object is left exactly as it
  * stands, so re-running (corrupt-recovery, a hand-edited migration version)
- * never flips someone's preference back off.
+ * never overwrites a choice somebody made.
  *
  * @internal Exported for testing only.
  * @param store - The `conf` store instance (provides `get`/`set`).
@@ -1411,7 +1424,7 @@ export function backfillComposerPrefs(store: {
   const composer = (ui as { composer?: unknown }).composer;
   if (ComposerPrefsSchema.strict().safeParse(composer).success) return;
 
-  store.set('ui', { ...(ui as Record<string, unknown>), composer: { richText: false } });
+  store.set('ui', { ...(ui as Record<string, unknown>), composer: { richText: true } });
 }
 
 /**
@@ -2505,8 +2518,11 @@ export const CONFIG_MIGRATIONS = {
     // `backfillProfileDefaults` is: conf builds Ajv with `useDefaults`, so the
     // declared default is written into a stored `ui` block during validation
     // whether or not this runs. It writes the section through on the upgrade
-    // where it lands, which keeps the intent — seeded OFF — reviewable in the
-    // table rather than implicit in a schema default. Additive + idempotent.
+    // where it lands, which keeps the intent — seeded ON, the owner's
+    // 2026-08-12 call — reviewable in the table rather than implicit in a schema
+    // default. The body used to seed OFF and was edited in place rather than
+    // superseded, which is only sound while this key is unreleased; see the
+    // body's docs for the condition. Additive + idempotent.
     backfillComposerPrefs(store);
     // Move the sidebar's seven per-section flags into `ui.sidebar.sections`,
     // record a dismissed groups hint as a retired Getting-started suggestion,
