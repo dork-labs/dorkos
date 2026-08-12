@@ -224,6 +224,14 @@ export function MobileTabsLayout({ takeover }: MobileTabsLayoutProps) {
         // without this the last row of Today sits under it and cannot be
         // pressed (DOR-1177). `--pip-dock` is absent whenever no PIP is
         // minimized, which is what makes the ordinary case cost nothing.
+        //
+        // **True while no software keyboard is up.** The mini-bar's own offset
+        // is `max(tab dock, keyboard inset)` because a raised keyboard covers
+        // the tab bar, and this sum does not follow it — so with the keyboard up
+        // the panels stop lower than the bar sits. That gap is inherited
+        // (DOR-300 lifted the bar; these panels are fixed to the LAYOUT viewport
+        // and never tracked the visual one) and it is only reachable by typing
+        // with a panel raised, which nothing here does.
         style={{ bottom: `calc(${MOBILE_TAB_BAR_DOCK} + var(--pip-dock, 0px))` }}
       >
         <MobileTabPanel id="home" active={active === 'home'}>

@@ -505,7 +505,7 @@
     "home-shell": {
       "specFile": "tests/home-surface/home-shell.spec.ts",
       "feature": "home-surface",
-      "description": "the tab bar is Home, Activity, Scheduled, Workspaces — and Home is lit on /, the retired home sections are gone, not hidden, each tab goes to the address it has always had, the sidebar has four places and a Search row — nothing else, a filtered Activity deep link keeps its filter, and survives leaving and coming back, the tab bar takes the overflow, and the page never scrolls sideways",
+      "description": "the tab bar is Home, Activity, Scheduled, Workspaces — and Home is lit on /, each tab goes to the address it has always had, a filtered Activity deep link keeps its filter, and survives leaving and coming back, the sidebar has four places — nothing else, the dashboard is gone, not hidden — Home is the #team room, the tab bar takes the overflow, and the page never scrolls sideways, says there is more to the right, and swaps sides at the end (light), says there is more to the right, and swaps sides at the end (dark), a deep link to the last tab opens with that tab on screen, draws no cue on a desktop, where all four already fit",
       "lastRun": "2026-08-12T10:58:25.116Z",
       "lastStatus": "passed",
       "runCount": 7,

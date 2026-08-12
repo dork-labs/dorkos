@@ -26,10 +26,14 @@ interface PipMiniBarProps {
  * PIP entirely. Two real buttons, so it is keyboard-accessible by construction.
  *
  * While mounted, sets `--pip-dock: 64px` on the document root; the app shells
- * consume it as bottom padding so ALL page content — including the session
- * composer — lifts above the bar and nothing is occluded. (The sheet
- * deliberately sets no dock padding: it is an overlay state entered on
- * purpose.) Same ambient semantics as the sheet: `role="complementary"`,
+ * consume it as bottom padding so ROUTED page content — including the session
+ * composer — lifts above the bar. That is the whole of what this variable
+ * covers, and saying more than that is what let a docked PIP swallow the phone's
+ * whole cockpit for a release (DOR-1177, below): the chrome AROUND the routed
+ * page reads no padding, so anything else that docks to the bottom has to be
+ * cleared on its own terms. (The sheet deliberately sets no dock padding at all:
+ * it is an overlay state entered on purpose, and it does cover the tab bar while
+ * it is up.) Same ambient semantics as the sheet: `role="complementary"`,
  * `z-40`, below every `z-50` modal surface, no modality machinery.
  *
  * **The bar never takes the bottom edge from the phone's tab bar** (DOR-1177).

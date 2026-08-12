@@ -68,8 +68,14 @@ function WidgetPipContent({ content }: { content: Extract<PipContent, { kind: 'w
   return <LiveSessionWidget sessionId={content.sessionId} />;
 }
 
+/** The search param {@link useDevPipDeepLink} answers to. */
+const DEV_PIP_PARAM = 'pip';
+
+/** What `?pip=demo` opens. */
+const DEV_PIP_TITLE = 'Demo panel';
+
 /**
- * The URL that opens a PIP with no agent behind it, in development only.
+ * Open the demo PIP once on mount when the page was loaded with `?pip=demo`.
  *
  * **Why this exists.** Every real way to open a PIP needs a live model turn: an
  * agent emits a `dorkos-ui` fence or an MCP app and somebody pops it out. So the
@@ -86,14 +92,6 @@ function WidgetPipContent({ content }: { content: Extract<PipContent, { kind: 'w
  * with `false` at build time, so a production bundle carries a function that
  * cannot do anything — there is no shipped URL that opens a demo panel. The
  * browser suite runs against the Vite dev server, which is where it is live.
- */
-const DEV_PIP_PARAM = 'pip';
-
-/** What `?pip=demo` opens. */
-const DEV_PIP_TITLE = 'Demo panel';
-
-/**
- * Open the demo PIP once on mount when the page was loaded with `?pip=demo`.
  *
  * Read straight off `window.location` rather than through the router's search
  * schema: this is a development seam, not a product deep link, and it must work

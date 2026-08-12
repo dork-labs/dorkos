@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(client): the row of tabs on Home shows when it holds more than fits (DOR-1180)'
+  - 'fix(client): the right panel reveals its selected tab when the panel alone gets narrower (DOR-1180)'
 ---
 
 ### Fixed

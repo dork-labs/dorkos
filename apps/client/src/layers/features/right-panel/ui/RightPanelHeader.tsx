@@ -201,16 +201,24 @@ function TabStrip({
   }, [selectedTab]);
 
   // Re-reveal on any size change: the panel is resizable, so a strip that fitted
-  // a moment ago can leave the selected tab behind an edge. (The fades take care
-  // of themselves — `useScrollOverflow` re-measures on every commit and observes
-  // the scroller and its child.)
+  // a moment ago can leave the selected tab behind an edge.
   //
-  // Two boxes are observed on top of that, because they answer a question the
-  // fades do not ask. The tablist is what the reveal measures against, and the
-  // selected tab itself is the box the reveal exists to keep on screen: anything
-  // that moves or resizes it (a sibling tab widening as its label resolves)
-  // invalidates a scroll position that was correct when it was set, which is
-  // what left the reveal one tab's width short of the edge.
+  // **All three boxes, and sharing the fades' observer is not enough.**
+  // `useScrollOverflow` watches the scroller too, but it watches it to answer a
+  // different question and it does not run this. Dropping the scroller from
+  // THIS list left the reveal blind to the one case that resizes only the scroll
+  // box: dragging the panel divider narrower. Measured on the real component —
+  // a tab that fitted at 340px, with the box then narrowed to 200px, stays at
+  // `scrollLeft: 0` with its label half-drawn, which is verbatim one of the
+  // three failures DOR-471 was written for.
+  //
+  // Each box answers its own part. The scroller gives the viewport the reveal
+  // compares against. The tablist is the content, which can change size on its
+  // own — a late web font, a contribution renaming its tab — while the box does
+  // not. And the selected tab itself is what the reveal exists to keep on
+  // screen: anything that moves or resizes it (a sibling tab widening as its
+  // label resolves) invalidates a scroll position that was correct when it was
+  // set, which is what left the reveal one tab's width short of the edge.
   //
   // Keyed on the tab ids, not their count: a route change can swap one
   // contribution for another and leave the count alone, and that is exactly when
@@ -220,7 +228,7 @@ function TabStrip({
     revealActiveTab();
     if (typeof ResizeObserver === 'undefined') return;
     const observer = new ResizeObserver(revealActiveTab);
-    for (const el of [tablistRef.current, selectedTab()]) {
+    for (const el of [scrollerRef.current, tablistRef.current, selectedTab()]) {
       if (el) observer.observe(el);
     }
     return () => observer.disconnect();
