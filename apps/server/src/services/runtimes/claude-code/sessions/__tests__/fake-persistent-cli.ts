@@ -49,6 +49,13 @@ export class FakeCliProcess {
   closed = 0;
   /** How many times the graceful `interrupt()` was reached for. */
   interrupts = 0;
+  /**
+   * When set, `interrupt()` rejects with this instead of resolving — the SDK's
+   * pre-init failure path, where the control write fails because the process is
+   * already gone (`request()` rejects on a failed `transport.write`). Drives the
+   * escalation-to-`close()` branch a booting Stop can hit (DOR-1191).
+   */
+  interruptRejectsWith: unknown;
   /** The four settable-live pins, in the order they were applied. */
   readonly liveSets: string[] = [];
   /** Every message id this process has READ off its input stream, in order. */
@@ -207,6 +214,7 @@ export class FakeCliProcess {
 
   interrupt(): Promise<void> {
     this.interrupts += 1;
+    if (this.interruptRejectsWith !== undefined) return Promise.reject(this.interruptRejectsWith);
     return Promise.resolve();
   }
 
