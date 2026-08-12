@@ -375,8 +375,8 @@ export const CHAT_SECTIONS: PlaygroundSection[] = [
     ],
   },
   {
-    id: 'transporterrorbanner',
-    title: 'TransportErrorBanner',
+    id: 'transport-error-errormessageblock',
+    title: 'Transport error (ErrorMessageBlock)',
     page: 'chat',
     category: 'Status',
     keywords: ['transport', 'error', 'banner', 'connection', 'retry', 'network', 'timeout'],

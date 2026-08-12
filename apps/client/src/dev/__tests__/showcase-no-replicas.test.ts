@@ -70,3 +70,39 @@ describe('the topology showcases render the real components', () => {
     }
   });
 });
+
+describe('the status showcases render the real components', () => {
+  const source = showcaseSource('showcases', 'StatusShowcases.tsx');
+  const code = showcaseCode('showcases', 'StatusShowcases.tsx');
+
+  it('renders the actual ErrorMessageBlock rather than a copy of its markup', () => {
+    // This is what drifted: ChatPanel renders transport errors through
+    // ErrorMessageBlock, but the showcase hand-drew its own
+    // `TransportErrorBanner` — self-documented as a replica — with markup that
+    // had already diverged from the real component.
+    expect(source).toContain('<ErrorMessageBlock');
+    expect(source).toMatch(/from '@\/layers\/features\/chat\/ui\/message\/ErrorMessageBlock'/);
+  });
+
+  it('defines no local transport-error banner of its own', () => {
+    expect(code, 'still defines a local TransportErrorBanner replica').not.toMatch(
+      /function TransportErrorBanner/
+    );
+  });
+
+  it('draws no icon or destructive-card chrome of its own for the transport error', () => {
+    // ErrorMessageBlock owns its own AlertTriangle icon and its own
+    // border/background pair for the destructive card. A showcase rendering
+    // the real component never needs either — importing the icon, or
+    // hand-spelling the exact class pair the component already applies
+    // internally, is the tell that a local replica crept back in.
+    expect(
+      code,
+      'imports AlertTriangle — ErrorMessageBlock already renders its own icon'
+    ).not.toMatch(/AlertTriangle/);
+    expect(
+      code,
+      'hand-spells the destructive banner chrome ErrorMessageBlock already owns'
+    ).not.toContain('border-destructive/30 bg-destructive/5');
+  });
+});
