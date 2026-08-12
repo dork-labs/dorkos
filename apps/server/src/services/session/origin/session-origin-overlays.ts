@@ -26,6 +26,45 @@ export interface SessionOriginResolvers {
   resolveTaskOrigins?: ResolveTaskOrigins | undefined;
 }
 
+/** One overlay in the ordered chain, named so a failure can say which failed. */
+export interface SessionOriginOverlayStep {
+  /** What to call it in a log line. */
+  name: string;
+  /** Apply it to these rows, in place. */
+  apply: (sessions: Session[]) => void;
+}
+
+/**
+ * The overlays, in order, as separable steps.
+ *
+ * Exposed beside {@link applySessionOriginOverlays} for the one caller that
+ * needs to survive a step failing: the global session-list stream isolates each
+ * one, so a Pulse lookup that throws still leaves a room turn marked as a room
+ * turn rather than discarding the whole overlay and broadcasting a row with no
+ * origin at all — which is the very defect DOR-1141 closed. The ORDER still
+ * lives only here, so isolating the steps cannot become a way to reorder them.
+ *
+ * The session routes deliberately do not use this: on a request, a lookup that
+ * throws should surface as a failed request rather than a quietly half-marked
+ * list.
+ *
+ * @param resolvers - The batched lookups; each absent one makes its step a no-op.
+ */
+export function sessionOriginOverlaySteps(
+  resolvers: SessionOriginResolvers
+): readonly SessionOriginOverlayStep[] {
+  return [
+    {
+      name: 'room origin',
+      apply: (sessions) => applyRoomOriginOverlay(sessions, resolvers.resolveRoomOrigins),
+    },
+    {
+      name: 'Pulse task origin',
+      apply: (sessions) => applyTaskOriginOverlay(sessions, resolvers.resolveTaskOrigins),
+    },
+  ];
+}
+
 /**
  * Overlay every origin the server knows and the transcript does not, in place.
  *
@@ -36,8 +75,7 @@ export function applySessionOriginOverlays(
   sessions: Session[],
   resolvers: SessionOriginResolvers
 ): void {
-  applyRoomOriginOverlay(sessions, resolvers.resolveRoomOrigins);
-  applyTaskOriginOverlay(sessions, resolvers.resolveTaskOrigins);
+  for (const step of sessionOriginOverlaySteps(resolvers)) step.apply(sessions);
 }
 
 /**

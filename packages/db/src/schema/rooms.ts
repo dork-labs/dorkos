@@ -695,6 +695,14 @@ export const roomAttachments = sqliteTable(
  * each keeping its own runtime binding (ADR-0255). One row per `(room, author)`
  * is the point: an agent's context in `#backend` is not its context in a DM,
  * and conflating them would make a room a session by the back door.
+ *
+ * The primary key answers "which session does this member use here?". The
+ * session-origin overlay asks the OPPOSITE question — "did a room start this
+ * session?" — and the primary key cannot serve it, so `session_id` carries its
+ * own index. That read runs on every session list a person loads AND on every
+ * `session_upserted` the global stream fans out, one row at a time and
+ * synchronously on the write path, so an unindexed scan of every binding on the
+ * machine sat behind each broadcast (DOR-1141 review).
  */
 export const roomSessions = sqliteTable(
   'room_sessions',
@@ -704,5 +712,8 @@ export const roomSessions = sqliteTable(
     sessionId: text('session_id').notNull(),
     createdAt: text('created_at').notNull(),
   },
-  (table) => [primaryKey({ columns: [table.roomId, table.authorId] })]
+  (table) => [
+    primaryKey({ columns: [table.roomId, table.authorId] }),
+    index('idx_room_sessions_session').on(table.sessionId),
+  ]
 );

@@ -33,11 +33,12 @@ export type ResolveRoomOrigins = (
  * it. The binding table is the server's own record of which sessions ARE room
  * turns, so the truth is here rather than inferred client-side from a title.
  *
- * Ordered AFTER the Pulse task overlay at every call site, and that ordering is
+ * Ordered BEFORE the Pulse task overlay, which therefore overwrites it — the
+ * order lives in `session-origin-overlays.ts` and nowhere else. That is
  * deliberate: a scheduled task that posts into a room is still a scheduled task
  * to the person who scheduled it, and "Scheduled task · nightly-digest" says
  * more than "#general" does. Whichever overlay runs last wins, so this one runs
- * first and Pulse overwrites it.
+ * first and loses.
  */
 export function applyRoomOriginOverlay(
   sessions: Session[],

@@ -35,7 +35,7 @@ import {
   type SessionSettingsOverlayPort,
 } from './session-settings-overlay.js';
 import {
-  applySessionOriginOverlays,
+  sessionOriginOverlaySteps,
   type SessionOriginResolvers,
 } from './origin/session-origin-overlays.js';
 import { DEFAULT_CWD } from '../../lib/resolve-root.js';
@@ -344,12 +344,13 @@ export class SessionListBroadcaster {
    * producers of client-visible session rows now derive the field the same way,
    * so neither can drift.
    *
-   * ## Why each step copies
+   * ## Why every overlay is its own step
    *
-   * Adapters emit the object they hold — the Claude watcher pushes the very
-   * instance in its diff map (and in the transcript reader's mtime cache) — so
-   * overlaying in place would write display values into a runtime's own cached
-   * state and defeat its change suppression.
+   * Each one is isolated, so a store that is down costs only its own field.
+   * Sharing a guard between the room and Pulse overlays would mean a failing
+   * Pulse lookup discarded the room marking that had already succeeded — and a
+   * row broadcast with no origin at all is exactly the DOR-1141 defect, arrived
+   * at from the other side. See {@link overlaid} for why a step works on a copy.
    */
   private withOverlays(event: SessionListEvent): SessionListEvent {
     if (event.type !== 'session_upserted') return event;
@@ -358,11 +359,9 @@ export class SessionListBroadcaster {
       const settings = this.settings;
       session = this.overlaid(session, (rows) => overlayStoredSettings(rows, settings), 'settings');
     }
-    session = this.overlaid(
-      session,
-      (rows) => applySessionOriginOverlays(rows, this.originResolvers),
-      'origin'
-    );
+    for (const step of sessionOriginOverlaySteps(this.originResolvers)) {
+      session = this.overlaid(session, step.apply, step.name);
+    }
     return session === event.session ? event : { ...event, session };
   }
 
@@ -370,10 +369,16 @@ export class SessionListBroadcaster {
    * Run one overlay over a COPY of the session, or hand back the original.
    *
    * Discovery must survive a store failure — an un-overlaid row is stale, a
-   * dropped row is invisible, and stale wins. Working on a copy is what makes
-   * "hand back the original" mean anything: an overlay that threw half way
-   * through would otherwise leave the row partly written, which is neither the
-   * old value nor the new one.
+   * dropped row is invisible, and stale wins.
+   *
+   * **The copy is what makes "hand back the original" mean anything**, and that
+   * is its whole reason here. An overlay writes field by field, so one that
+   * threw part way through would leave the row neither as it was nor as it
+   * should be; on a copy, a throw discards the half-written version outright.
+   * (It is NOT about protecting an adapter's own object: the event reaching this
+   * method has already been through `SessionListEventSchema.safeParse`, which
+   * hands back its own freshly built session, so the instance a runtime holds is
+   * already out of reach by the time anything here touches it.)
    *
    * @param session - The row as it stands after the previous step.
    * @param apply - The overlay, which mutates the array it is given.
