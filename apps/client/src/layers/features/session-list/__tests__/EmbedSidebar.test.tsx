@@ -38,9 +38,11 @@ vi.mock('@/layers/entities/agent', () => ({
 }));
 
 // Keep the unit focused on EmbedSidebar's own chrome + wiring — the roster and
-// promo surfaces have their own tests.
-vi.mock('../ui/SessionsView', () => ({
-  SessionsView: ({ groupedSessions }: { groupedSessions: Array<{ label: string }> }) => (
+// promo surfaces have their own tests. The roster is `EmbedSessionList` since
+// DOR-1080; the `data-testid` it stands in under is unchanged, so every
+// assertion below is the one this file has always made.
+vi.mock('../ui/EmbedSessionList', () => ({
+  EmbedSessionList: ({ groupedSessions }: { groupedSessions: Array<{ label: string }> }) => (
     <div data-testid="sessions-view">{groupedSessions.length} groups</div>
   ),
 }));

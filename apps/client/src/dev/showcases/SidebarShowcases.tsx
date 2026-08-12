@@ -5,7 +5,7 @@ import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
 import { ShowcaseDemo } from '../ShowcaseDemo';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { SessionsView } from '@/layers/features/session-list';
+import { EmbedSessionList, SessionsView } from '@/layers/features/session-list';
 import { SidebarFooterStrip } from '@/layers/features/dashboard-sidebar';
 import { configKeys } from '@/layers/entities/config';
 import { useSessionChatStore, useSessionListStore, SessionRow } from '@/layers/entities/session';
@@ -141,13 +141,17 @@ const GROUPED_SESSIONS = [
 // Showcases
 // ---------------------------------------------------------------------------
 
-/** Sidebar component showcases: SidebarRow, SessionRow, SessionsView, SidebarFooterStrip. */
+/**
+ * Sidebar component showcases: SidebarRow, SessionRow, SessionsView,
+ * EmbedSessionList, SidebarFooterStrip.
+ */
 export function SidebarShowcases() {
   return (
     <>
       <SidebarRowShowcase />
       <SessionRowShowcase />
       <SessionsViewShowcase />
+      <EmbedSessionListShowcase />
       <SidebarFooterStripShowcase />
     </>
   );
@@ -557,6 +561,50 @@ function SessionsViewShowcase() {
       <ShowcaseDemo>
         <div className="border-border h-40 w-64 overflow-hidden rounded-lg border">
           <SessionsView activeSessionId={null} groupedSessions={[]} onSessionClick={() => {}} />
+        </div>
+      </ShowcaseDemo>
+    </PlaygroundSection>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// EmbedSessionList
+// ---------------------------------------------------------------------------
+
+/**
+ * The Obsidian embed's roster, at the width its drawer actually is.
+ *
+ * **This showcase is the only way to see that surface without a vault.** The
+ * embed runs inside Obsidian through `DirectTransport`, so no browser test and
+ * no screenshot of the cockpit shows it; mounted here at `w-80` — the width of
+ * the drawer in `App.tsx` — it is at least the real component at the real size,
+ * in both themes.
+ */
+function EmbedSessionListShowcase() {
+  const [activeId, setActiveId] = useState<string | null>(MOCK_SESSIONS[0].id);
+
+  return (
+    <PlaygroundSection
+      title="EmbedSessionList"
+      description="The Obsidian embed's roster, in the shared sidebar row grammar (DOR-1080)."
+    >
+      <ShowcaseLabel>Grouped list — 320px, the embed drawer's width</ShowcaseLabel>
+      <ShowcaseDemo>
+        <div className="bg-sidebar h-80 w-80 overflow-hidden rounded-lg">
+          <EmbedSessionList
+            activeSessionId={activeId}
+            groupedSessions={GROUPED_SESSIONS}
+            onSessionClick={setActiveId}
+            onForkSession={() => {}}
+            onRenameSession={() => {}}
+          />
+        </div>
+      </ShowcaseDemo>
+
+      <ShowcaseLabel>Empty state</ShowcaseLabel>
+      <ShowcaseDemo>
+        <div className="bg-sidebar h-40 w-80 overflow-hidden rounded-lg">
+          <EmbedSessionList activeSessionId={null} groupedSessions={[]} onSessionClick={() => {}} />
         </div>
       </ShowcaseDemo>
     </PlaygroundSection>

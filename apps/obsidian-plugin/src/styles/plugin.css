@@ -1,5 +1,16 @@
 @import 'tailwindcss';
 @source '../../../node_modules/streamdown/dist/*.js';
+/*
+ * The embed's UI IS the client (DOR-1080).
+ *
+ * Tailwind's automatic source detection starts at this build's own root, so
+ * without this line it scans `apps/obsidian-plugin/src` and nothing else — and
+ * the plugin's `src` is four files of glue. Every class the components it
+ * actually renders are written in was being dropped on the floor: measured on
+ * the emitted `styles.css`, `tabular-nums` (57 client files), `min-h-7` (5) and
+ * `bg-sidebar-accent` (20) all came out at zero occurrences.
+ */
+@source '../../../client/src';
 
 @theme inline {
   --text-2xs: 0.6875rem;
@@ -26,6 +37,23 @@
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
+  /*
+   * The sidebar palette (DOR-1080).
+   *
+   * The embed's roster is drawn with the cockpit's shared sidebar primitives —
+   * `SidebarRow`, `SectionHeader` — and every tint they spend comes from this
+   * family. This build is its own Tailwind compile, so a `--color-sidebar-*`
+   * that is not declared here is not a colour Tailwind knows: the utility is
+   * never emitted and the class does nothing at all. That is not a theory —
+   * `PromoCard`'s `bg-sidebar-accent/40` has been shipping into this build as
+   * dead markup, which is why its card had no fill in a vault.
+   */
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
   --radius: var(--radius);
 }
 
@@ -186,6 +214,28 @@
   --border: var(--background-modifier-border);
   --input: var(--background-modifier-form-field);
   --ring: var(--interactive-accent);
+
+  /*
+   * Sidebar tints, bound to the vault's own theme.
+   *
+   * `--background-modifier-hover` is the tint every Obsidian theme defines for
+   * "the row you are pointing at", which is exactly what `--sidebar-accent`
+   * means in the cockpit's ramp — so the embed's rows highlight the way the
+   * file explorer beside them does, in whatever theme the reader chose.
+   *
+   * It is translucent in most themes, where the cockpit's own value is solid,
+   * so the `/40` and `/70` steps of the ramp land lighter here than they do in
+   * the browser. That is the right direction to be wrong in: a translucent tint
+   * over the panel darkens in a dark theme and lightens in a light one, which
+   * is the one property the ramp exists to guarantee and the reason `--muted`
+   * is banned from it.
+   */
+  --sidebar: var(--background-secondary);
+  --sidebar-foreground: var(--text-normal);
+  --sidebar-accent: var(--background-modifier-hover);
+  --sidebar-accent-foreground: var(--text-normal);
+  --sidebar-border: var(--background-modifier-border);
+  --sidebar-ring: var(--interactive-accent);
 
   color: var(--text-normal);
   background-color: var(--background-secondary);
