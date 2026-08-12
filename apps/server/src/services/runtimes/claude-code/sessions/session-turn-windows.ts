@@ -142,14 +142,17 @@ export interface SessionTurnWindowsOptions {
   /** The pump whose output is being windowed. */
   pump: WindowedPump;
   /**
-   * A window opened. **Task 3.7 arms the stall watchdog here** — per window, not
-   * per process, because a WARM session sitting legitimately silent for ten
-   * minutes must not be interrupted for it.
+   * A window opened. **The stall watchdog arms here** — per window, not per
+   * process, because a WARM session sitting legitimately silent for ten minutes
+   * must not be interrupted for it. Wire it to a `TurnWindowSignal`'s `opened`
+   * and hand that signal to `withStallGuard` (task 3.7).
    */
   onWindowOpen?: (window: TurnWindow) => void;
   /**
-   * A window closed and its stream has ended. **Task 3.7 disarms the stall
-   * watchdog here.**
+   * A window closed and its stream has ended. **The stall watchdog disarms
+   * here** — the signal's `closed`, which disarms only once the LAST open
+   * window is gone, so a runtime window closing beside a dispatched one leaves
+   * the turn somebody is waiting for still guarded.
    *
    * The process-idle timer is deliberately NOT armed here. It rides the pump's
    * `onStateChange` instead (`session-pump-registry.ts`), because a session can
@@ -292,7 +295,7 @@ export class SessionTurnWindows {
     this.opts = opts;
   }
 
-  /** The window that is open right now, if any — what task 3.7's watchdog guards. */
+  /** The window that is open right now, if any — what the stall watchdog guards. */
   get openWindow(): TurnWindow | undefined {
     return this.current?.window;
   }

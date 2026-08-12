@@ -408,21 +408,38 @@ failing, or the PR merging — not one that only knows how to notice success (th
 `Monitor` tool is the ergonomic form of this; the shape is what matters):
 
 ```bash
-# emits on the first real failure OR the merge; silent while healthy
+# emits on the first real failure, the merge, or its own expiry; silent while healthy
 for i in $(seq 1 55); do
   state=$(gh pr view <number> --json state --jq .state)
-  [ "$state" = MERGED ] && { echo MERGED; break; }
-  [ "$state" = CLOSED ] && { echo "CLOSED unmerged"; break; }
+  [ "$state" = MERGED ] && { echo MERGED; exit 0; }
+  [ "$state" = CLOSED ] && { echo "CLOSED unmerged"; exit 0; }
   fails=$(gh pr checks <number> | awk -F'\t' '$2=="fail"{print $1}' | grep -vi '^Vercel')
-  [ -n "$fails" ] && { echo "FAILED: $fails"; break; }
+  [ -n "$fails" ] && { echo "FAILED: $fails"; exit 0; }
   sleep 45
 done
+echo "watcher expired; PR <number> still unmerged — check it directly"
 ```
 
 On 2026-08-06 the v0.58.0 release PR sat `OPEN` with a red **required** `typecheck`
 (its prettier `--check` step — see the worktree gotcha below), while a
 merge-state-only poll reported nothing and would have run clean to timeout. The fix
 was not a shorter poll interval; it was polling the right field.
+
+The `Monitor` tool version of this loop fails the same way when written from
+memory. On 2026-08-12, PR #982 sat four hours behind one flaked `browser-test`
+while its watcher reported healthy: its terminal conditions — merged, closed,
+unresolved-threads-appeared, kicked-from-the-merge-queue — all stay quiet on a red
+check, because a PR with a failed required check never enters the queue at all.
+Three rules for any PR watcher, Monitor or bash:
+
+- **A failed non-`Vercel` check conclusion must be a terminal condition.** A
+  watcher without one cannot see the most common stall, however many other
+  signals it carries.
+- **"Auto-merge armed and zero unresolved threads" proves nothing about checks.**
+  It is exactly the state every stuck PR was in when it got stuck.
+- **A watcher that dies must say so.** The loop above echoes its own expiry
+  (~41 minutes); keep that shape, and answer it — an armed PR that outlives its
+  watcher deserves a direct `gh pr checks` look, whatever the watcher reported.
 
 Note the shape of the four traps together: a **conflicting** PR runs nothing, a PR
 missing a **path-filtered** required check hangs pending, a **BEHIND** PR is green
