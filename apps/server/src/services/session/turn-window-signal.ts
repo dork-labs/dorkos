@@ -32,6 +32,24 @@
  * close, and it keeps the count from going negative and disarming the guard on
  * a live turn.
  *
+ * ## The one ordering this cannot survive: a close BEFORE its open
+ *
+ * Ignoring an unseen close is safe in isolation, but not if the same window is
+ * announced open afterwards: the count goes to one and nothing will ever bring
+ * it back down, so the guard stays armed on a process with no turn running and
+ * eventually interrupts it — the exact failure this signal exists to prevent,
+ * re-entered through the other door.
+ *
+ * So whoever wires this owes it one invariant: **a window is announced open
+ * before it is announced closed, always.** `SessionTurnWindows` does not
+ * guarantee that today. It sets `this.current` before awaiting `pump.dispatch`
+ * but calls `onWindowOpen` after, and the pump's read loop runs during that
+ * await — so a `result` carrying no answered id, or a crash, closes the window
+ * before the dispatch that opened it returns. Reproduced against the real
+ * windower: the observers fire `close` then `open`, and `isOpen` stays true for
+ * good. Fixing the order belongs to the windower, not here; a signal cannot
+ * infer an ordering it is only ever told about after the fact.
+ *
  * ## Runtime windows arm it too
  *
  * A window nobody dispatched is still a turn on the durable stream: it mints a
