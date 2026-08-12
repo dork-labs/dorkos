@@ -158,6 +158,7 @@ FILTERED_SPECS=(
 #     — on the cockpit leg each one would bill the machine's own `claude`
 #     sign-in. Same directory, same extension rule, same reason.
 REGISTERED_MODULES=(
+  'chat/composer-escape-and-ime.ts'
   'chat/session-read-state.ts'
   'dashboard-sidebar/now-survives-reload.ts'
   'dashboard-sidebar/send-lands-in-today.ts'
