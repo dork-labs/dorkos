@@ -93,6 +93,7 @@ import { createPumpLauncher, decideProcessReuse, type PumpLaunchPlan } from './p
 import { streamTurnWindow } from './pump-turn-stream.js';
 import { SessionCrashLoopError, SessionCrashRecovery } from './session-crash-recovery.js';
 import { PumpRefusedError } from './session-pump-contract.js';
+import type { Query } from '@anthropic-ai/claude-agent-sdk';
 import type { SessionPump } from './session-pump.js';
 import type { SessionPumpRegistry } from './session-pump-registry.js';
 import { SessionTurnWindows, type TurnWindow } from './session-turn-windows.js';
@@ -102,6 +103,14 @@ interface SessionBundle {
   pump: SessionPump;
   windows: SessionTurnWindows;
   recovery: SessionCrashRecovery;
+  /**
+   * The running process's query, or `undefined` when this session holds none.
+   *
+   * Held here rather than on the session, because `session.activeQuery` means
+   * something narrower — see {@link SessionBundle.fingerprint}'s neighbour in
+   * `acquire`, where the two are kept apart.
+   */
+  live: Query | undefined;
   /** What the live process was launched with; `undefined` until one boots. */
   fingerprint: LaunchFingerprint | undefined;
   /** The plan of the dispatch currently in flight, read by the launcher. */
@@ -253,6 +262,7 @@ export class PersistentDispatch {
       if (control === undefined) {
         // The process went away between the comparison and here. Nothing to
         // adjust and nothing stale to ride: the dispatch below relaunches.
+        bundle.live = undefined;
         bundle.fingerprint = undefined;
       } else {
         try {
@@ -370,7 +380,7 @@ export class PersistentDispatch {
     // Definitely-assigned three lines down. Nothing can observe the gap: the
     // pump boots nothing until it is dispatched to, which cannot happen before
     // this function returns.
-    const bundle = { fingerprint: undefined, plan: undefined } as unknown as SessionBundle;
+    const bundle = { live: undefined, fingerprint: undefined, plan: undefined } as unknown as SessionBundle;
 
     bundle.pump = this.registry.acquire(sessionId, {
       maxWarmSessions: SESSIONS.MAX_WARM_SESSIONS,
@@ -392,23 +402,44 @@ export class PersistentDispatch {
           }
           return plan;
         },
-        (fingerprint) => {
+        (live, fingerprint) => {
+          bundle.live = live;
           bundle.fingerprint = fingerprint;
         }
       ),
       onMessage: (message) => bundle.windows.onMessage(message),
       onCrash: (crash) => {
+        // The process is gone, so nothing may ride it. `session.activeQuery` is
+        // already clear: `noteProcessGone` moves the pump to `crashed` before it
+        // announces the crash, and that transition disarms it above.
+        bundle.live = undefined;
         bundle.fingerprint = undefined;
-        // The process is gone, so the control channel on the session is stale.
-        // Left in place it would answer nothing, and a Stop would report success
-        // against a dead query.
-        if (session.activeQuery !== undefined) {
+        bundle.recovery.handleCrash(crash);
+      },
+      onStateChange: (change) => {
+        // `session.activeQuery` means "a turn is in flight", and on the resume
+        // path it is cleared in every turn's `finally`. A pump has no such
+        // frame, so the pump's own `running` edge is what arms and disarms it —
+        // one rule, driven by the state machine, so every exit is covered: the
+        // turn ending, the idle reap, a warm-ceiling reclaim, an eviction, a
+        // crash and shutdown, including the three the registry takes without
+        // telling this class.
+        //
+        // Leaving it armed between turns is not a cosmetic lie. `interruptQuery`
+        // escalates to `close()` when `interrupt()` rejects, so a Stop pressed
+        // on a warm IDLE session would answer "interrupted", destroy a perfectly
+        // healthy subprocess, and leave the session reporting `crashed`.
+        if (change.to === 'running') {
+          session.activeQuery = bundle.live;
+        } else if (session.activeQuery !== undefined) {
+          // Preserved as `lastQuery` exactly as the resume path preserves it, so
+          // post-turn control calls (`reloadPlugins`, the model probe) still
+          // have something to talk to.
           session.lastQuery = session.activeQuery;
           session.activeQuery = undefined;
         }
-        bundle.recovery.handleCrash(crash);
+        bundle.recovery.noteStateChange(change);
       },
-      onStateChange: (change) => bundle.recovery.noteStateChange(change),
       hasPendingInteraction: () => session.pendingInteractions.size > 0,
     });
 

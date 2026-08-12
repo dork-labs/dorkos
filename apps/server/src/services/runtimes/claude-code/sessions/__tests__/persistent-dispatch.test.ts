@@ -268,6 +268,60 @@ describe('warmth is answered honestly', () => {
   });
 });
 
+describe('Stop reaches a turn, never a process that is merely warm', () => {
+  beforeEach(() => {
+    optIn.persistentSession = true;
+  });
+
+  it('finds nothing to interrupt on a warm idle session, and leaves the process alone', async () => {
+    const sessionId = nextSession();
+    await turn(sessionId);
+    const process = cli.processes[0]!;
+    expect(runtime.getSessionWarmth(sessionId)).toBe('warm');
+
+    // The person presses Stop when nothing is running.
+    const interrupted = await runtime.interruptQuery(sessionId);
+
+    // Honest "there was nothing to stop". The alternative is not cosmetic:
+    // `interruptQuery` escalates to `close()` when `interrupt()` rejects, so a
+    // `true` here means a healthy warm subprocess was destroyed and the session
+    // reports `crashed` — a person pressing Stop on an idle chat losing the
+    // agent they were about to talk to.
+    expect(interrupted, 'Stop claimed it interrupted a turn that was not running').toBe(false);
+    expect(process.closed, 'Stop reached for the forceful close on an idle process').toBe(0);
+    expect(process.ended).toBe(false);
+    expect(runtime.getSessionWarmth(sessionId)).toBe('warm');
+  });
+
+  it('finds nothing to interrupt once the process has been given back', async () => {
+    const sessionId = nextSession();
+    await turn(sessionId);
+    await runtime.reapSession(sessionId);
+
+    expect(await runtime.interruptQuery(sessionId)).toBe(false);
+    expect(runtime.getSessionWarmth(sessionId)).toBe('cold');
+  });
+
+  it('still reaches a turn that IS running', async () => {
+    const sessionId = nextSession();
+    await turn(sessionId);
+    const process = cli.processes[0]!;
+    process.goSilent();
+
+    const running = turn(sessionId, 'this one is live');
+    await vi.waitFor(() => {
+      expect(process.received).toHaveLength(2);
+    });
+
+    // The discriminating half: a guard that simply never armed `activeQuery`
+    // would pass both cases above and fail here.
+    expect(await runtime.interruptQuery(sessionId), 'Stop could not reach a live turn').toBe(true);
+
+    process.answer(process.received[1]!);
+    await running;
+  });
+});
+
 describe('what a warm process must be re-checked for', () => {
   beforeEach(() => {
     optIn.persistentSession = true;

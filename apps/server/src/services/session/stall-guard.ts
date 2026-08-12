@@ -10,15 +10,21 @@
  * hung `codex exec`) stops yielding entirely, so an idle-gap clock catches
  * exactly the pathological case while never bounding honest work.
  *
- * Why the clock is armed by TURN WINDOWS and not by the stream (task 3.7): the
- * guard used to own its whole lifetime, because the generator it wrapped was
- * born with the turn and died with it. On a persistent pump that identity is
- * gone — one process, many turns, long legitimate quiet between them — so the
- * clock takes its lifetime from `windows` instead: armed while a turn window is
- * open, disarmed while none is. A WARM session's silence is bounded by the
- * process idle timer (`session-pump-registry.ts`, 5 minutes) rather than by a
- * watchdog that has no turn to end. With no `windows` supplied the clock runs
- * for the whole stream, which is the per-turn path exactly as it always was.
+ * Why the clock CAN be armed by turn windows rather than by the stream (task
+ * 3.7): the guard owns its whole lifetime only while the generator it wraps is
+ * born with the turn and dies with it. Where that identity breaks — one stream
+ * carrying many turns, with long legitimate quiet between them — the clock can
+ * take its lifetime from `windows` instead: armed while a turn window is open,
+ * disarmed while none is.
+ *
+ * **No caller supplies `windows` today, and the persistent pump deliberately
+ * does not (task 3.10).** Its dispatcher runs one turn per generator, so the
+ * identity above still holds on both paths and the clock runs for the whole
+ * stream — the per-turn behavior this guard has always had. A WARM session
+ * between turns has no generator here at all; its silence is bounded by the
+ * process idle timer (`session-pump-registry.ts`, 5 minutes), which is both the
+ * right mechanism and the shorter one. See `StallGuardOpts.windows` for why
+ * supplying the signal on the pump path would make this guard worse, not better
  *
  * Why check-at-expiry pause rather than pause/resume bookkeeping: the caller
  * can already answer "is this turn parked on a person?" precisely, so the guard
@@ -80,10 +86,23 @@ export interface StallGuardOpts {
   /** Diagnostics sink for onStall rejections (never thrown). */
   onError?: (err: unknown) => void;
   /**
-   * The turn windows this guard's clock follows. Supplied on the pump path,
-   * where one stream carries many turns: the clock runs only while a window is
-   * open, so a warm process between turns is never watchdogged. Omitted on the
-   * per-turn path, where the stream IS the turn and the clock runs throughout.
+   * The turn windows this guard's clock follows, when a caller has any.
+   *
+   * **Nothing supplies this today, on purpose (task 3.10).** It is staged for
+   * the case it was built for: ONE `StreamEvent` stream carrying MANY turns,
+   * which is P4's `deliverIntoTurn` — a steer's output lands in a window that
+   * is already open. The persistent pump did not turn out to be that case:
+   * `PersistentDispatch.dispatch` is called once per message and its generator
+   * ends with that message's window, so the stream reaching this guard still
+   * has exactly one turn's lifetime, exactly as the resume path's does.
+   *
+   * Supplying it on the pump path would make this guard strictly WORSE, which
+   * is why the composition deliberately does not: the clock would be disarmed
+   * before the first window opens, leaving a launch that hangs unbounded — and
+   * the launch is the part of a pump turn most able to hang.
+   *
+   * With no signal supplied the clock runs for the whole stream, which is the
+   * per-turn behavior this guard has always had.
    */
   windows?: TurnWindowSignal;
 }

@@ -30,7 +30,7 @@
  *
  * @module services/runtimes/claude-code/sessions/pump-launch
  */
-import { query, type Options } from '@anthropic-ai/claude-agent-sdk';
+import { query, type Options, type Query } from '@anthropic-ai/claude-agent-sdk';
 import type { StreamEvent } from '@dorkos/shared/types';
 import { logger } from '../../../../lib/logger.js';
 import type { AgentSession } from '../agent-types.js';
@@ -60,35 +60,40 @@ export interface PumpLaunchPlan {
  * Build the launcher for one session's pump.
  *
  * The returned function boots the process around the pump's held prompt and
- * publishes the live query on the session, so every control path that already
- * exists — Stop, a live model change, a permission-mode switch — reaches the
- * warm process without learning that the pump exists.
+ * hands the live query back to the caller, which is what every control path
+ * that already exists — Stop, a live model change, a permission-mode switch —
+ * eventually reaches. It does NOT publish that query on the session itself; see
+ * the note in the body for why a process is not a turn.
  *
  * @param session - The session whose process this launches
  * @param opts - The runtime's ports, for the per-process capability probes
  * @param currentPlan - Reads the plan of the dispatch that triggered the boot
- * @param onLaunched - Told what the new process is pinned to, so the next
- *   dispatch has something to compare against
+ * @param onLaunched - Told what the new process is and what it is pinned to, so
+ *   the next dispatch has something to compare against and the turn has
+ *   something to arm `session.activeQuery` with
  */
 export function createPumpLauncher(
   session: AgentSession,
   opts: MessageSenderOpts,
   currentPlan: () => PumpLaunchPlan,
-  onLaunched: (fingerprint: LaunchFingerprint) => void
+  onLaunched: (live: Query, fingerprint: LaunchFingerprint) => void
 ): PumpLauncher {
   return ({ sessionId, prompt }): PumpQuery => {
     const plan = currentPlan();
     const live = query({ prompt, options: plan.sdkOptions });
-    // The session's control channel for as long as this process lives. Every
-    // existing consumer (`interruptQuery`, `updateSession`'s live setters) reads
-    // this field and needs no knowledge of the pump.
-    session.activeQuery = live;
+    // Deliberately NOT `session.activeQuery = live` here. That field means "a
+    // turn is in flight" to every consumer in this runtime — `interruptQuery`
+    // escalates to `close()` when `interrupt()` rejects, which on a warm idle
+    // process destroys a healthy subprocess and marks the session crashed. A
+    // process is not a turn, so the field is armed and disarmed by the pump's
+    // own `running` edge instead (`persistent-dispatch.ts`).
+    //
     // What this subprocess supports, asked once per PROCESS — the same probes
     // the resume path fires, for the same reason. Skipping them here would
     // leave a warm session's model cache, MCP snapshot, command palette and
     // subagent list empty for as long as it stayed warm.
     fireLaunchProbes(live, opts);
-    onLaunched(plan.fingerprint);
+    onLaunched(live, plan.fingerprint);
     logger.debug('[pump-launch] booted a persistent process', {
       sessionId,
       cwd: plan.effectiveCwd,
