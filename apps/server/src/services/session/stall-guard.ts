@@ -10,6 +10,16 @@
  * hung `codex exec`) stops yielding entirely, so an idle-gap clock catches
  * exactly the pathological case while never bounding honest work.
  *
+ * Why the clock is armed by TURN WINDOWS and not by the stream (task 3.7): the
+ * guard used to own its whole lifetime, because the generator it wrapped was
+ * born with the turn and died with it. On a persistent pump that identity is
+ * gone — one process, many turns, long legitimate quiet between them — so the
+ * clock takes its lifetime from `windows` instead: armed while a turn window is
+ * open, disarmed while none is. A WARM session's silence is bounded by the
+ * process idle timer (`session-pump-registry.ts`, 5 minutes) rather than by a
+ * watchdog that has no turn to end. With no `windows` supplied the clock runs
+ * for the whole stream, which is the per-turn path exactly as it always was.
+ *
  * Why check-at-expiry pause rather than pause/resume bookkeeping: the caller
  * can already answer "is this turn parked on a person?" precisely, so the guard
  * just asks `isPaused()` when the timer fires and re-arms if so. No
@@ -42,6 +52,7 @@
 import type { StreamEvent } from '@dorkos/shared/types';
 import { SESSIONS } from '../../config/constants.js';
 import { logger } from '../../lib/logger.js';
+import type { TurnWindowSignal } from './turn-window-signal.js';
 
 /** Race sentinel: the inactivity timer expired before the next source event. */
 const STALL_TIMEOUT = Symbol('stall-timeout');
@@ -68,6 +79,13 @@ export interface StallGuardOpts {
   interruptTimeoutMs?: number;
   /** Diagnostics sink for onStall rejections (never thrown). */
   onError?: (err: unknown) => void;
+  /**
+   * The turn windows this guard's clock follows. Supplied on the pump path,
+   * where one stream carries many turns: the clock runs only while a window is
+   * open, so a warm process between turns is never watchdogged. Omitted on the
+   * per-turn path, where the stream IS the turn and the clock runs throughout.
+   */
+  windows?: TurnWindowSignal;
 }
 
 /** What the bounded interrupt attempt concluded, and how to say it to a person. */
@@ -134,6 +152,122 @@ async function attemptInterrupt(opts: StallGuardOpts): Promise<InterruptOutcome>
 }
 
 /**
+ * The inactivity countdown, and the two facts that decide whether it runs.
+ *
+ * A timer exists only while BOTH are true: the guard is waiting on the source
+ * (so there is silence to measure) and a turn window is open (so there is a
+ * turn the silence belongs to). Either one going false stops the timer; both
+ * going true starts a fresh full window, never a leftover remainder.
+ *
+ * {@link StallClock.stalled} settles exactly once, and only for a genuine
+ * stall: an expiry while the turn is parked on a person re-arms instead, which
+ * is the check-at-expiry pause the module doc describes.
+ */
+class StallClock {
+  private timer: NodeJS.Timeout | undefined;
+  /** True while the guard is awaiting the source — the only silence worth timing. */
+  private waiting = false;
+  /** True while a turn window is open; always true with no `windows` supplied. */
+  private armed: boolean;
+  private readonly unwatch: (() => void) | undefined;
+  private fire!: () => void;
+  /** Resolves once, when the source has gone silent past the bound. */
+  readonly stalled: Promise<typeof STALL_TIMEOUT>;
+
+  /**
+   * Build the clock for one guarded stream.
+   *
+   * @param opts - The guard's options; the timeout, the pause probe, the
+   *   diagnostics sink, and the turn windows that arm it
+   */
+  constructor(private readonly opts: StallGuardOpts) {
+    this.armed = opts.windows === undefined || opts.windows.isOpen;
+    this.stalled = new Promise<typeof STALL_TIMEOUT>((resolve) => {
+      this.fire = () => resolve(STALL_TIMEOUT);
+    });
+    this.unwatch = opts.windows?.watch((open) => {
+      this.setArmed(open);
+    });
+  }
+
+  /** The guard is about to await the source: start timing this silence. */
+  beginWait(): void {
+    this.waiting = true;
+    this.sync();
+  }
+
+  /** The race settled: stop timing until the guard waits again. */
+  endWait(): void {
+    this.waiting = false;
+    this.sync();
+  }
+
+  /** The guard is finished: no timer, and no subscription left on the signal. */
+  dispose(): void {
+    this.waiting = false;
+    this.armed = false;
+    this.stop();
+    this.unwatch?.();
+  }
+
+  /** A window opened or the last one closed. A fresh window gets a fresh bound. */
+  private setArmed(armed: boolean): void {
+    if (this.armed === armed) return;
+    this.armed = armed;
+    this.stop();
+    this.sync();
+  }
+
+  private sync(): void {
+    if (this.waiting && this.armed) this.start();
+    else this.stop();
+  }
+
+  /** Idempotent: an already-running countdown is never restarted from here. */
+  private start(): void {
+    if (this.timer !== undefined) return;
+    const timer = setTimeout(() => {
+      this.onExpiry();
+    }, this.opts.timeoutMs);
+    // Never hold the process open for a watchdog.
+    timer.unref();
+    this.timer = timer;
+  }
+
+  private stop(): void {
+    if (this.timer === undefined) return;
+    clearTimeout(this.timer);
+    this.timer = undefined;
+  }
+
+  private onExpiry(): void {
+    this.timer = undefined;
+    if (this.isPaused()) {
+      // Blocked on the operator: the silence is legitimate. Re-arm a fresh
+      // full-threshold timer against the same pending next().
+      this.sync();
+      return;
+    }
+    this.fire();
+  }
+
+  /**
+   * Ask the pause probe, treating a probe that cannot answer as "not paused".
+   * It runs inside a timer callback now, so a throw left alone would take the
+   * process down; and a probe that fails must not be able to suppress the
+   * watchdog forever either. The failure is reported, never swallowed.
+   */
+  private isPaused(): boolean {
+    try {
+      return this.opts.isPaused();
+    } catch (err) {
+      this.opts.onError?.(err);
+      return false;
+    }
+  }
+}
+
+/**
  * Forward a turn's `StreamEvent`s, racing each source `next()` against an
  * inactivity timer. On a stall (timer expiry while not paused) the source is
  * abandoned, `onStall` interrupts the runtime, and exactly three events close
@@ -157,32 +291,22 @@ export async function* withStallGuard(
 ): AsyncGenerator<StreamEvent> {
   const iterator = source[Symbol.asyncIterator]();
   // Only for the stall log's `inactivityMs`; the firing decision stays the
-  // timer's, so a paused re-arm is unaffected by what this records.
+  // clock's, so a paused re-arm is unaffected by what this records.
   let lastActivityAt = Date.now();
-  let timer: NodeJS.Timeout | undefined;
-  const clearTimer = (): void => {
-    if (timer !== undefined) {
-      clearTimeout(timer);
-      timer = undefined;
-    }
-  };
+  const clock = new StallClock(opts);
   try {
     // Exactly ONE pending next() at a time. A paused expiry re-arms a fresh
     // timer against the SAME pending promise; only a delivered event advances it.
     let pending = iterator.next();
     while (true) {
-      const expiry = new Promise<typeof STALL_TIMEOUT>((resolve) => {
-        timer = setTimeout(() => resolve(STALL_TIMEOUT), opts.timeoutMs);
-        // Never hold the process open for a watchdog.
-        timer.unref();
-      });
+      clock.beginWait();
       let winner: IteratorResult<StreamEvent> | typeof STALL_TIMEOUT;
       try {
-        // A source throw rejects the race; the finally clears the timer and the
+        // A source throw rejects the race; the finally stops the clock and the
         // throw propagates to guardTurnErrors (which owns translation).
-        winner = await Promise.race([pending, expiry]);
+        winner = await Promise.race([pending, clock.stalled]);
       } finally {
-        clearTimer();
+        clock.endWait();
       }
 
       if (winner !== STALL_TIMEOUT) {
@@ -191,12 +315,6 @@ export async function* withStallGuard(
         lastActivityAt = Date.now();
         yield winner.value;
         pending = iterator.next();
-        continue;
-      }
-
-      if (opts.isPaused()) {
-        // Blocked on the operator: the silence is legitimate. Loop to re-arm a
-        // fresh full-threshold timer against the same pending next().
         continue;
       }
 
@@ -254,7 +372,7 @@ export async function* withStallGuard(
       return;
     }
   } finally {
-    clearTimer();
+    clock.dispose();
     // Consumer-cancellation safety: if the guard itself is return()'d or
     // throws mid-race, finalize the source too so its generator (and any
     // subprocess behind it) is not left suspended. Fire-and-forget for the
