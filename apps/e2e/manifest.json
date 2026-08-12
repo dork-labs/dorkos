@@ -398,10 +398,10 @@
       "specFile": "tests/dashboard-sidebar/mobile-sidebar-navigation.spec.ts",
       "feature": "dashboard-sidebar",
       "description": "there is no drawer to open — no sheet, no hamburger, tapping a channel in Library lands on the room, and the tabs stay, re-opening the room you are already in still gets out of the way, the top-level destinations are reachable from You, picking inside the New message sheet dismisses nothing until the conversation starts, Home comes back where you left it after a look at Library (AC-1), the Home badge is Heads up’s count, and Library never carries one (AC-2), an approval is answered from Home, and nothing moves (AC-5), Catch up clears Today’s unread in one press (AC-4), a press and hold in Home offers what the “⋮” offers (AC-3)",
-      "lastRun": "2026-08-12T02:31:31.988Z",
+      "lastRun": "2026-08-12T03:03:26.873Z",
       "lastStatus": "passed",
-      "runCount": 12,
-      "passCount": 12,
+      "runCount": 13,
+      "passCount": 13,
       "failCount": 0,
       "relatedCode": [],
       "lastModified": ""
@@ -640,15 +640,6 @@
     }
   },
   "runHistory": [
-    {
-      "id": "2026-08-03T22-36-16",
-      "timestamp": "2026-08-03T22:36:16.822Z",
-      "total": 5,
-      "passed": 5,
-      "failed": 0,
-      "skipped": 0,
-      "duration": 39663
-    },
     {
       "id": "2026-08-03T22-38-07",
       "timestamp": "2026-08-03T22:38:07.533Z",
@@ -1539,6 +1530,15 @@
       "failed": 0,
       "skipped": 0,
       "duration": 54937
+    },
+    {
+      "id": "2026-08-12T03-03-26",
+      "timestamp": "2026-08-12T03:03:26.873Z",
+      "total": 10,
+      "passed": 10,
+      "failed": 0,
+      "skipped": 0,
+      "duration": 70589
     }
   ]
 }

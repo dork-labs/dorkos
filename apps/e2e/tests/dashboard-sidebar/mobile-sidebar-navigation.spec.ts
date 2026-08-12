@@ -437,12 +437,15 @@ test.describe('Mobile tabs — 390×844 @smoke', () => {
     await basePage.waitForAppReady();
     await goTo(page, 'home');
 
-    // The control says how much it is about to do, so the count is readable
-    // without counting rows — and it is the same list the press acts on.
+    // **The count is exact, because the seed makes it knowable.** Today's
+    // membership is the rooms `seedVisits` named — nothing else on this leg has
+    // been visited by this browser — and `/` is the #team room, which this test
+    // reads and so leaves with nothing unread. A range would pass on any
+    // plausible number; this fails on the wrong one.
     const catchUp = page.getByTestId('today-catch-up');
     await expect(catchUp).toBeVisible({ timeout: SERVER_ROUND_TRIP_MS });
     await expect(catchUp).toHaveAccessibleName(
-      /^Catch up — mark [3-9]\d* unread conversations in Today as read$/,
+      `Catch up — mark ${rooms.length} unread conversations in Today as read`,
       { timeout: SERVER_ROUND_TRIP_MS }
     );
 

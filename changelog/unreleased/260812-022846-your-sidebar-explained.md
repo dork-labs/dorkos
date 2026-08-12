@@ -1,6 +1,7 @@
 ---
 covers:
   - 'docs(docs,e2e): a page that explains your sidebar, and the mobile spec that proves it (P4.3, DOR-1079)'
+  - 'docs(docs,e2e): four wrong facts off the sidebar page, and an exact Catch up count (P4.3 review, DOR-1079)'
 ---
 
 ### Added
