@@ -934,6 +934,69 @@ describe('RoomService — atomicity, slug reclaim and visibility', () => {
     expect(service.listRooms(human).find((r) => r.id === room.id)?.unreadCount).toBe(1);
   });
 
+  it('says whether the viewer has written in a room, and only flips when they do', () => {
+    const room = service.createRoom(
+      { kind: 'channel', title: 'Backend', members: [], agentPaths: ['/agents/ana'] },
+      human
+    );
+    const listedFor = (viewer: string) =>
+      service.listRooms(viewer, { includeArchived: true }).find((r) => r.id === room.id);
+
+    // Joined, present, and silent. Membership is not participation.
+    expect(listedFor(human)?.viewerHasPosted).toBe(false);
+
+    // Somebody ELSE writing does not make it the viewer's room.
+    const ana = authors.resolveAgent('/agents/ana', 'Ana').id;
+    service.post(room.id, { authorId: ana, text: 'morning' });
+    expect(listedFor(human)?.viewerHasPosted).toBe(false);
+    expect(listedFor(ana)?.viewerHasPosted).toBe(true);
+
+    service.post(room.id, { authorId: human, text: 'hi team' });
+    expect(listedFor(human)?.viewerHasPosted).toBe(true);
+  });
+
+  it('keeps having posted to the room it was posted in', () => {
+    const spoken = service.createRoom(
+      { kind: 'channel', title: 'Backend', members: [], agentPaths: [] },
+      human
+    );
+    const quiet = service.createRoom(
+      { kind: 'channel', title: 'Design', members: [], agentPaths: [] },
+      human
+    );
+    service.post(spoken.id, { authorId: human, text: 'hi team' });
+
+    const posted = new Map(service.listRooms(human).map((r) => [r.id, r.viewerHasPosted]));
+    expect(posted.get(spoken.id)).toBe(true);
+    expect(posted.get(quiet.id)).toBe(false);
+  });
+
+  it('asks the entries table once for the whole list, however many rooms there are', () => {
+    // The claim is invisible in the returned value — the same booleans come back
+    // either way — so count the statements SQLite is asked to prepare. Pinned
+    // against the obvious per-room `EXISTS`, which would grow with the list.
+    const authorReads = (roomCount: number): number => {
+      const harness = createRoomHarness({ agents: agentLookup });
+      for (let i = 0; i < roomCount; i++) {
+        harness.service.createRoom(
+          { kind: 'channel', title: `Room ${i}`, members: [], agentPaths: [] },
+          harness.human
+        );
+      }
+      const sqlite = (harness.db as unknown as { $client: { prepare: (sql: string) => unknown } })
+        .$client;
+      const prepare = vi.spyOn(sqlite, 'prepare');
+      harness.service.listRooms(harness.human);
+      const reads = prepare.mock.calls.filter(([sql]) =>
+        String(sql).includes('"room_entries"."author_id"')
+      ).length;
+      prepare.mockRestore();
+      return reads;
+    };
+    expect(authorReads(2)).toBe(1);
+    expect(authorReads(25)).toBe(1);
+  });
+
   it("carries a direct message's roster, so the sidebar can draw who it is with", () => {
     const dm = service.createRoom(
       { kind: 'dm', title: 'Ana', members: [], agentPaths: ['/agents/ana'] },
