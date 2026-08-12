@@ -130,8 +130,8 @@ export interface CrashRecoveryPump {
 export interface CrashRecoveryWindows {
   /** Close whatever window was open as a failure. */
   onCrash(crash: PumpCrash): void;
-  /** Open a window for one dequeued batch and dispatch it. */
-  dispatch(batch: readonly PumpDispatch[]): Promise<TurnWindow>;
+  /** Open a window for one dequeued batch, in `cwd`, and dispatch it. */
+  dispatch(batch: readonly PumpDispatch[], cwd: string): Promise<TurnWindow>;
 }
 
 /** Everything the recovery needs to own one session's failover. */
@@ -250,12 +250,18 @@ export class SessionCrashRecovery {
    * stale-session retry included, both deliberately retained because THIS is
    * the route they are kept for.
    *
+   * The working directory is carried through rather than remembered, because
+   * the windower asks the boundary about it on every dispatch (task 3.9) — a
+   * relaunch after a crash is a new process in whatever directory the session
+   * names TODAY, and it is gated exactly like any other turn.
+   *
    * @param batch - The messages dequeued together, to run as one turn
+   * @param cwd - The working directory this turn would run in
    * @returns The window this dispatch opened
    * @throws SessionCrashLoopError When this session has already spent its
    *   automatic resume on a process that crashed straight back
    */
-  async dispatch(batch: readonly PumpDispatch[]): Promise<TurnWindow> {
+  async dispatch(batch: readonly PumpDispatch[], cwd: string): Promise<TurnWindow> {
     if (this.opts.pump.state === 'crashed' && !this.willAutoResume) {
       // Spent back down to a single crash, not to zero: the person has been
       // told, so their next attempt gets a launch — and if it dies the same
@@ -267,7 +273,7 @@ export class SessionCrashRecovery {
       });
       throw new SessionCrashLoopError(this.opts.sessionId, this.latest);
     }
-    return this.opts.windows.dispatch(batch);
+    return this.opts.windows.dispatch(batch, cwd);
   }
 
   /** Tell the recorder, without letting its failure reach the read loop. */
