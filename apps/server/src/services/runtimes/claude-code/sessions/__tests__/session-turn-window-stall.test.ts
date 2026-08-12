@@ -96,11 +96,20 @@ async function flush(): Promise<void> {
 function harness() {
   const pump = fakePump();
   const signal = new TurnWindowSignal();
+  // The order the windower announced its boundaries in, which is the whole
+  // subject of the close-before-open case below.
+  const observed: string[] = [];
   const windows = new SessionTurnWindows({
     sessionId: SESSION_ID,
     pump,
-    onWindowOpen: signal.opened,
-    onWindowClose: signal.closed,
+    onWindowOpen: (window) => {
+      observed.push('open');
+      signal.opened(window);
+    },
+    onWindowClose: (window) => {
+      observed.push('close');
+      signal.closed(window);
+    },
   });
   const src = createControlledSource();
   const onStall = vi.fn(async () => true);
@@ -113,7 +122,7 @@ function harness() {
       windows: signal,
     })
   );
-  return { pump, signal, windows, src, onStall, collector };
+  return { pump, signal, windows, src, onStall, collector, observed };
 }
 
 beforeEach(() => {
@@ -210,6 +219,69 @@ describe('the stall watchdog over turn windows', () => {
     expect(h.signal.isOpen).toBe(true);
     expect(h.pump.turnsEnded).toBe(0);
 
+    await vi.advanceTimersByTimeAsync(TEN_MINUTES);
+    await flush();
+    expect(h.onStall).toHaveBeenCalledTimes(1);
+    expect(h.collector.events).toEqual(STALL_CLOSE);
+  });
+
+  it('survives a window whose close is announced BEFORE its open', async () => {
+    const h = harness();
+    // The real inversion, driven exactly as the windower produces it: the
+    // window is registered before `pump.dispatch` is awaited but announced
+    // only after it resolves, and the pump's read loop runs during that await.
+    // A `result` landing in that gap closes the window first, so the observers
+    // fire close-then-open for one and the same window.
+    let releaseDispatch!: () => void;
+    vi.mocked(h.pump.dispatch).mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          releaseDispatch = resolve;
+        })
+    );
+    const dispatching = h.windows.dispatch([{ content: 'do the thing', messageId: 'm1' }]);
+    await flush();
+
+    h.windows.onMessage(resultMessage('m1'));
+    await flush();
+    releaseDispatch();
+    await dispatching;
+    await flush();
+
+    expect(h.observed).toEqual(['close', 'open']);
+    // The turn is over. A count that took the open at face value would sit at
+    // one for good, and the watchdog would eventually interrupt a warm process
+    // with nothing running on it.
+    expect(h.signal.isOpen).toBe(false);
+    expect(vi.getTimerCount()).toBe(0);
+    await vi.advanceTimersByTimeAsync(TEN_MINUTES * 3);
+    await flush();
+    expect(h.onStall).not.toHaveBeenCalled();
+    expect(h.collector.isEnded()).toBe(false);
+  });
+
+  it('still guards the next turn after an inverted one', async () => {
+    const h = harness();
+    let releaseDispatch!: () => void;
+    vi.mocked(h.pump.dispatch).mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          releaseDispatch = resolve;
+        })
+    );
+    const dispatching = h.windows.dispatch([{ content: 'first', messageId: 'm1' }]);
+    await flush();
+    h.windows.onMessage(resultMessage('m1'));
+    await flush();
+    releaseDispatch();
+    await dispatching;
+    await flush();
+
+    // The tombstone was spent on the inverted window and must not shut the
+    // next one: this turn is guarded like any other.
+    await h.windows.dispatch([{ content: 'second', messageId: 'm2' }]);
+    await flush();
+    expect(h.signal.isOpen).toBe(true);
     await vi.advanceTimersByTimeAsync(TEN_MINUTES);
     await flush();
     expect(h.onStall).toHaveBeenCalledTimes(1);

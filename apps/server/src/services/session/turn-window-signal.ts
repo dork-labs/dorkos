@@ -28,27 +28,42 @@
  * window closes, which is exactly when there is no turn left to guard.
  *
  * Windows are keyed by IDENTITY, so a close for a window this signal never saw
- * open changes nothing. That is the honest answer to a duplicate or foreign
- * close, and it keeps the count from going negative and disarming the guard on
- * a live turn.
+ * open cannot decrement anything. That keeps the count from going negative and
+ * disarming the guard on a live turn.
  *
- * ## The one ordering this cannot survive: a close BEFORE its open
+ * ## A close can arrive BEFORE its own open, and it is tolerated here
  *
- * Ignoring an unseen close is safe in isolation, but not if the same window is
- * announced open afterwards: the count goes to one and nothing will ever bring
- * it back down, so the guard stays armed on a process with no turn running and
- * eventually interrupts it — the exact failure this signal exists to prevent,
- * re-entered through the other door.
+ * `SessionTurnWindows` registers a window before awaiting `pump.dispatch` but
+ * announces it only after that dispatch is ACCEPTED, and the pump's read loop
+ * runs during the await — so a `result` landing in that gap closes the window
+ * before the dispatch that opened it returns, and the observers fire close then
+ * open for one and the same window. Reproduced against the real windower.
  *
- * So whoever wires this owes it one invariant: **a window is announced open
- * before it is announced closed, always.** `SessionTurnWindows` does not
- * guarantee that today. It sets `this.current` before awaiting `pump.dispatch`
- * but calls `onWindowOpen` after, and the pump's read loop runs during that
- * await — so a `result` carrying no answered id, or a crash, closes the window
- * before the dispatch that opened it returns. Reproduced against the real
- * windower: the observers fire `close` then `open`, and `isOpen` stays true for
- * good. Fixing the order belongs to the windower, not here; a signal cannot
- * infer an ordering it is only ever told about after the fact.
+ * Merely ignoring the unseen close is not enough: the open behind it would then
+ * be taken at face value, the count would sit at one for good, and the guard
+ * would stay armed on a process with no turn running — the exact failure this
+ * signal exists to prevent, re-entered through the other door. So an unseen
+ * close leaves a TOMBSTONE, and the matching open is cancelled by it instead of
+ * counting. One-shot and keyed by identity: it cancels that window's open and
+ * nothing else, so a window opened later on its own merits is unaffected.
+ *
+ * **The windower's ordering is deliberate and must not be "fixed" instead.**
+ * Announcing before acceptance is what the P3.3 review forbade: `onWindowOpen`
+ * is where a window is projected, and the `turn_start` it mints RETIRES the
+ * person's durable queue rows. Announce first and a REFUSED dispatch retires a
+ * row for a turn that never ran — the message is lost, with an empty turn on
+ * the stream where it should have been. Announce-after-acceptance is the rule;
+ * tolerating the inversion belongs to the observer, which is here.
+ *
+ * Tombstones are bounded ({@link MAX_CANCELLED_WINDOWS}, oldest evicted first)
+ * for the same reason the windower bounds its held buffer: a tombstone can only
+ * ever be claimed by ONE future open, and window records are freshly minted per
+ * dispatch, so one that is never claimed would sit here for the life of the warm
+ * process. The bound is safe because the inversion is claimed within a single
+ * `dispatch` call, and the windower serializes dispatches — at most one
+ * tombstone is ever genuinely outstanding, against a cap of thirty-two. Past the
+ * cap the oldest is simply forgotten, which restores the old behavior for a
+ * cancellation nobody claimed and can never affect a live one.
  *
  * ## Runtime windows arm it too
  *
@@ -66,6 +81,17 @@
 export type TurnWindowWatcher = (open: boolean) => void;
 
 /**
+ * How many close-before-open cancellations are remembered at once.
+ *
+ * Thirty-two against a genuine worst case of one: the windower serializes
+ * dispatches, so only the window currently being dispatched can have its close
+ * beat its open, and that open follows within the same call. The cap exists so
+ * a pathological producer cannot grow the set without limit, not because the
+ * real one ever approaches it.
+ */
+export const MAX_CANCELLED_WINDOWS = 32;
+
+/**
  * The set of turn windows open on one session, as an arm/disarm signal.
  *
  * Wire {@link TurnWindowSignal.opened} to `SessionTurnWindows`' `onWindowOpen`
@@ -76,26 +102,34 @@ export type TurnWindowWatcher = (open: boolean) => void;
 export class TurnWindowSignal {
   private readonly open = new Set<object>();
   private readonly watchers = new Set<TurnWindowWatcher>();
+  /** Windows already closed when their open arrives. Insertion-ordered, for FIFO eviction. */
+  private readonly cancelled = new Set<object>();
 
   /**
-   * A turn window opened. Idempotent per window.
+   * A turn window opened. Idempotent per window, and cancelled outright when
+   * this window's close was announced first — that turn is already over.
    *
    * @param window - The window that opened, used only for its identity
    */
   readonly opened = (window: object): void => {
+    if (this.cancelled.delete(window)) return;
     const wasOpen = this.open.size > 0;
     this.open.add(window);
-    if (!wasOpen && this.open.size > 0) this.announce(true);
+    if (!wasOpen) this.announce(true);
   };
 
   /**
    * A turn window closed and its stream has ended. A window this signal never
-   * saw open is ignored rather than counted.
+   * saw open leaves a one-shot cancellation instead of counting down, so the
+   * open still on its way cannot leave the count stuck at one forever.
    *
    * @param window - The window that closed, used only for its identity
    */
   readonly closed = (window: object): void => {
-    if (!this.open.delete(window)) return;
+    if (!this.open.delete(window)) {
+      this.cancel(window);
+      return;
+    }
     if (this.open.size === 0) this.announce(false);
   };
 
@@ -131,6 +165,19 @@ export class TurnWindowSignal {
     return () => {
       this.watchers.delete(watcher);
     };
+  }
+
+  /**
+   * Remember that this window is already over, evicting the oldest
+   * cancellation when the bound is reached. A `Set` iterates in insertion
+   * order, so its first entry is the oldest.
+   */
+  private cancel(window: object): void {
+    if (this.cancelled.size >= MAX_CANCELLED_WINDOWS) {
+      const oldest = this.cancelled.values().next().value;
+      if (oldest !== undefined) this.cancelled.delete(oldest);
+    }
+    this.cancelled.add(window);
   }
 
   /** Tell every watcher, over a copy so one that unsubscribes cannot skip another. */

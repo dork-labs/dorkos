@@ -12,7 +12,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { StreamEvent } from '@dorkos/shared/types';
 import { withStallGuard } from '../stall-guard.js';
 import type { StallGuardOpts } from '../stall-guard.js';
-import { TurnWindowSignal } from '../turn-window-signal.js';
+import { MAX_CANCELLED_WINDOWS, TurnWindowSignal } from '../turn-window-signal.js';
 
 // The guard says out loud when it fires, and consola parks a timer to collapse
 // an identical line repeated soon after — which would pollute the timer-count
@@ -370,5 +370,71 @@ describe('TurnWindowSignal', () => {
     signal.closed(window('never-opened'));
     expect(signal.isOpen).toBe(true);
     expect(seen).toEqual([true]);
+  });
+
+  it('cancels the open of a window whose close arrived first', () => {
+    const signal = new TurnWindowSignal();
+    const seen: boolean[] = [];
+    signal.watch((open) => seen.push(open));
+    const inverted = window('closed-before-it-opened');
+
+    signal.closed(inverted);
+    signal.opened(inverted);
+    // The window is over: its late open is the announcement of a turn that has
+    // already finished, and taking it at face value would leave the count at
+    // one with nothing left to close it.
+    expect(signal.isOpen).toBe(false);
+    expect(seen).toEqual([]);
+  });
+
+  it('spends a cancellation on one open only', () => {
+    const signal = new TurnWindowSignal();
+    const seen: boolean[] = [];
+    signal.watch((open) => seen.push(open));
+    const reused = window('same-identity-twice');
+
+    signal.closed(reused);
+    signal.opened(reused);
+    expect(signal.isOpen).toBe(false);
+
+    // Whatever the next open means, it is not the one that was cancelled.
+    signal.opened(reused);
+    expect(signal.isOpen).toBe(true);
+    expect(seen).toEqual([true]);
+    signal.closed(reused);
+    expect(signal.isOpen).toBe(false);
+    expect(seen).toEqual([true, false]);
+  });
+
+  it('keeps an inverted window from disarming a turn that is genuinely open', () => {
+    const signal = new TurnWindowSignal();
+    const live = window('live-turn');
+    const inverted = window('inverted');
+
+    signal.opened(live);
+    signal.closed(inverted);
+    signal.opened(inverted);
+    expect(signal.isOpen).toBe(true);
+
+    signal.closed(live);
+    expect(signal.isOpen).toBe(false);
+  });
+
+  it('bounds the cancellations it remembers, oldest first', () => {
+    const signal = new TurnWindowSignal();
+    const windows = Array.from({ length: MAX_CANCELLED_WINDOWS + 1 }, (_, i) => window(`w${i}`));
+    for (const w of windows) signal.closed(w);
+
+    // The oldest was evicted, so its open is taken at face value — the honest
+    // outcome for a cancellation nobody claimed within a full cap's worth of
+    // windows, and the reason the bound is safe: the real inversion is claimed
+    // inside a single dispatch.
+    signal.opened(windows[0]!);
+    expect(signal.isOpen).toBe(true);
+    signal.closed(windows[0]!);
+
+    // Everything still remembered cancels as it should.
+    signal.opened(windows[1]!);
+    expect(signal.isOpen).toBe(false);
   });
 });
