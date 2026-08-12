@@ -1,6 +1,7 @@
 ---
 covers:
   - "fix(client): the sidebar's suggestion cards lose their boxes, and Home goes to the first row (DOR-1138)"
+  - 'fix(client): the day-one invitation loses its dashed box too (DOR-1138)'
 ---
 
 ### Changed
