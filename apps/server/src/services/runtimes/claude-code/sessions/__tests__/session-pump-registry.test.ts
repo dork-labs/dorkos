@@ -1,72 +1,11 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
+
 import {
   SessionPumpRegistry,
   shutdownSessionPumps,
   type AcquirePumpOptions,
 } from '../session-pump-registry.js';
-import type { PumpQuery } from '../session-pump.js';
-
-/** A subprocess stand-in that stays up until something closes it. */
-class FakeQuery implements PumpQuery {
-  closed = 0;
-  private readonly pending: SDKMessage[] = [];
-  private wake: (() => void) | undefined;
-  private done = false;
-
-  emit(message: SDKMessage): void {
-    this.pending.push(message);
-    this.wake?.();
-    this.wake = undefined;
-  }
-
-  fail(err: unknown): void {
-    this.done = true;
-    this.error = err;
-    this.wake?.();
-    this.wake = undefined;
-  }
-
-  close(): void {
-    this.closed += 1;
-    this.done = true;
-    this.wake?.();
-    this.wake = undefined;
-  }
-
-  private error: unknown;
-
-  async *[Symbol.asyncIterator](): AsyncIterator<SDKMessage> {
-    for (;;) {
-      while (this.pending.length > 0) yield this.pending.shift()!;
-      if (this.error !== undefined) throw this.error;
-      if (this.done) return;
-      await new Promise<void>((resolve) => {
-        this.wake = resolve;
-      });
-    }
-  }
-}
-
-function initMessage(): SDKMessage {
-  return {
-    type: 'system',
-    subtype: 'init',
-    apiKeySource: 'user',
-    claude_code_version: '0.0.0-test',
-    cwd: '/tmp',
-    tools: [],
-    mcp_servers: [],
-    model: 'test-model',
-    permissionMode: 'default',
-    slash_commands: [],
-    output_style: 'default',
-    skills: [],
-    plugins: [],
-    uuid: '00000000-0000-0000-0000-000000000000',
-    session_id: 'sess',
-  } as SDKMessage;
-}
+import { FakeQuery, initMessage } from './fake-pump-query.js';
 
 /** Acquire options whose launcher hands back a query that inits on demand. */
 function launchOpts(
@@ -112,11 +51,11 @@ describe('SessionPumpRegistry', () => {
     expect(registry.warmth('s1')).toBe('cold');
     await pump.warm();
     expect(registry.warmth('s1')).toBe('warm');
-    await pump.dispatch({ content: 'hi' });
+    await pump.dispatch([{ content: 'hi', messageId: 'msg-hi' }]);
     expect(registry.warmth('s1')).toBe('running');
     pump.endTurn();
     expect(registry.warmth('s1')).toBe('warm');
-    queries[0]!.fail(new Error('killed'));
+    queries[0]!.failStream(new Error('killed'));
     await vi.waitFor(() => expect(registry.warmth('s1')).toBe('crashed'));
   });
 
@@ -154,7 +93,7 @@ describe('SessionPumpRegistry', () => {
     const registry = new SessionPumpRegistry();
     const pump = registry.acquire('s1', launchOpts(queries));
     await pump.warm();
-    queries[0]!.fail(new Error('killed'));
+    queries[0]!.failStream(new Error('killed'));
     await vi.waitFor(() => expect(registry.warmth('s1')).toBe('crashed'));
 
     expect(registry.peek('s1')).toBe(pump);
@@ -232,7 +171,7 @@ describe('SessionPumpRegistry', () => {
     const registry = new SessionPumpRegistry();
     const pump = registry.acquire('s1', launchOpts(queries));
     await pump.warm();
-    await pump.dispatch({ content: 'hi' });
+    await pump.dispatch([{ content: 'hi', messageId: 'msg-hi' }]);
 
     await registry.evict('s1');
     expect(queries[0]!.closed).toBe(1);

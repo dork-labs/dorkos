@@ -41,9 +41,10 @@ export class NewMenuPage {
   /**
    * A section header's `+`, by its accessible name.
    *
-   * Scoped to the shadcn `sidebar-group-action` slot so it never collides with
-   * `AgentOnboardingCard`'s plain button, which matches the same name at small
-   * fleet sizes. `data-sidebar` rather than `data-slot`: that is ours alone.
+   * Scoped to the shadcn `sidebar-group-action` slot so it can only ever match
+   * a section header's own `+`, never some other button in the panel wearing
+   * the same accessible name. `data-sidebar` rather than `data-slot`: that is
+   * ours alone.
    *
    * @param label - The `+`'s accessible name, e.g. `'New channel'`.
    */

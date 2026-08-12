@@ -59,7 +59,7 @@ export function mapSdkContextUsage(usage: SDKControlGetContextUsageResponse): Co
  * @param timeoutMs - Max time to wait for the control response.
  */
 export async function fetchContextBreakdown(
-  query: Query,
+  query: Pick<Query, 'getContextUsage'>,
   timeoutMs: number
 ): Promise<ContextUsage> {
   let timer: ReturnType<typeof setTimeout> | undefined;

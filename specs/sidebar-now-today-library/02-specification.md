@@ -611,6 +611,12 @@ Each contract is stated so a test can fail. Fixture names refer to the four jour
   for 2.5s and then folds away. Under `prefers-reduced-motion` the zone simply disappears.
 - **BC-51 — No tour.** No tour component, no tour anchors added, no "meet your new sidebar"
   copy anywhere. (§1, §10)
+- **BC-52 — The Getting-started swap yields fast and returns slow.** (Added 2026-08-11,
+  DOR-1144; design-decisions §19.) Getting started leaves the shared slot on the frame a real
+  signal claims it — BC-4's precedence is untouched. Its RETURN is damped twice over: it may
+  not come back within 5 seconds of stepping aside, and the return defers further while the
+  pointer is inside the zone stack or a row holds focus, on BC-17's machinery. Both apply
+  unchanged under `prefers-reduced-motion` — this is timing, not animation.
 
 ---
 
@@ -1117,8 +1123,15 @@ takeover contributions render inside the Library tab on mobile.
 long-press, catch-up and inline approval.
 
 **Rollback:** `MobileTabsLayout` is selected by `useIsMobile()` at one call site in `AppShell`;
-reverting that selection restores the Sheet, which stays in `shared/ui/sidebar.tsx` for the
-Obsidian embed regardless.
+reverting that selection restores the Sheet, which stays in `shared/ui/sidebar.tsx` regardless.
+
+> **Corrected at P4.3.** This paragraph and AC-6 above said the Sheet is kept "for the Obsidian
+> embed". It is not, and P4.1 corrected the same claim where it lived as a comment in
+> `AppShell.tsx`. The embed renders `features/session-list/ui/EmbedSidebar.tsx` inside its own
+> drawer in `App.tsx` and never touches `<Sidebar>`; the Sheet stays because `shared/ui/sidebar.tsx`
+> is a shared primitive the Dev Playground and the component tests mount. AC-6 still holds as
+> written — `EmbedSidebar` and its tests were untouched by the whole programme — but the reason it
+> holds is that the embed was never on this code path, not that this phase was careful with it.
 
 ---
 

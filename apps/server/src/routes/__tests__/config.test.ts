@@ -1170,6 +1170,7 @@ describe('GET /api/config', () => {
           defaultModel: null,
           defaultEffort: null,
           defaultTrustStop: null,
+          persistentSession: false,
         },
       });
 

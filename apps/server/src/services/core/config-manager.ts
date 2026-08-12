@@ -2157,6 +2157,50 @@ export function backfillDefaultTrustStops(store: {
 }
 
 /**
+ * Migration body: backfill `runtimes.claudeCode.persistentSession: false` onto a
+ * `runtimes.claudeCode` block already on disk (whether a Claude Code chat keeps
+ * its agent running between messages; spec `persistent-session-runtime` §P3,
+ * DOR-1173).
+ *
+ * Needed for the same reason {@link backfillRuntimeExecutionDefaults} is: conf's
+ * defaults-merge is SHALLOW, so a `runtimes.claudeCode` object already on disk
+ * never gains a newly-added nested key from the schema default alone. Ajv's
+ * `useDefaults` does fill it in during validation, which makes this body an
+ * anchor rather than the only thing standing between an upgrade and a missing
+ * key — the same standing {@link backfillComposerPrefs} has, and for the same
+ * reason: the intent (seeded OFF) stays reviewable in the migration table
+ * instead of being implicit in a schema default.
+ *
+ * Seeds `false`, so an upgrade leaves every chat running exactly the way it runs
+ * today — one process per message. Turning it on is the operator's choice.
+ *
+ * Additive + idempotent: the leaf is written only when absent, so re-running
+ * (corrupt-recovery, a hand-edited migration version) never flips somebody's
+ * `true` back off.
+ *
+ * @internal Exported for testing only.
+ * @param store - The `conf` store instance (provides `get`/`set`).
+ */
+export function backfillClaudeCodePersistentSession(store: {
+  get: (key: string) => unknown;
+  set: (key: string, value: unknown) => void;
+}): void {
+  const runtimes = store.get('runtimes');
+  if (runtimes == null || typeof runtimes !== 'object') return;
+  const current = runtimes as Record<string, unknown>;
+
+  const claudeCode = current.claudeCode;
+  if (claudeCode == null || typeof claudeCode !== 'object') return;
+  const block = claudeCode as Record<string, unknown>;
+  if ('persistentSession' in block) return;
+
+  store.set('runtimes', {
+    ...current,
+    claudeCode: { ...block, persistentSession: false },
+  });
+}
+
+/**
  * The `conf` migration chain, keyed by the app version each entry ships in.
  *
  * ## Where a new migration goes
@@ -2483,6 +2527,14 @@ export const CONFIG_MIGRATIONS = {
     // Independent of the backfill above — disjoint sections,
     // order-immaterial — and idempotent.
     migrateSidebarSectionPrefs(store);
+    // `runtimes.claudeCode.persistentSession` (whether a Claude Code chat keeps
+    // its agent running between messages, DOR-1173). Composed into this key for
+    // the reason the bodies above state: `v0.58.0` is still the newest tag, so
+    // this key has run for nobody, and the leaf ships in the same release —
+    // opening a key ABOVE 0.59.0 would mean the release that introduces the
+    // field is the one release whose upgraders never run its backfill.
+    // Independent of everything above (a different section) and idempotent.
+    backfillClaudeCodePersistentSession(store);
   },
 } as const;
 

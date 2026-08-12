@@ -6,10 +6,11 @@
  * earlier act earned — is withheld while they are reading, and applied the
  * moment they look away.
  *
- * @module features/dashboard-sidebar/model/use-today-order-hold
+ * @module features/dashboard-sidebar/model/holds/use-today-order-hold
  */
-import { useCallback, useState } from 'react';
-import type { SidebarRowModel } from './build-sidebar-model';
+import { useState } from 'react';
+import type { SidebarRowModel } from '../build-sidebar-model';
+import { useInsideHold, type InsideHoldHandlers } from './use-inside-hold';
 
 /**
  * `rows`, in the order `heldKeys` last saw them.
@@ -47,17 +48,8 @@ function applyHeldOrder(
 export interface TodayOrderHold {
   /** The rows to draw — this frame's, in the order the operator is looking at. */
   rows: SidebarRowModel[];
-  /**
-   * Spread onto the element that wraps the zone. Pointer and focus both,
-   * because a keyboard has no pointer and the promise is about neither device
-   * in particular: it is about not moving what somebody is aiming at.
-   */
-  handlers: {
-    onPointerEnter: () => void;
-    onPointerLeave: () => void;
-    onFocus: () => void;
-    onBlur: () => void;
-  };
+  /** Spread onto the element that wraps the zone. */
+  handlers: InsideHoldHandlers;
 }
 
 /**
@@ -69,10 +61,6 @@ export interface TodayOrderHold {
  * BC-36 scrolls to it — so the held order is dropped whenever the anchor
  * changes, and the new order is what the next frame freezes.
  *
- * `onFocus`/`onBlur` rather than the DOM's `focusin`/`focusout`: React's
- * synthetic versions of these two bubble, so one pair on the wrapper covers
- * every row inside it.
- *
  * @param rows - Today's rows, in the order the model wants them.
  * @param anchorKey - The open conversation's row key, or `null`.
  */
@@ -80,9 +68,7 @@ export function useTodayOrderHold(
   rows: readonly SidebarRowModel[],
   anchorKey: string | null
 ): TodayOrderHold {
-  const [pointerInside, setPointerInside] = useState(false);
-  const [focusInside, setFocusInside] = useState(false);
-  const holding = pointerInside || focusInside;
+  const { inside: holding, handlers } = useInsideHold();
 
   // The order the panel is currently showing, or `null` when nothing is held.
   //
@@ -109,13 +95,5 @@ export function useTodayOrderHold(
 
   const ordered = held === null ? [...rows] : applyHeldOrder(rows, held);
 
-  const onPointerEnter = useCallback(() => setPointerInside(true), []);
-  const onPointerLeave = useCallback(() => setPointerInside(false), []);
-  const onFocus = useCallback(() => setFocusInside(true), []);
-  const onBlur = useCallback(() => setFocusInside(false), []);
-
-  return {
-    rows: ordered,
-    handlers: { onPointerEnter, onPointerLeave, onFocus, onBlur },
-  };
+  return { rows: ordered, handlers };
 }

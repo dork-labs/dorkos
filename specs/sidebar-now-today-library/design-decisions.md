@@ -375,3 +375,65 @@ Two tiers plus Heads up membership — one table, no exceptions beyond those lis
   episode.
 - **Mobile Home tab badge = the Heads up count** (matches "N need you"). Library
   tab carries no badge — it is the calm surface.
+
+## 19. The Heads up ↔ Getting started swap is damped on the way back (decided 2026-08-11, DOR-1144)
+
+**Screens:** none — this was found in the P2.3 review, driving the shipped
+build rather than a mockup. Contract: **BC-52**.
+
+The two zones share one slot and §2's rule settles who gets it: real signals
+always win. That half is right and is not touched here. The problem was the
+_transition_. For a day-one operator who still has unretired suggestions, the
+zone left and came back instantly, so every turn an agent started or finished
+moved Today about four rows — twice per turn, on a surface the operator is
+reading. That is the thing BC-17 already refuses to do to Today's order, being
+done to Today's position instead.
+
+**Decided:**
+
+- **The yield stays instant.** A permission prompt, a question, a streaming turn
+  — anything real — takes the slot on the frame it exists. Precedence is not
+  negotiable and gains nothing from being smoothed.
+- **The return waits out a minimum dwell of 5 seconds** from the moment the zone
+  stepped aside. A turn that starts and finishes inside that window therefore
+  produces no return at all, which is the flap the review found: the zone never
+  comes back, so it cannot go away again.
+- **The return also waits for the operator's hands to leave the zones**,
+  deferring while the pointer is inside the zone stack or a row holds focus.
+  This is BC-17's own promise applied to the other axis, and it reuses BC-17's
+  own machinery rather than a second copy of it (`useInsideHold`, now shared by
+  `useTodayOrderHold` and `useGettingStartedReturn`). Scoped to the zones rather
+  than to the whole panel for BC-17's own reason: the zones are what move, and a
+  pointer resting in the empty panel beneath them has nothing above it to shift.
+  **This half is indefinite, not brief**: a pointer left resting in the zone
+  stack holds the return open for as long as it rests there, with no ceiling.
+  That is deliberate and is exactly `useTodayOrderHold`'s existing semantics —
+  the operator is still in the panel, so the reason not to move anything has not
+  expired — and it is bounded in practice by the pointer leaving, which is the
+  same event BC-17 already waits on.
+- **`prefers-reduced-motion` changes none of it.** The sidebar's other
+  reduced-motion rules suppress flourishes — the welcome-back glow, the
+  all-clear beat — because those are decoration about something that already
+  happened. This is timing, not animation, and the operator who asked for less
+  movement is the last one who should get the undamped version.
+
+**The accepted cost, stated plainly:** while the return is held, the slot is
+empty, so a short turn now moves Today up in two small steps (the zone leaving,
+then the working rollup clearing) and back down once, several seconds later,
+instead of thrashing it twice per turn. Movement is not eliminated; it is made
+infrequent and never sudden, which is what "rows must not move under a hand"
+actually asks for.
+
+**Rejected:**
+
+- _Damping both directions_ — the symmetric implementation, and the obvious one.
+  It delays real signals, which is the one thing the zone system exists to
+  prevent. The hook is built so this cannot be reintroduced by accident: it can
+  only ever subtract the Getting-started zone from the model it is handed, and
+  holds no copy of a previous frame to put back.
+- _Retiring Getting started the first time it yields_ — cheaper, and it throws
+  away suggestions the operator has not acted on because an unrelated agent
+  happened to run.
+- _Reserving the slot's height so nothing below it ever moves_ — a permanent
+  empty box for a transient problem, and BC-1 says a zone with nothing to say
+  renders nothing at all.

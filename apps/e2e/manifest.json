@@ -296,10 +296,10 @@
       "specFile": "tests/rooms/room-presence-sidebar.spec.ts",
       "feature": "rooms",
       "description": "the dot appears on the working room alone, and goes out when the work ends",
-      "lastRun": "2026-08-11T22:28:59.005Z",
+      "lastRun": "2026-08-12T02:31:31.988Z",
       "lastStatus": "passed",
-      "runCount": 7,
-      "passCount": 7,
+      "runCount": 8,
+      "passCount": 8,
       "failCount": 0,
       "relatedCode": [],
       "lastModified": ""
@@ -397,11 +397,11 @@
     "mobile-sidebar-navigation": {
       "specFile": "tests/dashboard-sidebar/mobile-sidebar-navigation.spec.ts",
       "feature": "dashboard-sidebar",
-      "description": "tapping a channel closes the sidebar and lands on the room, a top-level nav link closes it too, picking inside the New message sheet dismisses nothing until the conversation starts",
-      "lastRun": "2026-08-11T22:28:59.005Z",
+      "description": "there is no drawer to open — no sheet, no hamburger, tapping a channel in Library lands on the room, and the tabs stay, re-opening the room you are already in still gets out of the way, the top-level destinations are reachable from You, picking inside the New message sheet dismisses nothing until the conversation starts, Home comes back where you left it after a look at Library (AC-1), the Home badge is Heads up’s count, and Library never carries one (AC-2), an approval is answered from Home, and nothing moves (AC-5), Catch up clears Today’s unread in one press (AC-4), a press and hold in Home offers what the “⋮” offers (AC-3)",
+      "lastRun": "2026-08-12T03:03:26.873Z",
       "lastStatus": "passed",
-      "runCount": 11,
-      "passCount": 11,
+      "runCount": 13,
+      "passCount": 13,
       "failCount": 0,
       "relatedCode": [],
       "lastModified": ""
@@ -422,10 +422,10 @@
       "specFile": "tests/dashboard-sidebar/sidebar-groups.spec.ts",
       "feature": "dashboard-sidebar",
       "description": "creates a group, drags an agent into it, and persists across reload",
-      "lastRun": "2026-08-11T22:36:46.593Z",
+      "lastRun": "2026-08-12T02:31:31.988Z",
       "lastStatus": "passed",
-      "runCount": 11,
-      "passCount": 8,
+      "runCount": 12,
+      "passCount": 9,
       "failCount": 3,
       "relatedCode": [],
       "lastModified": ""
@@ -518,10 +518,10 @@
       "specFile": "tests/home-surface/jump-back-in.spec.ts",
       "feature": "home-surface",
       "description": "the empty composer floats up the threads you were in, and typing puts them away, Tab moves on rather than picking whatever was lit, Escape puts it down and leaves the words alone, opens fully inside the viewport, arrow and Enter open the highlighted thread, with the mouse never touched",
-      "lastRun": "2026-08-11T22:28:59.005Z",
+      "lastRun": "2026-08-12T02:31:31.988Z",
       "lastStatus": "passed",
-      "runCount": 6,
-      "passCount": 5,
+      "runCount": 7,
+      "passCount": 6,
       "failCount": 1,
       "relatedCode": [],
       "lastModified": ""
@@ -676,24 +676,6 @@
     }
   },
   "runHistory": [
-    {
-      "id": "2026-08-03T22-39-20",
-      "timestamp": "2026-08-03T22:39:20.339Z",
-      "total": 5,
-      "passed": 5,
-      "failed": 0,
-      "skipped": 0,
-      "duration": 52977
-    },
-    {
-      "id": "2026-08-03T22-40-24",
-      "timestamp": "2026-08-03T22:40:24.316Z",
-      "total": 5,
-      "passed": 4,
-      "failed": 0,
-      "skipped": 1,
-      "duration": 36277
-    },
     {
       "id": "2026-08-03T22-43-28",
       "timestamp": "2026-08-03T22:43:28.496Z",
@@ -1575,6 +1557,24 @@
       "failed": 0,
       "skipped": 0,
       "duration": 26413
+    },
+    {
+      "id": "2026-08-12T02-31-31",
+      "timestamp": "2026-08-12T02:31:31.988Z",
+      "total": 19,
+      "passed": 19,
+      "failed": 0,
+      "skipped": 0,
+      "duration": 54937
+    },
+    {
+      "id": "2026-08-12T03-03-26",
+      "timestamp": "2026-08-12T03:03:26.873Z",
+      "total": 10,
+      "passed": 10,
+      "failed": 0,
+      "skipped": 0,
+      "duration": 70589
     }
   ]
 }

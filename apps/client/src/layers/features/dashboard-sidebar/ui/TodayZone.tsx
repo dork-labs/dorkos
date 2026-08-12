@@ -25,7 +25,7 @@ import type { SidebarRowModel, SidebarZoneModel } from '../model/build-sidebar-m
 import type { SidebarZoneProps } from './SidebarZone';
 import { useMarkRoomsRead } from '../model/use-mark-rooms-read';
 import { useScrollToActive } from '../model/use-scroll-to-active';
-import { useTodayOrderHold } from '../model/use-today-order-hold';
+import { useTodayOrderHold } from '../model/holds/use-today-order-hold';
 import { SidebarZone } from './SidebarZone';
 
 /**

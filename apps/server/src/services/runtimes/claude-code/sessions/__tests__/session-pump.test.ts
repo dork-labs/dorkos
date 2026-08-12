@@ -10,81 +10,7 @@ import {
   type PumpState,
   type SessionPumpOptions,
 } from '../session-pump.js';
-
-/**
- * A scriptable stand-in for one SDK subprocess.
- *
- * It is an async iterable over messages a test pushes in, plus the `close()`
- * that terminates the child. `endStream`/`failStream` are how a test kills the
- * process; `close()` records that the pump reached for the forceful teardown.
- */
-class FakeQuery implements PumpQuery {
-  closed = 0;
-  /** Messages waiting for the consumer, and the parked consumer's waker. */
-  private readonly pending: SDKMessage[] = [];
-  private wake: (() => void) | undefined;
-  private done = false;
-  private failure: unknown;
-
-  emit(message: SDKMessage): void {
-    this.pending.push(message);
-    this.wake?.();
-    this.wake = undefined;
-  }
-
-  /** The subprocess exited cleanly (stdin closed, or it just went away). */
-  endStream(): void {
-    this.done = true;
-    this.wake?.();
-    this.wake = undefined;
-  }
-
-  /** The subprocess died and the generator threw. */
-  failStream(err: unknown): void {
-    this.failure = err;
-    this.done = true;
-    this.wake?.();
-    this.wake = undefined;
-  }
-
-  close(): void {
-    this.closed += 1;
-    this.endStream();
-  }
-
-  async *[Symbol.asyncIterator](): AsyncIterator<SDKMessage> {
-    for (;;) {
-      while (this.pending.length > 0) yield this.pending.shift()!;
-      if (this.failure !== undefined) throw this.failure;
-      if (this.done) return;
-      await new Promise<void>((resolve) => {
-        this.wake = resolve;
-      });
-    }
-  }
-}
-
-/** The `system/init` message, with whatever protocol capabilities a test wants. */
-function initMessage(capabilities?: string[]): SDKMessage {
-  return {
-    type: 'system',
-    subtype: 'init',
-    apiKeySource: 'user',
-    claude_code_version: '0.0.0-test',
-    cwd: '/tmp',
-    tools: [],
-    mcp_servers: [],
-    model: 'test-model',
-    permissionMode: 'default',
-    slash_commands: [],
-    output_style: 'default',
-    skills: [],
-    plugins: [],
-    ...(capabilities !== undefined ? { capabilities } : {}),
-    uuid: '00000000-0000-0000-0000-000000000000',
-    session_id: 'sess-1',
-  } as SDKMessage;
-}
+import { FakeQuery, initMessage } from './fake-pump-query.js';
 
 /** A plain assistant-ish message, for asserting the demux sees the whole stream. */
 function otherMessage(): SDKMessage {
@@ -103,6 +29,8 @@ interface Harness {
   crashes: PumpCrash[];
   /** Reach the input stream the way the SDK would: consume the held prompt. */
   readPrompt(index?: number): Promise<string[]>;
+  /** The same read, keeping the correlation id each message was stamped with. */
+  readStamped(index?: number): Promise<Array<{ content: string; uuid?: string }>>;
 }
 
 /** Build a pump over {@link FakeQuery}, with every seam recorded. */
@@ -134,20 +62,31 @@ function harness(overrides: Partial<SessionPumpOptions> = {}): Harness {
     messages,
     crashes,
     live: () => queries[queries.length - 1]!,
-    readPrompt: async (index = 0) => {
-      const seen: string[] = [];
-      const iterator = launches[index]!.prompt[Symbol.asyncIterator]();
-      for (;;) {
-        const next = await Promise.race([
-          iterator.next(),
-          new Promise<'idle'>((resolve) => setTimeout(() => resolve('idle'), 5)),
-        ]);
-        if (next === 'idle' || next.done === true) break;
-        seen.push(next.value.message.content);
-      }
-      return seen;
-    },
+    readPrompt: async (index = 0) => (await readStamped(launches, index)).map((m) => m.content),
+    readStamped: (index = 0) => readStamped(launches, index),
   };
+}
+
+/** Drain a launch's held prompt, keeping both what was sent and the id it carried. */
+async function readStamped(
+  launches: PumpLaunchInput[],
+  index: number
+): Promise<Array<{ content: string; uuid?: string }>> {
+  const seen: Array<{ content: string; uuid?: string }> = [];
+  const iterator = launches[index]!.prompt[Symbol.asyncIterator]();
+  for (;;) {
+    const next = await Promise.race([
+      iterator.next(),
+      new Promise<'idle'>((resolve) => setTimeout(() => resolve('idle'), 5)),
+    ]);
+    if (next === 'idle' || next.done === true) break;
+    const message = next.value as { message: { content: string }; uuid?: string };
+    seen.push({
+      content: message.message.content,
+      ...(message.uuid !== undefined ? { uuid: message.uuid } : {}),
+    });
+  }
+  return seen;
 }
 
 /** Drive a pump to WARM the way a caller would. */
@@ -215,7 +154,7 @@ describe('SessionPump — the state machine (spec §4.2)', () => {
   it('WARM -> RUNNING on dispatch, pushing into the held stream', async () => {
     const h = harness();
     await warmed(h);
-    await h.pump.dispatch({ content: 'hello' });
+    await h.pump.dispatch([{ content: 'hello', messageId: 'msg-hello' }]);
 
     expect(h.pump.state).toBe('running');
     expect(h.pump.warmth).toBe('running');
@@ -223,12 +162,59 @@ describe('SessionPump — the state machine (spec §4.2)', () => {
     expect(h.queries.length).toBe(1);
   });
 
+  // Purpose: a dequeued BATCH is one turn, and each of its messages carries its
+  // own correlation id into the stream. Without the per-message stamp the one
+  // `result` the CLI answers with could not name any of them, and the window
+  // would never close (DOR-1168).
+  it('sends a whole batch as one turn, each message stamped with its own id', async () => {
+    const h = harness();
+    await warmed(h);
+    await h.pump.dispatch([
+      { content: 'first', messageId: 'm1' },
+      { content: 'second', messageId: 'm2' },
+    ]);
+
+    expect(h.pump.state).toBe('running');
+    expect(await h.readStamped()).toEqual([
+      { content: 'first', uuid: 'm1' },
+      { content: 'second', uuid: 'm2' },
+    ]);
+  });
+
+  // Purpose: the same stamp on the path that boots the process, where the first
+  // message rides the launch rather than being pushed after it.
+  it('stamps the opening message when the batch rides a cold launch', async () => {
+    const h = harness();
+    const dispatching = h.pump.dispatch([
+      { content: 'first', messageId: 'm1' },
+      { content: 'second', messageId: 'm2' },
+    ]);
+    await vi.waitFor(() => expect(h.queries.length).toBe(1));
+    h.live().emit(initMessage());
+    await dispatching;
+
+    expect(await h.readStamped()).toEqual([
+      { content: 'first', uuid: 'm1' },
+      { content: 'second', uuid: 'm2' },
+    ]);
+  });
+
+  // Purpose: an empty batch would move the machine to RUNNING with nothing
+  // sent — a turn no result could ever close.
+  it('refuses an empty batch rather than opening an unanswerable turn', async () => {
+    const h = harness();
+    await warmed(h);
+
+    await expect(h.pump.dispatch([])).rejects.toMatchObject({ reason: 'empty-dispatch' });
+    expect(h.pump.state).toBe('warm');
+  });
+
   // Purpose: the RUNNING -> WARM row. The process survives the turn — that is
   // the entire point of the pump.
   it('RUNNING -> WARM on endTurn, with the process still up', async () => {
     const h = harness();
     await warmed(h);
-    await h.pump.dispatch({ content: 'hello' });
+    await h.pump.dispatch([{ content: 'hello', messageId: 'msg-hello' }]);
     h.pump.endTurn();
 
     expect(h.pump.state).toBe('warm');
@@ -240,7 +226,7 @@ describe('SessionPump — the state machine (spec §4.2)', () => {
   it('endTurn is idempotent and a no-op with no window open', async () => {
     const h = harness();
     await warmed(h);
-    await h.pump.dispatch({ content: 'hello' });
+    await h.pump.dispatch([{ content: 'hello', messageId: 'msg-hello' }]);
     h.pump.endTurn();
     h.pump.endTurn();
 
@@ -253,7 +239,7 @@ describe('SessionPump — the state machine (spec §4.2)', () => {
   it('RUNNING -> CRASHED when the process dies mid-turn', async () => {
     const h = harness();
     await warmed(h);
-    await h.pump.dispatch({ content: 'hello' });
+    await h.pump.dispatch([{ content: 'hello', messageId: 'msg-hello' }]);
     h.live().failStream(new Error('killed'));
 
     await vi.waitFor(() => expect(h.pump.state).toBe('crashed'));
@@ -284,7 +270,7 @@ describe('SessionPump — the state machine (spec §4.2)', () => {
     h.live().failStream(new Error('killed'));
     await vi.waitFor(() => expect(h.pump.state).toBe('crashed'));
 
-    const dispatched = h.pump.dispatch({ content: 'again' });
+    const dispatched = h.pump.dispatch([{ content: 'again', messageId: 'msg-again' }]);
     await vi.waitFor(() => expect(h.queries.length).toBe(2));
     h.live().emit(initMessage());
     await dispatched;
@@ -305,7 +291,7 @@ describe('SessionPump — the state machine (spec §4.2)', () => {
   it('any -> COLD on teardown, even mid-turn', async () => {
     const h = harness();
     await warmed(h);
-    await h.pump.dispatch({ content: 'hello' });
+    await h.pump.dispatch([{ content: 'hello', messageId: 'msg-hello' }]);
     const query = h.live();
 
     await h.pump.teardown();
@@ -321,7 +307,7 @@ describe('SessionPump — the state machine (spec §4.2)', () => {
   // and the message is merely "accepted".
   it('a cold dispatch rides the launch: COLD -> WARMING -> WARM -> RUNNING', async () => {
     const h = harness();
-    const dispatched = h.pump.dispatch({ content: 'first words' });
+    const dispatched = h.pump.dispatch([{ content: 'first words', messageId: 'msg-first-words' }]);
     await vi.waitFor(() => expect(h.queries.length).toBe(1));
     h.live().emit(initMessage());
     await dispatched;
@@ -346,7 +332,9 @@ describe('SessionPump — guards', () => {
     await warmed(h);
     parked = true;
 
-    await expect(h.pump.dispatch({ content: 'hello' })).rejects.toMatchObject({
+    await expect(
+      h.pump.dispatch([{ content: 'hello', messageId: 'msg-hello' }])
+    ).rejects.toMatchObject({
       name: 'PumpRefusedError',
       reason: 'pending-interaction',
     });
@@ -371,7 +359,7 @@ describe('SessionPump — guards', () => {
   it('refuses a reap while a turn is open', async () => {
     const h = harness();
     await warmed(h);
-    await h.pump.dispatch({ content: 'hello' });
+    await h.pump.dispatch([{ content: 'hello', messageId: 'msg-hello' }]);
 
     await expect(h.pump.reap()).resolves.toBe(false);
     expect(h.pump.state).toBe('running');
@@ -409,11 +397,11 @@ describe('SessionPump — guards', () => {
   it('refuses a second dispatch while a turn is open', async () => {
     const h = harness();
     await warmed(h);
-    await h.pump.dispatch({ content: 'one' });
+    await h.pump.dispatch([{ content: 'one', messageId: 'msg-one' }]);
 
-    await expect(h.pump.dispatch({ content: 'two' })).rejects.toBeInstanceOf(
-      IllegalPumpTransitionError
-    );
+    await expect(
+      h.pump.dispatch([{ content: 'two', messageId: 'msg-two' }])
+    ).rejects.toBeInstanceOf(IllegalPumpTransitionError);
     expect(await h.readPrompt()).toEqual(['one']);
   });
 
@@ -427,7 +415,9 @@ describe('SessionPump — guards', () => {
     // say so.
     await h.launches[0]!.prompt.return(undefined);
 
-    await expect(h.pump.dispatch({ content: 'hello' })).rejects.toMatchObject({
+    await expect(
+      h.pump.dispatch([{ content: 'hello', messageId: 'msg-hello' }])
+    ).rejects.toMatchObject({
       reason: 'process-gone',
     });
     expect(h.pump.state).toBe('crashed');
@@ -442,7 +432,7 @@ describe('SessionPump — guards', () => {
     await h.pump.reap();
 
     await expect(h.pump.warm()).rejects.toBeInstanceOf(IllegalPumpTransitionError);
-    await expect(h.pump.dispatch({ content: 'x' })).rejects.toBeInstanceOf(
+    await expect(h.pump.dispatch([{ content: 'x', messageId: 'msg-x' }])).rejects.toBeInstanceOf(
       IllegalPumpTransitionError
     );
 
@@ -475,7 +465,7 @@ describe('SessionPump — launch and teardown', () => {
     const h = harness();
     const warming = h.pump.warm();
     await vi.waitFor(() => expect(h.queries.length).toBe(1));
-    const dispatched = h.pump.dispatch({ content: 'hello' });
+    const dispatched = h.pump.dispatch([{ content: 'hello', messageId: 'msg-hello' }]);
     h.live().emit(initMessage());
     await Promise.all([warming, dispatched]);
 
@@ -604,7 +594,7 @@ describe('SessionPump — capabilities and the demux seam', () => {
     h.live().failStream(new Error('killed'));
     await vi.waitFor(() => expect(h.pump.state).toBe('crashed'));
 
-    const dispatched = h.pump.dispatch({ content: 'again' });
+    const dispatched = h.pump.dispatch([{ content: 'again', messageId: 'msg-again' }]);
     await vi.waitFor(() => expect(h.queries.length).toBe(2));
     expect(h.pump.capabilities).toEqual([]);
     h.live().emit(initMessage([]));
