@@ -150,7 +150,10 @@ export function ScopedPalette() {
             conversation would be a picture of the chip not filtering. */}
         <ScopedList
           scope={agentScope}
-          corpus={[sessionCandidate('sess-live', 0.0002), sessionCandidate('sess-frontend-two', 0.004)]}
+          corpus={[
+            sessionCandidate('sess-live', 0.0002),
+            sessionCandidate('sess-frontend-two', 0.004),
+          ]}
         />
       </ShowcaseDemo>
 
