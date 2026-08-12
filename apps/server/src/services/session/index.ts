@@ -135,6 +135,13 @@ export type { ResolveTaskOrigins } from './origin/task-origin-overlay.js';
 export { applyRoomOriginOverlay } from './origin/room-origin-overlay.js';
 export type { ResolveRoomOrigins } from './origin/room-origin-overlay.js';
 
+// --- Both origin overlays, in the one correct order (DOR-1141) ---
+export {
+  applySessionOriginOverlays,
+  sessionOriginResolvers,
+} from './origin/session-origin-overlays.js';
+export type { SessionOriginResolvers } from './origin/session-origin-overlays.js';
+
 // --- "Nobody typed here" gate on userLastMessageAt (BC-16, DOR-1081) ---
 export { dropUserLastMessageAtWithoutOperator } from './origin/user-last-message-origin.js';
 

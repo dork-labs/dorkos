@@ -13,6 +13,7 @@
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import type { SessionListEvent } from '@dorkos/shared/session-stream';
+import type { Session } from '@dorkos/shared/types';
 import { FakeAgentRuntime, createMockSession } from '@dorkos/test-utils';
 import { SSE } from '../../../config/constants.js';
 import { eventFanOut } from '../../core/event-fan-out.js';
@@ -275,6 +276,149 @@ describe('SessionListBroadcaster — multi-runtime fan-in (ADR-0310)', () => {
         expect.objectContaining({ session: expect.objectContaining({ id: SESSION_A }) })
       );
     });
+  });
+
+  it('stamps room origin onto a broadcast session_upserted, so a room turn never reaches a client as human', async () => {
+    // DOR-1141. The overlays ran on the REST routes and nowhere else, so the
+    // record this stream pushed carried no origin at all — and every consumer of
+    // the human-origin liveness rule (§18: the palette's Continue list, the
+    // sidebar's live rollups) counted a freshly triggered room turn as the
+    // operator's own conversation until the next REST refetch corrected it.
+    const a = controllableSessionList();
+    runtimeA.subscribeSessionList.mockReturnValue(a.iterable);
+    broadcaster.setOriginResolvers({
+      resolveRoomOrigins: (ids) =>
+        ids.includes(SESSION_A)
+          ? new Map([[SESSION_A, { roomLabel: '#general', roomId: 'room-general' }]])
+          : new Map(),
+    });
+
+    broadcaster.start([runtimeA]);
+    a.push({
+      type: 'session_upserted',
+      // What a runtime reports: an ordinary session, with a reading the room
+      // post it was triggered by looks exactly like a person having typed.
+      session: createMockSession({
+        id: SESSION_A,
+        userLastMessageAt: '2026-03-01T09:00:00.000Z',
+      }),
+    });
+
+    await vi.waitFor(() => {
+      expect(broadcastSpy).toHaveBeenCalledWith(
+        'session_upserted',
+        expect.objectContaining({
+          session: expect.objectContaining({ id: SESSION_A, origin: 'room' }),
+        })
+      );
+    });
+    const [, upsert] = broadcastSpy.mock.calls.find(
+      (call: unknown[]) => call[0] === 'session_upserted'
+    )!;
+    const { session } = upsert as { session: Session };
+    expect(session.originLabel).toBe('#general');
+    // BC-16: the reading came from another agent's post, so it is taken back
+    // here exactly as the REST routes take it back.
+    expect('userLastMessageAt' in session).toBe(false);
+  });
+
+  it('lets the Pulse overlay win on the stream, the same way it wins on the routes', async () => {
+    // The ordering is a product decision: a scheduled task that posts into a
+    // room is still the task somebody scheduled. It lives in
+    // `applySessionOriginOverlays`, which is why both producers can obey it.
+    const a = controllableSessionList();
+    runtimeA.subscribeSessionList.mockReturnValue(a.iterable);
+    broadcaster.setOriginResolvers({
+      resolveRoomOrigins: () =>
+        new Map([[SESSION_A, { roomLabel: '#general', roomId: 'room-general' }]]),
+      resolveTaskOrigins: () => new Map([[SESSION_A, { taskName: 'digest' }]]),
+    });
+
+    broadcaster.start([runtimeA]);
+    a.push({ type: 'session_upserted', session: createMockSession({ id: SESSION_A }) });
+
+    await vi.waitFor(() => {
+      expect(broadcastSpy).toHaveBeenCalledWith(
+        'session_upserted',
+        expect.objectContaining({
+          session: expect.objectContaining({
+            origin: 'task',
+            originLabel: 'Scheduled task · digest',
+          }),
+        })
+      );
+    });
+  });
+
+  it('keeps its origin resolvers across the stop/start a live account switch does', async () => {
+    // `runtimes/claude-code/account-switch.ts` restarts discovery by calling
+    // `stop()` then `start()`, and it cannot know about a lookup it was never
+    // handed. Passing the resolvers to `start()` would therefore have made room
+    // turns read as the operator's own again from the first account switch on —
+    // silently, and only on that path.
+    const first = controllableSessionList();
+    const second = controllableSessionList();
+    runtimeA.subscribeSessionList.mockReturnValueOnce(first.iterable);
+    runtimeA.subscribeSessionList.mockReturnValueOnce(second.iterable);
+    broadcaster.setOriginResolvers({
+      resolveRoomOrigins: () =>
+        new Map([[SESSION_A, { roomLabel: '#general', roomId: 'room-general' }]]),
+    });
+
+    broadcaster.start([runtimeA]);
+    await broadcaster.stop();
+    broadcaster.start([runtimeA]);
+    second.push({ type: 'session_upserted', session: createMockSession({ id: SESSION_A }) });
+
+    await vi.waitFor(() => {
+      expect(broadcastSpy).toHaveBeenCalledWith(
+        'session_upserted',
+        expect.objectContaining({ session: expect.objectContaining({ origin: 'room' }) })
+      );
+    });
+  });
+
+  it('broadcasts as-is when the origin lookup throws — stale beats invisible', async () => {
+    const a = controllableSessionList();
+    runtimeA.subscribeSessionList.mockReturnValue(a.iterable);
+    broadcaster.setOriginResolvers({
+      resolveRoomOrigins: () => {
+        throw new Error('rooms database is locked');
+      },
+    });
+
+    broadcaster.start([runtimeA]);
+    a.push({ type: 'session_upserted', session: createMockSession({ id: SESSION_A }) });
+
+    await vi.waitFor(() => {
+      expect(broadcastSpy).toHaveBeenCalledWith(
+        'session_upserted',
+        expect.objectContaining({ session: expect.objectContaining({ id: SESSION_A }) })
+      );
+    });
+  });
+
+  it('does not stamp origin onto the session object the adapter handed it', async () => {
+    // Same rule as the settings overlay above, and it has to hold for the
+    // origin half too: the Claude watcher pushes the very instance in its diff
+    // map, so writing `origin` into it would poison that runtime's own cache.
+    const a = controllableSessionList();
+    runtimeA.subscribeSessionList.mockReturnValue(a.iterable);
+    broadcaster.setOriginResolvers({
+      resolveRoomOrigins: () =>
+        new Map([[SESSION_A, { roomLabel: '#general', roomId: 'room-general' }]]),
+    });
+    const adapterOwned = createMockSession({
+      id: SESSION_A,
+      userLastMessageAt: '2026-03-01T09:00:00.000Z',
+    });
+
+    broadcaster.start([runtimeA]);
+    a.push({ type: 'session_upserted', session: adapterOwned });
+
+    await vi.waitFor(() => expect(broadcastSpy).toHaveBeenCalled());
+    expect(adapterOwned.origin).toBeUndefined();
+    expect(adapterOwned.userLastMessageAt).toBe('2026-03-01T09:00:00.000Z');
   });
 
   it('merges session-list events from every runtime onto the single fan-out', async () => {
