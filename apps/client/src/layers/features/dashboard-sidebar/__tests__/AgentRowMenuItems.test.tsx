@@ -275,7 +275,7 @@ describe('AgentRowMenuItems variant parity', () => {
         // under a thumb, so the menu is where a phone reaches them (P4.2).
         'Switch session…',
         'Agent hub',
-        'View profile…',
+        'View profile',
         'New session',
         // Submenu contents:
         'Clients',

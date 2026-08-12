@@ -614,15 +614,19 @@ test.describe('Sidebar model showcase @smoke', () => {
       const undecided = results.incomplete.flatMap((rule) => rule.nodes);
       // The one-digit counts axe declines to judge, enumerated. Each is a
       // DECISION recorded here rather than an exemption inherited: the panel's
-      // directed-unread mark since P1, and P4's mobile Home badge.
+      // directed-unread mark since P1, P4's mobile Home badge, and Catch up's
+      // "how many" — the last of which only appeared once the Catch-up showcase
+      // started drawing a real button instead of an empty box, which is what a
+      // showcase is for.
       //
       // **The mobile badge was measured before it was pinned, and the measuring
       // changed it.** As drawn first — white on amber-500 — it was 2.15:1, a
       // serious failure that would have hidden inside this list precisely
       // because axe cannot judge two-character text. It is amber-950 on
       // amber-500 now: 6.97:1, in both themes, since the pill carries its own
-      // background. Anything NEW appearing here still has to be measured the
-      // same way before it earns a line.
+      // background. Catch up's count went the same way: 3.24:1 at `/50`, and
+      // `/70` once anyone looked. **Every count admitted here is measured
+      // below** — one that is not is a colour nothing checks.
       //
       // **Matched on the node axe reported, not on a selector resolved again.**
       // `document.querySelector` silently answers `null` for a target axe
@@ -632,7 +636,8 @@ test.describe('Sidebar model showcase @smoke', () => {
       const isCountBadge = (text: string) =>
         /data-slot="sidebar-model-directed-badge"/.test(text) ||
         /aria-label="\d+ unread"/.test(text) ||
-        /data-testid="mobile-tab-badge-/.test(text);
+        /data-testid="mobile-tab-badge-/.test(text) ||
+        /data-slot="catch-up-count"/.test(text);
       const badges = undecided.filter(
         (node) => isCountBadge(node.html) || isCountBadge(node.target.join(' '))
       ).length;
@@ -701,6 +706,55 @@ test.describe('Sidebar model showcase @smoke', () => {
       expect(
         badgeContrast.filter((badge) => badge.ratio < 4.5),
         `a count badge axe could not judge is below 4.5:1 in the ${theme} theme`
+      ).toEqual([]);
+
+      // **The same debt for the one count that is NOT on its own pill.** Catch
+      // up's number is translucent text over whatever it sits on, so the
+      // opaque-pair check above cannot judge it: it has to be composited first.
+      // Admitting it to the pin without this would be the exact trade the
+      // mobile badge nearly shipped behind.
+      const countContrast = await page.evaluate((selector) => {
+        const canvas = document.createElement('canvas');
+        canvas.width = canvas.height = 1;
+        const ctx = canvas.getContext('2d')!;
+        const pixel = (value: string): [number, number, number, number] => {
+          ctx.clearRect(0, 0, 1, 1);
+          ctx.fillStyle = value;
+          ctx.fillRect(0, 0, 1, 1);
+          const [r, g, b, a] = ctx.getImageData(0, 0, 1, 1).data;
+          return [r!, g!, b!, a! / 255];
+        };
+        const channel = (v: number) => {
+          const s = v / 255;
+          return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+        };
+        const luminance = ([r, g, b]: number[]) =>
+          0.2126 * channel(r!) + 0.7152 * channel(g!) + 0.0722 * channel(b!);
+        /** The first ancestor that actually paints something behind this one. */
+        const backdrop = (node: Element): [number, number, number, number] => {
+          for (let el: Element | null = node; el !== null; el = el.parentElement) {
+            const painted = pixel(getComputedStyle(el).backgroundColor);
+            if (painted[3] === 1) return painted;
+          }
+          return [255, 255, 255, 1];
+        };
+        return [...document.querySelectorAll(selector)].map((node) => {
+          const fg = pixel(getComputedStyle(node).color);
+          const bg = backdrop(node);
+          // Source-over: the text's own alpha, laid on what is behind it.
+          const composited = [0, 1, 2].map((i) => fg[i]! * fg[3] + bg[i]! * (1 - fg[3]));
+          const [a, b] = [luminance(composited), luminance(bg)];
+          return {
+            text: node.textContent ?? '',
+            ratio: Math.round(((Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05)) * 100) / 100,
+          };
+        });
+      }, '[data-slot="catch-up-count"]');
+
+      expect(countContrast.length, 'no Catch-up counts on the page to check').toBeGreaterThan(0);
+      expect(
+        countContrast.filter((count) => count.ratio < 4.5),
+        `Catch up's count is below 4.5:1 in the ${theme} theme`
       ).toEqual([]);
     });
   }

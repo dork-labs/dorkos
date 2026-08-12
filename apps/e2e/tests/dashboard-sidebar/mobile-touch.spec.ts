@@ -288,14 +288,51 @@ test.describe('Touch — 390×844 @smoke', () => {
       await settled(sheet(page));
       await shoot(page, testInfo, `long-press-sheet-${theme}`);
 
-      // Legible in both: the sheet's own background is the app background and
-      // its rows sit on it, so a theme flip may not leave text on its own
-      // colour.
-      const contrast = await sheet(page).evaluate((el) => {
-        const style = getComputedStyle(el);
-        return { color: style.color, background: style.backgroundColor };
+      // **Legible in both, measured rather than compared.** The first version
+      // of this asked whether the sheet's text colour differed from its
+      // background — which holds at 1.05:1 and so could not fail. It reads
+      // pixels now, for the reason the showcase's badge guard does: Tailwind v4
+      // emits `oklch()`, and parsing those numbers as RGB scores unreadable
+      // pairs in the high teens.
+      const rowContrast = await sheet(page).evaluate((root) => {
+        const canvas = document.createElement('canvas');
+        canvas.width = canvas.height = 1;
+        const ctx = canvas.getContext('2d')!;
+        const pixel = (value: string): [number, number, number, number] => {
+          ctx.clearRect(0, 0, 1, 1);
+          ctx.fillStyle = value;
+          ctx.fillRect(0, 0, 1, 1);
+          const [r, g, b, a] = ctx.getImageData(0, 0, 1, 1).data;
+          return [r!, g!, b!, a! / 255];
+        };
+        const channel = (v: number) => {
+          const s = v / 255;
+          return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+        };
+        const luminance = ([r, g, b]: number[]) =>
+          0.2126 * channel(r!) + 0.7152 * channel(g!) + 0.0722 * channel(b!);
+        // The sheet's own surface is what every row sits on; the rows are
+        // transparent over it, which is why the background is read once here
+        // rather than per row.
+        const surface = luminance(pixel(getComputedStyle(root).backgroundColor));
+        return [...root.querySelectorAll('[role="menuitem"],[role="menuitemradio"]')].map(
+          (node) => {
+            const text = luminance(pixel(getComputedStyle(node).color));
+            const ratio = (Math.max(text, surface) + 0.05) / (Math.min(text, surface) + 0.05);
+            return {
+              label: (node.textContent ?? '').trim().slice(0, 30),
+              ratio: Math.round(ratio * 100) / 100,
+            };
+          }
+        );
       });
-      expect(contrast.color).not.toBe(contrast.background);
+      // Observable half: there ARE rows, so the bar below cannot be cleared by
+      // a sheet that drew none.
+      expect(rowContrast.length).toBeGreaterThan(0);
+      expect(
+        rowContrast.filter((row) => row.ratio < 4.5),
+        `a long-press sheet row is below 4.5:1 in the ${theme} theme`
+      ).toEqual([]);
 
       await page.keyboard.press('Escape');
       await expect(sheet(page)).toBeHidden();

@@ -189,9 +189,10 @@ export function buildRowMenuNodes(model: RowMenuModel): RowMenuNode[] {
             id: 'view-profile',
             label: 'View profile',
             icon: UserRound,
-            // The identity drawer, which is a surface the menu's focus restore
-            // would otherwise blur its way out of.
-            opensInput: true,
+            // The identity drawer takes focus, so the menu's close-time restore
+            // would blur its way out of it — but it asks for nothing, so it
+            // earns no `…`. That is the whole difference between these flags.
+            guardsFocus: true,
             run: model.onViewProfile,
           },
         ]),

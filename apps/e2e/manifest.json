@@ -5,11 +5,11 @@
       "specFile": "tests/dashboard-sidebar/sidebar-model-showcase.spec.ts",
       "feature": "dashboard-sidebar",
       "description": "renders all four journeys, and asks the server for nothing, draws the zones each journey earns, and never an empty box, caps Heads up at three, and overflows only when there is more than three, says why every row it drew is there, meets 4.5:1 on the zone tint in the light theme, meets 4.5:1 on the zone tint in the dark theme",
-      "lastRun": "2026-08-11T22:28:59.005Z",
-      "lastStatus": "passed",
-      "runCount": 21,
-      "passCount": 4,
-      "failCount": 17,
+      "lastRun": "2026-08-12T00:22:43.311Z",
+      "lastStatus": "failed",
+      "runCount": 26,
+      "passCount": 5,
+      "failCount": 21,
       "relatedCode": [
         "apps/client/src/dev/showcases/SidebarModelShowcases.tsx",
         "apps/client/src/layers/features/dashboard-sidebar/model/build-sidebar-model.ts"
@@ -236,10 +236,10 @@
       "specFile": "tests/rooms/room-entry-actions.spec.ts",
       "feature": "rooms",
       "description": "the toolbar appears on hover and offers what can be done to the message, the toolbar encloses the buttons it is drawn around, the toolbar straddles a message, and covers no word of one at rest, the toolbar rides the viewport edge on a message taller than the window, right-click offers the same actions as the toolbar, the keyboard alone reaches the actions and lands in the composer, a room costs one Tab per message, not one per action, a message is announced before the things you can do to it, Page Down crosses the room a message at a time, whatever each one carries, Page Down crosses the thread, and Ctrl+End lands in the thread’s own composer, a reply lands in the panel beside the room, and a reply to a reply joins it, a reply row opens the thread it counts, and Escape closes it again, a reply that arrives after you last looked wears the accent, a thread has an address, and a reload lands back on it, a long press opens the drawer, and a short one or a drag does not, the thread takes the whole screen, and Back returns to the room",
-      "lastRun": "2026-08-11T22:45:53.063Z",
+      "lastRun": "2026-08-12T00:23:18.173Z",
       "lastStatus": "passed",
-      "runCount": 55,
-      "passCount": 24,
+      "runCount": 56,
+      "passCount": 25,
       "failCount": 31,
       "relatedCode": [],
       "lastModified": ""
@@ -606,10 +606,10 @@
       "specFile": "tests/dashboard-sidebar/mobile-touch.spec.ts",
       "feature": "dashboard-sidebar",
       "description": "long-press on a row opens the same menu the \"⋮\" opens, a scroll that begins on a row never opens a menu, every row and every control a thumb can reach is at least 40px, You reads as a nav with names on it, not a row of unlabelled glyphs, the phone cockpit and its long-press sheet in the light theme, the phone cockpit and its long-press sheet in the dark theme",
-      "lastRun": "2026-08-11T22:28:59.005Z",
+      "lastRun": "2026-08-12T00:17:41.849Z",
       "lastStatus": "passed",
-      "runCount": 14,
-      "passCount": 11,
+      "runCount": 15,
+      "passCount": 12,
       "failCount": 3,
       "relatedCode": [],
       "lastModified": ""
@@ -640,60 +640,6 @@
     }
   },
   "runHistory": [
-    {
-      "id": "2026-07-31T03-57-35",
-      "timestamp": "2026-07-31T03:57:35.145Z",
-      "total": 1,
-      "passed": 0,
-      "failed": 1,
-      "skipped": 0,
-      "duration": 19617
-    },
-    {
-      "id": "2026-07-31T03-58-51",
-      "timestamp": "2026-07-31T03:58:51.967Z",
-      "total": 1,
-      "passed": 0,
-      "failed": 1,
-      "skipped": 0,
-      "duration": 19502
-    },
-    {
-      "id": "2026-07-31T04-00-06",
-      "timestamp": "2026-07-31T04:00:06.739Z",
-      "total": 21,
-      "passed": 21,
-      "failed": 0,
-      "skipped": 0,
-      "duration": 39778
-    },
-    {
-      "id": "2026-07-31T04-00-34",
-      "timestamp": "2026-07-31T04:00:34.751Z",
-      "total": 1,
-      "passed": 0,
-      "failed": 1,
-      "skipped": 0,
-      "duration": 19571
-    },
-    {
-      "id": "2026-07-31T08-36-18",
-      "timestamp": "2026-07-31T08:36:18.938Z",
-      "total": 1,
-      "passed": 1,
-      "failed": 0,
-      "skipped": 0,
-      "duration": 14107
-    },
-    {
-      "id": "2026-07-31T12-28-08",
-      "timestamp": "2026-07-31T12:28:08.366Z",
-      "total": 16,
-      "passed": 16,
-      "failed": 0,
-      "skipped": 0,
-      "duration": 42287
-    },
     {
       "id": "2026-07-31T13-06-57",
       "timestamp": "2026-07-31T13:06:57.417Z",
@@ -1539,6 +1485,60 @@
       "failed": 0,
       "skipped": 0,
       "duration": 62389
+    },
+    {
+      "id": "2026-08-12T00-17-41",
+      "timestamp": "2026-08-12T00:17:41.849Z",
+      "total": 16,
+      "passed": 15,
+      "failed": 1,
+      "skipped": 0,
+      "duration": 85634
+    },
+    {
+      "id": "2026-08-12T00-18-18",
+      "timestamp": "2026-08-12T00:18:18.758Z",
+      "total": 1,
+      "passed": 0,
+      "failed": 1,
+      "skipped": 0,
+      "duration": 26187
+    },
+    {
+      "id": "2026-08-12T00-20-44",
+      "timestamp": "2026-08-12T00:20:44.835Z",
+      "total": 9,
+      "passed": 9,
+      "failed": 0,
+      "skipped": 0,
+      "duration": 49363
+    },
+    {
+      "id": "2026-08-12T00-21-53",
+      "timestamp": "2026-08-12T00:21:53.727Z",
+      "total": 9,
+      "passed": 7,
+      "failed": 2,
+      "skipped": 0,
+      "duration": 51581
+    },
+    {
+      "id": "2026-08-12T00-22-43",
+      "timestamp": "2026-08-12T00:22:43.311Z",
+      "total": 9,
+      "passed": 8,
+      "failed": 1,
+      "skipped": 0,
+      "duration": 48753
+    },
+    {
+      "id": "2026-08-12T00-23-18",
+      "timestamp": "2026-08-12T00:23:18.173Z",
+      "total": 1,
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "duration": 22503
     }
   ]
 }

@@ -14,7 +14,7 @@
  * paired with the observation that makes its negative meaningful: the same
  * gesture with one thing changed DOES open the sheet.
  */
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
 import { act, render, screen, cleanup, fireEvent, within } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { Pin, FolderInput, Trash2, ListFilter } from 'lucide-react';
@@ -134,6 +134,27 @@ function press({ holdMs = 700, driftPx = 0 }: { holdMs?: number; driftPx?: numbe
   fireEvent.click(target);
 }
 
+/**
+ * Press and hold ON A GIVEN ELEMENT, and let go on it.
+ *
+ * **Deliberately not {@link press}.** That helper always releases with a click
+ * on the ROW, which clears the surface's own "this press opened the menu" latch
+ * before anything else can see it — so a press that begins and ends INSIDE an
+ * open menu is a case it structurally cannot express. Two reachable defects
+ * lived in exactly that gap.
+ *
+ * @param element - What the finger is on for the whole gesture.
+ * @param holdMs - How long it stays down.
+ */
+function holdOn(element: HTMLElement, holdMs = 700) {
+  fireEvent.pointerDown(element, { button: 0, clientX: 100, clientY: 200 });
+  act(() => {
+    vi.advanceTimersByTime(holdMs);
+  });
+  fireEvent.pointerUp(element);
+  fireEvent.click(element);
+}
+
 /** The long-press sheet, or `null` when no sheet is up. */
 const sheet = () => screen.queryByTestId('sidebar-menu-sheet');
 
@@ -157,7 +178,15 @@ function itemIds(root: HTMLElement): string[] {
     .sort();
 }
 
-/** Every choosable menu row in an open surface, by its accessible name. */
+/**
+ * Every choosable menu row in an open surface: its name, its role, and whether
+ * it is ticked.
+ *
+ * **The tick is part of the offer, not decoration.** "Move to group › Clients"
+ * with a mark beside it says the row is ALREADY there; without one it says
+ * pressing will move it. A comparison of names alone passes a sheet that drew
+ * every group unticked, which is the same list saying something different.
+ */
 function itemNames(root: HTMLElement): string[] {
   return Array.from(
     root.querySelectorAll(
@@ -166,9 +195,25 @@ function itemNames(root: HTMLElement): string[] {
         .join(',')
     )
   )
-    .map((el) => (el.textContent ?? '').trim())
+    .map((el) => {
+      const checked = el.getAttribute('aria-checked');
+      return `${(el.textContent ?? '').trim()} [${el.getAttribute('role')}${
+        checked === null ? '' : ` checked=${checked}`
+      }]`;
+    })
     .sort();
 }
+
+// jsdom implements no pointer capture, and vaul claims it on every press
+// inside the sheet (that is how a drawer follows a drag). Without these the
+// press cases below still pass but leave an uncaught `TypeError` behind, which
+// vitest reports as an unhandled error — and an unhandled error is how a real
+// one gets lost in the noise.
+beforeAll(() => {
+  Element.prototype.setPointerCapture ??= () => {};
+  Element.prototype.releasePointerCapture ??= () => {};
+  Element.prototype.hasPointerCapture ??= () => false;
+});
 
 beforeEach(() => {
   phone = true;
@@ -276,8 +321,11 @@ describe('the long-press sheet (P4 AC-3)', () => {
     // Not vacuously equal: both are the real list, and the list has content.
     expect(sheetIds).toContain('pin');
     expect(sheetIds).toContain('delete');
-    expect(sheetNames).toContain('Clients');
-    expect(sheetNames).toContain('Recently used');
+    // Named with their state, so a rendering that dropped the tick differs.
+    expect(sheetNames).toContain('Clients [menuitemcheckbox checked=true]');
+    expect(sheetNames).toContain('Experiments [menuitemcheckbox checked=false]');
+    expect(sheetNames).toContain('Name [menuitemradio checked=true]');
+    expect(sheetNames).toContain('Recently used [menuitemradio checked=false]');
   });
 
   it('stands down on the "⋮", which opens its own menu on the way down', () => {
@@ -296,6 +344,47 @@ describe('the long-press sheet (P4 AC-3)', () => {
     // so the silence above is the yield rather than a gesture that never works.
     press({ holdMs: 900 });
     expect(sheet()).not.toBeNull();
+  });
+
+  it('runs a sheet row that is held rather than tapped', () => {
+    // **A menu is portalled OUT of the row's DOM, but not out of its React
+    // tree.** React replays synthetic events along the tree it rendered, so a
+    // press held on a row INSIDE the open sheet ran the surface's own gesture
+    // handlers: the timer latched "this press opened the menu", and the release
+    // click was swallowed by the guard meant for the row underneath. The item
+    // never ran, and nothing said so.
+    renderSurface();
+    press({ holdMs: 700 });
+    const item = within(sheet()!).getByRole('menuitem', { name: /Pin agent/ });
+
+    holdOn(item, 700);
+    expect(onPin).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not raise the sheet from inside the "⋮" menu it is a twin of', () => {
+    // The same root cause through the other portal, and the same defect the
+    // yield on the trigger was supposed to have closed: `DropdownMenuContent`
+    // is a React child of the row too, so holding an ITEM in the open dropdown
+    // raised the sheet on top of it — two menus from one gesture, which is
+    // exactly what keeps Radix's own ContextMenu unmounted at this width.
+    renderSurface();
+    // Radix opens a dropdown on `pointerdown`, and the press that opens it is
+    // yielded, so this leaves the menu up and nothing else.
+    fireEvent.pointerDown(screen.getByRole('button', { name: 'Scout actions' }), {
+      button: 0,
+      ctrlKey: false,
+      pointerType: 'mouse',
+    });
+    const menu = screen.getByRole('menu');
+    expect(menu).toBeInTheDocument();
+    expect(sheet()).toBeNull();
+
+    const item = within(menu).getByRole('menuitem', { name: /Pin agent/ });
+    holdOn(item, 900);
+
+    expect(sheet()).toBeNull();
+    // …and the held item still did its job, rather than being swallowed.
+    expect(onPin).toHaveBeenCalledTimes(1);
   });
 
   it('runs the chosen action and puts itself away', () => {

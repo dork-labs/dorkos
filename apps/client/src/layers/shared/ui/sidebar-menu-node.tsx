@@ -90,12 +90,26 @@ export interface SidebarMenuActionNode {
   icon: LucideIcon;
   /**
    * The action needs more from the person before it can complete — it opens a
-   * dialog, a picker or an inline editor. That is what earns the `…`, and it is
-   * also what arms the close-focus guard (DOR-329): Radix closes the menu one
-   * commit after the item runs, and its focus restore would otherwise pull
-   * focus out of whatever just opened.
+   * dialog, a picker or an inline editor. That is what earns the `…`.
+   *
+   * It also arms {@link guardsFocus}, because everything that asks for more
+   * mounts something focusable to ask with.
    */
   opensInput?: boolean;
+  /**
+   * The action mounts a surface that takes focus, without asking the person for
+   * anything.
+   *
+   * **Separate from {@link opensInput} because they were one flag doing two
+   * jobs.** Radix closes the menu one commit after the item runs and restores
+   * focus later still, so anything that opens a dialog needs the close-focus
+   * guard (DOR-329) — but the `…` is a promise about the ACT, not about focus.
+   * "View profile" opens a drawer and asks nothing, and shipping it as "View
+   * profile…" told the reader to expect a question that never comes.
+   *
+   * Implied by `opensInput`; set this alone for a surface that only shows.
+   */
+  guardsFocus?: boolean;
   /** Takes something away. Rendered apart, and always with its own confirmation. */
   destructive?: boolean;
   /**
@@ -617,6 +631,20 @@ export const SIDEBAR_MENU_GUTTER = { fine: 'pr-7', coarse: 'pr-11' } as const;
  * ContextMenu — a thing a device with no right-click cannot ask for — is not
  * rendered at all.
  *
+ * **No menu's CONTENT is a React child of the element carrying the gesture,
+ * and that is the whole of why the gesture is safe.** A Radix or vaul surface
+ * is portalled out of the DOM, so it looks separate — but React replays
+ * synthetic events along the tree it RENDERED, not the tree the browser holds.
+ * While both menus were nested inside the pressed element, a press held on a
+ * row inside the open sheet ran this surface's own handlers: the timer latched,
+ * and the release click was swallowed by the guard meant for the row
+ * underneath, so the item silently did nothing. Holding an item in the "⋮" menu
+ * raised the sheet on top of it for the same reason. Both menu roots therefore
+ * sit ABOVE {@link SidebarMenuSurfaceProps.as}, which emit no DOM of their own —
+ * the rendered markup is unchanged, and the gesture can no longer see inside
+ * anything it opened. A list of surfaces to skip would have had to be extended
+ * by whoever added the next one.
+ *
  * The close-focus guard is armed here, once, rather than at every call site: an
  * item that `opensInput` mounts an editor or a dialog, and Radix's close-time
  * focus restore lands one commit later and would blur it (DOR-329). Whether
@@ -668,6 +696,7 @@ export function SidebarMenuSurface({
     },
     [longPress]
   );
+  const closeSheet = useCallback(() => setSheetOpen(false), []);
   const onClickCapture = useCallback((event: ReactMouseEvent) => {
     if (!openedByPress.current) return;
     openedByPress.current = false;
@@ -679,97 +708,135 @@ export function SidebarMenuSurface({
     return <Root className={cn('relative', className)}>{children}</Root>;
   }
 
-  const kebab = hideActionsTrigger ? null : (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <button
-          type="button"
-          aria-label={actionsLabel}
-          onClick={(e) => e.stopPropagation()}
-          // A satellite of its row, never a Tab stop of its own: the
-          // roving-focus hook stamps this `-1` and hands it the keyboard
-          // via ArrowRight from the row. Left in the tab order, a
-          // 60-agent Library would be 121 Tab presses rather than one.
-          {...{ [SIDEBAR_ACTIONS_ATTRIBUTE]: '' }}
-          className={cn(
-            'text-sidebar-foreground/60 hover:text-sidebar-foreground hover:bg-sidebar-accent focus-visible:ring-sidebar-ring',
-            'absolute top-1/2 flex -translate-y-1/2 items-center justify-center rounded-md outline-hidden transition-opacity',
-            'group-hover/sidebar-menu:opacity-100 focus-visible:opacity-100 focus-visible:ring-2 data-[state=open]:opacity-100',
-            // A thumb's target, not a pointer's: 44px of button in the wider
-            // gutter its caller is paying for, with the same 16px glyph inside.
-            isMobile ? 'right-0 size-11 opacity-100' : 'right-1 size-5 opacity-0',
-            kebabClassName
-          )}
-        >
-          <MoreVertical className="size-4" />
-        </button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent
-        side="right"
-        align="start"
-        className={menuWidth}
-        onCloseAutoFocus={onCloseAutoFocus}
+  const kebabTrigger = hideActionsTrigger ? null : (
+    <DropdownMenuTrigger asChild>
+      <button
+        type="button"
+        aria-label={actionsLabel}
+        onClick={(e) => e.stopPropagation()}
+        // A satellite of its row, never a Tab stop of its own: the
+        // roving-focus hook stamps this `-1` and hands it the keyboard
+        // via ArrowRight from the row. Left in the tab order, a
+        // 60-agent Library would be 121 Tab presses rather than one.
+        {...{ [SIDEBAR_ACTIONS_ATTRIBUTE]: '' }}
+        className={cn(
+          'text-sidebar-foreground/60 hover:text-sidebar-foreground hover:bg-sidebar-accent focus-visible:ring-sidebar-ring',
+          'absolute top-1/2 flex -translate-y-1/2 items-center justify-center rounded-md outline-hidden transition-opacity',
+          'group-hover/sidebar-menu:opacity-100 focus-visible:opacity-100 focus-visible:ring-2 data-[state=open]:opacity-100',
+          // A thumb's target, not a pointer's: 44px of button in the wider
+          // gutter its caller is paying for, with the same 16px glyph inside.
+          isMobile ? 'right-0 size-11 opacity-100' : 'right-1 size-5 opacity-0',
+          kebabClassName
+        )}
       >
-        <SidebarMenuNodes variant="dropdown" nodes={guarded} />
-      </DropdownMenuContent>
-    </DropdownMenu>
+        <MoreVertical className="size-4" />
+      </button>
+    </DropdownMenuTrigger>
   );
 
+  /**
+   * The "⋮" menu's own panel, rendered as a SIBLING of the pressed element.
+   *
+   * Radix anchors it to its trigger wherever the two sit in the tree, so this
+   * costs nothing — and it is what keeps a press held on one of its items out
+   * of the row's gesture handlers.
+   */
+  const kebabContent = hideActionsTrigger ? null : (
+    <DropdownMenuContent
+      side="right"
+      align="start"
+      className={menuWidth}
+      onCloseAutoFocus={onCloseAutoFocus}
+    >
+      <SidebarMenuNodes variant="dropdown" nodes={guarded} />
+    </DropdownMenuContent>
+  );
+
+  // **Both menu roots wrap the pressed element rather than sitting inside it.**
+  // `DropdownMenu` and `Drawer` are providers — they render no DOM — so the
+  // markup below is byte-for-byte what it was, while the panels they own are no
+  // longer part of the React subtree the gesture handlers listen to. See the
+  // module doc: React replays synthetic events along the tree it rendered, and
+  // a portal does not change that.
   if (isMobile) {
     return (
-      <Root
-        className={cn('group/sidebar-menu relative', className)}
-        onPointerDown={onPointerDown}
-        onPointerMove={longPress.onPointerMove}
-        onPointerUp={longPress.onPointerUp}
-        onPointerLeave={longPress.onPointerLeave}
-        onPointerCancel={longPress.onPointerCancel}
-        onClickCapture={onClickCapture}
-      >
-        {children}
-        {kebab}
-        <SidebarMenuSheet
-          open={sheetOpen}
-          onOpenChange={setSheetOpen}
-          nodes={guarded}
-          title={actionsLabel}
-          onCloseAutoFocus={onCloseAutoFocus}
-        />
-      </Root>
+      <DropdownMenu>
+        <Drawer open={sheetOpen} onOpenChange={setSheetOpen}>
+          <Root
+            className={cn(
+              'group/sidebar-menu relative',
+              // **The OS must not answer the press first.** iOS Safari raises
+              // its own callout — Copy / Look Up / Share — on a sustained touch
+              // over text, and Android shows a selection handle, either of which
+              // arrives on top of this sheet from the same gesture. Suppressing
+              // both is the standard cost of making long-press a primary
+              // affordance rather than a shortcut.
+              //
+              // **Untested on a real device.** Chromium at 390×844 honours the
+              // properties but does not raise the callout, so the browser suite
+              // can prove the classes are on the element and nothing more. A
+              // phone is what would prove the behaviour.
+              'select-none [-webkit-touch-callout:none]',
+              className
+            )}
+            onPointerDown={onPointerDown}
+            onPointerMove={longPress.onPointerMove}
+            onPointerUp={longPress.onPointerUp}
+            onPointerLeave={longPress.onPointerLeave}
+            onPointerCancel={longPress.onPointerCancel}
+            onClickCapture={onClickCapture}
+          >
+            {children}
+            {kebabTrigger}
+          </Root>
+          {kebabContent}
+          <SidebarMenuSheetContent
+            nodes={guarded}
+            title={actionsLabel}
+            onCloseAutoFocus={onCloseAutoFocus}
+            onClose={closeSheet}
+          />
+        </Drawer>
+      </DropdownMenu>
     );
   }
 
   return (
-    <ContextMenu>
-      <ContextMenuTrigger asChild>
-        <Root className={cn('group/sidebar-menu relative', className)}>
-          {children}
-          {kebab}
-        </Root>
-      </ContextMenuTrigger>
-      <ContextMenuContent className={menuWidth} onCloseAutoFocus={onCloseAutoFocus}>
-        <SidebarMenuNodes variant="context" nodes={guarded} />
-      </ContextMenuContent>
-    </ContextMenu>
+    <DropdownMenu>
+      <ContextMenu>
+        <ContextMenuTrigger asChild>
+          <Root className={cn('group/sidebar-menu relative', className)}>
+            {children}
+            {kebabTrigger}
+          </Root>
+        </ContextMenuTrigger>
+        <ContextMenuContent className={menuWidth} onCloseAutoFocus={onCloseAutoFocus}>
+          <SidebarMenuNodes variant="context" nodes={guarded} />
+        </ContextMenuContent>
+      </ContextMenu>
+      {kebabContent}
+    </DropdownMenu>
   );
 }
 
-/** Props for {@link SidebarMenuSheet}. */
-interface SidebarMenuSheetProps {
-  /** Whether the sheet is up. */
-  open: boolean;
-  /** Told when it opens or closes. */
-  onOpenChange: (open: boolean) => void;
+/** Props for {@link SidebarMenuSheetContent}. */
+interface SidebarMenuSheetContentProps {
   /** The same guarded list the other two renderers walk. */
   nodes: SidebarMenuNode[];
   /** What the sheet is about — the row or section it acts on. */
   title: string;
   /** The close-focus guard's handler, shared with the other renderings. */
   onCloseAutoFocus: (event: Event) => void;
+  /** Put the sheet away, which is what a chosen row does after it acts. */
+  onClose: () => void;
 }
 
 /**
  * The third rendering: the node list as a bottom sheet, opened by a long press.
+ *
+ * Content only — its `Drawer` root is mounted by {@link SidebarMenuSurface}
+ * ABOVE the pressed element, so a press held on one of these rows is not also a
+ * press on the row that opened them.
  *
  * **It names what it acts on.** A menu that appears at the pointer needs no
  * title; a sheet that rises from the bottom of the screen has left the row
@@ -780,33 +847,29 @@ interface SidebarMenuSheetProps {
  * with eight groups to move an agent into would otherwise grow the sheet off
  * the top of the screen, taking its first rows with it.
  */
-function SidebarMenuSheet({
-  open,
-  onOpenChange,
+function SidebarMenuSheetContent({
   nodes,
   title,
   onCloseAutoFocus,
-}: SidebarMenuSheetProps) {
-  const close = useCallback(() => onOpenChange(false), [onOpenChange]);
+  onClose,
+}: SidebarMenuSheetContentProps) {
   return (
-    <Drawer open={open} onOpenChange={onOpenChange}>
-      <DrawerContent
-        data-testid="sidebar-menu-sheet"
-        className="max-h-[85vh]"
-        onCloseAutoFocus={onCloseAutoFocus}
-      >
-        <DrawerTitle className="text-sidebar-foreground/70 px-4 pt-4 pb-1 text-xs font-medium">
-          {title}
-        </DrawerTitle>
-        {/* A real `menu`, so its rows are `menuitem`s a screen reader can walk
-            and a test can compare against the other two renderings by role. */}
-        <div role="menu" aria-label={title} className="overflow-y-auto pb-2">
-          <SheetCloseContext.Provider value={close}>
-            <SidebarMenuNodes variant="sheet" nodes={nodes} />
-          </SheetCloseContext.Provider>
-        </div>
-      </DrawerContent>
-    </Drawer>
+    <DrawerContent
+      data-testid="sidebar-menu-sheet"
+      className="max-h-[85vh]"
+      onCloseAutoFocus={onCloseAutoFocus}
+    >
+      <DrawerTitle className="text-sidebar-foreground/70 px-4 pt-4 pb-1 text-xs font-medium">
+        {title}
+      </DrawerTitle>
+      {/* A real `menu`, so its rows are `menuitem`s a screen reader can walk
+          and a test can compare against the other two renderings by role. */}
+      <div role="menu" aria-label={title} className="overflow-y-auto pb-2">
+        <SheetCloseContext.Provider value={onClose}>
+          <SidebarMenuNodes variant="sheet" nodes={nodes} />
+        </SheetCloseContext.Provider>
+      </div>
+    </DrawerContent>
   );
 }
 
@@ -844,7 +907,8 @@ export function useGuardedMenuNodes(nodes: SidebarMenuNode[]): {
 }
 
 /**
- * Wrap every `opensInput` action so choosing it arms the close-focus guard,
+ * Wrap every action that mounts a focusable surface — `opensInput` or
+ * {@link SidebarMenuActionNode.guardsFocus} — so choosing it arms the guard,
  * recursing into submenus — "Empty group…" lives one level down and needs the
  * guard as much as "Rename…" does at the top.
  *
@@ -854,7 +918,7 @@ export function useGuardedMenuNodes(nodes: SidebarMenuNode[]): {
 function armOpensInput(nodes: SidebarMenuNode[], arm: () => void): SidebarMenuNode[] {
   return nodes.map((node) => {
     if (node.kind === 'submenu') return { ...node, items: armOpensInput(node.items, arm) };
-    if (node.kind !== 'action' || !node.opensInput) return node;
+    if (node.kind !== 'action' || !(node.opensInput || node.guardsFocus)) return node;
     return {
       ...node,
       run: () => {

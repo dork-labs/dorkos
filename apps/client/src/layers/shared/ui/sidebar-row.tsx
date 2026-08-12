@@ -75,11 +75,17 @@ const SIDEBAR_ROW_GUTTER = SIDEBAR_MENU_GUTTER;
 
 /**
  * Where a {@link SidebarRowProps.trailingAction} sits: flush against the inside
- * edge of {@link SIDEBAR_ROW_GUTTER}, which is exactly where the row reserves
- * its width. The two are one number spelled twice, and a browser test pins them
- * together by measurement rather than by name.
+ * edge of the fine gutter, which is exactly where the row reserves its width.
+ * `sidebar-row-gutter.spec.ts` pins the two together by measurement rather than
+ * by name.
+ *
+ * **One value, because there is only one case.** The satellite is not drawn on
+ * touch at all — see {@link SidebarRowProps.trailingAction} — so a coarse
+ * variant would be a number no render can reach, and an unreachable branch in a
+ * geometry constant is exactly the kind of thing that later gets "kept in sync"
+ * with nothing.
  */
-const SIDEBAR_ROW_TRAILING_ACTION_OFFSET = { fine: 'right-7', coarse: 'right-11' } as const;
+const SIDEBAR_ROW_TRAILING_ACTION_OFFSET = 'right-7';
 
 /**
  * How tall a row is, by pointer.
@@ -632,7 +638,7 @@ export function SidebarRow({
               {...{ [SIDEBAR_TRAILING_ACTION_ATTRIBUTE]: '' }}
               className={cn(
                 'focus-ring absolute cursor-pointer rounded-full transition-[scale] active:scale-[0.94]',
-                SIDEBAR_ROW_TRAILING_ACTION_OFFSET[pointer],
+                SIDEBAR_ROW_TRAILING_ACTION_OFFSET,
                 showSecondLine ? 'top-1.5' : 'top-1/2 -translate-y-1/2'
               )}
             >

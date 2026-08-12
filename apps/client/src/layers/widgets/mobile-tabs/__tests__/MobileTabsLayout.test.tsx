@@ -653,31 +653,33 @@ describe('MobileTabsLayout', () => {
       expect(screen.queryByText(/could not check whether anything is waiting/i)).toBeNull();
     });
 
-    it('reorders nothing by drag, and offers a move in every draggable row menu (R3, WCAG 2.5.7)', () => {
+    it('reorders nothing by drag on a phone (R3)', () => {
       // Drag is off here — `SidebarDnd` never mounts a `DndContext` below 768px
-      // — so the menu is the ONLY way to move a row, and every row the desktop
-      // lets you drag has to carry one.
+      // — so the menu is the only way to move a row.
+      //
+      // **The WCAG 2.5.7 half of this claim lives where it can fail.** "Every
+      // draggable row's menu carries a move action" is a property of the MENU
+      // BUILDERS, and asserting it from here meant reading `row.actions` off
+      // the model — a required field, so the guard reduced to `length > 0` and
+      // never once looked for the word "move". The real one is
+      // `build-sidebar-model.contracts.test.ts` ("R2 WCAG 2.5.7 — every
+      // draggable row offers a move action"), which asserts
+      // `row.actions` CONTAINS 'move' rather than that it is non-empty.
       mockState = powerFixture;
       renderLayout();
       expect(document.querySelector('[data-dnd-context]')).toBeNull();
-      const dragHandles = panel('library').querySelectorAll('[aria-roledescription="sortable"]');
-      expect(dragHandles).toHaveLength(0);
+      expect(panel('library').querySelectorAll('[aria-roledescription="sortable"]')).toHaveLength(
+        0
+      );
 
-      const model = buildSidebarModel(powerFixture);
-      const draggable = model.zones
-        .flatMap((zone) => zone.sections)
+      // …and the model really did mark rows draggable, so the absence above is
+      // the phone rather than a fixture with nothing to drag.
+      const draggable = buildSidebarModel(powerFixture)
+        .zones.flatMap((zone) => zone.sections)
         .flatMap((section) => [section, ...(section.subsections ?? [])])
         .flatMap((section) => section.rows)
         .filter((row) => row.draggable);
-      // The fixture has to contain draggable rows or this asserts nothing.
       expect(draggable.length).toBeGreaterThan(0);
-      // Every draggable row is an agent or a room, and both row menus carry a
-      // move: agents "Move to group", rooms the same (WCAG 2.5.7's pointer
-      // alternate). Asserted on the model rather than by opening sixty sheets.
-      for (const row of draggable) {
-        expect(['agent', 'room']).toContain(row.target.kind);
-        expect(row.actions === undefined || row.actions.length > 0).toBe(true);
-      }
     });
   });
 });

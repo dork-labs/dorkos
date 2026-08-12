@@ -138,14 +138,36 @@ export function CatchUpAction({ roomIds }: CatchUpActionProps) {
   const isMobile = useIsMobile();
   const markRoomsRead = useMarkRoomsRead();
   if (!isMobile || roomIds.length === 0) return null;
+  return <CatchUpButton count={roomIds.length} onCatchUp={() => markRoomsRead(roomIds)} />;
+}
 
-  const count = roomIds.length;
+/** Props for {@link CatchUpButton}. */
+export interface CatchUpButtonProps {
+  /** How many conversations this press would clear. */
+  count: number;
+  /** Clear them. */
+  onCatchUp: () => void;
+}
+
+/**
+ * The control itself, with no opinion about whether it should exist.
+ *
+ * **Split from {@link CatchUpAction} so it can be looked at.** The gate reads
+ * `useIsMobile()`, which is a `matchMedia` question about the WINDOW — a 390px
+ * wrapper does not change the answer — so the Dev Playground, which is read at
+ * desktop width, drew an empty box for every fixture and the axe gate had no
+ * colours to judge. A showcase that renders nothing is worse than no showcase:
+ * it reports coverage it does not have.
+ *
+ * @param props - The count, and what pressing it does.
+ */
+export function CatchUpButton({ count, onCatchUp }: CatchUpButtonProps) {
   return (
     <div className="px-2 pt-0.5 pb-1">
       <button
         type="button"
         data-testid="today-catch-up"
-        onClick={() => markRoomsRead(roomIds)}
+        onClick={onCatchUp}
         // The visible words open the accessible name, so a voice control that
         // hears "Catch up" reaches this button (WCAG 2.5.3, label in name); the
         // rest says how much it is about to do, which the words alone cannot.
@@ -159,7 +181,12 @@ export function CatchUpAction({ roomIds }: CatchUpActionProps) {
       >
         <CheckCheck className="size-4 shrink-0" aria-hidden />
         Catch up
-        <span className="text-sidebar-foreground/50 ml-auto text-[11px] tabular-nums">{count}</span>
+        <span
+          data-slot="catch-up-count"
+          className="text-sidebar-foreground/70 ml-auto text-[11px] tabular-nums"
+        >
+          {count}
+        </span>
       </button>
     </div>
   );

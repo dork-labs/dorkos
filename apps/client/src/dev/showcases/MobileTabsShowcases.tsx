@@ -25,7 +25,7 @@ import { BellOff, FolderInput, FolderPlus, ListFilter, Trash2 } from 'lucide-rea
 import { SidebarMenuNodes, type SidebarMenuNode } from '@/layers/shared/ui';
 import { buildSidebarModel } from '@/layers/features/dashboard-sidebar/model/build-sidebar-model';
 import { SIDEBAR_FIXTURES } from '@/layers/features/dashboard-sidebar/model/fixtures';
-import { CatchUpAction } from '@/layers/features/dashboard-sidebar/ui/TodayZone';
+import { CatchUpButton } from '@/layers/features/dashboard-sidebar/ui/TodayZone';
 import { MobileTabBar, type MobileTabId } from '@/layers/widgets/mobile-tabs';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
@@ -208,32 +208,33 @@ export function MobileCatchUpShowcase() {
             buildSidebarModel(state)
               .zones.find((zone) => zone.id === 'today')
               ?.sections.find((section) => section.id === 'today')?.rows ?? [];
-          const roomIds = [
-            ...new Set(
-              rows
-                .filter((row) => row.unread.tier !== 'none' && row.target.kind === 'room')
-                .map((row) => (row.target.kind === 'room' ? row.target.roomId : ''))
-            ),
-          ];
+          const count = new Set(
+            rows
+              .filter((row) => row.unread.tier !== 'none' && row.target.kind === 'room')
+              .map((row) => (row.target.kind === 'room' ? row.target.roomId : ''))
+          ).size;
+          // **The BUTTON, not the gate.** `CatchUpAction` asks `useIsMobile()`,
+          // which is a question about the window — this page is read at 1600px,
+          // so the gate would answer "no" and draw nothing at all, and the axe
+          // run would have no colours here to judge. The count each fixture
+          // would really offer is still the model's.
           return (
             <div key={name} className="space-y-1">
-              <ShowcaseLabel>{`${name} — ${roomIds.length} to clear`}</ShowcaseLabel>
+              <ShowcaseLabel>{`${name} — ${count} to clear`}</ShowcaseLabel>
               <div
                 className="border-border/50 bg-sidebar overflow-hidden rounded-xl border py-1"
                 style={{ maxWidth: PHONE_WIDTH }}
               >
-                {/* Renders nothing at all when there is nothing to clear, which
-                    is what a journey with a quiet Today shows here. */}
-                <CatchUpAction roomIds={roomIds} />
+                <CatchUpButton count={count} onCatchUp={() => {}} />
               </div>
             </div>
           );
         })}
       </div>
       <p className="text-muted-foreground max-w-prose text-sm">
-        Absent under a pointer and absent with nothing to clear — chrome appears by data volume,
-        never by a setting. A journey with a quiet Today draws an empty box here, which is the
-        point.
+        In the product this is drawn only on a phone, and only when Today is holding something —
+        chrome appears by data volume, never by a setting. A journey whose Today is already read
+        offers <b>0 to clear</b> and draws nothing at all there.
       </p>
     </PlaygroundSection>
   );
