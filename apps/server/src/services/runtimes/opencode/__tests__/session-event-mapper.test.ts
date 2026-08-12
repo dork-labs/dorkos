@@ -100,7 +100,10 @@ describe('permission.asked → approval_required', () => {
 describe('permission.replied → interaction_cancelled', () => {
   it('reads the id off the live field name', () => {
     expect(mapPermissionReplied(LIVE_REPLIED, permissions())).toEqual([
-      { type: 'interaction_cancelled', data: { interactionId: 'per_ff0006910001mhtgQCU3N0PfUD' } },
+      {
+        type: 'interaction_cancelled',
+        data: { interactionId: 'per_ff0006910001mhtgQCU3N0PfUD', reason: 'approved' },
+      },
     ]);
   });
 
@@ -113,6 +116,28 @@ describe('permission.replied → interaction_cancelled', () => {
         permissions()
       )
     ).toEqual([]);
+  });
+
+  // DOR-1148: the echo's `reply` used to be ignored entirely, so a card
+  // answered outside DorkOS (the OpenCode TUI, another client) cleared with no
+  // Approved/Denied receipt — only an in-DorkOS `approveTool()` call earned
+  // one. `once`/`always` both mean yes (NOTES.md §2: DorkOS only ever SENDS
+  // once/reject, but the echo can carry `always` from elsewhere), `reject`
+  // means no.
+  it.each([
+    ['once', 'approved'],
+    ['always', 'approved'],
+    ['reject', 'denied'],
+  ] as const)('reply=%s carries reason=%s so the same receipt is earned', (reply, reason) => {
+    expect(mapPermissionReplied({ ...LIVE_REPLIED, reply }, permissions())).toEqual([
+      { type: 'interaction_cancelled', data: { interactionId: LIVE_REPLIED.requestID, reason } },
+    ]);
+  });
+
+  it('drops the reason for an unrecognized reply rather than guessing', () => {
+    expect(mapPermissionReplied({ ...LIVE_REPLIED, reply: 'unknown' }, permissions())).toEqual([
+      { type: 'interaction_cancelled', data: { interactionId: LIVE_REPLIED.requestID } },
+    ]);
   });
 });
 
@@ -131,7 +156,10 @@ describe('the turn mapper admits the events the sidecar really sends', () => {
       createOpenCodeEventContext('dork-session')
     );
     expect(events).toEqual([
-      { type: 'interaction_cancelled', data: { interactionId: LIVE_REPLIED.requestID } },
+      {
+        type: 'interaction_cancelled',
+        data: { interactionId: LIVE_REPLIED.requestID, reason: 'approved' },
+      },
     ]);
   });
 });

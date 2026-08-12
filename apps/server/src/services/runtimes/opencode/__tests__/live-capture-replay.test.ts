@@ -255,9 +255,11 @@ describe('live capture: a subagent asks, the operator approves, the run finishes
       toolName: 'bash',
       title: 'The general subagent needs permission',
     });
-    // The answer was sent to the child session; its echo cleared the card.
+    // The answer was sent to the child session; its echo cleared the card AND
+    // (DOR-1148) carries the same Approved receipt an in-DorkOS approve would.
     expect(events.find((event) => event.type === 'interaction_cancelled')!.data).toEqual({
       interactionId: 'per_ff0c31fc4001nfdcvgtN85TKvs',
+      reason: 'approved',
     });
     expect(events.find((event) => event.type === 'background_task_done')!.data).toMatchObject({
       status: 'completed',
@@ -290,6 +292,10 @@ describe('live capture: the user stops the turn while the subagent is asking', (
 
     const cancelled = events.filter((event) => event.type === 'interaction_cancelled');
     expect(cancelled).toHaveLength(1);
+    // No `permission.replied` rode this capture at all (see the class doc above)
+    // — this withdrawal is the turn-terminal sweep, not an echo, so it carries
+    // no `reason` and (DOR-1148) must not fabricate an Approved/Denied receipt
+    // for an ask nobody actually answered.
     expect(cancelled[0]!.data).toEqual({ interactionId: 'per_ff0c80c8d001N16GikRcotWY1j' });
 
     expect(events.find((event) => event.type === 'background_task_done')!.data).toMatchObject({

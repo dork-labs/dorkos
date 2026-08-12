@@ -243,9 +243,25 @@ export function mapPermissionAsked(
 }
 
 /**
+ * The only `reply` strings the shipped sidecar has been observed to send
+ * (NOTES.md §2): DorkOS itself only ever sends `once`/`reject`, but the echo
+ * can carry `always` too — the OpenCode TUI or another client can answer that
+ * way, and it means the same yes `once` does. An unrecognized string (a future
+ * sidecar addition) maps to `undefined` rather than a guess.
+ */
+const APPROVAL_REASON_BY_REPLY: Readonly<Record<string, 'approved' | 'denied'>> = {
+  once: 'approved',
+  always: 'approved',
+  reject: 'denied',
+};
+
+/**
  * permission.replied → `interaction_cancelled`, so a request answered
  * somewhere else (OpenCode's own TUI, another DorkOS client) stops showing as
- * an answerable card here.
+ * an answerable card here. Carries the echo's `reply` forward as `reason`
+ * (DOR-1148) so a card answered outside DorkOS earns the SAME
+ * Approved/Denied receipt one answered inside DorkOS does — before this, every
+ * echo mapped to a bare clear and a TUI-answered ask left no receipt at all.
  *
  * @param properties - Raw `permission.replied` properties off the wire
  * @param state - The turn's permission bookkeeping (mutated: the answered ask
@@ -263,7 +279,16 @@ export function mapPermissionReplied(
     return [];
   }
   state.pendingPermissionSessions.delete(parsed.data.requestID);
-  return [{ type: 'interaction_cancelled', data: { interactionId: parsed.data.requestID } }];
+  const reason = APPROVAL_REASON_BY_REPLY[parsed.data.reply];
+  return [
+    {
+      type: 'interaction_cancelled',
+      data: {
+        interactionId: parsed.data.requestID,
+        ...(reason !== undefined ? { reason } : {}),
+      },
+    },
+  ];
 }
 
 /**

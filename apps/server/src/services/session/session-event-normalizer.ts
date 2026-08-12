@@ -248,19 +248,23 @@ export function toRawSessionEvent(event: StreamEvent): RawSessionEvent | null {
       return progress;
     }
 
-    // A pending interaction was cancelled WITHOUT an operator action (SDK
-    // abort — e.g. a mid-turn steer superseding a pending question — or
-    // timeout). Projects to the same `interaction_resolved` member the
-    // operator paths use, so every consumer drops the card identically.
+    // A pending interaction resolved off the ordinary in-DorkOS answer path
+    // (SDK abort — e.g. a mid-turn steer superseding a pending question —
+    // timeout, or an OpenCode `permission.replied` echo reporting an answer
+    // given elsewhere, e.g. the OpenCode TUI). Projects to the same
+    // `interaction_resolved` member every path uses, so every consumer drops
+    // the card identically and, where the reason names a real answer, records
+    // the same receipt an in-DorkOS answer would (DOR-1148).
     //
-    // The two reasons stay distinguishable downstream: a `timeout` was answered
-    // (auto-denied) on the person's behalf and is worth recording, an `aborted`
-    // ask was withdrawn before anyone could answer it and is not.
+    // The four reasons stay distinguishable downstream: `timeout` was answered
+    // (auto-denied) on the person's behalf and is worth recording; `approved`/
+    // `denied` is a real answer somebody gave outside DorkOS; `aborted` (the
+    // default) withdrew the ask before anyone could answer it and is not.
     case 'interaction_cancelled': {
       const resolved: RawOf<'interaction_resolved'> = {
         type: 'interaction_resolved',
         id: String(data.interactionId ?? ''),
-        resolution: data.reason === 'timeout' ? 'expired' : 'cancelled',
+        resolution: resolutionForCancelledReason(data.reason),
         at: Date.now(),
       };
       return resolved;
@@ -325,6 +329,24 @@ function mapHookOutcome(outcome: unknown): 'success' | 'error' | 'cancelled' {
   if (outcome === 'error') return 'error';
   if (outcome === 'cancelled') return 'cancelled';
   return 'success';
+}
+
+/**
+ * Map an `interaction_cancelled` event's `reason` to the resolution its
+ * `interaction_resolved` projection carries (DOR-1148). `approved`/`denied`
+ * name a real answer (an OpenCode `permission.replied` echo reporting an
+ * answer given outside DorkOS); `timeout` names an answer the system gave on
+ * the person's behalf. Anything else — including the ordinary `aborted` and a
+ * reason a future runtime has not taught this function yet — is a withdrawal,
+ * not an answer, so it defaults to `cancelled` rather than inventing a receipt.
+ */
+function resolutionForCancelledReason(
+  reason: unknown
+): RawOf<'interaction_resolved'>['resolution'] {
+  if (reason === 'timeout') return 'expired';
+  if (reason === 'approved') return 'approved';
+  if (reason === 'denied') return 'denied';
+  return 'cancelled';
 }
 
 /**

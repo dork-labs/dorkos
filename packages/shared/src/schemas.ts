@@ -1780,16 +1780,19 @@ export const ElicitationCompleteEventSchema = z
 export type ElicitationCompleteEvent = z.infer<typeof ElicitationCompleteEventSchema>;
 
 /**
- * A pending interaction (approval / question / elicitation) was cancelled
- * WITHOUT an operator action: the SDK aborted the gating tool call (e.g. a
- * mid-turn steered message superseded a pending AskUserQuestion) or the
- * interaction timed out. Lets the projection drop the card instead of leaving
- * an answerable ghost until expiry.
+ * A pending interaction (approval / question / elicitation) resolved without
+ * riding the ordinary in-DorkOS answer path: the SDK aborted the gating tool
+ * call (e.g. a mid-turn steered message superseded a pending AskUserQuestion),
+ * the interaction timed out, or — an OpenCode permission specifically — its
+ * `permission.replied` echo reported an answer given somewhere else (the
+ * OpenCode TUI, another DorkOS client). Lets the projection drop the card
+ * instead of leaving an answerable ghost, and — for `approved`/`denied` — earn
+ * the same receipt an in-DorkOS answer would (DOR-1148).
  */
 export const InteractionCancelledEventSchema = z
   .object({
     interactionId: z.string(),
-    reason: z.enum(['aborted', 'timeout']).optional(),
+    reason: z.enum(['aborted', 'timeout', 'approved', 'denied']).optional(),
   })
   .openapi('InteractionCancelledEvent');
 

@@ -472,6 +472,36 @@ describe('toRawSessionEvent', () => {
         at: expect.any(Number),
       },
     },
+    {
+      // DOR-1148: an OpenCode `permission.replied` echo reporting `once`/
+      // `always` means the SAME yes an in-DorkOS approve means, so it must earn
+      // the SAME receipt (the projector's `resolveInteraction('approved')` path).
+      name: 'interaction_cancelled (approved) → interaction_resolved with approved resolution',
+      input: {
+        type: 'interaction_cancelled',
+        data: { interactionId: 'per_q3', reason: 'approved' },
+      },
+      expected: {
+        type: 'interaction_resolved',
+        id: 'per_q3',
+        resolution: 'approved',
+        at: expect.any(Number),
+      },
+    },
+    {
+      // DOR-1148: the `reject` half of the same echo.
+      name: 'interaction_cancelled (denied) → interaction_resolved with denied resolution',
+      input: {
+        type: 'interaction_cancelled',
+        data: { interactionId: 'per_q4', reason: 'denied' },
+      },
+      expected: {
+        type: 'interaction_resolved',
+        id: 'per_q4',
+        resolution: 'denied',
+        at: expect.any(Number),
+      },
+    },
     // Typed turn errors ride the durable stream (adapter-yielded or injected by
     // guardTurnErrors): live clients render them inline and the projector
     // latches SessionStatus.lastError. Pre-fix these default-dropped to null,
