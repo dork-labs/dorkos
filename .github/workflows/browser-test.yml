@@ -102,9 +102,33 @@ jobs:
     # The suite boots five webServer legs (Express API, Vite client, a second
     # Express+Vite pair for the TestModeRuntime project, and the Next.js
     # marketing site) and then runs ~90 tests serially (`workers: 1` under CI).
-    # Generous headroom for a cold 4-core runner, and low enough that a leg
-    # which never comes up fails the job rather than burning an hour.
-    timeout-minutes: 45
+    #
+    # THIS IS THE OUTERMOST RUNG OF A LADDER, AND IT MUST NEVER BE THE ONE THAT
+    # FIRES (DOR-1110). A job that hits `timeout-minutes` is CANCELLED, not
+    # failed: the suite step is killed mid-write and every later step is
+    # skipped, so no report, trace, screenshot or video survives. A run that
+    # ends that way proves nothing and reads as an infra hang — which is exactly
+    # what happened when one product change broke 21 specs at once and the
+    # attempt was cancelled with ZERO Playwright output, costing a whole extra
+    # debug cycle.
+    #
+    # So the deadlines are staggered, innermost first, and each rung below this
+    # one leaves output behind when it fires:
+    #
+    #   ~30m  a healthy suite (MEASURED: run 31577200766 took 30m24s in the
+    #         `playwright test` step; setup steps cost ~1m40s on top)
+    #    45m  playwright.config.ts `globalTimeout` — Playwright stops itself and
+    #         flushes every reporter, so the job fails WITH a named report
+    #    50m  the suite step's own `timeout-minutes` — a hung Playwright that
+    #         never reached its own deadline still fails the STEP, which leaves
+    #         the upload step below free to run
+    #    60m  this — the backstop, reachable only if both rungs above failed
+    #
+    # It used to be 45, which put the ceiling ~13 minutes above a healthy run:
+    # close enough that any broad failure spent the difference on retries and
+    # tripped it. `maxFailures` now caps that spend, but the ordering above is
+    # what guarantees output either way.
+    timeout-minutes: 60
     env:
       # Pins the server's data directory inside the checkout, on purpose.
       # `resolveDorkHome()` (apps/server/src/lib/dork-home.ts) falls back to the
@@ -184,7 +208,17 @@ jobs:
       # nothing and no later step reads it, but do not add a "the tree is clean"
       # assertion to this job without dealing with that first: it would fail
       # every time, for a reason unrelated to the code under test.
+      #
+      # `timeout-minutes` here is the middle rung of the ladder described on the
+      # job's own timeout (DOR-1110). It sits ABOVE playwright.config.ts's
+      # `globalTimeout` (45m) so Playwright normally stops itself first and
+      # flushes its reporters, and BELOW the job's ceiling (60m) so that a
+      # Playwright which somehow hangs without honouring its own deadline fails
+      # this STEP rather than cancelling the JOB — the difference being that a
+      # failed step still lets the report upload below run, and a cancelled job
+      # does not.
       - name: Run the browser suite
+        timeout-minutes: 50
         run: pnpm --filter @dorkos/e2e run e2e
 
       # THE POINT OF THIS STEP. Playwright exits 0 in more ways than it fails.
@@ -217,10 +251,19 @@ jobs:
 
       # The report is the only way to read a browser failure after the fact: it
       # carries the trace, the screenshot and the video the config captures on
-      # failure. Uploaded on failure only, because a green run's report is 100MB
-      # of things nobody opens.
+      # failure. Uploaded on anything-but-green, because a green run's report is
+      # 100MB of things nobody opens.
+      #
+      # `cancelled()` is in the condition on purpose (DOR-1110). A step whose
+      # `if:` names no status function is implicitly `success() && ...`, and
+      # plain `failure()` is false during a cancellation — so a job killed by
+      # its own ceiling, or a run a human cancels, skipped this step and threw
+      # away whatever partial evidence Playwright had already written. That is
+      # the "cancelled with zero output" failure this ticket is about. Naming
+      # `cancelled()` opts the step into GitHub's best-effort window so the
+      # report is uploaded even then.
       - name: Upload the Playwright report
-        if: failure()
+        if: ${{ failure() || cancelled() }}
         uses: actions/upload-artifact@v4
         with:
           name: playwright-report
