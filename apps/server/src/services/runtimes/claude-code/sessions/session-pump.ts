@@ -46,6 +46,7 @@ import {
   LEGAL_TRANSITIONS,
   PumpRefusedError,
   WARMTH_OF,
+  type PumpControlQuery,
   type PumpDispatch,
   type PumpQuery,
   type PumpState,
@@ -137,6 +138,19 @@ export class SessionPump {
   }
 
   /**
+   * The live process's control channel, or `undefined` when there is no process.
+   *
+   * This is what makes WARM worth having: between turns the subprocess is still
+   * there and still answers, so the windower can fetch a window's context and
+   * subscription accounting at every close instead of only at the one close
+   * that used to end the process. Never cache it across a relaunch — a crash
+   * replaces the query, and the old one answers nothing.
+   */
+  get controlQuery(): PumpControlQuery | undefined {
+    return this.query;
+  }
+
+  /**
    * Protocol capabilities the CLI reported at `system/init`, cached for this
    * process's life. Empty until init arrives, and empty on a CLI old enough not
    * to report any — which is the point: feature-detect what you are about to
@@ -171,25 +185,43 @@ export class SessionPump {
   }
 
   /**
-   * Open a turn with `input`: `WARM → RUNNING`, booting the process first when
+   * Open a turn with `batch`: `WARM → RUNNING`, booting the process first when
    * there is none.
    *
+   * **A batch, not a message, because a batch is what one turn is.** The CLI
+   * dequeues whatever is waiting on its input stream and coalesces it into ONE
+   * assistant turn answered by ONE `result` — so the messages the durable queue
+   * dequeues together are one dispatch, one window, and several correlation
+   * ids. Each message is stamped with its own `messageId` as the SDK `uuid`, so
+   * the single `result` can still be matched back by id.
+   *
    * **Resolving is an ACCEPTANCE, not a receipt** — see the module doc. The
-   * caller keeps the durable queue row until correlated output evidence says
-   * the turn began, and puts it back in line if this rejects.
+   * caller keeps the durable queue rows until correlated output evidence says
+   * the turn began, and puts them back in line if this rejects.
    *
    * The caller holds the dispatch mutex; this refuses to be re-entered rather
    * than serializing on its own, because a second dispatch arriving mid-turn is
    * a caller bug today (steering into an open turn is task P4's
-   * `deliverIntoTurn`, a different verb).
+   * `deliverIntoTurn`, a different verb). The windower is what makes that mutex
+   * more than honor-system for pump-driven turns.
    *
-   * @param input - The message to run
-   * @throws PumpRefusedError When the session is parked on a person, when the
-   *   warm ceiling has no slot, or when the input stream has ended
+   * @param batch - The messages to run as one turn, in delivery order
+   * @throws PumpRefusedError When the batch is empty, when the session is parked
+   *   on a person, when the warm ceiling has no slot, or when the input stream
+   *   has ended
    * @throws IllegalPumpTransitionError When a turn is already open
    */
-  async dispatch(input: PumpDispatch): Promise<void> {
+  async dispatch(batch: readonly PumpDispatch[]): Promise<void> {
     this.assertUsable();
+    const [first, ...rest] = batch;
+    if (first === undefined) {
+      // Moving to RUNNING with nothing sent would open a window no `result`
+      // could ever close, which is the failure this whole layer exists to stop.
+      throw new PumpRefusedError(
+        'empty-dispatch',
+        `session ${this.sessionId} was dispatched an empty batch; there is no turn to open`
+      );
+    }
     if (this.currentState === 'running') {
       throw new IllegalPumpTransitionError('running', 'running');
     }
@@ -203,7 +235,8 @@ export class SessionPump {
       // The first message rides the launch rather than being pushed after it:
       // it is in the stream from construction, so there is no window in which
       // the process is up and the message is merely "accepted".
-      await this.launch(input.content);
+      await this.launch(first);
+      this.pushRest(rest);
       this.setState('running');
       return;
     }
@@ -213,25 +246,42 @@ export class SessionPump {
     if (this.currentState !== 'warm') {
       throw new IllegalPumpTransitionError(this.currentState, 'running');
     }
-    if (this.held?.push(input.content) !== true) {
-      // `false` is the one answer the seam gives that is definite: the stream
-      // is finished and nothing was sent. Report the process gone so the caller
-      // leaves the message queued for the relaunch.
-      this.noteProcessGone(undefined);
-      throw new PumpRefusedError(
-        'process-gone',
-        `session ${this.sessionId} lost its process before the message was sent`
-      );
-    }
+    this.pushOrFail(first);
+    this.pushRest(rest);
     this.setState('running');
+  }
+
+  /**
+   * Push the rest of a batch behind its opening message. Ordering is what makes
+   * these one turn: the CLI reads them off the stream together and answers all
+   * of them with one `result`.
+   */
+  private pushRest(rest: readonly PumpDispatch[]): void {
+    for (const message of rest) this.pushOrFail(message);
+  }
+
+  /** Push one message into the held stream, or report the process gone. */
+  private pushOrFail(message: PumpDispatch): void {
+    if (this.held?.push(message.content, message.messageId) === true) return;
+    // `false` is the one answer the seam gives that is definite: the stream
+    // is finished and nothing was sent. Report the process gone so the caller
+    // leaves the message queued for the relaunch.
+    this.noteProcessGone(undefined);
+    throw new PumpRefusedError(
+      'process-gone',
+      `session ${this.sessionId} lost its process before the message was sent`
+    );
   }
 
   /**
    * Close the open turn window: `RUNNING → WARM`. The process stays up.
    *
-   * Task 3.3 calls this from the demux when the `result` correlated to the open
-   * window arrives. Idempotent, and a no-op when no window is open — a second
-   * `result` must be harmless, exactly as task 0.1's `closeTurn` guard makes it.
+   * The windower (`session-turn-windows.ts`) calls this once the `result`
+   * correlated to the open window has been released, not the instant it
+   * arrives: a window is not over until its accounting has been fetched from
+   * the still-live process. Idempotent, and a no-op when no window is open — a
+   * second `result` must be harmless, exactly as task 0.1's `closeTurn` guard
+   * makes it.
    */
   endTurn(): void {
     if (this.currentState !== 'running') return;
@@ -332,7 +382,7 @@ export class SessionPump {
    * a second caller in the same tick joins the first launch rather than booting
    * a second process.
    */
-  private launch(firstMessage?: string): Promise<void> {
+  private launch(firstMessage?: PumpDispatch): Promise<void> {
     this.launchInFlight ??= this.launchOnce(firstMessage).finally(() => {
       this.launchInFlight = undefined;
     });
@@ -340,7 +390,7 @@ export class SessionPump {
   }
 
   /** Claim a slot, boot the process, and wait for it to say it is ready. */
-  private async launchOnce(firstMessage?: string): Promise<void> {
+  private async launchOnce(firstMessage?: PumpDispatch): Promise<void> {
     await this.opts.reserveSlot?.();
     // A teardown can land while the slot is being claimed, and a launch that
     // carried on from here would boot a process nothing is left to close.
@@ -350,7 +400,9 @@ export class SessionPump {
     this.setState('warming');
     this.cachedCapabilities = [];
     const held =
-      firstMessage === undefined ? createIdlePrompt() : createHeldUserPrompt(firstMessage);
+      firstMessage === undefined
+        ? createIdlePrompt()
+        : createHeldUserPrompt(firstMessage.content, firstMessage.messageId);
     this.held = held;
     const ready = deferred();
     this.initReady = ready;

@@ -79,6 +79,8 @@ export const HOLDS_PROCESS: readonly PumpState[] = ['warming', 'warm', 'running'
 
 /** Why the pump refused something a caller was entitled to ask for. */
 export type PumpRefusalReason =
+  /** A dispatch carried no messages: there is no turn to open. */
+  | 'empty-dispatch'
   /** The warm ceiling is full and no slot could be reclaimed. */
   | 'warm-ceiling'
   /** The session is parked on a person; firing into an open ask is the failure this prevents. */
@@ -126,12 +128,28 @@ export class IllegalPumpTransitionError extends Error {
 }
 
 /**
- * The slice of the SDK's `Query` the pump depends on: its message stream, and
- * the forceful close that actually terminates the CLI child. Tasks 3.3 and 3.5
- * widen this as they need control methods; it is deliberately the minimum
- * today, so a test double stays a few lines.
+ * The control-plane slice of the SDK's `Query`: the methods a warm process can
+ * still answer between turns.
+ *
+ * Split out from {@link PumpQuery} because it is what {@link SessionPump}
+ * hands OUT (`controlQuery`), and what the turn windower calls at every window
+ * close to fetch that window's context and subscription accounting while the
+ * process is still alive. Task 3.5 widens it further as the relaunch
+ * fingerprint needs setters (`setModel`, `setPermissionMode`, …).
  */
-export type PumpQuery = AsyncIterable<SDKMessage> & Pick<Query, 'close'>;
+export type PumpControlQuery = Pick<
+  Query,
+  'getContextUsage' | 'usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET'
+>;
+
+/**
+ * The slice of the SDK's `Query` the pump depends on: its message stream, the
+ * forceful close that actually terminates the CLI child, and the control
+ * methods of {@link PumpControlQuery}. Task 3.5 widens it as the relaunch
+ * fingerprint needs more; it is deliberately the minimum today, so a test
+ * double stays a few lines.
+ */
+export type PumpQuery = AsyncIterable<SDKMessage> & Pick<Query, 'close'> & PumpControlQuery;
 
 /** What a launcher is handed to boot one process. */
 export interface PumpLaunchInput {
@@ -169,6 +187,17 @@ export interface PumpCrash {
 export interface PumpDispatch {
   /** The person's words, exactly as they will reach the model. */
   content: string;
+  /**
+   * The server-minted correlation id, stamped as this message's SDK `uuid`.
+   *
+   * Required, not optional, and for the same reason the capability flags are
+   * (spec §2.2): a dispatch nobody can correlate is the exact shape of the bug
+   * this exists to prevent — a turn window that never closes. The SDK echoes
+   * the id back on the `result` it answers with (`user_message_uuid`), and the
+   * turn windower (`session-turn-windows.ts`) matches on it and NEVER on
+   * position, because a dequeued batch coalesces into one turn.
+   */
+  messageId: string;
 }
 
 /** Everything a pump needs to own one session's process. */

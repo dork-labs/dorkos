@@ -79,7 +79,7 @@ export function mapSdkUsageResponse(response: SDKControlGetUsageResponse): Usage
  * @param timeoutMs - Max time to wait for the control response.
  */
 export async function fetchSubscriptionUsage(
-  query: Query,
+  query: Pick<Query, 'usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET'>,
   timeoutMs: number
 ): Promise<UsageStatus | undefined> {
   let timer: ReturnType<typeof setTimeout> | undefined;

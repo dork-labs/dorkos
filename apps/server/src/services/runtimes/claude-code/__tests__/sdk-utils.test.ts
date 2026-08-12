@@ -175,6 +175,29 @@ describe('createHeldUserPrompt — held single-message stream', () => {
     close();
     await expect(pull).resolves.toEqual({ value: undefined, done: true });
   });
+
+  // Purpose: this stamp is the whole basis of turn correlation (DOR-1168). The
+  // SDK echoes the message's `uuid` back on the `result` it answers with
+  // (`user_message_uuid`), and the windower matches on that id and never on
+  // position — so an unstamped message can never have its turn closed.
+  it('stamps the server-minted messageId as the SDK message uuid', async () => {
+    const { prompt, close } = createHeldUserPrompt('hello', 'msg-42');
+
+    await expect(prompt.next()).resolves.toMatchObject({
+      value: { uuid: 'msg-42', message: { content: 'hello' } },
+    });
+    close();
+  });
+
+  // Purpose: an id nobody supplied must not become an empty-string uuid the SDK
+  // would echo back and the windower would try to correlate.
+  it('carries no uuid at all when no messageId was supplied', async () => {
+    const { prompt, close } = createHeldUserPrompt('hello');
+
+    const first = await prompt.next();
+    expect(first.value).not.toHaveProperty('uuid');
+    close();
+  });
 });
 
 describe('HeldUserPrompt.push — steering into the live stream', () => {
@@ -205,6 +228,20 @@ describe('HeldUserPrompt.push — steering into the live stream', () => {
     expect((await prompt.next()).value?.message.content).toBe('third');
     close();
     await expect(prompt.next()).resolves.toEqual({ value: undefined, done: true });
+  });
+
+  // Purpose: a coalesced batch is several ids on one stream, and each message
+  // has to carry its OWN. Sharing one id (or dropping the later ones) is what
+  // would make a `result` unable to name the message it answered.
+  it('stamps each pushed message with its own messageId', async () => {
+    const { prompt, close, push } = createHeldUserPrompt('first', 'm1');
+    expect(push('second', 'm2')).toBe(true);
+    expect(push('third', 'm3')).toBe(true);
+
+    expect((await prompt.next()).value).toMatchObject({ uuid: 'm1' });
+    expect((await prompt.next()).value).toMatchObject({ uuid: 'm2' });
+    expect((await prompt.next()).value).toMatchObject({ uuid: 'm3' });
+    close();
   });
 
   it('refuses a push after close and sends nothing', async () => {
