@@ -1,6 +1,7 @@
 import { existsSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { createRequire } from 'node:module';
+import type { UUID } from 'node:crypto';
 
 /** Resolve modules relative to this file — ESM has no ambient `require`. */
 const requireFrom = createRequire(import.meta.url);
@@ -51,15 +52,35 @@ type HeldPromptMessage = {
   message: { role: 'user'; content: string };
   parent_tool_use_id: null;
   session_id: string;
+  /** The server-minted correlation id, carried as the SDK message's own `uuid`. */
+  uuid?: UUID;
 };
 
-/** Wrap plain text as the streaming-input user message the SDK expects. */
-function userMessage(content: string): HeldPromptMessage {
+/** One message pushed into a held stream: its text, and the id it answers to. */
+interface HeldPromptInput {
+  content: string;
+  /** Server-minted correlation id, or `undefined` for an uncorrelated message. */
+  messageId?: string;
+}
+
+/**
+ * Wrap plain text as the streaming-input user message the SDK expects, stamped
+ * with the server-minted correlation id when there is one.
+ *
+ * The cast is the one place the two id vocabularies meet. DorkOS mints message
+ * ids as plain `string`s (`MessageOpts.messageId`) because the neutral contract
+ * spans three runtimes; the SDK types `uuid` as node's template-literal `UUID`.
+ * Stamping is a pass-through of an id DorkOS already owns — the SDK echoes it
+ * back on the `result` as `user_message_uuid` and never parses it — so narrowing
+ * here is safe, and doing it once keeps the cast out of every call site.
+ */
+function userMessage(input: HeldPromptInput): HeldPromptMessage {
   return {
     type: 'user',
-    message: { role: 'user', content },
+    message: { role: 'user', content: input.content },
     parent_tool_use_id: null,
     session_id: '',
+    ...(input.messageId !== undefined ? { uuid: input.messageId as UUID } : {}),
   };
 }
 
@@ -95,13 +116,20 @@ export interface HeldUserPrompt {
    * delivers it at its next opportunity within the live turn; messages arrive in
    * the order they were pushed.
    *
+   * @param content - The message text, exactly as it will reach the model.
+   * @param messageId - The server-minted correlation id, stamped as the SDK
+   *   message's `uuid`. The SDK echoes it back on the `result` it answers with
+   *   (`user_message_uuid`), which is the ONLY non-positional way to tell which
+   *   turn window a result closes — a dequeued batch coalesces into one turn, so
+   *   counting results against pushes is wrong the first time two messages are
+   *   dequeued together. Omit it only for a message nothing needs to correlate.
    * @returns `false`, having sent nothing, once the stream has ended — whether
    *   DorkOS closed it or the consumer walked away. A `true` is only ever a
    *   promise that the stream was open and the message was accepted, so a
    *   consumer that abandons the iteration in that same tick can still leave an
    *   accepted message undelivered.
    */
-  push: (content: string) => boolean;
+  push: (content: string, messageId?: string) => boolean;
 }
 
 /**
@@ -115,7 +143,7 @@ export interface HeldUserPrompt {
  *
  * @param messages - User message texts to yield before holding the stream open.
  */
-function createHeldPrompt(messages: string[]): HeldUserPrompt {
+function createHeldPrompt(messages: readonly HeldPromptInput[]): HeldUserPrompt {
   // Queue-driven so `push()` can feed the stream after it is created (DOR-1087
   // corrective notes; the persistent pump's dispatches). The generator drains
   // the queue, then parks until the next push or the end of the stream.
@@ -179,9 +207,9 @@ function createHeldPrompt(messages: string[]): HeldUserPrompt {
       closed = true;
       wakeUp();
     },
-    push: (content: string) => {
+    push: (content: string, messageId?: string) => {
       if (closed) return false;
-      queue.push(content);
+      queue.push({ content, ...(messageId !== undefined ? { messageId } : {}) });
       wakeUp();
       return true;
     },
@@ -197,9 +225,12 @@ function createHeldPrompt(messages: string[]): HeldUserPrompt {
  * `finally`) or the subprocess will not terminate.
  *
  * @param content - User message text.
+ * @param messageId - The server-minted correlation id for the opening message,
+ *   stamped as its SDK `uuid`. See {@link HeldUserPrompt.push} for why the id,
+ *   and never the ordinal, is what a `result` is matched against.
  */
-export function createHeldUserPrompt(content: string): HeldUserPrompt {
-  return createHeldPrompt([content]);
+export function createHeldUserPrompt(content: string, messageId?: string): HeldUserPrompt {
+  return createHeldPrompt([{ content, ...(messageId !== undefined ? { messageId } : {}) }]);
 }
 
 /**
