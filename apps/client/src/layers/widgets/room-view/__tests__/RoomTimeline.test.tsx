@@ -35,6 +35,8 @@ interface MemberOverrides {
   emoji?: string;
   color?: string;
   origin?: AuthorOrigin;
+  /** The stable handle the fleet's faces are keyed by. Agents only. */
+  agentRef?: string;
 }
 
 function member(
@@ -58,6 +60,7 @@ function member(
       handle: null,
       emoji: overrides.emoji,
       color: overrides.color,
+      agentRef: overrides.agentRef,
     },
   };
 }
@@ -832,5 +835,62 @@ describe('toMessageAuthor', () => {
 
   it('treats a departed member as local rather than as an unknown platform', () => {
     expect(toMessageAuthor('gone', new Map()).isExternal).toBe(false);
+  });
+
+  it('wears the face the fleet resolved off the agent’s own manifest', () => {
+    // The loudest surface in a room, and the last one that was still drawing an
+    // agent as a letter while the sidebar drew its face. Nothing is cached on
+    // this author row — the common case — so without the fleet's answer the
+    // gutter has no emoji at all to draw.
+    const authors = authorsById([member('ana', 'Ana', 'agent', { agentRef: 'ref-ana' })]);
+    const faces = new Map([['ref-ana', { color: '#15803d', emoji: '🦊' }]]);
+
+    const author = toMessageAuthor('ana', authors, faces);
+
+    expect(author.emoji).toBe('🦊');
+    expect(author.color).toBe('#15803d');
+    // Dropping the map is what this asserts against: the same call without it
+    // is the bare letter-and-hash the gutter used to be stuck with.
+    expect(toMessageAuthor('ana', authors).emoji).toBeUndefined();
+  });
+
+  it('lets the fleet outrank a stale face cached on the author row', () => {
+    // Precedence. The manifest is the fresher source, so an agent that changed
+    // its icon must not keep drawing the old one here while the sidebar has
+    // already moved on.
+    const authors = authorsById([
+      member('ana', 'Ana', 'agent', { agentRef: 'ref-ana', emoji: '🎨', color: '#7c3aed' }),
+    ]);
+    const faces = new Map([['ref-ana', { color: '#15803d', emoji: '🦊' }]]);
+
+    expect(toMessageAuthor('ana', authors, faces)).toMatchObject({
+      emoji: '🦊',
+      color: '#15803d',
+    });
+  });
+
+  it('joins on agentRef — a face filed under the author id reaches nobody', () => {
+    // The two ids a room holds are different ULIDs, and the author one is the
+    // wrong key. Seeding the map under it must change nothing, or an agent
+    // would wear a face no other surface draws.
+    const authors = authorsById([member('ana', 'Ana', 'agent', { agentRef: 'ref-ana' })]);
+    const misfiled = new Map([['ana', { color: '#15803d', emoji: '🦊' }]]);
+
+    expect(toMessageAuthor('ana', authors, misfiled).emoji).toBeUndefined();
+  });
+
+  it('leaves everyone else alone: a person, and an agent the fleet never named', () => {
+    // A person has no `agentRef` to look up, and an agent the fleet could not
+    // resolve is absent from the map. Both keep the honest letter — the ladder
+    // never invents an emoji, whatever a caller passes.
+    const authors = authorsById([
+      member('dorian', 'Dorian', 'human'),
+      member('bo', 'Bo', 'agent', { agentRef: 'ref-bo' }),
+    ]);
+    const faces = new Map([['ref-ana', { color: '#15803d', emoji: '🦊' }]]);
+
+    expect(toMessageAuthor('dorian', authors, faces).emoji).toBeUndefined();
+    expect(toMessageAuthor('bo', authors, faces).emoji).toBeUndefined();
+    expect(toMessageAuthor('bo', authors, faces).color).toBe(authorColor('bo'));
   });
 });
