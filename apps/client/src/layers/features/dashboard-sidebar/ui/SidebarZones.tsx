@@ -74,7 +74,11 @@ export function SidebarZones({ model, zoneIds }: SidebarZonesProps) {
   // `model` is still the builder's answer, and the two differ on exactly one
   // zone for exactly as long as the damping lasts.
   const { model: drawn, handlers: slotHandlers } = useGettingStartedReturn(model);
-  const library = drawn.zones.find((zone) => zone.id === 'library');
+  // Off the BUILDER's model, like `nowSlotTaken` below. Alt-click fold-all is
+  // about Library, which the damping never touches, and reading it from `drawn`
+  // would make a whole-panel gesture a function of whether a zone above it
+  // happened to be held back at that instant.
+  const library = model.zones.find((zone) => zone.id === 'library');
   // "Is this zone mine to draw?" asked once. `undefined` means the whole
   // panel — the desktop case — so nothing about the existing call site changes.
   const draws = useCallback(
@@ -135,11 +139,15 @@ export function SidebarZones({ model, zoneIds }: SidebarZonesProps) {
             <SidebarZone key={zone.id} zone={zone} onToggleAll={onToggleAll} />
           )
         )}
-      {/* There is no empty-Library branch, and there cannot be one: `ensureDorkBot`
-          runs at every server boot, so the fleet is never empty and Library always
-          has at least its Agents section. The `AgentOnboardingCard` that used to
-          hang here was unreachable for that reason; day-one guidance is the
-          Getting started zone's job, at the top of the panel where it is read. */}
+      {/* There is no empty-Library branch on purpose. `AgentOnboardingCard` used
+          to hang off `library === undefined`, and that condition is reachable —
+          but only in the wrong moment. `useSidebarState` starts the roster at
+          `[]` and "a roster query that has not answered looks exactly like an
+          empty fleet" (its own words), so on every cold load the card drew for
+          the pre-hydration frames, and it would have stayed for good if the mesh
+          query failed. A hydration gap is not day one, and a flash of "Add more
+          agents" is the wrong thing to put in one. Day-one guidance is the
+          Getting started zone's, at the top of the panel where it is read. */}
     </div>
   );
 }

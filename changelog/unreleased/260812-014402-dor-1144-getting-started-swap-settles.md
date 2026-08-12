@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(client): Getting started stops flickering every time an agent starts or stops (DOR-1144)'
+  - 'fix(client): guard the damping seam, and correct why the day-one card was removed (DOR-1138, DOR-1144)'
 ---
 
 ### Fixed

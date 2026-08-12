@@ -177,8 +177,10 @@ describe('AC-7 — one create surface', () => {
         //
         // `ui/SidebarZones.tsx` was the second entry here, for the day-one
         // invitation drawn when Library held nothing at all. That card is gone
-        // (DOR-1138): `ensureDorkBot` runs at every boot, so Library is never
-        // empty and the branch could not be reached.
+        // (DOR-1138). Its condition was reachable, but only before the fleet
+        // query answered or while it failed — a hydration gap, not day one — so
+        // it flashed "Add more agents" on every cold load rather than greeting
+        // a new operator. Day-one guidance is the Getting started zone's.
         'ui/SidebarChrome.tsx',
       ],
     ],

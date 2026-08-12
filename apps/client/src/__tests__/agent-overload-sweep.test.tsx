@@ -11,14 +11,22 @@
  * concepts: `ProgressCard`'s row opens Settings → Runtimes (runtime sense),
  * while `AgentOnboardingCard`'s row added a fleet teammate (fleet sense).
  *
- * **`AgentOnboardingCard` has since been deleted** (DOR-1138): it hung off an
- * empty-Library branch that `ensureDorkBot` made unreachable, and day-one
- * guidance moved to the Getting started zone. Only the runtime-sense card is
- * left, so the collision is now impossible by construction rather than by
- * agreement — and what still needs guarding is the half that can regress: this
- * file mounts the real `ProgressCard`, not a copy of its strings, so reverting
- * its rename fails here instead of shipping silently.
+ * **`AgentOnboardingCard` has since been deleted** (DOR-1138). Its
+ * empty-Library branch was reachable, but only before the fleet query answered
+ * or while it failed — a hydration gap, not day one — so it flashed on cold
+ * loads instead of greeting anyone; day-one guidance is the Getting started
+ * zone's. One card is left, so the two-card collision cannot recur in the shape
+ * it took.
+ *
+ * Two halves still need guarding, and each is checked the way it can actually
+ * fail. The rename can be reverted, so this file mounts the real `ProgressCard`
+ * rather than a copy of its strings. And the fleet-sense string could be
+ * reintroduced anywhere in the sidebar by a component nobody thought to test,
+ * so that half is a source scan over the whole feature — a rendered tree can
+ * only ever speak for the components it mounts.
  */
+import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, cleanup, waitFor } from '@testing-library/react';
 import {
@@ -61,6 +69,43 @@ vi.mock('@/layers/entities/config', () => ({
 // barrel pulls in far more of the feature than this file needs to mount one
 // presentational card.
 import { ProgressCard } from '@/layers/features/onboarding/ui/ProgressCard';
+
+/**
+ * Every sidebar source file, tests and fixtures excluded.
+ *
+ * The three directories an operator experiences as "the sidebar": the panel
+ * itself, the embedded variant, and the phone's four tabs. Same set the
+ * `one-create-surface` scan uses, for the same reason — a claim about the
+ * sidebar that reads one directory is a claim about one directory.
+ */
+function sidebarSource(): Map<string, string> {
+  const roots: [string, string][] = [
+    ['dashboard-sidebar', join(__dirname, '..', 'layers', 'features', 'dashboard-sidebar')],
+    ['session-list', join(__dirname, '..', 'layers', 'features', 'session-list')],
+    ['mobile-tabs', join(__dirname, '..', 'layers', 'widgets', 'mobile-tabs')],
+  ];
+  const walk = (dir: string, prefix: string): [string, string][] =>
+    readdirSync(dir).flatMap((entry) => {
+      const full = join(dir, entry);
+      if (statSync(full).isDirectory()) {
+        if (entry === '__tests__' || entry === 'fixtures') return [];
+        return walk(full, `${prefix}${entry}/`);
+      }
+      if (!entry.endsWith('.ts') && !entry.endsWith('.tsx')) return [];
+      return [[`${prefix}${entry}`, readFileSync(full, 'utf8')] as [string, string]];
+    });
+  return new Map(roots.flatMap(([label, dir]) => walk(dir, `${label}/`)));
+}
+
+const SIDEBAR_SOURCE = sidebarSource();
+
+/** Which sidebar files mention a pattern. */
+function sidebarFilesMatching(pattern: RegExp): string[] {
+  return [...SIDEBAR_SOURCE]
+    .filter(([, text]) => pattern.test(text))
+    .map(([file]) => file)
+    .sort();
+}
 
 afterEach(cleanup);
 
@@ -107,14 +152,16 @@ describe('DOR-853: the "agent" overload is resolved to one sense per surface', (
     expect(screen.queryByText(/^Add more agents$/)).not.toBeInTheDocument();
   });
 
-  it('leaves the fleet sense with no sidebar card to collide with', async () => {
-    // The other half of the original pair is gone, and its absence is the point:
-    // with one card left there is no second surface that could reclaim the
-    // string. Asserted from the runtime-sense card's own render so this is a
-    // fact about what ships, not a note about what was removed.
-    await renderProgressCard();
+  it('has no sidebar source carrying the fleet-sense string for it to collide with', () => {
+    // A rendered tree proves nothing here: the string could come back in any
+    // component this file does not mount. So the claim is checked against the
+    // source of the whole sidebar, in the `one-create-surface` style.
+    //
+    // Positive half first — the scan really read the feature — because "no file
+    // matches" is also what an empty scan says.
+    expect(SIDEBAR_SOURCE.size).toBeGreaterThan(20);
+    expect(sidebarFilesMatching(/\bSidebarZones\b/).length).toBeGreaterThan(0);
 
-    expect(screen.queryByText(/Add more agents to your fleet/)).not.toBeInTheDocument();
-    expect(screen.getByText('Connect more runtimes')).toBeInTheDocument();
+    expect(sidebarFilesMatching(/Add more agents/)).toEqual([]);
   });
 });

@@ -405,6 +405,12 @@ done to Today's position instead.
   `useTodayOrderHold` and `useGettingStartedReturn`). Scoped to the zones rather
   than to the whole panel for BC-17's own reason: the zones are what move, and a
   pointer resting in the empty panel beneath them has nothing above it to shift.
+  **This half is indefinite, not brief**: a pointer left resting in the zone
+  stack holds the return open for as long as it rests there, with no ceiling.
+  That is deliberate and is exactly `useTodayOrderHold`'s existing semantics —
+  the operator is still in the panel, so the reason not to move anything has not
+  expired — and it is bounded in practice by the pointer leaving, which is the
+  same event BC-17 already waits on.
 - **`prefers-reduced-motion` changes none of it.** The sidebar's other
   reduced-motion rules suppress flourishes — the welcome-back glow, the
   all-clear beat — because those are decoration about something that already
