@@ -115,7 +115,7 @@ make_workspace "$tmp/healthy"
 # The count is the FIXTURE's, not the real suite's — two ordinary specs plus one
 # test per registered module — so it moves when make_workspace does and never
 # because somebody added a browser test.
-check 'a healthy run passes' "$tmp/healthy" 0 '5 test(s) executed'
+check 'a healthy run passes' "$tmp/healthy" 0 '6 test(s) executed'
 
 # A spec on disk that the run never collected — the testIgnore/testMatch hole.
 make_workspace "$tmp/uncollected"
