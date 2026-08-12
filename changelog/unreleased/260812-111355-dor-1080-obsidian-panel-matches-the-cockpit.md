@@ -9,11 +9,10 @@ covers:
 
 - **The DorkOS panel in Obsidian now looks like the app.** Its list of conversations is drawn
   with the same rows the cockpit sidebar uses: sentence-case group names instead of shouty
-  capitals, a coloured dot when a chat is working, waiting on you or has gone wrong — hover it
-  and it tells you which, in words — and one "⋮" menu per row holding Rename, Fork and Details,
-  so everything you could reach by hovering is now also reachable from the keyboard. Arrow keys
-  walk the list; Tab steps past it in one press instead of one per conversation. The dividing
-  lines are gone, replaced by the same soft shading the app uses. Colours follow your Obsidian
-  theme, so the rows highlight the way the file explorer beside them does. The Obsidian plugin
-  is still an early, lightly tested surface, and none of this has been confirmed in a real
-  vault yet (DOR-1080)
+  capitals, a coloured dot when a chat is working, waiting on you or has gone wrong, and one "⋮"
+  menu per row holding Rename, Fork and Details, so everything you could reach by hovering is now
+  also reachable from the keyboard. Arrow keys walk the list; Tab steps past it in one press
+  instead of one per conversation. The dividing lines are gone, replaced by the same soft shading
+  the app uses. Colours follow your Obsidian theme, so the rows highlight the way the file
+  explorer beside them does. The Obsidian plugin is still an early, lightly tested surface, and
+  none of this has been confirmed in a real vault yet (DOR-1080)
