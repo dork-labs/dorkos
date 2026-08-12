@@ -1,0 +1,915 @@
+---
+title: DorkOS 0.59.0
+description: Open DorkOS and you land in a room with your whole team, the sidebar says what needs you right now, and every person and agent has a real face, name and profile.
+date: 2026-08-12
+author: DorkOS Team
+category: release
+tags: [release, home, sidebar, identity]
+---
+
+DorkOS 0.59.0 changes what you see when you open it. You land in a room with your whole team, the sidebar says what needs you right now, and everyone in it has a real face, a name and a profile.
+
+## Highlights
+
+**Home is your team room now**
+
+![The DorkOS home screen with the #team channel open, six agents listed down the left sidebar, and a message box at the bottom](/product/archive/v0.59.0/cockpit-light.png)
+_Home is #team: you and every agent you run, in one place._
+
+Open DorkOS and you land in #team, a channel every agent you run is already in, instead of the old dashboard of cards. Your first morning there gives you a few things to say, and coming back after time away gets you a short note on what your agents did.
+
+**The sidebar knows what needs you**
+
+![Four DorkOS sessions running side by side in dark mode, each showing whether it is working or done](/product/archive/v0.59.0/multi-session-dark.png)
+_Every session in one place. [See it move.](https://dorkos.ai/features/multi-runtime-cockpit)_
+
+The sidebar has three parts now: Heads up is what is waiting on you or working, Today is what you were just in, and Library is everything you keep. One New button starts anything, and ⌘K finds a conversation by its title, whichever agent it belongs to.
+
+**Your team has faces now**
+
+![The DorkOS Team page in table view, listing six agents with what each one runs on, what it is doing, and who manages it](/product/archive/v0.59.0/agents-light.png)
+_The Team page: you and every agent you run, in one roster._
+
+People and agents now have photos, an @handle that reaches exactly them, and one profile panel you can open from any name. The sidebar's Agents entry is now Team, a single roster of you and every agent you run.
+
+Also new: some tool servers, like Granola, make you sign in before an agent can use them. Ask your agent to connect one and the sign-in link arrives as a card right in the chat. Click it, approve in your browser, and your agent picks the job back up on its own.
+
+Claude Code chats can now stay warm between messages: switch it on for a chat and the agent is already awake when your next message lands, so the reply starts sooner. The chat box formats as you type by default now, with a switch in Settings → Advanced if you would rather see the plain markdown characters. And on your phone, four tabs along the bottom replace the slide-out menu.
+
+## All Changes
+
+### Added
+
+- You can now sign in to MCP servers that need OAuth, like Granola. Ask an agent to sign you
+  in, open the link it gives you, and approve access in your browser. DorkOS keeps the sign-in
+  token encrypted on your computer and sends it to the server for you, so the server's tools
+  start working on the agent's next reply. DorkOS refreshes the token quietly before it runs
+  out, and it remembers your sign-in if you restart. If a server needs you to sign in again,
+  checking it now says "needs sign-in" in plain words instead of a raw error. One thing to
+  know for now: if a server signs you out while you are working, DorkOS may not notice until
+  the next time you check that server, so sign in again to fix it (DOR-942).
+- When an agent needs your OK for something it cannot undo, like adding a tool server, it now
+  waits for your answer and picks up the moment you approve. The request shows up as a card right
+  in the chat, and saying yes there lets the agent keep going without you having to tell it to try
+  again. The agent waits about ten minutes; if you take longer it stops waiting and the chat says
+  what it asked and that it moved on without an answer. That goes for anything an agent waits on
+  you for — a question it asked you, or a sign-in prompt from a connected server, as well as a
+  tool approval. An approval is still there in your Approvals list — answer it, then tell the
+  agent to try again, exactly as before this existed (DOR-939, DOR-1158)
+- You can now sign in to an MCP server that needs OAuth right from the agent's server list,
+  without asking an agent to do it for you. When a server needs a sign-in, its row shows
+  "Needs sign-in" and a Sign in button. Click it, read what DorkOS will do with your sign-in,
+  then open the link and approve access in your browser. DorkOS keeps the sign-in for you, and
+  the server's tools work on the agent's next reply.
+- You can now tap and hold a person's or agent's name (like an `@mention` in a room) to see
+  their identity card on a phone or tablet — the same card you already got by hovering with a
+  mouse. A quick tap still does nothing, so it won't be mistaken for a button, and holding a
+  mention no longer also opens the message's actions menu underneath it, or leaves some other
+  open menu stuck on screen (DOR-953)
+- One list of everyone on your install — you and your agents together — behind the new `GET /api/team`. It reads the records DorkOS already keeps instead of making new ones, shows your real name rather than "You", and says which agents are yours. If something can't be read, you still get the rest of the list with a note about what was missing: a roster that can't say your name will still list your agents. The Team page that shows this is coming next (DOR-971).
+- Hovering an agent's `@mention` in a room now tells you how that agent runs — the runtime it
+  is on, and the model it starts on when it names one. Agents that just take their runtime's
+  default model show the runtime alone, and an agent DorkOS has no details for shows nothing
+  extra rather than a made-up answer (DOR-954).
+- Every agent in a room now has an `@handle`: one short name that reaches exactly them. DorkOS makes it from the name you gave the agent. Agents whose name has a space in it, like "Art Blocks Analytics", could not be reached by `@` at all before. Now they answer to `@art-blocks-analytics`. (DOR-676)
+- Two agents with the same name get different handles, so a message can only ever reach one of them. The second becomes `@api-server-2`.
+- People writing in from Telegram get a handle that carries the platform they came from, like `@miguel.telegram`. Nobody on another service can take a name your agents answer to.
+- Your own handle is not set yet, and DorkOS will not guess one for you. Rooms say you have no handle instead of inventing an address that reaches nobody. The screen for picking it is coming with the profile work.
+- Add a server that needs a sign-in and DorkOS says so immediately. It checks the address as
+  it saves it, so the "Sign in" button is there the first time you look — you no longer have
+  to press Test to find out (DOR-1003).
+- When you finish signing in, DorkOS tells you how many tools you just unlocked — "Connected —
+  12 tools." — instead of only saying it worked (DOR-1003).
+- The page you land on after signing in now names the server you signed in to, says what
+  happens next in plain words, and gives you a link back to DorkOS (DOR-1003).
+- Ask your agent to connect something, like your meeting notes or your issue tracker, and the
+  sign-in link now shows up as a card right there in the chat. Above the link is a plain note
+  about what DorkOS does with your sign-in. You do not have to go hunting through settings,
+  and your agent no longer repeats a long link you can already see. Click it, sign in, and
+  come back. Your agent picks the job back up on its own and carries on with what you asked
+  for. It will not announce that it connected, and it will not ask you to tell it when you
+  are done (DOR-1004).
+- You can sign in however you like and it still works. Close the tab, reload the page, or
+  finish on your phone. The agent still gets going again on its own (DOR-1004).
+- Once the sign-in lands, the card turns into a short note saying what you connected and how
+  many tools it added, so you can see it worked. The note sticks around while your agent gets
+  back to work, then the chat moves on. The moment your agent picked the job back up stays in
+  your chat and names the server, so you can still find it later (DOR-1004).
+- The card stays put while you are away signing in. If you open a new tab in the meantime, it
+  shows the card too (DOR-1004).
+- Adding a server that needs a sign-in now takes you straight into it. Before, you were
+  dropped back at the list and had to find the new row and press a button (DOR-1004).
+- People and agents can now carry a photo, alongside the name, emoji and colour they already had. Wherever the app draws a face — a room roster, a message, the card that opens over a mention — the photo is what shows, with the emoji as the backup if it will not load. Nothing sets a photo yet; the page for choosing one comes next. (DOR-975)
+- A profile photo can now be stored, and it stays on your own machine — under your DorkOS data folder, not in anyone's cloud. PNG, JPEG and WebP up to 2 MB; DorkOS checks what a file really is rather than trusting its name, and turns away anything else. Once stored, the photo shows up under the same name everywhere on the roster and in your account, so the two can't disagree. **There is still no page for choosing one** — this is the storage underneath, reachable only through the API for now; the Settings screen that asks for a photo is next. (DOR-976)
+- Some services will not let DorkOS sign itself up automatically — they want you to register an
+  app with them first and hand over the ID it gives you. That used to be a dead end. Now, if a
+  sign-in fails for that reason, the server's card offers "Use your own app credentials": paste
+  the ID (and the secret, if you got one) and sign in normally. What you paste is kept encrypted
+  on this computer, the agent never sees it, and the card's Details afterwards says the server is
+  using your own app credentials (DOR-982).
+- A profile panel for everyone on your install. It shows who a person or an agent is, what an agent runs on, and who it belongs to. Your own row also shows your email. The panel keeps its own web address, so a reload or a saved link brings the same profile back. It opens beside the page on a computer and fills the screen on a phone.
+- **A Team page.** The sidebar's Agents entry is now **Team**, and it opens one roster of everyone on your install: you, and every agent you run. You are always on it, even before you register a single agent.
+  - **You can tell a person from an agent at a glance.** A person is a circle. An agent is a filled square with a small robot mark. Someone reaching you from another app, like Telegram, gets that app's mark. The shapes are the same everywhere else in DorkOS.
+  - **Every agent says who it belongs to.** A line under the name reads "by @you". Click it and the roster narrows to that person and their agents. DorkBot has no owner line, because it belongs to the install rather than to a person.
+  - **Filter, group, and search.** Narrow to just people or just agents, cluster each person's agents under them, or type a name. Every control writes to the address bar, so a filtered roster is a link you can bookmark or send. The filters follow you between views: narrow the cards, switch to the table, and you are looking at the same people.
+  - **Five views, one page.** Cards is the roster. Table is your agents in columns, now with a "Managed by" column. Topology, Denied, and Access are unchanged, and all three moved here from the old Agents page. On a phone the table is not offered: six columns at that width is a scroll bar pretending to be a table.
+  - **An old link still gets you there.** A saved address that names a view DorkOS no longer has now opens the roster instead of an error page.
+- Your face now sits in the bottom-left corner of DorkOS. Click it for your name, your @handle, a link to your profile, Settings, and — if you have a login on this machine — a way to sign out. On a phone it opens as a drawer you can swipe away.
+- **Settings › Profile**, now the first tab. Upload a photo, set the name DorkOS calls you, and claim the @handle people and agents use to reach you. Your photo shows up everywhere you appear: your team page, every room, and beside everything you write.
+- If a handle you want is already someone else's, or is spoken for, or isn't spellable as a handle, the form says which of those three things happened — and what to do instead — rather than just refusing.
+- Click a face to see who it is. Names and avatars now open a profile: an @mention in a room, a card on the Team page, an agent's picture in the sidebar, the agent chip above the chat box, and an agent in the network view. The profile keeps its own web address, so you can reload the page or send someone the link and get the same profile back. On a phone, tap the name instead of holding it.
+- Right-click a file or folder in the Files panel to show it in Finder (or File Explorer), copy its full or relative path, or add it to the chat as an `@` reference (DOR-1032)
+- Agents now know what was said in a room while they were not answering. When an agent takes
+  a turn, it is shown the messages it has not seen yet — not only the one that woke it up —
+  so an agent pulled into a busy channel arrives knowing what the conversation is about
+  instead of reading one line out of fifty. Listening still costs nothing: a message that
+  addresses nobody starts no turn (DOR-665)
+- Copy and paste files in the Files panel — from the right-click menu or with Cmd/Ctrl+C and Cmd/Ctrl+V. A copy that would land on an existing name is renamed the way your file manager does it (`notes copy.md`), and Duplicate makes one beside the original in a single step (DOR-1032)
+- Hold Alt while dropping a file in the tree to copy it instead of moving it, and drop one in the empty space below the tree to move it to the top level (DOR-1032)
+- Drag a file or folder from the Files panel into the chat box to add it to your message as an `@` reference. Files dragged in from your desktop still upload as before (DOR-1032)
+- Paste tells you when a folder cannot go where you asked, and the menu greys it out where it would not work, instead of looking like nothing happened (DOR-1032)
+- **Send files in a room.** Click the paperclip, drag a file onto the message box, or paste one in,
+  then send it with your message. Pictures show up right in the conversation; everything else shows
+  up as a chip you can click to download. Only the people and agents in that room can open them.
+  The agents in the room get your files along with the message, with nothing to approve.
+- Extensions can now pass `visibleWhen` when they add a section, so a section can hide itself on the days it has nothing to say instead of showing an empty card.
+- Click into the empty box on Home and the last few things you were in float up above it: chats with your agents, channels, and direct messages, newest first. Press the arrow keys to move through them and Enter to open one, or just click. Escape puts the list away, and so does typing — once you start writing, it stays out of your way until you come back to the box.
+- The list is the same one in the sidebar, so the two can never tell you different stories about where you left off. Rooms you have muted stay out of both, and a direct message shows the same agent's face in both.
+- DorkOS now keeps one record of where you have read up to, for every kind of conversation you
+  have — rooms, chats with your agents, and your inbox. It is yours alone, and it tells your
+  other open screens the moment it moves, so nothing waits on a refresh. Your agents keep their
+  own separate place in a room, and nothing they do there moves yours
+- Every install now gets a **#team** channel: you and DorkBot are in it from the start, and each
+  new agent you make joins it automatically, ready to answer when the room is talking to it
+- Nobody but you can rename or archive #team. Agents in the room can change its topic and talk
+  in it, but they cannot take your home room away. You can still mute it
+- **What needs you stays at the top of Home.** Approvals an agent is waiting on, and anything that broke — a stalled session, a failed run, an agent you cannot reach — now sit pinned above the Home feed instead of scrolling away with it. When there is nothing waiting and nothing wrong, there is no header at all: no "all clear" box, no empty strip.
+  - **Answer where you are.** Allow or refuse a request and the card ticks and clears on the spot. Nothing jumps, nothing reloads, and the page underneath does not move. If an answer cannot go through, the buttons come back rather than leaving a tick over a request that is still waiting.
+  - **It gets out of the way when you type.** Tap the message box on a phone and the header shrinks to one line — "2 waiting · 1 needs attention" — so the keyboard does not push what you are writing off the screen. Tap that line to open it back up.
+  - **Keyboard and phone.** Answering a card moves you to the next one instead of dropping you nowhere. On a phone the small buttons are easier to hit without getting bigger, and a screen reader hears what arrived.
+  - **A failure still speaks up.** If DorkOS cannot read the approval list, it says so and offers to try again — an approval you never see is an agent stuck waiting on you.
+- Type in **#team** without naming anybody and your default agent answers. No `@` needed, and
+  the rest of your team stays quiet instead of all piling on
+- Name somebody with `@` and only they answer — and they stay the only one, including when
+  they write back. Your default agent steps back rather than doubling up on a question you
+  already handed to someone else, unless you named it too or you were already talking to it
+- Setting an agent to "Everything" from a room's member list still means everything. Only the
+  default agent's seat steps back, and changing your default agent never touches a choice you
+  made yourself
+- Pick a different default agent in Settings and the next thing you type in #team goes to the
+  new one — no restart. The old one goes back to only answering when you address it
+- If the agent named in Settings isn't on this machine any more, DorkBot picks up what you type
+  instead of it going nowhere
+- **See who is working, and look over their shoulder.** One line at the bottom of the Home header shows the agents working right now — "tangerines · replying in #release-train", "DorkBot · working in a session" — and clicking one takes you there to watch. Watching is all it does: it never takes over the conversation, never interrupts the turn, and never stops the agent mid-thought.
+  - **It stays one line, however busy things get.** Past five agents it shows the first few and counts the rest, so a busy morning never pushes your feed down the screen.
+  - **It would rather say less than say something untrue.** An agent DorkOS cannot put a name to does not appear at all, and work it can name but cannot place shows the name with nothing invented after it.
+  - **When nobody is working there is no line.** No "all quiet" strip, no empty space held open — the header simply is not there.
+- Your first morning in #team starts with something to say. Four openers sit above the message box, and pressing one writes it into the box for you to edit or send. They go away as soon as there is a real conversation to read.
+- A morning where nothing happened now says so: "All quiet." If a scheduled run is coming, it names the run and the time. If there is nothing real ahead, it stops after those two words instead of making something up.
+- The first time you open Home each day, the room fades in rather than snapping on. Every other visit that day is instant, and so is every visit if you have asked your system for less motion.
+- The chat message box now formats as you type. `**bold**` turns bold as you close the second
+  pair of asterisks, `- ` starts a bullet list, `# ` makes a heading, and `` `code` `` becomes
+  code. Enter still sends your message — except inside a list, where it starts the next bullet,
+  and an empty bullet ends the list. Anything the box does not preview, like quotes, code blocks,
+  links and tables, stays as you typed it and still renders when the message is sent. If you would
+  rather see the plain markdown characters, there is a switch in Settings → Advanced →
+  **Format text as you type**. This applies to chat for now (DOR-948)
+- Settings → Tools has a new **Background systems** section with one switch for scheduled runs
+  and one for agent messaging. Turning a switch off stops DorkOS from starting that system, and
+  its tools go quiet with it. Until now the only way to do that was to hand-edit your config
+  file. DorkOS starts these systems once, when it starts, so the row says plainly that your
+  change takes effect the next time DorkOS starts rather than pretending it already has. If a
+  `DORKOS_TASKS_ENABLED` or `DORKOS_RELAY_ENABLED` variable is set in the server's environment,
+  the switch says so and stays locked, because that variable is what decides.
+- **Your team room marks the moments that matter.** #team now says when something
+  real happens: an agent joining ("tangerines joined your team"), your first
+  schedule, your first connection, the first run that finished overnight, a week
+  or a month with an agent, and a week where something ran every single day. Each
+  one shows up as its own kind of post in the feed, with the face of whoever it is
+  about.
+- Every moment is read from your own records, so the numbers in one are counted
+  rather than guessed, and each lands once and never again — restarting DorkOS
+  does not repeat it. The room marks at most one an hour, so an afternoon of
+  setting things up does not fill your feed with milestones.
+- On a quiet morning, DorkBot may add one gentle suggestion under "All quiet." — something you don't use yet, like setting up a schedule. One line, quieter than the line above it, and only when it fits what you actually have set up: you won't be offered scheduling if you already schedule. Dismissing it is a single press, and it's remembered — the same suggestion doesn't come back, on home or in the sidebar (team-room-home 4.5).
+- **Come back to a summary instead of a scroll.** After a few hours away, each
+  agent that actually did something while you were gone leaves one line in #team
+  saying what it worked on and when it last changed. Agents that did nothing new
+  stay quiet, and at most three lines land however many agents qualify.
+- The lines are read from your own sessions, so they say what happened and
+  nothing more. No agent is woken up to write one, so coming back costs you
+  nothing, and work an agent already posted in the room is left out because you
+  have read it.
+- You decide whether this happens at all. The switch is in Settings →
+  Preferences, and turning it off means no notes and no looking, not fewer notes.
+  It is stored on your server, so it follows you to every device you open DorkOS
+  on. Four hours is what counts as being away, and three is the most notes one
+  return can produce; both are settings in your config file if you want different
+  numbers: `dorkos config set welcomeBack.absenceThresholdMinutes 720`.
+- Every session's current tool now rides the fleet-wide status stream, so
+  anything watching your agents — not just the chat you have open — can say what
+  each one is working on (DOR-1053)
+- **A link can bring the question with it.** Add `?prompt=` to a session address
+  and DorkOS opens a new chat with those words already in the box — yours to
+  read, change, or send. Add `&send=1` and it sends them for you, so the agent is
+  already working by the time you look at the screen.
+- It sends once. Refreshing the page or pressing Back will not send it a second
+  time, because the address drops both settings the moment they are used. And it
+  only ever starts a conversation: pointed at a chat that already has messages,
+  or at a box you have started typing in, the link does nothing at all.
+- **⌘K now finds your conversations.** Type a few words from a chat's title and it comes
+  up, whichever agent it belongs to and whenever you last touched it. Press Enter to go
+  back to it, or ⌘Enter to start a fresh chat with the same agent. Both shortcuts are
+  written on the row you have highlighted, so you never have to be told about them.
+- Each conversation reads the way it does in the sidebar: the agent's face, the agent's
+  name, then the title — plus a small mark when the chat started somewhere other than
+  with you (a scheduled run, a message from Telegram, a room), and when it last moved.
+- ⌘K searches what things are **called** — chats, agents, channels, actions — and never
+  what was said inside them. Searching your messages stays a separate thing.
+- Sidebar rows can now say what an agent is actually doing — "Editing RoomRow.tsx…",
+  "Running pnpm test…", "waiting on you" — and say nothing at all when a session is idle.
+  The rule is deliberately honest: if we do not know which tool is running, the row says
+  "Working…", and if the turn is over it says nothing rather than leaving an old phrase up.
+  A verb that outlives its turn is just a lie in a small font.
+- **The session switcher.** When an agent has more than one conversation going at once,
+  its sidebar row shows a small "2 live" chip. Click it — or find the agent in ⌘K and
+  pick "Browse sessions…" — and you get every conversation that agent has, in three
+  groups: the ones running right now, each saying what it is doing ("Editing
+  RoomRow.tsx…"); the ones you finished, each with the last thing that happened in it;
+  and everything that started without you — scheduled runs, messages from Telegram —
+  tucked away until you ask for them. The one you have open is marked. Press Enter to
+  jump into a conversation, ⌘Enter to start a fresh one, or Shift+Enter to branch off
+  a copy and leave the original alone. It opens as a panel on a computer and slides up
+  from the bottom on a phone (DOR-1071)
+- The top of the sidebar is now a **Heads up** zone: the things that are actually waiting on you.
+  Only four things are allowed in — an agent asking permission, an agent asking a question, a
+  session that stopped with an error, and one gentle nudge about a session that went quiet.
+  Mentions, unread channels, direct messages and background work never appear there, so a Heads
+  up zone with something in it always means something (DOR-1067)
+- Heads up shows at most three things plus a "+ N more" row that takes you to the home page, where
+  the full list already lives. It never scrolls, and agents that are busy working are summed
+  into a single "N working" line instead of a row each. That line counts the conversations you
+  started — a scheduled run working away in the background is not something that needs you, so
+  it stays where it belongs and is never counted here. If one of your scheduled runs does get
+  stuck or asks you something, it still comes to Heads up like anything else
+- When the last thing needing you is done, Heads up says "All clear" for a moment and then folds
+  away. If you have asked your system for less motion, it simply disappears
+- A new **Getting started** zone takes the place of Heads up on a fresh install. It suggests what you have
+  not done yet — add your first agent, ask DorkBot something — and each suggestion retires for
+  good once you have done it, even if the thing it was about goes away again later
+- **Ask DorkBot** opens a fresh conversation with DorkBot that already knows the situation:
+  which page you were on, how many agents you run, which version you are on and which
+  conversations just failed. None of it is typed for you — the box you land in is empty and
+  waiting, and DorkBot simply starts out knowing where you came from. If something cannot be
+  worked out, it is left unsaid rather than guessed (DOR-1070)
+- Come back after a few hours away and your agents already leave a short note about what moved. Now
+  a note can also end with **one thing the agent wants you to decide** — "want me to open the PR?".
+  There is no way to know an agent has a next step without asking it, and asking runs that agent
+  for a turn, so it has its own switch that says so: Settings → Preferences →
+  **Next-step offers**. Only the agents that already left you a note are asked, and each of them
+  only once. An agent with nothing to offer says nothing; an agent that is busy or runs into
+  trouble stays quiet too, and you still get the notes either way (DOR-1046)
+- When an OpenCode agent hands work to one of its subagents, you can now see it happening. The
+  subagent shows up in the activity feed with its own card, the "working" line counts it while it
+  runs, and the card keeps a running tally of the tools the subagent has used. Before this, a turn
+  that delegated looked exactly like one that did not. Stop the turn partway, or stop the parent
+  OpenCode agent while the subagent is still working, and the subagent is marked stopped, not
+  failed — instead of ending with a shrug, marked as something DorkOS lost track of (DOR-1109)
+- **Next-step offers start on.** When your agents leave you a welcome-back note, the note can end
+  with one thing the agent wants you to decide, and you do not have to go and find a switch first.
+  It is the one part of coming back that costs anything — the only way to know an agent has a next
+  step is to ask it, and asking runs that agent for a turn — so the switch says that in plain words
+  right next to it: Settings → Preferences → **Next-step offers**. Turn it off and it stays off.
+  Nothing puts it back: not an update, not starting your settings over (DOR-1121)
+- **Today** is the middle of the sidebar now: the conversations, channels, direct messages and
+  threads you have actually been in. It is ordered by when **you** last touched each one — so
+  your recent conversations stay put while your agents work. An agent starting a turn, finishing
+  one, or posting a message moves nothing.
+- The conversation you have open is always Today's first row, and it shows what that agent is
+  doing right there. When you switch conversations it scrolls into view; it will not scroll for
+  anything else, and it never opens a section you folded away.
+- Rows also refuse to **reorder** while your pointer is inside Today or a row has your keyboard
+  focus. If the order legitimately changed while you were reading, it applies the moment you
+  move away — so the row under your cursor is still the row you meant to click.
+- Scheduled runs, room turns and other work you did not start sit behind one **+ N automated**
+  row. Press it to see them, press it again to put them away. If one of them needs you, it
+  still appears in **Heads up** like anything else.
+- Threads sit in Today as conversations of their own, showing the message they hang off, and
+  clicking one opens that thread beside its channel rather than just the channel.
+- After you have been away, Today can open with a single **While you were away…** row that
+  takes you to what your agents got done. It appears at most once a day, only when something
+  actually finished, and only if you have welcome-back notes switched on. Opening any
+  conversation dismisses it.
+- Anything you have not touched since 4am quietly leaves Today the next morning — except the
+  conversation you have open and anything addressed to you by name. Nothing is deleted: it is
+  all still one ⌘K away (DOR-1068)
+- Send a message to an agent that is already working and it is taken right away,
+  with no error bouncing it back at you. It waits in a queue and goes the moment
+  the current turn finishes. The queue lives on the server, so it survives a page
+  refresh and a server restart, and every window you have open sees the same one:
+  open the session in a second tab or on another device and your queued messages
+  are there. Any window can reword one, move it earlier, send it next, or take it
+  off the line, and a message queued from somewhere else is marked as coming from
+  another window. Nothing you type is lost on the way — your words stay in the
+  message box until they are safely in the queue (DOR-1131, DOR-1132, DOR-1133)
+- ⌘K can now search **inside** one agent or one channel. Type `@` or `#`, land on the one you
+  want, and press Tab — it becomes a chip in the search box, and what you type next only looks at
+  that agent's or that channel's conversations. Backspace with the cursor at the start puts the
+  chip down again and keeps what you typed. There is no search syntax to memorise: the chip is on
+  screen the whole time, so you can always see what you are looking inside (DOR-1075).
+- ⌘K now says when something it found is no longer current. A conversation where nothing has
+  happened since early this morning, and a channel somebody has closed, both carry a small
+  **Archived** label. You can still find them by name and still open them — the label is only
+  there so a row cannot look like part of today's work when it is not (DOR-1076).
+- **Press and hold any row on your phone** to get the same list of things you can
+  do that a right-click gives you on a computer — mute a channel, move an agent
+  into a group, rename, archive. It rises from the bottom of the screen with
+  everything in one list, so nothing is hidden behind a second menu. A press that
+  turns into a scroll never opens it, and it never opens the conversation you
+  were only trying to scroll past.
+- **"Catch up" at the top of Today** clears every unread conversation in one tap.
+  It only shows up on a phone, and only when there is something to clear.
+- **Approvals now appear in Home on your phone**, with Allow and Don't allow
+  right on the card. You can unblock an agent from the queue for coffee without
+  opening anything. If DorkOS cannot check whether something is waiting, it says
+  so and offers to try again rather than showing you an empty screen.
+- **A page that explains your sidebar.** "Your sidebar", in the docs under Concepts, says what
+  Heads up, Today and Library are each for, why the first two are worked out for you and the
+  third is yours to arrange, and where the things that used to be in the sidebar went. It ends
+  with the four tabs on your phone and the three things that work differently under a thumb.
+  We chose to write this instead of a pop-up tour, because a page is there the second time you
+  wonder (DOR-1079)
+- Claude Code chats can now keep their agent running between messages. Normally every message
+  you send starts the agent up again and shuts it down when the reply is done; with this on, the
+  agent stays running in between, so your next message reaches one that is already awake.
+  Turn it on with `runtimes.claudeCode.persistentSession`. It ships off, and it applies to the
+  next message you send in each chat — nothing you have open changes underneath you. An agent
+  that has been sitting idle is shut down for you after a few quiet minutes, and you will not
+  notice: your next message picks the conversation up exactly where it left off (DOR-1175)
+
+### Changed
+
+- `list_capabilities` now returns a short, filterable list instead of the whole catalog at once. A plain call gives you one compact line per capability (id, title, tier, and a summary), so discovering what a DorkOS can do no longer floods an agent's context. Narrow it with `domain` (e.g. `mcp`) or a `query`, ask for `detail: "full"` to see the input and output schemas, and page with `limit` and `cursor`. A search only expands to full detail once it narrows to a handful of results, a page that leaves something out says how many and how to see the rest, and a search that finds nothing says so plainly (DOR-940).
+- Each MCP server now shows its status in plain words (Connected, Needs sign-in, Failed, or
+  Disabled), not a color dot with no label. Testing a server that needs a sign-in now says so
+  and points you to the Sign in button, instead of showing a raw error (DOR-943).
+- Sending messages between agents stays fast as message history grows — the rate limiter now looks up a sender's recent messages through an index instead of scanning the whole list every time.
+- Agents now look like agents everywhere in the cockpit. Tell an avatar what an identity is — an agent, a person, the room's own voice — and it draws the right shape, fill and corner mark on its own, instead of each screen deciding for itself. Agents are filled squares with a small bot mark; people stay round, with a platform mark when they are writing in from somewhere like Telegram. (DOR-967)
+- An agent that is busy now pulses the same green dot everywhere, in your theme's own colour, and the dot stays put (without the pulse) if you have asked your system to reduce motion. (DOR-967)
+- The chat message list and the hover card that opens over a name now share one rule for drawing agents and people, so an agent always looks like an agent everywhere you see it. (DOR-969)
+- The agent picker in a room's add-agent dialog now draws every row as a filled square, the same shape agents get everywhere else, instead of a round dot. (DOR-969)
+- The avatar next to an approval request now looks like an agent, too, whenever DorkOS can confirm one made the request. (DOR-969)
+- A server DorkOS holds a sign-in for, but has not talked to yet, now reads "Signed in" rather
+  than "Connected". "Connected" means the server actually answered.
+- Display names no longer work as addresses. Typing `@Ana Reyes` used to reach whoever the room happened to list first. Now only a handle reaches somebody, and each handle belongs to one agent or person. Messages you sent before this change are untouched.
+- Changing a handle is safe. Every message already sent still reaches the right agent, and the handle you leave behind stays yours to take back. Nobody else can claim it.
+- Every MCP server on an agent is now a card instead of a cramped row. The card says the
+  server's name, where it came from, how it is doing, and one plain sentence about what to do
+  next — with the single button for that one thing right underneath. Everything else lives
+  behind a "⋯" menu. Long names no longer get chopped to "plugin:cont…" (DOR-1005).
+- Each card says where its server came from: added to this agent, from this project, from a
+  plugin, or from your computer-wide setup. Hover the badge and it explains itself. A server
+  a plugin brought with it shows its clean name, with the raw one kept in Details. When
+  DorkOS cannot tell where a server came from, it says nothing rather than guessing
+  (DOR-1005).
+- The cards are sorted when you open the panel — anything that needs you goes to the top —
+  and then they hold still. A card you are in the middle of signing in to will never slide
+  out from under you. The next time you open the panel, it sorts again. The sort waits for
+  everything DorkOS knows about your servers to arrive first, so a server that cannot be
+  reached always makes it to the top instead of getting stranded at the bottom (DOR-1005).
+- Plain words replace the system's own: "Needs sign-in", "Can't reach", "Setup problem",
+  "Uses your key", "Off". A server nothing has checked yet now says "Not checked yet" instead
+  of spinning on "Connecting…" forever. The exact error a broken server gave has moved into
+  Details, where you can read it when you want it (DOR-1005).
+- Signing in shows a short, calm note first: your sign-in stays on this computer, the key is
+  kept here, and the agent never sees it. It is said once, in one box, whether you are signing
+  in from settings or from a card your agent put in the chat. There is now a Cancel button if
+  you change your mind (DOR-1005).
+- Cards have a Details section. It says how the server signs in, where it lives — the web
+  address for a remote one, the command for one on your computer — and, for a broken one, the
+  exact error. It only shows what it actually knows, and a card with nothing to show does not
+  offer Details at all (DOR-1005).
+- The on/off switch is on every card now, not just some. A server you have turned off is
+  dimmed with its switch off, and flipping it back on is all there is to it (DOR-1005).
+- Adding a server the project already had now says what you get — "Manage it here to enable,
+  disable, or sign in from DorkOS" — instead of talking about bringing it under management
+  (DOR-1005).
+- When a sign-in cannot get started, you now get a sentence you can act on instead of an OAuth
+  error. "This server doesn't let DorkOS register itself." "This server doesn't offer sign-in the
+  way DorkOS expects." "Couldn't reach the server." The exact technical error is still there,
+  tucked behind Details for when you want it (DOR-982).
+- **`/agents` now takes you to `/team`.** Old bookmarks, docs links, and saved desktop tabs keep working, and they land on whichever view you had open.
+- The message box in a room now sits in the same rounded card as the one in chat, instead of a strip ruled off with a line. Rooms and the home screen used to draw their own version of the box; there is one box now, in one place, so it looks the same everywhere you type. Typing, sending, drafts and shortcuts all work exactly as they did. (DOR-946)
+- The Codex runtime is running a newer version under the hood. Its connections to outside
+  tools (MCP servers) now recover on their own instead of stalling a turn. No visible
+  change in what you do; just fewer rough edges when Codex is running. (DOR-1012)
+- The engine behind your Claude Code sessions moved up to a newer version. It carries about two months of fixes from Anthropic, listed below. (DOR-1014)
+- Pinning a session to one exact model now gets you that model's real abilities. Before, DorkOS only knew the abilities of the short names like "sonnet", so a session pinned to a full model id fell back to generic defaults. Thinking and effort settings now match the model you actually picked. (DOR-1014)
+- The menu item that opens an agent's panel on the right is now called "Agent hub" instead of "Agent profile". It still opens the same panel. Two things one click apart were both called "profile", and only one of them is.
+- Faces, names, and cards now answer when you point at them. A card on the Team page lifts a little and picks up a hint of that agent's own color. An avatar you can click rings itself in its color. A mention in a room gains a touch more color. Before this, most of these just sat there, and you found out something was clickable by clicking it.
+- Clickable faces no longer fade when you hover them. Fading is how the whole app says "you can't use this", so your own avatar and every agent lockup were quietly reading as switched off. They use color now instead.
+- You can reach all of it with a keyboard. Anything that responds to the mouse now responds to Tab the same way — a Team card lights up the whole tile when you Tab to it, not just the name — including the agent chip above the chat box, which had no keyboard highlight at all.
+- On a Team card, pointing at "by @name" calms the card down, so it is clear you are about to filter the roster rather than open a profile.
+- A profile panel carries a thin line in that person or agent's own color when there is something under the header, so you can tell whose panel you have open at a glance.
+- "View profile" on a hover card no longer looks like a button on the surfaces where it does not work yet. It only wears the accent color where pressing it actually opens something.
+- If you have asked your system for less motion, none of this moves. You get the finished state right away.
+- Cards on the Team page now slide to their new spots instead of jumping. Flip "Group: manager" and every card travels to its owner's cluster, so you can see where each one went. Narrow to People or Agents and the cards leaving fade out without shoving the ones that stay. On a very large team — more than 120 cards — they go back to appearing in place, because a hundred things moving at once is not something you can follow.
+- Pointing at "by @name" on a Team card now tells you how many agents that person has, right beside their name. It answers the question the card was making you count for yourself. Tab to it and you get the same thing.
+- The profile panel opens faster. It used to take half a second to slide in, which you noticed every single time — especially when you only opened it to read a project path. Now it is there in a third of a second.
+- Point at an agent's card and its little robot mark leans in. Only where the face belongs to something you can actually press, so the long list of agents in the sidebar stays still.
+- All of the above still respects "reduce motion": cards stop travelling, the robot mark stays upright, and the agent count appears without a fade. Nothing you need is hidden behind movement.
+- An agent is never shown messages from before it joined the room, and one turn catches up on
+  at most the last 30 messages, so the first turn in a long-running channel no longer replays
+  the whole history. When older messages are left out, the agent is told so
+- A turn no longer sees the same message twice. The agent's place in the conversation moves
+  the moment its turn starts, so a turn that runs and then breaks does not repeat itself on
+  the next one. If the turn never started — the agent was already busy, or nothing could
+  reach it — the messages stay unread and are waiting on its next turn instead
+- Read a room on your laptop and your phone catches up straight away. The unread dot on the
+  other screen used to hang around for up to half a minute, so a room you had just finished
+  reading still looked like it wanted you. The room now says so the moment your place in it
+  moves, and every screen you have open agrees — including the count in the browser tab.
+  Only your own reading counts: an agent working through a room never clears your dot.
+- Home, Activity, Scheduled and Workspaces are one screen now, switched with a tab bar across the top instead of four separate stops in the sidebar. Every link you already have still works: the addresses have not changed, and a saved link with filters on it lands on the right tab with those filters still applied. The tab that opens your scheduled runs is called Scheduled, and the title above it now says the same word. The page that used to be called Dashboard is called Home.
+- The sidebar's "Recent" list is now "Jump back in", and it covers everything you were last in — your channels and direct messages as well as your agent chats, newest first. Each row says what last happened there: how many messages are waiting, who is working, or the last thing said. A room shows up once, as the room; the turns your agents took answering in it no longer sit beside it as separate rows. Rooms you have muted stay out of the list, and the row you are already looking at is marked as the one you are on.
+- Home is quieter. The promo card grid, the "Your agents" grid, and the System Status row are gone. Nothing they told you is lost: your team lives on the Team page and in the sidebar, schedules on the Scheduled tab, messaging health under Connections, and how busy the week has been now sits at the top of the Activity tab with its sparkline.
+- Sections added by extensions now appear under "From your extensions" at the top of the Activity tab. Extension authors do not need to change anything — it is the same slot, in the same order, and the heading only shows up when you actually have an extension contributing a section.
+- The sidebar is down to four places: Home, Team, Connections, and Marketplace, plus Search. Activity, scheduled work, and workspaces have not gone anywhere. They are tabs on Home now, and Home stays lit while you are on any of them.
+- The main page is called Home everywhere it is named: "Go home" in the command palette (searching "dashboard" still finds it), "Back to Home" on the error and page-not-found screens, and on the way back from the Marketplace.
+- DorkBot's tours point at the page instead of the sidebar, so they work the same on a phone as on a desktop. "Show me around" is now the composer and the tabs above it, and the tour you get on your second agent opens your Team page and shows you the roster.
+- Your place in a room is now kept in the same place as your place in everything else you read.
+  Nothing looks different: the unread dot in the sidebar, the count in the browser tab and the
+  "New messages" line all sit exactly where they did, and reading a room on your laptop still
+  clears it on your phone straight away. What changed is underneath — a room no longer keeps its
+  own separate copy of where you are, so there is one answer to "have I read this" instead of one
+  per surface. Rooms you had already read stay read when you upgrade
+- An agent working through a room can never move your unread mark, and you can never move its
+  own. An agent keeps its own record of what it has been shown, which is what lets it catch up on
+  a busy channel without repeating itself — that is a different thing from what you have looked
+  at, and the two are now kept apart on purpose
+- Your unread marks in a chat now follow you between devices. The "New messages" line used to be
+  remembered by the browser you were sitting at, so reading a conversation on your laptop left it
+  looking unread on your phone. It is now kept with your account, alongside the same mark rooms
+  use: read to the end in one place and the line is gone in the other, straight away, without a
+  refresh. Opening a conversation still holds the line where you left off until you leave, so it
+  does not vanish before you have read what is under it.
+- In Obsidian there is no DorkOS server behind the plugin to hold that mark, so your unread line
+  still works there and stays local to the vault you are reading in.
+- The old per-browser mark is cleared out the next time you open a chat, so nothing stale is left
+  behind to disagree with what your account says.
+- There is now exactly one way to mark anything read. Rooms used to have a mark-read address of
+  their own, kept working while the app moved onto the shared one; everything uses the shared one
+  now, so the old room-only address is gone. Nothing changes for you — the same badges clear at
+  the same moment — but if you wrote a script against `PUT /api/rooms/{id}/read-cursor`, point it
+  at `PUT /api/read-cursors/room/{id}` instead.
+- Agents were never able to mark a room read by asking, and now they cannot ask at all. What an
+  agent has been shown is tracked as entries are actually handed to it, which is the only honest
+  record of it.
+- Home is a conversation now. Open DorkOS and you land in **#team** — the room you and every
+  agent you run share — instead of a dashboard of cards. Type in the box and your agents can
+  answer, right there: nothing navigates away, and no throwaway session is created.
+- What actually needs you sits above the conversation and stays there while it scrolls:
+  approvals waiting on a decision, and anything that broke. Answer an approval where it stands
+  and it clears without moving the room under you. Nothing waiting and nothing wrong shows
+  nothing at all.
+- Under those, a line of whoever is working somewhere else, so you can follow along without
+  taking over. Work happening in #team is announced by the room itself, once.
+- Put the caret in the empty box and the last few threads you were in float up, the same list
+  the sidebar shows.
+- **Pages now share one width system.** Before, every screen picked its own
+  width: chats with an agent were narrower than channel rooms, the Activity page
+  had no side padding, and Tasks stretched edge to edge while Workspaces sat in
+  a narrow column. Now there are three named sizes — full, wide, and reading —
+  and every page uses one of them, so moving between screens no longer makes
+  the content jump around.
+- Chatting with an agent now looks the same as chatting in a channel: the
+  message list uses the whole pane, long messages stay at a comfortable reading
+  width, and the composer spans the pane.
+- Sessions that never got an auto-generated title now derive a cleaner one
+  from your first message — on every runtime (Claude Code, Codex, OpenCode).
+  Filler openers like "please can you" are dropped, the
+  title caps at six words, and it gets a capital letter — so "please can you
+  review the help and feedback submission options" shows up as "Review the
+  help and feedback submission…" in the sidebar. Titles the assistant already
+  generated are untouched.
+- While an agent is working, the status strip now tells you what it is doing —
+  "Running pnpm verify…", "Editing router.tsx…", "Using Slack…" — instead of a
+  random catchphrase. When DorkOS does not know, it says so: "Working…", and
+  nothing more. The reading is cleared the moment the turn ends, so a label you
+  see is always about something still running (DOR-1053)
+- The skull that used to appear at random while permissions were bypassed now
+  shows for as long as the session is in that mode, because it is a warning
+  rather than a joke (DOR-1053)
+- Every live dot in the app now says the same thing in the same colour: green and
+  pulsing for working, amber for waiting on you, red for a failed turn, blue for
+  output you have not read. They were four different greens and three different
+  ambers, spread across the sidebar, the tab strip, the group headers and the
+  agent panel.
+- Only the working dot moves. A tab waiting for your approval used to pulse too,
+  which read as a turn still running when it was actually stopped, waiting for
+  you.
+- Health moved to where it is actually useful: "Online" or "Offline" in the agent
+  panel, and a labelled dot on the mesh map, which also gained a colour for
+  agents it cannot reach at all and a legend entry explaining it.
+- In the agent panel, the pencil that appears when you hover no longer covers the
+  little robot mark on the avatar. It moved next to the name it renames, it now
+  shows up for keyboard users too, and the avatar answers your pointer with a
+  ring in the agent's own colour instead.
+- Activity, Workspaces, Connections, and Feedback Requests now use the same
+  wide layout as the Marketplace. On a large monitor they used to sit in a
+  narrow column while every other page filled the screen; now all the main
+  pages feel the same width.
+- The sidebar is being rebuilt, and the settings behind it moved house. Everything you had set
+  comes with you: the sections you had folded shut stay folded, the way you had your agents
+  sorted and filtered stays put, your pins, groups and muted conversations are untouched, and a
+  tip you dismissed stays dismissed. There is nothing to do — it happens the first time DorkOS
+  starts on the new version.
+- Agents that read or change your settings can no longer see which sidebar sections are folded.
+  Nothing sensitive was there; it is simply a shape the settings snapshot has no way to describe
+  yet, and DorkOS leaves out anything it cannot describe precisely.
+- The sidebar is tighter and quieter. It is now 272 pixels wide instead of 320, every row
+  starts 16 pixels from the edge instead of 30, and section names read as words
+  ("Direct messages") rather than as SHOUTING. Rows are 13px on a 28px line, so more of
+  your work fits on screen without anything feeling cramped.
+- Sections and rows no longer have hairlines between them. Where there used to be a line
+  under the header and above the footer, there is now a faint tint and a soft shadow that
+  appears only when there is more to scroll to — so the panel reads as one surface instead
+  of three stacked boxes. The tint works the same way in light and dark mode.
+- Nothing is drawn until you reach for it. A section's own icon turns into a collapse arrow
+  when you hover it or tab to it, and the "more" menu on a row is a small vertical `⋮` that
+  appears on hover **and** on keyboard focus — so everything the menu offers is reachable
+  without a mouse, and on a device with no right-click.
+- Every row in the sidebar is now built from the same template: a mark, who it belongs to,
+  what it is called, and its badges. A session says which agent it belongs to
+  ("Scout › fix the flaky test"); a channel or a conversation does not, because it is the
+  place itself. Long agent names can no longer squeeze out the title, and the full name is
+  always in the tooltip. A row only grows a second line when there is something real to put
+  on it.
+- **Opening ⌘K without typing now shows a command center instead of a menu.** First
+  **Continue** — the chats your agents are working in right now, each saying what it is
+  doing ("Editing strip-state.ts…", "waiting on you"). Then **Recent** — the last things
+  you were in, whether they were chats, channels or agents, with anything unread on top.
+  Then **New**, for starting a chat or making an agent. Continue is simply absent when
+  nothing is running, rather than an empty heading.
+- Settings, Tasks, Toggle Theme and the rest are no longer listed before you type. They
+  are one keystroke away: start typing and they come back.
+- The chat status strip and the sidebar now get their words from the same place. They could
+  drift apart before, and briefly did: the strip used to make up a joke verb while the
+  sidebar said nothing, so two parts of the same screen described one agent two ways.
+- The coloured dot on an agent's face now says what it means out loud, so a screen reader
+  announces "needs you" rather than nothing at all. Colour on its own was never enough, and
+  a dot is nothing but colour.
+- `/compact` waits for the current reply to finish instead of interrupting it.
+  Before, running it mid-reply quietly took the conversation out from under the
+  agent that was still typing.
+- **Your sidebar has three parts now: Heads up, Today and Library.** _Heads up_ is what needs you.
+  _Today_ is what you were working on, in the order you last touched it. _Library_ is the
+  structure you built yourself — and **nothing in it moved**. Your pins, your channels,
+  your direct messages, your agents and your groups are all exactly where you put them, in
+  the order you put them, with the same names. The only new thing above them is a short
+  list of what has changed since you looked away.
+- Sections open and close by clicking anywhere on their name — you no longer have to hit a
+  small arrow. Hold `Alt` (or `Option` on a Mac) while you click and every section opens or
+  closes at once.
+- A closed section keeps telling you what is inside it. Fold away your conversations and
+  the unread count and the "someone is working" dot move up onto the section name, so you
+  never lose a signal by tidying up.
+- Sections appear when you have something to put in them. There is no "Direct messages"
+  heading until you have a conversation, and no "Pins" until you pin something. Grouping
+  shows up once you are running eight agents or two different kinds. There is no settings
+  toggle for any of it, and there never will be.
+- Because the "Direct messages" heading now waits until you have a conversation, starting
+  your **first** one moved: it is "New message…" under the `+` beside Agents. Once you have
+  one, the `+` beside Direct messages works as it always did.
+- Dragging still works everywhere it used to — reordering pins, moving an agent or a
+  channel into a group, reordering inside a group. Dragging a row into Heads up or Today is the
+  one thing that does not, because those two lists are worked out for you rather than
+  arranged by hand. If you try, DorkOS says so and tells you what to do instead: pin it to
+  Library and it stays put.
+- Everything in the sidebar is reachable from the keyboard. `Tab` moves between sections,
+  the arrow keys move within one, and the `⋮` menu on every row appears on focus as well as
+  on hover — so every action is available without a mouse, and on a device with no
+  right-click.
+- Clicking an agent in the sidebar now opens the conversation you were having with it,
+  the way clicking a person in a chat app opens your messages with them. It used to
+  unfold a little panel underneath showing three of that agent's sessions, which meant
+  two clicks to get anywhere and no way to see the other eleven. That panel is gone
+  (DOR-1071)
+- **There is one place to make things now.** Starting a session, a channel, a direct message,
+  an agent or a group used to mean finding the right `+` in the right part of the sidebar —
+  three menus, four buttons, and no way to guess which one. They are all one **New** button at
+  the top of the sidebar. Press ⌘N in the desktop app and it starts a session straight away,
+  with the agent you were last talking to. The `+` on a section still works: it opens the same
+  New menu with the matching item already picked out.
+- **The top of the sidebar says whose cockpit this is** — "Dorian's team", from the name in
+  your profile. Press it for workspace settings, your account, and which version you are
+  running, with a "Check for updates" beside it that asks the server and tells you what it
+  found. It is one menu, and it is the menu that will hold your other teams when shared
+  spaces arrive.
+- **A "Jump to anything…" pill sits under it**, opening the same ⌘K search you already had —
+  now visible instead of remembered.
+- **Settings and your profile each have one door.** The footer's `⋯` menu used to offer both as
+  well; it keeps what only it has — who you are signed in as, sign out, the theme, and help —
+  and leaves the rest to the menu at the top.
+- Zone headings in the sidebar are a little darker, so they meet the readable-contrast bar in
+  the light theme as well as the dark one
+- The bottom of the sidebar is one slim strip now. It used to spend three rows on a logo, a
+  row of icons and a version number; it spends one on the four places DorkOS goes — Home,
+  Team, Marketplace, Connections — and a new **✦ Ask DorkBot** button. Your account, Settings,
+  the theme switch, help and feedback, and the developer tools all moved one press away, into
+  the **…** menu beside them.
+- The version number left the chrome. When a new version is genuinely waiting, a small
+  "Update ready" pill appears above the strip and disappears once you have it — and it never
+  shows up in the Heads up zone, which is for agents that need you (DOR-1070)
+- ⌘K now puts the best match first. Typing gives you one list, ordered by how well each thing
+  matches what you typed, how much you use it, and how fresh it is — so a channel called
+  `#shipping` comes before an agent that only nearly matches, instead of always sitting below it.
+  When one row is clearly the one you meant, it gets its own "Best match" line on top (DOR-1074).
+- ⌘K now remembers how often you open a conversation or a channel, not just an agent. It used to
+  keep a separate note of the agents you use, so a channel you live in could never rank as highly
+  as an agent you open every day. There is one memory for all three of them now, and the sidebar
+  and ⌘K both write to it — so it no longer matters which door you came through. Your existing
+  agent history moves across, so the agents you already reach for stay where they are (DOR-1075).
+- The sidebar's Today list puts a conversation where your own attention left it: writing in one
+  counts, not just opening it. So a conversation you typed in this morning stays near the top even
+  if you opened something else since. When we cannot tell when you last wrote — some agent
+  runtimes do not report it — the order falls back to when you last opened it, rather than
+  guessing (DOR-1081).
+- A quiet conversation now sits below a busy one when they match what you typed equally well. It
+  is not pushed to the bottom of the list, though: something you go back to constantly still
+  comes up first, whatever day it last moved. A closed channel is the one thing that always ranks
+  below everything still going (DOR-1076).
+- On your phone, DorkOS now has four tabs along the bottom instead of a slide-out
+  menu. **Home** shows what needs you and what you were working on today, with a
+  count on the tab when your agents are waiting. **Library** is your channels,
+  direct messages, agents and pins, and it never shows a count — it is the quiet
+  one. **DorkBot** opens a conversation with the assistant that knows how DorkOS
+  works. **You** holds your account and the rest of the app. The hamburger button
+  is gone: nothing has to be swiped away before you can use what is underneath,
+  and switching tabs keeps your place in each one.
+- **Everything you tap on a phone is now big enough to tap.** Rows, section
+  headings, the menu buttons, "New", the search bar and the four places DorkOS
+  goes are all at least 44 pixels tall. Two small controls that could not grow
+  without covering the row's own words — the face that opens an agent's profile
+  and the "N live" chip — moved into the press-and-hold menu instead, along with
+  a new way to switch between an agent's conversations.
+- **The You tab now says what each thing is.** The four destinations were
+  unlabelled icons whose only names appeared when you hovered over them, which
+  never happens on a touch screen. They are named rows now, and your account sits
+  among them instead of behind a "…".
+- The tab you are on is easier to see: it was marked with a shade of grey almost
+  identical to the others.
+- **The DorkOS panel in Obsidian now looks like the app.** Its list of conversations is drawn
+  with the same rows the cockpit sidebar uses: sentence-case group names instead of shouty
+  capitals, a coloured dot when a chat is working, waiting on you or has gone wrong, and one "⋮"
+  menu per row holding Rename, Fork and Details, so everything you could reach by hovering is now
+  also reachable from the keyboard. Arrow keys walk the list; Tab steps past it in one press
+  instead of one per conversation. The dividing lines are gone, replaced by the same soft shading
+  the app uses. Colours follow your Obsidian theme, so the rows highlight the way the file
+  explorer beside them does. The Obsidian plugin is still an early, lightly tested surface, and
+  none of this has been confirmed in a real vault yet (DOR-1080)
+
+### Removed
+
+- The dashboard. Its composer became the room's, its two useful sections moved above the feed,
+  and the recent-activity preview is the Activity tab, which was always the fuller version of
+  it.
+- The old dashboard's promo grid is gone for good, along with the wide card layout only it used. Feature suggestions now live in the sidebar and in that one quiet line.
+- **Agent faces no longer draw a second, competing ring.** A coloured health ring
+  sat two pixels outside the dot, both fed by the same hour-old signal — one fact
+  drawn twice, on every list row in the app.
+
+### Fixed
+
+- An agent's profile Sessions tab and the command-palette preview now show that agent's
+  conversations even when the current window is pointed at a different project. Before, they
+  read only the window's own directory, so every agent except the one this window had open
+  looked like it had no conversations — an agent could appear to be working while claiming
+  none (DOR-929)
+- When the app updates while a tab is open, the error screen now offers a one-click reload instead of a dead Retry (DOR-936)
+- **`dorkos call` stops claiming a real capability does not exist.** When the catalog was too big
+  for the command to read in one go, it quietly stopped early and then reported perfectly valid
+  ids as unknown. It now says plainly that the app and the command are out of step (DOR-988)
+- One agent, one silhouette. The member list in a room's details and the row of faces at the top of the room used to draw the same agent two different ways — a bot mark on one and none on the other, both of them round, and two different colours for anyone the app could not look up. They agree now: same shape, same corner mark, and the same colour for anyone the app cannot look up. (DOR-968)
+- Direct messages wear the agent they are with. In the sidebar, the room header and the ⌘K palette, a one-to-one now shows that agent's own square mark instead of a round one that made it look like a person. (DOR-968)
+- The green "working now" dot on the identity card was being drawn twice for one fact. There is one dot now, on the avatar, where it is everywhere else. (DOR-968)
+- Updating a marketplace package that you installed into a single project now works. Before,
+  the updater only looked at packages installed for your whole machine, so it answered
+  "Package not installed" for anything that lived in one project — even though it would have
+  installed the new version right there. When the same package is installed both ways, the
+  project's copy is the one that gets updated.
+- OpenCode sessions now show messages in the order they actually happened, including
+  after a revert, a fork, or a long conversation that got summarized. MCP tool
+  connections also reconnect more reliably when a session runs for a while (DOR-1013).
+- The tool servers you connect to an agent, called MCP servers, are now ready before your first message runs. Before, an agent could start too early and type a tool call out as plain text instead of running it. (DOR-1014)
+- Two projects with very long folder paths no longer share each other's chat history. This mostly hit people who work in many git worktrees at once. (DOR-1014)
+- A very long session no longer repeats tool results after about a thousand tool calls. (DOR-1014)
+- If you stop a turn in the moment a tool is being checked before it runs, that one tool no longer slips through and runs anyway. (DOR-1014)
+- DorkOS now updates its managed OpenCode helper when a new version ships, instead of
+  quietly keeping the old one (DOR-1034)
+- The Workspaces page now scrolls. Before, anything past the first screenful was cut
+  off and there was no way to reach it (DOR-1036)
+- After you add a file to the chat from the Files panel, the cursor is in the message box, ready to type (DOR-1038)
+- Restore focus when a focus-moving action moves none
+- The Workspaces page and docs no longer say DorkOS creates workspaces automatically. Today a
+  workspace is created only when a tool or script asks the server for one. The empty state, the
+  guide, and the glossary now say so plainly.
+- Workspace retention cleanup now honors your `retentionCap` setting: it keeps your most recently
+  used checkouts and skips any workspace a session is still using, instead of trying to remove
+  every unpinned workspace. DorkOS does not yet run this cleanup on its own.
+- The Marketplace no longer shrinks when you switch to the Installed tab. The
+  page kept its width only when it had enough cards to fill it; now it holds
+  its width no matter how little is on it. Same fix for the Sources page.
+- The Connections page and the Marketplace Sources page now scroll when their
+  content is taller than the window. Before, anything below the fold was
+  simply cut off.
+- **Rows in the Cmd+K palette that did nothing now do something.** Four kinds of
+  row let you highlight them, press Enter, and watch the palette close with
+  nothing else happening: slash commands, the "Continue: …" suggestion, the
+  recent conversations under an agent, and any row an extension added.
+- Picking a slash command takes you to the conversation it would run in and
+  types it into the message box for you. It does not send it — you press Enter
+  when you are ready. Commands like `/clear` are not ones to fire off from
+  across the app with one keystroke. Anything you had already typed is kept, as
+  the command's instructions: a half-written "focus on the API changes" plus
+  `/compact` becomes `/compact focus on the API changes`. If you had already
+  typed a different command, the new one takes its place.
+- "Continue: …" and an agent's recent conversations now open the conversation
+  they name, in the right project.
+- **The palette lists the commands your agent actually has.** It used to ask
+  without saying which conversation you were in, so it always got the default
+  runtime's list — you could be talking to Codex and be offered Claude Code's
+  commands.
+- **A channel you archived can be found again.** Archived channels were gone
+  from the whole app. They now turn up in the palette when you search for one,
+  marked "Archived", and only there — your sidebar and everything else stay
+  free of them.
+- **A green dot now means one thing: an agent is working right this second.** It
+  used to light up whenever DorkOS had heard from an agent in the last hour, so
+  faces all over the cockpit pulsed as if mid-turn when nothing was running.
+  Agents that are simply alive show nothing at all, which is what makes the ones
+  that do light up worth looking at.
+- The amber "needs you" dot got darker in the light theme, so it stands out
+  against a pale background instead of washing into it.
+- A row that is showing a live verb keeps its second line even when the reading behind it
+  goes quiet for a moment. It used to collapse and grow back under your pointer.
+- Rows no longer lose their one-line preview. A quiet session and a busy channel both keep
+  the last thing that happened there, instead of showing an empty line where it should be.
+- Agents no longer wrongly believe you stopped them. When a background agent finished at
+  the exact moment the main agent asked permission to use a tool, the runtime cancelled
+  that tool call with a message that read as if you had refused. The agent would halt,
+  apologize, and sometimes throw away finished work. DorkOS now catches that false
+  signal, tells the agent it was a system hiccup and not you, and flashes a short note
+  in the status line so you know what happened (DOR-1087)
+- **A chat now runs one turn at a time.** A message you had queued up could be
+  sent while the agent was still working on the previous one, which started a
+  second copy of the agent on the same conversation. The two wrote over each
+  other, and the box you type in went quiet and unresponsive while replies were
+  still coming in. A queued message now simply waits its turn and goes the moment
+  the agent finishes.
+- Stopping an agent works again in the cases where that second copy had taken
+  over. When one of the two finished, it took the controls with it, so Stop had
+  nothing left to talk to and the other kept running.
+- The same protection now holds for a brand-new chat. A chat gets its permanent
+  name a moment after it starts, and messages sent under the new name used to
+  slip past the check entirely — which is exactly when it mattered, because that
+  is your first reply in a new conversation.
+- A chat whose agent crashed without a word no longer strands your next message.
+  The wait has a ceiling: past it, your message gets the same answer anyone else
+  would get, rather than queueing forever behind something that is never coming
+  back.
+- The chat no longer goes quiet while your agent is still working. When a background
+  task finished, the agent would wake up and carry on — writing, running tools — but
+  DorkOS had already decided the turn was over. The screen said idle, the reply
+  streamed nowhere, and none of that work was saved to the conversation. DorkOS now
+  notices the agent has started talking again, picks the conversation back up, and
+  keeps the words and the tool calls where you can see them. Your finished reply stays
+  on screen while it happens, and you only get one "finished" chime per message you
+  send, not one per wake-up (DOR-1100)
+- The status line now tells you when background tasks are still running after your
+  agent has stopped talking, so a session that looks finished but isn't says so
+  instead of just going quiet. The count clears itself when those tasks end — or when
+  the agent stops for any reason and they end with it — so it can never sit there
+  claiming work that is no longer happening (DOR-1100)
+- Clicking an agent no longer drops you into a job it ran on its own. If you
+  `@`-mentioned an agent in a channel, that run became the newest thing in its
+  history — so clicking the agent opened _that_ instead of the conversation you
+  were having with it, and because automatic runs are deliberately kept out of
+  your recent list, there was no row to get you back. DorkOS now opens the last
+  conversation the two of you actually had, and starts a fresh one if you have
+  never spoken (DOR-1071)
+- A long chat with a sign-in card still waiting for you no longer grows without limit.
+  DorkOS caps how much of an in-progress reply it holds in the browser. That cap
+  stopped working whenever a sign-in card sat at the top of the reply, so a tab left
+  open while an agent woke itself up over and over kept piling on and slowly got
+  heavier. The cap now holds in that case too, and the sign-in link you walked away
+  to use still stays on screen (DOR-1107)
+- **When `/compact` says it failed, it really did not run.** If you typed `/compact`
+  while your agent was still working, it waited its turn behind the reply in
+  progress. After 30 seconds DorkOS gave up on the request and showed you an error —
+  but the compaction was still sitting in line, and it went ahead minutes later
+  anyway. You would come back to a conversation that had been shortened without your
+  say-so, after being told nothing had happened. Now DorkOS stops waiting first and
+  tells you the chat is busy, and the compaction is dropped for good. Run `/compact`
+  again once the reply is done (DOR-1101)
+- When an agent asks to change a setting only you may change, the refusal now says what
+  that setting really is. It used to tell every agent the same thing — that the setting
+  decides who can reach your instance, where your keys go, and what leaves your machine
+  — which is true of your login switch and untrue of a room's reply limit or the
+  welcome-back greeting cap. Those bounds are about how often your agents speak on their
+  own and what that spends, so that is what the refusal says now, and a request touching
+  several kinds of setting gets one honest line for each (DOR-1044)
+- Rename an agent, or watch someone leave a room, and every `@mention` of them already on
+  screen now updates to match. They used to keep whatever name the roster had the moment
+  the message was first drawn, so a room left open could go on calling somebody by a name
+  they no longer had (DOR-989)
+- The line above your Activity feed now counts sessions your agents started across
+  your whole machine, which is the same ground the feed below it covers. It used to
+  count only the project you happened to have open, so the two quietly described
+  different things. It also says plainly what it counts now — "Your agents started 12
+  sessions this week" — and if a runtime can't be reached, it says "at least" instead
+  of passing a smaller number off as the whole story (DOR-1039)
+- A background task that never reported back could leave your session saying "still
+  working in the background" forever. Nothing in DorkOS could clear it, so the count
+  sat there for the life of the session. Now a task that has gone quiet for fifteen
+  minutes, on a session that has finished talking, stops counting. Tasks that keep
+  checking in keep their place however long they run (DOR-1104)
+- DorkOS no longer says a background task stopped when all it knows is that it can no
+  longer see it. When your agent finishes, anything it started inside itself is gone
+  with it — but something it launched to keep running on its own, like a dev server,
+  carries on, and DorkOS cannot tell the two apart. It now says it lost track of the
+  task and that it may still be running, instead of reporting a stop that may never
+  have happened. These tasks are not marked as finished or failed, because DorkOS did
+  not see either one happen (DOR-1108)
+- Settings that live inside a list — your saved MCP servers, your Claude accounts — now get the same only-you-can-change-them protection as every other protected setting. An agent asking to rewrite one of those lists is turned down and told which settings are yours to pick. Changing them yourself in Settings works exactly as before.
+- The little running figure on the background task bar now shows how its task ended.
+  It used to burst into confetti and then just keep running, so the tick for a task
+  that finished, the cross for one that failed, and the dash for one DorkOS lost
+  sight of never appeared — the figure ran until the task faded from the bar. The
+  figure now settles into its mark after the burst, and a task that is already
+  finished when it shows up on the bar opens on its mark instead of pretending to
+  run (DOR-1119)
+- Reloading the page or following a link straight into a conversation used to leave that
+  conversation missing from the sidebar entirely. It is now always there, at the top, even
+  before the rest of the list has loaded.
+- On day one, an agent could be working and the sidebar would never say so — the Getting
+  started suggestions took the space the "N working" line needed. Now working wins that space,
+  and Getting started comes back when the work finishes.
+- Conversation rows in the sidebar reserved a line for a live status and then left it blank.
+  They now say what the agent is doing, matching the status shown in the conversation itself
+  (DOR-1068)
+- Running `/compact` no longer leaves the session stuck looking busy. Before,
+  a finished compact never said it was done, so every later message waited on
+  a turn that had already ended (DOR-1130)
+- OpenCode sessions now show the approval card when the agent wants to run a
+  command, edit a file, or fetch a page. Before, the question never reached you:
+  the turn simply stopped and sat there with nothing on screen, sometimes for
+  many minutes. Approve or deny and the turn carries on, and a decision you make
+  in OpenCode's own app clears the card here too.
+- When an OpenCode agent hands work to a subagent and that subagent needs
+  permission to run a command or change a file, the ask now reaches you. It
+  appears in the session with the subagent's name on it, and answering it lets
+  the subagent carry on. Before, the question was raised somewhere nothing could
+  show it: the turn went quiet and waited, sometimes for many minutes, with
+  nothing on screen to answer. Stop the turn while a subagent is waiting on you
+  and the ask is taken down instead of sitting there unanswerable.
+- An OpenCode subagent you stopped while it was waiting for permission now says
+  it was stopped. It used to say it failed, right when there was nothing else on
+  screen to tell you otherwise.
+- Resume a session after a restart and change only its model, effort, or
+  title, and it now keeps the trust level you gave it. Doing this used to
+  quietly drop the session back to the default "ask before every action"
+  mode — the sidebar and session settings kept showing your real choice, but
+  the agent was actually running with less trust than you'd granted it,
+  until you re-toggled the dial.
+- When a background task finished at an awkward moment, the agent was told its
+  own work had been cancelled — in wording that reads like you refusing it. DorkOS
+  spotted that and sent a correction, but the correction never landed in the one
+  kind of turn where this happens: turns running background tasks. So the agent
+  kept believing you had said no, and sometimes told you so. The correction now
+  reaches it, and it carries on with the work instead of stopping.
+- When the runtime cut off a helper the agent had running, the helper often
+  reported back that you had declined something or blocked it from saving. The
+  agent believed the helper and gave up on that work. DorkOS now tells the agent
+  what actually happened — the runtime stopped it, you did not — and to redo the
+  work instead of taking the helper's word for it.
+- **A sidebar section's menu is reachable on a phone again.** Rename, sort, mute
+  and delete-group sat behind a button that only appeared when you hovered — so
+  on a touch screen there was no way to reach them at all.
+- Answering an OpenCode approval card somewhere else — its own terminal window, another
+  DorkOS window — now shows up in the transcript as Approved or Denied, the same as answering
+  it here. Before, it just cleared with no record of which way it went.
+
+### Security
+
+- Live-update connections now require the same scheme (`http` or `https`) as the page that
+  opened them when no reverse proxy declares one. This closes a gap where an unusual proxy
+  setup could let a plain `http` page open a secure cockpit's stream. If you run a custom
+  TLS-terminating proxy, set the `X-Forwarded-Proto` header on it — a proxy that omits it
+  will now have its upgrade requests rejected instead of silently accepted (DOR-932)
+
+## Install / Update
+
+```
+npm install -g dorkos@0.59.0
+```

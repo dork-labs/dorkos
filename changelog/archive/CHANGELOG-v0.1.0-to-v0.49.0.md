@@ -1,9 +1,7 @@
----
-title: Changelog archive
-description: Older DorkOS releases (v0.1.0 – v0.49.0), aged out of the main changelog.
----
+# Changelog archive: v0.1.0 – v0.49.0
 
-Older DorkOS releases, following [Semantic Versioning](https://semver.org/spec/v2.0.0.html). For recent releases see the [Changelog](/changelog).
+Released versions aged out of the top-level [CHANGELOG.md](../../CHANGELOG.md).
+See [changelog/README.md](../README.md) for the fragment workflow.
 
 ## [0.49.0] - 2026-07-14
 
@@ -318,8 +316,6 @@ Older DorkOS releases, following [Semantic Versioning](https://semver.org/spec/v
 
 ## [0.44.0] - 2026-06-16
 
-> Your messages now reach the agent exactly as written — per-turn context (git status, UI state, queued-message notes) travels alongside them instead of being injected into the text — and the chat status strip gains live feedback for session hooks and context compaction. Plus a Core Extensions tier, a smarter command palette (ranking + alias provenance), and in-chat output for local slash commands.
-
 ### Added
 
 - Agent context (git status, UI state, queued-message notes) now travels alongside your message instead of inside it — your message reaches the agent exactly as written, and that context never shows up as if you had typed it (#258)
@@ -334,6 +330,8 @@ Older DorkOS releases, following [Semantic Versioning](https://semver.org/spec/v
   manual/auto") sourced from the durable transcript, plus a live "Compacting
   context…" strip that resolves and an inline failed-compaction notice (DOR-118)
 
+### Changed
+
 ### Fixed
 
 - Chat status strip was starved of live `system_status` events (the projected turn dropped them), so "Compacting context…" and hook progress only appeared after the durable history reload — now retained live (DOR-125, completes DOR-118)
@@ -341,8 +339,6 @@ Older DorkOS releases, following [Semantic Versioning](https://semver.org/spec/v
 - Apply enable/disable live instead of requiring a page reload
 
 ## [0.43.1] - 2026-06-13
-
-> A maintenance release: the Claude Agent SDK moves to 0.3.177 — restoring background-agent and MCP task state on session resume — the Obsidian model and subagent catalog now derives from the SDK like every other surface, plus fixes for worktree dev ports, slash-command dispatch, session titles, and canvas scrolling.
 
 ### Changed
 
@@ -361,8 +357,6 @@ Older DorkOS releases, following [Semantic Versioning](https://semver.org/spec/v
 ---
 
 ## [0.43.0] - 2026-06-11
-
-> Runtime-agnostic session streaming with durable reconnection, permission prompts that survive session switches, and a model-gated auto permission mode — plus the SDK 0.3.168 native-binary upgrade.
 
 ### Added
 
@@ -430,6 +424,8 @@ Older DorkOS releases, following [Semantic Versioning](https://semver.org/spec/v
 - Address review — reconcile validation docs, echo all settings in PATCH
 - Match agent display name in fleet-page search
 - Sort agent lists by resolved display name
+
+---
 
 ## [0.42.0] - 2026-06-05
 
@@ -1099,6 +1095,8 @@ Older DorkOS releases, following [Semantic Versioning](https://semver.org/spec/v
 - Improve binding row UX with consistent icons and clearer overflow
 - Add missing traits_json and conventions_json migration
 
+---
+
 ## [0.19.0] - 2026-03-21
 
 > Fleet management dashboard — dedicated agents page, mission control, and client-side routing
@@ -1154,8 +1152,6 @@ Older DorkOS releases, following [Semantic Versioning](https://semver.org/spec/v
 - Fix stuck input bar and 404 errors in AskUserQuestion flow
 - Fix createPulseRouter missing dorkHome parameter
 - Fix tunnel CORS test using hardcoded port instead of dynamic assignment
-
----
 
 ## [0.17.2] - 2026-03-19
 
@@ -1468,13 +1464,6 @@ Older DorkOS releases, following [Semantic Versioning](https://semver.org/spec/v
 
 > MCP server integration, file uploads, chat UX overhaul, and SSE reliability fixes
 
-<Callout type="warn">
-  **Breaking changes:** The `POST /sessions` endpoint has been removed — API consumers must use
-  message-first session creation (send a message to create a session implicitly). Pulse and agent
-  MCP tool names have been renamed to follow the `domain_verb_noun` convention (e.g.,
-  `pulse_create_schedule`). Update any scripts or integrations that reference the old names.
-</Callout>
-
 ### Added
 
 - Embed MCP server with Streamable HTTP transport — external agents (Claude Code, Cursor, Windsurf) can connect via `/mcp`
@@ -1525,15 +1514,13 @@ Older DorkOS releases, following [Semantic Versioning](https://semver.org/spec/v
 
 ### Added
 
-- Per-agent tool filtering via `enabledToolGroups` in `AgentManifest` — configure which tool domains each agent can access; cascade disable propagates to dependent tools
-- `relay_send_and_wait` blocking MCP tool for synchronous inter-agent request/reply
-- `get_current_agent` MCP tool returning agent identity for the session's working directory
-- `CapabilitiesTab` in agent settings dialog with per-agent Tool Groups toggles showing 3-state display (inherited/overridden)
-- Command palette rebuilt with Fuse.js fuzzy search, agent preview panel, Slack bucket frecency, sub-menu drill-down, and spring animations (`features/command-palette/`)
-- Shadcn Sidebar component migration for agent-centric sidebar layout
-- Tool context injection into SDK system prompt with global and per-agent configurable toggles
-- Mesh always-on mode — no environment variable required for continuous agent discovery
-- Responsive touch targets and explicit size variants for shared UI primitives
+- Per-agent tool filtering and cascade disable — configure which tools each agent can access
+- Add relay_send_and_wait blocking MCP tool for inter-agent communication
+- Rebuild command palette with preview panel, fuzzy search, and sub-menu navigation for agent discovery
+- Migrate sidebar to Shadcn Sidebar component with agent-centric layout
+- Add tool context injection with configurable toggles throughout the interface
+- Enable Mesh always-on mode for continuous agent discovery and visibility
+- Enhance UI primitives with responsive touch targets and sizing variants
 
 ### Changed
 
@@ -1549,7 +1536,7 @@ Older DorkOS releases, following [Semantic Versioning](https://semver.org/spec/v
 - Clean up command palette cmdk prop usage and @ filtering logic
 - Enforce file-first write-through storage pattern for agent identity (ADR-0043)
 - Improve onboarding step completion logic to handle rapid user interactions
-- Register `relay_send_and_wait` in tool filter and add test coverage
+- Register relay_send_and_wait in tool filter and add test coverage
 
 ---
 
@@ -1577,7 +1564,7 @@ Older DorkOS releases, following [Semantic Versioning](https://semver.org/spec/v
 
 ### Changed
 
-- Migrate domain from dorkos.dev to dorkos.ai
+- Migrate domain from dorkos.ai to dorkos.ai
 - Add DORKOS_HOST, Docker workflow, and discovery endpoint to guides
 
 ### Fixed
@@ -1665,16 +1652,11 @@ Older DorkOS releases, following [Semantic Versioning](https://semver.org/spec/v
 - Handle console endpoint registration errors gracefully
 - Resolve 125+ code quality issues across server, relay, mesh, client, and shared packages
 
+---
+
 ## [0.4.0] - 2026-02-26
 
 > Multi-agent infrastructure — Relay message bus, Mesh discovery, Agent Identity, and unified database
-
-<Callout type="warn">
-  **Breaking changes:** Three separate SQLite databases have been consolidated into a single
-  `dork.db` — this is handled automatically on first startup, but back up your `~/.dork/` directory
-  before upgrading if you want to preserve the originals. The package manager for self-hosted
-  installs has changed from npm to pnpm — run `pnpm install` instead of `npm install` after pulling.
-</Callout>
 
 ### Added
 
@@ -1733,6 +1715,8 @@ Older DorkOS releases, following [Semantic Versioning](https://semver.org/spec/v
 - Declare runtime env vars in turbo.json globalPassThroughEnv
 - Fix docs search, add blog footer and TOC sidebar
 
+---
+
 ## [0.3.0] - 2026-02-18
 
 ### Added
@@ -1751,11 +1735,6 @@ Older DorkOS releases, following [Semantic Versioning](https://semver.org/spec/v
 - Complete documentation overhaul — fill all stubs, add concepts section, rewrite stale guides
 
 ## [0.2.0] - 2026-02-17
-
-<Callout type="warn">
-  **Breaking change:** The default server port changed from 6942 to 4242. Update any hardcoded port
-  references in scripts, reverse proxies, bookmarks, or `DORKOS_PORT` environment variables.
-</Callout>
 
 ### Added
 
@@ -1803,3 +1782,29 @@ Older DorkOS releases, following [Semantic Versioning](https://semver.org/spec/v
 - CLI package (`dorkos`) for standalone usage
 - Keyboard shortcuts for navigation
 - Directory picker for working directory selection
+
+[0.21.0]: https://github.com/dork-labs/dorkos/compare/v0.20.0...v0.21.0
+[0.20.0]: https://github.com/dork-labs/dorkos/compare/v0.19.0...v0.20.0
+[0.19.0]: https://github.com/dork-labs/dorkos/compare/v0.18.0...v0.19.0
+[0.18.0]: https://github.com/dork-labs/dorkos/compare/v0.17.2...v0.18.0
+[0.17.2]: https://github.com/dork-labs/dorkos/compare/v0.17.1...v0.17.2
+[0.17.1]: https://github.com/dork-labs/dorkos/compare/v0.17.0...v0.17.1
+[0.17.0]: https://github.com/dork-labs/dorkos/compare/v0.16.0...v0.17.0
+[0.16.0]: https://github.com/dork-labs/dorkos/compare/v0.15.0...v0.16.0
+[0.15.0]: https://github.com/dork-labs/dorkos/compare/v0.14.0...v0.15.0
+[0.14.0]: https://github.com/dork-labs/dorkos/compare/v0.13.1...v0.14.0
+[0.13.1]: https://github.com/dork-labs/dorkos/compare/v0.13.0...v0.13.1
+[0.13.0]: https://github.com/dork-labs/dorkos/compare/v0.12.0...v0.13.0
+[0.12.0]: https://github.com/dork-labs/dorkos/compare/v0.11.0...v0.12.0
+[0.11.0]: https://github.com/dork-labs/dorkos/compare/v0.10.0...v0.11.0
+[0.10.0]: https://github.com/dork-labs/dorkos/compare/v0.9.1...v0.10.0
+[0.9.1]: https://github.com/dork-labs/dorkos/compare/v0.9.0...v0.9.1
+[0.9.0]: https://github.com/dork-labs/dorkos/compare/v0.8.0...v0.9.0
+[0.8.0]: https://github.com/dork-labs/dorkos/compare/v0.7.0...v0.8.0
+[0.7.0]: https://github.com/dork-labs/dorkos/compare/v0.6.0...v0.7.0
+[0.6.0]: https://github.com/dork-labs/dorkos/compare/v0.5.0...v0.6.0
+[0.5.0]: https://github.com/dork-labs/dorkos/compare/v0.4.0...v0.5.0
+[0.4.0]: https://github.com/dork-labs/dorkos/compare/v0.3.0...v0.4.0
+[0.3.0]: https://github.com/dork-labs/dorkos/compare/v0.2.0...v0.3.0
+[0.2.0]: https://github.com/dork-labs/dorkos/compare/v0.1.0...v0.2.0
+[0.1.0]: https://github.com/dork-labs/dorkos/releases/tag/v0.1.0
