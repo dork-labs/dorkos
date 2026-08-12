@@ -304,6 +304,30 @@ export const SessionSchema = z
      */
     originLabel: z.string().optional(),
     /**
+     * The id of the room that started this session, when one did — the exact
+     * room, not a name that might belong to two of them.
+     *
+     * Present only alongside `origin: 'room'`, and stamped from the server's own
+     * `room_sessions` binding (`applyRoomOriginOverlay`). ABSENT everywhere else,
+     * including on a room turn that a scheduled run then claims: Pulse wins the
+     * origin, so it takes this with it rather than leaving an id under a `task`.
+     *
+     * **Why it exists beside {@link Session.originLabel}, which names the same
+     * room.** A label is a name and names are not unique here. Channel slugs are
+     * unique only among LIVE channels (`rooms_channel_slug_unique` is partial on
+     * `archived = 0`), so an archived `#shipping` and a live `#shipping` are both
+     * legal at once — and nothing stops a direct message being titled `#general`.
+     * A client joining conversations to rooms by label had to pick one of the
+     * colliding rooms and was silently wrong for the other: turns from the
+     * archived room were offered under the live one, and the losing room showed
+     * no conversations at all (DOR-1157). An id cannot collide.
+     *
+     * The label stays: it is what a person READS, it tracks renames (the binding
+     * is joined to the live `rooms` row on every request), and it is the honest
+     * fallback for a room this reader cannot see.
+     */
+    originRoomId: z.string().optional(),
+    /**
      * Which Claude Code account this session belongs to — the absolute Claude
      * config directory its transcript lives under (`~/.claude`, `~/.claude2`,
      * …). Derived from disk on every read and never stored: a session's

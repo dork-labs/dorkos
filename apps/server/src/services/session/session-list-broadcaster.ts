@@ -26,6 +26,7 @@
 import type { AgentRuntime, SessionOpts } from '@dorkos/shared/agent-runtime';
 import { SessionListEventSchema } from '@dorkos/shared/session-stream';
 import type { SessionLifecycle, SessionListEvent } from '@dorkos/shared/session-stream';
+import type { Session } from '@dorkos/shared/types';
 import { SSE } from '../../config/constants.js';
 import { eventFanOut, encodeBroadcast, type FanOutClient } from '../core/event-fan-out.js';
 import { listProjectorStatuses, onProjectorStatusChange } from './session-state-projector.js';
@@ -33,6 +34,10 @@ import {
   overlayStoredSettings,
   type SessionSettingsOverlayPort,
 } from './session-settings-overlay.js';
+import {
+  sessionOriginOverlaySteps,
+  type SessionOriginResolvers,
+} from './origin/session-origin-overlays.js';
 import { DEFAULT_CWD } from '../../lib/resolve-root.js';
 import { logger } from '../../lib/logger.js';
 
@@ -166,6 +171,27 @@ export class SessionListBroadcaster {
   private running = false;
   private unsubscribeStatus: (() => void) | undefined;
   private settings: SessionSettingsOverlayPort | undefined;
+  private originResolvers: SessionOriginResolvers = {};
+
+  /**
+   * Wire the origin lookups every broadcast `session_upserted` is stamped from.
+   *
+   * Its own call rather than a `start()` argument, and that is the point: a live
+   * Claude account switch restarts discovery with
+   * `start(runtimeRegistry.listRuntimes(), runtimeRegistry)`
+   * (`runtimes/claude-code/account-switch.ts`), so anything passed only to
+   * `start()` has to be re-passed by every caller that ever restarts it —
+   * exactly the kind of omission that shows up as room turns quietly reading as
+   * yours again after somebody switches accounts. Set once by the composition
+   * root, it survives every stop/start.
+   *
+   * @param resolvers - The batched room/task lookups. Either may be absent when
+   *   its subsystem is off; both absent leaves the stream unstamped, which is
+   *   the pre-DOR-1141 behaviour.
+   */
+  setOriginResolvers(resolvers: SessionOriginResolvers): void {
+    this.originResolvers = resolvers;
+  }
 
   /**
    * Begin consuming every runtime's session-list stream and broadcasting the
@@ -294,7 +320,11 @@ export class SessionListBroadcaster {
   }
 
   /**
-   * Overlay persisted settings onto a `session_upserted` before it goes out.
+   * Overlay everything the server knows onto a `session_upserted` before it
+   * goes out — the operator's persisted settings, then the origins no
+   * transcript can carry.
+   *
+   * ## Why the settings half exists
    *
    * This stream — not `GET /api/sessions` — is what keeps a client's session
    * list current: the cold-load query has no poll, so every later refresh of a
@@ -302,26 +332,70 @@ export class SessionListBroadcaster {
    * stored permission mode in the client's cache with the runtime-derived one,
    * which is the same disagreement DOR-463 fixed on the HTTP endpoints.
    *
-   * Copies the session first. Adapters emit the object they hold — the Claude
-   * watcher pushes the very instance in its diff map (and in the transcript
-   * reader's mtime cache) — so overlaying in place would write display values
-   * into a runtime's own cached state and defeat its change suppression.
+   * ## Why the origin half exists
+   *
+   * The same argument, one field over. The overlays ran on the REST routes and
+   * nowhere else, so the record this stream pushed carried no origin at all —
+   * and every consumer of the human-origin liveness rule (design-decisions §18:
+   * the palette's Continue list, the sidebar's live rollups) read a freshly
+   * triggered room turn as a person's own conversation until the next REST
+   * refetch corrected it (DOR-1141). Unknown reading as human is the safe
+   * direction, which is why this was polish rather than a defect — but the two
+   * producers of client-visible session rows now derive the field the same way,
+   * so neither can drift.
+   *
+   * ## Why every overlay is its own step
+   *
+   * Each one is isolated, so a store that is down costs only its own field.
+   * Sharing a guard between the room and Pulse overlays would mean a failing
+   * Pulse lookup discarded the room marking that had already succeeded — and a
+   * row broadcast with no origin at all is exactly the DOR-1141 defect, arrived
+   * at from the other side. See {@link overlaid} for why a step works on a copy.
    */
-  private withStoredSettings(event: SessionListEvent): SessionListEvent {
-    if (event.type !== 'session_upserted' || !this.settings) return event;
-    const session = { ...event.session };
+  private withOverlays(event: SessionListEvent): SessionListEvent {
+    if (event.type !== 'session_upserted') return event;
+    let session = event.session;
+    if (this.settings) {
+      const settings = this.settings;
+      session = this.overlaid(session, (rows) => overlayStoredSettings(rows, settings), 'settings');
+    }
+    for (const step of sessionOriginOverlaySteps(this.originResolvers)) {
+      session = this.overlaid(session, step.apply, step.name);
+    }
+    return session === event.session ? event : { ...event, session };
+  }
+
+  /**
+   * Run one overlay over a COPY of the session, or hand back the original.
+   *
+   * Discovery must survive a store failure — an un-overlaid row is stale, a
+   * dropped row is invisible, and stale wins.
+   *
+   * **The copy is what makes "hand back the original" mean anything**, and that
+   * is its whole reason here. An overlay writes field by field, so one that
+   * threw part way through would leave the row neither as it was nor as it
+   * should be; on a copy, a throw discards the half-written version outright.
+   * (It is NOT about protecting an adapter's own object: the event reaching this
+   * method has already been through `SessionListEventSchema.safeParse`, which
+   * hands back its own freshly built session, so the instance a runtime holds is
+   * already out of reach by the time anything here touches it.)
+   *
+   * @param session - The row as it stands after the previous step.
+   * @param apply - The overlay, which mutates the array it is given.
+   * @param what - Named in the warning, so a failing overlay is identifiable.
+   */
+  private overlaid(session: Session, apply: (rows: Session[]) => void, what: string): Session {
+    const copy = { ...session };
     try {
-      overlayStoredSettings([session], this.settings);
+      apply([copy]);
+      return copy;
     } catch (err) {
-      // Discovery must survive a settings-store failure: an un-overlaid row is
-      // stale, a dropped row is invisible. Prefer stale.
-      logger.warn('[SessionListBroadcaster] settings overlay failed; broadcasting as-is', {
-        sessionId: event.session.id,
+      logger.warn(`[SessionListBroadcaster] ${what} overlay failed; broadcasting as-is`, {
+        sessionId: session.id,
         error: err instanceof Error ? err.message : String(err),
       });
-      return event;
+      return session;
     }
-    return { ...event, session };
   }
 
   /**
@@ -356,7 +430,7 @@ export class SessionListBroadcaster {
     }
     // The SSE event name is the schema-constrained discriminator, so there is no
     // stringly-typed drift: clients filter on the same `type` values.
-    const outgoing = this.withStoredSettings(validated);
+    const outgoing = this.withOverlays(validated);
     if (outgoing.type === 'session_removed') notifySessionRemoved(outgoing.sessionId);
     eventFanOut.broadcast(outgoing.type, outgoing);
   }

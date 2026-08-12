@@ -346,7 +346,7 @@ export function StatusShowcases() {
 
       <PlaygroundSection
         title="TransportErrorBanner"
-        description="Structured error banner for transport-level failures (network, server, timeout, session lock). Shown outside the message stream."
+        description="Structured error banner for transport-level failures (network, server, timeout). Shown outside the message stream."
       >
         <ShowcaseLabel>Can't reach DorkOS (retryable)</ShowcaseLabel>
         <ShowcaseDemo responsive>
@@ -381,18 +381,6 @@ export function StatusShowcases() {
               retryable: true,
             }}
             onRetry={() => console.log('[Showcase] Retry clicked')}
-          />
-        </ShowcaseDemo>
-
-        <ShowcaseLabel>Session in use (not retryable, auto-dismisses)</ShowcaseLabel>
-        <ShowcaseDemo responsive>
-          <TransportErrorBanner
-            error={{
-              heading: 'Session in use',
-              message: 'Another client is sending a message. Try again in a few seconds.',
-              retryable: false,
-              autoDismissMs: 4000,
-            }}
           />
         </ShowcaseDemo>
 

@@ -129,8 +129,6 @@ export interface TransportErrorInfo {
   message: string;
   /** Whether the user can retry the same action. */
   retryable: boolean;
-  /** If set, the error banner auto-dismisses after this many ms. */
-  autoDismissMs?: number;
 }
 
 export type ChatStatus = 'idle' | 'streaming' | 'error';

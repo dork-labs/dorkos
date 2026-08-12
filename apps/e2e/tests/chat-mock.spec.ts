@@ -5,6 +5,7 @@ import path from 'path';
 import { BasePage } from '../pages/BasePage.js';
 import { ChatPage } from '../pages/ChatPage.js';
 import { caretOffset, composerText, expectComposerText } from '../pages/composer-probe.js';
+import { registerComposerEscapeAndImeTests } from './chat/composer-escape-and-ime.js';
 import { registerSessionReadStateTests } from './chat/session-read-state.js';
 import { registerNowSurvivesReloadTests } from './dashboard-sidebar/now-survives-reload.js';
 import { registerSendLandsInTodayTests } from './dashboard-sidebar/send-lands-in-today.js';
@@ -921,6 +922,13 @@ registerNowSurvivesReloadTests({ apiUrl: API_URL, agentDir: () => agentDir });
 // because what it asserts happens on the OTHER side of a navigation, which is
 // exactly what a jsdom render cannot walk through.
 registerSendLandsInTodayTests({ agentDir: () => agentDir });
+
+// The double-Escape clear on both fields, and Enter during an IME composition
+// (DOR-948). Registered here because both suites flip `ui.composer.richText`,
+// which is server-global — only this file's sequential single worker makes that
+// safe. See the module header.
+registerComposerEscapeAndImeTests({ apiUrl: API_URL, agentDir: () => agentDir });
+
 /**
  * Conversations in ⌘K (spec `sidebar-now-today-library` P3, §15).
  *

@@ -227,8 +227,10 @@ export function createDirectSessionMethods(
       if (!result.accepted) {
         const error = new Error('Session locked') as Error & SessionLockedError;
         error.code = 'SESSION_LOCKED';
-        // Approximations mirror postMessage: the narrowed seam exposes no
-        // getLockInfo, and only `code` is consumed by classify-transport-error.
+        // `lockedBy`/`lockedAt` are approximations — the narrowed seam exposes
+        // no getLockInfo — and harmlessly so: `code` is the only field any
+        // caller reads (`dispatchCompactIntent` picks the busy-agent toast off
+        // it). `sendUiAction` below throws the same shape for the same reason.
         error.lockedBy = getClientId();
         error.lockedAt = new Date().toISOString();
         throw error;
