@@ -134,20 +134,29 @@ export class IllegalPumpTransitionError extends Error {
  * Split out from {@link PumpQuery} because it is what {@link SessionPump}
  * hands OUT (`controlQuery`), and what the turn windower calls at every window
  * close to fetch that window's context and subscription accounting while the
- * process is still alive. Task 3.5 widens it further as the relaunch
- * fingerprint needs setters (`setModel`, `setPermissionMode`, …).
+ * process is still alive.
+ *
+ * The four setters are the settable-live half of the relaunch pin list (task
+ * 3.5): the launch parameters a warm process can be moved onto instead of being
+ * replaced. They are applied by `launch-live-settings.ts`, which is also the
+ * only module that should call them — a setter fired from anywhere else moves
+ * the process out from under its own launch fingerprint.
  */
 export type PumpControlQuery = Pick<
   Query,
-  'getContextUsage' | 'usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET'
+  | 'getContextUsage'
+  | 'usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET'
+  | 'setModel'
+  | 'setPermissionMode'
+  | 'setMcpServers'
+  | 'reloadPlugins'
 >;
 
 /**
  * The slice of the SDK's `Query` the pump depends on: its message stream, the
  * forceful close that actually terminates the CLI child, and the control
- * methods of {@link PumpControlQuery}. Task 3.5 widens it as the relaunch
- * fingerprint needs more; it is deliberately the minimum today, so a test
- * double stays a few lines.
+ * methods of {@link PumpControlQuery}. Deliberately the minimum, so a test
+ * double stays short.
  */
 export type PumpQuery = AsyncIterable<SDKMessage> & Pick<Query, 'close'> & PumpControlQuery;
 

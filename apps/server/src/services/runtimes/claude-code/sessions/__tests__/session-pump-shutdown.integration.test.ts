@@ -70,6 +70,10 @@ function launchRealChild(source: string) {
       getContextUsage: () => Promise.reject(new Error('no control channel')),
       usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET: () =>
         Promise.reject(new Error('no control channel')),
+      setModel: () => Promise.reject(new Error('no control channel')),
+      setPermissionMode: () => Promise.reject(new Error('no control channel')),
+      setMcpServers: () => Promise.reject(new Error('no control channel')),
+      reloadPlugins: () => Promise.reject(new Error('no control channel')),
       async *[Symbol.asyncIterator](): AsyncIterator<SDKMessage> {
         yield {
           type: 'system',

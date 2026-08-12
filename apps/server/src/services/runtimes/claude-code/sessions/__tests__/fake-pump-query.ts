@@ -132,6 +132,43 @@ export class FakeQuery implements PumpQuery {
     >;
   }
 
+  /**
+   * The four settable-live pins, as `launch-live-settings.ts` applies them
+   * (task 3.5). Recorded in call order so a test can assert what a relaunch
+   * DIDN'T have to do.
+   */
+  readonly liveSets: string[] = [];
+
+  /** `setModel` on the live query — the model pin's live path. */
+  setModel(model?: string): Promise<void> {
+    return this.answer().then(() => {
+      this.liveSets.push(`setModel:${model ?? '<default>'}`);
+    });
+  }
+
+  /** `setPermissionMode` on the live query. */
+  setPermissionMode(mode: string): Promise<void> {
+    return this.answer().then(() => {
+      this.liveSets.push(`setPermissionMode:${mode}`);
+    });
+  }
+
+  /** `setMcpServers` on the live query — swaps the server set in place. */
+  setMcpServers(servers: Record<string, unknown>): ReturnType<PumpQuery['setMcpServers']> {
+    return this.answer().then(() => {
+      this.liveSets.push(`setMcpServers:${Object.keys(servers).sort().join(',')}`);
+      return { added: [], removed: [], failed: [] };
+    }) as unknown as ReturnType<PumpQuery['setMcpServers']>;
+  }
+
+  /** `reloadPlugins` on the live query — re-reads the plugin set from disk. */
+  reloadPlugins(): ReturnType<PumpQuery['reloadPlugins']> {
+    return this.answer().then(() => {
+      this.liveSets.push('reloadPlugins');
+      return { commands: [] };
+    }) as unknown as ReturnType<PumpQuery['reloadPlugins']>;
+  }
+
   async *[Symbol.asyncIterator](): AsyncIterator<SDKMessage> {
     for (;;) {
       while (this.pending.length > 0) yield this.pending.shift()!;
