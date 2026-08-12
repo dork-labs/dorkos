@@ -73,9 +73,12 @@ export function editQueuedMessage(
 ): QueuedMessage | undefined {
   const store = getMessageQueueStore();
   if (!store || !isQueuedOn(sessionId, messageId)) return undefined;
-  let record = edit.content === undefined ? store.get(messageId) : undefined;
-  if (edit.content !== undefined) record = store.updateContent(messageId, edit.content);
-  if (record && edit.move) record = store.move(messageId, edit.move);
+  // The move goes FIRST: it is the only half that can be refused (a bogus or
+  // cross-session anchor), and the reword cannot fail on a row already
+  // confirmed present. Committing the reword before checking the move would
+  // answer 404 while silently changing what the message says (DOR-1178).
+  let record = edit.move ? store.move(messageId, edit.move) : store.get(messageId);
+  if (record && edit.content !== undefined) record = store.updateContent(messageId, edit.content);
   if (record) emitQueueUpdate(sessionId);
   return record ? toQueuedMessage(record) : undefined;
 }

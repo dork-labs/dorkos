@@ -213,14 +213,15 @@ Server-side, the single `sessionGate` middleware enforces this for `/api/*` and 
 
 ### Standalone Web (HttpTransport)
 
-`POST /api/sessions/:id/messages` is trigger-only (ADR-0264): it returns `202 { sessionId }` (the canonical id) and the turn runs detached server-side. ALL turn delivery — and cross-client sync — rides the durable per-session stream `GET /api/sessions/:id/events` (snapshot → gap-free replay via `Last-Event-ID` → live `SessionEvent`s with monotonic `seq`), owned client-side by `StreamManager` (`shared/lib/transport/stream-manager.ts`).
+`POST /api/sessions/:id/messages` is trigger-only AND accept-only (ADR-0264, amended by ADR 260811-184735): it returns `202` immediately, without waiting for the turn ahead of it, and never `409` — a busy session queues the message instead of refusing it. The body carries the canonical session id plus a delivery receipt (`messageId`, `outcome`, `queuePosition`), but the receipt cannot say whether the turn started immediately or is waiting behind another: `queuePosition` reads `1` in both cases. ALL turn delivery — and cross-client sync — rides the durable per-session stream `GET /api/sessions/:id/events` (snapshot → gap-free replay via `Last-Event-ID` → live `SessionEvent`s with monotonic `seq`), owned client-side by `StreamManager` (`shared/lib/transport/stream-manager.ts`); `turn_start` there is the only signal that this message's turn actually began.
 
 Server-side, every caller that can start a turn (HTTP route, MCP tool, relay, CLI) now goes through one ingress, `MessageDispatcher` (`services/session/message-dispatcher.ts`, spec `persistent-session-runtime`): it decides whether a message runs now or waits, and if it waits, in the durable `MessageQueueStore` rather than an in-memory list — so a queued message survives a server restart. A dequeue fires only on `turn_end`, never on a bare `result`, and never while the session has a pending interaction open. Every subscribed client sees the same queue, hydrated on the snapshot's `queuedMessages` and kept live by `queue_update` stream events (see `contributing/data-fetching.md`).
 
 ```
 User input -> ChatPanel -> useChatSession.handleSubmit()
   -> transport.postMessage(sessionId, content, cwd) -> POST /api/sessions/:id/messages -> 202
-  -> turn runs detached; runtime StreamEvents feed the per-session projector (monotonic seq)
+  -> MessageDispatcher: runs now (detached) or joins the queue if a turn is already open
+  -> a running turn's StreamEvents feed the per-session projector (monotonic seq)
 
 Delivery (always, for every subscribed client):
   -> GET /api/sessions/:id/events (durable stream: snapshot -> replay -> live)

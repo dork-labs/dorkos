@@ -614,8 +614,12 @@ export type SendMessageRequest = z.infer<typeof SendMessageRequestSchema>;
  *
  * The POST is trigger-only AND accept-only: it never waits for the turn ahead
  * of it, so a `202` means "the server has this message", not "the turn is
- * running". Which of the two it was is on `outcome` and `queuePosition`, and the
- * turn itself is announced on `GET /:id/events` like everything else.
+ * running". This body cannot say which of the two it was: `queuePosition`
+ * reads `1` both when the turn started immediately and when the message
+ * became the sole entry in a queue behind a still-running turn, and `outcome`
+ * carries the requested/applied disposition, not whether a turn began.
+ * `turn_start` on `GET /:id/events` is the only signal that this message's
+ * turn actually started.
  *
  * `sessionId` is the CANONICAL session id, best effort: for a brand-new session
  * it is the real id assigned during the turn (it differs from the
