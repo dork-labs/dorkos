@@ -7,7 +7,7 @@ import type { RoomEntry, RoomRosterEntry } from '@/layers/entities/room';
 import { usePendingPosts } from '@/layers/entities/room';
 import { DayDivider, UnreadDivider } from '@/layers/features/chat';
 import { authorsById, entryRowId, groupByThread, toMessageAuthor } from '../lib/room-timeline';
-import { RoomAgentInfoProvider } from '../model/agent-info-context';
+import { AgentInfoProvider, useRoomAgentDirectory } from '../model/agent-info-context';
 import { RoomEntryRow } from './RoomEntryRow';
 import { RoomPendingList } from './RoomPendingRow';
 import { RoomThreadReplyRow } from './RoomThreadReplyRow';
@@ -147,6 +147,11 @@ export function RoomTimeline({
   onOpenThread,
 }: RoomTimelineProps) {
   const authors = useMemo(() => authorsById(members), [members]);
+  // The fleet, read once for the whole feed: `info` is what a mention pill's
+  // hover card reads, `faces` is what each message's disc wears. Both come from
+  // the same pass, so an agent cannot be one face in the gutter and another in
+  // the card that opens off it.
+  const agents = useRoomAgentDirectory();
   // Names only — a reaction names who reacted, and the roster is the only place
   // that can say. An id it does not hold belongs to somebody who has left.
   const authorNames = useMemo(
@@ -224,7 +229,7 @@ export function RoomTimeline({
   return (
     // Wrapped only around the drawn history: the states above have no messages
     // in them, so nothing there could carry a mention to look an agent up for.
-    <RoomAgentInfoProvider>
+    <AgentInfoProvider known={agents}>
       <Feed
         label={`Messages in ${roomName}`}
         className="flex flex-col py-4"
@@ -240,7 +245,7 @@ export function RoomTimeline({
               <RoomEntryRow
                 roomId={roomId}
                 entry={entry}
-                author={toMessageAuthor(entry.authorId, authors)}
+                author={toMessageAuthor(entry.authorId, authors, agents.faces)}
                 authorRef={authors.get(entry.authorId)}
                 authors={authors}
                 viewerAuthorId={viewerAuthorId}
@@ -283,6 +288,6 @@ export function RoomTimeline({
           and outside the feed, because a message the server has not accepted
           yet is not one of its numbered articles. */}
       <RoomPendingList posts={pending} viewerAuthorId={viewerAuthorId} />
-    </RoomAgentInfoProvider>
+    </AgentInfoProvider>
   );
 }

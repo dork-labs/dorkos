@@ -1,43 +1,36 @@
 /**
- * How the agents on a room's roster RUN, made available to every mention pill
- * in that room's history.
+ * What a room knows about the agents on its roster — how each one runs, and
+ * what each one looks like — made available to every row and pill inside it.
  *
  * @module widgets/room-view/model/agent-info-context
  */
 import { createContext, useContext, useMemo, type ReactNode } from 'react';
+import type { AgentVisual } from '@/layers/shared/lib';
 import { useResolvedAgents } from '@/layers/entities/agent';
 import { useMeshAgentPaths } from '@/layers/entities/mesh';
-import { agentInfoByRef, type RosterAgentInfo } from '../lib/agent-details';
+import { agentFacesByRef, agentInfoByRef, type RosterAgentInfo } from '../lib/agent-details';
 
-/** One shared empty answer, so a room with no provider above it costs nothing. */
-const NOTHING_KNOWN: ReadonlyMap<string, RosterAgentInfo> = new Map();
-
-const AgentInfoContext = createContext<ReadonlyMap<string, RosterAgentInfo>>(NOTHING_KNOWN);
-
-/**
- * Hand a ready-made answer down, without reading anything.
- *
- * The dumb half of {@link RoomAgentInfoProvider}, split out so a surface that
- * already HAS the answer can supply it — the Dev Playground, which benches the
- * real `RoomEntryRow` against seeded data and has no fleet to read. Keeping it
- * separate is what stops the fetching provider growing a dev-only escape hatch
- * that then has to be reasoned about in production.
- *
- * @param props.known - How each agent runs, keyed by `agentRef`.
- * @param props.children - The surface this answers for.
- */
-export function AgentInfoProvider({
-  known,
-  children,
-}: {
-  known: ReadonlyMap<string, RosterAgentInfo>;
-  children: ReactNode;
-}) {
-  return <AgentInfoContext.Provider value={known}>{children}</AgentInfoContext.Provider>;
+/** Everything a room reads off the fleet, resolved in one pass. */
+export interface RoomAgentDirectory {
+  /**
+   * How each agent runs, keyed by `agentRef` — what a mention pill's hover card
+   * reads.
+   */
+  info: ReadonlyMap<string, RosterAgentInfo>;
+  /**
+   * Each agent's face, keyed by `agentRef` — the override a disc takes over
+   * whatever the author row cached.
+   */
+  faces: ReadonlyMap<string, AgentVisual>;
 }
 
+/** One shared empty answer, so a room with no provider above it costs nothing. */
+const NOTHING_KNOWN: RoomAgentDirectory = { info: new Map(), faces: new Map() };
+
+const AgentInfoContext = createContext<RoomAgentDirectory>(NOTHING_KNOWN);
+
 /**
- * Read the fleet once for a whole room, and hand the answer down.
+ * Hand a room's agents down to every mention pill inside it.
  *
  * **A context rather than a prop, because a prop cannot get there.** A mention
  * pill is rendered by Streamdown, and Streamdown's own top-level memo
@@ -49,10 +42,40 @@ export function AgentInfoProvider({
  * bail-out is what the update never gets past.) Context is the one channel that
  * reaches a consumer inside a bailed-out subtree, and it costs no re-parse.
  *
- * **One query pair per room, never one per pill.** Both reads are the shared
+ * **It reads nothing itself**, which is what lets the Dev Playground bench the
+ * real `RoomEntryRow` against seeded data with no fleet to read. The routed app
+ * feeds it {@link useRoomAgentDirectory}, so the surface holding the
+ * answer is also the one that can use it for its own rows — a provider that
+ * fetched privately would have to be read back through a second hook.
+ *
+ * @param props.known - What this room knows about its agents.
+ * @param props.children - The surface this answers for.
+ */
+export function AgentInfoProvider({
+  known,
+  children,
+}: {
+  known: RoomAgentDirectory;
+  children: ReactNode;
+}) {
+  return <AgentInfoContext.Provider value={known}>{children}</AgentInfoContext.Provider>;
+}
+
+/**
+ * Read the fleet once for a whole room: how its agents run, and what they look
+ * like.
+ *
+ * **Both halves come from one pass**, so the four faces a room draws for one
+ * agent — its roster stack, the room's own mark for a direct message, every
+ * message's disc in the gutter, and the hover card a mention opens — cannot be
+ * resolved differently. That divergence is what DOR-1002 closes, and one
+ * derivation is what keeps it closed.
+ *
+ * **One query pair per surface, never one per row.** Both reads are the shared
  * cache entries the sidebar and every agent picker already keep warm
- * (`useAgentPickerCandidates` reads the same two), so a history full of
- * mentions costs a map lookup each rather than a request each.
+ * (`useAgentPickerCandidates` reads the same two), so a second caller in the
+ * same room — the masthead beside the feed — costs a memo rather than a
+ * request.
  *
  * **Nothing here reads a clock.** The identity card can also say that an agent
  * is working right now, and this deliberately does not answer that: the elapsed
@@ -61,18 +84,18 @@ export function AgentInfoProvider({
  * regression `useRoomPresenceAuthorIds` exists to undo. That chip belongs to
  * whatever leaf can own the timer, not here.
  *
- * **A failed read costs only the extra detail.** Names, faces and origins all
- * come from the room's own roster, which is already in hand; an unreachable
- * mesh or a manifest that will not resolve simply leaves the map empty.
- *
- * @param props.children - The room surface this answers for.
+ * **A failed read costs only the extra detail.** Names, cached faces and
+ * origins all come from the room's own roster, which is already in hand; an
+ * unreachable mesh or a manifest that will not resolve simply leaves both maps
+ * empty, and every surface falls back to what the roster cached for itself.
  */
-export function RoomAgentInfoProvider({ children }: { children: ReactNode }) {
+export function useRoomAgentDirectory(): RoomAgentDirectory {
   const mesh = useMeshAgentPaths();
   const paths = useMemo(() => (mesh.data?.agents ?? []).map((a) => a.projectPath), [mesh.data]);
   const resolved = useResolvedAgents(paths);
-  const known = useMemo(() => agentInfoByRef(paths, resolved.data ?? {}), [paths, resolved.data]);
-  return <AgentInfoProvider known={known}>{children}</AgentInfoProvider>;
+  const info = useMemo(() => agentInfoByRef(paths, resolved.data ?? {}), [paths, resolved.data]);
+  const faces = useMemo(() => agentFacesByRef(info), [info]);
+  return useMemo(() => ({ info, faces }), [info, faces]);
 }
 
 /**
@@ -87,5 +110,21 @@ export function RoomAgentInfoProvider({ children }: { children: ReactNode }) {
  */
 export function useAgentInfo(agentRef: string | undefined): RosterAgentInfo | undefined {
   const known = useContext(AgentInfoContext);
-  return agentRef === undefined ? undefined : known.get(agentRef);
+  return agentRef === undefined ? undefined : known.info.get(agentRef);
+}
+
+/**
+ * The faces of every agent this room could resolve, keyed by `agentRef`.
+ *
+ * The map rather than one face, because the surfaces that need it resolve one
+ * author at a time off a roster they already hold — `toMessageAuthor` does the
+ * join itself, and a row asking for a single face would have to know which key
+ * to ask under.
+ *
+ * Empty anywhere no provider is mounted, and empty when the fleet could not be
+ * read; both mean the same thing to a caller — leave the lower rungs of the
+ * ladder to answer — which is why they are one answer rather than two.
+ */
+export function useRoomAgentFaces(): ReadonlyMap<string, AgentVisual> {
+  return useContext(AgentInfoContext).faces;
 }
