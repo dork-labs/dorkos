@@ -24,7 +24,27 @@ export { useNewSessionShortcut } from './model/use-new-session-shortcut';
 // nav implementation in the panel now: the four destinations moved here off the
 // retired `SidebarNavHeader`, tour anchor and all, so the tour-anchor guard
 // mounts THIS at both widths for the reason it always mounted that.
-export { SidebarFooterStrip } from './ui/SidebarFooterStrip';
+export { SidebarFooterStrip, useAskDorkBot } from './ui/SidebarFooterStrip';
+// ── The panel, in parts, for the mobile tabs (P4) ──
+// A phone splits one sidebar across two destinations, so the widget assembles
+// the state once, builds the model once, and draws two subsets of the same
+// zones. That is why the model lives in this feature rather than a slice of its
+// own: a widget may import a feature, and drawing the same build twice is what
+// keeps Home and Library from disagreeing (spec §A1, P4).
+export { SidebarChrome } from './ui/SidebarChrome';
+export { SidebarZones } from './ui/SidebarZones';
+export { useSidebarState } from './model/use-sidebar-state';
+export { useSidebarModel } from './model/use-sidebar-model';
+// One-time migration of pre-redesign pins. `DashboardSidebar` runs it, and on a
+// phone `DashboardSidebar` is never mounted — so the tabs run it instead, or an
+// operator who only ever opens DorkOS on their phone keeps their old pins
+// forever.
+export { useLegacyPinMigration } from './model/use-legacy-pin-migration';
+// The zone enumeration and one zone's id — what the mobile tabs need to split
+// the panel across two destinations. `SidebarModel` and `SidebarZoneModel` are
+// deliberately NOT here: nothing outside the feature names them, and knip says
+// so.
+export { SIDEBAR_ZONE_IDS, type SidebarZoneId } from './model/build-sidebar-model';
 export { AgentListItem } from './ui/AgentListItem';
 // Where an agent's depth lives (BC-35). Exported because the command palette
 // renders it too — a sibling feature composing this one's UI, which is the one

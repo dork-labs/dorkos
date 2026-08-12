@@ -211,7 +211,6 @@ export function ChatPanel({
     enqueueContent,
     status,
     error,
-    sessionBusy,
     stop,
     isLoadingHistory,
     hydrated,
@@ -480,7 +479,6 @@ export function ChatPanel({
         tryNativeCommand={tryNativeCommand}
         commandPending={commandPending}
         status={status}
-        sessionBusy={sessionBusy}
         stop={stop}
         setInput={setInput}
         sessionId={sessionId ?? ''}

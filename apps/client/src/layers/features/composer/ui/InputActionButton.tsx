@@ -16,7 +16,6 @@ interface InputActionButtonProps {
   isStreaming: boolean;
   /** A dispatched native command has not settled — its text is still in the box. */
   commandPending?: boolean;
-  sessionBusy: boolean;
   /** When true, the send action reads disabled and does nothing (target not ready). */
   submitDisabled?: boolean;
   editingQueueItem: boolean;
@@ -164,7 +163,6 @@ export function InputActionButton({
   hasText,
   isStreaming,
   commandPending = false,
-  sessionBusy,
   submitDisabled = false,
   editingQueueItem,
   queueDepth,
@@ -183,9 +181,9 @@ export function InputActionButton({
     editingQueueItem,
     commandPending
   );
-  // The send action is blocked while the session is busy or the target is not
-  // ready yet; other actions are never blocked here.
-  const sendBlocked = buttonState === 'send' && (sessionBusy || submitDisabled);
+  // The send action is blocked while the target is not ready yet; other actions
+  // are never blocked here.
+  const sendBlocked = buttonState === 'send' && submitDisabled;
   const onClick =
     sendBlocked || buttonState === null
       ? undefined

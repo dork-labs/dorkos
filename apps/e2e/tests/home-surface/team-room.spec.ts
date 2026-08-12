@@ -210,6 +210,39 @@ test.describe('Home is the #team room @smoke', () => {
     });
   });
 
+  test('saying something here puts #team in Today (DOR-1156)', async ({
+    basePage,
+    homeSurface,
+    dashboardSidebar,
+    teamRoomApi,
+    page,
+  }) => {
+    await basePage.goto();
+    await basePage.waitForAppReady();
+    await basePage.ensureSidebarOpen();
+
+    // **Home is arrived at, not opened.** `/` renders #team, but the router
+    // reports no conversational target there — so the room gets no anchor row
+    // and no interaction record, and this browser has never clicked it in the
+    // sidebar either. Today genuinely does not have it.
+    const teamRow = dashboardSidebar.todayRows.filter({ hasText: 'team' });
+    await expect(teamRow).toHaveCount(0);
+
+    const said = `today check ${teamRoomApi.runId}`;
+    await homeSurface.composerField.click();
+    await homeSurface.composerField.fill(said);
+    await homeSurface.composerField.press('Enter');
+
+    // The post lands…
+    await expect(page.getByTestId('room-timeline')).toContainText(said, {
+      timeout: SERVER_ROUND_TRIP_MS,
+    });
+    // …and the room the operator wrote in is now one of the places they have
+    // been today. Deleting the write in `RoomComposer.handleSubmit` reddens
+    // exactly this line.
+    await expect(teamRow).toHaveCount(1, { timeout: SERVER_ROUND_TRIP_MS });
+  });
+
   test('naming an agent stands the default agent down', async ({
     basePage,
     homeSurface,

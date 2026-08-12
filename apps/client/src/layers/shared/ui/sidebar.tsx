@@ -4,7 +4,6 @@ import * as React from 'react';
 import { cva, type VariantProps } from 'class-variance-authority';
 import { PanelLeftIcon } from 'lucide-react';
 import { Slot } from 'radix-ui';
-import { useRouter } from '@tanstack/react-router';
 
 import { useIsMobile } from '@/layers/shared/model';
 import { cn } from '@/layers/shared/lib/utils';
@@ -247,61 +246,6 @@ function Sidebar({
       </div>
     </div>
   );
-}
-
-/**
- * Puts the mobile sheet away as soon as the app commits to a destination.
- * Renders nothing; mount it once inside a {@link SidebarProvider} that lives
- * under a `RouterProvider`.
- *
- * On a phone the sidebar IS a sheet drawn over the whole screen, so every row in
- * it leads somewhere the sheet is covering. Left open, the person taps a
- * conversation, lands on it, and is looking at the sidebar again (DOR-610).
- *
- * **The seam is the router, not the rows.** One subscription closes the sheet
- * for every link in the sidebar — the nav header, agent rows, channel and
- * direct-message rows, the footer, whatever an extension contributes next —
- * instead of a `setOpenMobile(false)` each new call site has to remember.
- *
- * **It fires on the commit, never on a choice made inside the sheet.** Only the
- * router can say a destination was actually taken. Expanding an agent's
- * sessions, collapsing a section, and picking names in the nested "New message"
- * panel — which on a phone is a full-height sheet drawn INSIDE this one — are
- * all local state that never reaches the URL, so a half-assembled conversation
- * survives right up until it is started. The commit is not always the person's
- * own tap, and the sheet closes on those too: an agent-issued `control_ui`
- * navigation and the one-time SSE session rekey (`setSessionId` with replace)
- * both land as real loads. The app genuinely moved, so revealing where it went
- * beats holding a sheet over it.
- *
- * **Deliberately NOT gated on the href changing.** Re-opening the room you are
- * already in is the commonest tap of all — that row is the highlighted one,
- * right there — and TanStack reports it as an unchanged href, which would leave
- * the sheet sitting over the one destination the person was surest of.
- *
- * `onBeforeLoad` rather than `onBeforeNavigate`: the two are emitted together,
- * but `onBeforeNavigate` is skipped while a redirect is in flight, and this
- * cockpit redirects on the way into `/session` (`router.tsx`) — those landings
- * need the sheet gone just as much.
- *
- * **A component rather than a hook folded into the provider, and that is the
- * decision.** `SidebarProvider` is a `shared/ui` primitive that the Obsidian
- * embed's surfaces and dozens of component tests mount with no router at all;
- * reading the router from inside it would make every one of them declare a
- * router stub to render a sidebar. Mounting the subscription where the router
- * actually lives keeps the primitive presentational and the cost at one line in
- * the app shell.
- */
-function SidebarMobileNavigationClose() {
-  const { setOpenMobile } = useSidebar();
-  const router = useRouter();
-
-  React.useEffect(
-    () => router.subscribe('onBeforeLoad', () => setOpenMobile(false)),
-    [router, setOpenMobile]
-  );
-
-  return null;
 }
 
 /** Ghost button that toggles the sidebar open or closed. */
@@ -769,7 +713,6 @@ export {
   SidebarMenuSub,
   SidebarMenuSubButton,
   SidebarMenuSubItem,
-  SidebarMobileNavigationClose,
   SidebarProvider,
   SidebarRail,
   SidebarSeparator,

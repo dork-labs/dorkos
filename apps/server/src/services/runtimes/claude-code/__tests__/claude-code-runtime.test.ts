@@ -815,6 +815,25 @@ describe('ClaudeCodeRuntime', () => {
     });
   });
 
+  describe('getSessionWarmth() / reapSession()', () => {
+    // Purpose: the honest answer for a runtime that holds no warm process —
+    // which is every server today, since nothing launches a pump until the
+    // per-session opt-in (task 3.8). A session it has never heard of is cold.
+    it('reports cold for any session, warm processes not being wired yet', () => {
+      agentManager.ensureSession('s1', { permissionMode: 'default' });
+      expect(agentManager.getSessionWarmth?.('s1')).toBe('cold');
+      expect(agentManager.getSessionWarmth?.('never-seen')).toBe('cold');
+    });
+
+    // Purpose: reapSession's callers are timers and sweeps. Asking about a
+    // session with no process must be free, silent, and repeatable.
+    it('reapSession is idempotent and a no-op when cold', async () => {
+      await expect(agentManager.reapSession?.('s1')).resolves.toBeUndefined();
+      await expect(agentManager.reapSession?.('s1')).resolves.toBeUndefined();
+      expect(agentManager.getSessionWarmth?.('s1')).toBe('cold');
+    });
+  });
+
   describe('checkSessionHealth()', () => {
     it('removes sessions older than 30 minutes', () => {
       agentManager.ensureSession('old', { permissionMode: 'default' });

@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import { useInteractionStore } from '@/layers/entities/interactions';
 import { useSessions, sessionDisplayTitle } from '@/layers/entities/session';
 import { useTaskRuns } from '@/layers/entities/tasks';
 import { useAggregatedDeadLetters } from '@/layers/entities/relay';
@@ -88,11 +89,21 @@ export function useAttentionItems(): AttentionState {
             timestamp: session.updatedAt,
             action: {
               label: 'Open →',
-              onClick: () =>
-                navigate({
+              onClick: () => {
+                // Opening from here counts as opening (DOR-1156). An automated
+                // run reached by hand is one the operator has started —
+                // `select-today-items`' anchor branch says so in as many words
+                // — and without a record it left Today again the instant they
+                // looked at something else.
+                useInteractionStore.getState().recordOpened('session', session.id);
+                if (session.cwd) {
+                  useInteractionStore.getState().recordOpened('agent', session.cwd);
+                }
+                void navigate({
                   to: '/session',
                   search: { session: session.id, dir: session.cwd ?? '' },
-                }),
+                });
+              },
             },
             severity: 'warning',
           });

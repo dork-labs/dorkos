@@ -57,7 +57,6 @@ const { InputActionButton } = await import('../ui/InputActionButton');
 const baseProps = {
   hasText: true,
   isStreaming: false,
-  sessionBusy: false,
   editingQueueItem: false,
   queueDepth: 0,
   isTouchOnly: false,
@@ -73,12 +72,6 @@ describe('InputActionButton — the blocked send looks blocked (DOR-850)', () =>
     render(<InputActionButton {...baseProps} submitDisabled />);
 
     expect(screen.getByLabelText('Send message')).toHaveProperty('disabled', true);
-    expect(animateByLabel.get('Send message')).toEqual({ opacity: 0.5, scale: 1 });
-  });
-
-  it('animates to half opacity while the session is busy', () => {
-    render(<InputActionButton {...baseProps} sessionBusy />);
-
     expect(animateByLabel.get('Send message')).toEqual({ opacity: 0.5, scale: 1 });
   });
 

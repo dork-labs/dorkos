@@ -289,7 +289,7 @@ describe('ComposerInput', () => {
     expect(onSubmit).not.toHaveBeenCalled();
   });
 
-  // One test, three states. There used to be three of these — two byte-identical
+  // One test, two states. There used to be three of these — two byte-identical
   // — and each only checked that `disabled` was still its own default, which the
   // component never sets either way. Locking the field is the regression that
   // matters (it drops the caret with no restore), and it has more than one
@@ -297,7 +297,6 @@ describe('ComposerInput', () => {
   // still arrive.
   it.each([
     ['while the agent is streaming', { isStreaming: true }],
-    ['while the session is busy', { sessionBusy: true }],
     ['while an upload is in flight', { isUploading: true }],
   ])('stays typeable %s', (_label, state) => {
     const onChange = vi.fn();
@@ -811,44 +810,6 @@ describe('ComposerInput', () => {
       render(<ComposerInput {...defaultProps} isPaletteOpen={false} onEscape={onEscape} />);
       fireEvent.blur(screen.getByRole('combobox'));
       expect(onEscape).not.toHaveBeenCalled();
-    });
-  });
-
-  describe('sessionBusy state', () => {
-    it('does not submit on Enter when sessionBusy is true', () => {
-      const onSubmit = vi.fn();
-      render(
-        <ComposerInput {...defaultProps} value="hello" sessionBusy={true} onSubmit={onSubmit} />
-      );
-      fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Enter' });
-      expect(onSubmit).not.toHaveBeenCalled();
-    });
-
-    it('disables send button when sessionBusy is true', () => {
-      render(<ComposerInput {...defaultProps} value="hello" sessionBusy={true} />);
-      const btn = screen.getByLabelText('Send message');
-      expect(btn).toHaveProperty('disabled', true);
-      expect(btn.className).toContain('pointer-events-none');
-    });
-
-    it('names the actor and the wait when sessionBusy is true', () => {
-      render(<ComposerInput {...defaultProps} sessionBusy={true} />);
-      expect(
-        screen.getByText('Your agent is still finishing the last message. Try again in a moment.')
-      ).toBeInTheDocument();
-    });
-
-    it('hides busy message when sessionBusy is false', () => {
-      render(<ComposerInput {...defaultProps} sessionBusy={false} />);
-      expect(screen.queryByText(/still finishing/)).toBeNull();
-    });
-
-    it('hides clear button when sessionBusy is true', () => {
-      render(
-        <ComposerInput {...defaultProps} value="hello" sessionBusy={true} onClear={vi.fn()} />
-      );
-      const btn = screen.getByLabelText('Clear message');
-      expect(btn.className).toContain('pointer-events-none');
     });
   });
 
@@ -1526,16 +1487,6 @@ describe('ComposerInput', () => {
       expect(isArmed()).toBe(false);
     });
 
-    it('stays down while the session is busy, where the clear button is disabled', () => {
-      // `showClear` is false, so the button renders disabled and drops out of
-      // the tab order — unreachable in the same way, for the same reason.
-      render(<ComposerInput {...armable()} sessionBusy={true} />);
-      fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Escape' });
-
-      expect(screen.getByLabelText('Clear message')).toBeDisabled();
-      expect(isArmed()).toBe(false);
-    });
-
     it('drops a raised arm when the composer changes session', () => {
       // ChatPanel re-renders rather than remounts on a session switch, so an arm
       // raised against session A would otherwise still be live against B's
@@ -1915,20 +1866,6 @@ describe('ComposerInput', () => {
           canSubmitReason="Getting your agent ready…"
         />
       );
-      expect(screen.queryByText('Getting your agent ready…')).toBeNull();
-    });
-
-    it('defers to the busy banner rather than stacking two explanations', () => {
-      render(
-        <ComposerInput
-          {...defaultProps}
-          value="hello"
-          sessionBusy={true}
-          canSubmit={false}
-          canSubmitReason="Getting your agent ready…"
-        />
-      );
-      expect(screen.getByText(/still finishing the last message/)).toBeInTheDocument();
       expect(screen.queryByText('Getting your agent ready…')).toBeNull();
     });
   });

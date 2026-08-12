@@ -22,6 +22,7 @@ import type { Transport } from '@dorkos/shared/transport';
 import type { RoomSignalEvent } from '@dorkos/shared/room-schemas';
 import { createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
+import { useInteractionStore } from '@/layers/entities/interactions';
 import { useRoomPresenceStore } from '@/layers/entities/room';
 import { useSessionListStore } from '@/layers/entities/session';
 import { usePresenceStrip } from '../model/use-presence-strip';
@@ -169,6 +170,7 @@ describe('usePresenceStrip', () => {
   beforeEach(() => {
     useRoomPresenceStore.setState({ rooms: {} });
     useSessionListStore.setState({ statuses: {}, statusCwds: {} });
+    useInteractionStore.getState().reset();
   });
 
   afterEach(() => {
@@ -231,6 +233,9 @@ describe('usePresenceStrip', () => {
 
     await waitFor(() => expect(router.state.location.pathname).toBe('/channels'));
     expect(router.state.location.search).toEqual({ id: ROOM_ID });
+    // Following IS opening, so Today keeps the room the operator walked into
+    // (DOR-1156). Without this the strip was a door out of Today's memory.
+    expect(Object.keys(useInteractionStore.getState().opened)).toEqual([`room:${ROOM_ID}`]);
     // Watch, not hijack: the lock is taken only by writes, and following makes
     // none. Red the moment this grows a "take over" or a kickoff message.
     expect(lockingCalls(transport)).toBe(0);
@@ -261,6 +266,12 @@ describe('usePresenceStrip', () => {
 
     await waitFor(() => expect(router.state.location.pathname).toBe('/session'));
     expect(router.state.location.search).toEqual({ session: 'sess-1', dir: AGENT_PATH });
+    // The conversation AND its agent, the pair `SidebarChrome.openSession`
+    // writes (DOR-1156).
+    expect(Object.keys(useInteractionStore.getState().opened).sort()).toEqual([
+      `agent:${AGENT_PATH}`,
+      'session:sess-1',
+    ]);
     expect(lockingCalls(transport)).toBe(0);
   });
 

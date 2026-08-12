@@ -37,6 +37,8 @@ import {
   sessionKeys,
 } from '@/layers/entities/session';
 import { useRuntimeCapabilities } from '@/layers/entities/runtime';
+import { useInteractionStore } from '@/layers/entities/interactions';
+import { carryInteractionForward } from '../lib/carry-interaction-forward';
 import { clearComposerOnConfirmed } from '../lib/clear-composer-on-confirmed';
 import type { SessionStoreActions } from './use-session-store-actions';
 import type { NativeCommandResult } from './native-commands';
@@ -66,7 +68,6 @@ interface UseSessionSubmitParams {
   // Store setters (sourced from useSessionStoreActions)
   setInput: SessionStoreActions['setInput'];
   setError: SessionStoreActions['setError'];
-  setSessionBusy: SessionStoreActions['setSessionBusy'];
   /**
    * Native (client-side) command interceptor. Returns a {@link NativeCommandResult}:
    * `handled` is true when `content` was a registered DorkOS command (the runtime
@@ -98,7 +99,6 @@ export function useSessionSubmit({
   takeSeedContext,
   setInput,
   setError,
-  setSessionBusy,
   tryNativeCommand,
 }: UseSessionSubmitParams) {
   // Refs to avoid stale closures inside the async submit callback.
@@ -135,13 +135,6 @@ export function useSessionSubmit({
     onSessionIdChangeReplaceRef.current = onSessionIdChangeReplace;
   });
 
-  const sessionBusyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(() => {
-    return () => {
-      if (sessionBusyTimerRef.current) clearTimeout(sessionBusyTimerRef.current);
-    };
-  }, []);
-
   // ---------------------------------------------------------------------------
   // Submission
   // ---------------------------------------------------------------------------
@@ -152,7 +145,6 @@ export function useSessionSubmit({
    *
    * @param content - The trimmed message text to send (PRISTINE — never annotated).
    * @param clearInput - When true, clears the input state after triggering.
-   * @param restoreContentOnLock - Content to restore if the session is locked.
    * @param opts - `{ kickoff: true }` for the M4 auto-first-turn: the content is
    *   a DorkOS-injected "introduce yourself" instruction, not a person's typing,
    *   so it skips the native-command funnel, the file/content transform, and —
@@ -170,7 +162,6 @@ export function useSessionSubmit({
     async (
       content: string,
       clearInput: boolean,
-      restoreContentOnLock: string,
       opts: { kickoff?: boolean; cwd?: string } = {}
     ) => {
       // Native (client-side) command: runs locally and must NEVER reach the
@@ -206,6 +197,38 @@ export function useSessionSubmit({
       // `?dir=` has settled onto the new agent.
       const cwd = opts.cwd ?? selectedCwdRef.current;
       setError(null);
+
+      // **Writing is the strongest thing a person can do to a conversation, so
+      // it is recorded like opening one** (DOR-1156). Today's membership and
+      // order are `max(userLastMessageAt, userLastOpenedAt)` (BC-16), and the
+      // client half of that pair was only ever written by a click on a sidebar
+      // row — so a person could type a paragraph into an agent, walk away, and
+      // find the conversation nowhere in Today. Recorded HERE, at the act,
+      // rather than on the 202: the operator's rule is about what THEY did, and
+      // a message that fails to reach the runtime was still one they wrote.
+      //
+      // The agent gets a record too, exactly as `SidebarChrome.openSession`
+      // does, so one act updates both the conversation's place in Today and the
+      // agent's frecency — a thing you write in is a thing you use.
+      //
+      // The kickoff is the one send excluded, because nobody performed an act:
+      // it is DorkOS-injected, so nothing it does is evidence of the operator's
+      // attention. That is the honesty seam this hook applies everywhere else.
+      //
+      // **A queued message cannot reach this function at all**, and that is
+      // worth saying out loud because it used to and had to be excluded by
+      // hand. The queue is the server's now (`persistent-session-runtime`):
+      // {@link enqueueContent} posts with `disposition: 'queue'` and the server
+      // dispatches when the running turn ends. So the only callers left are the
+      // operator's own — `handleSubmit`, `retryMessage` — plus the kickoff.
+      // Were a flush ever routed back through here, it would advance Today's
+      // order key at the instant an AGENT finished talking, which BC-16 forbids
+      // outright; the enqueue site records instead, at the keystroke
+      // (`useChatQueue.handleQueue`).
+      if (!opts.kickoff) {
+        useInteractionStore.getState().recordOpened('session', targetSessionId);
+        if (cwd) useInteractionStore.getState().recordOpened('agent', cwd);
+      }
 
       // Subscribe-first, and BEFORE the upload await. `attachSession` re-targets
       // the single active-session connection, and the only other caller is an
@@ -243,7 +266,7 @@ export function useSessionSubmit({
       } catch (err) {
         // Nothing was sent, and the words are still in the composer because
         // `clearInput` has not run yet — the clear used to happen before the
-        // upload and only `SESSION_LOCKED` restored it, so an upload failure on
+        // upload, with nothing to put the words back, so an upload failure on
         // an ordinary send destroyed the message outright (DOR-480).
         if (opts.kickoff) throw err;
         setError({
@@ -353,6 +376,13 @@ export function useSessionSubmit({
           // stream fires the same migration when the canonical id resolves only
           // AFTER this 202 (the common Claude path — see session-stream-binding).
           useSessionStreamStore.getState().migrateSessionContinuity(targetSessionId, canonicalId);
+          // The interaction the send above recorded is bucketed under the
+          // throwaway id too, and Today walks the session LIST — so left behind
+          // it names a session no list will ever contain, and the conversation
+          // the operator just started is absent from Today the moment they open
+          // something else. Same migration by the other route in
+          // `useSessionRekeyRedirect`.
+          carryInteractionForward(targetSessionId, canonicalId);
           // Move the newborn-agent birth ceremony (M4) to the canonical id too,
           // for the case the rekey resolves synchronously here (no-op without a
           // birth record; idempotent with the retire-announce migration).
@@ -394,21 +424,6 @@ export function useSessionSubmit({
         useSessionStreamStore.getState().setOptimisticUserMessage(targetSessionId, null);
         useSessionStreamStore.getState().setTriggerPending(targetSessionId, false);
 
-        if ((err as { code?: string }).code === 'SESSION_LOCKED') {
-          // A locked birth session means a turn is already running — the
-          // greeting rode another trigger. Nothing to restore or retry.
-          if (opts.kickoff) return;
-          if (clearInput) setInput(restoreContentOnLock);
-          setSessionBusy(true);
-          if (sessionBusyTimerRef.current) clearTimeout(sessionBusyTimerRef.current);
-          sessionBusyTimerRef.current = setTimeout(() => {
-            setSessionBusy(false);
-            setError(null);
-            sessionBusyTimerRef.current = null;
-          }, TIMING.SESSION_BUSY_CLEAR_MS);
-          return;
-        }
-
         // A failed kickoff propagates to useAutoKickoff, which retries once and
         // — if that is also spent — surfaces an honest greeting-failed line on
         // the empty session. Deliberately NO "Could not send message" banner:
@@ -424,13 +439,12 @@ export function useSessionSubmit({
         });
       }
     },
-    [sessionId, transport, queryClient, setInput, setError, setSessionBusy, tryNativeCommand]
+    [sessionId, transport, queryClient, setInput, setError, tryNativeCommand]
   );
 
   const handleSubmit = useCallback(async () => {
     if (!input.trim() || status === 'streaming') return;
-    const userContent = input.trim();
-    await executeSubmission(userContent, true, userContent);
+    await executeSubmission(input.trim(), true);
   }, [input, status, executeSubmission]);
 
   /**
@@ -442,7 +456,7 @@ export function useSessionSubmit({
   const submitContent = useCallback(
     async (content: string, opts?: { cwd?: string }) => {
       if (!content.trim() || status === 'streaming') return;
-      await executeSubmission(content.trim(), false, '', {
+      await executeSubmission(content.trim(), false, {
         ...(opts?.cwd ? { cwd: opts.cwd } : {}),
       });
     },
@@ -531,7 +545,7 @@ export function useSessionSubmit({
   const retryMessage = useCallback(
     async (content: string) => {
       setError(null);
-      await executeSubmission(content, false, '');
+      await executeSubmission(content, false);
     },
     [executeSubmission, setError]
   );
@@ -551,7 +565,7 @@ export function useSessionSubmit({
    */
   const submitKickoff = useCallback(
     async (content: string, cwd?: string) => {
-      await executeSubmission(content, false, '', {
+      await executeSubmission(content, false, {
         kickoff: true,
         ...(cwd ? { cwd } : {}),
       });

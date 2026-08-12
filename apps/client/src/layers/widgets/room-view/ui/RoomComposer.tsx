@@ -12,6 +12,7 @@ import {
   useMentionAutocomplete,
   type MentionRow,
 } from '@/layers/features/mentions';
+import { useInteractionStore } from '@/layers/entities/interactions';
 import {
   newPendingId,
   roomDisplayTitle,
@@ -348,6 +349,18 @@ export function RoomComposer({
     // been emptied by then, so the second submit finds nothing and stops.
     const body = useRoomDraftStore.getState().take(draftKey).trim();
     if (body === '') return;
+    // **Posting into a room is an interaction with it** (DOR-1156). Today is
+    // ordered by `max(userLastMessageAt, userLastOpenedAt)` (BC-16) and the
+    // client half was only written by opening a row — so the home surface,
+    // which IS #team and is arrived at rather than opened, could be written in
+    // all morning and still hold no record at all.
+    //
+    // Recorded here rather than in `usePostToRoom`, and not only because an
+    // entity may not import a sibling entity: this is the keystroke, and the
+    // post is still one upload away from being made. A thread reply records the
+    // ROOM, matching `SidebarChrome.openTarget` — a thread reads its room's
+    // cursor, so one place has one record.
+    useInteractionStore.getState().recordOpened('room', room.id);
     // The id is minted here, at the keystroke, because that is when the row has
     // to appear — before there is any server id to call it by.
     const clientId = newPendingId();

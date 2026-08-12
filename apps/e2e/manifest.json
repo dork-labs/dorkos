@@ -602,6 +602,18 @@
       ],
       "lastModified": ""
     },
+    "send-lands-in-today": {
+      "specFile": "tests/dashboard-sidebar/send-lands-in-today.ts",
+      "feature": "dashboard-sidebar",
+      "description": "a conversation you only wrote in is still in Today after you walk away, Today is ordered by when you wrote, newest first",
+      "lastRun": "2026-08-11T16:10:25.567Z",
+      "lastStatus": "passed",
+      "runCount": 1,
+      "passCount": 1,
+      "failCount": 0,
+      "relatedCode": [],
+      "lastModified": ""
+    },
     "archived-in-palette": {
       "specFile": "tests/rooms/archived-in-palette.spec.ts",
       "feature": "rooms",
@@ -628,15 +640,6 @@
     }
   },
   "runHistory": [
-    {
-      "id": "2026-07-30T11-00-27",
-      "timestamp": "2026-07-30T11:00:27.966Z",
-      "total": 27,
-      "passed": 27,
-      "failed": 0,
-      "skipped": 0,
-      "duration": 40977
-    },
     {
       "id": "2026-07-30T12-30-10",
       "timestamp": "2026-07-30T12:30:10.521Z",
@@ -1527,6 +1530,15 @@
       "failed": 0,
       "skipped": 0,
       "duration": 146210
+    },
+    {
+      "id": "2026-08-11T16-10-25",
+      "timestamp": "2026-08-11T16:10:25.567Z",
+      "total": 2,
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0,
+      "duration": 98004
     }
   ]
 }

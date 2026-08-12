@@ -166,7 +166,6 @@ function baseProps(autocomplete = makeAutocomplete()) {
     tryNativeCommand: vi.fn(() => ({ handled: false }) as const),
     commandPending: false,
     status: 'idle' as 'idle' | 'streaming' | 'error',
-    sessionBusy: false,
     stop: vi.fn(),
     setInput: vi.fn(),
     sessionId: SESSION_ID,

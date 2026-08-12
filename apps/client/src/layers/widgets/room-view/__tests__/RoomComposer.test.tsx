@@ -12,6 +12,7 @@ import type {
   RoomAttachment,
   RoomWithRoster,
 } from '@dorkos/shared/room-schemas';
+import { useInteractionStore } from '@/layers/entities/interactions';
 import { usePendingPostStore, useRoomDraftStore } from '@/layers/entities/room';
 import { createQueryClientConfig } from '@/layers/shared/lib';
 import { TransportProvider } from '@/layers/shared/model';
@@ -45,6 +46,7 @@ afterEach(() => {
   // Pending rows outlive their composer for the same reason drafts do — a
   // refusal has to find something still standing — so they outlive tests too.
   usePendingPostStore.setState({ posts: [] });
+  useInteractionStore.getState().reset();
 });
 
 function roomWith(overrides: Partial<RoomWithRoster> = {}): RoomWithRoster {
@@ -69,7 +71,7 @@ function roomWith(overrides: Partial<RoomWithRoster> = {}): RoomWithRoster {
 function renderComposer(
   transport: Transport,
   room: RoomWithRoster = roomWith(),
-  props: { offerJumpBackIn?: boolean } = {}
+  props: { offerJumpBackIn?: boolean; threadRootId?: string } = {}
 ) {
   // The app's real cache configuration, retries off. A bare `new QueryClient()`
   // has no MutationCache — and the MutationCache is where a failed post's toast
@@ -116,6 +118,36 @@ function neverSettles(): Promise<PostToRoomResponse> {
 function type(field: HTMLTextAreaElement, text: string) {
   fireEvent.change(field, { target: { value: text } });
 }
+
+describe('RoomComposer — the post records the interaction (DOR-1156)', () => {
+  it('records the room on Enter, and nothing before it', async () => {
+    const transport = createMockTransport();
+    const field = renderComposer(transport);
+
+    type(field, 'ship it');
+    // Typing is not writing-to. The record has to be the SEND, or a person who
+    // opens a box and walks away has told Today they were in the room.
+    expect(Object.keys(useInteractionStore.getState().opened)).toEqual([]);
+
+    fireEvent.keyDown(field, { key: 'Enter' });
+
+    await waitFor(() => expect(transport.postToRoom).toHaveBeenCalledTimes(1));
+    expect(Object.keys(useInteractionStore.getState().opened)).toEqual(['room:room-1']);
+  });
+
+  it('records the ROOM for a thread reply, not the thread', async () => {
+    const transport = createMockTransport();
+    const field = renderComposer(transport, roomWith(), { threadRootId: 'entry-7' });
+
+    type(field, 'agreed');
+    fireEvent.keyDown(field, { key: 'Enter' });
+
+    await waitFor(() => expect(transport.replyInThread).toHaveBeenCalledTimes(1));
+    // A thread reads its room's cursor (ADR 260728-022013), so one place has
+    // one record — the same rule `SidebarChrome.openTarget` follows.
+    expect(Object.keys(useInteractionStore.getState().opened)).toEqual(['room:room-1']);
+  });
+});
 
 describe('RoomComposer', () => {
   it('posts the typed message on Enter', async () => {

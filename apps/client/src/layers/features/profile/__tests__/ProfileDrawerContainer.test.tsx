@@ -27,6 +27,7 @@ import { zodValidator } from '@tanstack/zod-adapter';
 import { z } from 'zod';
 import type { Transport } from '@dorkos/shared/transport';
 import { createMockTransport } from '@dorkos/test-utils';
+import { useInteractionStore } from '@/layers/entities/interactions';
 import { TransportProvider, mergeDialogSearch, useAppStore } from '@/layers/shared/model';
 import { MOCK_TEAM_ROSTER } from '@/dev/mock-samples';
 import { ProfileDrawerContainer } from '../ui/ProfileDrawerContainer';
@@ -104,6 +105,7 @@ function renderContainer({
 beforeEach(() => {
   vi.clearAllMocks();
   useAppStore.setState({ settingsOpen: false, profileOpen: false, profileMemberId: null });
+  useInteractionStore.getState().reset();
 });
 
 afterEach(() => {
@@ -213,5 +215,12 @@ describe('ProfileDrawerContainer — its two actions', () => {
 
     await waitFor(() => expect(harness.pathname()).toBe('/session'));
     expect(harness.search().dir).toBe('/Users/dorian/code/dorkos');
+    // The roster's door records the AGENT (DOR-1156). It names a directory and
+    // not a session — which conversation opens is resolved afterwards — so the
+    // agent is the only honest thing to write, and it is the one ⌘K and the New
+    // menu's "last used" read.
+    expect(Object.keys(useInteractionStore.getState().opened)).toEqual([
+      'agent:/Users/dorian/code/dorkos',
+    ]);
   });
 });
