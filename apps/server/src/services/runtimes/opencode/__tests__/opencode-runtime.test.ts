@@ -745,6 +745,51 @@ describe('OpenCodeRuntime', () => {
       await finished;
     });
 
+    it('an approval answered outside DorkOS earns the SAME receipt as one answered inside (DOR-1148)', async () => {
+      // Before DOR-1148, `mapPermissionReplied` ignored the echo's `reply`
+      // field entirely, so a TUI-answered ask always landed as a bare
+      // `interaction_cancelled` — no `reason` — which the normalizer turned
+      // into `resolution: 'cancelled'`, earning NO Approved/Denied receipt. An
+      // ask answered inside DorkOS goes through `approveTool()`, which tells
+      // the projector `resolveInteraction(id, 'approved' | 'denied')` directly
+      // (see its own doc). This asserts the echo path now reaches the same
+      // outcome.
+      const harness = makeRuntime();
+      const { connection, events, finished } = await turnWithPermission(harness, 'default');
+      await vi.waitFor(() => expect(events.some((e) => e.type === 'approval_required')).toBe(true));
+
+      // Answered `once` in the TUI — DorkOS never sent this response itself.
+      connection.push(globalEvent(DIRECTORY, permissionReplied(OC_SESSION_A, 'per_0001', 'once')));
+      await vi.waitFor(() =>
+        expect(events.find((e) => e.type === 'interaction_cancelled')?.data).toMatchObject({
+          interactionId: 'per_0001',
+          reason: 'approved',
+        })
+      );
+
+      finishTurn(connection);
+      await finished;
+    });
+
+    it('a permission.replied reject echo earns a Denied receipt (DOR-1148)', async () => {
+      const harness = makeRuntime();
+      const { connection, events, finished } = await turnWithPermission(harness, 'default');
+      await vi.waitFor(() => expect(events.some((e) => e.type === 'approval_required')).toBe(true));
+
+      connection.push(
+        globalEvent(DIRECTORY, permissionReplied(OC_SESSION_A, 'per_0001', 'reject'))
+      );
+      await vi.waitFor(() =>
+        expect(events.find((e) => e.type === 'interaction_cancelled')?.data).toMatchObject({
+          interactionId: 'per_0001',
+          reason: 'denied',
+        })
+      );
+
+      finishTurn(connection);
+      await finished;
+    });
+
     it('clears the pending card on approve WITHOUT waiting for the sidecar echo', async () => {
       // The echo is the sidecar's courtesy, not a guarantee. When it never
       // arrives the card used to hang forever and the session stayed `blocked`,

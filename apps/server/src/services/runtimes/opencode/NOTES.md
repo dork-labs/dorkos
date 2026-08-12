@@ -139,6 +139,28 @@ path: { id: sessionID, permissionID }, body: { response: "once" | "always" | "re
 - `permission.v2.asked` / `permission.v2.replied` exist in the OpenAPI document but did NOT fire in any
   observed turn — tool permissions came through the v1 pair every time. Nothing maps them.
 
+### The echo's `reply` now earns a receipt, not just a clear (DOR-1148)
+
+DOR-1147 wired `permission.replied` to clear the card (`interaction_cancelled`) but ignored the echo's
+`reply` field entirely, so a card answered OUTSIDE DorkOS — the OpenCode TUI, another DorkOS client —
+always landed as `resolution: 'cancelled'` and earned no Approved/Denied receipt, even though a request
+answered THROUGH `approveTool()` gets one (it tells the projector directly,
+`resolveInteraction(id, 'approved' | 'denied')` — see that method's doc in `opencode-runtime.ts`).
+
+`mapPermissionReplied` (`session-event-mapper.ts`) now maps the echo's `reply` to a `reason` on the same
+`interaction_cancelled` event: `once`/`always` → `reason: 'approved'`, `reject` → `reason: 'denied'`, an
+unrecognized string → no `reason` at all (never a guess). The normalizer
+(`session-event-normalizer.ts`) already had a `reason` → `resolution` table for `timeout` (a receipt an
+auto-deny timer decided FOR the operator); `approved`/`denied` slot into that same table so a card
+answered outside DorkOS renders the identical receipt one answered inside does. A genuinely withdrawn ask
+(the turn-terminal sweep in `closeOpenPermissions`, which never carries a `reply` because it is not
+built from a `permission.replied` event at all) is unaffected — it still clears with no `reason` and no
+fabricated receipt.
+
+`always`, notably, is folded into `approved` even though DorkOS itself never SENDS it (§2 above): the
+echo can still carry it when the answer came from elsewhere, and to whoever answered it, `always` meant
+the same yes `once` does.
+
 ### Whose card owns a SUBAGENT's prompt (DOR-1126, live-verified 2026-08-11)
 
 A subagent's prompts are raised against its CHILD session, and the child path used to drop them: the

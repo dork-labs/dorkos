@@ -681,7 +681,7 @@ describe('mapOpenCodeEvent', () => {
     it('maps permission.replied to interaction_cancelled so resolved-elsewhere cards clear', () => {
       const events = mapOpenCodeEvent(permissionReplied(OC, 'per_0001', 'once'), makeContext());
       expect(events).toEqual([
-        { type: 'interaction_cancelled', data: { interactionId: 'per_0001' } },
+        { type: 'interaction_cancelled', data: { interactionId: 'per_0001', reason: 'approved' } },
       ]);
     });
 
@@ -787,7 +787,10 @@ describe('mapOpenCodeEvent', () => {
       const ctx = startedContext();
       mapOpenCodeEvent(childAsk(), ctx);
       expect(mapOpenCodeEvent(permissionReplied(OC_CHILD_SESSION, 'per_child01'), ctx)).toEqual([
-        { type: 'interaction_cancelled', data: { interactionId: 'per_child01' } },
+        {
+          type: 'interaction_cancelled',
+          data: { interactionId: 'per_child01', reason: 'approved' },
+        },
       ]);
     });
 
