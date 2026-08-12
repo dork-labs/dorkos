@@ -20,7 +20,14 @@ import { GitFork, Info, Pencil, ShieldOff } from 'lucide-react';
 import type { Session } from '@dorkos/shared/types';
 import { cn, formatRelativeTime } from '@/layers/shared/lib';
 import { useNow } from '@/layers/shared/model';
-import { SidebarRow, statusDotClass, type SidebarMenuNode } from '@/layers/shared/ui';
+import {
+  SidebarRow,
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+  statusDotClass,
+  type SidebarMenuNode,
+} from '@/layers/shared/ui';
 import { RuntimeMark } from '@/layers/entities/runtime';
 import type { StatusSignal } from '@/layers/shared/ui';
 import { useSessionBorderState, type SessionBorderKind } from '../model/use-session-border-state';
@@ -213,14 +220,36 @@ export function SessionRowSidebar({
           // mid-turn is unreadable.
           <span aria-hidden className="size-1.5" />
         ) : (
-          <span
-            // `img` because the dot has no text of its own — a bare `aria-label`
-            // on a generic element is not reliably read out, and the role is
-            // what turns this from decoration into something with a name.
-            role="img"
-            aria-label={border.label}
-            className={cn('size-1.5 rounded-full', statusDotClass(signal))}
-          />
+          // **Colour is never the sole indicator** (`status-dot.ts`, WCAG 1.4.1).
+          // A dot's entire content is a hue, so it has to be paired with words:
+          // the label for a screen reader, and this tooltip for everyone else.
+          //
+          // A tooltip rather than a verb line, of the two stronger pairings the
+          // dot vocabulary sanctions. A verb line only speaks while a turn is
+          // streaming, and three of the four signals here — needs-you, error,
+          // unseen — are exactly the states where nothing is streaming and the
+          // line would sit empty. `border.label` names all four in the same
+          // words the full row used, so this restores the affordance the old row
+          // had rather than inventing a different one, and it matches the three
+          // marks in the trailing slot beside it, which are all tooltipped
+          // already.
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span
+                // `img` because the dot has no text of its own — a bare
+                // `aria-label` on a generic element is not reliably read out,
+                // and the role is what turns this from decoration into
+                // something with a name. Presentational within the row's
+                // `<button>`: the trigger adds no tab stop of its own.
+                role="img"
+                aria-label={border.label}
+                className={cn('size-1.5 rounded-full', statusDotClass(signal))}
+              />
+            </TooltipTrigger>
+            <TooltipContent side="right" sideOffset={8}>
+              {border.label}
+            </TooltipContent>
+          </Tooltip>
         )
       }
       title={title}

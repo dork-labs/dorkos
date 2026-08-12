@@ -221,7 +221,7 @@ export type SidebarRowMenu =
 /** Props for {@link SidebarRow}. */
 export interface SidebarRowProps {
   /**
-   * The mark at the head of the row, in a fixed 18px slot — an agent's face, a
+   * The mark at the head of the row, in an unvarying 18px slot — an agent's face, a
    * room's `#`, a stack of faces for a group conversation. A node rather than a
    * descriptor so `shared/` never has to know what an agent or a room is.
    */

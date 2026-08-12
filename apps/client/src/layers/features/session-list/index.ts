@@ -7,7 +7,6 @@ export { EmbedSidebar } from './ui/EmbedSidebar';
 // The embed's roster, published for the Dev Playground — the only surface that
 // can show what the Obsidian panel looks like without an Obsidian vault.
 export { EmbedSessionList } from './ui/EmbedSessionList';
-export type { EmbedSessionListProps } from './ui/EmbedSessionList';
 export { SessionsView } from './ui/SessionsView';
 export { TasksView } from './ui/TasksView';
 // The desktop app's native updater, read by the sidebar footer strip's update

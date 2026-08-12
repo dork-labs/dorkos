@@ -1,16 +1,88 @@
 @import 'tailwindcss';
 @source '../../../node_modules/streamdown/dist/*.js';
 /*
- * The embed's UI IS the client (DOR-1080).
+ * The guard's own prose is not markup.
  *
- * Tailwind's automatic source detection starts at this build's own root, so
- * without this line it scans `apps/obsidian-plugin/src` and nothing else — and
- * the plugin's `src` is four files of glue. Every class the components it
- * actually renders are written in was being dropped on the floor: measured on
- * the emitted `styles.css`, `tabular-nums` (57 client files), `min-h-7` (5) and
- * `bg-sidebar-accent` (20) all came out at zero occurrences.
+ * `plugin-styles.test.ts` asserts that `fixed`, `inset-0`, `z-50` and
+ * `bg-black/80` never reach this stylesheet — and it names them, in a string
+ * array and in the comment explaining why. Tailwind's scanner reads candidate
+ * classes out of raw text with no idea which file is a test, so the guard
+ * emitted the very utility it forbids and failed on itself. Excluded here rather
+ * than obfuscated there: a test that has to spell `'fix' + 'ed'` to avoid its own
+ * build is a test nobody can read.
  */
-@source '../../../client/src';
+@source not '../__tests__/**/*';
+
+/*
+ * ── The roster's own modules, and NOTHING else in the client (DOR-1080) ──
+ *
+ * Tailwind's automatic source detection starts at this build's own root, so it
+ * scans `apps/obsidian-plugin/src` — four files of glue — and none of the client
+ * code the embed actually renders. Measured on the emitted `styles.css` before
+ * this list existed: `tabular-nums` (57 client files), `min-h-7` (5) and
+ * `bg-sidebar-accent` (20) all came out at zero occurrences. That is why the
+ * panel's rows had no hover, no active tint and no status colour.
+ *
+ * **A file list rather than `@source '../../../client/src'`, deliberately.**
+ * Scanning the whole client is a restyle of the entire embed in one line, and
+ * the damage is not hypothetical: it activates `fixed inset-0 z-50 bg-black/80`
+ * from `drawer.tsx`, and `position: fixed` inside an Obsidian leaf is positioned
+ * against the WINDOW — so every menu long-press would drop an 80%-black scrim
+ * over the user's whole vault. Nothing here has ever been seen running in a
+ * vault (AGENTS.md: the plugin is a staged surface), so the scan covers exactly
+ * the modules DOR-1080 restyled and stops.
+ *
+ * **What is deliberately NOT listed**, and stays exactly as unstyled as it was
+ * before this branch: `drawer.tsx`, `dialog.tsx`, `sheet.tsx`, `sidebar.tsx`,
+ * `context-menu.tsx`, `dropdown-menu.tsx`, `tooltip.tsx`. Every one of them
+ * carries window-level positioning (`fixed`, `z-50`) that has never been emitted
+ * into this build, and turning it on unseen is the thing this list exists to
+ * refuse. The row's menus therefore look exactly as they always have here; a
+ * `plugin-styles.test.ts` sibling asserts those four classes stay off.
+ */
+/* The roster itself. */
+@source '../../../client/src/layers/features/session-list/ui/EmbedSidebar.tsx';
+@source '../../../client/src/layers/features/session-list/ui/EmbedSessionList.tsx';
+@source '../../../client/src/layers/features/session-list/ui/SessionListWarningNotice.tsx';
+@source '../../../client/src/layers/features/session-list/ui/FleetContextBar.tsx';
+/* The session row it draws, and the marks that ride in its trailing slot. */
+@source '../../../client/src/layers/entities/session/ui/SessionRowSidebar.tsx';
+@source '../../../client/src/layers/entities/session/ui/SessionDetailsPanel.tsx';
+@source '../../../client/src/layers/entities/session/ui/SessionContextGauge.tsx';
+@source '../../../client/src/layers/entities/session/ui/SessionOriginMark.tsx';
+@source '../../../client/src/layers/entities/session/ui/AccountMark.tsx';
+@source '../../../client/src/layers/entities/runtime/ui/RuntimeMark.tsx';
+/* The two shared primitives the whole point of DOR-1080 is adopting. */
+@source '../../../client/src/layers/shared/ui/sidebar-row.tsx';
+@source '../../../client/src/layers/shared/ui/section-header.tsx';
+@source '../../../client/src/layers/shared/ui/sidebar-menu-node.tsx';
+@source '../../../client/src/layers/shared/ui/scroll-area.tsx';
+@source '../../../client/src/layers/shared/ui/copy-button.tsx';
+@source '../../../client/src/layers/shared/ui/button.tsx';
+/* The promo card in the panel's foot, which already spoke the ramp. */
+@source '../../../client/src/layers/features/feature-promos/ui/PromoCard.tsx';
+/*
+ * The three list-chrome utilities `sidebar.tsx` contributes to the roster
+ * (`SidebarGroup`, `SidebarMenu`, `SidebarMenuItem`). Named here rather than
+ * scanning that file, which also holds the offcanvas Sheet's `fixed`.
+ */
+@source inline('relative flex w-full min-w-0 flex-col p-2 gap-1');
+/*
+ * The status dot's own colours, from `status-dot.ts`'s `STATUS_DOT_COLOR`, plus
+ * the one pulse this cockpit spends on "right now".
+ *
+ * **Named rather than scanned, and the alternative is worse.** That module also
+ * declares `STATUS_DOT_HALO`, which begins `absolute inset-0` — an avatar's
+ * corner ping, entirely safe where it is used, but `inset-0` is one of the four
+ * window-escape utilities this build refuses to emit unseen, and the roster
+ * draws no haloes at all. So the list is spelled out, and `plugin-styles.test.ts`
+ * pins it to `STATUS_DOT_COLOR` itself: a fifth signal added there fails the
+ * test until it is answered here, which is the drift a hand-written safelist
+ * would otherwise invite.
+ */
+@source inline(
+  'bg-status-success bg-status-warning-dot bg-status-error bg-status-info motion-safe:animate-pulse'
+);
 
 @theme inline {
   --text-2xs: 0.6875rem;
@@ -38,15 +110,22 @@
   --color-input: var(--input);
   --color-ring: var(--ring);
   /*
-   * The sidebar palette (DOR-1080).
+   * ── The rest of the client's colour family (DOR-1080) ──
    *
-   * The embed's roster is drawn with the cockpit's shared sidebar primitives —
-   * `SidebarRow`, `SectionHeader` — and every tint they spend comes from this
-   * family. This build is its own Tailwind compile, so a `--color-sidebar-*`
-   * that is not declared here is not a colour Tailwind knows: the utility is
-   * never emitted and the class does nothing at all. That is not a theory —
-   * `PromoCard`'s `bg-sidebar-accent/40` has been shipping into this build as
-   * dead markup, which is why its card had no fill in a vault.
+   * This build is its own Tailwind compile, so a `--color-*` the client's
+   * `index.css` declares and this file does not is simply not a colour Tailwind
+   * knows here: the utility is never emitted and the class is dead markup. It
+   * had already cost this plugin two visible things — `PromoCard`'s
+   * `bg-sidebar-accent/40` had zero occurrences in the emitted stylesheet, and
+   * so did every `bg-status-*`, which is what a status dot is made of. A dot
+   * with no colour is a correctly sized, correctly pulsing, invisible span.
+   *
+   * So the family is bridged WHOLE rather than one name at a time. A token
+   * declaration costs nothing on its own — utilities are emitted only for
+   * classes the `@source` list above actually finds — and the next component
+   * that arrives here should not have to rediscover this mechanism a third time.
+   * `plugin-styles.test.ts` fails if `index.css` grows a `--color-*` this file
+   * has not answered for.
    */
   --color-sidebar: var(--sidebar);
   --color-sidebar-foreground: var(--sidebar-foreground);
@@ -54,6 +133,39 @@
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-status-success: var(--status-success);
+  --color-status-success-bg: var(--status-success-bg);
+  --color-status-success-border: var(--status-success-border);
+  --color-status-success-fg: var(--status-success-fg);
+  --color-status-error: var(--status-error);
+  --color-status-error-bg: var(--status-error-bg);
+  --color-status-error-border: var(--status-error-border);
+  --color-status-error-fg: var(--status-error-fg);
+  --color-status-warning: var(--status-warning);
+  --color-status-warning-dot: var(--status-warning-dot);
+  --color-status-warning-bg: var(--status-warning-bg);
+  --color-status-warning-border: var(--status-warning-border);
+  --color-status-warning-fg: var(--status-warning-fg);
+  --color-status-info: var(--status-info);
+  --color-status-info-bg: var(--status-info-bg);
+  --color-status-info-border: var(--status-info-border);
+  --color-status-info-fg: var(--status-info-fg);
+  --color-status-pending: var(--status-pending);
+  --color-status-pending-bg: var(--status-pending-bg);
+  --color-status-pending-fg: var(--status-pending-fg);
+  --color-brand: var(--brand);
+  --color-brand-foreground: var(--brand-foreground);
+  --color-surface: var(--surface);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-msg-command-fg: var(--msg-command-fg);
+  --color-msg-compaction-fg: var(--msg-compaction-fg);
+  --color-msg-timestamp: var(--msg-timestamp);
   --radius: var(--radius);
 }
 
@@ -236,6 +348,57 @@
   --sidebar-accent-foreground: var(--text-normal);
   --sidebar-border: var(--background-modifier-border);
   --sidebar-ring: var(--interactive-accent);
+  --sidebar-primary: var(--interactive-accent);
+  --sidebar-primary-foreground: var(--text-on-accent);
+  --surface: var(--background-primary);
+
+  /*
+   * Status, in the same literals the client's own Obsidian block already uses
+   * (`index.css`, `.copilot-view-content`). Mid-tones rather than theme vars:
+   * "this failed" is not a fact about the vault's palette, and Obsidian offers
+   * no semantic colour for it.
+   */
+  --status-success: #16a34a;
+  --status-success-bg: rgba(22, 163, 74, 0.1);
+  --status-success-border: rgba(22, 163, 74, 0.2);
+  --status-success-fg: #16a34a;
+  --status-error: #dc2626;
+  --status-error-bg: rgba(220, 38, 38, 0.1);
+  --status-error-border: rgba(220, 38, 38, 0.2);
+  --status-error-fg: #dc2626;
+  --status-warning: #f59e0b;
+  --status-warning-bg: rgba(245, 158, 11, 0.1);
+  --status-warning-border: rgba(245, 158, 11, 0.2);
+  --status-warning-fg: #f59e0b;
+  --status-info: #3b82f6;
+  --status-info-bg: rgba(59, 130, 246, 0.1);
+  --status-info-border: rgba(59, 130, 246, 0.2);
+  --status-info-fg: #3b82f6;
+  --status-pending: #737373;
+  --status-pending-bg: rgba(115, 115, 115, 0.1);
+  --status-pending-fg: #737373;
+  /*
+   * The one status colour that MUST differ by theme, and the reason it is its
+   * own token at all: `--status-warning` is 2.15:1 on a light surface, under the
+   * 3:1 WCAG 1.4.11 asks of a dot that carries meaning by colour. This is that
+   * amber taken to 3.3:1 in light mode; the dark value is already ~10:1 and
+   * darkening it would move it toward the background (`status-dot.ts`).
+   */
+  --status-warning-dot: hsl(38 92% 40%);
+
+  /* DorkOS's own marks. Identity, so they do not become the vault's accent. */
+  --brand: hsl(24 90% 44%);
+  --brand-foreground: hsl(0 0% 100%);
+  --chart-1: hsl(24 90% 44%);
+  --chart-2: hsl(210 70% 45%);
+  --chart-3: hsl(152 60% 36%);
+  --chart-4: hsl(280 55% 52%);
+  --chart-5: hsl(43 90% 45%);
+
+  /* Transcript furniture, in the vault's own text ramp. */
+  --msg-command-fg: var(--text-muted);
+  --msg-compaction-fg: var(--text-muted);
+  --msg-timestamp: var(--text-faint);
 
   color: var(--text-normal);
   background-color: var(--background-secondary);
@@ -243,4 +406,16 @@
   user-select: text;
   -webkit-user-select: text;
   cursor: auto;
+}
+
+/*
+ * The two colours whose whole job is to differ between the themes.
+ *
+ * Obsidian puts `theme-dark` on the body, so this rides the vault's own switch
+ * rather than adding a second one. Everything above either follows an Obsidian
+ * variable that is already theme-aware, or is a mid-tone picked to work in both.
+ */
+.theme-dark .copilot-view-content {
+  --status-warning-dot: hsl(38 92% 60%);
+  --brand: hsl(24 88% 55%);
 }

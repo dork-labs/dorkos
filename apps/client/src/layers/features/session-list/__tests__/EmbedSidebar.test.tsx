@@ -75,4 +75,16 @@ describe('EmbedSidebar', () => {
     expect(mockSetActiveSession.mock.calls[0][0]).toEqual(expect.any(String));
     expect(mockSetSidebarOpen).toHaveBeenCalledWith(false);
   });
+
+  it('draws no hairline — separation is tint, in this component too (R1)', () => {
+    // **This assertion has to live HERE, and the version of it in
+    // `EmbedSessionList.test.tsx` is not a substitute.** Both hairlines the
+    // sidebar programme retired belonged to THIS file — the `border-b` under the
+    // agent header and the `border-t` above the promo panel — and the roster's
+    // own test renders only the roster, so putting both back left it green.
+    // A guard that cannot see the component it is about is not a guard.
+    const { container } = render(<EmbedSidebar />, { wrapper: Wrapper });
+
+    expect(container.querySelector('[class*="border-t"],[class*="border-b"]')).toBeNull();
+  });
 });

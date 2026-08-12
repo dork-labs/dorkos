@@ -134,7 +134,7 @@ export type { SessionRowProps } from './ui/SessionRow';
 // The session row in the sidebar's own grammar (`shared/ui/SidebarRow`). Kept
 // out of `SessionRow`'s `variant` union on purpose: this one renders its own
 // list item, so it belongs inside a `SidebarMenu` and nowhere a `<div>` row goes.
-export { SessionRowSidebar, statusSignalForBorderKind } from './ui/SessionRowSidebar';
+export { SessionRowSidebar } from './ui/SessionRowSidebar';
 export type { SessionRowSidebarProps } from './ui/SessionRowSidebar';
 export { SessionContextGauge } from './ui/SessionContextGauge';
 // The leaf that holds the live verb, so the sidebar model never has to (R1).

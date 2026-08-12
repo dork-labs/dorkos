@@ -59,6 +59,16 @@ function formatTimestamp(iso: string): string {
 /**
  * The expandable detail block under a session row.
  *
+ * **It reads the permission summary itself, and its caller reads it too.** That
+ * duplication is deliberate: `SessionRowFull` and `SessionRowSidebar` both need
+ * `isUnsafe` for the shield on the row face, and this needs the mode in words.
+ * Both calls land on the same two cached reads — a `enabled: false` session
+ * query and one `staleTime: Infinity` capability map the shell has already
+ * mounted — so the second costs a map lookup and nothing else. Passing it down
+ * as a prop instead would make every caller responsible for deriving a fact this
+ * component is perfectly able to ask for, which is how the two got to disagree
+ * before there was a hook at all.
+ *
  * @param props - The session, whether the block is open, and the fork handler.
  */
 export function SessionDetailsPanel({
