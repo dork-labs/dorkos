@@ -84,8 +84,10 @@ const fromShipping = makeSession({
   title: 'probe delta',
   cwd: '/projects/lander',
   origin: 'room',
-  // Exactly what `RoomStore.resolveRoomOrigins` stamps for a channel.
+  // Exactly what `applyRoomOriginOverlay` stamps for a channel: the name a
+  // person reads, and the id the scope actually joins on (DOR-1157).
   originLabel: '#shipping',
+  originRoomId: 'room-shipping',
 });
 const ALL_SESSIONS = [orbitOne, orbitTwo, landerOne, fromShipping];
 

@@ -124,6 +124,7 @@ export const SESSION_ROWS: PaletteSessionItem[] = [
     agent: MOCK_AGENTS[1],
     origin: 'room',
     originLabel: '#shipping',
+    originRoomId: 'room-shipping',
     lastActivityAt: minutesAgo(52),
     archived: false,
   },

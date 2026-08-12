@@ -13,6 +13,7 @@
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import type { SessionListEvent } from '@dorkos/shared/session-stream';
+import type { Session } from '@dorkos/shared/types';
 import { FakeAgentRuntime, createMockSession } from '@dorkos/test-utils';
 import { SSE } from '../../../config/constants.js';
 import { eventFanOut } from '../../core/event-fan-out.js';
@@ -219,32 +220,49 @@ describe('SessionListBroadcaster — multi-runtime fan-in (ADR-0310)', () => {
     });
   });
 
-  it('does not mutate the session object the adapter handed it', async () => {
-    // Adapters emit the instance they hold — the Claude watcher pushes the very
-    // object in its diff map, which is also the transcript reader's mtime-cached
-    // entry. Overlaying in place would write display values into a runtime's own
-    // cached state and defeat its change suppression.
+  it('discards a half-written row when an overlay throws part way through', async () => {
+    // What the per-step copy is FOR. An overlay writes field by field, so one
+    // that throws mid-row would otherwise broadcast a row that is neither what
+    // the runtime reported nor what the store says — a mode nobody chose.
+    //
+    // This replaces a test that asserted the adapter's own object was not
+    // mutated. That claim cannot fail here and so proved nothing:
+    // `SessionListEventSchema.safeParse` runs first and hands back its own
+    // freshly built session, so the instance a runtime holds is already out of
+    // reach. Deleting the copy left that test green; it reds this one.
     const a = controllableSessionList();
     runtimeA.subscribeSessionList.mockReturnValue(a.iterable);
+    // `applyStoredSettings` writes permissionMode, then model, then consults the
+    // runtime's effort declaration. A declaration read that throws lands the
+    // first field and abandons the row exactly half way.
     const settings = {
       getSessionSettingsMany: vi.fn(
-        () => new Map([[SESSION_A, { permissionMode: 'bypassPermissions' as const }]])
+        () =>
+          new Map([
+            [SESSION_A, { permissionMode: 'bypassPermissions' as const, effort: 'high' as const }],
+          ])
       ),
       has: () => true,
       get: () => ({
         getInternalSessionId: () => undefined,
-        // Every registered runtime declares whether it takes an effort; these
-        // sessions carry none, so the declaration only has to be present.
-        getCapabilities: () => ({ settings: { supportsEffort: true } }),
+        getCapabilities: () => {
+          throw new Error('runtime declaration unavailable');
+        },
       }),
     };
-    const adapterOwned = createMockSession({ id: SESSION_A, permissionMode: 'default' });
 
     broadcaster.start([runtimeA], settings);
-    a.push({ type: 'session_upserted', session: adapterOwned });
+    a.push({
+      type: 'session_upserted',
+      session: createMockSession({ id: SESSION_A, permissionMode: 'default' }),
+    });
 
     await vi.waitFor(() => expect(broadcastSpy).toHaveBeenCalled());
-    expect(adapterOwned.permissionMode).toBe('default');
+    const [, upsert] = broadcastSpy.mock.calls.find(
+      (call: unknown[]) => call[0] === 'session_upserted'
+    )!;
+    // The row the runtime reported, whole — not the partly-overlaid one.
+    expect((upsert as { session: Session }).session.permissionMode).toBe('default');
   });
 
   it('broadcasts as-is when the settings store throws — stale beats invisible', async () => {
@@ -273,6 +291,154 @@ describe('SessionListBroadcaster — multi-runtime fan-in (ADR-0310)', () => {
       expect(broadcastSpy).toHaveBeenCalledWith(
         'session_upserted',
         expect.objectContaining({ session: expect.objectContaining({ id: SESSION_A }) })
+      );
+    });
+  });
+
+  it('stamps room origin onto a broadcast session_upserted, so a room turn never reaches a client as human', async () => {
+    // DOR-1141. The overlays ran on the REST routes and nowhere else, so the
+    // record this stream pushed carried no origin at all — and every consumer of
+    // the human-origin liveness rule (§18: the palette's Continue list, the
+    // sidebar's live rollups) counted a freshly triggered room turn as the
+    // operator's own conversation until the next REST refetch corrected it.
+    const a = controllableSessionList();
+    runtimeA.subscribeSessionList.mockReturnValue(a.iterable);
+    broadcaster.setOriginResolvers({
+      resolveRoomOrigins: (ids) =>
+        ids.includes(SESSION_A)
+          ? new Map([[SESSION_A, { roomLabel: '#general', roomId: 'room-general' }]])
+          : new Map(),
+    });
+
+    broadcaster.start([runtimeA]);
+    a.push({
+      type: 'session_upserted',
+      // What a runtime reports: an ordinary session, with a reading the room
+      // post it was triggered by looks exactly like a person having typed.
+      session: createMockSession({
+        id: SESSION_A,
+        userLastMessageAt: '2026-03-01T09:00:00.000Z',
+      }),
+    });
+
+    await vi.waitFor(() => {
+      expect(broadcastSpy).toHaveBeenCalledWith(
+        'session_upserted',
+        expect.objectContaining({
+          session: expect.objectContaining({ id: SESSION_A, origin: 'room' }),
+        })
+      );
+    });
+    const [, upsert] = broadcastSpy.mock.calls.find(
+      (call: unknown[]) => call[0] === 'session_upserted'
+    )!;
+    const { session } = upsert as { session: Session };
+    expect(session.originLabel).toBe('#general');
+    // BC-16: the reading came from another agent's post, so it is taken back
+    // here exactly as the REST routes take it back.
+    expect('userLastMessageAt' in session).toBe(false);
+  });
+
+  it('lets the Pulse overlay win on the stream, the same way it wins on the routes', async () => {
+    // The ordering is a product decision: a scheduled task that posts into a
+    // room is still the task somebody scheduled. It lives in
+    // `applySessionOriginOverlays`, which is why both producers can obey it.
+    const a = controllableSessionList();
+    runtimeA.subscribeSessionList.mockReturnValue(a.iterable);
+    broadcaster.setOriginResolvers({
+      resolveRoomOrigins: () =>
+        new Map([[SESSION_A, { roomLabel: '#general', roomId: 'room-general' }]]),
+      resolveTaskOrigins: () => new Map([[SESSION_A, { taskName: 'digest' }]]),
+    });
+
+    broadcaster.start([runtimeA]);
+    a.push({ type: 'session_upserted', session: createMockSession({ id: SESSION_A }) });
+
+    await vi.waitFor(() => {
+      expect(broadcastSpy).toHaveBeenCalledWith(
+        'session_upserted',
+        expect.objectContaining({
+          session: expect.objectContaining({
+            origin: 'task',
+            originLabel: 'Scheduled task · digest',
+          }),
+        })
+      );
+    });
+  });
+
+  it('keeps its origin resolvers across the stop/start a live account switch does', async () => {
+    // `runtimes/claude-code/account-switch.ts` restarts discovery by calling
+    // `stop()` then `start()`, and it cannot know about a lookup it was never
+    // handed. Passing the resolvers to `start()` would therefore have made room
+    // turns read as the operator's own again from the first account switch on —
+    // silently, and only on that path.
+    const first = controllableSessionList();
+    const second = controllableSessionList();
+    runtimeA.subscribeSessionList.mockReturnValueOnce(first.iterable);
+    runtimeA.subscribeSessionList.mockReturnValueOnce(second.iterable);
+    broadcaster.setOriginResolvers({
+      resolveRoomOrigins: () =>
+        new Map([[SESSION_A, { roomLabel: '#general', roomId: 'room-general' }]]),
+    });
+
+    broadcaster.start([runtimeA]);
+    await broadcaster.stop();
+    broadcaster.start([runtimeA]);
+    second.push({ type: 'session_upserted', session: createMockSession({ id: SESSION_A }) });
+
+    await vi.waitFor(() => {
+      expect(broadcastSpy).toHaveBeenCalledWith(
+        'session_upserted',
+        expect.objectContaining({ session: expect.objectContaining({ origin: 'room' }) })
+      );
+    });
+  });
+
+  it('broadcasts as-is when the origin lookup throws — stale beats invisible', async () => {
+    const a = controllableSessionList();
+    runtimeA.subscribeSessionList.mockReturnValue(a.iterable);
+    broadcaster.setOriginResolvers({
+      resolveRoomOrigins: () => {
+        throw new Error('rooms database is locked');
+      },
+    });
+
+    broadcaster.start([runtimeA]);
+    a.push({ type: 'session_upserted', session: createMockSession({ id: SESSION_A }) });
+
+    await vi.waitFor(() => {
+      expect(broadcastSpy).toHaveBeenCalledWith(
+        'session_upserted',
+        expect.objectContaining({ session: expect.objectContaining({ id: SESSION_A }) })
+      );
+    });
+  });
+
+  it('keeps the room marking when the Pulse lookup is the half that fails', async () => {
+    // The two origin overlays are guarded SEPARATELY. Sharing one guard would
+    // have meant a failing Pulse lookup discarded the room marking that had
+    // already succeeded — and a row broadcast with no origin at all is exactly
+    // the DOR-1141 defect, reached from the other side.
+    const a = controllableSessionList();
+    runtimeA.subscribeSessionList.mockReturnValue(a.iterable);
+    broadcaster.setOriginResolvers({
+      resolveRoomOrigins: () =>
+        new Map([[SESSION_A, { roomLabel: '#general', roomId: 'room-general' }]]),
+      resolveTaskOrigins: () => {
+        throw new Error('pulse store unavailable');
+      },
+    });
+
+    broadcaster.start([runtimeA]);
+    a.push({ type: 'session_upserted', session: createMockSession({ id: SESSION_A }) });
+
+    await vi.waitFor(() => {
+      expect(broadcastSpy).toHaveBeenCalledWith(
+        'session_upserted',
+        expect.objectContaining({
+          session: expect.objectContaining({ origin: 'room', originRoomId: 'room-general' }),
+        })
       );
     });
   });

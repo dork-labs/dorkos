@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, uniqueIndex } from 'drizzle-orm/sqlite-core';
+import { sqliteTable, text, integer, index, uniqueIndex } from 'drizzle-orm/sqlite-core';
 
 /** Task definitions cached from .md files. Internal table name retained for migration simplicity. */
 export const pulseSchedules = sqliteTable('pulse_schedules', {
@@ -25,31 +25,44 @@ export const pulseSchedules = sqliteTable('pulse_schedules', {
   updatedAt: text('updated_at').notNull(),
 });
 
-/** Execution history for task runs. Internal table name retained for migration simplicity. */
-export const pulseRuns = sqliteTable('pulse_runs', {
-  id: text('id').primaryKey(), // ULID
-  scheduleId: text('schedule_id')
-    .notNull()
-    // ON DELETE CASCADE: a run is history *of* a schedule and has no meaning
-    // without it. Without the cascade, `foreign_keys = ON` turns every delete
-    // of a schedule that ever ran into a FOREIGN KEY violation.
-    .references(() => pulseSchedules.id, { onDelete: 'cascade' }),
-  status: text('status', {
-    enum: ['running', 'completed', 'failed', 'cancelled', 'timeout'],
-  }).notNull(),
-  startedAt: text('started_at').notNull(), // ISO 8601 TEXT
-  finishedAt: text('finished_at'),
-  durationMs: integer('duration_ms'),
-  output: text('output'), // was: output_summary
-  error: text('error'),
-  sessionId: text('session_id'),
-  trigger: text('trigger', {
-    enum: ['scheduled', 'manual', 'agent'],
-  })
-    .notNull()
-    .default('scheduled'),
-  createdAt: text('created_at').notNull(),
-});
+/**
+ * Execution history for task runs. Internal table name retained for migration
+ * simplicity.
+ *
+ * Indexed on `session_id` because the session-origin overlay asks this table
+ * "did a scheduled run produce this session?" on every session list a person
+ * loads AND on every `session_upserted` the global stream fans out — the latter
+ * one row at a time, synchronously, on the write path. Without the index that
+ * is a full scan of all run history per broadcast (DOR-1141 review).
+ */
+export const pulseRuns = sqliteTable(
+  'pulse_runs',
+  {
+    id: text('id').primaryKey(), // ULID
+    scheduleId: text('schedule_id')
+      .notNull()
+      // ON DELETE CASCADE: a run is history *of* a schedule and has no meaning
+      // without it. Without the cascade, `foreign_keys = ON` turns every delete
+      // of a schedule that ever ran into a FOREIGN KEY violation.
+      .references(() => pulseSchedules.id, { onDelete: 'cascade' }),
+    status: text('status', {
+      enum: ['running', 'completed', 'failed', 'cancelled', 'timeout'],
+    }).notNull(),
+    startedAt: text('started_at').notNull(), // ISO 8601 TEXT
+    finishedAt: text('finished_at'),
+    durationMs: integer('duration_ms'),
+    output: text('output'), // was: output_summary
+    error: text('error'),
+    sessionId: text('session_id'),
+    trigger: text('trigger', {
+      enum: ['scheduled', 'manual', 'agent'],
+    })
+      .notNull()
+      .default('scheduled'),
+    createdAt: text('created_at').notNull(),
+  },
+  (table) => [index('idx_pulse_runs_session').on(table.sessionId)]
+);
 
 /**
  * Dispatch dedup log (ADR-285): one row per `(taskId, scheduledFireTime)` the
