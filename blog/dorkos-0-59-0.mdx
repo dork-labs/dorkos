@@ -1,7 +1,7 @@
 ---
 title: DorkOS 0.59.0
 description: Open DorkOS and you land in a room with your whole team, the sidebar says what needs you right now, and every person and agent has a real face, name and profile.
-date: 2026-08-11
+date: 2026-08-12
 author: DorkOS Team
 category: release
 tags: [release, home, sidebar, identity]
@@ -23,7 +23,7 @@ Open DorkOS and you land in #team, a channel every agent you run is already in, 
 ![Four DorkOS sessions running side by side in dark mode, each showing whether it is working or done](/product/archive/v0.59.0/multi-session-dark.png)
 _Every session in one place. [See it move.](https://dorkos.ai/features/multi-runtime-cockpit)_
 
-The sidebar has three parts now: Now is what is waiting on you or working, Today is what you were just in, and Library is everything you keep. One New button starts anything, and ⌘K finds a conversation by its title, whichever agent it belongs to.
+The sidebar has three parts now: Heads up is what is waiting on you or working, Today is what you were just in, and Library is everything you keep. One New button starts anything, and ⌘K finds a conversation by its title, whichever agent it belongs to.
 
 **Your team has faces now**
 
@@ -33,6 +33,8 @@ _The Team page: you and every agent you run, in one roster._
 People and agents now have photos, an @handle that reaches exactly them, and one profile panel you can open from any name. The sidebar's Agents entry is now Team, a single roster of you and every agent you run.
 
 Also new: some tool servers, like Granola, make you sign in before an agent can use them. Ask your agent to connect one and the sign-in link arrives as a card right in the chat. Click it, approve in your browser, and your agent picks the job back up on its own.
+
+Claude Code chats can now stay warm between messages: switch it on for a chat and the agent is already awake when your next message lands, so the reply starts sooner. The chat box formats as you type by default now, with a switch in Settings → Advanced if you would rather see the plain markdown characters. And on your phone, four tabs along the bottom replace the slide-out menu.
 
 ## All Changes
 
@@ -49,9 +51,11 @@ Also new: some tool servers, like Granola, make you sign in before an agent can 
 - When an agent needs your OK for something it cannot undo, like adding a tool server, it now
   waits for your answer and picks up the moment you approve. The request shows up as a card right
   in the chat, and saying yes there lets the agent keep going without you having to tell it to try
-  again. The agent waits about ten minutes; if you take longer it stops waiting and says so, and
-  the request is still there in your Approvals list — answer it, then tell the agent to try again,
-  exactly as before this existed (DOR-939)
+  again. The agent waits about ten minutes; if you take longer it stops waiting and the chat says
+  what it asked and that it moved on without an answer. That goes for anything an agent waits on
+  you for — a question it asked you, or a sign-in prompt from a connected server, as well as a
+  tool approval. An approval is still there in your Approvals list — answer it, then tell the
+  agent to try again, exactly as before this existed (DOR-939, DOR-1158)
 - You can now sign in to an MCP server that needs OAuth right from the agent's server list,
   without asking an agent to do it for you. When a server needs a sign-in, its row shows
   "Needs sign-in" and a Sign in button. Click it, read what DorkOS will do with your sign-in,
@@ -163,13 +167,13 @@ Also new: some tool servers, like Granola, make you sign in before an agent can 
 - Your first morning in #team starts with something to say. Four openers sit above the message box, and pressing one writes it into the box for you to edit or send. They go away as soon as there is a real conversation to read.
 - A morning where nothing happened now says so: "All quiet." If a scheduled run is coming, it names the run and the time. If there is nothing real ahead, it stops after those two words instead of making something up.
 - The first time you open Home each day, the room fades in rather than snapping on. Every other visit that day is instant, and so is every visit if you have asked your system for less motion.
-- A new setting that makes the chat message box show formatting as you type. Turn it on in
-  Settings → Advanced → **Format text as you type**. With it on, `**bold**` turns bold as you
-  close the second pair of asterisks, `- ` starts a bullet list, `# ` makes a heading, and
-  `` `code` `` becomes code. Enter still sends your message — except inside a list, where it
-  starts the next bullet, and an empty bullet ends the list. Anything the box does not preview,
-  like quotes, code blocks, links and tables, stays as you typed it and still renders when the
-  message is sent. It is off until you turn it on, and it applies to chat for now (DOR-948)
+- The chat message box now formats as you type. `**bold**` turns bold as you close the second
+  pair of asterisks, `- ` starts a bullet list, `# ` makes a heading, and `` `code` `` becomes
+  code. Enter still sends your message — except inside a list, where it starts the next bullet,
+  and an empty bullet ends the list. Anything the box does not preview, like quotes, code blocks,
+  links and tables, stays as you typed it and still renders when the message is sent. If you would
+  rather see the plain markdown characters, there is a switch in Settings → Advanced →
+  **Format text as you type**. This applies to chat for now (DOR-948)
 - Settings → Tools has a new **Background systems** section with one switch for scheduled runs
   and one for agent messaging. Turning a switch off stops DorkOS from starting that system, and
   its tools go quiet with it. Until now the only way to do that was to hand-edit your config
@@ -237,20 +241,20 @@ Also new: some tool servers, like Granola, make you sign in before an agent can 
   jump into a conversation, ⌘Enter to start a fresh one, or Shift+Enter to branch off
   a copy and leave the original alone. It opens as a panel on a computer and slides up
   from the bottom on a phone (DOR-1071)
-- The top of the sidebar is now a **Now** zone: the things that are actually waiting on you.
+- The top of the sidebar is now a **Heads up** zone: the things that are actually waiting on you.
   Only four things are allowed in — an agent asking permission, an agent asking a question, a
   session that stopped with an error, and one gentle nudge about a session that went quiet.
-  Mentions, unread channels, direct messages and background work never appear there, so a Now
-  zone with something in it always means something (DOR-1067)
-- Now shows at most three things plus a "+ N more" row that takes you to the home page, where
+  Mentions, unread channels, direct messages and background work never appear there, so a Heads
+  up zone with something in it always means something (DOR-1067)
+- Heads up shows at most three things plus a "+ N more" row that takes you to the home page, where
   the full list already lives. It never scrolls, and agents that are busy working are summed
   into a single "N working" line instead of a row each. That line counts the conversations you
   started — a scheduled run working away in the background is not something that needs you, so
   it stays where it belongs and is never counted here. If one of your scheduled runs does get
-  stuck or asks you something, it still comes to Now like anything else
-- When the last thing needing you is done, Now says "All clear" for a moment and then folds
+  stuck or asks you something, it still comes to Heads up like anything else
+- When the last thing needing you is done, Heads up says "All clear" for a moment and then folds
   away. If you have asked your system for less motion, it simply disappears
-- A new **Getting started** zone takes Now's place on a fresh install. It suggests what you have
+- A new **Getting started** zone takes the place of Heads up on a fresh install. It suggests what you have
   not done yet — add your first agent, ask DorkBot something — and each suggestion retires for
   good once you have done it, even if the thing it was about goes away again later
 - **Ask DorkBot** opens a fresh conversation with DorkBot that already knows the situation:
@@ -289,7 +293,7 @@ Also new: some tool servers, like Granola, make you sign in before an agent can 
   move away — so the row under your cursor is still the row you meant to click.
 - Scheduled runs, room turns and other work you did not start sit behind one **+ N automated**
   row. Press it to see them, press it again to put them away. If one of them needs you, it
-  still appears in **Now** like anything else.
+  still appears in **Heads up** like anything else.
 - Threads sit in Today as conversations of their own, showing the message they hang off, and
   clicking one opens that thread beside its channel rather than just the channel.
 - After you have been away, Today can open with a single **While you were away…** row that
@@ -299,10 +303,49 @@ Also new: some tool servers, like Granola, make you sign in before an agent can 
 - Anything you have not touched since 4am quietly leaves Today the next morning — except the
   conversation you have open and anything addressed to you by name. Nothing is deleted: it is
   all still one ⌘K away (DOR-1068)
-- Messages you send while an agent is busy now wait in a queue every window can
-  see. Open the same session in a second tab or on another device and the queue
-  is there too — and if the server restarts, your queued messages come back
-  instead of vanishing (DOR-1132)
+- Send a message to an agent that is already working and it is taken right away,
+  with no error bouncing it back at you. It waits in a queue and goes the moment
+  the current turn finishes. The queue lives on the server, so it survives a page
+  refresh and a server restart, and every window you have open sees the same one:
+  open the session in a second tab or on another device and your queued messages
+  are there. Any window can reword one, move it earlier, send it next, or take it
+  off the line, and a message queued from somewhere else is marked as coming from
+  another window. Nothing you type is lost on the way — your words stay in the
+  message box until they are safely in the queue (DOR-1131, DOR-1132, DOR-1133)
+- ⌘K can now search **inside** one agent or one channel. Type `@` or `#`, land on the one you
+  want, and press Tab — it becomes a chip in the search box, and what you type next only looks at
+  that agent's or that channel's conversations. Backspace with the cursor at the start puts the
+  chip down again and keeps what you typed. There is no search syntax to memorise: the chip is on
+  screen the whole time, so you can always see what you are looking inside (DOR-1075).
+- ⌘K now says when something it found is no longer current. A conversation where nothing has
+  happened since early this morning, and a channel somebody has closed, both carry a small
+  **Archived** label. You can still find them by name and still open them — the label is only
+  there so a row cannot look like part of today's work when it is not (DOR-1076).
+- **Press and hold any row on your phone** to get the same list of things you can
+  do that a right-click gives you on a computer — mute a channel, move an agent
+  into a group, rename, archive. It rises from the bottom of the screen with
+  everything in one list, so nothing is hidden behind a second menu. A press that
+  turns into a scroll never opens it, and it never opens the conversation you
+  were only trying to scroll past.
+- **"Catch up" at the top of Today** clears every unread conversation in one tap.
+  It only shows up on a phone, and only when there is something to clear.
+- **Approvals now appear in Home on your phone**, with Allow and Don't allow
+  right on the card. You can unblock an agent from the queue for coffee without
+  opening anything. If DorkOS cannot check whether something is waiting, it says
+  so and offers to try again rather than showing you an empty screen.
+- **A page that explains your sidebar.** "Your sidebar", in the docs under Concepts, says what
+  Heads up, Today and Library are each for, why the first two are worked out for you and the
+  third is yours to arrange, and where the things that used to be in the sidebar went. It ends
+  with the four tabs on your phone and the three things that work differently under a thumb.
+  We chose to write this instead of a pop-up tour, because a page is there the second time you
+  wonder (DOR-1079)
+- Claude Code chats can now keep their agent running between messages. Normally every message
+  you send starts the agent up again and shuts it down when the reply is done; with this on, the
+  agent stays running in between, so your next message reaches one that is already awake.
+  Turn it on with `runtimes.claudeCode.persistentSession`. It ships off, and it applies to the
+  next message you send in each chat — nothing you have open changes underneath you. An agent
+  that has been sitting idle is shut down for you after a few quiet minutes, and you will not
+  notice: your next message picks the conversation up exactly where it left off (DOR-1175)
 
 ### Changed
 
@@ -519,7 +562,7 @@ Also new: some tool servers, like Granola, make you sign in before an agent can 
 - `/compact` waits for the current reply to finish instead of interrupting it.
   Before, running it mid-reply quietly took the conversation out from under the
   agent that was still typing.
-- **Your sidebar has three parts now: Now, Today and Library.** _Now_ is what needs you.
+- **Your sidebar has three parts now: Heads up, Today and Library.** _Heads up_ is what needs you.
   _Today_ is what you were working on, in the order you last touched it. _Library_ is the
   structure you built yourself — and **nothing in it moved**. Your pins, your channels,
   your direct messages, your agents and your groups are all exactly where you put them, in
@@ -539,7 +582,7 @@ Also new: some tool servers, like Granola, make you sign in before an agent can 
   your **first** one moved: it is "New message…" under the `+` beside Agents. Once you have
   one, the `+` beside Direct messages works as it always did.
 - Dragging still works everywhere it used to — reordering pins, moving an agent or a
-  channel into a group, reordering inside a group. Dragging a row into Now or Today is the
+  channel into a group, reordering inside a group. Dragging a row into Heads up or Today is the
   one thing that does not, because those two lists are worked out for you rather than
   arranged by hand. If you try, DorkOS says so and tells you what to do instead: pin it to
   Library and it stays put.
@@ -577,7 +620,54 @@ Also new: some tool servers, like Granola, make you sign in before an agent can 
   the **…** menu beside them.
 - The version number left the chrome. When a new version is genuinely waiting, a small
   "Update ready" pill appears above the strip and disappears once you have it — and it never
-  shows up in the Now zone, which is for agents that need you (DOR-1070)
+  shows up in the Heads up zone, which is for agents that need you (DOR-1070)
+- ⌘K now puts the best match first. Typing gives you one list, ordered by how well each thing
+  matches what you typed, how much you use it, and how fresh it is — so a channel called
+  `#shipping` comes before an agent that only nearly matches, instead of always sitting below it.
+  When one row is clearly the one you meant, it gets its own "Best match" line on top (DOR-1074).
+- ⌘K now remembers how often you open a conversation or a channel, not just an agent. It used to
+  keep a separate note of the agents you use, so a channel you live in could never rank as highly
+  as an agent you open every day. There is one memory for all three of them now, and the sidebar
+  and ⌘K both write to it — so it no longer matters which door you came through. Your existing
+  agent history moves across, so the agents you already reach for stay where they are (DOR-1075).
+- The sidebar's Today list puts a conversation where your own attention left it: writing in one
+  counts, not just opening it. So a conversation you typed in this morning stays near the top even
+  if you opened something else since. When we cannot tell when you last wrote — some agent
+  runtimes do not report it — the order falls back to when you last opened it, rather than
+  guessing (DOR-1081).
+- A quiet conversation now sits below a busy one when they match what you typed equally well. It
+  is not pushed to the bottom of the list, though: something you go back to constantly still
+  comes up first, whatever day it last moved. A closed channel is the one thing that always ranks
+  below everything still going (DOR-1076).
+- On your phone, DorkOS now has four tabs along the bottom instead of a slide-out
+  menu. **Home** shows what needs you and what you were working on today, with a
+  count on the tab when your agents are waiting. **Library** is your channels,
+  direct messages, agents and pins, and it never shows a count — it is the quiet
+  one. **DorkBot** opens a conversation with the assistant that knows how DorkOS
+  works. **You** holds your account and the rest of the app. The hamburger button
+  is gone: nothing has to be swiped away before you can use what is underneath,
+  and switching tabs keeps your place in each one.
+- **Everything you tap on a phone is now big enough to tap.** Rows, section
+  headings, the menu buttons, "New", the search bar and the four places DorkOS
+  goes are all at least 44 pixels tall. Two small controls that could not grow
+  without covering the row's own words — the face that opens an agent's profile
+  and the "N live" chip — moved into the press-and-hold menu instead, along with
+  a new way to switch between an agent's conversations.
+- **The You tab now says what each thing is.** The four destinations were
+  unlabelled icons whose only names appeared when you hovered over them, which
+  never happens on a touch screen. They are named rows now, and your account sits
+  among them instead of behind a "…".
+- The tab you are on is easier to see: it was marked with a shade of grey almost
+  identical to the others.
+- **The DorkOS panel in Obsidian now looks like the app.** Its list of conversations is drawn
+  with the same rows the cockpit sidebar uses: sentence-case group names instead of shouty
+  capitals, a coloured dot when a chat is working, waiting on you or has gone wrong, and one "⋮"
+  menu per row holding Rename, Fork and Details, so everything you could reach by hovering is now
+  also reachable from the keyboard. Arrow keys walk the list; Tab steps past it in one press
+  instead of one per conversation. The dividing lines are gone, replaced by the same soft shading
+  the app uses. Colours follow your Obsidian theme, so the rows highlight the way the file
+  explorer beside them does. The Obsidian plugin is still an early, lightly tested surface, and
+  none of this has been confirmed in a real vault yet (DOR-1080)
 
 ### Removed
 
@@ -771,6 +861,44 @@ Also new: some tool servers, like Granola, make you sign in before an agent can 
 - Running `/compact` no longer leaves the session stuck looking busy. Before,
   a finished compact never said it was done, so every later message waited on
   a turn that had already ended (DOR-1130)
+- OpenCode sessions now show the approval card when the agent wants to run a
+  command, edit a file, or fetch a page. Before, the question never reached you:
+  the turn simply stopped and sat there with nothing on screen, sometimes for
+  many minutes. Approve or deny and the turn carries on, and a decision you make
+  in OpenCode's own app clears the card here too.
+- When an OpenCode agent hands work to a subagent and that subagent needs
+  permission to run a command or change a file, the ask now reaches you. It
+  appears in the session with the subagent's name on it, and answering it lets
+  the subagent carry on. Before, the question was raised somewhere nothing could
+  show it: the turn went quiet and waited, sometimes for many minutes, with
+  nothing on screen to answer. Stop the turn while a subagent is waiting on you
+  and the ask is taken down instead of sitting there unanswerable.
+- An OpenCode subagent you stopped while it was waiting for permission now says
+  it was stopped. It used to say it failed, right when there was nothing else on
+  screen to tell you otherwise.
+- Resume a session after a restart and change only its model, effort, or
+  title, and it now keeps the trust level you gave it. Doing this used to
+  quietly drop the session back to the default "ask before every action"
+  mode — the sidebar and session settings kept showing your real choice, but
+  the agent was actually running with less trust than you'd granted it,
+  until you re-toggled the dial.
+- When a background task finished at an awkward moment, the agent was told its
+  own work had been cancelled — in wording that reads like you refusing it. DorkOS
+  spotted that and sent a correction, but the correction never landed in the one
+  kind of turn where this happens: turns running background tasks. So the agent
+  kept believing you had said no, and sometimes told you so. The correction now
+  reaches it, and it carries on with the work instead of stopping.
+- When the runtime cut off a helper the agent had running, the helper often
+  reported back that you had declined something or blocked it from saving. The
+  agent believed the helper and gave up on that work. DorkOS now tells the agent
+  what actually happened — the runtime stopped it, you did not — and to redo the
+  work instead of taking the helper's word for it.
+- **A sidebar section's menu is reachable on a phone again.** Rename, sort, mute
+  and delete-group sat behind a button that only appeared when you hovered — so
+  on a touch screen there was no way to reach them at all.
+- Answering an OpenCode approval card somewhere else — its own terminal window, another
+  DorkOS window — now shows up in the transcript as Approved or Denied, the same as answering
+  it here. Before, it just cleared with no record of which way it went.
 
 ### Security
 
