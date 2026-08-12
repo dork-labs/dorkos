@@ -396,7 +396,7 @@ export function captureLaunchFingerprint(launch: LaunchParams): LaunchFingerprin
     account,
     pins: {
       cwd: options.cwd ?? '',
-      accountRoot: [path.normalize(accountRoot), configDirEnv ?? '<unset>'].join(FIELD_SEP),
+      accountRoot: [path.resolve(accountRoot), configDirEnv ?? '<unset>'].join(FIELD_SEP),
       credentialEnv: digest(serializeEnv(credentialEnv, new Set())),
       agentIdentity: describeAgentIdentity(agentIdentity),
       systemPromptAppend: digest(readSystemPromptAppend(options.systemPrompt)),
