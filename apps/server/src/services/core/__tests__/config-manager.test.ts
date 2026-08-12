@@ -47,6 +47,7 @@ import {
   backfillProfileDefaults,
   backfillRuntimeExecutionDefaults,
   backfillDefaultTrustStops,
+  backfillClaudeCodePersistentSession,
 } from '../config-manager.js';
 import { applyConfigPatch } from '../operator/config-patch.js';
 import { checkMigrationSafety, extractMigrationBodies } from './migration-safety.js';
@@ -69,6 +70,9 @@ const RUNTIMES_DEFAULTS = {
     defaultModel: null,
     defaultEffort: null,
     defaultTrustStop: null,
+    // Off: one process per message, exactly as claude-code has always run
+    // (spec `persistent-session-runtime` §P3).
+    persistentSession: false,
   },
   opencode: {
     enabled: true,
@@ -1535,6 +1539,7 @@ describe('backfillClaudeCodeRuntimeDefaults migration (claude-code-accounts)', (
         defaultModel: null,
         defaultEffort: null,
         defaultTrustStop: null,
+        persistentSession: false,
       });
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
@@ -3937,6 +3942,80 @@ describe('backfillDefaultTrustStops migration (trust-dial, decision 6)', () => {
     const runtimes = store.data.runtimes as Record<string, Record<string, unknown>>;
     expect(runtimes.defaultTrustStop).toBeNull();
     expect(runtimes.claudeCode.defaultTrustStop).toBeNull();
+  });
+});
+
+describe('backfillClaudeCodePersistentSession migration (persistent-session-runtime P3)', () => {
+  it('seeds the opt-in OFF onto a claudeCode section already on disk', () => {
+    // The case it exists for: conf's defaults-merge is shallow, so a
+    // `runtimes.claudeCode` block written by an earlier release never gains a
+    // nested key on its own.
+    const store = createMockStore({
+      runtimes: {
+        default: 'claude-code',
+        claudeCode: { activeAccount: null, accounts: [], defaultModel: 'opus' },
+        codex: { enabled: true },
+      },
+    });
+
+    backfillClaudeCodePersistentSession(store);
+
+    expect(store.data.runtimes).toEqual({
+      default: 'claude-code',
+      claudeCode: {
+        activeAccount: null,
+        accounts: [],
+        defaultModel: 'opus',
+        persistentSession: false,
+      },
+      // Untouched: the setting is claude-code's, and no other section grows one.
+      codex: { enabled: true },
+    });
+  });
+
+  it('never turns off an opt-in somebody already turned on, however often it runs', () => {
+    const store = createMockStore({
+      runtimes: {
+        default: 'claude-code',
+        claudeCode: { activeAccount: null, accounts: [], persistentSession: true },
+      },
+    });
+
+    backfillClaudeCodePersistentSession(store);
+    backfillClaudeCodePersistentSession(store);
+
+    expect((store.data.runtimes as Record<string, unknown>).claudeCode).toEqual({
+      activeAccount: null,
+      accounts: [],
+      persistentSession: true,
+    });
+  });
+
+  it('leaves a config with no runtimes block alone', () => {
+    // The section-level backfills in the earlier keys own that case.
+    const store = createMockStore({ server: { port: 4242 } });
+    backfillClaudeCodePersistentSession(store);
+    expect(store.data.runtimes).toBeUndefined();
+  });
+
+  it('leaves a runtimes block with no claudeCode section alone', () => {
+    const store = createMockStore({ runtimes: { default: 'codex' } });
+    backfillClaudeCodePersistentSession(store);
+    expect(store.data.runtimes).toEqual({ default: 'codex' });
+  });
+
+  it('rides the 0.59.0 key, which is the release that ships the field', () => {
+    const store = createMockStore({
+      runtimes: { default: 'claude-code', claudeCode: { activeAccount: null, accounts: [] } },
+    });
+
+    CONFIG_MIGRATIONS['0.59.0'](store);
+
+    expect((store.data.runtimes as Record<string, Record<string, unknown>>).claudeCode).toEqual({
+      activeAccount: null,
+      accounts: [],
+      persistentSession: false,
+    });
   });
 });
 

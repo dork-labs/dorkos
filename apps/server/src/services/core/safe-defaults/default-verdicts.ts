@@ -176,6 +176,16 @@ export const NO_RISK_DEFAULTS: readonly string[] = [
   // upgrade cannot move anybody onto a more expensive one.
   'runtimes.claudeCode.defaultModel',
   'runtimes.claudeCode.defaultEffort',
+  // Whether a Claude Code chat keeps its agent running between messages (spec
+  // `persistent-session-runtime` §P3). Ships `false` — one process per message,
+  // byte-for-byte today's behavior — and the flip side sends nothing off the
+  // machine, grants no capability, and relaxes no bound: the same executable
+  // runs with the same permissions and the same per-dispatch boundary check,
+  // held open for longer. The bounds that do apply to a held process (the warm
+  // ceiling and the idle reaper) live in code, not under this default, so
+  // calling `false` a safety verdict would claim a protection this leaf does
+  // not provide.
+  'runtimes.claudeCode.persistentSession',
   'runtimes.opencode.defaultModel',
   'runtimes.codex.defaultModel',
   'runtimes.codex.defaultEffort',
