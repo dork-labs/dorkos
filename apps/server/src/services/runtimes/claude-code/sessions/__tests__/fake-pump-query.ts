@@ -10,6 +10,18 @@ import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import type { PumpQuery } from '../session-pump-contract.js';
 
 /**
+ * A control answer that arrives on a LATER macrotask, as a real one does.
+ *
+ * Load-bearing, not decoration. The windower promises a window's accounting is
+ * delivered BEFORE its `result` is released, so `context_usage` still precedes
+ * `done`. Answering control calls synchronously makes that ordering hold by
+ * microtask luck whether or not the code preserves it — reordering the fetch
+ * after the push stayed green against a synchronous fake and goes red against
+ * this one.
+ */
+const tick = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
+
+/**
  * One SDK subprocess a test drives by hand.
  *
  * It is an async iterable over messages a test pushes in, plus the `close()`
@@ -63,13 +75,13 @@ export class FakeQuery implements PumpQuery {
     // A DIFFERENT total on every call, so a test asserting that each window got
     // its own breakdown cannot pass on a stale one left over from the window
     // before it.
-    return Promise.resolve({
+    return tick().then(() => ({
       totalTokens: 1_000 * this.contextUsageCalls,
       maxTokens: 200_000,
       percentage: 0.5,
       model: 'test-model',
       categories: [{ name: 'Messages', tokens: 1_000, isDeferred: false, color: 'text' }],
-    } as unknown as Awaited<ReturnType<PumpQuery['getContextUsage']>>);
+    })) as unknown as ReturnType<PumpQuery['getContextUsage']>;
   }
 
   /** The experimental `/usage` control call, alongside the context fetch. */
@@ -78,12 +90,12 @@ export class FakeQuery implements PumpQuery {
   > {
     this.subscriptionUsageCalls += 1;
     if (this.done) return Promise.reject(new Error('the process is gone'));
-    return Promise.resolve({
+    return tick().then(() => ({
       rate_limits_available: true,
       rate_limits: { five_hour: { utilization: 25, resets_at: null } },
-    } as unknown as Awaited<
-      ReturnType<PumpQuery['usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET']>
-    >);
+    })) as unknown as ReturnType<
+      PumpQuery['usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET']
+    >;
   }
 
   async *[Symbol.asyncIterator](): AsyncIterator<SDKMessage> {

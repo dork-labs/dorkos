@@ -20,6 +20,7 @@ import { SessionStateProjector } from '../../../../session/session-state-project
 import { mapSdkMessage } from '../../sdk/sdk-event-mapper.js';
 import { createToolState } from '../../agent-types.js';
 import type { AgentSession } from '../../agent-types.js';
+import { PumpRefusedError } from '../session-pump-contract.js';
 import { IllegalPumpTransitionError, SessionPump } from '../session-pump.js';
 import { SessionTurnWindows, type TurnWindow, type WindowUsage } from '../session-turn-windows.js';
 import { FakeQuery, initMessage } from './fake-pump-query.js';
@@ -444,6 +445,84 @@ describe('SessionTurnWindows — a turn opens on dispatch and closes on its resu
     const h = harness();
     await expect(h.windows.dispatch([])).rejects.toMatchObject({ reason: 'empty-dispatch' });
     expect(h.opened).toHaveLength(0);
+  });
+
+  // A refused dispatch must be INVISIBLE. `onWindowOpen` is where task 3.10
+  // projects the window, and the `turn_start` that mints is what retires the
+  // caller's queue row — and the dispatcher restores only rows still IN the
+  // store (`returnToQueue`), so a row retired for a turn that never ran is a
+  // message silently lost. Announcing the window before the pump has accepted
+  // the batch is exactly that bug, and it also puts an empty turn on the
+  // durable stream.
+  it('announces no window at all when the pump refuses the dispatch', async () => {
+    const opened: TurnWindow[] = [];
+    const closed: TurnWindow[] = [];
+    const refusing = new SessionTurnWindows({
+      sessionId: SESSION_ID,
+      pump: {
+        dispatch: () =>
+          Promise.reject(new PumpRefusedError('warm-ceiling', 'no slot for this session')),
+        endTurn: () => {},
+        controlQuery: undefined,
+      },
+      onWindowOpen: (w) => opened.push(w),
+      onWindowClose: (w) => closed.push(w),
+    });
+
+    await expect(
+      refusing.dispatch([{ content: 'do the thing', messageId: 'm1' }])
+    ).rejects.toBeInstanceOf(PumpRefusedError);
+
+    // Nobody was ever told a turn started, so nobody retired the queue row.
+    expect(opened).toHaveLength(0);
+    // And nothing is told a window it never saw has closed.
+    expect(closed).toHaveLength(0);
+    expect(refusing.openWindow).toBeUndefined();
+  });
+
+  // The other half of the same teardown: output the process managed to produce
+  // before the refusal belongs to no window, so it waits for the next one
+  // rather than dying in a stream nobody will read.
+  it("re-holds an abandoned window's messages for the next window", async () => {
+    const opened: TurnWindow[] = [];
+    let refuse = true;
+    const windows = new SessionTurnWindows({
+      sessionId: SESSION_ID,
+      pump: {
+        dispatch: () =>
+          refuse
+            ? Promise.reject(new PumpRefusedError('warm-ceiling', 'no slot'))
+            : Promise.resolve(),
+        endTurn: () => {},
+        controlQuery: undefined,
+      },
+      onWindowOpen: (w) => opened.push(w),
+    });
+
+    // The warm process speaks with no window open: held.
+    windows.onMessage(textDeltaMessage('said before the refusal'));
+
+    await expect(
+      windows.dispatch([{ content: 'never runs', messageId: 'm-refused' }])
+    ).rejects.toBeInstanceOf(PumpRefusedError);
+    expect(opened).toHaveLength(0);
+
+    // The next dispatch is accepted, and the held words ride into ITS window.
+    refuse = false;
+    const window = await windows.dispatch([{ content: 'hello', messageId: 'm1' }]);
+    expect(opened).toHaveLength(1);
+
+    const got: SDKMessage[] = [];
+    const reading = (async () => {
+      for await (const m of window.messages) got.push(m);
+    })();
+    windows.onMessage(resultMessage('m1'));
+    await reading;
+
+    // In order: the re-held message first, then this window's own result.
+    expect(got).toHaveLength(2);
+    expect(got[0]).toMatchObject({ type: 'stream_event' });
+    expect(got[1]).toMatchObject({ type: 'result' });
   });
 
   // Nothing the process says is lost. A message that arrives between windows is

@@ -172,6 +172,17 @@ class WindowChannel {
     this.wake = undefined;
   }
 
+  /**
+   * Take back everything pushed but not yet consumed, emptying the channel.
+   *
+   * For a window that is being abandoned before anyone observed it: its
+   * messages belong to no window now, so they go back on hold for the next one
+   * rather than dying in a stream nothing will ever read.
+   */
+  takePending(): SDKMessage[] {
+    return this.pending.splice(0, this.pending.length);
+  }
+
   /** No more messages will come. Idempotent. */
   end(): void {
     this.ended = true;
@@ -282,11 +293,21 @@ export class SessionTurnWindows {
    * racing it. **Task 3.9 validates the turn's boundary here**, on the batch,
    * before anything is sent.
    *
-   * The window is registered BEFORE the pump is asked to dispatch, so output
-   * that arrives during the launch — a `system/init`, or a whole fast turn — is
-   * attributed to the window that caused it rather than mistaken for a runtime
-   * continuation. A dispatch that throws takes its window back down with it, so
-   * the caller's queue rows stay queued.
+   * The window is REGISTERED before the pump is asked to dispatch but ANNOUNCED
+   * only once the dispatch is accepted, and the split is deliberate. Registering
+   * first is what attributes launch output — a `system/init`, or a whole fast
+   * turn — to the window that caused it rather than to a runtime continuation;
+   * the channel buffers it, so an observer that attaches a moment later still
+   * reads it in order. Announcing last is what keeps a refused dispatch from
+   * being observable at all: `onWindowOpen` is where the window is projected,
+   * and a `turn_start` mints the turn identity that RETIRES the caller's queue
+   * rows. Announcing before the refusal would retire a row for a turn that never
+   * ran, and nothing could put it back — the dispatcher restores only rows still
+   * in the store — so the person's message would be silently lost and the
+   * durable stream would carry an empty turn that never happened. A dispatch
+   * that throws therefore leaves no trace: no window opened, no window closed,
+   * and anything the process managed to say goes back on hold for the next
+   * window.
    *
    * @param batch - The messages dequeued together, to run as one turn
    * @returns The window this dispatch opened
@@ -313,15 +334,17 @@ export class SessionTurnWindows {
     );
     this.current = record;
     this.flushHeld(record);
-    this.opts.onWindowOpen?.(record.window);
     try {
       await this.opts.pump.dispatch(batch);
     } catch (err) {
+      // A turn that never began must leave NO trace: no observer has seen this
+      // window, so none has to be told it closed.
       this.current = undefined;
+      this.rehold(record.channel.takePending());
       record.channel.end();
-      this.opts.onWindowClose?.(record.window);
       throw err;
     }
+    this.opts.onWindowOpen?.(record.window);
     return record.window;
   }
 
@@ -354,6 +377,14 @@ export class SessionTurnWindows {
    * window. No accounting is fetched: the process that would answer is gone.
    * Task 3.6 owns what happens NEXT (resume, and the queue rows that survive);
    * this owns only the window that was open when the process died.
+   *
+   * **Task 3.6 also owns the held buffer across a relaunch.** A crash with NO
+   * window open leaves whatever the dying process said still on hold, and the
+   * next window — belonging to a DIFFERENT process — is where it currently
+   * flushes. That is bounded and never silent, but attributing a dead process's
+   * words to a live process's turn is a call about relaunch semantics, not about
+   * windowing, so 3.6 decides it: carry them, or retire them into a closing
+   * runtime window of their own.
    *
    * @param crash - What the pump observed
    */
@@ -450,6 +481,22 @@ export class SessionTurnWindows {
       });
     }
     this.held.push(message);
+  }
+
+  /**
+   * Put an abandoned window's messages back at the FRONT of the hold, ahead of
+   * anything that arrived after them, so the next window reads them in the
+   * order the process produced them. Bounded exactly as {@link hold} is.
+   */
+  private rehold(messages: SDKMessage[]): void {
+    if (messages.length === 0) return;
+    this.held.unshift(...messages);
+    if (this.held.length <= MAX_UNATTRIBUTED_MESSAGES) return;
+    this.held.splice(0, this.held.length - MAX_UNATTRIBUTED_MESSAGES);
+    logger.warn('[SessionTurnWindows] dropped held messages; a dispatch was refused', {
+      sessionId: this.opts.sessionId,
+      limit: MAX_UNATTRIBUTED_MESSAGES,
+    });
   }
 
   /** Move everything held into the window that just opened. */
