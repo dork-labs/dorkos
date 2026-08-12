@@ -318,6 +318,11 @@ export default defineConfig({
         // one rename to `.spec.ts` would put four billable sessions on the
         // machine's own `claude` sign-in, and nothing else here would object.
         '**/chat/session-read-state*',
+        // Same shape, same lock: a module registered into `chat-mock.spec.ts`,
+        // living under `tests/chat/` because that is the feature it belongs to.
+        // It drives a send and flips a server-global preference, so it must
+        // never reach this leg (DOR-948).
+        '**/chat/composer-escape-and-ime*',
         ...(INCLUDE_SITE ? [] : SITE_SPECS),
       ],
       // Skips the specs that need real model credentials — see INCLUDE_INTEGRATION.
