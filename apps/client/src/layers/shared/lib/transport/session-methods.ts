@@ -48,6 +48,16 @@ import { fetchJSON, buildQueryString } from './http-client';
 // 260805-041016) — but the first reason is the real one and still holds.
 const INTERACTION_TIMEOUT_MS = 10 * 60 * 1000;
 
+// The message-trigger POST is a raw `fetch` (it parses the 202 body itself), so
+// like {@link runCommandIntent} it inherits no default timeout — every other
+// transport write gets 30s from `fetchJSON`. Without a bound it could hang
+// forever, and two callers latch on that promise: the composer holds the typed
+// words until an enqueue settles (DOR-480), and enqueue POSTs are chained per
+// session so acceptance order matches keystroke order (DOR-1165). An unbounded
+// hang would leave the composer stuck AND wedge every message queued behind it.
+// The bound is what guarantees the "reset on settle" the chain relies on.
+const MESSAGE_TRIGGER_REQUEST_TIMEOUT_MS = 30_000;
+
 /**
  * Create all session-related methods bound to a base URL.
  *
@@ -195,6 +205,7 @@ export function createSessionMethods(
           'X-Client-Id': getClientId(),
         },
         credentials: 'include',
+        signal: AbortSignal.timeout(MESSAGE_TRIGGER_REQUEST_TIMEOUT_MS),
         body: JSON.stringify(body),
       });
 
