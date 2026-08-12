@@ -1062,6 +1062,19 @@ export class ClaudeCodeRuntime implements AgentRuntime {
     // markInterrupted is a no-op for an idle projector.
     const evictedIds = this.sessionStore.checkSessionHealth(this.lockManager);
     for (const sessionId of evictedIds) {
+      // No subprocess may outlive the session record it belongs to. Eviction
+      // ALWAYS implies a reap; the idle timer's reap never implies an eviction
+      // (spec §4.3). Not awaited, because this sweep is synchronous by contract
+      // and a close that takes its grace window must not hold it up — and never
+      // bare `void`, because a wedged teardown rejecting would take the server
+      // down with it. A no-op for every session today: nothing warms a pump
+      // until the per-session opt-in lands (task 3.8).
+      this.pumps.evict(sessionId).catch((err: unknown) => {
+        logger.warn('[ClaudeCodeRuntime] evicted session failed to give back its process', {
+          sessionId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      });
       // Drop the session's captured diff baselines (DOR-212) — they are in-memory
       // and per-session, so an evicted session must not leak them. Idempotent for
       // an id that captured none.

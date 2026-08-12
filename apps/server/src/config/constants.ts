@@ -118,6 +118,37 @@ export const SESSIONS = {
   /** Maximum number of concurrent in-memory sessions. */
   MAX_SESSIONS: 50,
   /**
+   * How long a WARM session's subprocess may sit with no turn open before it is
+   * given back (spec `persistent-session-runtime` §4.3).
+   *
+   * This is **not** session eviction. `TIMEOUT_MS` retires the session RECORD
+   * after 30 minutes and the person loses their place; this closes a PROCESS
+   * after 5 minutes and the person cannot tell — the record, the transcript and
+   * the conversation are untouched, and the next message resumes. Eviction
+   * implies a reap; a reap never implies eviction.
+   *
+   * Five minutes is long enough that somebody thinking between turns keeps their
+   * warm prompt cache, and short enough that a session abandoned mid-afternoon
+   * is not still holding a CLI subprocess (and its MCP children) at dinner.
+   */
+  WARM_IDLE_MS: 5 * 60 * 1000,
+  /**
+   * How many sessions may hold a subprocess at once (spec §4.4).
+   *
+   * This counts PROCESSES; `MAX_SESSIONS` (50) counts session RECORDS, and the
+   * two are deliberately different numbers. Fifty concurrent CLI subprocesses
+   * plus their MCP children on a laptop is not a shape to ship, so warmth stops
+   * at twelve while records stay at fifty — which keeps `ensureSession`'s throw
+   * the genuinely exceptional path it is today.
+   *
+   * It is also **not** a refusal ceiling in the way `MAX_SESSIONS` is. Warmth is
+   * a cache, so the thirteenth warm session does not fail: the least recently
+   * used warm process is reaped to make room for it, and only a host where
+   * nothing is reclaimable — every process mid-turn or parked on a person — is
+   * refused.
+   */
+  MAX_WARM_SESSIONS: 12,
+  /**
    * Inactivity window before a detached turn is declared stalled: the watchdog
    * interrupts the runtime and closes the turn with a typed error. Resets on
    * every StreamEvent; suspended while the session holds a live pending

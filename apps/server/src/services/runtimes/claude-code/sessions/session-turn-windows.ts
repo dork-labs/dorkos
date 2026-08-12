@@ -144,7 +144,12 @@ export interface SessionTurnWindowsOptions {
   onWindowOpen?: (window: TurnWindow) => void;
   /**
    * A window closed and its stream has ended. **Task 3.7 disarms the stall
-   * watchdog here**, and task 3.4 arms the process-idle timer.
+   * watchdog here.**
+   *
+   * The process-idle timer is deliberately NOT armed here. It rides the pump's
+   * `onStateChange` instead (`session-pump-registry.ts`), because a session can
+   * reach WARM without any window ever having opened — an explicit `warm()` —
+   * and arming from here would leave that one holding its subprocess forever.
    */
   onWindowClose?: (window: TurnWindow) => void;
   /**
