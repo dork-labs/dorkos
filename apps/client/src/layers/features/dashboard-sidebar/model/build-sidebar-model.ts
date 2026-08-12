@@ -456,6 +456,13 @@ export function buildSidebarModel(state: SidebarState): SidebarModel {
   //
   // **"Any" includes the working rollup, and getting that wrong lost it.** The
   // rollup is a Heads up row — BC-8 counts it in Heads up's five-row ceiling and BC-9
+  //
+  // **Five and `NOW_ATTENTION_CAP = 3` are not two answers to one question.**
+  // The ceiling is what the zone may DRAW; the cap bounds only the rows that
+  // name something needing you. Five decomposes as three attention rows, plus
+  // the "+ N more" fold `capNowItems` adds when there were more than three,
+  // plus the one "N working" rollup below. Public docs quoting "three" are
+  // quoting the cap, correctly.
   // makes it unconditional ("when ≥1 session is streaming, one row reads N
   // working") — but BC-4 phrases the slot rule as "if `selectNowItems` returns
   // any row", and `selectNowItems` never returns the rollup. Read literally
