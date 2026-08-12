@@ -81,6 +81,9 @@ vi.mock('@/layers/features/dashboard-sidebar', async () => {
     useSidebarModel: () => ({ zones: [] }),
     useAskDorkBot: () => ({ ask: vi.fn(), ready: true }),
     useLegacyPinMigration: () => {},
+    // The phone's needs-you announcement, which the tabs now render OUTSIDE
+    // their panels because a panel is `inert` whenever it is put away (P4.2).
+    useLiveRegionText: (text: string | undefined) => text ?? '',
   };
 });
 

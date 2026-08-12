@@ -210,9 +210,16 @@ export function useSectionChrome(section: SidebarSectionModel): SectionChrome {
   const deepLinkAction = (item: NewMenuItemId, label: string): ReactNode => (
     <SidebarGroupAction
       className={cn(
-        'right-2 transition-opacity',
+        'transition-opacity',
         'group-hover/section:opacity-100 focus-visible:opacity-100',
-        isMobile ? 'opacity-100' : 'opacity-0'
+        // A thumb's target on a 44px header, sitting at its outer edge, with
+        // the "⋮" parked inboard of it — the pair the header's own `pr-22`
+        // gutter is paying for (P4 AC-4). The primitive's `after:-inset-*`
+        // reach is for a 20px control and would overlap this one's neighbour.
+        // `h-11 w-11` rather than `size-11`: the primitive already declares
+        // `w-5`, and tailwind-merge drops a `size-*` that a later `w-*`
+        // conflicts with — leaving a control with a width and no height.
+        isMobile ? 'top-0 right-0 h-11 w-11 opacity-100 after:hidden' : 'right-2 opacity-0'
       )}
       aria-label={label}
       onClick={() => openNewMenu(item)}

@@ -43,6 +43,13 @@ type StreamData = Record<string, unknown>;
 type RawOf<T extends SessionEvent['type']> = Omit<Extract<SessionEvent, { type: T }>, 'seq'>;
 
 /**
+ * Who opened a turn window: `'runtime'` for one nobody asked for, absent (or
+ * `'user'`) for the ordinary case. Derived from the durable event rather than
+ * restated, so the two can never drift.
+ */
+export type TurnOrigin = NonNullable<RawOf<'turn_start'>['origin']>;
+
+/**
  * Map a single DorkOS {@link StreamEvent} to a {@link RawSessionEvent}, or
  * `null` when the event has no durable session-stream projection.
  *
@@ -703,6 +710,13 @@ export const TURN_REOPENING_STREAM_EVENT_TYPES: ReadonlySet<StreamEvent['type']>
  *   on the synthesized `turn_start` so log-backed runtimes can reconstruct the
  *   user side of the conversation from the EventLog alone (the POST is
  *   trigger-only, so the durable stream is the only place it can ride).
+ * @param opts.origin - Who opened this window. Omit for the ordinary case, a
+ *   turn a person or a caller triggered. Pass `'runtime'` for a window NOBODY
+ *   asked for: the persistent pump's synthetic turn around a `result` that
+ *   answers no dispatch, which must reach the stream (the durable stream is a
+ *   complete account of the session) without being disguised as a person's
+ *   turn. It is the same field, and the same rules, as the DOR-1100 reopen a
+ *   few lines below.
  * @param opts.onTurnStart - Receives the `seq` this turn's `turn_start` was
  *   stamped with — the turn's identity, for a caller that also reads the stream
  *   and has to know which turn on it is the one it started. Called
@@ -714,11 +728,16 @@ export const TURN_REOPENING_STREAM_EVENT_TYPES: ReadonlySet<StreamEvent['type']>
 export async function feedProjector(
   projector: SessionStateProjector,
   events: AsyncIterable<StreamEvent>,
-  opts: { userMessage?: string; onTurnStart?: (seq: number) => void } = {}
+  opts: {
+    userMessage?: string;
+    origin?: TurnOrigin;
+    onTurnStart?: (seq: number) => void;
+  } = {}
 ): Promise<void> {
   const start: RawOf<'turn_start'> = {
     type: 'turn_start',
     ...(opts.userMessage !== undefined ? { userMessage: opts.userMessage } : {}),
+    ...(opts.origin !== undefined ? { origin: opts.origin } : {}),
   };
   // Two statements, and they must stay two. Folded into
   // `opts.onTurnStart?.(projector.ingest(start).seq)` the optional CALL

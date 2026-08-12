@@ -876,12 +876,19 @@ Usage:
 
 ### Hover Pattern Mobile Alternatives
 
-| Pattern                     | Desktop                | Mobile                                                                        |
-| --------------------------- | ---------------------- | ----------------------------------------------------------------------------- |
-| Message timestamps          | Hidden, shown on hover | Always visible at 40% opacity                                                 |
-| Session expand chevron      | Hidden, shown on hover | Hidden; tap session row to expand                                             |
-| Table action icons          | Hidden, shown on hover | Always visible at 60% opacity                                                 |
-| Sidebar row/section actions | Hidden, shown on hover | Always visible — `alwaysShowActions={isMobile}` (`shared/ui/sidebar-row.tsx`) |
+| Pattern                     | Desktop                | Mobile                                                                                         |
+| --------------------------- | ---------------------- | ---------------------------------------------------------------------------------------------- |
+| Message timestamps          | Hidden, shown on hover | Always visible at 40% opacity                                                                  |
+| Session expand chevron      | Hidden, shown on hover | Hidden; tap session row to expand                                                              |
+| Table action icons          | Hidden, shown on hover | Always visible at 60% opacity                                                                  |
+| Sidebar row/section actions | Hidden, shown on hover | Always visible, 44px, plus a long-press sheet — `shared/ui/sidebar-menu-node.tsx` decides both |
+
+`SidebarMenuSurface` answers "is there a hover here?" itself, from `useIsMobile()`,
+for every row and every section header at once. It used to be an
+`alwaysShowActions` prop — which `SidebarRow` passed and `SectionHeader` did not,
+so section menus were unreachable by finger for a release (DOR-1083). Do not
+reintroduce a prop for it: a question about the device is not a decision a call
+site should be able to get wrong.
 
 ### Safe Area Classes
 

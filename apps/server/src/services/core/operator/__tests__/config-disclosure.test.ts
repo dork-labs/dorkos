@@ -176,6 +176,7 @@ function fullyPopulatedConfig(): Record<string, unknown> {
         defaultModel: 'opus',
         defaultEffort: 'high',
         defaultTrustStop: null,
+        persistentSession: true,
       },
       opencode: {
         enabled: true,

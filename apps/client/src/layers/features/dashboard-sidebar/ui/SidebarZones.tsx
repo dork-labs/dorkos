@@ -8,7 +8,7 @@
  *
  * @module features/dashboard-sidebar/ui/SidebarZones
  */
-import { useCallback } from 'react';
+import { useCallback, type ReactNode } from 'react';
 import {
   setGroupCollapsed,
   setSectionCollapsed,
@@ -52,9 +52,34 @@ export interface SidebarZonesProps {
    * into its own tab (P4) — and this is how, so both tabs are the same renderer
    * reading the same build rather than a second copy of it. The two beats that
    * belong to a particular zone travel with it: the all-clear plays only where
-   * Now would be, and the day-one invitation only where Library would be.
+   * Now would be.
    */
   zoneIds?: readonly SidebarZoneId[];
+  /**
+   * Content to draw at the top of Now, above its rows, or `null` for none.
+   *
+   * **The phone's inline approvals arrive here** (P4 AC-5). They are a
+   * composition of `features/approvals`, which this feature may not import —
+   * `shared ← entities ← features ← widgets` — so the widget that owns the
+   * mobile Home tab builds them and hands them down.
+   *
+   * **A non-null slot can bring Now into existence**, and that is the whole
+   * reason it is `ReactNode | null` rather than "render it if you like". Now is
+   * absent from the model when nothing needs the operator (BC-1) — and the one
+   * state where the operator most needs to hear from this slot is exactly that
+   * one: approvals failed to load, so no approval became an attention row, so
+   * there is no Now zone to put the failure in. An approval nobody is shown is
+   * an agent sitting blocked. So the caller passes `null` when it has nothing
+   * to say, and anything else gets a zone.
+   */
+  nowSlot?: ReactNode | null;
+  /**
+   * Something above these zones announces Now's count, so no zone drawn here
+   * may. See {@link SidebarZoneProps.silenceLiveRegion} — the phone cockpit is
+   * the one caller, and its reason is that these panels are `inert` whenever
+   * they are put away.
+   */
+  silenceLiveRegion?: boolean;
 }
 
 /**
@@ -67,7 +92,12 @@ export interface SidebarZonesProps {
  *
  * @param props - The model.
  */
-export function SidebarZones({ model, zoneIds }: SidebarZonesProps) {
+export function SidebarZones({
+  model,
+  zoneIds,
+  nowSlot = null,
+  silenceLiveRegion = false,
+}: SidebarZonesProps) {
   const { update } = useUpdateSidebarPrefs();
   // Getting started leaves the shared slot the frame a real signal wants it and
   // takes a few seconds to come back (BC-52). Everything below draws `drawn`;
@@ -111,12 +141,18 @@ export function SidebarZones({ model, zoneIds }: SidebarZonesProps) {
   // model is emitting always wins over an animation about one it is not.
   const beating = useAllClearBeat(model);
   // Asked of the BUILDER's model, not the damped one. Withholding Getting
-  // started for a few seconds is not an invitation for an animation to move
-  // into the space it just left: the slot is spoken for either way, and the
-  // beat stays exactly as rare as BC-50 made it.
+  // started for a few seconds is not an invitation for an animation — or for
+  // the orphaned slot below — to move into the space it just left: the slot is
+  // spoken for either way, and the beat stays exactly as rare as BC-50 made it.
   const nowSlotTaken = model.zones.some(
     (zone) => zone.id === 'now' || zone.id === 'getting-started'
   );
+  // The slot brings its own zone when the model has none. See
+  // {@link SidebarZonesProps.nowSlot}: this is the loud-failure case, and it
+  // outranks the beat — an animation about work that finished must not be what
+  // the panel says while an approval is sitting unreachable behind a fetch that
+  // failed.
+  const orphanedSlot = nowSlot !== null && !nowSlotTaken && draws('now');
 
   return (
     // The damping's "not under a hand" half reads the pointer and focus here,
@@ -124,8 +160,21 @@ export function SidebarZones({ model, zoneIds }: SidebarZonesProps) {
     // everything the returning zone would push down, and therefore the right
     // boundary for a promise about not moving what somebody is aiming at.
     <div className="flex flex-col gap-1" {...slotHandlers}>
-      {beating && !nowSlotTaken && draws('now') && (
-        <SidebarZone zone={ALL_CLEAR_ZONE} onToggleAll={onToggleAll} allClear />
+      {orphanedSlot && (
+        <SidebarZone
+          zone={ALL_CLEAR_ZONE}
+          onToggleAll={onToggleAll}
+          lead={nowSlot}
+          silenceLiveRegion={silenceLiveRegion}
+        />
+      )}
+      {beating && !nowSlotTaken && !orphanedSlot && draws('now') && (
+        <SidebarZone
+          zone={ALL_CLEAR_ZONE}
+          onToggleAll={onToggleAll}
+          allClear
+          silenceLiveRegion={silenceLiveRegion}
+        />
       )}
       {drawn.zones
         .filter((zone) => draws(zone.id))
@@ -134,9 +183,20 @@ export function SidebarZones({ model, zoneIds }: SidebarZonesProps) {
           // pointer and focus are (BC-17, BC-36), so it gets a wrapper of its own.
           // Every other zone is the plain renderer.
           zone.id === 'today' ? (
-            <TodayZone key={zone.id} zone={zone} onToggleAll={onToggleAll} />
+            <TodayZone
+              key={zone.id}
+              zone={zone}
+              onToggleAll={onToggleAll}
+              silenceLiveRegion={silenceLiveRegion}
+            />
           ) : (
-            <SidebarZone key={zone.id} zone={zone} onToggleAll={onToggleAll} />
+            <SidebarZone
+              key={zone.id}
+              zone={zone}
+              onToggleAll={onToggleAll}
+              silenceLiveRegion={silenceLiveRegion}
+              {...(zone.id === 'now' ? { lead: nowSlot } : {})}
+            />
           )
         )}
       {/* There is no empty-Library branch on purpose. `AgentOnboardingCard` used

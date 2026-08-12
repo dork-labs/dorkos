@@ -65,6 +65,11 @@ function launchRealChild(source: string) {
       close: () => {
         child.kill('SIGKILL');
       },
+      // A bare node child has no SDK control channel. Rejecting is the honest
+      // stand-in, and this suite is about process teardown, not accounting.
+      getContextUsage: () => Promise.reject(new Error('no control channel')),
+      usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET: () =>
+        Promise.reject(new Error('no control channel')),
       async *[Symbol.asyncIterator](): AsyncIterator<SDKMessage> {
         yield {
           type: 'system',

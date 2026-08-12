@@ -11,8 +11,32 @@
 import type { ReactNode } from 'react';
 import { ChevronDown, ChevronRight, type LucideIcon } from 'lucide-react';
 import { cn } from '@/layers/shared/lib';
+import { useIsMobile } from '@/layers/shared/model';
 import { SIDEBAR_SECTION_TOGGLE_ATTRIBUTE } from '@/layers/shared/model/use-roving-focus';
-import { SidebarMenuSurface, type SidebarMenuNode } from './sidebar-menu-node';
+import { SIDEBAR_MENU_GUTTER, SidebarMenuSurface, type SidebarMenuNode } from './sidebar-menu-node';
+
+/**
+ * How tall a section header is, by pointer.
+ *
+ * 32px under a mouse. 44px under a thumb, matching the rows underneath it: a
+ * header is a control — it folds the section, and it is the door to rename,
+ * sort, mute and delete-group — so it is a touch target like any other, and a
+ * list where the headers are shorter than the rows reads as a mistake before
+ * anyone measures it (P4 AC-4).
+ */
+const SECTION_HEADER_HEIGHT = { fine: 'h-8', coarse: 'h-11' } as const;
+
+/**
+ * The header's right padding, holding its satellites off the label.
+ *
+ * The `+` sits at the outer edge and the "⋮" inboard of it, so a header that
+ * has both pays for both — twice the gutter a row pays, at whichever size the
+ * pointer earns.
+ */
+const SECTION_HEADER_GUTTER = {
+  fine: { one: SIDEBAR_MENU_GUTTER.fine, two: 'pr-14' },
+  coarse: { one: SIDEBAR_MENU_GUTTER.coarse, two: 'pr-22' },
+} as const;
 
 /** Props for {@link SectionHeader}. */
 export interface SectionHeaderProps {
@@ -100,8 +124,15 @@ export interface SectionHeaderProps {
  * The chevron is decorative; `aria-expanded` on the header button carries the
  * collapse state and `aria-controls` names what it opens. The "⋮" is a real
  * focusable button that `focus-visible` reveals, so a keyboard reaches every
- * section action without a pointer — which is also the only way the menu exists
- * at all on a device with no right-click.
+ * section action without a pointer.
+ *
+ * **On touch that "⋮" is drawn at rest, and a long press opens the same menu as
+ * a sheet.** Neither used to be true here: rows passed `alwaysShowActions` and
+ * headers did not, so on a phone the header's kebab sat at `opacity-0` and
+ * rename, sort, mute and delete-group had no door at all (DOR-1083). Both
+ * behaviours now come from {@link SidebarMenuSurface}, which reads the device
+ * once for every surface that draws a menu — the fix is that the question is no
+ * longer a prop a caller can forget to pass.
  */
 export function SectionHeader({
   label,
@@ -123,10 +154,13 @@ export function SectionHeader({
 }: SectionHeaderProps) {
   const heading = level === 4 ? 'h4' : 'h3';
   const Chevron = collapsed ? ChevronRight : ChevronDown;
+  const isMobile = useIsMobile();
+  const pointer = isMobile ? 'coarse' : 'fine';
+  const height = SECTION_HEADER_HEIGHT[pointer];
 
   const labelLine =
     editor !== undefined ? (
-      <span className="flex h-8 min-w-0 flex-1 items-center px-2">{editor}</span>
+      <span className={cn('flex min-w-0 flex-1 items-center px-2', height)}>{editor}</span>
     ) : onToggle ? (
       <button
         type="button"
@@ -147,7 +181,8 @@ export function SectionHeader({
         {...{ [SIDEBAR_SECTION_TOGGLE_ATTRIBUTE]: '' }}
         className={cn(
           'text-sidebar-foreground/70 hover:text-sidebar-foreground focus-visible:ring-sidebar-ring',
-          'group/section-toggle flex h-8 min-w-0 flex-1 items-center gap-1.5 rounded-md px-2 text-xs font-medium outline-hidden focus-visible:ring-2',
+          'group/section-toggle flex min-w-0 flex-1 items-center gap-1.5 rounded-md px-2 text-xs font-medium outline-hidden focus-visible:ring-2',
+          height,
           emphasized && 'text-sidebar-foreground font-semibold'
         )}
       >
@@ -173,7 +208,8 @@ export function SectionHeader({
     ) : (
       <span
         className={cn(
-          'text-sidebar-foreground/70 flex h-8 min-w-0 flex-1 items-center gap-1.5 px-2 text-xs font-medium',
+          'text-sidebar-foreground/70 flex min-w-0 flex-1 items-center gap-1.5 px-2 text-xs font-medium',
+          height,
           emphasized && 'text-sidebar-foreground font-semibold'
         )}
       >
@@ -193,8 +229,13 @@ export function SectionHeader({
       actionsLabel={actionsLabel ?? `${label} section actions`}
       menuWidth={menuWidth}
       hideActionsTrigger={editor !== undefined}
-      kebabClassName={hasSectionAction ? 'right-8' : undefined}
-      className={cn('flex h-8 items-center', hasSectionAction ? 'pr-14' : 'pr-7', className)}
+      kebabClassName={hasSectionAction ? (isMobile ? 'right-11' : 'right-8') : undefined}
+      className={cn(
+        'flex items-center',
+        height,
+        hasSectionAction ? SECTION_HEADER_GUTTER[pointer].two : SECTION_HEADER_GUTTER[pointer].one,
+        className
+      )}
     >
       {labelLine}
       {trailing !== undefined && (

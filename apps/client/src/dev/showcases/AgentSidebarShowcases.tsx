@@ -280,6 +280,8 @@ function RowMenuSurfaceShowcase() {
   const nodes = useAgentRowMenuNodes({
     path: MOCK_AGENTS[0].path,
     onOpenProfile: () => {},
+    onOpenSessions: () => {},
+    onViewProfile: () => {},
     onNewSession: () => {},
     onRequestNewGroup: () => {},
   });

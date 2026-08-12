@@ -40,6 +40,13 @@ export { useSidebarModel } from './model/use-sidebar-model';
 // operator who only ever opens DorkOS on their phone keeps their old pins
 // forever.
 export { useLegacyPinMigration } from './model/use-legacy-pin-migration';
+// BC-11's debounce, for the one surface that has to announce Now's count from
+// OUTSIDE the zone: the phone's bottom bar. Its panels are `inert` whenever
+// they are put away, so the region inside the zone is out of the accessibility
+// tree exactly when the count matters, and the badge on the bar would otherwise
+// be a number nobody ever hears. One hook, so the bar's announcement is held
+// for the same second the panel's is.
+export { useLiveRegionText } from './model/use-live-region-text';
 // The zone enumeration and one zone's id — what the mobile tabs need to split
 // the panel across two destinations. `SidebarModel` and `SidebarZoneModel` are
 // deliberately NOT here: nothing outside the feature names them, and knip says
