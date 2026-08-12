@@ -20,6 +20,7 @@ import { useNow } from '@/layers/shared/model';
 import { CommandItem, statusDotClass, type StatusSignal } from '@/layers/shared/ui';
 import { AgentAvatar, useAgentVisual } from '@/layers/entities/agent';
 import { SessionOriginMark } from '@/layers/entities/session';
+import { ArchivedMark } from './ArchivedMark';
 import { paletteSessionKeywords, type PaletteSessionItem } from '../model/palette-sessions';
 
 /** How often the row re-reads the clock for its relative timestamp. */
@@ -88,6 +89,14 @@ function TimeStamp({ lastActivityAt }: { lastActivityAt: string }) {
  *
  * The second line appears only when there is live state to put on it, so height
  * carries meaning: a taller row is a working row (BC-24).
+ *
+ * **A conversation that left Today says so** ({@link ArchivedMark}) — the same
+ * word an archived channel carries, because the reader's question is the same:
+ * is this row part of what is happening now? A row with {@link
+ * SessionCommandItemProps.live} state never carries it, whatever its stored
+ * timestamp says. Liveness is a fact arriving this second and the timestamp is
+ * a record of the last write; "working…" beside "Archived" would be the row
+ * arguing with itself, and the fresher fact wins.
  */
 export function SessionCommandItem({
   item,
@@ -133,6 +142,10 @@ export function SessionCommandItem({
             {item.title}
           </span>
           <span className={cn('flex items-center gap-1.5', ROW_TRAILING_CLASS)}>
+            {/* In the meta slot rather than beside the title, so the title
+                keeps its ~6-character floor and this is never squeezed away —
+                the same budget the origin mark and the timestamp ride on. */}
+            {item.archived && live === undefined && <ArchivedMark />}
             {/* The origin mark rides in the meta slot and never on the avatar —
                 the avatar's corners belong to identity (BC-26). */}
             <SessionOriginMark

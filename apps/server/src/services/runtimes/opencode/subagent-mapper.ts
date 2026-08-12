@@ -39,6 +39,13 @@ const SUBAGENT_SESSION_METADATA_KEY = 'sessionId';
 const SUBAGENT_PARENT_SESSION_METADATA_KEY = 'parentSessionId';
 
 /**
+ * The `task` tool input field naming which agent to run (`GET /experimental/
+ * tool`: required alongside `description` and `prompt`). It is what a person
+ * would call the subagent, so it is what its prompts are labelled with.
+ */
+const SUBAGENT_TYPE_INPUT_KEY = 'subagent_type';
+
+/**
  * Metadata flag OpenCode stamps on every tool part it tears down on abort — the
  * STRUCTURAL stop signal, and the one upstream's own renderer keys on
  * (`state.status === "error" && (metadata.interrupted === true || error ===
@@ -47,15 +54,20 @@ const SUBAGENT_PARENT_SESSION_METADATA_KEY = 'parentSessionId';
 const SUBAGENT_INTERRUPTED_METADATA_KEY = 'interrupted';
 
 /**
- * Tool-error text that means a subagent was STOPPED rather than failed. All
- * four shapes verified against the compiled `opencode-ai@1.18.15` binary:
+ * Tool-error text that means a subagent was STOPPED rather than failed. Four of
+ * the five shapes were read off the compiled `opencode-ai@1.18.15` binary; the
+ * fourth was live-captured, and the binary read had said it could not happen:
  *
  * - `Tool execution aborted` — `SessionProcessor.cleanup` on abort, alongside
  *   `metadata.interrupted: true`. **This is the ordinary user-stop path.**
  * - `Tool execution interrupted` — `SessionRunner.failUnsettledTools`.
  * - `Tool execution failed: Task cancelled` — the TaskTool's own
- *   `Error("Task cancelled")` after the runner wraps it; the bare message never
- *   reaches the wire.
+ *   `Error("Task cancelled")` after the runner wraps it.
+ * - `Task cancelled` — the SAME throw, unwrapped. Live-captured 2026-08-11
+ *   (`fixtures/live-child-permission-stop.jsonl`) when the stop landed while the
+ *   subagent was holding a permission: the task tool settles its own part, so
+ *   the runner never wraps the message and never stamps `interrupted`. Reading
+ *   it as a failure told the operator their own stop had gone wrong.
  * - `Cancelled` — `SessionPrompt.handleSubtask`'s `onInterrupt`, reachable only
  *   when a client sends a `SubtaskPartInput` (DorkOS never does).
  *
@@ -63,12 +75,18 @@ const SUBAGENT_INTERRUPTED_METADATA_KEY = 'interrupted';
  * stop as a failure, because it is the one path DorkOS cannot reach.
  */
 const SUBAGENT_STOPPED_PATTERN =
-  /^(?:cancelled|tool execution (?:aborted|interrupted)|tool execution failed: task cancelled)$/i;
+  /^(?:(?:task )?cancelled|tool execution (?:aborted|interrupted|failed: task cancelled))$/i;
 
 /** One live subagent run, keyed in the context by the `task` tool's callID. */
 interface OpenCodeSubagentRun {
   /** `state.time.start` of the task tool part — the baseline for progress durations. */
   readonly startedAt: number;
+  /**
+   * What to call this subagent on the parent's surfaces: the agent type the
+   * `task` call selected, or its description when the model named no type.
+   * Undefined when the input bag carried neither.
+   */
+  readonly name: string | undefined;
   /** Distinct child tool callIDs observed so far; the size is `toolUses`. */
   readonly toolCallIds: Set<string>;
   /** The subagent's child OpenCode session id, once its metadata reveals it. */
@@ -163,9 +181,14 @@ export function mapSubagentTaskPart(part: ToolPart, state: OpenCodeSubagentState
 
   let run = state.subagentRuns.get(taskId);
   if (run === undefined) {
-    run = { startedAt: toolState.time.start, toolCallIds: new Set(), ended: false };
-    state.subagentRuns.set(taskId, run);
     const description = readStringField(toolState.input, 'description');
+    run = {
+      startedAt: toolState.time.start,
+      name: readStringField(toolState.input, SUBAGENT_TYPE_INPUT_KEY) ?? description,
+      toolCallIds: new Set(),
+      ended: false,
+    };
+    state.subagentRuns.set(taskId, run);
     events.push({
       type: 'background_task_started',
       data: {
@@ -254,6 +277,37 @@ export function* closeOpenSubagents(state: OpenCodeSubagentState): Generator<Str
       },
     };
   }
+}
+
+/**
+ * Whether a subagent run is still live — the guard every child-session event
+ * passes before it is attributed to the parent's card. A run that has already
+ * reported its terminal is finished: a straggling child event belongs to
+ * nothing, and a straggling child PROMPT would be an unanswerable card.
+ *
+ * @param state - The turn's subagent bookkeeping
+ * @param taskId - The parent's `task` callID the child session belongs to
+ */
+export function isSubagentRunning(state: OpenCodeSubagentState, taskId: string): boolean {
+  const run = state.subagentRuns.get(taskId);
+  return run !== undefined && !run.ended;
+}
+
+/**
+ * The card header for a permission a subagent raised, so a person answering it
+ * knows who is asking rather than seeing an unexplained command appear
+ * (DOR-1126). Named for the agent the `task` call selected; a run whose input
+ * named neither an agent type nor a description still says a subagent asked,
+ * which is the part that changes what the answer means.
+ *
+ * @param state - The turn's subagent bookkeeping
+ * @param taskId - The parent's `task` callID the child session belongs to
+ */
+export function subagentPromptTitle(state: OpenCodeSubagentState, taskId: string): string {
+  const name = state.subagentRuns.get(taskId)?.name;
+  return name === undefined
+    ? 'A subagent needs permission'
+    : `The ${name} subagent needs permission`;
 }
 
 /**

@@ -143,9 +143,9 @@ function useActiveTarget(
  * Everything the sidebar is a function of, as one memoized snapshot.
  *
  * One field is still waiting for a source and says so where it is filled:
- * `userLastMessageAt`, the server half of Today's order key, which no route
- * carries yet. Its absence is the specified behaviour rather than a gap — the
- * operator's own interaction record governs alone (BC-16).
+ * `mentions`, which no client source can count above a read cursor. Its absence
+ * is the specified behaviour rather than a gap — omission, never a guess
+ * (BC-40).
  */
 export function useSidebarState(): SidebarState {
   const now = useNow(SIDEBAR_CLOCK_TICK_MS);
@@ -217,6 +217,37 @@ export function useSidebarState(): SidebarState {
     [rawPaths, manifests]
   );
 
+  // ── When the operator last WROTE, the server's half of Today's key ──
+  //
+  // The other half of BC-16's `max(userLastMessageAt, userLastOpenedAt)`, from
+  // `Session.userLastMessageAt` on `GET /api/sessions/recent` (DOR-1081). A
+  // session that carries no value contributes no entry, and the operator's own
+  // interaction record governs alone — omission, never a guess.
+  //
+  // **Read from the REST window and from nothing else, deliberately.** The live
+  // session-list stream carries session records too, and it is the wrong source
+  // for this one field: `SessionListBroadcaster` applies only the stored-settings
+  // overlay, not the room and task origin overlays that suppress the field for
+  // turns a person did not start. A room turn's prompt arrives as plain user
+  // text no content rule can tell from something you typed, so on the stream it
+  // would look like your writing and reorder Today for work an agent did. The
+  // REST read applies those overlays and is the only source that has answered
+  // the question.
+  //
+  // Stability-guarded like every other map here: a session's other fields churn
+  // (`updatedAt` moves on every agent write) and rebuilding this map identically
+  // would rebuild the whole model with it.
+  const userLastMessageAt = useShallowStable(
+    useMemo(() => {
+      const written: Record<string, string> = {};
+      for (const session of sessions) {
+        const at = session.userLastMessageAt;
+        if (at !== undefined) written[`session:${session.id}`] = at;
+      }
+      return written;
+    }, [sessions])
+  );
+
   // ── What the operator opened, and when ──
   // Read before prefs because the digest is a function of it (BC-22), and the
   // digest is what the prefs handed to the model are adjusted for.
@@ -266,7 +297,7 @@ export function useSidebarState(): SidebarState {
   const todayAutomatedExpanded = useTodayRevealStore((s) => s.automatedExpanded);
 
   // ── What needs the operator (BC-5) ──
-  // The only source Now draws from, normalized once in `entities/attention` so
+  // The only source Heads up draws from, normalized once in `entities/attention` so
   // the home surface's triage header and this panel read the same list.
   const attention = useAttentionSignals();
 
@@ -280,6 +311,7 @@ export function useSidebarState(): SidebarState {
     agents,
     agentActivity,
     sessionCount: sessions.length,
+    rooms,
     rosterResolved:
       meshQuery.isSuccess &&
       recentQuery.isSuccess &&
@@ -311,11 +343,9 @@ export function useSidebarState(): SidebarState {
       recents,
       prefs,
       interactions,
-      // No field on the wire carries "when did the operator last WRITE here"
-      // yet (§F makes it an additive field on `GET /api/sessions/recent`), and
-      // no client source counts @mentions above a read cursor. A source that
-      // cannot say has no entry — omission, never a guess (BC-16, BC-40).
-      userLastMessageAt: {},
+      userLastMessageAt,
+      // No client source counts @mentions above a read cursor. A source that
+      // cannot say has no entry — omission, never a guess (BC-40).
       mentions: {},
       todayAutomatedExpanded,
       activeTarget,
@@ -337,6 +367,7 @@ export function useSidebarState(): SidebarState {
       recents,
       prefs,
       interactions,
+      userLastMessageAt,
       todayAutomatedExpanded,
       activeTarget,
       journey.facts,

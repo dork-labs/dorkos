@@ -1,9 +1,15 @@
 import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useQueryClient } from '@tanstack/react-query';
-import { useAppStore, useIsMobile } from '@/layers/shared/model';
+import { useAppStore, useIsMobile, useNow } from '@/layers/shared/model';
 import { cachedSessionForCwd } from '@/layers/entities/session';
-import { cn, openLink, supportsNewTab, supportsSeparateWindow } from '@/layers/shared/lib';
+import {
+  cn,
+  getAgentDisplayName,
+  openLink,
+  supportsNewTab,
+  supportsSeparateWindow,
+} from '@/layers/shared/lib';
 import {
   ResponsiveDialog,
   ResponsiveDialogContent,
@@ -16,8 +22,14 @@ import {
 import { usePaletteItems } from '../model/use-palette-items';
 import { useGlobalPalette } from '../model/use-global-palette';
 import { usePaletteSearch } from '../model/use-palette-search';
+import { usePaletteUsage } from '../model/use-palette-usage';
 import { usePaletteActions } from '../model/use-palette-actions';
 import { useLeadingRowPin } from '../model/use-leading-row-pin';
+import { PaletteScopeChip } from './PaletteScopeChip';
+import { scopeKey, type PaletteScope } from '../model/palette-scope';
+import { searchHandoffHref } from '../model/search-surface';
+import type { RankedRow } from '../model/palette-ranking';
+import type { SearchResult } from '../model/use-palette-search';
 import { AgentPreviewPanel } from './AgentPreviewPanel';
 import { AgentSubMenu } from './AgentSubMenu';
 import { PaletteFooter } from './PaletteFooter';
@@ -27,12 +39,80 @@ import { usePreviewData } from '../model/use-preview-data';
 import { dialogVariants } from './palette-constants';
 import { useAgentHubStore } from '@/layers/features/agent-hub';
 import { resolveAgentVisual } from '@/layers/entities/agent';
+import { useLegacyFrecencyMigration } from '@/layers/entities/interactions';
 // Composition across features, which the layer rules permit for UI: the
 // switcher is the sidebar's component, and ⌘K is one of the three doors BC-35
 // says it opens from.
 import { SessionSwitcher } from '@/layers/features/dashboard-sidebar';
 import type { AgentPathEntry } from '@dorkos/shared/mesh-schemas';
-import type { FuseResultMatch } from 'fuse.js';
+
+/**
+ * How often the ranking re-reads the clock.
+ *
+ * A minute, matching the rows' own relative timestamps. Both of the ranker's
+ * time-based signals halve over days, so a finer tick would repaint the list
+ * without ever changing it — and a coarser one would leave a palette left open
+ * on a second monitor ranking against a stale morning.
+ */
+const RANKING_CLOCK_TICK_MS = 60_000;
+
+/**
+ * Whether the caret sits before everything, with nothing selected.
+ *
+ * The condition that turns Backspace from "delete a character" into "drop the
+ * scope". `null` — an input jsdom or a browser has not laid out yet — reads as
+ * "at the start", because an input with no caret has no character to the left
+ * of it either.
+ *
+ * **How a person gets the caret there, measured rather than assumed:** by
+ * emptying the field, or by walking back with ArrowLeft. **Not** with Home —
+ * cmdk's root handler claims Home and End for jumping the highlight to the
+ * first and last row and calls `preventDefault` on them, so Home never reaches
+ * the caret at all. Found in a browser; jsdom moves no caret and could not have
+ * shown it.
+ *
+ * @param input - The search field, when it is mounted.
+ */
+function caretAtStart(input: HTMLInputElement | null): boolean {
+  if (input === null) return true;
+  return (input.selectionStart ?? 0) === 0 && (input.selectionEnd ?? 0) === 0;
+}
+
+/**
+ * The scope the highlighted row stands for, or `null` when it stands for none.
+ *
+ * Read off the RANKED ROWS rather than off the corpus, so the offer can only
+ * ever name something actually on screen — and so it disappears by itself once
+ * a chip is up, because a scoped list holds no agent and no channel rows. That
+ * is what makes "only one chip at a time" a fact about the list rather than a
+ * rule somebody has to remember.
+ *
+ * The value it compares against is cmdk's, which is each row's own `value`
+ * prop: an agent's display name (`AgentCommandItem`), a room's id
+ * (`RoomCommandItem`). Matching on anything else here would silently never fire.
+ *
+ * @param selectedValue - What cmdk has highlighted.
+ * @param bestMatch - The row lifted into its own section, when there is one.
+ * @param rows - Everything else, in ranked order.
+ */
+function scopableRow(
+  selectedValue: string,
+  bestMatch: RankedRow<SearchResult> | null,
+  rows: readonly RankedRow<SearchResult>[]
+): PaletteScope | null {
+  if (!selectedValue) return null;
+  const candidates = bestMatch === null ? rows : [bestMatch, ...rows];
+  for (const row of candidates) {
+    const { item } = row.item;
+    if (item.type === 'agent' && getAgentDisplayName(item.data) === selectedValue) {
+      return { kind: 'agent', agent: item.data };
+    }
+    if ((item.type === 'room' || item.type === 'dm') && item.id === selectedValue) {
+      return { kind: 'room', room: item.data };
+    }
+  }
+  return null;
+}
 
 /**
  * Global command palette dialog.
@@ -59,6 +139,17 @@ export function CommandPaletteDialog() {
   // dialog's own state: "Browse sessions…" closes the palette, and the surface
   // it opens has to outlive the one it was launched from.
   const [switcherAgent, setSwitcherAgent] = useState<AgentPathEntry | null>(null);
+  // What the palette is looking inside, or `null` (design-decisions §15).
+  //
+  // **One chip, never two, and that is a decision rather than a limit of the
+  // state shape.** The two kinds of scope select disjoint sets — an agent's
+  // conversations and a channel's are different conversations — so a second
+  // chip could only ever intersect two disjoint sets and empty the list.
+  // Rather than offer a combination whose only outcome is "no results", the
+  // corpus under a chip contains no agent and no channel row at all, so there
+  // is nothing left to scope BY: the second chip is unreachable by
+  // construction rather than blocked by a rule somebody has to remember.
+  const [scope, setScope] = useState<PaletteScope | null>(null);
   const page = pages[pages.length - 1];
   // staggerKey drives the stagger entrance animation: incremented on dialog open
   // and page transitions, but NOT on search keystrokes.
@@ -75,6 +166,7 @@ export function CommandPaletteDialog() {
     setSelectedValue('');
     setPages([]);
     setSubMenuAgent(null);
+    setScope(null);
   }, [setGlobalPaletteOpen, clearGlobalPaletteInitialSearch]);
 
   const {
@@ -85,7 +177,7 @@ export function CommandPaletteDialog() {
     handleRoomSelect,
     handleSessionSelect,
     handleCommandSelect,
-    recordUsage,
+    recordAgentOpened,
     selectedCwd,
   } = usePaletteActions(closePalette);
 
@@ -133,10 +225,10 @@ export function CommandPaletteDialog() {
         return;
       }
       openLink(agentHref(agent), { target: 'tab' });
-      recordUsage(agent.id);
+      recordAgentOpened(agent.projectPath);
       closePalette();
     },
-    [agentHref, handleAgentSelect, recordUsage, closePalette]
+    [agentHref, handleAgentSelect, recordAgentOpened, closePalette]
   );
 
   // "Open in New Window" — the same target, in a second cockpit window instead
@@ -148,10 +240,10 @@ export function CommandPaletteDialog() {
   const openAgentInNewWindow = useCallback(
     (agent: AgentPathEntry) => {
       openLink(agentHref(agent), { target: 'window' });
-      recordUsage(agent.id);
+      recordAgentOpened(agent.projectPath);
       closePalette();
     },
-    [agentHref, recordUsage, closePalette]
+    [agentHref, recordAgentOpened, closePalette]
   );
 
   // Whether to offer the "New Window" choice at all. In a browser it is not a
@@ -160,94 +252,71 @@ export function CommandPaletteDialog() {
   // or quietly remapped. Two rows that do the same thing is a lie (DOR-568).
   const canOpenSeparateWindow = supportsSeparateWindow();
 
-  const {
-    recentAgents,
-    allAgents,
-    features,
-    commands,
-    quickActions,
-    newActions,
-    rooms,
-    sessions,
-    continueRows,
-    recent,
-    searchableItems,
-  } = usePaletteItems(selectedCwd);
+  // What this person actually uses, and the clock every time-based claim in the
+  // palette is measured against. Both are read here and passed down: the scorer
+  // takes an injected `now` and reads no store, which is what makes its
+  // ordering assertable against a fixed corpus (`palette-ranking`), and the
+  // corpus takes the same clock so a row can say it is archived.
+  const usage = usePaletteUsage();
+  const now = useNow(RANKING_CLOCK_TICK_MS);
 
-  const { results, prefix } = usePaletteSearch(searchableItems, search);
+  const { allAgents, newActions, rooms, sessions, continueRows, recent, searchableItems } =
+    usePaletteItems(selectedCwd, now);
 
-  // Build lookup maps from search results for efficient access during render
-  const agentMatchMap = useMemo(() => {
-    const map = new Map<string, readonly FuseResultMatch[] | undefined>();
-    for (const result of results) {
-      if (result.item.type === 'agent') {
-        map.set(result.item.id, result.matches);
-      }
-    }
-    return map;
-  }, [results]);
+  // Fold ⌘K's retired agent-frecency key into the one interaction store, once,
+  // and delete it from the browser. Here because this dialog is mounted at the
+  // app root for the whole life of the app and the roster it needs is already
+  // in hand — the earliest point at which the translation can be made at all.
+  useLegacyFrecencyMigration(allAgents);
 
-  // Determine which agents/features/commands are visible based on search results
-  const visibleAgentIds = useMemo(() => {
-    if (!search) return null; // null means "use group defaults"
-    return new Set(results.filter((r) => r.item.type === 'agent').map((r) => r.item.id));
-  }, [results, search]);
+  const { bestMatch, rows, prefix, term } = usePaletteSearch(searchableItems, search, {
+    usage,
+    now,
+    scope,
+  });
 
-  const visibleFeatureIds = useMemo(() => {
-    if (!search || prefix === '@' || prefix === '>') return null;
-    return new Set(results.filter((r) => r.item.type === 'feature').map((r) => r.item.id));
-  }, [results, search, prefix]);
-
-  // Use item IDs (format: "cmd-{name}") for command visibility — matches searchableItems
-  const visibleCommandIds = useMemo(() => {
-    if (!search || prefix === '@') return null;
-    return new Set(results.filter((r) => r.item.type === 'command').map((r) => r.item.id));
-  }, [results, search, prefix]);
-
-  const visibleQuickActionIds = useMemo(() => {
-    if (!search || prefix === '@' || prefix === '>') return null;
-    return new Set(results.filter((r) => r.item.type === 'quick-action').map((r) => r.item.id));
-  }, [results, search, prefix]);
-
-  // Which rooms the current query matches. Rooms are two item types, not one:
-  // `#` addresses a channel by its name, `@` a DM by who is in it (spec `rooms`
-  // §13.2), so the visible sets are derived separately and each group filters
-  // its own already-ordered list — which keeps unread first rather than
-  // adopting Fuse's relevance order.
-  const visibleRoomIds = useMemo(() => {
-    if (!search) return null;
-    return new Set(results.filter((r) => r.item.type === 'room').map((r) => r.item.id));
-  }, [results, search]);
-
-  const visibleDmIds = useMemo(() => {
-    if (!search) return null;
-    return new Set(results.filter((r) => r.item.type === 'dm').map((r) => r.item.id));
-  }, [results, search]);
-
-  // Conversations keep Fuse's own relevance order rather than the recency order
-  // they arrived in: a person who typed something is asking "which one is this",
-  // not "which one is newest".
-  const searchSessions = useMemo(() => {
-    if (!search) return [];
-    const byId = new Map(sessions.map((session) => [session.id, session]));
-    return results.flatMap((r) => {
-      if (r.item.type !== 'session') return [];
-      const session = byId.get(r.item.id);
-      return session ? [session] : [];
-    });
-  }, [results, search, sessions]);
-
-  const isAtMode = prefix === '@';
-  const isCommandMode = prefix === '>';
   const isRoomMode = prefix === '#';
+
+  // The one row that leaves ⌘K, and only if there is anywhere to leave for.
+  // `term` rather than the raw search string: `#` and `@` are how a person
+  // narrowed this list, not part of what they want looked for. `openLink`
+  // rather than `navigate`, because that seam already knows what to do in each
+  // shell — and in the Obsidian embed, which mounts no router at all.
+  const handoffHref = searchHandoffHref(term);
+  const searchHandoff = handoffHref
+    ? {
+        term: term.trim(),
+        onSelect: () => {
+          openLink(handoffHref);
+          closePalette();
+        },
+      }
+    : null;
 
   // Derive the currently selected agent from the cmdk selected value.
   // Agents are identified by name (cmdk uses the value prop of CommandItem).
   const selectedAgent = useMemo<AgentPathEntry | null>(() => {
     if (!selectedValue) return null;
-    const allVisibleAgents = [...recentAgents, ...allAgents];
-    return allVisibleAgents.find((a) => a.name === selectedValue) ?? null;
-  }, [selectedValue, recentAgents, allAgents]);
+    return allAgents.find((a) => a.name === selectedValue) ?? null;
+  }, [selectedValue, allAgents]);
+
+  // What the highlighted row could be scoped to, or `null` when it is not a
+  // thing you can look inside. Derived rather than memoized: it is a scan over
+  // rows already in hand, and nothing downstream needs its identity to hold —
+  // the footer reads a boolean off it and the key handler reads it once.
+  const scopableSelection = scopableRow(selectedValue, bestMatch, rows);
+
+  // Pick up a scope, and start the query over.
+  //
+  // The residual query is cleared rather than kept, because what was typed was
+  // how the person FOUND the chip (`@dor`, `#ship`) — carrying it forward would
+  // immediately search inside the scope for the name of the scope. The mockup
+  // shows exactly this: chip, then a fresh word.
+  const applyScope = useCallback((next: PaletteScope) => {
+    setScope(next);
+    setSearch('');
+    setSelectedValue('');
+  }, []);
 
   const hasAgentSelected = !isMobile && selectedAgent !== null;
 
@@ -321,6 +390,7 @@ export function CommandPaletteDialog() {
         setSelectedValue('');
         setPages([]);
         setSubMenuAgent(null);
+        setScope(null);
       }
     },
     [setGlobalPaletteOpen]
@@ -335,46 +405,18 @@ export function CommandPaletteDialog() {
     rootRef: commandRootRef,
     activePage: page ?? 'root',
     onPin: setSelectedValue,
-    resetKey: JSON.stringify([globalPaletteOpen, page ?? null, search]),
+    // The scope is part of "the list started over": picking or dropping a chip
+    // replaces every row, so a highlight held from the previous list would be
+    // aimed at a row that is no longer there.
+    resetKey: JSON.stringify([globalPaletteOpen, page ?? null, search, scope && scopeKey(scope)]),
   });
 
-  // Zero-query state: show Recent Agents, Features, Quick Actions (default layout)
-  const isZeroQuery = !search;
-
-  // Which agents to show in the All Agents group during search
-  const searchAgents = useMemo(() => {
-    if (!visibleAgentIds) return allAgents;
-    return allAgents.filter((a) => visibleAgentIds.has(a.id));
-  }, [allAgents, visibleAgentIds]);
-
-  // Which features to show during search
-  const searchFeatures = useMemo(() => {
-    if (!visibleFeatureIds) return features;
-    return features.filter((f) => visibleFeatureIds.has(f.id));
-  }, [features, visibleFeatureIds]);
-
-  // Which commands to show during search
-  const searchCommands = useMemo(() => {
-    if (!visibleCommandIds) return commands;
-    return commands.filter((cmd) => visibleCommandIds.has(`cmd-${cmd.name}`));
-  }, [commands, visibleCommandIds]);
-
-  // Which quick actions to show during search
-  const searchQuickActions = useMemo(() => {
-    if (!visibleQuickActionIds) return quickActions;
-    return quickActions.filter((qa) => visibleQuickActionIds.has(qa.id));
-  }, [quickActions, visibleQuickActionIds]);
-
-  // Which channels and DMs to show during search
-  const searchChannels = useMemo(() => {
-    if (!visibleRoomIds) return rooms.channels;
-    return rooms.channels.filter((room) => visibleRoomIds.has(room.id));
-  }, [rooms.channels, visibleRoomIds]);
-
-  const searchDms = useMemo(() => {
-    if (!visibleDmIds) return rooms.dms;
-    return rooms.dms.filter((room) => visibleDmIds.has(room.id));
-  }, [rooms.dms, visibleDmIds]);
+  // Zero-query state: the command center, not a ranked list of everything.
+  //
+  // A chip counts as having asked something, even with nothing typed after it:
+  // picking a scope IS the question "what is in here", and answering it with
+  // the global Continue/Recent list would ignore the chip on screen.
+  const isZeroQuery = !search && scope === null;
 
   const palette = (
     <ResponsiveDialog open={globalPaletteOpen} onOpenChange={handleOpenChange}>
@@ -444,6 +486,45 @@ export function CommandPaletteDialog() {
                 openAgentInNewTab(subMenuAgent);
                 return;
               }
+              // Tab scopes the palette to the highlighted agent or channel
+              // (P3 AC-3). Tab rather than Enter, because Enter already means
+              // "go there" on every row in this list and one key cannot mean
+              // both — and because it is the key Linear and Raycast use for
+              // exactly this. Stopped as well as prevented: the dialog's focus
+              // trap would otherwise move focus out of the input on the same
+              // keystroke.
+              //
+              // **Tab still means Tab when there is nothing to scope to**, and
+              // that is worth knowing rather than discovering: with a chip up
+              // the list holds only conversations, so this branch does not fire
+              // and Tab falls through to the dialog's focus trap, which moves
+              // focus to the close button. The caret leaves the field silently.
+              // Swallowing Tab unconditionally would fix that by taking away
+              // the only keyboard route out of the dialog for anyone not using
+              // Escape, which is the worse trade.
+              if (e.key === 'Tab' && !e.shiftKey && !page && scopableSelection) {
+                e.preventDefault();
+                e.stopPropagation();
+                applyScope(scopableSelection);
+                return;
+              }
+              // Backspace with the caret at the very start pops the chip, and
+              // leaves what was typed after it (P3 AC-3, verbatim: "without
+              // clearing the residual query"). The caret test is what makes
+              // the two readings one rule: an empty input has the caret at 0,
+              // so the usual "backspace out of an empty box" works, and a
+              // person who has typed can walk back to the start and drop the
+              // scope without losing the word they came for.
+              //
+              // **Walk back with ArrowLeft — Home does not do it**, measured in
+              // a browser: cmdk's root claims Home for jumping the highlight to
+              // the first row and calls `preventDefault`, so `selectionStart`
+              // never moves. See `caretAtStart`.
+              if (e.key === 'Backspace' && scope && !page && caretAtStart(inputRef.current)) {
+                e.preventDefault();
+                setScope(null);
+                return;
+              }
               // Backspace when input is empty pops the last page (goes back)
               if (e.key === 'Backspace' && !search && pages.length > 0) {
                 e.preventDefault();
@@ -484,10 +565,15 @@ export function CommandPaletteDialog() {
               // `getByPlaceholder` that matches nothing waits and times out rather
               // than saying what it could not find.
               data-testid="command-palette-input"
+              leading={scope && !page ? <PaletteScopeChip scope={scope} /> : undefined}
               placeholder={
                 page === 'agent-actions'
                   ? `${subMenuAgent?.name ?? 'Agent'} actions...`
-                  : 'Search rooms, agents, commands...'
+                  : scope && !page
+                    ? // The chip beside it already says what is being searched,
+                      // so the placeholder says the one thing left to say.
+                      'Search within…'
+                    : 'Search rooms, agents, commands...'
               }
               value={search}
               onValueChange={setSearch}
@@ -525,24 +611,18 @@ export function CommandPaletteDialog() {
                       <PaletteRootPage
                         staggerKey={staggerKey}
                         isZeroQuery={isZeroQuery}
-                        isAtMode={isAtMode}
-                        isCommandMode={isCommandMode}
                         isRoomMode={isRoomMode}
-                        search={search}
+                        scope={scope}
+                        hasQuery={term.length > 0}
                         selectedCwd={selectedCwd}
                         selectedValue={selectedValue}
                         continueRows={continueRows}
                         recent={recent}
                         newActions={newActions}
-                        searchAgents={searchAgents}
-                        searchSessions={searchSessions}
-                        searchFeatures={searchFeatures}
-                        searchCommands={searchCommands}
-                        searchQuickActions={searchQuickActions}
+                        bestMatch={bestMatch}
+                        rows={rows}
                         rooms={rooms}
-                        searchChannels={searchChannels}
-                        searchDms={searchDms}
-                        agentMatchMap={agentMatchMap}
+                        searchHandoff={searchHandoff}
                         onFeatureAction={handleFeatureAction}
                         onQuickAction={handleQuickAction}
                         onGoToAgentActions={goToAgentActions}
@@ -572,7 +652,7 @@ export function CommandPaletteDialog() {
                           // otherwise this row and "Open Here" above it do the
                           // same thing (DOR-928).
                           startNewSession(subMenuAgent.projectPath);
-                          recordUsage(subMenuAgent.id);
+                          recordAgentOpened(subMenuAgent.projectPath);
                           closePalette();
                         }}
                         onEditSettings={() => {
@@ -590,7 +670,7 @@ export function CommandPaletteDialog() {
                           previewData.sessionCount > 0
                             ? () => {
                                 setSwitcherAgent(subMenuAgent);
-                                recordUsage(subMenuAgent.id);
+                                recordAgentOpened(subMenuAgent.projectPath);
                                 closePalette();
                               }
                             : undefined
@@ -600,17 +680,24 @@ export function CommandPaletteDialog() {
                         // durable stream resolves a session's history from
                         // `?cwd=`, so inheriting the current one would read
                         // another project's transcript.
-                        onSelectSession={(sessionId) => {
-                          handleSessionSelect(sessionId, subMenuAgent.projectPath);
-                          recordUsage(subMenuAgent.id);
-                        }}
+                        // `handleSessionSelect` records both the conversation
+                        // and the agent whose directory it travels with, so
+                        // there is nothing to add here.
+                        onSelectSession={(sessionId) =>
+                          handleSessionSelect(sessionId, subMenuAgent.projectPath)
+                        }
                       />
                     )}
                   </motion.div>
                 </AnimatePresence>
               </ScrollArea>
             </CommandList>
-            <PaletteFooter page={page} hasAgentSelected={hasAgentSelected} />
+            <PaletteFooter
+              page={page}
+              hasAgentSelected={hasAgentSelected}
+              canScope={!page && scopableSelection !== null}
+              isScoped={scope !== null}
+            />
           </Command>
 
           {/* Agent preview panel — only shown on desktop when an agent item is selected */}

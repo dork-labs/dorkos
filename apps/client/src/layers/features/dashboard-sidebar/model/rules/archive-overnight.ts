@@ -4,43 +4,15 @@
  *
  * @module features/dashboard-sidebar/model/rules/archive-overnight
  */
+// A deep import into `shared/lib`, deliberately: this module is covered by a
+// source-level purity contract that forbids value-importing the `shared/lib`
+// barrel, which drags in the transport and every other side effect behind it.
+// The leaf module imports nothing at all. Same shape `SessionCommandItem` uses
+// to reach `row-grammar`, and for the same reason.
+import { overnightBoundary } from '@/layers/shared/lib/overnight-boundary';
 import type { SidebarRowModel } from '../build-sidebar-model';
 import type { SidebarState } from '../sidebar-state';
 import { lastInteractionAt } from './order-today';
-
-/**
- * The hour a day turns over for a person who works late.
- *
- * Not midnight: somebody still going at 1am is having yesterday, and a sidebar
- * that empties itself under them at 00:00 is arguing with them about it.
- */
-export const OVERNIGHT_BOUNDARY_HOUR = 4;
-
-/**
- * The most recent 04:00 local that has already passed, epoch ms.
- *
- * Local rather than UTC, and computed from `now` rather than read from a clock,
- * so the boundary is a pure function of the snapshot and a test can walk it
- * across a day without mocking time. `new Date(now)` reads the host timezone,
- * which is what "04:00 local" means; no `Intl` and no implicit timezone appear
- * anywhere in this module.
- *
- * @param now - The instant to reason from, epoch ms.
- */
-export function overnightBoundary(now: number): number {
-  const date = new Date(now);
-  const boundary = new Date(
-    date.getFullYear(),
-    date.getMonth(),
-    date.getDate(),
-    OVERNIGHT_BOUNDARY_HOUR,
-    0,
-    0,
-    0
-  );
-  if (boundary.getTime() > now) boundary.setDate(boundary.getDate() - 1);
-  return boundary.getTime();
-}
 
 /** What {@link archiveOvernight} must keep whatever the clock says. */
 export interface ArchiveExemptions {

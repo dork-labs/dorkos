@@ -27,29 +27,8 @@ import {
 import { TransportProvider, useTheme } from '@/layers/shared/model';
 import { ChevronLeft, LayoutDashboard, Sun, Monitor, Moon, Search } from 'lucide-react';
 import { createPlaygroundTransport } from './playground-transport';
-import { ChatPage } from './pages/ChatPage';
-import { EntryActionsPage } from './pages/EntryActionsPage';
-import { FeaturesPage } from './pages/FeaturesPage';
-import { IdentityPage } from './pages/IdentityPage';
-import { TokensPage } from './pages/TokensPage';
-import { FormsPage } from './pages/FormsPage';
-import { ComponentsPage } from './pages/ComponentsPage';
-import { OverviewPage } from './pages/OverviewPage';
-import { PromosPage } from './pages/PromosPage';
-import { CommandPalettePage } from './pages/CommandPalettePage';
-import { SimulatorPage } from './pages/SimulatorPage';
-import { TopologyPage } from './pages/TopologyPage';
-import { ErrorStatesPage } from './pages/ErrorStatesPage';
-import { FilterBarPage } from './pages/FilterBarPage';
-import { OnboardingPage } from './pages/OnboardingPage';
-import { TablesPage } from './pages/TablesPage';
-import { SettingsPage } from './pages/SettingsPage';
-import { MarketplacePage } from './pages/MarketplacePage';
-import { GenUiPage } from './pages/GenUiPage';
-import { RoomsPage } from './pages/RoomsPage';
-import { TourSpotlightPage } from './pages/TourSpotlightPage';
-import { SidebarModelPage } from './pages/SidebarModelPage';
 import { PlaygroundSearch } from './PlaygroundSearch';
+import { PAGE_COMPONENTS } from './playground-pages';
 import {
   DESIGN_SYSTEM_NAV,
   GEN_UI_NAV,
@@ -80,37 +59,6 @@ const devRouter = createRouter({
 /** Platform-aware modifier key symbol. */
 const MOD_KEY =
   typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.userAgent) ? '⌘' : 'Ctrl+';
-
-/** Props shared by all playground page components. Only OverviewPage uses `onNavigate`. */
-interface PlaygroundPageProps {
-  onNavigate?: (page: Page) => void;
-}
-
-/** Page component lookup — maps page IDs to their React components. */
-const PAGE_COMPONENTS: Record<string, React.ComponentType<PlaygroundPageProps>> = {
-  overview: OverviewPage as React.ComponentType<PlaygroundPageProps>,
-  tokens: TokensPage,
-  forms: FormsPage,
-  components: ComponentsPage,
-  chat: ChatPage,
-  'entry-actions': EntryActionsPage,
-  features: FeaturesPage,
-  identity: IdentityPage,
-  topology: TopologyPage,
-  promos: PromosPage,
-  'command-palette': CommandPalettePage,
-  simulator: SimulatorPage,
-  'filter-bar': FilterBarPage,
-  'error-states': ErrorStatesPage,
-  onboarding: OnboardingPage,
-  tables: TablesPage,
-  settings: SettingsPage,
-  marketplace: MarketplacePage,
-  'gen-ui': GenUiPage,
-  rooms: RoomsPage,
-  'tour-spotlight': TourSpotlightPage,
-  'sidebar-model': SidebarModelPage,
-};
 
 /**
  * Scroll the SidebarInset scroll container to the element with the given id.
@@ -338,9 +286,11 @@ function DevPlaygroundShell() {
             <ThemeToggle />
           </Sidebar>
 
-          {/* --pip-dock (set by the mobile PIP mini-bar) lifts playground
+          {/* --pip-dock (set by the mobile PIP mini-bar) lifts this inset's
               content above the 64px bar — the PIP showcase invites mobile
-              testing on these routes. */}
+              testing on these routes. It lifts THIS box and nothing else: the
+              variable is padding for whoever reads it, never a promise that
+              every surface on screen has been cleared (DOR-1177). */}
           <SidebarInset className="overflow-y-auto pb-[var(--pip-dock,0px)]">
             <header className="flex h-9 shrink-0 items-center gap-2 border-b px-2">
               <SidebarTrigger className="-ml-0.5" />

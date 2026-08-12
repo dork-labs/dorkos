@@ -118,6 +118,37 @@ export const SESSIONS = {
   /** Maximum number of concurrent in-memory sessions. */
   MAX_SESSIONS: 50,
   /**
+   * How long a WARM session's subprocess may sit with no turn open before it is
+   * given back (spec `persistent-session-runtime` §4.3).
+   *
+   * This is **not** session eviction. `TIMEOUT_MS` retires the session RECORD
+   * after 30 minutes and the person loses their place; this closes a PROCESS
+   * after 5 minutes and the person cannot tell — the record, the transcript and
+   * the conversation are untouched, and the next message resumes. Eviction
+   * implies a reap; a reap never implies eviction.
+   *
+   * Five minutes is long enough that somebody thinking between turns keeps their
+   * warm prompt cache, and short enough that a session abandoned mid-afternoon
+   * is not still holding a CLI subprocess (and its MCP children) at dinner.
+   */
+  WARM_IDLE_MS: 5 * 60 * 1000,
+  /**
+   * How many sessions may hold a subprocess at once (spec §4.4).
+   *
+   * This counts PROCESSES; `MAX_SESSIONS` (50) counts session RECORDS, and the
+   * two are deliberately different numbers. Fifty concurrent CLI subprocesses
+   * plus their MCP children on a laptop is not a shape to ship, so warmth stops
+   * at twelve while records stay at fifty — which keeps `ensureSession`'s throw
+   * the genuinely exceptional path it is today.
+   *
+   * It is also **not** a refusal ceiling in the way `MAX_SESSIONS` is. Warmth is
+   * a cache, so the thirteenth warm session does not fail: the least recently
+   * used warm process is reaped to make room for it, and only a host where
+   * nothing is reclaimable — every process mid-turn or parked on a person — is
+   * refused.
+   */
+  MAX_WARM_SESSIONS: 12,
+  /**
    * Inactivity window before a detached turn is declared stalled: the watchdog
    * interrupts the runtime and closes the turn with a typed error. Resets on
    * every StreamEvent; suspended while the session holds a live pending
@@ -138,8 +169,25 @@ export const SESSIONS = {
 } as const;
 
 export const TRANSCRIPT = {
-  /** Bytes to read from file tail for latest status. */
-  TAIL_BUFFER_BYTES: 16384,
+  /**
+   * Bytes to read from a transcript's tail for its latest status.
+   *
+   * Sized by the field with the FARTHEST-BACK answer: `userLastMessageAt`, the
+   * time the person last wrote (BC-16). The other readings this window feeds —
+   * model, permission mode, context tokens — sit in the last few records and
+   * were satisfied by 16 KB; the person's last turn is a whole agent work
+   * session further back. Measured over 474 real transcripts, the distance from
+   * EOF to the last person-authored record is p50 27 KB / p75 47 KB, so 16 KB
+   * answered only 11% of conversations (5.6% of those touched in the last week)
+   * while 64 KB answers 84% (89.7% in the last week).
+   *
+   * Growing it is safe for the other readings by construction: every one of
+   * them is last-occurrence-wins, so a wider window can never change which
+   * record is last — it can only find one that was previously out of reach.
+   * `lastAutoCompactAt` is the one that gains from that, and gaining coverage
+   * is what its own doc already calls the disclosed limitation.
+   */
+  TAIL_BUFFER_BYTES: 65536,
   /** Bytes to read from file head for metadata. */
   HEAD_BUFFER_BYTES: 8192,
   /** Max characters for session title. */

@@ -48,7 +48,7 @@ describe('UserConfigSchema', () => {
           autoFollowAgent: false,
         },
         statusBar: { pins: [] },
-        composer: { richText: false },
+        composer: { richText: true },
         autonomyAcknowledgedAt: null,
       },
       logging: { level: 'info', maxLogSizeKb: 500, maxLogFiles: 14 },
@@ -118,6 +118,7 @@ describe('UserConfigSchema', () => {
           defaultModel: null,
           defaultEffort: null,
           defaultTrustStop: null,
+          persistentSession: false,
         },
         opencode: {
           enabled: true,
@@ -386,7 +387,7 @@ describe('USER_CONFIG_DEFAULTS', () => {
           autoFollowAgent: false,
         },
         statusBar: { pins: [] },
-        composer: { richText: false },
+        composer: { richText: true },
         autonomyAcknowledgedAt: null,
       },
       logging: { level: 'info', maxLogSizeKb: 500, maxLogFiles: 14 },
@@ -456,6 +457,7 @@ describe('USER_CONFIG_DEFAULTS', () => {
           defaultModel: null,
           defaultEffort: null,
           defaultTrustStop: null,
+          persistentSession: false,
         },
         opencode: {
           enabled: true,
@@ -747,6 +749,7 @@ describe('UserConfigSchema runtimes', () => {
         defaultModel: null,
         defaultEffort: null,
         defaultTrustStop: null,
+        persistentSession: false,
       },
       opencode: {
         enabled: true,
@@ -780,6 +783,7 @@ describe('UserConfigSchema runtimes', () => {
         defaultModel: null,
         defaultEffort: null,
         defaultTrustStop: null,
+        persistentSession: false,
       },
       opencode: {
         enabled: true,
@@ -971,6 +975,7 @@ describe('UserConfigSchema runtimes.claudeCode (spec claude-code-accounts)', () 
       defaultModel: null,
       defaultEffort: null,
       defaultTrustStop: null,
+      persistentSession: false,
     });
   });
 
@@ -987,6 +992,7 @@ describe('UserConfigSchema runtimes.claudeCode (spec claude-code-accounts)', () 
       defaultModel: null,
       defaultEffort: null,
       defaultTrustStop: null,
+      persistentSession: false,
     });
   });
 
@@ -1012,6 +1018,7 @@ describe('UserConfigSchema runtimes.claudeCode (spec claude-code-accounts)', () 
       defaultModel: null,
       defaultEffort: null,
       defaultTrustStop: null,
+      persistentSession: false,
     });
   });
 

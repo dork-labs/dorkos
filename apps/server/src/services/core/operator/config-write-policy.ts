@@ -129,13 +129,16 @@
  * unenforced from the day they were classified (DOR-1113). A guard that reads a
  * table and a walk that cannot reach part of it is the shape to watch for.
  *
- * One consequence to know before you "fix" it: a payload whose SHAPE does not
- * match the schema — `{ rawMcpServers: { '0': {…} } }`, an array of arrays —
- * walks to paths no policy key matches, so this guard returns nothing and Zod
- * refuses the write with a 400. That is the layering working, not a hole: the
- * guard answers "may this caller write this setting", validation answers "is
- * this even a config", and teaching the matcher to guess at malformed shapes
- * would add complexity in front of a bar that already holds.
+ * One consequence to know before you "fix" it: a malformed shape is still
+ * refused, and by whichever layer it reaches first. An array of arrays —
+ * `{ rawMcpServers: [[{…}]] }` — is caught by THIS guard: `[][]` collapses to
+ * the same plain form as the guarded key, so it matches and fails closed. An
+ * object with numeric keys where a list belongs — `{ rawMcpServers: { '0': {…} } }`
+ * — walks to paths no policy key matches, so the guard returns nothing and Zod
+ * refuses the write with a 400 instead. That is the layering working, not a
+ * hole: the guard answers "may this caller write this setting", validation
+ * answers "is this even a config", and teaching the matcher to guess at
+ * malformed shapes would add complexity in front of a bar that already holds.
  *
  * @module services/core/operator/config-write-policy
  */
@@ -444,6 +447,15 @@ export const CONFIG_WRITE_POLICY = {
   // reverse it: the chip on every row says where the value came from.
   'runtimes.claudeCode.defaultModel': 'agent-writable',
   'runtimes.claudeCode.defaultEffort': 'agent-writable',
+  // Whether a Claude Code chat keeps its agent running between messages
+  // (spec `persistent-session-runtime` §P3). A preference about how work runs,
+  // on the same footing as the model and effort leaves above: it spawns the same
+  // executable with the same permissions and the same trust stop, and only
+  // changes how long that process is held. It removes no gate, widens no
+  // boundary — the boundary check runs per dispatch either way — and reaches no
+  // credential. What it can cost is memory: warm processes are bounded by the
+  // warm-session ceiling in code, not by anything an agent can write here.
+  'runtimes.claudeCode.persistentSession': 'agent-writable',
   'runtimes.opencode.defaultModel': 'agent-writable',
   'runtimes.codex.defaultModel': 'agent-writable',
   'runtimes.codex.defaultEffort': 'agent-writable',

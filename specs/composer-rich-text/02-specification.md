@@ -399,6 +399,12 @@ reads it. Rooms pass it (derived from `room.members`, which `RoomComposer` alrea
 
 ### Decision 5 — the feature flag
 
+> **The default below was superseded by an owner decision on 2026-08-12: it is `true` for chat.**
+> The graduation ladder at the end of this decision still governs which SURFACES pass `richText`
+> (rooms and onboarding stay plain), and the Settings switch stays as the escape hatch. The
+> decision and its reasoning are recorded in `04-implementation.md`. The rest of this section is
+> left as written.
+
 **Where it lives:** `UserConfigSchema.ui.composer.richText: z.boolean().default(false)` in
 `packages/shared/src/config-schema.ts`.
 

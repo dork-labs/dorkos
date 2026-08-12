@@ -11,7 +11,7 @@ import {
 } from '@/layers/shared/ui';
 import { useTopology } from '@/layers/entities/mesh';
 import { getAgentDisplayName } from '@/layers/shared/lib';
-import { useAgentVisual } from '@/layers/entities/agent';
+import { AgentAvatar, useAgentVisual } from '@/layers/entities/agent';
 import { formatRelativeTime } from '../lib/format-relative-time';
 import { Check } from 'lucide-react';
 import type { TopologyAgent } from '@dorkos/shared/mesh-schemas';
@@ -32,10 +32,9 @@ function AgentRow({ agent }: AgentRowProps) {
 
   return (
     <div className="flex items-center gap-3 py-2">
-      <span className="text-lg" aria-hidden>
-        {visual.emoji}
-      </span>
-      <div className="size-2 shrink-0 rounded-full" style={{ backgroundColor: visual.color }} />
+      {/* `sm`, matching the other two-line member rows in a sheet
+          (`RoomMemberRow`) rather than the one-line `xs` of a list row. */}
+      <AgentAvatar color={visual.color} emoji={visual.emoji} size="sm" className="shrink-0" />
       <div className="min-w-0 flex-1">
         <p className="text-foreground truncate text-sm font-medium">{getAgentDisplayName(agent)}</p>
         <div className="flex items-center gap-2">

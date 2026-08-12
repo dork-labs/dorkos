@@ -152,9 +152,16 @@ FILTERED_SPECS=(
 #     behind DORKOS_TEST_RUNTIME, and it needs a session to outlive that file's
 #     `POST /api/test/reset`. Its neighbours in tests/dashboard-sidebar/ are
 #     ordinary cockpit specs, which is exactly why the extension matters here.
+#   dashboard-sidebar/send-lands-in-today.ts — writing in a conversation puts it
+#     in Today (DOR-1156). Registered into chat-mock.spec.ts because it drives
+#     real sends, which are free and deterministic only against TestModeRuntime
+#     — on the cockpit leg each one would bill the machine's own `claude`
+#     sign-in. Same directory, same extension rule, same reason.
 REGISTERED_MODULES=(
+  'chat/composer-escape-and-ime.ts'
   'chat/session-read-state.ts'
   'dashboard-sidebar/now-survives-reload.ts'
+  'dashboard-sidebar/send-lands-in-today.ts'
 )
 
 fail() {

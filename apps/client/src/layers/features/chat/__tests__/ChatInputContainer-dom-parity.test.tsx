@@ -33,7 +33,7 @@
  * rendered composer on a notched phone and NOTHING else in the tree — no
  * attribute, no element, no other class.
  */
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
 import React, { createRef } from 'react';
 import { render, screen, cleanup, fireEvent, act, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -56,9 +56,31 @@ import {
  */
 const COMPOSER_CARD_ATTR_DIFF = 'div > div: [attr-added] attribute data-composer-card="" added';
 
-/** The diff, with that one reviewed attribute accounted for. */
+/**
+ * The queue panel's own subtree, which DOR-1133 deliberately rewrote.
+ *
+ * The rows gained a move-earlier control, a note for a message another window
+ * queued, and a slot for a delivery notice; Send-next replaced the old
+ * blocked-with-a-reason Send-now, because the server dispatches the queue and
+ * "next" is the earliest a message can go. Their markup contract lives in
+ * `QueuePanel.test.tsx`, which is where it belongs — this file is about the
+ * COMPOSER's markup.
+ *
+ * The panel's PLACEMENT is still pinned, and by this filter rather than in spite
+ * of it: the prefix is the path the baseline puts the panel at, so a panel that
+ * moved would report its diffs outside the prefix and fail here.
+ */
+const QUEUE_PANEL_SUBTREE = 'div > div > div[2] > div[1]';
+
+/** The diff, with the two reviewed exemptions accounted for. */
 function beyondTheComposerCardAttr(diff: readonly DomDiffEntry[]): string {
-  return formatDomDiff(diff.filter((entry) => formatDomDiff([entry]) !== COMPOSER_CARD_ATTR_DIFF));
+  return formatDomDiff(
+    diff.filter(
+      (entry) =>
+        formatDomDiff([entry]) !== COMPOSER_CARD_ATTR_DIFF &&
+        !entry.path.startsWith(QUEUE_PANEL_SUBTREE)
+    )
+  );
 }
 
 vi.mock('../ui/status/ChatStatusSection', () => ({
@@ -107,6 +129,7 @@ vi.mock('@/layers/entities/session', async (importOriginal) => ({
 
 import { ChatInputContainer } from '../ui/input/ChatInputContainer';
 import { useSessionStreamStore } from '@/layers/entities/session';
+import { configKeys } from '@/layers/entities/config';
 import { TransportProvider } from '@/layers/shared/model';
 import type { ToolCallState } from '../model/chat-types';
 import type { PendingFile } from '@/layers/features/composer';
@@ -140,11 +163,10 @@ function baseProps(autocomplete = makeAutocomplete()) {
     input: '',
     autocomplete: autocomplete as never,
     handleSubmit: vi.fn(),
-    submitContent: vi.fn(),
+    enqueueContent: vi.fn().mockResolvedValue(true),
     tryNativeCommand: vi.fn(() => ({ handled: false }) as const),
     commandPending: false,
     status: 'idle' as 'idle' | 'streaming' | 'error',
-    sessionBusy: false,
     stop: vi.fn(),
     setInput: vi.fn(),
     sessionId: SESSION_ID,
@@ -190,17 +212,34 @@ type Props = ReturnType<typeof baseProps>;
  * own, so the baselines are untouched by its arrival — which the flag-off five
  * diffing empty against files recorded long before it is the proof of.
  *
+ * ## Why the config is SEEDED and not merely resolved
+ *
+ * The preference is now default-ON (owner decision, 2026-08-12), so a container
+ * that waits for config renders the RICH field first and swaps to the plain one
+ * a tick later. That swap is invisible to a person and fatal to a DOM
+ * photograph: the mount-time auto-focus lands on whichever field existed at
+ * mount, and jsdom cannot focus a `contenteditable`, so the composer's focus
+ * ring — and therefore three class tokens in every baseline — came out
+ * different depending on load ORDER.
+ *
+ * Seeding the answer into the query cache before the first render removes the
+ * swap entirely: each test renders the one field it is about, once. That is
+ * also the honest photograph, because the state being pinned is the resting
+ * state, not the transition.
+ *
  * @param props - The container's props for this state.
  * @param richText - Whether the composer formats as you type. `false` is the
  *   flag-off path the original five baselines pin.
  */
 function mount(props: Props, richText = false) {
+  const config = { ui: { composer: { richText } } };
   const transport = createMockTransport({
-    getConfig: vi.fn().mockResolvedValue({ ui: { composer: { richText } } }),
+    getConfig: vi.fn().mockResolvedValue(config),
   });
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
+  queryClient.setQueryData(configKeys.current(), config);
   return render(
     <QueryClientProvider client={queryClient}>
       <TransportProvider transport={transport}>
@@ -208,6 +247,41 @@ function mount(props: Props, richText = false) {
       </TransportProvider>
     </QueryClientProvider>
   );
+}
+
+/**
+ * Seed the session's queue the way the server does — a `queue_update` on the
+ * durable stream, with the session streaming so the head counts as waiting.
+ */
+function seedQueue(...contents: string[]) {
+  const store = useSessionStreamStore.getState();
+  store.applyEvent(SESSION_ID, {
+    seq: 1,
+    type: 'status_change',
+    status: {
+      contextUsage: null,
+      cost: null,
+      usage: null,
+      cacheStats: null,
+      model: null,
+      permissionMode: 'default',
+      todoCounts: null,
+      runningSubagentCount: 0,
+      lifecycle: 'streaming',
+      lastError: null,
+    },
+  });
+  store.applyEvent(SESSION_ID, {
+    seq: 2,
+    type: 'queue_update',
+    queue: contents.map((content, i) => ({
+      id: `q${i}`,
+      content,
+      disposition: 'queue' as const,
+      enqueuedAt: 1_000,
+      enqueuedBy: 'window-a',
+    })),
+  });
 }
 
 beforeEach(() => {
@@ -218,7 +292,7 @@ afterEach(() => {
   cleanup();
   // The stream store is module state: a queue seeded by one case must not
   // decide what the next one serializes.
-  useSessionStreamStore.getState().clearQueue(SESSION_ID);
+  useSessionStreamStore.setState({ sessions: {}, sessionAccessOrder: [] });
 });
 
 describe('ChatInputContainer — serialized-DOM parity against the pre-migration baselines', () => {
@@ -236,10 +310,7 @@ describe('ChatInputContainer — serialized-DOM parity against the pre-migration
   it('2. streaming with two queued messages', () => {
     // Seeded through the real store, so the real `useChatQueue` derives the
     // panel the same way a mid-turn Enter does.
-    act(() => {
-      useSessionStreamStore.getState().enqueueMessage(SESSION_ID, 'first queued');
-      useSessionStreamStore.getState().enqueueMessage(SESSION_ID, 'second queued');
-    });
+    act(() => seedQueue('first queued', 'second queued'));
 
     const { container } = mount({ ...baseProps(), status: 'streaming' });
 
@@ -333,9 +404,10 @@ describe('ChatInputContainer — serialized-DOM parity against the pre-migration
 /**
  * Mount with the preference ON and wait for the editor chunk to land.
  *
- * The field is lazy, and the preference arrives from an async `getConfig`, so
- * the composer is briefly the plain textarea twice over. Serializing before
- * both settle would record a flag-OFF tree under a flag-on name.
+ * The field is lazy, so the composer is briefly the Suspense fallback — a plain
+ * textarea. Serializing before it settles would record a flag-OFF tree under a
+ * flag-on name. (The preference itself no longer arrives late: `mount` seeds it,
+ * for the reasons given there.)
  *
  * @param props - The container's props for this state.
  */
@@ -349,6 +421,31 @@ async function mountRich(props: Props) {
 }
 
 /**
+ * Load the editor chunk once, before any flag-on case renders.
+ *
+ * Without this, whether a case ever paints the Suspense fallback depends on
+ * whether an earlier case in this FILE already resolved the lazy import — and
+ * that decides where the mount-time auto-focus lands, which decides whether the
+ * composer card carries its focus-ring classes. The first flag-on case was
+ * therefore photographing a different tree from the other three, for a reason
+ * that lives in module state rather than in the component.
+ *
+ * With the chunk warm, every case here renders the real field on the first
+ * paint. jsdom cannot focus a `contenteditable`, so what these four record is an
+ * UNFOCUSED composer — which is what the container genuinely renders, rather
+ * than a ring inherited from a textarea that existed for one tick and was
+ * replaced.
+ *
+ * Warmed by RENDERING one rather than by reaching for the module: `field/` is
+ * internal to `features/composer` and nothing outside that slice may import a
+ * path inside it, tests included.
+ */
+beforeAll(async () => {
+  await mountRich(baseProps());
+  cleanup();
+});
+
+/**
  * The flag-ON reference tree, and the ONE place in this spec where recording a
  * baseline is legitimate.
  *
@@ -356,8 +453,27 @@ async function mountRich(props: Props) {
  * what gives it its weight. These four have no such ancestor: before DOR-948
  * there was no rich field to photograph. So they were recorded deliberately
  * with `DORKOS_RECORD_DOM_BASELINE=1`, once, and reviewed as the reference —
- * and from here they are as frozen as any other. If one of them starts
+ * and from here they are no less frozen than the rest. If one of them starts
  * diffing, the field moved; fix the field, not the file.
+ *
+ * ## The one amendment since, and exactly what it was (2026-08-12)
+ *
+ * Making rich text default-ON changed which field the container renders FIRST,
+ * and with it where the mount-time auto-focus lands. jsdom cannot focus a
+ * `contenteditable`, so these four had been photographing a focus ring the rich
+ * field never earned — it belonged to a textarea that existed for one tick,
+ * was focused, and was replaced without a `blur` jsdom bothers to fire. All four
+ * now record the composer card as unfocused.
+ *
+ * That was applied as a THREE-TOKEN edit per file (`border-ring`, `ring-[1px]`
+ * and `ring-ring/75` out, `border-input` in) and NOT by re-running the recorder,
+ * deliberately: `DORKOS_RECORD_DOM_BASELINE=1` also rewrites the queue-panel
+ * subtree these baselines carry stale ON PURPOSE (see {@link QUEUE_PANEL_SUBTREE}
+ * — the staleness is what the exemption is exempting), which would have
+ * destroyed evidence while fixing a class list. The measured proof that the ring
+ * was the ONLY difference is that the four cases' diffs, before the edit, were
+ * twelve class-token entries and nothing else — no element, no attribute, no
+ * text.
  *
  * ## The intended deltas from the flag-off tree, enumerated
  *
@@ -413,10 +529,7 @@ describe('ChatInputContainer — the flag-on reference tree', () => {
   });
 
   it('2. streaming with two queued messages, formatting on', async () => {
-    act(() => {
-      useSessionStreamStore.getState().enqueueMessage(SESSION_ID, 'first queued');
-      useSessionStreamStore.getState().enqueueMessage(SESSION_ID, 'second queued');
-    });
+    act(() => seedQueue('first queued', 'second queued'));
 
     const { container } = await mountRich({ ...baseProps(), status: 'streaming' });
 
@@ -433,7 +546,9 @@ describe('ChatInputContainer — the flag-on reference tree', () => {
       'chat-input-container.rich-text.streaming-queue',
       serializeDom(container)
     );
-    expect(formatDomDiff(diff)).toBe('');
+    // The queue rows are exempt here for the same reviewed reason as in the
+    // flag-off case — see {@link QUEUE_PANEL_SUBTREE}.
+    expect(formatDomDiff(diff.filter((e) => !e.path.startsWith(QUEUE_PANEL_SUBTREE)))).toBe('');
   });
 
   it('3. two pending attachments, one failed, formatting on', async () => {

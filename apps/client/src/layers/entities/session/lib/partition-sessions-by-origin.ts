@@ -19,7 +19,7 @@ export interface SessionOriginPartition {
  * turn is an engine run under a thread the reader can already see (ADR
  * 260808-140954): the room row IS that conversation, so listing the run beside
  * it lists one thing twice. The origin is assigned server-side from the
- * `room_sessions` binding (`services/session/room-origin-overlay.ts`), because
+ * `room_sessions` binding (`services/session/origin/room-origin-overlay.ts`), because
  * nothing in a room turn's transcript says where it came from.
  * Pure and synchronous; callers slice each bucket to their own row cap
  * (MAX_JUMP_BACK_IN in the recents model) AFTER partitioning, not before —
@@ -49,13 +49,13 @@ export function partitionSessionsByOrigin(sessions: Session[]): SessionOriginPar
  *
  * §18's Signal → Rendering table reads "Automated session activity → Nothing.
  * No bold, no badge", directly under the line naming approval / question /
- * wedged / idle-timeout as the only things that enter Now. So a scheduled run
+ * wedged / idle-timeout as the only things that enter Heads up. So a scheduled run
  * or a room's own turn is not in any count of what is running: not the
  * sidebar's "N working", not an agent row's "N live" chip, not ⌘K's Continue.
  * Three surfaces reading one function is what stops them from disagreeing,
  * which is exactly what they did before this existed (DOR-1137).
  *
- * **The carve-out is Now, and it is elsewhere.** An automated session that is
+ * **The carve-out is Heads up, and it is elsewhere.** An automated session that is
  * blocked — waiting on an approval, asking a question, wedged — still reaches
  * the operator, as an attention item through `entities/attention`, which reads
  * no origin at all. Only the liveness COUNT excludes automation.

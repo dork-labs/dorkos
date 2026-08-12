@@ -53,7 +53,6 @@ export interface SessionState {
   input: string;
   status: ChatStatus;
   error: TransportErrorInfo | null;
-  sessionBusy: boolean;
 
   // --- Streaming metadata ---
   streamStartTime: number | null;
@@ -97,7 +96,6 @@ export const DEFAULT_SESSION_STATE: SessionState = {
   input: '',
   status: 'idle',
   error: null,
-  sessionBusy: false,
   streamStartTime: null,
   estimatedTokens: 0,
   isTextStreaming: false,

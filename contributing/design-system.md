@@ -287,7 +287,7 @@ Built on **Shadcn Sidebar** (`layers/shared/ui/sidebar.tsx`) with `collapsible="
 - **Toggle**: `Cmd+B` / `Ctrl+B` (Shadcn built-in `SIDEBAR_KEYBOARD_SHORTCUT`)
 - **SidebarRail**: Invisible hover-target strip at sidebar edge for mouse-over toggle
 - **SidebarTrigger**: Toggle button in `SidebarInset` header (outside the sidebar itself)
-- **Zones, not temporal grouping**: rows are grouped into Now, Getting started, Today and Library — see [Zones and Sections](#zones-and-sections) below — never by session date.
+- **Zones, not temporal grouping**: rows are grouped into Heads up, Getting started, Today and Library — see [Zones and Sections](#zones-and-sections) below — never by session date.
 - **Rows**: `SidebarModelRow` draws each row from `buildSidebarModel`'s output; `isActive` highlights whichever row matches the current route.
 - **Header block**: `SidebarHeaderBlock`, mounted in `Sidebar` above the body-swap region — persistent chrome that survives a `sidebar.body` takeover (spec BC-43→46). A button named after the operator ("Dorian's team"), opening Workspace settings / Account / a quiet version line; the `NewMenu` (Session, Channel, Direct message, Agent…, Agent group — every create surface in the sidebar, and nowhere else); and `SidebarSearchPill`, the ⌘K pill.
 - **Footer**: `SidebarFooter` contains `ProgressCard` (onboarding) and `SidebarFooterStrip` — one slim tinted row of destinations (Home, Team, Marketplace, Connections), a `⋯` menu holding the `sidebar.footer` slot, and ✦ Ask DorkBot. No logo, no version line, no `border-t`: separation is a step up the `--sidebar-accent` ramp (spec `sidebar-now-today-library` BC-47, R1)
@@ -340,7 +340,7 @@ Dimming is the wrong mechanism and it is not a tuning problem. `SidebarRow` dims
 
 A nav panel has two levels of grouping, and they behave differently:
 
-- **Zone** — a landmark heading (Now, Getting started, Today, Library). It orients; it is **not** a collapse control.
+- **Zone** — a landmark heading (Heads up, Getting started, Today, Library). It orients; it is **not** a collapse control. The first zone's label became **Heads up** on 2026-08-11 (DOR-1155, `specs/sidebar-now-today-library/02-specification.md` §B) — label only; its id is still `now` in the model, the DOM and config.
 - **Section** — a collapsible group inside a zone (Channels, Agents, DMs). Only sections collapse.
 
 Never nest accordions, and keep nav trees to **one indent level** — depth past two stops helping wayfinding. Section labels are sentence case, 12px medium, muted; ALL-CAPS with letterspacing reads dated at small sizes.
@@ -349,9 +349,9 @@ Never nest accordions, and keep nav trees to **one indent level** — depth past
 
 This is the whole contract a zoned nav panel must meet, and it is what shipped: `SidebarZone.tsx`, `SidebarSection.tsx` and `use-live-region-text.ts` implement it, and `DashboardSidebar.tsx` composes them. Treat it as the spec those components are checked against, not a future one.
 
-- **Landmarks.** The panel root is `<nav aria-label="Sidebar">`. Each zone is `<section aria-labelledby="sidebar-zone-{id}">` with a visible `<h2>` label. **Collapsible** sections are `<h3>` containing a `<button aria-expanded aria-controls>`; group sub-headers are `<h4>`. A headerless body — Now's and Today's single section — has no header element at all and therefore no button. Zone labels are headings, never buttons.
-- **Roving tabindex, per section.** Each section exposes exactly one tab stop — the active row if the section holds it, otherwise the first row. `ArrowDown`/`ArrowUp` move within the section, `Home`/`End` jump to its ends, and `ArrowLeft`/`ArrowRight` on a section header collapse or expand it. `Tab` moves between sections and zones, so a 60-agent Library is four tab stops rather than sixty.
-- **One live region, counts only.** A single visually-hidden `aria-live="polite" aria-atomic="true"` element inside the Now zone announces how many things need you ("2 agents need you"), debounced 1s. Verbs, activity and unread changes are never announced — a fleet of agents would otherwise turn a screen reader into a siren.
+- **Landmarks.** The panel root is `<nav aria-label="Sidebar">`. Each zone is `<section aria-labelledby="sidebar-zone-{id}">` with a visible `<h2>` label. **Collapsible** sections are `<h3>` containing a `<button aria-expanded aria-controls>`; group sub-headers are `<h4>`. A headerless body — the single section in Heads up and in Today — has no header element at all and therefore no button. Zone labels are headings, never buttons.
+- **Roving tabindex, per section.** Each section exposes exactly one tab stop — the active row if the section holds it, otherwise the section's first stop, which is its header where it has one and its first row where it does not. `ArrowDown`/`ArrowUp` move within the section, `Home`/`End` jump to the **first and last row** (never to the header — that is one `ArrowUp` off the top, and it is where you go to fold a section rather than to start reading it), and `ArrowLeft`/`ArrowRight` on a section header collapse or expand it. `Tab` moves between sections and zones, so a 60-agent Library is four tab stops rather than sixty.
+- **One live region, counts only.** A single visually-hidden `aria-live="polite" aria-atomic="true"` element inside the Heads up zone announces how many things need you ("2 agents need you"), debounced 1s. Verbs, activity and unread changes are never announced — a fleet of agents would otherwise turn a screen reader into a siren.
 - **Only "working" animates.** The status dot uses `STATUS_DOT_PULSE` (`shared/ui/status-dot.ts`), which is `motion-safe:animate-pulse`; its ping halo carries `motion-reduce:hidden`. Scroll-to-active uses `behavior: 'auto'` under `prefers-reduced-motion`, and the celebratory moments (the welcome-back glow, the all-clear beat) do not render at all under it.
 - **Hover-revealed chrome always has two other paths.** `focus-visible` reveals it on the keyboard, and on touch it is either always visible or reachable by long-press (see [Hover Pattern Mobile Alternatives](#hover-pattern-mobile-alternatives)). Nothing may be reachable by hover alone.
 - **Every drag has a keyboard and pointer alternate** (WCAG 2.5.7). Reorder, pin/unpin and move-to-group are all reachable from the row kebab and the context menu on every platform. `KeyboardSensor` and `sortableKeyboardCoordinates` stay wired, and the `buildSidebarAnnouncements` strings (`features/dashboard-sidebar/model/use-sidebar-dnd.ts`) are preserved verbatim.
@@ -467,7 +467,7 @@ Two things make this the shape it is:
 
 **Reaching the disc.** `AgentAvatar` (`entities/agent/ui/AgentAvatar.tsx`) is the agent-side wrapper: it hard-passes `kind="agent"` and deliberately accepts no `shape` or `variant`, so the convention cannot be skipped through it. It carries **no mesh health** — it used to draw a coloured ring keyed on when the agent was last seen, ~2px outside a working dot lit from the same fact, on every list row in the product. Health is a diagnostic about the last hour and the corner dot is a claim about this second; the two surfaces that genuinely need health (the Agent Hub hero, the mesh topology page) now say it in their own words, where there is room to say _which_ health it is. Room and roster surfaces pass `kind` to `IdentityAvatar` directly; a room must never import the agent entity to draw an agent square.
 
-**Deciding what to draw: `resolveIdentityFace` (`shared/lib/identity-face.ts`).** One pure function turns the fragments a caller happens to hold into the props the disc takes — colour, emoji, fallback letter, kind, origin. Precedence, highest first: an explicit `override` (an agent's own manifest face, which only a feature-layer caller can reach), then the record's own render cache, then a colour hashed from the opaque id with the first letter of the name. It hashes a colour but never an emoji: a letter admits the face is unknown where an invented emoji would look chosen. It takes no agent types on purpose — that is what lets `entities/room` use the same ladder a feature does, and two roster surfaces hand-rolling their own is what made an agent read as two different identities in one room.
+**Deciding what to draw: `resolveIdentityFace` (`shared/lib/identity-face.ts`).** One pure function turns the fragments a caller happens to hold into the props the disc takes — colour, emoji, fallback letter, kind, origin. Precedence, highest first: an explicit `override` (an agent's own manifest face, which only a feature-layer caller can reach), then the record's own render cache, then a colour hashed from the opaque id with the first letter of the name. It hashes a colour but never an emoji: a letter admits the face is unknown where an invented emoji would look chosen. **Inventing an agent's emoji is a caller's job, not this function's** — `teamMemberFace` (`entities/team/lib/team-member-face.ts`) does it for roster rows, because a `TeamMember`'s `id` is the agent's manifest ULID and hashing that reaches the same face the sidebar draws. This function's other callers hold author-row ids, which hash differently, so the rung has to sit where the right id is (DOR-1122). It takes no agent types on purpose — that is what lets `entities/room` use the same ladder a feature does, and two roster surfaces hand-rolling their own is what made an agent read as two different identities in one room.
 
 ### The interaction grammar — what an identity says when you point at it
 
@@ -876,12 +876,19 @@ Usage:
 
 ### Hover Pattern Mobile Alternatives
 
-| Pattern                     | Desktop                | Mobile                                                                        |
-| --------------------------- | ---------------------- | ----------------------------------------------------------------------------- |
-| Message timestamps          | Hidden, shown on hover | Always visible at 40% opacity                                                 |
-| Session expand chevron      | Hidden, shown on hover | Hidden; tap session row to expand                                             |
-| Table action icons          | Hidden, shown on hover | Always visible at 60% opacity                                                 |
-| Sidebar row/section actions | Hidden, shown on hover | Always visible — `alwaysShowActions={isMobile}` (`shared/ui/sidebar-row.tsx`) |
+| Pattern                     | Desktop                | Mobile                                                                                         |
+| --------------------------- | ---------------------- | ---------------------------------------------------------------------------------------------- |
+| Message timestamps          | Hidden, shown on hover | Always visible at 40% opacity                                                                  |
+| Session expand chevron      | Hidden, shown on hover | Hidden; tap session row to expand                                                              |
+| Table action icons          | Hidden, shown on hover | Always visible at 60% opacity                                                                  |
+| Sidebar row/section actions | Hidden, shown on hover | Always visible, 44px, plus a long-press sheet — `shared/ui/sidebar-menu-node.tsx` decides both |
+
+`SidebarMenuSurface` answers "is there a hover here?" itself, from `useIsMobile()`,
+for every row and every section header at once. It used to be an
+`alwaysShowActions` prop — which `SidebarRow` passed and `SectionHeader` did not,
+so section menus were unreachable by finger for a release (DOR-1083). Do not
+reintroduce a prop for it: a question about the device is not a decision a call
+site should be able to get wrong.
 
 ### Safe Area Classes
 

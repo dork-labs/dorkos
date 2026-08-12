@@ -12,9 +12,15 @@ import type {
 
 /**
  * Create a mock Session with sensible defaults. Every optional `Session`
- * field — including `origin`/`originLabel` (session-origin-legibility) and
- * `contextTokens`/`lastAutoCompactAt` — passes through via `overrides`
- * with no changes needed here; add fields to `overrides`, not new params.
+ * field — including `origin`/`originLabel`/`originRoomId`
+ * (session-origin-legibility) and `contextTokens`/`lastAutoCompactAt` — passes
+ * through via `overrides` with no changes needed here; add fields to
+ * `overrides`, not new params.
+ *
+ * The three origin fields are stamped by the server's own overlays, never by a
+ * runtime, so a new runtime owes them nothing and the conformance suite asks
+ * for nothing: `SessionSchema` has them optional and the suite validates
+ * against it.
  */
 export function createMockSession(overrides: Partial<Session> = {}): Session {
   return {
@@ -166,6 +172,19 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     subscribeSessionList: vi.fn(emptyAsyncIterable),
     getTasks: vi.fn().mockResolvedValue({ tasks: [] }),
     postMessage: vi.fn().mockImplementation((sessionId: string) => Promise.resolve({ sessionId })),
+    updateQueuedMessage: vi.fn().mockImplementation((_sessionId: string, messageId: string) =>
+      Promise.resolve({
+        message: {
+          id: messageId,
+          content: '',
+          disposition: 'queue',
+          enqueuedAt: 0,
+          enqueuedBy: 'test-client',
+        },
+        queue: [],
+      })
+    ),
+    removeQueuedMessage: vi.fn().mockResolvedValue({ queue: [] }),
     runCommandIntent: vi
       .fn()
       .mockImplementation((sessionId: string) => Promise.resolve({ sessionId })),

@@ -76,14 +76,31 @@ describe('PipMiniBar', () => {
     expect(document.documentElement.style.getPropertyValue('--pip-dock')).toBe('');
   });
 
-  it('sits at bottom 0 when no keyboard inset is reported', () => {
+  /**
+   * The `bottom` the component actually asked for, as written.
+   *
+   * Read off the style attribute rather than through `toHaveStyle`: the value is
+   * a `max()` over a custom property, which has no computed answer without a
+   * layout engine — jsdom has none, so the only honest question here is what the
+   * component declared. What it RESOLVES to at 390×844 is
+   * `tests/pip/mobile-pip-dock.spec.ts`'s job.
+   */
+  const declaredBottom = () =>
+    (screen.getByRole('complementary') as HTMLElement).style.getPropertyValue('bottom');
+
+  it('docks above the phone cockpit rather than on the bottom edge (DOR-1177)', () => {
     render(<PipMiniBar content={WIDGET} onRestore={vi.fn()} onClose={vi.fn()} />);
-    expect(screen.getByRole('complementary')).toHaveStyle({ bottom: '0px' });
+    // The variable the mobile cockpit publishes while its bar is on screen.
+    // Absent — desktop, the Obsidian embed — the fallback is the bottom edge the
+    // bar has always sat on.
+    expect(declaredBottom()).toBe('max(var(--mobile-tab-dock, 0px), 0px)');
   });
 
   it('lifts by the visual-viewport bottom inset when the keyboard is open', () => {
     setKeyboardInset(300);
     render(<PipMiniBar content={WIDGET} onRestore={vi.fn()} onClose={vi.fn()} />);
-    expect(screen.getByRole('complementary')).toHaveStyle({ bottom: '300px' });
+    // `max`, not a sum: a raised keyboard already covers the tab bar, so adding
+    // the two would float the bar a tab bar's height clear of the keyboard.
+    expect(declaredBottom()).toBe('max(var(--mobile-tab-dock, 0px), 300px)');
   });
 });

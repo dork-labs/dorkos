@@ -44,6 +44,7 @@ function fakeConfig(): ConfigReadWrite & { state: Partial<UserConfig> } {
         defaultModel: null,
         defaultEffort: null,
         defaultTrustStop: null,
+        persistentSession: false,
       },
       opencode: {
         enabled: true,

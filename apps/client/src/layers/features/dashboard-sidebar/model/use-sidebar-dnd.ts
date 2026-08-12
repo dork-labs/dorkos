@@ -31,14 +31,14 @@ import {
 } from '@/layers/entities/config';
 
 /**
- * What a drop into Now or Today is answered with (R3).
+ * What a drop into Heads up or Today is answered with (R3).
  *
  * One spelling, read by the toast the operator sees and by the announcement a
  * screen reader hears, so the two can never drift. It names the way out rather
  * than only the refusal: the row CAN be kept in place, by pinning it.
  */
 export const COMPUTED_ZONE_REJECTION =
-  'Now and Today are computed — pin it to Library to keep it in place.';
+  'Heads up and Today are computed — pin it to Library to keep it in place.';
 
 /** Where a sidebar row lives — its home section during a drag, or a drop target. */
 export type SidebarContainer =
@@ -54,7 +54,7 @@ export type SidebarContainer =
    */
   | { kind: 'ungrouped'; section?: string }
   /**
-   * A computed zone — Now, Today or Getting started (R3).
+   * A computed zone — Heads up, Today or Getting started (R3).
    *
    * These are the only containers that are never a home: nothing is dragged
    * OUT of them, because the model gives every row in them `draggable: false`.
@@ -110,7 +110,7 @@ type SidebarDropOp =
    */
   | { kind: 'reject-smart-group'; groupId: string; ref: SidebarItemRef }
   /**
-   * A drop landed in a computed zone (R3). Applying it is a no-op — Now and
+   * A drop landed in a computed zone (R3). Applying it is a no-op — Heads up and
    * Today are derived, so there is no stored order for a row to take a place
    * in — and the distinct kind is what lets `SidebarDnd` say so rather than
    * appear to lose the gesture.
@@ -284,7 +284,7 @@ export function classifySidebarDrop(
   const { ref, from } = drag;
   const { container, overRef } = resolveTarget(drop);
 
-  // Now and Today are computed, and dragging into them would be a lie about
+  // Heads up and Today are computed, and dragging into them would be a lie about
   // what the operator controls (R3, design-meta rule 6). Checked FIRST, before
   // any source branch: where the row came from does not change the answer, and
   // putting it here is what leaves the existing table below untouched.
@@ -441,7 +441,7 @@ function describeSidebarDragOver(
     case 'ungrouped':
       return `Over ${container.section ?? 'Agents'}.`;
     case 'computed':
-      return container.zone === 'today' ? 'Over Today.' : 'Over Now.';
+      return container.zone === 'today' ? 'Over Today.' : 'Over Heads up.';
     case 'group':
       return `Over group ${ctx.groupName(container.groupId)}.`;
   }

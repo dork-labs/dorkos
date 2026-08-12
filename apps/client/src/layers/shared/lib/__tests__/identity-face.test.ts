@@ -52,6 +52,21 @@ describe('resolveIdentityFace', () => {
     expect(face.fallback).toBe('Z');
   });
 
+  it('hashes no emoji for an agent either, however tempting that looks', () => {
+    // The rung that belongs one layer up, pinned where it would be added by
+    // mistake. An agent SHOULD always show a face — but only a caller holding
+    // its manifest id can invent one, and this function's callers do not all
+    // hold that: `MemberList` passes author-row ids, which hash differently, so
+    // hashing here draws one agent two faces in one room (DOR-1122 review).
+    // `teamMemberFace` owns the rung; see `entities/team`.
+    const face = resolveIdentityFace({
+      record: { id: 'agent-warden', kind: 'agent', displayName: 'Warden' },
+    });
+
+    expect(face.emoji).toBeUndefined();
+    expect(face.fallback).toBe('W');
+  });
+
   it('gives two different ids two different colours', () => {
     // A parity assertion is worthless if the source it compares answers the
     // same thing for everything.

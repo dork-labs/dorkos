@@ -10,6 +10,7 @@ import {
   ScrollArea,
   Skeleton,
 } from '@/layers/shared/ui';
+import { useInteractionStore } from '@/layers/entities/interactions';
 import { useTaskRun, useCancelTaskRun } from '@/layers/entities/tasks';
 import { useNavigate } from '@tanstack/react-router';
 import { formatRelativeTime } from '../lib/format-relative-time';
@@ -43,6 +44,10 @@ export function FailedRunDetailSheet({ open, itemId, onClose }: FailedRunDetailS
 
   const handleViewSession = () => {
     if (!run?.sessionId) return;
+    // The other half of the attention section's door (DOR-1156) — see
+    // `use-attention-items`. No directory to record an agent against: a run's
+    // detail carries the session and nothing else.
+    useInteractionStore.getState().recordOpened('session', run.sessionId);
     void navigate({
       to: '/session',
       search: { session: run.sessionId },

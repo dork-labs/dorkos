@@ -188,6 +188,11 @@ export async function resumeAfterMcpSignin(event: McpSigninConnectedEvent): Prom
       cwd,
       projector,
       runtime,
+      // Terminal rather than queued: this nudge is only worth sending while the
+      // agent is idle and waiting for it. On a busy session the server's tools
+      // reach the agent on its next turn anyway, so a queued copy would be a
+      // prompt nobody typed arriving after it stopped being useful.
+      whenBusy: 'refuse',
       onError: (err) => {
         logger.warn('[mcp-signin-resume] detached turn error', {
           sessionId,

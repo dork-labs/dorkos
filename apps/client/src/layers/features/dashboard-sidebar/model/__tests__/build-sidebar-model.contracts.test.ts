@@ -64,6 +64,13 @@ function pureModuleSources(): { file: string; source: string }[] {
 const ALLOWED_VALUE_IMPORTS = [
   '@dorkos/shared/smart-groups',
   '@/layers/entities/session',
+  // The cockpit's 4am day boundary, which the command palette also reads so
+  // that a conversation Today has retired can say so in ⌘K. A leaf module by
+  // deliberate construction — it imports NOTHING, and it is kept off the
+  // `shared/lib` barrel precisely so this entry can be the narrow thing it
+  // looks like rather than a door onto the transport. The barrel itself stays
+  // banned.
+  '@/layers/shared/lib/overnight-boundary',
   // Relative siblings inside the model itself.
   /^\.{1,2}\//,
 ];
@@ -269,6 +276,39 @@ describe('P1 AC-1 — purity, asserted over the module source', () => {
     expect(source).not.toMatch(/\bIntl\./);
   });
 
+  it('holds the one non-sibling module on the whitelist to the promise that put it there', () => {
+    // The whitelist entry above is worth exactly as much as this assertion. It
+    // is justified by the module being a leaf — no imports, so nothing
+    // transitive can arrive through it — and the day somebody adds one, the
+    // exemption stops being narrow and this fails instead of nobody noticing.
+    const leaf = stripComments(
+      readFileSync(
+        join(MODEL_DIR, '..', '..', '..', 'shared', 'lib', 'overnight-boundary.ts'),
+        'utf8'
+      )
+    );
+    expect(importsOf(leaf)).toEqual([]);
+    // `importsOf` only recognises `import … from '…'`. A side-effect import
+    // (`import './registers-everything';`) and a `require()` each pull a whole
+    // module graph in without ever taking that shape, and either would turn
+    // this leaf into the door the whitelist entry promises it is not. So the
+    // mechanism is banned, not one spelling of it. Comments are stripped above,
+    // so this module's own prose can neither trip nor satisfy these.
+    expect(leaf).not.toMatch(/\bimport\b/);
+    expect(leaf).not.toMatch(/\brequire\s*\(/);
+    expect(illegalDateUses(leaf)).toEqual([]);
+  });
+
+  it('proves the leaf check catches the two shapes `importsOf` cannot see', () => {
+    // The assertions above pass trivially against a matcher that matches
+    // nothing. This is each one being made to fire.
+    const sideEffect = stripComments("import './registers-everything';\n");
+    const required = stripComments("const x = require('node:fs');\n");
+    expect(importsOf(sideEffect)).toEqual([]);
+    expect(sideEffect).toMatch(/\bimport\b/);
+    expect(required).toMatch(/\brequire\s*\(/);
+  });
+
   it('proves the import whitelist can fail', () => {
     const offending = stripComments(
       "import { useInteractionStore } from '@/layers/entities/interactions';\n" +
@@ -367,7 +407,7 @@ describe.each(SIDEBAR_FIXTURES)('$name fixture', ({ state }) => {
     );
   });
 
-  it('BC-5 — Now holds nothing but attention rows and the working rollup', () => {
+  it('BC-5 — Heads up holds nothing but attention rows and the working rollup', () => {
     const now = buildSidebarModel(state).zones.find((zone) => zone.id === 'now');
     for (const row of now?.sections.flatMap((section) => section.rows) ?? []) {
       expect(['attention', 'rollup']).toContain(row.target.kind);
@@ -378,13 +418,13 @@ describe.each(SIDEBAR_FIXTURES)('$name fixture', ({ state }) => {
     }
   });
 
-  it('BC-8 — Now never emits more than five rows', () => {
+  it('BC-8 — Heads up never emits more than five rows', () => {
     const now = buildSidebarModel(state).zones.find((zone) => zone.id === 'now');
     const rows = now?.sections.flatMap((section) => section.rows) ?? [];
     expect(rows.length).toBeLessThanOrEqual(5);
   });
 
-  it('BC-21 — no session row ever appears in Now', () => {
+  it('BC-21 — no session row ever appears in Heads up', () => {
     for (const { zoneId, row } of rowsOf(state)) {
       if (zoneId === 'now') expect(row.target.kind).not.toBe('session');
     }

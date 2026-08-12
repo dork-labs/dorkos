@@ -75,22 +75,115 @@ Inside `server-manager.ts`, keyed by `path.resolve(cwd)`:
 
 ## 2. Permissions: SSE surface, respond flow, and the capabilities descriptor array
 
-### How requests surface
+> **Live-verified 2026-08-11 against the shipped `opencode` 1.18.15 binary** (DOR-1147). Everything in
+> this section is now behaviour that was observed, not source that was read. The paragraphs it replaces
+> were read off the SDK's generated types in 2026-07 and were WRONG for the shipped server — that is
+> the whole bug this section exists to prevent repeating.
 
-- SSE event `permission.updated` (`EventPermissionUpdated`, types.gen.d.ts:384) carries a `Permission`:
+### The SDK's permission types are stale — do not trust them here
+
+`@opencode-ai/sdk@1.18.15` still declares `permission.updated` (carrying a `Permission` with `type`,
+`pattern`, `title`, `time.created`) and `permission.replied` with `{sessionID, permissionID, response}`.
+**The shipped 1.18.15 server emits neither shape.** `permission.updated` does not appear anywhere in the
+binary (zero occurrences); the adapter subscribed to it, so no approval card ever appeared and a gated
+`bash` call hung a turn for 7+ minutes with nothing on screen.
+
+Authoritative source going forward: the sidecar's OWN OpenAPI document, `GET /doc` on a running server
+(schemas `EventPermissionAsked`, `EventPermissionReplied`, `PermissionRequest`). It ships with the
+binary, so it can never drift from it the way a separately-published SDK can. A newer SDK release may
+fix the generated types; nothing in this adapter should wait for one.
+
+### How requests surface (live)
+
+- SSE event **`permission.asked`**, properties = `PermissionRequest`:
   ```ts
-  { id, type: string, pattern?: string | string[], sessionID, messageID, callID?,
-    title: string, metadata: Record<string, unknown>, time: { created } }
+  { id: `per_…`, sessionID: `ses_…`, permission: string, patterns: string[],
+    metadata: Record<string, unknown>, always: string[],
+    tool?: { messageID: string, callID: string } }
   ```
-  `type` is the permission key the request was raised under (`"bash"`, `"edit"`, `"webfetch"`,
-  `"doom_loop"`, …) — e.g. `processor.ts:370` raises `permission.ask({ permission: "doom_loop", … })`.
-  (Exact `type` strings per tool: flagged for live verification.)
-- Resolution echo: `permission.replied` with `{ sessionID, permissionID, response: string }` — use it
-  to clear approval UI when a request is answered elsewhere (e.g. the TUI).
-- Respond: `client.postSessionIdPermissionsPermissionId({ path: { id: sessionID, permissionID }, body: { response: "once" | "always" | "reject" } })`
-  → `POST /session/{id}/permissions/{permissionID}` (types.gen.d.ts:2510). `"always"` persists a rule
-  for that pattern; prefer `"once"` from DorkOS so OpenCode-side state never diverges from DorkOS's
-  own approval model.
+  Captured verbatim:
+  ```json
+  {
+    "type": "permission.asked",
+    "properties": {
+      "id": "per_ff00069…",
+      "sessionID": "ses_00fffd9…",
+      "permission": "bash",
+      "patterns": ["ls -F"],
+      "metadata": { "command": "ls -F" },
+      "always": ["ls *"],
+      "tool": { "messageID": "msg_ff0002659…", "callID": "call_esj3yoqx" }
+    }
+  }
+  ```
+  `permission` (NOT `type`) is the config key the request was raised under. **Live-confirmed strings:**
+  `"bash"` for a shell command, `"edit"` for a file write — so `acceptEdits`' `edit` match in
+  `approvals.ts` is correct. There is no `title` and no timestamp: the adapter stamps `startedAt`
+  itself, since the countdown the operator sees is DorkOS's own auto-deny timer.
+  `metadata` is per-permission: `{command}` for bash, `{filepath, diff}` for edit (the adapter lifts
+  `filepath` into the approval's `blockedPath`).
+- Resolution echo: **`permission.replied`** with `{ sessionID, requestID, reply }` — note `requestID`
+  and `reply`, not the SDK's `permissionID`/`response`. Reading the SDK's names yielded
+  `interactionId: undefined`, i.e. an echo that cancelled nothing and left the card hanging.
+- Respond (live-verified, both an approve and a deny): `client.postSessionIdPermissionsPermissionId({
+path: { id: sessionID, permissionID }, body: { response: "once" | "always" | "reject" } })` →
+  `POST /session/{id}/permissions/{permissionID}`, answers `200 true` and publishes the echo. `"always"`
+  persists a rule in OpenCode's own store; DorkOS only ever sends `once`/`reject` so the two approval
+  models cannot diverge.
+  1.18.15 also serves `POST /permission/{requestID}/reply` with `{reply, message}` (verified working,
+  same effect) plus a v2 family under `/api/…`. The SDK client exposes none of those, and the route we
+  use still works, so there is nothing to migrate to yet.
+- **Denial semantics (live):** rejecting does NOT fail the turn. The tool part goes to
+  `status: "error"` with `"The user rejected permission to use this specific tool call."`, the model
+  carries on, and the session reaches `session.idle` normally. No `session.error` is published.
+- `permission.v2.asked` / `permission.v2.replied` exist in the OpenAPI document but did NOT fire in any
+  observed turn — tool permissions came through the v1 pair every time. Nothing maps them.
+
+### The echo's `reply` now earns a receipt, not just a clear (DOR-1148)
+
+DOR-1147 wired `permission.replied` to clear the card (`interaction_cancelled`) but ignored the echo's
+`reply` field entirely, so a card answered OUTSIDE DorkOS — the OpenCode TUI, another DorkOS client —
+always landed as `resolution: 'cancelled'` and earned no Approved/Denied receipt, even though a request
+answered THROUGH `approveTool()` gets one (it tells the projector directly,
+`resolveInteraction(id, 'approved' | 'denied')` — see that method's doc in `opencode-runtime.ts`).
+
+`mapPermissionReplied` (`session-event-mapper.ts`) now maps the echo's `reply` to a `reason` on the same
+`interaction_cancelled` event: `once`/`always` → `reason: 'approved'`, `reject` → `reason: 'denied'`, an
+unrecognized string → no `reason` at all (never a guess). The normalizer
+(`session-event-normalizer.ts`) already had a `reason` → `resolution` table for `timeout` (a receipt an
+auto-deny timer decided FOR the operator); `approved`/`denied` slot into that same table so a card
+answered outside DorkOS renders the identical receipt one answered inside does. A genuinely withdrawn ask
+(the turn-terminal sweep in `closeOpenPermissions`, which never carries a `reply` because it is not
+built from a `permission.replied` event at all) is unaffected — it still clears with no `reason` and no
+fabricated receipt.
+
+`always`, notably, is folded into `approved` even though DorkOS itself never SENDS it (§2 above): the
+echo can still carry it when the answer came from elsewhere, and to whoever answered it, `always` meant
+the same yes `once` does.
+
+### Whose card owns a SUBAGENT's prompt (DOR-1126, live-verified 2026-08-11)
+
+A subagent's prompts are raised against its CHILD session, and the child path used to drop them: the
+card never appeared and the turn simply waited, because a gated tool blocks the child's loop and the
+child blocks the parent's `task` call behind it. **The parent session's prompt surface owns them.**
+
+Two consequences the mapping has to carry, neither of which needed a shared-schema change:
+
+- **The card says who is asking.** The approval's existing optional `title` becomes
+  `The <agent> subagent needs permission`, named from the `task` call's `subagent_type` (its
+  `description` as a fallback). A session's own prompts still send no title — 1.18.15 carries no prompt
+  sentence, and the card reads fine from the tool name and its input.
+- **The answer goes back to the CHILD session.** `POST /session/{id}/permissions/{permissionID}` is
+  per-session, so the turn's own `ses_*` is the wrong target. The mapper records permission id → asking
+  session (`pendingPermissionSessions` on the turn context) and the adapter answers there — for the
+  user's decision, for an auto-approve under `bypassPermissions`/`acceptEdits`, and for the auto-deny
+  timer alike.
+
+An ask still outstanding when the turn terminates is WITHDRAWN (`interaction_cancelled`, yielded before
+the terminal `done`, the same shape and the same `session.idle`-only rule as `closeOpenSubagents`).
+After the turn, `clearSession` has already dropped the pending record, so the card could not be
+answered anyway; on the stop path the request is dead upstream. This applies to a session's own prompts
+too — a turn cannot reach `session.idle` with a live ask, so the only things it retires are ghosts.
 
 ### OpenCode's permission config model (not modes!)
 
@@ -106,14 +199,14 @@ per-pattern object form), values `ask | allow | deny`
 
 Because config is per-sidecar (env at spawn) and DorkOS wants **per-session** modes on ONE sidecar:
 
-1. Spawn the sidecar with a conservative ruleset so every sensitive action raises a `permission.updated`:
+1. Spawn the sidecar with a conservative ruleset so every sensitive action raises a `permission.asked`:
    ```ts
    config: { permission: { edit: 'ask', bash: 'ask', webfetch: 'ask' } }
    ```
    (Reads stay `allow` — mirrors Claude `default` semantics: reads free, mutations gated.)
-2. The adapter (3.6) resolves each `permission.updated` according to the **session's** DorkOS mode:
+2. The adapter resolves each `permission.asked` according to the **session's** DorkOS mode:
    - `default` → forward to DorkOS approval UI; respond with the user's `once`/`reject`.
-   - `acceptEdits` → auto-respond `once` when `type === 'edit'`; forward everything else.
+   - `acceptEdits` → auto-respond `once` when `permission === 'edit'`; forward everything else.
    - `bypassPermissions` → auto-respond `once` to everything.
 
 ### The descriptor array for `OpenCodeRuntime.getCapabilities()`
@@ -244,9 +337,12 @@ Revisit v2 when opencode documents it as the public SDK surface.
 1. Two sessions with different `directory` on ONE `opencode serve`: create + prompt both, confirm tool
    calls execute in the right cwd (the single-instance verdict's end-to-end proof).
 2. `createOpencodeServer({ port: 0 })` resolves a real URL (4096-preferred fallback path).
-3. Exact `Permission.type` string values for edit/bash/webfetch approvals (mapper in 3.6 switches on
-   them).
-4. `permission.updated` arrives on `/global/event` for sessions created via the API (not just `/event`).
+3. ~~Exact permission-key string values for edit/bash/webfetch approvals.~~ **Answered 2026-08-11
+   (DOR-1147):** the event is `permission.asked` and its key field is `permission` — `"bash"` and
+   `"edit"` observed live. See §2.
+4. ~~`permission.updated` arrives on `/global/event` for sessions created via the API.~~ **Answered
+   2026-08-11 (DOR-1147):** `permission.asked` does arrive on `/global/event`;
+   `permission.updated` never arrives, because the shipped server does not have it. See §2.
 5. `opencode auth list` stdout capture through `execFileSync` (clack non-TTY rendering), and the
    env-var-only "0 credentials" false-missing (item 4 above).
 6. Basic-auth round trip: spawn with `OPENCODE_SERVER_PASSWORD`, confirm 401 without header and 200
@@ -370,14 +466,22 @@ sends directly) does the same thing: it synthesizes a `tool: "task"` part with
 
 Worth stating precisely, because the first cut of this mapping got it wrong: it anchored on
 `"Cancelled"`, which is the ONE shape DorkOS cannot reach, so an ordinary user stop rendered the
-subagent as a failure. Four distinct shapes land in `state.error`:
+subagent as a failure. Five distinct shapes land in `state.error`:
 
 | Producer                             | `state.error`                           | Reachable from DorkOS?          |
 | ------------------------------------ | --------------------------------------- | ------------------------------- |
 | `SessionProcessor.cleanup` (abort)   | `Tool execution aborted`                | **yes — the user-stop path**    |
 | `SessionRunner.failUnsettledTools`   | `Tool execution interrupted`            | yes                             |
-| TaskTool's `Error("Task cancelled")` | `Tool execution failed: Task cancelled` | yes (the runner wraps it)       |
+| TaskTool's `Error("Task cancelled")` | `Tool execution failed: Task cancelled` | yes (when the runner wraps it)  |
+| the same throw, UNWRAPPED            | `Task cancelled`                        | **yes — live-captured**         |
 | `handleSubtask` `onInterrupt`        | `Cancelled`                             | no — needs a `SubtaskPartInput` |
+
+The fourth row was read off the binary as unreachable ("the runner wraps it") and is not: stopping a
+turn while the subagent is HOLDING A PERMISSION produces the bare `Task cancelled`, with no
+`interrupted` flag anywhere on the part, because the task tool settles its own part before the runner
+gets to it (`fixtures/live-child-permission-stop.jsonl`, 2026-08-11, DOR-1126). Until the pattern
+learned that shape, the most ordinary stop there is — you stop a turn parked on a question — reported
+the subagent as `failed`.
 
 The abort path also stamps `metadata: {...previous, interrupted: true}` onto the part, and that flag
 is the STRUCTURAL signal — it is what upstream's own renderer keys on:
@@ -401,18 +505,20 @@ text), which is why a stop reads as `stopped` rather than `failed` even if the w
 | `task` tool part reaches `running`        | `background_task_started` (`taskId` = `callID`, `taskType: 'agent'`, `description`)           |
 | its `state.metadata.sessionId` appears    | child session admitted to the demux; id attached as `subagentSessionId`                       |
 | a tool part in the CHILD session          | `background_task_progress` (`toolUses` = distinct child callIDs, `lastToolName`)              |
-| `task` part reaches `completed` / `error` | `background_task_done` (`completed`; `stopped` for the four stop shapes above, else `failed`) |
+| a `permission.asked` in the CHILD session | `approval_required` on the PARENT session, titled for the subagent (§2, DOR-1126)             |
+| `task` part reaches `completed` / `error` | `background_task_done` (`completed`; `stopped` for the five stop shapes above, else `failed`) |
 
-The session normalizer turns those three into `subagent_update`, which is what feeds
+The session normalizer turns the three `background_task_*` rows into `subagent_update`, which is what feeds
 `runningSubagentCount`, the status-line hint and the activity feed (runtime-neutral since DOR-1100).
 **No shared-schema change, no new `SessionEvent` member, no client change.** The `task` call also
 keeps its ordinary tool card, exactly as claude-code renders a `Task` tool call beside its
 background-task card.
 
 Child sessions are admitted by `matchesOpenCodeSubagentSession` and routed away from the parent
-mapping entirely: only their tool parts are read, and their text, todos, permissions and
-`session.idle` are dropped. That last one matters — an admitted child `session.idle` reaching the
-parent mapper would end the parent's turn early.
+mapping entirely: their tool parts become progress beats, their permission prompts become approval
+cards on the PARENT session (§2, DOR-1126), and their text, todos and `session.idle` are dropped.
+That last one matters — an admitted child `session.idle` reaching the parent mapper would end the
+parent's turn early.
 
 A `sessionId` that names the PARENT is refused outright (`readSubagentChildSessionId`), checked
 against both `part.sessionID` — the structural truth, since a `task` part always lives in the
@@ -426,9 +532,11 @@ The mapping was originally scripted from the compiled binary because no provider
 here. It has since been driven end to end against a **local Ollama** model (the provider injected
 into the sidecar through `OPENCODE_CONFIG_CONTENT`; parent `qwen2.5-coder:7b`, subagent
 `gemma4:latest`), capturing the raw `/global/event` stream through a full delegation, a delegation
-whose child ran its own tools, and a user stop. Three captures are committed verbatim as
+whose child ran its own tools, and a user stop. Five captures are committed verbatim as
 `__tests__/fixtures/live-*.jsonl` and replayed through the real mapper by
-`__tests__/live-capture-replay.test.ts`.
+`__tests__/live-capture-replay.test.ts` — the last two (`live-child-permission*.jsonl`, DOR-1126)
+were driven through the REAL `OpenCodeRuntime` rather than raw HTTP, so the answer they carry is the
+one `approveTool()` actually sent.
 
 Every wire shape claimed above was confirmed: the `task` part's `pending → running → completed/error`
 progression, `state.metadata.{parentSessionId, sessionId, model}`, the child session created with
@@ -450,9 +558,9 @@ own tool parts arriving in its own session. Two details the binary read did not 
   unaffected: they ride the parent session, which is always admitted.
 - **No `summary` on the terminal.** The task tool's output is the `<task …><task_result>` envelope,
   not a short summary; forwarding it verbatim would put a wall of text where claude-code puts a line.
-- **A subagent's own permission prompts are still invisible.** They are raised against the child
-  session, and the child path drops them. Pre-existing (the child session was dropped entirely
-  before this change); surfacing them is a separate decision about whose card owns the prompt.
+- **A subagent's prompts reach the operator only while the run is open.** They ride the parent's card
+  (§2, DOR-1126); an ask arriving after the `task` part has reported its terminal is dropped, because
+  a card for a finished subagent is one nobody can act on.
 
 ### A stopped subagent's terminal arrives AFTER the turn's (DOR-1146)
 

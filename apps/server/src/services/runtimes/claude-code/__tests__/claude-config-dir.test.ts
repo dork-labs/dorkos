@@ -27,6 +27,7 @@ function fakeConfig(claudeCode: Partial<UserConfig['runtimes']['claudeCode']> = 
       defaultModel: null,
       defaultEffort: null,
       defaultTrustStop: null,
+      persistentSession: false,
       ...claudeCode,
     },
   };

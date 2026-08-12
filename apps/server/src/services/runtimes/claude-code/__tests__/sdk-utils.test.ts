@@ -175,6 +175,29 @@ describe('createHeldUserPrompt — held single-message stream', () => {
     close();
     await expect(pull).resolves.toEqual({ value: undefined, done: true });
   });
+
+  // Purpose: this stamp is the whole basis of turn correlation (DOR-1168). The
+  // SDK echoes the message's `uuid` back on the `result` it answers with
+  // (`user_message_uuid`), and the windower matches on that id and never on
+  // position — so an unstamped message can never have its turn closed.
+  it('stamps the server-minted messageId as the SDK message uuid', async () => {
+    const { prompt, close } = createHeldUserPrompt('hello', 'msg-42');
+
+    await expect(prompt.next()).resolves.toMatchObject({
+      value: { uuid: 'msg-42', message: { content: 'hello' } },
+    });
+    close();
+  });
+
+  // Purpose: an id nobody supplied must not become an empty-string uuid the SDK
+  // would echo back and the windower would try to correlate.
+  it('carries no uuid at all when no messageId was supplied', async () => {
+    const { prompt, close } = createHeldUserPrompt('hello');
+
+    const first = await prompt.next();
+    expect(first.value).not.toHaveProperty('uuid');
+    close();
+  });
 });
 
 describe('HeldUserPrompt.push — steering into the live stream', () => {
@@ -207,11 +230,134 @@ describe('HeldUserPrompt.push — steering into the live stream', () => {
     await expect(prompt.next()).resolves.toEqual({ value: undefined, done: true });
   });
 
+  // Purpose: a coalesced batch is several ids on one stream, and each message
+  // has to carry its OWN. Sharing one id (or dropping the later ones) is what
+  // would make a `result` unable to name the message it answered.
+  it('stamps each pushed message with its own messageId', async () => {
+    const { prompt, close, push } = createHeldUserPrompt('first', 'm1');
+    expect(push('second', 'm2')).toBe(true);
+    expect(push('third', 'm3')).toBe(true);
+
+    expect((await prompt.next()).value).toMatchObject({ uuid: 'm1' });
+    expect((await prompt.next()).value).toMatchObject({ uuid: 'm2' });
+    expect((await prompt.next()).value).toMatchObject({ uuid: 'm3' });
+    close();
+  });
+
   it('refuses a push after close and sends nothing', async () => {
     const { prompt, close, push } = createHeldUserPrompt('first');
     await prompt.next();
     close();
     expect(push('too late')).toBe(false);
     await expect(prompt.next()).resolves.toEqual({ value: undefined, done: true });
+  });
+
+  // Purpose: the pump (spec task 3.2) pushes each dispatch into one long-lived
+  // stream, so a burst arriving while the SDK is parked must not reorder. Fails
+  // if the queue is ever drained as a stack or a push overwrites a parked slot.
+  it('delivers a burst of pushes into a parked consumer in FIFO order', async () => {
+    const { prompt, close, push } = createIdlePrompt();
+    const seen: string[] = [];
+    const consume = (async () => {
+      for await (const m of prompt) seen.push(m.message.content);
+    })();
+
+    await flushMacrotasks(1); // let the consumer reach the hold
+    expect(push('1')).toBe(true);
+    expect(push('2')).toBe(true);
+    expect(push('3')).toBe(true);
+    close();
+    await consume;
+
+    expect(seen).toEqual(['1', '2', '3']);
+  });
+});
+
+/**
+ * Yield the event loop `turns` times. Each turn drains the whole microtask
+ * queue, so this settles generator resumption deterministically — unlike a
+ * timeout, it cannot flake on a loaded machine.
+ */
+async function flushMacrotasks(turns: number): Promise<void> {
+  for (let i = 0; i < turns; i++) await new Promise((resolve) => setImmediate(resolve));
+}
+
+describe('HeldUserPrompt — who ends the stream', () => {
+  // Purpose: close() must not discard what it already accepted. A message
+  // pushed before close is a message DorkOS told its caller was delivered
+  // (`push` returned true), so dropping it would make that return value a lie.
+  it('close() drains messages already accepted, then ends the stream', async () => {
+    const { prompt, close, push } = createHeldUserPrompt('a');
+    expect(push('b')).toBe(true);
+    close();
+
+    const seen: string[] = [];
+    for await (const m of prompt) seen.push(m.message.content);
+
+    expect(seen).toEqual(['a', 'b']);
+  });
+
+  // Purpose: `finally { close() }` fires on paths where close already ran, and
+  // the drain contract above must survive the second call unchanged.
+  it('close() is idempotent with a message still queued', async () => {
+    const { prompt, close, push } = createHeldUserPrompt('a');
+    push('b');
+    close();
+    close();
+
+    const seen: string[] = [];
+    for await (const m of prompt) seen.push(m.message.content);
+
+    expect(seen).toEqual(['a', 'b']);
+  });
+
+  // Purpose: the SDK — not DorkOS — owns the consuming loop, and it abandons
+  // the stream on abort. Once it has, nothing can reach the model, so `push`
+  // must say so. Red before the fix: `push` returned true and the caller
+  // (message-sender's phantom correction) counted a note it never sent.
+  it('refuses a push once the consumer has broken out of the stream', async () => {
+    const { prompt, push } = createHeldUserPrompt('first');
+
+    for await (const m of prompt) {
+      expect(m.message.content).toBe('first');
+      break; // an early break calls prompt.return() under the hood
+    }
+
+    expect(push('nobody is reading')).toBe(false);
+  });
+
+  // Purpose: a consumer that stops mid-turn stops while the stream is PARKED —
+  // that is what "held open" means. Red before the fix: return() waited on the
+  // hold promise nobody would ever resolve, so SDK teardown hung.
+  it('return() ends the stream immediately even while it is parked', async () => {
+    const { prompt, push } = createHeldUserPrompt('first');
+    await prompt.next(); // drain the initial message
+    void prompt.next(); // consumer now parked on the hold
+
+    let ended: IteratorResult<unknown> | undefined;
+    void prompt.return(undefined).then((r) => {
+      ended = r;
+    });
+    await flushMacrotasks(2);
+
+    expect(ended).toEqual({ value: undefined, done: true });
+    expect(push('too late')).toBe(false);
+  });
+
+  // Purpose: the asymmetry between the two endings is the contract task 3.2
+  // relies on — close() is DorkOS finishing politely and drains; return() is
+  // the consumer walking away, so anything still queued is dropped rather than
+  // handed to a loop that has already given up. `push` returning true and the
+  // message never landing is the one unavoidable race: the stream really was
+  // open when it was asked, and the consumer left in the same tick.
+  it('return() discards a message pushed in the same tick as the teardown', async () => {
+    const { prompt, push } = createHeldUserPrompt('first');
+    await prompt.next(); // drain the initial message
+    const parked = prompt.next(); // consumer parked on the hold
+    expect(push('racing the teardown')).toBe(true);
+
+    await prompt.return(undefined);
+
+    await expect(parked).resolves.toEqual({ value: undefined, done: true });
   });
 });

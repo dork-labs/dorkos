@@ -5,6 +5,7 @@
  */
 import { useCallback, useMemo, type ReactNode } from 'react';
 import { useNavigate } from '@tanstack/react-router';
+import { useInteractionStore } from '@/layers/entities/interactions';
 import { PresenceStrip } from '../ui/PresenceStrip';
 import type { PresenceFollowTarget } from '../lib/presence-rows';
 import { usePresenceRows } from './use-presence-rows';
@@ -65,10 +66,17 @@ export function usePresenceStrip(excludeRoomIds: readonly string[] = []): Presen
 
   const follow = useCallback(
     (target: PresenceFollowTarget) => {
+      // Following IS opening, so it records one — the same write the sidebar's
+      // own rows make (`SidebarChrome.openTarget`). Without it the strip was a
+      // door into a conversation that Today then claimed the operator had never
+      // been in (DOR-1156).
       if (target.kind === 'room') {
+        useInteractionStore.getState().recordOpened('room', target.roomId);
         void navigate({ to: '/channels', search: { id: target.roomId } });
         return;
       }
+      useInteractionStore.getState().recordOpened('session', target.sessionId);
+      if (target.cwd) useInteractionStore.getState().recordOpened('agent', target.cwd);
       void navigate({
         to: '/session',
         search: { session: target.sessionId, dir: target.cwd },

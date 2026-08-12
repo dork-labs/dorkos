@@ -2,6 +2,11 @@ import { PageContainer } from '@/layers/shared/ui';
 import { TocSidebar } from '../TocSidebar';
 import { SIDEBAR_MODEL_SECTIONS } from '../sections/sidebar-model-sections';
 import { SidebarModelShowcases } from '../showcases/SidebarModelShowcases';
+import {
+  MobileCatchUpShowcase,
+  MobileLongPressSheetShowcase,
+  MobileTabBarShowcase,
+} from '../showcases/MobileTabsShowcases';
 
 /**
  * The Sidebar Model page — `buildSidebarModel` over its four journey fixtures.
@@ -39,6 +44,9 @@ export function SidebarModelPage() {
             an axe run. */}
         <div className="min-w-0 flex-1 space-y-8">
           <SidebarModelShowcases />
+          <MobileTabBarShowcase />
+          <MobileLongPressSheetShowcase />
+          <MobileCatchUpShowcase />
         </div>
         <TocSidebar sections={SIDEBAR_MODEL_SECTIONS} />
       </div>

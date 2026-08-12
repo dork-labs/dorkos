@@ -6,6 +6,7 @@ import { renderHook, waitFor, cleanup } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Session, ServerConfig, SubagentInfo } from '@dorkos/shared/types';
+import type { QueuedMessage } from '@dorkos/shared/schemas';
 import type { SessionSnapshot } from '@dorkos/shared/session-stream';
 import { createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider, useAppStore } from '@/layers/shared/model';
@@ -70,7 +71,7 @@ const SUBAGENTS: SubagentInfo[] = [
 ];
 
 /** A hydrated snapshot with server-derived figures the status line reads. */
-function snapshot(cursor = 400): SessionSnapshot {
+function snapshot(cursor = 400, queuedMessages: QueuedMessage[] = []): SessionSnapshot {
   return {
     messages: [],
     inProgressTurn: [
@@ -103,7 +104,7 @@ function snapshot(cursor = 400): SessionSnapshot {
       lastError: null,
     },
     pendingInteractions: [],
-    queuedMessages: [],
+    queuedMessages,
     cursor,
   };
 }
@@ -149,9 +150,15 @@ afterEach(() => {
 
 describe('useSessionDiagnostics — the snapshot it assembles', () => {
   it('reports the stream, the resolution, usage, and the running subagents', async () => {
-    useSessionStreamStore.getState().applySnapshot('s1', snapshot());
+    useSessionStreamStore
+      .getState()
+      .applySnapshot(
+        's1',
+        snapshot(400, [
+          { id: 'q1', content: 'later', disposition: 'queue', enqueuedAt: 1, enqueuedBy: 'w' },
+        ])
+      );
     useSessionStreamStore.getState().setConnectionState('s1', 'connected');
-    useSessionStreamStore.getState().enqueueMessage('s1', 'later');
 
     const { wrapper } = harness();
     const { result } = renderHook(() => useSessionDiagnostics('s1'), { wrapper });
@@ -330,9 +337,15 @@ describe('useSessionDiagnostics — one source of truth', () => {
   });
 
   it('never leaks the previous session values after a switch', async () => {
-    useSessionStreamStore.getState().applySnapshot('s1', snapshot());
+    useSessionStreamStore
+      .getState()
+      .applySnapshot(
+        's1',
+        snapshot(400, [
+          { id: 'q1', content: 'later', disposition: 'queue', enqueuedAt: 1, enqueuedBy: 'w' },
+        ])
+      );
     useSessionStreamStore.getState().setConnectionState('s1', 'connected');
-    useSessionStreamStore.getState().enqueueMessage('s1', 'later');
 
     const { wrapper } = harness([sessionRow(), sessionRow({ id: 's2', cwd: '/other/repo' })]);
     const { result, rerender } = renderHook(({ id }: { id: string }) => useSessionDiagnostics(id), {

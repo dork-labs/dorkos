@@ -150,9 +150,35 @@ function row() {
   return screen.getByTestId('sidebar-footer-strip-row');
 }
 
+// ── The viewport ───────────────────────────────────────────────────────────
+// On a phone this strip is the whole You tab rather than a 272px footer, and
+// that is a `matchMedia` question jsdom cannot answer for itself.
+let phone = false;
+function useEmulatedViewport() {
+  Object.defineProperty(window, 'matchMedia', {
+    writable: true,
+    configurable: true,
+    value: (query: string) => {
+      const maxWidth = /max-width:\s*(\d+)px/.exec(query);
+      return {
+        matches: maxWidth === null ? false : phone && 390 <= Number(maxWidth[1]),
+        media: query,
+        onchange: null,
+        addEventListener: () => {},
+        removeEventListener: () => {},
+        addListener: () => {},
+        removeListener: () => {},
+        dispatchEvent: () => false,
+      };
+    },
+  });
+}
+
 describe('SidebarFooterStrip', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    phone = false;
+    useEmulatedViewport();
     mockPathname = '/marketplace';
     mockConfigData = {
       version: '1.2.3',
@@ -473,7 +499,7 @@ describe('SidebarFooterStrip', () => {
     expect(mockRestart).toHaveBeenCalled();
   });
 
-  it('never puts an update in Now', () => {
+  it('never puts an update in Heads up', () => {
     mockConfigData = {
       version: '1.2.3',
       latestVersion: '1.4.0',
@@ -486,7 +512,7 @@ describe('SidebarFooterStrip', () => {
     expect(screen.getByText('Update ready — v1.4.0')).toBeInTheDocument();
 
     // And the zone model built from the same moment — a fleet that genuinely
-    // has things waiting, so the Now zone is populated and the query below can
+    // has things waiting, so the Heads up zone is populated and the query below can
     // fail — carries nothing about it.
     const model = buildSidebarModel(busyFixture);
     const now = model.zones.find((zone) => zone.id === 'now');
@@ -495,9 +521,75 @@ describe('SidebarFooterStrip', () => {
     const nowText = nowRows.map((r) => `${r.primary} ${r.secondary ?? ''} ${r.reason}`);
     expect(nowText).not.toContain('Update ready — v1.4.0');
     expect(nowText.filter((text) => /update|version|restart/i.test(text))).toEqual([]);
-    // Every Now row is an agent that needs you or a rollup of them, and nothing
+    // Every Heads up row is an agent that needs you or a rollup of them, and nothing
     // else can be (BC-5) — these are the only provenances the model can emit
     // into this zone, so an update could not join them without a new rule.
     expect(nowRows.every((r) => /^(now:|rollup:)/.test(r.reason))).toBe(true);
+  });
+
+  describe('the You tab, at 390 wide (P4.2)', () => {
+    beforeEach(() => {
+      phone = true;
+      useEmulatedViewport();
+    });
+
+    it('names every destination on the row itself, not in a tooltip', () => {
+      // **A tooltip is not a name on a touch screen.** These were four 28px
+      // glyphs whose only names were hover text, on a device with no hover.
+      renderStrip();
+      const destinations = Array.from(row().querySelectorAll('[data-sidebar-destination]'));
+      expect(destinations).toHaveLength(4);
+      for (const button of destinations) {
+        // The visible words, not just the `aria-label` — a label alone is a
+        // name for a screen reader and still a mystery glyph for everyone else.
+        expect(button.textContent?.trim()).toBe(button.getAttribute('aria-label'));
+        expect(button.textContent?.trim()).not.toBe('');
+      }
+      // Every one of them is a thumb's target, by the class that decides it.
+      for (const button of destinations) expect(button.className).toContain('min-h-11');
+    });
+
+    it('leaves them unlabelled under a pointer, where the strip is 272px wide', () => {
+      // The pair. Without it the case above could pass against a strip that had
+      // always been labelled, and BC-47's one-row footer would have quietly
+      // become four words wide.
+      phone = false;
+      useEmulatedViewport();
+      renderStrip();
+      const destinations = Array.from(row().querySelectorAll('[data-sidebar-destination]'));
+      expect(destinations).toHaveLength(4);
+      for (const button of destinations) expect(button.textContent?.trim()).toBe('');
+    });
+
+    it('says what the fold holds instead of calling itself "More"', () => {
+      renderStrip();
+      const trigger = screen.getByTestId('sidebar-footer-menu-trigger');
+      expect(trigger).toHaveAccessibleName('Account and settings');
+      expect(trigger.textContent).toContain('Account and settings');
+      expect(trigger.className).toContain('min-h-11');
+    });
+
+    it('still opens the account rows it has always held', async () => {
+      const user = userEvent.setup();
+      renderStrip();
+      await user.click(screen.getByTestId('sidebar-footer-menu-trigger'));
+      // The fold is the same menu; only its trigger changed shape.
+      expect(await screen.findByRole('menu')).toBeInTheDocument();
+    });
+
+    it('gives Ask DorkBot a thumb-sized row of its own', () => {
+      renderStrip();
+      const ask = screen.getByRole('button', { name: 'Ask DorkBot' });
+      expect(ask.className).toContain('min-h-11');
+    });
+
+    it('is still ONE nav — four destinations and no second implementation', () => {
+      // The reason this grew a shape rather than a sibling component: a second
+      // nav would be a second `nav-agents` anchor to keep alive and a second
+      // place a fifth destination could be forgotten.
+      renderStrip();
+      expect(row().querySelectorAll('[data-sidebar-destination]')).toHaveLength(4);
+      expect(screen.getByTestId('nav-agents')).toBeInTheDocument();
+    });
   });
 });

@@ -93,6 +93,10 @@ export async function sessionUiActionHandler(req: Request, res: Response): Promi
     cwd,
     projector,
     runtime,
+    // Refuse rather than queue, unlike `/messages`. A widget action answers the
+    // turn it was rendered in; run minutes later against whatever a different
+    // turn left behind, it is not the action the person clicked.
+    whenBusy: 'refuse',
     onError: (err) => {
       logger.warn('[POST /ui-action] detached turn error', {
         sessionId,

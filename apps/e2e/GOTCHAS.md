@@ -7,6 +7,8 @@ Anti-patterns and hard-won lessons discovered during test creation. Read this be
 - Avoid `getByText()` on dynamic content that changes between runs (timestamps, session IDs, message previews)
 - Sidebar session items re-render on SSE updates; grab locators fresh after any navigation that triggers a sync
 - **An agent's streamed words are in the DOM TWICE while the turn is live**: once in the message, and once in the transcript's screen-reader announcer (`[data-testid="transcript-announcer"]`, a `role="log"` region that mirrors each new sentence and empties itself a few seconds later). A bare `page.getByText(/…/)` on assistant text therefore resolves to two elements and fails the strict-mode check. Scope it to where you mean — `page.getByTestId('transcript-feed').getByText(…)` for what the reader sees, the announcer for what a screen reader hears.
+  - **And it fails on the first poll, not after the timeout.** Playwright treats a strict-mode violation as non-retriable, so the assertion never waits the announcer out — a `timeout: 10_000` buys you nothing here.
+  - **Your machine will not show you this.** The announcer only picks up a message it sees _arriving_, and locally a mock turn lands in one batch with the streaming flag already down, so the region stays empty and a bare `getByText` passes. CI is slow enough to render the turn across several frames, the announcer adopts, and the same line fails there and only there. Scope the locator on the way in; do not wait for a green local run to tell you it was needed.
 
 ## Multi-window / connection-budget tests
 
@@ -55,9 +57,11 @@ Worth knowing before you assume a behaviour is tested.
 
 ## Known flakes
 
-These are tracked, not mysteries. If you hit one, you have found the known
-thing — go to the ticket rather than re-diagnosing it. Neither is a test bug, so
-neither is fixed here.
+These are known, not mysteries. If you hit one, you have found the known thing —
+go to the ticket where there is one rather than re-diagnosing it. None of them
+is a test bug, so none is fixed here. The last one has no ticket on purpose: it
+is a property of running this suite on a machine that is already busy, and it
+cannot reach CI.
 
 - **DOR-697 — `relay/adapter-wizard-fields.spec.ts`, ~1 run in 7.** A save
   answers **500** with `ENOENT: no such file or directory, rename …` under
@@ -88,6 +92,20 @@ used within an EventStreamProvider`, any spec, roughly 1 run in 10.** The
 
   Re-run the spec in isolation (`--repeat-each=5`) before you touch anything. If
   it passes, that is the answer.
+
+- **`home-surface/home-shell.spec.ts` › "the dashboard is gone, not hidden —
+  Home is the #team room", locally only, on a busy machine.** It waits 5s for
+  `home-composer`, which is the #team room's box, and loses that race when the
+  file is running wide enough in parallel — this repo is routinely several agents
+  deep, and the cockpit leg is one Express process serving all of them.
+
+  **Not caused by whatever you just changed, and the check is cheap.** Run the
+  file with your own block grepped out (`-g "the shell|375px"`): if the other
+  tests pass at that width, you have this. Adding tests to the file is enough to
+  trigger it — four new ones at 390px did (DOR-1180), and the same six
+  pre-existing tests were green with them filtered out. `--workers=1` is also
+  always green, and that is what CI runs (`workers: CI ? 1 : undefined`), so this
+  cannot reach a PR check. Do not add a retry or stretch the timeout for it.
 
 **A stale Vite can outlive its run.** `turbo dev` spawns vite as a grandchild,
 so when Playwright kills the leg the vite process survives holding the port.

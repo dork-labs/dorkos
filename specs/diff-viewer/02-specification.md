@@ -410,10 +410,13 @@ bytes), `GET /api/files/content` (current text). New `control_ui` action
 ## Security Considerations
 
 - **Every** new diff route reuses `validateBoundary` (double-validated against
-  the session cwd) and the `resolveWithinCwd`/`assertAncestorWithin` guards from
-  `routes/files.ts` — no path logic is reinvented; `..`/symlink escape and
-  null-byte rejection are **mandatory-tested** (the workbench review caught a real
-  symlink-parent hole here — do not regress it).
+  the session cwd) via the `resolveWithinCwd` guard in `lib/file-route-guards.ts`
+  — no path logic is reinvented; `..`/symlink escape and null-byte rejection are
+  **mandatory-tested** (the workbench review caught a real symlink-parent hole
+  here — do not regress it). That hole was originally closed by a companion
+  `assertAncestorWithin` guard; since DOR-1185 `validateBoundary` confines a
+  not-yet-created target through its deepest existing ancestor itself, so the
+  companion guard is gone and callers need only `resolveWithinCwd`.
 - `GET /api/diff/baseline/raw` inherits the `GET /api/files/raw` posture exactly:
   the narrow `MEDIA_CONTENT_TYPES` allowlist (415 otherwise, never an
   arbitrary-file reader), `X-Content-Type-Options: nosniff`, `Content-Disposition:

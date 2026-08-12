@@ -33,6 +33,7 @@ import {
   type SessionStreamState,
 } from '@/layers/entities/session';
 import { streamManager } from '@/layers/shared/lib/transport';
+import { carryInteractionForward } from '../lib/carry-interaction-forward';
 import type { ChatSessionOptions } from './chat-types';
 
 /**
@@ -112,6 +113,12 @@ export function useSessionRekeyRedirect(
   });
 
   useEffect(() => {
-    if (canonicalId) replaceRef.current?.(canonicalId);
-  }, [canonicalId]);
+    if (!canonicalId || !sessionId) return;
+    // The send that created this conversation recorded the operator's
+    // interaction under the id it had at the time — the request UUID this
+    // announce has just retired (DOR-1156). Carried over here, before the URL
+    // moves, so Today keeps a row for the conversation they just wrote in.
+    carryInteractionForward(sessionId, canonicalId);
+    replaceRef.current?.(canonicalId);
+  }, [canonicalId, sessionId]);
 }

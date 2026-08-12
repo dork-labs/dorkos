@@ -10,7 +10,8 @@ import type { Session } from '@dorkos/shared/types';
 import { describe, expect, it } from 'vitest';
 import { buildSidebarModel, type SidebarRowModel } from '../build-sidebar-model';
 import { HOUR, busyFixture, hoursAgo, prefs, quietFixture, room, session } from '../fixtures';
-import { archiveOvernight, overnightBoundary } from '../rules/archive-overnight';
+import { overnightBoundary } from '@/layers/shared/lib/overnight-boundary';
+import { archiveOvernight } from '../rules/archive-overnight';
 import { buildDigestRow, localDateKey } from '../rules/build-digest-row';
 import { deriveProjectLabel } from '../rules/derive-project-label';
 import { TODAY_SOFT_CAP, lastInteractionAt, orderToday } from '../rules/order-today';
@@ -311,7 +312,7 @@ describe('BC-21 — the active-conversation anchor', () => {
     expect(todayKeys(state)[0]).toBe('session:ses-1');
   });
 
-  it('never appears in Now', () => {
+  it('never appears in Heads up', () => {
     const now = buildSidebarModel(busyFixture).zones.find((zone) => zone.id === 'now');
     const keys = now?.sections.flatMap((section) => section.rows.map((row) => row.key)) ?? [];
     expect(keys).not.toContain('session:ses-1');

@@ -14,7 +14,7 @@ import {
   sessionKeys,
 } from '@/layers/entities/session';
 import { PromoSlot } from '@/layers/features/feature-promos';
-import { SessionsView } from './SessionsView';
+import { EmbedSessionList } from './EmbedSessionList';
 
 /**
  * Slim left chrome for the Obsidian embed: an agent header plus the
@@ -24,10 +24,16 @@ import { SessionsView } from './SessionsView';
  * (its Overview / Schedules / Connections tabs moved to the right-panel
  * Inspector — Pulse and Agent Profile — or were dropped as legacy). The embed is
  * a focused single-agent session surface, so the sidebar's whole job is session
- * switching and starting a new session; the roster ({@link SessionsView}, the
- * same component the Agent Hub Sessions tab uses) carries both. Rendered inside
- * the embed's overlay Sheet, so picking a session or starting a new one closes
- * the overlay.
+ * switching and starting a new session; the roster ({@link EmbedSessionList})
+ * carries both. Rendered inside the embed's overlay Sheet, so picking a session
+ * or starting a new one closes the overlay.
+ *
+ * **It is drawn in the cockpit sidebar's language** (DOR-1080). The roster used
+ * to be `SessionsView` — the Agent Hub's panel, which is a panel in a page — and
+ * the embed wore hairlines the cockpit sidebar retired: separation here is the
+ * `--sidebar-accent` tint ramp and nothing else (spec `sidebar-now-today-library`
+ * R1). What the embed does NOT adopt is the zone structure: Heads up / Today /
+ * Library all read router state that embedded mode has none of.
  */
 export function EmbedSidebar() {
   const selectedCwd = useAppStore((s) => s.selectedCwd);
@@ -78,8 +84,11 @@ export function EmbedSidebar() {
 
   return (
     <div className="flex h-full flex-col">
-      <header className="border-border flex items-center justify-between gap-2 border-b px-3 py-2">
-        <span className="text-foreground truncate text-sm font-medium">
+      {/* No hairline under the header, and none above the promos below: the
+          sidebar's separation is tint, never a line (R1). The header earns its
+          edge from the roster's own top padding instead. */}
+      <header className="flex items-center justify-between gap-2 px-3 py-2">
+        <span className="text-sidebar-foreground truncate text-sm font-medium">
           {currentAgent ? getAgentDisplayName(currentAgent) : 'Agent'}
         </span>
         <Button variant="ghost" size="sm" className="h-7 gap-1.5 px-2" onClick={handleNewSession}>
@@ -89,7 +98,7 @@ export function EmbedSidebar() {
       </header>
 
       <div className={cn('min-h-0 flex-1 overflow-hidden')}>
-        <SessionsView
+        <EmbedSessionList
           activeSessionId={activeSessionId}
           groupedSessions={groupedSessions}
           warnings={sessionListWarnings}
@@ -100,8 +109,10 @@ export function EmbedSidebar() {
       </div>
 
       {/* Feature promos targeted at the agent sidebar surface — self-hiding when
-          there is nothing to show, so the slim chrome stays quiet by default. */}
-      <div className="border-border border-t p-2 empty:border-0 empty:p-0">
+          there is nothing to show, so the slim chrome stays quiet by default.
+          `PromoCard` already paints itself from the `--sidebar-accent` ramp, so
+          the panel around it is padding and nothing more. */}
+      <div className="p-2 empty:p-0">
         <PromoSlot placement="agent-sidebar" maxUnits={3} />
       </div>
     </div>

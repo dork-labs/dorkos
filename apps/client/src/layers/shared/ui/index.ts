@@ -321,7 +321,6 @@ export {
   SidebarMenuSub,
   SidebarMenuSubButton,
   SidebarMenuSubItem,
-  SidebarMobileNavigationClose,
   SidebarProvider,
   SidebarRail,
   SidebarSeparator,
@@ -358,6 +357,7 @@ export type {
   SidebarMenuVariant,
 } from './sidebar-menu-node';
 export { SidebarRow, SIDEBAR_ROW_INSET } from './sidebar-row';
+export { TOUCH_TARGET_MIN_H } from './touch-target';
 export type { RowDragBindings, SidebarRowMenu, SidebarRowProps } from './sidebar-row';
 export { SectionHeader } from './section-header';
 export type { SectionHeaderProps } from './section-header';

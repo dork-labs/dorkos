@@ -21,7 +21,7 @@ import {
   notifySessionLookupFailed,
 } from '@/layers/entities/session';
 import type { RoomSummary } from '@/layers/entities/room';
-import { useAgentFrecency } from './use-agent-frecency';
+import { useInteractionStore } from '@/layers/entities/interactions';
 import { composeCommandDraft } from './palette-command-draft';
 import { runPaletteCommandHandler } from './palette-command-handlers';
 import type { AgentPathEntry } from '@dorkos/shared/mesh-schemas';
@@ -37,7 +37,12 @@ interface PaletteActions {
   handleSessionSelect: (sessionId: string, dir?: string | null) => void;
   /** Put a slash command into the active conversation's composer and go there. */
   handleCommandSelect: (command: string) => void;
-  recordUsage: (agentId: string) => void;
+  /**
+   * Record that the operator reached an agent, for the rows that open one
+   * without going through {@link PaletteActions.handleAgentSelect} — a second
+   * tab, a second window, a fresh conversation.
+   */
+  recordAgentOpened: (projectPath: string) => void;
   setDir: (dir: string) => void;
   selectedCwd: string | null;
 }
@@ -59,7 +64,6 @@ interface PaletteActions {
  */
 export function usePaletteActions(closePalette: () => void): PaletteActions {
   const [selectedCwd, setDir] = useDirectoryState();
-  const { recordUsage } = useAgentFrecency();
   const { setTheme, theme } = useTheme();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -84,6 +88,19 @@ export function usePaletteActions(closePalette: () => void): PaletteActions {
   const setRightPanelOpen = useAppStore((s) => s.setRightPanelOpen);
   const setActiveRightPanelTab = useAppStore((s) => s.setActiveRightPanelTab);
 
+  /**
+   * Record that the operator reached an agent.
+   *
+   * Keyed by the DIRECTORY, which is what every other surface in the cockpit
+   * records and what the palette's own corpus ranks agents under. It used to be
+   * written twice — once here by mesh id into ⌘K's private frecency key, once
+   * by directory into the shared store — and the two could disagree about the
+   * same act; there is one writer now.
+   */
+  const recordAgentOpened = useCallback((projectPath: string) => {
+    useInteractionStore.getState().recordOpened('agent', projectPath);
+  }, []);
+
   const handleAgentSelect = useCallback(
     (agent: AgentPathEntry) => {
       // The palette closes at once — it has done its job either way — but the
@@ -96,12 +113,12 @@ export function usePaletteActions(closePalette: () => void): PaletteActions {
       setDir(agent.projectPath, {
         onOpened: () => {
           if (leaving && leaving !== agent.projectPath) setPreviousCwd(leaving);
-          recordUsage(agent.id);
+          recordAgentOpened(agent.projectPath);
         },
       });
       closePalette();
     },
-    [recordUsage, setDir, closePalette, selectedCwd, setPreviousCwd]
+    [recordAgentOpened, setDir, closePalette, selectedCwd, setPreviousCwd]
   );
 
   // Shared with the sidebar and the chat header's agent chip; carries the
@@ -114,12 +131,15 @@ export function usePaletteActions(closePalette: () => void): PaletteActions {
    * `id` is all of it — every room the palette can offer is a room you open
    * directly (ADR 260728-022013).
    *
-   * No frecency is recorded: frecency is keyed on agent ids and the palette
-   * already leads with unread, which is a fact about what is waiting rather
-   * than a guess from history.
+   * The open is recorded, because ranking reads it: a channel you keep coming
+   * back to should be easier to reach the next time you type half its name
+   * (design-decisions §15). It does not displace unread — that stays a separate,
+   * larger signal in the ranker, because a message nobody has read is a fact and
+   * this is only a habit.
    */
   const handleRoomSelect = useCallback(
     (room: RoomSummary) => {
+      useInteractionStore.getState().recordOpened('room', room.id);
       closePalette();
       navigate({ to: '/channels', search: { id: room.id } });
     },
@@ -136,15 +156,25 @@ export function usePaletteActions(closePalette: () => void): PaletteActions {
    * Callers pass the directory the session belongs to — the agent's own, in the
    * sub-menu's case, which is rarely the one on screen.
    *
+   * The open is recorded under `session:<id>`, which is what makes a
+   * conversation you were just in rank above one you have not touched in a week
+   * the next time you go looking for it (design-decisions §15) — **and under
+   * `agent:<dir>` as well**, because opening a conversation is also reaching the
+   * agent whose project it runs in. The sidebar's own row has always written
+   * both (`SidebarChrome.openSession`); ⌘K wrote only the first, so the same act
+   * built a weaker memory depending on which door a person used.
+   *
    * @param sessionId - The conversation to open.
    * @param dir - The working directory it belongs to.
    */
   const handleSessionSelect = useCallback(
     (sessionId: string, dir?: string | null) => {
+      useInteractionStore.getState().recordOpened('session', sessionId);
+      if (dir) recordAgentOpened(dir);
       closePalette();
       navigate({ to: '/session', search: { session: sessionId, dir: dir ?? undefined } });
     },
-    [closePalette, navigate]
+    [closePalette, navigate, recordAgentOpened]
   );
 
   /**
@@ -177,6 +207,13 @@ export function usePaletteActions(closePalette: () => void): PaletteActions {
             notifySessionLookupFailed(selectedCwd);
             return;
           }
+          // Recorded here and not before the resolve, for the reason
+          // `handleAgentSelect` defers its own write: the lookup can fail, and
+          // a conversation nobody reached is not one to rank (DOR-928). This
+          // row lands a person IN a conversation exactly as the session rows
+          // above do, so it leaves the same memory behind.
+          useInteractionStore.getState().recordOpened('session', resolved.sessionId);
+          if (selectedCwd) recordAgentOpened(selectedCwd);
           const store = useSessionChatStore.getState();
           const draft = store.getSession(resolved.sessionId).input;
           store.updateSession(resolved.sessionId, {
@@ -195,7 +232,7 @@ export function usePaletteActions(closePalette: () => void): PaletteActions {
           notifySessionLookupFailed(selectedCwd);
         });
     },
-    [closePalette, navigate, queryClient, transport, selectedCwd]
+    [closePalette, navigate, queryClient, transport, selectedCwd, recordAgentOpened]
   );
 
   /**
@@ -349,7 +386,7 @@ export function usePaletteActions(closePalette: () => void): PaletteActions {
     handleRoomSelect,
     handleSessionSelect,
     handleCommandSelect,
-    recordUsage,
+    recordAgentOpened,
     setDir,
     selectedCwd,
   };

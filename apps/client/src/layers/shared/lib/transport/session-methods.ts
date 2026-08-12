@@ -20,10 +20,18 @@ import type {
   DevtoolsIngest,
   RecentSessionsResponse,
   SessionDailyCountsResponse,
+  MessageDisposition,
+  QueueMoveTarget,
+  QueuedMessage,
+  UpdateQueuedMessageResponse,
+  SessionQueueResponse,
 } from '@dorkos/shared/schemas';
 import {
   RecentSessionsResponseSchema,
   SessionDailyCountsResponseSchema,
+  SendMessageResponseSchema,
+  UpdateQueuedMessageResponseSchema,
+  SessionQueueResponseSchema,
 } from '@dorkos/shared/schemas';
 import type { ClientContext } from '@dorkos/shared/additional-context';
 import type { RuntimeCommandIntentId } from '@dorkos/shared/command-intents';
@@ -39,6 +47,16 @@ import { fetchJSON, buildQueryString } from './http-client';
 // — the streams are WebSockets and do not draw on that pool (ADR
 // 260805-041016) — but the first reason is the real one and still holds.
 const INTERACTION_TIMEOUT_MS = 10 * 60 * 1000;
+
+// The message-trigger POST is a raw `fetch` (it parses the 202 body itself), so
+// like {@link runCommandIntent} it inherits no default timeout — every other
+// transport write gets 30s from `fetchJSON`. Without a bound it could hang
+// forever, and two callers latch on that promise: the composer holds the typed
+// words until an enqueue settles (DOR-480), and enqueue POSTs are chained per
+// session so acceptance order matches keystroke order (DOR-1165). An unbounded
+// hang would leave the composer stuck AND wedge every message queued behind it.
+// The bound is what guarantees the "reset on settle" the chain relies on.
+const MESSAGE_TRIGGER_REQUEST_TIMEOUT_MS = 30_000;
 
 /**
  * Create all session-related methods bound to a base URL.
@@ -169,6 +187,7 @@ export function createSessionMethods(
         context?: ClientContext;
         runtime?: string;
         seedContext?: string;
+        disposition?: MessageDisposition;
       }
     ): Promise<{ sessionId: string }> {
       const body: Record<string, unknown> = { content };
@@ -177,6 +196,7 @@ export function createSessionMethods(
       if (options?.context) body.context = options.context;
       if (options?.runtime) body.runtime = options.runtime;
       if (options?.seedContext) body.seedContext = options.seedContext;
+      if (options?.disposition) body.disposition = options.disposition;
 
       const response = await fetch(`${baseUrl}/sessions/${sessionId}/messages`, {
         method: 'POST',
@@ -185,28 +205,62 @@ export function createSessionMethods(
           'X-Client-Id': getClientId(),
         },
         credentials: 'include',
+        signal: AbortSignal.timeout(MESSAGE_TRIGGER_REQUEST_TIMEOUT_MS),
         body: JSON.stringify(body),
       });
 
       if (!response.ok) {
-        if (response.status === 409) {
-          const errorData = (await response.json().catch(() => null)) as SessionLockedError | null;
-          if (errorData?.code === 'SESSION_LOCKED') {
-            const error = new Error('Session locked') as Error & SessionLockedError;
-            error.code = 'SESSION_LOCKED';
-            error.lockedBy = errorData.lockedBy;
-            error.lockedAt = errorData.lockedAt;
-            throw error;
-          }
-        }
         throw new Error(`HTTP ${response.status}`);
       }
 
-      // Trigger-only contract: the turn streams over /events. The body carries
-      // the SDK-canonical id (which may differ from the client UUID for a
-      // brand-new session — create-on-first-message).
-      const data = (await response.json().catch(() => ({}))) as { sessionId?: string };
-      return { sessionId: data.sessionId ?? sessionId };
+      // Trigger-only, accept-only contract: the turn (or the queue place) is
+      // announced over /events. The body carries the SDK-canonical id, which
+      // differs from the client UUID for a brand-new session
+      // (create-on-first-message), plus the delivery receipt.
+      //
+      // Validated rather than cast: this is a contract with the server, and a
+      // body that has drifted should say so here rather than as a mystery
+      // three layers up. A body we cannot read is NOT treated as a failed send
+      // though — the server said 202, the message is accepted, and throwing
+      // would put a delivered message back in front of the person as if it had
+      // been lost.
+      const raw: unknown = await response.json().catch(() => null);
+      const parsed = SendMessageResponseSchema.safeParse(raw);
+      if (parsed.success) return { sessionId: parsed.data.sessionId };
+      console.warn('[transport] The server accepted the message with a body DorkOS cannot read');
+      const fallbackId = (raw as { sessionId?: unknown } | null)?.sessionId;
+      return { sessionId: typeof fallbackId === 'string' ? fallbackId : sessionId };
+    },
+
+    // ── Session Queue (the messages waiting behind the running turn) ────────
+
+    async updateQueuedMessage(
+      sessionId: string,
+      messageId: string,
+      edit: { content?: string; move?: QueueMoveTarget }
+    ): Promise<UpdateQueuedMessageResponse> {
+      const data = await fetchJSON<unknown>(
+        baseUrl,
+        `/sessions/${sessionId}/queue/${encodeURIComponent(messageId)}`,
+        {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json', 'X-Client-Id': getClientId() },
+          body: JSON.stringify(edit),
+        }
+      );
+      return UpdateQueuedMessageResponseSchema.parse(data);
+    },
+
+    async removeQueuedMessage(
+      sessionId: string,
+      messageId: string
+    ): Promise<{ queue: QueuedMessage[] }> {
+      const data = await fetchJSON<unknown>(
+        baseUrl,
+        `/sessions/${sessionId}/queue/${encodeURIComponent(messageId)}`,
+        { method: 'DELETE', headers: { 'X-Client-Id': getClientId() } }
+      );
+      return SessionQueueResponseSchema.parse(data) satisfies SessionQueueResponse;
     },
 
     // ── Command-Intent Trigger (202, out-of-band delivery via /events) ─────

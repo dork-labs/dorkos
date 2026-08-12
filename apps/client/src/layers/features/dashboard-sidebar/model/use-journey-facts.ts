@@ -10,6 +10,7 @@
  * @module features/dashboard-sidebar/model/use-journey-facts
  */
 import { useMemo } from 'react';
+import { TEAM_ROOM_WELL_KNOWN, type RoomSummary } from '@dorkos/shared/room-schemas';
 import { useDiscoveryStore } from '@/layers/entities/discovery';
 import type { AgentRosterEntry, JourneyFacts } from './sidebar-state';
 
@@ -57,6 +58,14 @@ export interface JourneyFactsInput {
   /** How many sessions the cockpit can currently see. */
   sessionCount: number;
   /**
+   * Every room the sidebar holds — read for #team, and for nothing else.
+   *
+   * The whole list rather than the one room, because #team is found by
+   * `wellKnown` and the owner may rename it (`useTeamRoom`); a caller that
+   * pre-selected it by slug would hand over the wrong room after a rename.
+   */
+  rooms: readonly RoomSummary[];
+  /**
    * Whether the roster and the recent-sessions read have both answered.
    *
    * Passed in rather than re-queried, because the assembly hook already holds
@@ -81,7 +90,7 @@ export interface JourneyFactsInput {
  * @param input - The roster and session facts the assembly hook holds.
  */
 export function useJourneyFacts(input: JourneyFactsInput): JourneyFactsState {
-  const { agents, agentActivity, sessionCount, rosterResolved } = input;
+  const { agents, agentActivity, sessionCount, rooms, rosterResolved } = input;
   const candidates = useDiscoveryStore((state) => state.candidates);
 
   return useMemo(() => {
@@ -98,6 +107,10 @@ export function useJourneyFacts(input: JourneyFactsInput): JourneyFactsState {
     // free to put it anywhere.
     const dorkBot = agents.find((entry) => entry.isSystem) ?? null;
 
+    // Found by `wellKnown` rather than by `#team`, for the reason `useTeamRoom`
+    // gives: the key survives a rename and the slug does not.
+    const team = rooms.find((room) => room.wellKnown === TEAM_ROOM_WELL_KNOWN);
+
     return {
       facts: {
         discoveredUnregisteredPaths,
@@ -106,19 +119,25 @@ export function useJourneyFacts(input: JourneyFactsInput): JourneyFactsState {
         // sessions before the recent list is trimmed, so it answers "ever",
         // which the trimmed list on its own cannot.
         hasEverStartedSession: sessionCount > 0 || Object.keys(agentActivity).length > 0,
-        // **Not knowable on the client today, so it stays quiet.** BC-12 asks
-        // whether the operator has authored a message in #team, and nothing on
-        // the wire carries it: `RoomSummary` has no last-author, and
-        // `RoomMember` records `lastReadSeq` but not authorship, so the only
-        // source is the room's full message list — a fetch the sidebar has no
-        // business making. `true` means "nothing to suggest", which is the same
-        // omission-never-a-guess rule `userLastMessageAt` follows. The
-        // suggestion is live in the model, the fixtures and the playground; what
-        // it lacks is a cheap server fact, filed as a follow-up.
-        hasPostedInTeam: true,
+        // The server's own read of the room's log (`RoomSummary.viewerHasPosted`,
+        // DOR-1112), which is the only place this is cheaply knowable: the client
+        // would have to fetch every message in #team to work it out.
+        //
+        // **Absent stays quiet, and only `false` speaks.** No #team in the list
+        // (still loading, archived, or an install that predates the field) is
+        // "we cannot say", and a suggestion built on a guess would tell an
+        // operator who has been talking in #team for months to go say hello —
+        // the same omission-never-a-guess rule the rest of these facts follow.
+        // The standing case, not a hypothetical one: the Obsidian embed's
+        // `DirectTransport` answers `listRooms()` with `[]` (rooms are
+        // server-owned and out of scope there, `embedded-mode-stubs.ts`), so
+        // `team` is permanently undefined on that surface and `?? false` would
+        // give every Obsidian user an undismissable nudge toward a channel their
+        // cockpit cannot open.
+        hasPostedInTeam: team?.viewerHasPosted ?? true,
         hasDorkBotSession: dorkBot !== null && agentActivity[dorkBot.path] !== undefined,
       },
       isResolved: true,
     };
-  }, [agents, agentActivity, sessionCount, rosterResolved, candidates]);
+  }, [agents, agentActivity, sessionCount, rooms, rosterResolved, candidates]);
 }

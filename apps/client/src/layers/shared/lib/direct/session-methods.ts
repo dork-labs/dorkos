@@ -20,7 +20,7 @@ import type {
 import type { ClientContext } from '@dorkos/shared/additional-context';
 import type { RuntimeCommandIntentId } from '@dorkos/shared/command-intents';
 import type { ClaudePluginTransport } from '@dorkos/shared/transport';
-import type { UiActionRequest } from '@dorkos/shared/schemas';
+import type { UiActionRequest, MessageDisposition, QueuedMessage } from '@dorkos/shared/schemas';
 import { formatUiActionMessage } from '@dorkos/shared/ui-widget';
 import type { DirectTransportServices } from './services';
 
@@ -146,10 +146,10 @@ export function createDirectSessionMethods(
      * contract, ADR-0264). The turn runs detached via the wired
      * {@link DirectTransportServices.turnTrigger | turnTrigger}, feeding the
      * session projector; tokens are delivered solely over `subscribeSession`.
-     * Throws a typed `SESSION_LOCKED` error when the session lock is held —
-     * only reachable when ANOTHER transport instance (e.g. a previous view's
-     * client id) holds it, since a same-client acquire steals the lock.
-     * Callers restore input exactly as for the HTTP 409.
+     *
+     * A busy session is never refused: the dispatcher behind this bridge takes
+     * the message and holds it until the running turn ends (spec
+     * `persistent-session-runtime` §3.3), exactly as the HTTP route does.
      */
     async postMessage(
       sessionId: string,
@@ -157,12 +157,15 @@ export function createDirectSessionMethods(
       cwd?: string,
       // `options.runtime` (the first-turn runtime hint) is intentionally not
       // forwarded: DirectTransport embeds exactly one in-process runtime, so
-      // there is never a second runtime to select.
+      // there is never a second runtime to select. `options.disposition` is not
+      // forwarded either: the embedded bridge carries no disposition envelope,
+      // and every disposition resolves to `queue` today anyway.
       options?: {
         clientMessageId?: string;
         context?: ClientContext;
         runtime?: string;
         seedContext?: string;
+        disposition?: MessageDisposition;
       }
     ): Promise<{ sessionId: string }> {
       const result = await services.turnTrigger.trigger({
@@ -173,17 +176,26 @@ export function createDirectSessionMethods(
         context: options?.context,
         seedContext: options?.seedContext,
       });
-      if (!result.accepted) {
-        const error = new Error('Session locked') as Error & SessionLockedError;
-        error.code = 'SESSION_LOCKED';
-        // Approximations: the narrowed runtime seam exposes no getLockInfo, and
-        // only `code` is consumed by callers (classify-transport-error). The real
-        // holder is some other embedded client id; the timestamp is "observed at".
-        error.lockedBy = getClientId();
-        error.lockedAt = new Date().toISOString();
-        throw error;
-      }
       return { sessionId: result.canonicalId ?? sessionId };
+    },
+
+    // ── Session Queue ───────────────────────────────────────────────────────
+
+    /**
+     * Edit or move a message waiting on the session's queue.
+     *
+     * Embedded hosts run without a queue store, so nothing is ever waiting and
+     * the cockpit draws no chips to reach this from. It refuses honestly rather
+     * than pretending to have edited something, which is what a silent no-op
+     * would look like from the caller's side.
+     */
+    updateQueuedMessage(): Promise<{ message: QueuedMessage; queue: QueuedMessage[] }> {
+      return Promise.reject(new Error('This surface keeps no message queue'));
+    },
+
+    /** Remove a message waiting on the session's queue. See {@link updateQueuedMessage}. */
+    removeQueuedMessage(): Promise<{ queue: QueuedMessage[] }> {
+      return Promise.reject(new Error('This surface keeps no message queue'));
     },
 
     // ── Command-Intent Trigger ───────────────────────────────────────────────
@@ -215,8 +227,10 @@ export function createDirectSessionMethods(
       if (!result.accepted) {
         const error = new Error('Session locked') as Error & SessionLockedError;
         error.code = 'SESSION_LOCKED';
-        // Approximations mirror postMessage: the narrowed seam exposes no
-        // getLockInfo, and only `code` is consumed by classify-transport-error.
+        // `lockedBy`/`lockedAt` are approximations — the narrowed seam exposes
+        // no getLockInfo — and harmlessly so: `code` is the only field any
+        // caller reads (`dispatchCompactIntent` picks the busy-agent toast off
+        // it). `sendUiAction` below throws the same shape for the same reason.
         error.lockedBy = getClientId();
         error.lockedAt = new Date().toISOString();
         throw error;

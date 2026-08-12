@@ -373,13 +373,11 @@
                   "classes": [
                     "bg-background",
                     "border",
-                    "border-ring",
+                    "border-input",
                     "flex",
                     "gap-1.5",
                     "items-end",
                     "p-1.5",
-                    "ring-[1px]",
-                    "ring-ring/75",
                     "rounded-md",
                     "shadow-xs",
                     "transition-[color,box-shadow]"

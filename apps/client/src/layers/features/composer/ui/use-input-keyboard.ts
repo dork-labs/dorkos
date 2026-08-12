@@ -52,7 +52,6 @@ export interface UseInputKeyboardOptions {
    * See {@link import('@/layers/shared/model').useIsTouchOnly}.
    */
   isTouchOnly: boolean;
-  sessionBusy: boolean;
   /** An attachment upload is in flight — this send is already happening. */
   isUploading?: boolean;
   /**
@@ -128,7 +127,6 @@ export function useInputKeyboard({
   value,
   isStreaming,
   isTouchOnly,
-  sessionBusy,
   isUploading = false,
   onCancelUpload,
   commandPending = false,
@@ -348,7 +346,7 @@ export function useInputKeyboard({
           onSaveEdit?.();
         } else if (isStreaming && value.trim()) {
           onQueue?.();
-        } else if (!isStreaming && !sessionBusy && !isUploading && canSubmit && value.trim()) {
+        } else if (!isStreaming && !isUploading && canSubmit && value.trim()) {
           // `!isUploading` is the second half of the trigger latch: the send's
           // attachment upload runs BEFORE the session reads as streaming, so
           // without this a second Enter mid-upload starts a whole second send.
@@ -380,7 +378,6 @@ export function useInputKeyboard({
       queueHasItems,
       onQueueNavigateUp,
       onQueueNavigateDown,
-      sessionBusy,
       canSubmit,
       surface,
       clearArmed,

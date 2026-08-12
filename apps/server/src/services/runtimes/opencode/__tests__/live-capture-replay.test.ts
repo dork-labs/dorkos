@@ -81,13 +81,24 @@ async function* admit(
   }
 }
 
-/** Map a whole captured turn, exactly as the runtime's `sendMessage` does. */
-async function replay(name: string): Promise<StreamEvent[]> {
+/**
+ * Map a whole captured turn, exactly as the runtime's `sendMessage` does, and
+ * hand back the turn context too — it holds the reply routing the adapter
+ * answers permissions through.
+ */
+async function replayWithContext(
+  name: string
+): Promise<{ events: StreamEvent[]; ctx: OpenCodeEventContext }> {
   const capture = loadCapture(name);
   const ctx = createOpenCodeEventContext(SESSION_ID);
-  const out: StreamEvent[] = [];
-  for await (const event of mapOpenCodeTurn(admit(capture, ctx), ctx)) out.push(event);
-  return out;
+  const events: StreamEvent[] = [];
+  for await (const event of mapOpenCodeTurn(admit(capture, ctx), ctx)) events.push(event);
+  return { events, ctx };
+}
+
+/** Map a whole captured turn, exactly as the runtime's `sendMessage` does. */
+async function replay(name: string): Promise<StreamEvent[]> {
+  return (await replayWithContext(name)).events;
 }
 
 /** Just the background-task lifecycle, which is what the subagent card renders. */
@@ -181,5 +192,123 @@ describe('live capture: the stream dies with the child still running', () => {
     const events = await replay('live-child-tools.jsonl');
     expect(events.filter((event) => event.type === 'done')).toHaveLength(1);
     expect(events.at(-1)!.type).toBe('done');
+  });
+
+  /**
+   * The reason that capture ends mid-run: the child's `bash` call raised a
+   * `permission.asked` IN THE CHILD SESSION, the child path dropped it, and the
+   * turn sat silent for 7+ minutes with nothing on screen until the probe gave
+   * up (DOR-1126). The ask is in the capture verbatim — the mapper simply had
+   * nowhere to put it.
+   */
+  it("surfaces the child's own ask on the parent turn, named for the subagent (DOR-1126)", async () => {
+    const { events, ctx } = await replayWithContext('live-child-tools.jsonl');
+    const approvals = events.filter((event) => event.type === 'approval_required');
+    expect(approvals).toHaveLength(1);
+    expect(approvals[0]!.data).toMatchObject({
+      toolCallId: 'per_fef50a146001jQshzG9Vh6W93z',
+      toolName: 'bash',
+      title: 'The general subagent needs permission',
+      input: '{"patterns":["ls -F"],"command":"ls -F"}',
+    });
+    expect(StreamEventSchema.safeParse(approvals[0]).success).toBe(true);
+    // Answering it means answering the CHILD session — the reply route is
+    // per-session, and the parent's id would 404 the permission.
+    expect(ctx.pendingPermissionSessions.get('per_fef50a146001jQshzG9Vh6W93z')).toBe(
+      'ses_010af9e8cffe57H7AZMRP71rhc'
+    );
+  });
+});
+
+describe('live capture: a subagent asks, the operator approves, the run finishes', () => {
+  /**
+   * The whole DOR-1126 loop, captured through the REAL runtime (probe of
+   * 2026-08-11: local Ollama `gemma4:latest`, the adapter's own `bash: ask`
+   * ruleset, the card answered by `approveTool()`). The reply went to the CHILD
+   * session, the sidecar echoed it, the child's `bash` ran, and the parent turn
+   * ended 28s later — where before the ask was never shown and the turn waited.
+   */
+  it("shows the ask, clears it on the sidecar's echo, and finishes the subagent", async () => {
+    const { events, ctx } = await replayWithContext('live-child-permission.jsonl');
+    const relevant = events
+      .filter((event) => event.type !== 'text_delta' && event.type !== 'thinking_delta')
+      .map((event) => event.type);
+    expect(relevant).toEqual([
+      'tool_call_start',
+      'background_task_started',
+      'background_task_progress',
+      'approval_required',
+      'interaction_cancelled',
+      'tool_call_end',
+      'tool_result',
+      'background_task_done',
+      'session_status',
+      'session_status',
+      'session_status',
+      'session_status',
+      'done',
+    ]);
+
+    const approval = events.find((event) => event.type === 'approval_required')!;
+    expect(approval.data).toMatchObject({
+      toolCallId: 'per_ff0c31fc4001nfdcvgtN85TKvs',
+      toolName: 'bash',
+      title: 'The general subagent needs permission',
+    });
+    // The answer was sent to the child session; its echo cleared the card AND
+    // (DOR-1148) carries the same Approved receipt an in-DorkOS approve would.
+    expect(events.find((event) => event.type === 'interaction_cancelled')!.data).toEqual({
+      interactionId: 'per_ff0c31fc4001nfdcvgtN85TKvs',
+      reason: 'approved',
+    });
+    expect(events.find((event) => event.type === 'background_task_done')!.data).toMatchObject({
+      status: 'completed',
+      toolUses: 1,
+    });
+    // Nothing outstanding at the terminal, so nothing was withdrawn.
+    expect(ctx.pendingPermissionSessions.size).toBe(0);
+  });
+});
+
+describe('live capture: the user stops the turn while the subagent is asking', () => {
+  /**
+   * Captured through the real runtime (same probe, `interruptQuery` fired the
+   * moment the card appeared). Two things this ordering proves that no
+   * hand-written one could:
+   *
+   * - the sidecar publishes NO `permission.replied` for an ask it abandons, so
+   *   the card is only taken down because the turn terminal withdraws it;
+   * - the `task` part settles itself here, with the BARE `Task cancelled` and no
+   *   `interrupted` flag — the shape `subagentFailureStatus` used to read as a
+   *   failure, on the most ordinary stop there is.
+   */
+  it('withdraws the ask and reports the subagent as stopped, not failed', async () => {
+    const { events, ctx } = await replayWithContext('live-child-permission-stop.jsonl');
+    const approval = events.find((event) => event.type === 'approval_required')!;
+    expect(approval.data).toMatchObject({
+      toolCallId: 'per_ff0c80c8d001N16GikRcotWY1j',
+      title: 'The general subagent needs permission',
+    });
+
+    const cancelled = events.filter((event) => event.type === 'interaction_cancelled');
+    expect(cancelled).toHaveLength(1);
+    // No `permission.replied` rode this capture at all (see the class doc above)
+    // — this withdrawal is the turn-terminal sweep, not an echo, so it carries
+    // no `reason` and (DOR-1148) must not fabricate an Approved/Denied receipt
+    // for an ask nobody actually answered.
+    expect(cancelled[0]!.data).toEqual({ interactionId: 'per_ff0c80c8d001N16GikRcotWY1j' });
+
+    expect(events.find((event) => event.type === 'background_task_done')!.data).toMatchObject({
+      taskId: 'call_wzvfj4m1',
+      status: 'stopped',
+    });
+    expect(ctx.pendingPermissionSessions.size).toBe(0);
+  });
+
+  it('settles the withdrawal inside the turn, and ends the turn exactly once', async () => {
+    const types = (await replay('live-child-permission-stop.jsonl')).map((event) => event.type);
+    expect(types.indexOf('interaction_cancelled')).toBeLessThan(types.indexOf('done'));
+    expect(types.filter((type) => type === 'done')).toHaveLength(1);
+    expect(types.at(-1)).toBe('done');
   });
 });

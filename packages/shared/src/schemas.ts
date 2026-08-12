@@ -285,7 +285,7 @@ export const SessionSchema = z
      * visible in the session's readable transcript tail (claude-code only;
      * codex has no compaction, opencode reports it live-only). ABSENT means no
      * auto-compaction is visible in the tail — either the session never
-     * auto-compacted, or the boundary has scrolled past the ~16 KB tail window
+     * auto-compacted, or the boundary has scrolled past the 64 KB tail window
      * as the session grew (an honest, disclosed limitation; durable recency is
      * a deferred follow-up). Drives the row's discreet "auto-compacted" marker.
      */
@@ -304,6 +304,30 @@ export const SessionSchema = z
      */
     originLabel: z.string().optional(),
     /**
+     * The id of the room that started this session, when one did — the exact
+     * room, not a name that might belong to two of them.
+     *
+     * Present only alongside `origin: 'room'`, and stamped from the server's own
+     * `room_sessions` binding (`applyRoomOriginOverlay`). ABSENT everywhere else,
+     * including on a room turn that a scheduled run then claims: Pulse wins the
+     * origin, so it takes this with it rather than leaving an id under a `task`.
+     *
+     * **Why it exists beside {@link Session.originLabel}, which names the same
+     * room.** A label is a name and names are not unique here. Channel slugs are
+     * unique only among LIVE channels (`rooms_channel_slug_unique` is partial on
+     * `archived = 0`), so an archived `#shipping` and a live `#shipping` are both
+     * legal at once — and nothing stops a direct message being titled `#general`.
+     * A client joining conversations to rooms by label had to pick one of the
+     * colliding rooms and was silently wrong for the other: turns from the
+     * archived room were offered under the live one, and the losing room showed
+     * no conversations at all (DOR-1157). An id cannot collide.
+     *
+     * The label stays: it is what a person READS, it tracks renames (the binding
+     * is joined to the live `rooms` row on every request), and it is the honest
+     * fallback for a room this reader cannot see.
+     */
+    originRoomId: z.string().optional(),
+    /**
      * Which Claude Code account this session belongs to — the absolute Claude
      * config directory its transcript lives under (`~/.claude`, `~/.claude2`,
      * …). Derived from disk on every read and never stored: a session's
@@ -316,6 +340,47 @@ export const SessionSchema = z
      * registered accounts in `GET /api/config`.
      */
     account: z.string().optional(),
+    /**
+     * ISO-8601 timestamp of the last message a PERSON sent in this session —
+     * the server half of the sidebar's interaction-recency order key
+     * (`lastInteractionAt = max(userLastMessageAt, userLastOpenedAt)`, spec
+     * `sidebar-now-today-library` BC-16). The name matches BC-16 and the
+     * client's own key rather than the `last…At` shape of its neighbours here,
+     * because one name across the wire and the consumer is worth more than
+     * local symmetry.
+     *
+     * Deliberately NOT {@link Session.updatedAt}: `updatedAt` moves every time
+     * the AGENT writes (for claude-code it is the transcript's mtime), which is
+     * exactly the signal Today must not reorder on. This field moves only when
+     * a person writes, so a row whose agent has been working for an hour keeps
+     * its place.
+     *
+     * ABSENT means nobody can honestly say — omission, never a guess, and the
+     * client then orders that row by its local `userLastOpenedAt` alone. It is
+     * absent in four situations, and the last two are the interesting ones:
+     *
+     * 1. **The runtime cannot derive it.** Codex, opencode and test-mode all
+     *    omit it; each says why in its conformance declaration.
+     * 2. **The person's last turn is out of reach.** Claude-code reads it from
+     *    the transcript tail it already reads (64 KB), which covered ~90% of
+     *    conversations touched in the last week when measured over 474 real
+     *    transcripts. A longer agent monologue pushes the turn out of the
+     *    window and the row honestly says nothing.
+     * 3. **Nobody wrote the message.** The `user` role is a wire role, not an
+     *    author: tool results, resume bootstraps, compaction summaries, DorkOS's
+     *    own corrective notes and relay hand-offs from other agents all arrive
+     *    on it, and none of them count.
+     * 4. **Nobody wrote in the SESSION.** A scheduled task's prompt and a room
+     *    post by another agent arrive as plain, unmarked user text that no
+     *    content rule can tell from something you typed — so a session whose
+     *    `origin` is `agent`, `task` or `room` reports nothing at all. A
+     *    `channel` session still reports: that IS a person, writing from
+     *    Telegram or Slack.
+     *
+     * Best-effort and never a security boundary — the markers it reads are the
+     * same advisory ones {@link Session.origin} is derived from.
+     */
+    userLastMessageAt: z.string().datetime().optional(),
     cwd: z.string().optional(),
   })
   .openapi('Session');
@@ -394,74 +459,6 @@ export type ReloadPluginsResult = z.infer<typeof ReloadPluginsResultSchema>;
  * see this text, so a runaway one is a cost nobody can spot from the UI.
  */
 export const SEED_CONTEXT_MAX_LENGTH = 10_000;
-
-export const SendMessageRequestSchema = z
-  .object({
-    content: z.string().min(1, 'content is required'),
-    cwd: z.string().optional(),
-    correlationId: z.string().uuid().optional(),
-    clientMessageId: z.string().optional(),
-    /** Neutral client-sourced context signals (ui_state, queued). Server derives git_status/env. */
-    context: z.lazy(() => ClientContextSchema).optional(),
-    /**
-     * Explicit runtime hint for session ownership. Used on the first message
-     * only — subsequent calls for the same `sessionId` ignore this field (the
-     * stored `session_metadata` row wins). Priority: `runtime` > agent-manifest
-     * `runtime` field > server default. See ADR 0255.
-     */
-    runtime: z.string().optional(),
-    /**
-     * Path to the agent directory whose `.dork/agent.json` manifest seeded this
-     * session. Recorded on first message for provenance. Ignored on subsequent
-     * calls (session ownership is immutable).
-     */
-    agentPath: z.string().optional(),
-    /**
-     * Opt-in (DOR-84): bind this turn to a server-managed workspace keyed by this
-     * unit-of-work id (issue id / spec slug). When set, the server
-     * provisions-or-reuses the workspace from the supplied `cwd` (the source repo)
-     * and runs the turn with `cwd = workspace.path` and the allocated port block.
-     * Absent → behavior is unchanged (the supplied `cwd` is used directly).
-     */
-    workspaceKey: z.string().optional(),
-    /** Provider for a newly-provisioned workspace; defaults to server config. */
-    workspaceProvider: z.enum(['worktree', 'clone']).optional(),
-    /**
-     * Background for THIS turn that the agent reads and the person never sees —
-     * see `SeedContextData` in `additional-context.ts` for what it is for and
-     * what it is not.
-     *
-     * It rides the neutral context bag (ADR-0273), never `content`: the prompt
-     * is the person's message byte for byte, so anything DorkOS or a launching
-     * surface has to say about it belongs out-of-band. Every runtime delivers it
-     * and every runtime keeps it out of rendered history.
-     *
-     * Empty is a caller bug, not "inject nothing" — the block would still be
-     * rendered and would still cost the model attention, so it is refused.
-     */
-    seedContext: z.string().min(1).max(SEED_CONTEXT_MAX_LENGTH).optional(),
-  })
-  .openapi('SendMessageRequest');
-
-export type SendMessageRequest = z.infer<typeof SendMessageRequestSchema>;
-
-/**
- * The `202 Accepted` body for `POST /api/sessions/:id/messages` (ADR-0264).
- * The POST is trigger-only: it starts the turn server-side and returns the
- * CANONICAL session id; the turn's tokens are delivered solely on
- * `GET /:id/events`. For a brand-new session this `sessionId` is the real SDK
- * id assigned during the turn (it differs from the client-supplied id), so the
- * client re-keys its URL and its `/events` subscription to it (DOR-74).
- */
-export const SendMessageResponseSchema = z
-  .object({
-    sessionId: z
-      .string()
-      .describe('Canonical session id; differs from the request id for a new session'),
-  })
-  .openapi('SendMessageResponse');
-
-export type SendMessageResponse = z.infer<typeof SendMessageResponseSchema>;
 
 // === Message disposition & the server-owned queue ===
 
@@ -555,6 +552,181 @@ export const QueuedMessageSchema = z
 
 /** One message waiting on a session's queue. See {@link QueuedMessageSchema}. */
 export type QueuedMessage = z.infer<typeof QueuedMessageSchema>;
+
+export const SendMessageRequestSchema = z
+  .object({
+    content: z.string().min(1, 'content is required'),
+    cwd: z.string().optional(),
+    correlationId: z.string().uuid().optional(),
+    clientMessageId: z.string().optional(),
+    /** Neutral client-sourced context signals (ui_state, queued). Server derives git_status/env. */
+    context: z.lazy(() => ClientContextSchema).optional(),
+    /**
+     * Explicit runtime hint for session ownership. Used on the first message
+     * only — subsequent calls for the same `sessionId` ignore this field (the
+     * stored `session_metadata` row wins). Priority: `runtime` > agent-manifest
+     * `runtime` field > server default. See ADR 0255.
+     */
+    runtime: z.string().optional(),
+    /**
+     * Path to the agent directory whose `.dork/agent.json` manifest seeded this
+     * session. Recorded on first message for provenance. Ignored on subsequent
+     * calls (session ownership is immutable).
+     */
+    agentPath: z.string().optional(),
+    /**
+     * Opt-in (DOR-84): bind this turn to a server-managed workspace keyed by this
+     * unit-of-work id (issue id / spec slug). When set, the server
+     * provisions-or-reuses the workspace from the supplied `cwd` (the source repo)
+     * and runs the turn with `cwd = workspace.path` and the allocated port block.
+     * Absent → behavior is unchanged (the supplied `cwd` is used directly).
+     */
+    workspaceKey: z.string().optional(),
+    /** Provider for a newly-provisioned workspace; defaults to server config. */
+    workspaceProvider: z.enum(['worktree', 'clone']).optional(),
+    /**
+     * Background for THIS turn that the agent reads and the person never sees —
+     * see `SeedContextData` in `additional-context.ts` for what it is for and
+     * what it is not.
+     *
+     * It rides the neutral context bag (ADR-0273), never `content`: the prompt
+     * is the person's message byte for byte, so anything DorkOS or a launching
+     * surface has to say about it belongs out-of-band. Every runtime delivers it
+     * and every runtime keeps it out of rendered history.
+     *
+     * Empty is a caller bug, not "inject nothing" — the block would still be
+     * rendered and would still cost the model attention, so it is refused.
+     */
+    seedContext: z.string().min(1).max(SEED_CONTEXT_MAX_LENGTH).optional(),
+    /**
+     * What to do when the session is already working. Absent means `queue`, the
+     * disposition every runtime supports because the server owns the queue.
+     */
+    disposition: MessageDispositionSchema.optional(),
+  })
+  .openapi('SendMessageRequest');
+
+export type SendMessageRequest = z.infer<typeof SendMessageRequestSchema>;
+
+/**
+ * The `202 Accepted` body for `POST /api/sessions/:id/messages` (ADR-0264,
+ * spec `persistent-session-runtime` §3.3).
+ *
+ * The POST is trigger-only AND accept-only: it never waits for the turn ahead
+ * of it, so a `202` means "the server has this message", not "the turn is
+ * running". This body cannot say which of the two it was: `queuePosition`
+ * reads `1` both when the turn started immediately and when the message
+ * became the sole entry in a queue behind a still-running turn, and `outcome`
+ * carries the requested/applied disposition, not whether a turn began.
+ * `turn_start` on `GET /:id/events` is the only signal that this message's
+ * turn actually started.
+ *
+ * `sessionId` is the CANONICAL session id, best effort: for a brand-new session
+ * it is the real id assigned during the turn (it differs from the
+ * client-supplied id), so the client re-keys its URL and its `/events`
+ * subscription to it (DOR-74). A message accepted onto the queue is answered
+ * before any turn of its own has run, so this is whatever id the runtime already
+ * resolves to — which for a session with a queue is always the canonical one,
+ * because a queue means a turn has already run.
+ */
+export const SendMessageResponseSchema = z
+  .object({
+    sessionId: z
+      .string()
+      .describe('Canonical session id; differs from the request id for a new session'),
+    messageId: z.string().describe('Server-minted id for this message; the queue is keyed by it'),
+    outcome: MessageDeliveryOutcomeSchema,
+    queuePosition: z
+      .number()
+      .int()
+      .positive()
+      .describe(
+        '1-based place in the session queue at acceptance; 1 means nothing was ahead of it'
+      ),
+  })
+  .openapi('SendMessageResponse');
+
+export type SendMessageResponse = z.infer<typeof SendMessageResponseSchema>;
+
+/**
+ * The `202 Accepted` body for the trigger routes that answer with the session id
+ * alone — `POST /:id/ui-action` and `POST /:id/command-intents/:intent`.
+ *
+ * Deliberately NOT {@link SendMessageResponseSchema}: neither carries a queue
+ * receipt. A command intent is never queued as a person's words (it is not
+ * words), and a widget action still refuses rather than waits.
+ */
+export const SessionTriggerResponseSchema = z
+  .object({
+    sessionId: z
+      .string()
+      .describe('Canonical session id; differs from the request id for a new session'),
+  })
+  .openapi('SessionTriggerResponse');
+
+export type SessionTriggerResponse = z.infer<typeof SessionTriggerResponseSchema>;
+
+/** A session's queue, head first. The body of `GET /api/sessions/:id/queue`. */
+export const SessionQueueResponseSchema = z
+  .object({
+    queue: z.array(QueuedMessageSchema),
+  })
+  .openapi('SessionQueueResponse');
+
+export type SessionQueueResponse = z.infer<typeof SessionQueueResponseSchema>;
+
+/**
+ * Where a queued message should be moved to: immediately before, or immediately
+ * after, another message in the SAME session's queue.
+ *
+ * An anchor rather than an index, because an index means something different to
+ * every window the moment anyone else edits the queue — and two windows editing
+ * one queue is the case this whole surface exists for.
+ */
+export const QueueMoveTargetSchema = z
+  .union([z.object({ before: z.string() }).strict(), z.object({ after: z.string() }).strict()])
+  .openapi('QueueMoveTarget');
+
+export type QueueMoveTarget = z.infer<typeof QueueMoveTargetSchema>;
+
+/**
+ * The body of `PATCH /api/sessions/:id/queue/:messageId` — edit the words, move
+ * the message, or both in one call.
+ *
+ * A body that asks for neither is refused rather than treated as a no-op: it can
+ * only be a caller bug, and answering `200` to it would hide the bug behind a
+ * response that looks like it worked.
+ */
+export const UpdateQueuedMessageRequestSchema = z
+  .object({
+    /** The replacement words, stored pristine. */
+    content: z.string().min(1).optional(),
+    /** Where to move it, relative to another message in the same queue. */
+    move: QueueMoveTargetSchema.optional(),
+  })
+  .refine((body) => body.content !== undefined || body.move !== undefined, {
+    message: 'content or move is required',
+  })
+  .openapi('UpdateQueuedMessageRequest');
+
+export type UpdateQueuedMessageRequest = z.infer<typeof UpdateQueuedMessageRequestSchema>;
+
+/**
+ * The body of a successful queue edit: the message as it now stands, and the
+ * whole queue around it.
+ *
+ * The whole queue, always — the same choice `queue_update` makes on the stream.
+ * A move changes other messages' places, so answering with the edited message
+ * alone would leave the caller holding an order it cannot trust.
+ */
+export const UpdateQueuedMessageResponseSchema = z
+  .object({
+    message: QueuedMessageSchema,
+    queue: z.array(QueuedMessageSchema),
+  })
+  .openapi('UpdateQueuedMessageResponse');
+
+export type UpdateQueuedMessageResponse = z.infer<typeof UpdateQueuedMessageResponseSchema>;
 
 /**
  * Longest deny reason accepted. Generous enough for a couple of sentences of
@@ -1608,16 +1780,19 @@ export const ElicitationCompleteEventSchema = z
 export type ElicitationCompleteEvent = z.infer<typeof ElicitationCompleteEventSchema>;
 
 /**
- * A pending interaction (approval / question / elicitation) was cancelled
- * WITHOUT an operator action: the SDK aborted the gating tool call (e.g. a
- * mid-turn steered message superseded a pending AskUserQuestion) or the
- * interaction timed out. Lets the projection drop the card instead of leaving
- * an answerable ghost until expiry.
+ * A pending interaction (approval / question / elicitation) resolved without
+ * riding the ordinary in-DorkOS answer path: the SDK aborted the gating tool
+ * call (e.g. a mid-turn steered message superseded a pending AskUserQuestion),
+ * the interaction timed out, or — an OpenCode permission specifically — its
+ * `permission.replied` echo reported an answer given somewhere else (the
+ * OpenCode TUI, another DorkOS client). Lets the projection drop the card
+ * instead of leaving an answerable ghost, and — for `approved`/`denied` — earn
+ * the same receipt an in-DorkOS answer would (DOR-1148).
  */
 export const InteractionCancelledEventSchema = z
   .object({
     interactionId: z.string(),
-    reason: z.enum(['aborted', 'timeout']).optional(),
+    reason: z.enum(['aborted', 'timeout', 'approved', 'denied']).optional(),
   })
   .openapi('InteractionCancelledEvent');
 

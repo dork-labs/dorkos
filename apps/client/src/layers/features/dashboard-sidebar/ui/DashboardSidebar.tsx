@@ -29,11 +29,11 @@ import { SidebarDnd } from './dnd/SidebarDnd';
 import { SidebarZones } from './SidebarZones';
 
 /**
- * The dashboard sidebar — Now, Today and Library, drawn from one model.
+ * The dashboard sidebar — Heads up, Today and Library, drawn from one model.
  *
  * Pins, channels, direct messages, agents and groups all stay exactly where
  * they were put: Library is the operator's own structure and nothing reorders
- * it (BC-28 → BC-33). Now and Today above it are computed, and are the only
+ * it (BC-28 → BC-33). Heads up and Today above it are computed, and are the only
  * parts of the panel that move on their own.
  */
 export function DashboardSidebar() {

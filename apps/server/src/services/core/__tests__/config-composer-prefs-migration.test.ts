@@ -20,8 +20,9 @@
  *
  * ## What these assert, and what they deliberately do not
  *
- * They assert the OUTCOME of an upgrade boot: the section is there, it is off,
- * and the file is not condemned. They are not a test of the migration body, and
+ * They assert the OUTCOME of an upgrade boot: the section is there, it is on
+ * (the owner's 2026-08-12 call), and the file is not condemned. They are not a
+ * test of the migration body, and
  * emptying `CONFIG_MIGRATIONS['0.59.0']` leaves them green — measured, not
  * assumed. conf builds Ajv with `useDefaults`, so a declared default is written
  * into a stored `ui` block during validation whether or not a migration runs,
@@ -77,12 +78,12 @@ describe('ui.composer on an upgrade boot (real conf + Ajv)', () => {
     expect(SERVER_VERSION).toBe('0.59.0');
   });
 
-  it('adds ui.composer with rich text off to a config that predates it', () => {
+  it('adds ui.composer with rich text on to a config that predates it', () => {
     const dir = seedUpgradeBoot({ theme: 'dark', statusBar: { pins: ['git'] } });
 
     const manager = new ConfigManager(dir);
 
-    expect(manager.getDot('ui.composer.richText')).toBe(false);
+    expect(manager.getDot('ui.composer.richText')).toBe(true);
     // The rest of `ui` is untouched — the backfill spreads the stored block.
     expect(manager.get('ui').theme).toBe('dark');
     expect(manager.get('ui').statusBar.pins).toEqual(['git']);
@@ -96,22 +97,24 @@ describe('ui.composer on an upgrade boot (real conf + Ajv)', () => {
     expect(manager.validate()).toEqual({ valid: true });
     expect(fs.existsSync(path.join(dir, 'config.json.bak'))).toBe(false);
     // A second boot reads the migrated file cleanly rather than looping.
-    expect(new ConfigManager(dir).getDot('ui.composer.richText')).toBe(false);
-  });
-
-  it('never turns off a preference someone already turned on', () => {
-    const dir = seedUpgradeBoot({ theme: 'system', composer: { richText: true } });
-
     expect(new ConfigManager(dir).getDot('ui.composer.richText')).toBe(true);
   });
 
-  it('a fresh install gets the section from the schema, with rich text off', () => {
+  it('never turns on a preference someone already turned off', () => {
+    // The direction that matters now the seed is `true`: somebody who used the
+    // Settings switch to go back to the plain box keeps it across the upgrade.
+    const dir = seedUpgradeBoot({ theme: 'system', composer: { richText: false } });
+
+    expect(new ConfigManager(dir).getDot('ui.composer.richText')).toBe(false);
+  });
+
+  it('a fresh install gets the section from the schema, with rich text on', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dorkos-composer-prefs-fresh-'));
     dirs.push(dir);
 
     const manager = new ConfigManager(dir);
 
-    expect(manager.get('ui').composer).toEqual({ richText: false });
+    expect(manager.get('ui').composer).toEqual({ richText: true });
     expect(manager.validate()).toEqual({ valid: true });
   });
 });

@@ -2,7 +2,7 @@
  * Library — the structure the operator built themselves, never reordered by us
  * (BC-28 → BC-33).
  *
- * Prediction is additive: Now and Today are computed and may move every render.
+ * Prediction is additive: Heads up and Today are computed and may move every render.
  * Everything in here stays exactly where it was put, which is what makes the
  * spatial memory worth having.
  *
@@ -69,7 +69,7 @@ export function offersGroupAffordances(agents: readonly { runtime: string }[]): 
  * signal for exactly the members most worth knowing about (DOR-1137).
  *
  * An agent's answer comes from {@link liveSessionIdsForPath}, so it is the same
- * human-origin list Now's "N working" counts (§18). A room's comes from the
+ * human-origin list Heads up's "N working" counts (§18). A room's comes from the
  * `working` field its summary already carries, which is a server-side count of
  * agents mid-turn in that room and has no origin dimension to apply — a room
  * turn IS the room's work.
@@ -214,7 +214,7 @@ function orderLibraryRows(
  * @param id - Which Library section this is. Narrower than
  *   `SidebarSectionModel['id']` on purpose: this helper reads the section's
  *   STORED collapse and options, and only a persisted Library section has any.
- *   Now, Today, Getting started and group sub-headers never reach here.
+ *   Heads up, Today, Getting started and group sub-headers never reach here.
  * @param label - Its heading.
  * @param rows - Its rows.
  * @param state - The snapshot.

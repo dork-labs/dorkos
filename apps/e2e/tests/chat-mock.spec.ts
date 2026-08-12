@@ -5,8 +5,10 @@ import path from 'path';
 import { BasePage } from '../pages/BasePage.js';
 import { ChatPage } from '../pages/ChatPage.js';
 import { caretOffset, composerText, expectComposerText } from '../pages/composer-probe.js';
+import { registerComposerEscapeAndImeTests } from './chat/composer-escape-and-ime.js';
 import { registerSessionReadStateTests } from './chat/session-read-state.js';
 import { registerNowSurvivesReloadTests } from './dashboard-sidebar/now-survives-reload.js';
+import { registerSendLandsInTodayTests } from './dashboard-sidebar/send-lands-in-today.js';
 
 /**
  * Browser simulation tests using TestModeRuntime.
@@ -135,7 +137,17 @@ test.describe('TestModeRuntime — mock browser tests', () => {
       'This sentence pads the message so the rendered row wraps well past the height estimate. ';
     for (let i = 1; i <= 3; i++) {
       await chatPage.sendMessage(`Long message ${i}: ${filler.repeat(6)}`);
-      await expect(page.getByText(new RegExp(`Echo: Long message ${i}:`))).toBeVisible({
+      // Scoped to the transcript: the echo is in the DOM twice whenever the
+      // announcer catches the turn arriving (see GOTCHAS), and a bare
+      // `getByText` then resolves to two elements. Playwright treats that
+      // strict-mode violation as non-retriable, so the assertion fails on its
+      // first poll rather than waiting the announcer out — which is exactly how
+      // this failed on CI, where the stream renders across enough frames for the
+      // announcer to adopt the message. Locally the turn lands in one batch and
+      // the announcer stays silent, so only the slower runner ever saw it.
+      await expect(
+        page.getByTestId('transcript-feed').getByText(new RegExp(`Echo: Long message ${i}:`))
+      ).toBeVisible({
         timeout: 10_000,
       });
     }
@@ -324,7 +336,14 @@ test.describe('Runtime UX — multi-runtime test server', () => {
     await expect(statusLine.getByRole('button', { name: 'test-mode-b' })).toBeVisible();
 
     await chatPage.sendMessage('Hello');
-    await expect(page.getByText('Echo: Hello')).toBeVisible({ timeout: 10_000 });
+    // Scoped to the transcript: the echo is in the DOM twice while the turn is
+    // live — the message and the screen-reader announcer mirroring it (see
+    // GOTCHAS). Preventive per DOR-1184: this echo has no sentence terminator
+    // today, so it doesn't race the announcer's immediate-sentence path, but
+    // that's a fact about the fixture text, not a guarantee.
+    await expect(page.getByTestId('transcript-feed').getByText('Echo: Hello')).toBeVisible({
+      timeout: 10_000,
+    });
 
     // The first send carried the hint — the session is bound server-side.
     const sessionId = await chatPage.getSessionId();
@@ -347,7 +366,10 @@ test.describe('Runtime UX — multi-runtime test server', () => {
     const chatPage = new ChatPage(page);
     await chatPage.goto(undefined, { dir: agentDir });
     await chatPage.sendMessage('Default runtime session');
-    await expect(page.getByText('Echo: Default runtime session')).toBeVisible({
+    // Scoped to the transcript — see GOTCHAS (announcer duplicates the echo).
+    await expect(
+      page.getByTestId('transcript-feed').getByText('Echo: Default runtime session')
+    ).toBeVisible({
       timeout: 10_000,
     });
 
@@ -367,7 +389,10 @@ test.describe('Runtime UX — multi-runtime test server', () => {
     // creating a new one.
     await chatPage.goto(crypto.randomUUID(), { dir: agentDir, runtime: 'test-mode-b' });
     await chatPage.sendMessage('Secondary runtime session');
-    await expect(page.getByText('Echo: Secondary runtime session')).toBeVisible({
+    // Scoped to the transcript — see GOTCHAS (announcer duplicates the echo).
+    await expect(
+      page.getByTestId('transcript-feed').getByText('Echo: Secondary runtime session')
+    ).toBeVisible({
       timeout: 10_000,
     });
 
@@ -408,7 +433,10 @@ test.describe('Runtime UX — multi-runtime test server', () => {
     // replayed turn succeeds.
     await request.post(`${API_URL}/api/test/scenario`, { data: { name: 'simple-text' } });
     await retry.click();
-    await expect(page.getByText('Echo: please fail')).toBeVisible({ timeout: 10_000 });
+    // Scoped to the transcript — see GOTCHAS (announcer duplicates the echo).
+    await expect(page.getByTestId('transcript-feed').getByText('Echo: please fail')).toBeVisible({
+      timeout: 10_000,
+    });
   });
 });
 
@@ -493,7 +521,10 @@ test.describe('Fleet context health — per-row gauge + honest unknown', () => {
     const chatPage = new ChatPage(page);
     await chatPage.goto(undefined, { dir: agentDir });
     await chatPage.sendMessage('Hello');
-    await expect(page.getByText('Echo: Hello')).toBeVisible({ timeout: 10_000 });
+    // Scoped to the transcript — see GOTCHAS (announcer duplicates the echo).
+    await expect(page.getByTestId('transcript-feed').getByText('Echo: Hello')).toBeVisible({
+      timeout: 10_000,
+    });
 
     await new BasePage(page).ensureSidebarOpen();
 
@@ -880,11 +911,24 @@ test.describe('the chat composer with formatting on', () => {
 // worker rather than beside it. See the module header for the full argument.
 registerSessionReadStateTests({ apiUrl: API_URL, agentDir: () => agentDir });
 
-// The sidebar's Now zone surviving a page load (DOR-1136). Registered here for
+// The sidebar's Heads up zone surviving a page load (DOR-1136). Registered here for
 // the same reason as the suite above — it needs the `error` scenario, which only
 // this leg has — and because the defect is about what a FRESH page connection is
 // told, which no unit test can observe.
 registerNowSurvivesReloadTests({ apiUrl: API_URL, agentDir: () => agentDir });
+
+// Writing in a conversation puts it in Today (DOR-1156). Registered here because
+// it drives a real send, which is free and deterministic only on this leg — and
+// because what it asserts happens on the OTHER side of a navigation, which is
+// exactly what a jsdom render cannot walk through.
+registerSendLandsInTodayTests({ agentDir: () => agentDir });
+
+// The double-Escape clear on both fields, and Enter during an IME composition
+// (DOR-948). Registered here because both suites flip `ui.composer.richText`,
+// which is server-global — only this file's sequential single worker makes that
+// safe. See the module header.
+registerComposerEscapeAndImeTests({ apiUrl: API_URL, agentDir: () => agentDir });
+
 /**
  * Conversations in ⌘K (spec `sidebar-now-today-library` P3, §15).
  *
@@ -913,37 +957,19 @@ test.describe('conversations in the command palette', () => {
   const TITLE_WORD = 'Zanzibar';
 
   /**
-   * The agent this suite talks to — registered with the MESH, not merely seeded
-   * on disk.
+   * The agent this suite talks to.
    *
-   * That distinction is the whole reason this hook exists. `GET
-   * /api/sessions/recent` fans out over `meshCore.listWithPaths()`, so a
-   * directory the mesh has never heard of contributes no sessions however many
-   * it holds — and the palette's Recent list came up empty with a conversation
-   * plainly on screen. `POST /api/test/seed-agent` writes a manifest to disk and
-   * stops there; registration is a separate act.
+   * There is nothing to set up. `POST /api/test/seed-agent` — which the
+   * file-level `beforeEach` already calls — now registers the agent it seeds
+   * with the mesh as well as writing it to disk (DOR-1142), and
+   * `GET /api/sessions/recent` fans out over `meshCore.listWithPaths()`, so the
+   * conversations started below are visible to the palette by construction.
    *
-   * `runtime: 'codex'` for the same reason `seed-agent` declares it: a manifest
-   * runtime beats the server default whenever this process registers it, and
-   * this server never registers codex — so the session lands on `test-mode`,
-   * which is what makes it free.
+   * This suite used to mint a SECOND agent in a sibling directory and register
+   * it by hand in a `beforeAll` that had no teardown, purely to work around the
+   * seed route stopping at the manifest. That is gone; the shared fixture is
+   * the agent now.
    */
-  let paletteAgentDir: string;
-
-  test.beforeAll(async () => {
-    const ctx = await apiRequest.newContext();
-    const seed = await ctx.post(`${API_URL}/api/test/seed-agent`);
-    const { agentDir: baseDir } = (await seed.json()) as { agentDir: string };
-    paletteAgentDir = `${baseDir}-palette`;
-    await fs.mkdir(paletteAgentDir, { recursive: true });
-    const res = await ctx.post(`${API_URL}/api/mesh/agents`, {
-      data: { path: paletteAgentDir, overrides: { name: 'Palette Test Agent', runtime: 'codex' } },
-    });
-    if (!res.ok()) {
-      throw new Error(`Failed to register the palette agent: ${res.status()}`);
-    }
-    await ctx.dispose();
-  });
 
   /**
    * Start a conversation whose title contains {@link TITLE_WORD}, and answer
@@ -955,7 +981,7 @@ test.describe('conversations in the command palette', () => {
    */
   async function startNamedSession(page: Page): Promise<string> {
     const chatPage = new ChatPage(page);
-    await chatPage.goto(undefined, { dir: paletteAgentDir });
+    await chatPage.goto(undefined, { dir: agentDir });
     await chatPage.sendMessage(`${TITLE_WORD} migration plan`);
     await expect(page.getByTestId('transcript-feed').getByText(/Echo:/)).toBeVisible({
       timeout: 15_000,

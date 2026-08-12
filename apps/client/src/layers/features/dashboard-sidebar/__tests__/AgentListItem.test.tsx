@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent, cleanup } from '@testing-library/react';
+import { act, render, screen, fireEvent, cleanup } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { AgentListItem } from '../ui/AgentListItem';
 import { SidebarProvider, TooltipProvider } from '@/layers/shared/ui';
@@ -66,13 +66,21 @@ vi.mock('../ui/SessionSwitcher', async (importOriginal) => {
   };
 });
 
+// What the row hands its menu. Captured rather than discarded, because two of
+// those handlers are the row's ONLY door to something under a thumb: the
+// switcher and the profile drawer are satellites the row stops drawing on touch
+// (P4.2), so "the menu was given a working handler" is the whole guarantee.
+let lastMenuParams: Record<string, unknown> = {};
 vi.mock('../ui/AgentRowMenuItems', () => ({
   // The row's menu reads `ui.sidebar` through the config entity, which needs a
   // transport this file deliberately does not stand up. The menu's own contents
   // are `AgentRowMenuItems.test.tsx`'s subject; here it is just "there is a
   // menu", so an empty list keeps the row's chrome honest (no ⋮ with nothing
   // behind it) without dragging a query client into every case.
-  useAgentRowMenuNodes: () => [],
+  useAgentRowMenuNodes: (params: Record<string, unknown>) => {
+    lastMenuParams = params;
+    return [];
+  },
 }));
 
 vi.mock('../ui/AgentActivityBadge', () => ({
@@ -307,6 +315,37 @@ describe('AgentListItem', () => {
       const { props } = renderItem({ isMuted: true, isActive: false });
       fireEvent.click(row());
       expect(props.onSelect).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  // --- The menu's doors to the row's satellites (P4.2) ---
+
+  describe('what the row hands its menu', () => {
+    it('opens the switcher from the menu, with no chip on the row at all', () => {
+      // **The case the chip cannot cover.** Under a thumb the row draws no "N
+      // live" chip, and below two live sessions it draws none at any width — so
+      // the menu is the only door, and the switcher has to mount when it is
+      // opened from there rather than only when the chip is on offer.
+      mockLiveCount.mockReturnValue(0);
+      renderItem();
+      expect(screen.queryByTestId('session-switcher')).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /session switcher/ })).not.toBeInTheDocument();
+
+      act(() => (lastMenuParams.onOpenSessions as () => void)());
+      expect(screen.getByTestId('session-switcher')).toBeInTheDocument();
+    });
+
+    it('passes the profile drawer through, or null when the mesh cannot name the agent', () => {
+      const onViewProfile = vi.fn();
+      renderItem({ onViewProfile });
+      (lastMenuParams.onViewProfile as () => void)();
+      expect(onViewProfile).toHaveBeenCalledTimes(1);
+
+      // The pair: no profile to open means no menu item offering one, which is
+      // a `null` rather than a handler that quietly does nothing.
+      cleanup();
+      renderItem({ onViewProfile: undefined });
+      expect(lastMenuParams.onViewProfile).toBeNull();
     });
   });
 });

@@ -49,6 +49,11 @@ const FEATURE_DIR = join(__dirname, '..');
 const SIDEBAR_DIRS: [label: string, dir: string][] = [
   ['dashboard-sidebar', FEATURE_DIR],
   ['session-list', join(__dirname, '..', '..', 'session-list')],
+  // The third one, since P4: on a phone the panel is four destinations along
+  // the bottom, and it draws the same zones. The banner above says "every
+  // sidebar implementation", so a new one that grew its own create surface or
+  // its own version line has to be inside the scan for that to be true.
+  ['mobile-tabs', join(__dirname, '..', '..', '..', 'widgets', 'mobile-tabs')],
 ];
 
 /** Every source file in the feature, tests excluded — relative to the feature root. */
@@ -163,15 +168,20 @@ describe('AC-7 — one create surface', () => {
       /\buseAgentCreationStore\b/,
       [
         'ui/NewMenu.tsx',
-        // Not create surfaces: both are computed Getting-started suggestions —
-        // the day-one invitation drawn when the Library holds nothing at all,
-        // and P2.2's `suggestion:add-agent` row, which retires the moment it is
-        // done (§8). Each opens the SAME flow this menu's "Agent" item opens,
-        // and the id each stands for is in the vocabulary above. A suggestion
-        // is a thing the sidebar computed for you once; a create surface is a
-        // control that is always there.
+        // Not a create surface: P2.2's `suggestion:add-agent` row is a computed
+        // Getting-started suggestion that retires the moment it is done (§8).
+        // It opens the SAME flow this menu's "Agent" item opens, and the id it
+        // stands for is in the vocabulary above. A suggestion is a thing the
+        // sidebar computed for you once; a create surface is a control that is
+        // always there.
+        //
+        // `ui/SidebarZones.tsx` was the second entry here, for the day-one
+        // invitation drawn when Library held nothing at all. That card is gone
+        // (DOR-1138). Its condition was reachable, but only before the fleet
+        // query answered or while it failed — a hydration gap, not day one — so
+        // it flashed "Add more agents" on every cold load rather than greeting
+        // a new operator. Day-one guidance is the Getting started zone's.
         'ui/SidebarChrome.tsx',
-        'ui/SidebarZones.tsx',
       ],
     ],
   ];
@@ -311,6 +321,9 @@ describe('BC-44 — the version number leaves the chrome', () => {
     expect(scanned).toContain('dashboard-sidebar/ui/header-block-menu.ts');
     expect(scanned).toContain('dashboard-sidebar/ui/SidebarFooterStrip.tsx');
     expect(scanned).toContain('session-list/ui/EmbedSidebar.tsx');
+    // Pins the third SIDEBAR_DIRS entry: deleting it must red this line, not
+    // silently shrink the scan (the review proved the entry was unobservable).
+    expect(scanned).toContain('mobile-tabs/ui/MobileTabBar.tsx');
   });
 
   it('puts a version number only where it is still allowed to', () => {

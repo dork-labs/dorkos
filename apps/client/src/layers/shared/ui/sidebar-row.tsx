@@ -29,7 +29,8 @@ import {
 } from '@/layers/shared/lib/row-grammar';
 import { IDENTITY_MARK_GROUP } from './identity-avatar';
 import { SidebarMenuItem } from './sidebar';
-import { SidebarMenuSurface, type SidebarMenuNode } from './sidebar-menu-node';
+import { SIDEBAR_MENU_GUTTER, SidebarMenuSurface, type SidebarMenuNode } from './sidebar-menu-node';
+import { TOUCH_TARGET_MIN_H } from './touch-target';
 
 /** The horizontal inset every sidebar row pays, and the only place it is paid. */
 export const SIDEBAR_ROW_INSET = 'px-2';
@@ -65,16 +66,38 @@ export const SIDEBAR_ROW_INSET = 'px-2';
  * 28px, against a "⋮" that is 20px wide sitting 4px off the edge — the gutter
  * clears it exactly, and {@link SIDEBAR_ROW_TRAILING_ACTION_OFFSET} parks the
  * trailing satellite on the same line.
+ *
+ * On touch both numbers grow: the "⋮" is 44px there (P4 AC-4), so the gutter it
+ * has to clear is 44 too. The pair comes from {@link SIDEBAR_MENU_GUTTER}, which
+ * the surface that DRAWS the "⋮" owns, rather than from a second literal here.
  */
-const SIDEBAR_ROW_GUTTER = 'pr-7';
+const SIDEBAR_ROW_GUTTER = SIDEBAR_MENU_GUTTER;
 
 /**
  * Where a {@link SidebarRowProps.trailingAction} sits: flush against the inside
- * edge of {@link SIDEBAR_ROW_GUTTER}, which is exactly where the row reserves
- * its width. The two are one number spelled twice, and a browser test pins them
- * together by measurement rather than by name.
+ * edge of the fine gutter, which is exactly where the row reserves its width.
+ * `sidebar-row-gutter.spec.ts` pins the two together by measurement rather than
+ * by name.
+ *
+ * **One value, because there is only one case.** The satellite is not drawn on
+ * touch at all — see {@link SidebarRowProps.trailingAction} — so a coarse
+ * variant would be a number no render can reach, and an unreachable branch in a
+ * geometry constant is exactly the kind of thing that later gets "kept in sync"
+ * with nothing.
  */
 const SIDEBAR_ROW_TRAILING_ACTION_OFFSET = 'right-7';
+
+/**
+ * How tall a row is, by pointer.
+ *
+ * 28px under a mouse — 13px type on a 28px line, the density §11 asks for. 44px
+ * under a thumb: the top of the 40–44px band `design-system.md` states, and the
+ * same number as the "⋮" that sits inside it. **The two have to be equal, not
+ * merely both ≥40.** The kebab is absolutely positioned and vertically centred,
+ * so a 44px control in a 40px row hangs 2px into the rows above and below it,
+ * and a thumb landing near a row's edge opens its neighbour's menu.
+ */
+const SIDEBAR_ROW_HEIGHT = { fine: 'min-h-7', coarse: TOUCH_TARGET_MIN_H } as const;
 
 /**
  * What may never appear inside a trailing action's width reservation.
@@ -198,7 +221,7 @@ export type SidebarRowMenu =
 /** Props for {@link SidebarRow}. */
 export interface SidebarRowProps {
   /**
-   * The mark at the head of the row, in a fixed 18px slot — an agent's face, a
+   * The mark at the head of the row, in an unvarying 18px slot — an agent's face, a
    * room's `#`, a stack of faces for a group conversation. A node rather than a
    * descriptor so `shared/` never has to know what an agent or a room is.
    */
@@ -213,6 +236,14 @@ export interface SidebarRowProps {
    * glyph's own 18px square: same target, same look, one level out. It is a
    * satellite like the "⋮" — `ArrowLeft` from the row reaches it, and it is
    * never a Tab stop of its own.
+   *
+   * **Not drawn on touch, and the caller owes the action a menu node.** The
+   * overlay is exactly the glyph's 18px square, and 18px is half the smallest
+   * thing a thumb hits reliably (P4 AC-4). It cannot simply grow: a 44px target
+   * on the left of a 44px row reaches ten pixels into the row's own title, so
+   * tapping the first letter of a conversation would open a profile instead.
+   * The honest fix is the one every phone app makes — the row is the row, and
+   * its second action lives in the menu a long press opens.
    */
   glyphAction?: { onClick: () => void; label: string };
   /**
@@ -273,6 +304,14 @@ export interface SidebarRowProps {
    * `ArrowRight` again continues to the "⋮", it is never a Tab stop of its own,
    * it rides the drag transform with the row, and a right-click on it opens the
    * row's own menu.
+   *
+   * **Not drawn on touch, and the caller owes the action a menu node** — the
+   * same contract {@link glyphAction} carries, for the same reason arrived at
+   * from the other side of the row. A 44px chip and a 44px "⋮" side by side
+   * would spend 88px of a 390px screen on two satellites of a row whose whole
+   * job is to be pressed. BC-35 already says so for the one caller there is:
+   * the session switcher is reachable "from the agent row's 'N live' chip, a
+   * long-press on mobile, and ⌘K" — three doors, and the phone's is the menu.
    */
   trailingAction?: { content: ReactNode; onClick: () => void; label: string };
   /**
@@ -415,6 +454,7 @@ export function SidebarRow({
   // `useIsMobile()` call one layer up (design-system §Hover Pattern Mobile
   // Alternatives).
   const isMobile = useIsMobile();
+  const pointer = isMobile ? 'coarse' : 'fine';
   const plainTitle = titleText ?? (typeof title === 'string' ? title : '');
   const showSecondLine = hasSecondLine({ reservesVerbLine, preview });
   // Reserving the line decides WHETHER there is a second line; it does not
@@ -462,11 +502,12 @@ export function SidebarRow({
         data-slot={dataSlot}
         {...{ [SIDEBAR_ROW_ATTRIBUTE]: '' }}
         className={cn(
-          // 13px on a 28px line, the density §11 asks for: `min-h-7` is the
-          // line and `py-1` is what keeps a one-line row on it exactly. A row
-          // that earned a second line grows past it, which is the point —
+          // 13px on a 28px line, the density §11 asks for: the height constant
+          // is the line and `py-1` is what keeps a one-line row on it exactly.
+          // A row that earned a second line grows past it, which is the point —
           // height carries meaning here.
-          'focus-visible:ring-sidebar-ring flex min-h-7 w-full rounded-md py-1 text-left text-[13px] outline-hidden transition-colors duration-100 focus-visible:ring-2 active:scale-[0.98]',
+          'focus-visible:ring-sidebar-ring flex w-full rounded-md py-1 text-left text-[13px] outline-hidden transition-colors duration-100 focus-visible:ring-2 active:scale-[0.98]',
+          SIDEBAR_ROW_HEIGHT[pointer],
           SIDEBAR_ROW_INSET,
           showSecondLine ? 'items-start py-1.5' : 'items-center',
           isActive
@@ -481,7 +522,7 @@ export function SidebarRow({
           // one property a call site may not have: the gutter is what holds the
           // "⋮" off the row's own words, and a caller's `px-*` landing after it
           // would silently take it back. See {@link SIDEBAR_ROW_GUTTER}.
-          SIDEBAR_ROW_GUTTER
+          SIDEBAR_ROW_GUTTER[pointer]
         )}
       >
         {srLabel !== undefined && <span className="sr-only">{srLabel}</span>}
@@ -508,15 +549,17 @@ export function SidebarRow({
               </>
             ) : null}
             <span className={ROW_TITLE_CLASS}>{title}</span>
-            {(trailing !== undefined || trailingAction !== undefined) && (
+            {(trailing !== undefined || (trailingAction !== undefined && !isMobile)) && (
               <span className={cn('flex items-center gap-1.5', ROW_TRAILING_CLASS)}>
                 {trailing}
                 {/* The trailing action's own width, held open for it. Invisible
                     rather than hidden, so it still occupies the line: this is
                     what makes a long title ellipsize BEFORE the control instead
                     of sliding under it. Last in the slot, because the overlay
-                    above it is parked against the row's right gutter. */}
-                {trailingAction !== undefined && (
+                    above it is parked against the row's right gutter. Not held
+                    on touch, where the control it reserves for is not drawn —
+                    a reservation for nothing is a title truncated for nothing. */}
+                {trailingAction !== undefined && !isMobile && (
                   <span
                     ref={reservationRef}
                     data-slot="sidebar-row-trailing-reservation"
@@ -559,10 +602,9 @@ export function SidebarRow({
           actionsLabel={actionsLabel ?? ''}
           menuWidth={menuWidth}
           hideActionsTrigger={editor !== undefined}
-          alwaysShowActions={isMobile}
         >
           {row}
-          {glyphAction !== undefined && editor === undefined && (
+          {glyphAction !== undefined && editor === undefined && !isMobile && (
             <button
               type="button"
               aria-label={glyphAction.label}
@@ -582,7 +624,7 @@ export function SidebarRow({
               )}
             />
           )}
-          {trailingAction !== undefined && editor === undefined && (
+          {trailingAction !== undefined && editor === undefined && !isMobile && (
             <button
               type="button"
               aria-label={trailingAction.label}

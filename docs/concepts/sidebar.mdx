@@ -1,0 +1,141 @@
+---
+title: Your sidebar
+description: What Heads up, Today and Library are, why things move between them, and what the tabs on your phone do
+---
+
+import { Callout } from 'fumadocs-ui/components/callout';
+
+# Your sidebar
+
+The column down the left of DorkOS has three parts, stacked in this order:
+
+1. **Heads up** is what needs you right now.
+2. **Today** is what you were working on.
+3. **Library** is the structure you built yourself.
+
+They are not three lists of the same things. Each one answers a different question, and a
+conversation can be in more than one of them at the same time.
+
+## Heads up: what needs you
+
+Only four things are allowed in:
+
+- an agent asking permission to do something
+- an agent asking you a question
+- a session that stopped with an error
+- one gentle nudge about a session that has gone quiet
+
+That is the whole list. Mentions, unread channels, direct messages and background work never
+appear here. So a Heads up zone with something in it always means something.
+
+It shows up to three at a time, plus a "+ N more" row that takes you to the home page where the
+full list lives. Agents that are simply busy are summed into one "N working" line rather than a
+row each. When the last thing needing you is done, Heads up says "All clear" for a moment and
+then folds away.
+
+Nothing here snoozes. The one thing you can wave away is the nudge about a session that has gone
+quiet. Everything else leaves when the thing it is about is resolved, and not before.
+
+<Callout type="info">
+  On a fresh install, **Getting started** sits in the same slot and suggests what you have not done
+  yet. Each suggestion retires for good once you have done it. The moment a real signal arrives,
+  Heads up takes the slot back.
+</Callout>
+
+## Today: what you were doing
+
+Today holds the conversations, channels, direct messages and threads you have actually been in,
+newest first, about eight of them. The conversation you have open and anything addressed to you
+by name are always shown, even when that takes the list past eight.
+
+The order is by when **you** last touched each one. An agent starting a turn, finishing one, or
+posting a message moves nothing. Your recent conversations stay put while your agents work.
+
+A few other things Today does:
+
+- The conversation you have open is always its first row.
+- Rows refuse to reorder while your pointer is inside Today. The row under your cursor is still
+  the row you meant to click.
+- Work you did not start, like a scheduled run, sits behind one "+ N automated" row.
+- Threads are rows of their own, showing the message they hang off.
+
+Anything you have not touched since 4am leaves Today the next morning. The conversation you have
+open stays, and so does anything addressed to you by name. Nothing is deleted: it is all still
+one ⌘K away.
+
+## Library: what you built
+
+Your pins, your channels, your direct messages, your agents and your groups. Nothing here moves on
+its own, and nothing in it moved when the sidebar was redesigned.
+
+Your pins and the groups you make by hand keep the order you put them in. Your channels and direct
+messages are listed by name, and each section's `⋮` menu can sort it differently.
+
+This is the calm part of the sidebar. It never asks you for anything, and it never shows a count
+on your phone.
+
+Click a section's name to fold it away. Hold `Alt` (or `Option` on a Mac) while you click and
+every section folds at once. A folded section keeps telling you what is inside it: the unread
+count and the "someone is working" dot move up onto its name.
+
+Sections appear when you have something to put in them. There is no "Direct messages" heading
+until you have a conversation, and no "Pins" until you pin something.
+
+## Why things move in and out
+
+Heads up and Today are **worked out for you**. DorkOS decides what is in them, from what needs
+you and from what you have been doing. That is why you cannot drag a row into either one. If you
+try, DorkOS says so and tells you what to do instead.
+
+Library is **yours**. Pin things, gather them into groups, and drag them around inside a pin list
+or a group you made by hand. What you arrange there stays arranged.
+
+So the rule is: if you want something to stay in one place, pin it to Library. Everything else
+comes and goes on its own, and nothing is ever lost when it does.
+
+## Where the old sidebar's things went
+
+| You used to…                                           | Now                                                                           |
+| ------------------------------------------------------ | ----------------------------------------------------------------------------- |
+| Hunt for the right `+` to start something              | One **New** button at the top. A section's `+` opens it with that item picked |
+| Search from memory with ⌘K                             | A "Jump to anything…" pill under the New button opens the same search         |
+| Read a row of icons and a version number at the bottom | One slim strip: Home, Team, Marketplace, Connections, and **✦ Ask DorkBot**   |
+| Open Settings or your profile from two places          | Each has one door. The `…` in the footer strip keeps sign-out, theme and help |
+| Find your pins, channels, agents and groups            | Exactly where you left them, in Library                                       |
+
+Two things worth knowing. The version number is gone from the bottom of the sidebar; it lives in
+the menu at the top now, with a "Check for updates" beside it. When a new version is genuinely
+waiting, an "Update ready" pill appears above the footer strip and goes away once you have it.
+
+And starting your **first** direct message moved, because the "Direct messages" heading now waits
+until you have one. Use **New › Direct message**. Once you have a conversation, the `+` beside
+Direct messages works as it always did.
+
+<Callout type="info">
+  ⌘K finds conversations, channels, agents and pages by name. It does not search inside your
+  messages. Use it to get somewhere, not to find a sentence.
+</Callout>
+
+## On a phone
+
+Below tablet width there is no sidebar and no slide-out menu. There are four tabs along the
+bottom instead:
+
+- **Home** is Heads up and Today together. The number on the tab is the same count Heads up
+  shows, so it only ever means "this many agents are waiting on you".
+- **Library** is your channels, direct messages, agents and pins. It never shows a number.
+- **DorkBot** opens a conversation with the assistant that knows how DorkOS works.
+- **You** holds your account and the rest of the app.
+
+Switching tabs keeps your place in each one. Nothing has to be swiped away before you can use
+what is underneath.
+
+Three things work differently under a thumb:
+
+- **Press and hold any row** for the same list of actions a right-click gives you on a computer.
+  A press that turns into a scroll never opens it.
+- **"Catch up"** at the top of Today marks every unread channel and direct message in it read, in
+  one tap. It says how many it is about to clear, and it only appears when there is something to
+  clear.
+- **Approvals appear in Home**, with Allow and Don't allow on the card. You can unblock an agent
+  without opening the conversation it came from.

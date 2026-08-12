@@ -29,7 +29,6 @@ import { assertBoundary, parseSessionId, sendError } from '../lib/route-utils.js
 import { DEFAULT_CWD } from '../lib/resolve-root.js';
 import { logError, logger } from '../lib/logger.js';
 import { runInDispatch } from '../lib/dispatch-context.js';
-import { logRefusal } from '../services/observability/refusals.js';
 import {
   recordDispatchEnd,
   recordDispatchStart,
@@ -41,12 +40,16 @@ import {
   getOrCreateProjector,
   persistenceModeFor,
   dispatchMessage,
-  applyTaskOriginOverlay,
-  applyRoomOriginOverlay,
+  applySessionOriginOverlays,
+  sessionOriginResolvers,
   overlayStoredSettings,
 } from '../services/session/index.js';
-import type { ResolveTaskOrigins, ResolveRoomOrigins } from '../services/session/index.js';
 import { sessionUiActionHandler } from './session-ui-action-handler.js';
+import {
+  sessionQueueListHandler,
+  sessionQueueRemoveHandler,
+  sessionQueueUpdateHandler,
+} from './session-queue-handler.js';
 import { sessionEventsHandler } from './session-events-handler.js';
 import { sessionCommandIntentHandler } from './session-command-intent-handler.js';
 import { sessionDevtoolsIngestHandler } from './session-devtools.js';
@@ -86,14 +89,12 @@ router.get('/', async (req, res) => {
   // `GET /:id` also uses, so the two endpoints cannot report different modes
   // for one session (DOR-463).
   overlayStoredSettings(page, runtimeRegistry);
-  // Overlay Pulse task origin (session-origin-legibility) — runtime-agnostic,
-  // catches direct-branch Pulse runs the transcript-head classifier can't see.
-  // Overlay room origin FIRST, so a scheduled task that posts into a room still
-  // reads as the task somebody scheduled (see room-origin-overlay's doc).
-  const resolveRoomOrigins = req.app.locals.resolveRoomOrigins as ResolveRoomOrigins | undefined;
-  applyRoomOriginOverlay(page, resolveRoomOrigins);
-  const resolveTaskOrigins = req.app.locals.resolveTaskOrigins as ResolveTaskOrigins | undefined;
-  applyTaskOriginOverlay(page, resolveTaskOrigins);
+  // Overlay the origins no transcript can carry — the room binding and the Pulse
+  // run (session-origin-legibility, team-room-home §D2.3). The ordering rule
+  // lives in `applySessionOriginOverlays`, which the global session-list stream
+  // applies too, so a room turn reads the same way whichever one a client heard
+  // it from (DOR-1141).
+  applySessionOriginOverlays(page, sessionOriginResolvers(req.app.locals));
   res.json(warnings.length > 0 ? { sessions: page, warnings } : { sessions: page });
 });
 
@@ -121,15 +122,10 @@ router.get('/recent', async (req, res) => {
   // Same persisted-settings overlay as the other two session reads — a recent
   // session is the same session, so it must not report a different mode.
   overlayStoredSettings(sessions, runtimeRegistry);
-  // Overlay Pulse task origin (session-origin-legibility) — runtime-agnostic,
-  // catches direct-branch Pulse runs the transcript-head classifier can't see.
-  // Overlay room origin (team-room-home §D2.3) BEFORE the Pulse overlay: a room
-  // turn is an engine run under a thread the reader can already see, and this is
-  // the only place that knows — the transcript head carries no room marker.
-  const resolveRoomOrigins = req.app.locals.resolveRoomOrigins as ResolveRoomOrigins | undefined;
-  applyRoomOriginOverlay(sessions, resolveRoomOrigins);
-  const resolveTaskOrigins = req.app.locals.resolveTaskOrigins as ResolveTaskOrigins | undefined;
-  applyTaskOriginOverlay(sessions, resolveTaskOrigins);
+  // The same origin overlays the list endpoint applies, in the same order — a
+  // room turn is an engine run under a thread the reader can already see, and
+  // the binding table is the only place that knows.
+  applySessionOriginOverlays(sessions, sessionOriginResolvers(req.app.locals));
   res.json({ sessions, agentActivity, warnings });
 });
 
@@ -191,10 +187,7 @@ router.get('/:id', async (req, res) => {
   // including when this route is reached by a retired id, since the resolver
   // keys off the session it actually resolved, not the id asked for.
   overlayStoredSettings([session], runtimeRegistry);
-  const resolveRoomOrigins = req.app.locals.resolveRoomOrigins as ResolveRoomOrigins | undefined;
-  applyRoomOriginOverlay([session], resolveRoomOrigins);
-  const resolveTaskOrigins = req.app.locals.resolveTaskOrigins as ResolveTaskOrigins | undefined;
-  applyTaskOriginOverlay([session], resolveTaskOrigins);
+  applySessionOriginOverlays([session], sessionOriginResolvers(req.app.locals));
   res.json(session);
 });
 
@@ -567,18 +560,26 @@ async function resolveRuntimeTypeForNewSession(opts: {
   return runtimeRegistry.getDefaultType();
 }
 
-// POST /api/sessions/:id/messages — Trigger a turn (trigger-only, ADR-0264).
+// POST /api/sessions/:id/messages — Accept a message (trigger-only, ADR-0264;
+// accept-only, spec `persistent-session-runtime` §3.3).
 //
-// This endpoint NO LONGER streams tokens in-band. It validates, acquires the
-// session write-lock, and STARTS the turn server-side, feeding the runtime's
-// `sendMessage` generator into the per-session projector (the single delivery
-// path). It then responds `202 Accepted` with the CANONICAL session id and
-// returns — the turn runs detached, delivering its tokens solely on
-// `GET /:id/events`. The lock is bound to the turn's real duration (not the
-// 202) and released on completion AND on error; a detached failure is surfaced
-// INTO the projector so `/events` consumers see it. See
-// `services/session/trigger-turn.ts` for the orchestration and the lock/error
-// invariants.
+// This endpoint NO LONGER streams tokens in-band, and no longer waits for the
+// session to be free. It validates and hands the message to the dispatcher,
+// which either starts the turn now or puts it on the session's durable queue,
+// then answers `202 Accepted` with the canonical session id, the message id, the
+// delivery outcome and the queue position. Everything after that — the turn
+// starting, its tokens, its end — arrives on `GET /:id/events`, the single
+// delivery path.
+//
+// **There is no `409` here.** A busy session used to refuse a second window;
+// now it queues, and the person can edit or remove what is waiting through the
+// queue routes below. The write-lock still exists — it is the mutex one turn
+// window holds, and its inactivity TTL still reclaims a turn that went dark
+// (DOR-782) — but it is no longer an answer this route can give. The lock is
+// bound to the turn's real duration and released on completion AND on error; a
+// detached failure is surfaced INTO the projector so `/events` consumers see it.
+// See `services/session/message-dispatcher.ts` and `trigger-turn.ts` for the
+// orchestration and the lock/error invariants.
 router.post('/:id/messages', async (req, res) => {
   const sessionId = parseSessionId(req.params.id);
   if (!sessionId) return sendError(res, 400, 'Invalid session ID', 'INVALID_SESSION_ID');
@@ -596,6 +597,7 @@ router.post('/:id/messages', async (req, res) => {
     workspaceKey,
     workspaceProvider,
     seedContext,
+    disposition,
   } = parsed.data;
 
   // Opt-in workspace binding (DOR-84). When a workspaceKey is supplied, the
@@ -710,6 +712,9 @@ router.post('/:id/messages', async (req, res) => {
       // context bag, never `content`: the prompt stays the person's message
       // byte for byte, and the seed is stripped from every rendered transcript.
       ...(seedContext ? { seedContext } : {}),
+      // Absent means `queue`, which is also what every disposition resolves to
+      // until the native rungs land (P4). The receipt says which it was.
+      ...(disposition ? { disposition } : {}),
       projector,
       runtime,
       onError: (err) => {
@@ -726,37 +731,30 @@ router.post('/:id/messages', async (req, res) => {
     })
   );
 
-  if (!result.accepted) {
-    const lockInfo = runtime.getLockInfo(sessionId);
-    // A refused trigger still opened a dispatch above, and `onSettled` fires
-    // only for a turn that STARTED — so nothing else will ever close this one.
-    // Left open, the most common interactive refusal sat at the top of
-    // `GET /api/debug/dispatches` reading as a turn still running.
-    recordDispatchEnd(dispatchId, 'refused');
-    // `shown`, so `info`: the caller gets a 409 naming the holder, which is a
-    // refusal the person can see and act on. It is deliberately not a `warn` —
-    // the level is reserved for refusals that left no other trace.
-    //
-    // The id is passed explicitly because this line runs AFTER `runInDispatch`
-    // has returned: the scope that would have supplied it ambiently is gone by
-    // the time the 409 is written.
-    logRefusal('[POST /messages] session locked', {
-      reason: 'session_locked',
-      visibility: 'shown',
-      dispatchId,
+  if (result.queued) {
+    logger.info('[POST /messages] queued behind the running turn', {
       sessionId,
-      detail: { lockedBy: lockInfo?.clientId ?? 'unknown' },
-    });
-    return res.status(409).json({
-      error: 'Session locked',
-      code: 'SESSION_LOCKED',
-      lockedBy: lockInfo?.clientId ?? 'unknown',
-      lockedAt: lockInfo ? new Date(lockInfo.acquiredAt).toISOString() : new Date().toISOString(),
+      dispatchId,
+      messageId: result.outcome.messageId,
+      queuePosition: result.queuePosition,
     });
   }
 
-  res.status(202).json({ sessionId: result.canonicalId });
+  res.status(202).json({
+    sessionId: result.canonicalId,
+    messageId: result.outcome.messageId,
+    outcome: result.outcome,
+    queuePosition: result.queuePosition,
+  });
 });
+
+// GET|PATCH|DELETE /api/sessions/:id/queue — the messages waiting on a session.
+// Handlers live in `session-queue-handler.ts` so this file stays under the size
+// rule. The queue is per SESSION: any window may edit or remove any message on
+// it, whichever window typed it. See the handler's module doc.
+router.get('/:id/queue', sessionQueueListHandler);
+router.patch('/:id/queue/:messageId', sessionQueueUpdateHandler);
+router.delete('/:id/queue/:messageId', sessionQueueRemoveHandler);
 
 // POST /api/sessions/:id/approve - Approve pending tool call
 router.post('/:id/approve', async (req, res) => {
@@ -866,8 +864,11 @@ router.post('/:id/submit-answers', async (req, res) => {
 // POST /api/sessions/:id/ui-action — Generative-UI widget interactivity channel
 // (spec gen-ui-tier1 §3). The handler lives in `session-ui-action-handler.ts`
 // so this route file stays under the file-size rule, mirroring `/:id/events`.
-// Semantics: mirrors /messages (fresh turn via the dispatcher, 202, turn streams
-// over /events; busy → 409 SESSION_LOCKED) — see the handler's module doc.
+// Semantics: fresh turn via the dispatcher, 202, turn streams over /events. A
+// busy session still answers 409 SESSION_LOCKED here — unlike /messages, which
+// now queues: a widget action is answered by the turn it was clicked in, so
+// running it against whatever a later turn leaves behind is not the same action.
+// See the handler's module doc.
 router.post('/:id/ui-action', sessionUiActionHandler);
 
 // POST /api/sessions/:id/command-intents/:intent — Runtime-fulfilled command

@@ -103,6 +103,9 @@ import type {
   McpAppResourceResponse,
   DevtoolsIngest,
   ForkShapeRequest,
+  MessageDisposition,
+  QueueMoveTarget,
+  QueuedMessage,
 } from './schemas.js';
 import type { TemplateEntry } from './template-catalog.js';
 import type { ClientContext } from './additional-context.js';
@@ -612,13 +615,16 @@ export interface Transport extends RoomTransport {
    * `sessionId` differs from `sessionId`, the caller re-targets the durable
    * stream and rewrites the URL to the canonical id (create-on-first-message).
    *
-   * Throws a typed `SESSION_LOCKED` error on `409` (another client holds the
-   * lock) so callers can restore input and surface a busy banner.
+   * **A busy session never refuses.** The server owns the queue, so a message
+   * sent into a running turn is accepted and waits its turn — the `202` says so
+   * and the queue itself arrives on the session's event stream. There is no
+   * `409 SESSION_LOCKED` on this path any more (spec
+   * `persistent-session-runtime` §3.3).
    *
    * @param sessionId - Target session id (a client UUID for a brand-new session)
    * @param content - User message text
    * @param cwd - Optional working directory override
-   * @param options - Optional additional parameters (clientMessageId for server-echo ID, context for neutral client signals: uiState, queued, runtime as the first-turn runtime hint resolved hint > agent manifest > default and persisted first-write-wins per ADR-0255, seedContext for background the agent reads and the person never sees — see `SeedContextData`)
+   * @param options - Optional additional parameters (clientMessageId for server-echo ID, context for neutral client signals: uiState, queued, runtime as the first-turn runtime hint resolved hint > agent manifest > default and persisted first-write-wins per ADR-0255, seedContext for background the agent reads and the person never sees — see `SeedContextData`, disposition for what to do when the session is already working — absent means `queue`)
    */
   postMessage(
     sessionId: string,
@@ -629,8 +635,42 @@ export interface Transport extends RoomTransport {
       context?: ClientContext;
       runtime?: string;
       seedContext?: string;
+      disposition?: MessageDisposition;
     }
   ): Promise<{ sessionId: string }>;
+  /**
+   * Change a waiting message's words, its place in the queue, or both.
+   *
+   * `PATCH /sessions/:id/queue/:messageId`. The queue belongs to the SESSION,
+   * so any window may edit any message on it — that is the point of the queue
+   * living on the server. A move names another message to land before or after
+   * rather than an index, because an index means something different to every
+   * window the moment anyone else edits the queue.
+   *
+   * Rejects with a `QUEUED_MESSAGE_NOT_FOUND` error when the message is no
+   * longer waiting: it already started running, or another window removed it.
+   * Callers treat that as "the queue moved on", never as a failure to report.
+   *
+   * @param sessionId - The session whose queue holds the message.
+   * @param messageId - The server-minted id of the waiting message.
+   * @param edit - New words, a move, or both. At least one is required.
+   */
+  updateQueuedMessage(
+    sessionId: string,
+    messageId: string,
+    edit: { content?: string; move?: QueueMoveTarget }
+  ): Promise<{ message: QueuedMessage; queue: QueuedMessage[] }>;
+  /**
+   * Take a waiting message off the queue, so it never runs.
+   *
+   * `DELETE /sessions/:id/queue/:messageId`. Rejects with
+   * `QUEUED_MESSAGE_NOT_FOUND` when it is already gone — see
+   * {@link updateQueuedMessage}.
+   *
+   * @param sessionId - The session whose queue holds the message.
+   * @param messageId - The server-minted id of the waiting message.
+   */
+  removeQueuedMessage(sessionId: string, messageId: string): Promise<{ queue: QueuedMessage[] }>;
   /**
    * Trigger a RUNTIME-fulfilled command intent (currently `compact`) for a
    * session and resolve to the canonical session id.

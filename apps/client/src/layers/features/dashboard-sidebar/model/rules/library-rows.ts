@@ -31,10 +31,10 @@ const LIVE_CHIP_MIN = 2;
  * a teammate, not a folder (design-decisions §4) — which is why the row carries
  * no expansion affordance and the depth lives in the session switcher.
  *
- * **Its liveness is Now's liveness** ({@link liveSessionIdsForPath}): the same
+ * **Its liveness is Heads up's liveness** ({@link liveSessionIdsForPath}): the same
  * human-origin rule, off the same stream, so the dot, the "N live" chip and —
  * through `rollUpCollapsedSection`, which sums these rows — the folded section's
- * "N agents working" all agree with the "N working" line in Now. They did not before
+ * "N agents working" all agree with the "N working" line in Heads up. They did not before
  * (DOR-1137): this row demanded the session ALSO be in the last-ten REST
  * window, which a turn started seconds ago is not.
  *

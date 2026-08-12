@@ -29,10 +29,10 @@ import type { SidebarRowModel, SidebarSectionModel } from '../build-sidebar-mode
  *
  * The predicate is the caller's because the caller is where the truth is:
  * `buildLibrarySections` holds the snapshot and the room index, so it can put
- * an agent row's answer through `liveSessionIds` — the same list Now counts —
+ * an agent row's answer through `liveSessionIds` — the same list Heads up counts —
  * rather than through a status the row had already collapsed.
  *
- * A live session whose directory nothing knows is in Now's number and in no
+ * A live session whose directory nothing knows is in Heads up's number and in no
  * section's, because it is a member of nothing. That is a gap in attribution,
  * not in signal: the operator is still told something is running.
  *

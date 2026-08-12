@@ -121,9 +121,12 @@ describe('AdvancedTab', () => {
     expect(screen.getByText(/This applies to chat for now/i)).toBeInTheDocument();
   });
 
-  it('the formatting row is off when nobody has turned it on', () => {
+  it('the formatting row is on when nobody has turned it off', () => {
+    // The shipped default since 2026-08-12. This wrapper's config carries no
+    // `ui` block at all, so what the switch shows here is exactly what a person
+    // who never opened this tab gets.
     render(<AdvancedTab />, { wrapper: createWrapper() });
-    expect(screen.getByRole('switch', { name: /Format text as you type/i })).not.toBeChecked();
+    expect(screen.getByRole('switch', { name: /Format text as you type/i })).toBeChecked();
   });
 
   it('reflects the stored value when the preference is on', async () => {
@@ -138,6 +141,13 @@ describe('AdvancedTab', () => {
     const { wrapper, transport } = createConfigHarness({ ui: { composer: { richText: false } } });
     render(<AdvancedTab />, { wrapper });
 
+    // Wait for the stored `false` to arrive before clicking. Config resolves a
+    // tick late and the default is now `true`, so a click on the first render
+    // would toggle a switch that is still showing the default and write the
+    // opposite of what this test claims to be testing.
+    await waitFor(() =>
+      expect(screen.getByRole('switch', { name: /Format text as you type/i })).not.toBeChecked()
+    );
     fireEvent.click(screen.getByRole('switch', { name: /Format text as you type/i }));
 
     await waitFor(() => expect(transport.updateConfig).toHaveBeenCalledTimes(1));

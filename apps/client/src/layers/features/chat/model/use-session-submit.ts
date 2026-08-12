@@ -37,7 +37,10 @@ import {
   sessionKeys,
 } from '@/layers/entities/session';
 import { useRuntimeCapabilities } from '@/layers/entities/runtime';
+import { useInteractionStore } from '@/layers/entities/interactions';
+import { carryInteractionForward } from '../lib/carry-interaction-forward';
 import { clearComposerOnConfirmed } from '../lib/clear-composer-on-confirmed';
+import { sequenceEnqueue } from '../lib/enqueue-sequencer';
 import type { SessionStoreActions } from './use-session-store-actions';
 import type { NativeCommandResult } from './native-commands';
 import type { ChatSessionOptions, ChatStatus } from './chat-types';
@@ -66,7 +69,6 @@ interface UseSessionSubmitParams {
   // Store setters (sourced from useSessionStoreActions)
   setInput: SessionStoreActions['setInput'];
   setError: SessionStoreActions['setError'];
-  setSessionBusy: SessionStoreActions['setSessionBusy'];
   /**
    * Native (client-side) command interceptor. Returns a {@link NativeCommandResult}:
    * `handled` is true when `content` was a registered DorkOS command (the runtime
@@ -98,7 +100,6 @@ export function useSessionSubmit({
   takeSeedContext,
   setInput,
   setError,
-  setSessionBusy,
   tryNativeCommand,
 }: UseSessionSubmitParams) {
   // Refs to avoid stale closures inside the async submit callback.
@@ -135,13 +136,6 @@ export function useSessionSubmit({
     onSessionIdChangeReplaceRef.current = onSessionIdChangeReplace;
   });
 
-  const sessionBusyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(() => {
-    return () => {
-      if (sessionBusyTimerRef.current) clearTimeout(sessionBusyTimerRef.current);
-    };
-  }, []);
-
   // ---------------------------------------------------------------------------
   // Submission
   // ---------------------------------------------------------------------------
@@ -152,19 +146,12 @@ export function useSessionSubmit({
    *
    * @param content - The trimmed message text to send (PRISTINE — never annotated).
    * @param clearInput - When true, clears the input state after triggering.
-   * @param restoreContentOnLock - Content to restore if the session is locked.
-   * @param queued - True when this send originated from a queue flush; sent
-   *   as `context: { queued: true }` so the server renders a `<queue_note>`.
    * @param opts - `{ kickoff: true }` for the M4 auto-first-turn: the content is
    *   a DorkOS-injected "introduce yourself" instruction, not a person's typing,
    *   so it skips the native-command funnel, the file/content transform, and —
    *   the honesty seam — the optimistic user bubble. It still rides the full
    *   trigger machinery (subscribe-first, rekey, watchdog) so the greeting
    *   streams in normally.
-   *   `{ restoreQueued }` is the queue's undo for a flushed message: the queue
-   *   dequeues before the trigger resolves, so ANY failed trigger — a lock the
-   *   server still holds while a turn sits blocked on an approval, a dead
-   *   network — has to put the message back rather than drop it (DOR-480).
    *   `{ cwd }` pins the working directory for THIS send, overriding the ambient
    *   selected directory. The newborn-agent kickoff uses it to run the first turn
    *   in the agent's own directory (from the birth record) rather than whatever
@@ -176,9 +163,7 @@ export function useSessionSubmit({
     async (
       content: string,
       clearInput: boolean,
-      restoreContentOnLock: string,
-      queued = false,
-      opts: { kickoff?: boolean; restoreQueued?: () => void; cwd?: string } = {}
+      opts: { kickoff?: boolean; cwd?: string } = {}
     ) => {
       // Native (client-side) command: runs locally and must NEVER reach the
       // runtime/model. This is the funnel safety net for the non-streaming paths
@@ -192,41 +177,10 @@ export function useSessionSubmit({
       if (!opts.kickoff) {
         const native = tryNativeCommand(content);
         if (native.handled) {
-          // A REJECTED command performed nothing, and this return is upstream of
-          // the try/catch that restores a queued flush — so a queued message the
-          // operator had rewritten into one (say a bare `/rename`) was dequeued
-          // and then simply ceased to exist: the composer never held it either
-          // (DOR-480). Put it back. Restoring is idempotent, so a later edge that
-          // flushes it again just returns it again, and the row stays on screen
-          // with its Send-now control until the text is corrected.
-          //
-          // A command that RAN is not restored — it did what was asked, so the
-          // message is consumed and re-queueing would re-run it on every edge.
-          // But `ran` is only "the dispatch started" for a command that finishes
-          // asynchronously: a queued `/compact` refused by the session lock would
-          // otherwise be spent with no compaction and nothing to recover. Settle
-          // those on `confirmed` instead, so "it ran" has to be true before the
-          // message is treated as gone.
-          if (!native.ran) {
-            opts.restoreQueued?.();
-          } else if (native.confirmed && opts.restoreQueued) {
-            const restoreQueued = opts.restoreQueued;
-            // The rejection arm is not defensive padding: without it "never
-            // rejects" is a convention two producers happen to honour rather
-            // than something the call site can rely on. Treating an unexpected
-            // rejection as "not confirmed" is also the right default — it puts
-            // the message back instead of silently eating it.
-            void native.confirmed.then(
-              (accepted) => {
-                if (!accepted) restoreQueued();
-              },
-              () => restoreQueued()
-            );
-          }
-          // The composer's clear settles on `confirmed` for the same reason the
-          // queue's undo does: emptying it on "the dispatch started" deleted
-          // `/compact focus on the API changes` and then toasted that the agent
-          // was busy, with the instructions already gone.
+          // The composer's clear settles on `confirmed`, never on `ran`:
+          // emptying it on "the dispatch started" deleted `/compact focus on the
+          // API changes` and then toasted that the agent was busy, with the
+          // instructions already gone (DOR-480).
           if (clearInput && native.ran) {
             if (native.confirmed) {
               clearComposerOnConfirmed(sessionId, content, native.confirmed);
@@ -244,6 +198,38 @@ export function useSessionSubmit({
       // `?dir=` has settled onto the new agent.
       const cwd = opts.cwd ?? selectedCwdRef.current;
       setError(null);
+
+      // **Writing is the strongest thing a person can do to a conversation, so
+      // it is recorded like opening one** (DOR-1156). Today's membership and
+      // order are `max(userLastMessageAt, userLastOpenedAt)` (BC-16), and the
+      // client half of that pair was only ever written by a click on a sidebar
+      // row — so a person could type a paragraph into an agent, walk away, and
+      // find the conversation nowhere in Today. Recorded HERE, at the act,
+      // rather than on the 202: the operator's rule is about what THEY did, and
+      // a message that fails to reach the runtime was still one they wrote.
+      //
+      // The agent gets a record too, exactly as `SidebarChrome.openSession`
+      // does, so one act updates both the conversation's place in Today and the
+      // agent's frecency — a thing you write in is a thing you use.
+      //
+      // The kickoff is the one send excluded, because nobody performed an act:
+      // it is DorkOS-injected, so nothing it does is evidence of the operator's
+      // attention. That is the honesty seam this hook applies everywhere else.
+      //
+      // **A queued message cannot reach this function at all**, and that is
+      // worth saying out loud because it used to and had to be excluded by
+      // hand. The queue is the server's now (`persistent-session-runtime`):
+      // {@link enqueueContent} posts with `disposition: 'queue'` and the server
+      // dispatches when the running turn ends. So the only callers left are the
+      // operator's own — `handleSubmit`, `retryMessage` — plus the kickoff.
+      // Were a flush ever routed back through here, it would advance Today's
+      // order key at the instant an AGENT finished talking, which BC-16 forbids
+      // outright; the enqueue site records instead, at the keystroke
+      // (`useChatQueue.handleQueue`).
+      if (!opts.kickoff) {
+        useInteractionStore.getState().recordOpened('session', targetSessionId);
+        if (cwd) useInteractionStore.getState().recordOpened('agent', cwd);
+      }
 
       // Subscribe-first, and BEFORE the upload await. `attachSession` re-targets
       // the single active-session connection, and the only other caller is an
@@ -279,12 +265,10 @@ export function useSessionSubmit({
             ? await transformContentRef.current(content)
             : content;
       } catch (err) {
-        // Nothing was sent. A queued message goes back to its row; a typed one
-        // is still in the composer, because `clearInput` has not run yet — the
-        // clear used to happen before the upload and only `SESSION_LOCKED`
-        // restored it, so an upload failure on an ordinary send destroyed the
-        // message outright.
-        opts.restoreQueued?.();
+        // Nothing was sent, and the words are still in the composer because
+        // `clearInput` has not run yet — the clear used to happen before the
+        // upload, with nothing to put the words back, so an upload failure on
+        // an ordinary send destroyed the message outright (DOR-480).
         if (opts.kickoff) throw err;
         setError({
           heading: 'Could not send message',
@@ -348,10 +332,7 @@ export function useSessionSubmit({
           targetSessionId,
           uiSnapshot
         );
-        const context: ClientContext | undefined =
-          uiState || queued
-            ? { ...(uiState ? { uiState } : {}), ...(queued ? { queued: true } : {}) }
-            : undefined;
+        const context: ClientContext | undefined = uiState ? { uiState } : undefined;
 
         const postOptions: PostMessageOptions = {
           clientMessageId: optimisticId,
@@ -396,6 +377,13 @@ export function useSessionSubmit({
           // stream fires the same migration when the canonical id resolves only
           // AFTER this 202 (the common Claude path — see session-stream-binding).
           useSessionStreamStore.getState().migrateSessionContinuity(targetSessionId, canonicalId);
+          // The interaction the send above recorded is bucketed under the
+          // throwaway id too, and Today walks the session LIST — so left behind
+          // it names a session no list will ever contain, and the conversation
+          // the operator just started is absent from Today the moment they open
+          // something else. Same migration by the other route in
+          // `useSessionRekeyRedirect`.
+          carryInteractionForward(targetSessionId, canonicalId);
           // Move the newborn-agent birth ceremony (M4) to the canonical id too,
           // for the case the rekey resolves synchronously here (no-op without a
           // birth record; idempotent with the retire-announce migration).
@@ -437,29 +425,6 @@ export function useSessionSubmit({
         useSessionStreamStore.getState().setOptimisticUserMessage(targetSessionId, null);
         useSessionStreamStore.getState().setTriggerPending(targetSessionId, false);
 
-        // A queued message was dequeued to make this attempt. The attempt failed,
-        // so it goes straight back where it was — every failure mode, not just the
-        // lock: the composer was never holding this text, so dropping it here is
-        // pure data loss with nowhere to recover it from (DOR-480). The queue row
-        // reappears with its Send-now control, so the person can see it survived
-        // and retry deliberately.
-        opts.restoreQueued?.();
-
-        if ((err as { code?: string }).code === 'SESSION_LOCKED') {
-          // A locked birth session means a turn is already running — the
-          // greeting rode another trigger. Nothing to restore or retry.
-          if (opts.kickoff) return;
-          if (clearInput) setInput(restoreContentOnLock);
-          setSessionBusy(true);
-          if (sessionBusyTimerRef.current) clearTimeout(sessionBusyTimerRef.current);
-          sessionBusyTimerRef.current = setTimeout(() => {
-            setSessionBusy(false);
-            setError(null);
-            sessionBusyTimerRef.current = null;
-          }, TIMING.SESSION_BUSY_CLEAR_MS);
-          return;
-        }
-
         // A failed kickoff propagates to useAutoKickoff, which retries once and
         // — if that is also spent — surfaces an honest greeting-failed line on
         // the empty session. Deliberately NO "Could not send message" banner:
@@ -475,60 +440,112 @@ export function useSessionSubmit({
         });
       }
     },
-    [sessionId, transport, queryClient, setInput, setError, setSessionBusy, tryNativeCommand]
+    [sessionId, transport, queryClient, setInput, setError, tryNativeCommand]
   );
 
   const handleSubmit = useCallback(async () => {
     if (!input.trim() || status === 'streaming') return;
-    const userContent = input.trim();
-    await executeSubmission(userContent, true, userContent);
+    await executeSubmission(input.trim(), true);
   }, [input, status, executeSubmission]);
 
   /**
    * Submit a message by content string directly, without clearing the input state.
-   * Used by the queue's flush (automatic and hand-triggered).
    *
    * @param content - The message text to submit (PRISTINE — never annotated).
-   * @param originSessionId - When supplied (queue flush), the session the message
-   *   was QUEUED in. Defense-in-depth (DOR-81): if it no longer matches the
-   *   active session, the message is NOT delivered here — it goes back into its
-   *   own session's queue, because a queued message must never flush into a
-   *   session the operator switched to.
-   * @param opts - `{ queued }` carries the queue origin out-of-band so the send
-   *   forwards `context: { queued: true }` (ADR-0273). `{ restore }` puts the
-   *   message back in its queue when the send does not happen — every refusal
-   *   path below, and every failed trigger, calls it (DOR-480). Defaults to
-   *   non-queued.
+   * @param opts - `{ cwd }` pins the working directory for this send.
    */
   const submitContent = useCallback(
-    async (
-      content: string,
-      originSessionId?: string,
-      opts?: { queued: boolean; restore?: () => void; cwd?: string }
-    ) => {
-      if (!content.trim() || status === 'streaming') {
-        // A turn started between the drain decision and this call. The message is
-        // already dequeued, so put it back — it will ride the next edge.
-        opts?.restore?.();
-        return;
-      }
-      if (originSessionId !== undefined && originSessionId !== sessionId) {
-        // Should be unreachable — the per-session queue key already pins the
-        // flush to its origin. Logged, and returned to its OWN queue (the restore
-        // closes over the origin session), so a wrong-session flush can neither
-        // misdeliver nor destroy the message.
-        console.warn(
-          `[chat] Refused a queued message whose origin session (${originSessionId}) no longer matches the active session (${sessionId ?? 'none'}); it stays queued in its origin.`
-        );
-        opts?.restore?.();
-        return;
-      }
-      await executeSubmission(content.trim(), false, '', opts?.queued ?? false, {
-        ...(opts?.restore ? { restoreQueued: opts.restore } : {}),
+    async (content: string, opts?: { cwd?: string }) => {
+      if (!content.trim() || status === 'streaming') return;
+      await executeSubmission(content.trim(), false, {
         ...(opts?.cwd ? { cwd: opts.cwd } : {}),
       });
     },
-    [status, sessionId, executeSubmission]
+    [status, executeSubmission]
+  );
+
+  /**
+   * Put a message on the SESSION's queue, where it waits for the running turn to
+   * finish (spec `persistent-session-runtime`).
+   *
+   * Deliberately NOT {@link executeSubmission}. A queued message starts no turn,
+   * so it gets none of that path's turn machinery: no optimistic user bubble (it
+   * has not been said to the agent yet — the chip is what stands for it), no
+   * trigger latch, and no rekey handling (a session with a queue has already run
+   * a turn, so its id is already canonical).
+   *
+   * What it DOES share is everything about the message itself: attachments are
+   * uploaded now rather than at dispatch, and the client's UI-state snapshot is
+   * taken now, because now is when the person was looking at it.
+   *
+   * @param content - The message text to queue (PRISTINE — never annotated).
+   * @returns `true` once the server has the message. The composer holds the
+   *   words until this resolves, so a refused enqueue leaves them exactly where
+   *   they were typed rather than needing an undo (DOR-480).
+   */
+  const enqueueContent = useCallback(
+    async (content: string): Promise<boolean> => {
+      if (!sessionId) return false;
+      const targetSessionId = sessionId;
+      const cwd = selectedCwdRef.current;
+      setError(null);
+
+      // Sequence this session's enqueue POSTs so the server accepts them in
+      // keystroke order (DOR-1165). Each queued message is its own POST and the
+      // server orders the queue by acceptance, so two POSTs fired ~20ms apart
+      // (a fast typist, a paste-and-Enter hammer) could be accepted out of order
+      // and transpose what the person typed. The chain claims its slot HERE, at
+      // the synchronous head of the call — before the attachment transform's
+      // await — so ordering follows the order Enter was pressed, not the order
+      // uploads happen to finish. This is request ordering only: no queue state,
+      // no gating on turn status (see enqueue-sequencer).
+      return sequenceEnqueue(targetSessionId, async (): Promise<boolean> => {
+        let finalContent: string;
+        try {
+          finalContent = transformContentRef.current
+            ? await transformContentRef.current(content)
+            : content;
+        } catch (err) {
+          setError({
+            heading: 'Could not queue message',
+            message: (err as Error).message || 'The attachment did not upload. Please try again.',
+            retryable: false,
+          });
+          return false;
+        }
+
+        try {
+          const uiSnapshot = buildUiStateSnapshot(useAppStore.getState(), cwd ?? null);
+          const { uiState, commit: commitUiState } = prepareUiStateForSend(
+            targetSessionId,
+            uiSnapshot
+          );
+          // `queued: true` becomes the server's `<queue_note>` — the same
+          // out-of-band signal the old client-side flush carried (ADR-0273). The
+          // content itself is never annotated.
+          const context: ClientContext = { ...(uiState ? { uiState } : {}), queued: true };
+          const { sessionId: canonicalId } = await transport.postMessage(
+            targetSessionId,
+            finalContent,
+            cwd ?? undefined,
+            { context, disposition: 'queue' }
+          );
+          commitUiState(canonicalId);
+          return true;
+        } catch (err) {
+          setError({
+            heading: 'Could not queue message',
+            message: (err as Error).message || 'The request failed. Please try again.',
+            // The words are still in the composer, so the retry is a keystroke
+            // away. A Retry button here would re-send the PREVIOUS user message,
+            // which is not what anyone asked for.
+            retryable: false,
+          });
+          return false;
+        }
+      });
+    },
+    [sessionId, transport, setError]
   );
 
   /** Interrupt the active turn; `/events` reports the resulting status. */
@@ -544,7 +561,7 @@ export function useSessionSubmit({
   const retryMessage = useCallback(
     async (content: string) => {
       setError(null);
-      await executeSubmission(content, false, '');
+      await executeSubmission(content, false);
     },
     [executeSubmission, setError]
   );
@@ -564,7 +581,7 @@ export function useSessionSubmit({
    */
   const submitKickoff = useCallback(
     async (content: string, cwd?: string) => {
-      await executeSubmission(content, false, '', false, {
+      await executeSubmission(content, false, {
         kickoff: true,
         ...(cwd ? { cwd } : {}),
       });
@@ -591,5 +608,13 @@ export function useSessionSubmit({
     []
   );
 
-  return { handleSubmit, submitContent, stop, retryMessage, submitKickoff, markToolCallResponded };
+  return {
+    handleSubmit,
+    submitContent,
+    enqueueContent,
+    stop,
+    retryMessage,
+    submitKickoff,
+    markToolCallResponded,
+  };
 }

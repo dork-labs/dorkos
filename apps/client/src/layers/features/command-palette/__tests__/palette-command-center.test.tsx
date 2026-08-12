@@ -168,14 +168,6 @@ vi.mock('@/layers/entities/session', async (importOriginal) => ({
   useStartNewSession: () => mockStartNewSession,
 }));
 
-vi.mock('../model/use-agent-frecency', () => ({
-  useAgentFrecency: () => ({
-    entries: [],
-    recordUsage: vi.fn(),
-    getSortedAgentIds: (ids: string[]) => ids,
-  }),
-}));
-
 vi.mock('../model/use-preview-data', () => ({
   usePreviewData: () => ({ sessionCount: 0, recentSessions: [], health: null }),
 }));

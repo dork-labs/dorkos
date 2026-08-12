@@ -2,7 +2,7 @@
  * @vitest-environment jsdom
  */
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
-import { render, screen, cleanup, fireEvent } from '@testing-library/react';
+import { act, render, screen, cleanup, fireEvent } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { TooltipProvider } from '@/layers/shared/ui';
 import type { RightPanelContribution } from '@/layers/shared/model';
@@ -15,14 +15,22 @@ let mockActiveRightPanelTab: string | null = null;
 // The header reads only the active tab and the open/close setters from the
 // store now — the container owns contribution filtering and passes the visible
 // list in as a prop.
-vi.mock('@/layers/shared/model', () => ({
-  useAppStore: (selector: (s: Record<string, unknown>) => unknown) =>
-    selector({
-      setRightPanelOpen: mockSetRightPanelOpen,
-      activeRightPanelTab: mockActiveRightPanelTab,
-      setActiveRightPanelTab: mockSetActiveRightPanelTab,
-    }),
-}));
+// Only the store is stubbed. `useScrollOverflow` and `revealInScroller` come
+// from the real module on purpose: the fade and reveal assertions below stub
+// layout metrics and then check what the strip did with them, so replacing the
+// thing that reads those metrics would leave nothing under test.
+vi.mock('@/layers/shared/model', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/layers/shared/model')>();
+  return {
+    ...actual,
+    useAppStore: (selector: (s: Record<string, unknown>) => unknown) =>
+      selector({
+        setRightPanelOpen: mockSetRightPanelOpen,
+        activeRightPanelTab: mockActiveRightPanelTab,
+        setActiveRightPanelTab: mockSetActiveRightPanelTab,
+      }),
+  };
+});
 
 beforeAll(() => {
   Object.defineProperty(window, 'matchMedia', {
@@ -361,27 +369,109 @@ describe('RightPanelHeader — the selected tab is never left behind an edge', (
     expect(scroller().scrollLeft).toBe(0);
   });
 
-  it('watches the tablist as well as the scroll box', () => {
-    // `clientWidth` comes from the scroll box, but `scrollWidth` is the tablist —
-    // and the tablist can change size on its own (a late web font, a contribution
-    // renaming its tab) while the box does not, which would leave the fades
-    // reporting a strip that no longer exists.
-    const observed: Element[] = [];
+  /** One stand-in `ResizeObserver`: what it was pointed at, and a way to fire it. */
+  interface CapturedObserver {
+    observed: Element[];
+    fire: () => void;
+  }
+
+  /**
+   * Replace `ResizeObserver` with a recorder, PER INSTANCE.
+   *
+   * **Per instance is the whole point.** This component ends up with two
+   * observers — the fades' (inside `useScrollOverflow`) and the reveal's — and
+   * they overlap: both watch the scroll box. A recorder that pooled every
+   * `observe` call into one list would say "the scroller is watched" no matter
+   * which of them was watching it, which is exactly how a reveal that had
+   * stopped watching the scroller kept a green test.
+   */
+  function captureResizeObservers(): { instances: CapturedObserver[]; restore: () => void } {
+    const instances: CapturedObserver[] = [];
     const original = global.ResizeObserver;
     global.ResizeObserver = class {
+      observed: Element[] = [];
+      constructor(callback: ResizeObserverCallback) {
+        instances.push({ observed: this.observed, fire: () => callback([], this as never) });
+      }
       observe(el: Element) {
-        observed.push(el);
+        this.observed.push(el);
       }
       unobserve() {}
       disconnect() {}
     } as unknown as typeof ResizeObserver;
+    return { instances, restore: () => (global.ResizeObserver = original) };
+  }
+
+  it('reveals the selected tab again when only the scroll box gets narrower', () => {
+    // **Dragging the panel divider in.** The strip shrinks, the tabs do not, and
+    // a tab that fitted a moment ago is now past the edge — one of the three
+    // failures DOR-471 names, and the only one that resizes NOTHING but the
+    // scroll box. So it is the case that catches a reveal which quietly stopped
+    // watching the scroller and leant on the fades' observer instead: measured
+    // that way, this stayed at 0 with the label half-drawn.
+    mockActiveRightPanelTab = 'terminal';
+    let boxRight = 340;
+    vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (
+      this: Element
+    ) {
+      if (this.getAttribute('role') === 'tab' && this.getAttribute('aria-selected') === 'true') {
+        return rect(250, 330);
+      }
+      if (this.querySelector('[role="tablist"]')) return rect(0, boxRight);
+      return rect(0, 0);
+    });
+    const observers = captureResizeObservers();
+
+    try {
+      renderHeader(
+        ['agent', 'files', 'canvas', 'terminal', 'session', 'pulse'].map((id) =>
+          makeContribution(id)
+        )
+      );
+      // It fitted on mount (330 inside 340), so nothing moved — without this the
+      // assertion below could be satisfied by a reveal that fired on mount.
+      expect(scroller().scrollLeft).toBe(0);
+
+      boxRight = 200;
+      // Fire everything pointed at the scroll box, not just the reveal's own
+      // observer: that is what the browser would do, and picking the reveal's
+      // out by hand would assume the answer.
+      act(() => {
+        for (const observer of observers.instances) {
+          if (observer.observed.includes(scroller())) observer.fire();
+        }
+      });
+
+      // The least scroll that clears the new edge, plus the reveal margin.
+      expect(scroller().scrollLeft).toBe(330 - 200 + 8);
+    } finally {
+      observers.restore();
+    }
+  });
+
+  it('gives the reveal one observer over all three boxes', () => {
+    // Each box answers its own part of "is the selected tab still on screen".
+    // The scroller is the viewport it is compared against; the tablist is the
+    // content, which resizes on its own (a late web font, a contribution
+    // renaming its tab) while the box does not; the tab itself is what the
+    // reveal exists to keep visible, and a sibling widening moves it.
+    //
+    // Found by "one instance that watches the scroller AND the selected tab",
+    // which is the reveal's alone: the fades' observer watches the scroller and
+    // its child, and the tab is a grandchild.
+    mockActiveRightPanelTab = 'agent';
+    const observers = captureResizeObservers();
 
     try {
       renderHeader([makeContribution('agent'), makeContribution('files')]);
-      expect(observed).toContain(screen.getByRole('tablist'));
-      expect(observed).toContain(scroller());
+      const selected = screen.getByRole('tab', { selected: true });
+      const reveal = observers.instances.find(
+        (observer) => observer.observed.includes(scroller()) && observer.observed.includes(selected)
+      );
+      expect(reveal, 'no observer watches both the scroll box and the selected tab').toBeDefined();
+      expect(reveal!.observed).toContain(screen.getByRole('tablist'));
     } finally {
-      global.ResizeObserver = original;
+      observers.restore();
     }
   });
 });

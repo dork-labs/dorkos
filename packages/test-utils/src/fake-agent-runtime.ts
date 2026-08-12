@@ -10,6 +10,8 @@ import type {
   McpAppServerConnection,
   RuntimeSettingsCapability,
   ToolDecisionOptions,
+  DeliverIntoTurnOpts,
+  RuntimeDeliveryResult,
 } from '@dorkos/shared/agent-runtime';
 import type { RuntimeCommandIntentId } from '@dorkos/shared/command-intents';
 import type { McpServerEntry } from '@dorkos/shared/transport';
@@ -128,6 +130,19 @@ export class FakeAgentRuntime implements AgentRuntime {
   ): AsyncGenerator<StreamEvent> {
     yield { type: 'compact_boundary', data: {} } as StreamEvent;
   });
+
+  /**
+   * Steer or stage a message into a session without opening a turn. Spied so a
+   * dispatcher test can assert an authorized steer reached the runtime and an
+   * unauthorized one did not; answers `{ delivered: true }` by default.
+   */
+  deliverIntoTurn = vi.fn<
+    (
+      sessionId: string,
+      content: string,
+      opts: DeliverIntoTurnOpts
+    ) => Promise<RuntimeDeliveryResult>
+  >(async () => ({ delivered: true }));
 
   ensureSession = vi.fn<(sessionId: string, opts: SessionOpts) => void>();
   hasSession = vi.fn<(sessionId: string) => boolean>(() => false);

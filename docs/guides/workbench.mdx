@@ -108,7 +108,7 @@ Sometimes DorkOS has no snapshot from when the agent started — for example, if
 
 Changed images get their own comparison, in the style you may know from GitHub: **2-up** shows before and after side by side, **Swipe** puts them in the same frame with a divider you drag, and **Onion skin** blends between them with a slider. Because an image changes as a whole, the review is whole-file: **Restore previous** puts the old image back on disk (it asks you to confirm first), and **Mark reviewed** keeps the new one. An image the agent just created has no previous version — the panel says so instead of pretending there's something to compare.
 
-Text diff review works in the web app and the Obsidian plugin; the image comparison is web-only.
+Text diff review is built for the Obsidian plugin too, but that plugin is an early, still-hardening surface — expect rough edges there. The image comparison is web-only.
 
 You can turn the automatic open off with `workbench.autoOpenDiff` in your [config file](/docs/getting-started/configuration) — the agent can still bring up a diff on purpose.
 

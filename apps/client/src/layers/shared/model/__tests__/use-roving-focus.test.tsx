@@ -153,13 +153,36 @@ describe('useRovingFocus — moving inside the section', () => {
     expect(document.activeElement).toBe(screen.getByText('four'));
   });
 
-  it('jumps to the ends with Home and End', () => {
+  it('jumps to the first ROW with Home and the last with End', () => {
     render(<Section rows={ROWS} />);
     fireEvent.keyDown(screen.getByText('one'), { key: 'End' });
     expect(document.activeElement).toBe(screen.getByText('four'));
 
+    // Home is the top of the LIST, not the heading above it. The section's
+    // rows are the things a reader came here to open; a Home that parks them
+    // on the collapse toggle costs an ArrowDown every single time, and it is
+    // the asymmetry that gives it away — End lands on a row, so Home should.
     fireEvent.keyDown(screen.getByText('four'), { key: 'Home' });
-    expect(document.activeElement).toBe(screen.getByText('Channels'));
+    expect(document.activeElement).toBe(screen.getByText('one'));
+  });
+
+  it('takes Home DOWN off the header, because the first row is still the first row', () => {
+    render(<Section rows={ROWS} />);
+    const header = screen.getByText('Channels');
+    header.focus();
+    fireEvent.keyDown(header, { key: 'Home' });
+    expect(document.activeElement).toBe(screen.getByText('one'));
+  });
+
+  it('leaves Home on the header when the section has no rows to send it to', () => {
+    // The same setup with the one variable flipped: with rows, Home moves; with
+    // none, the header is the only stop there is and Home has to stay put
+    // rather than land on nothing.
+    render(<Section rows={[]} />);
+    const header = screen.getByText('Channels');
+    header.focus();
+    fireEvent.keyDown(header, { key: 'Home' });
+    expect(document.activeElement).toBe(header);
   });
 
   it('leaves keys it does not own alone', () => {

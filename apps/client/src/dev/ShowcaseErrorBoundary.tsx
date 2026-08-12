@@ -33,7 +33,15 @@ export class ShowcaseErrorBoundary extends Component<Props, State> {
   render() {
     if (this.state.error) {
       return (
-        <div className="border-destructive/30 bg-destructive/5 flex flex-col items-start gap-3 rounded-lg border p-4">
+        <div
+          // The gate's handle on a caught crash (DOR-1117). The visible copy
+          // ("X crashed") is prose and will be rewritten one day; an attribute
+          // is a contract. `every-showcase-mounts.test.tsx` counts these after
+          // rendering every page, so a showcase that throws is a red test
+          // rather than a tidy red card nobody loads.
+          data-showcase-error={this.props.name ?? 'unknown'}
+          className="border-destructive/30 bg-destructive/5 flex flex-col items-start gap-3 rounded-lg border p-4"
+        >
           <div className="flex items-center gap-2">
             <AlertTriangle className="text-destructive size-4" />
             <span className="text-destructive text-sm font-medium">

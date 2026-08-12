@@ -8,8 +8,7 @@
  *
  * @module features/dashboard-sidebar/ui/SidebarZones
  */
-import { useCallback } from 'react';
-import { useAgentCreationStore } from '@/layers/shared/model';
+import { useCallback, type ReactNode } from 'react';
 import {
   setGroupCollapsed,
   setSectionCollapsed,
@@ -17,11 +16,13 @@ import {
 } from '@/layers/entities/config';
 import {
   librarySectionId,
+  ZONE_LABEL,
   type SidebarModel,
+  type SidebarZoneId,
   type SidebarZoneModel,
 } from '../model/build-sidebar-model';
 import { useAllClearBeat } from '../model/use-all-clear-beat';
-import { AgentOnboardingCard } from './AgentOnboardingCard';
+import { useGettingStartedReturn } from '../model/holds/use-getting-started-return';
 import { SidebarZone } from './SidebarZone';
 import { TodayZone } from './TodayZone';
 
@@ -35,7 +36,7 @@ import { TodayZone } from './TodayZone';
  */
 const ALL_CLEAR_ZONE: SidebarZoneModel = {
   id: 'now',
-  label: 'Now',
+  label: ZONE_LABEL.now,
   sections: [],
   reason: 'zone:now',
 };
@@ -44,6 +45,41 @@ const ALL_CLEAR_ZONE: SidebarZoneModel = {
 export interface SidebarZonesProps {
   /** The model to draw. */
   model: SidebarModel;
+  /**
+   * Which zones to draw. Omitted = all of them, which is the desktop panel.
+   *
+   * Mobile splits one model across two tabs — Now and Today into Home, Library
+   * into its own tab (P4) — and this is how, so both tabs are the same renderer
+   * reading the same build rather than a second copy of it. The two beats that
+   * belong to a particular zone travel with it: the all-clear plays only where
+   * Now would be.
+   */
+  zoneIds?: readonly SidebarZoneId[];
+  /**
+   * Content to draw at the top of Now, above its rows, or `null` for none.
+   *
+   * **The phone's inline approvals arrive here** (P4 AC-5). They are a
+   * composition of `features/approvals`, which this feature may not import —
+   * `shared ← entities ← features ← widgets` — so the widget that owns the
+   * mobile Home tab builds them and hands them down.
+   *
+   * **A non-null slot can bring Now into existence**, and that is the whole
+   * reason it is `ReactNode | null` rather than "render it if you like". Now is
+   * absent from the model when nothing needs the operator (BC-1) — and the one
+   * state where the operator most needs to hear from this slot is exactly that
+   * one: approvals failed to load, so no approval became an attention row, so
+   * there is no Now zone to put the failure in. An approval nobody is shown is
+   * an agent sitting blocked. So the caller passes `null` when it has nothing
+   * to say, and anything else gets a zone.
+   */
+  nowSlot?: ReactNode | null;
+  /**
+   * Something above these zones announces Now's count, so no zone drawn here
+   * may. See {@link SidebarZoneProps.silenceLiveRegion} — the phone cockpit is
+   * the one caller, and its reason is that these panels are `inert` whenever
+   * they are put away.
+   */
+  silenceLiveRegion?: boolean;
 }
 
 /**
@@ -56,9 +92,29 @@ export interface SidebarZonesProps {
  *
  * @param props - The model.
  */
-export function SidebarZones({ model }: SidebarZonesProps) {
+export function SidebarZones({
+  model,
+  zoneIds,
+  nowSlot = null,
+  silenceLiveRegion = false,
+}: SidebarZonesProps) {
   const { update } = useUpdateSidebarPrefs();
+  // Getting started leaves the shared slot the frame a real signal wants it and
+  // takes a few seconds to come back (BC-52). Everything below draws `drawn`;
+  // `model` is still the builder's answer, and the two differ on exactly one
+  // zone for exactly as long as the damping lasts.
+  const { model: drawn, handlers: slotHandlers } = useGettingStartedReturn(model);
+  // Off the BUILDER's model, like `nowSlotTaken` below. Alt-click fold-all is
+  // about Library, which the damping never touches, and reading it from `drawn`
+  // would make a whole-panel gesture a function of whether a zone above it
+  // happened to be held back at that instant.
   const library = model.zones.find((zone) => zone.id === 'library');
+  // "Is this zone mine to draw?" asked once. `undefined` means the whole
+  // panel — the desktop case — so nothing about the existing call site changes.
+  const draws = useCallback(
+    (id: SidebarZoneId) => zoneIds === undefined || zoneIds.includes(id),
+    [zoneIds]
+  );
 
   const onToggleAll = useCallback(() => {
     const sections = library?.sections ?? [];
@@ -80,36 +136,78 @@ export function SidebarZones({ model }: SidebarZonesProps) {
     });
   }, [library, update]);
 
-  // BC-50. Drawn before the map so the beat sits in Now's own slot at the top,
+  // BC-50. Drawn before the map so the beat sits in Heads up's own slot at the top,
   // and suppressed the moment anything real wants that slot back — a zone the
   // model is emitting always wins over an animation about one it is not.
   const beating = useAllClearBeat(model);
+  // Asked of the BUILDER's model, not the damped one. Withholding Getting
+  // started for a few seconds is not an invitation for an animation — or for
+  // the orphaned slot below — to move into the space it just left: the slot is
+  // spoken for either way, and the beat stays exactly as rare as BC-50 made it.
   const nowSlotTaken = model.zones.some(
     (zone) => zone.id === 'now' || zone.id === 'getting-started'
   );
+  // The slot brings its own zone when the model has none. See
+  // {@link SidebarZonesProps.nowSlot}: this is the loud-failure case, and it
+  // outranks the beat — an animation about work that finished must not be what
+  // the panel says while an approval is sitting unreachable behind a fetch that
+  // failed.
+  const orphanedSlot = nowSlot !== null && !nowSlotTaken && draws('now');
 
   return (
-    <div className="flex flex-col gap-1">
-      {beating && !nowSlotTaken && (
-        <SidebarZone zone={ALL_CLEAR_ZONE} onToggleAll={onToggleAll} allClear />
+    // The damping's "not under a hand" half reads the pointer and focus here,
+    // one element above every zone — the smallest wrapper that contains
+    // everything the returning zone would push down, and therefore the right
+    // boundary for a promise about not moving what somebody is aiming at.
+    <div className="flex flex-col gap-1" {...slotHandlers}>
+      {orphanedSlot && (
+        <SidebarZone
+          zone={ALL_CLEAR_ZONE}
+          onToggleAll={onToggleAll}
+          lead={nowSlot}
+          silenceLiveRegion={silenceLiveRegion}
+        />
       )}
-      {model.zones.map((zone) =>
-        // Today is the one zone whose rows react to where the operator's
-        // pointer and focus are (BC-17, BC-36), so it gets a wrapper of its own.
-        // Every other zone is the plain renderer.
-        zone.id === 'today' ? (
-          <TodayZone key={zone.id} zone={zone} onToggleAll={onToggleAll} />
-        ) : (
-          <SidebarZone key={zone.id} zone={zone} onToggleAll={onToggleAll} />
-        )
+      {beating && !nowSlotTaken && !orphanedSlot && draws('now') && (
+        <SidebarZone
+          zone={ALL_CLEAR_ZONE}
+          onToggleAll={onToggleAll}
+          allClear
+          silenceLiveRegion={silenceLiveRegion}
+        />
       )}
-      {/* "Is there anything at all yet?" — a presence check on the model, not a
-          membership rule. Library is absent only when there is no agent, no room
-          and no pin to put in it, which is the one moment the invitation belongs
-          on screen. P2.2's Getting started zone takes this over. */}
-      {library === undefined && (
-        <AgentOnboardingCard onAddAgent={() => useAgentCreationStore.getState().open()} />
-      )}
+      {drawn.zones
+        .filter((zone) => draws(zone.id))
+        .map((zone) =>
+          // Today is the one zone whose rows react to where the operator's
+          // pointer and focus are (BC-17, BC-36), so it gets a wrapper of its own.
+          // Every other zone is the plain renderer.
+          zone.id === 'today' ? (
+            <TodayZone
+              key={zone.id}
+              zone={zone}
+              onToggleAll={onToggleAll}
+              silenceLiveRegion={silenceLiveRegion}
+            />
+          ) : (
+            <SidebarZone
+              key={zone.id}
+              zone={zone}
+              onToggleAll={onToggleAll}
+              silenceLiveRegion={silenceLiveRegion}
+              {...(zone.id === 'now' ? { lead: nowSlot } : {})}
+            />
+          )
+        )}
+      {/* There is no empty-Library branch on purpose. `AgentOnboardingCard` used
+          to hang off `library === undefined`, and that condition is reachable —
+          but only in the wrong moment. `useSidebarState` starts the roster at
+          `[]` and "a roster query that has not answered looks exactly like an
+          empty fleet" (its own words), so on every cold load the card drew for
+          the pre-hydration frames, and it would have stayed for good if the mesh
+          query failed. A hydration gap is not day one, and a flash of "Add more
+          agents" is the wrong thing to put in one. Day-one guidance is the
+          Getting started zone's, at the top of the panel where it is read. */}
     </div>
   );
 }

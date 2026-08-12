@@ -180,7 +180,7 @@ const mockTransport = {
   resolveAgents: vi.fn().mockResolvedValue({}),
   listSessions: vi.fn().mockResolvedValue({ sessions: [] }),
   listRooms: vi.fn(() => Promise.resolve(mockRooms())),
-  // The permission queue Now draws from (BC-5). Empty unless a case says otherwise.
+  // The permission queue Heads up draws from (BC-5). Empty unless a case says otherwise.
   listPendingApprovals: vi.fn(() => Promise.resolve({ approvals: mockApprovals() })),
   listThreads: vi.fn(() => Promise.resolve(mockThreads())),
 };
@@ -555,7 +555,7 @@ describe('DashboardSidebar', () => {
       isSuccess: true,
     });
     // Every suggestion already answered, so Getting started stays out of the way
-    // of the cases that are about Now. The block that IS about Getting started
+    // of the cases that are about Heads up. The block that IS about Getting started
     // gives itself an unretired set (BC-4: they share one slot).
     mockSidebarPrefs.mockReturnValue(makePrefs({ gettingStarted: { retired: ALL_SUGGESTIONS } }));
     mockApprovals.mockReset();
@@ -942,7 +942,7 @@ describe('DashboardSidebar', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Now, Getting started, and the all-clear beat (P2.2)
+// Heads up, Getting started, and the all-clear beat (P2.2)
 // ---------------------------------------------------------------------------
 
 /** DorkBot's directory, the one agent every install has. */
@@ -957,7 +957,7 @@ const ALL_SUGGESTIONS = [
   'suggestion:ask-dorkbot',
 ];
 
-/** The Now zone's `<section>`, or `null` when the model emitted none. */
+/** The Heads up zone's `<section>`, or `null` when the model emitted none. */
 function nowZone(): HTMLElement | null {
   return document.querySelector('[data-sidebar-zone="now"]');
 }
@@ -1032,7 +1032,7 @@ async function renderSidebarWithNow() {
   return view;
 }
 
-describe('Now — the zone that justifies the redesign', () => {
+describe('Heads up — the zone that justifies the redesign', () => {
   afterEach(() => cleanup());
 
   // Its own resets, because this is a sibling of the suite above rather than a
@@ -1058,7 +1058,7 @@ describe('Now — the zone that justifies the redesign', () => {
       isSuccess: true,
     });
     // Every suggestion already answered, so Getting started stays out of the way
-    // of the cases that are about Now. The block that IS about Getting started
+    // of the cases that are about Heads up. The block that IS about Getting started
     // gives itself an unretired set (BC-4: they share one slot).
     mockSidebarPrefs.mockReturnValue(makePrefs({ gettingStarted: { retired: ALL_SUGGESTIONS } }));
     mockApprovals.mockReset();
@@ -1095,13 +1095,30 @@ describe('Now — the zone that justifies the redesign', () => {
       await waitFor(() => expect(nowZone()).not.toBeNull());
       expect(zoneRows(nowZone())).toEqual(['alpha›Write a file']);
     });
+
+    // The zone's id is `now` and its heading is "Heads up" — the split DOR-1155
+    // deliberately left in place, because renaming the id would cost a
+    // persisted-config migration and buy the operator nothing. Both halves are
+    // asserted in one breath: the element is found BY the id, and read FOR the
+    // label, so a rename of either without the other reddens here.
+    it('heads the zone "Heads up", under the id `now` (DOR-1155)', async () => {
+      mockApprovals.mockReturnValue([pendingApproval()]);
+      await renderSidebarWithNow();
+      await waitFor(() => expect(nowZone()).not.toBeNull());
+      const heading = nowZone()!.querySelector('h2');
+      expect(heading).not.toBeNull();
+      expect(heading!.textContent).toBe('Heads up');
+      // And it is the zone's accessible name, not a loose bit of text: the
+      // landmark points at this heading by id.
+      expect(nowZone()!.getAttribute('aria-labelledby')).toBe(heading!.id);
+    });
   });
 
-  describe('P2 AC-5 — what can never be in Now', () => {
+  describe('P2 AC-5 — what can never be in Heads up', () => {
     it('keeps mentions, DMs, unread channels and automated activity out', async () => {
       // The name is honest again as of the 2026-08-10 ruling: a scheduled run is
       // not counted as working, so an automated session streaming on its own
-      // leaves Now with nothing at all to say. Before that ruling this exact
+      // leaves Heads up with nothing at all to say. Before that ruling this exact
       // fixture drew a "1 working" row — automated activity rendered in the one
       // zone that promises to hold only what needs you.
       mockRooms.mockReturnValue([
@@ -1121,7 +1138,7 @@ describe('Now — the zone that justifies the redesign', () => {
       // test of an empty cockpit.
       await waitFor(() => expect(document.body.textContent).toContain('deploys'));
       expect(document.querySelector('[data-sidebar-zone="library"]')).not.toBeNull();
-      // And Now is absent entirely: no rollup, no room, no DM, no unread count.
+      // And Heads up is absent entirely: no rollup, no room, no DM, no unread count.
       expect(nowZone()).toBeNull();
     });
 
@@ -1261,7 +1278,7 @@ describe('Now — the zone that justifies the redesign', () => {
       expect(mockUpdateSidebar).toHaveBeenCalled();
     });
 
-    it('offers a dismiss on the nudge and on nothing else in Now', async () => {
+    it('offers a dismiss on the nudge and on nothing else in Heads up', async () => {
       mockApprovals.mockReturnValue([pendingApproval()]);
       seedSessions([
         {
@@ -1397,9 +1414,9 @@ describe('Now — the zone that justifies the redesign', () => {
       }
     });
 
-    it('abandons the beat when Now comes straight back holding a working session', async () => {
+    it('abandons the beat when Heads up comes straight back holding a working session', async () => {
       // **The interleaving that stranded the flag.** Resolve the last approval,
-      // and an agent starts a turn inside the beat's own 2.5 seconds: Now
+      // and an agent starts a turn inside the beat's own 2.5 seconds: Heads up
       // returns holding only "1 working", so the needs-you count is still zero
       // while the zone exists again. The effect re-runs, React's cleanup has
       // already cancelled the timer that would have lowered the flag, and every
@@ -1480,7 +1497,7 @@ describe('Now — the zone that justifies the redesign', () => {
   });
 });
 
-describe('Getting started — Now’s first life stage (BC-4, BC-12 → BC-14)', () => {
+describe('Getting started — Heads up’s first life stage (BC-4, BC-12 → BC-14)', () => {
   afterEach(() => cleanup());
 
   /** The Getting-started zone's `<section>`, or `null`. */
@@ -1557,7 +1574,7 @@ describe('Getting started — Now’s first life stage (BC-4, BC-12 → BC-14)',
     expect(zoneRows(zone())).toEqual(['Meet the 2 agents we found', 'Ask DorkBot anything']);
   });
 
-  it('gives Now the slot the moment something real needs you (BC-4)', async () => {
+  it('gives Heads up the slot the moment something real needs you (BC-4)', async () => {
     mockApprovals.mockReturnValue([pendingApproval()]);
     await renderSidebarWithNow();
     await waitFor(() => expect(nowZone()).not.toBeNull());
@@ -1780,7 +1797,7 @@ describe('Today — what you were doing, and it holds still', () => {
       expect(todayOrder()[0]).toContain('Gamma work');
     });
 
-    it('never appears in Now', () => {
+    it('never appears in Heads up', () => {
       seedThreeConversations();
       openRoute('ses-a');
       mountSidebar();

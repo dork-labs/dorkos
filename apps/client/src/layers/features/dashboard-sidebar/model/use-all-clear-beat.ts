@@ -1,5 +1,5 @@
 /**
- * The all-clear beat: Now settles before it folds away (BC-50).
+ * The all-clear beat: Heads up settles before it folds away (BC-50).
  *
  * @module features/dashboard-sidebar/model/use-all-clear-beat
  */
@@ -16,31 +16,35 @@ import type { SidebarModel } from './build-sidebar-model';
 export const ALL_CLEAR_BEAT_MS = 2_500;
 
 /**
- * How many rows in Now are things that actually need the operator.
+ * How many things in Heads up actually need the operator.
  *
- * The working rollup is not one of them: a zone holding only "6 working" has
- * nothing waiting in it, so its rows draining to zero is not a queue being
- * finished and must not produce a beat.
+ * **Read off the model, which now publishes it.** This used to walk the zone's
+ * rows and count the ones whose target was `attention` — the same question
+ * asked a second way, and it answered a subtly different number: the rows are
+ * capped at five (BC-8), so a fleet with seven blocked agents counted three.
+ * Only zero-ness is read below, so the two agreed on every transition, but one
+ * fact computed twice is one fact that can drift. `needsYouCount` is the
+ * uncapped truth and the number BC-11 announces.
+ *
+ * The working rollup is not one of them either way: a zone holding only
+ * "6 working" has nothing waiting in it, so its rows draining to zero is not a
+ * queue being finished and must not produce a beat.
  *
  * @param model - The model as built.
  */
 function needsYouCount(model: SidebarModel): number {
-  const now = model.zones.find((zone) => zone.id === 'now');
-  if (now === undefined) return 0;
-  return now.sections
-    .flatMap((section) => section.rows)
-    .filter((row) => row.target.kind === 'attention').length;
+  return model.zones.find((zone) => zone.id === 'now')?.needsYouCount ?? 0;
 }
 
 /**
- * Whether Now should be showing its all-clear beat right now.
+ * Whether Heads up should be showing its all-clear beat right now.
  *
  * The beat exists because a zone that simply vanishes gives an operator no
  * moment of having finished; the sidebar's own disappearance is the reward, and
  * it needs half a breath to be read as one.
  *
  * Fires on ONE transition and no other: the last needs-you row leaving while
- * nothing else keeps the zone alive. In particular it does not fire when Now
+ * nothing else keeps the zone alive. In particular it does not fire when Heads up
  * was only ever a working rollup, and it cannot fire on first paint — there is
  * no previous frame to have held anything, which is what makes "an empty
  * fixture renders zero DOM nodes" (P2 AC-1) true on mount as well as at rest.
@@ -73,7 +77,7 @@ export function useAllClearBeat(model: SidebarModel): boolean {
     // breaks the zone's own zero-DOM-when-empty promise (P2 AC-1, BC-50).
     //
     // The interleaving that reaches it is the ordinary one: resolve the last
-    // approval, and an agent starts a turn inside the next 2.5 seconds. Now
+    // approval, and an agent starts a turn inside the next 2.5 seconds. Heads up
     // comes straight back holding only "1 working", so `count` is still 0 while
     // `hasNowZone` flips true.
     if (!shouldBeat) {

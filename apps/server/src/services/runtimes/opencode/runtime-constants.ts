@@ -2,7 +2,9 @@
  * Static configuration for the OpenCode runtime — capability flags, turn
  * timing, and the session-listing ceiling. Values are the task 3.2
  * verification verdicts (NOTES.md §2), derived from the pinned
- * `@opencode-ai/sdk@1.17.13` and the upstream server source at that tag.
+ * `@opencode-ai/sdk@1.17.13` and the upstream server source at that tag —
+ * except the approval claims, which were re-verified live against the shipped
+ * 1.18.15 sidecar after its permission surface moved (NOTES.md §2, DOR-1147).
  *
  * @module services/runtimes/opencode/runtime-constants
  */
@@ -12,10 +14,13 @@ import type { RuntimeCapabilities } from '@dorkos/shared/agent-runtime';
  * Static OpenCode capabilities (NOTES.md §2).
  *
  * - `supportsToolApproval: true` — the sidecar's conservative ask-ruleset
- *   raises `permission.updated` for every edit/bash/webfetch, mapped to
+ *   raises `permission.asked` for every edit/bash/webfetch, mapped to
  *   `approval_required` and answered through
  *   `POST /session/{id}/permissions/{permissionID}` (`once`/`reject` only —
  *   never `always`, so OpenCode-side rule state cannot diverge from DorkOS).
+ *   Both the event name and the reply route are live-verified against the
+ *   shipped 1.18.15 sidecar (2026-08-11, DOR-1147); the SDK's generated types
+ *   still describe an older permission surface the server no longer speaks.
  * - `supportsCostTracking: true` — completed assistant messages carry real
  *   `cost` (USD) + token usage, which the event mapper emits as
  *   `session_status`.

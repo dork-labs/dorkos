@@ -155,8 +155,9 @@ function laneStep(key: string): number {
  * inside it.
  *
  * `ArrowDown` / `ArrowUp` move between the header and the rows (no wrapping —
- * the ends are the ends, and `Tab` is how you leave), `Home` / `End` jump to
- * them. `ArrowLeft` / `ArrowRight` on the header collapse or expand it, which
+ * the ends are the ends, and `Tab` is how you leave), and `Home` / `End` jump to
+ * the first and last ROW — the header is reached by arrowing up off the top, not
+ * by pressing Home. `ArrowLeft` / `ArrowRight` on the header collapse or expand it, which
  * is the Tree pattern's own contract and the reason a keyboard reader never has
  * to hunt for a chevron; on a row they walk its lane — out through any control
  * in the right gutter to the "⋮", and back through the row to its glyph.
@@ -321,9 +322,22 @@ export function useRovingFocus(options?: {
         case 'ArrowUp':
           next = Math.max(index - 1, 0);
           break;
-        case 'Home':
-          next = 0;
+        case 'Home': {
+          // **The first ROW, not the heading above it.** `End` lands on a row
+          // and `Home` landed on the collapse toggle, which made the two keys
+          // mean different kinds of thing and cost a reader one extra
+          // `ArrowDown` every time they went back to the top of a list. The
+          // header stays reachable — `ArrowUp` from the first row is one press,
+          // and it is where a reader goes to fold the section, not where they
+          // go to start reading it (R2).
+          const firstRow = stops.findIndex(
+            (stop) => !stop.hasAttribute(SIDEBAR_SECTION_TOGGLE_ATTRIBUTE)
+          );
+          // A section with a header and nothing under it has one stop, and Home
+          // has to stay on it rather than move to nothing.
+          next = firstRow === -1 ? 0 : firstRow;
           break;
+        }
         case 'End':
           next = stops.length - 1;
           break;

@@ -25,7 +25,7 @@ import type { WorkingSession } from './presence-rows';
  *   working directory for it. An unattributable turn is not presence — it is a
  *   fact about the machine with nobody's name on it.
  * - **Origin.** Human sessions only (`design-decisions.md` §18), the same rule
- *   Now's "N working" counts by — and Now's rollup NAVIGATES to this strip, so
+ *   Heads up's "N working" counts by — and Heads up's rollup NAVIGATES to this strip, so
  *   the two saying different numbers was a disagreement the operator could see
  *   in one click.
  *

@@ -96,6 +96,8 @@ export function createQueueItem(overrides: Partial<QueueItem> = {}): QueueItem {
   return {
     id: nextId('q'),
     content: 'Follow-up message',
+    mine: true,
+    notice: null,
     ...overrides,
   };
 }

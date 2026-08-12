@@ -19,11 +19,11 @@
  *    (task 2.1), so `steer` and `stage` come back as `applied: 'queue'` with
  *    `degradedBecause: 'unsupported'`. The ladder's shape is here; its native
  *    rungs land in P4.
- * 2. **Whether it runs now.** A message whose client already has a turn open on
- *    the session waits in the durable queue ({@link MessageQueueStore}) instead
- *    of starting a second stream beside it. Anything else is launched
- *    immediately and meets the write-lock exactly as it did before, so a second
- *    CLIENT still gets the same refusal it has always got.
+ * 2. **Whether it runs now.** A message arriving while the session has a turn
+ *    open waits in the durable queue ({@link MessageQueueStore}) instead of
+ *    starting a second stream beside it — whichever window sent it. A busy
+ *    session is a queue, not a refusal (task 2.4). A caller that would rather
+ *    not run at all than run late says so with `whenBusy: 'refuse'`.
  * 3. **When a waiting message runs.** On the signal a turn actually ENDED —
  *    `turn_end` on the projector — never on a bare `result`. Dequeuing on
  *    `result` is how every queue-capable tool has shipped the same bug
@@ -51,22 +51,45 @@
  * through {@link dispatchMessage} — re-offering would enqueue a duplicate beside
  * every original and hand the person their queue twice.
  *
- * ## What it does NOT change (yet)
+ * ## When a dispatch answers its caller (task 2.4)
  *
- * The HTTP contract is untouched by this task. A dispatch still resolves when
- * the turn actually STARTS, so `POST /api/sessions/:id/messages` still holds
- * its socket for a queued message and still answers `409 SESSION_LOCKED` when
- * another client holds the lock. Task 2.4 retires both: the 202 will resolve at
- * acceptance and the queue will be what a busy session returns. The queue rows
- * this module writes are what that change stands on.
+ * At ACCEPTANCE, not at the turn's start. A message that can run now still
+ * answers when its turn has started, because that answer is available
+ * immediately and carries the canonical id; a message that has to wait answers
+ * the moment its row is written. Nothing holds an HTTP socket for a turn ahead
+ * of it any more, and no caller is told "no" because the session was busy.
  *
- * {@link SessionTurnQueue} (DOR-1088) is likewise kept, underneath: it is the
+ * The write-lock survives this, retargeted: it is no longer "who may send" but
+ * the mutex one turn window holds, and its inactivity TTL (`LockActivity`,
+ * DOR-782) is untouched — a turn that goes dark still loses the session a TTL
+ * later.
+ *
+ * ## When a message leaves the queue
+ *
+ * **When a turn actually STARTS with it** — the `turn_start` the projector
+ * ingests — and never at the launch ATTEMPT. The two are not the same moment: a
+ * launch can be refused by the write-lock (a holder this module does not track)
+ * or throw before any turn exists, and a row dropped at the attempt would take
+ * words the sender was told were accepted with it. That is the loss DOR-480
+ * named, and after task 2.5 it can also hit a row this process ADOPTED rather
+ * than accepted, whose sender is long gone and cannot retype it. A message that
+ * did not start goes back in line instead.
+ *
+ * The one exception is a `whenBusy: 'refuse'` caller, whose row IS removed when
+ * its launch fails: it has said the message has no value later, and leaving it
+ * behind would put a prompt nobody typed into somebody's composer for good.
+ *
+ * {@link SessionTurnQueue} (DOR-1088) is kept, underneath: it is the
  * intra-process ordering primitive inside `triggerTurn` and this does not
- * replace it. What changes later is that an HTTP request stops waiting on it.
+ * replace it. What changed is that no HTTP request waits on it.
  *
  * @module services/session/message-dispatcher
  */
-import type { AgentRuntime, RuntimeCapabilities } from '@dorkos/shared/agent-runtime';
+import type {
+  AgentRuntime,
+  RuntimeCapabilities,
+  RuntimeDeliveryResult,
+} from '@dorkos/shared/agent-runtime';
 import type {
   MessageDeliveryOutcome,
   MessageDisposition,
@@ -74,9 +97,14 @@ import type {
 } from '@dorkos/shared/schemas';
 import type { SessionEvent } from '@dorkos/shared/session-stream';
 import type { SessionSettings } from '@dorkos/shared/types';
-import type { ClientContext, RoomContextData } from '@dorkos/shared/additional-context';
+import type {
+  AdditionalContext,
+  ClientContext,
+  RoomContextData,
+} from '@dorkos/shared/additional-context';
 import type { RuntimeCommandIntentId } from '@dorkos/shared/command-intents';
 import { COMMAND_INTENT_QUEUE_WAIT_MS } from '@dorkos/shared/command-intents';
+import { newDispatchId } from '@dorkos/shared/dispatch-id';
 import { getMessageQueueStore, toQueuedMessage } from './message-queue-store.js';
 import type { SessionStateProjector } from './session-state-projector.js';
 import {
@@ -85,11 +113,21 @@ import {
   peekProjector,
   rekeyProjector,
 } from './session-state-projector.js';
+import {
+  forgetSessionAliases,
+  linkSessionId,
+  primaryOf,
+  projectorFor,
+  queueKeyOf,
+  resetSessionKeys,
+} from './session-key-registry.js';
 import { onSessionRemoved } from './session-list-broadcaster.js';
 import { triggerTurn, type TriggerTurnDeps, type TriggerTurnResult } from './trigger-turn.js';
 import { triggerCommandIntent } from './trigger-command-intent.js';
 import { SESSIONS } from '../../config/constants.js';
 import { logger } from '../../lib/logger.js';
+import { captureDispatchScope, runInDispatch } from '../../lib/dispatch-context.js';
+import { recordDispatchEnd, recordDispatchStart } from '../observability/dispatch-buffers.js';
 
 /**
  * How many session ids the orphan sweep hands to one `DELETE ... IN (...)`.
@@ -115,88 +153,47 @@ interface PendingDispatch {
   messageId: string;
   /** The session key it is queued under (canonical where one is known). */
   sessionKey: string;
-  /** Who asked for it, so it waits only behind that client's own turn. */
+  /** Who asked for it — the lock identity its turn will run under. */
   clientId: string;
   /** Run it now. Idempotent — the wait bound and the pump can both reach it. */
   launch: (opts: { budgetExhausted: boolean }) => void;
   /** The wait bound's timer, cleared when the dispatch launches. */
   timer: ReturnType<typeof setTimeout>;
+  /**
+   * True for a message whose launch the write-lock has already refused.
+   *
+   * The pump skips it until the session reaches a turn boundary, because
+   * nothing between now and then can change the lock's answer — and a pump that
+   * retried immediately would spin: every refusal hands the slot back, which
+   * schedules the pump, which launches it again, which is refused again. That
+   * loop exhausted the heap in testing. Only a boundary (or, if none ever
+   * comes, the wait bound) tries again.
+   */
+  waitingOnLock: boolean;
 }
 
 /** Turns open right now, keyed by resolved session id. */
 const inFlight = new Map<string, InFlightTurn>();
 /** Accepted messages waiting to launch, keyed by message id. */
 const pending = new Map<string, PendingDispatch>();
-/** Later-learned session id → the id its dispatcher state is filed under. */
-const sessionAliases = new Map<string, string>();
 /**
- * Filing id → the id the PROJECTOR is registered under today.
+ * Messages whose launch is under way: out of {@link pending}, still on the
+ * queue.
  *
- * The two diverge for one session's first turn: dispatcher state stays filed
- * under the id the session was born with, while the projector registry moves to
- * the canonical id. Without this the pending-interaction gate would look up a
- * projector that is no longer there and read "no interactions" from its
- * absence — a gate that cannot fail is worse than no gate.
+ * The gap between the two is not instantaneous. A launch leaves `pending`
+ * synchronously and the row leaves the store at `turn_start`, and between those
+ * two moments the turn is awaiting its neutral context bag — real filesystem
+ * work. A row seen in that window is on disk with no pending entry behind it,
+ * which is precisely what {@link adoptQueuedMessages} takes to mean "a previous
+ * process left this", so it would adopt a message that is at this instant being
+ * sent — running somebody's words twice and reporting a queue recovery on a
+ * server that never restarted.
  */
-const projectorIds = new Map<string, string>();
+const launching = new Set<string>();
 /** Tail of each session's dispatch mutex chain; dropped when it drains. */
 const dispatchMutex = new Map<string, Promise<void>>();
 /** Sessions the fleet has reported gone, awaiting the next sweep. */
 const orphanedSessions = new Set<string>();
-
-/** The id `sessionId`'s dispatcher state is filed under (itself, unless aliased). */
-function primaryOf(sessionId: string): string {
-  return sessionAliases.get(sessionId) ?? sessionId;
-}
-
-/**
- * The id a session's queue ROWS are stored under.
- *
- * Deliberately NOT {@link primaryOf}, and the difference is load-bearing. The
- * dispatcher's in-memory state stays filed under the id a session was born with
- * so an in-flight turn keeps its slot across the rename; the durable rows go the
- * other way, moved onto the canonical id by the store's `rekeySession` on the
- * same beat the projector is re-keyed. Reading them back through the filing id
- * therefore finds nothing, and — worse — a message enqueued after the rename
- * would be written under the filing id and land in a SECOND queue nothing lists
- * and nothing drains. Every store call resolves its key here so there is only
- * ever one queue per session.
- *
- * It is also the key the snapshot reads by, because it resolves to exactly the
- * id the projector is registered under.
- *
- * @param sessionId - Either id a caller might hold (request uuid or canonical)
- */
-function queueKeyOf(sessionId: string): string {
-  const primary = primaryOf(sessionId);
-  return projectorIds.get(primary) ?? primary;
-}
-
-/**
- * Record that a session has gained its canonical id, so state filed under the
- * id it was born with stays reachable.
- *
- * A brand-new session is dispatched to under the request UUID and gains its
- * real SDK id mid-first-turn. The queue ROWS move with it (the store's
- * `rekeySession`, called from the projector's rekey choke point); this moves the
- * in-memory half — the open turn and anything queued behind it — so the second
- * message a person types does not queue against a session key nothing will ever
- * pump.
- *
- * @param oldId - The id the state is filed under today
- * @param newId - The canonical id the session is now known by
- */
-export function linkSessionId(oldId: string, newId: string): void {
-  const primary = primaryOf(oldId);
-  if (newId === primary) return;
-  sessionAliases.set(newId, primary);
-  projectorIds.set(primary, newId);
-}
-
-/** The projector for a filing id, following the canonical-id rename. */
-function projectorFor(sessionKey: string): SessionStateProjector | undefined {
-  return peekProjector(projectorIds.get(sessionKey) ?? sessionKey);
-}
 
 /**
  * Run `fn` with this session's dispatch mutex held.
@@ -365,7 +362,27 @@ export interface DispatchMessageOpts {
   onSettled?(outcome: 'ok' | 'failed'): void;
   /** Receives the `seq` of this turn's `turn_start` — its identity on the stream. */
   onTurnStart?(seq: number): void;
+  /**
+   * What to do when the session already has a turn open.
+   *
+   * - `'queue'` (default) — accept it and run it when the session frees up. The
+   *   answer for a message a person typed and is watching: it is theirs, it is
+   *   durable, every window can see it, and they can edit or remove it while it
+   *   waits.
+   * - `'refuse'` — answer `{ accepted: false }` and write nothing. For a trigger
+   *   a machine generated on somebody's behalf (a room turn, an MCP sign-in
+   *   resume), where the reason it was sent may not survive the wait and firing
+   *   it late is worse than not firing it.
+   */
+  whenBusy?: WhenBusy;
 }
+
+/**
+ * What a caller wants done when the session is already working.
+ *
+ * @see DispatchMessageOpts.whenBusy
+ */
+export type WhenBusy = 'queue' | 'refuse';
 
 /** What happened to a message the dispatcher accepted. */
 export interface MessageDispatchResult extends TriggerTurnResult {
@@ -373,9 +390,16 @@ export interface MessageDispatchResult extends TriggerTurnResult {
   outcome: MessageDeliveryOutcome;
   /**
    * Where the message sat in its session's queue at acceptance, 1-based.
-   * `1` means it was the head — nothing was ahead of it.
+   * `1` means it was the head — nothing was ahead of it. `0` means it was never
+   * queued at all, which only a refusal is.
    */
   queuePosition: number;
+  /**
+   * True when the message was accepted onto the queue rather than started. Its
+   * turn begins when the session frees up, announced on the session's stream
+   * like every other queue change.
+   */
+  queued: boolean;
 }
 
 /** Everything one accepted message needs to become a running turn. */
@@ -394,6 +418,12 @@ interface DispatchPlan {
   budgetMs: number;
   /** When it started spending that budget. */
   startedWaitingAt: number;
+  /**
+   * What a launch that started no turn means for this message: go back in line
+   * (`'queue'`, the default everywhere except the callers that opt out) or be
+   * dropped with its row (`'refuse'`).
+   */
+  whenBusy: WhenBusy;
   /** What the caller passes straight through to the turn. */
   turn: Pick<
     DispatchMessageOpts,
@@ -410,14 +440,63 @@ interface DispatchPlan {
 }
 
 /**
- * Start one accepted message's turn: claim the session, take the message off the
- * queue, and hand it to {@link triggerTurn}.
+ * Give up on a message whose launch started no turn, or put it back in line.
  *
- * Shared by the two ways a message reaches this point — accepted onto an idle
- * session, or released from the queue by the pump (including a row
- * {@link adoptQueuedMessages} recovered after a restart) — so all of them take
- * the message off the queue, announce that the queue moved, and hand the
+ * Which of the two is the caller's `whenBusy`, and the difference is a promise
+ * to a person: a message somebody typed and was told was accepted must survive
+ * a launch the write-lock refused, while a machine-generated trigger that asked
+ * not to wait must not be left sitting in their composer.
+ *
+ * A message already gone from the queue — removed from another window between
+ * the launch and its refusal — is left gone.
+ */
+function returnToQueue(plan: DispatchPlan): void {
+  const store = getMessageQueueStore();
+  if (plan.whenBusy === 'refuse') {
+    if (store?.remove(plan.messageId)) emitQueueUpdate(plan.sessionKey);
+    return;
+  }
+  if (store && !store.get(plan.messageId)) return;
+  parkDispatch(plan, unwatchedSettle(plan), { waitingOnLock: true });
+}
+
+/**
+ * Settlement handlers for a launch nobody is waiting on.
+ *
+ * Every parked dispatch is one of these now: the caller was answered at
+ * ACCEPTANCE (task 2.4), and an adopted row's caller belonged to a process that
+ * is gone. So a failure has to be reported here or it is reported nowhere.
+ */
+function unwatchedSettle(plan: DispatchPlan): {
+  resolve(result: TriggerTurnResult): void;
+  reject(err: unknown): void;
+} {
+  return {
+    resolve: () => {},
+    reject: (err: unknown) => {
+      logger.warn('[MessageDispatcher] a waiting message failed to start', {
+        sessionId: plan.sessionKey,
+        messageId: plan.messageId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    },
+  };
+}
+
+/**
+ * Start one accepted message's turn: claim the session, hand it to
+ * {@link triggerTurn}, and take it off the queue once the turn is really
+ * running.
+ *
+ * Shared by every way a message reaches this point — accepted onto an idle
+ * session, released from the queue by the pump, or a row
+ * {@link adoptQueuedMessages} recovered after a restart — so all of them leave
+ * the queue on the same signal, announce that the queue moved, and hand the
  * session back the same way however they got here.
+ *
+ * **The message leaves the queue at `turn_start`, not here at the attempt.** See
+ * the module doc: an attempt the write-lock refuses must leave the words where
+ * they were, and {@link returnToQueue} puts the message back in line.
  *
  * @param plan - The message, its session, and the turn's passthroughs
  * @param opts.budgetExhausted - The wait bound fired: launch anyway, with no
@@ -435,28 +514,41 @@ function launchDispatch(
     : Math.max(0, plan.budgetMs - (Date.now() - plan.startedWaitingAt));
   const token = Symbol('dispatcher-turn');
   if (!opts.budgetExhausted) inFlight.set(sessionKey, { clientId, token });
+  // Held from here until this launch is done with the message, whichever way it
+  // ends. Every exit below routes through `clearIfOurs` — the sync throw, the
+  // rejection, the refusal, and the settle — so there is no path that leaves an
+  // id behind, and each of them hands the message back to `pending` (or to
+  // nobody, if it ran) in the same synchronous beat.
+  launching.add(messageId);
   const clearIfOurs = (): void => {
+    launching.delete(messageId);
     if (inFlight.get(sessionKey)?.token === token) inFlight.delete(sessionKey);
     schedulePump(sessionKey);
   };
-  // The row goes as the turn starts, and every window is told so in the same
-  // beat — a queue chip that outlives the message it stands for is a lie about
-  // what is still waiting.
-  if (getMessageQueueStore()?.remove(messageId)) emitQueueUpdate(sessionKey);
   const { turn } = plan;
   let started: Promise<TriggerTurnResult>;
   try {
     started = triggerTurn({
       sessionId: plan.sessionId,
       clientId,
-      content: plan.content,
+      // The ROW's words, not the ones the plan was built with: a message that
+      // waited may have been reworded while it waited, and running what the
+      // person first typed instead of what they left in the queue would make
+      // the edit a lie.
+      content: getMessageQueueStore()?.get(messageId)?.content ?? plan.content,
       ...(turn.cwd !== undefined ? { cwd: turn.cwd } : {}),
       ...(turn.context ? { context: turn.context } : {}),
       ...(turn.roomContext ? { roomContext: turn.roomContext } : {}),
       ...(turn.seedContext ? { seedContext: turn.seedContext } : {}),
       ...(turn.settings ? { settings: turn.settings } : {}),
       ...(turn.stallTimeoutMs !== undefined ? { stallTimeoutMs: turn.stallTimeoutMs } : {}),
-      ...(turn.onTurnStart ? { onTurnStart: turn.onTurnStart } : {}),
+      // The turn is running: THIS is the instant the message stops waiting, and
+      // every window is told so in the same beat — a queue chip that outlives
+      // the message it stands for is a lie about what is still waiting.
+      onTurnStart: (seq) => {
+        if (getMessageQueueStore()?.remove(messageId)) emitQueueUpdate(sessionKey);
+        turn.onTurnStart?.(seq);
+      },
       projector: plan.projector,
       deps: turnDeps(plan.runtime),
       queueWaitMs: remainingMs,
@@ -469,6 +561,7 @@ function launchDispatch(
     });
   } catch (err) {
     clearIfOurs();
+    returnToQueue(plan);
     // Rejected with what was thrown, unchanged: `triggerTurn` throws typed
     // errors its callers narrow on, and re-wrapping would cost them that.
     return Promise.reject(err as Error);
@@ -476,11 +569,15 @@ function launchDispatch(
   return started.then(
     (result) => {
       // A refused turn never settles, so nothing else will hand the slot back.
-      if (!result.accepted) clearIfOurs();
+      if (!result.accepted) {
+        clearIfOurs();
+        returnToQueue(plan);
+      }
       return result;
     },
     (err: unknown) => {
       clearIfOurs();
+      returnToQueue(plan);
       throw err;
     }
   );
@@ -492,19 +589,35 @@ function launchDispatch(
  *
  * @param plan - The message and everything its turn will need
  * @param settle - Receives the launch's result, however it settles
+ * @param opts.waitingOnLock - This message has already been refused by the
+ *   write-lock once, so the pump leaves it alone until a turn boundary; see
+ *   {@link PendingDispatch.waitingOnLock}
  */
 function parkDispatch(
   plan: DispatchPlan,
-  settle: { resolve(result: TriggerTurnResult): void; reject(err: unknown): void }
+  settle: { resolve(result: TriggerTurnResult): void; reject(err: unknown): void },
+  opts?: { waitingOnLock?: boolean }
 ): void {
+  // Taken HERE, where the message was accepted, and applied wherever the pump
+  // eventually calls `launch` — which is inside the PREVIOUS turn's scope on
+  // both routes that reach it: the projector's `turn_end`, and the turn handing
+  // its slot back. Correlation follows the call chain, and a parked closure's
+  // call chain is not its own, so without this snapshot a queued turn logs
+  // under the id of the turn it waited behind (DOR-1159). The `setTimeout`
+  // below never had the problem, because a timer captures its creation context;
+  // this makes the two paths agree.
+  const scope = captureDispatchScope();
   const entry: PendingDispatch = {
     messageId: plan.messageId,
     sessionKey: plan.sessionKey,
     clientId: plan.clientId,
+    waitingOnLock: opts?.waitingOnLock ?? false,
     launch: (launchOpts) => {
       if (!pending.delete(plan.messageId)) return;
       clearTimeout(entry.timer);
-      launchDispatch(plan, launchOpts).then(settle.resolve, settle.reject);
+      scope(() => {
+        void launchDispatch(plan, launchOpts).then(settle.resolve, settle.reject);
+      });
     },
     // Bounded for the same reason DOR-1088 bounds its chain: the write-lock has
     // a TTL and a queue does not, so a turn that went dark would otherwise hand
@@ -516,16 +629,20 @@ function parkDispatch(
 }
 
 /**
- * Accept a message, decide when it runs, and resolve once its turn has started
- * (or been refused).
+ * Accept a message and decide when it runs.
  *
- * The message is persisted before anything else, so from the moment this is
- * called it survives a refresh, a second window, a failed turn and a restart.
- * It is removed from the queue at the instant it is dispatched.
+ * Resolves at ACCEPTANCE (task 2.4): immediately for a message that has to
+ * wait, and — for one that can run now — as soon as its turn has started and the
+ * canonical id is known. Nothing here waits for a turn ahead of it.
+ *
+ * The message is persisted before anything else, so from the moment this returns
+ * it survives a refresh, a second window, a failed turn and a restart. It leaves
+ * the queue when a turn actually STARTS with it; see the module doc for why that
+ * is not the same moment as the launch attempt.
  *
  * @param opts - The message, its sender, the session's projector and runtime
- * @returns The delivery outcome, the queue position it was accepted at, and the
- *   same `{ accepted, canonicalId }` every caller has always read
+ * @returns The delivery outcome, the queue position it was accepted at, whether
+ *   it is waiting, and the `{ accepted, canonicalId }` every caller has read
  */
 export async function dispatchMessage(opts: DispatchMessageOpts): Promise<MessageDispatchResult> {
   const { sessionId, clientId, content, projector, runtime } = opts;
@@ -534,6 +651,18 @@ export async function dispatchMessage(opts: DispatchMessageOpts): Promise<Messag
   const sessionKey = primaryOf(runtime.getInternalSessionId(sessionId) ?? sessionId);
   const queueKey = queueKeyOf(sessionId);
   const budgetMs = opts.queueWaitMs ?? SESSIONS.LOCK_TTL_MS;
+  const whenBusy = opts.whenBusy ?? 'queue';
+
+  // Asked and answered before anything is written: a caller that refuses rather
+  // than waits must not leave a row behind for a message it is about to disown.
+  if (whenBusy === 'refuse' && inFlight.has(sessionKey)) {
+    return {
+      accepted: false,
+      queued: false,
+      outcome: { messageId: crypto.randomUUID(), requested, ...resolved },
+      queuePosition: 0,
+    };
+  }
 
   // Anything a previous server process left queued is picked up first, so this
   // message joins a queue that is whole rather than jumping a person's own
@@ -574,23 +703,47 @@ export async function dispatchMessage(opts: DispatchMessageOpts): Promise<Messag
     runtime,
     budgetMs,
     startedWaitingAt: Date.now(),
+    whenBusy,
     turn: opts,
   };
 
-  const launched = new Promise<TriggerTurnResult>((resolve, reject) => {
-    // The first attempt is gated only by this client's own open turn. A message
-    // from any OTHER client is launched straight away and meets the write-lock,
-    // which is the answer that route has always given — deferring it here would
-    // turn an immediate refusal into a wait of minutes.
-    if (inFlight.get(sessionKey)?.clientId !== clientId) {
-      launchDispatch(plan, { budgetExhausted: false }).then(resolve, reject);
-      return;
-    }
-    parkDispatch(plan, { resolve, reject });
+  /** Accepted, waiting: the answer for every message that does not start now. */
+  const waiting = (): MessageDispatchResult => ({
+    accepted: true,
+    queued: true,
+    canonicalId: runtime.getInternalSessionId(sessionId) ?? sessionId,
+    outcome,
+    queuePosition,
   });
 
-  const result = await launched;
-  return { ...result, outcome, queuePosition };
+  // A session with a turn open takes the message and holds it — whoever sent it.
+  // Racing a second stream into one session is what left a live session showing
+  // an idle composer (DOR-1088), and refusing the second window instead is what
+  // task 2.4 retires.
+  if (inFlight.has(sessionKey)) {
+    parkDispatch(plan, unwatchedSettle(plan));
+    return waiting();
+  }
+
+  let result: TriggerTurnResult;
+  try {
+    result = await launchDispatch(plan, { budgetExhausted: false });
+  } catch (err) {
+    // The launch threw rather than being refused. `returnToQueue` has already
+    // decided what becomes of the message; a caller that asked to refuse still
+    // wants the throw, and one that is queueing has an accepted message either
+    // way and learns about the failure through `onError`.
+    if (whenBusy === 'refuse') throw err;
+    return waiting();
+  }
+  if (result.accepted) return { ...result, queued: false, outcome, queuePosition };
+  // The write-lock said no. For a refusing caller that is the answer; for
+  // everybody else the message kept its place in the queue and runs when the
+  // holder lets go.
+  if (whenBusy === 'refuse') {
+    return { accepted: false, queued: false, outcome, queuePosition: 0 };
+  }
+  return waiting();
 }
 
 /** Inputs for {@link adoptQueuedMessages}. */
@@ -620,9 +773,13 @@ export interface AdoptQueuedMessagesOpts {
  * would enqueue a fresh row beside every original and hand the person their
  * queue twice, which is the one failure worse than the queue not running at all.
  *
- * Idempotent by construction — a row that already has a pending entry is skipped
- * — so it is safe to call on every dispatch, which is what makes recovery
- * automatic rather than something a caller has to remember.
+ * Idempotent by construction — a row this process is already carrying is
+ * skipped, whether it is waiting ({@link pending}) or already on its way out
+ * ({@link launching}) — so it is safe to call on every dispatch, which is what
+ * makes recovery automatic rather than something a caller has to remember. Both
+ * halves are load-bearing: a row is briefly in NEITHER the pending set nor the
+ * store's rear-view while its turn assembles its context, and adopting there
+ * sends somebody's message twice.
  *
  * Ends by giving the queue a chance to move: an idle session with rows on disk
  * has nothing else coming that would ever start them.
@@ -637,7 +794,14 @@ export function adoptQueuedMessages(opts: AdoptQueuedMessagesOpts): number {
   const rows = store.list(queueKeyOf(opts.sessionId));
   let adopted = 0;
   for (const row of rows) {
-    if (pending.has(row.id)) continue;
+    if (pending.has(row.id) || launching.has(row.id)) continue;
+    // The dispatch that accepted this row belonged to a process that is gone,
+    // and its id went with it. Adoption is a new dispatch — its own id, its own
+    // origin — because the alternative is a turn that appears in the log under
+    // whichever unrelated caller happened to trigger the adoption sweep, or
+    // under nothing at all.
+    const dispatchId = newDispatchId();
+    recordDispatchStart({ dispatchId, origin: 'queue-recovery', sessionId: sessionKey });
     const plan: DispatchPlan = {
       sessionId: opts.sessionId,
       sessionKey,
@@ -648,24 +812,25 @@ export function adoptQueuedMessages(opts: AdoptQueuedMessagesOpts): number {
       runtime: opts.runtime,
       budgetMs: SESSIONS.LOCK_TTL_MS,
       startedWaitingAt: Date.now(),
+      // A recovered row is somebody's words with nobody left to retype them, so
+      // it queues rather than being dropped if its first launch is refused.
+      whenBusy: 'queue',
       turn: {
         ...(opts.cwd !== undefined ? { cwd: opts.cwd } : {}),
         ...(row.context !== null ? { context: row.context } : {}),
+        // Nobody is holding a request open for this one, so the buffer entry
+        // would otherwise never be closed out.
+        onSettled: (outcome) =>
+          recordDispatchEnd(dispatchId, outcome === 'failed' ? 'failed' : 'answered'),
       },
     };
-    parkDispatch(plan, {
-      resolve: () => {},
-      // Nobody is awaiting a recovered turn — the request that accepted it
-      // belonged to a process that is gone — so a failure has to be reported
-      // here or it is reported nowhere.
-      reject: (err: unknown) => {
-        logger.warn('[MessageDispatcher] a recovered queued message failed to start', {
-          sessionId: sessionKey,
-          messageId: row.id,
-          error: err instanceof Error ? err.message : String(err),
-        });
-      },
-    });
+    // Parked INSIDE the scope, so the snapshot `parkDispatch` takes is this
+    // recovery dispatch's rather than the caller's — an adoption triggered by
+    // somebody else's `dispatchMessage` must not put its turn under that
+    // person's id.
+    runInDispatch({ dispatchId, origin: 'queue-recovery' }, () =>
+      parkDispatch(plan, unwatchedSettle(plan))
+    );
     adopted += 1;
   }
   if (adopted > 0) schedulePump(sessionKey);
@@ -754,6 +919,96 @@ export async function dispatchCommandIntent(
   }
 }
 
+/** Inputs for {@link deliverSteer}. */
+export interface DeliverSteerOpts {
+  /** The session to steer; either id a caller might hold. */
+  sessionId: string;
+  /** The client asking to steer — the identity the authorization gate turns on. */
+  clientId: string;
+  /** The person's words, passed through pristine. */
+  content: string;
+  /** The server-minted correlation id for this steered message. */
+  messageId: string;
+  /** The neutral context bag, assembled server-side; rendered out of band. */
+  additionalContext?: AdditionalContext;
+  /** The runtime this session resolves to. */
+  runtime: AgentRuntime;
+}
+
+/**
+ * What a steer did, plus whether the caller was allowed to make it.
+ *
+ * `authorized: false` is distinct from an ordinary `delivered: false`: the
+ * steer was refused before the runtime was ever asked, because the caller does
+ * not own the turn. The degradation ladder (task 4.4) turns an unauthorized or
+ * undelivered steer into a queued message; this is the receipt it reads.
+ */
+export interface SteerDeliveryResult extends RuntimeDeliveryResult {
+  /** True when the caller was entitled to steer this session's live turn. */
+  authorized: boolean;
+}
+
+/**
+ * Steer a message into a session's live turn, through the same ingress and the
+ * same authorization a turn passes (spec `persistent-session-runtime` §2.3,
+ * task 4.1).
+ *
+ * **A steer is a WRITE.** A live turn is owned by exactly one client — the one
+ * holding its write-lock — and injecting a message into that turn is as much a
+ * write as starting it. So the authorization is the identical gate `sendMessage`
+ * passes, asked of the identical authority: the runtime's real write-lock, via
+ * {@link AgentRuntime.isLocked}. It is deliberately NOT the dispatcher's
+ * {@link inFlight} mirror, which is lossy — a budget-exhausted launch runs its
+ * turn holding the real lock WITHOUT ever claiming `inFlight`
+ * ({@link launchDispatch} sets it only when `!budgetExhausted`), so `inFlight`
+ * can be empty while a steerable turn is live, and gating on it would let ANY
+ * client — including one that could not send right now — steer that turn.
+ * `isLocked(key, clientId)` closes that hole: true only when a DIFFERENT client
+ * holds the live lock, false for the owner, and false when no turn is open (the
+ * lock is free and every client may send, so the runtime just reports
+ * `no-open-turn`).
+ *
+ * Held under the dispatch mutex so the lock check and the delivery cannot
+ * straddle a turn ending or a reap: the same mutex every turn boundary and the
+ * warm-process reaper take, so a steer racing either simply does not interleave.
+ *
+ * This is the ONE server path to a runtime's `deliverIntoTurn`, exactly as
+ * {@link dispatchMessage} is the one path to `sendMessage` — the single-ingress
+ * audit (`dispatcher-single-ingress.test.ts`) holds it to that, so no caller
+ * can reach the write around this gate.
+ *
+ * @param opts - The session, the steering client, the message, and the runtime
+ * @returns Whether the caller was authorized, whether the steer was delivered,
+ *   and why not when it was not
+ */
+export async function deliverSteer(opts: DeliverSteerOpts): Promise<SteerDeliveryResult> {
+  const { sessionId, clientId, runtime } = opts;
+  // The lock is keyed by the canonical id when one is known — the same `turnKey`
+  // `triggerTurn` acquires it under — so ask under that id, not the request uuid.
+  const lockKey = runtime.getInternalSessionId(sessionId) ?? sessionId;
+  const sessionKey = primaryOf(lockKey);
+  return withDispatchMutex(sessionKey, async () => {
+    // A DIFFERENT client holds the live write-lock: this client could not send
+    // now, so it may not steer now. The only refusal that is authorization's.
+    if (runtime.isLocked(lockKey, clientId)) {
+      return { authorized: false, delivered: false };
+    }
+    // A runtime that declares neither steer nor stage simply omits the method;
+    // the ladder degrades around a missing implementation rather than failing.
+    if (runtime.deliverIntoTurn === undefined) {
+      return { authorized: true, delivered: false, reason: 'unsupported' };
+    }
+    const result = await runtime.deliverIntoTurn(sessionId, opts.content, {
+      mode: 'steer',
+      messageId: opts.messageId,
+      ...(opts.additionalContext !== undefined
+        ? { additionalContext: opts.additionalContext }
+        : {}),
+    });
+    return { authorized: true, ...result };
+  });
+}
+
 /**
  * Give a session's queue a chance to move, on the next microtask.
  *
@@ -791,13 +1046,14 @@ function pumpLocked(sessionKey: string): void {
   // arriving now is answered by nobody and read as the person's reply by the
   // model. Reuse the probe the write-lock and the stall watchdog already share.
   if (projectorFor(sessionKey)?.hasPendingInteractions()) return;
-  for (const entry of orderedWaiting(sessionKey)) {
-    // A client waits behind its OWN open turn and nobody else's, so a message
-    // from a second window is not held hostage by the first window's turn.
-    if (inFlight.get(sessionKey)?.clientId === entry.clientId) continue;
-    entry.launch({ budgetExhausted: false });
-    return;
-  }
+  // One turn at a time on a session, whoever owns it. The pump is called both
+  // when a turn ENDS on the projector and when one hands its slot back, and the
+  // first of those fires while the ending turn still holds the write-lock — so
+  // this gate is also what keeps the queue from racing a release it would lose.
+  if (inFlight.has(sessionKey)) return;
+  const head = orderedWaiting(sessionKey)[0];
+  if (!head || head.waitingOnLock) return;
+  head.launch({ budgetExhausted: false });
 }
 
 /**
@@ -834,6 +1090,12 @@ function orderedWaiting(sessionKey: string): PendingDispatch[] {
  * @param sessionId - The session whose boundary was reached
  */
 export function noteTurnBoundary(sessionId: string): void {
+  // A boundary is the only thing that can change the write-lock's answer, so it
+  // is also what re-arms a message the lock refused earlier.
+  const sessionKey = primaryOf(sessionId);
+  for (const entry of pending.values()) {
+    if (entry.sessionKey === sessionKey) entry.waitingOnLock = false;
+  }
   schedulePump(sessionId);
 }
 
@@ -850,20 +1112,6 @@ export function noteTurnBoundary(sessionId: string): void {
  */
 export function noteSessionOrphaned(sessionId: string): void {
   orphanedSessions.add(primaryOf(sessionId));
-}
-
-/**
- * Drop the canonical-id bookkeeping for a session that is gone for good, in both
- * directions: the filing id's forward pointer, and every later id that resolved
- * back to it.
- *
- * @param primary - The id the session's dispatcher state was filed under
- */
-function forgetSessionAliases(primary: string): void {
-  projectorIds.delete(primary);
-  for (const [alias, target] of sessionAliases) {
-    if (target === primary) sessionAliases.delete(alias);
-  }
 }
 
 /**
@@ -915,6 +1163,25 @@ export function listQueuedMessages(sessionId: string): QueuedMessage[] {
 }
 
 /**
+ * Disarm the pending dispatch of a message somebody took off the queue.
+ *
+ * The dispatcher owns the pending set, so removing a row without telling it
+ * would leave the message armed: it would fire anyway one turn boundary later,
+ * which is the worst possible reading of a Remove. Called by
+ * {@link cancelQueuedMessage}, which owns the row half of the same act.
+ *
+ * @param messageId - The server-minted message id
+ * @returns True when a dispatch was armed and is now cancelled
+ */
+export function cancelPendingDispatch(messageId: string): boolean {
+  const entry = pending.get(messageId);
+  if (!entry) return false;
+  clearTimeout(entry.timer);
+  pending.delete(messageId);
+  return true;
+}
+
+/**
  * Drop every scrap of in-memory dispatcher state.
  *
  * @internal Exported for testing only — a dispatcher outlives one test file.
@@ -923,8 +1190,8 @@ export function resetMessageDispatcher(): void {
   for (const entry of pending.values()) clearTimeout(entry.timer);
   inFlight.clear();
   pending.clear();
-  sessionAliases.clear();
-  projectorIds.clear();
+  launching.clear();
+  resetSessionKeys();
   dispatchMutex.clear();
   orphanedSessions.clear();
 }

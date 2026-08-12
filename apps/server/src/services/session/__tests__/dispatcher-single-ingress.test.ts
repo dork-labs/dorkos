@@ -81,8 +81,14 @@ const ALLOWED = new Map<string, string>([
   ],
 ]);
 
-/** The runtime methods that START work; anything else is a read. */
-const TURN_STARTERS = ['.sendMessage(', '.executeCommandIntent('];
+/**
+ * The runtime methods that START or STEER work; anything else is a read.
+ *
+ * `deliverIntoTurn` joins them (task 4.1): a steer is a WRITE into a live turn,
+ * authorized identically to `sendMessage`, so it must reach the runtime only
+ * through the dispatcher's `deliverSteer` gate — never around it.
+ */
+const TURN_STARTERS = ['.sendMessage(', '.executeCommandIntent(', '.deliverIntoTurn('];
 
 /**
  * Files under `SCOPE` whose working-tree contents contain `needle`.

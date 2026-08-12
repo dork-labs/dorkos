@@ -39,9 +39,9 @@ const AXE_CONTEXT = '[data-slot="page-container"]';
  * expectation off the thing it is testing cannot fail. These are the four
  * journeys' answers as `buildSidebarModel` computes them:
  *
- * - `first-run` — Getting started occupies Now's slot, and Today is **absent**
+ * - `first-run` — Getting started occupies Heads up's slot, and Today is **absent**
  *   because nothing has happened yet. BC-1 and BC-4 in one row.
- * - `quiet` — no Now zone AT ALL. The calm signal is the absence of a box, not
+ * - `quiet` — no Heads up zone AT ALL. The calm signal is the absence of a box, not
  *   an empty one.
  * - `busy` / `power` — the full three.
  */
@@ -53,7 +53,7 @@ const EXPECTED_ZONES: Record<string, string[]> = {
 };
 
 /**
- * How many attention rows each journey's Now zone holds, and whether it
+ * How many attention rows each journey's Heads up zone holds, and whether it
  * overflows.
  *
  * **`busy` does not overflow, and that is the point of having both.** It raises
@@ -64,7 +64,7 @@ const EXPECTED_ZONES: Record<string, string[]> = {
  * otherwise, and the model is what this asserts.)
  */
 const EXPECTED_NOW: Record<string, { attention: number; overflow: string | null } | null> = {
-  // No Now zone at all — the row exists so that adding a fifth journey without
+  // No Heads up zone at all — the row exists so that adding a fifth journey without
   // an entry here throws rather than being silently skipped, which is what
   // `Object.entries` over a partial table used to do.
   'first-run': null,
@@ -306,9 +306,16 @@ test.describe('Sidebar model showcase @smoke', () => {
    * It grows with the page, which is the point: `expectPageFitsViewport` reds
    * the moment a new showcase pushes the column past it, and the fix is this
    * number rather than a looser threshold. Raised for the Today states panel
-   * (P2.3), which added four more 272px panels below Now's four.
+   * (P2.3), which added four more 272px panels below Heads up's four.
    */
-  test.use({ viewport: { width: 1600, height: 8800 } });
+  // **The viewport is the page's height, not a round number.** axe reports
+  // success for a page it never looked at, so this suite asserts coverage
+  // before correctness (`expectPageFitsViewport`) — which means the viewport
+  // has to grow with the page. It went from 8800 to 10400 when P4.2 added the
+  // long-press-menu and Catch-up showcases; raising it is the fix the guard's
+  // own failure message names, and lowering the threshold is the one it
+  // forbids.
+  test.use({ viewport: { width: 1600, height: 10400 } });
 
   // The per-test default is 30s, which is under the cold cost of the first
   // navigation to `/dev` — see PLAYGROUND_COLD_START_MS. A locator ceiling
@@ -349,7 +356,7 @@ test.describe('Sidebar model showcase @smoke', () => {
 
       // Named separately from the ordered list above, because "absent" is the
       // assertion this phase keeps having to defend: a zone with nothing in it
-      // disappears entirely rather than rendering an empty card (BC-1). Now and
+      // disappears entirely rather than rendering an empty card (BC-1). Heads up and
       // the day-one zone also share one slot, so no journey may show both.
       if (!EXPECTED_ZONES[fixture].includes('now')) {
         await expect(panel.locator('[data-zone="now"]')).toHaveCount(0);
@@ -360,24 +367,26 @@ test.describe('Sidebar model showcase @smoke', () => {
     }
   });
 
-  test('caps Now at three, and overflows only when there is more than three', async ({ page }) => {
+  test('caps Heads up at three, and overflows only when there is more than three', async ({
+    page,
+  }) => {
     await openShowcase(page);
 
     // Driven off FIXTURES, not off EXPECTED_NOW's own keys: a fifth journey with
-    // a Now zone and no entry in the table must throw here rather than be
+    // a Heads up zone and no entry in the table must throw here rather than be
     // skipped by a loop that only ever visits what somebody remembered to write.
     for (const fixture of FIXTURES) {
       const expected = EXPECTED_NOW[fixture];
       expect(
         expected,
-        `${fixture} has no EXPECTED_NOW entry — add one, using null if it draws no Now zone`
+        `${fixture} has no EXPECTED_NOW entry — add one, using null if it draws no Heads up zone`
       ).not.toBeUndefined();
 
       const now = page.locator(
         `[data-slot="sidebar-model-panel"][data-fixture="${fixture}"] [data-zone="now"]`
       );
       if (expected === null) {
-        await expect(now, `${fixture} drew a Now zone it has nothing for`).toHaveCount(0);
+        await expect(now, `${fixture} drew a Heads up zone it has nothing for`).toHaveCount(0);
         continue;
       }
 
@@ -409,11 +418,11 @@ test.describe('Sidebar model showcase @smoke', () => {
     }
   });
 
-  test('never lets Now scroll — five rows is its ceiling (BC-8)', async ({ page }) => {
+  test('never lets Heads up scroll — five rows is its ceiling (BC-8)', async ({ page }) => {
     await openShowcase(page);
 
     // `power` is the worst case the fixtures hold: seven things waiting and six
-    // sessions working, so Now draws its maximum — three attention rows, an
+    // sessions working, so Heads up draws its maximum — three attention rows, an
     // overflow row and the working rollup.
     const now = page.locator(
       '[data-slot="sidebar-model-panel"][data-fixture="power"] [data-zone="now"]'
@@ -424,7 +433,7 @@ test.describe('Sidebar model showcase @smoke', () => {
     // heights, so this assertion is vacuous there and is deliberately here
     // instead: a zone that had grown a scroller would report an overflow.
     const overflow = await now.evaluate((zone) => zone.scrollHeight - zone.clientHeight);
-    expect(overflow, 'the Now zone grew a scroller — it must never scroll').toBe(0);
+    expect(overflow, 'the Heads up zone grew a scroller — it must never scroll').toBe(0);
 
     // And the measurement is live: the same reading over a box that IS
     // scrollable comes back non-zero, so a zero above means "does not scroll"
@@ -441,7 +450,7 @@ test.describe('Sidebar model showcase @smoke', () => {
     expect(proof).toBeGreaterThan(0);
   });
 
-  test('draws Now’s four states, and the beat, on the same page', async ({ page }) => {
+  test('draws Heads up’s four states, and the beat, on the same page', async ({ page }) => {
     await openShowcase(page);
 
     // The states a reviewer cannot catch in the running app: empty, one signal,
@@ -491,7 +500,7 @@ test.describe('Sidebar model showcase @smoke', () => {
       );
       expect(rowsWithoutReason, `${fixture} drew a row that does not say why`).toEqual([]);
 
-      // Zones and sections carry one too, including the headerless bodies Now
+      // Zones and sections carry one too, including the headerless bodies Heads up
       // and Today draw — those used to render no chip at all, so their reasons
       // were never format-checked by the loop below.
       const zones = await panel.locator('[data-slot="sidebar-model-zone"]').count();
@@ -593,20 +602,168 @@ test.describe('Sidebar model showcase @smoke', () => {
       // unread badge tripping axe's "content is too short to be text" heuristic;
       // anything else appearing here is a hole in the gate that somebody has to
       // decide about rather than inherit.
+      //
+      // **Matched on what makes it an unread badge, not on which component
+      // drew it, and read off the node axe reported rather than off a selector
+      // resolved again.** The allowance used to name the showcase's own
+      // stand-in (`sidebar-model-directed-badge`) and look it up by
+      // `querySelector` — which silently answers `null` for a target axe
+      // reports as more than one selector, so the filter counted nothing and
+      // the gate failed with no explanation. `node.html` is the element itself,
+      // as axe saw it.
       const undecided = results.incomplete.flatMap((rule) => rule.nodes);
-      const badges = await page.evaluate(
-        (targets) =>
-          targets.filter((target) =>
-            document.querySelector(target)?.closest('[data-slot="sidebar-model-directed-badge"]')
-          ).length,
-        undecided.map((node) => node.target.join(' '))
-      );
+      // The one-digit counts axe declines to judge, enumerated. Each is a
+      // DECISION recorded here rather than an exemption inherited: the panel's
+      // directed-unread mark since P1, P4's mobile Home badge, and Catch up's
+      // "how many" — the last of which only appeared once the Catch-up showcase
+      // started drawing a real button instead of an empty box, which is what a
+      // showcase is for.
+      //
+      // **The mobile badge was measured before it was pinned, and the measuring
+      // changed it.** As drawn first — white on amber-500 — it was 2.15:1, a
+      // serious failure that would have hidden inside this list precisely
+      // because axe cannot judge two-character text. It is amber-950 on
+      // amber-500 now: 6.97:1, in both themes, since the pill carries its own
+      // background. Catch up's count went the same way: 3.24:1 at `/50`, and
+      // `/70` once anyone looked. **Every count admitted here is measured
+      // below** — one that is not is a colour nothing checks.
+      //
+      // **Matched on the node axe reported, not on a selector resolved again.**
+      // `document.querySelector` silently answers `null` for a target axe
+      // reports as more than one selector — which is most of them once this
+      // page grew past its first fold — so a `closest()` filter counted nothing
+      // and the gate failed naming elements it had in fact been handed.
+      const isCountBadge = (text: string) =>
+        /data-slot="sidebar-model-directed-badge"/.test(text) ||
+        /aria-label="\d+ unread"/.test(text) ||
+        /data-testid="mobile-tab-badge-/.test(text) ||
+        /data-slot="catch-up-count"/.test(text);
+      const badges = undecided.filter(
+        (node) => isCountBadge(node.html) || isCountBadge(node.target.join(' '))
+      ).length;
       expect(
         undecided.length - badges,
         `axe could not judge something new in the ${theme} theme: ${undecided
-          .map((node) => node.target.join(' '))
-          .join(', ')}`
+          .map((node) => `${node.target.join(' ')} :: ${node.html}`)
+          .join(' | ')}`
       ).toBe(0);
+
+      // **What the pin above costs, paid back.** Forgiving a badge from the
+      // undecided list leaves its colours guarded by nothing — axe declines to
+      // judge two-character text, so "not a violation" says nothing about it.
+      // That is not hypothetical: the mobile badge shipped white-on-amber at
+      // 2.15:1 and this list is where it hid.
+      //
+      // **Scoped to the badge this task pinned**, not to both families. The
+      // panel's own directed badge is translucent (`bg-brand/15`), so judging it
+      // means compositing it over whatever is behind it — a different and
+      // larger job, and it is no less guarded than it was before P4 touched
+      // this pin.
+      //
+      // **Colours are read as pixels, never parsed as text.** Tailwind v4 emits
+      // `oklch()`, and a regex pulling the first three numbers out of
+      // `oklch(0.769 0.188 70.08)` reads them as RGB — which scored
+      // white-on-amber at 19.26:1 and made the first version of this check
+      // incapable of failing. A 1×1 canvas makes the browser do the conversion.
+      const badgeContrast = await page.evaluate((selector) => {
+        const canvas = document.createElement('canvas');
+        canvas.width = canvas.height = 1;
+        const ctx = canvas.getContext('2d')!;
+        const pixel = (value: string): [number, number, number, number] => {
+          ctx.clearRect(0, 0, 1, 1);
+          ctx.fillStyle = value;
+          ctx.fillRect(0, 0, 1, 1);
+          const [r, g, b, a] = ctx.getImageData(0, 0, 1, 1).data;
+          return [r!, g!, b!, a! / 255];
+        };
+        const channel = (v: number) => {
+          const s = v / 255;
+          return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+        };
+        const luminance = ([r, g, b]: number[]) =>
+          0.2126 * channel(r!) + 0.7152 * channel(g!) + 0.0722 * channel(b!);
+        return [...document.querySelectorAll(selector)].map((node) => {
+          const style = getComputedStyle(node);
+          const fg = pixel(style.color);
+          const bg = pixel(style.backgroundColor);
+          const [a, b] = [luminance(fg), luminance(bg)];
+          return {
+            text: node.textContent ?? '',
+            opaque: bg[3] === 1 && fg[3] === 1,
+            ratio: Math.round(((Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05)) * 100) / 100,
+          };
+        });
+      }, '[data-testid^="mobile-tab-badge-"]');
+
+      // Observable half first: there ARE badges on this page, so the bars below
+      // cannot be cleared by a page that happens to draw none.
+      expect(badgeContrast.length, 'no mobile count badges on the page to check').toBeGreaterThan(
+        0
+      );
+      // …and each carries its own opaque background, which is what makes the
+      // ratio above a complete answer rather than one missing a backdrop.
+      expect(badgeContrast.filter((badge) => !badge.opaque)).toEqual([]);
+      expect(
+        badgeContrast.filter((badge) => badge.ratio < 4.5),
+        `a count badge axe could not judge is below 4.5:1 in the ${theme} theme`
+      ).toEqual([]);
+
+      // **The same debt for the one count that is NOT on its own pill.** Catch
+      // up's number is translucent text over whatever it sits on, so the
+      // opaque-pair check above cannot judge it: it has to be composited first.
+      // Admitting it to the pin without this would be the exact trade the
+      // mobile badge nearly shipped behind.
+      const countContrast = await page.evaluate((selector) => {
+        const canvas = document.createElement('canvas');
+        canvas.width = canvas.height = 1;
+        const ctx = canvas.getContext('2d')!;
+        const pixel = (value: string): [number, number, number, number] => {
+          ctx.clearRect(0, 0, 1, 1);
+          ctx.fillStyle = value;
+          ctx.fillRect(0, 0, 1, 1);
+          const [r, g, b, a] = ctx.getImageData(0, 0, 1, 1).data;
+          return [r!, g!, b!, a! / 255];
+        };
+        const channel = (v: number) => {
+          const s = v / 255;
+          return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+        };
+        const luminance = ([r, g, b]: number[]) =>
+          0.2126 * channel(r!) + 0.7152 * channel(g!) + 0.0722 * channel(b!);
+        /**
+         * The first ancestor that actually paints something behind this one.
+         *
+         * **Exact while nothing translucent sits between**, which is true of
+         * every count on this page: the button is transparent and the panel
+         * behind it is solid. An interposed translucent layer would need
+         * compositing in turn, and this would then read slightly optimistic —
+         * so a new one is a reason to extend this, not to trust it.
+         */
+        const backdrop = (node: Element): [number, number, number, number] => {
+          for (let el: Element | null = node; el !== null; el = el.parentElement) {
+            const painted = pixel(getComputedStyle(el).backgroundColor);
+            if (painted[3] === 1) return painted;
+          }
+          return [255, 255, 255, 1];
+        };
+        return [...document.querySelectorAll(selector)].map((node) => {
+          const fg = pixel(getComputedStyle(node).color);
+          const bg = backdrop(node);
+          // Source-over: the text's own alpha, laid on what is behind it.
+          const composited = [0, 1, 2].map((i) => fg[i]! * fg[3] + bg[i]! * (1 - fg[3]));
+          const [a, b] = [luminance(composited), luminance(bg)];
+          return {
+            text: node.textContent ?? '',
+            ratio: Math.round(((Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05)) * 100) / 100,
+          };
+        });
+      }, '[data-slot="catch-up-count"]');
+
+      expect(countContrast.length, 'no Catch-up counts on the page to check').toBeGreaterThan(0);
+      expect(
+        countContrast.filter((count) => count.ratio < 4.5),
+        `Catch up's count is below 4.5:1 in the ${theme} theme`
+      ).toEqual([]);
     });
   }
 });

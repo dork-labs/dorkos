@@ -269,6 +269,9 @@ export function IdentityTab({ agent, onUpdate }: IdentityTabProps) {
                   className="border-input hover:bg-accent/50 inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm transition-colors"
                   aria-label="Choose color"
                 >
+                  {/* A raw swatch on purpose, not an identity face: it previews
+                      the COLOUR this trigger edits, so it must not wear the
+                      square/fill/badge an agent's disc does. */}
                   <span
                     className="size-4 shrink-0 rounded-full"
                     style={{ backgroundColor: visual.color }}
@@ -298,6 +301,8 @@ export function IdentityTab({ agent, onUpdate }: IdentityTabProps) {
                   className="border-input hover:bg-accent/50 inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm transition-colors"
                   aria-label="Choose icon"
                 >
+                  {/* The bare emoji is picker chrome too — it previews the ICON
+                      this trigger edits, so it carries no disc of its own. */}
                   <span className="text-base leading-none">{visual.emoji}</span>
                   <span className="text-muted-foreground">
                     {hasIconOverride ? 'Custom' : 'Default'}

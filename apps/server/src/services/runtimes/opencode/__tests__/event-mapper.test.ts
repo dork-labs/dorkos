@@ -38,9 +38,9 @@ import {
   outputLengthError,
   partDelta,
   partUpdated,
-  permission,
+  permissionAsked,
   permissionReplied,
-  permissionUpdated,
+  permissionRequest,
   providerAuthError,
   reasoningPart,
   serverConnected,
@@ -94,7 +94,7 @@ describe('extractOpenCodeSessionId', () => {
 
   it('keys deltas, permissions, status, idle, error, and todos by properties.sessionID', () => {
     expect(extractOpenCodeSessionId(partDelta(OC, 'p1', 'x'))).toBe(OC);
-    expect(extractOpenCodeSessionId(permissionUpdated(permission(OC)))).toBe(OC);
+    expect(extractOpenCodeSessionId(permissionAsked(permissionRequest(OC)))).toBe(OC);
     expect(extractOpenCodeSessionId(permissionReplied(OC, 'per_0001'))).toBe(OC);
     expect(extractOpenCodeSessionId(statusEvent(OC, { type: 'busy' }))).toBe(OC);
     expect(extractOpenCodeSessionId(sessionIdle(OC))).toBe(OC);
@@ -569,6 +569,10 @@ describe('mapOpenCodeEvent', () => {
         ['abort cleanup', 'Tool execution aborted'],
         ['failUnsettledTools', 'Tool execution interrupted'],
         ['wrapped TaskTool throw', 'Tool execution failed: Task cancelled'],
+        // Live-captured when the stop lands while the subagent holds a
+        // permission: the task tool settles its own part, so nothing wraps the
+        // message and nothing stamps `interrupted` (DOR-1126).
+        ['bare TaskTool throw', 'Task cancelled'],
         ['handleSubtask onInterrupt', 'Cancelled'],
       ];
 
@@ -636,16 +640,15 @@ describe('mapOpenCodeEvent', () => {
     });
   });
 
-  describe('permission.updated → approval_required', () => {
+  describe('permission.asked → approval_required', () => {
     it('maps the permission to a schema-valid approval keyed by the permission id', () => {
       const events = mapOpenCodeEvent(
-        permissionUpdated(
-          permission(OC, {
+        permissionAsked(
+          permissionRequest(OC, {
             id: 'per_0001',
-            type: 'bash',
-            pattern: 'rm *',
+            permission: 'bash',
+            patterns: ['rm *'],
             callID: 'call_1',
-            title: 'Run command: rm -rf dist',
             metadata: { command: 'rm -rf dist' },
           })
         ),
@@ -657,10 +660,9 @@ describe('mapOpenCodeEvent', () => {
           data: {
             toolCallId: 'per_0001',
             toolName: 'bash',
-            input: '{"pattern":"rm *","command":"rm -rf dist"}',
+            input: '{"patterns":["rm *"],"command":"rm -rf dist"}',
             timeoutMs: SESSIONS.INTERACTION_TIMEOUT_MS,
-            startedAt: CREATED_AT,
-            title: 'Run command: rm -rf dist',
+            startedAt: expect.any(Number),
             hasSuggestions: false,
           },
         },
@@ -668,9 +670,9 @@ describe('mapOpenCodeEvent', () => {
       expect(StreamEventSchema.safeParse(events[0]).success).toBe(true);
     });
 
-    it('omits pattern from input when the permission has none', () => {
+    it('omits patterns from input when the request carries none', () => {
       const events = mapOpenCodeEvent(
-        permissionUpdated(permission(OC, { metadata: { filePath: '/tmp/a' } })),
+        permissionAsked(permissionRequest(OC, { patterns: [], metadata: { filePath: '/tmp/a' } })),
         makeContext()
       );
       expect(events[0]!.data).toMatchObject({ input: '{"filePath":"/tmp/a"}' });
@@ -679,8 +681,159 @@ describe('mapOpenCodeEvent', () => {
     it('maps permission.replied to interaction_cancelled so resolved-elsewhere cards clear', () => {
       const events = mapOpenCodeEvent(permissionReplied(OC, 'per_0001', 'once'), makeContext());
       expect(events).toEqual([
-        { type: 'interaction_cancelled', data: { interactionId: 'per_0001' } },
+        { type: 'interaction_cancelled', data: { interactionId: 'per_0001', reason: 'approved' } },
       ]);
+    });
+
+    it('records where the answer must be sent — the session that asked', () => {
+      const ctx = makeContext();
+      mapOpenCodeEvent(permissionAsked(permissionRequest(OC, { id: 'per_0001' })), ctx);
+      expect(ctx.pendingPermissionSessions.get('per_0001')).toBe(OC);
+      mapOpenCodeEvent(permissionReplied(OC, 'per_0001', 'once'), ctx);
+      expect(ctx.pendingPermissionSessions.has('per_0001')).toBe(false);
+    });
+
+    it('withdraws an ask nobody answered when the turn terminates', async () => {
+      // The turn is over: `clearSession` has dropped the pending record, so the
+      // card can no longer be answered. Leaving it on screen is a ghost.
+      const events = await drain([
+        permissionAsked(permissionRequest(OC, { id: 'per_0001' })),
+        sessionIdle(OC),
+      ]);
+      expect(events.map((e) => e.type)).toEqual([
+        'approval_required',
+        'interaction_cancelled',
+        'done',
+      ]);
+      expect(events[1]!.data).toEqual({ interactionId: 'per_0001' });
+    });
+
+    it('leaves an answered ask alone at the terminal — no second withdrawal', async () => {
+      const events = await drain([
+        permissionAsked(permissionRequest(OC, { id: 'per_0001' })),
+        permissionReplied(OC, 'per_0001', 'once'),
+        sessionIdle(OC),
+      ]);
+      expect(events.filter((e) => e.type === 'interaction_cancelled')).toHaveLength(1);
+    });
+  });
+
+  describe("a subagent's permission prompts ride the parent's card (DOR-1126)", () => {
+    const input = taskToolInput();
+
+    /** A turn whose subagent is running, so its child session is admitted. */
+    function startedContext(taskInput = input): OpenCodeEventContext {
+      const ctx = makeContext();
+      mapOpenCodeEvent(
+        partUpdated(taskToolPart(OC, 'call_task', toolStateRunning(taskInput), taskToolMetadata())),
+        ctx
+      );
+      return ctx;
+    }
+
+    /** The child's `bash` ask, as the 1.18.15 wire raises it in the CHILD session. */
+    function childAsk(id = 'per_child01'): OpenCodeWireEvent {
+      return permissionAsked(
+        permissionRequest(OC_CHILD_SESSION, {
+          id,
+          permission: 'bash',
+          patterns: ['ls -F'],
+          metadata: { command: 'ls -F' },
+        })
+      );
+    }
+
+    it('surfaces the ask on the parent turn, named for the subagent that raised it', () => {
+      const ctx = startedContext();
+      const events = mapOpenCodeEvent(childAsk(), ctx);
+      expect(events).toEqual([
+        {
+          type: 'approval_required',
+          data: {
+            toolCallId: 'per_child01',
+            toolName: 'bash',
+            title: 'The explore subagent needs permission',
+            input: '{"patterns":["ls -F"],"command":"ls -F"}',
+            timeoutMs: SESSIONS.INTERACTION_TIMEOUT_MS,
+            startedAt: expect.any(Number),
+            hasSuggestions: false,
+          },
+        },
+      ]);
+      expect(StreamEventSchema.safeParse(events[0]).success).toBe(true);
+    });
+
+    it('routes the answer to the CHILD session, which is the only one that can take it', () => {
+      const ctx = startedContext();
+      mapOpenCodeEvent(childAsk(), ctx);
+      expect(ctx.pendingPermissionSessions.get('per_child01')).toBe(OC_CHILD_SESSION);
+    });
+
+    it('still says a subagent is asking when the task named no agent type', () => {
+      const ctx = startedContext({ prompt: 'go' });
+      const events = mapOpenCodeEvent(childAsk(), ctx);
+      expect(events[0]!.data).toMatchObject({ title: 'A subagent needs permission' });
+    });
+
+    it('falls back to the task description when the agent type is missing', () => {
+      const ctx = startedContext({ prompt: 'go', description: 'survey the routes' });
+      const events = mapOpenCodeEvent(childAsk(), ctx);
+      expect(events[0]!.data).toMatchObject({
+        title: 'The survey the routes subagent needs permission',
+      });
+    });
+
+    it("clears the card when the child's ask is answered elsewhere", () => {
+      const ctx = startedContext();
+      mapOpenCodeEvent(childAsk(), ctx);
+      expect(mapOpenCodeEvent(permissionReplied(OC_CHILD_SESSION, 'per_child01'), ctx)).toEqual([
+        {
+          type: 'interaction_cancelled',
+          data: { interactionId: 'per_child01', reason: 'approved' },
+        },
+      ]);
+    });
+
+    it('ignores an ask from a child whose subagent already finished', () => {
+      const ctx = startedContext();
+      mapOpenCodeEvent(
+        partUpdated(
+          taskToolPart(OC, 'call_task', toolStateCompleted(input, 'done'), taskToolMetadata())
+        ),
+        ctx
+      );
+      expect(mapOpenCodeEvent(childAsk(), ctx)).toEqual([]);
+    });
+
+    it('withdraws an outstanding child ask when the user stops the turn', async () => {
+      // The live stop ordering (fixtures/live-cancel.jsonl): the child dies
+      // first, the parent's terminal lands next, and the `task` part's own
+      // outcome arrives after it. Neither the ask nor the subagent may outlive
+      // the turn — one would be an unanswerable card, the other a running
+      // subagent nobody is watching (DOR-1146).
+      const ctx = makeContext();
+      const events = await drain(
+        [
+          partUpdated(taskToolPart(OC, 'call_task', toolStateRunning(input), taskToolMetadata())),
+          childAsk(),
+          sessionError(OC_CHILD_SESSION, abortedError()),
+          sessionIdle(OC_CHILD_SESSION),
+          sessionError(OC, abortedError()),
+          sessionIdle(OC),
+        ],
+        ctx
+      );
+      expect(events.map((e) => e.type)).toEqual([
+        'tool_call_start',
+        'background_task_started',
+        'approval_required',
+        'interaction_cancelled',
+        'background_task_done',
+        'done',
+      ]);
+      expect(events[3]!.data).toEqual({ interactionId: 'per_child01' });
+      expect(events[4]!.data).toMatchObject({ taskId: 'call_task', status: 'stopped' });
+      expect(ctx.pendingPermissionSessions.size).toBe(0);
     });
   });
 

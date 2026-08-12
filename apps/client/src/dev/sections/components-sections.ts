@@ -190,6 +190,13 @@ export const COMPONENTS_SECTIONS: PlaygroundSection[] = [
     keywords: ['session', 'list', 'group', 'today', 'yesterday', 'empty', 'scroll'],
   },
   {
+    id: 'embedsessionlist',
+    title: 'EmbedSessionList',
+    page: 'components',
+    category: 'Sidebar',
+    keywords: ['obsidian', 'embed', 'session', 'roster', 'sidebar row', 'section header'],
+  },
+  {
     id: 'sidebarfooterstrip',
     title: 'SidebarFooterStrip',
     page: 'components',

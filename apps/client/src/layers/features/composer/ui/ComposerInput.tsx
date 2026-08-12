@@ -76,7 +76,6 @@ export interface ComposerInputProps {
    * stops a second Enter from turning one intent into two triggers.
    */
   commandPending?: boolean;
-  sessionBusy?: boolean;
   /** Currently editing a queued message item. */
   editingQueueItem?: boolean;
   /**
@@ -230,7 +229,6 @@ export const ComposerInput = forwardRef<ComposerInputHandle, ComposerInputProps>
       isUploading = false,
       onCancelUpload,
       commandPending = false,
-      sessionBusy = false,
       editingQueueItem = false,
       editingPosition,
       queueDepth = 0,
@@ -298,7 +296,6 @@ export const ComposerInput = forwardRef<ComposerInputHandle, ComposerInputProps>
       value,
       isStreaming,
       isTouchOnly,
-      sessionBusy,
       isUploading,
       onCancelUpload,
       commandPending,
@@ -350,14 +347,13 @@ export const ComposerInput = forwardRef<ComposerInputHandle, ComposerInputProps>
     };
 
     const hasText = value.trim().length > 0;
-    const showClear = hasText && !sessionBusy;
     // Whether the labelled "Clear message" button is on screen AND usable: a host
-    // has to wire `onClear` for it to render at all, and a busy session leaves it
-    // disabled and out of the tab order. This gates the armed readout below,
-    // because that readout is deliberately hidden from assistive tech — showing
-    // it anywhere the button is unreachable would advertise a destructive
-    // keyboard shortcut to sighted people and to nobody else.
-    const clearReachable = onClear !== undefined && showClear;
+    // has to wire `onClear` for it to render at all, and there has to be text to
+    // clear. This gates the armed readout below, because that readout is
+    // deliberately hidden from assistive tech — showing it anywhere the button is
+    // unreachable would advertise a destructive keyboard shortcut to sighted
+    // people and to nobody else.
+    const clearReachable = onClear !== undefined && hasText;
 
     useEffect(() => {
       onClearArmedChange?.(clearArmed && clearReachable);
@@ -365,15 +361,10 @@ export const ComposerInput = forwardRef<ComposerInputHandle, ComposerInputProps>
 
     return (
       <div className="flex flex-col gap-1.5">
-        {sessionBusy && (
-          <div className="px-1 text-xs text-amber-600 dark:text-amber-500">
-            Your agent is still finishing the last message. Try again in a moment.
-          </div>
-        )}
         {/* A live region, not a plain line: the failure it explains is "I pressed
           Enter and nothing happened", which a screen-reader user gets no other
           signal for at all. */}
-        {!canSubmit && !sessionBusy && canSubmitReason && (
+        {!canSubmit && canSubmitReason && (
           <div role="status" className="text-muted-foreground px-1 text-xs">
             {canSubmitReason}
           </div>
@@ -432,15 +423,15 @@ export const ComposerInput = forwardRef<ComposerInputHandle, ComposerInputProps>
             X at half opacity, enabled and tab-reachable, wired to nothing. */}
           {onClear && (
             <motion.button
-              animate={{ opacity: showClear ? 0.5 : 0, scale: showClear ? 1 : 0.8 }}
+              animate={{ opacity: hasText ? 0.5 : 0, scale: hasText ? 1 : 0.8 }}
               transition={{ duration: 0.15 }}
-              whileHover={showClear ? { opacity: 1 } : undefined}
+              whileHover={hasText ? { opacity: 1 } : undefined}
               onClick={onClear}
-              disabled={!showClear}
+              disabled={!hasText}
               type="button"
               className={cn(
                 'focus-ring text-muted-foreground hover:text-foreground shrink-0 rounded-lg p-1 transition-colors',
-                !showClear && 'pointer-events-none'
+                !hasText && 'pointer-events-none'
               )}
               aria-label="Clear message"
             >
@@ -455,7 +446,6 @@ export const ComposerInput = forwardRef<ComposerInputHandle, ComposerInputProps>
             // an inert one — the spinner nobody could press is the wedge itself.
             onCancelUpload={isUploading ? onCancelUpload : undefined}
             commandPending={commandPending}
-            sessionBusy={sessionBusy}
             submitDisabled={!canSubmit}
             editingQueueItem={editingQueueItem}
             queueDepth={queueDepth}

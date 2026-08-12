@@ -1,5 +1,5 @@
 /**
- * Dashboard sidebar feature — Now, Today and Library, drawn from one pure
+ * Dashboard sidebar feature — Heads up, Today and Library, drawn from one pure
  * model (`model/build-sidebar-model.ts`).
  *
  * Only symbols consumed outside the feature are exported here; the zone
@@ -24,14 +24,40 @@ export { useNewSessionShortcut } from './model/use-new-session-shortcut';
 // nav implementation in the panel now: the four destinations moved here off the
 // retired `SidebarNavHeader`, tour anchor and all, so the tour-anchor guard
 // mounts THIS at both widths for the reason it always mounted that.
-export { SidebarFooterStrip } from './ui/SidebarFooterStrip';
+export { SidebarFooterStrip, useAskDorkBot } from './ui/SidebarFooterStrip';
+// ── The panel, in parts, for the mobile tabs (P4) ──
+// A phone splits one sidebar across two destinations, so the widget assembles
+// the state once, builds the model once, and draws two subsets of the same
+// zones. That is why the model lives in this feature rather than a slice of its
+// own: a widget may import a feature, and drawing the same build twice is what
+// keeps Home and Library from disagreeing (spec §A1, P4).
+export { SidebarChrome } from './ui/SidebarChrome';
+export { SidebarZones } from './ui/SidebarZones';
+export { useSidebarState } from './model/use-sidebar-state';
+export { useSidebarModel } from './model/use-sidebar-model';
+// One-time migration of pre-redesign pins. `DashboardSidebar` runs it, and on a
+// phone `DashboardSidebar` is never mounted — so the tabs run it instead, or an
+// operator who only ever opens DorkOS on their phone keeps their old pins
+// forever.
+export { useLegacyPinMigration } from './model/use-legacy-pin-migration';
+// BC-11's debounce, for the one surface that has to announce Now's count from
+// OUTSIDE the zone: the phone's bottom bar. Its panels are `inert` whenever
+// they are put away, so the region inside the zone is out of the accessibility
+// tree exactly when the count matters, and the badge on the bar would otherwise
+// be a number nobody ever hears. One hook, so the bar's announcement is held
+// for the same second the panel's is.
+export { useLiveRegionText } from './model/use-live-region-text';
+// The zone enumeration and one zone's id — what the mobile tabs need to split
+// the panel across two destinations. `SidebarModel` and `SidebarZoneModel` are
+// deliberately NOT here: nothing outside the feature names them, and knip says
+// so.
+export { SIDEBAR_ZONE_IDS, type SidebarZoneId } from './model/build-sidebar-model';
 export { AgentListItem } from './ui/AgentListItem';
 // Where an agent's depth lives (BC-35). Exported because the command palette
 // renders it too — a sibling feature composing this one's UI, which is the one
 // cross-feature import the layer rules allow.
 export { SessionSwitcher } from './ui/SessionSwitcher';
 export { AgentActivityBadge } from './ui/AgentActivityBadge';
-export { AgentOnboardingCard } from './ui/AgentOnboardingCard';
 export { GroupCreateInput } from './ui/GroupCreateInput';
 // The section-header menu builders — exported for the Dev Playground, which
 // shows the shared `SectionHeader` primitive wearing a real section's items.

@@ -157,7 +157,7 @@ function sessionSignal(
  *
  * Order inside the returned list carries no meaning — `rankNowItems` decides
  * priority (BC-6). What this decides is membership: a source not read here
- * cannot reach Now, which is how BC-5's allowlist is enforced by construction
+ * cannot reach Heads up, which is how BC-5's allowlist is enforced by construction
  * rather than by a filter somebody could relax.
  *
  * **A DM never appears here, and neither does an unread channel** (BC-39). The
@@ -264,6 +264,6 @@ export function deriveAttentionSignals(sources: AttentionSources): AttentionSign
   // downstream ever has to ask whether something was waved away (BC-10). It can
   // only reach something DISMISSIBLE: a dismissed id that later belonged to a
   // permission prompt would otherwise hide a blockage nobody chose to hide, and
-  // BC-42 is explicit that nothing else in Now can be waved away at all.
+  // BC-42 is explicit that nothing else in Heads up can be waved away at all.
   return signals.filter((signal) => !(signal.dismissible && sources.dismissed.has(signal.id)));
 }

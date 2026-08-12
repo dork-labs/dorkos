@@ -55,11 +55,21 @@ export interface PaletteCommandCenter {
    * Live conversations, waiting-on-you first. Empty when nothing is live.
    *
    * Human-origin only, like every other liveness count in the cockpit (§18) —
-   * an automated run that needs you arrives in Now, not here.
+   * an automated run that needs you arrives in Heads up, not here.
    */
   continueRows: PaletteContinueRow[];
   /** The last things you were in, across sessions, rooms and agents. */
   recent: PaletteRecentEntry[];
+  /**
+   * Each agent's latest session time, keyed by `projectPath`, ISO-8601 — the
+   * `agentActivity` map `GET /api/sessions/recent` already returns.
+   *
+   * Handed out as well as used, because it is the only freshness an AGENT has:
+   * a conversation and a room each carry their own `lastActivityAt`, and an
+   * agent carries none, so without this the ranker would score every agent as
+   * equally stale (`palette-ranking`'s recency signal).
+   */
+  agentActivity: Readonly<Record<string, string>>;
 }
 
 /**
@@ -76,11 +86,16 @@ export interface PaletteCommandCenter {
  * @param agents - Every agent the cockpit can see, for session attribution.
  * @param rooms - Every room, archived included, for the Recent mix.
  * @param unreadRoomIds - Rooms with something waiting, which lead Recent.
+ * @param archivedBefore - The cockpit's day boundary, epoch ms. Conversations
+ *   older than it are labelled archived. Passed in rather than derived here
+ *   because it changes once a day: a clock read on this line would rebuild the
+ *   whole corpus — and the Fuse index over it — every minute the app is open.
  */
 export function usePaletteCommandCenter(
   agents: readonly AgentPathEntry[],
   rooms: readonly RoomSummary[],
-  unreadRoomIds: ReadonlySet<string>
+  unreadRoomIds: ReadonlySet<string>,
+  archivedBefore: number
 ): PaletteCommandCenter {
   // Asked for at BOOT, not when the palette opens — and that is a decision, not
   // an oversight.
@@ -110,13 +125,13 @@ export function usePaletteCommandCenter(
   const streamed = useSessionListStore(useShallow((s) => Object.values(s.sessions)));
 
   const sessions = useMemo(
-    () => toPaletteSessionItems(data?.sessions ?? [], agents),
-    [data?.sessions, agents]
+    () => toPaletteSessionItems(data?.sessions ?? [], agents, archivedBefore),
+    [data?.sessions, agents, archivedBefore]
   );
 
   const streamedSessions = useMemo(
-    () => toPaletteSessionItems(streamed, agents),
-    [streamed, agents]
+    () => toPaletteSessionItems(streamed, agents, archivedBefore),
+    [streamed, agents, archivedBefore]
   );
 
   // Every session record the palette can see, from both sources, so Continue
@@ -128,16 +143,16 @@ export function usePaletteCommandCenter(
   // unmarked copies sit beside it. Automated wins regardless of order — the safe
   // direction — and the concatenation is only about coverage.
   //
-  // **What each source does and does not know.** The query's window is where
-  // `origin` is authoritative: `applyRoomOriginOverlay` runs on the REST routes
-  // and nowhere else, so a room turn is marked there and NOT on the stream
-  // (DOR-1141). The stream's map is where a run that started after the last
-  // fetch exists at all, and it supplies that session's title and cwd. So for a
-  // just-triggered room turn there is a gap — it is unmarked until the recent
-  // query refetches, which the global stream triggers on the next session-set
-  // change rather than on the 30s stale timer. Continue counts it as human for
-  // that round trip, which is the documented direction: unknown is not
-  // automated.
+  // **What each source does and does not know.** Both carry `origin`: the
+  // server applies the same overlays to the REST routes and to the global
+  // session-list stream, from one shared rule, so a room turn is marked on
+  // whichever of the two a client hears it from first (DOR-1141). The stream's
+  // map is additionally where a run that started after the last fetch exists at
+  // all, and it supplies that session's title and cwd.
+  //
+  // A gap survives only where NEITHER source has spoken yet, and it closes the
+  // moment either does. Until then Continue counts the session as human, which
+  // is the documented direction: unknown is not automated.
   //
   // `data` whole rather than its one field, for the same React Compiler reason
   // the Recent memo below spells out.
@@ -183,5 +198,14 @@ export function usePaletteCommandCenter(
     // the same cache with a shape the compiler can keep.
   }, [data, sessions, rooms, unreadRoomIds, agents, continueRows]);
 
-  return { sessions, continueRows, recent };
+  return { sessions, continueRows, recent, agentActivity: data?.agentActivity ?? EMPTY_ACTIVITY };
 }
+
+/**
+ * The empty activity map, as one shared object.
+ *
+ * A fresh `{}` per render would be a new identity every time, and this value
+ * feeds a `useMemo` dependency list in the corpus above — so the corpus would
+ * rebuild on every render for as long as the query has not answered.
+ */
+const EMPTY_ACTIVITY: Readonly<Record<string, string>> = Object.freeze({});

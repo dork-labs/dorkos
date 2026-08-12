@@ -1,7 +1,7 @@
 ---
 id: 260808-180004
 title: Composer mentions are token text nodes decorated from a host-supplied roster
-status: draft
+status: accepted
 created: 2026-08-08
 spec: composer-rich-text
 superseded-by: null
@@ -11,7 +11,7 @@ superseded-by: null
 
 ## Status
 
-Draft (auto-extracted from spec: composer-rich-text)
+Accepted
 
 ## Context
 

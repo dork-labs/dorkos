@@ -4,15 +4,44 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook } from '@testing-library/react';
 import { usePaletteItems } from '../use-palette-items';
+import type {
+  CommandItemData,
+  FeatureItem,
+  PaletteItems,
+  QuickActionItem,
+} from '../use-palette-items';
+import type { SearchableItem } from '../use-palette-search';
 import type { AgentPathEntry } from '@dorkos/shared/mesh-schemas';
 import type { RoomSummary } from '@dorkos/shared/room-schemas';
 import type { CommandPaletteContribution } from '@/layers/shared/model';
+
+/**
+ * The instant this hook reasons about time from — noon, local.
+ *
+ * Held still rather than read per render, so nothing below depends on the hour
+ * the suite happens to run at. The only thing derived from it is the day
+ * boundary a row's archived label is measured against, and that boundary is
+ * 04:00 LOCAL — so a fixed UTC instant would land on either side of it
+ * depending on the machine's timezone.
+ */
+const NOW = (() => {
+  const noon = new Date();
+  noon.setHours(12, 0, 0, 0);
+  return noon.getTime();
+})();
+
+/** A local hour on NOW's own day, or `daysAgo` days before it, as an ISO string. */
+function localAt(hour: number, daysAgo = 0): string {
+  const at = new Date(NOW);
+  at.setDate(at.getDate() - daysAgo);
+  at.setHours(hour, 0, 0, 0);
+  return at.toISOString();
+}
 
 // --- Mock entity hooks ---
 
 const mockUseMeshAgentPaths = vi.fn();
 const mockUseCommands = vi.fn();
-const mockUseAgentFrecency = vi.fn();
 const mockUseSessions = vi.fn();
 const mockUseRecentSessions = vi.fn();
 const mockSessionListState = vi.fn();
@@ -140,10 +169,6 @@ vi.mock('@/layers/shared/model', () => ({
   useSlotContributions: () => mockUseSlotContributions(),
 }));
 
-vi.mock('../use-agent-frecency', () => ({
-  useAgentFrecency: () => mockUseAgentFrecency(),
-}));
-
 vi.mock('@/layers/shared/lib', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/layers/shared/lib')>();
   return {
@@ -164,9 +189,6 @@ const makeAgent = (overrides: Partial<AgentPathEntry> = {}): AgentPathEntry => (
 const agentA = makeAgent({ id: 'agent-a', name: 'Agent A', projectPath: '/projects/a' });
 const agentB = makeAgent({ id: 'agent-b', name: 'Agent B', projectPath: '/projects/b' });
 const agentC = makeAgent({ id: 'agent-c', name: 'Agent C', projectPath: '/projects/c' });
-const agentD = makeAgent({ id: 'agent-d', name: 'Agent D', projectPath: '/projects/d' });
-const agentE = makeAgent({ id: 'agent-e', name: 'Agent E', projectPath: '/projects/e' });
-const agentF = makeAgent({ id: 'agent-f', name: 'Agent F', projectPath: '/projects/f' });
 
 const makeRoom = (overrides: Partial<RoomSummary> = {}): RoomSummary => ({
   id: 'room-default',
@@ -214,14 +236,6 @@ const unreadButOlder = makeRoom({
   unreadCount: 2,
 });
 
-function makeFrecency(sortedIds: string[]) {
-  return {
-    entries: [],
-    recordUsage: vi.fn(),
-    getSortedAgentIds: (_ids: string[]) => sortedIds,
-  };
-}
-
 describe('usePaletteItems', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -229,7 +243,6 @@ describe('usePaletteItems', () => {
     // Default: no data, not loading
     mockUseMeshAgentPaths.mockReturnValue({ data: undefined, isLoading: false });
     mockUseCommands.mockReturnValue({ data: undefined });
-    mockUseAgentFrecency.mockReturnValue(makeFrecency([]));
     mockUseSessions.mockReturnValue({ sessions: [] });
     mockUseRecentSessions.mockReturnValue({ data: undefined });
     mockSessionListState.mockReturnValue({ statuses: {}, sessions: {} });
@@ -240,20 +253,32 @@ describe('usePaletteItems', () => {
 
   // --- Static content groups ---
 
-  it('features is a static list of 4 items', () => {
-    const { result } = renderHook(() => usePaletteItems(null));
-    expect(result.current.features).toHaveLength(4);
-    const ids = result.current.features.map((f) => f.id);
+  /**
+   * Every registered contribution of one category, as the corpus carries it.
+   *
+   * Read off `searchableItems` rather than off a list of its own, because that
+   * IS the list now: a typed query is one ranked list across types, so the
+   * corpus is the only route an action has to the screen. Asserting a parallel
+   * array would have gone on passing after the palette stopped reading it.
+   */
+  function corpusOf(items: PaletteItems, type: SearchableItem['type']) {
+    return items.searchableItems.filter((item) => item.type === type);
+  }
+
+  it('offers every registered feature as a searchable row', () => {
+    const { result } = renderHook(() => usePaletteItems(null, NOW));
+    const ids = corpusOf(result.current, 'feature').map((f) => f.id);
+    expect(ids).toHaveLength(4);
     expect(ids).toContain('tasks');
     expect(ids).toContain('relay');
     expect(ids).toContain('mesh');
     expect(ids).toContain('settings');
   });
 
-  it('quickActions is a static list of 6 items', () => {
-    const { result } = renderHook(() => usePaletteItems(null));
-    expect(result.current.quickActions).toHaveLength(6);
-    const ids = result.current.quickActions.map((q) => q.id);
+  it('offers every registered quick action as a searchable row', () => {
+    const { result } = renderHook(() => usePaletteItems(null, NOW));
+    const ids = corpusOf(result.current, 'quick-action').map((q) => q.id);
+    expect(ids).toHaveLength(6);
     expect(ids).toContain('dashboard');
     expect(ids).toContain('new-session');
     expect(ids).toContain('create-agent');
@@ -262,20 +287,22 @@ describe('usePaletteItems', () => {
     expect(ids).toContain('theme');
   });
 
-  it('each feature has id, label, icon, and action fields', () => {
-    const { result } = renderHook(() => usePaletteItems(null));
-    for (const feature of result.current.features) {
-      expect(feature.id).toBeTruthy();
+  it('gives every feature row a name and something to run', () => {
+    const { result } = renderHook(() => usePaletteItems(null, NOW));
+    for (const row of corpusOf(result.current, 'feature')) {
+      expect(row.name).toBeTruthy();
+      const feature = row.data as FeatureItem;
       expect(feature.label).toBeTruthy();
       expect(feature.icon).toBeTruthy();
       expect(feature.action).toBeTruthy();
     }
   });
 
-  it('each quickAction has id, label, icon, and action fields', () => {
-    const { result } = renderHook(() => usePaletteItems(null));
-    for (const qa of result.current.quickActions) {
-      expect(qa.id).toBeTruthy();
+  it('gives every quick-action row a name and something to run', () => {
+    const { result } = renderHook(() => usePaletteItems(null, NOW));
+    for (const row of corpusOf(result.current, 'quick-action')) {
+      expect(row.name).toBeTruthy();
+      const qa = row.data as QuickActionItem;
       expect(qa.label).toBeTruthy();
       expect(qa.icon).toBeTruthy();
       expect(qa.action).toBeTruthy();
@@ -284,11 +311,10 @@ describe('usePaletteItems', () => {
 
   // --- Agent data ---
 
-  it('returns empty recentAgents and allAgents when no agents are registered', () => {
+  it('returns an empty roster when no agents are registered', () => {
     mockUseMeshAgentPaths.mockReturnValue({ data: undefined, isLoading: false });
 
-    const { result } = renderHook(() => usePaletteItems(null));
-    expect(result.current.recentAgents).toEqual([]);
+    const { result } = renderHook(() => usePaletteItems(null, NOW));
     expect(result.current.allAgents).toEqual([]);
   });
 
@@ -297,100 +323,20 @@ describe('usePaletteItems', () => {
       data: { agents: [agentA, agentB, agentC] },
       isLoading: false,
     });
-    mockUseAgentFrecency.mockReturnValue(makeFrecency(['agent-a', 'agent-b', 'agent-c']));
 
-    const { result } = renderHook(() => usePaletteItems(null));
+    const { result } = renderHook(() => usePaletteItems(null, NOW));
     expect(result.current.allAgents).toHaveLength(3);
     expect(result.current.allAgents).toContain(agentA);
     expect(result.current.allAgents).toContain(agentB);
     expect(result.current.allAgents).toContain(agentC);
   });
 
-  it('recentAgents is limited to at most 5 agents', () => {
-    const agents = [agentA, agentB, agentC, agentD, agentE, agentF];
-    mockUseMeshAgentPaths.mockReturnValue({ data: { agents }, isLoading: false });
-    mockUseAgentFrecency.mockReturnValue(
-      makeFrecency(['agent-a', 'agent-b', 'agent-c', 'agent-d', 'agent-e', 'agent-f'])
-    );
-
-    const { result } = renderHook(() => usePaletteItems(null));
-    expect(result.current.recentAgents.length).toBeLessThanOrEqual(5);
-  });
-
-  it('recentAgents respects frecency order from getSortedAgentIds', () => {
-    mockUseMeshAgentPaths.mockReturnValue({
-      data: { agents: [agentA, agentB, agentC] },
-      isLoading: false,
-    });
-    // frecency says B is most used, then C, then A
-    mockUseAgentFrecency.mockReturnValue(makeFrecency(['agent-b', 'agent-c', 'agent-a']));
-
-    const { result } = renderHook(() => usePaletteItems(null));
-    const ids = result.current.recentAgents.map((a) => a.id);
-    expect(ids[0]).toBe('agent-b');
-    expect(ids[1]).toBe('agent-c');
-    expect(ids[2]).toBe('agent-a');
-  });
-
-  it('active agent is pinned first in recentAgents', () => {
-    mockUseMeshAgentPaths.mockReturnValue({
-      data: { agents: [agentA, agentB, agentC] },
-      isLoading: false,
-    });
-    // frecency says B is most used
-    mockUseAgentFrecency.mockReturnValue(makeFrecency(['agent-b', 'agent-c', 'agent-a']));
-
-    // active cwd matches agentC
-    const { result } = renderHook(() => usePaletteItems('/projects/c'));
-    const ids = result.current.recentAgents.map((a) => a.id);
-    expect(ids[0]).toBe('agent-c'); // active agent pinned first
-  });
-
-  it('active agent is not duplicated in recentAgents', () => {
-    mockUseMeshAgentPaths.mockReturnValue({
-      data: { agents: [agentA, agentB, agentC] },
-      isLoading: false,
-    });
-    mockUseAgentFrecency.mockReturnValue(makeFrecency(['agent-a', 'agent-b', 'agent-c']));
-
-    const { result } = renderHook(() => usePaletteItems('/projects/a'));
-    const ids = result.current.recentAgents.map((a) => a.id);
-    const agentACount = ids.filter((id) => id === 'agent-a').length;
-    expect(agentACount).toBe(1);
-  });
-
-  it('activeCwd with no matching agent does not affect recentAgents ordering', () => {
-    mockUseMeshAgentPaths.mockReturnValue({
-      data: { agents: [agentA, agentB] },
-      isLoading: false,
-    });
-    mockUseAgentFrecency.mockReturnValue(makeFrecency(['agent-b', 'agent-a']));
-
-    const { result } = renderHook(() => usePaletteItems('/projects/does-not-exist'));
-    const ids = result.current.recentAgents.map((a) => a.id);
-    expect(ids[0]).toBe('agent-b');
-    expect(ids[1]).toBe('agent-a');
-  });
-
-  it('null activeCwd means no agent is pinned', () => {
-    mockUseMeshAgentPaths.mockReturnValue({
-      data: { agents: [agentA, agentB, agentC] },
-      isLoading: false,
-    });
-    mockUseAgentFrecency.mockReturnValue(makeFrecency(['agent-c', 'agent-b', 'agent-a']));
-
-    const { result } = renderHook(() => usePaletteItems(null));
-    const ids = result.current.recentAgents.map((a) => a.id);
-    // frecency order with no pinning
-    expect(ids[0]).toBe('agent-c');
-  });
-
   // --- Commands ---
 
   it('commands is empty array when no command data is available', () => {
     mockUseCommands.mockReturnValue({ data: undefined });
-    const { result } = renderHook(() => usePaletteItems(null));
-    expect(result.current.commands).toEqual([]);
+    const { result } = renderHook(() => usePaletteItems(null, NOW));
+    expect(corpusOf(result.current, 'command')).toEqual([]);
   });
 
   it('commands are populated from the commands query', () => {
@@ -416,11 +362,12 @@ describe('usePaletteItems', () => {
       },
     });
 
-    const { result } = renderHook(() => usePaletteItems(null));
-    expect(result.current.commands).toHaveLength(2);
-    expect(result.current.commands[0].name).toBe('/hello');
-    expect(result.current.commands[0].description).toBe('Say hello');
-    expect(result.current.commands[1].name).toBe('/world');
+    const { result } = renderHook(() => usePaletteItems(null, NOW));
+    const rows = corpusOf(result.current, 'command');
+    expect(rows).toHaveLength(2);
+    expect(rows[0].name).toBe('/hello');
+    expect((rows[0].data as CommandItemData).description).toBe('Say hello');
+    expect(rows[1].name).toBe('/world');
   });
 
   it('commands with no description have undefined description', () => {
@@ -439,9 +386,12 @@ describe('usePaletteItems', () => {
       },
     });
 
-    const { result } = renderHook(() => usePaletteItems(null));
-    // description is mapped from cmd.description; empty string is falsy but still set
-    expect(result.current.commands[0].name).toBe('/bare');
+    const { result } = renderHook(() => usePaletteItems(null, NOW));
+    // description is mapped from cmd.description; empty string is falsy, so the
+    // row carries no keywords rather than an empty one.
+    const rows = corpusOf(result.current, 'command');
+    expect(rows[0].name).toBe('/bare');
+    expect(rows[0].keywords).toBeUndefined();
   });
 
   // --- isLoading ---
@@ -449,7 +399,7 @@ describe('usePaletteItems', () => {
   it('isLoading is true while agent data is loading', () => {
     mockUseMeshAgentPaths.mockReturnValue({ data: undefined, isLoading: true });
 
-    const { result } = renderHook(() => usePaletteItems(null));
+    const { result } = renderHook(() => usePaletteItems(null, NOW));
     expect(result.current.isLoading).toBe(true);
   });
 
@@ -459,35 +409,39 @@ describe('usePaletteItems', () => {
       isLoading: false,
     });
 
-    const { result } = renderHook(() => usePaletteItems(null));
+    const { result } = renderHook(() => usePaletteItems(null, NOW));
     expect(result.current.isLoading).toBe(false);
   });
 
   // --- Return shape ---
 
-  it('returns every content group the palette draws', () => {
-    const { result } = renderHook(() => usePaletteItems(null));
-    expect(result.current).toHaveProperty('recentAgents');
-    expect(result.current).toHaveProperty('allAgents');
-    expect(result.current).toHaveProperty('features');
-    expect(result.current).toHaveProperty('commands');
-    expect(result.current).toHaveProperty('quickActions');
-    expect(result.current).toHaveProperty('newActions');
-    expect(result.current).toHaveProperty('sessions');
-    expect(result.current).toHaveProperty('continueRows');
-    expect(result.current).toHaveProperty('recent');
-    expect(result.current).toHaveProperty('isLoading');
+  it('returns every content group the palette draws, and no list nothing reads', () => {
+    const { result } = renderHook(() => usePaletteItems(null, NOW));
+    // Exact, not `toHaveProperty` one at a time: a list with no reader is dead
+    // surface, and the three that went (`features`, `commands`, `quickActions`)
+    // went because a typed query is one ranked list now and the corpus is their
+    // only route to the screen.
+    expect(Object.keys(result.current).sort()).toEqual([
+      'allAgents',
+      'continueRows',
+      'isLoading',
+      'newActions',
+      'recent',
+      'rooms',
+      'searchableItems',
+      'sessions',
+    ]);
   });
 
   // --- The zero-query "New" group ---
 
   it('New holds the two creation actions, in their declared order', () => {
-    const { result } = renderHook(() => usePaletteItems(null));
+    const { result } = renderHook(() => usePaletteItems(null, NOW));
     expect(result.current.newActions.map((a) => a.id)).toEqual(['new-session', 'create-agent']);
   });
 
   it('New leaves out every quick action that does not make something', () => {
-    const { result } = renderHook(() => usePaletteItems(null));
+    const { result } = renderHook(() => usePaletteItems(null, NOW));
     const ids = result.current.newActions.map((a) => a.id);
     // These are real quick actions in the fixture above; none of them creates
     // anything, and none of them may take a seat in the four rows before typing.
@@ -518,7 +472,7 @@ describe('usePaletteItems', () => {
     it('names the directory, the conversation on screen, and the runtime that owns it', () => {
       mockUseSessions.mockReturnValue({ sessions: [activeSession] });
 
-      renderHook(() => usePaletteItems('/projects/a'));
+      renderHook(() => usePaletteItems('/projects/a', NOW));
 
       expect(mockUseCommands).toHaveBeenCalledWith('/projects/a', 'session-codex', 'codex');
     });
@@ -528,7 +482,7 @@ describe('usePaletteItems', () => {
       // live under it — so the cwd goes even when there is nothing else to say.
       mockUseSessions.mockReturnValue({ sessions: [] });
 
-      renderHook(() => usePaletteItems('/projects/a'));
+      renderHook(() => usePaletteItems('/projects/a', NOW));
 
       expect(mockUseCommands).toHaveBeenCalledWith('/projects/a', undefined, undefined);
     });
@@ -541,7 +495,7 @@ describe('usePaletteItems', () => {
         sessions: [{ ...activeSession, cwd: '/projects/elsewhere' }],
       });
 
-      renderHook(() => usePaletteItems('/projects/a'));
+      renderHook(() => usePaletteItems('/projects/a', NOW));
 
       expect(mockUseCommands).toHaveBeenCalledWith('/projects/a', undefined, undefined);
     });
@@ -566,7 +520,7 @@ describe('usePaletteItems', () => {
       data: { sessions: [recentSession], agentActivity: {} },
     });
 
-    const { result } = renderHook(() => usePaletteItems(null));
+    const { result } = renderHook(() => usePaletteItems(null, NOW));
     const item = result.current.searchableItems.find((i) => i.id === recentSession.id);
 
     expect(item?.type).toBe('session');
@@ -581,7 +535,7 @@ describe('usePaletteItems', () => {
       data: { sessions: [recentSession], agentActivity: {} },
     });
 
-    const { result } = renderHook(() => usePaletteItems(null));
+    const { result } = renderHook(() => usePaletteItems(null, NOW));
     const item = result.current.searchableItems.find((i) => i.id === recentSession.id);
 
     // The preview is right there on the session and would be one line to add.
@@ -591,11 +545,43 @@ describe('usePaletteItems', () => {
     expect(searchable).not.toContain('flaky');
   });
 
+  it('labels a conversation from before the day turned over — and does NOT demote it', () => {
+    // The whole difference between an archived room and an archived
+    // conversation, in one assertion. `demoted` is a hard partition below every
+    // live row of every kind; the room below earns it because somebody closed
+    // it, and the conversation must not, or yesterday's work would sit under
+    // today's slash commands.
+    const yesterday = { ...recentSession, id: 'ses-yesterday', updatedAt: localAt(20, 1) };
+    const thisMorning = { ...recentSession, id: 'ses-this-morning', updatedAt: localAt(11) };
+    mockUseMeshAgentPaths.mockReturnValue({ data: { agents: [agentA] }, isLoading: false });
+    mockUseRecentSessions.mockReturnValue({
+      data: { sessions: [yesterday, thisMorning], agentActivity: {} },
+    });
+    mockUseRooms.mockReturnValue({
+      data: [{ ...channel, id: 'room-shut', slug: 'shut', archived: true }],
+      isLoading: false,
+      isError: false,
+    });
+
+    const { result } = renderHook(() => usePaletteItems(null, NOW));
+    const byId = new Map(result.current.sessions.map((s) => [s.id, s]));
+    const corpus = new Map(result.current.searchableItems.map((i) => [i.id, i]));
+
+    expect(byId.get('ses-yesterday')?.archived).toBe(true);
+    expect(byId.get('ses-this-morning')?.archived).toBe(false);
+    // Neither conversation is demoted…
+    expect(corpus.get('ses-yesterday')?.demoted).toBe(false);
+    expect(corpus.get('ses-this-morning')?.demoted).toBe(false);
+    // …and the archived ROOM is, so this is `demoted` still working rather than
+    // a field nothing sets any more.
+    expect(corpus.get('room-shut')?.demoted).toBe(true);
+  });
+
   // --- Rooms (spec `rooms` §13.2) ---
 
   it('puts a channel in the flat search list under type "room", named the way people type it', () => {
     mockUseRooms.mockReturnValue({ data: [channel], isLoading: false, isError: false });
-    const { result } = renderHook(() => usePaletteItems(null));
+    const { result } = renderHook(() => usePaletteItems(null, NOW));
 
     const item = result.current.searchableItems.find((i) => i.id === 'room-general');
     expect(item).toEqual({
@@ -605,13 +591,35 @@ describe('usePaletteItems', () => {
       // The bare slug rides along so `#gen` — which arrives with the prefix
       // already stripped — matches `general` rather than fuzzing past the `#`.
       keywords: ['General chatter', 'general'],
+      // What ranking reads. Asserted as part of the whole object rather than
+      // spot-checked, so a row that stopped carrying them — and so silently
+      // ranked as never-used, never-active and never-waiting — goes red here.
+      usageKey: 'room:room-general',
+      lastActivityAt: channel.lastActivityAt,
+      waiting: false,
+      demoted: false,
+      // A channel is something you scope BY, so it belongs to no scope itself.
+      scopes: [],
       data: channel,
     });
   });
 
+  it('marks an unread channel as waiting, and an archived one as findable-not-live', () => {
+    const unread = { ...channel, id: 'room-loud', slug: 'loud', unreadCount: 3 };
+    const archived = { ...channel, id: 'room-old', slug: 'old', archived: true };
+    mockUseRooms.mockReturnValue({ data: [unread, archived], isLoading: false, isError: false });
+    const { result } = renderHook(() => usePaletteItems(null, NOW));
+
+    const byId = new Map(result.current.searchableItems.map((i) => [i.id, i]));
+    expect(byId.get('room-loud')?.waiting).toBe(true);
+    expect(byId.get('room-loud')?.demoted).toBe(false);
+    expect(byId.get('room-old')?.waiting).toBe(false);
+    expect(byId.get('room-old')?.demoted).toBe(true);
+  });
+
   it('puts a direct message under type "dm", not "room", so `@` finds it and `#` does not', () => {
     mockUseRooms.mockReturnValue({ data: [dmWithAna], isLoading: false, isError: false });
-    const { result } = renderHook(() => usePaletteItems(null));
+    const { result } = renderHook(() => usePaletteItems(null, NOW));
 
     const item = result.current.searchableItems.find((i) => i.id === 'room-ana');
     expect(item?.type).toBe('dm');
@@ -626,7 +634,7 @@ describe('usePaletteItems', () => {
   // already do — this is what lets Wave 2 register aliases (e.g. "connectors",
   // "telegram") on a renamed palette entry without a search-layer change.
   it('has no keywords on a feature entry that declares none', () => {
-    const { result } = renderHook(() => usePaletteItems(null));
+    const { result } = renderHook(() => usePaletteItems(null, NOW));
     const item = result.current.searchableItems.find((i) => i.id === 'relay');
     expect(item?.type).toBe('feature');
     expect(item?.keywords).toBeUndefined();
@@ -646,7 +654,7 @@ describe('usePaletteItems', () => {
       },
     ]);
 
-    const { result } = renderHook(() => usePaletteItems(null));
+    const { result } = renderHook(() => usePaletteItems(null, NOW));
     const item = result.current.searchableItems.find((i) => i.id === 'relay');
     expect(item?.keywords).toEqual(['connectors', 'telegram', 'slack']);
   });
@@ -665,7 +673,7 @@ describe('usePaletteItems', () => {
       },
     ]);
 
-    const { result } = renderHook(() => usePaletteItems(null));
+    const { result } = renderHook(() => usePaletteItems(null, NOW));
     const item = result.current.searchableItems.find((i) => i.id === 'browse');
     expect(item?.type).toBe('quick-action');
     expect(item?.keywords).toEqual(['files', 'folder']);
@@ -677,7 +685,7 @@ describe('usePaletteItems', () => {
       isLoading: false,
       isError: false,
     });
-    const { result } = renderHook(() => usePaletteItems(null));
+    const { result } = renderHook(() => usePaletteItems(null, NOW));
 
     expect(result.current.rooms.channels.map((r) => r.id)).toEqual(['room-unread', 'room-recent']);
     expect(result.current.rooms.unread.map((r) => r.id)).toEqual(['room-unread']);

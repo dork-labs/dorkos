@@ -127,17 +127,35 @@ function countFinishedWhileAway(
  * with, so the row survives its own memory being written. See
  * {@link DigestFacts.lastShownDate}.
  *
- * **The dismissal is narrower than BC-22's words, deliberately and for now.**
- * "It dissolves when the user opens any conversation" is implemented as "the
- * newest interaction record moved", and only `SidebarChrome.openTarget` writes
- * one — so opening a conversation from ⌘K or from the home surface does not put
- * the row away within this browser session. It still goes on the next load,
- * because `lastShownDate` was written the moment it rendered, so the failure is
- * one stale row for one session rather than a repeated moment. Widening it
- * means every open path recording an interaction, which is P3's job: it retires
- * `dorkos:agent-frecency-v2` into this same store and makes ⌘K a writer
- * (`entities/interactions`, module note). Doing it here would put a write into
- * three sibling features this task does not own.
+ * **The dismissal is "the newest interaction record moved", and that now covers
+ * nearly every way in.** The sidebar's own rows (`SidebarChrome.openTarget`)
+ * record one, and so does ⌘K (`use-palette-actions`, which since P3.3 records
+ * the agent, room or conversation every row it offers lands you in — including
+ * the conversation a slash-command row types into). DOR-1156 added the rest:
+ * the presence strip, the "Jump back in" popover, the attention rows and
+ * `/team`'s profile drawer each record what they open, and writing a message
+ * records the conversation you wrote it in — the strongest signal there is,
+ * since BC-16 already treats what you WROTE as attention.
+ *
+ * It is a record of PLACES, not of acts: choosing "Toggle theme" from ⌘K
+ * records nothing and dissolves nothing, which is deliberate and argued at
+ * `InteractionKind`.
+ *
+ * **Two ways in still leave the row standing, both on purpose.** Landing on the
+ * home surface records nothing — `/` IS #team, and it is arrived at rather than
+ * opened, so a write there would fire on every page load and dissolve this row
+ * before anybody read it. A deep link into a session records nothing for the
+ * same reason. (`useStartNewSession` records nothing either, but for a
+ * different reason: it mints an id no session list holds yet, so a record would
+ * name a row nothing can draw — the first message writes one.) All of them
+ * still put the row away on the next load, because `lastShownDate` was written
+ * the moment it rendered.
+ *
+ * Closing the deep-link case is one write inside `entities/session`'s
+ * navigation seams — `useDirectoryState`'s setter already takes the `onOpened`
+ * hook ⌘K uses, which is how an entity that may not import `entities/interactions`
+ * can still record. That is an entity edit wanting its own task with that
+ * entity's owner rather than a quiet addition from a feature.
  *
  * @param input - The clock, the sessions, the interactions and stored prefs.
  */

@@ -1,4 +1,4 @@
-# Design Decisions — Sidebar: Now / Today / Library
+# Design Decisions — Sidebar: Heads up / Today / Library
 
 Visual companion sessions: `.dork/visual-companion/19627-1786276365/` (screens
 teardown → session-02) and `.dork/visual-companion/9729-1786282982/` (screens
@@ -24,12 +24,20 @@ a step change in UI/UX, not just conventional." Relearning cost accepted;
 
 ## 2. The zone system
 
-- Three zones: **Now**, **Today**, **Library** (+ **Getting started**, which is
-  Now's day-one life stage — same engine, same slot).
+- Three zones: **Heads up**, **Today**, **Library** (+ **Getting started**,
+  which is the day-one life stage of Heads up — same engine, same slot).
+- **Renamed 2026-08-11 (DOR-1155): the first zone's label is "Heads up."** Label
+  only — the id stays `now` in the model, the DOM and config, because renaming
+  it costs a config migration and buys the user nothing. "Now" read temporally,
+  so the operator looked in this zone for the agent that was currently running;
+  the zone actually holds what he should know about (agents waiting on him,
+  plus the rolled-up "N working" line). Every "Heads up" below is the zone this
+  document first named "Now"; quoted decisions from the 2026-08-09 session are
+  left verbatim.
 - Zone labels are **landmarks, never accordions**: they cannot collapse. A zone
   with no content **disappears entirely** — an empty box is never rendered
   (decided: "Now zone disappears entirely", screen session-02, click-confirmed).
-- **Now** = needs-you items + working rollup. Priority: permission prompts →
+- **Heads up** = needs-you items + working rollup. Priority: permission prompts →
   questions → wedged/error → idle-timeout nudges. Max 3 visible + "+ N more";
   working sessions aggregate to one line ("6 working"), never N pulsing rows.
   Never scrolls.
@@ -95,15 +103,15 @@ a step change in UI/UX, not just conventional." Relearning cost accepted;
 - **The active-conversation anchor**: the open conversation is always Today's
   first row, pinned while open, carrying live status. This solves "my agent is
   40 rows down and I can't see if it's working" with zero new UI. It is not
-  placed in Now because Now means "needs you" — being where the user already is
-  would teach them to ignore Now.
+  placed in Heads up because Heads up means "needs you" — being where the user already is
+  would teach them to ignore Heads up.
 - **Scroll-to-active** (decided): on conversation switch, the sidebar scrolls
   the anchor into view. Guardrails: never auto-expand a collapsed section (the
   Library copy just gets an active tint if visible — dual presence), instant
   jump under reduced-motion, and never scroll while the user is reading — only
   on switch.
 - Automated sessions never claim a top-level Today row; they stay behind the
-  reveal unless they need you (then they're in Now).
+  reveal unless they need you (then they're in Heads up).
 
 ## 5. Activity verbs (the honesty ladder)
 
@@ -114,7 +122,7 @@ a step change in UI/UX, not just conventional." Relearning cost accepted;
    Codex/OpenCode: generic-but-honest forms ("running a command…").
 2. "working…" when a turn is streaming and the tool is unknown (guaranteed on
    all runtimes by the lifecycle contract).
-3. "waiting on you" when blocked (also a Now item).
+3. "waiting on you" when blocked (also a Heads up item).
 4. Nothing when idle. **Degrade down the ladder, never guess.**
 
 Engineering gap (the one real server task): the fleet-wide session-list stream
@@ -157,7 +165,7 @@ verbs with the same ladder — one verb system everywhere.
 - **Version number is hidden from the chrome** (decided). It lives in that menu
   - in DorkBot's seeded context. **Update-ready** renders as a transient footer
     pill ("Update ready — Restart") that exists only while true. Updates never
-    enter Now (Now = your agents need you).
+    enter Heads up (Heads up = your agents need you).
 - **One "New" button** (from B, decided): the only create surface — Session
   (⌘N, ↵ = last-used agent), Channel, Direct message, Agent…, Agent group.
   Section hover `+` deep-links into this same menu pre-selected. Kills the
@@ -179,32 +187,32 @@ verbs with the same ladder — one verb system everywhere.
 `session-03-conversations.html` §3.
 
 - The sidebar is never empty: DorkBot + #team are seeded at install.
-- Day one: **Getting started** zone (Now's first life stage) with **computed**
+- Day one: **Getting started** zone (the first life stage of Heads up) with **computed**
   suggestions, never a static checklist: discovery found agents → "Meet the N
   agents we found"; none found → "Add your first agent" (fallback only); agents
   never ran → "Start your first session"; plus "Say hi in #team", "Ask DorkBot
-  anything". Items retire permanently when done; the zone becomes Now as real
+  anything". Items retire permanently when done; the zone becomes Heads up as real
   signals take over.
-- Quiet morning: no Now zone; Today opens with the welcome-back digest. Truly
+- Quiet morning: no Heads up zone; Today opens with the welcome-back digest. Truly
   nothing: Library stands alone — absence is the calm signal.
-- Power user (30+ agents): Now capped with rollups; Library collapsed rows
+- Power user (30+ agents): Heads up capped with rollups; Library collapsed rows
   carry counts ("32 · 6 working"); density scales, chrome doesn't.
 
 ## 9. Mobile
 
 **Screen:** `session-02-c-deep-dive.html` §4.
 
-- The drawer dies. Now + Today become the **Home tab** content. Four bottom
+- The drawer dies. Heads up + Today become the **Home tab** content. Four bottom
   tabs: Home (badged with needs-you count) · Library · DorkBot · You.
 - No FAB; "New" stays in the header. Long-press replaces hover (the dual-render
   menu system already guarantees context menus exist everywhere). Rows grow to
-  40–44px. "Catch up" bulk action tops Today. Approvals inline in Now =
+  40–44px. "Catch up" bulk action tops Today. Approvals inline in Heads up =
   approve-from-anywhere.
 
 ## 10. Moments
 
 **Screen:** `session-02-c-deep-dive.html` §5. Welcome-back glow (row glows
-amber once for work finished while away), the all-clear beat (Now settles with
+amber once for work finished while away), the all-clear beat (Heads up settles with
 "All clear ✓" then folds away), the morning digest (once per day, dissolves if
 ignored), suggestions that retire, approve-from-anywhere. The "meet your new
 sidebar" tour is **cut** (decided — user count doesn't justify it).
@@ -225,7 +233,7 @@ you. Dark mode: same tint logic, calibration pass required (open).
 Decided direction (2026-08-09): **a convention, not a framework.**
 
 - One pure function `buildSidebarModel(state) → SidebarModel` in the feature's
-  `model/`: every rule above (zone visibility, Now priority/cap, anchor,
+  `model/`: every rule above (zone visibility, Heads up priority/cap, anchor,
   digest, retirement, rollups) is a small named, TSDoc'd function composed
   inside. Components render the model; no logic in JSX.
 - **Every row/zone carries a `reason` field** (provenance):
@@ -332,29 +340,29 @@ Implications adopted for this spec:
 
 ## 17. Open items (before/at SPECIFY)
 
-- Dark-mode calibration; a11y spec (zone landmarks, roving tabindex, Now
-  live-region); drag-and-drop scope (Library manual order + keyboard fallback;
-  Now/Today never draggable); Obsidian EmbedSidebar mapping. Resolve inside
+- Dark-mode calibration; a11y spec (zone landmarks, roving tabindex,
+  Heads up live-region); drag-and-drop scope (Library manual order + keyboard fallback;
+  Heads up/Today never draggable); Obsidian EmbedSidebar mapping. Resolve inside
   `02-specification.md`, not as further design rounds.
 - Multi-project (repo) context in row grammar — decide placement of project
   meta for operators running one agent across several repos.
 
 ## 18. Notification rules (decided 2026-08-09, delegated authority)
 
-Two tiers plus Now membership — one table, no exceptions beyond those listed:
+Two tiers plus Heads up membership — one table, no exceptions beyond those listed:
 
-| Signal                                            | Rendering                                                            |
-| ------------------------------------------------- | -------------------------------------------------------------------- |
-| Channel has new messages                          | Bold label only. No badge, no dot.                                   |
-| Unread DM to you                                  | Numbered amber badge (DMs are direct by nature).                     |
-| @mention of you (any room)                        | Numbered amber badge on that row.                                    |
-| Agent working                                     | Status dot (avatar corner) + verb. Never affects unread state.       |
-| Approval / agent question / wedged / idle-timeout | Now zone item. The only things that enter Now.                       |
-| Automated session activity                        | Nothing. No bold, no badge. Blocking states go to Now like the rest. |
+| Signal                                            | Rendering                                                                 |
+| ------------------------------------------------- | ------------------------------------------------------------------------- |
+| Channel has new messages                          | Bold label only. No badge, no dot.                                        |
+| Unread DM to you                                  | Numbered amber badge (DMs are direct by nature).                          |
+| @mention of you (any room)                        | Numbered amber badge on that row.                                         |
+| Agent working                                     | Status dot (avatar corner) + verb. Never affects unread state.            |
+| Approval / agent question / wedged / idle-timeout | Heads up zone item. The only things that enter Heads up.                  |
+| Automated session activity                        | Nothing. No bold, no badge. Blocking states go to Heads up like the rest. |
 
-- **Mentions and DMs never enter Now.** Now is reserved for blocked agent
+- **Mentions and DMs never enter Heads up.** Heads up is reserved for blocked
   work; diluting it with social signals teaches users to ignore it. (An agent
-  asking you a question in a DM enters Now as a _question_, not as a DM.)
+  asking you a question in a DM enters Heads up as a _question_, not as a DM.)
 - **Mute** kills bold, badge, and Today eligibility. One exception:
   @mentions pierce mute (badge still renders). Muted rooms stay excluded from
   recents (already the Jump Back In rule; carries to Today).
@@ -362,8 +370,70 @@ Two tiers plus Now membership — one table, no exceptions beyond those listed:
   (DOR-1030).
 - **Rollups on collapsed Library sections**: badge = sum of tier-2 counts,
   bold if any tier-1, plus the working count. Signal never lost by folding.
-- **No snooze in v1.** Now items clear by resolution. Idle-timeout nudges are
+- **No snooze in v1.** Heads up items clear by resolution. Idle-timeout nudges are
   dismissible (hover × / ⋮ menu), and dismissal is permanent for that idle
   episode.
-- **Mobile Home tab badge = the Now count** (matches "N need you"). Library
+- **Mobile Home tab badge = the Heads up count** (matches "N need you"). Library
   tab carries no badge — it is the calm surface.
+
+## 19. The Heads up ↔ Getting started swap is damped on the way back (decided 2026-08-11, DOR-1144)
+
+**Screens:** none — this was found in the P2.3 review, driving the shipped
+build rather than a mockup. Contract: **BC-52**.
+
+The two zones share one slot and §2's rule settles who gets it: real signals
+always win. That half is right and is not touched here. The problem was the
+_transition_. For a day-one operator who still has unretired suggestions, the
+zone left and came back instantly, so every turn an agent started or finished
+moved Today about four rows — twice per turn, on a surface the operator is
+reading. That is the thing BC-17 already refuses to do to Today's order, being
+done to Today's position instead.
+
+**Decided:**
+
+- **The yield stays instant.** A permission prompt, a question, a streaming turn
+  — anything real — takes the slot on the frame it exists. Precedence is not
+  negotiable and gains nothing from being smoothed.
+- **The return waits out a minimum dwell of 5 seconds** from the moment the zone
+  stepped aside. A turn that starts and finishes inside that window therefore
+  produces no return at all, which is the flap the review found: the zone never
+  comes back, so it cannot go away again.
+- **The return also waits for the operator's hands to leave the zones**,
+  deferring while the pointer is inside the zone stack or a row holds focus.
+  This is BC-17's own promise applied to the other axis, and it reuses BC-17's
+  own machinery rather than a second copy of it (`useInsideHold`, now shared by
+  `useTodayOrderHold` and `useGettingStartedReturn`). Scoped to the zones rather
+  than to the whole panel for BC-17's own reason: the zones are what move, and a
+  pointer resting in the empty panel beneath them has nothing above it to shift.
+  **This half is indefinite, not brief**: a pointer left resting in the zone
+  stack holds the return open for as long as it rests there, with no ceiling.
+  That is deliberate and is exactly `useTodayOrderHold`'s existing semantics —
+  the operator is still in the panel, so the reason not to move anything has not
+  expired — and it is bounded in practice by the pointer leaving, which is the
+  same event BC-17 already waits on.
+- **`prefers-reduced-motion` changes none of it.** The sidebar's other
+  reduced-motion rules suppress flourishes — the welcome-back glow, the
+  all-clear beat — because those are decoration about something that already
+  happened. This is timing, not animation, and the operator who asked for less
+  movement is the last one who should get the undamped version.
+
+**The accepted cost, stated plainly:** while the return is held, the slot is
+empty, so a short turn now moves Today up in two small steps (the zone leaving,
+then the working rollup clearing) and back down once, several seconds later,
+instead of thrashing it twice per turn. Movement is not eliminated; it is made
+infrequent and never sudden, which is what "rows must not move under a hand"
+actually asks for.
+
+**Rejected:**
+
+- _Damping both directions_ — the symmetric implementation, and the obvious one.
+  It delays real signals, which is the one thing the zone system exists to
+  prevent. The hook is built so this cannot be reintroduced by accident: it can
+  only ever subtract the Getting-started zone from the model it is handed, and
+  holds no copy of a previous frame to put back.
+- _Retiring Getting started the first time it yields_ — cheaper, and it throws
+  away suggestions the operator has not acted on because an unrelated agent
+  happened to run.
+- _Reserving the slot's height so nothing below it ever moves_ — a permanent
+  empty box for a transient problem, and BC-1 says a zone with nothing to say
+  renders nothing at all.

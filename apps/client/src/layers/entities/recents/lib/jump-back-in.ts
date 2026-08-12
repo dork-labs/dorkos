@@ -307,7 +307,7 @@ function isJumpBackInRoom(room: RoomSummary, mutedRoomIds: ReadonlySet<string>):
  * That is the whole dedupe, and it rests entirely on the origin being TRUE.
  * A room turn carries no marker in its own transcript, so the server assigns
  * `origin: 'room'` from the `room_sessions` binding on the way out
- * (`services/session/room-origin-overlay.ts`). Without that overlay a room and
+ * (`services/session/origin/room-origin-overlay.ts`). Without that overlay a room and
  * its turn are two indistinguishable rows and both are drawn — which is exactly
  * what shipped in review. Nothing here can recover from a missing origin:
  * the key namespaces (`session:` / `channel:`) can never collide, so the

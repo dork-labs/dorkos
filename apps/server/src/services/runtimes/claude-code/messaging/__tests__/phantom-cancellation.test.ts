@@ -47,7 +47,7 @@ function userMessage(blocks: ResultBlock[], parentToolUseId: string | null = nul
 describe('detectPhantomCancellations', () => {
   it('detects a main-thread sentinel tool_result with no operator stop behind it', () => {
     const found = detectPhantomCancellations(userMessage([{}]), makeSession());
-    expect(found).toEqual([{ toolUseId: 'toolu_123', mainThread: true }]);
+    expect(found).toEqual([{ toolUseId: 'toolu_123', mainThread: true, parentToolUseId: null }]);
   });
 
   it('detects EVERY phantom when the CLI cancels parallel calls in one message', () => {
@@ -88,7 +88,9 @@ describe('detectPhantomCancellations', () => {
 
   it('flags a subagent phantom as not main-thread', () => {
     const found = detectPhantomCancellations(userMessage([{}], 'toolu_parent'), makeSession());
-    expect(found).toEqual([{ toolUseId: 'toolu_123', mainThread: false }]);
+    expect(found).toEqual([
+      { toolUseId: 'toolu_123', mainThread: false, parentToolUseId: 'toolu_parent' },
+    ]);
   });
 
   it('ignores sentinels inside the post-interrupt suppression window', () => {
@@ -141,15 +143,53 @@ describe('detectPhantomCancellations', () => {
 
 describe('buildPhantomCorrectionNote', () => {
   it('names the cancelled tool call and says the user did not deny it', () => {
-    const note = buildPhantomCorrectionNote(['toolu_abc']);
+    const note = buildPhantomCorrectionNote([
+      { toolUseId: 'toolu_abc', mainThread: true, parentToolUseId: null },
+    ]);
     expect(note).toContain('toolu_abc');
     expect(note).toContain('not by the user');
     expect(note).toContain('did NOT deny');
   });
 
   it('names every cancelled call in one note', () => {
-    const note = buildPhantomCorrectionNote(['toolu_A', 'toolu_B']);
+    const note = buildPhantomCorrectionNote([
+      { toolUseId: 'toolu_A', mainThread: true, parentToolUseId: null },
+      { toolUseId: 'toolu_B', mainThread: true, parentToolUseId: null },
+    ]);
     expect(note).toContain('toolu_A');
     expect(note).toContain('toolu_B');
+  });
+
+  // A subagent's own input stream is not ours to write to, but the coordinator
+  // that dispatched it IS reachable — and it is the one about to believe a false
+  // "the user declined" in the subagent's report (DOR-1150).
+  describe('subagent phantoms', () => {
+    const subagentPhantoms = [
+      { toolUseId: 'toolu_sub_A', mainThread: false, parentToolUseId: 'toolu_task_1' },
+      { toolUseId: 'toolu_sub_B', mainThread: false, parentToolUseId: 'toolu_task_1' },
+    ];
+
+    it('names the dispatching task and every cancelled call inside it', () => {
+      const note = buildPhantomCorrectionNote(subagentPhantoms);
+      expect(note).toContain('toolu_task_1');
+      expect(note).toContain('toolu_sub_A');
+      expect(note).toContain('toolu_sub_B');
+    });
+
+    it('tells the coordinator the runtime cancelled them, not the user', () => {
+      const note = buildPhantomCorrectionNote(subagentPhantoms);
+      expect(note).toContain('not by the user');
+    });
+
+    it("marks any 'user declined' claim in that subagent's report as false", () => {
+      const note = buildPhantomCorrectionNote(subagentPhantoms);
+      expect(note).toContain('FALSE');
+      expect(note.toLowerCase()).toContain('declined');
+    });
+
+    it('tells the coordinator to re-issue or re-dispatch the work', () => {
+      const note = buildPhantomCorrectionNote(subagentPhantoms);
+      expect(note.toLowerCase()).toMatch(/re-?dispatch|re-?issue/);
+    });
   });
 });

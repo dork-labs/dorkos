@@ -1,17 +1,27 @@
 /**
- * When YOU last opened a thing — one store, one key space, every kind.
+ * What YOU opened, when, and how often — one store, one key space, every kind.
  *
  * The sidebar's Today zone is ordered by the operator's own attention and never
  * by an agent's (spec `sidebar-now-today-library` BC-16), which needs a fact no
  * server has: the moment this person last looked at this conversation. That is
- * what lives here.
+ * what lives here, beside the count of how many times they have.
  *
  * **One key space for every kind** (`session:<id>`, `room:<id>`,
  * `agent:<path>`) because the alternative is what the cockpit already grew
  * once: a localStorage key that only knew about agents
  * (`dorkos:agent-frecency-v2`), so ⌘K could rank agents by use and could rank
- * nothing else. P3 retires that key into this store and adds frecency scoring
- * beside the same records; nothing here changes shape when it does.
+ * nothing else. That key is retired into this store by
+ * {@link module:entities/interactions/model/legacy-frecency-migration}, and the
+ * count it carried now lives on {@link InteractionState.counts} for every kind
+ * rather than for one.
+ *
+ * **Two maps, added rather than merged.** The obvious shape is one record per
+ * key holding both facts. It is not the shape here, because
+ * `SidebarState.interactions` is `opened` itself — the sidebar reads the map
+ * whole and parses its values — so merging would have rewritten a contract two
+ * shipped phases already depend on to add a field only ⌘K reads. The two maps
+ * carry the same keys and are pruned together, which is the invariant
+ * {@link prune} exists to keep.
  *
  * **Why it persists, when the spec's prefs table says "not persisted".** That
  * table is about `~/.dork/config.json` — the server-held prefs that follow you
@@ -30,6 +40,19 @@ import { createJSONStorage, persist } from 'zustand/middleware';
  *
  * Deliberately the three the sidebar and ⌘K both speak. A fourth would need a
  * row grammar to render it, which is the real gate on adding one.
+ *
+ * **Actions and slash commands are not the fourth, and that was decided rather
+ * than deferred.** ⌘K ranks them and they carry no history at all, so recording
+ * them here is the obvious fix for the handicap
+ * `features/command-palette/model/use-palette-items` documents — that file even
+ * names this store as the escape hatch. It is not taken, because of a coupling
+ * neither file can see alone: the sidebar's "While you were away…" digest
+ * dissolves when the NEWEST record here moves, of whatever kind
+ * (`use-digest-facts.ts`, BC-22). Recording an action would mean toggling the
+ * theme from ⌘K puts away a summary of the night's work — the digest reporting
+ * itself read by somebody who read nothing. The rule this store keeps is
+ * therefore **a record is a place you went, not a thing you did**, and adding a
+ * fourth kind means first giving the digest a way to say which kinds count.
  */
 export type InteractionKind = 'session' | 'room' | 'agent';
 
@@ -64,8 +87,9 @@ export const MAX_INTERACTION_RECORDS = 500;
  * `persist` writes inside the `set` call, so an unguarded `QuotaExceededError`
  * propagates out of whatever triggered it — and the only trigger here is
  * clicking a row, which would turn a full quota into a crash on navigation.
- * The same shape as `use-agent-frecency.ts`' write path: degrade to
- * memory-only for this session rather than fail the interaction.
+ * Degrade to memory-only for this session rather than fail the interaction —
+ * the same shape the retired agent-frecency key's write path used, and the
+ * reason `legacy-frecency-migration.ts` guards its reads too.
  */
 const guardedLocalStorage = {
   getItem: (name: string): string | null => {
@@ -92,16 +116,41 @@ const guardedLocalStorage = {
   },
 };
 
+/**
+ * {@link interactionKey} → how many times the operator has opened it, ever.
+ *
+ * A key absent from this map has been opened zero times. It carries the same
+ * keys as {@link InteractionState.opened} and is pruned with it — see the
+ * module note on why the two facts are two maps.
+ */
+export type InteractionCounts = Readonly<Record<string, number>>;
+
 /** What the store holds. */
 interface InteractionState {
   /** When the operator last opened each thing, ISO-8601. */
   opened: InteractionTimestamps;
+  /** How many times the operator has opened each thing. */
+  counts: InteractionCounts;
+}
+
+/** One thing the operator has used, as a caller outside this store describes it. */
+export interface InteractionUsage {
+  /** The key it is recorded under — build it with {@link interactionKey}. */
+  key: string;
+  /** When they last opened it, epoch ms. */
+  lastUsedAt: number;
+  /** How many times they have opened it, ever. */
+  useCount: number;
 }
 
 /** Ways the record set changes. */
 interface InteractionActions {
   /**
    * Record that the operator just opened something.
+   *
+   * Moves the timestamp AND advances the count, because both halves of
+   * frecency come from the same act and a caller that could record one without
+   * the other is a caller that can put the two maps out of step.
    *
    * @param kind - What sort of thing was opened.
    * @param id - Its stable identity.
@@ -110,6 +159,23 @@ interface InteractionActions {
    *   caller's.
    */
   recordOpened: (kind: InteractionKind, id: string, at?: number) => void;
+  /**
+   * Fold history recorded somewhere else into this store.
+   *
+   * **Every field takes the larger value**, and that is what makes it safe to
+   * run twice: two tabs migrating the same retired key at the same time, or one
+   * tab replaying a merge it already did, converge on the same records instead
+   * of double-counting. Summing would not — it would inflate the count of every
+   * agent a person happened to have two tabs open for.
+   *
+   * The only caller is the `dorkos:agent-frecency-v2` migration. It is an
+   * action rather than a loop over {@link InteractionActions.recordOpened}
+   * because that would stamp the migration's own clock over a history that
+   * already knows when it happened.
+   *
+   * @param records - What was recorded elsewhere.
+   */
+  mergeUsage: (records: readonly InteractionUsage[]) => void;
   /** Forget everything. Test seam and the "clear local data" path. */
   reset: () => void;
 }
@@ -130,21 +196,33 @@ export function interactionKey(kind: InteractionKind, id: string): string {
 }
 
 /**
- * The most recent {@link MAX_INTERACTION_RECORDS} entries of a record map.
+ * The most recent {@link MAX_INTERACTION_RECORDS} entries of both record maps.
  *
  * Oldest-first eviction, because the whole value of a record is its recency:
  * the entry about to be dropped is the one neither consumer would have ranked
  * or shown anyway.
  *
- * @param opened - The map to bound.
+ * **Both maps are cut on the same key set**, which is the invariant that keeps
+ * them one record split in two rather than two records. A count left behind by
+ * an evicted timestamp would rank a row the store no longer claims to know,
+ * and it would never be evicted again because eviction reads timestamps.
+ *
+ * @param state - The maps to bound, already updated.
  */
-function prune(opened: Record<string, string>): Record<string, string> {
-  const keys = Object.keys(opened);
-  if (keys.length <= MAX_INTERACTION_RECORDS) return opened;
+function prune(state: InteractionState): InteractionState {
+  const keys = Object.keys(state.opened);
+  if (keys.length <= MAX_INTERACTION_RECORDS) return state;
   const kept = keys
-    .sort((a, b) => Date.parse(opened[b] ?? '') - Date.parse(opened[a] ?? ''))
+    .sort((a, b) => Date.parse(state.opened[b] ?? '') - Date.parse(state.opened[a] ?? ''))
     .slice(0, MAX_INTERACTION_RECORDS);
-  return Object.fromEntries(kept.map((key) => [key, opened[key] as string]));
+  const opened: Record<string, string> = {};
+  const counts: Record<string, number> = {};
+  for (const key of kept) {
+    opened[key] = state.opened[key] as string;
+    const count = state.counts[key];
+    if (count !== undefined) counts[key] = count;
+  }
+  return { opened, counts };
 }
 
 /**
@@ -158,19 +236,35 @@ export const useInteractionStore = create<InteractionState & InteractionActions>
   persist(
     (set) => ({
       opened: {},
+      counts: {},
       recordOpened: (kind, id, at) =>
-        set((state) => ({
-          opened: prune({
-            ...state.opened,
-            [interactionKey(kind, id)]: new Date(at ?? Date.now()).toISOString(),
-          }),
-        })),
-      reset: () => set({ opened: {} }),
+        set((state) => {
+          const key = interactionKey(kind, id);
+          return prune({
+            opened: { ...state.opened, [key]: new Date(at ?? Date.now()).toISOString() },
+            counts: { ...state.counts, [key]: (state.counts[key] ?? 0) + 1 },
+          });
+        }),
+      mergeUsage: (records) =>
+        set((state) => {
+          if (records.length === 0) return state;
+          const opened = { ...state.opened };
+          const counts = { ...state.counts };
+          for (const record of records) {
+            const existing = Date.parse(opened[record.key] ?? '');
+            if (Number.isNaN(existing) || record.lastUsedAt > existing) {
+              opened[record.key] = new Date(record.lastUsedAt).toISOString();
+            }
+            counts[record.key] = Math.max(counts[record.key] ?? 0, record.useCount);
+          }
+          return prune({ opened, counts });
+        }),
+      reset: () => set({ opened: {}, counts: {} }),
     }),
     {
       name: 'dorkos:interactions-v1',
       storage: createJSONStorage(() => guardedLocalStorage),
-      partialize: (state) => ({ opened: state.opened }),
+      partialize: (state) => ({ opened: state.opened, counts: state.counts }),
     }
   )
 );
@@ -187,6 +281,19 @@ export const useInteractionStore = create<InteractionState & InteractionActions>
  */
 export function useInteractionTimestamps(): InteractionTimestamps {
   return useInteractionStore((state) => state.opened);
+}
+
+/**
+ * How many times the operator has opened each thing, keyed by
+ * {@link interactionKey}.
+ *
+ * The other half of frecency, and the half that used to exist for agents only.
+ * A selector on the store's own object for the same reason
+ * {@link useInteractionTimestamps} is one: the ranker wants the whole map, and
+ * handing it the stored object keeps the memo above it honest.
+ */
+export function useInteractionCounts(): InteractionCounts {
+  return useInteractionStore((state) => state.counts);
 }
 
 /**

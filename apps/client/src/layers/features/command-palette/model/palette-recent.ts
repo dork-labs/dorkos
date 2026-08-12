@@ -49,12 +49,12 @@ export interface ContinueEntry {
  * name, and Recent has always dropped it for that reason — so a Continue that
  * promoted the very session Recent suppressed made one dialog give two answers
  * about what is running (DOR-1137, audit D4). A blocked automated session still
- * reaches the operator, through Now, which reads no origin at all; what it does
- * not do is claim a first-class row in a list about where to go back to.
+ * reaches the operator, through Heads up, which reads no origin at all; what it
+ * does not do is claim a first-class row in a list about where to go back to.
  *
  * Two lifecycles qualify and no others. `blocked` comes first because it is
- * waiting on a person and streaming is not — the same priority Now uses (BC-6)
- * — and within a lifecycle the id breaks the tie so the list cannot reshuffle
+ * waiting on a person and streaming is not — the same priority Heads up uses
+ * (BC-6) — and within a lifecycle the id breaks the tie so the list cannot reshuffle
  * itself between renders while nothing has changed.
  *
  * Everything else is absent rather than dimmed. The store already prunes a
@@ -170,12 +170,14 @@ function isRecentRoom(room: RoomSummary): boolean {
  * put unread rooms at the head of the untyped palette before this list existed
  * (spec `rooms` §13.2), kept alive inside the command center's shape.
  *
- * **After that it is recency, and only recency.** Frecency is the other half of
- * §15's rule and it is deliberately not here yet: the only frecency store that
- * exists today is agent-only (`use-agent-frecency.ts`), and the unified
- * `type:id` store is task 3.3's. Blending a half-store now would mean building
- * a ranking that 3.2's scorer deletes. Recency alone is honest in the meantime;
- * it is never a guess.
+ * **After that it is recency, and only recency** — and now that the unified
+ * `entities/interactions` store could supply the other half of §15's rule, that
+ * is a standing choice rather than a gap waiting to be filled. This is the
+ * UNTYPED list: it answers "where was I", which is a question recency answers
+ * exactly. Frecency belongs to the typed list, where a person has asked for
+ * something and rows have to be compared. Ordering the last things you were in
+ * by how often you use them would put a habit above the thing you were actually
+ * just doing, which is the one thing this list is for.
  *
  * **An agent whose own conversation is already listed is dropped.** The row
  * would open that same conversation (BC-34), so keeping both says one thing

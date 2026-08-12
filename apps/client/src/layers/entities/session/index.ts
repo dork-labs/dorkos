@@ -82,9 +82,10 @@ export {
   useSessionTriggerPending,
   useSessionInProgressTurn,
   useSessionQueue,
+  useSessionQueueOutcomes,
   DEFAULT_SESSION_STREAM_STATE,
 } from './model/session-stream-store';
-export type { SessionStreamState, QueuedMessage } from './model/session-stream-store';
+export type { SessionStreamState } from './model/session-stream-store';
 export {
   useSessionListStore,
   useSessionListSessions,
@@ -130,6 +131,11 @@ export { useRenameSession } from './model/use-rename-session';
 // UI — session row display primitive
 export { SessionRow } from './ui/SessionRow';
 export type { SessionRowProps } from './ui/SessionRow';
+// The session row in the sidebar's own grammar (`shared/ui/SidebarRow`). Kept
+// out of `SessionRow`'s `variant` union on purpose: this one renders its own
+// list item, so it belongs inside a `SidebarMenu` and nowhere a `<div>` row goes.
+export { SessionRowSidebar } from './ui/SessionRowSidebar';
+export type { SessionRowSidebarProps } from './ui/SessionRowSidebar';
 export { SessionContextGauge } from './ui/SessionContextGauge';
 // The leaf that holds the live verb, so the sidebar model never has to (R1).
 export { SessionVerbLine } from './ui/SessionVerbLine';

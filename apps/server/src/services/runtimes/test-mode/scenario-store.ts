@@ -4,6 +4,70 @@ import { Q3_SCENARIOS } from './q3-contention-scenarios.js';
 
 export type ScenarioFn = (content: string) => AsyncGenerator<StreamEvent>;
 
+/** Heartbeat interval for the working-turn scenarios. */
+const WORKING_TICK_MS = 1_000;
+
+/**
+ * Raised by `POST /api/test/finish-turn` to end every running
+ * {@link workingTurn} at its next heartbeat.
+ *
+ * A browser test that needs a turn to END at a moment of its choosing has no
+ * other lever: `TestModeRuntime.interruptQuery` answers `false` (there is no
+ * process to signal), so the composer's Stop cannot close a scripted turn. A
+ * test that instead waited out a deliberately SHORT turn is racing its own
+ * setup — which is exactly how this spec's second case failed on CI, where
+ * opening a second window took longer than the turn it was supposed to be
+ * queued behind.
+ *
+ * STICKY until {@link ScenarioStore.reset}, deliberately: a queue drains by
+ * starting the next turn, so a one-shot flag would end the turn a test was
+ * waiting on and then let the queued message open a fresh three-minute one.
+ * Sticky means "from here on, turns finish immediately" — which is what a test
+ * watching a queue drain is actually asking for.
+ */
+let finishRequested = false;
+
+/**
+ * End every running {@link workingTurn} at its next heartbeat, and let every
+ * turn started afterwards finish at once.
+ */
+export function requestFinishTurn(): void {
+  finishRequested = true;
+}
+
+/**
+ * A turn that keeps working until the test says stop — the scenario a browser
+ * test needs when it has to do something to a session that is genuinely BUSY.
+ *
+ * Every other scenario either finishes in one synchronous pass or stops on a
+ * permission prompt, and a prompt swaps the composer for the approval card,
+ * which is the surface a queue test cannot use. This one just streams a slow
+ * heartbeat, so the session is `streaming` with no pending interaction for as
+ * long as the test needs — and ends within one tick of
+ * {@link requestFinishTurn}, so when it ends is the test's decision rather than
+ * a stopwatch's.
+ *
+ * Bounded as well as signalled: a turn nothing ever ends would outlive the run
+ * and leave a projector holding it.
+ *
+ * @param ticks - Heartbeats to stream, one a second, before the turn gives up
+ *   waiting to be told and finishes anyway.
+ */
+function workingTurn(ticks: number): ScenarioFn {
+  return async function* () {
+    yield {
+      type: 'session_status',
+      data: { sessionId: 'test-mode', model: 'claude-haiku-4-5' },
+    } as StreamEvent;
+    yield { type: 'text_delta', data: { text: 'Working on it' } } as StreamEvent;
+    for (let tick = 0; tick < ticks && !finishRequested; tick += 1) {
+      await new Promise((resolve) => setTimeout(resolve, WORKING_TICK_MS));
+      yield { type: 'text_delta', data: { text: '.' } } as StreamEvent;
+    }
+    yield { type: 'done', data: { sessionId: 'test-mode' } } as StreamEvent;
+  };
+}
+
 /**
  * Built-in scenarios available without explicit configuration. The `demo-*`
  * entries (rich streaming, tool approval, canvas) come from
@@ -15,6 +79,11 @@ export type ScenarioFn = (content: string) => AsyncGenerator<StreamEvent>;
 const BUILT_IN_SCENARIOS: Record<string, ScenarioFn> = {
   ...DEMO_SCENARIOS,
   ...Q3_SCENARIOS,
+  /**
+   * A turn that stays busy until `POST /api/test/finish-turn` says otherwise,
+   * and gives up after three minutes regardless — see {@link workingTurn}.
+   */
+  'long-turn': workingTurn(180),
   'simple-text': async function* (content) {
     // session_status data cast needed because data union requires sessionId
     yield {
@@ -156,6 +225,9 @@ class ScenarioStore {
   reset(): void {
     this._sessionScenarios.clear();
     this._defaultScenario = BUILT_IN_SCENARIOS['simple-text']!;
+    // A finish raised by one test must not end the next test's first turn
+    // before it has begun.
+    finishRequested = false;
   }
 }
 

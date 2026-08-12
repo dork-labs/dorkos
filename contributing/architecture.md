@@ -145,7 +145,9 @@ Each route provides its own sidebar and header content via private slot hooks in
 
 **The swap region is now exactly the body.** `AppShell.tsx` wraps only `sidebarSlot.body` in the animated swap. The header block above it and `SidebarFooter` (→ `SidebarFooterStrip`) below it are both siblings outside it, so a takeover replaces the roster and leaves the panel's identity and its destinations standing. The navigation used to render inside `DashboardSidebar` — which _is_ the body — so navigating to `/marketplace` destroyed it; it moved out with the sidebar redesign's zone shell, and moved again into the footer strip when the panel went down to one nav implementation (spec `sidebar-now-today-library` BC-47).
 
-**The rule is that only the body swaps.** The header block and the footer strip are both persistent chrome and both belong outside the swap region, so a takeover replaces the middle of the panel and nothing else — the operator never loses the New menu or the destination icons to somebody's extension, and there is always a way back out of a contributed body. It is a review blocker to render either piece inside `sidebarSlot.body`, and `app-shell-slots.test.tsx` asserts both stay mounted across a takeover, with zones present and with zones absent. There is no mobile tab bar yet — a phone gets the same sidebar as a Sheet drawer — so today a takeover only has to keep working with zones present and absent, on desktop and inside that drawer.
+**The rule is that only the body swaps.** The header block and the footer strip are both persistent chrome and both belong outside the swap region, so a takeover replaces the middle of the panel and nothing else — the operator never loses the New menu or the destination icons to somebody's extension, and there is always a way back out of a contributed body. It is a review blocker to render either piece inside `sidebarSlot.body`, and `app-shell-slots.test.tsx` asserts both stay mounted across a takeover, with zones present and with zones absent.
+
+**On a phone the sidebar is not mounted at all.** Below 768px `AppShell` selects `widgets/mobile-tabs`'s `MobileTabsLayout` instead — four destinations along the bottom, no drawer and no hamburger (spec `sidebar-now-today-library` §9, P4.1). A contributed `sidebar.body` takeover replaces **Library** there and leaves Home standing, which is the one place mobile deliberately differs from desktop: Heads up and Today are what needs you, and browsing somebody's extension is not a reason to stop being told. So a takeover has three shapes to keep working in, not two: desktop with zones, desktop with a takeover body, and the phone's Library panel.
 
 Search params use `@tanstack/zod-adapter` with `zodValidator()`. Hooks `useSessionId()` and `useDirectoryState()` read/write via `useSearch`/`useNavigate` internally, preserving their public API.
 
@@ -211,12 +213,15 @@ Server-side, the single `sessionGate` middleware enforces this for `/api/*` and 
 
 ### Standalone Web (HttpTransport)
 
-`POST /api/sessions/:id/messages` is trigger-only (ADR-0264): it returns `202 { sessionId }` (the canonical id) and the turn runs detached server-side. ALL turn delivery — and cross-client sync — rides the durable per-session stream `GET /api/sessions/:id/events` (snapshot → gap-free replay via `Last-Event-ID` → live `SessionEvent`s with monotonic `seq`), owned client-side by `StreamManager` (`shared/lib/transport/stream-manager.ts`).
+`POST /api/sessions/:id/messages` is trigger-only AND accept-only (ADR-0264, amended by ADR 260811-184735): it returns `202` immediately, without waiting for the turn ahead of it, and never `409` — a busy session queues the message instead of refusing it. The body carries the canonical session id plus a delivery receipt (`messageId`, `outcome`, `queuePosition`), but the receipt cannot say whether the turn started immediately or is waiting behind another: `queuePosition` reads `1` in both cases. ALL turn delivery — and cross-client sync — rides the durable per-session stream `GET /api/sessions/:id/events` (snapshot → gap-free replay via `Last-Event-ID` → live `SessionEvent`s with monotonic `seq`), owned client-side by `StreamManager` (`shared/lib/transport/stream-manager.ts`); `turn_start` there is the only signal that this message's turn actually began.
+
+Server-side, every caller that can start a turn (HTTP route, MCP tool, relay, CLI) now goes through one ingress, `MessageDispatcher` (`services/session/message-dispatcher.ts`, spec `persistent-session-runtime`): it decides whether a message runs now or waits, and if it waits, in the durable `MessageQueueStore` rather than an in-memory list — so a queued message survives a server restart. A dequeue fires only on `turn_end`, never on a bare `result`, and never while the session has a pending interaction open. Every subscribed client sees the same queue, hydrated on the snapshot's `queuedMessages` and kept live by `queue_update` stream events (see `contributing/data-fetching.md`).
 
 ```
 User input -> ChatPanel -> useChatSession.handleSubmit()
   -> transport.postMessage(sessionId, content, cwd) -> POST /api/sessions/:id/messages -> 202
-  -> turn runs detached; runtime StreamEvents feed the per-session projector (monotonic seq)
+  -> MessageDispatcher: runs now (detached) or joins the queue if a turn is already open
+  -> a running turn's StreamEvents feed the per-session projector (monotonic seq)
 
 Delivery (always, for every subscribed client):
   -> GET /api/sessions/:id/events (durable stream: snapshot -> replay -> live)

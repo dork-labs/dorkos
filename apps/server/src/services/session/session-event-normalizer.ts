@@ -43,6 +43,13 @@ type StreamData = Record<string, unknown>;
 type RawOf<T extends SessionEvent['type']> = Omit<Extract<SessionEvent, { type: T }>, 'seq'>;
 
 /**
+ * Who opened a turn window: `'runtime'` for one nobody asked for, absent (or
+ * `'user'`) for the ordinary case. Derived from the durable event rather than
+ * restated, so the two can never drift.
+ */
+export type TurnOrigin = NonNullable<RawOf<'turn_start'>['origin']>;
+
+/**
  * Map a single DorkOS {@link StreamEvent} to a {@link RawSessionEvent}, or
  * `null` when the event has no durable session-stream projection.
  *
@@ -241,19 +248,23 @@ export function toRawSessionEvent(event: StreamEvent): RawSessionEvent | null {
       return progress;
     }
 
-    // A pending interaction was cancelled WITHOUT an operator action (SDK
-    // abort — e.g. a mid-turn steer superseding a pending question — or
-    // timeout). Projects to the same `interaction_resolved` member the
-    // operator paths use, so every consumer drops the card identically.
+    // A pending interaction resolved off the ordinary in-DorkOS answer path
+    // (SDK abort — e.g. a mid-turn steer superseding a pending question —
+    // timeout, or an OpenCode `permission.replied` echo reporting an answer
+    // given elsewhere, e.g. the OpenCode TUI). Projects to the same
+    // `interaction_resolved` member every path uses, so every consumer drops
+    // the card identically and, where the reason names a real answer, records
+    // the same receipt an in-DorkOS answer would (DOR-1148).
     //
-    // The two reasons stay distinguishable downstream: a `timeout` was answered
-    // (auto-denied) on the person's behalf and is worth recording, an `aborted`
-    // ask was withdrawn before anyone could answer it and is not.
+    // The four reasons stay distinguishable downstream: `timeout` was answered
+    // (auto-denied) on the person's behalf and is worth recording; `approved`/
+    // `denied` is a real answer somebody gave outside DorkOS; `aborted` (the
+    // default) withdrew the ask before anyone could answer it and is not.
     case 'interaction_cancelled': {
       const resolved: RawOf<'interaction_resolved'> = {
         type: 'interaction_resolved',
         id: String(data.interactionId ?? ''),
-        resolution: data.reason === 'timeout' ? 'expired' : 'cancelled',
+        resolution: resolutionForCancelledReason(data.reason),
         at: Date.now(),
       };
       return resolved;
@@ -318,6 +329,24 @@ function mapHookOutcome(outcome: unknown): 'success' | 'error' | 'cancelled' {
   if (outcome === 'error') return 'error';
   if (outcome === 'cancelled') return 'cancelled';
   return 'success';
+}
+
+/**
+ * Map an `interaction_cancelled` event's `reason` to the resolution its
+ * `interaction_resolved` projection carries (DOR-1148). `approved`/`denied`
+ * name a real answer (an OpenCode `permission.replied` echo reporting an
+ * answer given outside DorkOS); `timeout` names an answer the system gave on
+ * the person's behalf. Anything else — including the ordinary `aborted` and a
+ * reason a future runtime has not taught this function yet — is a withdrawal,
+ * not an answer, so it defaults to `cancelled` rather than inventing a receipt.
+ */
+function resolutionForCancelledReason(
+  reason: unknown
+): RawOf<'interaction_resolved'>['resolution'] {
+  if (reason === 'timeout') return 'expired';
+  if (reason === 'approved') return 'approved';
+  if (reason === 'denied') return 'denied';
+  return 'cancelled';
 }
 
 /**
@@ -703,6 +732,13 @@ export const TURN_REOPENING_STREAM_EVENT_TYPES: ReadonlySet<StreamEvent['type']>
  *   on the synthesized `turn_start` so log-backed runtimes can reconstruct the
  *   user side of the conversation from the EventLog alone (the POST is
  *   trigger-only, so the durable stream is the only place it can ride).
+ * @param opts.origin - Who opened this window. Omit for the ordinary case, a
+ *   turn a person or a caller triggered. Pass `'runtime'` for a window NOBODY
+ *   asked for: the persistent pump's synthetic turn around a `result` that
+ *   answers no dispatch, which must reach the stream (the durable stream is a
+ *   complete account of the session) without being disguised as a person's
+ *   turn. It is the same field, and the same rules, as the DOR-1100 reopen a
+ *   few lines below.
  * @param opts.onTurnStart - Receives the `seq` this turn's `turn_start` was
  *   stamped with — the turn's identity, for a caller that also reads the stream
  *   and has to know which turn on it is the one it started. Called
@@ -714,11 +750,16 @@ export const TURN_REOPENING_STREAM_EVENT_TYPES: ReadonlySet<StreamEvent['type']>
 export async function feedProjector(
   projector: SessionStateProjector,
   events: AsyncIterable<StreamEvent>,
-  opts: { userMessage?: string; onTurnStart?: (seq: number) => void } = {}
+  opts: {
+    userMessage?: string;
+    origin?: TurnOrigin;
+    onTurnStart?: (seq: number) => void;
+  } = {}
 ): Promise<void> {
   const start: RawOf<'turn_start'> = {
     type: 'turn_start',
     ...(opts.userMessage !== undefined ? { userMessage: opts.userMessage } : {}),
+    ...(opts.origin !== undefined ? { origin: opts.origin } : {}),
   };
   // Two statements, and they must stay two. Folded into
   // `opts.onTurnStart?.(projector.ingest(start).seq)` the optional CALL
@@ -785,9 +826,11 @@ export async function feedProjector(
     //
     // The stream, not the turn, is the right boundary — verified in the
     // claude-code runtime rather than assumed. `executeSdkQuery` releases stdin
-    // at the `result` and keeps reading, so the subprocess stays alive exactly
-    // as long as it has queued background work to drain; that is what lets a
-    // finished task wake the agent for another window in the first place. When
+    // at a `result` — holding it open across the gap between a background task
+    // settling and its notification being delivered (DOR-1149) — and keeps
+    // reading, so the subprocess stays alive exactly as long as it has queued
+    // background work to drain; that is what lets a finished task wake the agent
+    // for another window in the first place. When
     // the iterator finally ends the process is gone, and no `task_notification`
     // can ever follow. The same holds for the paths that end a stream early — a
     // stop escalating to `query.close()`, a crash, an abandoned generator —

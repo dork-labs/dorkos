@@ -74,7 +74,6 @@ export {
   dispatchCommandIntent,
   emitQueueUpdate,
   listQueuedMessages,
-  linkSessionId,
   noteSessionOrphaned,
   noteTurnBoundary,
   sweepOrphanedMessageQueues,
@@ -85,7 +84,11 @@ export type {
   DispatchMessageOpts,
   DispatchCommandIntentOpts,
   MessageDispatchResult,
+  WhenBusy,
 } from './message-dispatcher.js';
+export { linkSessionId } from './session-key-registry.js';
+export { cancelQueuedMessage, editQueuedMessage } from './queued-message-edits.js';
+export type { QueuedMessageEdit } from './queued-message-edits.js';
 export {
   MessageQueueStore,
   QUEUE_POSITION_STEP,
@@ -101,6 +104,8 @@ export type {
 } from './trigger-command-intent.js';
 export { withStallGuard } from './stall-guard.js';
 export type { StallGuardOpts } from './stall-guard.js';
+export { TurnWindowSignal } from './turn-window-signal.js';
+export type { TurnWindowWatcher } from './turn-window-signal.js';
 export { toRawSessionEvent, feedProjector } from './session-event-normalizer.js';
 export { listPendingInteractions } from './pending-interactions.js';
 export type { PendingInteractionEntry } from './pending-interactions.js';
@@ -124,13 +129,18 @@ export { countSessionsPerDay } from './session-daily-counts.js';
 // --- Global session-list discovery → unified SSE fan-out (Task #7, ADR-0265) ---
 export { SessionListBroadcaster, sessionListBroadcaster } from './session-list-broadcaster.js';
 
-// --- Pulse task-origin overlay (session-origin-legibility) ---
-export { applyTaskOriginOverlay } from './task-origin-overlay.js';
-export type { ResolveTaskOrigins } from './task-origin-overlay.js';
+// --- Session-origin overlays, room then Pulse (session-origin-legibility,
+// team-room-home §D2.3, ADR 260808-140954). The composite is the only seam:
+// the two halves are ordered, and a caller reaching past this for one of them
+// would be choosing an ordering rather than following one (DOR-1141). ---
+export {
+  applySessionOriginOverlays,
+  sessionOriginResolvers,
+} from './origin/session-origin-overlays.js';
+export type { SessionOriginResolvers } from './origin/session-origin-overlays.js';
 
-// --- Room-origin overlay (team-room-home §D2.3, ADR 260808-140954) ---
-export { applyRoomOriginOverlay } from './room-origin-overlay.js';
-export type { ResolveRoomOrigins } from './room-origin-overlay.js';
+// --- "Nobody typed here" gate on userLastMessageAt (BC-16, DOR-1081) ---
+export { dropUserLastMessageAtWithoutOperator } from './origin/user-last-message-origin.js';
 
 // --- Persisted per-session settings overlay (ADR-0260, DOR-463) ---
 export { overlayStoredSettings, resolveSettingsKey } from './session-settings-overlay.js';

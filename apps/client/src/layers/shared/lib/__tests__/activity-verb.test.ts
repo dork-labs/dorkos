@@ -51,8 +51,8 @@ describe('activityVerb — the honesty ladder (BC-37)', () => {
     expect(activityVerb(undefined)).toBeNull();
   });
 
-  it('says nothing for an errored session, because Now is already saying it', () => {
-    // A wedged session is a Now item (BC-5). Spending the row's second line on
+  it('says nothing for an errored session, because Heads up is already saying it', () => {
+    // A wedged session is a Heads up item (BC-5). Spending the row's second line on
     // it would say the same thing twice, in the weaker of the two places.
     expect(activityVerb('error')).toBeNull();
   });

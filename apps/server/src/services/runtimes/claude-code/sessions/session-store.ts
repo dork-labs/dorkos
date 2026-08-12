@@ -6,7 +6,7 @@
  *
  * @module services/runtimes/claude-code/session-store
  */
-import { forkSession as sdkForkSession } from '@anthropic-ai/claude-agent-sdk';
+import { forkSession as sdkForkSession, type Query } from '@anthropic-ai/claude-agent-sdk';
 import type {
   PermissionMode,
   EffortLevel,
@@ -369,7 +369,12 @@ export class SessionStore {
     return !!this.findSession(sessionId);
   }
 
-  /** Update mutable session fields. Returns false if the session does not exist. */
+  /**
+   * Update mutable session fields, auto-creating (hydrated from durable
+   * settings) if the session isn't currently in memory. Always resolves
+   * `true` — there is no "session does not exist" case for this runtime,
+   * because the auto-create branch below handles it.
+   */
   async updateSession(
     sessionId: string,
     opts: {
@@ -382,9 +387,23 @@ export class SessionStore {
     let session = this.findSession(sessionId);
     if (!session) {
       // Auto-create with hasStarted=false — sendMessage will check the transcript
-      // on disk before deciding whether to resume.
+      // on disk before deciding whether to resume. Hydrate from the durable
+      // store first (ADR-0260): a PATCH that touches only model/effort/fastMode
+      // (or a title rename, which routes through here unconditionally) can be
+      // the first thing to reach a session whose in-memory state was evicted or
+      // the server restarted since. Without this, the auto-create silently
+      // reset an ENFORCED bypassPermissions/plan session back to 'default'
+      // while the DB row — and the cockpit's display overlay reading it —
+      // kept showing the operator's real choice (DOR-1151). Precedence
+      // mirrors `ensureForMessage`: per-call override → persisted → runtime
+      // default.
+      const persisted = await this.settingsPort?.getSessionSettings(sessionId);
       this.ensureSession(sessionId, {
-        permissionMode: opts.permissionMode ?? this.defaultPermissionMode,
+        permissionMode:
+          opts.permissionMode ?? persisted?.permissionMode ?? this.defaultPermissionMode,
+        model: opts.model ?? persisted?.model,
+        effort: opts.effort ?? persisted?.effort,
+        fastMode: opts.fastMode ?? persisted?.fastMode,
         hasStarted: false,
       });
       session = this.findSession(sessionId)!;
@@ -510,17 +529,38 @@ export class SessionStore {
   async interruptQuery(sessionId: string): Promise<boolean> {
     const session = this.findSession(sessionId);
     if (!session?.activeQuery) return false;
+    return this.interruptGivenQuery(sessionId, session.activeQuery);
+  }
+
+  /**
+   * Interrupt a SPECIFIC query for a session, escalating to a forceful
+   * `close()` if the graceful `interrupt()` throws.
+   *
+   * Split out of {@link interruptQuery} so the persistent path can stop a turn
+   * that is still BOOTING — one whose live query the pump holds before its
+   * `running` edge has armed `session.activeQuery` (DOR-1191). Same escalation,
+   * same phantom-cancellation stamp, so a Stop during launch behaves exactly as
+   * a Stop on a turn that has already reached the model.
+   *
+   * @param sessionId - The session the query belongs to
+   * @param query - The live query to interrupt
+   * @returns True when the turn was interrupted or the process was closed, false
+   *   when neither path took and the session is unknown
+   */
+  async interruptGivenQuery(sessionId: string, query: Query): Promise<boolean> {
+    const session = this.findSession(sessionId);
+    if (!session) return false;
     // A deliberate stop is about to cancel every pending tool call; stamp it so
     // the phantom-cancellation detector (DOR-1087) treats the resulting CLI
     // interrupt sentinels as legitimate rather than phantoms.
     session.interruptRequestedAt = Date.now();
     try {
-      await session.activeQuery.interrupt();
+      await query.interrupt();
       return true;
     } catch {
       // Interrupt failed — escalate to forceful close
       try {
-        session.activeQuery.close();
+        query.close();
         return true;
       } catch {
         // Neither path stopped the turn — do not blind the phantom detector.

@@ -463,6 +463,16 @@ export const SAMPLE_QUEUE: QueueItem[] = [
   createQueueItem({ content: '/test src/auth.test.ts' }),
 ];
 
+/** A queue whose rows did not all come from this window, and one with a notice. */
+export const SAMPLE_QUEUE_MIXED_ORIGINS: QueueItem[] = [
+  createQueueItem({ content: 'Then add error handling to the auth endpoint' }),
+  createQueueItem({ content: 'Finally, update the API docs', mine: false }),
+  createQueueItem({
+    content: 'And change course on the migration',
+    notice: 'Queued — this agent cannot take a message mid-task',
+  }),
+];
+
 // ---------------------------------------------------------------------------
 // Command palette mock data
 // ---------------------------------------------------------------------------

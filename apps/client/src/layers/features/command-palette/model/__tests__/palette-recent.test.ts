@@ -40,6 +40,7 @@ function makeSessionItem(overrides: Partial<PaletteSessionItem> = {}): PaletteSe
     cwd: '/projects/dorkos',
     agent: null,
     lastActivityAt: '2026-08-09T10:00:00.000Z',
+    archived: false,
     ...overrides,
   };
 }
@@ -143,9 +144,9 @@ describe('selectContinueEntries', () => {
       expect(entries.map((e) => e.sessionId)).toEqual(['ses-human']);
     });
 
-    it('drops an automated run that is BLOCKED too — Now is where that surfaces', () => {
-      // The carve-out in §18 ("blocking states go to Now like the rest") is a
-      // rule about Now, and Now reads no origin at all. ⌘K's Continue is a
+    it('drops an automated run that is BLOCKED too — Heads up is where that surfaces', () => {
+      // The carve-out in §18 ("blocking states go to Heads up like the rest") is
+      // a rule about Heads up, and it reads no origin at all. ⌘K's Continue is a
       // liveness listing, so it takes the liveness definition whole.
       const entries = selectContinueEntries({ 'ses-task': status({ lifecycle: 'blocked' }) }, [
         makeSession({ id: 'ses-task', origin: 'task' }),

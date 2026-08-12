@@ -38,9 +38,11 @@ vi.mock('@/layers/entities/agent', () => ({
 }));
 
 // Keep the unit focused on EmbedSidebar's own chrome + wiring — the roster and
-// promo surfaces have their own tests.
-vi.mock('../ui/SessionsView', () => ({
-  SessionsView: ({ groupedSessions }: { groupedSessions: Array<{ label: string }> }) => (
+// promo surfaces have their own tests. The roster is `EmbedSessionList` since
+// DOR-1080; the `data-testid` it stands in under is unchanged, so every
+// assertion below is the one this file has always made.
+vi.mock('../ui/EmbedSessionList', () => ({
+  EmbedSessionList: ({ groupedSessions }: { groupedSessions: Array<{ label: string }> }) => (
     <div data-testid="sessions-view">{groupedSessions.length} groups</div>
   ),
 }));
@@ -72,5 +74,17 @@ describe('EmbedSidebar', () => {
     expect(mockSetActiveSession).toHaveBeenCalledTimes(1);
     expect(mockSetActiveSession.mock.calls[0][0]).toEqual(expect.any(String));
     expect(mockSetSidebarOpen).toHaveBeenCalledWith(false);
+  });
+
+  it('draws no hairline — separation is tint, in this component too (R1)', () => {
+    // **This assertion has to live HERE, and the version of it in
+    // `EmbedSessionList.test.tsx` is not a substitute.** Both hairlines the
+    // sidebar programme retired belonged to THIS file — the `border-b` under the
+    // agent header and the `border-t` above the promo panel — and the roster's
+    // own test renders only the roster, so putting both back left it green.
+    // A guard that cannot see the component it is about is not a guard.
+    const { container } = render(<EmbedSidebar />, { wrapper: Wrapper });
+
+    expect(container.querySelector('[class*="border-t"],[class*="border-b"]')).toBeNull();
   });
 });

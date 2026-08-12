@@ -18,7 +18,33 @@ beforeAll(() => {
   if (!Element.prototype.scrollIntoView) Element.prototype.scrollIntoView = () => {};
 });
 
-afterEach(() => cleanup());
+afterEach(() => {
+  phone = false;
+  useEmulatedViewport();
+  cleanup();
+});
+
+// ── The viewport ───────────────────────────────────────────────────────────
+let phone = false;
+function useEmulatedViewport() {
+  Object.defineProperty(window, 'matchMedia', {
+    writable: true,
+    configurable: true,
+    value: (query: string) => {
+      const maxWidth = /max-width:\s*(\d+)px/.exec(query);
+      return {
+        matches: maxWidth === null ? false : phone && 390 <= Number(maxWidth[1]),
+        media: query,
+        onchange: null,
+        addEventListener: () => {},
+        removeEventListener: () => {},
+        addListener: () => {},
+        removeListener: () => {},
+        dispatchEvent: () => false,
+      };
+    },
+  });
+}
 
 const menu: SidebarMenuNode[] = [
   { kind: 'action', id: 'rename', label: 'Rename', icon: Pencil, opensInput: true, run: vi.fn() },
@@ -177,5 +203,66 @@ describe('SectionHeader', () => {
     render(<SectionHeader label="Pinned" emphasized />);
     const label = screen.getByText('Pinned').parentElement;
     expect(label?.className).toContain('font-semibold');
+  });
+
+  describe('on touch (DOR-1083)', () => {
+    it('draws its menu trigger at rest, where there is no hover to reveal it', () => {
+      // **The defect, named.** `SidebarRow` took an `alwaysShowActions` prop and
+      // passed `isMobile`; this header never did. So on a phone the "⋮" sat at
+      // `opacity-0` and rename, sort, mute and delete-group had no door at all.
+      // The prop is gone — the surface that DRAWS the control reads the device.
+      phone = true;
+      useEmulatedViewport();
+      render(<SectionHeader label="Channels" collapsed={false} onToggle={vi.fn()} nodes={menu} />);
+      const trigger = screen.getByRole('button', { name: 'Channels section actions' });
+      expect(trigger.className).toContain('opacity-100');
+      expect(trigger.className).not.toContain('opacity-0');
+      // …and it is a thumb's target rather than a 20px satellite.
+      expect(trigger.className).toContain('size-11');
+    });
+
+    it('still hides it at rest under a pointer, where hover reveals it', () => {
+      // The pair: the reveal is the desktop design (nothing renders at rest,
+      // §11), so a fix that showed the kebab everywhere would be a regression
+      // this case would catch.
+      render(<SectionHeader label="Channels" collapsed={false} onToggle={vi.fn()} nodes={menu} />);
+      const trigger = screen.getByRole('button', { name: 'Channels section actions' });
+      expect(trigger.className).toContain('opacity-0');
+      expect(trigger.className).toContain('size-5');
+    });
+
+    it('grows the whole header to a touch target, header and toggle together', () => {
+      phone = true;
+      useEmulatedViewport();
+      render(<SectionHeader label="Channels" collapsed={false} onToggle={vi.fn()} nodes={menu} />);
+      expect(screen.getByRole('heading', { level: 3 }).className).toContain('h-11');
+      expect(screen.getByRole('button', { name: 'Channels' }).className).toContain('h-11');
+    });
+
+    it('keeps 32px under a pointer, which is the density the panel is cut for', () => {
+      render(<SectionHeader label="Channels" collapsed={false} onToggle={vi.fn()} nodes={menu} />);
+      expect(screen.getByRole('heading', { level: 3 }).className).toContain('h-8');
+      expect(screen.getByRole('button', { name: 'Channels' }).className).toContain('h-8');
+    });
+
+    it('widens its gutter to match, so the "⋮" never lands on the label', () => {
+      phone = true;
+      useEmulatedViewport();
+      const { rerender } = render(
+        <SectionHeader label="Channels" collapsed={false} onToggle={vi.fn()} nodes={menu} />
+      );
+      expect(screen.getByRole('heading', { level: 3 }).className).toContain('pr-11');
+      // A header that also carries a `+` pays for both satellites.
+      rerender(
+        <SectionHeader
+          label="Channels"
+          collapsed={false}
+          onToggle={vi.fn()}
+          nodes={menu}
+          hasSectionAction
+        />
+      );
+      expect(screen.getByRole('heading', { level: 3 }).className).toContain('pr-22');
+    });
   });
 });

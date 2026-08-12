@@ -39,7 +39,7 @@ import {
   SessionListEventSchema,
   type SessionListEvent,
 } from '@dorkos/shared/session-stream';
-import type { HistoryMessage, PermissionMode, StreamEvent } from '@dorkos/shared/types';
+import type { HistoryMessage, PermissionMode, Session, StreamEvent } from '@dorkos/shared/types';
 
 /**
  * Tuning knobs for legitimate cross-runtime differences. Defaults describe
@@ -125,6 +125,19 @@ export interface RuntimeConformanceOpts {
     probes: { midTurn: () => Promise<void>; afterTurn: () => Promise<void> }
   ) => Promise<void>;
   /**
+   * Drives a session to WARM — a completed turn with the process still held —
+   * and hands control back.
+   *
+   * Provided ONLY by runtimes declaring `supportsPersistentSession`. Omit it and
+   * the warmth cases SKIP by name rather than passing on an absence the suite
+   * manufactured: a runtime's `sendMessage` moves no projector, so a warmth
+   * assertion read off it alone would report the same thing for every runtime
+   * and assert nothing. Whatever per-session opt-in the runtime requires is the
+   * driver's job to arrange — the capability says the adapter CAN hold a
+   * process, not that every session does.
+   */
+  warmSession?: (runtime: AgentRuntime, sessionId: string) => Promise<void>;
+  /**
    * Waives the safety invariant that a runtime's DEFAULT permission mode must
    * still stop for the person — one that would need a consent ritual if a person
    * selected it (`needsConsentRitual`) may not be where a session is BORN. The
@@ -156,6 +169,41 @@ export interface RuntimeConformanceOpts {
    * in a sentence, rather than inheriting a silent pass they never chose.
    */
   sessionListSilentReason?: string;
+  /**
+   * Produces the Session **this runtime's LIST path reports** for a conversation
+   * a person has written to — the presence half of the `Session.userLastMessageAt`
+   * contract (spec `sidebar-now-today-library` BC-16).
+   *
+   * Read it off `listSessions`, not `getSession`: `userLastMessageAt` is a
+   * field of the recents LIST, that is the path the sidebar actually calls, and
+   * a runtime can populate one without the other.
+   *
+   * **Your fixture has an obligation, and it is not optional.** It must contain
+   * agent activity AFTER the person's last message, so the reported instant is
+   * strictly earlier than the session's own `updatedAt`. That gap is the only
+   * thing that can distinguish a real derivation from `updatedAt` returned
+   * under a second name, and the suite asserts it. This is a requirement on the
+   * FIXTURE rather than a claim about runtimes in general — a conversation that
+   * really did end on the person's turn has both facts legitimately equal, and
+   * such a conversation simply cannot serve as the probe.
+   *
+   * Wire this, or declare {@link userLastMessageAtOmittedReason}. A runtime that
+   * supplies neither fails the case rather than skipping it: "nobody decided"
+   * is not one of the two honest answers.
+   */
+  userLastMessageAtSession?: (runtime: AgentRuntime) => Promise<Session>;
+  /**
+   * Why this runtime can never say when the person last wrote, in a sentence
+   * somebody wrote — required rather than a boolean for the same reason as
+   * {@link autonomyDefaultReason}, and whitespace declares nothing.
+   *
+   * Declaring it does not buy silence: the suite then asserts the field is
+   * strictly ABSENT on a session that has just received a user message, so an
+   * omitting runtime cannot quietly start emitting a placeholder, a null, or
+   * its `updatedAt`. Implementing the field means DELETING this reason and
+   * wiring {@link userLastMessageAtSession}.
+   */
+  userLastMessageAtOmittedReason?: string;
 }
 
 /**
@@ -242,6 +290,113 @@ export async function evaluateSessionListStream(
   return (
     `subscribeSessionList produced an event that fails SessionListEventSchema ` +
     `(SessionListBroadcaster would silently drop it): ${parsed.error.message}`
+  );
+}
+
+/**
+ * Which of the two honest answers this runtime signed up for, if either.
+ *
+ * Exported and separate from the assertions below for the same reason
+ * {@link evaluateSessionListStream} is: the suite only ever meets adapters that
+ * are supposed to pass, so a green run is no evidence these rules fired.
+ * `runtime-conformance-last-user-message.test.ts` drives them directly.
+ *
+ * @param supplies - Whether {@link RuntimeConformanceOpts.userLastMessageAtSession} was wired.
+ * @param omittedReason - The runtime's {@link RuntimeConformanceOpts.userLastMessageAtOmittedReason}.
+ * @returns Null when the runtime picked an arm, else the failure message.
+ */
+export function chooseUserLastMessageAtArm(
+  supplies: boolean,
+  omittedReason: string | undefined
+): string | null {
+  const declared = (omittedReason ?? '').trim().length > 0;
+  if (supplies && declared) {
+    return (
+      'this runtime both supplies Session.userLastMessageAt and declares it cannot ' +
+      '(userLastMessageAtSession + userLastMessageAtOmittedReason). Pick one — the ' +
+      'reason string exists to be DELETED when the field is implemented.'
+    );
+  }
+  if (supplies || declared) return null;
+  return (
+    'a runtime must either supply Session.userLastMessageAt (wire userLastMessageAtSession) ' +
+    'or declare in a sentence why it cannot (userLastMessageAtOmittedReason). Choosing ' +
+    'neither leaves the sidebar ordering Today on a field nobody decided about, and ' +
+    'whitespace declares nothing.'
+  );
+}
+
+/**
+ * The presence half of the `Session.userLastMessageAt` contract, applied to one
+ * probe session (spec `sidebar-now-today-library` BC-16).
+ *
+ * `userLastMessageAt < updatedAt` is asserted as a **fixture obligation, not a
+ * runtime invariant**. Plenty of real conversations end on the person's turn
+ * and have both facts legitimately equal; nothing forbids a runtime from
+ * reporting that. But such a conversation proves nothing here, because a
+ * runtime that simply renamed `updatedAt` would pass on it. So the probe is
+ * required to hand over a conversation the agent worked on afterwards, and a
+ * fixture that cannot discriminate is rejected rather than passing.
+ *
+ * @param session - The Session the runtime's list path reported for the probe.
+ * @returns Null when the reading satisfies the contract, else the failure message.
+ */
+export function evaluateUserLastMessageAtPresence(session: Session): string | null {
+  const reported = session.userLastMessageAt;
+  if (reported === undefined) {
+    return (
+      'this runtime declares it can say when the person last wrote, but its probe ' +
+      'session reports nothing'
+    );
+  }
+  const at = Date.parse(reported);
+  if (Number.isNaN(at)) return `userLastMessageAt '${reported}' is not a date`;
+  const updated = Date.parse(session.updatedAt);
+  if (Number.isNaN(updated)) return `updatedAt '${session.updatedAt}' is not a date`;
+  if (at >= updated) {
+    return (
+      `userLastMessageAt (${reported}) is not EARLIER than updatedAt (${session.updatedAt}). ` +
+      'Either your probe fixture has no agent activity after the person’s last message — ' +
+      'in which case it cannot discriminate and needs one, since a runtime that renamed ' +
+      'updatedAt would pass on it — or this runtime is in fact reporting updatedAt under ' +
+      'a second name.'
+    );
+  }
+  return null;
+}
+
+/**
+ * The omission half: a runtime that declared it cannot say when the person last
+ * wrote must report NOTHING even after a person has written.
+ *
+ * `undefined` is the only accepted answer. A null, an empty string or a
+ * placeholder all reach the client as a value it would order Today on, which is
+ * precisely the guess the contract forbids.
+ *
+ * A null session is a FAILURE, not a pass: the turn completed, so a runtime that
+ * cannot resolve the session it just ran gives this case nothing to look at and
+ * would report green having asserted nothing.
+ *
+ * @param session - What the runtime reported for a session that just took a user
+ *   message.
+ * @param omittedReason - The declared reason, quoted back in the failure.
+ * @returns Null when the runtime honestly said nothing, else the failure message.
+ */
+export function evaluateUserLastMessageAtOmission(
+  session: Session | null,
+  omittedReason: string | undefined
+): string | null {
+  if (session === null) {
+    return (
+      'getSession returned null for a session that had just completed a turn, so this ' +
+      'case had no reported field to look at and asserted nothing.'
+    );
+  }
+  if (session.userLastMessageAt === undefined) return null;
+  return (
+    `this runtime declared it cannot say when the person last wrote ("${omittedReason}") ` +
+    `but reported ${JSON.stringify(session.userLastMessageAt)} after a user message. ` +
+    'Implementing the field means deleting that reason and wiring userLastMessageAtSession.'
   );
 }
 
@@ -565,6 +720,20 @@ export function validatePresenceReport(observation: PresenceObservation): string
 }
 
 /**
+ * The event types that carry an agent's OWN output, as opposed to bookkeeping.
+ *
+ * Used where a case has to tell "the turn said something" from "the turn
+ * happened": a terminal `done`, a `session_status` and an `error` are all
+ * events, and none of them is the agent answering.
+ */
+const CONTENT_EVENT_TYPES = new Set([
+  'text_delta',
+  'tool_call_start',
+  'tool_result',
+  'thinking_delta',
+]);
+
+/**
  * Register the shared AgentRuntime conformance suite for one runtime.
  *
  * Call at the top level of a Vitest test file. The factory is invoked once
@@ -589,8 +758,11 @@ export function runtimeConformance(
     makeCompactingRuntime,
     durableHistory,
     presenceTurn,
+    warmSession,
     autonomyDefaultReason,
     sessionListSilentReason,
+    userLastMessageAtSession,
+    userLastMessageAtOmittedReason,
   } = opts;
 
   /**
@@ -750,9 +922,45 @@ export function runtimeConformance(
           if (session.lastAutoCompactAt !== undefined) {
             expect(typeof session.lastAutoCompactAt).toBe('string');
           }
+          if (session.userLastMessageAt !== undefined) {
+            expect(typeof session.userLastMessageAt).toBe('string');
+          }
         }
 
         await expect(runtime.getSession(projectDir, nextSessionId())).resolves.toBeNull();
+      });
+
+      it('says when the person last wrote, or says why it cannot (BC-16)', async () => {
+        // Purpose: `Session.userLastMessageAt` is half the sidebar's Today
+        // order key, and the contract is "omission, never a guess". Two honest
+        // answers exist — a real timestamp, or nothing — and a runtime that
+        // picked neither is the third, which this case exists to prevent. The
+        // rules live in the exported evaluators so a proof-of-failure test can
+        // drive them with sessions no shipped runtime would produce.
+        expect(
+          chooseUserLastMessageAtArm(
+            userLastMessageAtSession !== undefined,
+            userLastMessageAtOmittedReason
+          )
+        ).toBeNull();
+
+        if (userLastMessageAtSession !== undefined) {
+          const session = await userLastMessageAtSession(makeRuntime());
+          expect(evaluateUserLastMessageAtPresence(session)).toBeNull();
+          return;
+        }
+
+        // The omission half: a runtime that declared it cannot say must report
+        // NOTHING even once a person has written — never a null, an empty
+        // string, or the row's own updatedAt.
+        const runtime = makeRuntime();
+        const sessionId = nextSessionId();
+        runtime.ensureSession(sessionId, sessionOpts(runtime));
+        await drainTurn(runtime, sessionId);
+        const session = await runtime.getSession(projectDir, sessionId);
+        expect(
+          evaluateUserLastMessageAtOmission(session, userLastMessageAtOmittedReason)
+        ).toBeNull();
       });
 
       it('subscribeSessionList emits only events that satisfy SessionListEventSchema (DOR-851)', async () => {
@@ -940,6 +1148,118 @@ export function runtimeConformance(
           assertOperationProgress(event);
         }
       });
+    });
+
+    describe('a session that holds its process open (C4, C5)', () => {
+      const declaresPersistence = (runtime: AgentRuntime): boolean =>
+        runtime.getCapabilities().supportsPersistentSession === true;
+
+      // Keyed on the CAPABILITY, not on the driver. Keyed on the driver, a
+      // runtime that declared `supportsPersistentSession: true` and simply
+      // forgot to wire one would skip in silence — the suite would report
+      // "nothing proves this" about the one runtime that most needs proving.
+      // Declaring the capability is what creates the obligation; the driver is
+      // how it is met, and a missing driver is now a failure rather than a skip.
+      it('a runtime declaring persistent sessions wires a `warmSession` driver', () => {
+        const runtime = makeRuntime();
+        if (!declaresPersistence(runtime)) {
+          expect(
+            warmSession,
+            'a `warmSession` driver was wired by a runtime that does not declare `supportsPersistentSession`'
+          ).toBeUndefined();
+          return;
+        }
+        expect(
+          warmSession,
+          'this runtime declares `supportsPersistentSession` but wired no `warmSession` driver, ' +
+            'so C4 and C5 would assert nothing about the capability it claims ' +
+            '(see RuntimeConformanceOpts.warmSession)'
+        ).toBeDefined();
+      });
+
+      if (warmSession) {
+        it('C4: reports idle with no turn while it sits warm', async () => {
+          // The presence contract already forbids `streaming` with an empty
+          // `inProgressTurn`, because an empty array is absence wearing the
+          // shape of presence. WARM is a NEW way to get that wrong: the process
+          // is alive while nothing at all is running, so a runtime that reported
+          // warmth as activity would pin every idle chat to "working".
+          const runtime = makeRuntime();
+          const sessionId = nextSessionId();
+          runtime.ensureSession(sessionId, sessionOpts(runtime));
+
+          await warmSession(runtime, sessionId);
+
+          const observation = await observePresence(runtime, sessionId, 'after-turn', projectDir);
+          expect(validatePresenceReport(observation), presenceMessage(observation)).toEqual([]);
+          expect(
+            observation.lifecycle,
+            'a warm session is holding a process, not running a turn — and not failing one either'
+          ).toBe('idle');
+          expect(
+            observation.inProgressTurn,
+            'a session with nothing running must report no turn at all'
+          ).toBeNull();
+          // And the warmth itself is reported where warmth belongs. Without
+          // this the case would pass on a runtime that never warmed anything.
+          expect(
+            runtime.getSessionWarmth?.(sessionId),
+            'the driver was supposed to leave this session warm'
+          ).toBe('warm');
+        });
+
+        it('C5: a reap is invisible — the next turn is well formed either way', async () => {
+          const runtime = makeRuntime();
+          const sessionId = nextSessionId();
+          runtime.ensureSession(sessionId, sessionOpts(runtime));
+
+          await warmSession(runtime, sessionId);
+          const onWarmProcess = await drainTurn(runtime, sessionId);
+
+          await runtime.reapSession?.(sessionId);
+          expect(
+            runtime.getSessionWarmth?.(sessionId),
+            'the process was supposed to be given back'
+          ).toBe('cold');
+
+          const afterReap = await drainTurn(runtime, sessionId);
+
+          // Same shape, both times. The reap took the process away and the
+          // person cannot tell: each turn ends in exactly one terminal, carries
+          // the agent's actual words, and FAILS AT NEITHER — which is the whole
+          // promise of a short idle window being safe.
+          //
+          // "carried something other than `done`" is deliberately not the test.
+          // An `[error, done]` turn satisfies it, so a relaunch that died on the
+          // way back up would report a failure to the person and still be called
+          // invisible — the exact defect this case exists to catch.
+          for (const [label, events] of [
+            ['on the warm process', onWarmProcess],
+            ['after the reap', afterReap],
+          ] as const) {
+            for (const event of events) StreamEventSchema.parse(event);
+            expect(
+              events.filter((event) => event.type === 'done'),
+              `the turn ${label} did not end in exactly one terminal`
+            ).toHaveLength(1);
+            expect(
+              events.filter((event) => event.type === 'error'),
+              `the turn ${label} failed, so the reap was anything but invisible`
+            ).toHaveLength(0);
+            expect(
+              events.some((event) => CONTENT_EVENT_TYPES.has(event.type)),
+              `the turn ${label} carried none of the agent's own output`
+            ).toBe(true);
+          }
+        });
+      } else {
+        it.skip(
+          'SKIPPED: this runtime does not declare `supportsPersistentSession`, so it holds no ' +
+            'process between turns and there is no warmth to report (a runtime that DOES declare ' +
+            'it fails the case above instead of reaching this skip)',
+          () => {}
+        );
+      }
     });
 
     describe('presence truthfulness (the strip omits rather than lies)', () => {

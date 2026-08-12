@@ -1,6 +1,7 @@
 import { motion } from 'motion/react';
 import { Badge } from '@/layers/shared/ui';
 import { getAgentDisplayName, shortenHomePath, resolveAgentVisual } from '@/layers/shared/lib';
+import { AgentAvatar } from '@/layers/entities/agent';
 import { usePreviewData } from '../model/use-preview-data';
 import type { AgentPathEntry } from '@dorkos/shared/mesh-schemas';
 
@@ -33,11 +34,10 @@ export function AgentPreviewPanel({ agent }: AgentPreviewPanelProps) {
       <div className="w-[240px] space-y-3 p-4">
         {/* Agent identity */}
         <div className="flex items-center gap-2">
-          <span
-            className="size-2.5 flex-shrink-0 rounded-full"
-            style={{ backgroundColor: color }}
-          />
-          <span className="text-base">{emoji}</span>
+          {/* `sm`, where the palette's own rows use `xs`: this line is the
+              panel's heading, not another row in the list, and the hand-rolled
+              mark it replaces was already drawn a step larger than a row's. */}
+          <AgentAvatar color={color} emoji={emoji} size="sm" className="shrink-0" />
           <span className="truncate text-sm font-semibold">{getAgentDisplayName(agent)}</span>
         </div>
 

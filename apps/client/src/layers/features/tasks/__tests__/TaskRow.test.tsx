@@ -289,6 +289,48 @@ describe('ScheduleRow', () => {
       expect(screen.getByText('🤖')).toBeTruthy();
     });
 
+    it('draws the agent as an agent — square, filled, Bot-marked — not a bare colour dot', () => {
+      const agent = {
+        id: 'agent-1',
+        name: 'api-bot',
+        icon: '🤖',
+        color: '#6366f1',
+        description: '',
+        runtime: 'claude-code' as const,
+        capabilities: [],
+        behavior: { responseMode: 'always' as const },
+        registeredAt: new Date().toISOString(),
+        registeredBy: 'test',
+        enabledToolGroups: {},
+        mcpServers: [],
+        personaEnabled: true,
+        isSystem: false,
+      };
+
+      const t = createMockTransport();
+      const Wrapper = createWrapper(t);
+      const { container } = render(
+        <Wrapper>
+          <TaskRow
+            task={{ ...activeSchedule, agentId: 'agent-1' }}
+            agent={agent}
+            expanded={false}
+            onToggleExpand={vi.fn()}
+            onEdit={vi.fn()}
+          />
+        </Wrapper>
+      );
+
+      const disc = container.querySelector('[data-slot="agent-avatar"]');
+      expect(disc).toBeTruthy();
+      // The three things the hand-rolled dot could not say: agents are square,
+      // they are filled with their own colour, and they carry the Bot mark.
+      expect(disc?.className).toContain('rounded-md');
+      expect(disc?.className).not.toContain('rounded-full');
+      expect(disc?.getAttribute('style')).toContain('#6366f1');
+      expect(disc?.querySelector('[data-slot="identity-badge"]')).toBeTruthy();
+    });
+
     it('shows "Agent not found" warning when agentId is set but agent is not provided', () => {
       renderScheduleRow(scheduleWithOrphanedAgent);
 

@@ -210,14 +210,18 @@ describe('MemberList', () => {
   });
 
   it('counts off the members past the fifth', () => {
-    renderRoster(
+    const { container } = renderRoster(
       Array.from({ length: 7 }, (_, i) =>
         member({ id: `author-${i}`, kind: 'agent', displayName: `Agent ${i}`, handle: null })
       )
     );
 
     expect(screen.getByText('+2')).toBeInTheDocument();
-    expect(screen.getAllByText(/^A$/)).toHaveLength(5);
+    // Discs, not letters. What this test is about is the cap, and counting one
+    // particular kind of face couples it to a fallback ladder it does not care
+    // about — it went red once already when an agent's empty face was being
+    // reconsidered (DOR-1122).
+    expect(container.querySelectorAll('[data-slot="room-member-avatar"]')).toHaveLength(5);
   });
 
   describe('the origin mark (chats-as-channels spec §4.3, §9, DOR-879)', () => {

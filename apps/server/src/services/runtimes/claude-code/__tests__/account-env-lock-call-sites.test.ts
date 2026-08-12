@@ -18,7 +18,8 @@ import {
   forkSession as sdkForkSession,
 } from '@anthropic-ai/claude-agent-sdk';
 import { SessionStore } from '../sessions/session-store.js';
-import type { TranscriptReader } from '../sessions/transcript-reader.js';
+import { TranscriptReader } from '../sessions/transcript-reader.js';
+import { ClaudeCodeRuntime } from '../claude-code-runtime.js';
 
 /** Every account the config resolvers can see, so the probe order is fixed. */
 const ACTIVE = '/staged/claude-active';
@@ -46,6 +47,18 @@ vi.mock('../../../../lib/logger.js', () => ({
   },
   initLogger: vi.fn(),
 }));
+// Only the `renameSession` case (below) needs this: `ClaudeCodeRuntime`
+// constructs its own `TranscriptReader` internally with no injection seam, so
+// stubbing its account-probe answer means stubbing the class the constructor
+// calls `new` on. Declared here (module scope, hoisted) rather than via
+// `vi.doMock` inside the test — `vi.doMock` needs `vi.resetModules()` +
+// dynamic `import()` to take effect, which forces vitest to re-transform
+// `ClaudeCodeRuntime`'s entire dependency graph from scratch INSIDE the
+// test's timeout window (measured ~1.4s on an otherwise idle machine; DOR-1139
+// timed out at 5s under concurrent-agent load). A static import plus a
+// module-scoped mock lets that transform happen once, during file collection,
+// off the clock a single `it()` is timed against.
+vi.mock('../sessions/transcript-reader.js', () => ({ TranscriptReader: vi.fn() }));
 
 /** A reader stub whose account probe answers with `root` (or nothing). */
 function fakeReader(root?: string): TranscriptReader {
@@ -79,6 +92,10 @@ describe('D8 env-lock call sites', () => {
   afterEach(() => {
     if (ORIGINAL === undefined) delete process.env.CLAUDE_CONFIG_DIR;
     else process.env.CLAUDE_CONFIG_DIR = ORIGINAL;
+    // `vi.clearAllMocks()` (above) clears calls, not implementations — reset
+    // explicitly so a mockImplementation set by the `renameSession` case below
+    // can never leak into a later test.
+    vi.mocked(TranscriptReader).mockReset();
   });
 
   describe('SessionStore.accountRootFor', () => {
@@ -135,22 +152,21 @@ describe('D8 env-lock call sites', () => {
     it("renames inside the session's own account, not the active one", async () => {
       // Built through the runtime facade because that is where the SDK rename is
       // called; the reader is stubbed so the account probe is deterministic.
-      vi.resetModules();
-      vi.doMock('../sessions/transcript-reader.js', () => ({
-        TranscriptReader: class {
-          constructor() {
-            return fakeReader(ACCOUNT_B);
-          }
-        },
-      }));
-      const { ClaudeCodeRuntime } = await import('../claude-code-runtime.js');
+      // `ClaudeCodeRuntime` calls `new TranscriptReader()` internally, so the
+      // module-scoped mock above stands in and this swaps in the fake return
+      // value the same way `SessionStore` tests take a `fakeReader()` argument.
+      // A regular `function`, not an arrow: `new TranscriptReader()` invokes
+      // this as a constructor, and arrow functions can never be constructors.
+      // Returning an object here is what makes `new` yield the fake instead.
+      vi.mocked(TranscriptReader).mockImplementation(function () {
+        return fakeReader(ACCOUNT_B);
+      });
       const runtime = new ClaudeCodeRuntime('/tmp/dorkos-test');
 
       await runtime.renameSession('s1', 'Acme kickoff', '/work');
 
       expect(seenInsideCall).toBe(ACCOUNT_B);
       expect(process.env.CLAUDE_CONFIG_DIR).toBe('/staged/claude-inherited');
-      vi.doUnmock('../sessions/transcript-reader.js');
     });
   });
 });

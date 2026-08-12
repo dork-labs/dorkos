@@ -28,7 +28,10 @@ import {
 import { useCurrentAgent, useAgentVisual } from '@/layers/entities/agent';
 import {
   useDirectoryState,
+  useSessionAwaitingDecision,
   useSessionChatState,
+  useSessionQueue,
+  useSessionStreamLifecycle,
   useSessionStreamState,
 } from '@/layers/entities/session';
 import { selectRenderedMessages } from '../../model/stream/derive-rendered-state';
@@ -37,17 +40,19 @@ import { AnimatedPlaceholder } from './AnimatedPlaceholder';
 import placeholderHints from '../../config/placeholder-hints.json';
 import type { useInputAutocomplete } from '../../model/use-input-autocomplete';
 import { sessionContextKey } from '../../lib/session-context-key';
+import { selectWaitingQueue } from '../../lib/queue-chips';
 
 interface ChatInputContainerProps {
   chatInputRef: RefObject<ComposerInputHandle | null>;
   input: string;
   autocomplete: ReturnType<typeof useInputAutocomplete>;
   handleSubmit: () => void;
-  submitContent: (
-    content: string,
-    originSessionId?: string,
-    opts?: { queued: boolean; restore?: () => void }
-  ) => void;
+  /**
+   * Put the composer's text on the session's server-owned queue. Resolves
+   * `true` once the server has it, which is what lets the composer hold the
+   * words until then.
+   */
+  enqueueContent: (content: string) => Promise<boolean>;
   /**
    * Native (client-side) command interceptor. Used at the queue decision so a
    * native command typed while a turn streams runs instantly instead of being
@@ -61,7 +66,6 @@ interface ChatInputContainerProps {
    */
   commandPending: boolean;
   status: 'idle' | 'streaming' | 'error';
-  sessionBusy: boolean;
   stop: () => void;
   setInput: (value: string) => void;
   sessionId: string;
@@ -100,11 +104,10 @@ export function ChatInputContainer({
   input,
   autocomplete,
   handleSubmit,
-  submitContent,
+  enqueueContent,
   tryNativeCommand,
   commandPending,
   status,
-  sessionBusy,
   stop,
   setInput,
   sessionId,
@@ -138,14 +141,23 @@ export function ChatInputContainer({
   const agentName = currentAgent ? getAgentDisplayName(currentAgent) : undefined;
   const defaultPlaceholder = agentName ? `Message ${agentName}...` : 'Send a message...';
 
+  // The queue lives on the server; this window reads it out of the session
+  // projection and narrows it to the messages that are genuinely waiting.
+  const serverQueue = useSessionQueue(sessionId);
+  const lifecycle = useSessionStreamLifecycle(sessionId);
+  const awaitingDecision = useSessionAwaitingDecision(sessionId);
+  const waiting = useMemo(
+    () => selectWaitingQueue(serverQueue, lifecycle),
+    [serverQueue, lifecycle]
+  );
+
   const chatQueue = useChatQueue({
     input,
     setInput,
-    status,
-    sessionBusy,
     sessionId,
     selectedCwd,
-    onFlush: submitContent,
+    waiting,
+    onEnqueue: enqueueContent,
     tryNativeCommand,
     chatInputRef,
   });
@@ -322,19 +334,16 @@ export function ChatInputContainer({
                   onEdit={chatQueue.handleQueueEdit}
                   onRemove={chatQueue.handleQueueRemove}
                   onSend={chatQueue.handleQueueSend}
-                  // A failed attachment blocks a hand-send exactly as it blocks a
-                  // normal one — and says so, instead of letting the click dequeue,
-                  // fail inside the upload, and land as a generic "Could not send
-                  // message". This component is the one place that holds both the
-                  // queue and the attachment state.
-                  sendBlockedReason={
-                    hasFailedUpload ? 'An attachment did not upload' : chatQueue.sendBlockedReason
+                  onMoveUp={chatQueue.handleQueueMoveUp}
+                  // The server dispatches the head the moment the session frees
+                  // up, so the only thing that genuinely holds the line is the
+                  // agent parked on a person — which it will not leave until
+                  // that question is answered.
+                  statusNote={
+                    awaitingDecision
+                      ? 'Waiting for your answer above'
+                      : 'Sending one at a time as the agent finishes'
                   }
-                  // A turn that ended in error never armed the flush pump, so
-                  // its queue really is waiting on a person — every other
-                  // unblocked queue drains itself on the next idle edge, and
-                  // telling someone to act would be wrong for that one.
-                  whenUnblocked={status === 'error' ? 'Ready to send' : 'Will send next'}
                 />
               )}
             </AnimatePresence>
@@ -349,7 +358,6 @@ export function ChatInputContainer({
               isUploading={isUploading}
               onCancelUpload={onUploadCancel}
               commandPending={commandPending}
-              sessionBusy={sessionBusy}
               onStop={stop}
               onEscape={autocomplete.dismissPalettes}
               onClear={() => {

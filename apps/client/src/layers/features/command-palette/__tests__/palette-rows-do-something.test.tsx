@@ -16,6 +16,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import '@testing-library/jest-dom/vitest';
 import { createMockTransport } from '@dorkos/test-utils';
 import { sessionKeys, useSessionChatStore } from '@/layers/entities/session';
+import { useInteractionStore } from '@/layers/entities/interactions';
 // Reaching into another feature, as only a test may: the claim is an agreement
 // between the palette and the chat send funnel, and an agreement asserted
 // against a re-typed copy of the rule is not asserted at all.
@@ -34,6 +35,20 @@ const ACTIVE_CWD = '/projects/current';
 const agents: AgentPathEntry[] = [
   { id: 'agent-1', name: 'Auth Service', projectPath: '/projects/auth' },
 ];
+
+/**
+ * The ranking fields of a corpus row with no history behind it.
+ *
+ * The real search and ranking run in this file — nothing stubs them — so every
+ * corpus row has to answer them. Which order they produce is another file's
+ * claim; this one is about rows that DO something when you press them.
+ */
+const unranked = {
+  usageKey: null,
+  lastActivityAt: null,
+  waiting: false,
+  demoted: false,
+} as const;
 
 /** The conversation `ACTIVE_CWD` is already on, cached so resolution is a hit. */
 const cachedSession = {
@@ -124,7 +139,6 @@ vi.mock('@/layers/entities/session', async (importOriginal) => ({
 vi.mock('../model/use-palette-items', () => ({
   usePaletteItems: () => ({
     rooms: { channels: [], dms: [], unread: [], isLoading: false, isError: false },
-    recentAgents: agents,
     allAgents: agents,
     features: [],
     // `/compact` beside the generic one because it is a command the send funnel
@@ -141,10 +155,44 @@ vi.mock('../model/use-palette-items', () => ({
     // The flat list the search reads. The command entry has to be here or the
     // `>` page filters `/deploy` straight back out.
     searchableItems: [
-      { id: 'cmd-/deploy', name: '/deploy', type: 'command', data: { name: '/deploy' } },
-      { id: 'cmd-/compact', name: '/compact', type: 'command', data: { name: '/compact' } },
-      { id: 'ext:demo:ping', name: 'Ping the demo', type: 'quick-action', data: {} },
-      { id: 'ext:ghost:gone', name: 'Ghost action', type: 'quick-action', data: {} },
+      {
+        id: 'cmd-/deploy',
+        name: '/deploy',
+        type: 'command',
+        ...unranked,
+        data: { name: '/deploy' },
+      },
+      {
+        id: 'cmd-/compact',
+        name: '/compact',
+        type: 'command',
+        ...unranked,
+        data: { name: '/compact' },
+      },
+      {
+        id: 'ext:demo:ping',
+        name: 'Ping the demo',
+        type: 'quick-action',
+        ...unranked,
+        data: {
+          id: 'ext:demo:ping',
+          label: 'Ping the demo',
+          icon: 'Plus',
+          action: 'ext:demo:ping',
+        },
+      },
+      {
+        id: 'ext:ghost:gone',
+        name: 'Ghost action',
+        type: 'quick-action',
+        ...unranked,
+        data: {
+          id: 'ext:ghost:gone',
+          label: 'Ghost action',
+          icon: 'Plus',
+          action: 'ext:ghost:gone',
+        },
+      },
     ],
     newActions: [],
     sessions: [],
@@ -174,15 +222,6 @@ vi.mock('../model/use-palette-items', () => ({
     ],
     isLoading: false,
   }),
-}));
-
-// Passthrough search, preserving only the prefix modes the cases below use.
-vi.mock('../model/use-palette-search', () => ({
-  usePaletteSearch: (items: Array<{ id: string; type: string; name: string }>, search: string) => {
-    const prefix = search.startsWith('@') ? '@' : search.startsWith('>') ? '>' : null;
-    return { results: items.map((item) => ({ item, matches: undefined })), prefix, term: search };
-  },
-  parsePrefix: (search: string) => ({ prefix: null, term: search }),
 }));
 
 vi.mock('../model/use-global-palette', () => ({
@@ -242,6 +281,7 @@ beforeEach(() => {
     })),
   });
   useSessionChatStore.setState({ sessions: {}, sessionAccessOrder: [] });
+  useInteractionStore.getState().reset();
 });
 
 afterEach(cleanup);
@@ -276,6 +316,12 @@ describe('a slash command row', () => {
     // Typed in, not sent: a global palette must not fire `/clear` at an agent
     // on one keystroke. The trailing space puts the caret where an argument goes.
     expect(draftFor('session-current')).toBe('/deploy ');
+    // And it leaves the same memory the conversation rows do — this row lands a
+    // person IN a conversation, so ranking has to know it happened. Recorded
+    // AFTER the resolve, never before: a lookup that failed is not an open.
+    const { opened } = useInteractionStore.getState();
+    expect(opened['session:session-current']).toBeDefined();
+    expect(opened[`agent:${ACTIVE_CWD}`]).toBeDefined();
   });
 
   it('still produces a RUNNABLE command when the composer already had text', async () => {

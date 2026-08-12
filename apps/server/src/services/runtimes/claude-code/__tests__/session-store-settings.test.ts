@@ -160,4 +160,56 @@ describe('SessionStore session-settings hydration (ADR-0260)', () => {
     expect(session.permissionMode).toBe('default'); // hardcoded fallback default
     await expect(store.updateSession('s1', { permissionMode: 'plan' })).resolves.toBe(true);
   });
+
+  it('updateSession hydrates persisted settings on a cold auto-create (regression, DOR-1151)', async () => {
+    // A PATCH that changes only model/effort/fastMode (or a title rename) can
+    // reach updateSession for a session that was evicted or the server
+    // restarted since. Pre-fix, the auto-create branch never consulted the
+    // durable row, so it silently reset a bypassPermissions session back to
+    // 'default' — the DB row (and the cockpit's display overlay reading it)
+    // kept showing bypassPermissions while every subsequent turn actually ran
+    // 'default'.
+    const port = createFakePort();
+    port.store.set('s1', { permissionMode: 'bypassPermissions' });
+    store.configureSettings(port, 'default');
+
+    // s1 is NOT in memory — no ensureSession/ensureForMessage call precedes
+    // this. updateSession must hit its own auto-create branch.
+    const result = await store.updateSession('s1', { model: 'claude-sonnet-4' });
+
+    expect(result).toBe(true);
+    expect(port.getSessionSettings).toHaveBeenCalledWith('s1');
+    expect(store.findSession('s1')!.permissionMode).toBe('bypassPermissions');
+    expect(store.findSession('s1')!.model).toBe('claude-sonnet-4');
+  });
+
+  it('updateSession hydrates persisted model/effort/fastMode on a cold auto-create too', async () => {
+    const port = createFakePort();
+    port.store.set('s1', {
+      permissionMode: 'plan',
+      model: 'claude-haiku-4-5-20251001',
+      effort: 'high',
+      fastMode: true,
+    });
+    store.configureSettings(port, 'default');
+
+    await store.updateSession('s1', { fastMode: false });
+
+    const session = store.findSession('s1')!;
+    expect(session.permissionMode).toBe('plan');
+    expect(session.model).toBe('claude-haiku-4-5-20251001');
+    expect(session.effort).toBe('high');
+    // The explicit opt for this call still wins over the persisted value.
+    expect(session.fastMode).toBe(false);
+  });
+
+  it('updateSession: explicit opts.permissionMode still wins over persisted on a cold auto-create', async () => {
+    const port = createFakePort();
+    port.store.set('s1', { permissionMode: 'bypassPermissions' });
+    store.configureSettings(port, 'default');
+
+    await store.updateSession('s1', { permissionMode: 'plan' });
+
+    expect(store.findSession('s1')!.permissionMode).toBe('plan');
+  });
 });

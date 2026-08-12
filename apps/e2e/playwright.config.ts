@@ -161,6 +161,77 @@ export default defineConfig({
   workers: CI ? 1 : undefined,
   timeout: 30_000,
 
+  // STOP AFTER FIVE FAILURES IN CI — fail fast, report loudly (DOR-1110).
+  //
+  // The incident this is sized against: one product change broke 21 @smoke
+  // specs at once, every one of them dying on a 30s locator timeout. Serially,
+  // with one retry, that is 21 × (30s + 30s) ≈ 21 minutes of a runner waiting
+  // to be told the same thing 21 times — on top of a healthy suite that already
+  // takes 30 minutes (measured, see the workflow header). The attempt hit the
+  // job ceiling and was CANCELLED with zero Playwright output, so the run cost
+  // a full debug cycle and reported nothing. `globalTimeout` below fixes the
+  // "reported nothing" half; this fixes the "waited 21 minutes" half.
+  //
+  // WHY FIVE, and not one and not twenty.
+  //
+  //   * A break of this shape is one root cause, so the fifth named spec tells
+  //     you nothing the third did not. Five red spec names is a diagnosis;
+  //     twenty-one is the same diagnosis, sixteen minutes later.
+  //   * It must not be so tight that ONE test kills the job, because retries
+  //     exist and this suite has a tracked flake budget of exactly one (DOR-698
+  //     — see `retries` above and the workflow header). A flake that passes on
+  //     its retry is `flaky`, never `unexpected`, so it does not count here at
+  //     all; only a test that fails BOTH attempts does. At 5 the suite still
+  //     surfaces four other genuine failures past a hard flake, and at 1 or 2 a
+  //     single hard flake would abort the run and hide everything behind it.
+  //   * Cost when it trips: at worst 5 × (30s + 30s retry) ≈ 5 minutes of
+  //     failure burn, and much less in practice because an assertion failure is
+  //     immediate and only a locator timeout pays the full 30s.
+  //
+  // INERT ON A HEALTHY RUN, by construction rather than by measurement: the
+  // counter only advances on an `unexpected` result, so a run with zero
+  // failures cannot reach any threshold. A green run is bit-for-bit the run it
+  // was before this line, which is why it can be raised in CI without a
+  // corresponding local change.
+  //
+  // Local runs keep 0 (unlimited). A developer running one spec file wants the
+  // whole picture, has no 45-minute meter running, and is watching the output
+  // live — the failure mode this guards against does not exist there.
+  maxFailures: CI ? 5 : 0,
+
+  // PLAYWRIGHT MUST DIE BEFORE THE JOB DOES — never cancel silently (DOR-1110).
+  //
+  // A GitHub job that hits its own `timeout-minutes` is CANCELLED, not failed:
+  // the step is killed mid-write, `if: failure()` steps do not run, and no
+  // report, trace, screenshot or video survives. That is what turned the
+  // incident above into an "infra hang" that nobody could read. A run that
+  // proves nothing is worse than a red one, because a red one at least names a
+  // spec.
+  //
+  // So Playwright gets its own deadline, deliberately BELOW the job's. When
+  // this fires, Playwright stops the run itself — gracefully, through its own
+  // shutdown path — which means every reporter still flushes: the HTML report,
+  // the JSON the assert step reads, and the `github` annotations. The job then
+  // fails on a non-zero exit with output, instead of vanishing.
+  //
+  // THE NUMBERS, measured rather than guessed (run 31577200766, 2026-08-12):
+  // a green suite's `playwright test` step took 30m24s, inside a 45-minute job
+  // whose setup steps cost ~1m40s. That left barely 13 minutes of headroom —
+  // the ceiling was already close enough to touch on a healthy run, which is
+  // the other half of why the incident ended in a cancellation. The workflow
+  // now allows 60 minutes, so the ladder is: suite 30m (healthy) → Playwright
+  // gives up at 45m → the step is killed at 50m → the job at 60m. Each rung
+  // above the one below it, and the FIRST rung to fire is the one that leaves
+  // output behind.
+  //
+  // 45 minutes is ~48% headroom over the measured healthy run, so this is inert
+  // until the suite grows by half. If it ever fires on a genuinely healthy
+  // suite, that is the signal to split the job, not to raise the number.
+  //
+  // Unset locally: a developer's machine has no job ceiling to lose a report
+  // to, and a debugging session paused on a breakpoint must not be shot.
+  globalTimeout: CI ? 45 * 60_000 : undefined,
+
   reporter: [
     ['html', { open: 'never', outputFolder: 'playwright-report' }],
     ['json', { outputFile: 'test-results/results.json' }],
@@ -318,6 +389,11 @@ export default defineConfig({
         // one rename to `.spec.ts` would put four billable sessions on the
         // machine's own `claude` sign-in, and nothing else here would object.
         '**/chat/session-read-state*',
+        // Same shape, same lock: a module registered into `chat-mock.spec.ts`,
+        // living under `tests/chat/` because that is the feature it belongs to.
+        // It drives a send and flips a server-global preference, so it must
+        // never reach this leg (DOR-948).
+        '**/chat/composer-escape-and-ime*',
         ...(INCLUDE_SITE ? [] : SITE_SPECS),
       ],
       // Skips the specs that need real model credentials — see INCLUDE_INTEGRATION.

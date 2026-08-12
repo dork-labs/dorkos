@@ -58,11 +58,17 @@ vi.mock('../model/use-profile', () => ({
 
 /** The traits write — must stay untouched when the personality beat is skipped. */
 const mockSaveTraits = vi.fn().mockResolvedValue({});
+/** DorkBot's workspace, and the system-agent manifest the registry returns for it. */
+const DORKBOT_PATH = '/home/kai/.dork/agents/dorkbot';
 vi.mock('@/layers/entities/agent', () => ({
   useUpdateAgent: () => ({ mutateAsync: mockSaveTraits }),
+  useResolvedAgents: () => ({
+    data: { [DORKBOT_PATH]: { id: '01JQZ8XKF3M0000000000DBOT', name: 'dorkbot', isSystem: true } },
+  }),
 }));
 
 vi.mock('@/layers/entities/config', () => ({
+  // The session DIRECTORY only — the face comes from the system-agent lookup.
   useDefaultAgentSession: () => ({
     defaultAgentDir: '/home/kai/.dork/agents/dorkbot',
     startSession: vi.fn(),
@@ -86,7 +92,10 @@ vi.mock('@/layers/entities/discovery', () => ({
   BulkAddBar: () => null,
 }));
 
-vi.mock('@/layers/entities/mesh', () => ({ useRegisterAgent: () => ({ mutate: vi.fn() }) }));
+vi.mock('@/layers/entities/mesh', () => ({
+  useRegisterAgent: () => ({ mutate: vi.fn() }),
+  useMeshAgentPaths: () => ({ data: { agents: [{ projectPath: DORKBOT_PATH }] } }),
+}));
 
 // The conversation asks whether the default runtime can actually run the first
 // session. Nothing here is about that, so every runtime answers ready.

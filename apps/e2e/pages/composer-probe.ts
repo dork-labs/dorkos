@@ -96,6 +96,30 @@ export async function expectComposerText(
 }
 
 /**
+ * Assert the composer field itself holds focus — the check to make BEFORE
+ * pressing any key at it.
+ *
+ * Every rung of the composer's keyboard ladder is handled on the FIELD, so a
+ * key pressed while focus sits on `document.body` does nothing and proves
+ * nothing. A test that skips this reads a real shortcut as broken, and stays
+ * green if the shortcut is deleted — which is how the double-Escape clear was
+ * once written off as not working.
+ *
+ * Field-shape agnostic like the rest of this module: `activeElement` answers
+ * the same for a `<textarea>` and for a `contenteditable`, so one assertion
+ * covers both paths.
+ *
+ * @param composer - Locator for the composer field, either shape.
+ */
+export async function expectFieldFocused(composer: Locator): Promise<void> {
+  await expect
+    .poll(() => composer.evaluate((el) => el === el.ownerDocument.activeElement), {
+      message: 'the composer field must hold focus before any key is pressed at it',
+    })
+    .toBe(true);
+}
+
+/**
  * Assert where the caret sits, retrying for the same reason as
  * {@link expectComposerText}.
  *

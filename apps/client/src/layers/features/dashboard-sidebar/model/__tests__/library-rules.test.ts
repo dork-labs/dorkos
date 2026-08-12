@@ -174,7 +174,7 @@ describe('BC-31 — a folded section keeps its signal', () => {
       // The reproduction: collapse Agents, then start a turn. The status event
       // arrives at once and carries the directory; `GET /api/sessions/recent`
       // is up to 30s behind, and for those 30s the header read plain "Agents"
-      // while Now read "1 working" three inches above it.
+      // while Heads up read "1 working" three inches above it.
       const state = folded({ liveSessionCwds: { 'ses-brand-new': SAFFRON } });
       expect(state.sessions.some((entry) => entry.id === 'ses-brand-new')).toBe(false);
 
@@ -195,7 +195,7 @@ describe('BC-31 — a folded section keeps its signal', () => {
       expect(agents?.rows.find((row) => row.key === `agent:${SAFFRON}`)?.status).toBe('working');
     });
 
-    it('agrees with Now, which counted the same session all along', () => {
+    it('agrees with Heads up, which counted the same session all along', () => {
       const state = folded({ liveSessionCwds: { 'ses-brand-new': SAFFRON } });
       const agents = library(state).find((section) => section.id === 'agents');
       expect(buildWorkingRollup(state)?.primary).toBe('1 working');
@@ -459,7 +459,7 @@ describe('SIDEBAR_LIBRARY_SECTION_IDS is the order', () => {
 
   it('narrows only the four ids that have somewhere to store a fold', () => {
     for (const id of SIDEBAR_LIBRARY_SECTION_IDS) expect(librarySectionId(id)).toBe(id);
-    // Now, Today and Getting started cannot fold; a group\u2019s fold lives on the
+    // Heads up, Today and Getting started cannot fold; a group\u2019s fold lives on the
     // group. None of them has a slot in `prefs.sections`.
     expect(librarySectionId('now')).toBeNull();
     expect(librarySectionId('today')).toBeNull();
