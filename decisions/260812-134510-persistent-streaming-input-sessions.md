@@ -68,20 +68,6 @@ A warm process pins whatever it was launched with. Change any pinned value and t
 
 **The account pin is a security control, not an optimization detail.** A Claude account _is_ a config directory: it carries that account's transcripts and its own sign-in, so the account a process launched under is the account its work **bills to**. A dispatch that rode a process launched under a different account would bill a paying client's conversation to someone else. No other row has that consequence. So the account is compared **first and unconditionally**, ahead of any other pin and with no "these fingerprints are otherwise identical" shortcut in front of it, and again through the ordinary pin loop; a cross-account reuse is its own error class (`AccountPinViolationError`) because it is a security event, not a bug. Two string compares is a trivial price to never send someone else's invoice.
 
-## Rejected alternatives
-
-**Keep resume-per-message and queue only at our layer.** We could have taken the server-owned durable queue (ADR-c) and left the runtime on the old resume-per-message path — durable queueing without a warm process. Rejected because it discards most of the motivation. It leaves **every turn cold** — a fresh subprocess, a fresh MCP handshake, and a cold prompt cache on every message, exactly the cost this work exists to remove — and it makes **steering impossible**, because there is no live turn to inject into when the process only exists inside a single `result`. A durable queue in front of a cold runtime is a better waiting room for the same slow turn; it is not the feature.
-
-## Non-goals
-
-**The persistent process does not survive a DorkOS restart.** This is deliberate and inherited. ADR-0264 already accepts losing an in-flight turn when the server restarts; the pump takes that same boundary. On restart every warm process is gone, and the first message to each session recovers through resume — which is precisely why resume is kept rather than deleted. What _does_ survive a restart is the durable queue (ADR-c) and the session record and transcript; the warm process is the one thing that is allowed to be lost, because it is a cache and losing a cache is invisible once it refills.
-
-The cross-runtime framing follows from this being a claude-code adapter fact. Codex (ADR-0309) and OpenCode (ADR-0308) do not become persistent; they keep their fresh-subprocess and sidecar models and declare `supportsPersistentSession: false`. Persistence is a property one adapter has, surfaced honestly through a capability flag, not a contract every runtime must meet — the same per-runtime-degradation stance as ADR-0310.
-
-### The `priority` field (D3): we measured nothing, so we relied on nothing
-
-The SDK exposes a `priority` field, and it was tempting to build turn-ordering on it. We did not. Even at `@anthropic-ai/claude-agent-sdk@0.3.224` the field carries **no prose documentation** — the only thing read out of the bundled binary is that the sole queue-driven abort keys on `priority: 'now'`, which nothing in the CLI enqueues and DorkOS never sets. Building on an undocumented field whose behavior we could only infer would be relying on something we never measured. So nothing in the pump reads or writes `priority`. This is recorded here rather than as an ADR of its own, because "we measured nothing and therefore relied on nothing" is a note, not a decision worth its own record.
-
 ## Consequences
 
 ### Positive
@@ -97,3 +83,17 @@ The SDK exposes a `priority` field, and it was tempting to build turn-ordering o
 - LRU thrash is possible on a host with many simultaneously active sessions: a process reaped to make room, then immediately rewanted. The metric to watch is reap-then-immediately-rewarm frequency, and the remedy is raising the ceiling, not lengthening the idle timer.
 - The pin list is now load-bearing correctness: a launch parameter added without a pin disposition would silently ride a stale warm process. `launch-fingerprint.test.ts` pins the disposition table against spec §4.5 so a new option fails a test rather than defaulting to "rides the warm process".
 - The two paths — persistent and resume-per-message — run side by side behind a per-session flag, so the recovery path cannot be deleted and both must stay tested. That is the cost of a reversible, comparable rollout, and it is intended: a measurement run that flips the flag off must reap or restart before it can claim it is measuring the other path.
+
+## Alternatives Considered
+
+**Keep resume-per-message and queue only at our layer.** We could have taken the server-owned durable queue (ADR-c) and left the runtime on the old resume-per-message path — durable queueing without a warm process. Rejected because it discards most of the motivation. It leaves **every turn cold** — a fresh subprocess, a fresh MCP handshake, and a cold prompt cache on every message, exactly the cost this work exists to remove — and it makes **steering impossible**, because there is no live turn to inject into when the process only exists inside a single `result`. A durable queue in front of a cold runtime is a better waiting room for the same slow turn; it is not the feature.
+
+## Non-Goals
+
+**The persistent process does not survive a DorkOS restart.** This is deliberate and inherited. ADR-0264 already accepts losing an in-flight turn when the server restarts; the pump takes that same boundary. On restart every warm process is gone, and the first message to each session recovers through resume — which is precisely why resume is kept rather than deleted. What _does_ survive a restart is the durable queue (ADR-c) and the session record and transcript; the warm process is the one thing that is allowed to be lost, because it is a cache and losing a cache is invisible once it refills.
+
+The cross-runtime framing follows from this being a claude-code adapter fact. Codex (ADR-0309) and OpenCode (ADR-0308) do not become persistent; they keep their fresh-subprocess and sidecar models and declare `supportsPersistentSession: false`. Persistence is a property one adapter has, surfaced honestly through a capability flag, not a contract every runtime must meet — the same per-runtime-degradation stance as ADR-0310.
+
+### The `priority` field (D3): we measured nothing, so we relied on nothing
+
+The SDK exposes a `priority` field, and it was tempting to build turn-ordering on it. We did not. Even at `@anthropic-ai/claude-agent-sdk@0.3.224` the field carries **no prose documentation** — the only thing read out of the bundled binary is that the sole queue-driven abort keys on `priority: 'now'`, which nothing in the CLI enqueues and DorkOS never sets. Building on an undocumented field whose behavior we could only infer would be relying on something we never measured. So nothing in the pump reads or writes `priority`. This is recorded here rather than as an ADR of its own, because "we measured nothing and therefore relied on nothing" is a note, not a decision worth its own record.
