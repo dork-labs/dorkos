@@ -15,14 +15,22 @@ let mockActiveRightPanelTab: string | null = null;
 // The header reads only the active tab and the open/close setters from the
 // store now — the container owns contribution filtering and passes the visible
 // list in as a prop.
-vi.mock('@/layers/shared/model', () => ({
-  useAppStore: (selector: (s: Record<string, unknown>) => unknown) =>
-    selector({
-      setRightPanelOpen: mockSetRightPanelOpen,
-      activeRightPanelTab: mockActiveRightPanelTab,
-      setActiveRightPanelTab: mockSetActiveRightPanelTab,
-    }),
-}));
+// Only the store is stubbed. `useScrollOverflow` and `revealInScroller` come
+// from the real module on purpose: the fade and reveal assertions below stub
+// layout metrics and then check what the strip did with them, so replacing the
+// thing that reads those metrics would leave nothing under test.
+vi.mock('@/layers/shared/model', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/layers/shared/model')>();
+  return {
+    ...actual,
+    useAppStore: (selector: (s: Record<string, unknown>) => unknown) =>
+      selector({
+        setRightPanelOpen: mockSetRightPanelOpen,
+        activeRightPanelTab: mockActiveRightPanelTab,
+        setActiveRightPanelTab: mockSetActiveRightPanelTab,
+      }),
+  };
+});
 
 beforeAll(() => {
   Object.defineProperty(window, 'matchMedia', {

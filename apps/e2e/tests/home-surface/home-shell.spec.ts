@@ -1,5 +1,7 @@
+import type { Locator, Page } from '@playwright/test';
 import { test, expect } from '../../fixtures';
 import { HOME_TABS, SIDEBAR_NAV_LABELS } from '../../pages/HomeSurfacePage';
+import { rectOf } from '../rooms/room-sheet-helpers';
 
 /**
  * The home surface shell (spec `team-room-home`, Phase 1).
@@ -173,5 +175,135 @@ test.describe('Home surface — 375px @smoke', () => {
       expect(box!.x).toBeGreaterThanOrEqual(-1);
       expect(box!.x + box!.width).toBeLessThanOrEqual(376);
     }
+  });
+});
+
+/**
+ * The bar holds more than a phone shows, and has to say so (DOR-1180).
+ *
+ * 390×844 is the iPhone 14/15 class, and it is the width the complaint came
+ * from: the strip opened on `Home | Activity | Scheduled | Workspac` — 430px of
+ * labels in a 390px box — and a word cut mid-letter with nothing to explain it
+ * is the first thing a phone user ever saw of DorkOS. The scrolling itself was
+ * never the bug (the block above pins that the page does not scroll with it, and
+ * sideways is what keeps working when a fifth tab arrives); the bug was that
+ * nothing on screen said the bar had more, and macOS draws no scrollbar until
+ * you have already scrolled.
+ *
+ * **Only a real browser can answer any of this.** The cue is a function of
+ * `scrollWidth` against `clientWidth` in the shipped font at a real width, and
+ * jsdom reports every element as 0×0 — the unit suite can prove what the
+ * component does with a measurement, and only this can prove the measurement.
+ *
+ * Both themes: the fade is drawn from `--background`, which is the one thing a
+ * theme changes about it, and a cue that reads as a smudge in one ramp is not a
+ * cue.
+ */
+test.describe('Home surface — the tab bar at 390px @smoke', () => {
+  test.use({ viewport: { width: 390, height: 844 } });
+
+  /**
+   * The strip once it has stopped changing width, with the numbers it settled
+   * on.
+   *
+   * **Web fonts move this, and that cost a red run.** The app loads its type
+   * asynchronously, so the strip is one width in the fallback face and another
+   * once the real one lands. A test that scrolled to the end before that
+   * happened found the end cue back a moment later, because the content had
+   * grown under a scroll position that was correct when it was set — the same
+   * "a late web font resizes the content while the box stays put" case the
+   * scroll hook observes a `ResizeObserver` for. So: wait for the fonts, then
+   * require two identical readings before believing either.
+   *
+   * @param page - The page being measured.
+   * @param bar - The tab bar, which is its own scroll container.
+   */
+  async function settledStrip(
+    page: Page,
+    bar: Locator
+  ): Promise<{ client: number; scroll: number }> {
+    await page.evaluate(() => document.fonts.ready);
+    const read = () => bar.evaluate((el) => ({ client: el.clientWidth, scroll: el.scrollWidth }));
+    let previous = await read();
+    await expect
+      .poll(async () => {
+        const next = await read();
+        const stable = next.scroll === previous.scroll && next.client === previous.client;
+        previous = next;
+        return stable;
+      })
+      .toBe(true);
+    return previous;
+  }
+
+  for (const theme of ['light', 'dark'] as const) {
+    test(`says there is more to the right, and swaps sides at the end (${theme})`, async ({
+      page,
+      basePage,
+      homeSurface,
+    }) => {
+      await page.addInitScript((value) => {
+        window.localStorage.setItem('dorkos-theme', value);
+      }, theme);
+      await basePage.goto();
+      await basePage.waitForAppReady();
+
+      // The premise. If four labels ever start fitting 390px, everything below
+      // is vacuous and this is what says so out loud instead of passing quietly.
+      const strip = await settledStrip(page, homeSurface.tabBar);
+      expect(
+        strip.scroll,
+        'four labels now fit 390px — this suite needs rewriting'
+      ).toBeGreaterThan(strip.client);
+
+      // Parked at the start: the cue points the one way there is to go.
+      await expect(homeSurface.tabsFadeEnd).toBeVisible();
+      await expect(homeSurface.tabsFadeStart).toHaveCount(0);
+
+      // At the end of the scroll it swaps sides rather than hanging over an edge
+      // with nothing behind it (ADR 260725-004456).
+      await homeSurface.tabBar.evaluate((el) => {
+        el.scrollLeft = el.scrollWidth;
+      });
+      await expect(homeSurface.tabsFadeStart).toBeVisible();
+      await expect(homeSurface.tabsFadeEnd).toHaveCount(0);
+    });
+  }
+
+  test('a deep link to the last tab opens with that tab on screen', async ({
+    page,
+    basePage,
+    homeSurface,
+  }) => {
+    // Workspaces is the tab that starts past the right edge, so a bookmark to it
+    // used to open a bar whose active marker was off screen — the address bar
+    // said where you were and the bar said nothing.
+    await page.goto('/workspaces');
+    await basePage.waitForAppReady();
+    await expect(homeSurface.activeTab).toHaveText('Workspaces');
+    await settledStrip(page, homeSurface.tabBar);
+
+    const box = await rectOf(homeSurface.activeTab);
+    // Fully inside the viewport, both edges — a marker half off the screen
+    // answers the question no better than one entirely off it.
+    expect(box.left).toBeGreaterThanOrEqual(-1);
+    expect(box.right).toBeLessThanOrEqual(391);
+  });
+
+  test('draws no cue on a desktop, where all four already fit', async ({
+    page,
+    basePage,
+    homeSurface,
+  }) => {
+    // The other half of the rule: the affordance costs nothing where there is
+    // nothing to advertise. Same page, one resize — so this cannot pass by
+    // testing a different app.
+    await basePage.goto();
+    await basePage.waitForAppReady();
+    await expect(homeSurface.tabsFadeEnd).toBeVisible();
+
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await expect(homeSurface.tabsFadeEnd).toHaveCount(0);
+    await expect(homeSurface.tabsFadeStart).toHaveCount(0);
   });
 });

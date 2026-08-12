@@ -124,10 +124,10 @@
       "specFile": "tests/dialog-deep-link.spec.ts",
       "feature": "dialog-deep-link.spec.ts",
       "description": "navigating to ?settings=tools&settingsSection=external-mcp scrolls into view, navigating to ?settings=tools opens Settings to Tools tab, palette open updates URL after migration (settings=open), browser back closes the dialog",
-      "lastRun": "2026-08-11T22:28:59.005Z",
+      "lastRun": "2026-08-12T10:58:25.116Z",
       "lastStatus": "passed",
-      "runCount": 7,
-      "passCount": 6,
+      "runCount": 8,
+      "passCount": 7,
       "failCount": 0,
       "relatedCode": [],
       "lastModified": ""
@@ -410,10 +410,10 @@
       "specFile": "tests/pulse/pulse-panel.spec.ts",
       "feature": "pulse",
       "description": "opens on the dashboard to Pulse with its attention + activity sections, opens on a session to the contextual default (Agent Profile), not Pulse, the attention badge is honest — hidden when nothing needs the operator",
-      "lastRun": "2026-08-11T22:28:59.005Z",
+      "lastRun": "2026-08-12T10:58:25.116Z",
       "lastStatus": "passed",
-      "runCount": 5,
-      "passCount": 5,
+      "runCount": 6,
+      "passCount": 6,
       "failCount": 0,
       "relatedCode": [],
       "lastModified": ""
@@ -434,10 +434,10 @@
       "specFile": "tests/pulse/right-panel-tab-strip.spec.ts",
       "feature": "pulse",
       "description": "brings a tab selected without a click into view, and fades the edges hiding tabs, advertises nothing when every tab fits",
-      "lastRun": "2026-08-11T22:28:59.005Z",
+      "lastRun": "2026-08-12T10:58:25.116Z",
       "lastStatus": "passed",
-      "runCount": 5,
-      "passCount": 5,
+      "runCount": 6,
+      "passCount": 6,
       "failCount": 0,
       "relatedCode": [],
       "lastModified": ""
@@ -506,10 +506,10 @@
       "specFile": "tests/home-surface/home-shell.spec.ts",
       "feature": "home-surface",
       "description": "the tab bar is Home, Activity, Scheduled, Workspaces — and Home is lit on /, the retired home sections are gone, not hidden, each tab goes to the address it has always had, the sidebar has four places and a Search row — nothing else, a filtered Activity deep link keeps its filter, and survives leaving and coming back, the tab bar takes the overflow, and the page never scrolls sideways",
-      "lastRun": "2026-08-11T22:28:59.005Z",
+      "lastRun": "2026-08-12T10:58:25.116Z",
       "lastStatus": "passed",
-      "runCount": 6,
-      "passCount": 5,
+      "runCount": 7,
+      "passCount": 6,
       "failCount": 0,
       "relatedCode": [],
       "lastModified": ""
@@ -673,18 +673,21 @@
       "failCount": 0,
       "relatedCode": [],
       "lastModified": ""
+    },
+    "mobile-pip-dock": {
+      "specFile": "tests/pip/mobile-pip-dock.spec.ts",
+      "feature": "pip",
+      "description": "every destination is still reachable with a PIP docked (light), every destination is still reachable with a PIP docked (dark), the panels and the routed page both stop above the docked bar",
+      "lastRun": "2026-08-12T10:58:25.116Z",
+      "lastStatus": "passed",
+      "runCount": 1,
+      "passCount": 1,
+      "failCount": 0,
+      "relatedCode": [],
+      "lastModified": ""
     }
   },
   "runHistory": [
-    {
-      "id": "2026-08-03T22-43-28",
-      "timestamp": "2026-08-03T22:43:28.496Z",
-      "total": 28,
-      "passed": 28,
-      "failed": 0,
-      "skipped": 0,
-      "duration": 102831
-    },
     {
       "id": "2026-08-04T03-19-45",
       "timestamp": "2026-08-04T03:19:45.785Z",
@@ -1575,6 +1578,15 @@
       "failed": 0,
       "skipped": 0,
       "duration": 70589
+    },
+    {
+      "id": "2026-08-12T10-58-25",
+      "timestamp": "2026-08-12T10:58:25.116Z",
+      "total": 23,
+      "passed": 23,
+      "failed": 0,
+      "skipped": 0,
+      "duration": 89291
     }
   ]
 }

@@ -110,22 +110,29 @@ let mockSelectedCwd: string | null = null;
 // signal the container threads into every visibleWhen predicate.
 let mockExplicitAgentPath: string | null = null;
 
-vi.mock('@/layers/shared/model', () => ({
-  useAppStore: (selector: (s: Record<string, unknown>) => unknown) =>
-    selector({
-      rightPanelOpen: mockRightPanelOpen,
-      setRightPanelOpen: mockSetRightPanelOpen,
-      activeRightPanelTab: mockActiveRightPanelTab,
-      setActiveRightPanelTab: mockSetActiveRightPanelTab,
-      setActiveRightPanelTabView: mockSetActiveRightPanelTabView,
-      currentAgentId: mockCurrentAgentId,
-      selectedCwd: mockSelectedCwd,
-      explicitAgentPath: mockExplicitAgentPath,
-    }),
-  useIsMobile: () => mockIsMobile,
-  useSlotContributions: () => mockContributions,
-  useTransport: () => mockTransport,
-}));
+// Spread over the real module rather than replacing it: the header inside the
+// container reads its scroll cues from `useScrollOverflow`, which is shared and
+// not something this suite has an opinion about.
+vi.mock('@/layers/shared/model', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/layers/shared/model')>();
+  return {
+    ...actual,
+    useAppStore: (selector: (s: Record<string, unknown>) => unknown) =>
+      selector({
+        rightPanelOpen: mockRightPanelOpen,
+        setRightPanelOpen: mockSetRightPanelOpen,
+        activeRightPanelTab: mockActiveRightPanelTab,
+        setActiveRightPanelTab: mockSetActiveRightPanelTab,
+        setActiveRightPanelTabView: mockSetActiveRightPanelTabView,
+        currentAgentId: mockCurrentAgentId,
+        selectedCwd: mockSelectedCwd,
+        explicitAgentPath: mockExplicitAgentPath,
+      }),
+    useIsMobile: () => mockIsMobile,
+    useSlotContributions: () => mockContributions,
+    useTransport: () => mockTransport,
+  };
+});
 
 // The container is router-free — it takes `pathname` as a prop (AppShell passes
 // the live router pathname; the embed passes a constant), so no router mock is
