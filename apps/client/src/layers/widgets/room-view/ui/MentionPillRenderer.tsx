@@ -17,6 +17,7 @@
 import type { KeyboardEvent, ReactNode } from 'react';
 import type { Components } from 'streamdown';
 import { IdentityHoverCard, MentionPill } from '@/layers/shared/ui';
+import { resolveIdentityFace } from '@/layers/shared/lib';
 import { useProfileDeepLink } from '@/layers/shared/model';
 import { MENTION_AUTHOR_ATTR } from '../lib/mention-markup';
 import type { RosterAuthor } from '../lib/room-timeline';
@@ -115,6 +116,12 @@ export function MentionPillRenderer({ authorId, children }: MentionPillRendererP
     return <MentionPill kind="human" label={handleLabel(children)} resolved={false} />;
   }
 
+  // The same ladder the gutter climbs, with the same override — `agent.visual`
+  // is the face resolved off this agent's own manifest, and the card opens off
+  // a message whose disc is already wearing it. Reading `author.color` and
+  // `author.emoji` straight off the render cache is what left the two
+  // disagreeing: 🦊 in the gutter, a grey letter in the card describing it.
+  const face = resolveIdentityFace({ record: author, override: agent?.visual });
   const memberId = profileMemberIdOf(author, agent);
   const viewProfile = memberId === undefined ? undefined : () => openProfile(memberId);
   // A `<span>` that acts like a button has to say so and be reachable: Radix's
@@ -146,12 +153,12 @@ export function MentionPillRenderer({ authorId, children }: MentionPillRendererP
         kind: author.kind,
         displayName: author.displayName,
         handle: author.handle ?? undefined,
-        color: author.color,
-        emoji: author.emoji,
-        // The card and the message gutter draw the same person, so they read
-        // the same render cache. Omitting this is how a photo would show beside
+        color: face.color,
+        emoji: face.emoji,
+        // The card and the message gutter draw the same person, so they climb
+        // the same ladder. Omitting this is how a photo would show beside
         // somebody's message and an emoji inside the card that describes them.
-        imageUrl: author.imageUrl,
+        imageUrl: face.imageUrl,
         origin: author.origin,
         // The card draws a chip per fact it is handed and nothing at all for
         // one it is not, so an agent whose manifest never resolved reads as
@@ -165,6 +172,10 @@ export function MentionPillRenderer({ authorId, children }: MentionPillRendererP
         kind={author.kind}
         label={author.displayName}
         handle={author.handle ?? undefined}
+        // The raw cache on purpose, where the CARD above takes the resolved
+        // face. A pill tints a run of text rather than drawing a face, and it
+        // falls to `currentColor` for everyone today; giving it a fleet colour
+        // is its own decision about inline text, tracked separately.
         color={author.color}
         origin={author.origin}
         resolved

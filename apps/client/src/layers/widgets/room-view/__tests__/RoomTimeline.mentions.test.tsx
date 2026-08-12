@@ -74,6 +74,12 @@ afterEach(cleanup);
 /** Where each agent lives — the path both sides derive its handle from. */
 const BO_PATH = '/w/bo';
 const GONE_PATH = '/w/gone';
+/**
+ * A manifest always carries its own id, and the join reads it twice: it is the
+ * roster id a pill's click travels under, and the seed the agent's face is
+ * hashed from. A fixture without one is not a manifest.
+ */
+const BO_MANIFEST_ID = '01JBOMANIFESTULID';
 
 function agentMember(id: string, displayName: string, path: string): RoomRosterEntry {
   return {
@@ -214,9 +220,9 @@ describe('mention hover card — agent details', () => {
     const user = userEvent.setup();
     renderTimeline({
       listMeshAgentPaths: vi.fn().mockResolvedValue({ agents: [{ projectPath: BO_PATH }] }),
-      resolveAgents: vi
-        .fn()
-        .mockResolvedValue({ [BO_PATH]: { runtime: 'claude-code', model: 'opus' } }),
+      resolveAgents: vi.fn().mockResolvedValue({
+        [BO_PATH]: { id: BO_MANIFEST_ID, runtime: 'claude-code', model: 'opus' },
+      }),
     });
 
     // The pill is drawn from the roster immediately and the fleet answers
@@ -239,7 +245,9 @@ describe('mention hover card — agent details', () => {
     const user = userEvent.setup();
     renderTimeline({
       listMeshAgentPaths: vi.fn().mockResolvedValue({ agents: [{ projectPath: BO_PATH }] }),
-      resolveAgents: vi.fn().mockResolvedValue({ [BO_PATH]: { runtime: 'codex' } }),
+      resolveAgents: vi
+        .fn()
+        .mockResolvedValue({ [BO_PATH]: { id: BO_MANIFEST_ID, runtime: 'codex' } }),
     });
 
     await openCardOn(user, 'Bo');
@@ -263,7 +271,7 @@ describe('mention hover card — agent details', () => {
         .fn()
         .mockResolvedValue({ agents: [{ projectPath: BO_PATH }, { projectPath: GONE_PATH }] }),
       resolveAgents: vi.fn().mockResolvedValue({
-        [BO_PATH]: { runtime: 'claude-code', model: 'opus' },
+        [BO_PATH]: { id: BO_MANIFEST_ID, runtime: 'claude-code', model: 'opus' },
         [GONE_PATH]: null,
       }),
     });

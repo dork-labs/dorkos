@@ -3,6 +3,7 @@ import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { render, cleanup } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import type { AuthorRef, RoomRosterEntry } from '@dorkos/shared/room-schemas';
+import type { AgentVisual } from '@/layers/shared/lib';
 import { MemberList } from '@/layers/entities/room';
 import { RoomMemberRow, type RoomMemberRowProps } from '../ui/RoomMemberRow';
 
@@ -20,14 +21,13 @@ import { RoomMemberRow, type RoomMemberRowProps } from '../ui/RoomMemberRow';
  * resolver, and it fails against every version of this code where each surface
  * decided for itself.
  *
- * **What it deliberately cannot see:** every fixture here renders the row with
- * `visual: null`, so the sheet's fleet override is never exercised and the one
- * divergence that survives this change is out of frame — an agent whose
- * manifest colour reached the fleet but not its author record still paints one
- * colour in the sheet and another in the masthead, because only the sheet can
- * reach the fleet. Closing that is a separate design decision about whether an
- * entity component may accept a fleet-resolved face; it is tracked, and this
- * file will need a case of its own when it lands.
+ * **The fleet override is in frame too, and that is the newer half.** Every
+ * fixture used to render the row with `visual: null`, which left the divergence
+ * that mattered most out of the comparison: an agent whose face the fleet could
+ * resolve painted it in the sheet and a bare letter in the masthead, because
+ * only the sheet could reach the fleet. `MemberList` now takes the same faces as
+ * a map (DOR-1002), so both surfaces are handed the same answer — and dropping
+ * the map on either side reddens this file.
  */
 
 /** jsdom has no `matchMedia`, and the row asks for one on every render. */
@@ -123,12 +123,12 @@ function faceOf(root: HTMLElement): Face {
 }
 
 /** The member sheet's line, drawn for one member and read back. */
-function rowFace(entry: RoomRosterEntry): Face {
+function rowFace(entry: RoomRosterEntry, visual: AgentVisual | null = null): Face {
   const props: RoomMemberRowProps = {
     member: entry,
     roomKind: 'channel',
     isReader: false,
-    visual: null,
+    visual,
     presence: null,
     lastSpokeAt: null,
     expanded: false,
@@ -151,15 +151,34 @@ function rowFace(entry: RoomRosterEntry): Face {
   return face;
 }
 
-/** The masthead's roster, drawn for the same member and read back. */
-function listFace(entry: RoomRosterEntry): Face {
+/**
+ * The masthead's roster, drawn for the same member and read back.
+ *
+ * The fleet arrives as the map the real caller builds — keyed by `agentRef`,
+ * never by the author id — so a fixture that got the key wrong shows up here as
+ * a missing override rather than quietly passing.
+ */
+function listFace(entry: RoomRosterEntry, visual: AgentVisual | null = null): Face {
+  const ref = entry.author.agentRef;
+  const facesByRef =
+    visual !== null && ref !== undefined
+      ? new Map([[ref, visual]])
+      : new Map<string, AgentVisual>();
   const { container } = render(
-    <MemberList members={[entry]} onClick={() => {}} label="Members of #general" />
+    <MemberList
+      members={[entry]}
+      onClick={() => {}}
+      label="Members of #general"
+      facesByRef={facesByRef}
+    />
   );
   const face = faceOf(container);
   cleanup();
   return face;
 }
+
+/** The face an agent's own manifest would answer with. */
+const FLEET_FACE: AgentVisual = { color: '#15803d', emoji: '🦊' };
 
 describe('the roster reads the same in the sheet and in the masthead', () => {
   it('draws an agent identically in both', () => {
@@ -239,5 +258,105 @@ describe('the roster reads the same in the sheet and in the masthead', () => {
 
     expect(row.paint).not.toBe('');
     expect(row.paint).toBe(listFace(stranger).paint);
+  });
+
+  it('draws a fleet-resolved agent identically in both, and prefers its manifest face', () => {
+    // The divergence this file used to be blind to, and the reason DOR-1002
+    // exists. The author row carries NOTHING — the common case, since the
+    // server only caches a face for an agent that stored one — so until the
+    // masthead could be handed the fleet's answer it drew a letter on a hashed
+    // colour while the sheet beside it drew the agent's real face.
+    const agent = member({
+      kind: 'agent',
+      id: 'author-fox',
+      displayName: 'Fox',
+      agentRef: 'ref-fox',
+    });
+    const row = rowFace(agent, FLEET_FACE);
+
+    expect(row).toEqual(listFace(agent, FLEET_FACE));
+    expect(row.glyph).toBe(FLEET_FACE.emoji);
+    // jsdom hands back the computed form, so the colour is compared as the
+    // browser resolved it rather than as the fixture spelled it.
+    expect(row.paint).toContain('rgb(21, 128, 61)');
+    // And the override really is what moved it: the same member with the fleet
+    // silent falls back to the letter and a different colour entirely.
+    expect(listFace(agent).glyph).toBe('F');
+    expect(listFace(agent).paint).not.toBe(row.paint);
+  });
+
+  it('lets the fleet outrank a stale face cached on the author row', () => {
+    // Precedence, not merely presence. An agent that changed its icon keeps the
+    // old one on its author row until the server catches up, and the manifest is
+    // the fresher source — so a surface reading only the cache would draw
+    // yesterday's face beside one drawing today's.
+    const stale = member({
+      kind: 'agent',
+      id: 'author-fox',
+      displayName: 'Fox',
+      agentRef: 'ref-fox',
+      emoji: '🐙',
+      color: '#7c3aed',
+    });
+    const row = rowFace(stale, FLEET_FACE);
+
+    expect(row).toEqual(listFace(stale, FLEET_FACE));
+    expect(row.glyph).toBe(FLEET_FACE.emoji);
+    expect(listFace(stale).glyph).toBe('🐙');
+  });
+
+  it('keeps the honest letter for an agent the fleet could not resolve', () => {
+    // The rung the ladder deliberately stops at. A map with no answer for this
+    // agent must leave both surfaces where they were — never an emoji hashed
+    // from an id that matches nothing else on screen.
+    const unknown = member({
+      kind: 'agent',
+      id: 'author-nobody',
+      displayName: 'Nobody',
+      agentRef: 'ref-nobody',
+    });
+    const row = rowFace(unknown);
+
+    expect(row).toEqual(listFace(unknown));
+    expect(row.glyph).toBe('N');
+  });
+
+  it('joins on agentRef only — a face filed under an author id reaches nobody', () => {
+    // The join KEY, which the cases above cannot see: they seed the map
+    // correctly, so a lookup that quietly fell back to the author id would pass
+    // every one of them. This seeds an agent's face under the wrong key and
+    // requires the disc not to move — the two ids a room holds are different
+    // ULIDs, and using the author one would draw a face no other surface draws.
+    const agent = member({
+      kind: 'agent',
+      id: 'author-fox',
+      displayName: 'Fox',
+      agentRef: 'ref-fox',
+    });
+    const misfiled = new Map([[agent.author.id, FLEET_FACE]]);
+    const { container } = render(
+      <MemberList members={[agent]} onClick={() => {}} label="m" facesByRef={misfiled} />
+    );
+    const drawn = faceOf(container);
+    cleanup();
+
+    expect(drawn).toEqual(rowFace(agent));
+    expect(drawn.glyph).toBe('F');
+  });
+
+  it('never reaches a person at all — they have no handle to be filed under', () => {
+    // The other end of the same rule. A person has no `agentRef`, so the join
+    // cannot reach them however the map is keyed: an invented emoji beside
+    // somebody's name claims a face nobody chose.
+    const person = member({ kind: 'human', id: 'author-dorian', displayName: 'Dorian' });
+    const seeded = new Map([['ref-fox', FLEET_FACE]]);
+    const { container } = render(
+      <MemberList members={[person]} onClick={() => {}} label="m" facesByRef={seeded} />
+    );
+    const drawn = faceOf(container);
+    cleanup();
+
+    expect(drawn).toEqual(rowFace(person));
+    expect(drawn.glyph).toBe('D');
   });
 });

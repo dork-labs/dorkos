@@ -8,7 +8,8 @@
 import { describe, it, expect } from 'vitest';
 import { agentAuthorRef } from '@dorkos/shared/room-schemas';
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
-import { agentInfoByRef } from '../lib/agent-details';
+import { hashToEmoji, hashToHslColor } from '@/layers/shared/lib';
+import { agentFacesByRef, agentInfoByRef } from '../lib/agent-details';
 
 /** A manifest with only the fields this join reads. */
 function manifest(runtime: string, model?: string, id = '01JMANIFESTULID'): AgentManifest {
@@ -23,6 +24,7 @@ describe('agentInfoByRef', () => {
     // the server, derived again here, and the two must meet.
     expect(info.get(agentAuthorRef('/w/bo'))).toEqual({
       manifestId: '01JMANIFESTULID',
+      visual: { color: hashToHslColor('01JMANIFESTULID'), emoji: hashToEmoji('01JMANIFESTULID') },
       runtime: 'Claude Code',
       model: 'opus',
     });
@@ -46,7 +48,11 @@ describe('agentInfoByRef', () => {
     const info = agentInfoByRef(['/w/bo'], { '/w/bo': manifest('claude-code') });
 
     const entry = info.get(agentAuthorRef('/w/bo'));
-    expect(entry).toEqual({ manifestId: '01JMANIFESTULID', runtime: 'Claude Code' });
+    expect(entry).toEqual({
+      manifestId: '01JMANIFESTULID',
+      visual: { color: hashToHslColor('01JMANIFESTULID'), emoji: hashToEmoji('01JMANIFESTULID') },
+      runtime: 'Claude Code',
+    });
     expect(entry).not.toHaveProperty('model');
   });
 
@@ -65,5 +71,52 @@ describe('agentInfoByRef', () => {
 
   it('gives no entries when nothing resolved', () => {
     expect(agentInfoByRef(['/w/bo'], {}).size).toBe(0);
+  });
+});
+
+describe('the face the join resolves', () => {
+  it('hashes an agent with no stored icon off its MANIFEST id, as the sidebar does', () => {
+    // The whole reason a room's faces come through this join. Hashing anything
+    // else — the author row the room actually holds, or the directory — lands
+    // on a different emoji than the sidebar draws for the same agent, which is
+    // the bug DOR-1002 closes. Pinned against `resolveAgentVisual`'s own
+    // primitives rather than a literal emoji, so this asserts WHICH SEED is
+    // hashed and stays true if the palette is ever retuned.
+    const info = agentInfoByRef(['/w/bo'], { '/w/bo': manifest('claude-code', 'opus') });
+
+    expect(info.get(agentAuthorRef('/w/bo'))?.visual).toEqual({
+      color: hashToHslColor('01JMANIFESTULID'),
+      emoji: hashToEmoji('01JMANIFESTULID'),
+    });
+    // Not the path, and not the author id — the two seeds that were available
+    // and would both have been wrong.
+    expect(info.get(agentAuthorRef('/w/bo'))?.visual.emoji).not.toBe(hashToEmoji('/w/bo'));
+  });
+
+  it('prefers the icon and colour an agent actually chose over the hash', () => {
+    const chosen = {
+      id: '01JMANIFESTULID',
+      runtime: 'claude-code',
+      icon: '🐙',
+      color: '#7c3aed',
+    } as unknown as AgentManifest;
+    const info = agentInfoByRef(['/w/bo'], { '/w/bo': chosen });
+
+    expect(info.get(agentAuthorRef('/w/bo'))?.visual).toEqual({ color: '#7c3aed', emoji: '🐙' });
+  });
+
+  it('projects to faces keyed the same way, and drops nothing else in', () => {
+    const info = agentInfoByRef(['/w/bo', '/w/gone'], {
+      '/w/bo': manifest('claude-code', 'opus'),
+      '/w/gone': null,
+    });
+
+    const faces = agentFacesByRef(info);
+
+    expect([...faces.keys()]).toEqual([agentAuthorRef('/w/bo')]);
+    expect(faces.get(agentAuthorRef('/w/bo'))).toEqual(info.get(agentAuthorRef('/w/bo'))?.visual);
+    // A face is a face: an agent the fleet could not resolve has none, so
+    // nothing downstream can be handed an override for it.
+    expect(faces.has(agentAuthorRef('/w/gone'))).toBe(false);
   });
 });

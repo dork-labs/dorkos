@@ -17,7 +17,7 @@
  * @module entities/room/lib/identity-mark
  */
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
-import type { RoomSummary } from '@dorkos/shared/room-schemas';
+import type { RoomRosterEntry, RoomSummary } from '@dorkos/shared/room-schemas';
 import { resolveAgentVisual, type AgentVisual } from '@/layers/shared/lib';
 
 /**
@@ -91,6 +91,45 @@ export function roomIdentityMark({
   if (visuals.length === 0) return { kind: 'sigil' };
   if (visuals.length === 1) return { kind: 'identity', visual: visuals[0]! };
   return { kind: 'stack', visuals };
+}
+
+/**
+ * The faces of the agents on a roster, in roster order, for a caller that has
+ * already resolved the fleet into faces keyed by `agentRef`.
+ *
+ * **The same rule as {@link roomIdentityMark}, entered from the other end.**
+ * That function is for a caller holding raw manifests (the sidebar, which reads
+ * the fleet to draw every row); this is for one holding a room already open and
+ * a resolved faces map (the masthead, and the member sheet's own `roomVisuals`).
+ * Both join participants to the fleet on `agentRef` — never a display name,
+ * never the author id.
+ *
+ * They part company on the agent the fleet could NOT name. This one drops it,
+ * so a room falls back to its own letter rather than showing a face nothing
+ * else on screen shows. {@link roomIdentityMark} hashes the agent's DIRECTORY
+ * instead (`resolveAgentVisual({ id: path })`), which lands on a face the
+ * sidebar's own agent row does not draw — a pre-existing divergence, tracked
+ * separately, and deliberately not changed here.
+ *
+ * It does not check the room's kind, because `RoomAvatar` already does: only a
+ * direct message draws faces, and a channel ignores whatever it is handed. One
+ * component deciding that is why the masthead and the sidebar cannot disagree
+ * about which rooms wear a face.
+ *
+ * @param members - The room's roster, as an open room carries it.
+ * @param facesByRef - Faces keyed by `agentRef`, resolved against the fleet.
+ */
+export function rosterAgentFaces(
+  members: readonly RoomRosterEntry[],
+  facesByRef: ReadonlyMap<string, AgentVisual>
+): AgentVisual[] {
+  const faces: AgentVisual[] = [];
+  for (const { author } of members) {
+    if (author.kind !== 'agent' || author.agentRef === undefined) continue;
+    const face = facesByRef.get(author.agentRef);
+    if (face !== undefined) faces.push(face);
+  }
+  return faces;
 }
 
 /**

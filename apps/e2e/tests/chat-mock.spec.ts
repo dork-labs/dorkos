@@ -335,7 +335,14 @@ test.describe('Runtime UX — multi-runtime test server', () => {
     await expect(statusLine.getByRole('button', { name: 'test-mode-b' })).toBeVisible();
 
     await chatPage.sendMessage('Hello');
-    await expect(page.getByText('Echo: Hello')).toBeVisible({ timeout: 10_000 });
+    // Scoped to the transcript: the echo is in the DOM twice while the turn is
+    // live — the message and the screen-reader announcer mirroring it (see
+    // GOTCHAS). Preventive per DOR-1184: this echo has no sentence terminator
+    // today, so it doesn't race the announcer's immediate-sentence path, but
+    // that's a fact about the fixture text, not a guarantee.
+    await expect(page.getByTestId('transcript-feed').getByText('Echo: Hello')).toBeVisible({
+      timeout: 10_000,
+    });
 
     // The first send carried the hint — the session is bound server-side.
     const sessionId = await chatPage.getSessionId();
@@ -358,7 +365,10 @@ test.describe('Runtime UX — multi-runtime test server', () => {
     const chatPage = new ChatPage(page);
     await chatPage.goto(undefined, { dir: agentDir });
     await chatPage.sendMessage('Default runtime session');
-    await expect(page.getByText('Echo: Default runtime session')).toBeVisible({
+    // Scoped to the transcript — see GOTCHAS (announcer duplicates the echo).
+    await expect(
+      page.getByTestId('transcript-feed').getByText('Echo: Default runtime session')
+    ).toBeVisible({
       timeout: 10_000,
     });
 
@@ -378,7 +388,10 @@ test.describe('Runtime UX — multi-runtime test server', () => {
     // creating a new one.
     await chatPage.goto(crypto.randomUUID(), { dir: agentDir, runtime: 'test-mode-b' });
     await chatPage.sendMessage('Secondary runtime session');
-    await expect(page.getByText('Echo: Secondary runtime session')).toBeVisible({
+    // Scoped to the transcript — see GOTCHAS (announcer duplicates the echo).
+    await expect(
+      page.getByTestId('transcript-feed').getByText('Echo: Secondary runtime session')
+    ).toBeVisible({
       timeout: 10_000,
     });
 
@@ -419,7 +432,10 @@ test.describe('Runtime UX — multi-runtime test server', () => {
     // replayed turn succeeds.
     await request.post(`${API_URL}/api/test/scenario`, { data: { name: 'simple-text' } });
     await retry.click();
-    await expect(page.getByText('Echo: please fail')).toBeVisible({ timeout: 10_000 });
+    // Scoped to the transcript — see GOTCHAS (announcer duplicates the echo).
+    await expect(page.getByTestId('transcript-feed').getByText('Echo: please fail')).toBeVisible({
+      timeout: 10_000,
+    });
   });
 });
 
@@ -504,7 +520,10 @@ test.describe('Fleet context health — per-row gauge + honest unknown', () => {
     const chatPage = new ChatPage(page);
     await chatPage.goto(undefined, { dir: agentDir });
     await chatPage.sendMessage('Hello');
-    await expect(page.getByText('Echo: Hello')).toBeVisible({ timeout: 10_000 });
+    // Scoped to the transcript — see GOTCHAS (announcer duplicates the echo).
+    await expect(page.getByTestId('transcript-feed').getByText('Echo: Hello')).toBeVisible({
+      timeout: 10_000,
+    });
 
     await new BasePage(page).ensureSidebarOpen();
 
