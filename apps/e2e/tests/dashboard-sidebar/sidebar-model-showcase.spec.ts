@@ -730,7 +730,15 @@ test.describe('Sidebar model showcase @smoke', () => {
         };
         const luminance = ([r, g, b]: number[]) =>
           0.2126 * channel(r!) + 0.7152 * channel(g!) + 0.0722 * channel(b!);
-        /** The first ancestor that actually paints something behind this one. */
+        /**
+         * The first ancestor that actually paints something behind this one.
+         *
+         * **Exact while nothing translucent sits between**, which is true of
+         * every count on this page: the button is transparent and the panel
+         * behind it is solid. An interposed translucent layer would need
+         * compositing in turn, and this would then read slightly optimistic —
+         * so a new one is a reason to extend this, not to trust it.
+         */
         const backdrop = (node: Element): [number, number, number, number] => {
           for (let el: Element | null = node; el !== null; el = el.parentElement) {
             const painted = pixel(getComputedStyle(el).backgroundColor);

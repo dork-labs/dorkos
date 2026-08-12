@@ -5,10 +5,10 @@
       "specFile": "tests/dashboard-sidebar/sidebar-model-showcase.spec.ts",
       "feature": "dashboard-sidebar",
       "description": "renders all four journeys, and asks the server for nothing, draws the zones each journey earns, and never an empty box, caps Heads up at three, and overflows only when there is more than three, says why every row it drew is there, meets 4.5:1 on the zone tint in the light theme, meets 4.5:1 on the zone tint in the dark theme",
-      "lastRun": "2026-08-12T00:22:43.311Z",
-      "lastStatus": "failed",
-      "runCount": 26,
-      "passCount": 5,
+      "lastRun": "2026-08-12T00:46:15.246Z",
+      "lastStatus": "passed",
+      "runCount": 27,
+      "passCount": 6,
       "failCount": 21,
       "relatedCode": [
         "apps/client/src/dev/showcases/SidebarModelShowcases.tsx",
@@ -236,10 +236,10 @@
       "specFile": "tests/rooms/room-entry-actions.spec.ts",
       "feature": "rooms",
       "description": "the toolbar appears on hover and offers what can be done to the message, the toolbar encloses the buttons it is drawn around, the toolbar straddles a message, and covers no word of one at rest, the toolbar rides the viewport edge on a message taller than the window, right-click offers the same actions as the toolbar, the keyboard alone reaches the actions and lands in the composer, a room costs one Tab per message, not one per action, a message is announced before the things you can do to it, Page Down crosses the room a message at a time, whatever each one carries, Page Down crosses the thread, and Ctrl+End lands in the thread’s own composer, a reply lands in the panel beside the room, and a reply to a reply joins it, a reply row opens the thread it counts, and Escape closes it again, a reply that arrives after you last looked wears the accent, a thread has an address, and a reload lands back on it, a long press opens the drawer, and a short one or a drag does not, the thread takes the whole screen, and Back returns to the room",
-      "lastRun": "2026-08-12T00:23:18.173Z",
+      "lastRun": "2026-08-12T00:46:51.156Z",
       "lastStatus": "passed",
-      "runCount": 56,
-      "passCount": 25,
+      "runCount": 57,
+      "passCount": 26,
       "failCount": 31,
       "relatedCode": [],
       "lastModified": ""
@@ -606,10 +606,10 @@
       "specFile": "tests/dashboard-sidebar/mobile-touch.spec.ts",
       "feature": "dashboard-sidebar",
       "description": "long-press on a row opens the same menu the \"⋮\" opens, a scroll that begins on a row never opens a menu, every row and every control a thumb can reach is at least 40px, You reads as a nav with names on it, not a row of unlabelled glyphs, the phone cockpit and its long-press sheet in the light theme, the phone cockpit and its long-press sheet in the dark theme",
-      "lastRun": "2026-08-12T00:17:41.849Z",
+      "lastRun": "2026-08-12T00:46:15.246Z",
       "lastStatus": "passed",
-      "runCount": 15,
-      "passCount": 12,
+      "runCount": 16,
+      "passCount": 13,
       "failCount": 3,
       "relatedCode": [],
       "lastModified": ""
@@ -640,24 +640,6 @@
     }
   },
   "runHistory": [
-    {
-      "id": "2026-07-31T13-06-57",
-      "timestamp": "2026-07-31T13:06:57.417Z",
-      "total": 17,
-      "passed": 17,
-      "failed": 0,
-      "skipped": 0,
-      "duration": 67274
-    },
-    {
-      "id": "2026-08-03T22-33-07",
-      "timestamp": "2026-08-03T22:33:07.175Z",
-      "total": 5,
-      "passed": 2,
-      "failed": 0,
-      "skipped": 2,
-      "duration": 117589
-    },
     {
       "id": "2026-08-03T22-35-06",
       "timestamp": "2026-08-03T22:35:06.726Z",
@@ -1539,6 +1521,24 @@
       "failed": 0,
       "skipped": 0,
       "duration": 22503
+    },
+    {
+      "id": "2026-08-12T00-46-15",
+      "timestamp": "2026-08-12T00:46:15.246Z",
+      "total": 16,
+      "passed": 16,
+      "failed": 0,
+      "skipped": 0,
+      "duration": 119828
+    },
+    {
+      "id": "2026-08-12T00-46-51",
+      "timestamp": "2026-08-12T00:46:51.156Z",
+      "total": 1,
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "duration": 26413
     }
   ]
 }

@@ -314,23 +314,35 @@ test.describe('Touch — 390×844 @smoke', () => {
         // The sheet's own surface is what every row sits on; the rows are
         // transparent over it, which is why the background is read once here
         // rather than per row.
-        const surface = luminance(pixel(getComputedStyle(root).backgroundColor));
-        return [...root.querySelectorAll('[role="menuitem"],[role="menuitemradio"]')].map(
-          (node) => {
-            const text = luminance(pixel(getComputedStyle(node).color));
-            const ratio = (Math.max(text, surface) + 0.05) / (Math.min(text, surface) + 0.05);
-            return {
-              label: (node.textContent ?? '').trim().slice(0, 30),
-              ratio: Math.round(ratio * 100) / 100,
-            };
-          }
-        );
+        //
+        // **Its opacity is reported, not assumed.** A ratio computed against a
+        // translucent backdrop is against the wrong colour and reads HIGHER
+        // than the truth, so a surface that ever went see-through would quietly
+        // clear this bar rather than fail it.
+        const surfacePixel = pixel(getComputedStyle(root).backgroundColor);
+        const surface = luminance(surfacePixel);
+        return {
+          surfaceOpaque: surfacePixel[3] === 1,
+          rows: [...root.querySelectorAll('[role="menuitem"],[role="menuitemradio"]')].map(
+            (node) => {
+              const text = luminance(pixel(getComputedStyle(node).color));
+              const ratio = (Math.max(text, surface) + 0.05) / (Math.min(text, surface) + 0.05);
+              return {
+                label: (node.textContent ?? '').trim().slice(0, 30),
+                ratio: Math.round(ratio * 100) / 100,
+              };
+            }
+          ),
+        };
       });
       // Observable half: there ARE rows, so the bar below cannot be cleared by
       // a sheet that drew none.
-      expect(rowContrast.length).toBeGreaterThan(0);
+      expect(rowContrast.rows.length).toBeGreaterThan(0);
+      // …and the colour they were measured against is really the one behind
+      // them, which is what makes the ratios below complete answers.
+      expect(rowContrast.surfaceOpaque, 'the sheet surface is translucent').toBe(true);
       expect(
-        rowContrast.filter((row) => row.ratio < 4.5),
+        rowContrast.rows.filter((row) => row.ratio < 4.5),
         `a long-press sheet row is below 4.5:1 in the ${theme} theme`
       ).toEqual([]);
 
