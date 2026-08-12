@@ -680,3 +680,58 @@ describe('SessionPump — capabilities and the demux seam', () => {
     expect(h.crashes).toEqual([]);
   });
 });
+
+describe('SessionPump — steer (P4 deliverIntoTurn, task 4.1)', () => {
+  // Purpose: a steer joins the running turn by pushing into the SAME held stream
+  // the opening message rode, behind it and in order, without moving the state
+  // machine — the pump stays RUNNING.
+  it('pushes into the open turn’s stream, behind the opening message, staying RUNNING', async () => {
+    const h = harness();
+    await warmed(h);
+    await h.pump.dispatch([{ content: 'do the thing', messageId: 'm-open' }]);
+
+    expect(h.pump.steer('also check the tests', 'm-steer')).toBe('delivered');
+    // Still RUNNING: a steer is not a second dispatch and opens no new turn.
+    expect(h.pump.state).toBe('running');
+
+    // Both messages reached the CLI's input stream, in order, each keeping its
+    // own correlation id — which is what lets the coalesced result be matched.
+    expect(await h.readStamped()).toEqual([
+      { content: 'do the thing', uuid: 'm-open' },
+      { content: 'also check the tests', uuid: 'm-steer' },
+    ]);
+  });
+
+  // Purpose: with no turn open there is nothing to join. Reported, never thrown,
+  // so the server degrades rather than failing the person's message.
+  it('reports no-open-turn on a WARM session, without throwing', async () => {
+    const h = harness();
+    await warmed(h);
+    expect(h.pump.state).toBe('warm');
+
+    expect(h.pump.steer('too early', 'm-steer')).toBe('no-open-turn');
+    expect(await h.readPrompt()).toEqual([]);
+  });
+
+  // Purpose: the same on a COLD pump — no process, no turn, and still no throw.
+  it('reports no-open-turn on a COLD session', () => {
+    const h = harness();
+    expect(h.pump.state).toBe('cold');
+    expect(h.pump.steer('nobody home', 'm-steer')).toBe('no-open-turn');
+  });
+
+  // Purpose: the amnesiac seam — the consumer can abandon the input stream
+  // without the pump being told, so `push` reporting the stream gone must become
+  // a `stream-closed` receipt rather than a silent success into nothing.
+  it('reports stream-closed when the input stream was abandoned under a live turn', async () => {
+    const h = harness();
+    await warmed(h);
+    await h.pump.dispatch([{ content: 'do the thing', messageId: 'm-open' }]);
+    expect(h.pump.state).toBe('running');
+
+    // The consumer (the SDK subprocess) walks away from the held prompt.
+    await h.launches[0]!.prompt.return?.(undefined);
+
+    expect(h.pump.steer('too late', 'm-steer')).toBe('stream-closed');
+  });
+});

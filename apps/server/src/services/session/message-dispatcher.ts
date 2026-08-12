@@ -85,7 +85,11 @@
  *
  * @module services/session/message-dispatcher
  */
-import type { AgentRuntime, RuntimeCapabilities } from '@dorkos/shared/agent-runtime';
+import type {
+  AgentRuntime,
+  RuntimeCapabilities,
+  RuntimeDeliveryResult,
+} from '@dorkos/shared/agent-runtime';
 import type {
   MessageDeliveryOutcome,
   MessageDisposition,
@@ -93,7 +97,11 @@ import type {
 } from '@dorkos/shared/schemas';
 import type { SessionEvent } from '@dorkos/shared/session-stream';
 import type { SessionSettings } from '@dorkos/shared/types';
-import type { ClientContext, RoomContextData } from '@dorkos/shared/additional-context';
+import type {
+  AdditionalContext,
+  ClientContext,
+  RoomContextData,
+} from '@dorkos/shared/additional-context';
 import type { RuntimeCommandIntentId } from '@dorkos/shared/command-intents';
 import { COMMAND_INTENT_QUEUE_WAIT_MS } from '@dorkos/shared/command-intents';
 import { newDispatchId } from '@dorkos/shared/dispatch-id';
@@ -909,6 +917,96 @@ export async function dispatchCommandIntent(
     clearIfOurs();
     throw err;
   }
+}
+
+/** Inputs for {@link deliverSteer}. */
+export interface DeliverSteerOpts {
+  /** The session to steer; either id a caller might hold. */
+  sessionId: string;
+  /** The client asking to steer — the identity the authorization gate turns on. */
+  clientId: string;
+  /** The person's words, passed through pristine. */
+  content: string;
+  /** The server-minted correlation id for this steered message. */
+  messageId: string;
+  /** The neutral context bag, assembled server-side; rendered out of band. */
+  additionalContext?: AdditionalContext;
+  /** The runtime this session resolves to. */
+  runtime: AgentRuntime;
+}
+
+/**
+ * What a steer did, plus whether the caller was allowed to make it.
+ *
+ * `authorized: false` is distinct from an ordinary `delivered: false`: the
+ * steer was refused before the runtime was ever asked, because the caller does
+ * not own the turn. The degradation ladder (task 4.4) turns an unauthorized or
+ * undelivered steer into a queued message; this is the receipt it reads.
+ */
+export interface SteerDeliveryResult extends RuntimeDeliveryResult {
+  /** True when the caller was entitled to steer this session's live turn. */
+  authorized: boolean;
+}
+
+/**
+ * Steer a message into a session's live turn, through the same ingress and the
+ * same authorization a turn passes (spec `persistent-session-runtime` §2.3,
+ * task 4.1).
+ *
+ * **A steer is a WRITE.** A live turn is owned by exactly one client — the one
+ * holding its write-lock — and injecting a message into that turn is as much a
+ * write as starting it. So the authorization is the identical gate `sendMessage`
+ * passes, asked of the identical authority: the runtime's real write-lock, via
+ * {@link AgentRuntime.isLocked}. It is deliberately NOT the dispatcher's
+ * {@link inFlight} mirror, which is lossy — a budget-exhausted launch runs its
+ * turn holding the real lock WITHOUT ever claiming `inFlight`
+ * ({@link launchDispatch} sets it only when `!budgetExhausted`), so `inFlight`
+ * can be empty while a steerable turn is live, and gating on it would let ANY
+ * client — including one that could not send right now — steer that turn.
+ * `isLocked(key, clientId)` closes that hole: true only when a DIFFERENT client
+ * holds the live lock, false for the owner, and false when no turn is open (the
+ * lock is free and every client may send, so the runtime just reports
+ * `no-open-turn`).
+ *
+ * Held under the dispatch mutex so the lock check and the delivery cannot
+ * straddle a turn ending or a reap: the same mutex every turn boundary and the
+ * warm-process reaper take, so a steer racing either simply does not interleave.
+ *
+ * This is the ONE server path to a runtime's `deliverIntoTurn`, exactly as
+ * {@link dispatchMessage} is the one path to `sendMessage` — the single-ingress
+ * audit (`dispatcher-single-ingress.test.ts`) holds it to that, so no caller
+ * can reach the write around this gate.
+ *
+ * @param opts - The session, the steering client, the message, and the runtime
+ * @returns Whether the caller was authorized, whether the steer was delivered,
+ *   and why not when it was not
+ */
+export async function deliverSteer(opts: DeliverSteerOpts): Promise<SteerDeliveryResult> {
+  const { sessionId, clientId, runtime } = opts;
+  // The lock is keyed by the canonical id when one is known — the same `turnKey`
+  // `triggerTurn` acquires it under — so ask under that id, not the request uuid.
+  const lockKey = runtime.getInternalSessionId(sessionId) ?? sessionId;
+  const sessionKey = primaryOf(lockKey);
+  return withDispatchMutex(sessionKey, async () => {
+    // A DIFFERENT client holds the live write-lock: this client could not send
+    // now, so it may not steer now. The only refusal that is authorization's.
+    if (runtime.isLocked(lockKey, clientId)) {
+      return { authorized: false, delivered: false };
+    }
+    // A runtime that declares neither steer nor stage simply omits the method;
+    // the ladder degrades around a missing implementation rather than failing.
+    if (runtime.deliverIntoTurn === undefined) {
+      return { authorized: true, delivered: false, reason: 'unsupported' };
+    }
+    const result = await runtime.deliverIntoTurn(sessionId, opts.content, {
+      mode: 'steer',
+      messageId: opts.messageId,
+      ...(opts.additionalContext !== undefined
+        ? { additionalContext: opts.additionalContext }
+        : {}),
+    });
+    return { authorized: true, ...result };
+  });
 }
 
 /**

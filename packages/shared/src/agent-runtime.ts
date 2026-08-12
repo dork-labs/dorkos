@@ -694,6 +694,56 @@ export interface CommandIntentOpts extends MessageOpts {
 }
 
 /**
+ * The two ways a message can reach a session WITHOUT opening a turn of its own
+ * (spec `persistent-session-runtime` §2.3). Both are non-turn-opening by
+ * definition — a `queue` disposition opens a turn and so is not here.
+ *
+ * - `'steer'` reaches a turn that is ALREADY running and joins it.
+ * - `'stage'` reaches the transcript without provoking any turn at all.
+ */
+export type DeliverMode = 'steer' | 'stage';
+
+/** Inputs for {@link AgentRuntime.deliverIntoTurn}. */
+export interface DeliverIntoTurnOpts {
+  /** `'steer'` reaches the live turn; `'stage'` reaches the transcript only. */
+  mode: DeliverMode;
+  /**
+   * The server-minted correlation id for this delivery (see
+   * {@link MessageOpts.messageId}). A steer joins a turn whose `result` is
+   * matched back by id, so the id is how the runtime tells the steered message
+   * apart from the one that opened the turn.
+   */
+  messageId: string;
+  /**
+   * The neutral additional-context bag, assembled server-side EXACTLY as for a
+   * turn (ADR-0273). The adapter renders it out of band; it never mutates
+   * `content`, and injected context never renders as user-authored text.
+   */
+  additionalContext?: AdditionalContext;
+}
+
+/**
+ * The receipt {@link AgentRuntime.deliverIntoTurn} returns — what the runtime
+ * did, never a stream. A steer's resulting events surface on the ALREADY-open
+ * turn's stream, which is why this is a receipt and not a generator (see the
+ * method's own docs, trap (a)).
+ */
+export interface RuntimeDeliveryResult {
+  /** True when the content reached the backend. */
+  delivered: boolean;
+  /**
+   * Why not, present only when `delivered` is false.
+   *
+   * - `'no-open-turn'` — a steer arrived with no turn open to join (either none
+   *   was ever open, or it closed between acceptance and delivery).
+   * - `'stream-closed'` — the process's input stream had already ended, so
+   *   nothing could be pushed into it.
+   * - `'unsupported'` — this runtime does not implement the requested mode.
+   */
+  reason?: 'no-open-turn' | 'stream-closed' | 'unsupported';
+}
+
+/**
  * How a tool-approval decision was made, beyond allow-versus-deny.
  *
  * One object rather than two trailing positional flags, because the two fields
@@ -878,6 +928,48 @@ export interface AgentRuntime {
    * @returns true if the query was interrupted, false if no active query
    */
   interruptQuery(sessionId: string): Promise<boolean>;
+
+  /**
+   * Deliver a message into a session WITHOUT opening a turn of its own.
+   *
+   * Three things about this are traps, and each one is why the signature is the
+   * shape it is:
+   *
+   * (a) **It returns a RECEIPT, not a generator.** A `'steer'`'s resulting
+   *     events surface on the turn's ALREADY-open stream — the one another
+   *     `feedProjector` call is already consuming as that turn. Returning a
+   *     second turn-shaped `AsyncGenerator<StreamEvent>` here would mean two
+   *     `feedProjector` calls fighting over one turn, so this hands back only
+   *     what happened.
+   * (b) **It is called ONLY when the matching capability is declared**
+   *     (`supportsSteer` for `'steer'`, `supportsContextStaging` for `'stage'`).
+   *     It is optional on the interface so a runtime that can do NEITHER simply
+   *     omits it; the server's degradation ladder covers the gap, and a missing
+   *     implementation is never an error the person sees.
+   * (c) **It MUST NOT throw for an ordinary refusal.** No open turn, a closed
+   *     stream, an unsupported mode — all are reported as
+   *     `{ delivered: false, reason }`, because the server's job is to degrade
+   *     (queue it instead, fold it into the next turn) rather than fail the
+   *     person's message. A throw is reserved for a genuine fault, exactly as it
+   *     is for {@link sendMessage}.
+   *
+   * `content` is the person's text, PRISTINE — never mutated. Any context rides
+   * `opts.additionalContext` and is rendered out of band (ADR-0273). A steer is
+   * a WRITE, subject to the SAME authorization as {@link sendMessage}: the
+   * caller must be entitled to write to the session, and the server enforces
+   * that before calling this.
+   *
+   * @param sessionId - Target session
+   * @param content - The user's text, pristine; context rides `opts`
+   * @param opts - The mode, the correlation id, and the neutral context bag
+   * @returns A receipt saying whether the content reached the backend, and why
+   *   not when it did not
+   */
+  deliverIntoTurn?(
+    sessionId: string,
+    content: string,
+    opts: DeliverIntoTurnOpts
+  ): Promise<RuntimeDeliveryResult>;
 
   /**
    * How warm this session's backing process is, for a runtime that keeps one

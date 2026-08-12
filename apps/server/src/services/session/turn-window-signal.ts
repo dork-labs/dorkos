@@ -99,13 +99,19 @@ export const MAX_CANCELLED_WINDOWS = 32;
  * signal to `withStallGuard` as `windows`. Both are bound methods, so they can
  * be passed straight across as callbacks.
  *
- * **Nothing constructs one yet (task 3.10).** The persistent pump was expected
- * to be the first caller and is not: it runs one turn per `StreamEvent` stream,
- * so `withStallGuard` already has the turn lifetime it needs and handing it
- * this signal would only disarm the clock during a launch. The genuine first
- * caller is P4's `deliverIntoTurn`, where a steer's events arrive on a stream
- * that outlives the turn that opened it — which is when "which windows are open
- * right now" stops being answerable from the stream alone.
+ * **Nothing constructs one yet (task 3.10), and P4's steer did not change that
+ * (task 4.1).** The persistent pump was expected to be the first caller and is
+ * not: it runs one turn per `StreamEvent` stream, so `withStallGuard` already
+ * has the turn lifetime it needs and handing it this signal would only disarm
+ * the clock during a launch. P3 expected `deliverIntoTurn` to be the genuine
+ * first caller — a steer whose events arrive on a stream that OUTLIVES the turn
+ * that opened it. Task 4.1 built the steer and that shape did not arise: a
+ * steer pushes into the OPEN window's held stream, so its events land in the
+ * window already open and end at that same turn's one `result`. It makes a turn
+ * longer, not a stream carry two turns — so "which windows are open right now"
+ * is still answerable from the single stream `withStallGuard` already follows.
+ * This class stays staged for the day one `StreamEvent` stream genuinely does
+ * carry several concurrently-open windows; nothing on today's paths does.
  */
 export class TurnWindowSignal {
   private readonly open = new Set<object>();

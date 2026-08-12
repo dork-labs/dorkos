@@ -91,6 +91,14 @@ vi.mock('../../../../core/agent-identity/index.js', () => ({
   resolveAgentTokenEnv: vi.fn().mockResolvedValue({}),
   AGENT_TOKEN_ENV_VAR: 'DORKOS_AGENT_TOKEN',
 }));
+// One warm process at a time, so warming a second session reclaims the first's
+// pump through the registry WITHOUT telling PersistentDispatch — the stale-bundle
+// case a steer must survive without throwing (task 4.1 finding 2). Every other
+// SESSIONS value is preserved.
+vi.mock('../../../../../config/constants.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../../../config/constants.js')>();
+  return { ...actual, SESSIONS: { ...actual.SESSIONS, MAX_WARM_SESSIONS: 1 } };
+});
 
 import { query } from '@anthropic-ai/claude-agent-sdk';
 import { validateBoundaryOrDorkHome } from '../../../../../lib/boundary.js';
@@ -495,5 +503,138 @@ describe('a turn nobody asked for', () => {
       "the person's turn carried its own answer"
     ).toBe(true);
     expect(cli.launches).toBe(1);
+  });
+});
+
+describe('deliverIntoTurn — a steer reaches the running turn (task 4.1)', () => {
+  beforeEach(() => {
+    optIn.persistentSession = true;
+  });
+
+  it('pushes the person’s words into the open turn, pristine, context out of band', async () => {
+    const sessionId = nextSession();
+    await turn(sessionId); // warms the process
+    const process = cli.processes[0]!;
+    process.goSilent();
+
+    // A turn is opened and left running (goSilent). Wait until its message has
+    // been READ — the window is open — before steering into it.
+    const running = turn(sessionId, 'do the thing');
+    await vi.waitFor(() => expect(process.received).toHaveLength(2));
+
+    const receipt = await runtime.deliverIntoTurn(sessionId, 'please also check the tests', {
+      mode: 'steer',
+      messageId: 'steer-1',
+      additionalContext: [
+        { kind: 'queue_note', scope: 'per-turn', data: { composedDuringPrevTurn: true } },
+      ],
+    });
+    expect(receipt).toEqual({ delivered: true });
+
+    await vi.waitFor(() => expect(process.received).toHaveLength(3));
+    // AC5: the person's words reach the model byte-for-byte, and the context
+    // rides its own tagged block AHEAD of them (renderContextEntry is mocked to
+    // `<kind>mock</kind>`) — never woven into what they typed.
+    expect(process.inbox.at(-1)).toEqual({
+      uuid: 'steer-1',
+      content: '<queue_note>mock</queue_note>\n\nplease also check the tests',
+    });
+
+    // AC1 + AC4, end to end: the CLI coalesces the steer into the SAME turn and
+    // answers with ONE result naming it, and the turn closes as ONE turn with
+    // ONE terminal. A broken window correlation would strand this turn open and
+    // hang the await.
+    process.answer('steer-1');
+    const events = await running;
+    expect(events.filter((e) => e.type === 'done')).toHaveLength(1);
+    // One process throughout: a steer opened no second turn and forced no
+    // relaunch.
+    expect(cli.launches).toBe(1);
+  });
+
+  it('reports no-open-turn on a warm idle session, without throwing', async () => {
+    const sessionId = nextSession();
+    await turn(sessionId); // warm, and now idle
+    expect(runtime.getSessionWarmth(sessionId)).toBe('warm');
+
+    const receipt = await runtime.deliverIntoTurn(sessionId, 'nobody to steer', {
+      mode: 'steer',
+      messageId: 'steer-1',
+    });
+
+    expect(receipt).toEqual({ delivered: false, reason: 'no-open-turn' });
+    // Nothing was pushed: the warm process still holds only its first turn's one
+    // message.
+    expect(cli.processes[0]!.received).toHaveLength(1);
+  });
+
+  it('reports unsupported for stage, which claude-code has not built yet (task 4.2)', async () => {
+    const sessionId = nextSession();
+
+    const receipt = await runtime.deliverIntoTurn(sessionId, 'attach this', {
+      mode: 'stage',
+      messageId: 'stage-1',
+    });
+
+    expect(receipt).toEqual({ delivered: false, reason: 'unsupported' });
+    // A stage must never boot a process on the path that has not built it.
+    expect(cli.launches).toBe(0);
+  });
+
+  it('refuses a steer in the close gap and pushes nothing (finding 3)', async () => {
+    const sessionId = nextSession();
+    await turn(sessionId); // warms the process
+    const process = cli.processes[0]!;
+    process.goSilent();
+
+    const running = turn(sessionId, 'do the thing');
+    await vi.waitFor(() => expect(process.received).toHaveLength(2)); // window open
+
+    // Enter the CLOSE GAP: hold the per-close accounting fetch so `endTurn` is
+    // deferred. The `result` clears the open window synchronously, but the pump
+    // stays RUNNING until the held fetch returns — up to ~8s in production. A
+    // steer that gated on the pump's `'running'` state would push into this gap
+    // and open a phantom SECOND turn while claiming `delivered`.
+    process.holdControls = true;
+    process.answer(process.received[1]!); // the result that closes the window
+    await vi.waitFor(() => expect(process.parkedControls).toBeGreaterThan(0));
+
+    // The pump still says 'running'; there is no window to join.
+    expect(runtime.getSessionWarmth(sessionId)).toBe('running');
+
+    const receipt = await runtime.deliverIntoTurn(sessionId, 'too late', {
+      mode: 'steer',
+      messageId: 'late-1',
+    });
+
+    // Gating on WINDOW openness, not the pump state: refused, and nothing pushed.
+    expect(receipt).toEqual({ delivered: false, reason: 'no-open-turn' });
+    expect(process.received).toHaveLength(2);
+
+    // Release the fetch; the turn settles as exactly ONE turn.
+    process.releaseControls();
+    const events = await running;
+    expect(events.filter((e) => e.type === 'done')).toHaveLength(1);
+  });
+
+  it('degrades rather than throwing when the bundle points at a reaped pump (finding 2)', async () => {
+    const a = nextSession();
+    await turn(a);
+    expect(runtime.getSessionWarmth(a)).toBe('warm');
+
+    // Warming a second session reclaims A's warm pump (the ceiling is 1 here),
+    // and the registry does it WITHOUT telling PersistentDispatch — so A's bundle
+    // lingers, pointing at a spent pump whose every method throws.
+    const b = nextSession();
+    await turn(b);
+    expect(runtime.getSessionWarmth(a)).toBe('cold');
+
+    // A steer to A must degrade, never throw out of the must-not-throw contract.
+    const receipt = await runtime.deliverIntoTurn(a, 'steer the reaped one', {
+      mode: 'steer',
+      messageId: 'reaped-1',
+    });
+
+    expect(receipt).toEqual({ delivered: false, reason: 'no-open-turn' });
   });
 });

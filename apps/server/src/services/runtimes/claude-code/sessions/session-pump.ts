@@ -217,9 +217,10 @@ export class SessionPump {
    *
    * The caller holds the dispatch mutex; this refuses to be re-entered rather
    * than serializing on its own, because a second dispatch arriving mid-turn is
-   * a caller bug today (steering into an open turn is task P4's
-   * `deliverIntoTurn`, a different verb). The windower is what makes that mutex
-   * more than honor-system for pump-driven turns.
+   * a caller bug: opening a turn is not how you reach one already open. Joining
+   * the running turn is {@link steer}, this pump's half of `deliverIntoTurn`,
+   * and it deliberately leaves the state machine alone. The windower is what
+   * makes that mutex more than honor-system for pump-driven turns.
    *
    * **This method asks nothing about the directory boundary, and that is not an
    * oversight — it is why `SessionTurnWindows.dispatch` is the only supported
@@ -322,6 +323,40 @@ export class SessionPump {
       'process-gone',
       `session ${this.sessionId} lost its process before the message was sent`
     );
+  }
+
+  /**
+   * Push a message into the turn that is ALREADY open, without opening one of
+   * its own — the steer half of P4's `deliverIntoTurn` (spec §2.3).
+   *
+   * Unlike {@link dispatch}, this does not touch the state machine: a steer
+   * joins the running turn rather than starting a new one, so the pump stays
+   * `RUNNING` and the message rides the same held stream the opening message
+   * did, delivered by the CLI within the live turn. The windower correlates the
+   * turn's single `result` back by adding this message's id to the open window,
+   * which is the caller's job — this method only reaches the input stream.
+   *
+   * Amnesiac exactly as {@link dispatch} is: a `'delivered'` means the stream
+   * accepted the message, never that the agent received it (see the module
+   * doc). The durable queue is not involved — a steer is not a queued row — so
+   * there is nothing to reconcile against; the receipt is the whole of it.
+   *
+   * @param content - The message text, already enriched with any context bag
+   * @param messageId - The server-minted correlation id, stamped as the SDK
+   *   message's `uuid` so the turn's `result` can be matched back to it
+   * @returns `'no-open-turn'` when no turn is running to join, `'stream-closed'`
+   *   when the process's input stream has already ended, and `'delivered'`
+   *   when the message was accepted onto it
+   */
+  steer(content: string, messageId: string): 'delivered' | 'no-open-turn' | 'stream-closed' {
+    this.assertUsable();
+    if (this.currentState !== 'running') return 'no-open-turn';
+    // `held` is set for the life of a launched process and cleared the instant
+    // it goes away (`noteProcessGone`, `drain`), so its absence — or a `false`
+    // from `push`, the one definite answer the seam gives — is the stream being
+    // gone out from under a turn that has not yet been told.
+    if (this.held?.push(content, messageId) === true) return 'delivered';
+    return 'stream-closed';
   }
 
   /**

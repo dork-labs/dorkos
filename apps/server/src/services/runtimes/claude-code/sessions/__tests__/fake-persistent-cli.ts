@@ -60,6 +60,12 @@ export class FakeCliProcess {
   readonly liveSets: string[] = [];
   /** Every message id this process has READ off its input stream, in order. */
   readonly received: string[] = [];
+  /**
+   * Every message this process READ, with the text as it reached the model —
+   * so a steer test can assert the person's words arrived pristine and their
+   * context rode its own tagged block (spec §2.3, task 4.1).
+   */
+  readonly inbox: Array<{ uuid?: string; content: string }> = [];
   /** Messages waiting for the consumer. */
   private readonly pending: SDKMessage[] = [];
   private wake: (() => void) | undefined;
@@ -68,6 +74,15 @@ export class FakeCliProcess {
   private autoAnswer = true;
   /** A prompt whose reading waits for {@link reportReady}, so a turn can hang mid-boot. */
   private deferredPrompt: AsyncIterable<unknown> | undefined;
+  /**
+   * Park every control answer (the windower's per-close accounting fetch) until
+   * {@link releaseControls} lets it through. Lets a test hold a window inside its
+   * close — after the `result` cleared it but before `endTurn` — which is the
+   * gap a steer must not mistake for an open turn (spec §5, task 4.1 finding).
+   */
+  holdControls = false;
+  /** Control answers waiting for {@link releaseControls}, oldest first. */
+  private readonly parked: Array<() => void> = [];
 
   /**
    * Boot a process around a held prompt.
@@ -101,6 +116,28 @@ export class FakeCliProcess {
   /** Stop answering dispatched messages, so a turn can be left hanging. */
   goSilent(): void {
     this.autoAnswer = false;
+  }
+
+  /**
+   * Let parked control answers through, oldest first.
+   *
+   * @param count - How many to release. Defaults to every one waiting.
+   */
+  releaseControls(count = this.parked.length): void {
+    for (const release of this.parked.splice(0, count)) release();
+  }
+
+  /** How many control answers are parked right now. */
+  get parkedControls(): number {
+    return this.parked.length;
+  }
+
+  /** When a control answer arrives: next macrotask, or whenever the test says. */
+  private controlAnswer(): Promise<void> {
+    if (!this.holdControls) return tick();
+    return new Promise<void>((resolve) => {
+      this.parked.push(resolve);
+    });
   }
 
   /** Hand a message to whoever is reading this process's output. */
@@ -150,7 +187,9 @@ export class FakeCliProcess {
     for await (const message of prompt) {
       if (this.ended) return;
       const id = (message as { uuid?: string }).uuid;
+      const content = (message as { message?: { content?: string } }).message?.content ?? '';
       this.received.push(id ?? '<unnamed>');
+      this.inbox.push({ ...(id !== undefined ? { uuid: id } : {}), content });
       if (this.autoAnswer) this.answer(id);
     }
     // Stdin closed, so the CLI exits and its output stream ends. Faithful, and
@@ -175,7 +214,7 @@ export class FakeCliProcess {
 
   getContextUsage(): Promise<unknown> {
     if (this.ended) return Promise.reject(new Error('the process is gone'));
-    return tick().then(() => ({
+    return this.controlAnswer().then(() => ({
       totalTokens: 1_000,
       maxTokens: 200_000,
       percentage: 0.5,
@@ -186,7 +225,7 @@ export class FakeCliProcess {
 
   usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET(): Promise<unknown> {
     if (this.ended) return Promise.reject(new Error('the process is gone'));
-    return tick().then(() => ({
+    return this.controlAnswer().then(() => ({
       rate_limits_available: true,
       rate_limits: { five_hour: { utilization: 25, resets_at: null } },
     }));

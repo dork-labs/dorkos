@@ -307,6 +307,33 @@ export class SessionTurnWindows {
   }
 
   /**
+   * Add a steered message's id to the OPEN window so the turn's `result` still
+   * correlates (spec `persistent-session-runtime` §2.3, task 4.1).
+   *
+   * A steer pushes a second user message into the running turn's input stream,
+   * and the CLI coalesces it into the SAME assistant turn — answered by ONE
+   * `result` carrying ONE `user_message_uuid`, which may be the steer's rather
+   * than the opening message's. Unless the open window holds the steer's id
+   * too, that `result` would be read as answering a message this session never
+   * sent (see {@link onResult}), opening a synthetic runtime turn beside the
+   * real one and stranding the real one open. Adding the id is what keeps a
+   * steered turn to exactly one `turn_start` and one `turn_end`.
+   *
+   * The id joins the window's live `ids` array — the same array
+   * {@link TurnWindow.ids} exposes — so a `result` that arrives after this is
+   * correlated whichever of the batch's ids it names.
+   *
+   * @param messageId - The steered message's server-minted correlation id
+   * @returns True when a window was open to steer, false when none was (the
+   *   turn closed between the caller's check and here)
+   */
+  steerOpenWindow(messageId: string): boolean {
+    if (this.current === undefined) return false;
+    this.current.ids.push(messageId);
+    return true;
+  }
+
+  /**
    * Open a window for one dequeued batch and dispatch it.
    *
    * **This is the single ingress for a pump-driven turn**, which is what makes
