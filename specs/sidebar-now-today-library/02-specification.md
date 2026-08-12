@@ -611,6 +611,12 @@ Each contract is stated so a test can fail. Fixture names refer to the four jour
   for 2.5s and then folds away. Under `prefers-reduced-motion` the zone simply disappears.
 - **BC-51 — No tour.** No tour component, no tour anchors added, no "meet your new sidebar"
   copy anywhere. (§1, §10)
+- **BC-52 — The Getting-started swap yields fast and returns slow.** (Added 2026-08-11,
+  DOR-1144; design-decisions §19.) Getting started leaves the shared slot on the frame a real
+  signal claims it — BC-4's precedence is untouched. Its RETURN is damped twice over: it may
+  not come back within 5 seconds of stepping aside, and the return defers further while the
+  pointer is inside the zone stack or a row holds focus, on BC-17's machinery. Both apply
+  unchanged under `prefers-reduced-motion` — this is timing, not animation.
 
 ---
 

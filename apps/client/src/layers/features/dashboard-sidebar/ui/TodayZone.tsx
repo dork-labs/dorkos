@@ -13,7 +13,7 @@
 import { useMemo, useRef } from 'react';
 import type { SidebarZoneModel } from '../model/build-sidebar-model';
 import { useScrollToActive } from '../model/use-scroll-to-active';
-import { useTodayOrderHold } from '../model/use-today-order-hold';
+import { useTodayOrderHold } from '../model/holds/use-today-order-hold';
 import { SidebarZone } from './SidebarZone';
 
 /**

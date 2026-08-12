@@ -23,6 +23,7 @@ import {
   type SidebarZoneModel,
 } from '../model/build-sidebar-model';
 import { useAllClearBeat } from '../model/use-all-clear-beat';
+import { useGettingStartedReturn } from '../model/holds/use-getting-started-return';
 import { AgentOnboardingCard } from './AgentOnboardingCard';
 import { SidebarZone } from './SidebarZone';
 import { TodayZone } from './TodayZone';
@@ -70,7 +71,12 @@ export interface SidebarZonesProps {
  */
 export function SidebarZones({ model, zoneIds }: SidebarZonesProps) {
   const { update } = useUpdateSidebarPrefs();
-  const library = model.zones.find((zone) => zone.id === 'library');
+  // Getting started leaves the shared slot the frame a real signal wants it and
+  // takes a few seconds to come back (BC-52). Everything below draws `drawn`;
+  // `model` is still the builder's answer, and the two differ on exactly one
+  // zone for exactly as long as the damping lasts.
+  const { model: drawn, handlers: slotHandlers } = useGettingStartedReturn(model);
+  const library = drawn.zones.find((zone) => zone.id === 'library');
   // "Is this zone mine to draw?" asked once. `undefined` means the whole
   // panel — the desktop case — so nothing about the existing call site changes.
   const draws = useCallback(
@@ -102,16 +108,24 @@ export function SidebarZones({ model, zoneIds }: SidebarZonesProps) {
   // and suppressed the moment anything real wants that slot back — a zone the
   // model is emitting always wins over an animation about one it is not.
   const beating = useAllClearBeat(model);
+  // Asked of the BUILDER's model, not the damped one. Withholding Getting
+  // started for a few seconds is not an invitation for an animation to move
+  // into the space it just left: the slot is spoken for either way, and the
+  // beat stays exactly as rare as BC-50 made it.
   const nowSlotTaken = model.zones.some(
     (zone) => zone.id === 'now' || zone.id === 'getting-started'
   );
 
   return (
-    <div className="flex flex-col gap-1">
+    // The damping's "not under a hand" half reads the pointer and focus here,
+    // one element above every zone — the smallest wrapper that contains
+    // everything the returning zone would push down, and therefore the right
+    // boundary for a promise about not moving what somebody is aiming at.
+    <div className="flex flex-col gap-1" {...slotHandlers}>
       {beating && !nowSlotTaken && draws('now') && (
         <SidebarZone zone={ALL_CLEAR_ZONE} onToggleAll={onToggleAll} allClear />
       )}
-      {model.zones
+      {drawn.zones
         .filter((zone) => draws(zone.id))
         .map((zone) =>
           // Today is the one zone whose rows react to where the operator's
