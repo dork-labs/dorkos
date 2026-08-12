@@ -2,6 +2,7 @@
 covers:
   - 'feat(server): a claude-code chat can keep its agent running between messages (P3.10, DOR-1175)'
   - 'test(server,test-utils): hold the persistent pump to the contract it now runs under (P3.10, DOR-1175)'
+  - 'fix(server,test-utils): Stop reaches a turn, never a process that is merely warm (DOR-1175 review)'
 ---
 
 ### Added
