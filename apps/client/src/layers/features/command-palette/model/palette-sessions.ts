@@ -56,6 +56,40 @@ export interface PaletteSessionItem {
   originLabel?: string;
   /** When the session was last active, ISO-8601, for the row's relative time. */
   lastActivityAt: string;
+  /**
+   * Findable, but no longer today's business — the row says so (P3 AC-5).
+   *
+   * True when the conversation has had **no activity** since the cockpit's 4am
+   * day boundary (`overnightBoundary`) — activity of any kind, an agent's own
+   * writes included, read off `session.updatedAt`.
+   *
+   * **That is not the same measurement the sidebar makes, and the two can
+   * disagree about one conversation.** Today's `archiveOvernight` retires a row
+   * on YOUR last interaction with it — when you last opened or wrote to it,
+   * with exemptions for the row you are standing on and anything that mentions
+   * you by name. This reads the CONVERSATION's last activity. So an agent that
+   * posted at 10:00 into a thread you last opened on Monday leaves Today and is
+   * unlabelled here; a thread you opened at 09:00 whose last message is from
+   * yesterday stays in Today and is labelled here.
+   *
+   * Both definitions are defensible for the surface that makes them — Today is
+   * about what YOU are doing, recall is about what a THING is — and neither is
+   * a bug. What is not claimed is that they are one fact. Aligning them is a
+   * product decision nobody has taken; the shared boundary above is only the
+   * hour, not the signal.
+   *
+   * design-decisions §15 is what puts the label here at all: "archived
+   * overnight → find it in ⌘K" means by title and recency.
+   *
+   * **A label, never a demotion.** An archived ROOM is pushed below everything
+   * live no matter what it scores, because somebody closed it. A conversation
+   * from yesterday is not closed — it is most of what a person searches ⌘K FOR
+   * — so demoting it would sink every conversation older than this morning
+   * below every action and slash command in the list. It stays in the ranking
+   * on its merits, where its own recency signal already puts it under an
+   * equally-relevant live one (`palette-ranking`'s `RECENCY_WEIGHT`).
+   */
+  archived: boolean;
 }
 
 /**
@@ -104,15 +138,25 @@ function directoryName(cwd: string | null): string | null {
  *
  * @param sessions - Sessions, in the order the server gave them (recency).
  * @param agents - Every agent this cockpit can see.
+ * @param archivedBefore - The cockpit's day boundary, epoch ms
+ *   (`overnightBoundary`). Anything last active before it is labelled
+ *   archived. Injected rather than read from a clock here, for the same reason
+ *   the ranker takes its `now`: what a row says becomes assertable against a
+ *   fixed corpus instead of against the hour the suite happens to run at.
  */
 export function toPaletteSessionItems(
   sessions: readonly Session[],
-  agents: readonly AgentPathEntry[]
+  agents: readonly AgentPathEntry[],
+  archivedBefore: number
 ): PaletteSessionItem[] {
   const byPath = new Map(agents.map((agent) => [agent.projectPath, agent]));
   return sessions.map((session) => {
     const cwd = session.cwd ?? null;
     const agent = cwd ? (byPath.get(cwd) ?? null) : null;
+    // A timestamp the browser cannot parse is NOT archived: an unreadable date
+    // is a thing this client knows nothing about, and labelling it would be
+    // asserting a fact about a conversation on the strength of a parse failure.
+    const lastActivity = Date.parse(session.updatedAt);
     return {
       id: session.id,
       who: agent ? getAgentDisplayName(agent) : directoryName(cwd),
@@ -122,6 +166,7 @@ export function toPaletteSessionItems(
       origin: session.origin,
       originLabel: session.originLabel,
       lastActivityAt: session.updatedAt,
+      archived: !Number.isNaN(lastActivity) && lastActivity < archivedBefore,
     };
   });
 }

@@ -14,6 +14,7 @@ import {
   type PaletteRecentEntry,
 } from '@/layers/features/command-palette';
 import { RankedResults } from './RankedResultsShowcase';
+import { ArchivedRows, ScopedPalette } from './ScopedAndArchivedShowcase';
 import type { AgentPathEntry } from '@dorkos/shared/mesh-schemas';
 import { MOCK_AGENTS, SESSION_ROWS, minutesAgo } from './command-palette-fixtures';
 import { UNTITLED_SESSION_LABEL } from '@/layers/entities/session';
@@ -407,6 +408,14 @@ const RECENT_ROWS: PaletteRecentEntry[] = [
     session: SESSION_ROWS[1],
   },
   {
+    // Yesterday, resurfacing. Recent is where an overnight-archived row comes
+    // back, and it is labelled when it does (design-decisions §15).
+    kind: 'session',
+    key: 'session:sess-archived',
+    lastActivityAt: SESSION_ROWS[3].lastActivityAt,
+    session: SESSION_ROWS[3],
+  },
+  {
     kind: 'agent',
     key: `agent:${MOCK_AGENTS[3].projectPath}`,
     lastActivityAt: minutesAgo(180),
@@ -524,6 +533,20 @@ export function CommandPaletteShowcases() {
         description="One list across every kind, blended from relevance × frecency × recency (plus what is waiting). The standout row gets a Best match heading; below the margin it does not, and the list is unchanged. Rendered by the shipped scorer, not by hand."
       >
         <RankedResults />
+      </PlaygroundSection>
+
+      <PlaygroundSection
+        title="Scoped by a chip"
+        description="@agent and #channel resolve into a visible chip instead of a query language. Under a chip every row is a conversation, so the one heading names the scope — with the preposition the relation actually takes."
+      >
+        <ScopedPalette />
+      </PlaygroundSection>
+
+      <PlaygroundSection
+        title="Archived rows"
+        description="A closed channel and a conversation that left Today at 4am carry the same word: findable, openable, not part of what is happening now. A live row never carries it."
+      >
+        <ArchivedRows />
       </PlaygroundSection>
 
       <PlaygroundSection

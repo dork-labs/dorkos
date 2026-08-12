@@ -59,6 +59,15 @@ export interface CommandPalette {
    * two are different assertions.
    */
   chip: Locator;
+  /**
+   * Every "Archived" mark on screen — a closed channel or a conversation that
+   * left Today at 4am (P3 AC-5).
+   *
+   * By test id rather than by the word: "Archived" can appear in a room's own
+   * title, and a locator that matched one would report the label on a row that
+   * never carried it.
+   */
+  archivedMarks: Locator;
 }
 
 /**
@@ -76,6 +85,7 @@ function commandPalette(page: Page): CommandPalette {
     input: page.getByTestId('command-palette-input'),
     options: root.getByRole('option'),
     chip: page.getByTestId('palette-scope-chip'),
+    archivedMarks: root.getByTestId('palette-archived-mark'),
   };
 }
 

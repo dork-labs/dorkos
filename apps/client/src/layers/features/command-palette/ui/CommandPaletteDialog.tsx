@@ -27,6 +27,7 @@ import { usePaletteActions } from '../model/use-palette-actions';
 import { useLeadingRowPin } from '../model/use-leading-row-pin';
 import { PaletteScopeChip } from './PaletteScopeChip';
 import { scopeKey, type PaletteScope } from '../model/palette-scope';
+import { searchHandoffHref } from '../model/search-surface';
 import type { RankedRow } from '../model/palette-ranking';
 import type { SearchResult } from '../model/use-palette-search';
 import { AgentPreviewPanel } from './AgentPreviewPanel';
@@ -251,21 +252,22 @@ export function CommandPaletteDialog() {
   // or quietly remapped. Two rows that do the same thing is a lie (DOR-568).
   const canOpenSeparateWindow = supportsSeparateWindow();
 
+  // What this person actually uses, and the clock every time-based claim in the
+  // palette is measured against. Both are read here and passed down: the scorer
+  // takes an injected `now` and reads no store, which is what makes its
+  // ordering assertable against a fixed corpus (`palette-ranking`), and the
+  // corpus takes the same clock so a row can say it is archived.
+  const usage = usePaletteUsage();
+  const now = useNow(RANKING_CLOCK_TICK_MS);
+
   const { allAgents, newActions, rooms, sessions, continueRows, recent, searchableItems } =
-    usePaletteItems(selectedCwd);
+    usePaletteItems(selectedCwd, now);
 
   // Fold ⌘K's retired agent-frecency key into the one interaction store, once,
   // and delete it from the browser. Here because this dialog is mounted at the
   // app root for the whole life of the app and the roster it needs is already
   // in hand — the earliest point at which the translation can be made at all.
   useLegacyFrecencyMigration(allAgents);
-
-  // What this person actually uses, and the clock the ranking is measured
-  // against. Both are read here and passed down: the scorer takes an injected
-  // `now` and reads no store, which is what makes its ordering assertable
-  // against a fixed corpus (`palette-ranking`).
-  const usage = usePaletteUsage();
-  const now = useNow(RANKING_CLOCK_TICK_MS);
 
   const { bestMatch, rows, prefix, term } = usePaletteSearch(searchableItems, search, {
     usage,
@@ -274,6 +276,22 @@ export function CommandPaletteDialog() {
   });
 
   const isRoomMode = prefix === '#';
+
+  // The one row that leaves ⌘K, and only if there is anywhere to leave for.
+  // `term` rather than the raw search string: `#` and `@` are how a person
+  // narrowed this list, not part of what they want looked for. `openLink`
+  // rather than `navigate`, because that seam already knows what to do in each
+  // shell — and in the Obsidian embed, which mounts no router at all.
+  const handoffHref = searchHandoffHref(term);
+  const searchHandoff = handoffHref
+    ? {
+        term: term.trim(),
+        onSelect: () => {
+          openLink(handoffHref);
+          closePalette();
+        },
+      }
+    : null;
 
   // Derive the currently selected agent from the cmdk selected value.
   // Agents are identified by name (cmdk uses the value prop of CommandItem).
@@ -604,6 +622,7 @@ export function CommandPaletteDialog() {
                         bestMatch={bestMatch}
                         rows={rows}
                         rooms={rooms}
+                        searchHandoff={searchHandoff}
                         onFeatureAction={handleFeatureAction}
                         onQuickAction={handleQuickAction}
                         onGoToAgentActions={goToAgentActions}

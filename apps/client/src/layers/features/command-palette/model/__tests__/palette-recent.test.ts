@@ -40,6 +40,7 @@ function makeSessionItem(overrides: Partial<PaletteSessionItem> = {}): PaletteSe
     cwd: '/projects/dorkos',
     agent: null,
     lastActivityAt: '2026-08-09T10:00:00.000Z',
+    archived: false,
     ...overrides,
   };
 }
