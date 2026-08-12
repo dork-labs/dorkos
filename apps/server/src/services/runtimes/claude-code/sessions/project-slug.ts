@@ -83,6 +83,15 @@ function normalizeLikeSdk(value: string): string {
  * own failure, so a brand-new session still gets the name it will be written
  * under.
  *
+ * That fallback DELIBERATELY diverges from `lib/boundary.ts`, which stopped
+ * resolving unresolvable paths lexically in DOR-1185 and now confines them
+ * through their deepest existing ancestor. The divergence is the point: this
+ * function computes a NAME that must match the SDK's byte for byte, and the SDK
+ * falls back lexically. Being cleverer here would invent a slug the SDK never
+ * writes, and the transcript would be looked for where it is not. Nothing is
+ * authorized by this path — the boundary is asked separately, by the validator,
+ * before any turn runs.
+ *
  * @param cwd - A working directory, absolute or relative. Defaults to `.`.
  */
 export function canonicalizeCwd(cwd?: string): string {

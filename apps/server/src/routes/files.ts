@@ -487,8 +487,8 @@ router.post('/rename', async (req, res) => {
     const fromR = await resolveWithinCwd(cwd, from);
     validatedCwd = fromR.validatedCwd;
     fromResolved = fromR.resolved;
-    // `to` does not exist yet, so its own realpath falls back to path.resolve;
-    // the containment check still rejects a `..` escape.
+    // `to` does not exist yet, so it is confined through its deepest existing
+    // ancestor — a `..` escape and a symlinked parent are both rejected.
     ({ resolved: toResolved } = await resolveWithinCwd(cwd, to));
   } catch (err) {
     if (sendPathError(res, err)) return;
@@ -551,8 +551,8 @@ router.post('/copy', async (req, res) => {
     const fromR = await resolveWithinCwd(cwd, from);
     validatedCwd = fromR.validatedCwd;
     fromResolved = fromR.resolved;
-    // `to` does not exist yet, so its own realpath falls back to path.resolve;
-    // the containment check still rejects a `..` escape.
+    // `to` does not exist yet, so it is confined through its deepest existing
+    // ancestor — a `..` escape and a symlinked parent are both rejected.
     ({ resolved: toResolved } = await resolveWithinCwd(cwd, to));
   } catch (err) {
     if (sendPathError(res, err)) return;
