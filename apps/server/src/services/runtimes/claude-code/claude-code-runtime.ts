@@ -685,7 +685,14 @@ export class ClaudeCodeRuntime implements AgentRuntime {
 
   /** @inheritdoc */
   async interruptQuery(sessionId: string): Promise<boolean> {
-    return this.sessionStore.interruptQuery(sessionId);
+    if (await this.sessionStore.interruptQuery(sessionId)) return true;
+    // Nothing on the ordinary path — but a persistent session's FIRST turn may
+    // still be booting, so the pump holds a live query the `running` edge has
+    // not yet armed `session.activeQuery` with (DOR-1191). Reach that turn
+    // through the same interrupt→close escalation the running path uses.
+    const bootingQuery = this.persistent.bootingQuery(sessionId);
+    if (bootingQuery === undefined) return false;
+    return this.sessionStore.interruptGivenQuery(sessionId, bootingQuery);
   }
 
   /** @inheritdoc */

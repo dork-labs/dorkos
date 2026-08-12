@@ -320,6 +320,43 @@ describe('Stop reaches a turn, never a process that is merely warm', () => {
     process.answer(process.received[1]!);
     await running;
   });
+
+  // DOR-1191. The first turn of a cold session passes warming -> warm ->
+  // running, and only reaches running once `system/init` arrives — up to
+  // INIT_TIMEOUT_MS later. `session.activeQuery` arms on that running edge, so a
+  // Stop pressed while the process is still booting used to find nothing and do
+  // nothing: exactly when someone Stops a mis-send. It must reach the booting
+  // turn through the live query the pump already holds.
+  it('reaches a first turn that is still booting', async () => {
+    const sessionId = nextSession();
+    // The process boots but holds `system/init`, so the first turn parks in the
+    // launch window rather than reaching the model.
+    cli.deferNextInit = true;
+
+    const booting = turn(sessionId, 'a mis-send, stopped before it lands');
+    const process = await vi.waitFor(() => {
+      expect(cli.launches).toBe(1);
+      return cli.processes[0]!;
+    });
+    // The pump is warming: no turn has reached the model, so warmth is not yet
+    // `running` and the ordinary Stop path (`session.activeQuery`) is empty.
+    expect(runtime.getSessionWarmth(sessionId)).toBe('warming');
+
+    // The person presses Stop while the mis-send is still booting.
+    expect(
+      await runtime.interruptQuery(sessionId),
+      'Stop could not reach a turn that was still booting'
+    ).toBe(true);
+    // And it actually reached the process, through the same graceful interrupt
+    // the running path uses — not a bookkeeping `true` that stopped nothing.
+    expect(process.interrupts).toBe(1);
+
+    // Let the (now-interrupted) boot finish so the hanging turn settles rather
+    // than leaking into the next case.
+    process.reportReady();
+    const events = await booting;
+    expect(events.some((e) => e.type === 'done')).toBe(true);
+  });
 });
 
 describe('what a warm process must be re-checked for', () => {
