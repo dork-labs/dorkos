@@ -380,7 +380,11 @@ export class PersistentDispatch {
     // Definitely-assigned three lines down. Nothing can observe the gap: the
     // pump boots nothing until it is dispatched to, which cannot happen before
     // this function returns.
-    const bundle = { live: undefined, fingerprint: undefined, plan: undefined } as unknown as SessionBundle;
+    const bundle = {
+      live: undefined,
+      fingerprint: undefined,
+      plan: undefined,
+    } as unknown as SessionBundle;
 
     bundle.pump = this.registry.acquire(sessionId, {
       maxWarmSessions: SESSIONS.MAX_WARM_SESSIONS,
