@@ -168,15 +168,20 @@ describe('AC-7 — one create surface', () => {
       /\buseAgentCreationStore\b/,
       [
         'ui/NewMenu.tsx',
-        // Not create surfaces: both are computed Getting-started suggestions —
-        // the day-one invitation drawn when the Library holds nothing at all,
-        // and P2.2's `suggestion:add-agent` row, which retires the moment it is
-        // done (§8). Each opens the SAME flow this menu's "Agent" item opens,
-        // and the id each stands for is in the vocabulary above. A suggestion
-        // is a thing the sidebar computed for you once; a create surface is a
-        // control that is always there.
+        // Not a create surface: P2.2's `suggestion:add-agent` row is a computed
+        // Getting-started suggestion that retires the moment it is done (§8).
+        // It opens the SAME flow this menu's "Agent" item opens, and the id it
+        // stands for is in the vocabulary above. A suggestion is a thing the
+        // sidebar computed for you once; a create surface is a control that is
+        // always there.
+        //
+        // `ui/SidebarZones.tsx` was the second entry here, for the day-one
+        // invitation drawn when Library held nothing at all. That card is gone
+        // (DOR-1138). Its condition was reachable, but only before the fleet
+        // query answered or while it failed — a hydration gap, not day one — so
+        // it flashed "Add more agents" on every cold load rather than greeting
+        // a new operator. Day-one guidance is the Getting started zone's.
         'ui/SidebarChrome.tsx',
-        'ui/SidebarZones.tsx',
       ],
     ],
   ];

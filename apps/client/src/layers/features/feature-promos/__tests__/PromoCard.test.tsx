@@ -47,6 +47,19 @@ describe('PromoCard', () => {
     expect(screen.getByRole('button')).toHaveAttribute('data-slot', 'promo-card-compact');
   });
 
+  it('separates by tint and carries no hairline anywhere in it (R1)', () => {
+    // The sidebar removed every border in favour of one `--sidebar-accent`
+    // ramp, and a card that kept its own outline was the last thing in the
+    // panel drawing a box. `--muted` is banned here for the same reason
+    // `SidebarRow` bans it: it is lighter than the panel in light mode and
+    // darker in dark, so it separates in opposite directions between themes.
+    const { container } = render(<PromoCard promo={makePromo()} />);
+    const card = screen.getByRole('button');
+    expect(card.className).toMatch(/\bbg-sidebar-accent\/40\b/);
+    expect(card.className).toMatch(/\bhover:bg-sidebar-accent\/70\b/);
+    expect(container.innerHTML).not.toMatch(/\bborder\b|\bbg-card\b|\bbg-muted\b/);
+  });
+
   it('renders open-dialog component with open=true after click', () => {
     const MockDialog: React.FC<{ open: boolean; onOpenChange: (v: boolean) => void }> = vi.fn(
       () => null

@@ -18,7 +18,7 @@
 import { describe, expect, it } from 'vitest';
 import { act, renderHook } from '@testing-library/react';
 import type { SidebarRowModel } from '../build-sidebar-model';
-import { useTodayOrderHold } from '../use-today-order-hold';
+import { useTodayOrderHold } from '../holds/use-today-order-hold';
 
 /** A Today row, reduced to what the hold reads. */
 function row(key: string): SidebarRowModel {
