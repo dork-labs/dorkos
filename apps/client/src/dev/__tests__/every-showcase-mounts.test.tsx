@@ -47,6 +47,13 @@ import { createPlaygroundTransport } from '../playground-transport';
 import { PAGE_CONFIGS } from '../playground-config';
 import { PAGE_COMPONENTS } from '../playground-pages';
 
+// A whole page per case, and the heaviest measured 1.6s on an idle machine.
+// Vitest's 5s default leaves under 4s of margin, which this repo routinely eats
+// — several agents share this box, and a timeout here would read as "a showcase
+// broke" when the truth is "the machine was busy". Raised so the failure this
+// file reports is always the failure it tests for.
+vi.setConfig({ testTimeout: 15_000 });
+
 // The onboarding showcase fires real confetti, which paints on a rAF loop
 // against a 2D canvas context jsdom does not implement — so the loop throws
 // `Cannot read properties of null (reading 'clearRect')` from a timer, AFTER

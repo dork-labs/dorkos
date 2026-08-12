@@ -28,6 +28,7 @@ import { test, expect } from '@playwright/test';
 import type { Page } from '@playwright/test';
 import { BasePage } from '../../pages/BasePage.js';
 import { ChatPage } from '../../pages/ChatPage.js';
+import { HomeSurfacePage } from '../../pages/HomeSurfacePage.js';
 
 /**
  * Ceiling for an assertion that cannot pass until the server answers.
@@ -145,8 +146,11 @@ export function registerNowSurvivesReloadTests({ apiUrl, agentDir }: NowSurvives
         // every fresh test-mode home. Two matches is a strict-mode violation,
         // so the unscoped locator was only ever passing by winning a race
         // against that row appearing.
-        await page
-          .getByTestId('sidebar-footer-strip-row')
+        //
+        // Through the page object rather than the raw testid: the strip already
+        // has a name in `HomeSurfacePage`, and a second hand-rolled copy of the
+        // selector is the thing that goes stale when the strip is renamed.
+        await new HomeSurfacePage(page).sidebarNav
           .getByRole('button', { name: 'Ask DorkBot' })
           .click();
         const dorkbotChat = new ChatPage(page);

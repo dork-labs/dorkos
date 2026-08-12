@@ -361,7 +361,11 @@ await request.post(`${API_URL}/api/test/scenario`, {
 });
 ```
 
-The `seed-agent` endpoint creates a temporary `.dork/agent.json` under the mock DORK_HOME and returns the directory path. Without it, the chat input's send button stays disabled because no agent is registered for the working directory.
+The `seed-agent` endpoint creates a temporary `.dork/agent.json` under the mock DORK_HOME, registers that agent with the mesh, and returns `{ agentDir, agentId }`. Without it, the chat input's send button stays disabled because no agent is registered for the working directory.
+
+Both halves matter, and the second one used to be missing (DOR-1142). `GET /api/sessions/recent` and `/daily-counts` fan out over `meshCore.listWithPaths()`, so a directory the mesh has never heard of contributes no sessions however many it holds — which left every sidebar zone built from recent sessions (Today, Heads-up) structurally empty on the test-mode leg. **Do not hand-roll registration around it.** Three suites once carried their own `POST /api/mesh/agents` dance in `beforeEach`; all three are deleted. That route is also the wrong tool here — it mints a second id distinct from the manifest's own, rewrites the manifest, and seats the agent in `#team`.
+
+The fixture's id is derived from its directory, so re-seeding in a per-test `beforeEach` is a true upsert rather than a new identity each time. Nothing needs unregistering between tests, and `POST /api/test/reset` deliberately leaves the mesh alone.
 
 ### Writing Mock Browser Tests
 

@@ -304,7 +304,7 @@ function MobileDrillInSection() {
                   as nothing loaded /dev/settings. On desktop the real component
                   renders a Radix `DialogTitle`, which is an `h2` — so this is
                   what it looked like when it worked. */}
-              <h2 className="text-sm font-medium">Settings</h2>
+              <h2 className="text-sm leading-none font-medium tracking-tight">Settings</h2>
             </NavigationLayoutDialogHeader>
             <NavigationLayoutBody>
               <NavigationLayoutSidebar>

@@ -39,8 +39,14 @@ import { TopologyPage } from './pages/TopologyPage';
 import { TourSpotlightPage } from './pages/TourSpotlightPage';
 import type { Page } from './playground-registry';
 
-/** Props shared by all playground page components. Only OverviewPage uses `onNavigate`. */
-export interface PlaygroundPageProps {
+/**
+ * Props shared by all playground page components. Only OverviewPage uses
+ * `onNavigate`.
+ *
+ * Deliberately not exported: every consumer reaches these components through
+ * {@link PAGE_COMPONENTS}, whose value type already carries the shape.
+ */
+interface PlaygroundPageProps {
   onNavigate?: (page: Page) => void;
 }
 

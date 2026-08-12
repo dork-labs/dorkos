@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import path from 'path';
 import { z } from 'zod';
+import { createHash } from 'node:crypto';
 import { ulid } from 'ulidx';
 import { writeManifest } from '@dorkos/shared/manifest';
 import type { AgentManifest, McpServerTransport } from '@dorkos/shared/mesh-schemas';
@@ -130,6 +131,49 @@ function e2eAgentDir(): string {
 }
 
 /**
+ * The fixture agent's identity, derived from its directory rather than minted.
+ *
+ * **Why this is not `ulid()` (DOR-1142 review).** `chat-mock.spec.ts` seeds in
+ * a per-test `beforeEach`, so a fresh id per call meant a fresh identity for the
+ * same directory dozens of times per run — and `AgentRegistry.upsert` handles a
+ * new id at an occupied path by DELETING the incumbent row. That delete is
+ * `registry.remove()`, a bare row delete, not `unregister()` — so it never
+ * reaches `relayBridge.unregisterAgent`, while `upsertAutoImported` goes on to
+ * register a Relay endpoint for the new id. One orphaned endpoint per seed, on
+ * a leg that runs with Relay enabled. The rooms author-registry reads the same
+ * churn as an occupancy change: it keys rows to `minted_for_manifest_id`, so a
+ * new id at a known directory is "this directory changed hands" and the rooms
+ * do not carry over.
+ *
+ * Nothing failed today, which is exactly why it is worth pinning: the fixture
+ * was quietly exercising the relocation machinery on every test instead of
+ * being the boring, stable agent it is meant to stand for.
+ *
+ * Keyed on the PATH rather than a bare constant so the mapping stays one-to-one
+ * in both directions. A constant would follow the fixture to whatever directory
+ * a changed `DORKOS_BOUNDARY` puts it in, and against a `DORK_HOME` that
+ * outlived the move the old row would still hold that id at the old path —
+ * which `upsert` answers with `duplicate-id`, i.e. the seed route failing for a
+ * reason no diff explains. Same directory, same agent; different directory,
+ * different agent.
+ *
+ * Shaped like a ULID (26 Crockford-base32 characters) because that is what the
+ * rest of the system reads ids as, though nothing validates the format —
+ * `AgentManifestSchema.id` is `z.string().min(1)`. The digest is truncated, not
+ * decoded: this needs to be stable and collision-free against one other
+ * fixture, not unguessable.
+ *
+ * @param agentDir - The fixture's directory, from {@link e2eAgentDir}.
+ */
+function fixtureAgentId(agentDir: string): string {
+  const CROCKFORD = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
+  const digest = createHash('sha256').update(agentDir).digest();
+  let id = '';
+  for (let i = 0; i < 26; i += 1) id += CROCKFORD[digest[i] % 32];
+  return id;
+}
+
+/**
  * The execution runtime the shared fixture agent's manifest declares.
  *
  * `AgentManifest.runtime` is required and its enum has no `test-mode` member,
@@ -197,8 +241,9 @@ testControlRouter.post('/seed-agent', async (req, res) => {
         `this server does not register.`,
     });
   }
+  const agentDir = e2eAgentDir();
   const manifest: AgentManifest = {
-    id: ulid(),
+    id: fixtureAgentId(agentDir),
     name: 'E2E Test Agent',
     description: 'Seeded by test setup — runs on the server default runtime',
     runtime: FIXTURE_AGENT_RUNTIME,
@@ -211,13 +256,19 @@ testControlRouter.post('/seed-agent', async (req, res) => {
     enabledToolGroups: {},
     mcpServers: [],
   };
-  const agentDir = e2eAgentDir();
   await writeManifest(agentDir, manifest);
 
-  // Both refusals below are 500s rather than a quiet `{ ok: true }`. A seed
+  // Every refusal below is a 500 rather than a quiet `{ ok: true }`. A seed
   // route that half-worked is what this ticket was: the caller gets a
   // directory, believes it has an agent, and fails ten assertions later in a
   // spec about the sidebar. Say it here, where the cause is.
+  //
+  // Deliberately NOT the best-effort `try { ... } catch { /* non-fatal */ }`
+  // that `POST /api/agents` wraps its own `syncFromDisk` in. There, swallowing
+  // is right: the agent was really created and the DB cache reconciles itself
+  // within five minutes. Here, registration IS the product of the call, so a
+  // swallowed throw would hand back the same `{ ok: true }` as a working seed
+  // and put the hole straight back.
   const meshCore = req.app.locals.meshCore as
     | { syncFromDisk(path: string): Promise<'synced' | 'no-manifest' | 'duplicate-id'> }
     | undefined;
@@ -228,14 +279,29 @@ testControlRouter.post('/seed-agent', async (req, res) => {
         'Sessions in it would be invisible to GET /api/sessions/recent.',
     });
   }
-  const outcome = await meshCore.syncFromDisk(agentDir);
+  // The catch is what keeps a thrown registration legible. Express 5 would
+  // forward a rejected handler promise to the generic error handler on its
+  // own, which answers 500 with no mention of seeding — a diagnosis-free 500
+  // in the one route whose entire job is diagnosis.
+  let outcome: 'synced' | 'no-manifest' | 'duplicate-id';
+  try {
+    outcome = await meshCore.syncFromDisk(agentDir);
+  } catch (err) {
+    return res.status(500).json({
+      error:
+        `seed-agent: wrote the manifest at ${agentDir} but mesh registration threw: ` +
+        `${err instanceof Error ? err.message : String(err)}`,
+    });
+  }
   if (outcome !== 'synced') {
     return res.status(500).json({
       error:
         `seed-agent: wrote the manifest but the mesh refused it (${outcome}). ` +
-        `'no-manifest' means the write did not land at ${agentDir}; 'duplicate-id' means ` +
-        `another directory holds id ${manifest.id}, which should be impossible for a ` +
-        `freshly minted ULID.`,
+        `'no-manifest' means \`readManifest\` answered null for ${agentDir} — the write did ` +
+        `not land, or the file is unreadable, or it no longer satisfies AgentManifestSchema. ` +
+        `'duplicate-id' means another directory holds id ${manifest.id}; since that id is ` +
+        `derived from this path, it means a stale row survives from when the fixture lived ` +
+        `elsewhere — wipe this server's DORK_HOME.`,
     });
   }
   res.json({ ok: true, agentDir, agentId: manifest.id });
@@ -270,9 +336,16 @@ testControlRouter.post('/seed-bridge', async (req, res) => {
   }
   try {
     // Register the seeded agent into the mesh cache so the room roster can
-    // resolve it by path (ADR-0043's file-first write-through). `seed-agent`
-    // only writes the manifest to disk; the cockpit normally syncs on its own
-    // navigation, which this seam does not go through.
+    // resolve it by path (ADR-0043's file-first write-through).
+    //
+    // Redundant for the usual caller and kept anyway. `seed-agent` registers
+    // what it seeds now (DOR-1142), so a bridge seeded against that fixture is
+    // already resolvable and this is a no-op re-sync — `upsert` on an unchanged
+    // manifest. But `agentPath` is a free parameter: nothing makes a caller
+    // pass the fixture's directory, and a spec that writes its own manifest
+    // somewhere and bridges it would otherwise get a roster that cannot name
+    // the agent. Costing one idempotent write to stay correct for any path is
+    // the right trade for a test seam.
     const meshCore = req.app.locals.meshCore as
       | { syncFromDisk(path: string): Promise<unknown> }
       | undefined;
