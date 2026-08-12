@@ -680,6 +680,22 @@ export const SessionEventSchema = z
        */
       outcome: MessageDeliveryOutcomeSchema.optional(),
     }),
+    // A person STAGED context — attached information without provoking a turn
+    // (spec `persistent-session-runtime` §2.5, task 4.2). It opens no turn, so it
+    // has no `turn_start`; this event is the receipt that keeps the transcript
+    // honest, because a silent success is indistinguishable from a dropped
+    // message. Emitted on both native staging (the message reached the runtime's
+    // transcript directly) and the fold-into-next fallback (the text is held to
+    // ride the next dispatch as an `additionalContext` entry). Rendered as a
+    // quiet transcript entry, never as a user turn.
+    z.object({
+      ...seqShape,
+      type: z.literal('context_staged'),
+      /** The staged text, exactly as the person wrote it. */
+      content: z.string(),
+      /** The server-minted correlation id for this staged message. */
+      messageId: z.string(),
+    }),
   ])
   .openapi('SessionEvent');
 

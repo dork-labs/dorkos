@@ -568,19 +568,6 @@ describe('deliverIntoTurn — a steer reaches the running turn (task 4.1)', () =
     expect(cli.processes[0]!.received).toHaveLength(1);
   });
 
-  it('reports unsupported for stage, which claude-code has not built yet (task 4.2)', async () => {
-    const sessionId = nextSession();
-
-    const receipt = await runtime.deliverIntoTurn(sessionId, 'attach this', {
-      mode: 'stage',
-      messageId: 'stage-1',
-    });
-
-    expect(receipt).toEqual({ delivered: false, reason: 'unsupported' });
-    // A stage must never boot a process on the path that has not built it.
-    expect(cli.launches).toBe(0);
-  });
-
   it('refuses a steer in the close gap and pushes nothing (finding 3)', async () => {
     const sessionId = nextSession();
     await turn(sessionId); // warms the process
@@ -636,5 +623,115 @@ describe('deliverIntoTurn — a steer reaches the running turn (task 4.1)', () =
     });
 
     expect(receipt).toEqual({ delivered: false, reason: 'no-open-turn' });
+  });
+});
+
+describe('deliverIntoTurn — a stage reaches the transcript with no turn (task 4.2)', () => {
+  beforeEach(() => {
+    optIn.persistentSession = true;
+  });
+
+  it('warms a COLD session and appends, without running a turn (AC1, AC6)', async () => {
+    const sessionId = nextSession();
+    expect(runtime.getSessionWarmth(sessionId)).toBe('cold');
+
+    const receipt = await runtime.deliverIntoTurn(sessionId, 'use the staging bucket', {
+      mode: 'stage',
+      messageId: 'stage-1',
+    });
+    expect(receipt).toEqual({ delivered: true });
+
+    // AC6: a cold session warmed — exactly one process — and it is WARM (idle),
+    // NOT running a turn. AC1: no turn ran, so nothing was answered and there is
+    // no querying message on the process at all.
+    expect(cli.launches).toBe(1);
+    expect(runtime.getSessionWarmth(sessionId)).toBe('warm');
+    const process = cli.processes[0]!;
+    await vi.waitFor(() => expect(process.staged).toHaveLength(1));
+    // The person's words reached the transcript pristine (no context bag here).
+    expect(process.staged).toEqual([{ uuid: 'stage-1', content: 'use the staging bucket' }]);
+    // AC1, the load-bearing half: a stage provokes NO turn — no result, no cost.
+    expect(process.answered).toBe(0);
+    expect(process.received).toHaveLength(0);
+  });
+
+  it('appends onto a WARM session without a new process or a turn (AC1)', async () => {
+    const sessionId = nextSession();
+    await turn(sessionId); // warms via a real turn
+    expect(runtime.getSessionWarmth(sessionId)).toBe('warm');
+    const process = cli.processes[0]!;
+    const answeredBefore = process.answered;
+
+    const receipt = await runtime.deliverIntoTurn(sessionId, 'attach this', {
+      mode: 'stage',
+      messageId: 'stage-1',
+    });
+    expect(receipt).toEqual({ delivered: true });
+
+    await vi.waitFor(() => expect(process.staged).toHaveLength(1));
+    // The warm process took it — no relaunch — and ran no turn for it.
+    expect(cli.launches).toBe(1);
+    expect(process.answered).toBe(answeredBefore);
+    expect(runtime.getSessionWarmth(sessionId)).toBe('warm');
+  });
+
+  it('keeps the person’s words pristine and rides context out of band (ADR-0273)', async () => {
+    const sessionId = nextSession();
+
+    await runtime.deliverIntoTurn(sessionId, 'ship it', {
+      mode: 'stage',
+      messageId: 'stage-1',
+      additionalContext: [
+        { kind: 'queue_note', scope: 'per-turn', data: { composedDuringPrevTurn: true } },
+      ],
+    });
+
+    const process = cli.processes[0]!;
+    await vi.waitFor(() => expect(process.staged).toHaveLength(1));
+    // The context rides its own tagged block AHEAD of the person's words
+    // (renderContextEntry is mocked to `<kind>mock</kind>`) — never woven in.
+    expect(process.staged[0]).toEqual({
+      uuid: 'stage-1',
+      content: '<queue_note>mock</queue_note>\n\nship it',
+    });
+  });
+
+  it('lets a staged note be followed by a querying turn, in order (AC2)', async () => {
+    const sessionId = nextSession();
+
+    await runtime.deliverIntoTurn(sessionId, 'context first', {
+      mode: 'stage',
+      messageId: 'stage-1',
+    });
+    const process = cli.processes[0]!;
+    await vi.waitFor(() => expect(process.staged).toHaveLength(1));
+
+    // A real turn on the now-warm process. The staged note is already on the
+    // transcript ahead of it; the SDK merges the two, which is its own contract.
+    await turn(sessionId, 'now do the thing');
+
+    // Same process throughout — the stage did not force a relaunch — and the
+    // querying message ran a turn while the staged note stayed a bare append.
+    expect(cli.launches).toBe(1);
+    expect(process.staged).toEqual([{ uuid: 'stage-1', content: 'context first' }]);
+    expect(process.inbox.at(-1)!.content).toBe('now do the thing');
+    expect(process.answered).toBe(1);
+  });
+
+  it('appends two staged notes before one dispatch, in order (AC5)', async () => {
+    const sessionId = nextSession();
+
+    await runtime.deliverIntoTurn(sessionId, 'first note', { mode: 'stage', messageId: 'stage-1' });
+    await runtime.deliverIntoTurn(sessionId, 'second note', {
+      mode: 'stage',
+      messageId: 'stage-2',
+    });
+
+    const process = cli.processes[0]!;
+    await vi.waitFor(() => expect(process.staged).toHaveLength(2));
+    expect(process.staged.map((m) => m.content)).toEqual(['first note', 'second note']);
+    // Both onto the one warm process, and neither ran a turn.
+    expect(cli.launches).toBe(1);
+    expect(process.answered).toBe(0);
   });
 });

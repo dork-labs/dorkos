@@ -91,6 +91,7 @@ import type { SessionStateProjector } from './session-state-projector.js';
 import type { LockActivity } from './session-lock.js';
 import { feedProjector } from './session-event-normalizer.js';
 import { assembleAdditionalContext } from './context-assembler.js';
+import { takeStagedContext } from './staged-context-store.js';
 import { withStallGuard } from './stall-guard.js';
 import { SESSIONS } from '../../config/constants.js';
 import { startSpan, SPAN, ATTR } from '../observability/index.js';
@@ -643,6 +644,12 @@ export async function triggerTurn(opts: TriggerTurnOpts): Promise<TriggerTurnRes
       ...(seedContext ? { seedContext } : {}),
       nativeContext: deps.getCapabilities().nativeContext,
     });
+    // Fold in any context a person STAGED for a runtime that cannot append to
+    // its own transcript (the fold-into-next fallback, task 4.2). Taken — not
+    // peeked — so each note rides exactly this one dispatch; the ordinary case
+    // holds nothing and pays a single map lookup. A native-staging runtime never
+    // fills this hold, so its dispatches are untouched.
+    additionalContext.push(...takeStagedContext(sessionId));
     const tapped = tapEachEvent(
       deps.sendMessage(sessionId, content, {
         cwd,

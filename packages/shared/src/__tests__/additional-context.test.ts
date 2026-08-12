@@ -11,6 +11,7 @@ const ALL_KINDS: ContextKind[] = [
   'git_status',
   'ui_state',
   'queue_note',
+  'staged_context',
   'env',
   'relay_context',
   'room_context',
@@ -101,6 +102,26 @@ describe('AdditionalContextEntrySchema', () => {
       data: { composedDuringPrevTurn: true },
     });
     expect(result.success).toBe(true);
+  });
+
+  it('validates a staged_context entry', () => {
+    const result = AdditionalContextEntrySchema.safeParse({
+      kind: 'staged_context',
+      scope: 'per-turn',
+      data: { text: 'Use the staging bucket, not prod.' },
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects a staged_context with empty text', () => {
+    // A staged note with nothing in it is a dropped message wearing a receipt —
+    // the one outcome the whole feature exists to prevent. It must not parse.
+    const result = AdditionalContextEntrySchema.safeParse({
+      kind: 'staged_context',
+      scope: 'per-turn',
+      data: { text: '' },
+    });
+    expect(result.success).toBe(false);
   });
 
   it('validates a room_context entry', () => {

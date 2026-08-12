@@ -86,6 +86,10 @@ const CARRIES_PROSE: Record<ContextKind, boolean> = {
   git_status: false,
   ui_state: false,
   queue_note: false,
+  // A staged note is the person's own prose, folded into the next dispatch on
+  // the fallback path (task 4.2). Like a seed, its writer must defuse system
+  // tags, so it is enlisted in the break-out case below.
+  staged_context: true,
   env: false,
   relay_context: false,
   room_context: true,
@@ -127,6 +131,11 @@ const SAMPLES: Record<ContextKind, AdditionalContextEntry> = {
     kind: 'seed_context',
     scope: 'per-turn',
     data: { text: `The person opened this from the Marketplace page.\n\n${BREAKOUT}` },
+  },
+  staged_context: {
+    kind: 'staged_context',
+    scope: 'per-turn',
+    data: { text: `Use the staging bucket, not prod.\n\n${BREAKOUT}` },
   },
   room_context: {
     kind: 'room_context',

@@ -36,6 +36,7 @@ vi.mock('../context-assembler.js', () => ({
 
 import {
   adoptQueuedMessages,
+  deliverStage,
   deliverSteer,
   dispatchMessage,
   dispatchCommandIntent,
@@ -44,6 +45,7 @@ import {
   resetMessageDispatcher,
   sweepOrphanedMessageQueues,
 } from '../message-dispatcher.js';
+import { resetStagedContextStore } from '../staged-context-store.js';
 import { assembleAdditionalContext } from '../context-assembler.js';
 import type { DispatchContext } from '../../../lib/dispatch-context.js';
 import { currentDispatch, currentDispatchId } from '../../../lib/dispatch-context.js';
@@ -140,6 +142,7 @@ afterEach(async () => {
   for (const open of openGates) open();
   await settle();
   resetMessageDispatcher();
+  resetStagedContextStore();
   setMessageQueueStore(undefined);
   disposeProjector(session);
   for (const id of extraProjectors) disposeProjector(id);
@@ -675,6 +678,165 @@ describe('deliverSteer — a delivered steer emits one turn_input into the open 
       .replayFrom(0)
       .filter((e) => e.type === 'turn_input');
     expect(inputs).toHaveLength(0);
+  });
+});
+
+describe('deliverStage — a stage is a write, and folds into the next when unsupported (task 4.2)', () => {
+  it('lets the owner stage natively and emits the context_staged receipt (AC3)', async () => {
+    // No turn is open — a stage needs none — so the lock is free and the owner
+    // may write. The FakeAgentRuntime answers `{ delivered: true }` natively.
+    runtime.isLocked.mockReturnValue(false);
+    const projector = getOrCreateProjector(session);
+    const ingest = vi.spyOn(projector, 'ingest');
+
+    const result = await deliverStage({
+      sessionId: session,
+      clientId: TAB,
+      content: 'use the staging bucket',
+      messageId: 'stage-1',
+      runtime,
+    });
+
+    expect(result).toEqual({ authorized: true, delivered: true });
+    expect(runtime.deliverIntoTurn).toHaveBeenCalledWith(
+      session,
+      'use the staging bucket',
+      expect.objectContaining({ mode: 'stage', messageId: 'stage-1' })
+    );
+    // AC3: the receipt lands on the durable stream as its OWN event, never a
+    // turn_start — a staged message is not a user turn.
+    expect(ingest).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'context_staged',
+        content: 'use the staging bucket',
+        messageId: 'stage-1',
+      })
+    );
+  });
+
+  it('refuses a DIFFERENT client, and never reaches the runtime', async () => {
+    // TAB owns the live turn; window-b could not send now, so it may not stage —
+    // the SAME authorization a steer and a send pass.
+    runtime.isLocked.mockImplementation((_sid, cid) => cid !== undefined && cid !== TAB);
+
+    const result = await deliverStage({
+      sessionId: session,
+      clientId: 'window-b',
+      content: 'let me in',
+      messageId: 'stage-x',
+      runtime,
+    });
+
+    expect(result).toEqual({ authorized: false, delivered: false });
+    expect(runtime.deliverIntoTurn).not.toHaveBeenCalled();
+  });
+
+  it('proceeds on a FREE lock — a stage needs no open turn (unlike a steer)', async () => {
+    // Nobody holds the lock. A steer here would report `no-open-turn`; a stage
+    // does not need one, so it reaches the runtime and lands.
+    runtime.isLocked.mockReturnValue(false);
+    getOrCreateProjector(session);
+
+    const result = await deliverStage({
+      sessionId: session,
+      clientId: TAB,
+      content: 'attach this',
+      messageId: 'stage-2',
+      runtime,
+    });
+
+    expect(result.authorized).toBe(true);
+    expect(result.delivered).toBe(true);
+    expect(runtime.deliverIntoTurn).toHaveBeenCalled();
+  });
+
+  it('folds into the NEXT dispatch when the runtime cannot stage, content pristine (AC4)', async () => {
+    runtime.isLocked.mockReturnValue(false);
+    // This runtime has no native staging — the fallback carries the note.
+    runtime.deliverIntoTurn.mockResolvedValue({ delivered: false, reason: 'unsupported' });
+    const projector = getOrCreateProjector(session);
+    const ingest = vi.spyOn(projector, 'ingest');
+
+    const staged = await deliverStage({
+      sessionId: session,
+      clientId: TAB,
+      content: 'use the staging bucket',
+      messageId: 'stage-1',
+      runtime,
+    });
+    expect(staged).toEqual({ authorized: true, delivered: true, viaFallback: true });
+
+    // The fallback emits the SAME context_staged receipt the native path does —
+    // a silent hold is indistinguishable from a dropped message, and the person
+    // cannot tell which path carried their note (AC3 holds on both paths).
+    expect(ingest).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'context_staged',
+        content: 'use the staging bucket',
+        messageId: 'stage-1',
+      })
+    );
+
+    // The NEXT dispatched message carries the staged text as a `staged_context`
+    // entry in the neutral bag, and the person's own content for THAT message is
+    // untouched (ADR-0273).
+    runtime.withScenarios([quickTurn()]);
+    await send('now do the thing');
+    await settle();
+
+    const call = runtime.sendMessage.mock.calls.find(
+      ([, content]) => content === 'now do the thing'
+    );
+    expect(call).toBeDefined();
+    const [, sentContent, opts] = call!;
+    expect(sentContent).toBe('now do the thing');
+    expect(opts?.additionalContext).toContainEqual({
+      kind: 'staged_context',
+      scope: 'per-turn',
+      data: { text: 'use the staging bucket' },
+    });
+  });
+
+  it('folds two staged notes into the next dispatch, in order (AC5, fallback)', async () => {
+    runtime.isLocked.mockReturnValue(false);
+    runtime.deliverIntoTurn.mockResolvedValue({ delivered: false, reason: 'unsupported' });
+    getOrCreateProjector(session);
+
+    await deliverStage({
+      sessionId: session,
+      clientId: TAB,
+      content: 'first',
+      messageId: 's1',
+      runtime,
+    });
+    await deliverStage({
+      sessionId: session,
+      clientId: TAB,
+      content: 'second',
+      messageId: 's2',
+      runtime,
+    });
+
+    runtime.withScenarios([quickTurn()]);
+    await send('go');
+    await settle();
+
+    const call = runtime.sendMessage.mock.calls.find(([, content]) => content === 'go');
+    const stagedEntries = (call?.[2]?.additionalContext ?? []).filter(
+      (e) => e.kind === 'staged_context'
+    );
+    expect(stagedEntries.map((e) => (e.kind === 'staged_context' ? e.data.text : ''))).toEqual([
+      'first',
+      'second',
+    ]);
+    // Only one dispatch consumed the hold — a later turn carries nothing.
+    runtime.withScenarios([quickTurn()]);
+    await send('again');
+    await settle();
+    const second = runtime.sendMessage.mock.calls.find(([, content]) => content === 'again');
+    expect((second?.[2]?.additionalContext ?? []).some((e) => e.kind === 'staged_context')).toBe(
+      false
+    );
   });
 });
 

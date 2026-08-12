@@ -122,6 +122,7 @@ import {
   resetSessionKeys,
 } from './session-key-registry.js';
 import { onSessionRemoved } from './session-list-broadcaster.js';
+import { holdStagedContext } from './staged-context-store.js';
 import { triggerTurn, type TriggerTurnDeps, type TriggerTurnResult } from './trigger-turn.js';
 import { triggerCommandIntent } from './trigger-command-intent.js';
 import { SESSIONS } from '../../config/constants.js';
@@ -272,6 +273,12 @@ function resolveDisposition(
 type RawQueueUpdate = Omit<Extract<SessionEvent, { type: 'queue_update' }>, 'seq'>;
 
 /**
+ * The `context_staged` member as an emitter builds it — the projector stamps the
+ * `seq`, exactly as it does for {@link RawQueueUpdate}.
+ */
+type RawContextStaged = Omit<Extract<SessionEvent, { type: 'context_staged' }>, 'seq'>;
+
+/**
  * Announce a session's queue on its durable stream — the one way a queue change
  * reaches the windows watching it (spec `persistent-session-runtime` §3.2).
  *
@@ -348,6 +355,35 @@ function emitTurnInput(sessionKey: string, content: string, messageId: string): 
   const projector = projectorFor(sessionKey);
   if (!projector) return;
   const event: RawTurnInput = { type: 'turn_input', content, disposition: 'steer', messageId };
+  projector.ingest(event);
+}
+
+/**
+ * Announce that a person STAGED context — the receipt for a `stage` (spec
+ * `persistent-session-runtime` §2.5, task 4.2). A staged message opens no turn,
+ * so it mints no `turn_start`; without this event a successful stage would be
+ * indistinguishable on the stream from a dropped one, which is the exact failure
+ * the receipt exists to prevent.
+ *
+ * Synthesized server-side and ingested straight into the projector — the same
+ * path {@link emitQueueUpdate} takes, so it is stamped with a `seq`, replayed to
+ * a client resuming from `Last-Event-ID`, and folded outside the turn transcript
+ * (`EVENTS_OUTSIDE_THE_TURN`) rather than as a user turn. Emitted for BOTH the
+ * native path (the message reached the runtime's transcript directly) and the
+ * fold-into-next fallback (the text is held to ride the next dispatch).
+ *
+ * A no-op when no projector is registered — nobody is listening, and a cold
+ * connect learns the staged text from the runtime's transcript (native) or sees
+ * it fold into the next turn (fallback) either way.
+ *
+ * @param sessionId - Either id a caller might hold (request uuid or canonical)
+ * @param content - The person's staged text, pristine
+ * @param messageId - The server-minted correlation id for the staged message
+ */
+function emitContextStaged(sessionId: string, content: string, messageId: string): void {
+  const projector = peekProjector(primaryOf(sessionId));
+  if (!projector) return;
+  const event: RawContextStaged = { type: 'context_staged', content, messageId };
   projector.ingest(event);
 }
 
@@ -1054,6 +1090,118 @@ export async function deliverSteer(opts: DeliverSteerOpts): Promise<SteerDeliver
     // check, so the ingest cannot straddle a turn ending.
     if (result.delivered) emitTurnInput(sessionKey, opts.content, opts.messageId);
     return { authorized: true, ...result };
+  });
+}
+
+/** Inputs for {@link deliverStage}. */
+export interface DeliverStageOpts {
+  /** The session to stage onto; either id a caller might hold. */
+  sessionId: string;
+  /** The client staging — the identity the authorization gate turns on. */
+  clientId: string;
+  /** The person's words, passed through pristine. */
+  content: string;
+  /** The server-minted correlation id for this staged message. */
+  messageId: string;
+  /** The neutral context bag, assembled server-side; rendered out of band. */
+  additionalContext?: AdditionalContext;
+  /** The runtime this session resolves to. */
+  runtime: AgentRuntime;
+}
+
+/**
+ * What a stage did, plus whether the caller was allowed to make it.
+ *
+ * `authorized: false` is distinct from an ordinary `delivered: false`, exactly as
+ * it is for a steer: the stage was refused before the runtime was ever asked,
+ * because a DIFFERENT client owns the live turn.
+ */
+export interface StageDeliveryResult extends RuntimeDeliveryResult {
+  /** True when the caller was entitled to write to this session. */
+  authorized: boolean;
+  /**
+   * True when the stage landed via the fold-into-next FALLBACK rather than the
+   * runtime's native transcript — the text is held and rides the next dispatch.
+   * Absent on the native path. The person cannot tell the two apart, and should
+   * not have to; this is for callers that log or degrade.
+   */
+  viaFallback?: boolean;
+}
+
+/**
+ * Stage a message onto a session WITHOUT provoking a turn, through the same
+ * ingress and the SAME authorization a steer and a turn pass (spec
+ * `persistent-session-runtime` §2.5, task 4.2).
+ *
+ * **A stage is a WRITE**, so its authorization is identical to {@link
+ * deliverSteer}'s: the runtime's real write-lock via {@link
+ * AgentRuntime.isLocked}, refusing only when a DIFFERENT client owns the live
+ * turn. The one difference from a steer is what a FREE lock means. A steer with
+ * no open turn is `no-open-turn` — there is nothing to join. A stage needs no
+ * open turn at all: a free lock is the ordinary case, and a cold session is warmed
+ * so the message can reach a transcript. So this never reports `no-open-turn`.
+ *
+ * **Native, then fallback.** The runtime is asked to stage natively
+ * ({@link AgentRuntime.deliverIntoTurn} with `mode: 'stage'`). A runtime that
+ * cannot — it does not implement the method, or answers `unsupported` — degrades
+ * to the fold-into-next fallback: the text is held ({@link holdStagedContext})
+ * and rides the next dispatch as a `staged_context` entry, so nothing the person
+ * staged is lost. Both paths emit the same `context_staged` receipt. This mirrors
+ * the way {@link deliverSteer} degrades around a missing implementation rather
+ * than reading a capability flag — the flag is the routing layer's concern (task
+ * 4.4), not this gate's.
+ *
+ * Held under the dispatch mutex so the lock check and the delivery cannot
+ * straddle a turn boundary or a reap, and so a stage that warms a cold session
+ * does not interleave with a dispatch on the same session.
+ *
+ * This is the ONE server path to a runtime's `deliverIntoTurn` for a stage, the
+ * same single ingress {@link deliverSteer} is for a steer — the single-ingress
+ * audit holds both to it.
+ *
+ * @param opts - The session, the staging client, the message, and the runtime
+ * @returns Whether the caller was authorized, whether the stage was delivered,
+ *   whether it went via the fallback, and why not when it did not land
+ */
+export async function deliverStage(opts: DeliverStageOpts): Promise<StageDeliveryResult> {
+  const { sessionId, clientId, runtime, content, messageId } = opts;
+  // Keyed exactly as `deliverSteer` and `triggerTurn` key it — the canonical id
+  // when known — so the lock check asks the same authority a turn would.
+  const lockKey = runtime.getInternalSessionId(sessionId) ?? sessionId;
+  const sessionKey = primaryOf(lockKey);
+  return withDispatchMutex(sessionKey, async () => {
+    // A DIFFERENT client holds the live write-lock: this client could not send
+    // now, so it may not stage now. A FREE lock is NOT a refusal — a stage needs
+    // no open turn — which is the whole difference from a steer's gate.
+    if (runtime.isLocked(lockKey, clientId)) {
+      return { authorized: false, delivered: false };
+    }
+    const native = runtime.deliverIntoTurn
+      ? await runtime.deliverIntoTurn(sessionId, content, {
+          mode: 'stage',
+          messageId,
+          ...(opts.additionalContext !== undefined
+            ? { additionalContext: opts.additionalContext }
+            : {}),
+        })
+      : { delivered: false, reason: 'unsupported' as const };
+    if (native.delivered) {
+      emitContextStaged(sessionId, content, messageId);
+      return { authorized: true, delivered: true };
+    }
+    if (native.reason === 'unsupported') {
+      // The runtime cannot append to its own transcript. Hold the person's words
+      // and fold them into the next dispatch (ADR-0273); the same receipt goes
+      // out, because to the person a stage landed either way.
+      holdStagedContext(sessionId, content, messageId);
+      emitContextStaged(sessionId, content, messageId);
+      return { authorized: true, delivered: true, viaFallback: true };
+    }
+    // A transient the runtime named (a stream that closed under a warm process, a
+    // boundary a cwd failed). Report it; the caller decides what to say. Not
+    // folded into the fallback — that is for a runtime that CANNOT stage, not one
+    // that momentarily could not.
+    return { authorized: true, ...native };
   });
 }
 
