@@ -27,6 +27,20 @@ export const COMMAND_PALETTE_SECTIONS: PlaygroundSection[] = [
     ],
   },
   {
+    id: 'scoped-by-a-chip',
+    title: 'Scoped by a chip',
+    page: 'command-palette',
+    category: 'Command Palette',
+    keywords: ['scope', 'chip', 'agent', 'channel', 'within', 'backspace', 'conversations'],
+  },
+  {
+    id: 'archived-rows',
+    title: 'Archived rows',
+    page: 'command-palette',
+    category: 'Command Palette',
+    keywords: ['archived', 'closed', 'channel', 'overnight', 'yesterday', 'label', 'findable'],
+  },
+  {
     id: 'agentcommanditem',
     title: 'AgentCommandItem',
     page: 'command-palette',

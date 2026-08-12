@@ -46,6 +46,7 @@ function item(overrides: Partial<PaletteSessionItem> = {}): PaletteSessionItem {
     cwd: '/Users/dev/code/tangerine',
     agent: null,
     lastActivityAt: '2026-08-09T10:00:00.000Z',
+    archived: false,
     ...overrides,
   };
 }

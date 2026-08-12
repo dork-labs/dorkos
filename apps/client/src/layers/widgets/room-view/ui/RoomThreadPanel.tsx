@@ -10,7 +10,7 @@ import {
   useRoomPresenceAuthorIds,
 } from '@/layers/entities/room';
 import { authorsById, toMessageAuthor } from '../lib/room-timeline';
-import { RoomAgentInfoProvider } from '../model/agent-info-context';
+import { AgentInfoProvider, useRoomAgentDirectory } from '../model/agent-info-context';
 import { useThreadArrivals } from '../model/use-thread-arrivals';
 import { RoomComposer } from './RoomComposer';
 import { RoomEntryRow } from './RoomEntryRow';
@@ -119,6 +119,9 @@ export function RoomThreadPanel({
   onClose,
 }: RoomThreadPanelProps) {
   const authors = useMemo(() => authorsById(room.members), [room.members]);
+  // The same fleet read the room's own feed makes — a reply draws the same
+  // faces the message it hangs off does.
+  const agents = useRoomAgentDirectory();
   const authorNames = useMemo(
     () => new Map([...authors].map(([id, author]) => [id, author.displayName])),
     [authors]
@@ -205,7 +208,7 @@ export function RoomThreadPanel({
   return (
     // The thread draws the same messages the room does, mentions and all, so it
     // needs the same answer about how the agents in them run.
-    <RoomAgentInfoProvider>
+    <AgentInfoProvider known={agents}>
       {/*
         A panel is a region, not a control: it holds the thread's messages and
         their own buttons, and none of that may sit inside an interactive
@@ -322,7 +325,7 @@ export function RoomThreadPanel({
               <RoomEntryRow
                 roomId={room.id}
                 entry={root}
-                author={toMessageAuthor(root.authorId, authors)}
+                author={toMessageAuthor(root.authorId, authors, agents.faces)}
                 authorRef={authors.get(root.authorId)}
                 authors={authors}
                 viewerAuthorId={room.viewerAuthorId}
@@ -369,7 +372,7 @@ export function RoomThreadPanel({
                         <RoomEntryRow
                           roomId={room.id}
                           entry={reply}
-                          author={toMessageAuthor(reply.authorId, authors)}
+                          author={toMessageAuthor(reply.authorId, authors, agents.faces)}
                           authorRef={authors.get(reply.authorId)}
                           authors={authors}
                           viewerAuthorId={room.viewerAuthorId}
@@ -427,6 +430,6 @@ export function RoomThreadPanel({
           happens after you press Enter. */}
         <RoomPresenceLine roomId={room.id} members={room.members} scope={scope} />
       </section>
-    </RoomAgentInfoProvider>
+    </AgentInfoProvider>
   );
 }

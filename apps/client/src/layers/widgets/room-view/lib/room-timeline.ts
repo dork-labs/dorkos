@@ -4,7 +4,8 @@
  * @module widgets/room-view/lib/room-timeline
  */
 import type { AuthorOrigin, AuthorRef, RoomEntry, RoomRosterEntry } from '@/layers/entities/room';
-import { authorColor, threadRootIdOf } from '@/layers/entities/room';
+import { threadRootIdOf } from '@/layers/entities/room';
+import { resolveIdentityFace, type IdentityFaceOverride } from '@/layers/shared/lib';
 import type { MessageAuthor } from '@/layers/shared/model';
 
 /**
@@ -38,33 +39,57 @@ export function authorsById(members: readonly RoomRosterEntry[]): Map<string, Ro
 /**
  * The view model the shared message primitives render an author from.
  *
- * `emoji`, `color` and `imageUrl` are read straight off the roster's own render cache
- * (`AuthorRef`) rather than re-derived: the roster IS the resolved identity,
- * so there is nothing to guess. Most agents carry neither today, which is why
- * `color` still falls back to a hash of the opaque author id — the common
- * path stays common, and a participant reads as one stable color everywhere
- * even with nothing stored for them. `isExternal` marks a roster member
- * bridged in from another platform, which is what lets a caller draw them
- * apart from someone local without this resolver knowing anything about how
- * that distinction is drawn.
+ * **The face comes off the one ladder** (`resolveIdentityFace`), the same one
+ * the masthead's roster and the member sheet's rows climb: an agent's own
+ * manifest first when the caller could reach the fleet, then the render cache
+ * the roster carries (`AuthorRef`), then a colour hashed from the opaque author
+ * id. This used to be hand-rolled here — the emoji taken straight off the cache
+ * with no rung above it, the colour hashed locally — which is how the loudest
+ * surface in a room ended up the last one still drawing an agent as a letter
+ * while the sidebar drew its face.
+ *
+ * **The fleet is reached by `agentRef`, never by the author id.** An agent's
+ * author row and its manifest are different ULIDs, so hashing the id this
+ * resolver holds would paint a confident face matching nothing else on screen —
+ * which is exactly why the ladder's own last rung stops at a letter and the
+ * emoji can only ever arrive through `facesByRef`.
+ *
+ * `isExternal` marks a roster member bridged in from another platform, which is
+ * what lets a caller draw them apart from someone local without this resolver
+ * knowing anything about how that distinction is drawn.
  *
  * @param authorId - The entry's stored author id.
  * @param authors - The room's roster, keyed by author id.
+ * @param facesByRef - The fleet's faces keyed by `agentRef`, when the caller
+ *   could read the fleet. Omitted or empty simply leaves the ladder's lower
+ *   rungs to answer.
  */
 export function toMessageAuthor(
   authorId: string,
-  authors: ReadonlyMap<string, RosterAuthor>
+  authors: ReadonlyMap<string, RosterAuthor>,
+  facesByRef?: ReadonlyMap<string, IdentityFaceOverride>
 ): MessageAuthor {
   const author = authors.get(authorId);
+  const face = resolveIdentityFace({
+    record: {
+      // A removed member's old posts still render: the roster no longer holds
+      // them, and saying so is more honest than dropping what they said.
+      kind: author?.kind ?? 'system',
+      id: authorId,
+      displayName: author?.displayName ?? 'Unknown',
+      emoji: author?.emoji,
+      color: author?.color,
+      imageUrl: author?.imageUrl,
+    },
+    override: author?.agentRef === undefined ? null : facesByRef?.get(author.agentRef),
+  });
   return {
-    // A removed member's old posts still render: the roster no longer holds
-    // them, and saying so is more honest than dropping what they said.
-    kind: author?.kind ?? 'system',
+    kind: face.kind,
     id: authorId,
     displayName: author?.displayName ?? 'Unknown',
-    emoji: author?.emoji,
-    imageUrl: author?.imageUrl,
-    color: author?.color ?? authorColor(authorId),
+    emoji: face.emoji,
+    imageUrl: face.imageUrl,
+    color: face.color,
     isExternal: typeof author?.origin === 'object' && author?.origin !== null,
   };
 }

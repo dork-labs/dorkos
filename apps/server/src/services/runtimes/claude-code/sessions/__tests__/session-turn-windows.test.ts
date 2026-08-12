@@ -11,10 +11,11 @@
  *
  * @module services/runtimes/claude-code/sessions/__tests__/session-turn-windows
  */
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeAll } from 'vitest';
 import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import type { SessionEvent } from '@dorkos/shared/session-stream';
 import type { StreamEvent } from '@dorkos/shared/types';
+import { initBoundary } from '../../../../../lib/boundary.js';
 import { feedProjector } from '../../../../session/session-event-normalizer.js';
 import { SessionStateProjector } from '../../../../session/session-state-projector.js';
 import { mapSdkMessage } from '../../sdk/sdk-event-mapper.js';
@@ -26,6 +27,18 @@ import { SessionTurnWindows, type TurnWindow, type WindowUsage } from '../sessio
 import { FakeQuery, initMessage } from './fake-pump-query.js';
 
 const SESSION_ID = 'sess-1';
+
+/**
+ * The directory every dispatch in this file runs in — real, and inside the
+ * boundary initialized below, because `dispatch` validates it before it sends
+ * anything (task 3.9). What happens when it is NOT allowed is a subject of its
+ * own, in `session-turn-windows-boundary.test.ts`.
+ */
+const CWD = process.cwd();
+
+beforeAll(async () => {
+  await initBoundary(CWD);
+});
 
 /** A `result` that answers `answers`, or one that answers nothing it can name. */
 function resultMessage(answers?: string): SDKMessage {
@@ -191,7 +204,7 @@ function harness(hooks: { onWindowClose?: (window: TurnWindow) => void } = {}): 
     windowsOnStream: () => groupWindows(projector.replayFrom(0)),
     rawStream: () => projector.replayFrom(0),
     dispatch: async (batch) => {
-      const dispatching = windows.dispatch(batch);
+      const dispatching = windows.dispatch(batch, CWD);
       // The launch parks until the CLI reports itself ready; only the first
       // dispatch boots a process, so a later one has nothing to wait for.
       if (queries.length === 0) {
@@ -464,7 +477,7 @@ describe('SessionTurnWindows — a turn opens on dispatch and closes on its resu
 
     await h.dispatch([{ content: 'first', messageId: 'm1' }]);
     await expect(
-      h.windows.dispatch([{ content: 'second', messageId: 'm2' }])
+      h.windows.dispatch([{ content: 'second', messageId: 'm2' }], CWD)
     ).rejects.toBeInstanceOf(IllegalPumpTransitionError);
 
     h.live().emit(resultMessage('m1'));
@@ -476,7 +489,7 @@ describe('SessionTurnWindows — a turn opens on dispatch and closes on its resu
   // no result could ever close.
   it('refuses an empty batch', async () => {
     const h = harness();
-    await expect(h.windows.dispatch([])).rejects.toMatchObject({ reason: 'empty-dispatch' });
+    await expect(h.windows.dispatch([], CWD)).rejects.toMatchObject({ reason: 'empty-dispatch' });
     expect(h.opened).toHaveLength(0);
   });
 
@@ -503,7 +516,7 @@ describe('SessionTurnWindows — a turn opens on dispatch and closes on its resu
     });
 
     await expect(
-      refusing.dispatch([{ content: 'do the thing', messageId: 'm1' }])
+      refusing.dispatch([{ content: 'do the thing', messageId: 'm1' }], CWD)
     ).rejects.toBeInstanceOf(PumpRefusedError);
 
     // Nobody was ever told a turn started, so nobody retired the queue row.
@@ -536,13 +549,13 @@ describe('SessionTurnWindows — a turn opens on dispatch and closes on its resu
     windows.onMessage(textDeltaMessage('said before the refusal'));
 
     await expect(
-      windows.dispatch([{ content: 'never runs', messageId: 'm-refused' }])
+      windows.dispatch([{ content: 'never runs', messageId: 'm-refused' }], CWD)
     ).rejects.toBeInstanceOf(PumpRefusedError);
     expect(opened).toHaveLength(0);
 
     // The next dispatch is accepted, and the held words ride into ITS window.
     refuse = false;
-    const window = await windows.dispatch([{ content: 'hello', messageId: 'm1' }]);
+    const window = await windows.dispatch([{ content: 'hello', messageId: 'm1' }], CWD);
     expect(opened).toHaveLength(1);
 
     const got: SDKMessage[] = [];
@@ -575,7 +588,7 @@ describe('SessionTurnWindows — a turn opens on dispatch and closes on its resu
     // decides whether it was held or simply arrived inside the new window —
     // and the test would then pass whether or not held messages survive.
     await vi.waitFor(() => expect(h.seen).toHaveLength(2));
-    await h.windows.dispatch([{ content: 'hello', messageId: 'm1' }]);
+    await h.windows.dispatch([{ content: 'hello', messageId: 'm1' }], CWD);
     h.live().emit(resultMessage('m1'));
     await settled(h, 1);
 
@@ -617,7 +630,7 @@ describe('SessionTurnWindows — a turn opens on dispatch and closes on its resu
 
     // The next turn must be accepted, not refused because a close it could not
     // see had not reached `endTurn()` yet.
-    const dispatching = h.windows.dispatch([{ content: 'next', messageId: 'm2' }]);
+    const dispatching = h.windows.dispatch([{ content: 'next', messageId: 'm2' }], CWD);
     // Released on a LATER MACROTASK, and that boundary is the whole experiment.
     // Node drains every microtask first, so a windower that believes nothing is
     // closing gets all the way to `pump.dispatch` before this line runs — and a
@@ -661,7 +674,7 @@ describe('SessionTurnWindows — a turn opens on dispatch and closes on its resu
     h.live().emit(resultMessage('m1'));
     await vi.waitFor(() => expect(h.live().parkedControls).toBe(2));
 
-    const dispatching = h.windows.dispatch([{ content: 'next', messageId: 'm2' }]);
+    const dispatching = h.windows.dispatch([{ content: 'next', messageId: 'm2' }], CWD);
 
     // Mid-wait, the process answers something nobody sent: a second close, and
     // one this dispatch could not have known about when it started waiting.
@@ -703,7 +716,7 @@ describe('SessionTurnWindows — a turn opens on dispatch and closes on its resu
     await vi.waitFor(() => expect(h.live().parkedControls).toBe(2));
 
     // The dispatch starts waiting while that doomed close is still in flight.
-    const dispatching = h.windows.dispatch([{ content: 'next', messageId: 'm2' }]);
+    const dispatching = h.windows.dispatch([{ content: 'next', messageId: 'm2' }], CWD);
     setTimeout(() => h.live().releaseControls(), 0);
 
     await expect(dispatching).resolves.toMatchObject({ ids: ['m2'] });

@@ -251,4 +251,9 @@ export { activityVerb, WAITING_ON_YOU_VERB } from './activity-verb';
 export { isWelcomeBackMoment } from './welcome-back-glow';
 export type { WelcomeBackMomentInput } from './welcome-back-glow';
 export { setAskDorkBotOrigin, takeAskDorkBotOrigin } from './ask-dorkbot-origin';
+// `overnightBoundary` is deliberately NOT re-exported here, for the same reason
+// `row-grammar` is not: one of its two callers is the sidebar model, which a
+// source-level contract forbids from value-importing this barrel at all (it
+// pulls in the transport, the sound player and a dozen other side effects).
+// Both callers deep-import the leaf module, which imports nothing.
 export { isNewer } from './version-compare';

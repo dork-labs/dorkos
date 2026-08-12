@@ -4,7 +4,7 @@
  * @module entities/room/ui/MemberList
  */
 import type { RoomRosterEntry } from '@dorkos/shared/room-schemas';
-import { cn, resolveIdentityFace } from '@/layers/shared/lib';
+import { cn, resolveIdentityFace, type IdentityFaceOverride } from '@/layers/shared/lib';
 import {
   IdentityAvatar,
   identityMarkRing,
@@ -41,25 +41,44 @@ export interface MemberListProps {
    * the whole name because there is no action to describe.
    */
   label?: string;
+  /**
+   * Fleet-resolved faces, keyed by the `agentRef` a roster member carries.
+   *
+   * The one thing this component cannot work out for itself. It is an entity:
+   * it may not import `entities/agent`, so it can never ask an agent's own
+   * manifest what it looks like — and the ids it holds are author rows, which
+   * hash to something no other surface draws. A caller that CAN reach the fleet
+   * (the room's masthead is a widget) resolves each agent the same way the
+   * sidebar does and hands the answers over.
+   *
+   * Only agents appear here, and only ones the fleet could resolve. Anybody
+   * missing keeps whatever their author record cached, then a letter — see
+   * {@link MemberList}.
+   */
+  facesByRef?: ReadonlyMap<string, IdentityFaceOverride>;
   className?: string;
 }
 
 /**
  * Overlapping discs, one per member, with the rest counted off at the end.
  *
- * **Every disc is drawn from the author record and nothing else.** This is an
- * entity: it is handed a roster, it cannot reach the fleet, and it does not go
- * looking. So a member wears the emoji and colour the server last cached for
- * them, and a member with neither wears a letter on a colour hashed from their
- * id. Shape and corner mark come off `kind`, so an agent here reads as an agent
- * the same way it does in the member sheet.
+ * **Every disc climbs the shared ladder** (`resolveIdentityFace`): the agent's
+ * own manifest first, when the caller could reach the fleet and passed
+ * {@link MemberListProps.facesByRef}; then the emoji and colour the server last
+ * cached on the author record; then a letter on a colour hashed from the
+ * opaque id. Shape and corner mark come off `kind`, so an agent here reads as
+ * an agent the same way it does in the member sheet.
  *
- * The **colour** is where that stops being true, and deliberately so for now:
- * the sheet's row can resolve an agent against the fleet and prefer its
- * manifest colour, and this cannot, so an agent whose manifest colour never
- * reached its author record shows one colour here and another there. Closing
- * that means deciding whether an entity component may accept a fleet-resolved
- * face at all, which is a design question and not this component's to answer.
+ * **This component still cannot reach the fleet, and that has not changed —
+ * what changed is that it no longer has to.** It is an entity and may not
+ * import `entities/agent`, so it is handed the faces rather than going looking,
+ * exactly as `roomIdentityMark` is handed manifests. With the room's masthead
+ * supplying them, one agent now draws one emoji and one colour across every
+ * disc a room has: this stack, the room's own mark for a direct message, the
+ * member sheet's rows, each message's disc in the gutter, and the hover card a
+ * mention opens — the same face the sidebar and `/team` draw. An agent the
+ * fleet could not resolve keeps the honest letter instead of an invented face —
+ * see `resolveIdentityFace` for why the ladder's last rung stops where it does.
  *
  * **Two shapes, chosen by whether it is pressable.** Read-only it is a labelled
  * list, each disc a tooltip trigger. Given an `onClick` it is a single button —
@@ -73,7 +92,7 @@ export interface MemberListProps {
  * it stays there for anything reading the roster off the element rather than
  * off the room.
  */
-export function MemberList({ members, onClick, label, className }: MemberListProps) {
+export function MemberList({ members, onClick, label, facesByRef, className }: MemberListProps) {
   if (members.length === 0) return null;
 
   const visible = members.slice(0, MAX_VISIBLE);
@@ -100,7 +119,11 @@ export function MemberList({ members, onClick, label, className }: MemberListPro
     const name = isExternal
       ? `${author.displayName}, from ${platformLabel(origin.platform)}`
       : author.displayName;
-    const face = resolveIdentityFace({ record: author, origin });
+    // Joined on `agentRef`, the stable handle derived from an agent's directory
+    // — never on the author id, which belongs to a different id space, and
+    // never on a display name, which two agents can share.
+    const override = author.agentRef === undefined ? null : facesByRef?.get(author.agentRef);
+    const face = resolveIdentityFace({ record: author, override, origin });
     return (
       <IdentityAvatar
         // Named explicitly: the tooltip trigger this stands in for would
