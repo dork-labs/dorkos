@@ -1,11 +1,18 @@
 import { useState, useEffect } from 'react';
 import { Hash, Pin } from 'lucide-react';
 import type { Session } from '@dorkos/shared/types';
+import {
+  CHANNEL_ORIGIN_SESSION,
+  GROUPED_SESSIONS,
+  MOCK_SESSIONS,
+  TASK_ORIGIN_SESSION,
+} from './session-list-fixtures';
 import { PlaygroundSection } from '../PlaygroundSection';
 import { ShowcaseLabel } from '../ShowcaseLabel';
 import { ShowcaseDemo } from '../ShowcaseDemo';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { EmbedSessionList, SessionsView } from '@/layers/features/session-list';
+import { SessionsView } from '@/layers/features/session-list';
+import { EmbedSessionListShowcase } from './EmbedSessionListShowcase';
 import { SidebarFooterStrip } from '@/layers/features/dashboard-sidebar';
 import { configKeys } from '@/layers/entities/config';
 import { useSessionChatStore, useSessionListStore, SessionRow } from '@/layers/entities/session';
@@ -21,16 +28,6 @@ import { useRovingFocus } from '@/layers/shared/model';
 // ---------------------------------------------------------------------------
 // Mock data
 // ---------------------------------------------------------------------------
-
-const now = new Date();
-
-function hoursAgo(hours: number): string {
-  return new Date(now.getTime() - hours * 60 * 60 * 1000).toISOString();
-}
-
-function daysAgo(days: number): string {
-  return new Date(now.getTime() - days * 24 * 60 * 60 * 1000).toISOString();
-}
 
 // Session IDs used to seed specific activity indicator states in the store
 const INDICATOR_SESSION_IDS = {
@@ -64,78 +61,6 @@ const INDICATOR_SESSIONS: Record<keyof typeof INDICATOR_SESSION_IDS, Session> = 
   ),
 };
 
-const MOCK_SESSIONS: Session[] = [
-  {
-    id: '00000000-0000-0000-0000-000000000001',
-    title: 'Refactor auth middleware to use JWT validation',
-    createdAt: hoursAgo(1),
-    updatedAt: hoursAgo(1),
-    permissionMode: 'default',
-    runtime: 'claude-code',
-  },
-  {
-    id: '00000000-0000-0000-0000-000000000002',
-    title: 'Debug failing E2E tests in CI pipeline',
-    createdAt: hoursAgo(3),
-    updatedAt: hoursAgo(2),
-    permissionMode: 'default',
-    runtime: 'claude-code',
-  },
-  {
-    id: '00000000-0000-0000-0000-000000000003',
-    title: 'Add dark mode support to settings panel',
-    createdAt: daysAgo(1),
-    updatedAt: daysAgo(1),
-    permissionMode: 'acceptEdits',
-    runtime: 'claude-code',
-  },
-  {
-    id: '00000000-0000-0000-0000-000000000004',
-    title: 'Migrate database schema to Drizzle ORM',
-    createdAt: daysAgo(2),
-    updatedAt: daysAgo(1),
-    permissionMode: 'bypassPermissions',
-    runtime: 'claude-code',
-  },
-  {
-    id: '00000000-0000-0000-0000-000000000005',
-    title: 'Implement WebSocket relay for agent messaging',
-    createdAt: daysAgo(5),
-    updatedAt: daysAgo(4),
-    permissionMode: 'default',
-    runtime: 'claude-code',
-  },
-  {
-    id: '00000000-0000-0000-0000-000000000006',
-    title: 'Optimize bundle size with tree-shaking analysis',
-    createdAt: daysAgo(8),
-    updatedAt: daysAgo(7),
-    permissionMode: 'plan',
-    runtime: 'claude-code',
-  },
-];
-
-// Origin-varied sessions (session-origin-legibility) — makes SessionOriginMark
-// visually discoverable in the playground alongside the plain-user rows above.
-const CHANNEL_ORIGIN_SESSION: Session = {
-  ...MOCK_SESSIONS[0],
-  id: '00000000-0000-0000-0000-000000000007',
-  origin: 'channel',
-  originLabel: 'Telegram',
-};
-
-const TASK_ORIGIN_SESSION: Session = {
-  ...MOCK_SESSIONS[1],
-  id: '00000000-0000-0000-0000-000000000008',
-  origin: 'task',
-  originLabel: 'Scheduled task · daily-digest',
-};
-
-const GROUPED_SESSIONS = [
-  { label: 'Today', sessions: MOCK_SESSIONS.slice(0, 2) },
-  { label: 'Yesterday', sessions: MOCK_SESSIONS.slice(2, 4) },
-  { label: 'Previous 7 Days', sessions: MOCK_SESSIONS.slice(4) },
-];
 
 // ---------------------------------------------------------------------------
 // Showcases
@@ -561,50 +486,6 @@ function SessionsViewShowcase() {
       <ShowcaseDemo>
         <div className="border-border h-40 w-64 overflow-hidden rounded-lg border">
           <SessionsView activeSessionId={null} groupedSessions={[]} onSessionClick={() => {}} />
-        </div>
-      </ShowcaseDemo>
-    </PlaygroundSection>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// EmbedSessionList
-// ---------------------------------------------------------------------------
-
-/**
- * The Obsidian embed's roster, at the width its drawer actually is.
- *
- * **This showcase is the only way to see that surface without a vault.** The
- * embed runs inside Obsidian through `DirectTransport`, so no browser test and
- * no screenshot of the cockpit shows it; mounted here at `w-80` — the width of
- * the drawer in `App.tsx` — it is at least the real component at the real size,
- * in both themes.
- */
-function EmbedSessionListShowcase() {
-  const [activeId, setActiveId] = useState<string | null>(MOCK_SESSIONS[0].id);
-
-  return (
-    <PlaygroundSection
-      title="EmbedSessionList"
-      description="The Obsidian embed's roster, in the shared sidebar row grammar (DOR-1080)."
-    >
-      <ShowcaseLabel>Grouped list — 320px, the embed drawer's width</ShowcaseLabel>
-      <ShowcaseDemo>
-        <div className="bg-sidebar h-80 w-80 overflow-hidden rounded-lg">
-          <EmbedSessionList
-            activeSessionId={activeId}
-            groupedSessions={GROUPED_SESSIONS}
-            onSessionClick={setActiveId}
-            onForkSession={() => {}}
-            onRenameSession={() => {}}
-          />
-        </div>
-      </ShowcaseDemo>
-
-      <ShowcaseLabel>Empty state</ShowcaseLabel>
-      <ShowcaseDemo>
-        <div className="bg-sidebar h-40 w-80 overflow-hidden rounded-lg">
-          <EmbedSessionList activeSessionId={null} groupedSessions={[]} onSessionClick={() => {}} />
         </div>
       </ShowcaseDemo>
     </PlaygroundSection>
