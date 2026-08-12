@@ -9,6 +9,7 @@
  */
 import type { HistoryMessage } from '@dorkos/shared/types';
 import type { Transport } from '@dorkos/shared/transport';
+import { resolveStableClientId } from './client-id';
 import { createTasksMethods } from './task-methods';
 import { createRelayMethods } from './relay-methods';
 import { createMeshMethods } from './mesh-methods';
@@ -73,7 +74,7 @@ export class HttpTransport implements Transport {
   private readonly messageCache = new Map<string, { messages: HistoryMessage[] }>();
 
   constructor(private readonly baseUrl: string) {
-    this.clientId = `web-${crypto.randomUUID()}`;
+    this.clientId = resolveStableClientId();
     Object.assign(
       this,
       createTasksMethods(baseUrl),
