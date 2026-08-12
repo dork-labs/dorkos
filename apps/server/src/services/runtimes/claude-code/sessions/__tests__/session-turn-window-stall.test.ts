@@ -11,14 +11,33 @@
  *
  * @module services/runtimes/claude-code/sessions/__tests__/session-turn-window-stall
  */
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import fs from 'fs/promises';
+import os from 'os';
+import path from 'path';
+import { describe, it, expect, vi, beforeAll, afterAll, beforeEach, afterEach } from 'vitest';
 import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import type { StreamEvent } from '@dorkos/shared/types';
 import { withStallGuard } from '../../../../session/stall-guard.js';
 import { TurnWindowSignal } from '../../../../session/turn-window-signal.js';
+import { initBoundary } from '../../../../../lib/boundary.js';
 import { SessionTurnWindows, type WindowedPump } from '../session-turn-windows.js';
 
 const SESSION_ID = 'warm-session';
+/** A real directory inside a real boundary: the dispatch gate resolves paths. */
+let CWD: string;
+let tmpRoot: string;
+
+beforeAll(async () => {
+  // realpath'd like the boundary suite: macOS tempdirs resolve /var -> /private/var.
+  tmpRoot = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'dor1172-')));
+  CWD = path.join(tmpRoot, 'project');
+  await fs.mkdir(CWD, { recursive: true });
+  await initBoundary(tmpRoot);
+});
+
+afterAll(async () => {
+  await fs.rm(tmpRoot, { recursive: true, force: true });
+});
 const TEN_MINUTES = 10 * 60 * 1000;
 
 /** The three events the guard injects when the interrupt aborts the turn. */
@@ -150,7 +169,7 @@ describe('the stall watchdog over turn windows', () => {
 
   it('interrupts a dispatched window that goes dark, at the same bound as today', async () => {
     const h = harness();
-    await h.windows.dispatch([{ content: 'do the thing', messageId: 'm1' }]);
+    await h.windows.dispatch([{ content: 'do the thing', messageId: 'm1' }], CWD);
     await flush();
 
     await vi.advanceTimersByTimeAsync(TEN_MINUTES - 1);
@@ -166,7 +185,7 @@ describe('the stall watchdog over turn windows', () => {
 
   it('disarms when the window closes, and stays disarmed while the process idles', async () => {
     const h = harness();
-    await h.windows.dispatch([{ content: 'do the thing', messageId: 'm1' }]);
+    await h.windows.dispatch([{ content: 'do the thing', messageId: 'm1' }], CWD);
     await flush();
 
     // The correlated result closes the window: RUNNING → WARM.
@@ -184,13 +203,13 @@ describe('the stall watchdog over turn windows', () => {
 
   it('re-arms for the next turn on the same warm process', async () => {
     const h = harness();
-    await h.windows.dispatch([{ content: 'first', messageId: 'm1' }]);
+    await h.windows.dispatch([{ content: 'first', messageId: 'm1' }], CWD);
     await flush();
     h.windows.onMessage(resultMessage('m1'));
     await flush();
     await vi.advanceTimersByTimeAsync(TEN_MINUTES * 2);
 
-    await h.windows.dispatch([{ content: 'second', messageId: 'm2' }]);
+    await h.windows.dispatch([{ content: 'second', messageId: 'm2' }], CWD);
     await flush();
     await vi.advanceTimersByTimeAsync(TEN_MINUTES - 1);
     await flush();
@@ -206,7 +225,7 @@ describe('the stall watchdog over turn windows', () => {
 
   it('keeps guarding the open turn when a runtime window opens and closes beside it', async () => {
     const h = harness();
-    await h.windows.dispatch([{ content: 'do the thing', messageId: 'm1' }]);
+    await h.windows.dispatch([{ content: 'do the thing', messageId: 'm1' }], CWD);
     await flush();
 
     // A `result` for a message this session never sent: the windower gives it a
@@ -233,13 +252,19 @@ describe('the stall watchdog over turn windows', () => {
     // A `result` landing in that gap closes the window first, so the observers
     // fire close-then-open for one and the same window.
     let releaseDispatch!: () => void;
-    vi.mocked(h.pump.dispatch).mockImplementationOnce(
-      () =>
-        new Promise<void>((resolve) => {
-          releaseDispatch = resolve;
-        })
-    );
-    const dispatching = h.windows.dispatch([{ content: 'do the thing', messageId: 'm1' }]);
+    // The boundary gate does real filesystem I/O before the pump is reached, so
+    // the test waits for the pump call itself rather than counting microtasks.
+    const dispatchStarted = new Promise<void>((started) => {
+      vi.mocked(h.pump.dispatch).mockImplementationOnce(
+        () =>
+          new Promise<void>((resolve) => {
+            releaseDispatch = resolve;
+            started();
+          })
+      );
+    });
+    const dispatching = h.windows.dispatch([{ content: 'do the thing', messageId: 'm1' }], CWD);
+    await dispatchStarted;
     await flush();
 
     h.windows.onMessage(resultMessage('m1'));
@@ -263,13 +288,17 @@ describe('the stall watchdog over turn windows', () => {
   it('still guards the next turn after an inverted one', async () => {
     const h = harness();
     let releaseDispatch!: () => void;
-    vi.mocked(h.pump.dispatch).mockImplementationOnce(
-      () =>
-        new Promise<void>((resolve) => {
-          releaseDispatch = resolve;
-        })
-    );
-    const dispatching = h.windows.dispatch([{ content: 'first', messageId: 'm1' }]);
+    const dispatchStarted = new Promise<void>((started) => {
+      vi.mocked(h.pump.dispatch).mockImplementationOnce(
+        () =>
+          new Promise<void>((resolve) => {
+            releaseDispatch = resolve;
+            started();
+          })
+      );
+    });
+    const dispatching = h.windows.dispatch([{ content: 'first', messageId: 'm1' }], CWD);
+    await dispatchStarted;
     await flush();
     h.windows.onMessage(resultMessage('m1'));
     await flush();
@@ -279,7 +308,7 @@ describe('the stall watchdog over turn windows', () => {
 
     // The tombstone was spent on the inverted window and must not shut the
     // next one: this turn is guarded like any other.
-    await h.windows.dispatch([{ content: 'second', messageId: 'm2' }]);
+    await h.windows.dispatch([{ content: 'second', messageId: 'm2' }], CWD);
     await flush();
     expect(h.signal.isOpen).toBe(true);
     await vi.advanceTimersByTimeAsync(TEN_MINUTES);
@@ -293,7 +322,7 @@ describe('the stall watchdog over turn windows', () => {
     vi.mocked(h.pump.dispatch).mockRejectedValueOnce(new Error('the process is gone'));
 
     await expect(
-      h.windows.dispatch([{ content: 'do the thing', messageId: 'm1' }])
+      h.windows.dispatch([{ content: 'do the thing', messageId: 'm1' }], CWD)
     ).rejects.toThrow('the process is gone');
     await flush();
     // A turn that never began is not a turn to watchdog.
