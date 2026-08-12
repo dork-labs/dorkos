@@ -87,9 +87,17 @@ export function MobileTabBar({
             // browser spec whatever it ends up being called.
             data-mobile-tab=""
             className={cn(
-              'focus-ring relative flex flex-1 flex-col items-center justify-center gap-0.5 text-[11px] font-medium transition-colors duration-150',
+              'focus-ring relative flex flex-1 flex-col items-center justify-center gap-0.5 text-[11px] transition-colors duration-150',
+              // **Weight AND contrast, because one of them was not enough and
+              // the other was not real.** Measured in Chromium at 390×844: the
+              // current destination came out at `oklab(0.2044 … / 0.7224)` and
+              // every other one at `… / 0.6` — the same colour, 12% of alpha
+              // apart, which nobody sees. Colour is never the sole indicator
+              // here (spec R2), and it could not have been the indicator at
+              // all: the two ends of `--sidebar-accent-foreground` and
+              // `--sidebar-foreground/60` resolve to one lightness.
               here
-                ? 'text-sidebar-accent-foreground'
+                ? 'text-sidebar-foreground font-semibold'
                 : // **`/70`, not `/60`, and the number is a measurement.** At 60%
                   // the label composites to #6b6b6b on the bar's #e8e8e8 in the
                   // light theme — 4.34:1 at 11px, under the 4.5:1 the design
@@ -97,7 +105,7 @@ export function MobileTabBar({
                   // light, 7.84:1 dark), which clears it in both. Caught by the
                   // showcase page's axe gate once the bar was drawn there, which
                   // is the same way `SidebarZone` found the same defect at `/50`.
-                  'text-sidebar-foreground/70 hover:text-sidebar-foreground',
+                  'text-sidebar-foreground/70 hover:text-sidebar-foreground font-medium',
               'disabled:pointer-events-none disabled:opacity-50'
             )}
           >
@@ -107,10 +115,16 @@ export function MobileTabBar({
                 <span
                   data-testid={`mobile-tab-badge-${tab.id}`}
                   // Silent to a screen reader on purpose: the same count is
-                  // already announced, debounced and politely, by the live
-                  // region inside the Home panel's Now zone (BC-11). Saying it
-                  // twice from two places is how a fleet of thirty agents turns
-                  // a screen reader into a siren.
+                  // announced, debounced and politely, by `MobileTabsLayout`'s
+                  // live region — which sits OUTSIDE the panels, beside this
+                  // bar. Saying it twice from two places is how a fleet of
+                  // thirty agents turns a screen reader into a siren.
+                  //
+                  // **The region it defers to used to be the wrong one.** It
+                  // was the one inside Now's zone, which lives inside a panel
+                  // marked `inert` whenever it is put away — so for every
+                  // moment the operator was in a conversation this number was
+                  // silent and nothing else was saying it (P4.2).
                   aria-hidden
                   // Amber, the one colour this product spends on "somebody is
                   // waiting for you" (design-decisions §18).

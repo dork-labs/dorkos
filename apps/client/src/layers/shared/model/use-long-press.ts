@@ -1,4 +1,4 @@
-import { useRef, useCallback } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { LONG_PRESS_DRIFT_PX, TIMING } from '@/layers/shared/lib';
 
 /**
@@ -107,6 +107,14 @@ export function useLongPress({
     },
     [onLongPress, ms, onPressStateChange, yieldToSelector]
   );
+
+  // **A press that outlives its element.** Opening the surface can unmount the
+  // row the finger is on — a menu item that navigates, a rebuild that drops the
+  // row — and the timer would keep running to call back into a component that
+  // is gone. Nothing user-visible has been traced to it; it is closed because a
+  // pending timer holding a stale closure is the kind of thing that becomes
+  // user-visible later, in a stack trace that names none of this.
+  useEffect(() => () => clear('cancelled'), [clear]);
 
   const onPointerMove = useCallback(
     (e: React.PointerEvent) => {

@@ -308,7 +308,14 @@ test.describe('Sidebar model showcase @smoke', () => {
    * number rather than a looser threshold. Raised for the Today states panel
    * (P2.3), which added four more 272px panels below Heads up's four.
    */
-  test.use({ viewport: { width: 1600, height: 8800 } });
+  // **The viewport is the page's height, not a round number.** axe reports
+  // success for a page it never looked at, so this suite asserts coverage
+  // before correctness (`expectPageFitsViewport`) — which means the viewport
+  // has to grow with the page. It went from 8800 to 10400 when P4.2 added the
+  // long-press-menu and Catch-up showcases; raising it is the fix the guard's
+  // own failure message names, and lowering the threshold is the one it
+  // forbids.
+  test.use({ viewport: { width: 1600, height: 10400 } });
 
   // The per-test default is 30s, which is under the cold cost of the first
   // navigation to `/dev` — see PLAYGROUND_COLD_START_MS. A locator ceiling
@@ -595,36 +602,50 @@ test.describe('Sidebar model showcase @smoke', () => {
       // unread badge tripping axe's "content is too short to be text" heuristic;
       // anything else appearing here is a hole in the gate that somebody has to
       // decide about rather than inherit.
+      //
+      // **Matched on what makes it an unread badge, not on which component
+      // drew it, and read off the node axe reported rather than off a selector
+      // resolved again.** The allowance used to name the showcase's own
+      // stand-in (`sidebar-model-directed-badge`) and look it up by
+      // `querySelector` — which silently answers `null` for a target axe
+      // reports as more than one selector, so the filter counted nothing and
+      // the gate failed with no explanation. `node.html` is the element itself,
+      // as axe saw it.
       const undecided = results.incomplete.flatMap((rule) => rule.nodes);
-      // The one-digit count badges axe declines to judge, enumerated. Both trip
-      // the same heuristic for the same reason, and each is a DECISION recorded
-      // here rather than an exemption inherited: the panel's directed-unread
-      // mark since P1, and P4's mobile Home badge.
+      // The one-digit counts axe declines to judge, enumerated. Each is a
+      // DECISION recorded here rather than an exemption inherited: the panel's
+      // directed-unread mark since P1, P4's mobile Home badge, and Catch up's
+      // "how many" — the last of which only appeared once the Catch-up showcase
+      // started drawing a real button instead of an empty box, which is what a
+      // showcase is for.
       //
       // **The mobile badge was measured before it was pinned, and the measuring
       // changed it.** As drawn first — white on amber-500 — it was 2.15:1, a
       // serious failure that would have hidden inside this list precisely
       // because axe cannot judge two-character text. It is amber-950 on
       // amber-500 now: 6.97:1, in both themes, since the pill carries its own
-      // background. Anything NEW appearing here still has to be measured the
-      // same way before it earns a line.
-      const COUNT_BADGES = [
-        '[data-slot="sidebar-model-directed-badge"]',
-        '[data-testid^="mobile-tab-badge-"]',
-      ];
-      const badges = await page.evaluate(
-        ({ targets, selectors }) =>
-          targets.filter((target) => {
-            const node = document.querySelector(target);
-            return node !== null && selectors.some((selector) => node.closest(selector) !== null);
-          }).length,
-        { targets: undecided.map((node) => node.target.join(' ')), selectors: COUNT_BADGES }
-      );
+      // background. Catch up's count went the same way: 3.24:1 at `/50`, and
+      // `/70` once anyone looked. **Every count admitted here is measured
+      // below** — one that is not is a colour nothing checks.
+      //
+      // **Matched on the node axe reported, not on a selector resolved again.**
+      // `document.querySelector` silently answers `null` for a target axe
+      // reports as more than one selector — which is most of them once this
+      // page grew past its first fold — so a `closest()` filter counted nothing
+      // and the gate failed naming elements it had in fact been handed.
+      const isCountBadge = (text: string) =>
+        /data-slot="sidebar-model-directed-badge"/.test(text) ||
+        /aria-label="\d+ unread"/.test(text) ||
+        /data-testid="mobile-tab-badge-/.test(text) ||
+        /data-slot="catch-up-count"/.test(text);
+      const badges = undecided.filter(
+        (node) => isCountBadge(node.html) || isCountBadge(node.target.join(' '))
+      ).length;
       expect(
         undecided.length - badges,
         `axe could not judge something new in the ${theme} theme: ${undecided
-          .map((node) => node.target.join(' '))
-          .join(', ')}`
+          .map((node) => `${node.target.join(' ')} :: ${node.html}`)
+          .join(' | ')}`
       ).toBe(0);
 
       // **What the pin above costs, paid back.** Forgiving a badge from the
@@ -685,6 +706,63 @@ test.describe('Sidebar model showcase @smoke', () => {
       expect(
         badgeContrast.filter((badge) => badge.ratio < 4.5),
         `a count badge axe could not judge is below 4.5:1 in the ${theme} theme`
+      ).toEqual([]);
+
+      // **The same debt for the one count that is NOT on its own pill.** Catch
+      // up's number is translucent text over whatever it sits on, so the
+      // opaque-pair check above cannot judge it: it has to be composited first.
+      // Admitting it to the pin without this would be the exact trade the
+      // mobile badge nearly shipped behind.
+      const countContrast = await page.evaluate((selector) => {
+        const canvas = document.createElement('canvas');
+        canvas.width = canvas.height = 1;
+        const ctx = canvas.getContext('2d')!;
+        const pixel = (value: string): [number, number, number, number] => {
+          ctx.clearRect(0, 0, 1, 1);
+          ctx.fillStyle = value;
+          ctx.fillRect(0, 0, 1, 1);
+          const [r, g, b, a] = ctx.getImageData(0, 0, 1, 1).data;
+          return [r!, g!, b!, a! / 255];
+        };
+        const channel = (v: number) => {
+          const s = v / 255;
+          return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+        };
+        const luminance = ([r, g, b]: number[]) =>
+          0.2126 * channel(r!) + 0.7152 * channel(g!) + 0.0722 * channel(b!);
+        /**
+         * The first ancestor that actually paints something behind this one.
+         *
+         * **Exact while nothing translucent sits between**, which is true of
+         * every count on this page: the button is transparent and the panel
+         * behind it is solid. An interposed translucent layer would need
+         * compositing in turn, and this would then read slightly optimistic —
+         * so a new one is a reason to extend this, not to trust it.
+         */
+        const backdrop = (node: Element): [number, number, number, number] => {
+          for (let el: Element | null = node; el !== null; el = el.parentElement) {
+            const painted = pixel(getComputedStyle(el).backgroundColor);
+            if (painted[3] === 1) return painted;
+          }
+          return [255, 255, 255, 1];
+        };
+        return [...document.querySelectorAll(selector)].map((node) => {
+          const fg = pixel(getComputedStyle(node).color);
+          const bg = backdrop(node);
+          // Source-over: the text's own alpha, laid on what is behind it.
+          const composited = [0, 1, 2].map((i) => fg[i]! * fg[3] + bg[i]! * (1 - fg[3]));
+          const [a, b] = [luminance(composited), luminance(bg)];
+          return {
+            text: node.textContent ?? '',
+            ratio: Math.round(((Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05)) * 100) / 100,
+          };
+        });
+      }, '[data-slot="catch-up-count"]');
+
+      expect(countContrast.length, 'no Catch-up counts on the page to check').toBeGreaterThan(0);
+      expect(
+        countContrast.filter((count) => count.ratio < 4.5),
+        `Catch up's count is below 4.5:1 in the ${theme} theme`
       ).toEqual([]);
     });
   }

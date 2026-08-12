@@ -22,13 +22,20 @@ import { ChevronDown } from 'lucide-react';
 import { toast } from 'sonner';
 import { OPERATOR_FALLBACK_DISPLAY_NAME } from '@dorkos/shared/team-schemas';
 import { isNewer } from '@/layers/shared/lib';
-import { useProfileDeepLink, useSettingsDeepLink, useTransport } from '@/layers/shared/model';
+import { cn } from '@/layers/shared/lib';
+import {
+  useIsMobile,
+  useProfileDeepLink,
+  useSettingsDeepLink,
+  useTransport,
+} from '@/layers/shared/model';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuTrigger,
   SidebarHeader,
   SidebarMenuNodes,
+  TOUCH_TARGET_MIN_H,
   useGuardedMenuNodes,
 } from '@/layers/shared/ui';
 import { useTeamRoster } from '@/layers/entities/team';
@@ -57,6 +64,11 @@ export function teamNameFor(displayName: string | null): string {
 
 /** The header block. */
 export function SidebarHeaderBlock() {
+  // **Measured, not assumed.** At 390×844 this header's three controls came in
+  // at 28px, 27px and 33px — all fine in a 272px panel beside a pointer, all
+  // under the 40px bar under a thumb, and none of them visible as a problem in
+  // the source (P4 AC-4).
+  const isMobile = useIsMobile();
   const roster = useTeamRoster();
   const transport = useTransport();
   const queryClient = useQueryClient();
@@ -121,7 +133,10 @@ export function SidebarHeaderBlock() {
               // R4). A screen reader hears the same vocabulary a sighted
               // reader does.
               aria-label={`${teamName} — menu`}
-              className="text-sidebar-foreground hover:bg-sidebar-accent/70 focus-visible:ring-sidebar-ring flex min-w-0 flex-1 items-center gap-1.5 rounded-md px-2 py-1 text-left text-[13px] font-semibold outline-hidden transition-colors duration-150 focus-visible:ring-2"
+              className={cn(
+                'text-sidebar-foreground hover:bg-sidebar-accent/70 focus-visible:ring-sidebar-ring flex min-w-0 flex-1 items-center gap-1.5 rounded-md px-2 py-1 text-left text-[13px] font-semibold outline-hidden transition-colors duration-150 focus-visible:ring-2',
+                isMobile && TOUCH_TARGET_MIN_H
+              )}
             >
               <span className="truncate">{teamName}</span>
               <ChevronDown className="size-3.5 shrink-0 opacity-50" aria-hidden />

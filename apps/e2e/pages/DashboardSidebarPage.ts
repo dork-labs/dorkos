@@ -52,6 +52,58 @@ export class DashboardSidebarPage {
     await this.newSessionButton.first().click();
   }
 
+  /**
+   * The bottom sheet a long press opens on a touch screen (P4.2).
+   *
+   * The sidebar's THIRD menu renderer, beside the right-click menu and the
+   * "⋮" — all three walk one node list, so anything a spec asserts about the
+   * items in here is an assertion about that list.
+   */
+  get longPressSheet(): Locator {
+    return this.page.getByTestId('sidebar-menu-sheet');
+  }
+
+  /**
+   * Press and hold a real finger on something, then lift it.
+   *
+   * **A real touch, dispatched through CDP.** Playwright's `touchscreen` can
+   * only tap, and `page.mouse` is a different input entirely: a mouse press is
+   * never handed to the compositor, which is exactly what the scroll case turns
+   * on. `RoomsPage.longPress` drives the room composer's gesture with a mouse
+   * for historical reasons; a spec about a TOUCH affordance should use this.
+   *
+   * @param target - What to press.
+   * @param options.holdMs - How long the finger stays down. Below
+   *   `TIMING.LONG_PRESS_MS` (500) this is a tap.
+   * @param options.driftPx - How far it travels upward mid-hold — what a scroll
+   *   that began on this row looks like to the gesture.
+   */
+  async longPress(
+    target: Locator,
+    options: { holdMs?: number; driftPx?: number } = {}
+  ): Promise<void> {
+    const { holdMs = 800, driftPx = 0 } = options;
+    const box = await target.boundingBox();
+    if (box === null) throw new Error('Cannot press an element with no box on screen');
+    const x = box.x + box.width / 2;
+    const y = box.y + box.height / 2;
+    const cdp = await this.page.context().newCDPSession(this.page);
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] });
+    if (driftPx > 0) {
+      // A scroll is a series of moves, not one jump — and the first few are
+      // what the drift guard sees before the compositor takes the gesture.
+      for (const step of [0.25, 0.5, 0.75, 1]) {
+        await cdp.send('Input.dispatchTouchEvent', {
+          type: 'touchMove',
+          touchPoints: [{ x, y: y - driftPx * step }],
+        });
+      }
+    }
+    await this.page.waitForTimeout(holdMs);
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    await cdp.detach();
+  }
+
   /** The sidebar panel itself — the surface the density is measured against. */
   get panel(): Locator {
     return this.page.locator('[data-slot="sidebar-inner"]');

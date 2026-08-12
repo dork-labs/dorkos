@@ -52,9 +52,11 @@ import {
   SidebarZones,
   useAskDorkBot,
   useLegacyPinMigration,
+  useLiveRegionText,
   useSidebarModel,
   useSidebarState,
 } from '@/layers/features/dashboard-sidebar';
+import { useNowApprovalsSlot } from './MobileNowApprovals';
 import {
   HOME_ZONE_IDS,
   LIBRARY_ZONE_IDS,
@@ -168,7 +170,22 @@ export function MobileTabsLayout({ takeover }: MobileTabsLayoutProps) {
   // The count BC-11 announces, read off the model rather than counted again
   // here: Now also holds the "N working" rollup, and a badge that counted rows
   // would tell a quiet morning that one agent needs it (P4 AC-2).
-  const needsYouCount = model.zones.find((zone) => zone.id === 'now')?.needsYouCount ?? 0;
+  const nowZone = model.zones.find((zone) => zone.id === 'now');
+  const needsYouCount = nowZone?.needsYouCount ?? 0;
+  // **The badge's words, said from outside the panels.** The badge itself is
+  // `aria-hidden` on the grounds that the count is already announced — and it
+  // is, by the region inside Now's zone, which lives inside a panel that is
+  // `inert` whenever it is put away. That is every moment the operator is in a
+  // conversation, which is when an agent starts needing them. So the phone's
+  // announcement moved out here, beside the bar that never leaves the screen,
+  // and the zone stands its own region down (`silenceLiveRegion`) rather than
+  // both of them saying the same number.
+  const liveRegionText = useLiveRegionText(nowZone?.liveRegionText);
+
+  // Approve from anywhere (P4 AC-5). `null` when there is nothing waiting AND
+  // nothing has failed — which is also what tells `SidebarZones` not to draw a
+  // Now zone for it.
+  const nowApprovals = useNowApprovalsSlot();
 
   return (
     <SidebarChrome activeTarget={state.activeTarget}>
@@ -194,14 +211,24 @@ export function MobileTabsLayout({ takeover }: MobileTabsLayoutProps) {
               pill (BC-43 → BC-46). */}
           <PageContainer width="full" className="px-3 py-2">
             <SidebarHeaderBlock />
-            <SidebarZones model={model} zoneIds={HOME_ZONE_IDS} />
+            <SidebarZones
+              model={model}
+              zoneIds={HOME_ZONE_IDS}
+              nowSlot={nowApprovals}
+              silenceLiveRegion
+            />
           </PageContainer>
         </MobileTabPanel>
 
         <MobileTabPanel id="library" active={active === 'library'}>
           <PageContainer width="full" className="px-3 py-2">
             {/* A contributed body takes over Library and nothing else here. */}
-            {takeover ?? <SidebarZones model={model} zoneIds={LIBRARY_ZONE_IDS} />}
+            {/* Silenced for the same reason Home is: this cockpit announces
+                Now's count once, from beside the bar. Library carries no count
+                today, and this is what keeps that true if it ever does. */}
+            {takeover ?? (
+              <SidebarZones model={model} zoneIds={LIBRARY_ZONE_IDS} silenceLiveRegion />
+            )}
           </PageContainer>
         </MobileTabPanel>
 
@@ -222,6 +249,17 @@ export function MobileTabsLayout({ takeover }: MobileTabsLayoutProps) {
           of the four destinations, so none of them is current — saying
           otherwise made the bar lie twice in review: DorkBot stayed marked
           after Back, and Library stayed marked with every panel hidden. */}
+      {/* Outside the panels, so it is never `inert`. Count changes only, held
+          for a second, exactly as the zone's own region holds them (BC-11). */}
+      <span
+        data-testid="mobile-needs-you-live-region"
+        aria-live="polite"
+        aria-atomic="true"
+        className="sr-only"
+      >
+        {liveRegionText}
+      </span>
+
       <MobileTabBar
         current={panelUp ? active : null}
         needsYouCount={needsYouCount}

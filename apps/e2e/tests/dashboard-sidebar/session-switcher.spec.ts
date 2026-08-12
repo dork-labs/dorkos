@@ -240,13 +240,25 @@ test.describe('session switcher @smoke', () => {
     );
     expect(nested).toBe(false);
 
-    // At both widths, because the mobile sheet is a narrower row and narrower is
-    // where a title first reaches the chip.
-    for (const width of [1280, 390]) {
+    // **Measured at 1280 and at 900, and no longer at 390.** Narrower is where
+    // a title first reaches the chip, so the geometry is still checked at a
+    // second width — but the chip is not drawn under a thumb at all now (P4.2).
+    // A 44px chip and a 44px "⋮" side by side would spend 88px of a 390px row
+    // on two satellites, so the phone reaches the switcher the way BC-35's
+    // third door says: from the row's long-press menu.
+    for (const width of [1280, 900]) {
       await page.setViewportSize({ width, height: 900 });
       await expect(chip.first()).toBeVisible();
       await assertChipGeometry(page, width);
     }
+
+    await page.setViewportSize({ width: 390, height: 900 });
+    await expect(chip).toHaveCount(0);
+    // …and nothing is stranded: the act it performed is in the row's menu,
+    // which a long press opens. The showcase mounts the row without its menu
+    // wiring, so the door itself is asserted where the menu is real —
+    // `AgentRowMenuItems.test.tsx` (the item is in the list) and
+    // `mobile-touch.spec.ts` (the gesture opens it).
     await page.setViewportSize({ width: 1280, height: 900 });
 
     await chip.first().click();

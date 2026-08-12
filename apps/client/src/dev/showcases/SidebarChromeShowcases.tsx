@@ -55,9 +55,9 @@ const noop = () => {};
  */
 function MenuTarget({ nodes, label }: { nodes: SidebarMenuNode[]; label: string }) {
   return (
-    <SidebarMenuSurface nodes={nodes} actionsLabel={label} alwaysShowActions className="w-72">
+    <SidebarMenuSurface nodes={nodes} actionsLabel={label} className="w-72">
       <div className="border-sidebar-border text-sidebar-foreground/70 hover:bg-sidebar-accent/70 hover:text-sidebar-foreground flex w-full cursor-context-menu items-center rounded-lg border border-dashed py-3 pr-8 pl-4 text-xs transition-colors">
-        {label} — right-click, or press the ⋮
+        {label} — right-click, or hover for the ⋮
       </div>
     </SidebarMenuSurface>
   );
