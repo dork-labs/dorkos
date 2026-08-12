@@ -1,7 +1,7 @@
 # Implementation Summary: Rich Text in the Composer
 
 **Created:** 2026-08-08
-**Last Updated:** 2026-08-08
+**Last Updated:** 2026-08-12
 **Spec:** specs/composer-rich-text/02-specification.md
 **Branch:** `composer-rich-text`
 **Work item:** DOR-948
@@ -15,7 +15,8 @@ task 5.5 requires before a PR opens.
 ## What shipped, in one paragraph
 
 The chat composer can now show formatting as you type — bold, headings, lists — behind a
-preference that ships OFF. The keyboard ladder was first moved behind a seven-method
+preference that shipped OFF and, on the owner's 2026-08-12 call, now ships ON (see the owner
+decision below). The keyboard ladder was first moved behind a seven-method
 `EditingSurface` port so the same scenario table runs against a `<textarea>` and against Lexical;
 a headless markdown boundary (nodes, a closed transformer set, and a single-walk serializer with a
 position map) keeps the host contract in markdown offsets, so neither autocomplete hook changed. A
@@ -443,8 +444,10 @@ case each time, 17/17 in isolation, no relay file changed by this branch. Green 
 
 ## Graduation criteria — where each one stands
 
-The flag ships OFF. These are what it takes to flip it and to let rooms, the dashboard and
-onboarding pass `richText`.
+> **Superseded for chat by an owner decision, 2026-08-12.** Dorian decided rich text is ON by
+> default in chat, ahead of criteria 4 and 5. See the section below.
+
+These are what it takes to let rooms and onboarding pass `richText`.
 
 | #   | Criterion                                                          | Status                                                                                                               |
 | --- | ------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------- |
@@ -458,6 +461,41 @@ onboarding pass `richText`.
 Two follow-ups to capture when this closes: the surface graduation (rooms, dashboard, onboarding),
 and the nested-list flattening that the empty-bullet Enter fix surfaced, which should land before
 rooms graduate.
+
+## Owner decision — rich text is on by default in chat (2026-08-12)
+
+**The decision.** `ui.composer.richText` defaults to `true`. The repo owner made the call; it is
+recorded here rather than argued from the table above, because it deliberately supersedes that
+table's chat half.
+
+**What it supersedes.** Decision 5 of `02-specification.md` said the flag flips only when all six
+criteria hold. Criteria 4 (a real IME) and 5 (a screen reader) are still owed a person in a real
+browser, and both are the kind of check that a feature nobody is using never gets. Turning it on
+for chat is how they get exercised. The remaining criteria were met and are recorded above.
+
+**What did NOT change.** The gate still governs the SURFACES: rooms and onboarding pass no
+`richText` and stay plain — that is composition, asserted by
+`features/composer/__tests__/surface-enablement.test.ts`, and it is unaffected by the default. The
+nested-list flattening follow-up is unaffected too, and it is what the flag's eventual removal
+waits on.
+
+**The escape hatch stays.** The Settings → Advanced switch is not removed. With the feature on for
+everybody, a reachable way back to the plain box matters more than it did as an opt-in. The switch,
+the `richText` prop, `TextareaField` and the whole plain path come out together in a later cleanup,
+blocked on the nested-list serialize fix rather than on anything decided here.
+
+**How the default was flipped, and one thing a reviewer must check.** `ComposerPrefsSchema`'s
+default became `true`, and `backfillComposerPrefs` — the `'0.59.0'` conf migration that seeds the
+section on an upgrade — was EDITED to seed `true` rather than being superseded by a second key.
+That is sound only because `0.59.0` had not been tagged (`v0.58.0` was the newest `v*` tag when
+this landed), so the `false` version of the body had run on no released install. **Once `v0.59.0`
+ships, that argument expires** and any further change of default needs a new key above the newest
+tag. The condition is written into the body's own docs and into `contributing/configuration.md`.
+
+**What was verified in a browser as part of this.** Two gaps the earlier phases left open are now
+covered by `apps/e2e` specs on the rich field: the double-Escape clear (both fields), and an
+Enter pressed mid-composition, driven through CDP's IME protocol. The second proves our handling
+of composition events; it is not a real IME, so criterion 4's manual pass is still owed.
 
 ## What the adversarial review found
 

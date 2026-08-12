@@ -1280,10 +1280,10 @@ describe('migrateStatusBarToPins migration (DOR-431, DOR-452)', () => {
 });
 
 describe('backfillComposerPrefs migration (composer-rich-text, DOR-948)', () => {
-  it('fresh install: the schema default seeds ui.composer with rich text off', () => {
-    // A brand-new config comes from the schema, not a migration — and it lands
-    // on the plain markdown box everyone already has.
-    expect(USER_CONFIG_DEFAULTS.ui.composer).toEqual({ richText: false });
+  it('fresh install: the schema default seeds ui.composer with rich text ON', () => {
+    // A brand-new config comes from the schema, not a migration — and since the
+    // owner's 2026-08-12 call it lands on the formatting box.
+    expect(USER_CONFIG_DEFAULTS.ui.composer).toEqual({ richText: true });
   });
 
   it('upgraded install: adds ui.composer to an existing ui block, preserving other ui fields', () => {
@@ -1301,12 +1301,15 @@ describe('backfillComposerPrefs migration (composer-rich-text, DOR-948)', () => 
       theme: 'dark',
       dismissedUpgradeVersions: ['1.0.0'],
       statusBar: { pins: ['git'] },
-      composer: { richText: false },
+      composer: { richText: true },
     });
   });
 
-  it('is idempotent — never flips a preference someone already turned on', () => {
-    const existing = { theme: 'system', composer: { richText: true } };
+  it('is idempotent — never overwrites a preference someone already set', () => {
+    // `false` is the interesting direction now that the seed is `true`: this is
+    // somebody who turned formatting OFF, and an upgrade must not turn it back
+    // on under them.
+    const existing = { theme: 'system', composer: { richText: false } };
     const store = createMockStore({ ui: structuredClone(existing) });
     backfillComposerPrefs(store);
     backfillComposerPrefs(store);
@@ -1331,7 +1334,7 @@ describe('backfillComposerPrefs migration (composer-rich-text, DOR-948)', () => 
     // judge of whether what is on disk is a ComposerPrefs.
     const store = createMockStore({ ui: { theme: 'dark', composer: stored } });
     backfillComposerPrefs(store);
-    expect(store.data.ui).toEqual({ theme: 'dark', composer: { richText: false } });
+    expect(store.data.ui).toEqual({ theme: 'dark', composer: { richText: true } });
   });
 
   it('leaves a shape the schema accepts', () => {
@@ -1341,7 +1344,20 @@ describe('backfillComposerPrefs migration (composer-rich-text, DOR-948)', () => 
     const store = createMockStore({ ui: { theme: 'dark', dismissedUpgradeVersions: [] } });
     backfillComposerPrefs(store);
     const parsed = UserConfigSchema.parse({ version: 1, ui: store.data.ui });
-    expect(parsed.ui.composer).toEqual({ richText: false });
+    expect(parsed.ui.composer).toEqual({ richText: true });
+  });
+
+  it('seeds the same value the schema default declares', () => {
+    // The seed and the default have to agree, and this is the assertion that
+    // says so rather than two literals that happen to match. The body was
+    // EDITED from `false` to `true` on the owner's 2026-08-12 call instead of
+    // being superseded by a second key, which is sound only because 0.59.0 is
+    // untagged — the test below is what notices if it ever ships.
+    const store = createMockStore({ ui: { theme: 'dark' } });
+    backfillComposerPrefs(store);
+    expect((store.data.ui as { composer: unknown }).composer).toEqual(
+      USER_CONFIG_DEFAULTS.ui.composer
+    );
   });
 
   it('is registered in CONFIG_MIGRATIONS under a key above the newest tag', () => {
@@ -1353,7 +1369,7 @@ describe('backfillComposerPrefs migration (composer-rich-text, DOR-948)', () => 
 
     const store = createMockStore({ ui: { theme: 'dark' } });
     CONFIG_MIGRATIONS['0.59.0'](store);
-    expect(store.data.ui).toMatchObject({ composer: { richText: false } });
+    expect(store.data.ui).toMatchObject({ composer: { richText: true } });
   });
 });
 

@@ -549,7 +549,25 @@ describe('MobileTabsLayout', () => {
       // One string, two uses. Two literals here would be two chances for a
       // phone with a home indicator to hide Today's last row behind the bar.
       expect(bar.style.height).toBe(MOBILE_TAB_BAR_DOCK);
-      expect(panels.style.bottom).toBe(MOBILE_TAB_BAR_DOCK);
+      // Plus whatever a docked PIP is holding — absent, `--pip-dock` resolves
+      // to the `0px` fallback and this is the bar's height and nothing else.
+      expect(panels.style.bottom).toBe(`calc(${MOBILE_TAB_BAR_DOCK} + var(--pip-dock, 0px))`);
+    });
+
+    it('publishes the bar height so other layers can dock above it (DOR-1177)', () => {
+      // The PIP mini-bar is a `features/` component and cannot import this
+      // widget's constant, but it must not paint over the bar — so the number
+      // travels as a custom property. Before this, a docked PIP covered all
+      // four destinations and every one of them was unpressable.
+      const { unmount } = renderLayout();
+      expect(document.documentElement.style.getPropertyValue('--mobile-tab-dock')).toBe(
+        MOBILE_TAB_BAR_DOCK
+      );
+
+      // And it goes away with the cockpit. A stale value left behind at desktop
+      // width would float the desktop PIP off an edge that is no longer there.
+      unmount();
+      expect(document.documentElement.style.getPropertyValue('--mobile-tab-dock')).toBe('');
     });
   });
 

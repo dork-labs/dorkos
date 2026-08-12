@@ -57,9 +57,11 @@ Worth knowing before you assume a behaviour is tested.
 
 ## Known flakes
 
-These are tracked, not mysteries. If you hit one, you have found the known
-thing — go to the ticket rather than re-diagnosing it. Neither is a test bug, so
-neither is fixed here.
+These are known, not mysteries. If you hit one, you have found the known thing —
+go to the ticket where there is one rather than re-diagnosing it. None of them
+is a test bug, so none is fixed here. The last one has no ticket on purpose: it
+is a property of running this suite on a machine that is already busy, and it
+cannot reach CI.
 
 - **DOR-697 — `relay/adapter-wizard-fields.spec.ts`, ~1 run in 7.** A save
   answers **500** with `ENOENT: no such file or directory, rename …` under
@@ -90,6 +92,20 @@ used within an EventStreamProvider`, any spec, roughly 1 run in 10.** The
 
   Re-run the spec in isolation (`--repeat-each=5`) before you touch anything. If
   it passes, that is the answer.
+
+- **`home-surface/home-shell.spec.ts` › "the dashboard is gone, not hidden —
+  Home is the #team room", locally only, on a busy machine.** It waits 5s for
+  `home-composer`, which is the #team room's box, and loses that race when the
+  file is running wide enough in parallel — this repo is routinely several agents
+  deep, and the cockpit leg is one Express process serving all of them.
+
+  **Not caused by whatever you just changed, and the check is cheap.** Run the
+  file with your own block grepped out (`-g "the shell|375px"`): if the other
+  tests pass at that width, you have this. Adding tests to the file is enough to
+  trigger it — four new ones at 390px did (DOR-1180), and the same six
+  pre-existing tests were green with them filtered out. `--workers=1` is also
+  always green, and that is what CI runs (`workers: CI ? 1 : undefined`), so this
+  cannot reach a PR check. Do not add a retry or stretch the timeout for it.
 
 **A stale Vite can outlive its run.** `turbo dev` spawns vite as a grandchild,
 so when Playwright kills the leg the vite process survives holding the port.

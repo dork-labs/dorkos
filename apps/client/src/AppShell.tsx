@@ -644,7 +644,20 @@ export function AppShell() {
                           header down. ── */}
                     <AppBannerSlot descriptors={appBanners} />
                     {/* --pip-dock (set by the mobile PIP mini-bar) lifts all
-                          routed content above the 64px bar — nothing occluded. */}
+                          routed content above the 64px bar.
+
+                          **This padding was never the whole of "nothing
+                          occluded", and the comment here used to claim it
+                          was.** It covers the routed page and nothing else: the
+                          phone's tab bar is a sibling of this provider and the
+                          tab panels are a `fixed` layer, so neither of them
+                          reads this variable and a docked PIP painted straight
+                          over both (DOR-1177). Those two are handled where they
+                          live — the bar keeps the bottom edge and the mini-bar
+                          docks above it (`--mobile-tab-dock`), and the panels
+                          add `--pip-dock` to the height they stop at. What is
+                          true here is the narrow thing: the routed page clears
+                          the bar. */}
                     <main
                       // The region the active tab controls (`aria-controls`).
                       id={APP_TAB_PANEL_ID}

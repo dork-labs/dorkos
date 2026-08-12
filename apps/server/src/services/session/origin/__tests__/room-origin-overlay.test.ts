@@ -10,7 +10,8 @@
 import { describe, it, expect } from 'vitest';
 import { createMockSession } from '@dorkos/test-utils';
 import { applyRoomOriginOverlay, type ResolveRoomOrigins } from '../room-origin-overlay.js';
-import { applyTaskOriginOverlay, type ResolveTaskOrigins } from '../task-origin-overlay.js';
+import { type ResolveTaskOrigins } from '../task-origin-overlay.js';
+import { applySessionOriginOverlays } from '../session-origin-overlays.js';
 
 describe('applyRoomOriginOverlay', () => {
   it('marks a bound session as a room turn and names the room it answers in', () => {
@@ -32,6 +33,30 @@ describe('applyRoomOriginOverlay', () => {
     expect(sessions[0].originLabel).toBe('#general');
     expect(sessions[2].origin).toBe('room');
     expect(sessions[2].originLabel).toBe('Ana');
+  });
+
+  // DOR-1157. A label is a name and names are not unique: an archived and a
+  // live channel can share a slug, and a DM can be titled `#general`. A client
+  // joining conversations to rooms by name had to guess between them.
+  it('names the room by id as well, which is the join a name cannot make', () => {
+    const sessions = [createMockSession({ id: 'bound' })];
+
+    applyRoomOriginOverlay(
+      sessions,
+      () => new Map([['bound', { roomLabel: '#shipping', roomId: 'room-shipping-archived' }]])
+    );
+
+    expect(sessions[0]!.originRoomId).toBe('room-shipping-archived');
+    // The label stays: it is what a person READS, and it tracks renames.
+    expect(sessions[0]!.originLabel).toBe('#shipping');
+  });
+
+  it('leaves no room id on a session no room is answering with', () => {
+    const sessions = [createMockSession({ id: 'loose' })];
+
+    applyRoomOriginOverlay(sessions, () => new Map());
+
+    expect('originRoomId' in sessions[0]!).toBe(false);
   });
 
   it('leaves a session no room is answering with completely untouched', () => {
@@ -83,19 +108,47 @@ describe('applyRoomOriginOverlay', () => {
     // …and the ordinary conversation beside it keeps its reading.
     expect(sessions[1]!.userLastMessageAt).toBe('2026-03-01T09:00:00.000Z');
   });
+});
 
+describe('applySessionOriginOverlays — the order, stated once', () => {
   // Ordering is a product decision, not an accident of import order: a
   // scheduled task that posts into a room is still the task somebody scheduled.
-  it('yields to the Pulse overlay, which runs after it at every call site', () => {
+  // Asserted against the COMPOSITE rather than two hand-sequenced calls, because
+  // the composite is what every call site now runs — a test that ordered them
+  // itself would keep passing however the shipped pair was ordered.
+  it('lets the Pulse overlay win over the room it posted into', () => {
     const sessions = [createMockSession({ id: 's1' })];
-    const resolveRooms: ResolveRoomOrigins = () =>
+    const resolveRoomOrigins: ResolveRoomOrigins = () =>
       new Map([['s1', { roomLabel: '#general', roomId: 'r1' }]]);
-    const resolveTasks: ResolveTaskOrigins = () => new Map([['s1', { taskName: 'digest' }]]);
+    const resolveTaskOrigins: ResolveTaskOrigins = () => new Map([['s1', { taskName: 'digest' }]]);
 
-    applyRoomOriginOverlay(sessions, resolveRooms);
-    applyTaskOriginOverlay(sessions, resolveTasks);
+    applySessionOriginOverlays(sessions, { resolveRoomOrigins, resolveTaskOrigins });
 
-    expect(sessions[0].origin).toBe('task');
-    expect(sessions[0].originLabel).toBe('Scheduled task · digest');
+    expect(sessions[0]!.origin).toBe('task');
+    expect(sessions[0]!.originLabel).toBe('Scheduled task · digest');
+    // …and it takes the room id with it. `Session.originRoomId` is documented
+    // as present only under `origin: 'room'`; a leftover id would be a room
+    // scope quietly claiming a run the wire calls a scheduled one.
+    expect('originRoomId' in sessions[0]!).toBe(false);
+  });
+
+  it('marks the room turn when no scheduled run claims the session', () => {
+    const sessions = [createMockSession({ id: 's1' })];
+
+    applySessionOriginOverlays(sessions, {
+      resolveRoomOrigins: () => new Map([['s1', { roomLabel: '#general', roomId: 'r1' }]]),
+      resolveTaskOrigins: () => new Map(),
+    });
+
+    expect(sessions[0]!.origin).toBe('room');
+    expect(sessions[0]!.originLabel).toBe('#general');
+    expect(sessions[0]!.originRoomId).toBe('r1');
+  });
+
+  it('is a safe no-op on an install with both subsystems off', () => {
+    const sessions = [createMockSession({ id: 's1' })];
+
+    expect(() => applySessionOriginOverlays(sessions, {})).not.toThrow();
+    expect(sessions[0]!.origin).toBeUndefined();
   });
 });

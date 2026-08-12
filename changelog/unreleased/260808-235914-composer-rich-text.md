@@ -14,14 +14,16 @@ covers:
   - 'fix(client): Enter on an empty list item exits the list (DOR-948)'
   - 'fix(client): the paste allowlist holds inside svg and math (DOR-948)'
   - "perf(e2e): measure the composer's two costs instead of estimating them (DOR-948)"
+  - 'feat(chat): rich text is on by default (DOR-948)'
+  - 'test(e2e): double-escape clear and IME composition guard in the browser (DOR-948)'
 ---
 
 ### Added
 
-- A new setting that makes the chat message box show formatting as you type. Turn it on in
-  Settings → Advanced → **Format text as you type**. With it on, `**bold**` turns bold as you
-  close the second pair of asterisks, `- ` starts a bullet list, `# ` makes a heading, and
-  `` `code` `` becomes code. Enter still sends your message — except inside a list, where it
-  starts the next bullet, and an empty bullet ends the list. Anything the box does not preview,
-  like quotes, code blocks, links and tables, stays as you typed it and still renders when the
-  message is sent. It is off until you turn it on, and it applies to chat for now (DOR-948)
+- The chat message box now formats as you type. `**bold**` turns bold as you close the second
+  pair of asterisks, `- ` starts a bullet list, `# ` makes a heading, and `` `code` `` becomes
+  code. Enter still sends your message — except inside a list, where it starts the next bullet,
+  and an empty bullet ends the list. Anything the box does not preview, like quotes, code blocks,
+  links and tables, stays as you typed it and still renders when the message is sent. If you would
+  rather see the plain markdown characters, there is a switch in Settings → Advanced →
+  **Format text as you type**. This applies to chat for now (DOR-948)

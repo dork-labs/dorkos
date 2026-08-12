@@ -139,6 +139,41 @@ describe('PipHost', () => {
     expect(presenceSpy).toHaveBeenCalled();
   });
 
+  // ── The development-only `?pip=demo` seam (DOR-1177) ───────────────────
+  // Every real way to open a PIP needs a live model turn, so the one state
+  // where PIP touches the phone cockpit had no way to be reached from a test
+  // at all — which is how a docked PIP came to cover all four destinations
+  // with nothing red. These pin the seam the browser spec drives.
+  describe('the ?pip=demo development seam', () => {
+    /** Load the host as if the page had been opened at `search`. */
+    function renderAt(search: string) {
+      window.history.replaceState({}, '', `/${search}`);
+      return render(<PipHost />);
+    }
+
+    afterEach(() => {
+      window.history.replaceState({}, '', '/');
+    });
+
+    it('opens the demo PIP when the page was loaded with ?pip=demo', () => {
+      renderAt('?pip=demo');
+      expect(screen.getByTestId('floating-panel')).toHaveAttribute('data-title', 'Demo panel');
+    });
+
+    it('opens nothing for any other URL', () => {
+      // Both halves matter: a seam that fired on a bare load would put a panel
+      // in front of every developer on every page, and one that answered any
+      // value would be a wider contract than it says it is.
+      const { container, unmount } = renderAt('');
+      expect(container).toBeEmptyDOMElement();
+      unmount();
+      resetStore();
+
+      renderAt('?pip=widget');
+      expect(screen.queryByTestId('floating-panel')).not.toBeInTheDocument();
+    });
+  });
+
   it('renders the demo content title when pipContent is a demo descriptor', () => {
     act(() => {
       useAppStore.getState().openPip({ kind: 'demo', title: 'Hello PIP' });

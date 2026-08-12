@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "9871c73a-8d00-4183-87e1-36931a0c3ad8",
+  "id": "4f318cea-728f-4233-ae3d-f83a9326c7ad",
   "prevId": "816e07d9-b5c6-4dd1-8583-71b4d0909b3b",
   "tables": {
     "a2a_tasks": {
@@ -628,7 +628,15 @@
           "autoincrement": false
         }
       },
-      "indexes": {},
+      "indexes": {
+        "idx_pulse_runs_session": {
+          "name": "idx_pulse_runs_session",
+          "columns": [
+            "session_id"
+          ],
+          "isUnique": false
+        }
+      },
       "foreignKeys": {
         "pulse_runs_schedule_id_pulse_schedules_id_fk": {
           "name": "pulse_runs_schedule_id_pulse_schedules_id_fk",
@@ -2972,14 +2980,6 @@
           ],
           "isUnique": false,
           "where": "\"thread_root_entry_id\" IS NOT NULL"
-        },
-        "idx_room_entries_author_room": {
-          "name": "idx_room_entries_author_room",
-          "columns": [
-            "author_id",
-            "room_id"
-          ],
-          "isUnique": false
         }
       },
       "foreignKeys": {},
@@ -3169,7 +3169,15 @@
           "autoincrement": false
         }
       },
-      "indexes": {},
+      "indexes": {
+        "idx_room_sessions_session": {
+          "name": "idx_room_sessions_session",
+          "columns": [
+            "session_id"
+          ],
+          "isUnique": false
+        }
+      },
       "foreignKeys": {},
       "compositePrimaryKeys": {
         "room_sessions_room_id_author_id_pk": {

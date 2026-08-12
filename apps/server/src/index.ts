@@ -273,6 +273,7 @@ import {
   setSessionEventStore,
   onProjectorRekey,
   sweepOrphanedMessageQueues,
+  sessionOriginResolvers,
 } from './services/session/index.js';
 import { aggregateSessionList } from './services/session/aggregate-session-list.js';
 import { env } from './env.js';
@@ -1972,6 +1973,25 @@ async function start() {
     mountedRouters.push('relay');
   }
 
+  // Session-origin overlays (session-origin-legibility, team-room-home §D2.3):
+  // two narrow batched lookups, mirroring the meshCore/relayCore pattern. Each
+  // is its own read rather than a widening of any bag: a session list asks one
+  // question of the rooms domain ("is this id a room's turn?") and one of Tasks
+  // ("is this id a scheduled run?"), and answering them must not drag either
+  // store into the session router's imports. A Tasks-disabled install leaves
+  // the second unset, which both overlays treat as a safe no-op.
+  //
+  // Wired to the session routes via app.locals AND to the global session-list
+  // stream below, because both produce client-visible session rows and a room
+  // turn must read the same way whichever one a client heard it from (DOR-1141).
+  if (taskStore) {
+    app.locals.resolveTaskOrigins = (sessionIds: string[]) =>
+      taskStore!.resolveTaskOrigins(sessionIds);
+  }
+  app.locals.resolveRoomOrigins = (sessionIds: string[]) =>
+    roomStore.resolveRoomOrigins(sessionIds);
+  sessionListBroadcaster.setOriginResolvers(sessionOriginResolvers(app.locals));
+
   // Wire global session-list discovery → unified SSE stream (ADR-0265/0266).
   // ALWAYS ON: fans every registered runtime's transition-only session-list
   // stream (session_upserted/session_removed/session_status) onto /api/events
@@ -2050,24 +2070,6 @@ async function start() {
     adapterLive: (adapterId: string) => adapterManager?.getRegistry().get(adapterId) !== undefined,
     agentLive: (agentId: string) => meshCore?.getProjectPath(agentId) !== undefined,
   } satisfies UnattendedAutonomyDeps;
-
-  // Session-origin Pulse overlay (session-origin-legibility): expose a narrow
-  // batched lookup to the sessions router via app.locals, mirroring the
-  // meshCore/relayCore pattern above. Tasks-disabled installs leave this
-  // unset, and applyTaskOriginOverlay treats that as a safe no-op — keeps
-  // transcript-reader.ts/classify-origin.ts free of any Tasks-subsystem import.
-  if (taskStore) {
-    app.locals.resolveTaskOrigins = (sessionIds: string[]) =>
-      taskStore!.resolveTaskOrigins(sessionIds);
-  }
-
-  // Session-origin ROOM overlay (team-room-home §D2.3): the same narrow batched
-  // shape as the Pulse lookup above, over `room_sessions`. Its own read rather
-  // than a widening of any bag: a session list asks one question of the rooms
-  // domain ("is this id a room's turn?"), and answering it must not drag the
-  // rooms store into the session router's imports.
-  app.locals.resolveRoomOrigins = (sessionIds: string[]) =>
-    roomStore.resolveRoomOrigins(sessionIds);
 
   // Shape schedule service — file-first schedule creator + re-binder the Shape
   // apply flow and the agent-create seam share. Built here (not just inside the

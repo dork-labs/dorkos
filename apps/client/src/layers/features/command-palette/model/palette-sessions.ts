@@ -54,6 +54,13 @@ export interface PaletteSessionItem {
   origin?: SessionOrigin;
   /** The session's own origin wording, when the server has better than the generic label. */
   originLabel?: string;
+  /**
+   * The room that started it, by id — what a room scope joins on
+   * (`scopesOfSession`). Absent unless {@link PaletteSessionItem.origin}
+   * is `room`, and absent on a record older than the field, which then falls
+   * back to matching {@link PaletteSessionItem.originLabel} by name.
+   */
+  originRoomId?: string;
   /** When the session was last active, ISO-8601, for the row's relative time. */
   lastActivityAt: string;
   /**
@@ -165,6 +172,7 @@ export function toPaletteSessionItems(
       agent,
       origin: session.origin,
       originLabel: session.originLabel,
+      originRoomId: session.originRoomId,
       lastActivityAt: session.updatedAt,
       archived: !Number.isNaN(lastActivity) && lastActivity < archivedBefore,
     };

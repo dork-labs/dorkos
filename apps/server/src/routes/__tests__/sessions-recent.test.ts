@@ -212,10 +212,17 @@ describe('GET /api/sessions/recent', () => {
     const bound = res.body.sessions.find((s: Session) => s.id === 's1');
     expect(bound.origin).toBe('room');
     expect(bound.originLabel).toBe('#general');
+    // The id, through the real route and real JSON — this is the seam the
+    // client's room scope joins on, and a name it cannot join on safely
+    // (DOR-1157). Pinned here as well as at the overlay unit, because a field
+    // that survives the overlay and not the response is the failure that
+    // matters to the reader.
+    expect(bound.originRoomId).toBe('room-1');
     // …and the session no room is answering with is untouched, which is what
     // keeps ordinary conversations in the list.
     const loose = res.body.sessions.find((s: Session) => s.id === 's2');
     expect(loose.origin).toBeUndefined();
+    expect('originRoomId' in loose).toBe(false);
   });
 
   // BC-16's server half. The point of the field is that it survives the whole
@@ -296,5 +303,10 @@ describe('GET /api/sessions/recent', () => {
 
     expect(res.body.sessions[0].origin).toBe('task');
     expect(res.body.sessions[0].originLabel).toBe('Scheduled task · daily-digest');
+    // …and it does not leave the room's id behind under a `task` origin, which
+    // would be a room scope quietly claiming a run the wire calls a scheduled
+    // one. Asserted on the serialized body: `res.json` omits `undefined`, so
+    // this is the reading a client actually gets.
+    expect('originRoomId' in res.body.sessions[0]).toBe(false);
   });
 });

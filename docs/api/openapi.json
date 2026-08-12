@@ -189,6 +189,9 @@
           "originLabel": {
             "type": "string"
           },
+          "originRoomId": {
+            "type": "string"
+          },
           "account": {
             "type": "string"
           },

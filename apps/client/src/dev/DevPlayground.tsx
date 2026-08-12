@@ -338,9 +338,11 @@ function DevPlaygroundShell() {
             <ThemeToggle />
           </Sidebar>
 
-          {/* --pip-dock (set by the mobile PIP mini-bar) lifts playground
+          {/* --pip-dock (set by the mobile PIP mini-bar) lifts this inset's
               content above the 64px bar — the PIP showcase invites mobile
-              testing on these routes. */}
+              testing on these routes. It lifts THIS box and nothing else: the
+              variable is padding for whoever reads it, never a promise that
+              every surface on screen has been cleared (DOR-1177). */}
           <SidebarInset className="overflow-y-auto pb-[var(--pip-dock,0px)]">
             <header className="flex h-9 shrink-0 items-center gap-2 border-b px-2">
               <SidebarTrigger className="-ml-0.5" />
