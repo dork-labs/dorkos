@@ -78,22 +78,22 @@ export function AdvancedTab() {
       <FieldCard>
         <FieldCardContent>
           {/*
-           * The switch is visible, and a reviewer will ask why a rollout
-           * mechanism belongs in Settings at all.
+           * Formatting as you type is ON by default since the owner's
+           * 2026-08-12 call, so this switch is no longer an opt-in — it is the
+           * way out.
            *
-           * Two reasons. Someone whose message box misbehaves can put it back
-           * without finding and hand-editing `~/.dork/config.json` — a
-           * kill-switch has to be reachable when the thing it gates is what
-           * broke. And an opt-in nobody can find returns no signal, so nothing
-           * would ever be learned about whether it earned its keep.
+           * That is why it stays visible. Someone whose message box misbehaves
+           * can put it back without finding and hand-editing
+           * `~/.dork/config.json`, and a kill-switch has to be reachable when
+           * the thing it gates is what broke. With the feature on for everyone,
+           * that reachability matters more than it did as an opt-in, not less.
            *
            * The fair counter-argument is that a switch here is a promise to
-           * carry both fields forever. The exit plan answers it: when the flag
-           * graduates to default-on (the criteria are in
-           * `specs/composer-rich-text/02-specification.md`), this row, the
-           * `richText` prop, `TextareaField` and the whole plain path come out
-           * together. Removing this row is the obvious first move of that
-           * change, not a discovery someone has to make.
+           * carry both fields forever. The exit plan answers it, unchanged in
+           * shape: this row, the `richText` prop, `TextareaField` and the whole
+           * plain path come out together. What that cleanup now waits on is the
+           * nested-list serialize fix, not a default flip. Removing this row is
+           * its obvious first move, not a discovery someone has to make.
            */}
           <SwitchSettingRow
             label="Format text as you type"

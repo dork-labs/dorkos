@@ -30,10 +30,18 @@ function selectComposer(config: ServerConfig | undefined): ComposerPrefs {
  * (`ui.composer.richText`).
  *
  * Selects from the shared {@link useConfig} query. Schema defaults guarantee the
- * section is present once config loads; `false` is returned while it is still
- * loading, and that direction is deliberate — a box that renders plain and then
- * becomes rich is fine, where one that renders rich and collapses back to a
- * textarea is a flash of the wrong field.
+ * section is present once config loads; until then this answers with
+ * {@link COMPOSER_PREFS_DEFAULTS}, which is the SAME value the server would have
+ * written for someone who never touched the switch.
+ *
+ * That is the whole rule, and it is worth stating rather than re-deriving: the
+ * loading answer tracks the shipped default, so the overwhelmingly common
+ * person — who has not opted out — never sees the field swap under them. It read
+ * a hardcoded `false` while the default was `false`, which was the same rule
+ * spelled differently; since 2026-08-12 the default is `true`, and a hardcoded
+ * `false` would now flash a textarea at everybody for one render. The only
+ * people who can still see a swap are those who deliberately turned formatting
+ * off, and they see the box they chose arrive a frame late.
  */
 export function useComposerRichText(): boolean {
   const { data } = useConfig();

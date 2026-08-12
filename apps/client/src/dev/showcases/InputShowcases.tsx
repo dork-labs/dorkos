@@ -209,7 +209,7 @@ export function InputShowcases() {
         <ComposerInputDemo label="Streaming (stop button)" isStreaming />
         <ComposerInputDemo label="Streaming with queue" isStreaming queueDepth={2} />
         <ComposerInputDemo
-          label="Formatting as you type (Settings → Advanced turns this on)"
+          label="Formatting as you type (on in chat; Settings → Advanced turns it off)"
           richText
           initialValue={'# Ship notes\n\n- **check** the `build`\n- then the *docs*'}
         />

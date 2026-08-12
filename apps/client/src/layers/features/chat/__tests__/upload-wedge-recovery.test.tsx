@@ -76,6 +76,7 @@ import { createMockTransport } from '@dorkos/test-utils';
 import { UPLOAD_CANCELED_MESSAGE, UPLOAD_STALLED_MESSAGE } from '@/layers/shared/lib';
 import { ChatInputContainer } from '../ui/input/ChatInputContainer';
 import { useFileUpload } from '../model/use-file-upload';
+import { configKeys } from '@/layers/entities/config';
 
 beforeAll(() => {
   Object.defineProperty(window, 'matchMedia', {
@@ -175,7 +176,25 @@ function Composer({ attachment }: { attachment: File }) {
   );
 }
 
+/**
+ * Render the composer on the PLAIN field, and say why that is pinned.
+ *
+ * `ui.composer.richText` defaults to `true` since 2026-08-12, so without this
+ * the container renders the Lexical field — and this suite types its draft with
+ * `user.keyboard`, which puts no text into a `contenteditable` under jsdom. The
+ * send would then never happen and every assertion here would pass or fail for
+ * a reason that has nothing to do with a stalled upload.
+ *
+ * Pinning the preference is right rather than merely convenient: the subject is
+ * the attachment chrome and the wedge it can cause, none of which is field-
+ * specific — the field is the instrument, not the thing being measured. The
+ * rich field's own keyboard behaviour is covered where it belongs, by the
+ * `EditingSurface` conformance table and the browser suite.
+ */
 function renderComposer() {
+  const config = { ui: { composer: { richText: false } } };
+  mockTransport.getConfig = vi.fn().mockResolvedValue(config);
+  queryClient.setQueryData(configKeys.current(), config);
   return render(
     <QueryClientProvider client={queryClient}>
       <TransportProvider transport={mockTransport}>

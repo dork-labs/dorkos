@@ -31,31 +31,41 @@ function createHarness(transport: Transport) {
 }
 
 describe('useComposerRichText', () => {
-  it('reads false while config has not loaded', () => {
-    // The direction matters: a box that renders plain and then becomes rich is
-    // fine; one that renders rich and collapses back is a flash of the wrong
-    // field.
+  it('reads the shipped default while config has not loaded', () => {
+    // The rule, asserted as a rule: the loading answer IS the shipped default,
+    // so the person who never touched the switch never sees the field swap.
+    // Asserting `COMPOSER_PREFS_DEFAULTS.richText` rather than a literal is what
+    // makes this survive the next change of default instead of pinning today's.
     const transport = createMockTransport({ getConfig: vi.fn().mockResolvedValue({}) });
     const { wrapper } = createHarness(transport);
     const { result } = renderHook(() => useComposerRichText(), { wrapper });
-    expect(result.current).toBe(false);
-    expect(COMPOSER_PREFS_DEFAULTS.richText).toBe(false);
+    expect(result.current).toBe(COMPOSER_PREFS_DEFAULTS.richText);
+  });
+
+  it('ships with formatting as you type ON (owner decision, 2026-08-12)', () => {
+    // Separate from the test above on purpose. That one says the hook agrees
+    // with the default; this one says what the default IS, so flipping it is a
+    // deliberate edit here rather than a silent pass.
+    expect(COMPOSER_PREFS_DEFAULTS.richText).toBe(true);
   });
 
   it('reads the stored value once config resolves', () => {
     const transport = createMockTransport({ getConfig: vi.fn().mockResolvedValue({}) });
     const { queryClient, wrapper } = createHarness(transport);
-    queryClient.setQueryData(configKeys.current(), makeServerConfig({ richText: true }));
+    // Stored `false` rather than `true`: it is the value that DISAGREES with the
+    // default, so it is the only one that can fail if the hook ever stops
+    // reading config and starts answering from the default alone.
+    queryClient.setQueryData(configKeys.current(), makeServerConfig({ richText: false }));
     const { result } = renderHook(() => useComposerRichText(), { wrapper });
-    expect(result.current).toBe(true);
+    expect(result.current).toBe(false);
   });
 
-  it('reads false from a config whose ui block predates the section', () => {
+  it('falls back to the default for a ui block that predates the section', () => {
     const transport = createMockTransport({ getConfig: vi.fn().mockResolvedValue({}) });
     const { queryClient, wrapper } = createHarness(transport);
     queryClient.setQueryData(configKeys.current(), { ui: {} } as unknown as ServerConfig);
     const { result } = renderHook(() => useComposerRichText(), { wrapper });
-    expect(result.current).toBe(false);
+    expect(result.current).toBe(COMPOSER_PREFS_DEFAULTS.richText);
   });
 });
 
@@ -105,10 +115,13 @@ describe('useUpdateComposerPrefs', () => {
     await waitFor(() =>
       expect(transport.updateConfig).toHaveBeenCalledWith({ ui: { composer: { richText: false } } })
     );
+    // The literal, not `COMPOSER_PREFS_DEFAULTS`: this asserts the optimistic
+    // write turned it OFF, and since the default is now `true` the two are no
+    // longer the same claim.
     await waitFor(() =>
-      expect(queryClient.getQueryData<ServerConfig>(configKeys.current())!.ui!.composer).toEqual(
-        COMPOSER_PREFS_DEFAULTS
-      )
+      expect(queryClient.getQueryData<ServerConfig>(configKeys.current())!.ui!.composer).toEqual({
+        richText: false,
+      })
     );
   });
 
