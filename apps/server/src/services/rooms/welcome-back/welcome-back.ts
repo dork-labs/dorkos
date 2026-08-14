@@ -57,8 +57,8 @@
 import { eq, max, readCursors, roomEntries, type Db } from '@dorkos/db';
 import type { UserConfig } from '@dorkos/shared/config-schema';
 import { sanitizeIdentity } from '@dorkos/shared/untrusted-text';
-import { logger } from '../../lib/logger.js';
-import { MENTION_PATTERN } from './mentions.js';
+import { logger } from '../../../lib/logger.js';
+import { MENTION_PATTERN } from '../mentions.js';
 
 /** The `welcomeBack` block of user config, as this module reads it. */
 export type WelcomeBackSettings = UserConfig['welcomeBack'];

@@ -18,9 +18,9 @@
  */
 import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
 import type { Session } from '@dorkos/shared/types';
-import { listRecentSessions } from '../session/recent-sessions.js';
-import type { AuthorRegistry } from './author-registry.js';
-import type { RoomStore } from './room-store.js';
+import { listRecentSessions } from '../../session/recent-sessions.js';
+import type { AuthorRegistry } from '../author-registry.js';
+import type { RoomStore } from '../room-store.js';
 import type { AgentAbsenceWork, WelcomeBackWorkSource } from './welcome-back.js';
 
 /**

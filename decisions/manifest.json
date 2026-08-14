@@ -4440,6 +4440,22 @@
         "apps/server/src/services/runtimes/shared/room-context-block.ts",
         "packages/shared/src/additional-context.ts"
       ]
+    },
+    {
+      "id": "260814-195522",
+      "slug": "agents-may-react-with-a-rate-bound",
+      "title": "Agents may react, bounded by a rate rather than by a ban",
+      "status": "accepted",
+      "created": "2026-08-14",
+      "specSlug": "room-participation",
+      "affects": [
+        "apps/server/src/services/rooms/room-service.ts",
+        "apps/server/src/services/rooms/reaction-budget.ts",
+        "apps/server/src/services/rooms/room-capabilities.ts",
+        "apps/server/src/services/rooms/room-errors.ts",
+        "apps/server/src/routes/room-error-response.ts",
+        "meta/agent-etiquette.md"
+      ]
     }
   ]
 }

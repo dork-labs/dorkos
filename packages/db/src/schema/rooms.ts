@@ -560,13 +560,12 @@ export const roomEntries = sqliteTable(
  * write beside a future `deleteEntry`. `createDb` turns `foreign_keys` ON, so it
  * is enforced rather than decorative.
  *
- * **`author_id` is not constrained to a human**, and that is deliberate rather
- * than an opening. Agents do not send reactions — no route accepts one, and
- * `RoomService.toggleReaction` refuses a non-human author (etiquette E16b). That
- * gate lives in the service because it is a conduct decision, and conduct
- * decisions get revisited; a column that had already decided would have to be
- * migrated on the day one is. What the schema decides is only that a reaction
- * has an author.
+ * **`author_id` is not constrained to a human**, and leaving that decision to
+ * the service is exactly what saved a migration. When this was written agents
+ * could not react at all; ADR 260814-195522 reversed that, and because the rule
+ * was conduct in `RoomService.toggleReaction` rather than a constraint here, the
+ * reversal was a deleted check and a new rate bound instead of a schema change.
+ * What the schema decides is only that a reaction has an author.
  *
  * The second index serves the quick row: a person's most-used emoji is
  * `GROUP BY emoji` over their own rows, across every room, which

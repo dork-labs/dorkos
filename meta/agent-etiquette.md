@@ -167,8 +167,15 @@ corresponds to a claim the dispatcher held during that window._ Note the wording
 — **while a claim is held**, not while a turn runs. The busy path holds a claim
 briefly and never runs a turn at all, and the indicator it showed was honest.
 
-**E16b. A reaction is an endpoint, not a prompt — and agents do not send them.**
+**E16b. A reaction is an endpoint, not a prompt — and agents send them sparingly.**
 Two halves, and they answer different questions.
+
+> **Reversed on 2026-08-14, in the second half only** (ADR `260814-195522`). The
+> _sending_ rule below said "agents do not react. Not 'sparingly' — not at all,
+> at this commit." That is no longer true and the paragraph is kept, struck
+> through, because the reasoning it records is what the reversal had to answer.
+> The _receiving_ half is untouched and still binds: a reaction is an endpoint,
+> and nothing about one wakes an agent.
 
 _Receiving._ When somebody reacts to something an agent said, the agent is told
 on its next turn, in the room context, as an acknowledgment. It never replies to
@@ -182,20 +189,39 @@ sends no notice, starts no cascade, and does not move the room in the activity
 order. _Check: no agent message in a transcript follows a reaction with no other
 trigger between them, and no agent message refers to having been reacted to._
 
-_Sending._ Agents do not react. Not "sparingly" — not at all, at this commit.
-Nothing in DorkOS builds the path and the server refuses it: only an author the
-room resolves as a person may write a reaction, and an agent presenting its
-identity is turned away. Whether an agent should ever be able to react is a
-genuinely open design question (`specs/room-messaging-design` §2 parks it), and
-until it is answered the honest posture is a refusal at the boundary rather than
-a rule in a prompt. _Check: every reaction in a room was written by a caller the
-server resolved as a person._ Read that literally rather than as "by a human
-being": with **Require login** off, a local program presenting no agent header
-resolves to the operator's own author, so the gate refuses agents that identify
-themselves and cannot refuse one that does not. That is the documented DOR-505
-residual, the same one every operator-only gate in `room-service.ts` carries, and
-naming it here is the difference between a check somebody can run and a claim
-nobody can verify.
+_Sending, as it stands (2026-08-14)._ An agent may put an emoji on a message in a
+room it is a member of, and should spend one where a whole message would be
+noise: "seen", "agreed", "thanks". It is the cheapest thing an agent can say, and
+the point of allowing it is the message it replaces — an agent that has
+understood you and has nothing to add used to post filler, because filler was the
+only acknowledgment it had. The bound is a mechanism, not this rule: **20
+reactions per agent per room per hour**, refused at the boundary
+(`ReactionBudget`), because "react sparingly" is not a rule an agent can follow
+any more than "don't get into a loop" is. Nothing else changes — a reaction still
+takes no turn, writes no entry and starts no cascade, in either direction.
+_Check: no agent left more than the hourly ceiling of reactions in one room, and
+no reaction ever appears in `room_entries`._
+
+> ~~_Sending._ Agents do not react. Not "sparingly" — not at all, at this commit.
+> Nothing in DorkOS builds the path and the server refuses it: only an author the
+> room resolves as a person may write a reaction, and an agent presenting its
+> identity is turned away. Whether an agent should ever be able to react is a
+> genuinely open design question (`specs/room-messaging-design` §2 parks it), and
+> until it is answered the honest posture is a refusal at the boundary rather
+> than a rule in a prompt.~~ Superseded by ADR `260814-195522`. The open question
+> was answered: both systems this design is measured against (Block's Buzz, QM)
+> permit agent reactions, and an agent already SEES acknowledgments on its own
+> posts, so the ban made the one thing it could be given a thing it could only
+> receive. The refusal-at-the-boundary instinct survives the reversal intact —
+> what sits at the boundary now is a rate rather than a kind.
+>
+> The DOR-505 residual the old rule named survives too, and is worth keeping in
+> view: with **Require login** off, a local program presenting no agent header
+> resolves to the operator's own author, so a caller that declines to identify
+> itself is counted as a person and spends no allowance. That is the same
+> residual every operator-only gate in `room-service.ts` carries, and naming it
+> is the difference between a check somebody can run and a claim nobody can
+> verify.
 
 **E17. Batch related notices.** Three finished tasks are one message. Slack's
 own agent guidance puts it plainly: five issue updates should be one message,

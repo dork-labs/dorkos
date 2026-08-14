@@ -83,8 +83,38 @@ export type RoomErrorCode =
    * happened.
    */
   | 'OWNER_MUST_BE_PRESENT'
-  /** A non-person tried to react. Agents do not send reactions (etiquette E16b). */
+  /**
+   * A non-person tried to do something only a person may do — today, stopping a
+   * room ({@link RoomService.requirePersonAuthor}).
+   *
+   * It used to guard reactions too. It does not any more: an agent may put an
+   * emoji on a message, bounded by {@link ReactionBudget} rather than by kind
+   * (ADR 260814-195522, which reverses etiquette E16b).
+   */
   | 'PEOPLE_ONLY'
+  /**
+   * `post_to_room` was aimed at a direct message (room-participation spec §2.6).
+   *
+   * In a DM the reply IS the message: the agent was unambiguously addressed and
+   * answering is obligatory, so the turn's own text posts and there is nothing
+   * for a posting verb to add. A second way to say the same thing there would be
+   * a second way for it to fail.
+   *
+   * Spelled `kind !== 'channel'`, never `kind === 'dm'`: `rooms.kind` is a text
+   * column narrowed by an unchecked cast, and an unrecognized kind must take the
+   * narrower branch (`.claude/rules/room-conduct.md`).
+   */
+  | 'TOOL_POST_NOT_IN_DM'
+  /**
+   * One agent has used up its hourly reaction allowance in one room
+   * ({@link ReactionBudget}).
+   *
+   * A bound rather than a ban, and it is the whole price of letting agents react
+   * at all: a reaction is free, so nothing else in the system would stop a loop
+   * that sprays one on every message. People are never counted — a person
+   * clicking pills is the behaviour the feature is for.
+   */
+  | 'REACTION_RATE_LIMITED'
   /**
    * A Telegram broadcast channel (`chat.type === 'channel'`) was offered to
    * `RoomService.createBridgedRoom` (chats-as-channels spec §3.3). A broadcast

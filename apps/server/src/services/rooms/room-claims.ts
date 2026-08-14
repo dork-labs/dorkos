@@ -104,6 +104,22 @@ export interface ActiveClaim {
    * real work in a real checkout. Only the cascade it does not have is hidden.
    */
   aside: boolean;
+  /**
+   * The agent has already posted into this room, deliberately, from inside this
+   * turn — `post_to_room` (room-participation spec §10.2).
+   *
+   * It exists so the room does not say the same thing twice. A turn that reaches
+   * for the posting verb has already put its words in front of the reader; the
+   * narration it then writes back to its own session ("I posted the deploy note")
+   * is addressed to whoever is watching the SESSION, and posting that as well
+   * would give the room two messages for one thought. So {@link
+   * RoomTriggerDispatcher.deliver} skips the automatic post when this is set.
+   *
+   * **Per `(room, agent)`, which is the grain of the claim itself.** An agent that
+   * posts into a DIFFERENT room mid-turn has said nothing here, and its answer to
+   * this room still lands.
+   */
+  spokeViaTool: boolean;
   /** When the claim was taken — what `room_context.working` reports as `since`. */
   claimedAt: string;
   /**

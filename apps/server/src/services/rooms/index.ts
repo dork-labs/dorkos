@@ -17,11 +17,13 @@ import { runtimeRegistry } from '../core/runtime-registry.js';
 import { ReadCursorService } from '../core/read-cursor-service.js';
 import { ReadCursorStore } from '../core/read-cursor-store.js';
 import { readOwnerAccount } from '../core/auth/index.js';
+import { roomsSource, searchMessages } from '../search/index.js';
 import { BridgeStore } from '../relay/chat-bridge/bridge-store.js';
 import { AuthorRegistry } from './author-registry.js';
 import { ensureHandles } from './handles/ensure-handles.js';
 import type { EngagedWindow } from './engagement.js';
-import { ReactionStore } from './reaction-store.js';
+import { ReactionBudget } from './reactions/reaction-budget.js';
+import { ReactionStore } from './reactions/reaction-store.js';
 import { AttachmentRowStore } from './attachments/attachment-row-store.js';
 import type { RoomAttachmentStore } from './attachments/room-attachment-store.js';
 import type { RoomAgentLookup } from './room-errors.js';
@@ -31,8 +33,8 @@ import { RoomBroadcaster } from './room-stream.js';
 import type { RoomTurnRunner } from './room-trigger.js';
 import { RoomTurnBudget, type TurnBudgetLimits } from './turn-budget.js';
 import { createSessionRoomTurnRunner } from './room-turn-runner.js';
-import { lastPersonSignalAt, WelcomeBackGreeter } from './welcome-back.js';
-import { createSessionWorkSource } from './welcome-back-work.js';
+import { lastPersonSignalAt, WelcomeBackGreeter } from './welcome-back/welcome-back.js';
+import { createSessionWorkSource } from './welcome-back/welcome-back-work.js';
 
 /** The wired rooms subsystem. */
 export interface RoomSubsystem {
@@ -267,6 +269,21 @@ export function createRoomSubsystem(opts: {
     // construction, so the ceilings mean an hour of wall clock rather than an
     // hour of uptime (DOR-1205).
     budget: opts.budget ?? new RoomTurnBudget({ limits: turnBudgetLimits, db: opts.db }),
+    // Recovered from the reactions themselves rather than a counter table, so an
+    // agent that spent its hour and met a restart comes back spent
+    // (ADR 260814-195522).
+    reactionBudget: new ReactionBudget({ db: opts.db }),
+    // The message index, behind its port. Composed here rather than imported by
+    // the service so the rooms domain neither knows the index is FTS5 nor which
+    // `sourceId` its own rows carry.
+    findMessages: ({ roomIds, query, limit, afterSeq }) =>
+      searchMessages(opts.db, {
+        sourceId: roomsSource.id,
+        originKeys: roomIds,
+        query,
+        limit,
+        afterOrdinal: afterSeq,
+      }).map((hit) => ({ roomId: hit.originKey, seq: hit.ordinal })),
     // Read per write, not captured once: changing the ceiling in Settings has
     // to bound the very next cascade, not the next server start.
     maxAgentDepth: readMaxAgentDepth,

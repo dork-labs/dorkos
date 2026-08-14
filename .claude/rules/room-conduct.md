@@ -28,8 +28,8 @@ question be the only thing bounding cost or loops.
 
 ## Bounds are mechanisms, never prompts
 
-The cascade guard (depth + ancestry), the two-ceiling turn budget, and the halt
-path are **mechanisms**. Do not replace any of them with an instruction in a
+The cascade guard (depth + ancestry), the two-ceiling turn budget, the hourly
+reaction ceiling (`reaction-budget.ts`), and the halt path are **mechanisms**. Do not replace any of them with an instruction in a
 prompt, and do not weaken one because a prompt "already says" not to do the
 thing. Block's Buzz learned this from a real 21-reply agent storm and wrote down
 why:
@@ -244,6 +244,28 @@ model. See ADR `260726-170127` and `research/20260727_buzz-conversational-behavi
     second copy is the one that misses NEL.
     A region is not trusted because a comment says so. It is trusted because
     everything reaching it went through that function.
+- **An agent's hand in a room is four verbs, and every one of them goes through
+  the service.** `post_to_room`, `react_to_room_entry`, `read_room_history` and
+  `search_room_history` are the `rooms` capability domain
+  (`room-capabilities.ts`), and each one is a thin caller of a `RoomService`
+  method — never a second write path and never a second read predicate. Three
+  consequences to keep true. **Membership is the gate**, not the tier: both reads
+  are `observe` with the read-only carve-out, so nothing but the membership check
+  stands between a caller and a room's log, and "not a member" answers exactly as
+  "no such room" so a room id is never a capability. **A member reads only above
+  its `joinedSeq`** — the same floor the ambient window keeps. And **posting is
+  channels and threads only** (spec §2.6): in a DM the reply IS the message, so
+  the tool refuses there, spelled `kind !== 'channel'` like every other room-kind
+  branch. An agent that posts through the tool mid-turn does not ALSO get its
+  turn narration posted (`ActiveClaim.spokeViaTool`); provenance still follows the
+  turn, so speaking on purpose is not a way to reset the cascade guard.
+- **Agents may react, bounded by a rate** (ADR `260814-195522`, reversing
+  etiquette E16b's second half). The bound is `ReactionBudget` — 20 per agent per
+  room per rolling hour, recovered from the reaction rows themselves so a restart
+  cannot clear it — and it is a mechanism, not a line in a prompt. **Reactions
+  still never cascade**: they live outside `room_entries` and take no turn, write
+  no entry, send no notice and do not move a room in the activity order. Keep it
+  that way; a reaction that became an entry would be a message wearing a pill.
 - **A room is not a session.** N agents in a room are N sessions on one stream.
   Nothing here may assume one runtime owns the room.
 

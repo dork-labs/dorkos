@@ -2644,6 +2644,11 @@ async function start() {
       // The MCP-server-management domain — its deps are built above so the
       // `mcp.import` fallback closure narrows `meshCore`.
       ...(mcpDeps && { mcpDeps }),
+      // The rooms domain (room-participation spec §10.2, §10.3): the four verbs
+      // an agent has in the rooms it belongs to. The SAME service instance the
+      // REST routes and the trigger dispatcher hold — one set of membership
+      // rules, one cascade guard, one budget, whichever surface reaches them.
+      roomDeps: { rooms: roomService },
     },
     createCapabilityAttributionObserver(activityService)
   );

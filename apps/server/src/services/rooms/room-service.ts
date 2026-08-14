@@ -112,7 +112,8 @@ import type { AuthorRecord, AuthorRegistry, ExternalAuthorIdentity } from './aut
 import { deriveCascade } from './cascade-guard.js';
 import type { EngagedWindow } from './engagement.js';
 import { resolveAddressing } from './mentions.js';
-import type { ReactionStore } from './reaction-store.js';
+import type { ReactionBudget } from './reactions/reaction-budget.js';
+import type { ReactionStore } from './reactions/reaction-store.js';
 import type { AttachmentRowStore } from './attachments/attachment-row-store.js';
 import { RoomError, type RoomAgentLookup } from './room-errors.js';
 import {
@@ -130,6 +131,27 @@ import type { ActiveClaimView } from './room-claims.js';
 import type { RoomTurnBudget } from './turn-budget.js';
 
 /** Everything {@link RoomService} is constructed from. */
+/**
+ * The message index, as this domain sees it: words in, coordinates out, no
+ * access rule of its own.
+ *
+ * `ordinal` is a room entry's `seq`. The finder is handed exactly the room ids
+ * the caller may read and a floor it may read above, and everything else about
+ * who may see what stays on this side of the port.
+ */
+export interface RoomMessageFinder {
+  (input: {
+    /** The rooms to search — already resolved to what this caller may read. */
+    roomIds: readonly string[];
+    /** What the caller typed. */
+    query: string;
+    /** The most hits to bring back, best first. */
+    limit: number;
+    /** Ignore entries at or below this `seq`. */
+    afterSeq: number;
+  }): Array<{ roomId: string; seq: number }>;
+}
+
 export interface RoomServiceDeps {
   store: RoomStore;
   /** Reactions on this room's entries — durable state, never a turn. */
@@ -143,6 +165,27 @@ export interface RoomServiceDeps {
   turns: RoomTurnRunner;
   /** The per-room ceiling on automatic turns, counted whoever is calling. */
   budget: RoomTurnBudget;
+  /**
+   * The per-`(room, agent)` hourly ceiling on reactions — the price of letting
+   * agents react at all (ADR 260814-195522).
+   *
+   * Required rather than defaulted, because a budget this class could build for
+   * itself is one a caller could forget to build — and the failure mode of
+   * forgetting is an unbounded one.
+   */
+  reactionBudget: ReactionBudget;
+  /**
+   * How `search_room_history` finds a message by words: the message index, behind
+   * a port so this domain neither imports it nor knows it is FTS5
+   * (room-participation spec §10.3, as amended by DOR-672).
+   *
+   * A port rather than a direct call for the reason every seam in this file is
+   * one: the index enforces no access rule and must never be asked to. It is
+   * handed a scope this service resolved and returns coordinates this service
+   * resolves back through its own read path, so membership, the join floor and
+   * the thread filter are applied by the code that already owns them.
+   */
+  findMessages: RoomMessageFinder;
   /** The live `rooms.maxAgentDepth`. Injected so the domain reads no config. */
   maxAgentDepth(): number;
   /** The live `rooms.engagedWindow*` ceilings, injected for the same reason. */
@@ -195,6 +238,29 @@ export interface RoomServiceDeps {
  * into exactly one query, which is the case that runs constantly.
  */
 const REACTION_LOOKUP_CHUNK = 500;
+
+/**
+ * The most entries either history tool will return in one page
+ * (room-participation spec §10.3).
+ *
+ * **A clamp, never a refusal.** An agent that asks for a thousand messages is not
+ * making an error a `400` would teach it anything about; it wants as much as it
+ * can have, and the useful answer is the most that is sensible plus a cursor to
+ * ask again with. Two hundred is roughly a long afternoon in a busy channel and
+ * still a page a model can hold.
+ */
+export const HISTORY_PAGE_MAX = 200;
+
+/**
+ * Bring a requested page size inside {@link HISTORY_PAGE_MAX}, and above zero.
+ *
+ * @param limit - What the caller asked for.
+ * @returns A page size the store will accept.
+ */
+function clampHistoryLimit(limit: number): number {
+  if (!Number.isFinite(limit)) return HISTORY_PAGE_MAX;
+  return Math.min(HISTORY_PAGE_MAX, Math.max(1, Math.floor(limit)));
+}
 
 /** Provenance a post carries when a trigger produced it. */
 export interface PostTrigger {
@@ -294,6 +360,10 @@ export interface RebridgeRequest {
 export class RoomService {
   private readonly store: RoomStore;
   private readonly reactions: ReactionStore;
+  /** How many emoji an agent may still land in one room this hour. */
+  private readonly reactionBudget: ReactionBudget;
+  /** Words in, entry coordinates out. The message index, behind its port. */
+  private readonly findMessages: RoomMessageFinder;
   private readonly attachments: AttachmentRowStore;
   private readonly authors: AuthorRegistry;
   private readonly broadcaster: RoomBroadcaster;
@@ -335,6 +405,8 @@ export class RoomService {
   constructor(deps: RoomServiceDeps) {
     this.store = deps.store;
     this.reactions = deps.reactions;
+    this.reactionBudget = deps.reactionBudget;
+    this.findMessages = deps.findMessages;
     this.attachments = deps.attachments;
     this.authors = deps.authors;
     this.broadcaster = deps.broadcaster;
@@ -1812,6 +1884,192 @@ export class RoomService {
   }
 
   /**
+   * Post because the agent decided to — `post_to_room` (room-participation spec
+   * §10.2), and the only caller is the rooms capability domain.
+   *
+   * **It is `post` with two things added and nothing removed**, which is the
+   * whole design: the tool must not become a second write path. Membership, the
+   * archive check, mention resolution, the cascade stamp, the SSE publish and the
+   * dispatch all come from {@link RoomService.post} unchanged, so a bound that
+   * holds for a person's message holds for this.
+   *
+   * What it adds:
+   *
+   * - **Channels and threads only** (§2.6). In a DM the reply IS the message: the
+   *   agent was unambiguously addressed, answering is obligatory, and the turn's
+   *   own text already posts. A second way to say the same thing there would be a
+   *   second way for it to fail, and it would buy nothing.
+   * - **The turn is marked as having spoken**, so the narration that turn writes
+   *   back to its session is not ALSO posted (see {@link ActiveClaim.spokeViaTool}).
+   *
+   * What it deliberately does not add is a fresh cascade. Provenance follows the
+   * turn: a post made mid-turn inherits that turn's stamp through `activeTurnFor`,
+   * and a post made with nothing in flight is stamped at the ceiling under its own
+   * root — silent, triggering nobody. Speaking on purpose is not a way to reset a
+   * bound.
+   *
+   * @param roomId - The channel to post into.
+   * @param input.authorId - The agent posting, resolved from its identity by the
+   *   capability — never read off the tool's arguments.
+   * @param input.text - What to say.
+   * @param input.replyTo - The entry this answers, to land it in that thread.
+   * @returns The committed entry.
+   */
+  postFromTool(
+    roomId: string,
+    input: { authorId: string; text: string; replyTo?: string }
+  ): RoomEntry {
+    const room = this.requireVisibleRoom(roomId, input.authorId);
+    // `!== 'channel'`, never `=== 'dm'`: `rooms.kind` is a text column narrowed by
+    // an unchecked cast, so an unrecognized kind takes the narrower branch
+    // (`.claude/rules/room-conduct.md`).
+    if (room.kind !== 'channel') {
+      throw new RoomError(
+        'TOOL_POST_NOT_IN_DM',
+        'This is a direct message — your reply is posted for you, so there is nothing to post here.'
+      );
+    }
+    const entry = this.post(roomId, input);
+    this.triggers.noteDeliberatePost(roomId, input.authorId);
+    return entry;
+  }
+
+  /**
+   * A page of one room's history for a member, newest first — `read_room_history`
+   * (room-participation spec §10.3).
+   *
+   * **One predicate over one table**, because a thread is an entry-level relation:
+   * `room_id`, the caller's join point, and optionally one `thread_root_entry_id`.
+   *
+   * Three scope rules, and they are the same three the room's own read paths
+   * already keep:
+   *
+   * - **Members only.** {@link RoomService.requireVisibleRoom} plus an explicit
+   *   membership check, so seeing a room is still not being in it.
+   * - **A room id is not a capability.** "Not a member" and "no such room" are the
+   *   same `ROOM_NOT_FOUND`, so a probe learns nothing.
+   * - **Never below `joinedSeq`.** A member does not retroactively read what was
+   *   said before they arrived (spec §8.3). Strictly above, matching the ambient
+   *   window's own floor.
+   *
+   * `limit` is CLAMPED rather than refused: an agent that asks for a thousand gets
+   * {@link HISTORY_PAGE_MAX}, because refusing a number is a worse answer than
+   * giving the most that is sensible.
+   *
+   * @param roomId - The room.
+   * @param viewerAuthorId - The caller; must be on the roster.
+   * @param opts.limit - How many entries to return, clamped to
+   *   {@link HISTORY_PAGE_MAX}.
+   * @param opts.before - Return entries with `seq` strictly below this, for paging
+   *   backwards.
+   * @param opts.threadRootEntryId - Narrow to one thread's replies.
+   * @returns The page, newest first.
+   */
+  readHistory(
+    roomId: string,
+    viewerAuthorId: string,
+    opts: { limit: number; before?: number; threadRootEntryId?: string }
+  ): RoomEntry[] {
+    const floor = this.requireHistoryFloor(roomId, viewerAuthorId);
+    const page = this.store.listEntries(roomId, {
+      afterSeq: floor,
+      limit: clampHistoryLimit(opts.limit),
+      ...(opts.before !== undefined ? { before: opts.before } : {}),
+      ...(opts.threadRootEntryId !== undefined
+        ? { threadRootEntryId: opts.threadRootEntryId }
+        : {}),
+    });
+    // The store answers oldest-first within the page; the tool's contract is
+    // newest-first, which is the order an agent reading back wants.
+    return this.withRollups(roomId, page).reverse();
+  }
+
+  /**
+   * The messages in one room that match some words, best first —
+   * `search_room_history` (room-participation spec §10.3, as amended by DOR-672).
+   *
+   * **A caller of the message index, never a scan of its own.** There is exactly
+   * one search path over these rows; a second one written here would answer the
+   * same question differently — stems against substrings — and the difference
+   * would be invisible until somebody compared them.
+   *
+   * The three scope rules are the read tool's, reused verbatim, and the index
+   * gains no authority the tool did not already have: membership is resolved
+   * first, the join floor rides into the query, and the coordinates that come back
+   * are resolved through this room's OWN read path — so a hit the index somehow
+   * held for a room this caller may not see could not be turned into a message
+   * anyway.
+   *
+   * **A thread filter narrows what the index already ranked.** The index knows
+   * nothing about threads (a projected message carries a container and an ordinal
+   * and no relation), so the filter is applied to the resolved entries, over the
+   * top {@link HISTORY_PAGE_MAX} matches in the room. Searching a busy channel for
+   * a common word and narrowing to one thread can therefore come back thin; the
+   * tool says so, and the fix if it ever matters is a column in the projection,
+   * not a second scan here.
+   *
+   * @param roomId - The room.
+   * @param viewerAuthorId - The caller; must be on the roster.
+   * @param opts.query - The words to look for. Matched by STEM, not substring.
+   * @param opts.limit - The most matches to return, clamped to
+   *   {@link HISTORY_PAGE_MAX}.
+   * @param opts.threadRootEntryId - Keep only matches inside this thread.
+   * @returns The matching entries, best first.
+   */
+  searchHistory(
+    roomId: string,
+    viewerAuthorId: string,
+    opts: { query: string; limit: number; threadRootEntryId?: string }
+  ): RoomEntry[] {
+    const floor = this.requireHistoryFloor(roomId, viewerAuthorId);
+    const wanted = clampHistoryLimit(opts.limit);
+    const hits = this.findMessages({
+      roomIds: [roomId],
+      query: opts.query,
+      // Over-fetch only when something will be filtered out afterwards, so the
+      // ordinary search costs exactly what it asked for.
+      limit: opts.threadRootEntryId === undefined ? wanted : HISTORY_PAGE_MAX,
+      afterSeq: floor,
+    });
+    if (hits.length === 0) return [];
+
+    const ranked = new Map(hits.map((hit, rank) => [hit.seq, rank]));
+    const found = this.store
+      .listEntriesBySeq(roomId, [...ranked.keys()])
+      .filter(
+        (entry) =>
+          opts.threadRootEntryId === undefined || entry.threadRootEntryId === opts.threadRootEntryId
+      )
+      // The index ranked these by relevance and the store returned them by
+      // position; relevance is the order the caller asked for.
+      .sort((a, b) => (ranked.get(a.seq) ?? 0) - (ranked.get(b.seq) ?? 0))
+      .slice(0, wanted);
+    return this.withRollups(roomId, found);
+  }
+
+  /**
+   * The floor a member may read from in a room, refusing anyone who may not read
+   * it at all.
+   *
+   * Shared by both history tools so the three scope rules are enforced once. A
+   * member row is required even for the owner, who can SEE every room on the
+   * install: reading a room's log is a membership, not a visibility.
+   *
+   * @param roomId - The room.
+   * @param viewerAuthorId - The caller.
+   * @returns The exclusive `seq` floor — entries strictly above it are readable.
+   */
+  private requireHistoryFloor(roomId: string, viewerAuthorId: string): number {
+    this.requireVisibleRoom(roomId, viewerAuthorId);
+    const member = this.store.getMember(roomId, viewerAuthorId);
+    // The same `ROOM_NOT_FOUND` a missing room gets, deliberately: a room id is
+    // not a capability, and a distinct code here would let a caller holding an id
+    // tell "exists, not yours" from "does not exist".
+    if (!member) throw new RoomError('ROOM_NOT_FOUND', 'No such room');
+    return member.joinedSeq;
+  }
+
+  /**
    * Refuse anyone who may not attach a file to this room, before a single byte
    * is read.
    *
@@ -2340,8 +2598,10 @@ export class RoomService {
    *   `post` draws the same line and this one is no looser.
    * - **Archived** → `ROOM_ARCHIVED`. Archiving promises a room gains nothing
    *   more, and a pill is something it would gain.
-   * - **Not a person** → `PEOPLE_ONLY`. See
-   *   {@link RoomService.requirePersonAuthor}.
+   * - **An agent out of allowance** → `REACTION_RATE_LIMITED`. Agents may react
+   *   (ADR 260814-195522, reversing etiquette E16b); what they may not do is
+   *   react without a bound, because a reaction costs nothing and so nothing else
+   *   in the system would ever slow one down. People are not counted.
    * - **No such entry here** → `ENTRY_NOT_FOUND`, scoped to this room so an id
    *   from elsewhere cannot attach a reaction to a message in a room the caller
    *   cannot see.
@@ -2368,9 +2628,21 @@ export class RoomService {
       throw new RoomError('MEMBER_NOT_FOUND', 'Not a member of this room');
     }
     if (room.archived) throw new RoomError('ROOM_ARCHIVED', 'This room is archived');
-    this.requirePersonAuthor(viewerAuthorId, 'send reactions');
     if (!this.store.getEntryById(roomId, entryId)) {
       throw new RoomError('ENTRY_NOT_FOUND', 'No such entry in this room');
+    }
+    // Asked LAST of the refusals, and after the entry check, because it is the
+    // only one that SPENDS something: a caller that was going to be refused for
+    // any other reason must not have an allowance taken off it on the way out.
+    // Taking a reaction back spends too — the loop this bounds is a toggle loop
+    // as much as an add loop, and only one of the two leaves a row behind.
+    if (this.authors.getById(viewerAuthorId)?.kind !== 'human') {
+      if (!this.reactionBudget.tryReserve(roomId, viewerAuthorId)) {
+        throw new RoomError(
+          'REACTION_RATE_LIMITED',
+          'You have used up your reactions in this room for now — say something instead, or wait.'
+        );
+      }
     }
 
     const reacted = this.reactions.set(
@@ -2813,14 +3085,12 @@ export class RoomService {
   /**
    * Refuse anything that is not a person.
    *
-   * Two verbs take it, for the same reason in two shapes.
-   *
-   * **Agents do not send reactions** (`meta/agent-etiquette.md` E16b, and
-   * `specs/room-messaging-design` §2.5, which parks the question rather than
-   * answering it). Nothing here builds the path, and this is what stops one
-   * appearing by accident: an agent posting through `POST /:id/entries` reaches
-   * the room with a resolved author id, and without this gate the same identity
-   * would reach the reaction route.
+   * **One verb takes it now, and it used to be two.** Reactions were the other,
+   * on the strength of etiquette E16b; ADR 260814-195522 reverses that, so an
+   * agent may put an emoji on a message and {@link ReactionBudget} — not this
+   * gate — is what bounds it. The kind check moved because the thing being
+   * protected turned out to be volume, not authorship: an acknowledgment from a
+   * colleague is worth having, and a hundred of them are not.
    *
    * **Agents do not stop each other.** A halt cuts every in-flight turn in a
    * room; an agent reaching for it would be electing itself referee over its

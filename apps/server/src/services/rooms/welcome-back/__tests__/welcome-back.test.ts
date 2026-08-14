@@ -22,8 +22,8 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import type { RoomEntry, RoomWithRoster } from '@dorkos/shared/room-schemas';
 import { readCursors, roomEntries, type Db } from '@dorkos/db';
-import type { AuthorRegistry } from '../author-registry.js';
-import type { RoomService } from '../room-service.js';
+import type { AuthorRegistry } from '../../author-registry.js';
+import type { RoomService } from '../../room-service.js';
 import {
   AbsenceLedger,
   lastPersonSignalAt,
@@ -39,7 +39,7 @@ import {
   scriptedRunner,
   settleUntil,
   type ScriptedTurnRunner,
-} from './room-test-harness.js';
+} from '../../__tests__/room-test-harness.js';
 
 const TANGERINES = '/agents/tangerines';
 const ANA = '/agents/ana';

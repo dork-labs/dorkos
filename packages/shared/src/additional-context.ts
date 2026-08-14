@@ -271,9 +271,13 @@ export interface RoomContextEntry {
  */
 export interface RoomContextAcknowledgment extends RoomContextAuthor {
   /**
-   * Whether a person left it. True for every one of them today — no path lets a
-   * non-human react — and carried anyway, because the reader is an agent
-   * deciding how to treat it and "who said this" is never something to infer.
+   * Whether a person left it.
+   *
+   * It used to be true of every one of them, because nothing let a non-human
+   * react; ADR 260814-195522 reverses that, so a room-mate's 👍 and the
+   * operator's are now both reachable and the field is what tells them apart.
+   * Carried rather than inferred, because the reader is an agent deciding how to
+   * treat it and "who said this" is never something to guess at.
    */
   isPerson: boolean;
   /** The emoji, exactly as it was sent. */

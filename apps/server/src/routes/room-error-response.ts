@@ -39,6 +39,14 @@ export const STATUS_BY_CODE: Record<RoomErrorCode, number> = {
   // the answer. The remedy is in the message, not in who asks.
   OWNER_MUST_BE_PRESENT: 403,
   PEOPLE_ONLY: 403,
+  // Both of these are reachable only through the rooms capability domain, which
+  // answers on MCP rather than over HTTP. They are mapped anyway because the
+  // table is total by type, and because "which status would this be" is a
+  // question worth having answered before a route ever throws one: a DM is the
+  // wrong room for this verb (a bad request), and a spent allowance is the
+  // canonical 429.
+  TOOL_POST_NOT_IN_DM: 400,
+  REACTION_RATE_LIMITED: 429,
   BROADCAST_NOT_BRIDGEABLE: 400,
   CHAT_ALREADY_BRIDGED: 409,
   BRIDGE_SECOND_AGENT_REFUSED: 409,

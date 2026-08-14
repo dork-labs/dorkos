@@ -137,7 +137,7 @@ import type { AuthorRegistry } from './author-registry.js';
 import { isLiveAuthor } from './handles/author-handles.js';
 import { evaluateCascade } from './cascade-guard.js';
 import { engagementFor, type EngagedWindow, type EngagementWindow } from './engagement.js';
-import type { ReactionStore } from './reaction-store.js';
+import type { ReactionStore } from './reactions/reaction-store.js';
 import { buildRoomContext } from './room-context.js';
 import {
   RoomNoticeLog,
@@ -763,6 +763,7 @@ export class RoomTriggerDispatcher {
         // A real trigger, so a post this agent makes mid-turn inherits this
         // exchange and the guard sees the whole chain.
         aside: false,
+        spokeViaTool: false,
         claimedAt: new Date().toISOString(),
         pastDeadline: false,
       });
@@ -850,6 +851,23 @@ export class RoomTriggerDispatcher {
    */
   activeTurnFor(authorId: string): CascadeStamp | undefined {
     return deepestClaimOf(this.claimed, authorId);
+  }
+
+  /**
+   * Record that an agent spoke into this room deliberately, from inside its own
+   * turn — `post_to_room` (room-participation spec §10.2).
+   *
+   * The whole effect is on the automatic post at the end of that turn: see
+   * {@link ActiveClaim.spokeViaTool}. A post made with no claim held here is an
+   * ordinary un-provenanced agent post and this does nothing, which is right —
+   * there is no turn narration coming to suppress.
+   *
+   * @param roomId - The room the post landed in.
+   * @param authorId - The agent that wrote it.
+   */
+  noteDeliberatePost(roomId: string, authorId: string): void {
+    const claim = this.claimed.get(agentKey(roomId, authorId));
+    if (claim) claim.spokeViaTool = true;
   }
 
   /**
@@ -1083,6 +1101,16 @@ export class RoomTriggerDispatcher {
     // claims.test.ts` pins it as chosen behaviour so it cannot be closed by
     // accident.
     if (!said) return 'quiet';
+    // **The agent already spoke here, on purpose.** `post_to_room` put its words
+    // in front of the reader mid-turn; what is left in `said` is the narration it
+    // wrote back to its own session, which belongs to whoever is watching THAT.
+    // Posting it as well gives the room two messages for one thought — the
+    // "I posted the deploy note" that follows the deploy note. The obligation to
+    // be visible is discharged either way, which is what makes this a suppression
+    // rather than a silence: there is a durable entry beside this release.
+    if (this.claimed.get(agentKey(room.id, target.authorId))?.spokeViaTool === true) {
+      return 'answered';
+    }
     if (opts.late !== undefined) {
       logger.info('[rooms] a late answer landed and was posted', {
         roomId: room.id,
@@ -1322,6 +1350,7 @@ export class RoomTriggerDispatcher {
       // Nothing in the room asked for this turn, so it has no cascade to hand
       // to a post the agent makes while it runs. See {@link ActiveClaim.aside}.
       aside: true,
+      spokeViaTool: false,
       claimedAt: new Date().toISOString(),
       pastDeadline: false,
     });
