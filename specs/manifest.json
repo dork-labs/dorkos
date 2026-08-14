@@ -2,6 +2,13 @@
   "version": 1,
   "specs": [
     {
+      "id": "260814-114442",
+      "slug": "proactive-agent-dms",
+      "title": "Proactive agent DMs: guardrails for messages nobody asked for",
+      "created": "2026-08-14",
+      "status": "ideation"
+    },
+    {
       "id": "260814-113503",
       "slug": "engaged-response-gate",
       "title": "The engaged response gate: making silence nearly free",

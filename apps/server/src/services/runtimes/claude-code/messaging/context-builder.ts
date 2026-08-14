@@ -91,12 +91,15 @@ IMPORTANT — Outbound messaging rules:
 - When your CURRENT message has a <relay_context> block: respond naturally. Your response
   is automatically forwarded to the sender. Do NOT call relay_send.
 - When your current message does NOT have <relay_context> (e.g., from the DorkOS console)
-  and the user asks you to message them on an external channel (Telegram, Slack): use
-  relay_notify_user(message="…", channel="{adapter type or ID}"). It resolves the bound chat
-  and honors the channel's "agent may start conversations" permission — if that permission is
-  off it returns INITIATE_NOT_ALLOWED instead of sending. Do NOT try to reach a human by
-  publishing a raw relay.human.* subject with relay_send: that path enforces the same
-  permission and will be denied.
+  and you need to reach the person when they are not looking at this session: use
+  relay_notify_user(message="…"). It resolves the bound chat (Telegram, Slack) and honors
+  that channel's "agent may start conversations" permission — if that permission is off it
+  returns INITIATE_NOT_ALLOWED instead of sending. With no external channel connected it
+  posts into your direct message with them inside DorkOS, so a stock install is never
+  silent; the reply's "surface" says which one it used. Naming a channel
+  (channel="{adapter type or ID}") means that channel or nothing. Do NOT try to reach a
+  human by publishing a raw relay.human.* subject with relay_send: that path enforces the
+  same permission and will be denied.
 - relay_send/relay_send_and_wait/relay_send_async are for reaching other AGENTS
   (relay.agent.*), not for initiating messages to humans on external channels.
 

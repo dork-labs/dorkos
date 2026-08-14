@@ -611,11 +611,15 @@ export function getRelayTools(deps: McpToolDeps, identity: SenderIdentity) {
       'relay_notify_user',
       'Send a message to the user on a bound external channel (Telegram, Slack, etc.). ' +
         'Automatically resolves the best active chat. If channel is omitted, sends to the ' +
-        'most recently active chat across all bound adapters. Specify channel to target a ' +
-        'specific adapter type (e.g., "telegram") or adapter ID (e.g., "telegram-lifeos"). ' +
-        'This always INITIATES a message — replying to an inbound chat message happens ' +
-        'automatically and does not need this tool. Fails with code INITIATE_NOT_ALLOWED ' +
-        'when the resolved binding has "Agent can start conversations" turned off.',
+        'most recently active chat across all bound adapters, and — when no external chat ' +
+        'is connected at all — to your direct message with the user inside DorkOS. The ' +
+        'reply says which one it used as "surface": "integration" or "dorkos-dm". Specify ' +
+        'channel to target a specific adapter type (e.g., "telegram") or adapter ID (e.g., ' +
+        '"telegram-lifeos"); naming one means that channel or nothing, never the DorkOS ' +
+        'direct message. This always INITIATES a message — replying to an inbound chat ' +
+        'message happens automatically and does not need this tool. Fails with code ' +
+        'INITIATE_NOT_ALLOWED when the resolved binding has "Agent can start conversations" ' +
+        'turned off.',
       {
         message: z.string().describe('Message text to send to the user'),
         channel: z
