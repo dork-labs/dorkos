@@ -34,6 +34,10 @@ export const STATUS_BY_CODE: Record<RoomErrorCode, number> = {
   ROOM_ARCHIVED: 409,
   SYSTEM_ROOM: 403,
   OPERATOR_ONLY: 403,
+  // A 403 even though the caller is the owner: the request named a room shape
+  // this install does not allow, and there is no credential that would change
+  // the answer. The remedy is in the message, not in who asks.
+  OWNER_MUST_BE_PRESENT: 403,
   PEOPLE_ONLY: 403,
   BROADCAST_NOT_BRIDGEABLE: 400,
   CHAT_ALREADY_BRIDGED: 409,

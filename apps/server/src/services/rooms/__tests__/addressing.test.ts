@@ -123,6 +123,7 @@ describe('selectTriggerTargets', () => {
   it('never triggers the entry author, however eager their mode', () => {
     const targets = selectTriggerTargets({
       roomKind: 'channel',
+      authorKind: 'agent',
       entry: { authorId: 'ana', mentions: ['ana'] },
       members: [ana, bo],
     });
@@ -132,6 +133,7 @@ describe('selectTriggerTargets', () => {
   it('never triggers a human or the system author', () => {
     const targets = selectTriggerTargets({
       roomKind: 'dm',
+      authorKind: 'agent',
       entry: { authorId: 'ana', mentions: ['dorian', 'system'] },
       members: [ana, human, system],
     });
@@ -141,6 +143,7 @@ describe('selectTriggerTargets', () => {
   it('triggers all three agents when all three were addressed', () => {
     const targets = selectTriggerTargets({
       roomKind: 'channel',
+      authorKind: 'human',
       entry: { authorId: 'dorian', mentions: ['ana', 'bo', 'cy'] },
       members: [
         ana,
@@ -156,6 +159,7 @@ describe('selectTriggerTargets', () => {
   it('leaves a mention-only agent alone in a busy channel', () => {
     const targets = selectTriggerTargets({
       roomKind: 'channel',
+      authorKind: 'human',
       entry: { authorId: 'dorian', mentions: [] },
       members: [ana, bo, human],
     });
@@ -165,6 +169,7 @@ describe('selectTriggerTargets', () => {
   it('returns targets in roster order, so the trigger order is stable', () => {
     const targets = selectTriggerTargets({
       roomKind: 'dm',
+      authorKind: 'human',
       entry: { authorId: 'dorian', mentions: [] },
       members: [
         bo,
@@ -190,6 +195,7 @@ describe('selectTriggerTargets', () => {
     };
     const targets = selectTriggerTargets({
       roomKind: 'channel',
+      authorKind: 'human',
       entry: { authorId: 'dorian', mentions: [] },
       members: [inside, outside, human],
     });

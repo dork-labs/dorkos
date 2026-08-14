@@ -171,6 +171,86 @@ describe('what the block tells an agent', () => {
     expect(identity).not.toContain('room');
   });
 
+  it.each([
+    ['always', 'You answer every message a person writes here.'],
+    [
+      'direct-only',
+      'You answer every message a person writes here, and anything that mentions you.',
+    ],
+    [
+      'engaged',
+      'You answer here when somebody mentions you, and for a short while afterwards while the conversation is still with you.',
+    ],
+  ] as const)(
+    'tells an agent on %s in a DM how a colleague actually reaches it',
+    (responseMode, sentence) => {
+      // The measured failure this prevents (ADR 260814-025326): in a group DM
+      // every member is seeded `always`, so an agent told "you answer every
+      // message here" writes "Bo, can you take this?" without the `@`, nothing
+      // is triggered, and the handoff no-ops while the agent believes it landed.
+      // What the mechanism does has to be what the agent is told it does.
+      const block = formatRoomContext(
+        context({
+          room: { id: 'r', kind: 'dm', name: 'Ana, Bo and you', bridged: false },
+          addressing: {
+            responseMode,
+            engagedUntil: null,
+            engagedPostsLeft: null,
+            addressedNow: false,
+          },
+        }),
+        { nonce: NONCE }
+      );
+      expect(block).toContain(sentence);
+      expect(block).toContain(
+        'A message from another agent reaches you only when it mentions you — ' +
+          'so use their @name to reach a colleague here.'
+      );
+    }
+  );
+
+  it('leaves the channel sentences exactly as they were', () => {
+    // Nothing about a channel changed, and this is what would go red if the
+    // note leaked into one — where an agent's post DOES still reach an `always`
+    // room-mate, so telling it otherwise would be the same lie in reverse.
+    const channel = (responseMode: 'always' | 'direct-only'): string =>
+      formatRoomContext(
+        context({
+          addressing: {
+            responseMode,
+            engagedUntil: null,
+            engagedPostsLeft: null,
+            addressedNow: false,
+          },
+        }),
+        { nonce: NONCE }
+      );
+    expect(channel('always')).toContain('You answer every message here.');
+    expect(channel('direct-only')).toContain(
+      'You answer here in direct messages, or when somebody mentions you.'
+    );
+    expect(channel('always')).not.toContain('reach a colleague here');
+  });
+
+  it('says nothing new to an agent a mention was always going to be needed for', () => {
+    // `mention-only` and `silent` are unchanged by the DM rule — a mention is a
+    // mention — so the note would be noise on every turn in a two-person DM.
+    const block = formatRoomContext(
+      context({
+        room: { id: 'r', kind: 'dm', name: 'Ana Reyes', bridged: false },
+        addressing: {
+          responseMode: 'mention-only',
+          engagedUntil: null,
+          engagedPostsLeft: null,
+          addressedNow: false,
+        },
+      }),
+      { nonce: NONCE }
+    );
+    expect(block).toContain('You answer here when somebody mentions you.');
+    expect(block).not.toContain('reach a colleague here');
+  });
+
   it('says an engaged agent is still in the conversation, and on what terms', () => {
     const block = formatRoomContext(
       context({
