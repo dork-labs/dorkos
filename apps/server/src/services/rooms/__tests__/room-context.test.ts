@@ -11,6 +11,7 @@
  * The one substitution is the runner, because the alternative is a model call.
  */
 import { describe, it, expect, vi } from 'vitest';
+import { eq, rooms, type Db } from '@dorkos/db';
 import type { RoomContextData } from '@dorkos/shared/additional-context';
 import type { ResponseMode } from '@dorkos/shared/mesh-schemas';
 import type { RoomWithRoster } from '@dorkos/shared/room-schemas';
@@ -38,6 +39,13 @@ const MAX_AGENT_DEPTH = 3;
 /** A pinned fence nonce, so an assertion can name the real marker. */
 const FENCE_NONCE = 'bbbb2222';
 
+/**
+ * How many top-level channel entries ride a thread turn, pinned to a literal for
+ * the reason {@link MAX_AGENT_DEPTH} is: reading the constant the code reads
+ * could only prove the two agree, never that they agree on the right number.
+ */
+const CHANNEL_TAIL_MAX = 5;
+
 const agents = agentLookupFor({
   '/agents/ana': { name: 'ana', displayName: 'Ana', responseMode: 'always' },
   '/agents/bo': { name: 'bo', displayName: 'Bo', responseMode: 'always' },
@@ -54,6 +62,7 @@ describe('the room context a trigger derives', () => {
   let bo: string;
   let cy: string;
   let attachments: AttachmentRowStore;
+  let db: Db;
   let uploaded = 0;
 
   /**
@@ -79,7 +88,7 @@ describe('the room context a trigger derives', () => {
     } = {}
   ): void {
     const agentPaths = opts.agentPaths ?? ['/agents/ana'];
-    ({ service, authors, attachments, runner, human } = createRoomHarness({
+    ({ service, authors, attachments, runner, human, db } = createRoomHarness({
       agents,
       runner: opts.runner ?? scriptedRunner(() => null),
       maxAgentDepth: MAX_AGENT_DEPTH,
@@ -568,19 +577,32 @@ describe('the room context a trigger derives', () => {
         true
       );
     });
+  });
 
-    it('reads a thread turn history from the whole channel, thread replies included', async () => {
-      // This inverts under ADR 260728-022013, and the inversion is the feature.
-      // A thread used to be a room with a log of its own, so a thread turn read
-      // only the thread and started from a blank session. Now the thread is a
-      // position in the channel: one log, one cursor, one session, so the agent
-      // arrives holding what was said in the room AND what was said in the
-      // thread, with nothing to fan out over.
-      // Ana is woken only by the last line, so everything before it — top-level
-      // messages and thread replies alike — is still unread when her turn runs.
+  describe('what a thread turn is told it missed', () => {
+    /**
+     * Open a thread on a channel message and leave Ana unread on everything.
+     *
+     * `mention-only` throughout, because a turn advances the cursor past what it
+     * answered — an agent that was woken by every line has nothing unread by
+     * construction, and this whole scope question is about a backlog.
+     *
+     * @returns The entry the thread hangs off.
+     */
+    async function openThread(text = 'the deploy is stuck'): Promise<{ id: string }> {
       open({ runner: outcomeRunner(() => ({ text: null })), responseMode: 'mention-only' });
-      const root = service.post(room.id, { authorId: human, text: 'the deploy is stuck' });
+      const root = service.post(room.id, { authorId: human, text });
       await service.triggersIdle();
+      return root;
+    }
+
+    it('scopes what it missed to the thread, not to the whole channel', async () => {
+      // The disagreement DOR-1207 settles. The engaged window and reply routing
+      // are both thread-scoped, so an agent addressed inside a thread was being
+      // engaged there, answering there — and handed the whole CHANNEL's unread
+      // backlog to read, which is a different conversation from the one it is
+      // in.
+      const root = await openThread();
       service.post(room.id, { authorId: human, text: 'unrelated channel chatter' });
       await service.triggersIdle();
       runner.turns.length = 0;
@@ -590,10 +612,138 @@ describe('the room context a trigger derives', () => {
       service.post(room.id, { authorId: human, text: '@ana still stuck?', replyTo: root.id });
       await service.triggersIdle();
 
-      // The last turn's window: everything unread except the triggering entry
-      // itself, which arrives as the turn's content rather than as history.
-      const pending = contextFor(ana).pending.map((entry) => entry.text);
-      expect(pending).toEqual(['the deploy is stuck', 'unrelated channel chatter', 'which step?']);
+      const context = contextFor(ana);
+      // The thread's own unread replies, minus the triggering entry — that one
+      // arrives as the turn's content rather than as history.
+      expect(context.pending.map((entry) => entry.text)).toEqual(['which step?']);
+      expect(context.pendingTruncated).toBe(false);
+      // The channel is still there, as background, and clearly not as the thread.
+      expect(context.channelTail?.map((entry) => entry.text)).toEqual([
+        'unrelated channel chatter',
+      ]);
+    });
+
+    it('leaves the message the thread hangs off out of the tail', async () => {
+      // It is a top-level entry, so a tail that only filtered on scope would
+      // carry it — and it is already quoted as the thread's opener, so the agent
+      // would read the same message twice under two different headings.
+      const root = await openThread();
+      runner.turns.length = 0;
+
+      service.post(room.id, { authorId: human, text: '@ana what now?', replyTo: root.id });
+      await service.triggersIdle();
+
+      const context = contextFor(ana);
+      expect(context.thread?.rootExcerpt).toBe('the deploy is stuck');
+      expect(context.channelTail).toEqual([]);
+    });
+
+    it('carries at most five channel messages, the newest of them', async () => {
+      const root = await openThread();
+      for (let i = 1; i <= 8; i += 1) {
+        service.post(room.id, { authorId: human, text: `c${i}` });
+      }
+      await service.triggersIdle();
+      runner.turns.length = 0;
+
+      service.post(room.id, {
+        authorId: human,
+        text: '@ana any of that relevant?',
+        replyTo: root.id,
+      });
+      await service.triggersIdle();
+
+      const tail = contextFor(ana).channelTail ?? [];
+      expect(tail).toHaveLength(CHANNEL_TAIL_MAX);
+      // Newest last, so it reads in the order it was said.
+      expect(tail.map((entry) => entry.text)).toEqual(['c4', 'c5', 'c6', 'c7', 'c8']);
+    });
+
+    it('never carries one message in both the thread backlog and the tail', async () => {
+      // The two reads are disjoint by scope — a thread reply is never top-level
+      // — and this is what would notice a filter that stopped discriminating.
+      const root = await openThread();
+      service.post(room.id, { authorId: human, text: 'in the channel' });
+      await service.triggersIdle();
+      service.post(room.id, { authorId: human, text: 'in the thread', replyTo: root.id });
+      await service.triggersIdle();
+      runner.turns.length = 0;
+
+      service.post(room.id, { authorId: human, text: '@ana still stuck?', replyTo: root.id });
+      await service.triggersIdle();
+
+      const context = contextFor(ana);
+      const pending = context.pending.map((entry) => entry.text);
+      const tail = (context.channelTail ?? []).map((entry) => entry.text);
+      expect(pending).toEqual(['in the thread']);
+      expect(tail).toEqual(['in the channel']);
+      expect(pending.filter((text) => tail.includes(text))).toEqual([]);
+    });
+
+    it('caps the thread backlog with the room own ambientMaxEntries, and says it dropped some', async () => {
+      // The same cap and the same flag as a top-level turn: scoping the window
+      // to a thread must not quietly hand it a different bound. Set to 2 rather
+      // than left at 30 so the assertion is about the COLUMN.
+      const root = await openThread();
+      db.update(rooms).set({ ambientMaxEntries: 2 }).where(eq(rooms.id, room.id)).run();
+      for (let i = 1; i <= 4; i += 1) {
+        service.post(room.id, { authorId: human, text: `r${i}`, replyTo: root.id });
+      }
+      await service.triggersIdle();
+      runner.turns.length = 0;
+
+      service.post(room.id, { authorId: human, text: '@ana where are we?', replyTo: root.id });
+      await service.triggersIdle();
+
+      const context = contextFor(ana);
+      expect(context.pending.map((entry) => entry.text)).toEqual(['r3', 'r4']);
+      expect(context.pendingTruncated).toBe(true);
+    });
+
+    it('renders the tail inside the fence, under a line that says it is not the thread', async () => {
+      // Other members' words, so they are fenced like every other message body
+      // — and labelled, because a channel message pasted under "you have not
+      // read these yet" would read as part of the thread being answered.
+      const root = await openThread();
+      service.post(room.id, { authorId: human, text: 'unrelated channel chatter' });
+      await service.triggersIdle();
+      runner.turns.length = 0;
+
+      service.post(room.id, { authorId: human, text: '@ana still stuck?', replyTo: root.id });
+      await service.triggersIdle();
+
+      const block = formatRoomContext(contextFor(ana), { nonce: FENCE_NONCE });
+      const begin = block.indexOf(`--- BEGIN UNTRUSTED ROOM MESSAGES ${FENCE_NONCE} ---`);
+      const end = block.indexOf(`--- END UNTRUSTED ROOM MESSAGES ${FENCE_NONCE} ---`);
+      const chatter = block.indexOf('unrelated channel chatter');
+      const heading = block.indexOf('Recent messages in the main channel');
+      expect(begin).toBeGreaterThan(-1);
+      expect(heading).toBeGreaterThan(begin);
+      expect(chatter).toBeGreaterThan(heading);
+      expect(chatter).toBeLessThan(end);
+    });
+
+    it('leaves a top-level turn reading the whole room, with no tail at all', async () => {
+      // The unchanged half, pinned: a channel that HAS a thread in it still
+      // gives a top-level turn everything unread, thread replies included, and
+      // nothing to label as background — the tail exists to say "this is the
+      // rest of the channel", which is meaningless when the channel IS the
+      // scope.
+      const root = await openThread();
+      service.post(room.id, { authorId: human, text: 'which step?', replyTo: root.id });
+      await service.triggersIdle();
+      runner.turns.length = 0;
+
+      service.post(room.id, { authorId: human, text: '@ana anything else?' });
+      await service.triggersIdle();
+
+      const context = contextFor(ana);
+      expect(context.thread).toBeNull();
+      expect(context.channelTail).toBeUndefined();
+      expect(context.pending.map((entry) => entry.text)).toEqual([
+        'the deploy is stuck',
+        'which step?',
+      ]);
     });
   });
 

@@ -62,6 +62,18 @@ const OWN_RECENT_MAX_ENTRIES = 5;
 const THREAD_EXCERPT_CHARS = 200;
 
 /**
+ * How many top-level channel messages ride a thread turn as background.
+ *
+ * Small on purpose, and deliberately NOT the room's `ambientMaxEntries`. That
+ * cap sizes the conversation the agent is answering; this is the glance sideways
+ * that keeps a thread turn from re-raising something the channel settled two
+ * minutes ago. Sized like {@link OWN_RECENT_MAX_ENTRIES} rather than like the
+ * window, because it is the same kind of thing: a handful of lines that stop an
+ * agent being wrong, not a conversation to read.
+ */
+const CHANNEL_TAIL_MAX_ENTRIES = 5;
+
+/**
  * How many acknowledgments reach the model at most, newest first.
  *
  * They are already bounded by {@link OWN_RECENT_MAX_ENTRIES} — only reactions on
@@ -115,15 +127,14 @@ export interface RoomContextDeps {
   /**
    * The stored forum-topic name for a batch of entries, keyed by entry id, or
    * an empty map for any entry with none — chats-as-channels §5.6's per-entry
-   * label, read once per turn for every candidate in `pending` and `ownRecent`
-   * rather than once per entry.
+   * label, read once per turn for every entry the turn renders rather than once
+   * per entry.
    */
   topicNamesFor(entryIds: readonly string[]): Map<string, string>;
   /**
    * The attachments on a batch of entries, keyed by entry id, or an empty map
-   * for any entry with none — read once per turn for every candidate in
-   * `pending` and `ownRecent`, exactly as {@link RoomContextDeps.topicNamesFor}
-   * is.
+   * for any entry with none — read once per turn for every entry the turn
+   * renders, exactly as {@link RoomContextDeps.topicNamesFor} is.
    *
    * Takes the room explicitly rather than closing over one: this deps object is
    * built once per service and reused for every room, so a captured room id
@@ -237,6 +248,15 @@ export function buildRoomContext(
   const members = deps.store.listMembers(input.room.id);
   const self = members.find((member) => member.authorId === input.agentAuthorId);
 
+  // WHICH CONVERSATION THIS TURN IS IN (DOR-1207). A thread reply is answered
+  // into its thread and the engaged window that kept the agent listening was
+  // opened there (`engagement.ts`, spec §3.2) — so the window it reads is that
+  // thread's too. Three mechanisms, one scope; they used to be two against one,
+  // and the odd one out was the one that decides what the agent actually reads.
+  //
+  // The channel it is NOT reading rides separately and bounded, below.
+  const threadRootEntryId = input.entry.threadRootEntryId ?? undefined;
+
   // THE AMBIENT WINDOW (room-participation spec §8.3): everything after
   // `max(lastReadSeq, joinedSeq)`, up to and including the entry being answered,
   // and never more than this room's cap.
@@ -276,6 +296,9 @@ export function buildRoomContext(
     // the turn's `content`, not as history.
     excludeEntryId: input.entry.id,
     limit: cap + 1,
+    // `undefined` for a top-level turn, which is the whole room — the same
+    // window it has always read.
+    threadRootEntryId,
   });
   const pendingTruncated = window.length > cap;
   // Counted from the FRONT, never `slice(-cap)`. A negative index is what a
@@ -283,6 +306,26 @@ export function buildRoomContext(
   // `slice(-0)` is `slice(0)` and returns the whole array. A room configured to
   // replay nothing would have replayed one entry and reported it as truncated.
   const missed = window.slice(Math.max(0, window.length - cap));
+  // THE CHANNEL TAIL: the last few top-level messages of the room a thread turn
+  // is happening in, and nothing for a top-level turn — where the channel IS the
+  // scope and there is no "rest of the room" to name.
+  //
+  // **Not an unread read, on purpose.** Scoping `pending` to the thread would
+  // otherwise take an agent's awareness of the channel away entirely, and a
+  // cursor cannot give it back: an agent already read up to date on the channel
+  // has nothing unread there and would be told nothing about it.
+  //
+  // The thread's own root is excluded because it is quoted as `thread.rootExcerpt`
+  // — the one message that could reach the model twice under two headings.
+  const channelTail = threadRootEntryId
+    ? deps.store.listRecentTopLevelEntries(input.room.id, {
+        // The same frozen ceiling as the window above, for the same reason.
+        throughSeq: input.entry.seq,
+        excludeAuthorId: input.agentAuthorId,
+        excludeEntryId: threadRootEntryId,
+        limit: CHANNEL_TAIL_MAX_ENTRIES,
+      })
+    : null;
   // Read off the whole log rather than off the unread window: the point of it is
   // that an agent triggered again does not repeat what it already said, and what
   // it already said sits behind its own cursor by definition.
@@ -292,10 +335,14 @@ export function buildRoomContext(
     OWN_RECENT_MAX_ENTRIES
   );
 
+  // Every entry that reaches the model, whichever heading it reaches it under —
+  // the tail included, because a tail line naming a file it cannot open is the
+  // same broken promise as a windowed one doing it (ADR 260807-233816).
+  const rendered = [...missed, ...(channelTail ?? []), ...ownRecent];
+
   // The forum-topic label for every candidate this turn might render, in ONE
   // query — gated on `framing` so an unbridged room's turn never touches the
   // bridge store at all (chats-as-channels §5.6).
-  const rendered = [...missed, ...ownRecent];
   const topicNames = framing
     ? deps.topicNamesFor(rendered.map((entry) => entry.id))
     : new Map<string, string>();
@@ -358,8 +405,11 @@ export function buildRoomContext(
   // left the room had every message they ever sent relabelled as machine-written.
   const records = deps.authors.getMany([
     ...members.map((member) => member.authorId),
-    ...missed.map((entry) => entry.authorId),
-    ...ownRecent.map((entry) => entry.authorId),
+    // `rendered` rather than `missed` and `ownRecent` by name: an author who
+    // only ever spoke in the channel tail is still an author whose line needs a
+    // name, and listing the three sources here separately is how the tail would
+    // have been forgotten.
+    ...rendered.map((entry) => entry.authorId),
     ...input.working.map((claim) => claim.authorId),
     // Somebody who reacted may have left the room since, exactly as an entry's
     // author may have — so they are resolved from the same union rather than
@@ -477,6 +527,10 @@ export function buildRoomContext(
       .map((claim) => ({ ...nameOf(claim.authorId), since: claim.since })),
     pending: missed.map(flatten),
     pendingTruncated,
+    // Omitted entirely for a top-level turn, rather than sent as an empty array:
+    // the field means "here is the rest of the channel", and a top-level turn is
+    // already reading it.
+    ...(channelTail ? { channelTail: channelTail.map(flatten) } : {}),
     ownRecent: ownRecent.map(flatten),
     acknowledgments: acknowledgments(),
     // The files on the message being answered. Resolved through the SAME helper

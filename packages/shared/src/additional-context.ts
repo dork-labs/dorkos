@@ -369,10 +369,42 @@ export interface RoomContextData {
    * room-scoped turn lock). Excludes the agent reading it.
    */
   working: Array<RoomContextAuthor & { since: string }>;
-  /** Entries this membership has not read, oldest first, excluding its own. */
+  /**
+   * Entries this membership has not read, oldest first, excluding its own.
+   *
+   * **Scoped to whatever the turn is answering in.** For a top-level turn that
+   * is the whole room; for a turn inside a thread it is that THREAD's unread
+   * replies and nothing else, because a thread reply is answered into the thread
+   * and the engaged window that kept the agent listening was opened there too.
+   * All three questions — do I stay engaged, what do I read, where does my
+   * answer land — now have one answer.
+   *
+   * The channel a thread turn is not reading rides separately, bounded, as
+   * {@link RoomContextData.channelTail}.
+   */
   pending: RoomContextEntry[];
   /** True when `pending` was capped and older entries were dropped. */
   pendingTruncated: boolean;
+  /**
+   * The last few TOP-LEVEL messages of the channel a thread turn is happening
+   * in, oldest first — background, never the conversation being answered.
+   *
+   * Present only for a turn inside a thread, where {@link RoomContextData.pending}
+   * is scoped to the thread: an agent that can see nothing but its own aside
+   * will re-raise something the channel settled two minutes ago. Absent for a
+   * top-level turn, where the channel IS the scope and there is no "rest of the
+   * room" to name.
+   *
+   * **Disjoint from `pending` by construction, and from the thread's opener too.**
+   * A thread reply is never top-level, and the entry the thread hangs off is
+   * excluded here because it is already quoted as
+   * {@link RoomContextData.thread}'s `rootExcerpt` — so no message reaches the
+   * model twice under two different headings.
+   *
+   * Deliberately small and NOT governed by `ambientMaxEntries`: that cap sizes
+   * the conversation an agent is answering, and this is the glance sideways.
+   */
+  channelTail?: RoomContextEntry[];
   /** This agent's own recent posts here, so it does not repeat itself. */
   ownRecent: RoomContextEntry[];
   /**
@@ -634,6 +666,7 @@ export const RoomContextDataSchema = z.object({
   working: z.array(RoomContextAuthorSchema.extend({ since: z.string() })),
   pending: z.array(RoomContextEntrySchema),
   pendingTruncated: z.boolean(),
+  channelTail: z.array(RoomContextEntrySchema).optional(),
   ownRecent: z.array(RoomContextEntrySchema),
   acknowledgments: z.array(RoomContextAcknowledgmentSchema),
   triggerAttachments: z.array(z.object({ name: z.string(), path: z.string() })),

@@ -797,6 +797,12 @@ export class RoomStore {
    *   fence, and the second are the room talking about the reader.
    * @param opts.excludeEntryId - Drop the triggering entry; it IS the message.
    * @param opts.limit - How many of the newest to return.
+   * @param opts.threadRootEntryId - Scope the window to one thread's replies.
+   *   Omit for the whole room, which is what a top-level turn reads. A turn
+   *   inside a thread passes the root, because the scope of what it reads has to
+   *   be the scope it answers into and stays engaged in (DOR-1207); the entry
+   *   the thread hangs off carries a null pointer, so it is never in its own
+   *   thread's window — it reaches the model as the quoted opener instead.
    */
   listUnreadEntries(
     roomId: string,
@@ -806,6 +812,7 @@ export class RoomStore {
       excludeAuthorId: string;
       excludeEntryId: string;
       limit: number;
+      threadRootEntryId?: string;
     }
   ): RoomEntry[] {
     const rows = this.db
@@ -818,11 +825,77 @@ export class RoomStore {
           lte(roomEntries.seq, opts.throughSeq),
           ne(roomEntries.authorId, opts.excludeAuthorId),
           ne(roomEntries.id, opts.excludeEntryId),
+          // Reads `idx_room_entries_thread_root`, whose third column is `seq` —
+          // so a thread scattered through a long channel is paged rather than
+          // sorted (migration 0040, and the measurement in
+          // {@link RoomStore.listRecentPostsByOthers}).
+          ...(opts.threadRootEntryId === undefined
+            ? []
+            : [eq(roomEntries.threadRootEntryId, opts.threadRootEntryId)]),
           // In SQL with the rest of them, for the reason the cap is: filtering
           // afterwards would return fewer than `limit` rows and make the
           // truncation flag lie. `json_extract` reads the subject out of the
           // body column; a row with no subject yields NULL, and `IS NOT` is the
           // null-safe comparison that keeps it.
+          sql`json_extract(${roomEntries.body}, '$.subjectAuthorId') IS NOT ${opts.excludeAuthorId}`
+        )
+      )
+      .orderBy(desc(roomEntries.seq))
+      .limit(opts.limit)
+      .all();
+    return rows.reverse().map(toEntry);
+  }
+
+  /**
+   * The last few TOP-LEVEL entries of a room, oldest-first within the page —
+   * the glance sideways a thread turn gets at the channel it is not reading
+   * (DOR-1207).
+   *
+   * **Deliberately not an unread read.** {@link RoomStore.listUnreadEntries}
+   * answers "what did this member miss"; this answers "what is the room talking
+   * about", which is a question a cursor cannot help with — an agent whose
+   * cursor is already past the channel would otherwise be told nothing at all
+   * about it, which is exactly the awareness scoping `pending` to a thread takes
+   * away.
+   *
+   * Bounded at the caller's `limit` and nothing else, so it stays a glance: the
+   * room's `ambientMaxEntries` sizes the conversation being answered, not this.
+   *
+   * `thread_root_entry_id IS NULL` is a residual filter over the `(room_id,
+   * seq)` primary key walked backwards, NOT an index seek — the partial index
+   * covers the non-null rows only, which is right, because in a channel most
+   * rows are top-level and the walk meets what it wants immediately.
+   *
+   * @param roomId - The room.
+   * @param opts.throughSeq - Frozen to the log as it stood at the trigger.
+   * @param opts.excludeAuthorId - Drop this author's own entries; they are
+   *   reported separately, outside the untrusted fence, because it wrote them.
+   * @param opts.excludeEntryId - Drop one entry — the thread's own root, which
+   *   is already quoted to the model as the thread opener.
+   * @param opts.limit - How many of the newest to return.
+   */
+  listRecentTopLevelEntries(
+    roomId: string,
+    opts: {
+      throughSeq: number;
+      excludeAuthorId: string;
+      excludeEntryId: string;
+      limit: number;
+    }
+  ): RoomEntry[] {
+    if (opts.limit <= 0) return [];
+    const rows = this.db
+      .select()
+      .from(roomEntries)
+      .where(
+        and(
+          eq(roomEntries.roomId, roomId),
+          lte(roomEntries.seq, opts.throughSeq),
+          isNull(roomEntries.threadRootEntryId),
+          ne(roomEntries.authorId, opts.excludeAuthorId),
+          ne(roomEntries.id, opts.excludeEntryId),
+          // The room narrating this agent in the third person is not background
+          // about the channel, exactly as it is not news in the unread window.
           sql`json_extract(${roomEntries.body}, '$.subjectAuthorId') IS NOT ${opts.excludeAuthorId}`
         )
       )

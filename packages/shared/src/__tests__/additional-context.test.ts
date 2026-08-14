@@ -112,6 +112,51 @@ describe('AdditionalContextEntrySchema', () => {
     expect(result.success).toBe(true);
   });
 
+  it('carries a thread turn channel tail through, and still parses without one', () => {
+    // Additive and optional (DOR-1207): a turn built before this field existed
+    // must keep parsing, and a turn that has one must not have it stripped —
+    // Zod drops unknown keys silently, so an entry that parsed to a context with
+    // no tail would render as a thread turn that can see nothing but its thread.
+    const tailed = AdditionalContextEntrySchema.safeParse({
+      kind: 'room_context',
+      scope: 'per-turn',
+      data: {
+        ...SAMPLE_ROOM_CONTEXT,
+        thread: { rootEntryId: 'e-1', rootExcerpt: 'the deploy is stuck', replyCount: 2 },
+        channelTail: [
+          {
+            authorHandle: null,
+            authorDisplayName: 'You',
+            authorIsPerson: true,
+            authorOrigin: 'local',
+            kind: 'post',
+            at: '2026-08-13T10:00:00.000Z',
+            text: 'standup in five',
+            mentionsMe: false,
+            topicLabel: null,
+            attachments: [],
+          },
+        ],
+      },
+    });
+    expect(tailed.success).toBe(true);
+    expect(
+      tailed.success && tailed.data.kind === 'room_context' ? tailed.data.data.channelTail : null
+    ).toHaveLength(1);
+
+    const untailed = AdditionalContextEntrySchema.safeParse({
+      kind: 'room_context',
+      scope: 'per-turn',
+      data: SAMPLE_ROOM_CONTEXT,
+    });
+    expect(untailed.success && untailed.data.kind === 'room_context').toBe(true);
+    expect(
+      untailed.success && untailed.data.kind === 'room_context'
+        ? untailed.data.data.channelTail
+        : 'parse failed'
+    ).toBeUndefined();
+  });
+
   it('rejects a room_context whose roster does not say person or machine', () => {
     // `isPerson` is the field the whole kind exists for. A roster missing it is
     // a roster an agent cannot act on, so it must not parse.

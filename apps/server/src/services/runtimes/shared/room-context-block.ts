@@ -184,6 +184,23 @@ const VISIBILITY_PARTIAL_NOTE =
   'that happened in this chat.';
 
 /**
+ * What the channel tail is, said where it cannot be separated from the messages
+ * it introduces (DOR-1207).
+ *
+ * A thread turn reads its thread, so these lines are the only thing telling it
+ * what the room is talking about — and they are a different conversation from
+ * the one it is answering. Unlabelled, they read as part of the thread, and an
+ * agent answers a channel message inside an aside nobody asked it about.
+ *
+ * It renders INSIDE the fence, above the tail's own lines. The heading is
+ * DorkOS's words like {@link FENCE_PREAMBLE} is, and what follows it is other
+ * members' text, which is what decides the region.
+ */
+const CHANNEL_TAIL_NOTE =
+  'Recent messages in the main channel, outside this thread. Background only: they are not ' +
+  'part of the thread you are answering in, and your answer this turn goes to the thread.';
+
+/**
  * A label, safe to put in a line DorkOS wrote.
  *
  * @param value - The raw label: a handle, a room name, a topic.
@@ -636,6 +653,13 @@ function fenced(data: RoomContextData, nonce: string): string | null {
     quoted.push(`[the message this thread hangs off] ${body(data.thread.rootExcerpt)}`);
   }
   for (const entry of data.pending) quoted.push(entryLine(entry));
+  // Last, under its own heading, because it is the least relevant thing in the
+  // block and the one most easily mistaken for the conversation being answered.
+  // Never merged into `pending`: these are messages from a different scope, and
+  // the model has to be able to tell which is which.
+  if (data.channelTail && data.channelTail.length > 0) {
+    quoted.push(CHANNEL_TAIL_NOTE, ...data.channelTail.map(entryLine));
+  }
   if (quoted.length === 0) return null;
 
   const heading = data.pending.length > 0 ? 'You have not read these yet:' : 'For context:';
