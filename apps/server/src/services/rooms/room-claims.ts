@@ -229,6 +229,9 @@ export const DISPATCH_OUTCOMES: Record<ClaimOutcome, DispatchOutcome> = {
   // agent is gone never becomes a target. It is a `refused` because that is
   // what it would be: no turn ran, and none was going to.
   gone: 'refused',
+  // Same shape as `gone`: refused before a claim was ever taken, because the
+  // bind that would have preceded the claim failed first (DOR-1206).
+  unavailable: 'refused',
 };
 
 /**

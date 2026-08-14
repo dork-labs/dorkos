@@ -77,9 +77,10 @@ model. See ADR `260726-170127` and `research/20260727_buzz-conversational-behavi
   that writes no room entry is indistinguishable from a broken agent, and the
   person who notices is not the person who configured it. If you add a path that
   can decline to run a turn — or one where a turn stops producing anything and
-  waits — it writes a durable room notice in the room's own voice. All seven live
+  waits — it writes a durable room notice in the room's own voice. All eight live
   in `room-notices.ts` (`cascade_stopped`, `budget_reached`, `agent_busy`,
-  `turn_failed`, `agent_gone`, `awaiting_approval`, `halted`), and every one of them is
+  `turn_failed`, `agent_gone`, `agent_unavailable`, `awaiting_approval`, `halted`),
+  and every one of them is
   written through `room-notice-log.ts` — its `write` is the single writer, and
   each damping key sits beside the write it damps. Nothing outside that module
   reaches `postNotice` in production; a second call site hand-rolling its own `try` is how a
@@ -183,7 +184,12 @@ model. See ADR `260726-170127` and `research/20260727_buzz-conversational-behavi
   mentions (`resolveAddressing`) and handed to the dispatcher; nothing re-parses
   the text (DOR-790). Both halves are load-bearing and both have shipped
   broken — too wide sprayed apologies about agents nobody had addressed, too
-  narrow answered "are you there?" with silence.
+  narrow answered "are you there?" with silence. `agent_unavailable` damps on
+  the same `(room, agent, reason)` key as `agent_busy` and `agent_gone`, for a
+  narrower reason: the one reachable cause is contention on the
+  `(room, agent)` session row, which a retry — the next message — routinely
+  clears, so a burst of triggers landing on the same contention gets one line
+  (DOR-1206).
 - **Other members' text is untrusted input.** Anything another person wrote that
   lands in an agent's context is a prompt-injection surface. Two regions, and
   which one a value belongs in is decided by what the value IS, never by where it

@@ -23,10 +23,12 @@ import type { RoomEntry, RoomWithRoster } from '@dorkos/shared/room-schemas';
 import { logger } from '../../../lib/logger.js';
 import type { AuthorRegistry } from '../author-registry.js';
 import type { RoomService } from '../room-service.js';
+import type { RoomStore } from '../room-store.js';
 import {
   agentLookupFor,
   createRoomHarness,
   outcomeRunner,
+  scriptedRunner,
   settleUntil,
   type ScriptedTurnRunner,
 } from './room-test-harness.js';
@@ -49,6 +51,7 @@ const bothAgents = agentLookupFor({
 describe('a room says why an agent did not answer', () => {
   let service: RoomService;
   let authors: AuthorRegistry;
+  let store: RoomStore;
   let runner: ScriptedTurnRunner;
   let room: RoomWithRoster;
   let ana: string;
@@ -67,7 +70,7 @@ describe('a room says why an agent did not answer', () => {
    * @param agentPaths - Who is in the room. One agent by default.
    */
   function open(scripted: ScriptedTurnRunner, agentPaths = ['/agents/ana']): void {
-    ({ service, authors, runner, human } = createRoomHarness({
+    ({ service, authors, store, runner, human } = createRoomHarness({
       agents: bothAgents,
       runner: scripted,
     }));
@@ -387,6 +390,113 @@ describe('a room says why an agent did not answer', () => {
       expect(notices()[0].body.notice).toBe('turn_failed');
       expect(notices()[0].body.subjectAuthorId).toBe(ana);
       expect(notices()[0].body.text).not.toContain('runtime is down');
+    });
+  });
+
+  describe('when its session cannot be bound', () => {
+    // DOR-1206: this was the last silent trigger drop. `bindRoomSession` can
+    // throw under database contention (`claimTargets`'s own comment says so),
+    // and until now the target was simply dropped — a log line and nothing in
+    // the room, so a dropped trigger and a broken agent looked identical from
+    // inside it.
+
+    /**
+     * Make every bind for this harness throw until `shouldFail` is switched
+     * off, restoring the real write once it is — the same "flip a flag"
+     * shape `open`'s busy scenarios use, but at the STORE rather than the
+     * runner: a bind failure happens before a turn is ever asked for, so
+     * `outcomeRunner` has nothing to stand in for here.
+     */
+    function failBinding(): { shouldFail: boolean } {
+      const real = store.bindRoomSession.bind(store);
+      const state = { shouldFail: true };
+      vi.spyOn(store, 'bindRoomSession').mockImplementation(
+        (roomId, authorId, sessionId, createdAt) => {
+          if (state.shouldFail) throw new Error('SQLITE_BUSY: database is locked');
+          return real(roomId, authorId, sessionId, createdAt);
+        }
+      );
+      return state;
+    }
+
+    it('says so, in the room own voice, and never asks the agent to run', async () => {
+      open(scriptedRunner());
+      failBinding();
+
+      await seedAndSettle();
+
+      // (a) the target was dropped without crashing the post that triggered
+      // it — `seedAndSettle` awaits `triggersIdle()`, so an uncaught throw out
+      // of `claimTargets` would already have failed this test.
+      expect(runner.turns.filter((turn) => turn.authorId === ana)).toHaveLength(0);
+      expect(postsBy(ana)).toHaveLength(0);
+      // (b) the damped notice entry lands, in plain words with nothing about
+      // the database contention that actually caused it.
+      expect(notices()).toHaveLength(1);
+      expect(notices()[0].body.notice).toBe('agent_unavailable');
+      expect(notices()[0].body.subjectAuthorId).toBe(ana);
+      expect(notices()[0].authorId).toBe(authors.system().id);
+      expect(notices()[0].body.text).toBe(
+        "Ana couldn't be made ready to answer here just now. Send another message to try again."
+      );
+      expect(notices()[0].body.text).not.toMatch(/SQLITE_BUSY|Error|stack|undefined|null/);
+    });
+
+    it('says it once for ordinary chatter that keeps failing to bind', async () => {
+      // (c) the second (and third) mention in the same cascade does not
+      // duplicate the notice — the same damping `agent_busy` gets, because the
+      // one reachable cause here is contention that a retry routinely clears.
+      open(scriptedRunner());
+      failBinding();
+
+      for (const text of ['is the build green?', 'still there?', 'hello?']) {
+        service.post(room.id, { authorId: human, text });
+      }
+      await service.triggersIdle();
+
+      expect(runner.turns.filter((turn) => turn.authorId === ana)).toHaveLength(0);
+      expect(noticesAbout(ana)).toHaveLength(1);
+      expect(notices()).toHaveLength(1);
+    });
+
+    it('answers every message that asked it directly, however it keeps failing to bind', async () => {
+      // The other half of the damping rule: a direct question is never
+      // swallowed, however persistent the contention is.
+      open(scriptedRunner());
+      failBinding();
+
+      for (const text of ['@ana is the build green?', '@ana still there?', '@ana hello?']) {
+        service.post(room.id, { authorId: human, text });
+      }
+      await service.triggersIdle();
+
+      expect(runner.turns.filter((turn) => turn.authorId === ana)).toHaveLength(0);
+      expect(noticesAbout(ana)).toHaveLength(3);
+      expect(noticesAbout(ana).map((entry) => entry.body.notice)).toEqual([
+        'agent_unavailable',
+        'agent_unavailable',
+        'agent_unavailable',
+      ]);
+    });
+
+    it('says it again once binding recovers and then fails a second time', async () => {
+      // Recovery re-arms the key, the way it does for `agent_busy`: a block
+      // that ended and started over is news.
+      open(scriptedRunner());
+      const state = failBinding();
+
+      await seedAndSettle('first message');
+      expect(noticesAbout(ana)).toHaveLength(1);
+      expect(runner.turns.filter((turn) => turn.authorId === ana)).toHaveLength(0);
+
+      state.shouldFail = false;
+      await seedAndSettle('second message');
+      expect(postsBy(ana)).toHaveLength(1);
+      expect(noticesAbout(ana)).toHaveLength(1);
+
+      state.shouldFail = true;
+      await seedAndSettle('third message');
+      expect(noticesAbout(ana)).toHaveLength(2);
     });
   });
 
