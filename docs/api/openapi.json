@@ -6044,10 +6044,18 @@
             "items": {
               "$ref": "#/components/schemas/RoomSummary"
             }
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RoomListWarning"
+            },
+            "description": "Communities that could not contribute to this list, each already carrying the sentence to show. Empty is the normal case; a non-empty entry is never a reason to hide the rooms that did list."
           }
         },
         "required": [
-          "rooms"
+          "rooms",
+          "warnings"
         ]
       },
       "RoomSummary": {
@@ -6259,6 +6267,31 @@
           "ambientMaxEntries",
           "createdAt",
           "lastActivityAt"
+        ]
+      },
+      "RoomListWarning": {
+        "type": "object",
+        "properties": {
+          "community": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The community that degraded."
+          },
+          "label": {
+            "type": "string",
+            "minLength": 1,
+            "description": "What a person calls that community."
+          },
+          "message": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Plain language, already safe to render — never a raw protocol string."
+          }
+        },
+        "required": [
+          "community",
+          "label",
+          "message"
         ]
       },
       "ThreadListResponse": {

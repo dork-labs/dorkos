@@ -41,6 +41,7 @@ import {
   RoomError,
   toAuthorRef,
 } from '../services/rooms/index.js';
+import { listRoomsAcrossCommunities } from '../services/communities/index.js';
 import { InvalidRoomAttachmentIdError } from '../services/rooms/attachments/room-attachment-store.js';
 import { sniffImageContentType } from '../services/identity/image-sniff.js';
 import { storedExtension } from '../services/rooms/attachments/attachment-paths.js';
@@ -54,13 +55,28 @@ import { logger } from '../lib/logger.js';
 
 const router = Router();
 
-/** GET / — rooms visible to the caller, each with their unread count. */
-router.get('/', (req, res) => {
+/**
+ * GET / — rooms visible to the caller, each with their unread count, plus every
+ * community that could not contribute to the list.
+ *
+ * `rooms` is this machine's own rooms and is unchanged by the community
+ * registry: the port is single-identity and this list is per-caller, so an
+ * agent's view has to come from the room service that knows who is asking.
+ * `warnings` is the other communities' half — empty on every install today.
+ * {@link listRoomsAcrossCommunities} argues the split in full.
+ */
+router.get('/', async (req, res) => {
   const query = parseBody(ListRoomsQuerySchema, req.query, res);
   if (!query) return;
   try {
     const caller = resolveCaller(res);
-    res.json({ rooms: getRoomService().listRooms(caller.id, query) });
+    res.json(
+      await listRoomsAcrossCommunities({
+        service: getRoomService(),
+        callerAuthorId: caller.id,
+        query,
+      })
+    );
   } catch (err) {
     sendRoomError(res, err, 'GET /');
   }
