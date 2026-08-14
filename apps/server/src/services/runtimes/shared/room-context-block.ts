@@ -184,6 +184,57 @@ const VISIBILITY_PARTIAL_NOTE =
   'that happened in this chat.';
 
 /**
+ * What the channel-tail sub-block is called, on the one line that opens it.
+ *
+ * **It carries the same per-turn nonce the fence markers do, and for the same
+ * reason.** This heading is not decoration: it tells the model that everything
+ * under it is background from a different conversation and not the thread it is
+ * answering. A plain literal would be typeable — a member pastes the exact line
+ * into a message, and every genuine thread message rendered after it is
+ * relabelled as ignorable channel noise, which is a message nobody has to
+ * answer. Nonced, it is exactly as unforgeable as the fence itself: a member
+ * cannot predict the nonce.
+ *
+ * The tail is always LAST inside the fence, so this marker opens a region the
+ * fence's own END marker closes. There is no second closing line to forge.
+ */
+const CHANNEL_TAIL_MARK = 'RECENT IN THE MAIN CHANNEL';
+
+/**
+ * What the channel tail is, said where it cannot be separated from the messages
+ * it introduces (DOR-1207).
+ *
+ * A thread turn reads its thread, so these lines are the only thing telling it
+ * what the room is talking about — and they are a different conversation from
+ * the one it is answering. Unlabelled, they read as part of the thread, and an
+ * agent answers a channel message inside an aside nobody asked it about.
+ *
+ * It renders INSIDE the fence, under {@link CHANNEL_TAIL_MARK}. The prose is
+ * DorkOS's words like {@link FENCE_PREAMBLE} is, and what follows it is other
+ * members' text, which is what decides the region.
+ */
+const CHANNEL_TAIL_NOTE =
+  'The messages below are recent traffic in the main channel, outside this thread. Background ' +
+  'only: they are not part of the thread you are answering in, and your answer this turn goes ' +
+  'to the thread.';
+
+/**
+ * The disclosure line for unread channel messages the glance could not fit.
+ *
+ * **Said out loud because the loss is permanent.** A thread turn advances the
+ * room's single read cursor past channel messages it never showed, so those are
+ * gone from every future turn's unread window. An agent told "and 12 more" can
+ * go and ask; an agent told nothing cannot tell the difference between a quiet
+ * channel and a channel it was never shown.
+ *
+ * @param count - How many unread top-level messages were left out.
+ */
+function omittedLine(count: number): string {
+  const messages = count === 1 ? '1 older channel message' : `${count} older channel messages`;
+  return `${messages} you have not read were not shown here. Ask in the channel if you need them.`;
+}
+
+/**
  * A label, safe to put in a line DorkOS wrote.
  *
  * @param value - The raw label: a handle, a room name, a topic.
@@ -679,6 +730,22 @@ function fenced(data: RoomContextData, nonce: string): string | null {
     quoted.push(`[the message this thread hangs off] ${body(data.thread.rootExcerpt)}`);
   }
   for (const entry of data.pending) quoted.push(entryLine(entry));
+  // Last, under its own NONCED heading, because it is the least relevant thing
+  // in the block and the one most easily mistaken for the conversation being
+  // answered. Never merged into `pending`: these are messages from a different
+  // scope, the model has to be able to tell which is which, and the boundary
+  // that says so has to be one a member cannot type.
+  if (data.channelTail && data.channelTail.length > 0) {
+    quoted.push(
+      `--- ${nonce} ${CHANNEL_TAIL_MARK} ---`,
+      CHANNEL_TAIL_NOTE,
+      // Inside the marked region rather than above it: the count is a claim
+      // about the tail, and a claim that can be separated from its heading is
+      // one a member's message could appear to make.
+      ...(data.channelTailOmitted ? [omittedLine(data.channelTailOmitted)] : []),
+      ...data.channelTail.map(entryLine)
+    );
+  }
   if (quoted.length === 0) return null;
 
   const heading = data.pending.length > 0 ? 'You have not read these yet:' : 'For context:';

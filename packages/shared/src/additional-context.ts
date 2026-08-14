@@ -369,10 +369,67 @@ export interface RoomContextData {
    * room-scoped turn lock). Excludes the agent reading it.
    */
   working: Array<RoomContextAuthor & { since: string }>;
-  /** Entries this membership has not read, oldest first, excluding its own. */
+  /**
+   * Entries this membership has not read, oldest first, excluding its own.
+   *
+   * **Scoped to whatever the turn is answering in.** For a top-level turn that
+   * is the whole room; for a turn inside a thread it is that THREAD's unread
+   * replies and nothing else, because a thread reply is answered into the thread
+   * and the engaged window that kept the agent listening was opened there too.
+   * All three questions — do I stay engaged, what do I read, where does my
+   * answer land — now have one answer.
+   *
+   * The channel a thread turn is not reading rides separately, bounded, as
+   * {@link RoomContextData.channelTail}.
+   */
   pending: RoomContextEntry[];
   /** True when `pending` was capped and older entries were dropped. */
   pendingTruncated: boolean;
+  /**
+   * The last few TOP-LEVEL messages of the channel a thread turn is happening
+   * in, oldest first — background, never the conversation being answered.
+   *
+   * Present only for a turn inside a thread, where {@link RoomContextData.pending}
+   * is scoped to the thread: an agent that can see nothing but its own aside
+   * will re-raise something the channel settled two minutes ago. Absent for a
+   * top-level turn, where the channel IS the scope and there is no "rest of the
+   * room" to name.
+   *
+   * **Unread first, recent as the fallback**, and the order matters for a reason
+   * beyond relevance. The claim advances ONE read cursor for the whole room, so
+   * a thread turn moves it past channel messages it never showed. Filling this
+   * with the unread ones first is what keeps the loss bounded rather than
+   * arbitrary; what could not fit is counted in
+   * {@link RoomContextData.channelTailOmitted} rather than dropped in silence.
+   * When nothing there is unread, it falls back to the newest few, because "you
+   * are up to date" is not a reason to know nothing about the room.
+   *
+   * **Disjoint from `pending` by construction, and from the thread's opener too.**
+   * A thread reply is never top-level, and the entry the thread hangs off is
+   * excluded here because it is already quoted as
+   * {@link RoomContextData.thread}'s `rootExcerpt` — so no message reaches the
+   * model twice under two different headings.
+   *
+   * Posts only: a machine notice must not eat one of the five slots. Deliberately
+   * NOT governed by `ambientMaxEntries` — that cap sizes the conversation an
+   * agent is answering, and this is the glance sideways.
+   */
+  channelTail?: RoomContextEntry[];
+  /**
+   * How many UNREAD top-level channel messages did not fit in
+   * {@link RoomContextData.channelTail}. Absent when none were left out.
+   *
+   * **It exists because the loss is real and must not be silent.** A thread turn
+   * advances the room's single read cursor past channel messages it did not
+   * show, so those messages are gone from every future turn's unread window.
+   * The tail bounds that; this number discloses it, and the rendered block says
+   * it out loud — an agent that knows it is missing five messages can ask,
+   * where one that was told nothing cannot.
+   *
+   * Counted over the same window the tail was read from, so the two are one
+   * statement rather than two estimates.
+   */
+  channelTailOmitted?: number;
   /** This agent's own recent posts here, so it does not repeat itself. */
   ownRecent: RoomContextEntry[];
   /**
@@ -634,6 +691,8 @@ export const RoomContextDataSchema = z.object({
   working: z.array(RoomContextAuthorSchema.extend({ since: z.string() })),
   pending: z.array(RoomContextEntrySchema),
   pendingTruncated: z.boolean(),
+  channelTail: z.array(RoomContextEntrySchema).optional(),
+  channelTailOmitted: z.number().int().nonnegative().optional(),
   ownRecent: z.array(RoomContextEntrySchema),
   acknowledgments: z.array(RoomContextAcknowledgmentSchema),
   triggerAttachments: z.array(z.object({ name: z.string(), path: z.string() })),

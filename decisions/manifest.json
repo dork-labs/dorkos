@@ -4426,6 +4426,20 @@
         "apps/server/src/services/rooms/room-errors.ts",
         "apps/server/src/routes/room-error-response.ts"
       ]
+    },
+    {
+      "id": "260814-024249",
+      "slug": "a-thread-turn-reads-its-thread-plus-a-bounded-channel-tail",
+      "title": "A thread turn reads its thread, plus a bounded channel tail",
+      "status": "accepted",
+      "created": "2026-08-14",
+      "specSlug": "room-participation",
+      "affects": [
+        "apps/server/src/services/rooms/room-context.ts",
+        "apps/server/src/services/rooms/room-store.ts",
+        "apps/server/src/services/runtimes/shared/room-context-block.ts",
+        "packages/shared/src/additional-context.ts"
+      ]
     }
   ]
 }
