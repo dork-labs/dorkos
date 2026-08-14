@@ -6,6 +6,7 @@ import type { BindingStore } from '../../../relay/binding-store.js';
 import type { BindingRouter } from '../../../relay/binding-router.js';
 import type { BridgeStore } from '../../../relay/chat-bridge/bridge-store.js';
 import type { TraceStore } from '../../../relay/trace-store.js';
+import type { NotifyDmDeps } from '../../../relay/notify-dm.js';
 import type { MeshCore } from '@dorkos/mesh';
 import type { ExtensionManager } from '../../../extensions/extension-manager.js';
 import type { RuntimeRegistry } from '../../../core/runtime-registry.js';
@@ -40,6 +41,14 @@ export interface McpToolDeps {
   bridgeStore?: BridgeStore;
   /** Optional MeshCore — undefined when Mesh is disabled */
   meshCore?: MeshCore;
+  /**
+   * Optional rooms seam for the first-party fallback `relay_notify_user` takes
+   * when no external chat integration can carry a proactive message: the
+   * caller's own direct message with the operator (DOR-1209). Undefined when
+   * rooms or mesh are not wired — the tool then reports non-delivery exactly as
+   * it did before, rather than pretending.
+   */
+  notifyDm?: NotifyDmDeps;
   /** Optional ExtensionManager — undefined when extensions are disabled */
   extensionManager?: ExtensionManager;
   /**

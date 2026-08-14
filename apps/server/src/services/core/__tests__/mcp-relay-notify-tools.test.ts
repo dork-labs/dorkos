@@ -79,6 +79,31 @@ function makeMockBridgeStore(overrides?: Record<string, unknown>) {
   };
 }
 
+/**
+ * The rooms/authors/mesh seam the DM fallback writes through (DOR-1209).
+ *
+ * The seam is faked, not the fallback: `deliverNotifyDm` itself runs for real
+ * here, so these tests still exercise the resolution order and the refusals.
+ * What the DM write does to a real room log is pinned against a real room
+ * service in `services/relay/__tests__/notify-dm.test.ts`.
+ */
+function makeMockNotifyDm(overrides: Partial<McpToolDeps['notifyDm']> = {}) {
+  return {
+    rooms: {
+      createRoom: vi.fn().mockReturnValue({ id: 'room-dm-1' }),
+      post: vi.fn().mockReturnValue({ id: 'entry-1' }),
+    },
+    authors: { resolveAgent: vi.fn().mockReturnValue({ id: 'author-ana' }) },
+    mesh: {
+      getProjectPath: vi.fn().mockReturnValue('/agents/ana'),
+      get: vi.fn().mockReturnValue({ name: 'ana', displayName: 'Ana' }),
+    },
+    operatorAuthorId: vi.fn().mockReturnValue('author-human'),
+    logger: { warn: vi.fn() },
+    ...overrides,
+  } satisfies NonNullable<McpToolDeps['notifyDm']>;
+}
+
 function makeMockDeps(overrides: Partial<McpToolDeps> = {}): McpToolDeps {
   return {
     transcriptReader: {} as McpToolDeps['transcriptReader'],
@@ -307,6 +332,150 @@ describe('relay_notify_user', () => {
     expect(data.chatId).toBe('chat-42');
     expect(data.messageId).toBe('msg-42');
     expect(data.deliveredTo).toBe(1);
+  });
+
+  // A stock install has no Telegram or Slack connected, which used to make this
+  // tool a silent no-op: the agent announced a finished job into nothing. The
+  // message now goes to the agent's own direct message with the operator
+  // (DOR-1209, point 3 of DOR-793).
+  describe('DorkOS DM fallback (DOR-1209)', () => {
+    /** Deps with no bindings at all — the stock install. */
+    function noIntegrationDeps(notifyDm = makeMockNotifyDm()): McpToolDeps {
+      return makeMockDeps({
+        bindingStore: makeMockBindingStore({
+          getAll: vi.fn().mockReturnValue([]),
+        }) as unknown as McpToolDeps['bindingStore'],
+        notifyDm,
+      });
+    }
+
+    it('posts into the agent-and-operator DM when nothing external is bound', async () => {
+      const notifyDm = makeMockNotifyDm();
+      const deps = noIntegrationDeps(notifyDm);
+      const handler = createRelayNotifyUserHandler(deps, NOTIFY);
+      const result = await handler({ message: 'Deploy finished.' });
+
+      expect(result.isError).toBeUndefined();
+      const data = JSON.parse(result.content[0].text);
+      expect(data).toMatchObject({
+        sent: true,
+        surface: 'dorkos-dm',
+        roomId: 'room-dm-1',
+        entryId: 'entry-1',
+      });
+      // The 1:1 conversation, opened by the agent, holding exactly it and the
+      // person — never a room per notification.
+      expect(notifyDm.rooms.createRoom).toHaveBeenCalledWith(
+        { kind: 'dm', title: 'Ana', members: ['author-human'], agentPaths: [] },
+        'author-ana'
+      );
+      // An ordinary post in the agent's own name, carrying its words verbatim.
+      expect(notifyDm.rooms.post).toHaveBeenCalledWith('room-dm-1', {
+        authorId: 'author-ana',
+        text: 'Deploy finished.',
+      });
+      // Nothing was published to the bus: there was no channel to publish to.
+      expect(deps.relayCore!.publish).not.toHaveBeenCalled();
+    });
+
+    it('also catches the case where a binding exists but no chat has ever been active', async () => {
+      const notifyDm = makeMockNotifyDm();
+      const deps = makeMockDeps({
+        bindingRouter: makeMockBindingRouter({
+          getSessionsByBinding: vi.fn().mockReturnValue([]),
+        }) as unknown as McpToolDeps['bindingRouter'],
+        notifyDm,
+      });
+      const handler = createRelayNotifyUserHandler(deps, NOTIFY);
+      const result = await handler({ message: 'Nobody has messaged the bot yet.' });
+
+      expect(result.isError).toBeUndefined();
+      expect(JSON.parse(result.content[0].text).surface).toBe('dorkos-dm');
+    });
+
+    it('leaves the external path untouched when an integration can carry it', async () => {
+      const notifyDm = makeMockNotifyDm();
+      const deps = makeMockDeps({ notifyDm });
+      const handler = createRelayNotifyUserHandler(deps, NOTIFY);
+      const result = await handler({ message: 'Hello user' });
+
+      const data = JSON.parse(result.content[0].text);
+      expect(data.sent).toBe(true);
+      expect(data.surface).toBe('integration');
+      expect(data.chatId).toBe('chat-42');
+      expect(deps.relayCore!.publish).toHaveBeenCalledWith(
+        'relay.human.telegram.tg-main.chat-42',
+        'Hello user',
+        { from: 'relay.agent.ns.agent-1' }
+      );
+      // First preference means the DM is not also written — one message, one place.
+      expect(notifyDm.rooms.post).not.toHaveBeenCalled();
+    });
+
+    it('does not redirect a message that asked for a named channel', async () => {
+      const notifyDm = makeMockNotifyDm();
+      const deps = makeMockDeps({
+        adapterManager: makeMockAdapterManager({
+          listAdapters: vi.fn().mockReturnValue([]),
+        }) as unknown as McpToolDeps['adapterManager'],
+        notifyDm,
+      });
+      const handler = createRelayNotifyUserHandler(deps, NOTIFY);
+      const result = await handler({ message: 'Slack or nothing', channel: 'slack' });
+
+      expect(result.isError).toBe(true);
+      expect(JSON.parse(result.content[0].text).code).toBe('NO_BINDING');
+      expect(notifyDm.rooms.post).not.toHaveBeenCalled();
+    });
+
+    it('does not route around a binding whose owner turned initiating off', async () => {
+      const notifyDm = makeMockNotifyDm();
+      const deps = makeMockDeps({
+        bindingStore: makeMockBindingStore({
+          getAll: vi.fn().mockReturnValue([makeBinding({ canInitiate: false })]),
+        }) as unknown as McpToolDeps['bindingStore'],
+        notifyDm,
+      });
+      const handler = createRelayNotifyUserHandler(deps, NOTIFY);
+      const result = await handler({ message: 'Surprise!' });
+
+      expect(result.isError).toBe(true);
+      expect(JSON.parse(result.content[0].text).code).toBe('INITIATE_NOT_ALLOWED');
+      expect(notifyDm.rooms.post).not.toHaveBeenCalled();
+    });
+
+    it('reports the old non-delivery — without throwing — when the DM cannot be reached', async () => {
+      const notifyDm = makeMockNotifyDm({
+        mesh: {
+          getProjectPath: vi.fn().mockReturnValue(undefined),
+          get: vi.fn().mockReturnValue(undefined),
+        },
+      });
+      const deps = noIntegrationDeps(notifyDm);
+      const handler = createRelayNotifyUserHandler(deps, NOTIFY);
+      const result = await handler({ message: 'Nowhere to go.' });
+
+      expect(result.isError).toBe(true);
+      const data = JSON.parse(result.content[0].text);
+      expect(data.code).toBe('NO_BINDING');
+      expect(data.sent).toBe(false);
+      // Loudly, rather than silently: the message reached nobody.
+      expect(notifyDm.logger!.warn).toHaveBeenCalled();
+    });
+
+    it('reports the old non-delivery when rooms are not wired at all', async () => {
+      const deps = makeMockDeps({
+        bindingStore: makeMockBindingStore({
+          getAll: vi.fn().mockReturnValue([]),
+        }) as unknown as McpToolDeps['bindingStore'],
+        notifyDm: undefined,
+      });
+      const handler = createRelayNotifyUserHandler(deps, NOTIFY);
+      const result = await handler({ message: 'Nowhere to go.' });
+
+      expect(result.isError).toBe(true);
+      expect(JSON.parse(result.content[0].text).code).toBe('NO_BINDING');
+    });
   });
 
   describe('canInitiate enforcement (DOR-239)', () => {
