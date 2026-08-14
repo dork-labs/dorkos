@@ -60,8 +60,34 @@ describe('aggregateCommunityRooms', () => {
     });
 
     expect(rooms, 'a working community is unaffected by a broken one').toHaveLength(1);
+    // The adapter's own text does NOT become the sentence a person reads: a
+    // relay refusal carries the remote's `event.message`, so passing it through
+    // would let a server we do not run write copy for our cockpit. The raw text
+    // goes to the log instead.
     expect(warnings).toEqual([
-      { community: REMOTE, label: 'Dork Labs', message: 'relay closed the socket' },
+      { community: REMOTE, label: 'Dork Labs', message: 'Dork Labs could not be reached.' },
+    ]);
+    expect(warnings[0]!.message).not.toContain('relay closed the socket');
+  });
+
+  it('never lets a synchronously-throwing adapter take down the whole listing', async () => {
+    // `allSettled` only settles promises. An adapter that throws before
+    // returning one escapes it entirely and rejects the caller's request —
+    // taking the OTHER communities' rooms with it.
+    const local = new FakeCommunityAdapter({ community: LOCAL_COMMUNITY, type: 'local' });
+    local.seedRoom({ entries: 1 });
+    const exploding = new FakeCommunityAdapter({ community: REMOTE, type: 'buzz' });
+    vi.spyOn(exploding, 'listRooms').mockImplementation(() => {
+      throw new Error('adapter blew up before returning a promise');
+    });
+
+    const { rooms, warnings } = await aggregateCommunityRooms({
+      communities: [source(local, 'This machine'), source(exploding, 'Dork Labs')],
+    });
+
+    expect(rooms).toHaveLength(1);
+    expect(warnings).toEqual([
+      { community: REMOTE, label: 'Dork Labs', message: 'Dork Labs could not be reached.' },
     ]);
   });
 
@@ -79,8 +105,11 @@ describe('aggregateCommunityRooms', () => {
     });
 
     expect(rooms).toHaveLength(1);
-    expect(warnings).toHaveLength(1);
-    expect(warnings[0]!.message).toMatch(/timed out/);
+    // Told apart from an ordinary failure by CLASS, not by matching the error
+    // text — which is why a slow community reads differently from a broken one.
+    expect(warnings).toEqual([
+      { community: REMOTE, label: 'Dork Labs', message: 'Dork Labs took too long to answer.' },
+    ]);
   });
 
   it('lists zero rooms for a not-admitted community, including ones it listed a minute ago', async () => {

@@ -272,20 +272,25 @@ describe('a room says when a turn has stopped', () => {
       expect(notices(second.id)[0].body.text).not.toContain('Backend');
     });
 
-    it('still says "here" for a second message in the room it is working in', async () => {
+    it('says nothing for a second message in the room it is working in, and answers it next', async () => {
       // The counter-assertion, and the reason the two questions are asked in
-      // this order: "wait, the answer is coming here" and "it is busy somewhere
-      // you cannot see" are different instructions, and getting them the wrong
-      // way round tells a person to wait for an answer that will never arrive.
+      // this order. "It is busy somewhere you cannot see" is a refusal, because
+      // nothing this room does will finish that turn. A message for an agent
+      // working HERE is not refused at all since RP8: it is held, and it becomes
+      // that agent's next turn the moment the claim goes (room-participation
+      // spec §10.4). Saying "it didn't pick this one up" about a message it is
+      // about to pick up would be the room lying to be reassuring.
       service.post(room.id, { authorId: human, text: '@ana check the build' });
       await settleUntil(() => runner.holdsFor(ana) > 0, 'Ana to be mid-turn');
 
       service.post(room.id, { authorId: human, text: '@ana still there?' });
-      await settleUntil(() => notices().length > 0, 'the room to say something');
+      runner.release(ana);
+      await settleUntil(() => runner.turns.length === 2, 'the held question to become a turn');
 
-      expect(notices()[0].body.text).toBe(
-        "Ana is still working on an earlier message here. It didn't pick this one up — that answer will land in this conversation."
-      );
+      expect(runner.turns[1].prompt).toBe('@ana still there?');
+      expect(notices()).toHaveLength(0);
+      runner.release(ana);
+      await service.triggersIdle();
     });
 
     it('lets the turn run once the other room is finished with it', async () => {

@@ -58,7 +58,7 @@ import {
   getRoomService,
   setWelcomeBackGreeter,
 } from '../../services/rooms/index.js';
-import { WelcomeBackGreeter } from '../../services/rooms/welcome-back/welcome-back.js';
+import { WelcomeBackGreeter } from '../../services/rooms/welcome-back/greeter.js';
 import { ReadCursorStore } from '../../services/core/read-cursor-store.js';
 import {
   ReadCursorService,

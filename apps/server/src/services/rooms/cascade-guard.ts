@@ -20,7 +20,7 @@
  * would be the one somebody edits when the real one is elsewhere.
  *
  * A refusal here is visible: `room-trigger.ts`, the production caller, writes
- * the room's own-voice `notice` for it. The words live in `room-notices.ts`
+ * the room's own-voice `notice` for it. The words live in `notices/notice-copy.ts`
  * with every other thing the room says about itself.
  *
  * @module server/services/rooms/cascade-guard

@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { CommunityMemberSchema, LOCAL_COMMUNITY } from '../community-adapter.js';
+import {
+  CommunityMemberSchema,
+  CommunityWarningSchema,
+  LOCAL_COMMUNITY,
+} from '../community-adapter.js';
+import { RoomListWarningSchema } from '../room-schemas.js';
 
 /** A member row with every required field and none of the optional ones. */
 const BARE_MEMBER = {
@@ -39,5 +44,26 @@ describe('CommunityMemberSchema render cache', () => {
       imageUrl: 'https://cdn.example/avatars/01JZMEMBER.png',
     });
     expect(parsed.imageUrl).toBe('https://cdn.example/avatars/01JZMEMBER.png');
+  });
+});
+
+describe('RoomListWarningSchema restates CommunityWarningSchema', () => {
+  it('carries exactly the same fields, so the restatement cannot drift', () => {
+    // `room-schemas.ts` restates this shape rather than importing it, because
+    // the port already imports `room-schemas.ts` and a back-import would put two
+    // top-level Zod modules in a cycle. That is a sound reason to duplicate and
+    // no reason at all to let the two diverge — the wire is the same object.
+    const fields = Object.keys(CommunityWarningSchema.shape).sort();
+    // Asserted so the comparison below cannot pass by both sides being empty —
+    // the failure mode of every shape-equality test.
+    expect(fields).toEqual(['community', 'label', 'message']);
+    expect(Object.keys(RoomListWarningSchema.shape).sort()).toEqual(fields);
+  });
+
+  it('accepts a CommunityWarning unchanged, brand and all', () => {
+    // The compile-time brand on `community` is gone by the time this is JSON, so
+    // a warning the aggregation produced must parse here with no mapping step.
+    const warning = { community: LOCAL_COMMUNITY, label: 'This machine', message: 'All quiet.' };
+    expect(RoomListWarningSchema.parse(warning)).toEqual(warning);
   });
 });

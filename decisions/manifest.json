@@ -4412,6 +4412,21 @@
       ]
     },
     {
+      "id": "260814-024525",
+      "slug": "bridged-rooms-are-projections-not-communities",
+      "title": "Bridged rooms are projections, not communities",
+      "status": "accepted",
+      "created": "2026-08-14",
+      "affects": [
+        "packages/shared/src/community-adapter.ts",
+        "apps/server/src/services/communities/list-rooms-across-communities.ts",
+        "apps/server/src/services/communities/aggregate-community-rooms.ts",
+        "apps/server/src/services/communities/registry.ts",
+        "apps/server/src/services/relay/chat-bridge/ingest.ts",
+        "apps/server/src/routes/rooms.ts"
+      ]
+    },
+    {
       "id": "260814-025326",
       "slug": "three-way-rule-for-agent-seeded-rooms",
       "title": "Agents may open rooms with each other, and the person is always in them",

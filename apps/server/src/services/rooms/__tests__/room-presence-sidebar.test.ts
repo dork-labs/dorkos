@@ -160,28 +160,43 @@ describe('the sidebar is told which rooms have an agent working', () => {
     expect(counts.at(-1)).toEqual({ roomId: room.id, working: 0 });
   });
 
-  it('does not repaint the dot for a second question the busy agent never takes', async () => {
+  it('does not repaint the dot for a second question the busy agent has not reached yet', async () => {
     // Two questions to one agent, the second arriving while the first turn is
-    // still running. The room refuses it — one turn per agent per room — and
-    // says so in a notice, so there is no second claim, no second turn, and
-    // nothing for the sidebar to redraw: the dot was already up, and it means
-    // the same thing it meant a moment ago.
+    // still running. Since RP8 that second one is HELD rather than refused — it
+    // rides Ana's next turn — but either way there is no second claim while the
+    // first is up, so there is nothing for the sidebar to redraw: the dot was
+    // already there, and it means the same thing it meant a moment ago.
     service.post(room.id, { authorId: human, text: '@ana can you check the deploy?' });
     await settleUntil(() => runner.turns.length === 1, 'Ana handed her first turn');
     expect(counts).toEqual([{ roomId: room.id, working: 1 }]);
 
     service.post(room.id, { authorId: human, text: '@ana and the migration?' });
-    await settleUntil(
-      () => service.listEntries(room.id, human, { limit: 20 }).some((e) => e.kind === 'notice'),
-      'the room to say Ana is busy'
-    );
+    // Absence is never the condition. Bo is asked next and answers, and his turn
+    // running is the proof that the room has finished deciding about Ana's
+    // second message — whatever it decided.
+    service.post(room.id, { authorId: human, text: '@bo anything from you?' });
+    await settleUntil(() => runner.turns.length === 2, 'Bo handed a turn of his own');
 
-    expect(runner.turns).toHaveLength(1);
-    expect(service.listRooms(human).map((summary) => summary.working)).toEqual([1]);
-    expect(counts).toEqual([{ roomId: room.id, working: 1 }]);
+    expect(runner.turns.filter((turn) => turn.authorId === ana)).toHaveLength(1);
+    // Two agents working now, and the room said so once — never twice for Ana.
+    expect(counts).toEqual([
+      { roomId: room.id, working: 1 },
+      { roomId: room.id, working: 2 },
+    ]);
 
-    // And the one turn there is takes the dot down with it when it ends.
+    // And when Ana's turn ends, the held question becomes her next one rather
+    // than disappearing — so the dot only reaches zero once everything the room
+    // was asked has actually run.
     runner.release(ana);
+    await settleUntil(
+      () => runner.turns.filter((turn) => turn.authorId === ana).length === 2,
+      'the held question to become Ana second turn'
+    );
+    expect(runner.turns.filter((turn) => turn.authorId === ana)[1].prompt).toBe(
+      '@ana and the migration?'
+    );
+    runner.release(ana);
+    runner.release(bo);
     await service.triggersIdle();
     expect(counts.at(-1)).toEqual({ roomId: room.id, working: 0 });
   });

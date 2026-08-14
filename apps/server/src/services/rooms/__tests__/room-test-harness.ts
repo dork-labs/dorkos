@@ -19,6 +19,7 @@ import { ReadCursorStore } from '../../core/read-cursor-store.js';
 import { roomsSource, searchMessages, SearchIndexer } from '../../search/index.js';
 import { AuthorRegistry } from '../author-registry.js';
 import type { EngagedWindow } from '../engagement.js';
+import type { CollectWindow } from '../room-collect.js';
 import { ReactionBudget } from '../reactions/reaction-budget.js';
 import { ReactionStore } from '../reactions/reaction-store.js';
 import { AttachmentRowStore } from '../attachments/attachment-row-store.js';
@@ -259,6 +260,12 @@ export interface RoomHarness {
  * @param opts.engagedWindow - The two engaged-window ceilings. A literal for the
  *   same reason as the ceiling above, and shipped-default-shaped so a test that
  *   does not care about the window still gets the behaviour a person would.
+ * @param opts.collect - The collect window (RP8). Defaults to a debounce of
+ *   **zero**, which is the same gathering path the product runs and not a way
+ *   round it: a collection still opens, still closes on its own macrotask, and
+ *   still becomes exactly one turn. What zero removes is the WAIT, so a suite
+ *   that is not about the window does not spend half a second per message
+ *   proving a timer works. A test that IS about the window pins a real one.
  * @param opts.maxAttachmentsPerEntry - How many files one message may carry.
  *   A literal for the same reason the ceilings above are: a test that read the
  *   same config the code reads could only prove the two agree.
@@ -275,6 +282,7 @@ export function createRoomHarness(opts: {
   maxAutomaticTurnsPerRoomPerHour?: number;
   maxAutomaticTurnsTotalPerHour?: number;
   engagedWindow?: EngagedWindow;
+  collect?: CollectWindow;
   maxAttachmentsPerEntry?: number;
   ownerUserId?: string;
   budgetNow?: () => number;
@@ -287,6 +295,7 @@ export function createRoomHarness(opts: {
   const perRoom = opts.maxAutomaticTurnsPerRoomPerHour ?? 1_000;
   const global = opts.maxAutomaticTurnsTotalPerHour ?? 100_000;
   const engagedWindow = opts.engagedWindow ?? { minutes: 10, posts: 5 };
+  const collect = opts.collect ?? { debounceMs: 0, maxEntries: 20 };
   const maxAttachmentsPerEntry = opts.maxAttachmentsPerEntry ?? 10;
   // Mutable so `setOwner` can drive the transition, and read per check the way
   // the live wiring reads it — an install becomes owned partway through its life.
@@ -333,6 +342,7 @@ export function createRoomHarness(opts: {
       }).map((hit) => ({ roomId: hit.originKey, seq: hit.ordinal })),
     maxAgentDepth: () => maxAgentDepth,
     engagedWindow: () => engagedWindow,
+    collect: () => collect,
     maxAttachmentsPerEntry: () => maxAttachmentsPerEntry,
     isOwnerAuthor: (authorId) => authors.isOwner(authorId, ownerUserId),
     readCursors,

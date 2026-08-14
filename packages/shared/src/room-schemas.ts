@@ -119,7 +119,7 @@ export type RoomEntryKind = z.infer<typeof RoomEntryKindSchema>;
  *   §10.4). About the room rather than one member, so it carries no
  *   `subjectAuthorId`.
  * - `addressing_changed` — DorkOS itself changed when the agents in this room
- *   answer. The only code not written by `room-notices.ts`: migration 0039 wrote
+ *   answer. The only code not written by `rooms/notices/notice-copy.ts`: migration 0039 wrote
  *   it once, into every channel whose members it moved from `mention-only` to
  *   `engaged` (room-participation spec §9.4). A widening nobody asked for has to
  *   say so, because absence is never consent.
@@ -1209,9 +1209,48 @@ export type ThreadSummary = z.infer<typeof ThreadSummarySchema>;
 
 // === Responses ===
 
-/** The `GET /api/rooms` envelope. */
+/**
+ * One community that could not contribute to the room list — the wire form of
+ * `CommunityWarning` (`community-adapter.ts` §8).
+ *
+ * **Restated here rather than imported, and the reason is a module cycle**: the
+ * `CommunityAdapter` port imports this file for `RoomKindSchema`,
+ * `AuthorKindSchema` and `RoomPresenceStateSchema`, so importing back would put
+ * two top-level Zod modules in a cycle and leave whichever loaded second reading
+ * an undefined schema. Nothing is duplicated by it: `community` is a branded
+ * `CommunityRef` in the server's types and a plain string once it is JSON, which
+ * is exactly the boundary this schema sits on, and a `CommunityWarning` passes
+ * through unchanged.
+ */
+export const RoomListWarningSchema = z
+  .object({
+    community: z.string().min(1).describe('The community that degraded.'),
+    label: z.string().min(1).describe('What a person calls that community.'),
+    message: z
+      .string()
+      .min(1)
+      .describe('Plain language, already safe to render — never a raw protocol string.'),
+  })
+  .openapi('RoomListWarning');
+
+export type RoomListWarning = z.infer<typeof RoomListWarningSchema>;
+
+/**
+ * The `GET /api/rooms` envelope.
+ *
+ * `rooms` is this machine's own rooms and nothing else. `warnings` is the
+ * per-community degradation every other configured community reports — empty on
+ * an install that is only in this one, which is every install today.
+ */
 export const RoomListResponseSchema = z
-  .object({ rooms: z.array(RoomSummarySchema) })
+  .object({
+    rooms: z.array(RoomSummarySchema),
+    warnings: z
+      .array(RoomListWarningSchema)
+      .describe(
+        'Communities that could not contribute to this list, each already carrying the sentence to show. Empty is the normal case; a non-empty entry is never a reason to hide the rooms that did list.'
+      ),
+  })
   .openapi('RoomListResponse');
 
 export type RoomListResponse = z.infer<typeof RoomListResponseSchema>;

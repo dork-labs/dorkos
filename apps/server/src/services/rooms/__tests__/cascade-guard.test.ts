@@ -11,7 +11,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import type { RoomEntry, RoomWithRoster } from '@dorkos/shared/room-schemas';
 import { deriveCascade, evaluateCascade } from '../cascade-guard.js';
-import { buildCascadeNotice } from '../room-notices.js';
+import { buildCascadeNotice } from '../notices/notice-copy.js';
 import type { AuthorRegistry } from '../author-registry.js';
 import type { RoomService } from '../room-service.js';
 import {
@@ -114,19 +114,21 @@ describe('cascade guard, wired', () => {
   it('lands a durable notice in the room, in the room own voice', async () => {
     await seedAndSettle('thoughts?');
 
-    // A ping-pong stops for two different reasons and the room names each one
-    // correctly. The agent that has already spoken in this exchange is refused
-    // by the ancestry rule — `cascade_stopped`. The agent that is simply still
-    // working when the other's reply lands is refused because it is busy, and
-    // saying "this back-and-forth hit its automatic-reply limit" about a turn
-    // that is running would be pointing at a limit nobody reached.
+    // A ping-pong stops for ONE reason, twice, and RP8 is why it is now the
+    // same reason both times. The agent that has already spoken is refused by
+    // the ancestry rule. The agent that was still working when the other's reply
+    // landed is not refused at all any more — its collection is held and run
+    // when its claim releases (`room-collect.ts`) — and by then it has spoken
+    // too, so the ancestry rule answers it as well. That second refusal is a
+    // strictly better answer than the busy line it replaced: the guard's
+    // ancestry query is durable, so it could not see a turn that was still in
+    // flight, and the claim was standing in for it.
     const notices = log().filter((entry) => entry.kind === 'notice');
     expect(notices.map((entry) => entry.body.notice).sort()).toEqual([
-      'agent_busy',
+      'cascade_stopped',
       'cascade_stopped',
     ]);
-    const stopped = notices.find((entry) => entry.body.notice === 'cascade_stopped');
-    expect(stopped?.body.text).toContain('automatic-reply limit');
+    expect(notices[0].body.text).toContain('automatic-reply limit');
     for (const notice of notices) {
       expect(notice.body.text).not.toMatch(/error|Error|undefined|null/);
       expect(notice.authorId).toBe(authors.system().id);

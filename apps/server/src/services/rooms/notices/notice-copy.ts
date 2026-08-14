@@ -18,11 +18,11 @@
  * room can act on. No reason codes in the prose, no stack traces, no jargon.
  * `room-trigger.ts` is the only writer.
  *
- * @module server/services/rooms/room-notices
+ * @module server/services/rooms/notices/notice-copy
  */
 import type { RoomEntryBody } from '@dorkos/shared/room-schemas';
-import { MENTION_PATTERN } from './mentions.js';
-import type { BudgetRefusalScope } from './turn-budget.js';
+import { MENTION_PATTERN } from '../mentions.js';
+import type { BudgetRefusalScope } from '../turn-budget.js';
 
 /**
  * The durable `notice` a cascade refusal writes into the room.
@@ -64,13 +64,18 @@ export function buildBudgetNotice(scope: BudgetRefusalScope = 'room'): RoomEntry
 /**
  * What the room knows about why an agent could not pick a message up.
  *
- * Three states, because three are now knowable — and each one is a different
- * remedy for the reader, which is the only reason to have more than one.
+ * Two states, and each one is a different remedy for the reader, which is the
+ * only reason to have more than one.
  *
- * - `working-here` — this room holds a live claim for that agent. The claim map
- *   is keyed `(room, agent)`, so a claim existing AT ALL means the agent is
- *   mid-turn on an earlier message **in this room**. Waiting is the remedy: that
- *   answer is coming, here, and the reader will see it.
+ * **There is deliberately no `working-here`.** There used to be, and RP8 removed
+ * the situation rather than the words: an agent mid-turn in THIS room is no
+ * longer refused at all, because the message is held and becomes its next turn
+ * (`room-collect.ts`, room-participation spec §10.4). A line saying "it didn't
+ * pick this one up" about a message it is about to pick up would be the room
+ * lying to be reassuring, so the copy went with the refusal it described. If a
+ * new path ever needs to refuse an agent working here, it needs new words, not
+ * these.
+ *
  * - `working-elsewhere` — the agent holds a claim in a DIFFERENT room. One
  *   agent is one working directory, so two turns in it are two writers on one
  *   checkout; the dispatcher refuses the second (room-participation spec,
@@ -95,7 +100,7 @@ export function buildBudgetNotice(scope: BudgetRefusalScope = 'room'): RoomEntry
  * reader in this room may not be a member of that one, and a busy line is not a
  * way to learn which conversations somebody else is having.
  */
-export type BusyContext = 'working-here' | 'working-elsewhere' | 'unknown';
+export type BusyContext = 'working-elsewhere' | 'unknown';
 
 /**
  * The durable `notice` for a trigger that was skipped because that agent was
@@ -132,8 +137,6 @@ export function buildBusyNotice(
  * the vaguest line in the set, which is the one it was added to stop saying.
  */
 const BUSY_LINES: Record<BusyContext, (agentName: string) => string> = {
-  'working-here': (agentName) =>
-    `${agentName} is still working on an earlier message here. It didn't pick this one up — that answer will land in this conversation.`,
   'working-elsewhere': (agentName) =>
     `${agentName} is working in another conversation right now, so it didn't pick this up. Send it again in a few minutes.`,
   unknown: (agentName) =>

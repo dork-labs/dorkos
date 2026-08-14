@@ -187,6 +187,21 @@ export interface RoomContextInput {
    * entry and threads it here).
    */
   engaged: EngagementWindow | null;
+  /**
+   * The ids, among the entries this turn is about to be shown, of messages that
+   * landed while this agent was already mid-turn here (room-participation spec
+   * §10.4).
+   *
+   * Passed in for the same reason {@link RoomContextInput.lastReadSeq} is: it is
+   * a fact about the DISPATCH — what the dispatcher was holding when this turn
+   * was assembled — and nothing in the log records it. Omitted for every turn
+   * nothing was collected behind, which is most of them.
+   *
+   * A trigger is never in it in practice, because the triggering entry is not in
+   * the window at all: it reaches the model as the turn's own message. The mark
+   * is for the ones BEHIND it.
+   */
+  arrivedDuringPrevTurn?: ReadonlySet<string>;
 }
 
 /**
@@ -440,6 +455,10 @@ export function buildRoomContext(
       at: entry.createdAt,
       text: entry.body.text,
       mentionsMe: entry.mentions.includes(input.agentAuthorId),
+      // Omitted rather than `false` when it did not, so the rendered block only
+      // ever says something happened — an entry carrying `arrivedDuringPrevTurn:
+      // false` on every ordinary line is noise the model has to read past.
+      ...(input.arrivedDuringPrevTurn?.has(entry.id) ? { arrivedDuringPrevTurn: true } : {}),
       // Already sanitized once, at write time (spec §9.2, A9.3) — carried
       // through raw so the renderer can sanitize it again at render.
       topicLabel: topicNames.get(entry.id) ?? null,

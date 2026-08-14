@@ -266,6 +266,18 @@ export const PROTECTIVE_CARRYOVERS: readonly ProtectiveCarryover[] = [
     reason: 'The same window, counted in messages from other members instead of minutes.',
   },
   {
+    path: 'rooms.collectDebounceMs',
+    direction: 'higher',
+    reason:
+      'How long a room gathers a burst of messages before answering it as one. Longer is the tightened bound here, not shorter: a person who lengthened it chose fewer, more considered replies, and a wipe that shortened it would buy them a turn per message.',
+  },
+  {
+    path: 'rooms.collectMaxEntries',
+    direction: 'higher',
+    reason:
+      'The most messages one gathered-up answer covers. Higher is the tightened bound for the same reason: raising it folds more of a busy room into one turn, and a wipe that lowered it would split that turn back into several.',
+  },
+  {
     path: 'welcomeBack.enabled',
     direction: 'boolean',
     protectiveValue: false,

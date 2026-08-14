@@ -504,6 +504,14 @@ function entryLine(entry: RoomContextEntry): string {
       : ` (${entry.authorIsPerson ? 'person' : 'agent'}${from}${addressNote(author)})`;
   const topic = entry.topicLabel ? ` [topic: ${label(entry.topicLabel, TOPIC_MAX_LENGTH)}]` : '';
   const mention = entry.mentionsMe ? ' [mentions you]' : '';
+  // **A label, and one only the server can write** (RP8). It is the room-side
+  // twin of `queue_note`'s `<queue_note>composed while the agent was responding
+  // to the previous message</queue_note>`, and it renders the same way that one
+  // does — as a fact DorkOS states about the message, never as part of what
+  // somebody typed. Without it a steered turn reads as a person repeating
+  // themselves; with it the model can see that the conversation carried on while
+  // it was working, which is the difference between apologising and catching up.
+  const steered = entry.arrivedDuringPrevTurn ? ' [arrived while you were working]' : '';
   // **A path is a LABEL, not somebody's words**, so it sits OUTSIDE the
   // untrusted fence beside `[topic: …]` rather than inside it beside
   // `body(entry.text)`. That is the room-conduct two-region test applied
@@ -523,7 +531,7 @@ function entryLine(entry: RoomContextEntry): string {
           .map((file) => label(file.path, ATTACHMENT_PATH_MAX_LENGTH))
           .join(', ')}]`
       : '';
-  return `[${clock(entry.at)}] ${who}${what}${topic}${mention}${attached}: ${body(entry.text)}`;
+  return `[${clock(entry.at)}] ${who}${what}${topic}${mention}${steered}${attached}: ${body(entry.text)}`;
 }
 
 /**

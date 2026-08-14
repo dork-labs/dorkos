@@ -193,7 +193,7 @@ describe('BridgeCatchUp (chats-as-channels §6.1)', () => {
     // The DELIVERED content is re-rendered for a bridged reader (§6.2) rather
     // than forwarded verbatim — the stored line above points a cockpit reader
     // at "Ana's session", which a person on the platform chat has no way to
-    // open (`bridgeTurnFailedText`, room-notices.ts).
+    // open (`bridgeTurnFailedText`, notices/notice-copy.ts).
     const delivered = publish.mock.calls.filter(
       (c) =>
         (c[1] as Record<string, unknown>).content ===

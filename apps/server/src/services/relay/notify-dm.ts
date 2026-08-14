@@ -23,7 +23,7 @@
  * ## Three things this deliberately does NOT do
  *
  * **It is not a notice.** A notice is the room speaking for itself about a turn
- * that could not run (`room-notice-log.ts`). This is the agent saying something,
+ * that could not run (`notices/notice-log.ts`). This is the agent saying something,
  * so it is written under the agent's own author id and reads like every other
  * message it sends.
  *

@@ -15,8 +15,8 @@
  * @module server/services/rooms/room-claims
  */
 import type { DispatchOutcome } from '../observability/dispatch-buffers.js';
-import type { BusyContext } from './room-notices.js';
-import type { CascadeStamp, RoomTurnUnanswered } from './room-notice-log.js';
+import type { BusyContext } from './notices/notice-copy.js';
+import type { CascadeStamp, RoomTurnUnanswered } from './notices/notice-log.js';
 import type { EngagementWindow } from './engagement.js';
 
 /**
@@ -141,6 +141,14 @@ export interface ActiveClaim {
  */
 export type ClaimOutcome = 'answered' | 'quiet' | 'halted' | RoomTurnUnanswered;
 
+/**
+ * Which of the two claim ceilings an agent is up against.
+ *
+ * `'working-here'` is held, `'working-elsewhere'` is refused — see
+ * {@link claimBusyWith} for why those are different answers.
+ */
+export type ClaimBusy = 'working-here' | 'working-elsewhere';
+
 /** One agent that survived the guard, with the depth its reply will carry. */
 export interface TriggerTarget {
   authorId: string;
@@ -169,6 +177,16 @@ export interface TriggerTarget {
    * moment it is still true.
    */
   lastReadSeq: number;
+  /**
+   * The entries in this turn's ambient window that landed while the agent was
+   * already mid-turn here (room-participation spec §10.4).
+   *
+   * Ids rather than entries, because the entries themselves are read from the
+   * log by `buildRoomContext`: this is only the MARK, and a second copy of the
+   * text would be a second answer to what the window contains. Empty for every
+   * turn nothing was collected behind — which is most of them.
+   */
+  arrivedDuringPrevTurn: ReadonlySet<string>;
 }
 
 /**
@@ -301,28 +319,32 @@ export function claimsWorkingIn(
 }
 
 /**
- * What the room can truthfully say an agent is doing, or `null` when it is free.
+ * Which ceiling an agent is already up against, or `null` when it is free.
  *
- * Two ceilings, asked in this order because they have two different remedies.
- * The `(room, agent)` key bounds one TRANSCRIPT: a claim under it means the
- * answer being worked on will land in front of this reader, so waiting is the
- * whole remedy. The agent PATH bounds one CHECKOUT, which is shared by every
- * room the agent is in — the contention DOR-500 measured — and nothing about
- * the first question could see it.
+ * **Two ceilings, two different outcomes, and that is why they are two values
+ * rather than one boolean.** The `(room, agent)` key bounds one TRANSCRIPT: a
+ * claim under it means the agent is mid-turn HERE, and since RP8 that is not a
+ * refusal at all — the message is held and becomes its next turn
+ * (`room-collect.ts`). The agent PATH bounds one CHECKOUT, which is shared by
+ * every room the agent is in — the contention DOR-500 measured — and that one IS
+ * a refusal, because nothing this room does will finish a turn in another one.
+ *
+ * Deliberately no longer {@link BusyContext}: that type is the vocabulary of the
+ * busy NOTICE, and only one of these two values can reach it.
  *
  * @param claims - The live claim map.
  * @param roomId - The room being triggered.
  * @param authorId - The agent a trigger would run.
  * @param agentPath - That agent's directory, which is what the second ceiling
  *   is really about.
- * @returns The busy context, or `null` when the agent is doing nothing.
+ * @returns Which ceiling it is up against, or `null` when it is doing nothing.
  */
 export function claimBusyWith(
   claims: ReadonlyMap<string, ActiveClaim>,
   roomId: string,
   authorId: string,
   agentPath: string
-): BusyContext | null {
+): ClaimBusy | null {
   if (claims.has(agentKey(roomId, authorId))) return 'working-here';
   for (const claim of claims.values()) {
     if (claim.agentPath === agentPath) return 'working-elsewhere';

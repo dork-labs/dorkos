@@ -190,6 +190,8 @@ export const CONFIG_DISCLOSURE = {
   'rooms.lateReplyCeilingMinutes': 'expose',
   'rooms.engagedWindowMinutes': 'expose',
   'rooms.engagedWindowPosts': 'expose',
+  'rooms.collectDebounceMs': 'expose',
+  'rooms.collectMaxEntries': 'expose',
 
   // What agents may say when the person comes back after being away. Three
   // plain numbers about the person's own rooms: nothing here is a credential or

@@ -2,6 +2,13 @@
   "version": 1,
   "specs": [
     {
+      "id": "260814-025025",
+      "slug": "community-remote-trigger",
+      "title": "The remote trigger path — turning a mention in someone else's community into a turn on my machine",
+      "created": "2026-08-14",
+      "status": "ideation"
+    },
+    {
       "id": "260814-114442",
       "slug": "proactive-agent-dms",
       "title": "Proactive agent DMs: guardrails for messages nobody asked for",

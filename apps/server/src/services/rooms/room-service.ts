@@ -111,6 +111,7 @@ import {
 import type { AuthorRecord, AuthorRegistry, ExternalAuthorIdentity } from './author-registry.js';
 import { deriveCascade } from './cascade-guard.js';
 import type { EngagedWindow } from './engagement.js';
+import type { CollectWindow } from './room-collect.js';
 import { resolveAddressing } from './mentions.js';
 import type { ReactionBudget } from './reactions/reaction-budget.js';
 import type { ReactionStore } from './reactions/reaction-store.js';
@@ -121,7 +122,7 @@ import {
   buildBridgeDisconnectedNotice,
   buildBridgeHistoryNotice,
   buildBridgeSecondAgentRefusedNotice,
-} from './room-notices.js';
+} from './notices/notice-copy.js';
 import { RoomRoster, type AddMemberInput } from './room-roster.js';
 import { parseEntryBody, type NewRoom } from './room-rows.js';
 import type { RoomStore } from './room-store.js';
@@ -190,6 +191,8 @@ export interface RoomServiceDeps {
   maxAgentDepth(): number;
   /** The live `rooms.engagedWindow*` ceilings, injected for the same reason. */
   engagedWindow(): EngagedWindow;
+  /** The live `rooms.collect*` ceilings, injected for the same reason. */
+  collect(): CollectWindow;
   /**
    * The live `uploads.maxFiles` — how many files one post may carry.
    *
@@ -448,6 +451,7 @@ export class RoomService {
       budget: deps.budget,
       maxAgentDepth: deps.maxAgentDepth,
       engagedWindow: deps.engagedWindow,
+      collect: deps.collect,
       writer: {
         post: (roomId, input) => this.post(roomId, input),
         postNotice: (roomId, body, cascade, replyTo) =>
@@ -1171,7 +1175,7 @@ export class RoomService {
     // seeded correctly (A3.6b) and the row still on the old binding; re-running
     // sees the new agent already present, takes the same-agent branch, and
     // finishes the re-point. The only write a retry does not replay is the swap
-    // notice — best-effort by design (`room-notice-log.ts`'s degrade contract),
+    // notice — best-effort by design (`notices/notice-log.ts`'s degrade contract),
     // never the durable state.
     if (room.archived) this.unarchiveBridgedRoom(room);
     this.bridges.unarchiveBridge(bridge.roomId);
