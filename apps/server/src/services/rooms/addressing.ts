@@ -86,19 +86,45 @@ export function respondsTo(
  * The entry's own author is never a target — an agent does not answer itself,
  * and `always` in a two-agent room would otherwise be an immediate loop.
  *
- * @param opts.roomKind - The room's kind; `direct-only` reads it.
+ * **Outside a channel, implicit addressing belongs to a PERSON's message**
+ * (ADR 260814-025326). A direct message needs no `@`: whatever you type there is
+ * addressed to whoever is on the other side, which is why `direct-only` fires on
+ * everything in one and why the DM seed is the agent's `always` default. That is
+ * a claim about a person talking to their agents, and it does not survive a
+ * second agent joining: with every member on `always`, one "hello" made Ana
+ * answer, Ana's answer trigger Bo, and Bo's answer trigger Ana — one message in,
+ * four turns and two apology notices out, with nobody's setting changed. So a
+ * post an AGENT writes in a DM addresses only the members it NAMES. Nothing
+ * about a channel changes, and `@name` still reaches anyone anywhere.
+ *
+ * This is the same idea `standDownFallbackSeat` applies to the fallback seat — a
+ * post an agent wrote is a conversation already underway — and it is not
+ * arbitration: it never chooses between two agents that were addressed, and it
+ * never silences one that was named.
+ *
+ * **The test is `!== 'channel'`, not `=== 'dm'`**, so a room whose stored kind is
+ * neither takes the restrained side. `rooms.kind` is a `text` column narrowed by
+ * an unchecked cast (`room-rows.ts`), so "the schema says this cannot happen" is
+ * a claim about callers, not about storage.
+ *
+ * @param opts.roomKind - The room's kind; `direct-only` reads it too.
+ * @param opts.authorKind - What wrote the entry. Only a person's post carries a
+ *   DM's implicit address.
  * @param opts.entry - The committed entry.
  * @param opts.members - The room's roster.
  * @returns Author ids to trigger, before the cascade guard has its say.
  */
 export function selectTriggerTargets(opts: {
   roomKind: RoomKind;
+  authorKind: AuthorKind;
   entry: AddressingEntry;
   members: readonly AddressingMember[];
 }): string[] {
   const mentioned = new Set(opts.entry.mentions);
+  const impliesEveryone = opts.roomKind === 'channel' || opts.authorKind === 'human';
   return opts.members
     .filter((member) => member.kind === 'agent' && member.authorId !== opts.entry.authorId)
+    .filter((member) => impliesEveryone || mentioned.has(member.authorId))
     .filter((member) =>
       respondsTo(member.responseMode, {
         roomKind: opts.roomKind,

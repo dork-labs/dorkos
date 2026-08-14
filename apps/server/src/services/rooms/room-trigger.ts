@@ -438,16 +438,27 @@ export class RoomTriggerDispatcher {
       });
     }
 
+    // Resolved once and read twice, because both rules below ask the same
+    // question about the same post: only a PERSON's message implicitly addresses
+    // anybody. An author row that has vanished reads as `system`, which is the
+    // conservative side of both.
+    const authorKind = records.get(entry.authorId)?.kind ?? 'system';
+
     // The second rule, a no-op in a room with no seat: a post that named another
     // agent is that agent's to answer, and a post an AGENT wrote is a
     // conversation already underway — the seat catches neither. See
     // `standDownFallbackSeat` for the two escapes.
     const selected = standDownFallbackSeat({
       entry,
-      authorKind: records.get(entry.authorId)?.kind ?? 'system',
+      authorKind,
       seatAuthorId,
       members: addressing,
-      selected: selectTriggerTargets({ roomKind: room.kind, entry, members: addressing }),
+      selected: selectTriggerTargets({
+        roomKind: room.kind,
+        authorKind,
+        entry,
+        members: addressing,
+      }),
     });
     if (selected.length === 0) {
       // **The commonest shape of the ghost case comes through here**, and it is

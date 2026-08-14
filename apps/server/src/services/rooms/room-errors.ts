@@ -68,6 +68,21 @@ export type RoomErrorCode =
    */
   | 'SYSTEM_ROOM'
   | 'OPERATOR_ONLY'
+  /**
+   * A membership change would have left two or more agents in a room the owner
+   * is not on the roster of — the three-way rule (ADR 260814-025326). Agents may
+   * open rooms with each other; they may not hold a conversation the person
+   * cannot see.
+   *
+   * **A separate code from `OPERATOR_ONLY`, because it is a different fact.**
+   * `OPERATOR_ONLY` answers "who may do this" and the caller is the wrong
+   * person. This one answers "what shape may a room be in", and its caller is
+   * always the RIGHT person: both membership verbs are operator-only already, so
+   * the only caller this can refuse is the owner herself. Reusing the other code
+   * would tell her she is not allowed to change her own rooms, which is not what
+   * happened.
+   */
+  | 'OWNER_MUST_BE_PRESENT'
   /** A non-person tried to react. Agents do not send reactions (etiquette E16b). */
   | 'PEOPLE_ONLY'
   /**

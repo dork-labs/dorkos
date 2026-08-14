@@ -4409,6 +4409,20 @@
         "apps/client/src/layers/entities/interactions/model/legacy-frecency-migration.ts",
         "apps/client/src/layers/features/command-palette/model/palette-ranking.ts"
       ]
+    },
+    {
+      "id": "260814-025326",
+      "slug": "three-way-rule-for-agent-seeded-rooms",
+      "title": "Agents may open rooms with each other, and the person is always in them",
+      "status": "accepted",
+      "created": "2026-08-13",
+      "specSlug": "room-participation",
+      "affects": [
+        "apps/server/src/services/rooms/room-service.ts",
+        "apps/server/src/services/rooms/addressing.ts",
+        "apps/server/src/services/rooms/room-errors.ts",
+        "apps/server/src/routes/room-error-response.ts"
+      ]
     }
   ]
 }

@@ -42,6 +42,33 @@ model. See ADR `260726-170127` and `research/20260727_buzz-conversational-behavi
 
 ## Invariants
 
+- **A room that holds two or more agents holds the person too** — the three-way
+  rule (ADR `260814-025326`). An agent may open a room of any kind with a
+  colleague, and the owner's membership is the price. It is a property of the
+  ROSTER, checked at every verb that can change one: `createRoom` refuses a
+  non-owner seeding somebody else's agent into a room the owner is not in,
+  `addMember` refuses the second agent in such a room, and `removeMember`
+  refuses to take the OWNER out of a room two agents share — a guarantee whose
+  escape hatch is "leave afterwards" is not a guarantee. Do not re-express this
+  as a prompt, and do not add a `created_by` column to weaken it into "an
+  AGENT-seeded pair needs a witness": a pair the owner seeded and then walked out
+  of is just as invisible. Taking an AGENT out is never refused, so nothing is
+  ever wedged.
+- **Outside a channel, implicit addressing belongs to a PERSON's message.** A DM
+  needs no `@`, which is why `direct-only` answers everything in one and why the
+  DM seed is the agent's `always` default — and that is a claim about a person
+  talking to their agents. A post an AGENT writes in a DM therefore addresses
+  only the members it NAMES (`selectTriggerTargets`). Measured before the rule
+  existed: one "hello" in a two-agent DM cost four turns and two apology notices,
+  with nobody's setting changed. This is not arbitration — it never chooses
+  between two agents that were addressed, and never silences one that was named —
+  and it changes nothing about a channel. The test is spelled `!== 'channel'`,
+  never `=== 'dm'`: `rooms.kind` is a `text` column narrowed by an unchecked cast
+  (`room-rows.ts`), so an unrecognized kind must take the narrower branch. That
+  is the standing rule for every room-kind branch — **an unknown kind never gets
+  more reach than the narrower of the two known kinds** — and it is why the
+  bridged-create path refuses `UNKNOWN_CHAT_TYPE` rather than falling through to
+  `channel`.
 - **No arbitration.** Addressing three agents and getting three answers is the
   intended outcome. `responseMode` stops an agent answering when it was not
   addressed; it never orders or serializes the ones who were. Do not add a
