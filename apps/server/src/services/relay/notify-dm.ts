@@ -169,11 +169,15 @@ export function deliverNotifyDm(
     const author = deps.authors.resolveAgent(agentPath, displayName);
     // Idempotent on the member set: the DM the cockpit already opened for these
     // two is returned (and un-archived) rather than a second one beside it, so
-    // notifications collect in the conversation the person knows about. The
-    // agent is the creator, which is what makes this legal without the operator
-    // being present to ask — `requireSeedingAllowed` refuses an agent seeding a
-    // room with ANOTHER agent, and this roster holds only the sender and the
-    // person it is speaking to.
+    // notifications collect in the conversation the person knows about.
+    //
+    // The agent creates it, and that is legal without the operator asking
+    // because `requireSeedingAllowed` only engages when a roster holds an agent
+    // OTHER than its creator — this one holds the sender and the person it is
+    // speaking to, and nobody else. That was true before DOR-1208 widened the
+    // rule (an agent may now seat another agent in a room the owner is also in)
+    // and is true after it, for the same reason rather than by the new
+    // allowance: there is no second agent here to weigh.
     const room = deps.rooms.createRoom(
       { kind: 'dm', title: displayName, members: [deps.operatorAuthorId()], agentPaths: [] },
       author.id

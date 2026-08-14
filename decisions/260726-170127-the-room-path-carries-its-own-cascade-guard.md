@@ -84,12 +84,16 @@ budget is the blunt one that bounds a dishonest caller. Neither is redundant, an
 deleting either on the grounds that the other exists reopens a case the other
 never covered.
 
-Both budget windows are in-memory and reset on restart. For an accidental loop
-that costs nothing; for a deliberate caller it is a real limit, since
+Both budget windows were in-memory and reset on restart. For an accidental loop
+that costs nothing; for a deliberate caller it was a real limit, since
 `POST /api/admin/restart` sits behind the same pass-through gate and is
-rate-limited to 3 per 5 minutes — roughly 36 clearances an hour.
+rate-limited to 3 per 5 minutes — roughly 36 clearances an hour. **That residual
+is closed; see the amendment at the end of this section.**
 
-### Why that residual is acceptable, and what actually closes it
+### Why that residual was acceptable, and what actually closes it
+
+_Written while the residual was open, and kept because the reasoning still
+decides things — the amendment below says what changed and what did not._
 
 The durable counter that would close it is a follow-up, and the reason is
 stronger than "the prose is now accurate".
@@ -123,6 +127,40 @@ only exists once login is on; `lib/caller-authority.ts` says so in its own modul
 doc — `requireOperatorCookieUnderLogin` "with login off it allows, because there
 is no cookie for anyone to present." That allow is the same one the room path
 inherits. The dependency is the posture, not the ticket.
+
+### Amendment (2026-08-14, DOR-1205): the windows are durable
+
+Both budget windows now survive a restart. Each turn that actually runs is
+written to `room_turn_spend` (migration 0067) and the current hour is read back
+when `RoomTurnBudget` is constructed, so an hour means an hour of wall clock
+rather than an hour of uptime, and the ~36 clearances an hour above are no longer
+reachable.
+
+**Everything the section above argues still holds; only its factual claim
+changed.** Durability is not what makes the ceiling trustworthy against an
+adversary — a caller who can omit the header already has a shell on this machine
+and can spend the model budget directly, so this hardens one door in a building
+whose walls are elsewhere, and the posture (login on) is still the actual fix.
+The reason it was worth doing anyway is the cheapness the section reserved
+judgement on: the durable write turned out to cost one INSERT and one indexed
+DELETE per turn ACTUALLY RUN, on the path of a turn already about to spend
+seconds of model time, and **nothing on the read path at all** — the in-memory
+windows remain the whole decision and the table is read exactly once per process.
+"A durable counter is worth adding when it is cheap" was the standing condition,
+and it was met.
+
+What the durable version buys is for the accident, not the adversary, which is
+the case this whole section says the budget is really for: two `always` agents
+looping do not stop being misconfigured because the server restarted, and before
+this their hour reset every time somebody bounced the process.
+
+Three properties of the implementation are load-bearing and should not be
+"simplified" away. Rows are individual timestamps rather than per-hour buckets,
+because the window ROLLS and a bucket resets on a boundary. The prune rides the
+write (`at <= floor`), so the table holds at most the last hour and is a counter,
+never a spend history. And hydration bounds the window at BOTH ends — a row
+stamped in the future, which a backwards clock jump can leave behind, is ignored
+rather than counted, because only the lower bound is self-healing.
 
 **Cross-room cascades carry their depth but not their ancestry.** An agent
 mid-turn in room A that posts into room B inherits A's `cascadeRoot` at its

@@ -241,6 +241,10 @@ On a committed `post` entry by author `A` in room `R`, for each agent member `M`
 | `direct-only`    | `R.kind === 'dm'`, or `M.authorId ∈ entry.mentions` |
 | `always`         | always                                              |
 
+**Amended 2026-08-13 (DOR-1208): outside a channel, the table above is gated by who WROTE the entry.** When `R.kind !== 'channel'` and `A` is not a person, the only members triggered are those in `entry.mentions` — every row of the table collapses to the `mention-only` row for that entry, `always` and `direct-only` included. A person's message is unchanged, in every kind of room, and a channel is unchanged for every author.
+
+The reason is that this table was written when a DM held exactly one agent. A DM needs no `@`, which is why `direct-only` fires on everything in one and why the DM seed is the agent's `always` manifest default — and that is a claim about a person talking to their agents. Group DMs (§12.3) made it false: with every member on `always`, one message from a person cost four turns and two apology notices while two agents answered each other. See ADR `260814-025326`, which also relaxes the roster rule that had kept two agents out of one room in the first place. The gate is spelled `R.kind !== 'channel'` rather than `=== 'dm'`, so a stored kind that is neither takes the narrower side.
+
 Then the cascade guard (§6) may veto. Survivors are triggered on their `room_sessions` row, creating the session if absent. **That binding is first-write-wins**, which is what makes an agent's per-room context survive across messages rather than starting fresh each time.
 
 **What the agent says becomes a post.** This is the feature, and the spec previously stopped short of saying it. The agent's turn is run through the normal `triggerTurn` path — so it is a visible session turn, not invisible work — and its reply is written back as a `post` entry authored by that agent, **carrying the triggering entry's provenance** (`cascadeRoot`, and `cascadeDepth + 1`). The cascade guard reads exactly that provenance, so a reply that does not carry it is a reply the guard cannot see.

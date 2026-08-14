@@ -30,12 +30,13 @@
  *
  * 3. **Every way an agent can fail to answer is visible, and repeats are damped
  *    against agents rather than against people.** The guard refusing it, its
- *    session being busy, its turn failing: each writes a `notice` into the room.
- *    A silently dropped trigger is indistinguishable from a broken agent, and in
- *    a shared room the person who notices is not the person who configured it.
- *    But a notice per refusal is its own failure — over-participation, not
- *    silence, is what people complain about — so repeats are damped, on keys
- *    that differ by what each rule is about:
+ *    session being busy, its session failing to bind, its turn failing: each
+ *    writes a `notice` into the room — the bind case was the last holdout,
+ *    closed by DOR-1206. A silently dropped trigger is indistinguishable from a
+ *    broken agent, and in a shared room the person who notices is not the
+ *    person who configured it. But a notice per refusal is its own failure —
+ *    over-participation, not silence, is what people complain about — so
+ *    repeats are damped, on keys that differ by what each rule is about:
  *
  *    - The GUARD's refusal is damped per cascade, because "this exchange went
  *      around enough times" is a fact about one exchange.
@@ -45,7 +46,10 @@
  *      inside its window. A message that NAMED this agent (or any message in a
  *      DM, where naming is implicit) is never damped, because a direct question
  *      deserves a direct answer and the count is bounded by how many such
- *      messages the sender chose to write.
+ *      messages the sender chose to write. A session that could not be BOUND
+ *      damps the same way, for the narrower reason that its one reachable cause
+ *      — contention on the `(room, agent)` session row — is usually gone by the
+ *      next message.
  *    - A FAILED turn is never damped at all. Each error is a distinct event, and
  *      swallowing the second leaves the room's last word describing a fault that
  *      has already been superseded.
@@ -110,7 +114,6 @@ import type {
 import { newDispatchId } from '@dorkos/shared/dispatch-id';
 import { logError, logger } from '../../lib/logger.js';
 import { runInDispatch } from '../../lib/dispatch-context.js';
-import { logRefusal } from '../observability/refusals.js';
 import { recordDispatchEnd, recordDispatchStart } from '../observability/dispatch-buffers.js';
 import {
   selectTriggerTargets,
@@ -438,16 +441,27 @@ export class RoomTriggerDispatcher {
       });
     }
 
+    // Resolved once and read twice, because both rules below ask the same
+    // question about the same post: only a PERSON's message implicitly addresses
+    // anybody. An author row that has vanished reads as `system`, which is the
+    // conservative side of both.
+    const authorKind = records.get(entry.authorId)?.kind ?? 'system';
+
     // The second rule, a no-op in a room with no seat: a post that named another
     // agent is that agent's to answer, and a post an AGENT wrote is a
     // conversation already underway — the seat catches neither. See
     // `standDownFallbackSeat` for the two escapes.
     const selected = standDownFallbackSeat({
       entry,
-      authorKind: records.get(entry.authorId)?.kind ?? 'system',
+      authorKind,
       seatAuthorId,
       members: addressing,
-      selected: selectTriggerTargets({ roomKind: room.kind, entry, members: addressing }),
+      selected: selectTriggerTargets({
+        roomKind: room.kind,
+        authorKind,
+        entry,
+        members: addressing,
+      }),
     });
     if (selected.length === 0) {
       // **The commonest shape of the ghost case comes through here**, and it is
@@ -703,20 +717,23 @@ export class RoomTriggerDispatcher {
         // refunded — `tryReserve` has no counterpart, and inventing one to
         // return a single turn on a path that only fires under database
         // contention would be more machinery than the fault is worth.
-        // Silent: nothing was ever claimed here, so the room writes no notice
-        // and this line is the only record that an agent the person addressed
-        // was quietly dropped.
-        logRefusal('[rooms] could not bind a room session, so this agent was not triggered', {
-          reason: 'session_bind_failed',
-          visibility: 'silent',
-          // Named rather than ambient: this frame may be running inside another
-          // agent's dispatch (see the cascade refusal above).
-          dispatchId: target.dispatchId,
+        //
+        // Visible, not silent (DOR-1206): a dropped trigger with no room entry
+        // is indistinguishable from a broken agent, and in a shared room the
+        // person who notices is not the person who configured it.
+        // `reportSilence` writes and damps the durable notice; the STACK stays
+        // here rather than there, and unlike `turn_failed` it has nowhere else
+        // to go — a bind that never happened mints no session, so there is no
+        // agent stream for a person to open and no `runOneInDispatch` catch to
+        // fall back on. This line is the only record of what actually broke.
+        logger.warn('[rooms] could not bind a room session, so this agent was not triggered', {
           roomId: room.id,
           authorId: target.authorId,
           entryId: entry.id,
-          detail: logError(err),
+          dispatchId: target.dispatchId,
+          ...logError(err),
         });
+        this.notices.reportSilence(room, entry, target, 'unavailable', target.dispatchId);
       }
     }
     for (const target of bound) {
