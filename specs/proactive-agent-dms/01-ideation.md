@@ -221,6 +221,12 @@ transports.
   A held message that is invisible until 8am is indistinguishable from a lost
   one, which is the failure `.claude/rules/room-conduct.md` calls a refusal
   nobody was told about.
+- **Q9.** Slice 1 **un-archives** a DM the person had tidied away, because
+  `createRoom`'s DM branch revives whatever it matched and a message that reaches
+  nobody is the worse failure. Once G1 and G3 exist, should a declined delivery
+  or a quiet window suppress the un-archive — or is archiving a DM already an
+  implicit "not now" that consent should read? (Named in
+  `services/relay/notify-dm.ts` as accepted behavior until this is answered.)
 
 ## Suggested approach (phasing)
 

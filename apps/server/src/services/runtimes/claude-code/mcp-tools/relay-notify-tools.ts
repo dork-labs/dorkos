@@ -139,8 +139,12 @@ export function createRelayNotifyUserHandler(deps: McpToolDeps, identity: Sender
           return jsonContent(
             {
               sent: false,
-              error:
-                'No active chat sessions found. The user must message the bot first to establish a chat.',
+              // The DM half is said only when a DM was actually tried. Naming a
+              // channel skips the fallback, and an error that claimed a DM had
+              // failed would send the caller looking for a room nobody opened.
+              error: args.channel
+                ? 'No active chat sessions found. The user must message the bot first to establish a chat.'
+                : 'No active chat sessions found, and no direct message could be opened with you. The user must message the bot first to establish a chat.',
               availableAdapters: target.availableAdapters,
               code: 'NO_ACTIVE_SESSIONS',
             },

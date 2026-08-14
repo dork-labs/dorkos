@@ -8,12 +8,17 @@
  * made `relay_notify_user` a silent no-op, so an agent that finished a long job
  * announced it into the void while DorkOS's own direct messages sat unused.
  *
- * This module is the other half of the answer. The message goes into the 1:1
+ * This module is the other half of the answer. The message goes into the **1:1**
  * DM between the agent and the operator — a normal post, written by the agent,
  * through {@link RoomService.post}, with the room resolved (or opened once)
  * through {@link RoomService.createRoom}'s DM branch, which is idempotent on
- * the exact member set. So the notification lands in the conversation the
- * person already has with that agent rather than in a room per notification.
+ * the exact member set. So the notification lands in that one conversation
+ * rather than in a room per notification.
+ *
+ * "The 1:1" is meant literally: the member set is exactly this agent and the
+ * operator, so a GROUP DM that happens to contain the same agent is a different
+ * room and does not absorb notifications. Whether it ever should is parked as
+ * Q6 in `specs/proactive-agent-dms/01-ideation.md`.
  *
  * ## Three things this deliberately does NOT do
  *
@@ -33,10 +38,24 @@
  * DM the point is close to moot: the only other member is a person, and people
  * are never dispatched to.
  *
- * **It never throws.** Every failure — an agent the mesh cannot place, a room
- * that refuses the write — is caught, logged loudly and reported as a structured
- * outcome. A notification is the least important thing an agent is doing when it
- * calls this, and it must never be able to fail the call that reached it.
+ * **It never throws.** Every failure — an agent the mesh cannot place, a mesh
+ * read that throws under a concurrent write, a room that refuses — is caught,
+ * logged loudly and reported as a structured outcome. A notification is the
+ * least important thing an agent is doing when it calls this, and it must never
+ * be able to fail the call that reached it.
+ *
+ * ## One thing it does that is a decision, not an accident
+ *
+ * **An ARCHIVED DM is un-archived and reused.** `createRoom`'s DM branch
+ * un-archives whatever it matched, so a conversation the person tidied away
+ * comes back when that agent next has something to say. It is worth naming
+ * because the alternative reading is defensible — archiving is a person's
+ * signal, and reviving it uninvited overrides one. It stays because a message
+ * that reaches nobody is the worse failure of the two (the same posture
+ * `.claude/rules/room-conduct.md` takes on silence), and because the honest fix
+ * is consent rather than a second hidden room: whether quiet hours or a
+ * declined delivery should suppress the un-archive is Q9 in
+ * `specs/proactive-agent-dms/01-ideation.md`, for the phase that adds them.
  *
  * @module services/relay/notify-dm
  */
@@ -120,22 +139,33 @@ export function deliverNotifyDm(
   deps: NotifyDmDeps
 ): NotifyDmOutcome {
   const log = deps.logger ?? createTaggedLogger('NotifyDM');
-  const agentPath = deps.mesh.getProjectPath(input.agentId);
-  const manifest = deps.mesh.get(input.agentId);
-  if (!agentPath || !manifest) {
-    // Loud rather than debug: an agent that reached this tool IS registered, so
-    // a mesh that cannot place it is a real inconsistency, and the symptom the
-    // person sees — a notification that never arrives — says nothing about it.
-    log.warn('[Relay] a proactive message had nowhere to go: the mesh could not place its sender', {
-      agentId: input.agentId,
-      hasPath: Boolean(agentPath),
-      hasManifest: Boolean(manifest),
-    });
-    return { ok: false, reason: 'AGENT_NOT_RESOLVABLE' };
-  }
-
-  const displayName = manifest.displayName ?? manifest.name;
+  // **Everything is inside this try, the mesh reads included.** They read the
+  // `agents` table, so `SQLITE_BUSY` under a concurrent write is a throw — and
+  // outside the try it would leave `relay_notify_user` throwing instead of
+  // answering, which is worse than the silence this whole module replaces. The
+  // contract is "never throws", and a contract that holds only for the calls
+  // somebody remembered to wrap is not one.
+  let agentPath: string | undefined;
   try {
+    agentPath = deps.mesh.getProjectPath(input.agentId);
+    const manifest = deps.mesh.get(input.agentId);
+    if (!agentPath || !manifest) {
+      // Loud rather than debug: an agent that reached this tool IS registered,
+      // so a mesh that cannot place it is a real inconsistency, and the symptom
+      // the person sees — a notification that never arrives — says nothing
+      // about it.
+      log.warn(
+        '[Relay] a proactive message had nowhere to go: the mesh could not place its sender',
+        {
+          agentId: input.agentId,
+          hasPath: Boolean(agentPath),
+          hasManifest: Boolean(manifest),
+        }
+      );
+      return { ok: false, reason: 'AGENT_NOT_RESOLVABLE' };
+    }
+
+    const displayName = manifest.displayName ?? manifest.name;
     const author = deps.authors.resolveAgent(agentPath, displayName);
     // Idempotent on the member set: the DM the cockpit already opened for these
     // two is returned (and un-archived) rather than a second one beside it, so
@@ -154,6 +184,8 @@ export function deliverNotifyDm(
     const error = err instanceof Error ? err.message : String(err);
     log.warn('[Relay] a proactive message could not be delivered to a direct message', {
       agentId: input.agentId,
+      // Undefined when the mesh read itself threw — which is information, not a
+      // gap: it says the failure was before this sender was ever placed.
       agentPath,
       error,
     });

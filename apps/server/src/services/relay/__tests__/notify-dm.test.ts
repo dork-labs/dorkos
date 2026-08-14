@@ -12,9 +12,10 @@ import { describe, it, expect, vi } from 'vitest';
 import {
   createRoomHarness,
   agentLookupFor,
+  outcomeRunner,
   type RoomHarness,
 } from '../../rooms/__tests__/room-test-harness.js';
-import { deliverNotifyDm, type NotifyDmDeps } from '../notify-dm.js';
+import { deliverNotifyDm, type NotifyDmDeps, type NotifyDmOutcome } from '../notify-dm.js';
 
 const ANA_PATH = '/agents/ana';
 const ANA_ID = 'agent-ana';
@@ -79,7 +80,60 @@ describe('deliverNotifyDm', () => {
     expect(entries[0]!.kind).toBe('post');
   });
 
-  it('spends the cascade at the ceiling, so the notification cannot start a conversation', () => {
+  it('inherits the cascade of a turn the agent is already running', async () => {
+    // The other half of the cascade rule, and the one the ceiling test cannot
+    // see: an agent that notifies from INSIDE a turn is not un-provenanced, so
+    // `writePost` picks up its live claim through `activeTurnFor` and the
+    // notification is bounded by the budget that turn is already spending —
+    // rather than being stamped at the ceiling as if nothing had triggered it.
+    let midTurn: NotifyDmOutcome | undefined;
+    // A holder, because the runner has to read the deps at the moment the turn
+    // runs — the only moment a claim is actually held — and the deps cannot
+    // exist until the harness the runner is built into does.
+    const wiring: { deps?: NotifyDmDeps } = {};
+    const runner = outcomeRunner(() => {
+      midTurn = deliverNotifyDm({ agentId: ANA_ID, message: 'Deploy finished.' }, wiring.deps!);
+      return { text: 'on it' };
+    });
+    const harness = createRoomHarness({
+      agents: agentLookupFor({ [ANA_PATH]: { name: 'ana' } }),
+      maxAgentDepth: CEILING,
+      runner,
+    });
+    wiring.deps = {
+      rooms: harness.service,
+      authors: harness.authors,
+      mesh: meshWithAna(),
+      operatorAuthorId: () => harness.human,
+      logger: { warn: vi.fn() },
+    };
+
+    const dm = harness.service.createRoom(
+      { kind: 'dm', title: 'Ana', members: [], agentPaths: [ANA_PATH] },
+      harness.human
+    );
+    const asked = harness.service.post(dm.id, { authorId: harness.human, text: 'ship it' });
+    await harness.service.triggersIdle();
+
+    expect(midTurn?.ok).toBe(true);
+    const entries = harness.service.listEntries(dm.id, harness.human, { limit: 10 });
+    const notified = entries.find((e) => e.id === (midTurn?.ok ? midTurn.entryId : ''));
+    // The turn's own answer, written by the dispatcher under the same claim.
+    const replied = entries.find((e) => (e.body as { text?: string }).text === 'on it');
+    expect(notified).toBeDefined();
+    expect(replied).toBeDefined();
+    // The person's message is the root, and the notification is stamped exactly
+    // like the reply that turn produced — NOT at the ceiling, and not as a fresh
+    // cascade of its own.
+    expect(notified!.cascadeRoot).toBe(asked.id);
+    expect(notified!.cascadeDepth).toBeLessThan(CEILING);
+    expect({ root: notified!.cascadeRoot, depth: notified!.cascadeDepth }).toEqual({
+      root: replied!.cascadeRoot,
+      depth: replied!.cascadeDepth,
+    });
+  });
+
+  it('spends the cascade at the ceiling when no turn is behind it, so the notification cannot start a conversation', () => {
     const { harness, deps } = setup();
 
     const outcome = deliverNotifyDm({ agentId: ANA_ID, message: 'Deploy finished.' }, deps);
@@ -127,6 +181,33 @@ describe('deliverNotifyDm', () => {
       hasPath: false,
       hasManifest: true,
     });
+  });
+
+  it('never throws when the MESH read itself fails', () => {
+    // The mesh reads hit the `agents` table, so a concurrent write can raise
+    // SQLITE_BUSY. Outside the try that throw escaped `deliverNotifyDm`
+    // entirely and left `relay_notify_user` throwing instead of answering —
+    // strictly worse than the silence this module exists to replace.
+    const { deps, warn } = setup(
+      meshWithAna({
+        getProjectPath: () => {
+          throw new Error('SQLITE_BUSY: database is locked');
+        },
+      })
+    );
+
+    const outcome = deliverNotifyDm({ agentId: ANA_ID, message: 'Deploy finished.' }, deps);
+
+    expect(outcome).toMatchObject({
+      ok: false,
+      reason: 'DM_UNAVAILABLE',
+      error: expect.stringContaining('SQLITE_BUSY'),
+    });
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining('could not be delivered'),
+      // No path, because the failure was before this sender was ever placed.
+      expect.objectContaining({ agentId: ANA_ID, agentPath: undefined })
+    );
   });
 
   it('never throws when the rooms domain refuses — it reports and logs instead', () => {

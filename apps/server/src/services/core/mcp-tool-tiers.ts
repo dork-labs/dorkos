@@ -149,8 +149,20 @@ export const MCP_TOOL_TIERS = {
   // in front of routine cleanup is the fastest way to teach someone to stop reading
   // cards.
   relay_unregister_endpoint: { tier: 'act', title: 'Remove a message endpoint' },
-  // In-session only. Already consent-gated by the binding's `canInitiate` flag,
-  // which is the right gate for "may this reach the person at all".
+  // In-session only, and the two destinations it can reach are gated
+  // differently — which is why this comment says what is true rather than "it
+  // is consent-gated".
+  //   - An EXTERNAL chat (Telegram, Slack) is gated by the binding's
+  //     `canInitiate` flag: a person decided whether this agent may start
+  //     conversations there, and a false one refuses the send outright.
+  //   - The DorkOS DM fallback (DOR-1209) has NO consent gate. It writes into
+  //     the operator's own cockpit, on a surface they can mute, archive and
+  //     read at their leisure — the same place a room post already lands — so
+  //     it is bounded by being quiet rather than by permission.
+  // The gate that will cover both is recipient consent for RECURRING
+  // deliveries (`specs/proactive-agent-dms` G1); until it ships, `act` is the
+  // right tier for the same reason it is on every other send tool, not because
+  // something upstream already asked.
   relay_notify_user: { tier: 'act', title: 'Send the person a message' },
 
   // ── Relay: chat connections ─────────────────────────────────────────────

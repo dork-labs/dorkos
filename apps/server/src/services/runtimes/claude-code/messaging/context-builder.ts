@@ -95,8 +95,8 @@ IMPORTANT — Outbound messaging rules:
   relay_notify_user(message="…"). It resolves the bound chat (Telegram, Slack) and honors
   that channel's "agent may start conversations" permission — if that permission is off it
   returns INITIATE_NOT_ALLOWED instead of sending. With no external channel connected it
-  posts into your direct message with them inside DorkOS instead, so this tool reaches them
-  either way; the reply's "surface" says which one it used. Naming a channel
+  posts into your direct message with them inside DorkOS, so a stock install is never
+  silent; the reply's "surface" says which one it used. Naming a channel
   (channel="{adapter type or ID}") means that channel or nothing. Do NOT try to reach a
   human by publishing a raw relay.human.* subject with relay_send: that path enforces the
   same permission and will be denied.
