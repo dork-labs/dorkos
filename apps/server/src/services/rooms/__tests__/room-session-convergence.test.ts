@@ -278,7 +278,14 @@ describe('the repair sweep', () => {
     const report = await repairRoomSessionBindings(sweepDeps(store, [CANONICAL]));
 
     expect(bound(db)).toBe(CANONICAL);
-    expect(report).toEqual({ checked: 1, repaired: 1, stranded: 0, unreadable: 0 });
+    expect(report).toEqual({
+      checked: 1,
+      repaired: 1,
+      stranded: 0,
+      refused: 0,
+      failed: 0,
+      unreadable: 0,
+    });
   });
 
   it('repairs a stranding a PREVIOUS process recorded (DOR-1205)', async () => {
@@ -294,7 +301,75 @@ describe('the repair sweep', () => {
     const report = await repairRoomSessionBindings(sweepDeps(rebooted, [CANONICAL]));
 
     expect(bound(db)).toBe(CANONICAL);
-    expect(report).toEqual({ checked: 1, repaired: 1, stranded: 0, unreadable: 0 });
+    expect(report).toEqual({
+      checked: 1,
+      repaired: 1,
+      stranded: 0,
+      refused: 0,
+      failed: 0,
+      unreadable: 0,
+    });
+  });
+
+  it('never reports a refused write as a repair', async () => {
+    // The store refuses a rebind onto an id that is itself retired, and it
+    // refuses by doing nothing. Counting that as `repaired` reported a room
+    // fixed while it still pointed at the dead id, AND took it out of the
+    // stranded count that is the only thing that would tell anyone to look.
+    const { store, db } = storeBoundToPlaceholder();
+    store.sessionLedger.retire(PLACEHOLDER, CANONICAL);
+    store.sessionLedger.retire(CANONICAL, PLACEHOLDER);
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => {});
+
+    const report = await repairRoomSessionBindings(sweepDeps(store, []));
+
+    expect(bound(db)).toBe(PLACEHOLDER);
+    expect(report).toEqual({
+      checked: 1,
+      repaired: 0,
+      stranded: 0,
+      refused: 1,
+      failed: 0,
+      unreadable: 0,
+    });
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining('retired too'),
+      expect.objectContaining({ roomId: ROOM, deadSessionId: PLACEHOLDER })
+    );
+    warn.mockRestore();
+  });
+
+  it('counts a repair write that threw and keeps sweeping the rest', async () => {
+    // The repair write is the only I/O here that can fail after a verdict.
+    // Unwrapped, one busy database rejected the whole sweep — no report, and no
+    // warning for any binding after it.
+    const { store, db } = storeBoundToPlaceholder();
+    db.insert(roomSessions)
+      .values({ roomId: 'room-frontend', authorId: ANA, sessionId: 'also-dead', createdAt: 'now' })
+      .run();
+    store.sessionLedger.retire(PLACEHOLDER, CANONICAL);
+    vi.spyOn(store, 'rebindRoomSession').mockImplementation(() => {
+      throw new Error('database is locked');
+    });
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => {});
+
+    const report = await repairRoomSessionBindings(sweepDeps(store, []));
+
+    // Two bindings judged: the failed repair, and the one behind it that would
+    // have gone unexamined if the throw had escaped.
+    expect(report).toEqual({
+      checked: 2,
+      repaired: 0,
+      stranded: 1,
+      refused: 0,
+      failed: 1,
+      unreadable: 0,
+    });
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining('could not write the repair'),
+      expect.objectContaining({ roomId: ROOM, error: 'database is locked' })
+    );
+    warn.mockRestore();
   });
 
   it('keeps a dead binding with no known successor, and warns with room, agent and id', async () => {
@@ -306,7 +381,14 @@ describe('the repair sweep', () => {
     // NOT deleted. A binding pointing nowhere is a conversation somebody may
     // still find by hand; a deleted one is a decision nobody can review.
     expect(bound(db)).toBe(PLACEHOLDER);
-    expect(report).toEqual({ checked: 1, repaired: 0, stranded: 1, unreadable: 0 });
+    expect(report).toEqual({
+      checked: 1,
+      repaired: 0,
+      stranded: 1,
+      refused: 0,
+      failed: 0,
+      unreadable: 0,
+    });
     expect(warn).toHaveBeenCalledWith(
       expect.stringContaining('no transcript'),
       expect.objectContaining({ roomId: ROOM, authorId: ANA, agentPath: ANA_PATH })
@@ -321,7 +403,14 @@ describe('the repair sweep', () => {
     const report = await repairRoomSessionBindings(sweepDeps(store, [PLACEHOLDER]));
 
     expect(bound(db)).toBe(PLACEHOLDER);
-    expect(report).toEqual({ checked: 1, repaired: 0, stranded: 0, unreadable: 0 });
+    expect(report).toEqual({
+      checked: 1,
+      repaired: 0,
+      stranded: 0,
+      refused: 0,
+      failed: 0,
+      unreadable: 0,
+    });
     expect(warn).not.toHaveBeenCalled();
     warn.mockRestore();
   });
@@ -334,7 +423,14 @@ describe('the repair sweep', () => {
     const report = await repairRoomSessionBindings(deps);
 
     expect(deps.probed).toEqual([]);
-    expect(report).toEqual({ checked: 0, repaired: 0, stranded: 0, unreadable: 0 });
+    expect(report).toEqual({
+      checked: 0,
+      repaired: 0,
+      stranded: 0,
+      refused: 0,
+      failed: 0,
+      unreadable: 0,
+    });
   });
 
   it('reports nothing rather than throwing when the bindings cannot be read', async () => {
@@ -347,6 +443,8 @@ describe('the repair sweep', () => {
       checked: 0,
       repaired: 0,
       stranded: 0,
+      refused: 0,
+      failed: 0,
       unreadable: 0,
     });
   });
@@ -363,7 +461,14 @@ describe('the repair sweep', () => {
 
     const report = await repairRoomSessionBindings(deps);
 
-    expect(report).toEqual({ checked: 0, repaired: 0, stranded: 0, unreadable: 1 });
+    expect(report).toEqual({
+      checked: 0,
+      repaired: 0,
+      stranded: 0,
+      refused: 0,
+      failed: 0,
+      unreadable: 1,
+    });
     // And it must not do it quietly: a sweep that reached no verdict at all
     // reads exactly like a clean bill of health unless it says otherwise.
     expect(warn).toHaveBeenCalledWith(
@@ -389,7 +494,14 @@ describe('the repair sweep', () => {
 
     const report = await repairRoomSessionBindings(deps);
 
-    expect(report).toEqual({ checked: 1, repaired: 0, stranded: 0, unreadable: 1 });
+    expect(report).toEqual({
+      checked: 1,
+      repaired: 0,
+      stranded: 0,
+      refused: 0,
+      failed: 0,
+      unreadable: 1,
+    });
     expect(warn).not.toHaveBeenCalled();
     warn.mockRestore();
   });

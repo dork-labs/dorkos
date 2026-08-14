@@ -84,7 +84,7 @@
  *
  * @module server/services/rooms/turn-budget
  */
-import { roomTurnSpend, gt, lte, type Db } from '@dorkos/db';
+import { roomTurnSpend, and, gt, lte, type Db } from '@dorkos/db';
 import { logger } from '../../lib/logger.js';
 
 /** One hour, the window both config fields are denominated in. */
@@ -237,18 +237,28 @@ export class RoomTurnBudget {
    * The GLOBAL window is rebuilt in full, because that is the one that has to be
    * exact.
    *
+   * **A spend stamped in the future is not a spend from this hour.** The window
+   * is bounded at BOTH ends, because only the lower bound is self-healing: a
+   * clock that jumps backwards (an NTP correction, a VM resumed from a snapshot)
+   * leaves rows the prune's `at <= floor` will not delete and hydration's
+   * `at > floor` would happily count, so a room's ceiling would stay spent until
+   * wall clock caught up — and unlike the in-memory version, a restart would no
+   * longer heal it. Ignoring them costs nothing: a row from the future ages into
+   * the window on its own if the clock was right, and is pruned if it was not.
+   *
    * **Fails open, loudly.** A budget that cannot read its own table starts empty
    * — which is exactly the pre-DOR-1205 behaviour, and the alternative is a
    * server that will not boot because a counter is unreadable.
    */
   private hydrate(): void {
-    const floor = this.now() - this.windowMs;
+    const at = this.now();
+    const floor = at - this.windowMs;
     let rows: { roomId: string; at: number }[];
     try {
       rows = this.db
         .select({ roomId: roomTurnSpend.roomId, at: roomTurnSpend.at })
         .from(roomTurnSpend)
-        .where(gt(roomTurnSpend.at, floor))
+        .where(and(gt(roomTurnSpend.at, floor), lte(roomTurnSpend.at, at)))
         .orderBy(roomTurnSpend.at)
         .all();
     } catch (err) {

@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(server,db): room coordination state survives a restart (DOR-1205)'
+  - 'fix(server): the boot repair sweep survives a failed write and never counts a refusal as a repair (DOR-1205)'
 ---
 
 ### Changed

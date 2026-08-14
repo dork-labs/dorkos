@@ -7,6 +7,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { roomTurnSpend } from '@dorkos/db';
 import { RoomTurnBudget } from '../turn-budget.js';
+import { logger } from '../../../lib/logger.js';
 
 /**
  * A budget with a hand-cranked clock, its own database, and a global cap high
@@ -192,9 +193,22 @@ describe('RoomTurnBudget — surviving a restart (DOR-1205)', () => {
     advance(60_001);
     budget.tryReserve('room-1');
 
-    // The prune rides the write: the six spends are one hour apart, and only
-    // the one inside the current window is still there.
+    // The prune rides the write: five spends at one instant, then a sixth an
+    // hour later, and the sixth write is what drops the five that aged out.
     expect(db.select().from(roomTurnSpend).all()).toHaveLength(1);
+  });
+
+  it('ignores a spend stamped in the future, so a clock that went backwards cannot wedge a room', () => {
+    // An NTP correction or a VM resumed from a snapshot leaves rows the prune
+    // (`at <= floor`) will not delete. Counting them would keep a room's ceiling
+    // spent until wall clock caught up — and durably, where the in-memory
+    // version was healed by the very restart that now reloads them.
+    const { db, restart } = budgetOf(1);
+    db.insert(roomTurnSpend)
+      .values({ roomId: 'room-1', at: 1_000_000 + 10 * 60_000 })
+      .run();
+
+    expect(restart().tryReserve('room-1').allowed).toBe(true);
   });
 
   it('still bounds this process when the write fails, rather than refusing the turn', () => {
@@ -211,22 +225,30 @@ describe('RoomTurnBudget — surviving a restart (DOR-1205)', () => {
     insert.mockRestore();
   });
 
-  it('boots with an empty window rather than throwing when the table cannot be read', () => {
-    const { db } = budgetOf(2);
+  it('gives a SPENT ceiling back, loudly, when the durable window cannot be read at boot', () => {
+    // The fail-open branch, proved against a window that really was spent —
+    // asserting it on an empty database would pass whether or not the read ever
+    // happened. Restoring the allowance is the deliberate trade (a server that
+    // will not boot because a counter is unreadable is worse), so the warn is
+    // half the behaviour under test, not decoration.
+    const { db, budget, restart } = budgetOf(2);
+    budget.tryReserve('room-1');
+    budget.tryReserve('room-1');
+    expect(budget.tryReserve('room-1').allowed).toBe(false);
+
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => {});
     const select = vi.spyOn(db, 'select').mockImplementation(() => {
       throw new Error('database is locked');
     });
-
-    const budget = new RoomTurnBudget({
-      db,
-      limits: { perRoom: () => 2, global: () => 100 },
-    });
+    const rebooted = restart();
     select.mockRestore();
 
-    // Unreadable is the pre-DOR-1205 behaviour, not a refusal to start: a
-    // server that will not boot because a counter is unreadable is worse than
-    // one whose ceiling reset.
-    expect(budget.tryReserve('room-1').allowed).toBe(true);
+    expect(rebooted.tryReserve('room-1').allowed).toBe(true);
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining('already spent this hour'),
+      expect.objectContaining({ error: 'database is locked' })
+    );
+    warn.mockRestore();
   });
 });
 

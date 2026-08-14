@@ -1504,8 +1504,12 @@ export class RoomStore {
    * @param roomId - The room.
    * @param authorId - The agent member.
    * @param sessionId - The session the turn ran on.
+   * @returns Whether the binding moved. `false` means the refusal above fired,
+   *   which a caller that is REPAIRING has to know: a repair sweep counting a
+   *   refused write as a repair would report a room fixed while it is still
+   *   pointing at a dead id, and stop reporting it as stranded.
    */
-  rebindRoomSession(roomId: string, authorId: string, sessionId: string): void {
+  rebindRoomSession(roomId: string, authorId: string, sessionId: string): boolean {
     const successor = this.sessionLedger.successorFor(sessionId);
     if (successor !== undefined) {
       logger.warn('[rooms] refused to rebind a room onto a retired session id', {
@@ -1514,13 +1518,14 @@ export class RoomStore {
         retiredSessionId: sessionId,
         canonicalSessionId: successor,
       });
-      return;
+      return false;
     }
     this.db
       .update(roomSessions)
       .set({ sessionId })
       .where(and(eq(roomSessions.roomId, roomId), eq(roomSessions.authorId, authorId)))
       .run();
+    return true;
   }
 }
 

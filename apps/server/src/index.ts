@@ -956,7 +956,16 @@ async function start() {
         (await transcripts.hasTranscript(agentPath, sessionId)).exists,
     }).then(
       (report) => {
-        if (report.repaired > 0 || report.stranded > 0 || report.unreadable > 0) {
+        // Every non-clean outcome, including the two that mean a repair did not
+        // land (`refused`, `failed`) — a boot that quietly dropped those would
+        // read exactly like a boot with nothing to fix.
+        if (
+          report.repaired > 0 ||
+          report.stranded > 0 ||
+          report.refused > 0 ||
+          report.failed > 0 ||
+          report.unreadable > 0
+        ) {
           logger.info('[Rooms] checked room session bindings', { ...report });
         }
       },
