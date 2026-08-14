@@ -202,7 +202,7 @@ export function PersonalityTab({
         <FieldCardContent>
           <SettingRow
             label="Response Mode"
-            description="Controls when this agent responds to messages automatically"
+            description="Controls when this agent responds to messages automatically. Engaged only sets what a new direct message starts as: a channel always starts engaged, and a room you've already set up keeps what it has."
           >
             <Select
               value={responseMode}
@@ -227,21 +227,29 @@ export function PersonalityTab({
                 so it is a real setting for a DM seed too. Operator decision
                 DOR-773 (2026-08-13): offer it.
 
-                The description below is the same sentence the room sheet
-                shows for `engaged` when it has no per-install window ceilings
-                to quote yet (`explainEngaged` in
-                `entities/room/lib/response-mode.ts`, the `window === null`
-                branch) — this select has no room to read those ceilings from
-                either, so the two surfaces describe the same unknown the same
-                way rather than each inventing its own words for it.
+                `engaged`'s item is the bare rung name, not a sentence, to
+                match the terse style of the other four here — a `SelectItem`'s
+                children are portaled verbatim into the closed trigger's
+                `SelectValue` (Radix `SelectItemText`, `context.valueNode`),
+                and the trigger is a fixed-width, `whitespace-nowrap` box: a
+                full sentence there hard-cuts mid-word with no ellipsis rather
+                than wrapping or truncating cleanly. The scope caveat that
+                matters — this only seeds a NEW direct message, never an
+                existing room or a channel — lives in `SettingRow`'s
+                `description` above instead, where it renders once regardless
+                of which mode is picked.
+
+                Ordered loud to quiet, same direction as `RESPONSE_RUNGS` in
+                `entities/room/lib/response-mode.ts` (`silent < mention <
+                engaged < everything`): `engaged` sits between `direct-only`
+                (which behaves like "everything" for the DM this field
+                actually seeds) and `mention-only`.
               */}
               <SelectContent>
                 <SelectItem value="always">Always respond</SelectItem>
                 <SelectItem value="direct-only">Direct messages only</SelectItem>
+                <SelectItem value="engaged">Engaged</SelectItem>
                 <SelectItem value="mention-only">Only when mentioned</SelectItem>
-                <SelectItem value="engaged">
-                  Answers when you @mention it, then keeps answering for a while afterwards
-                </SelectItem>
                 <SelectItem value="silent">Never respond automatically</SelectItem>
               </SelectContent>
             </Select>

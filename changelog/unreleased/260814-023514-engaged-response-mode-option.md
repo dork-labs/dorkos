@@ -5,4 +5,4 @@ covers:
 
 ### Added
 
-- Agent settings now let you set an agent's response mode to "engaged" directly, without going through a room first. Pick it and the agent answers when you @mention it, then keeps answering for a while afterward before going quiet again. That's the same behavior you already see when you set it from a room (DOR-773).
+- Agent settings now offer "Engaged" as a response mode. Picking it sets what new direct messages with this agent start as. It doesn't change channels, which already start engaged, or any direct message you've already set up (DOR-773).

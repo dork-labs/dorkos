@@ -188,7 +188,7 @@ Every registered agent has a manifest describing its identity and configuration.
     behavior: {
       type: 'AgentBehavior',
       description:
-        "Response mode: 'always', 'direct-only', 'mention-only', or 'silent'. This is the agent's own default and it only seeds a direct message; a channel seeds 'engaged', and every room can override it",
+        "Response mode: 'always', 'direct-only', 'mention-only', 'engaged', or 'silent'. This is the agent's own default, and it only sets what a new direct message starts as. A channel always starts 'engaged', and a room someone already set up keeps what it has",
       default: "{ responseMode: 'always' }",
     },
     namespace: {

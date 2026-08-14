@@ -176,11 +176,15 @@ describe('PersonalityTab', () => {
     expect(screen.getByText('Always respond')).toBeInTheDocument();
   });
 
-  /** The corrected copy DOR-773 restored, matching the room sheet's own wording. */
-  const ENGAGED_DESCRIPTION =
-    'Answers when you @mention it, then keeps answering for a while afterwards';
+  /**
+   * The rung name DOR-773 restored to the picker — a bare label, not a
+   * sentence, because the trigger portals a `SelectItem`'s children verbatim
+   * into a fixed-width `whitespace-nowrap` box (Radix `SelectItemText` →
+   * `context.valueNode`) with no wrap and no ellipsis on overflow.
+   */
+  const ENGAGED_LABEL = 'Engaged';
 
-  it('shows a stored engaged mode with the room sheet’s own wording', () => {
+  it('shows a stored engaged mode as "Engaged" rather than blanking the control', () => {
     render(
       <PersonalityTab
         agent={{ ...mockAgent, behavior: { responseMode: 'engaged' as const } }}
@@ -190,22 +194,25 @@ describe('PersonalityTab', () => {
       />
     );
 
-    expect(screen.getByText(ENGAGED_DESCRIPTION)).toBeInTheDocument();
+    expect(screen.getByText(ENGAGED_LABEL)).toBeInTheDocument();
   });
 
-  it('offers engaged as a fresh choice, alongside the other four response modes', () => {
+  it('offers engaged as a fresh choice, ordered loud to quiet with the other four', () => {
     render(
       <PersonalityTab agent={mockAgent} soulContent="soul" nopeContent="nope" onUpdate={vi.fn()} />
     );
 
-    // DOR-773: engaged was withheld on a premise the ADR records as false (a
-    // direct message's engaged window opens exactly as a channel's does), so
-    // it is now offered like every other stored value.
+    // DOR-773: engaged was withheld on a premise
+    // decisions/260730-182745-response-mode-is-projected-onto-loudness-rungs.md
+    // records as false (a direct message's engaged window opens exactly as a
+    // channel's does), so it is now offered like every other stored value —
+    // between direct-only and mention-only, the same loud-to-quiet order as
+    // RESPONSE_RUNGS in entities/room/lib/response-mode.ts.
     expect(offeredModes()).toEqual([
       'Always respond',
       'Direct messages only',
+      ENGAGED_LABEL,
       'Only when mentioned',
-      ENGAGED_DESCRIPTION,
       'Never respond automatically',
     ]);
   });
@@ -218,12 +225,25 @@ describe('PersonalityTab', () => {
 
     fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Enter' });
     fireEvent.click(
-      within(screen.getByRole('listbox')).getByRole('option', { name: ENGAGED_DESCRIPTION })
+      within(screen.getByRole('listbox')).getByRole('option', { name: ENGAGED_LABEL })
     );
 
     expect(onUpdate).toHaveBeenCalledWith({
       behavior: { responseMode: 'engaged' },
     });
+  });
+
+  it('scopes engaged honestly: new direct messages only, never a channel or an already-configured room', () => {
+    render(
+      <PersonalityTab agent={mockAgent} soulContent="soul" nopeContent="nope" onUpdate={vi.fn()} />
+    );
+
+    expect(
+      screen.getByText(
+        "Engaged only sets what a new direct message starts as: a channel always starts engaged, and a room you've already set up keeps what it has.",
+        { exact: false }
+      )
+    ).toBeInTheDocument();
   });
 
   it('renders with null convention content without crashing', () => {
