@@ -41,7 +41,7 @@ The two are told apart by one question — **who holds the durable log** — and
 
 - The bypass stops being an open question. A reviewer finding `chat-bridge → RoomService.postExternal` now finds a record saying why it is the right door, instead of filing it as debt for the third time.
 - The conformance suite's scope is nameable: **remote-truth backends**. That makes it a real gate rather than an aspiration, and it means a future bridge (Discord, iMessage, whatever) is not blocked behind a port it has no business implementing.
-- The port is no longer dead. A change to `aggregateCommunityRooms`, the registry's degradation shape, or `CommunityWarning` now breaks a route test, which is the only thing that keeps a seam honest between the day it is built and the day it is needed.
+- The port is no longer dead. A change to `aggregateCommunityRooms`, the registry's degradation shape, or `CommunityWarning` now breaks a route test, which is the only thing that keeps a seam honest between the day it is built and the day it is needed. `routes/__tests__/rooms-communities.test.ts` registers a second backend into the real registry and asserts the degradation on the actual HTTP response, so the guard is end-to-end rather than a unit test calling the service directly.
 - The distinction is testable rather than stylistic: "who holds the durable log" has one answer per backend, and it decides projection-vs-community without a judgment call.
 
 ### Negative
@@ -50,6 +50,7 @@ The two are told apart by one question — **who holds the durable log** — and
 - **The drift guard is thin while only one community is registered.** The aggregation runs over an empty set on every install today, so what is protected is the call shape and the wire envelope, not the merge behaviour under load. The unit tests carry a fake second community precisely because production cannot yet.
 - **`warnings[]` is on the wire before anything renders it.** `GET /api/rooms` now always carries the key, and the cockpit ignores it. That is a deliberately small piece of forward payload — it is what makes "empty" distinguishable from "this server does not report it" — but it is a field with no consumer until a second community exists.
 - A remote community's rooms are **not** listed in `rooms` today, only counted in a warning, because nothing on this server resolves a `(community, roomId)` pair. Listing them would put clickable rooms in a sidebar that 404 on open.
+- **Part of the degradation contract is unreachable from the production consumer.** The aggregation suppresses a `'not-admitted'` community's rooms and renders its disclosure instead — but that branch reads `RegisteredCommunity.connection`, which only `registerLocalCommunity` populates, and the local community is the one this consumer excludes. So admission-based degradation stays exercised only by the conformance fakes and the unit tests until something drives `connect()` for a second community. Timeout and failure degradation do run on the real path.
 
 ## Alternatives Considered
 

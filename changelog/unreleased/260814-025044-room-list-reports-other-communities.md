@@ -1,8 +1,9 @@
 ---
 covers:
   - 'feat(server,shared): give the CommunityAdapter port a production consumer (DOR-1204)'
+  - 'fix(server,shared): sanitize community warning copy and prove the seam end-to-end (DOR-1204, review)'
 ---
 
 ### Added
 
-- The room list now tells you when a community DorkOS is connected to could not be reached. Nothing changes on a normal install, where every room is one on your own machine. This is groundwork for sharing rooms with other people (DOR-1204)
+- Groundwork for rooms shared with other people: the room list can now carry a report about a community it could not reach. Nothing changes on a normal install (DOR-1204)

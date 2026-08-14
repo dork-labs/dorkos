@@ -41,7 +41,7 @@ import { aggregateCommunityRooms } from './aggregate-community-rooms.js';
 import { communityRegistry, type CommunityRegistry } from './registry.js';
 
 /**
- * Say that a community has rooms this cockpit cannot open yet.
+ * Say that a community has rooms this surface does not show.
  *
  * A remote room is deliberately NOT projected into `rooms`: nothing on this
  * server resolves a `(community, roomId)` pair, so a listed remote room would
@@ -50,13 +50,17 @@ import { communityRegistry, type CommunityRegistry } from './registry.js';
  * community's rooms to avoid. Saying so is the honest half, and it is what the
  * warning channel is for.
  *
+ * The copy states what is true now and promises nothing about later: "aren't
+ * available here" is a fact about this surface, where "can't open yet" would be
+ * a roadmap commitment on a room list.
+ *
  * @param label - What a person calls the community.
  * @param count - How many rooms it listed.
  */
-function roomsNotOpenableYet(label: string, count: number): string {
+function roomsNotShownHere(label: string, count: number): string {
   return count === 1
-    ? `${label} has 1 room DorkOS can't open yet.`
-    : `${label} has ${count} rooms DorkOS can't open yet.`;
+    ? `1 room in ${label} isn't available here.`
+    : `${count} rooms in ${label} aren't available here.`;
 }
 
 /**
@@ -108,7 +112,7 @@ export async function listRoomsAcrossCommunities(opts: {
       {
         community: descriptor.community,
         label: descriptor.label,
-        message: roomsNotOpenableYet(descriptor.label, count),
+        message: roomsNotShownHere(descriptor.label, count),
       },
     ];
   });

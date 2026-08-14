@@ -106,7 +106,7 @@ describe('listRoomsAcrossCommunities', () => {
     expect(result.rooms.map((room) => room.id)).toEqual(['general']);
   });
 
-  it("aggregates a second community's rooms and says they cannot be opened yet", async () => {
+  it("aggregates a second community's rooms and says they are not available here", async () => {
     const { registry } = registryWithLocal();
     const remote = new FakeCommunityAdapter({ community: REMOTE, type: 'buzz' });
     remote.seedRoom({ entries: 1 });
@@ -129,7 +129,7 @@ describe('listRoomsAcrossCommunities', () => {
       {
         community: REMOTE,
         label: 'Dork Labs',
-        message: "Dork Labs has 2 rooms DorkOS can't open yet.",
+        message: "2 rooms in Dork Labs aren't available here.",
       },
     ]);
   });
@@ -163,8 +163,11 @@ describe('listRoomsAcrossCommunities', () => {
     });
 
     expect(result.rooms, 'a broken community elsewhere does not empty the sidebar').toEqual(rooms);
+    // Sanitized copy, not the adapter's own words — the schema promises "never
+    // a raw protocol string" and a relay's refusal text is written by a server
+    // we do not run.
     expect(result.warnings).toEqual([
-      { community: REMOTE, label: 'Dork Labs', message: 'relay closed the socket' },
+      { community: REMOTE, label: 'Dork Labs', message: 'Dork Labs could not be reached.' },
     ]);
   });
 
@@ -184,8 +187,9 @@ describe('listRoomsAcrossCommunities', () => {
       timeoutMs: 20,
     });
 
-    expect(result.warnings).toHaveLength(1);
-    expect(result.warnings[0]!.message).toMatch(/timed out/);
+    expect(result.warnings).toEqual([
+      { community: REMOTE, label: 'Dork Labs', message: 'Dork Labs took too long to answer.' },
+    ]);
   });
 
   it('counts one room as one room', async () => {
@@ -201,6 +205,6 @@ describe('listRoomsAcrossCommunities', () => {
       registry,
     });
 
-    expect(result.warnings[0]!.message).toBe("Dork Labs has 1 room DorkOS can't open yet.");
+    expect(result.warnings[0]!.message).toBe("1 room in Dork Labs isn't available here.");
   });
 });
