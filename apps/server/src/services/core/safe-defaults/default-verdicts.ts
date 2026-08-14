@@ -229,6 +229,12 @@ export const SAFE_DEFAULTS: Readonly<Record<string, unknown>> = {
   // lower.
   'rooms.engagedWindowMinutes': 10,
   'rooms.engagedWindowPosts': 5,
+  // The collect window's two ceilings (room-participation spec §10.4). Both are
+  // bounds on how many turns a burst of messages costs — a pause of zero and a
+  // cap of one would be one turn per message — so the shipped values are the
+  // bounded side, and the protective direction for both is HIGHER.
+  'rooms.collectDebounceMs': 500,
+  'rooms.collectMaxEntries': 20,
   // The two welcome-back bounds (spec `team-room-home`, D5.2). Both bound the
   // noise a return can produce: four hours before an absence counts at all, and
   // at most three posts when it does. Both carry across a wipe, in opposite

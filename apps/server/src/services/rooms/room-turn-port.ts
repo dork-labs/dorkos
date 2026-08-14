@@ -18,8 +18,8 @@
 import type { RoomContextData } from '@dorkos/shared/additional-context';
 import type { Room, RoomEntry } from '@dorkos/shared/room-schemas';
 import type { ProjectableAttachment } from './room-context.js';
-import type { RoomTurnUnanswered } from './room-notice-log.js';
-import type { WaitingKind } from './room-notices.js';
+import type { RoomTurnUnanswered } from './notices/notice-log.js';
+import type { WaitingKind } from './notices/notice-copy.js';
 
 /** One agent turn, as the room asks for it. */
 export interface RoomTurnRequest {

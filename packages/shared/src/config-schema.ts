@@ -1071,6 +1071,27 @@ export const UserConfigSchema = z.object({
        * judgement rather than a measurement.
        */
       engagedWindowPosts: z.number().int().min(0).max(100).default(5),
+      /**
+       * How long an agent waits for the room to stop talking before it answers,
+       * in milliseconds.
+       *
+       * When several people say things at once, the messages are gathered up and
+       * answered together — one considered reply instead of one rushed reply per
+       * message. This is how long "at once" means. Nothing is dropped: a message
+       * that arrives after the pause simply starts the next answer.
+       *
+       * Like every number in this area, it is a judgement rather than a
+       * measurement — see `meta/agent-etiquette.md` §9.
+       */
+      collectDebounceMs: z.number().int().min(0).max(10_000).default(500),
+      /**
+       * The most messages one gathered-up answer covers.
+       *
+       * Reaching it answers straight away instead of waiting out the pause, so a
+       * room that never goes quiet still gets replies. The messages past it are
+       * not lost — they start the next answer.
+       */
+      collectMaxEntries: z.number().int().min(1).max(200).default(20),
     })
     .default(() => ({
       maxAgentDepth: 3,
@@ -1080,6 +1101,8 @@ export const UserConfigSchema = z.object({
       lateReplyCeilingMinutes: 60,
       engagedWindowMinutes: 10,
       engagedWindowPosts: 5,
+      collectDebounceMs: 500,
+      collectMaxEntries: 20,
     })),
   /**
    * What your agents may say when you come back after being away (spec

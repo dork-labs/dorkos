@@ -22,8 +22,8 @@ import type { RoomWithRoster } from '@dorkos/shared/room-schemas';
 import type { AuthorRegistry } from '../author-registry.js';
 import type { RoomService } from '../room-service.js';
 import type { RoomStore } from '../room-store.js';
-import { createSessionWorkSource } from '../welcome-back-work.js';
-import type { WelcomeBackWorkSource } from '../welcome-back.js';
+import { createSessionWorkSource } from '../welcome-back/work-source.js';
+import type { WelcomeBackWorkSource } from '../welcome-back/greeter.js';
 import { agentLookupFor, createRoomHarness } from './room-test-harness.js';
 
 const TANGERINES = '/agents/tangerines';

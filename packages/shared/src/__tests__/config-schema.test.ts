@@ -63,6 +63,8 @@ describe('UserConfigSchema', () => {
         lateReplyCeilingMinutes: 60,
         engagedWindowMinutes: 10,
         engagedWindowPosts: 5,
+        collectDebounceMs: 500,
+        collectMaxEntries: 20,
       },
       welcomeBack: {
         enabled: true,
@@ -402,6 +404,8 @@ describe('USER_CONFIG_DEFAULTS', () => {
         lateReplyCeilingMinutes: 60,
         engagedWindowMinutes: 10,
         engagedWindowPosts: 5,
+        collectDebounceMs: 500,
+        collectMaxEntries: 20,
       },
       welcomeBack: {
         enabled: true,

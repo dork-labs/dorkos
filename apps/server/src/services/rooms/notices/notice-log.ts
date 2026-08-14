@@ -27,16 +27,16 @@
  * describe is over, the next occurrence is news again. No timer, no staleness,
  * nothing to tune.
  *
- * @module server/services/rooms/room-notice-log
+ * @module server/services/rooms/notices/notice-log
  */
 import type { Room, RoomEntry, RoomEntryBody } from '@dorkos/shared/room-schemas';
-import { logger } from '../../lib/logger.js';
+import { logger } from '../../../lib/logger.js';
 import {
   logRefusal,
   type RefusalReason,
   type RefusalVisibility,
-} from '../observability/refusals.js';
-import type { AuthorRegistry } from './author-registry.js';
+} from '../../observability/refusals.js';
+import type { AuthorRegistry } from '../author-registry.js';
 import {
   buildAgentGoneNotice,
   buildAgentUnavailableNotice,
@@ -47,8 +47,8 @@ import {
   buildWaitingNotice,
   type BusyContext,
   type WaitingKind,
-} from './room-notices.js';
-import type { BudgetRefusalScope } from './turn-budget.js';
+} from './notice-copy.js';
+import type { BudgetRefusalScope } from '../turn-budget.js';
 
 /** The cascade a written entry belongs to. */
 export interface CascadeStamp {

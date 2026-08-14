@@ -65,7 +65,7 @@ import {
   buildBridgeBlockedNotice,
   buildBridgeUndeliveredNotice,
   type BridgeBlockedReason,
-} from '../../rooms/room-notices.js';
+} from '../../rooms/notices/notice-copy.js';
 import { buildBridgePrincipal, type BridgePrincipalClassification } from '../bridge-principal.js';
 import type { Bridge, BridgeStore, ExternalRef } from './bridge-store.js';
 

@@ -1360,12 +1360,13 @@ describe('backfillComposerPrefs migration (composer-rich-text, DOR-948)', () => 
     );
   });
 
-  it('is registered in CONFIG_MIGRATIONS under a key above the newest tag', () => {
-    // v0.58.0 is tagged and package.json reads 0.58.0, so 0.59.0 is the newest
-    // key that can still run for everybody. The migration-safety guard below
-    // enforces the rule; this pins the effect.
-    const keys = Object.keys(CONFIG_MIGRATIONS);
-    expect(keys[keys.length - 1]).toBe('0.59.0');
+  it('is registered in CONFIG_MIGRATIONS under a key above the tag it shipped after', () => {
+    // This body rides `0.59.0`, which is no longer the LAST key — RP8 opened
+    // `0.60.0` above it once v0.59.0 was tagged. What matters here is unchanged:
+    // this body is registered under the key it was written for, and running that
+    // key applies it. The migration-safety guard is what enforces the rule about
+    // which key a NEW body may use.
+    expect(Object.keys(CONFIG_MIGRATIONS)).toContain('0.59.0');
 
     const store = createMockStore({ ui: { theme: 'dark' } });
     CONFIG_MIGRATIONS['0.59.0'](store);
@@ -1762,6 +1763,8 @@ describe('backfillRoomsDefaults migration (room cascade ceiling, DOR-526)', () =
       lateReplyCeilingMinutes: 60,
       engagedWindowMinutes: 10,
       engagedWindowPosts: 5,
+      collectDebounceMs: 500,
+      collectMaxEntries: 20,
     });
   });
 
@@ -1784,6 +1787,8 @@ describe('backfillRoomsDefaults migration (room cascade ceiling, DOR-526)', () =
       lateReplyCeilingMinutes: 60,
       engagedWindowMinutes: 10,
       engagedWindowPosts: 5,
+      collectDebounceMs: 500,
+      collectMaxEntries: 20,
     });
   });
 
@@ -1804,6 +1809,8 @@ describe('backfillRoomsDefaults migration (room cascade ceiling, DOR-526)', () =
       lateReplyCeilingMinutes: 60,
       engagedWindowMinutes: 10,
       engagedWindowPosts: 5,
+      collectDebounceMs: 500,
+      collectMaxEntries: 20,
     });
   });
 
@@ -1821,6 +1828,8 @@ describe('backfillRoomsDefaults migration (room cascade ceiling, DOR-526)', () =
       lateReplyCeilingMinutes: 60,
       engagedWindowMinutes: 10,
       engagedWindowPosts: 5,
+      collectDebounceMs: 500,
+      collectMaxEntries: 20,
     });
   });
 
@@ -1841,6 +1850,8 @@ describe('backfillRoomsDefaults migration (room cascade ceiling, DOR-526)', () =
       lateReplyCeilingMinutes: 60,
       engagedWindowMinutes: 2,
       engagedWindowPosts: 5,
+      collectDebounceMs: 500,
+      collectMaxEntries: 20,
     });
   });
 
@@ -1860,6 +1871,8 @@ describe('backfillRoomsDefaults migration (room cascade ceiling, DOR-526)', () =
       lateReplyCeilingMinutes: 60,
       engagedWindowMinutes: 10,
       engagedWindowPosts: 5,
+      collectDebounceMs: 500,
+      collectMaxEntries: 20,
     });
   });
 });

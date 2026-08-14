@@ -176,16 +176,22 @@ describe('a room says why an agent did not answer', () => {
       // they wrote messages naming Ana. Nothing an agent does inflates it.
       //
       // What stays damped is everything nobody directed at her — the test below.
+      //
+      // **Asked one at a time, and since RP8 that is the whole point of the
+      // shape.** The room now gathers a burst into ONE turn, so three questions
+      // typed in the same instant are one question as far as the model is
+      // concerned and earn one line between them — which is the collect
+      // mechanism working, not damping. The rule this test is about is the other
+      // one: a person who asks, waits, and asks again is answered every time.
       open(outcomeRunner(() => ({ text: null, unanswered: 'busy' })));
       for (const text of ['@ana is the build green?', '@ana still there?', '@ana hello?']) {
         service.post(room.id, { authorId: human, text });
+        await service.triggersIdle();
       }
-      await service.triggersIdle();
 
-      // Only the FIRST reaches the runner: the other two arrive while Ana holds
-      // a claim here, and the dispatcher refuses them outright rather than
-      // starting a second turn on her session (DOR-752).
-      expect(runner.turns.filter((turn) => turn.authorId === ana)).toHaveLength(1);
+      // Every one of them reached the runner, and every one of them came back
+      // busy — the runner's own refusal, before any model ran.
+      expect(runner.turns.filter((turn) => turn.authorId === ana)).toHaveLength(3);
       expect(noticesAbout(ana)).toHaveLength(3);
       expect(notices()).toHaveLength(3);
       expect(noticesAbout(ana).map((entry) => entry.body.notice)).toEqual([
@@ -193,6 +199,29 @@ describe('a room says why an agent did not answer', () => {
         'agent_busy',
         'agent_busy',
       ]);
+    });
+
+    it('gathers a burst of direct questions into one turn, and one line', async () => {
+      // The other side of the test above, and the reason it had to change
+      // (room-participation spec §10.4). Three messages typed at once are one
+      // moment, and answering each of them separately is the "several rushed
+      // replies" RP8 exists to stop. One turn ran, so there is one thing to
+      // report about, so there is one line.
+      open(outcomeRunner(() => ({ text: null, unanswered: 'busy' })));
+      for (const text of ['@ana is the build green?', '@ana still there?', '@ana hello?']) {
+        service.post(room.id, { authorId: human, text });
+      }
+      await service.triggersIdle();
+
+      expect(runner.turns.filter((turn) => turn.authorId === ana)).toHaveLength(1);
+      // The LAST message is what the turn answers; the two before it ride its
+      // ambient window, so none of the three is lost.
+      expect(runner.turns[0].prompt).toBe('@ana hello?');
+      expect(runner.turns[0].roomContext.pending.map((entry) => entry.text)).toEqual([
+        '@ana is the build green?',
+        '@ana still there?',
+      ]);
+      expect(noticesAbout(ana)).toHaveLength(1);
     });
 
     it('says it once for ordinary chatter that never asked it anything', async () => {
@@ -207,13 +236,15 @@ describe('a room says why an agent did not answer', () => {
       // apologies about an agent nobody had addressed.
       //
       // Nobody is owed a repeat for a message they never aimed at her.
+      // One at a time, so the collect window is not what is doing the work here
+      // — three turns really do run, and only one of them earns a line.
       open(outcomeRunner(() => ({ text: null, unanswered: 'busy' })));
       for (const text of ['is the build green?', 'still there?', 'hello?']) {
         service.post(room.id, { authorId: human, text });
+        await service.triggersIdle();
       }
-      await service.triggersIdle();
 
-      expect(runner.turns.filter((turn) => turn.authorId === ana)).toHaveLength(1);
+      expect(runner.turns.filter((turn) => turn.authorId === ana)).toHaveLength(3);
       expect(noticesAbout(ana)).toHaveLength(1);
       expect(notices()).toHaveLength(1);
     });
@@ -230,8 +261,10 @@ describe('a room says why an agent did not answer', () => {
       );
       for (const text of ['is the build green?', 'still there?']) {
         service.post(dm.id, { authorId: human, text });
+        // One at a time: a burst is one turn since RP8, and this test is about
+        // repeats over time rather than about messages typed in one breath.
+        await service.triggersIdle();
       }
-      await service.triggersIdle();
 
       const dmNotices = service
         .listEntries(dm.id, human, { limit: 50 })
@@ -246,6 +279,14 @@ describe('a room says why an agent did not answer', () => {
       // — so two agent-authored entries refuse against the same busy agent,
       // inside one exchange nobody typed. That is exactly the traffic E17 is
       // about, and it gets one line.
+      //
+      // **Ana is busy in ANOTHER room, and since RP8 that is the only busy that
+      // still refuses.** An agent mid-turn in THIS room is not refused any more;
+      // the message is held and becomes its next turn (room-participation spec
+      // §10.4), so there is no line to damp. One agent is one working directory,
+      // though, and a turn running in a room this reader cannot see is a turn
+      // nothing here will finish — that refusal stands, and it is the one this
+      // damping key is now about.
       //
       // Everyone is `mention-only` so that who runs is a property of the
       // message rather than of an engagement window, and so that Bo's and Cy's
@@ -276,9 +317,21 @@ describe('a room says why an agent did not answer', () => {
       for (const agent of [ana, bo, cy]) {
         service.updateMembership(room.id, human, agent, 'mention-only');
       }
+      // The other room, which only Ana is in. Nothing here reads its log; it
+      // exists to give Ana a turn that this room cannot finish.
+      const elsewhere = service.createRoom(
+        { kind: 'channel', title: 'Frontend', members: [], agentPaths: ['/agents/ana'] },
+        human
+      );
+      service.updateMembership(elsewhere.id, human, ana, 'mention-only');
 
-      // Ana is asked, and outruns the wait — so she holds a claim from here on.
-      service.post(room.id, { authorId: human, text: '@ana can you check the deploy?' });
+      // Ana is asked THERE, and outruns the wait — so she holds a claim in a
+      // room the readers of this one cannot see.
+      service.post(elsewhere.id, { authorId: human, text: '@ana can you check the deploy?' });
+      await settleUntil(
+        () => runner.turns.some((turn) => turn.roomId === elsewhere.id),
+        'Ana mid-turn in the other room'
+      );
       // One message, two agents, and each of their answers names Ana.
       service.post(room.id, { authorId: human, text: '@bo @cy can either of you chase it?' });
       await settleUntil(
@@ -498,8 +551,11 @@ describe('a room says why an agent did not answer', () => {
 
       for (const text of ['@ana is the build green?', '@ana still there?', '@ana hello?']) {
         service.post(room.id, { authorId: human, text });
+        // One at a time: three messages typed in one breath are one turn since
+        // RP8, so they are one bind attempt and one line. The rule under test is
+        // about asking again after waiting.
+        await service.triggersIdle();
       }
-      await service.triggersIdle();
 
       expect(runner.turns.filter((turn) => turn.authorId === ana)).toHaveLength(0);
       expect(noticesAbout(ana)).toHaveLength(3);

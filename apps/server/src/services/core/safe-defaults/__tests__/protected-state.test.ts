@@ -290,6 +290,8 @@ describe('applyProtectedState', () => {
       lateReplyCeilingMinutes: 60,
       engagedWindowMinutes: 10,
       engagedWindowPosts: 5,
+      collectDebounceMs: 500,
+      collectMaxEntries: 20,
     });
   });
 
