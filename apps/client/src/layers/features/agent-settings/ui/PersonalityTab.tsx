@@ -62,10 +62,7 @@ export function PersonalityTab({
   nopeContent: initialNopeContent,
   onUpdate,
 }: PersonalityTabProps) {
-  /**
-   * What this agent's manifest stores today, which decides both the selected
-   * option and whether the fifth one is listed at all — see the picker below.
-   */
+  /** What this agent's manifest stores today, which decides the picker's selection. */
   const responseMode = agent.behavior?.responseMode ?? 'always';
   const [traits, setTraits] = useState<Traits>((agent.traits ?? DEFAULT_TRAITS) as Traits);
   const [conventions, setConventions] = useState<Conventions>(
@@ -222,41 +219,30 @@ export function PersonalityTab({
                 <SelectValue />
               </SelectTrigger>
               {/*
-                Four of the enum's five to CHOOSE from, and the fifth appears
-                only when it is already stored. Same instinct as the room
-                roster's rung scale (`entities/room/lib/response-mode.ts`),
-                which narrows what may be picked and never what can be shown,
-                for the same two reasons.
-
-                Not offered: `engaged` is a room disposition that decays over a
-                room's log, and the only thing this manifest value does is seed
-                a DIRECT MESSAGE membership — one room, at join time, which is
-                a strange thing to set from an agent's own settings. A person
-                picks `engaged` per room, in the room sheet, where the sentence
-                under it quotes this install's own window.
-
-                It is a real setting there, not a degenerate one: the engaged
+                All five stored values are offered here. `engaged` was
+                withheld for one release on the premise that a direct message
+                has no window for it to decay against — false: the engaged
                 window opens in a direct message exactly as it does in a
-                channel (`room-trigger.ts` gates `engagementFor` on nothing).
-                Whether this select should offer it too is a product question
-                nobody has answered yet.
+                channel (`room-trigger.ts` gates `engagementFor` on nothing),
+                so it is a real setting for a DM seed too. Operator decision
+                DOR-773 (2026-08-13): offer it.
 
-                Not hidden either: `UpdateAgentRequestSchema` `.pick()`s
-                `behavior` off the manifest whole, so `PATCH /api/mesh/agents/:id`
-                accepts the full enum and a script — or a hand-edited
-                `agent.json` re-saved through that route — can really store it
-                here. Listing only four left Radix with no item matching the
-                value and it rendered the trigger EMPTY, which is a setting
-                nobody can read and nobody can fix.
+                The description below is the same sentence the room sheet
+                shows for `engaged` when it has no per-install window ceilings
+                to quote yet (`explainEngaged` in
+                `entities/room/lib/response-mode.ts`, the `window === null`
+                branch) — this select has no room to read those ceilings from
+                either, so the two surfaces describe the same unknown the same
+                way rather than each inventing its own words for it.
               */}
               <SelectContent>
                 <SelectItem value="always">Always respond</SelectItem>
                 <SelectItem value="direct-only">Direct messages only</SelectItem>
                 <SelectItem value="mention-only">Only when mentioned</SelectItem>
+                <SelectItem value="engaged">
+                  Answers when you @mention it, then keeps answering for a while afterwards
+                </SelectItem>
                 <SelectItem value="silent">Never respond automatically</SelectItem>
-                {responseMode === 'engaged' && (
-                  <SelectItem value="engaged">Stays in the conversation (per room)</SelectItem>
-                )}
               </SelectContent>
             </Select>
           </SettingRow>

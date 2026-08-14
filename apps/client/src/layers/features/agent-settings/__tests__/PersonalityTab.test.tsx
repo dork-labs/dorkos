@@ -176,15 +176,11 @@ describe('PersonalityTab', () => {
     expect(screen.getByText('Always respond')).toBeInTheDocument();
   });
 
-  /**
-   * The blank-control failure, pinned from both sides.
-   *
-   * `UpdateAgentRequestSchema` `.pick()`s `behavior` off the manifest whole, so
-   * `PATCH /api/mesh/agents/:id` accepts the full `ResponseModeSchema` — this
-   * value is reachable without any UI ever offering it, and a Select with no
-   * matching item renders its trigger empty.
-   */
-  it('shows a stored engaged mode rather than blanking the control', () => {
+  /** The corrected copy DOR-773 restored, matching the room sheet's own wording. */
+  const ENGAGED_DESCRIPTION =
+    'Answers when you @mention it, then keeps answering for a while afterwards';
+
+  it('shows a stored engaged mode with the room sheet’s own wording', () => {
     render(
       <PersonalityTab
         agent={{ ...mockAgent, behavior: { responseMode: 'engaged' as const } }}
@@ -194,35 +190,40 @@ describe('PersonalityTab', () => {
       />
     );
 
-    expect(screen.getByText('Stays in the conversation (per room)')).toBeInTheDocument();
+    expect(screen.getByText(ENGAGED_DESCRIPTION)).toBeInTheDocument();
   });
 
-  it('does not offer engaged as a fresh choice, because it only seeds a DM here', () => {
+  it('offers engaged as a fresh choice, alongside the other four response modes', () => {
     render(
       <PersonalityTab agent={mockAgent} soulContent="soul" nopeContent="nope" onUpdate={vi.fn()} />
     );
 
-    // Four options and no fifth: at the manifest level `engaged` would seed a
-    // direct message, where the window never opens. A person picks it per room.
+    // DOR-773: engaged was withheld on a premise the ADR records as false (a
+    // direct message's engaged window opens exactly as a channel's does), so
+    // it is now offered like every other stored value.
     expect(offeredModes()).toEqual([
       'Always respond',
       'Direct messages only',
       'Only when mentioned',
+      ENGAGED_DESCRIPTION,
       'Never respond automatically',
     ]);
   });
 
-  it('offers the fifth only to the agent that already stores it', () => {
+  it('commits engaged when the reader picks it', () => {
+    const onUpdate = vi.fn();
     render(
-      <PersonalityTab
-        agent={{ ...mockAgent, behavior: { responseMode: 'engaged' as const } }}
-        soulContent="soul"
-        nopeContent="nope"
-        onUpdate={vi.fn()}
-      />
+      <PersonalityTab agent={mockAgent} soulContent="soul" nopeContent="nope" onUpdate={onUpdate} />
     );
 
-    expect(offeredModes()).toContain('Stays in the conversation (per room)');
+    fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Enter' });
+    fireEvent.click(
+      within(screen.getByRole('listbox')).getByRole('option', { name: ENGAGED_DESCRIPTION })
+    );
+
+    expect(onUpdate).toHaveBeenCalledWith({
+      behavior: { responseMode: 'engaged' },
+    });
   });
 
   it('renders with null convention content without crashing', () => {
