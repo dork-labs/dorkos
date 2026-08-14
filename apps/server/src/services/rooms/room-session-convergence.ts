@@ -25,21 +25,24 @@
  * next message probes for a transcript, finds none, reports `hasStarted: false`,
  * and the agent starts over from nothing — every time, silently, forever.
  *
- * **At boot the sweep reports; it does not repair, and cannot.** Repair needs a
- * successor, and the only thing that knows one is {@link RoomSessionLedger},
- * whose memory of retired ids is per-process and therefore empty at startup. So
- * on a fresh process every dead binding takes the warn branch by construction,
- * and that is the whole of what the boot sweep delivers: a loud, specific line
- * naming the room, the agent and the id, where before there was nothing at all.
+ * **At boot the sweep now repairs what it can prove, and reports the rest**
+ * (DOR-1205). Repair needs a successor, and the only thing that knows one is
+ * {@link RoomSessionLedger} — whose memory of retired ids used to be
+ * per-process and therefore empty at startup, so on a fresh process every dead
+ * binding took the warn branch by construction. Retirements are written to
+ * `room_session_retirements` now, so a rename recorded by ANY previous process
+ * repairs its binding at the next boot, and the branch that was a seam waiting
+ * for a durable ledger is the one that does the work.
  *
- * The repair branch is not decoration. It serves a sweep run AFTER a rekey this
- * same process observed, and it is the seam a durable retirement ledger plugs
- * into — at which point boot-time repair becomes real without this file
- * changing shape. Keeping it costs one map lookup and keeps that seam honest;
- * removing it would mean re-deriving it in the slice that needs it.
+ * **A stranding with no recorded successor is still only reported, and that is
+ * a decision rather than a gap.** The obvious next guess — "the newest
+ * transcript in this agent's directory" — would silently graft one room's
+ * conversation onto another's, which is worse than the amnesia it would be
+ * curing. Unknown stays unknown, out loud, with everything a person needs to
+ * find the transcript by hand.
  *
- * Nothing here deletes a binding. A binding pointing somewhere useless is a
- * conversation whose transcript may still be found by hand; a deleted one is a
+ * Nothing here deletes a binding either. A binding pointing somewhere useless is
+ * a conversation whose transcript may still be found by hand; a deleted one is a
  * decision nobody can review.
  *
  * @module server/services/rooms/room-session-convergence
@@ -119,10 +122,33 @@ export interface RoomBindingRepairReport {
    * counted here; it is in {@link RoomBindingRepairReport.unreadable}.
    */
   checked: number;
-  /** Bindings moved onto a canonical id this process knew the successor for. */
+  /** Bindings moved onto a canonical id the ledger could name. */
   repaired: number;
   /** Bindings left pointing at an id with no transcript and no known successor. */
   stranded: number;
+  /**
+   * Bindings whose successor was named but whose write the store REFUSED,
+   * because the successor is itself a retired id.
+   *
+   * Counted apart from {@link RoomBindingRepairReport.repaired} because a
+   * refused write moves nothing: counting it as a repair would report a room
+   * fixed while it still points at a dead session, and would take it out of the
+   * stranded count that is the only thing telling anyone to look. Reachable
+   * whenever the retirement table describes a loop, which nothing in SQLite
+   * forbids across two processes.
+   */
+  refused: number;
+  /**
+   * Bindings whose repair write threw — a locked or busy database, most
+   * likely.
+   *
+   * The write is the one piece of I/O in this loop that can fail after a
+   * verdict, and before it was counted here a single `SQLITE_BUSY` rejected the
+   * whole sweep: the report was discarded and every remaining binding went
+   * unexamined and unwarned, out of a function whose contract is that it never
+   * throws.
+   */
+  failed: number;
   /**
    * Bindings whose transcript could not be read at all, so nothing is known
    * about them either way.
@@ -148,22 +174,37 @@ export interface RoomBindingRepairReport {
  * test-mode all return `undefined` from `getInternalSessionId`, so their ids
  * never moved and there is nothing to look for.
  *
- * **At boot, expect the warn branch and only the warn branch.** A binding is
- * repaired only when the ledger can NAME its successor, and the ledger's memory
- * is per-process, so at startup it knows nothing (see this module's header).
- * Guessing instead — "the newest transcript in this agent's directory" — would
+ * **A binding is repaired only when the ledger can NAME its successor**, which
+ * since DOR-1205 includes renames recorded by an earlier process — that is the
+ * case boot-time repair exists for. The successor is followed to the end of its
+ * chain, so a session renamed twice lands on the id that is live rather than on
+ * another dead one, and the move goes through `RoomStore.rebindRoomSession` so
+ * it obeys the same retired-id refusal every other rebind does.
+ *
+ * When the ledger knows nothing, the sweep says what it found — with everything
+ * a person needs to find the transcript by hand — and leaves the row alone.
+ * Guessing instead ("the newest transcript in this agent's directory") would
  * silently graft one room's conversation onto another's, which is worse than the
- * amnesia it would be curing. So the sweep says what it found, with everything a
- * person needs to find the transcript by hand, and leaves the row alone.
+ * amnesia it would be curing.
  *
  * Never throws, and never goes quiet: a sweep that could judge nothing says so.
+ * Every step that can fail — the binding read, the transcript probe, and the
+ * repair WRITE — is counted into its own field and the loop continues, because
+ * one busy database on row three must not cost rows four onwards their warning.
  *
  * @param deps - The store, the agent lookup and the transcript probe.
  */
 export async function repairRoomSessionBindings(
   deps: RoomBindingRepairDeps
 ): Promise<RoomBindingRepairReport> {
-  const report: RoomBindingRepairReport = { checked: 0, repaired: 0, stranded: 0, unreadable: 0 };
+  const report: RoomBindingRepairReport = {
+    checked: 0,
+    repaired: 0,
+    stranded: 0,
+    refused: 0,
+    failed: 0,
+    unreadable: 0,
+  };
   let bindings;
   try {
     bindings = deps.store.sessionLedger.list();
@@ -201,14 +242,47 @@ export async function repairRoomSessionBindings(
 
     const successor = deps.store.sessionLedger.successorFor(binding.sessionId);
     if (successor !== undefined) {
-      deps.store.rebindRoomSession(binding.roomId, binding.authorId, successor);
-      report.repaired += 1;
-      logger.info('[rooms] repaired a room binding that pointed at a renamed session', {
-        roomId: binding.roomId,
-        authorId: binding.authorId,
-        deadSessionId: binding.sessionId,
-        canonicalSessionId: successor,
-      });
+      let moved: boolean;
+      try {
+        moved = deps.store.rebindRoomSession(binding.roomId, binding.authorId, successor);
+      } catch (err) {
+        // The one piece of I/O here that can fail AFTER a verdict. Unwrapped, a
+        // single busy database threw out of this loop and took the report and
+        // every remaining binding's warning with it.
+        report.failed += 1;
+        logger.warn('[rooms] could not write the repair for a room binding', {
+          roomId: binding.roomId,
+          authorId: binding.authorId,
+          deadSessionId: binding.sessionId,
+          canonicalSessionId: successor,
+          error: err instanceof Error ? err.message : String(err),
+        });
+        continue;
+      }
+      if (moved) {
+        report.repaired += 1;
+        logger.info('[rooms] repaired a room binding that pointed at a renamed session', {
+          roomId: binding.roomId,
+          authorId: binding.authorId,
+          deadSessionId: binding.sessionId,
+          canonicalSessionId: successor,
+        });
+        continue;
+      }
+      // The store refused: the successor is itself retired, so nothing moved and
+      // the room is still stranded. Saying "repaired" here would be a lie the
+      // report told about a row it had not touched.
+      report.refused += 1;
+      logger.warn(
+        '[rooms] could not repair a room binding — the id that replaced its session is retired too',
+        {
+          roomId: binding.roomId,
+          authorId: binding.authorId,
+          agentPath,
+          deadSessionId: binding.sessionId,
+          refusedSessionId: successor,
+        }
+      );
       continue;
     }
 

@@ -4005,10 +4005,11 @@
       "status": "accepted",
       "created": "2026-07-26",
       "specSlug": "rooms",
-      "lastVerified": "2026-08-06",
+      "lastVerified": "2026-08-14",
       "affects": [
         "apps/server/src/services/rooms/cascade-guard.ts",
-        "apps/server/src/services/rooms/turn-budget.ts"
+        "apps/server/src/services/rooms/turn-budget.ts",
+        "packages/db/src/schema/room-coordination.ts"
       ]
     },
     {

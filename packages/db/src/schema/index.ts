@@ -24,6 +24,7 @@ export * from './auth.js';
 export * from './connected-accounts.js';
 export * from './connector-attachments.js';
 export * from './rooms.js';
+export * from './room-coordination.js';
 export * from './read-cursors.js';
 export * from './bridges.js';
 export * from './search.js';

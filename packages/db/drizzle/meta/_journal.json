@@ -470,6 +470,13 @@
       "when": 1786541868382,
       "tag": "0066_lyrical_major_mapleleaf",
       "breakpoints": true
+    },
+    {
+      "idx": 67,
+      "version": "6",
+      "when": 1786703278605,
+      "tag": "0067_spooky_jazinda",
+      "breakpoints": true
     }
   ]
 }
