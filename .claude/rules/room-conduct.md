@@ -77,24 +77,23 @@ model. See ADR `260726-170127` and `research/20260727_buzz-conversational-behavi
   that writes no room entry is indistinguishable from a broken agent, and the
   person who notices is not the person who configured it. If you add a path that
   can decline to run a turn — or one where a turn stops producing anything and
-  waits — it writes a durable room notice in the room's own voice. All eight live
-  in `room-notices.ts` (`cascade_stopped`, `budget_reached`, `agent_busy`,
-  `turn_failed`, `agent_gone`, `agent_unavailable`, `awaiting_approval`, `halted`),
-  and every one of them is
-  written through `room-notice-log.ts` — its `write` is the single writer, and
-  each damping key sits beside the write it damps. Nothing outside that module
-  reaches `postNotice` in production; a second call site hand-rolling its own `try` is how a
-  halt in an archived room came to throw where every other notice degraded. A
-  new way to go quiet earns a new code there, never a free-text line.
-  `RoomNoticeCodeSchema` carries one more, `addressing_changed`, and it is
-  deliberately not in that module: migration 0039 wrote it once, into every
-  channel whose members it moved to `engaged`, and nothing at runtime writes it.
-  `halted` is damped per room and re-armed by the next claim, so pressing Stop
-  twice in a quiet room is one line. Two silences are deliberate and pinned by
-  tests: an agent that ran a turn and chose to say nothing (conduct, not a
-  fault), and the depth refusal against an agent's own un-provenanced post
-  (nothing was triggered, and no damping key exists that would keep a notice
-  from spraying).
+  waits — it writes a durable room notice in the room's own voice. All eight
+  live in `room-notices.ts` (`cascade_stopped`, `budget_reached`, `agent_busy`,
+  `turn_failed`, `agent_gone`, `agent_unavailable`, `awaiting_approval`,
+  `halted`), and every one of them is written through `room-notice-log.ts` —
+  its `write` is the single writer, and each damping key sits beside the write
+  it damps. Nothing outside that module reaches `postNotice` in production; a
+  second call site hand-rolling its own `try` is how a halt in an archived room
+  came to throw where every other notice degraded. A new way to go quiet earns
+  a new code there, never a free-text line. `RoomNoticeCodeSchema` carries one
+  more, `addressing_changed`, and it is deliberately not in that module:
+  migration 0039 wrote it once, into every channel whose members it moved to
+  `engaged`, and nothing at runtime writes it. `halted` is damped per room and
+  re-armed by the next claim, so pressing Stop twice in a quiet room is one
+  line. Two silences are deliberate and pinned by tests: an agent that ran a
+  turn and chose to say nothing (conduct, not a fault), and the depth refusal
+  against an agent's own un-provenanced post (nothing was triggered, and no
+  damping key exists that would keep a notice from spraying).
 - **An ASIDE turn is the one refusal nobody is told about, and here is the whole
   exception.** A welcome-back offer (`RoomTriggerDispatcher.askAside`,
   `welcome-back.ts`, DOR-1046) runs a turn that no message in the room triggered:

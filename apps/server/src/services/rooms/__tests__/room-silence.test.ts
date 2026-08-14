@@ -442,6 +442,37 @@ describe('a room says why an agent did not answer', () => {
       expect(notices()[0].body.text).not.toMatch(/SQLITE_BUSY|Error|stack|undefined|null/);
     });
 
+    it('drops only the target whose bind failed, and binds/claims/answers the other normally', async () => {
+      // Pins the two-pass invariant this catch reaches into: `claimTargets`
+      // binds every affordable target in its own loop, each wrapped in its
+      // own try/catch, PRECISELY so one target's contention cannot take the
+      // others down with it (see the comment above the `bound` array). A
+      // shared try around the whole loop would have made Bo collateral damage
+      // for a fault that was never his.
+      open(scriptedRunner(), ['/agents/ana', '/agents/bo']);
+      const real = store.bindRoomSession.bind(store);
+      vi.spyOn(store, 'bindRoomSession').mockImplementation(
+        (roomId, authorId, sessionId, createdAt) => {
+          if (authorId === ana) throw new Error('SQLITE_BUSY: database is locked');
+          return real(roomId, authorId, sessionId, createdAt);
+        }
+      );
+
+      await seedAndSettle();
+
+      // Bo is untouched by Ana's contention: bound, claimed, and answered
+      // exactly once.
+      expect(runner.turns.filter((turn) => turn.authorId === bo)).toHaveLength(1);
+      expect(postsBy(bo)).toHaveLength(1);
+      // Ana never ran — her bind failed before a claim was ever taken.
+      expect(runner.turns.filter((turn) => turn.authorId === ana)).toHaveLength(0);
+      expect(postsBy(ana)).toHaveLength(0);
+      // Exactly one notice, naming Ana and nobody else.
+      expect(notices()).toHaveLength(1);
+      expect(notices()[0].body.notice).toBe('agent_unavailable');
+      expect(notices()[0].body.subjectAuthorId).toBe(ana);
+    });
+
     it('says it once for ordinary chatter that keeps failing to bind', async () => {
       // (c) the second (and third) mention in the same cascade does not
       // duplicate the notice — the same damping `agent_busy` gets, because the

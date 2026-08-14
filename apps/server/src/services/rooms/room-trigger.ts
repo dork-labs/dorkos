@@ -112,7 +112,7 @@ import type {
   RoomPresenceState,
 } from '@dorkos/shared/room-schemas';
 import { newDispatchId } from '@dorkos/shared/dispatch-id';
-import { logger } from '../../lib/logger.js';
+import { logError, logger } from '../../lib/logger.js';
 import { runInDispatch } from '../../lib/dispatch-context.js';
 import { recordDispatchEnd, recordDispatchStart } from '../observability/dispatch-buffers.js';
 import {
@@ -709,15 +709,18 @@ export class RoomTriggerDispatcher {
         //
         // Visible, not silent (DOR-1206): a dropped trigger with no room entry
         // is indistinguishable from a broken agent, and in a shared room the
-        // person who notices is not the person who configured it. The raw error
-        // stays off the room log and goes here instead, message only — the same
-        // split every turn failure in this file keeps (see `runOneInDispatch`'s
-        // catch below). `reportSilence` writes and damps the durable notice.
+        // person who notices is not the person who configured it.
+        // `reportSilence` writes and damps the durable notice; the STACK stays
+        // here rather than there, and unlike `turn_failed` it has nowhere else
+        // to go — a bind that never happened mints no session, so there is no
+        // agent stream for a person to open and no `runOneInDispatch` catch to
+        // fall back on. This line is the only record of what actually broke.
         logger.warn('[rooms] could not bind a room session, so this agent was not triggered', {
           roomId: room.id,
           authorId: target.authorId,
           entryId: entry.id,
-          error: err instanceof Error ? err.message : String(err),
+          dispatchId: target.dispatchId,
+          ...logError(err),
         });
         this.notices.reportSilence(room, entry, target, 'unavailable', target.dispatchId);
       }

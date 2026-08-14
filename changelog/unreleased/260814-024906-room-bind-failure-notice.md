@@ -5,4 +5,4 @@ covers:
 
 ### Fixed
 
-- When an agent can't reply in a channel, the room now tells you instead of staying silent (DOR-1206)
+- When an agent can't reply in a room, it now tells you instead of staying silent (DOR-1206)
