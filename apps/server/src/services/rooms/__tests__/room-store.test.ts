@@ -468,6 +468,154 @@ describe('RoomStore.listUnreadEntries', () => {
   });
 });
 
+describe('RoomStore top-level channel reads', () => {
+  const BOUNDS = {
+    throughSeq: Number.MAX_SAFE_INTEGER,
+    excludeAuthorId: 'ana',
+    excludeEntryId: 'none',
+  };
+
+  /** A room with one top-level post per text, plus whatever `extra` adds. */
+  function roomWith(texts: string[], extra: NewRoomEntry[] = []): RoomStore {
+    const store = new RoomStore(createTestDb());
+    seedRoom(store);
+    texts.forEach((text, i) => {
+      store.appendEntry(entry({ id: `t-${i + 1}`, authorId: 'human', body: { text } }));
+    });
+    for (const row of extra) store.appendEntry(row);
+    return store;
+  }
+
+  it('returns the NEWEST top-level entries above the floor, oldest first', () => {
+    const store = roomWith(['c1', 'c2', 'c3', 'c4']);
+    const rows = store.listRecentTopLevelEntries(ROOM_ID, {
+      ...BOUNDS,
+      afterSeq: 0,
+      limit: 2,
+    });
+    expect(rows.map((e) => e.body.text)).toEqual(['c3', 'c4']);
+  });
+
+  it('reads nothing at all for a limit of zero or less', () => {
+    // A caller asking for no rows must not reach SQLite: a negative LIMIT is
+    // UNLIMITED there, so the one number most obviously meaning "nothing" would
+    // return the whole room.
+    const store = roomWith(['c1', 'c2']);
+    expect(store.listRecentTopLevelEntries(ROOM_ID, { ...BOUNDS, afterSeq: 0, limit: 0 })).toEqual(
+      []
+    );
+    expect(store.listRecentTopLevelEntries(ROOM_ID, { ...BOUNDS, afterSeq: 0, limit: -1 })).toEqual(
+      []
+    );
+  });
+
+  it('honours the floor, so nothing said before the member joined is read', () => {
+    const store = roomWith(['c1', 'c2', 'c3']);
+    const rows = store.listRecentTopLevelEntries(ROOM_ID, { ...BOUNDS, afterSeq: 2, limit: 5 });
+    expect(rows.map((e) => e.body.text)).toEqual(['c3']);
+  });
+
+  it('closes the window at the trigger, exactly as the unread window does', () => {
+    const store = roomWith(['c1', 'c2', 'c3', 'c4']);
+    const rows = store.listRecentTopLevelEntries(ROOM_ID, {
+      ...BOUNDS,
+      throughSeq: 2,
+      afterSeq: 0,
+      limit: 5,
+    });
+    expect(rows.map((e) => e.body.text)).toEqual(['c1', 'c2']);
+  });
+
+  it('reads posts only, so no notice eats a slot in the glance', () => {
+    // Five slots is the whole budget, and a notice is the room narrating itself
+    // rather than anybody talking. Reading posts only also subsumes the
+    // subject filter `listUnreadEntries` needs: `subjectAuthorId` is written
+    // exactly when `kind === 'notice'`, so a notice ABOUT the reader — the room
+    // saying "Ana was busy" back to Ana — cannot reach this read either.
+    const store = roomWith(
+      ['c1'],
+      [
+        entry({
+          id: 'notice-about-ana',
+          authorId: 'system',
+          kind: 'notice',
+          body: { text: 'Ana was busy', subjectAuthorId: 'ana' },
+        }),
+        entry({
+          id: 'notice-about-bo',
+          authorId: 'system',
+          kind: 'notice',
+          body: { text: 'Bo was busy', subjectAuthorId: 'bo' },
+        }),
+      ]
+    );
+    const rows = store.listRecentTopLevelEntries(ROOM_ID, { ...BOUNDS, afterSeq: 0, limit: 5 });
+    expect(rows.map((e) => e.id)).toEqual(['t-1']);
+  });
+
+  it('reads the channel only, never a thread reply hanging off it', () => {
+    const store = roomWith(
+      ['c1'],
+      [
+        entry({
+          id: 'reply',
+          authorId: 'human',
+          body: { text: 'in the thread' },
+          parentEntryId: 't-1',
+          threadRootEntryId: 't-1',
+        }),
+      ]
+    );
+    const rows = store.listRecentTopLevelEntries(ROOM_ID, { ...BOUNDS, afterSeq: 0, limit: 5 });
+    expect(rows.map((e) => e.body.text)).toEqual(['c1']);
+  });
+
+  it('excludes the reading agent own posts and the one named entry', () => {
+    const store = new RoomStore(createTestDb());
+    seedRoom(store);
+    store.appendEntry(entry({ id: 'from-human', authorId: 'human' }));
+    store.appendEntry(entry({ id: 'from-ana', authorId: 'ana' }));
+    store.appendEntry(entry({ id: 'the-root', authorId: 'human' }));
+
+    const rows = store.listRecentTopLevelEntries(ROOM_ID, {
+      ...BOUNDS,
+      excludeEntryId: 'the-root',
+      afterSeq: 0,
+      limit: 5,
+    });
+    expect(rows.map((e) => e.id)).toEqual(['from-human']);
+  });
+
+  it('counts exactly what the list would have returned without a limit', () => {
+    // The two reads answer "show me five" and "how many are there", and the
+    // omitted count is their difference — so a predicate that drifted between
+    // them would report a number about a different set of messages.
+    const store = roomWith(
+      ['c1', 'c2', 'c3', 'c4', 'c5', 'c6'],
+      [
+        entry({
+          id: 'notice',
+          authorId: 'system',
+          kind: 'notice',
+          body: { text: 'Ana was busy', subjectAuthorId: 'ana' },
+        }),
+        entry({ id: 'mine', authorId: 'ana', body: { text: 'my own' } }),
+        entry({
+          id: 'reply',
+          authorId: 'human',
+          body: { text: 'threaded' },
+          parentEntryId: 't-1',
+          threadRootEntryId: 't-1',
+        }),
+      ]
+    );
+    const opts = { ...BOUNDS, excludeEntryId: 't-1', afterSeq: 1 };
+    const all = store.listRecentTopLevelEntries(ROOM_ID, { ...opts, limit: 100 });
+    expect(store.countRecentTopLevelEntries(ROOM_ID, opts)).toBe(all.length);
+    expect(all.map((e) => e.body.text)).toEqual(['c2', 'c3', 'c4', 'c5', 'c6']);
+  });
+});
+
 describe('RoomStore.rewindReadCursor', () => {
   /** A room with one member whose cursor has been advanced to `at`. */
   function memberAt(at: number): RoomStore {

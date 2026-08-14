@@ -123,6 +123,7 @@ describe('AdditionalContextEntrySchema', () => {
       data: {
         ...SAMPLE_ROOM_CONTEXT,
         thread: { rootEntryId: 'e-1', rootExcerpt: 'the deploy is stuck', replyCount: 2 },
+        channelTailOmitted: 3,
         channelTail: [
           {
             authorHandle: null,
@@ -140,9 +141,12 @@ describe('AdditionalContextEntrySchema', () => {
       },
     });
     expect(tailed.success).toBe(true);
-    expect(
-      tailed.success && tailed.data.kind === 'room_context' ? tailed.data.data.channelTail : null
-    ).toHaveLength(1);
+    const carried =
+      tailed.success && tailed.data.kind === 'room_context' ? tailed.data.data : undefined;
+    expect(carried?.channelTail).toHaveLength(1);
+    // The omitted count travels with it, or an agent is told five messages are
+    // the whole channel when eight of them exist.
+    expect(carried?.channelTailOmitted).toBe(3);
 
     const untailed = AdditionalContextEntrySchema.safeParse({
       kind: 'room_context',

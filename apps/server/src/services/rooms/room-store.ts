@@ -33,6 +33,7 @@ import {
   desc,
   type Db,
   type DbTransaction,
+  type SQL,
 } from '@dorkos/db';
 import type { ResponseMode } from '@dorkos/shared/mesh-schemas';
 import type {
@@ -53,6 +54,46 @@ import {
   type NewRoomEntry,
   type ThreadAggregateRow,
 } from './room-rows.js';
+
+/**
+ * The bounds of one read of a channel's top level, shared by the read that
+ * LISTS it and the one that COUNTS it (DOR-1207).
+ */
+export interface TopLevelWindow {
+  /** Return entries with `seq` strictly above this — the caller's floor. */
+  afterSeq: number;
+  /** And with `seq` at or below this — the triggering entry's own position. */
+  throughSeq: number;
+  /** Drop this author's own entries; the turn reports them separately. */
+  excludeAuthorId: string;
+  /** Drop one entry by id — the thread root, quoted to the model already. */
+  excludeEntryId: string;
+}
+
+/**
+ * The predicate both top-level reads run, written once.
+ *
+ * It exists as a function rather than as two identical `where` clauses because
+ * the count is SUBTRACTED from the list: the omitted number is only true while
+ * the two describe the same set of messages, and a filter added to one of two
+ * copies would make it a lie nothing could detect.
+ *
+ * @param roomId - The room.
+ * @param opts - The window bounds.
+ */
+function topLevelWindow(roomId: string, opts: TopLevelWindow): SQL | undefined {
+  return and(
+    eq(roomEntries.roomId, roomId),
+    gt(roomEntries.seq, opts.afterSeq),
+    lte(roomEntries.seq, opts.throughSeq),
+    isNull(roomEntries.threadRootEntryId),
+    // Posts only — see `listRecentTopLevelEntries` for why this is a budget
+    // decision and why it subsumes the notice-about-me filter.
+    eq(roomEntries.kind, 'post'),
+    ne(roomEntries.authorId, opts.excludeAuthorId),
+    ne(roomEntries.id, opts.excludeEntryId)
+  );
+}
 
 /** Persistence for rooms, memberships, entries, and per-room agent sessions. */
 export class RoomStore {
@@ -847,26 +888,36 @@ export class RoomStore {
   }
 
   /**
-   * The last few TOP-LEVEL entries of a room, oldest-first within the page —
-   * the glance sideways a thread turn gets at the channel it is not reading
+   * The last few TOP-LEVEL POSTS of a room, oldest-first within the page — the
+   * glance sideways a thread turn gets at the channel it is not reading
    * (DOR-1207).
    *
-   * **Deliberately not an unread read.** {@link RoomStore.listUnreadEntries}
-   * answers "what did this member miss"; this answers "what is the room talking
-   * about", which is a question a cursor cannot help with — an agent whose
-   * cursor is already past the channel would otherwise be told nothing at all
-   * about it, which is exactly the awareness scoping `pending` to a thread takes
-   * away.
+   * **Posts only, and that is a budget decision.** The whole read is five rows,
+   * so one machine notice — the room narrating that somebody was busy — would
+   * eat a fifth of an agent's entire awareness of the channel. It also subsumes
+   * the subject filter {@link RoomStore.listUnreadEntries} needs:
+   * `subjectAuthorId` is written exactly when `kind === 'notice'`, so a notice
+   * about the reader cannot reach this read either, and a second predicate
+   * saying so would be SQL that can never match.
    *
-   * Bounded at the caller's `limit` and nothing else, so it stays a glance: the
-   * room's `ambientMaxEntries` sizes the conversation being answered, not this.
+   * **`afterSeq` is the caller's floor, and it carries two different jobs.**
+   * The unread-first read passes `max(lastReadSeq, joinedSeq)`; the fallback
+   * read, taken when nothing there is unread, passes `joinedSeq` alone — a
+   * member never retroactively reads what was said before they were in the room
+   * (spec §8.3), whichever of the two reads answers.
    *
-   * `thread_root_entry_id IS NULL` is a residual filter over the `(room_id,
-   * seq)` primary key walked backwards, NOT an index seek — the partial index
-   * covers the non-null rows only, which is right, because in a channel most
-   * rows are top-level and the walk meets what it wants immediately.
+   * **The cost is honest rather than free.** `thread_root_entry_id IS NULL` is a
+   * residual filter over the `(room_id, seq)` primary key walked backwards, not
+   * an index seek: the partial index covers the non-null rows only. So the walk
+   * reads every row between the trigger and the fifth qualifying top-level post
+   * — which in a channel is five rows, and inside a 30k-reply thread is 30k
+   * (~0.5µs/row, so ~15ms). That is once per THREAD turn, beside a model call,
+   * and no second index is being added for it; if a room ever makes that
+   * measurable, the fix is an index on `(room_id, seq) WHERE
+   * thread_root_entry_id IS NULL`, not a smaller glance.
    *
    * @param roomId - The room.
+   * @param opts.afterSeq - Return entries with `seq` strictly above this.
    * @param opts.throughSeq - Frozen to the log as it stood at the trigger.
    * @param opts.excludeAuthorId - Drop this author's own entries; they are
    *   reported separately, outside the untrusted fence, because it wrote them.
@@ -874,35 +925,39 @@ export class RoomStore {
    *   is already quoted to the model as the thread opener.
    * @param opts.limit - How many of the newest to return.
    */
-  listRecentTopLevelEntries(
-    roomId: string,
-    opts: {
-      throughSeq: number;
-      excludeAuthorId: string;
-      excludeEntryId: string;
-      limit: number;
-    }
-  ): RoomEntry[] {
+  listRecentTopLevelEntries(roomId: string, opts: TopLevelWindow & { limit: number }): RoomEntry[] {
     if (opts.limit <= 0) return [];
     const rows = this.db
       .select()
       .from(roomEntries)
-      .where(
-        and(
-          eq(roomEntries.roomId, roomId),
-          lte(roomEntries.seq, opts.throughSeq),
-          isNull(roomEntries.threadRootEntryId),
-          ne(roomEntries.authorId, opts.excludeAuthorId),
-          ne(roomEntries.id, opts.excludeEntryId),
-          // The room narrating this agent in the third person is not background
-          // about the channel, exactly as it is not news in the unread window.
-          sql`json_extract(${roomEntries.body}, '$.subjectAuthorId') IS NOT ${opts.excludeAuthorId}`
-        )
-      )
+      .where(topLevelWindow(roomId, opts))
       .orderBy(desc(roomEntries.seq))
       .limit(opts.limit)
       .all();
     return rows.reverse().map(toEntry);
+  }
+
+  /**
+   * How many entries {@link RoomStore.listRecentTopLevelEntries} would return
+   * with no limit — what turns "here are five" into "and N more you were not
+   * shown".
+   *
+   * **It shares its predicate with the list rather than restating it**, because
+   * the two are subtracted from each other: a filter that drifted between them
+   * would report a count about a different set of messages than the one the
+   * agent is looking at, and nothing would notice. Called only when the list
+   * came back full, so a quiet channel costs one query rather than two.
+   *
+   * @param roomId - The room.
+   * @param opts - Exactly the window the list read, minus its limit.
+   */
+  countRecentTopLevelEntries(roomId: string, opts: TopLevelWindow): number {
+    const row = this.db
+      .select({ total: sql<number>`count(*)` })
+      .from(roomEntries)
+      .where(topLevelWindow(roomId, opts))
+      .get();
+    return row?.total ?? 0;
   }
 
   /**

@@ -309,21 +309,11 @@ export function buildRoomContext(
   // THE CHANNEL TAIL: the last few top-level messages of the room a thread turn
   // is happening in, and nothing for a top-level turn — where the channel IS the
   // scope and there is no "rest of the room" to name.
-  //
-  // **Not an unread read, on purpose.** Scoping `pending` to the thread would
-  // otherwise take an agent's awareness of the channel away entirely, and a
-  // cursor cannot give it back: an agent already read up to date on the channel
-  // has nothing unread there and would be told nothing about it.
-  //
-  // The thread's own root is excluded because it is quoted as `thread.rootExcerpt`
-  // — the one message that could reach the model twice under two headings.
   const channelTail = threadRootEntryId
-    ? deps.store.listRecentTopLevelEntries(input.room.id, {
-        // The same frozen ceiling as the window above, for the same reason.
-        throughSeq: input.entry.seq,
-        excludeAuthorId: input.agentAuthorId,
-        excludeEntryId: threadRootEntryId,
-        limit: CHANNEL_TAIL_MAX_ENTRIES,
+    ? readChannelTail(deps, input, {
+        ambientFrom,
+        joinedSeq: self?.joinedSeq ?? 0,
+        threadRootEntryId,
       })
     : null;
   // Read off the whole log rather than off the unread window: the point of it is
@@ -338,7 +328,7 @@ export function buildRoomContext(
   // Every entry that reaches the model, whichever heading it reaches it under —
   // the tail included, because a tail line naming a file it cannot open is the
   // same broken promise as a windowed one doing it (ADR 260807-233816).
-  const rendered = [...missed, ...(channelTail ?? []), ...ownRecent];
+  const rendered = [...missed, ...(channelTail?.entries ?? []), ...ownRecent];
 
   // The forum-topic label for every candidate this turn might render, in ONE
   // query — gated on `framing` so an unbridged room's turn never touches the
@@ -530,7 +520,10 @@ export function buildRoomContext(
     // Omitted entirely for a top-level turn, rather than sent as an empty array:
     // the field means "here is the rest of the channel", and a top-level turn is
     // already reading it.
-    ...(channelTail ? { channelTail: channelTail.map(flatten) } : {}),
+    ...(channelTail ? { channelTail: channelTail.entries.map(flatten) } : {}),
+    // Present only when something really was left out, so a renderer never has
+    // to decide whether `0` means "none" or "not computed".
+    ...(channelTail && channelTail.omitted > 0 ? { channelTailOmitted: channelTail.omitted } : {}),
     ownRecent: ownRecent.map(flatten),
     acknowledgments: acknowledgments(),
     // The files on the message being answered. Resolved through the SAME helper
@@ -556,6 +549,87 @@ export function buildRoomContext(
   // above — so it is complete only here, and only for the entries that actually
   // reached the model.
   return { context, projection };
+}
+
+/** The channel glance a thread turn gets, and what it could not fit. */
+interface ChannelTail {
+  /** Top-level channel posts, oldest first. Empty in a channel with none. */
+  entries: RoomEntry[];
+  /** Unread top-level posts left out by the cap. `0` when nothing was. */
+  omitted: number;
+}
+
+/**
+ * The bounded channel glance for a turn inside a thread — unread first, recent
+ * as the fallback, and honest about what it left out (DOR-1207).
+ *
+ * **This is where a real unread loss is bounded, not merely a relevance
+ * preference.** The claim advances ONE read cursor for the whole room
+ * (`room-trigger.ts`), so a thread turn moves it past top-level messages this
+ * turn never showed — and those messages are then behind the cursor for every
+ * future turn, gone. Scoping `pending` to the thread is what makes that
+ * possible, and the honest answer is not to touch the cursor machinery (a
+ * per-scope cursor is a different, larger decision) but to spend the glance on
+ * the unread ones first and SAY how many did not fit.
+ *
+ * The fallback matters just as much in the other direction: an agent that has
+ * read the whole channel has nothing unread there, and "you are up to date" is
+ * not a reason to know nothing about the room it is answering in.
+ *
+ * **Both reads carry a floor, and they are different floors.** The unread read
+ * starts at `max(lastReadSeq, joinedSeq)`; the fallback starts at `joinedSeq`
+ * alone, because a member never retroactively reads what was said before they
+ * joined (spec §8.3) — the clause that has to survive the fallback path too.
+ *
+ * @param deps - The store.
+ * @param input - The turn being described.
+ * @param scope.ambientFrom - The unread floor: cursor or join point, whichever
+ *   is higher.
+ * @param scope.joinedSeq - The join point alone, which bounds the fallback.
+ * @param scope.threadRootEntryId - The thread this turn is in; its root is
+ *   excluded because the model is already shown it as the quoted opener.
+ */
+function readChannelTail(
+  deps: RoomContextDeps,
+  input: RoomContextInput,
+  scope: { ambientFrom: number; joinedSeq: number; threadRootEntryId: string }
+): ChannelTail {
+  const bounds = {
+    // The same frozen ceiling as the unread window, for the same reason: a
+    // message landing mid-assembly belongs to the next turn.
+    throughSeq: input.entry.seq,
+    excludeAuthorId: input.agentAuthorId,
+    excludeEntryId: scope.threadRootEntryId,
+  };
+  const unread = deps.store.listRecentTopLevelEntries(input.room.id, {
+    ...bounds,
+    afterSeq: scope.ambientFrom,
+    limit: CHANNEL_TAIL_MAX_ENTRIES,
+  });
+  if (unread.length === 0) {
+    return {
+      entries: deps.store.listRecentTopLevelEntries(input.room.id, {
+        ...bounds,
+        afterSeq: scope.joinedSeq,
+        limit: CHANNEL_TAIL_MAX_ENTRIES,
+      }),
+      // Nothing unread is nothing to omit. The fallback shows messages this
+      // member has already read, so a count of what it "missed" would be zero
+      // however many it did not show.
+      omitted: 0,
+    };
+  }
+  // Counted only when the page came back full — a short page IS the whole set,
+  // and asking a database to confirm it would be a query per thread turn to
+  // learn a number the first read already proved.
+  const total =
+    unread.length < CHANNEL_TAIL_MAX_ENTRIES
+      ? unread.length
+      : deps.store.countRecentTopLevelEntries(input.room.id, {
+          ...bounds,
+          afterSeq: scope.ambientFrom,
+        });
+  return { entries: unread, omitted: Math.max(0, total - unread.length) };
 }
 
 /** How the conversation is named to the agent, and where in it this turn sits. */
