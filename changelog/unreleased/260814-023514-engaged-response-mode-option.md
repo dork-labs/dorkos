@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(client): offer engaged as a response-mode choice in agent settings (DOR-773)'
+  - 'fix(client): shorten the engaged option label and correct its scope (DOR-773, review fixes)'
 ---
 
 ### Added
