@@ -54,7 +54,7 @@ export interface DigestFacts {
  * device has never seen them.
  *
  * The newest interaction record, which is the client's own version of the
- * signal `welcome-back.ts` calls `personSeen`: a thing this person opened.
+ * signal `rooms/welcome-back/greeter.ts` calls `personSeen`: a thing this person opened.
  * `null` — never `0` — because "never" and "at the epoch" are different facts,
  * and only one of them can produce an absence.
  *

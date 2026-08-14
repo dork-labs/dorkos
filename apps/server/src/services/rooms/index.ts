@@ -21,6 +21,7 @@ import { BridgeStore } from '../relay/chat-bridge/bridge-store.js';
 import { AuthorRegistry } from './author-registry.js';
 import { ensureHandles } from './handles/ensure-handles.js';
 import type { EngagedWindow } from './engagement.js';
+import type { CollectWindow } from './room-collect.js';
 import { ReactionStore } from './reaction-store.js';
 import { AttachmentRowStore } from './attachments/attachment-row-store.js';
 import type { RoomAttachmentStore } from './attachments/room-attachment-store.js';
@@ -31,8 +32,8 @@ import { RoomBroadcaster } from './room-stream.js';
 import type { RoomTurnRunner } from './room-trigger.js';
 import { RoomTurnBudget, type TurnBudgetLimits } from './turn-budget.js';
 import { createSessionRoomTurnRunner } from './room-turn-runner.js';
-import { lastPersonSignalAt, WelcomeBackGreeter } from './welcome-back.js';
-import { createSessionWorkSource } from './welcome-back-work.js';
+import { lastPersonSignalAt, WelcomeBackGreeter } from './welcome-back/greeter.js';
+import { createSessionWorkSource } from './welcome-back/work-source.js';
 
 /** The wired rooms subsystem. */
 export interface RoomSubsystem {
@@ -181,6 +182,24 @@ function readEngagedWindow(): EngagedWindow {
 }
 
 /**
+ * The live collect ceilings, degrading to the shipped defaults the same way
+ * {@link readEngagedWindow} does — and failing in the same direction, which for
+ * this pair means failing to the values that gather MORE into one turn. An
+ * unreadable config must never be able to buy a turn per message.
+ */
+function readCollectWindow(): CollectWindow {
+  try {
+    const rooms = configManager.get('rooms');
+    return { debounceMs: rooms.collectDebounceMs, maxEntries: rooms.collectMaxEntries };
+  } catch {
+    return {
+      debounceMs: USER_CONFIG_DEFAULTS.rooms.collectDebounceMs,
+      maxEntries: USER_CONFIG_DEFAULTS.rooms.collectMaxEntries,
+    };
+  }
+}
+
+/**
  * How many files one message may carry, read live from `uploads.maxFiles` and
  * degrading to the shipped default the same way {@link readMaxAgentDepth} does.
  *
@@ -273,6 +292,9 @@ export function createRoomSubsystem(opts: {
     // Read per dispatch, for the same reason: shortening the window in Settings
     // has to bind the very next message, not the next server start.
     engagedWindow: readEngagedWindow,
+    // Read per burst, for the same reason: lengthening the gathering window in
+    // Settings has to bind the very next message.
+    collect: readCollectWindow,
     // Read per post, for the same reason: lowering the limit in Settings has to
     // bind the very next message.
     maxAttachmentsPerEntry: readMaxAttachmentsPerEntry,

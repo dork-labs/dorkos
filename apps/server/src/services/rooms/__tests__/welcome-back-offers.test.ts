@@ -37,7 +37,7 @@ import {
   type PersonReturn,
   type WelcomeBackOfferSource,
   type WelcomeBackSettings,
-} from '../welcome-back.js';
+} from '../welcome-back/greeter.js';
 import {
   agentLookupFor,
   createRoomHarness,
@@ -549,9 +549,12 @@ describe('asking one agent aside', () => {
     // directory, and a second turn in it is a second process in that checkout.
     standUp({ runner: outcomeRunner(() => ({ text: null, late: new Promise(() => {}) })) });
     service.post(room.id, { authorId: human, text: '@tangerines morning' });
+    // Awaited rather than read straight back: a turn now starts one macrotask
+    // after the message that asked for it, because the room gathers a burst
+    // before answering it (RP8, `room-collect.ts`).
+    await settleUntil(() => runner.turns.length === 1, 'the first turn to be handed out');
     const before = service.listEntries(room.id, human, { limit: 200 }).length;
     const turnsBefore = runner.turns.length;
-    expect(turnsBefore).toBe(1);
 
     const said = await service.askAside({
       roomId: room.id,

@@ -68,7 +68,7 @@ interface RoomNoticeRowProps {
  * mark is what tells them apart at a glance; the colour is what says one of
  * them is waiting on you.
  *
- * The WORDS are never touched here. The server owns them (`room-notices.ts`)
+ * The WORDS are never touched here. The server owns them (`rooms/notices/notice-copy.ts`)
  * and writes them for a person who did not configure this room; a second
  * sentence invented at the render would be a second voice saying the same thing
  * slightly differently.

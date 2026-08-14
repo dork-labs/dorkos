@@ -11,15 +11,15 @@
  * The vocabulary of an OUTCOME is deliberately here rather than in the
  * dispatcher: `late`, `unanswered` and "chose to stay quiet" are the things a
  * turn can do, and what the room SAYS about each is a separate decision that
- * belongs to `room-notice-log.ts`.
+ * belongs to `notices/notice-log.ts`.
  *
  * @module server/services/rooms/room-turn-port
  */
 import type { RoomContextData } from '@dorkos/shared/additional-context';
 import type { Room, RoomEntry } from '@dorkos/shared/room-schemas';
 import type { ProjectableAttachment } from './room-context.js';
-import type { RoomTurnUnanswered } from './room-notice-log.js';
-import type { WaitingKind } from './room-notices.js';
+import type { RoomTurnUnanswered } from './notices/notice-log.js';
+import type { WaitingKind } from './notices/notice-copy.js';
 
 /** One agent turn, as the room asks for it. */
 export interface RoomTurnRequest {

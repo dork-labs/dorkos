@@ -5,7 +5,7 @@
  * The production {@link WelcomeBackWorkSource}. It is a separate module from
  * the greeter for one reason: this is the half that knows sessions exist, and
  * sessions are runtime-owned (ADR-0310). Keeping it here leaves
- * `welcome-back.ts` — the gate, the caps and the copy — provable without a
+ * `greeter.ts` — the gate, the caps and the copy — provable without a
  * runtime anywhere near it.
  *
  * **It wakes nobody.** Every number below comes from a session LISTING, which
@@ -14,14 +14,14 @@
  * fan-out degrades per runtime (ADR-0310), and an agent whose sessions could
  * not be read has no news rather than empty news.
  *
- * @module server/services/rooms/welcome-back-work
+ * @module server/services/rooms/welcome-back/work-source
  */
 import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
 import type { Session } from '@dorkos/shared/types';
-import { listRecentSessions } from '../session/recent-sessions.js';
-import type { AuthorRegistry } from './author-registry.js';
-import type { RoomStore } from './room-store.js';
-import type { AgentAbsenceWork, WelcomeBackWorkSource } from './welcome-back.js';
+import { listRecentSessions } from '../../session/recent-sessions.js';
+import type { AuthorRegistry } from '../author-registry.js';
+import type { RoomStore } from '../room-store.js';
+import type { AgentAbsenceWork, WelcomeBackWorkSource } from './greeter.js';
 
 /**
  * How many sessions one scan carries back.

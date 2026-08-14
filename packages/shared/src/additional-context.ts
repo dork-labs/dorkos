@@ -239,6 +239,22 @@ export interface RoomContextEntry {
   /** True when this entry mentioned the agent receiving the context. */
   mentionsMe: boolean;
   /**
+   * True when this message landed while the agent was already mid-turn here, so
+   * it is being read now rather than answered when it arrived
+   * (room-participation spec §10.4).
+   *
+   * The room-side twin of `queue_note`'s `composedDuringPrevTurn`: session chat
+   * has had this concept since ADR-0273 and rooms simply did not use it. It is
+   * the difference between "somebody asked this and you ignored it" and
+   * "somebody said this while you were working", and without it a steered turn
+   * reads as a person repeating themselves.
+   *
+   * Optional rather than required, unlike {@link RoomContextEntry.attachments} —
+   * absence means "arrived while nothing was running", which is the ordinary
+   * case and the safe reading. Nothing is lost when a builder omits it.
+   */
+  arrivedDuringPrevTurn?: boolean;
+  /**
    * The files posted with this entry, as paths relative to the agent's own
    * working directory. Empty for an entry with none.
    *
@@ -657,6 +673,7 @@ export const RoomContextEntrySchema = z.object({
   at: z.string(),
   text: z.string(),
   mentionsMe: z.boolean(),
+  arrivedDuringPrevTurn: z.boolean().optional(),
   topicLabel: z.string().nullable(),
   attachments: z.array(z.object({ name: z.string(), path: z.string() })),
 });

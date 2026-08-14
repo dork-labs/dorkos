@@ -28,7 +28,7 @@ import { THREAD_AGENT_ANA, THREAD_AGENT_KAI, THREAD_ROOM_ID } from './room-threa
 /**
  * Every notice the room can write, with the SERVER's own words.
  *
- * Copied from `room-notices.ts` rather than paraphrased: the point of the bench
+ * Copied from `rooms/notices/notice-copy.ts` rather than paraphrased: the point of the bench
  * is to show what a person actually reads, and prose written for a playground
  * would flatter a layout that real sentences would break.
  */

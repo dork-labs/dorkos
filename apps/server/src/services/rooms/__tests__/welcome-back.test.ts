@@ -32,7 +32,7 @@ import {
   WelcomeBackGreeter,
   type AgentAbsenceWork,
   type WelcomeBackSettings,
-} from '../welcome-back.js';
+} from '../welcome-back/greeter.js';
 import {
   agentLookupFor,
   createRoomHarness,

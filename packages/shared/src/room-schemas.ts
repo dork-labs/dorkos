@@ -119,7 +119,7 @@ export type RoomEntryKind = z.infer<typeof RoomEntryKindSchema>;
  *   §10.4). About the room rather than one member, so it carries no
  *   `subjectAuthorId`.
  * - `addressing_changed` — DorkOS itself changed when the agents in this room
- *   answer. The only code not written by `room-notices.ts`: migration 0039 wrote
+ *   answer. The only code not written by `rooms/notices/notice-copy.ts`: migration 0039 wrote
  *   it once, into every channel whose members it moved from `mention-only` to
  *   `engaged` (room-participation spec §9.4). A widening nobody asked for has to
  *   say so, because absence is never consent.

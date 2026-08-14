@@ -8,7 +8,7 @@
  * `room-trigger.ts`, which is how one key came to serve two kinds of news and
  * swallow the second (see {@link RoomNoticeLog.noticedSilence}).
  *
- * The words themselves are not here — they are in `room-notices.ts`, in the
+ * The words themselves are not here — they are in `notice-copy.ts`, in the
  * room's own voice, and this module only decides whether they are said. The
  * split matters: copy that lives inside the mechanism that happens to write it
  * is copy that drifts.
@@ -27,16 +27,16 @@
  * describe is over, the next occurrence is news again. No timer, no staleness,
  * nothing to tune.
  *
- * @module server/services/rooms/room-notice-log
+ * @module server/services/rooms/notices/notice-log
  */
 import type { Room, RoomEntry, RoomEntryBody } from '@dorkos/shared/room-schemas';
-import { logger } from '../../lib/logger.js';
+import { logger } from '../../../lib/logger.js';
 import {
   logRefusal,
   type RefusalReason,
   type RefusalVisibility,
-} from '../observability/refusals.js';
-import type { AuthorRegistry } from './author-registry.js';
+} from '../../observability/refusals.js';
+import type { AuthorRegistry } from '../author-registry.js';
 import {
   buildAgentGoneNotice,
   buildAgentUnavailableNotice,
@@ -47,8 +47,8 @@ import {
   buildWaitingNotice,
   type BusyContext,
   type WaitingKind,
-} from './room-notices.js';
-import type { BudgetRefusalScope } from './turn-budget.js';
+} from './notice-copy.js';
+import type { BudgetRefusalScope } from '../turn-budget.js';
 
 /** The cascade a written entry belongs to. */
 export interface CascadeStamp {
@@ -412,7 +412,7 @@ export class RoomNoticeLog {
    * @param room - The room the refusal happened in.
    * @param entry - The entry whose trigger was refused.
    * @param authorId - The agent that was refused.
-   * @param body - The notice copy, from `room-notices.ts`.
+   * @param body - The notice copy, from `notice-copy.ts`.
    * @param cause - Which guard rule refused, for the log.
    * @param dispatchId - The dispatch this refusal belongs to, or `null` when
    *   there is none — which is every reachable case today, since a target the
@@ -525,7 +525,7 @@ export class RoomNoticeLog {
    * degraded (`.claude/rules/room-conduct.md`, "a refusal is visible").
    *
    * @param roomId - The room the notice belongs to.
-   * @param body - The notice copy, from `room-notices.ts`.
+   * @param body - The notice copy, from `notice-copy.ts`.
    * @param about - Who it is about, for the failure log. `null` when it is about
    *   the room rather than a member.
    * @param where.cascade - The cascade to stamp it with.

@@ -1604,6 +1604,8 @@ export function backfillRoomsDefaults(store: {
     lateReplyCeilingMinutes: 60,
     engagedWindowMinutes: 10,
     engagedWindowPosts: 5,
+    collectDebounceMs: 500,
+    collectMaxEntries: 20,
   };
   const rooms = store.get('rooms');
   if (rooms == null) {
@@ -2551,6 +2553,24 @@ export const CONFIG_MIGRATIONS = {
     // field is the one release whose upgraders never run its backfill.
     // Independent of everything above (a different section) and idempotent.
     backfillClaudeCodePersistentSession(store);
+  },
+  // v0.59.0 is tagged, so the next key that can still run for everybody is
+  // 0.60.0 — strictly above the newest `v*` tag (`conf` runs a key only in
+  // `(storedVersion, projectVersion]`). Enforced by
+  // `__tests__/migration-safety.ts`.
+  '0.60.0': (store: {
+    get: (key: string) => unknown;
+    set: (key: string, value: unknown) => void;
+  }) => {
+    // `rooms.collectDebounceMs` / `rooms.collectMaxEntries` — how long a room
+    // gathers a burst of messages before answering it as one, and the most
+    // messages one answer covers (room-participation spec §10.4, DOR-1201).
+    // Re-runs the whole `rooms` backfill because conf merges top-level defaults
+    // SHALLOWLY: a `rooms` block already on disk never inherits a new nested
+    // field on its own, so an upgraded install would gather nothing and answer
+    // every message on its own. Additive + idempotent; the body fills only
+    // absent keys.
+    backfillRoomsDefaults(store);
   },
 } as const;
 

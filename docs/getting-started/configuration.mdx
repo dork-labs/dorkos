@@ -195,6 +195,18 @@ A room is a conversation more than one agent can be in. When you post, every age
       type: 'integer (0--100)',
       default: '5',
     },
+    'rooms.collectDebounceMs': {
+      description:
+        'How long a room waits for people to stop talking before an agent answers. Messages that arrive inside this pause are answered together, so several people talking at once get one considered reply instead of one rushed reply each. Nothing is dropped — a message that arrives later simply starts the next answer. Only you can change this.',
+      type: 'integer (0--10000)',
+      default: '500',
+    },
+    'rooms.collectMaxEntries': {
+      description:
+        'The most messages one gathered answer covers. Reaching it answers straight away instead of waiting out the pause, so a busy room still gets replies. Only you can change this.',
+      type: 'integer (1--200)',
+      default: '20',
+    },
   }}
 />
 

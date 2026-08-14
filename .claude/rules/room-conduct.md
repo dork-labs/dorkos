@@ -108,7 +108,35 @@ model. See ADR `260726-170127` and `research/20260727_buzz-conversational-behavi
   everything, stands down for nothing. Reading the mode as the marker made
   somebody else's setting behave like this one and let the boot reconcile revert
   it. A future fallback room reuses all of this; nothing here elects a speaker.
-- **Stopping is a control action and is never inferred.** The halt route
+- **A turn answers a MOMENT, not a message** (RP8, `room-collect.ts`). Messages
+  for one `(room, agent)` pair gather for `rooms.collectDebounceMs`, capped at
+  `rooms.collectMaxEntries`, and become ONE turn: the newest is what the agent
+  answers and the ones behind it ride its ambient window. One budget
+  reservation, one claim, one cursor advance over the whole batch. The window
+  **opens once and does not slide** — a resetting timer starves the answer for
+  as long as the chatter lasts, which is the opposite of gathering it — and the
+  cap closes it early rather than letting a busy room never be answered.
+  A message that lands while that agent is already mid-turn HERE is **held, not
+  refused**: it becomes the agent's next turn the instant the claim releases
+  (`RoomCollector.resume`, hung off `releaseClaim` so no terminal can forget
+  it), and it renders with `arrivedDuringPrevTurn` so the model can tell "they
+  carried on talking" from "they are repeating themselves". Do not add an
+  `agent_busy` line back for that case: the message IS picked up, so the line
+  would be false, and `working-here` was deleted from `BusyContext` rather than
+  left as dead copy. The refusal survives for the OTHER ceiling only — an agent
+  working in a different room is in a different checkout, and nothing here will
+  finish that turn. Holding is not the scheduler this domain declined twice
+  (ADR 260726-170125): what is stored is what the agent has not read yet, one
+  turn per agent per room is still enforced, and nothing orders two agents
+  against each other.
+  **The guard is re-asked when a held batch finally runs**, and it has to be:
+  the ancestry rule is a durable query that could not see the in-flight turn the
+  batch was waiting for, and by then it can. That is what still terminates a
+  two-agent ping-pong now that the claim no longer refuses outright.
+- **Stopping is a control action and is never inferred.** It also drops the
+  gathered messages, before it drops the claims — releasing a claim is what runs
+  a held batch, so the other order would answer, one macrotask later, the very
+  messages the person pressed Stop over. The halt route
   (`POST /api/rooms/:id/halt`) and the header button reach the runtimes; nothing
   pattern-matches a message for "stop", in this phase or any later one. An
   operator typing "you are in a loop, stop" is a message a looping agent answers
@@ -120,9 +148,9 @@ model. See ADR `260726-170127` and `research/20260727_buzz-conversational-behavi
   person who notices is not the person who configured it. If you add a path that
   can decline to run a turn — or one where a turn stops producing anything and
   waits — it writes a durable room notice in the room's own voice. All eight
-  live in `room-notices.ts` (`cascade_stopped`, `budget_reached`, `agent_busy`,
+  live in `notices/notice-copy.ts` (`cascade_stopped`, `budget_reached`, `agent_busy`,
   `turn_failed`, `agent_gone`, `agent_unavailable`, `awaiting_approval`,
-  `halted`), and every one of them is written through `room-notice-log.ts` —
+  `halted`), and every one of them is written through `notices/notice-log.ts` —
   its `write` is the single writer, and each damping key sits beside the write
   it damps. Nothing outside that module reaches `postNotice` in production; a
   second call site hand-rolling its own `try` is how a halt in an archived room
@@ -138,7 +166,7 @@ model. See ADR `260726-170127` and `research/20260727_buzz-conversational-behavi
   damping key exists that would keep a notice from spraying).
 - **An ASIDE turn is the one refusal nobody is told about, and here is the whole
   exception.** A welcome-back offer (`RoomTriggerDispatcher.askAside`,
-  `welcome-back.ts`, DOR-1046) runs a turn that no message in the room triggered:
+  `welcome-back/greeter.ts`, DOR-1046) runs a turn that no message in the room triggered:
   a person came back, their agents have already posted what moved, and one of
   them is asked whether it has a next step worth a decision. Four outcomes are
   **silent** — the agent is already working, the room is out of automatic turns,
@@ -211,9 +239,13 @@ model. See ADR `260726-170127` and `research/20260727_buzz-conversational-behavi
   that agent: a human author at `cascadeDepth: 0` whose entry names the agent in
   its stored `mentions`, or any human message in a DM, where naming is implicit.
   A direct question deserves a direct answer, and the count cannot run away
-  because the bound is per ADDRESSED message and the sender is the one
-  addressing — one dispatch triggers each agent once, so a person gets back
-  exactly as many lines as they wrote messages naming it. `turn_failed` is never
+  because the bound is the SENDER's own typing: one turn answers each agent
+  once, and messages that arrive together are answered together, so a line comes
+  back per gathered turn rather than per keystroke. Since RP8 that means three
+  questions typed in one breath are one turn and earn one line between them —
+  the collect window, not damping, which is why those scenarios ask one question
+  at a time and never assert a line count against a message count.
+  `turn_failed` is never
   damped at all: each error is a distinct event (room-participation spec §5.2,
   as amended by DOR-781). `agent_gone` follows the same split for the same
   reason: damped when the member was merely SELECTED (an agent that is not
@@ -251,6 +283,15 @@ model. See ADR `260726-170127` and `research/20260727_buzz-conversational-behavi
 
 Current as of 2026-07-31; fix them rather than working around them.
 
+- **A restart forgets the turns a room owed but had not started.** The collect
+  buffers (`room-collect.ts`) are process memory, exactly like the claim map
+  beside them, and nothing persists them. A server that goes down while a
+  message is gathered — or held behind a working agent — comes back with that
+  message still UNREAD and no turn owed for it: it reaches the agent on the next
+  turn something else triggers, rather than on its own. Nothing is lost from the
+  log and nothing is shown twice; what is lost is the promptness. Making it
+  durable is the scheduler this domain has declined twice
+  (ADR `260726-170125`), so it needs arguing as one rather than adding a table.
 - No room is bridged to a chat platform. Room presence reaches the cockpit
   (`RoomService.publishSignal` → the room's event stream) and stops there. The
   Telegram adapter keeps a signal seam for it (`handleTypingSignal`), but

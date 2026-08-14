@@ -102,6 +102,8 @@ Adapter-to-agent bindings are persisted to `~/.dork/relay/bindings.json`. The fi
 | `rooms.lateReplyCeilingMinutes`         | integer (1--1440)                                                        | `60`               | When a room gives up on a turn that never finishes and reports it as failed                                                                                                                                                                                                                                                                         |
 | `rooms.engagedWindowMinutes`            | integer (0--1440)                                                        | `10`               | How long an agent keeps answering in a room after somebody talks to it, before it goes back to needing an @mention. Talking to it again starts the clock over; `0` means an @mention every time                                                                                                                                                     |
 | `rooms.engagedWindowPosts`              | integer (0--100)                                                         | `5`                | How many messages from other members end that window, whichever runs out first                                                                                                                                                                                                                                                                      |
+| `rooms.collectDebounceMs`               | integer (0--10000)                                                       | `500`              | How long a room gathers messages before an agent answers them together, so several people talking at once get one reply instead of one each                                                                                                                                                                                                         |
+| `rooms.collectMaxEntries`               | integer (1--200)                                                         | `20`               | The most messages one gathered answer covers. Reaching it answers straight away; the messages past it start the next answer                                                                                                                                                                                                                         |
 | `welcomeBack.enabled`                   | boolean                                                                  | `true`             | Whether agents may post to your team channel when you come back after being away. Off means no post, and no work done to decide there was nothing to post                                                                                                                                                                                           |
 | `welcomeBack.absenceThresholdMinutes`   | integer (15--10080)                                                      | `240`              | How long you have to be away before coming back counts as a return                                                                                                                                                                                                                                                                                  |
 | `welcomeBack.maxPosts`                  | integer (0--10)                                                          | `3`                | The most posts one return may produce, however many agents qualify. `0` silences them while leaving the feature on                                                                                                                                                                                                                                  |
@@ -737,6 +739,23 @@ Both are **ceilings, not settings**: a room can hold an agent to a shorter windo
 ```bash
 dorkos config set rooms.engagedWindowMinutes 3
 dorkos config set rooms.engagedWindowPosts 2
+```
+
+### rooms.collectDebounceMs / rooms.collectMaxEntries
+
+How a room decides that people have stopped talking (room-participation spec §10.4).
+
+Messages that reach the same agent inside `collectDebounceMs` are answered by ONE turn: the newest is what the agent replies to, and the ones behind it are in front of it as context. Half a second of gathering turns "three people talking at once, three rushed replies" into one considered one, and it costs one automatic reply instead of three.
+
+The window opens once and does not slide. A message arriving inside it joins the batch without pushing the deadline back, so a room where somebody types every four hundred milliseconds still gets an answer — starving the reply for as long as the chatter lasts would be the opposite of gathering it. `collectMaxEntries` is the other bound in the same direction: reaching it answers straight away rather than waiting the window out, and the messages past it start the next answer.
+
+Nothing is ever dropped. A message the window did not fit is still in the room, and the agent reads it on its next turn — including a message that lands while the agent is already working, which is folded into that agent's next answer and marked as having arrived while it was busy.
+
+Neither number is measured; both are ours, to be tuned by using the product (`meta/agent-etiquette.md` §9). Operator-only, for the reason the engaged window is: an agent that set the pause to zero and the cap to one would be voting itself a turn per message.
+
+```bash
+dorkos config set rooms.collectDebounceMs 1500
+dorkos config set rooms.collectMaxEntries 10
 ```
 
 ### welcomeBack

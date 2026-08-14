@@ -52,13 +52,13 @@
  * posts when it lands. The status lines are posted first and are never withheld
  * waiting for an offer, so the worst an offer can do is not arrive.
  *
- * @module server/services/rooms/welcome-back
+ * @module server/services/rooms/welcome-back/greeter
  */
 import { eq, max, readCursors, roomEntries, type Db } from '@dorkos/db';
 import type { UserConfig } from '@dorkos/shared/config-schema';
 import { sanitizeIdentity } from '@dorkos/shared/untrusted-text';
-import { logger } from '../../lib/logger.js';
-import { MENTION_PATTERN } from './mentions.js';
+import { logger } from '../../../lib/logger.js';
+import { MENTION_PATTERN } from '../mentions.js';
 
 /** The `welcomeBack` block of user config, as this module reads it. */
 export type WelcomeBackSettings = UserConfig['welcomeBack'];
@@ -95,7 +95,7 @@ export interface AgentAbsenceWork {
  *
  * A port, because the answer comes from SESSION state and sessions are
  * runtime-owned (ADR-0310) — this domain must not learn to read a transcript.
- * The production implementation is `welcome-back-work.ts`; a test supplies its
+ * The production implementation is `work-source.ts`; a test supplies its
  * own and can therefore prove that a disabled feature never asks at all.
  *
  * **Implementations must wake nobody.** Everything an implementation reads is

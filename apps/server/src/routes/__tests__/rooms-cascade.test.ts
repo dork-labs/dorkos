@@ -19,6 +19,7 @@ import request from 'supertest';
 import { FakeAgentRuntime } from '@dorkos/test-utils';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { agents, type Db } from '@dorkos/db';
+import { USER_CONFIG_DEFAULTS } from '@dorkos/shared/config-schema';
 import type { RoomEntry } from '@dorkos/shared/room-schemas';
 
 vi.mock('../../lib/boundary.js', () => ({
@@ -62,7 +63,20 @@ vi.mock('../../services/core/tunnel-manager.js', () => ({
 }));
 
 vi.mock('../../services/core/config-manager.js', () => ({
-  configManager: { get: vi.fn().mockReturnValue(null), set: vi.fn() },
+  configManager: {
+    // The shipped defaults for `rooms`, with ONE value moved: the collect window
+    // (RP8) is zeroed. A room gathers a burst for half a second before it
+    // answers, so thirty sequential posts would otherwise spend fifteen seconds
+    // waiting out timers to measure something that has nothing to do with them.
+    // Zero is the same gathering path, without the wait —
+    // `room-collect.test.ts` is where the window's LENGTH is measured.
+    // Everything else falls through to `null`, which is what the readers'
+    // degrade-to-defaults path already handles.
+    get: vi.fn((key: string) =>
+      key === 'rooms' ? { ...USER_CONFIG_DEFAULTS.rooms, collectDebounceMs: 0 } : null
+    ),
+    set: vi.fn(),
+  },
 }));
 
 import { createApp, finalizeApp } from '../../app.js';

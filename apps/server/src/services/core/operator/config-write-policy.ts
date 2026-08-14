@@ -290,6 +290,14 @@ export const CONFIG_WRITE_POLICY = {
   // ever addressed in — the widening this whole mode exists to bound.
   'rooms.engagedWindowMinutes': 'operator-only',
   'rooms.engagedWindowPosts': 'operator-only',
+  // How long a room gathers a burst before answering it as one, and the most
+  // messages one answer covers. On the same side of the line as the engaged
+  // window, and for the same reason spelled the other way round: these decide
+  // how MANY turns run for a given conversation. An agent that set the pause to
+  // zero and the cap to one would be voting itself a turn per message, which is
+  // the spend the collect mechanism exists to fold together.
+  'rooms.collectDebounceMs': 'operator-only',
+  'rooms.collectMaxEntries': 'operator-only',
 
   // Whether agents may speak when the person comes back, how long an absence
   // has to be to count, how many may speak, and whether a greeting may spend a
@@ -662,6 +670,8 @@ export const OPERATOR_ONLY_STAKES: readonly OperatorOnlyStakeGroup[] = [
       'rooms.maxAutomaticTurnsTotalPerHour',
       'rooms.engagedWindowMinutes',
       'rooms.engagedWindowPosts',
+      'rooms.collectDebounceMs',
+      'rooms.collectMaxEntries',
       'welcomeBack.enabled',
       'welcomeBack.absenceThresholdMinutes',
       'welcomeBack.maxPosts',
