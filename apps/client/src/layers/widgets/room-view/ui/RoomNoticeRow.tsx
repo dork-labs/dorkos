@@ -6,7 +6,7 @@
  * so the grid, the toolbar and the reactions the row builds for a post are all
  * dead weight here. The row still decides WHICH of the two an entry is; this
  * module owns everything that follows from the answer being "notice", including
- * the table that tells fifteen codes apart at a glance.
+ * the table that tells sixteen codes apart at a glance.
  *
  * @module widgets/room-view/ui/RoomNoticeRow
  */
@@ -20,6 +20,7 @@ import {
   Info,
   Link2Off,
   Megaphone,
+  RefreshCw,
   Repeat,
   Timer,
   TriangleAlert,
@@ -81,6 +82,10 @@ const NOTICE_STYLES: Record<RoomNoticeCode, { Icon: LucideIcon; tone?: string }>
   // somebody re-registers it. Warm for the same reason `turn_failed` is: this
   // one is waiting on the reader, and waiting longer will not help.
   agent_gone: { Icon: UserX, tone: 'text-status-warning' },
+  // The agent could not be readied to answer — almost always brief database
+  // contention that clears on its own by the next message, which is why it
+  // reads like `agent_busy` rather than `turn_failed`: occupied, not broken.
+  agent_unavailable: { Icon: RefreshCw },
   // Stopped, and waiting for THIS reader to do something about it. Warm like
   // `turn_failed`, and for the same reason: both are lines a person has to act
   // on, and the rest are the room reporting that it is working as designed.

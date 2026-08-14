@@ -39,6 +39,7 @@ import {
 import type { AuthorRegistry } from './author-registry.js';
 import {
   buildAgentGoneNotice,
+  buildAgentUnavailableNotice,
   buildBudgetNotice,
   buildBusyNotice,
   buildHaltedNotice,
@@ -67,8 +68,12 @@ export interface CascadeStamp {
  * - `gone` — the member's directory no longer holds the agent it was added as,
  *   so no turn was even attempted. Never produced by a runner: the dispatcher
  *   decides it before a turn exists (ADR 260801-003051).
+ * - `unavailable` — the room could not bind a `(room, agent)` session for this
+ *   target, so no turn was even attempted. Never produced by a runner, for the
+ *   same reason `gone` is not: the dispatcher decides this in `claimTargets`,
+ *   before anything is claimed (DOR-1206).
  */
-export type RoomTurnUnanswered = 'busy' | 'failed' | 'gone';
+export type RoomTurnUnanswered = 'busy' | 'failed' | 'gone' | 'unavailable';
 
 /** How a notice reaches the room's durable log. */
 export interface RoomNoticeWriter {
@@ -269,6 +274,13 @@ export class RoomNoticeLog {
    *    where an `engaged` ghost sits would otherwise write another line saying
    *    the same unchanged thing. A person who names it still gets an answer
    *    every time they ask.
+   *
+   *    `unavailable` damps the same way, for a narrower reason: the one
+   *    reachable cause is database contention on the `(room, agent)` session
+   *    row, which a retry (the next message) routinely clears — so a burst of
+   *    triggers that all land on the same contention is one line, not one per
+   *    trigger, and a person who names the agent directly still gets told every
+   *    time (DOR-1206).
    *
    * Every block clears the moment that agent's turn there reaches an OUTCOME —
    * {@link RoomNoticeLog.recovered}.
@@ -728,6 +740,7 @@ const SILENCE_REASONS = Object.keys({
   busy: true,
   failed: true,
   gone: true,
+  unavailable: true,
 } satisfies Record<RoomTurnUnanswered, true>) as RoomTurnUnanswered[];
 
 /**
@@ -743,6 +756,7 @@ const SILENCE_BODIES: Record<
   busy: (agent, busyWith) => buildBusyNotice(agent.displayName, agent.authorId, busyWith),
   failed: (agent) => buildTurnFailedNotice(agent.displayName, agent.authorId),
   gone: (agent) => buildAgentGoneNotice(agent.displayName, agent.authorId),
+  unavailable: (agent) => buildAgentUnavailableNotice(agent.displayName, agent.authorId),
 };
 
 /**
@@ -754,6 +768,7 @@ const REFUSAL_FOR_SILENCE: Record<RoomTurnUnanswered, RefusalReason> = {
   busy: 'agent_busy',
   failed: 'turn_failed',
   gone: 'agent_gone',
+  unavailable: 'session_bind_failed',
 };
 
 /**
