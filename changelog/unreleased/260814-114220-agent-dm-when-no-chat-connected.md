@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(server): an agent with no chat integration connected now DMs you in DorkOS (DOR-1209)'
+  - 'fix(server): address adversarial review on the DM fallback (DOR-1209)'
 ---
 
 ### Added
