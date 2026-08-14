@@ -2,6 +2,13 @@
   "version": 1,
   "specs": [
     {
+      "id": "260814-114442",
+      "slug": "proactive-agent-dms",
+      "title": "Proactive agent DMs: guardrails for messages nobody asked for",
+      "created": "2026-08-14",
+      "status": "ideation"
+    },
+    {
       "id": "260810-003853",
       "slug": "persistent-session-runtime",
       "title": "Persistent session runtime, and the queue / steer / interrupt contract",

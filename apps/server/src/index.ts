@@ -1709,6 +1709,20 @@ async function start() {
       bridgeStore: roomBridges,
       ...(traceStore && { traceStore }),
       ...(meshCore && { meshCore }),
+      // Where a proactive message goes when no external chat integration can
+      // carry it: the sending agent's own direct message with the operator
+      // (DOR-1209). Needs mesh to place the sender on disk, which is what an
+      // author row keys on — without it the tool reports non-delivery rather
+      // than guessing at an identity.
+      ...(meshCore && {
+        notifyDm: {
+          rooms: roomService,
+          authors: roomAuthors,
+          mesh: meshCore,
+          operatorAuthorId: resolveOperatorAuthorId,
+          logger,
+        },
+      }),
     };
     claudeRuntime.setMcpServerFactory((session, sessionId) =>
       // Managed servers first, connectors second, `dorkos` last so it can never
