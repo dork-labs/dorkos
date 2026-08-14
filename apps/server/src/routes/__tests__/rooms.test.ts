@@ -243,6 +243,39 @@ describe('/api/rooms', () => {
       const withArchived = await request(app).get('/api/rooms').query({ includeArchived: 'true' });
       expect(withArchived.body.rooms).toHaveLength(1);
     });
+
+    it('serves exactly what the room service answers, now that the route asks the community registry too', async () => {
+      // The parity gate for DOR-1204. `GET /api/rooms` goes through
+      // `listRoomsAcrossCommunities`, which consults the community registry —
+      // and this machine's rooms must come back byte for byte regardless: same
+      // rooms, same order, every field. Three rooms of two kinds with different
+      // activity, so ordering and the DM-only `participants` field both vary
+      // and a reshape cannot hide behind a single row.
+      const first = await createChannel('Backend');
+      await request(app)
+        .post('/api/rooms')
+        .send({ kind: 'dm', title: 'Ana', agentPaths: [ANA_PATH] });
+      const last = await createChannel('Design');
+      await request(app).post(`/api/rooms/${first.id}/entries`).send({ text: 'hello' });
+      await request(app).post(`/api/rooms/${last.id}/entries`).send({ text: 'hi' });
+
+      // Whoever the server resolved this request as — the same author the route
+      // lists for, read off a room rather than assumed.
+      const viewer = (await request(app).get(`/api/rooms/${first.id}`)).body.viewerAuthorId;
+      const direct = getRoomService().listRooms(viewer, {});
+
+      const res = await request(app).get('/api/rooms');
+      expect(res.status).toBe(200);
+      expect(res.body.rooms).toEqual(JSON.parse(JSON.stringify(direct)));
+    });
+
+    it('carries an empty warnings list while this machine is the only community', async () => {
+      // Present, not absent: a client reading `warnings` must never have to tell
+      // "no community degraded" apart from "this server does not report it".
+      await createChannel();
+      const res = await request(app).get('/api/rooms');
+      expect(res.body.warnings).toEqual([]);
+    });
   });
 
   describe('GET /:id', () => {

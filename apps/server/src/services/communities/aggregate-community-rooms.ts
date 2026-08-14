@@ -32,10 +32,49 @@ export const LIST_ROOMS_TIMEOUT_MS = 2_000;
 const NOT_ADMITTED_FALLBACK =
   'You are not in this community yet. Ask whoever runs it to let you in.';
 
+/**
+ * A community that did not answer inside its budget.
+ *
+ * A class rather than a message match: the copy a person is shown is chosen by
+ * failure CLASS ({@link describeFailure}), and matching on `/timed out/` would
+ * have made an adapter's own error text decide which sentence renders.
+ */
+class CommunityListingTimeoutError extends Error {
+  /**
+   * Name the budget the community failed to answer inside.
+   *
+   * @param ms - The budget that elapsed.
+   */
+  constructor(ms: number) {
+    super(`listRooms timed out after ${ms}ms`);
+    this.name = 'CommunityListingTimeoutError';
+  }
+}
+
+/**
+ * The sentence a person is shown when a community fails to list.
+ *
+ * **Raw error text never reaches this return value**, and the rule is not
+ * stylistic. `CommunityWarning.message` is contractually "plain language,
+ * already safe to render — never a raw protocol string", and the strings on the
+ * other side of this boundary are written by whatever the adapter talked to: a
+ * relay refusal carries the remote's own `event.message`, so passing it through
+ * would let a server we do not run choose copy that renders in our cockpit. The
+ * detail is not lost — it goes to the log, once, beside the community it came
+ * from.
+ *
+ * @param error - What the listing rejected with.
+ * @param label - What a person calls the community.
+ */
+function describeFailure(error: unknown, label: string): string {
+  if (error instanceof CommunityListingTimeoutError) return `${label} took too long to answer.`;
+  return `${label} could not be reached.`;
+}
+
 /** Reject `promise` if it does not settle within `ms`. */
 function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   return new Promise<T>((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error(`listRooms timed out after ${ms}ms`)), ms);
+    const timer = setTimeout(() => reject(new CommunityListingTimeoutError(ms)), ms);
     promise.then(
       (value) => {
         clearTimeout(timer);
@@ -112,7 +151,17 @@ export async function aggregateCommunityRooms(opts: {
   });
 
   const results = await Promise.allSettled(
-    askable.map((source) => withTimeout(source.adapter.listRooms(), timeoutMs))
+    // `Promise.resolve().then(…)` rather than calling `listRooms()` inline: an
+    // adapter that throws SYNCHRONOUSLY throws before `allSettled` ever sees a
+    // promise, which would take down the whole request — and with it the local
+    // room list this function's caller has already computed. One community's bug
+    // must cost one community's rooms, which is the entire premise here.
+    askable.map((source) =>
+      withTimeout(
+        Promise.resolve().then(() => source.adapter.listRooms()),
+        timeoutMs
+      )
+    )
   );
 
   askable.forEach((source, i) => {
@@ -121,16 +170,16 @@ export async function aggregateCommunityRooms(opts: {
       rooms.push(...result.value);
       return;
     }
-    const message = result.reason instanceof Error ? result.reason.message : String(result.reason);
+    // The raw text goes here and nowhere else. See `describeFailure`.
     logger.warn('[aggregateCommunityRooms] community listing degraded', {
       community: source.descriptor.community,
       label: source.descriptor.label,
-      error: message,
+      error: result.reason instanceof Error ? result.reason.message : String(result.reason),
     });
     warnings.push({
       community: source.descriptor.community,
       label: source.descriptor.label,
-      message,
+      message: describeFailure(result.reason, source.descriptor.label),
     });
   });
 
