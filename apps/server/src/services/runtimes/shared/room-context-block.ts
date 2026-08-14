@@ -296,20 +296,61 @@ function clock(iso: string): string {
 }
 
 /**
+ * What is true outside a channel, whatever mode the agent is on: only a
+ * PERSON's message carries this room's implicit address, so a colleague's post
+ * reaches this agent when it names it and not otherwise
+ * (ADR 260814-025326, `selectTriggerTargets`).
+ *
+ * **Said because the alternative is an agent that believes a handoff worked.**
+ * The mode sentences below describe when the agent answers, and every one of
+ * them was written when a DM had exactly one agent in it. Left alone, an agent
+ * on `always` in a group DM is told it answers everything — so it writes "Bo,
+ * can you take the migration?" without the `@`, nothing is triggered, and
+ * nobody is told. This is the same class of failure `.claude/rules/room-conduct.md`
+ * records about prompts: what the mechanism does must be what the agent is told
+ * it does.
+ */
+const COLLEAGUE_REACH_NOTE =
+  ' A message from another agent reaches you only when it mentions you — so use their @name to reach a colleague here.';
+
+/**
  * How a response mode reads as a sentence about this agent, in this room.
  *
+ * **Kind-aware, because two of these modes mean different things in different
+ * rooms.** `direct-only` is the obvious one (it is what the mode is named for),
+ * and outside a channel every mode that fires without a mention gains
+ * {@link COLLEAGUE_REACH_NOTE}. A channel's sentences are byte-for-byte what
+ * they always were: nothing about a channel changed.
+ *
+ * The `direct-only` branch tests `=== 'dm'` while the note tests
+ * `!== 'channel'`, and the asymmetry is deliberate — each mirrors the predicate
+ * it describes (`respondsTo` and `selectTriggerTargets` respectively), so a room
+ * whose stored kind is neither is told the narrower truth about both.
+ *
  * @param mode - This room's stored override for the agent.
+ * @param roomKind - The room's kind, as the context carries it.
  */
-function respondsSentence(mode: ResponseMode): string {
+function respondsSentence(mode: ResponseMode, roomKind: string): string {
+  const colleague = roomKind === 'channel' ? '' : COLLEAGUE_REACH_NOTE;
   switch (mode) {
     case 'always':
-      return 'You answer every message here.';
+      return roomKind === 'channel'
+        ? 'You answer every message here.'
+        : `You answer every message a person writes here.${colleague}`;
     case 'engaged':
-      return 'You answer here when somebody mentions you, and for a short while afterwards while the conversation is still with you.';
+      return `You answer here when somebody mentions you, and for a short while afterwards while the conversation is still with you.${colleague}`;
     case 'mention-only':
       return 'You answer here when somebody mentions you.';
     case 'direct-only':
-      return 'You answer here in direct messages, or when somebody mentions you.';
+      if (roomKind === 'channel') {
+        return 'You answer here in direct messages, or when somebody mentions you.';
+      }
+      // Only a real `dm` makes this mode fire without a mention (`respondsTo`),
+      // so a room that is neither kind gets the mention-only sentence — the same
+      // narrow answer the predicate itself gives it.
+      return roomKind === 'dm'
+        ? `You answer every message a person writes here, and anything that mentions you.${colleague}`
+        : 'You answer here when somebody mentions you.';
     case 'silent':
       return 'You are set not to reply here.';
   }
@@ -535,7 +576,9 @@ function preamble(data: RoomContextData, where: string): string[] {
 
   const identity = self ? selfIdentity(self) : 'You are a member here.';
   const addressed = data.addressing.addressedNow ? ' This message mentions you.' : '';
-  lines.push(`${identity} ${respondsSentence(data.addressing.responseMode)}${addressed}`);
+  lines.push(
+    `${identity} ${respondsSentence(data.addressing.responseMode, data.room.kind)}${addressed}`
+  );
   if (data.addressing.engagedUntil) {
     // BOTH halves, with the real number in the second one. A time alone reads as
     // the whole rule and is half of one; "enough messages" is a rule an agent

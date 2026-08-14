@@ -19,6 +19,15 @@
  * | `direct-only`  | mention → **@only**            | always → **Everything**        |
  * | `always`       | always → **Everything**        | always → **Everything**        |
  *
+ * **Amended 2026-08-13 (DOR-1208): the DM column describes what a PERSON's
+ * message does.** Outside a channel, a message written by an AGENT triggers only
+ * the members it names, so every row of that column collapses to `@only` for
+ * agent-authored posts — `always` and `direct-only` included (ADR
+ * `260814-025326`). The rungs are unchanged and this module needs no new value:
+ * a rung ranks how loud an agent is **to the person operating the room**, which
+ * is exactly the column above. What moved is agent-to-agent reach, which no rung
+ * ever claimed to describe.
+ *
  * **Both kinds have four behaviours, so both get the same four rungs.**
  * `direct-only` is the only genuine alias in the five, and what moves with the
  * room kind is which rung it lands on — nothing else.

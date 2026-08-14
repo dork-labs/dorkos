@@ -44,29 +44,44 @@ model. See ADR `260726-170127` and `research/20260727_buzz-conversational-behavi
 
 - **A room that holds two or more agents holds the person too** — the three-way
   rule (ADR `260814-025326`). An agent may open a room of any kind with a
-  colleague, and the owner's membership is the price. It is a property of the
-  ROSTER, checked at every verb that can change one: `createRoom` refuses a
-  non-owner seeding somebody else's agent into a room the owner is not in,
-  `addMember` refuses the second agent in such a room, and `removeMember`
-  refuses to take the OWNER out of a room two agents share — a guarantee whose
-  escape hatch is "leave afterwards" is not a guarantee. Do not re-express this
-  as a prompt, and do not add a `created_by` column to weaken it into "an
-  AGENT-seeded pair needs a witness": a pair the owner seeded and then walked out
-  of is just as invisible. Taking an AGENT out is never refused, so nothing is
-  ever wedged.
+  colleague, and the owner's membership is the price. **The thing being protected
+  is MEMBERSHIP, not visibility**: `seesEveryRoom` already shows the owner every
+  room on the install, so nothing here is hidden from her either way. What only a
+  membership carries is a read cursor — and therefore an unread count at all
+  (`cursorsFor` keys on `room_members`; a non-member's count is `null`, drawn as
+  no badge). Two agents in a room she is not on the roster of would talk in a row
+  that never lights up. State it that way; "a conversation nobody sees" is false
+  as written and will be corrected by the next reader who checks.
+  It is a property of the ROSTER, checked at every verb that can change one:
+  `createRoom` refuses a non-owner seeding somebody else's agent into a room the
+  owner is not in, `addMember` refuses the second agent in such a room, and
+  `removeMember` refuses to take the OWNER out of a room two agents share — a
+  guarantee whose escape hatch is "leave afterwards" is not a guarantee. It is a
+  property of those three WRITE VERBS and not of the data: a room that reached
+  the forbidden shape before the rule existed keeps running and is never
+  retro-refused, and nothing sweeps the table. Do not re-express it as a prompt,
+  and do not add a `created_by` column to weaken it into "an AGENT-seeded pair
+  needs a witness": a pair the owner seeded and then walked out of is just as
+  unattended. Taking an AGENT out is never refused, so nothing is ever wedged.
 - **Outside a channel, implicit addressing belongs to a PERSON's message.** A DM
   needs no `@`, which is why `direct-only` answers everything in one and why the
   DM seed is the agent's `always` default — and that is a claim about a person
   talking to their agents. A post an AGENT writes in a DM therefore addresses
-  only the members it NAMES (`selectTriggerTargets`). Measured before the rule
-  existed: one "hello" in a two-agent DM cost four turns and two apology notices,
-  with nobody's setting changed. This is not arbitration — it never chooses
-  between two agents that were addressed, and never silences one that was named —
-  and it changes nothing about a channel. The test is spelled `!== 'channel'`,
-  never `=== 'dm'`: `rooms.kind` is a `text` column narrowed by an unchecked cast
-  (`room-rows.ts`), so an unrecognized kind must take the narrower branch. That
-  is the standing rule for every room-kind branch — **an unknown kind never gets
-  more reach than the narrower of the two known kinds** — and it is why the
+  only the members it NAMES (`selectTriggerTargets`) — **every mode, not just
+  `always`**: `direct-only` and `engaged` collapse to mention-only for that
+  entry too. Measured before the rule existed: one "hello" in a two-agent DM cost
+  four turns and two apology notices, with nobody's setting changed. This is not
+  arbitration — it never chooses between two agents that were addressed, and
+  never silences one that was named — and it changes nothing about a channel.
+  Whatever tells an agent how it is reached must say this too
+  (`room-context-block.ts`); a mechanism an agent is told the opposite of is a
+  handoff that silently no-ops.
+  The test is spelled `!== 'channel'`, never `=== 'dm'`: `rooms.kind` is a `text`
+  column narrowed by an unchecked cast (`room-rows.ts`), so an unrecognized kind
+  must take the narrower branch. That is the standing rule for every room-kind
+  branch — **an unknown kind never gets more reach than a DM**, and in the one
+  branch where a DM is the LOOSER side (`respondsTo`'s `direct-only`, which fires
+  on everything in a real DM) it gets less: mention-only. It is also why the
   bridged-create path refuses `UNKNOWN_CHAT_TYPE` rather than falling through to
   `channel`.
 - **No arbitration.** Addressing three agents and getting three answers is the

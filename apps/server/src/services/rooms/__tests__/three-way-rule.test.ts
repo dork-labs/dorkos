@@ -191,6 +191,32 @@ describe('the three-way rule — the shape survives a membership change', () => 
     service.removeMember(room.id, human, human);
     expect(service.getRoom(room.id, human)?.members.map((m) => m.authorId)).toEqual([ana]);
   });
+
+  it('lets an agent re-open a group DM the owner archived — accepted, and pinned', () => {
+    // A consequence of the relaxation rather than a goal of it, recorded in the
+    // ADR: `createRoom`'s DM branch matches on the exact member set and
+    // un-archives what it matched, and `updateRoom` has no operator gate
+    // (DOR-608's known hole, which cannot close without breaking that path).
+    // Before DOR-1208 an agent could only reach its own two-party DMs this way.
+    // Accepted because the room comes back whole — same id, same history, same
+    // roster, owner on it — and archive is the reversible "put it away"
+    // (spec §12.4). Pinned so that if somebody later decides it is NOT
+    // acceptable, they change this test deliberately rather than discovering it.
+    const { service, human, ana } = open();
+    const dm = service.createRoom(
+      { kind: 'dm', title: 'Pair', members: [human], agentPaths: ['/agents/bo'] },
+      ana
+    );
+    service.updateRoom(dm.id, human, { archived: true });
+
+    const reopened = service.createRoom(
+      { kind: 'dm', title: 'Pair', members: [human], agentPaths: ['/agents/bo'] },
+      ana
+    );
+    expect(reopened.id).toBe(dm.id);
+    expect(reopened.created).toBe(false);
+    expect(reopened.archived).toBe(false);
+  });
 });
 
 describe('a DM never widens under a membership change', () => {

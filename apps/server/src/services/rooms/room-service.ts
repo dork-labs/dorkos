@@ -1516,12 +1516,14 @@ export class RoomService {
    * refused` notice posted into the room BEFORE this throws, and the thrown
    * `BRIDGE_SECOND_AGENT_REFUSED`.
    *
-   * **A room the owner is not in refuses a SECOND agent** — the three-way rule
-   * (ADR 260814-025326), held here and not only at creation. An agent may open a
-   * room with a colleague, and the owner's membership is the price; without this
-   * check the price could be paid at creation and taken back one call later, by
-   * adding the second agent to a room the owner had already left, or to one an
-   * agent opened alone.
+   * **A room the owner is not ON THE ROSTER of refuses a SECOND agent** — the
+   * three-way rule (ADR 260814-025326), held here and not only at creation. An
+   * agent may open a room with a colleague, and the owner's membership is the
+   * price; without this check the price could be paid at creation and taken back
+   * one call later, by adding the second agent to a room the owner had already
+   * left, or to one an agent opened alone. Membership rather than visibility is
+   * the whole of what is being protected — see
+   * {@link RoomService.requireSeedingAllowed}, which owns that reasoning.
    *
    * @param roomId - The room.
    * @param viewerAuthorId - The caller; must be the install's owner.
@@ -1600,10 +1602,11 @@ export class RoomService {
    *
    * **The owner cannot be taken out of a room two agents share** — the
    * three-way rule (ADR 260814-025326). This is the half of the rule that
-   * refuses the OWNER, and it has to exist: a guarantee that agents never talk
-   * where nobody can see is worth nothing if the way to break it is to leave the
-   * room afterwards. Taking an AGENT out is never refused, so the room is never
-   * wedged — one agent out, and the person may go.
+   * refuses the OWNER, and it has to exist: a guarantee that the person is a
+   * MEMBER wherever two agents talk — on the roster, with the read cursor and
+   * the unread count that only membership carries — is worth nothing if the way
+   * to break it is to leave afterwards. Taking an AGENT out is never refused, so
+   * the room is never wedged — one agent out, and the person may go.
    *
    * @param roomId - The room.
    * @param viewerAuthorId - The caller; must be the install's owner.
@@ -2710,10 +2713,19 @@ export class RoomService {
    * the case beside it: **an agent may now open a room with another agent, and
    * the price is that the person is on the roster.** Agents that can only ever
    * talk to their operator cannot divide work between themselves, which is the
-   * coordination this product is for; agents that can assemble a room the
-   * person is not in can hold a conversation nobody sees, which is the one
-   * thing that must never be buildable. The owner's membership is what
-   * separates the two, and it is checked here rather than promised in a prompt.
+   * coordination this product is for.
+   *
+   * **What the owner's membership buys is not visibility — she already has
+   * that.** {@link RoomService.seesEveryRoom} shows the owner every room on the
+   * install whether or not she is on its roster, so "a conversation nobody can
+   * see" was never the thing at risk. MEMBERSHIP is: only a membership carries a
+   * read cursor, so only a room the owner is IN has an unread count at all
+   * ({@link RoomService.cursorsFor} keys on `room_members`; a non-member's is
+   * `null`, which the sidebar draws as no badge). Two agents in a room she is
+   * not on the roster of would talk in a row that never lights up — visible in
+   * the way a file is visible, which is not the same as being told. The rule
+   * makes the person a participant rather than an auditor, and it is checked
+   * here rather than promised in a prompt.
    *
    * **Only an AGENT gets that escape.** A second PERSON — a member account, in
    * an install with login on — still may not put any agent in any room, owner
@@ -2768,12 +2780,18 @@ export class RoomService {
    * It is deliberately compositional rather than provenance-based. Nothing
    * records who opened a room — `rooms` has no `created_by` column — and adding
    * one would make the rule "an AGENT-seeded pair needs a witness" while leaving
-   * a pair the owner seeded and then walked out of just as invisible. Asking the
-   * roster instead needs no column and covers both.
+   * a pair the owner seeded and then walked out of just as unattended. Asking
+   * the roster instead needs no column and covers both.
+   *
+   * **A property of these two write verbs, not of the data already on disk.** A
+   * room that reached the forbidden shape before this rule existed keeps
+   * running, keeps triggering, and is never retro-refused; nothing sweeps the
+   * table. What is closed is every way to REACH that shape from here.
    *
    * **Removing an agent is never refused**, so a room is never wedged: the way
-   * out of a room the owner does not want to be in is to take an agent out of
-   * it, or to archive it (spec §12.4 — there is no delete, and no Leave).
+   * out of a room the owner does not want to be on the roster of is to take an
+   * agent out of it, or to archive it (spec §12.4 — there is no delete, and no
+   * Leave).
    *
    * @param roster - The roster as it will be AFTER the change.
    * @param what - What the caller was doing, for the refusal's own words.
@@ -2788,7 +2806,7 @@ export class RoomService {
       'OWNER_MUST_BE_PRESENT',
       what === 'add'
         ? 'Two agents can only share a room you are in — join it first'
-        : 'You are what makes this room visible — take one of its agents out first'
+        : 'Two agents share this room — take one of them out before you leave it'
     );
   }
 
