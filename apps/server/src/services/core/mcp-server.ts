@@ -70,7 +70,8 @@ export function createExternalMcpServer(
   deps: McpToolDeps,
   marketplaceDeps?: MarketplaceMcpDeps,
   registry?: CapabilityRegistry,
-  identity?: AgentIdentity
+  identity?: AgentIdentity,
+  userId?: string
 ): McpServer {
   const server = new McpServer({
     name: 'dorkos',
@@ -103,12 +104,15 @@ export function createExternalMcpServer(
       operatorDeps: deps,
       ...(marketplaceDeps && { marketplaceDeps }),
     });
-  registerCapabilitiesAsMcpTools(
-    server,
-    capabilityRegistry,
-    'external',
-    identity ? { identity } : undefined
-  );
+  // Both facts ride, and the absence of either is a fact too: a capability that
+  // acts on somebody's own data reads `userId` to know WHICH person is asking,
+  // and reads its absence as "this surface could name nobody" rather than as
+  // "the owner" (see `CapabilityInvocationContext.userId`).
+  const caller =
+    identity || userId
+      ? { ...(identity ? { identity } : {}), ...(userId ? { userId } : {}) }
+      : undefined;
+  registerCapabilitiesAsMcpTools(server, capabilityRegistry, 'external', caller);
 
   // ── Read-only resources ──────────────────────────────────────────────────
   // Same call the in-session server makes. This surface has no per-request `cwd`

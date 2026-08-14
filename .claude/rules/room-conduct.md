@@ -280,17 +280,29 @@ model. See ADR `260726-170127` and `research/20260727_buzz-conversational-behavi
   the service.** `post_to_room`, `react_to_room_entry`, `read_room_history` and
   `search_room_history` are the `rooms` capability domain
   (`room-capabilities.ts`), and each one is a thin caller of a `RoomService`
-  method — never a second write path and never a second read predicate. Three
+  method — never a second write path and never a second read predicate. Four
   consequences to keep true. **Membership is the gate**, not the tier: both reads
-  are `observe` with the read-only carve-out, so nothing but the membership check
-  stands between a caller and a room's log, and "not a member" answers exactly as
-  "no such room" so a room id is never a capability. **A member reads only above
-  its `joinedSeq`** — the same floor the ambient window keeps. And **posting is
+  are `observe`, which returns allowed before any other check runs, so nothing but
+  the membership check stands between a caller and a room's log — and "not a
+  member" answers exactly as "no such room", so a room id is never a capability.
+  **Neither read takes `readOnlyCarveOut`**, and that omission is a decision
+  rather than a gap: the flag would make them reachable on the login-off external
+  `/mcp` surface with no token at all, and what they return is other people's
+  messages. Do not add it to make a client's life easier. **A member reads only
+  above its `joinedSeq`** — the same floor the ambient window keeps. And **posting is
   channels and threads only** (spec §2.6): in a DM the reply IS the message, so
   the tool refuses there, spelled `kind !== 'channel'` like every other room-kind
   branch. An agent that posts through the tool mid-turn does not ALSO get its
   turn narration posted (`ActiveClaim.spokeViaTool`); provenance still follows the
-  turn, so speaking on purpose is not a way to reset the cascade guard.
+  turn, so speaking on purpose is not a way to reset the cascade guard — and the
+  mark is CONSUMED by the delivery it was set for (`takeSpokeViaTool`), because a
+  claim outlives its answer under RP8's park-and-resume and a standing mark would
+  swallow the next one.
+  **Who is calling is resolved, never assumed.** An agent token names an agent; a
+  verified `userId` names a person; neither present means the surface could name
+  nobody, and on a login-on install that is a refusal (`UNIDENTIFIED_CALLER`),
+  never a fallback to the owner. Falling back is how an invited person's API key
+  read the owner's direct messages.
 - **Agents may react, bounded by a rate** (ADR `260814-195522`, reversing
   etiquette E16b's second half). The bound is `ReactionBudget` — 20 per agent per
   room per rolling hour, recovered from the reaction rows themselves so a restart

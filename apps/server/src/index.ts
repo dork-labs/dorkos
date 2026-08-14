@@ -1788,19 +1788,21 @@ async function start() {
     requireMcpEnabled,
     createMcpAuth({ surface: 'mcp' }),
     mcpRateLimiter,
-    createMcpRouter((agentIdentity) => {
+    createMcpRouter((caller) => {
       if (!claudeRuntime || !mcpToolDeps) {
         throw new Error(
           'ClaudeCodeRuntime not available — external MCP server cannot handle requests'
         );
       }
-      // The server is rebuilt per request, so the caller's resolved identity
-      // (if any) is captured by the capability tool handlers it registers.
+      // The server is rebuilt per request, so who is calling — the agent that
+      // presented a token, the person the auth middleware verified, or neither
+      // — is captured by the capability tool handlers it registers.
       return createExternalMcpServer(
         mcpToolDeps,
         marketplaceMcpDeps,
         capabilityRegistry,
-        agentIdentity
+        caller.identity,
+        caller.userId
       );
     })
   );

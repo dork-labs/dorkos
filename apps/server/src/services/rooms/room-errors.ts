@@ -106,6 +106,21 @@ export type RoomErrorCode =
    */
   | 'TOOL_POST_NOT_IN_DM'
   /**
+   * A rooms capability was called on a login-on install by a caller the surface
+   * could name neither as an agent nor as a person
+   * (`room-capabilities.ts`'s `callerAuthor`).
+   *
+   * **A refusal rather than a fallback, and that is the whole fix.** These verbs
+   * act on ONE member's rooms, so "who is asking" is not decoration; resolving an
+   * unattributable caller to the install owner is how an invited person's API key
+   * came to read the owner's direct messages. There is no honest default on an
+   * install that requires a login, so there is no default.
+   *
+   * Unreachable with login off, where the operator IS the unattributable caller
+   * (the documented DOR-505 residual).
+   */
+  | 'UNIDENTIFIED_CALLER'
+  /**
    * One agent has used up its hourly reaction allowance in one room
    * ({@link ReactionBudget}).
    *

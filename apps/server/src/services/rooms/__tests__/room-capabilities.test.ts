@@ -8,7 +8,7 @@
  * composition. A test that called `invoke` on a definition would prove none of
  * those, which is exactly the shape of enforcement this repo has been bitten by.
  */
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import type { RoomWithRoster } from '@dorkos/shared/room-schemas';
 import { composeRegistry, type CapabilityRegistry } from '../../core/capabilities/index.js';
 import { composeCapabilityRegistryForDocs } from '../../core/self-description/dorkos-registry.js';
@@ -22,6 +22,32 @@ import {
   scriptedRunner,
   type RoomHarness,
 } from './room-test-harness.js';
+
+/**
+ * The two module-level facts `callerAuthor` reads about this install: who owns
+ * it, and whether it requires a login. Both are stubbed rather than faked into
+ * the harness because they live outside the rooms domain — and both are read PER
+ * CALL by the code under test, so a test can move them between invocations the
+ * way an install moves between postures.
+ */
+const installState: { ownerId: string | null; loginEnabled: boolean } = {
+  ownerId: null,
+  loginEnabled: false,
+};
+
+vi.mock('../../core/auth/index.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../core/auth/index.js')>()),
+  readOwnerAccount: () => (installState.ownerId ? { id: installState.ownerId } : null),
+}));
+
+vi.mock('../../core/config-manager.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../core/config-manager.js')>()),
+  configManager: {
+    get: (section: string) =>
+      section === 'auth' ? { enabled: installState.loginEnabled } : undefined,
+    set: () => {},
+  },
+}));
 
 const agents = agentLookupFor({
   '/agents/ana': { name: 'ana', displayName: 'Ana', responseMode: 'always' },
@@ -51,6 +77,8 @@ describe('the rooms capability domain', () => {
   }
 
   beforeEach(() => {
+    installState.ownerId = null;
+    installState.loginEnabled = false;
     harness = createRoomHarness({ agents, runner: scriptedRunner(() => null) });
     ({ service, authors, human } = harness);
     registry = composeRegistry([roomsDomain], {
@@ -132,6 +160,96 @@ describe('the rooms capability domain', () => {
           logger: { debug() {}, info() {}, warn() {}, error() {} },
         })
       ).toThrow(/roomDeps/);
+    });
+  });
+
+  describe('who a call acts as', () => {
+    /** Call a tool as a caller carrying no agent token — a person, or nobody. */
+    function callAsPerson(id: string, input: unknown, userId?: string): Promise<unknown> {
+      return registry.invoke(id, input, {
+        ...(userId ? { userId } : {}),
+        retryChannel: 'http-header',
+      });
+    }
+
+    it('acts as the invited person themselves, never as the install owner', async () => {
+      // The bug this pins: with login on, every caller without an agent token
+      // resolved to the OWNER, so an invited person's API key read the owner's
+      // rooms and posted under the owner's name.
+      installState.loginEnabled = true;
+      installState.ownerId = 'owner-account';
+      const owner = authors.bindOwner('owner-account').id;
+      const priya = authors.human('priya-account').id;
+      // A room the OWNER is in and Priya is not. If Priya were resolved as the
+      // owner she would read it; as herself she cannot see it at all.
+      const ownersRoom = service.createRoom(
+        { kind: 'channel', title: 'Owner only', members: [], agentPaths: [] },
+        owner
+      );
+      service.post(ownersRoom.id, { authorId: owner, text: 'a private note' });
+
+      await expect(
+        callAsPerson('rooms.read_history', { roomId: ownersRoom.id, limit: 5 }, 'priya-account')
+      ).rejects.toMatchObject({ payload: { code: 'ROOM_NOT_FOUND' } });
+
+      // And her own room IS readable, so the refusal above is about membership
+      // rather than about her being unable to call anything at all.
+      const hers = service.createRoom(
+        { kind: 'channel', title: 'Hers', members: [], agentPaths: [] },
+        priya
+      );
+      service.post(hers.id, { authorId: priya, text: 'mine' });
+      const page = (await callAsPerson(
+        'rooms.read_history',
+        { roomId: hers.id, limit: 5 },
+        'priya-account'
+      )) as { entries: Array<{ text: string }> };
+      expect(page.entries.map((entry) => entry.text)).toEqual(['mine']);
+    });
+
+    it('refuses a caller it cannot name at all when login is on', async () => {
+      installState.loginEnabled = true;
+      installState.ownerId = 'owner-account';
+
+      await expect(
+        callAsPerson('rooms.read_history', { roomId: channel.id, limit: 5 })
+      ).rejects.toMatchObject({ payload: { code: 'UNIDENTIFIED_CALLER' } });
+    });
+
+    it('falls back to the person at the keyboard only when login is off', async () => {
+      // The documented DOR-505 residual, and the ONLY posture it applies in:
+      // with login off there is nothing left to tell a local program from the
+      // operator, so the owner is the honest answer rather than a guess.
+      installState.loginEnabled = false;
+      installState.ownerId = 'owner-account';
+      const owner = authors.bindOwner('owner-account').id;
+      const ownersRoom = service.createRoom(
+        { kind: 'channel', title: 'Owner only', members: [], agentPaths: [] },
+        owner
+      );
+      service.post(ownersRoom.id, { authorId: owner, text: 'a private note' });
+
+      const page = (await callAsPerson('rooms.read_history', {
+        roomId: ownersRoom.id,
+        limit: 5,
+      })) as { entries: Array<{ text: string }> };
+      expect(page.entries.map((entry) => entry.text)).toEqual(['a private note']);
+    });
+
+    it('lets an agent token win over a person on the same call', async () => {
+      // Ordering, pinned: an agent running inside somebody's session posts as
+      // ITSELF, which is `resolveCaller`'s first branch and the reason it is
+      // first.
+      installState.loginEnabled = true;
+      installState.ownerId = 'owner-account';
+
+      const result = (await registry.invoke(
+        'rooms.post',
+        { roomId: channel.id, text: 'as myself' },
+        { identity: ANA_IDENTITY, userId: 'priya-account', retryChannel: 'mcp-argument' }
+      )) as { entryId: string };
+
+      expect(harness.store.getEntryById(channel.id, result.entryId)?.authorId).toBe(ana);
     });
   });
 

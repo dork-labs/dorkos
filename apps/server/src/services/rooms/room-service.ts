@@ -2638,10 +2638,19 @@ export class RoomService {
     // Asked LAST of the refusals, and after the entry check, because it is the
     // only one that SPENDS something: a caller that was going to be refused for
     // any other reason must not have an allowance taken off it on the way out.
-    // Taking a reaction back spends too — the loop this bounds is a toggle loop
-    // as much as an add loop, and only one of the two leaves a row behind.
+    //
+    // **Only an ADDITION spends.** Taking a reaction back is never refused and
+    // never charged, because a retraction is the remedy for a reaction somebody
+    // regrets and an agent that cannot take one back is an agent whose mistakes
+    // are permanent — and because it makes the ceiling honest to describe:
+    // twenty an hour means twenty pills, not twenty clicks. Which way this call
+    // goes is settled before the write, from the row state: `on: false` removes,
+    // a flip removes what is standing, and `on: true` on a reaction already there
+    // is a no-op a retrying client must not be charged for.
     if (this.authors.getById(viewerAuthorId)?.kind !== 'human') {
-      if (!this.reactionBudget.tryReserve(roomId, viewerAuthorId)) {
+      const standing = this.reactions.has({ roomId, entryId, authorId: viewerAuthorId, emoji });
+      const lands = on === false ? false : !standing;
+      if (lands && !this.reactionBudget.tryReserve(roomId, viewerAuthorId)) {
         throw new RoomError(
           'REACTION_RATE_LIMITED',
           'You have used up your reactions in this room for now — say something instead, or wait.'

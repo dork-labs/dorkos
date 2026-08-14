@@ -1157,14 +1157,24 @@ export class RoomTriggerDispatcher {
   /**
    * Take the "this agent has already spoken here" mark, if one is standing.
    *
-   * **Consume-once, and the consuming is the point.** A claim can outlive the
-   * answer it was taken for — a turn past the wait deadline holds it while the
-   * collector parks the next message behind it (RP8) — so a mark left standing
-   * would suppress a SECOND answer that nobody had spoken for. Reading it and
-   * clearing it in one step binds the mark to exactly one delivery, whichever
-   * delivery gets there first, and makes that true structurally rather than by
-   * an argument about claim lifetimes that the next change to this file could
-   * quietly invalidate.
+   * **Consume-once, and the clear is defence in depth rather than a behaviour.**
+   * Be exact about that, because the tempting version of this comment overstates
+   * it: today one claim serves exactly ONE delivery — `runOneInDispatch` either
+   * delivers in frame or hands the turn to `deliverLate`, never both — so nothing
+   * observable depends on the mark being cleared, and removing the clear leaves
+   * every test green. It was measured.
+   *
+   * The clear is here for what changes underneath it. A claim already outlives
+   * its own turn (a late answer holds it while the collector parks the next
+   * message behind it, RP8), and the day something delivers twice under one claim
+   * a standing mark would swallow an answer nobody had spoken for — silently, in
+   * somebody else's room. Binding the mark to one delivery makes that impossible
+   * structurally, instead of by an argument about claim lifetimes that the next
+   * change to this file could quietly invalidate.
+   *
+   * What IS observable, and what the tests pin, is the mark's scope: it is per
+   * `(room, agent)`, so a post into another room suppresses nothing here, and a
+   * fresh claim starts unmarked, so the next turn's answer always lands.
    *
    * @param roomId - The room the answer is being delivered into.
    * @param authorId - The agent delivering it.

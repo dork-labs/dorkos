@@ -82,6 +82,7 @@ import {
   type CapabilityHandlerContext,
 } from '../core/capabilities/index.js';
 import { readOwnerAccount } from '../core/auth/index.js';
+import { configManager } from '../core/config-manager.js';
 import type { AuthorRecord } from './author-registry.js';
 import { RoomError } from './room-errors.js';
 import { HISTORY_PAGE_MAX, type RoomService } from './room-service.js';
@@ -125,10 +126,8 @@ function requireRoomDeps(deps: CapabilityDeps): RoomService {
 }
 
 /**
- * Who is calling, as a room author.
- *
- * Two branches, and they are the first and third of `resolveCaller`'s three —
- * the middle one reads an Express session, and no MCP call has one.
+ * Who is calling, as a room author — the same three branches `resolveCaller`
+ * draws for the HTTP room routes, in the same order and with the same answers.
  *
  * 1. **An agent that presented an identity token** acts as itself. This is the
  *    case every one of these tools is for, and the id is resolved from the token's
@@ -136,21 +135,76 @@ function requireRoomDeps(deps: CapabilityDeps): RoomService {
  *    author a caller could impersonate, and every room read is scoped to the
  *    caller's membership, so naming a member would also be a way to read their
  *    rooms.
- * 2. **Anything else** is the person at the keyboard, which on the external
- *    `/mcp` surface with login off is the documented DOR-505 residual and not this
- *    domain's to close.
+ * 2. **A signed-in person** acts as THEMSELVES — the owner when it is the owner,
+ *    and their own author when it is anybody else.
+ * 3. **Nobody the surface could name** is the person at the keyboard, and ONLY
+ *    when login is off. With login off there is genuinely nothing left to tell a
+ *    local program from the operator (the documented DOR-505 residual, which this
+ *    domain cannot close). With login ON, an unattributable caller is refused.
+ *
+ * **Branch 3's guard is the whole point of this function.** It used to resolve
+ * every non-agent caller to the install owner unconditionally, which with login
+ * on made "authenticated as somebody" mean "acting as the owner": an invited
+ * person's API key would read the owner's direct messages and post under the
+ * owner's name. The fix is not a narrower fallback but a REFUSAL — falling back
+ * to the owner because we could not name the caller is precisely the inference
+ * that was wrong, and a login-on install has no honest default.
  *
  * @param rooms - The rooms service, for its author registry.
  * @param context - What the registry resolved about this call.
  * @returns The author these verbs act as.
+ * @throws {RoomError} `UNIDENTIFIED_CALLER` when login is on and the surface
+ *   named neither an agent nor a person.
  */
 function callerAuthor(rooms: RoomService, context: CapabilityHandlerContext): AuthorRecord {
   const registry = rooms.authorRegistry;
   if (context.identity) {
     return registry.resolveAgent(context.identity.agentPath, context.identity.displayName);
   }
+
   const owner = readOwnerAccount();
+  if (context.userId !== undefined) {
+    // The owner reaches their author through `bindOwner`, which is what rebinds
+    // the unbound `'local'` sentinel onto their account the first time they ask
+    // for anything — so turning login on does not strand the rooms they already
+    // had. Everybody else gets their own author and nobody else's.
+    return context.userId === owner?.id
+      ? registry.bindOwner(owner.id)
+      : registry.human(context.userId);
+  }
+
+  if (loginIsOn()) {
+    throw new RoomError(
+      'UNIDENTIFIED_CALLER',
+      'This DorkOS requires a login, and this call named nobody. Present an agent token or sign in.'
+    );
+  }
   return owner ? registry.bindOwner(owner.id) : registry.localHuman();
+}
+
+/**
+ * Whether this install requires a login.
+ *
+ * Read per call rather than captured, for the reason every other live read in
+ * this domain is: an install becomes owned partway through its life, and a value
+ * captured at boot would leave the branch above believing forever that anybody
+ * may act as the operator.
+ *
+ * **`=== true`, matching every other reader of this flag** (`mcp-auth.ts`,
+ * `room-caller.ts`): an absent `auth` block is the default posture and means
+ * login is OFF. Spelling it `!== false` would make a fresh install refuse every
+ * call, which is the opposite mistake and just as wrong.
+ *
+ * **A THROW degrades to ON**, though, and that asymmetry is deliberate: an
+ * unreadable config is not evidence that anybody may act as the operator, and
+ * the only safe direction to fail here is the one that refuses.
+ */
+function loginIsOn(): boolean {
+  try {
+    return configManager.get('auth')?.enabled === true;
+  } catch {
+    return true;
+  }
 }
 
 /**
@@ -253,10 +307,12 @@ export const roomsDomain: CapabilityDomain = {
       },
       invoke: (deps, input, context) => {
         const rooms = requireRoomDeps(deps);
-        const author = callerAuthor(rooms, context);
+        // Inside `answering`, because resolving WHO is calling can itself refuse
+        // — a login-on install that could name nobody — and a refusal a model
+        // gets as a stack trace is a refusal it cannot act on.
         const entry = answering(() =>
           rooms.postFromTool(input.roomId, {
-            authorId: author.id,
+            authorId: callerAuthor(rooms, context).id,
             text: input.text,
             ...(input.replyTo !== undefined ? { replyTo: input.replyTo } : {}),
           })
@@ -299,9 +355,14 @@ export const roomsDomain: CapabilityDomain = {
       },
       invoke: (deps, input, context) => {
         const rooms = requireRoomDeps(deps);
-        const author = callerAuthor(rooms, context);
         const { reacted } = answering(() =>
-          rooms.toggleReaction(input.roomId, input.entryId, author.id, input.emoji, input.on)
+          rooms.toggleReaction(
+            input.roomId,
+            input.entryId,
+            callerAuthor(rooms, context).id,
+            input.emoji,
+            input.on
+          )
         );
         // The caller's own quick row is a person's UI affordance and is
         // deliberately not returned here: it would be state about the operator,
@@ -311,7 +372,7 @@ export const roomsDomain: CapabilityDomain = {
     }),
     defineCapability({
       id: 'rooms.read_history',
-      title: 'Read a room"s history',
+      title: "Read a room's history",
       description:
         'Read back what was said in a room you are a member of, newest first. ' +
         'Use it when someone refers to an earlier decision, or when you have lost the thread of ' +
@@ -344,9 +405,8 @@ export const roomsDomain: CapabilityDomain = {
       },
       invoke: (deps, input, context) => {
         const rooms = requireRoomDeps(deps);
-        const author = callerAuthor(rooms, context);
         const entries = answering(() =>
-          rooms.readHistory(input.roomId, author.id, {
+          rooms.readHistory(input.roomId, callerAuthor(rooms, context).id, {
             limit: input.limit,
             ...(input.before !== undefined ? { before: input.before } : {}),
             ...(input.threadRootEntryId !== undefined
@@ -362,7 +422,7 @@ export const roomsDomain: CapabilityDomain = {
     }),
     defineCapability({
       id: 'rooms.search_history',
-      title: 'Search a room"s history',
+      title: "Search a room's history",
       description:
         'Find where something was said in a room you are a member of, best match first. ' +
         'It matches whole words and their variants — searching for "deploys" finds "deploy" and ' +
@@ -391,9 +451,8 @@ export const roomsDomain: CapabilityDomain = {
       },
       invoke: (deps, input, context) => {
         const rooms = requireRoomDeps(deps);
-        const author = callerAuthor(rooms, context);
         const entries = answering(() =>
-          rooms.searchHistory(input.roomId, author.id, {
+          rooms.searchHistory(input.roomId, callerAuthor(rooms, context).id, {
             query: input.query,
             limit: input.limit,
             ...(input.threadRootEntryId !== undefined
