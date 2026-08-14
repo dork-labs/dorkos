@@ -136,6 +136,7 @@ describe('/api/rooms — what a headerless caller gets', () => {
         // Read through the mutable locals, so a test can raise a cap mid-run the
         // way Settings does rather than rebuilding the service.
         budget: new RoomTurnBudget({
+          db,
           limits: { perRoom: () => perRoomCap, global: () => globalCap },
         }),
       }).service

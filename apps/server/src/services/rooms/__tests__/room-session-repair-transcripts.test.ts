@@ -102,7 +102,14 @@ describe('the repair sweep over real transcripts on disk', () => {
     const report = await sweep();
 
     expect(bound()).toBe(CANONICAL);
-    expect(report).toEqual({ checked: 1, repaired: 1, stranded: 0, unreadable: 0 });
+    expect(report).toEqual({
+      checked: 1,
+      repaired: 1,
+      stranded: 0,
+      refused: 0,
+      failed: 0,
+      unreadable: 0,
+    });
   });
 
   it('leaves a stranded binding alone, and says which room and id it is', async () => {
@@ -112,7 +119,14 @@ describe('the repair sweep over real transcripts on disk', () => {
     const report = await sweep();
 
     expect(bound()).toBe(PLACEHOLDER);
-    expect(report).toEqual({ checked: 1, repaired: 0, stranded: 1, unreadable: 0 });
+    expect(report).toEqual({
+      checked: 1,
+      repaired: 0,
+      stranded: 1,
+      refused: 0,
+      failed: 0,
+      unreadable: 0,
+    });
     expect(warn).toHaveBeenCalledWith(
       expect.stringContaining('no transcript'),
       expect.objectContaining({ roomId: ROOM, agentPath, deadSessionId: PLACEHOLDER })
@@ -126,7 +140,14 @@ describe('the repair sweep over real transcripts on disk', () => {
     const report = await sweep();
 
     expect(bound()).toBe(PLACEHOLDER);
-    expect(report).toEqual({ checked: 1, repaired: 0, stranded: 0, unreadable: 0 });
+    expect(report).toEqual({
+      checked: 1,
+      repaired: 0,
+      stranded: 0,
+      refused: 0,
+      failed: 0,
+      unreadable: 0,
+    });
     expect(warn).not.toHaveBeenCalled();
   });
 });

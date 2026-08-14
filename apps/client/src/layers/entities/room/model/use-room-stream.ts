@@ -82,8 +82,10 @@ export function mergeRoomEntry(
  *   answer, so the indicator is telling the truth and the notice is telling the
  *   reader what to do about it. Retiring it here would say the work had ended
  *   at the exact moment the room is asking somebody to keep it going.
- * - `cascade_stopped` and `budget_reached` describe a turn that was never
- *   started, so there is no indicator to retire.
+ * - `cascade_stopped`, `budget_reached` and `agent_unavailable` describe a turn
+ *   that was never started, so there is no indicator to retire. A bind failure
+ *   is the same shape as the other two here: `claimTargets` catches it before a
+ *   claim is ever taken, so nothing was ever published for this hook to clear.
  * - `halted` retires nothing here BECAUSE it does not need to: the halt drops
  *   every claim through the dispatcher, so a real `done` signal is already on
  *   its way for each one (`room-trigger.ts`'s `releaseClaim`). This is the one

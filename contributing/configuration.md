@@ -715,7 +715,7 @@ Threads used to be the cheaper version of that lever and are not any more. While
 
 Set either to `0` to stop automatic replies entirely.
 
-**Known limit:** both windows are in-memory and reset when the server restarts. That costs nothing for an accidental loop, which runs in seconds. For a deliberate caller it is real: `POST /api/admin/restart` sits behind the same pass-through gate and is rate-limited to 3 per 5 minutes, so roughly 36 clearances an hour are reachable. Closing that needs a durable counter — a write on the hot path of every turn — and is tracked separately.
+**Both windows survive a restart** (DOR-1205). Each turn that actually runs is written to `room_turn_spend` and the current hour is read back when the server starts, so an hour means an hour of wall clock rather than an hour of uptime — restarting no longer clears either ceiling. Rows age out of the table as new ones land, so it holds at most the last hour and is a counter, never a spend history.
 
 ```bash
 dorkos config set rooms.maxAutomaticTurnsPerRoomPerHour 120

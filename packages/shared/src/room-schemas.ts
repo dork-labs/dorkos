@@ -99,6 +99,13 @@ export type RoomEntryKind = z.infer<typeof RoomEntryKindSchema>;
  *   and none ever will until somebody re-registers it, which is why this is its
  *   own code rather than `turn_failed` — nothing failed, and there is no session
  *   to go and look at (ADR 260801-003051).
+ * - `agent_unavailable` — the room could not bind a session for this agent before
+ *   a turn ever started, almost always brief database contention on the
+ *   `(room, agent)` session row. Its own code rather than `turn_failed` because
+ *   no turn ran and there is no session to point a reader at yet — the same
+ *   reasoning that gives `agent_gone` its own code, and the same shape: damped
+ *   per `(room, agent, reason)` rather than treated as one more distinct error
+ *   (DOR-1206).
  * - `awaiting_approval` — the agent's turn STARTED and then stopped, waiting for
  *   a person: a tool approval, a question it asked, or an MCP prompt. All three
  *   park the turn until somebody answers in that agent's own session, and the
@@ -151,6 +158,7 @@ export const RoomNoticeCodeSchema = z
     'agent_busy',
     'turn_failed',
     'agent_gone',
+    'agent_unavailable',
     'awaiting_approval',
     'halted',
     'addressing_changed',

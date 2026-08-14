@@ -263,7 +263,10 @@ export function createRoomSubsystem(opts: {
         waitMs: () => readRoomMinutesMs('replyWaitMinutes'),
         ceilingMs: () => readRoomMinutesMs('lateReplyCeilingMinutes'),
       }),
-    budget: opts.budget ?? new RoomTurnBudget({ limits: turnBudgetLimits }),
+    // The budget reads its own spent hour back out of this database at
+    // construction, so the ceilings mean an hour of wall clock rather than an
+    // hour of uptime (DOR-1205).
+    budget: opts.budget ?? new RoomTurnBudget({ limits: turnBudgetLimits, db: opts.db }),
     // Read per write, not captured once: changing the ceiling in Settings has
     // to bound the very next cascade, not the next server start.
     maxAgentDepth: readMaxAgentDepth,

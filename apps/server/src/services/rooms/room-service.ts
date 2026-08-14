@@ -75,6 +75,7 @@ import {
   type SignalType,
 } from '@dorkos/shared/relay-schemas';
 import type {
+  AuthorKind,
   CreateRoomRequest,
   Room,
   RoomAttachment,
@@ -600,9 +601,11 @@ export class RoomService {
       const author = this.roster.resolve({ agentPath });
       resolved.set(author.id, author);
     }
-    // Opening a room is not a way around the operator-only roster rule: an agent
-    // may make itself a room (and talk to the person in it), but conscripting a
-    // second agent into one is the same amplification lever `addMember` refuses.
+    // Opening a room is not a way around the operator-only roster rule. An agent
+    // may make itself a room, and may bring a colleague into one — but only into
+    // a room the person is on the roster of (the three-way rule,
+    // ADR 260814-025326). `addMember` and `removeMember` hold the same shape
+    // afterwards, so this is a gate and not a formality.
     this.requireSeedingAllowed(creator, [...resolved.values()]);
 
     // Deliberately AFTER that gate, not before. A caller the gate refuses gets
@@ -1513,6 +1516,15 @@ export class RoomService {
    * refused` notice posted into the room BEFORE this throws, and the thrown
    * `BRIDGE_SECOND_AGENT_REFUSED`.
    *
+   * **A room the owner is not ON THE ROSTER of refuses a SECOND agent** — the
+   * three-way rule (ADR 260814-025326), held here and not only at creation. An
+   * agent may open a room with a colleague, and the owner's membership is the
+   * price; without this check the price could be paid at creation and taken back
+   * one call later, by adding the second agent to a room the owner had already
+   * left, or to one an agent opened alone. Membership rather than visibility is
+   * the whole of what is being protected — see
+   * {@link RoomService.requireSeedingAllowed}, which owns that reasoning.
+   *
    * @param roomId - The room.
    * @param viewerAuthorId - The caller; must be the install's owner.
    * @param input - Who to add, and optionally how they should behave.
@@ -1521,19 +1533,16 @@ export class RoomService {
     const room = this.requireVisibleRoom(roomId, viewerAuthorId);
     this.requireOperator(viewerAuthorId, 'who is in a room');
 
-    const bridge = this.bridges.findBridgeByRoom(roomId);
-    if (bridge) {
-      // Resolved once here to decide the refusal, and again inside
-      // `RoomRoster.add` below — harmless: resolving an agent path is
-      // idempotent (it mints the author row at most once and returns the same
-      // row thereafter), and threading a pre-resolved author through `add`
-      // would widen a seam every other caller of `RoomRoster.add` shares, for
-      // one caller.
-      const candidate = this.roster.resolve(input);
-      if (candidate.kind === 'agent') {
-        const existingAgent = this.roster
-          .list(roomId)
-          .find((member) => member.author.kind === 'agent');
+    // Resolved once here and again inside `RoomRoster.add` below — harmless:
+    // resolving an agent path is idempotent (it mints the author row at most
+    // once and returns the same row thereafter), and threading a pre-resolved
+    // author through `add` would widen a seam every other caller of
+    // `RoomRoster.add` shares, for one caller.
+    const candidate = this.roster.resolve(input);
+    if (candidate.kind === 'agent') {
+      const roster = this.roster.list(roomId);
+      if (this.bridges.findBridgeByRoom(roomId)) {
+        const existingAgent = roster.find((member) => member.author.kind === 'agent');
         // Re-adding the room's OWN bound agent is a harmless idempotent no-op
         // one call down (`RoomStore.addMember`'s `onConflictDoNothing`) — the
         // refusal is about a SECOND, DIFFERENT agent, not about this agent
@@ -1546,6 +1555,19 @@ export class RoomService {
           );
         }
       }
+      // The roster this call is about to produce. The candidate is UNIONED in
+      // rather than appended, because re-adding somebody already on the roster
+      // is a no-op one call down — counting them twice would refuse a call that
+      // changes nothing.
+      this.requireOwnerWitnessesAgents(
+        [
+          ...roster
+            .filter((member) => member.authorId !== candidate.id)
+            .map((member) => ({ authorId: member.authorId, kind: member.author.kind })),
+          { authorId: candidate.id, kind: candidate.kind },
+        ],
+        'add'
+      );
     }
 
     const member = this.roster.add(room, input);
@@ -1578,6 +1600,14 @@ export class RoomService {
    * Remove a member, dropping its per-room session binding with it.
    * **Operator-only.**
    *
+   * **The owner cannot be taken out of a room two agents share** — the
+   * three-way rule (ADR 260814-025326). This is the half of the rule that
+   * refuses the OWNER, and it has to exist: a guarantee that the person is a
+   * MEMBER wherever two agents talk — on the roster, with the read cursor and
+   * the unread count that only membership carries — is worth nothing if the way
+   * to break it is to leave afterwards. Taking an AGENT out is never refused, so
+   * the room is never wedged — one agent out, and the person may go.
+   *
    * @param roomId - The room.
    * @param viewerAuthorId - The caller; must be the install's owner.
    * @param authorId - The member being removed.
@@ -1585,6 +1615,15 @@ export class RoomService {
   removeMember(roomId: string, viewerAuthorId: string, authorId: string): void {
     this.requireVisibleRoom(roomId, viewerAuthorId);
     this.requireOperator(viewerAuthorId, 'who is in a room');
+    if (this.isOwnerAuthor(authorId)) {
+      this.requireOwnerWitnessesAgents(
+        this.roster
+          .list(roomId)
+          .filter((member) => member.authorId !== authorId)
+          .map((member) => ({ authorId: member.authorId, kind: member.author.kind })),
+        'remove'
+      );
+    }
     this.roster.remove(roomId, authorId);
     eventFanOut.broadcast('room_member_removed', { roomId, authorId });
   }
@@ -2666,19 +2705,44 @@ export class RoomService {
 
   /**
    * Refuse a non-owner's attempt to seed a room with an agent that is not
-   * itself.
+   * itself — **unless the owner is in that room too** (the three-way rule,
+   * ADR 260814-025326).
    *
    * A caller opening a room for itself — a DM with the owner, a scratch channel
-   * — is legitimate and stays allowed. Putting somebody else's agent in one is
-   * not: it is `addMember` by a different route, and it would let the caller
-   * assemble a room whose members then answer each other.
+   * — is legitimate and has always been allowed. What changed on 2026-08-13 is
+   * the case beside it: **an agent may now open a room with another agent, and
+   * the price is that the person is on the roster.** Agents that can only ever
+   * talk to their operator cannot divide work between themselves, which is the
+   * coordination this product is for.
+   *
+   * **What the owner's membership buys is not visibility — she already has
+   * that.** {@link RoomService.seesEveryRoom} shows the owner every room on the
+   * install whether or not she is on its roster, so "a conversation nobody can
+   * see" was never the thing at risk. MEMBERSHIP is: only a membership carries a
+   * read cursor, so only a room the owner is IN has an unread count at all
+   * ({@link RoomService.cursorsFor} keys on `room_members`; a non-member's is
+   * `null`, which the sidebar draws as no badge). Two agents in a room she is
+   * not on the roster of would talk in a row that never lights up — visible in
+   * the way a file is visible, which is not the same as being told. The rule
+   * makes the person a participant rather than an auditor, and it is checked
+   * here rather than promised in a prompt.
+   *
+   * **Only an AGENT gets that escape.** A second PERSON — a member account, in
+   * an install with login on — still may not put any agent in any room, owner
+   * present or not. `/api/rooms` is reachable by a member (her own rooms live
+   * behind it), so without that narrowness she could conscript somebody else's
+   * agents into work that spends the owner's model quota with the server
+   * process's filesystem access. An agent seeding a colleague is doing the job
+   * it was installed to do; a guest doing it is spending an account that is not
+   * theirs. Nothing asked for the second, so nothing here grants it.
    *
    * This reads owner-identity rather than `kind === 'human'` for the same reason
-   * {@link RoomService.requireOperator} does, and it is not a formality: `/api/rooms`
-   * is reachable by a member (her own rooms live behind it), so on the old test
-   * an invited person could have assembled exactly the amplification room this
-   * refuses an agent — spending the owner's model quota, with the server
-   * process's filesystem access, in a room she made herself.
+   * {@link RoomService.requireOperator} does.
+   *
+   * **Creation is not the only door**, and this method is not the whole rule:
+   * {@link RoomService.requireOwnerWitnessesAgents} holds the same invariant at
+   * `addMember` and `removeMember`, because a room that passes here could
+   * otherwise be walked into the forbidden shape one membership call later.
    *
    * @param creator - The author opening the room.
    * @param seeded - Every author the new roster will hold.
@@ -2688,9 +2752,62 @@ export class RoomService {
     const conscripted = seeded.find(
       (author) => author.id !== creator.id && author.kind === 'agent'
     );
-    if (conscripted) {
+    if (!conscripted) return;
+    if (creator.kind !== 'agent') {
       throw new RoomError('OPERATOR_ONLY', 'Only you can put another agent in a room');
     }
+    if (seeded.some((author) => this.isOwnerAuthor(author.id))) return;
+    throw new RoomError(
+      'OPERATOR_ONLY',
+      'Two agents can only share a room you are in — add yourself to it'
+    );
+  }
+
+  /**
+   * Hold the three-way rule across a membership change: **a room that holds two
+   * or more agents holds the owner too** (ADR 260814-025326).
+   *
+   * The same invariant {@link RoomService.requireSeedingAllowed} settles at
+   * creation, asked of the roster a membership call is about to produce. Both
+   * are needed, and the reason is that either one alone is a door standing open:
+   * a create the gate allows could be walked into an owner-less pair by adding
+   * an agent afterwards, and an owner who may leave any room could empty herself
+   * out of a room her two agents are talking in. Neither is a caller check —
+   * both membership verbs are already `requireOperator`, so the caller here is
+   * always the owner. **This refuses the owner herself**, which is the point:
+   * the guarantee is about the shape of the room, not about who asked.
+   *
+   * It is deliberately compositional rather than provenance-based. Nothing
+   * records who opened a room — `rooms` has no `created_by` column — and adding
+   * one would make the rule "an AGENT-seeded pair needs a witness" while leaving
+   * a pair the owner seeded and then walked out of just as unattended. Asking
+   * the roster instead needs no column and covers both.
+   *
+   * **A property of these two write verbs, not of the data already on disk.** A
+   * room that reached the forbidden shape before this rule existed keeps
+   * running, keeps triggering, and is never retro-refused; nothing sweeps the
+   * table. What is closed is every way to REACH that shape from here.
+   *
+   * **Removing an agent is never refused**, so a room is never wedged: the way
+   * out of a room the owner does not want to be on the roster of is to take an
+   * agent out of it, or to archive it (spec §12.4 — there is no delete, and no
+   * Leave).
+   *
+   * @param roster - The roster as it will be AFTER the change.
+   * @param what - What the caller was doing, for the refusal's own words.
+   */
+  private requireOwnerWitnessesAgents(
+    roster: readonly { authorId: string; kind: AuthorKind }[],
+    what: 'add' | 'remove'
+  ): void {
+    if (roster.filter((member) => member.kind === 'agent').length < 2) return;
+    if (roster.some((member) => this.isOwnerAuthor(member.authorId))) return;
+    throw new RoomError(
+      'OWNER_MUST_BE_PRESENT',
+      what === 'add'
+        ? 'Two agents can only share a room you are in — join it first'
+        : 'Two agents share this room — take one of them out before you leave it'
+    );
   }
 
   /**
