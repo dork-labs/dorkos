@@ -177,14 +177,14 @@ describe('PersonalityTab', () => {
   });
 
   /**
-   * The blank-control failure, pinned from both sides.
-   *
-   * `UpdateAgentRequestSchema` `.pick()`s `behavior` off the manifest whole, so
-   * `PATCH /api/mesh/agents/:id` accepts the full `ResponseModeSchema` — this
-   * value is reachable without any UI ever offering it, and a Select with no
-   * matching item renders its trigger empty.
+   * The rung name DOR-773 restored to the picker — a bare label, not a
+   * sentence, because the trigger portals a `SelectItem`'s children verbatim
+   * into a fixed-width `whitespace-nowrap` box (Radix `SelectItemText` →
+   * `context.valueNode`) with no wrap and no ellipsis on overflow.
    */
-  it('shows a stored engaged mode rather than blanking the control', () => {
+  const ENGAGED_LABEL = 'Engaged';
+
+  it('shows a stored engaged mode as "Engaged" rather than blanking the control', () => {
     render(
       <PersonalityTab
         agent={{ ...mockAgent, behavior: { responseMode: 'engaged' as const } }}
@@ -194,35 +194,56 @@ describe('PersonalityTab', () => {
       />
     );
 
-    expect(screen.getByText('Stays in the conversation (per room)')).toBeInTheDocument();
+    expect(screen.getByText(ENGAGED_LABEL)).toBeInTheDocument();
   });
 
-  it('does not offer engaged as a fresh choice, because it only seeds a DM here', () => {
+  it('offers engaged as a fresh choice, ordered loud to quiet with the other four', () => {
     render(
       <PersonalityTab agent={mockAgent} soulContent="soul" nopeContent="nope" onUpdate={vi.fn()} />
     );
 
-    // Four options and no fifth: at the manifest level `engaged` would seed a
-    // direct message, where the window never opens. A person picks it per room.
+    // DOR-773: engaged was withheld on a premise
+    // decisions/260730-182745-response-mode-is-projected-onto-loudness-rungs.md
+    // records as false (a direct message's engaged window opens exactly as a
+    // channel's does), so it is now offered like every other stored value —
+    // between direct-only and mention-only, the same loud-to-quiet order as
+    // RESPONSE_RUNGS in entities/room/lib/response-mode.ts.
     expect(offeredModes()).toEqual([
       'Always respond',
       'Direct messages only',
+      ENGAGED_LABEL,
       'Only when mentioned',
       'Never respond automatically',
     ]);
   });
 
-  it('offers the fifth only to the agent that already stores it', () => {
+  it('commits engaged when the reader picks it', () => {
+    const onUpdate = vi.fn();
     render(
-      <PersonalityTab
-        agent={{ ...mockAgent, behavior: { responseMode: 'engaged' as const } }}
-        soulContent="soul"
-        nopeContent="nope"
-        onUpdate={vi.fn()}
-      />
+      <PersonalityTab agent={mockAgent} soulContent="soul" nopeContent="nope" onUpdate={onUpdate} />
     );
 
-    expect(offeredModes()).toContain('Stays in the conversation (per room)');
+    fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Enter' });
+    fireEvent.click(
+      within(screen.getByRole('listbox')).getByRole('option', { name: ENGAGED_LABEL })
+    );
+
+    expect(onUpdate).toHaveBeenCalledWith({
+      behavior: { responseMode: 'engaged' },
+    });
+  });
+
+  it('scopes engaged honestly: new direct messages only, never a channel or an already-configured room', () => {
+    render(
+      <PersonalityTab agent={mockAgent} soulContent="soul" nopeContent="nope" onUpdate={vi.fn()} />
+    );
+
+    expect(
+      screen.getByText(
+        "Engaged only sets what a new direct message starts as: a channel always starts engaged, and a room you've already set up keeps what it has.",
+        { exact: false }
+      )
+    ).toBeInTheDocument();
   });
 
   it('renders with null convention content without crashing', () => {

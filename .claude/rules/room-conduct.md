@@ -42,6 +42,48 @@ model. See ADR `260726-170127` and `research/20260727_buzz-conversational-behavi
 
 ## Invariants
 
+- **A room that holds two or more agents holds the person too** — the three-way
+  rule (ADR `260814-025326`). An agent may open a room of any kind with a
+  colleague, and the owner's membership is the price. **The thing being protected
+  is MEMBERSHIP, not visibility**: `seesEveryRoom` already shows the owner every
+  room on the install, so nothing here is hidden from her either way. What only a
+  membership carries is a read cursor — and therefore an unread count at all
+  (`cursorsFor` keys on `room_members`; a non-member's count is `null`, drawn as
+  no badge). Two agents in a room she is not on the roster of would talk in a row
+  that never lights up. State it that way; "a conversation nobody sees" is false
+  as written and will be corrected by the next reader who checks.
+  It is a property of the ROSTER, checked at every verb that can change one:
+  `createRoom` refuses a non-owner seeding somebody else's agent into a room the
+  owner is not in, `addMember` refuses the second agent in such a room, and
+  `removeMember` refuses to take the OWNER out of a room two agents share — a
+  guarantee whose escape hatch is "leave afterwards" is not a guarantee. It is a
+  property of those three WRITE VERBS and not of the data: a room that reached
+  the forbidden shape before the rule existed keeps running and is never
+  retro-refused, and nothing sweeps the table. Do not re-express it as a prompt,
+  and do not add a `created_by` column to weaken it into "an AGENT-seeded pair
+  needs a witness": a pair the owner seeded and then walked out of is just as
+  unattended. Taking an AGENT out is never refused, so nothing is ever wedged.
+- **Outside a channel, implicit addressing belongs to a PERSON's message.** A DM
+  needs no `@`, which is why `direct-only` answers everything in one and why the
+  DM seed is the agent's `always` default — and that is a claim about a person
+  talking to their agents. A post an AGENT writes in a DM therefore addresses
+  only the members it NAMES (`selectTriggerTargets`) — **every mode, not just
+  `always`**: `direct-only` and `engaged` collapse to mention-only for that
+  entry too. Measured before the rule existed: one "hello" in a two-agent DM cost
+  four turns and two apology notices, with nobody's setting changed. This is not
+  arbitration — it never chooses between two agents that were addressed, and
+  never silences one that was named — and it changes nothing about a channel.
+  Whatever tells an agent how it is reached must say this too
+  (`room-context-block.ts`); a mechanism an agent is told the opposite of is a
+  handoff that silently no-ops.
+  The test is spelled `!== 'channel'`, never `=== 'dm'`: `rooms.kind` is a `text`
+  column narrowed by an unchecked cast (`room-rows.ts`), so an unrecognized kind
+  must take the narrower branch. That is the standing rule for every room-kind
+  branch — **an unknown kind never gets more reach than a DM**, and in the one
+  branch where a DM is the LOOSER side (`respondsTo`'s `direct-only`, which fires
+  on everything in a real DM) it gets less: mention-only. It is also why the
+  bridged-create path refuses `UNKNOWN_CHAT_TYPE` rather than falling through to
+  `channel`.
 - **No arbitration.** Addressing three agents and getting three answers is the
   intended outcome. `responseMode` stops an agent answering when it was not
   addressed; it never orders or serializes the ones who were. Do not add a
@@ -77,23 +119,23 @@ model. See ADR `260726-170127` and `research/20260727_buzz-conversational-behavi
   that writes no room entry is indistinguishable from a broken agent, and the
   person who notices is not the person who configured it. If you add a path that
   can decline to run a turn — or one where a turn stops producing anything and
-  waits — it writes a durable room notice in the room's own voice. All seven live
-  in `room-notices.ts` (`cascade_stopped`, `budget_reached`, `agent_busy`,
-  `turn_failed`, `agent_gone`, `awaiting_approval`, `halted`), and every one of them is
-  written through `room-notice-log.ts` — its `write` is the single writer, and
-  each damping key sits beside the write it damps. Nothing outside that module
-  reaches `postNotice` in production; a second call site hand-rolling its own `try` is how a
-  halt in an archived room came to throw where every other notice degraded. A
-  new way to go quiet earns a new code there, never a free-text line.
-  `RoomNoticeCodeSchema` carries one more, `addressing_changed`, and it is
-  deliberately not in that module: migration 0039 wrote it once, into every
-  channel whose members it moved to `engaged`, and nothing at runtime writes it.
-  `halted` is damped per room and re-armed by the next claim, so pressing Stop
-  twice in a quiet room is one line. Two silences are deliberate and pinned by
-  tests: an agent that ran a turn and chose to say nothing (conduct, not a
-  fault), and the depth refusal against an agent's own un-provenanced post
-  (nothing was triggered, and no damping key exists that would keep a notice
-  from spraying).
+  waits — it writes a durable room notice in the room's own voice. All eight
+  live in `room-notices.ts` (`cascade_stopped`, `budget_reached`, `agent_busy`,
+  `turn_failed`, `agent_gone`, `agent_unavailable`, `awaiting_approval`,
+  `halted`), and every one of them is written through `room-notice-log.ts` —
+  its `write` is the single writer, and each damping key sits beside the write
+  it damps. Nothing outside that module reaches `postNotice` in production; a
+  second call site hand-rolling its own `try` is how a halt in an archived room
+  came to throw where every other notice degraded. A new way to go quiet earns
+  a new code there, never a free-text line. `RoomNoticeCodeSchema` carries one
+  more, `addressing_changed`, and it is deliberately not in that module:
+  migration 0039 wrote it once, into every channel whose members it moved to
+  `engaged`, and nothing at runtime writes it. `halted` is damped per room and
+  re-armed by the next claim, so pressing Stop twice in a quiet room is one
+  line. Two silences are deliberate and pinned by tests: an agent that ran a
+  turn and chose to say nothing (conduct, not a fault), and the depth refusal
+  against an agent's own un-provenanced post (nothing was triggered, and no
+  damping key exists that would keep a notice from spraying).
 - **An ASIDE turn is the one refusal nobody is told about, and here is the whole
   exception.** A welcome-back offer (`RoomTriggerDispatcher.askAside`,
   `welcome-back.ts`, DOR-1046) runs a turn that no message in the room triggered:
@@ -183,7 +225,12 @@ model. See ADR `260726-170127` and `research/20260727_buzz-conversational-behavi
   mentions (`resolveAddressing`) and handed to the dispatcher; nothing re-parses
   the text (DOR-790). Both halves are load-bearing and both have shipped
   broken — too wide sprayed apologies about agents nobody had addressed, too
-  narrow answered "are you there?" with silence.
+  narrow answered "are you there?" with silence. `agent_unavailable` damps on
+  the same `(room, agent, reason)` key as `agent_busy` and `agent_gone`, for a
+  narrower reason: the one reachable cause is contention on the
+  `(room, agent)` session row, which a retry — the next message — routinely
+  clears, so a burst of triggers landing on the same contention gets one line
+  (DOR-1206).
 - **Other members' text is untrusted input.** Anything another person wrote that
   lands in an agent's context is a prompt-injection surface. Two regions, and
   which one a value belongs in is decided by what the value IS, never by where it

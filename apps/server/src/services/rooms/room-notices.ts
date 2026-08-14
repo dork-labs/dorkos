@@ -298,6 +298,32 @@ export function buildAgentGoneNotice(agentName: string, subjectAuthorId: string)
 }
 
 /**
+ * The durable `notice` for a member whose session could not be bound before a
+ * turn ever started.
+ *
+ * **This closes the last silent trigger drop (DOR-1206).** Every other refusal
+ * in this file writes a visible line; a `bindRoomSession` failure used to write
+ * only a log entry, so a dropped trigger and a broken agent looked identical
+ * from inside the room. The bind is a `(room, agent)` session row, and the one
+ * reachable way to lose the write is database contention — usually gone by the
+ * next message, which is why the words point the reader at trying again rather
+ * than at a session to go and inspect (there is none yet, unlike `turn_failed`).
+ *
+ * @param agentName - Display name of the agent that could not be readied.
+ * @param subjectAuthorId - Author id of that agent, for rendering.
+ */
+export function buildAgentUnavailableNotice(
+  agentName: string,
+  subjectAuthorId: string
+): RoomEntryBody {
+  return {
+    text: `${agentName} couldn't be made ready to answer here just now. Send another message to try again.`,
+    notice: 'agent_unavailable',
+    subjectAuthorId,
+  };
+}
+
+/**
  * The durable `notice` for a second agent refused on a bridged room
  * (chats-as-channels spec §3.4, D-6 Q3).
  *

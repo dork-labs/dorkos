@@ -478,7 +478,7 @@ An agent member `M` in room `R` at thread scope `T` is **engaged** when both hol
 
 `engaged` triggers when `M` is mentioned, or when `M` is engaged. Being mentioned resets both clocks by construction, because it becomes the new most-recent mention.
 
-**Nothing is stored.** The window is a pure predicate over the room log, which is durable and never trimmed. No column, no table, no in-memory window to reset on restart, and no state that can disagree with the log. Contrast `turn-budget.ts`, whose windows are in-memory and reset on restart (ADR `260726-170127`): that one has to count things the log does not record, and this one does not.
+**Nothing is stored.** The window is a pure predicate over the room log, which is durable and never trimmed. No column, no table, no in-memory window to reset on restart, and no state that can disagree with the log. Contrast `turn-budget.ts`, whose windows are counted in memory and written to `room_turn_spend` so they survive a restart (ADR `260726-170127`, DOR-1205): that one has to count things the log does not record, and this one does not.
 
 **The query is bounded to `engagedWindowPosts + 1` rows.** Scan backwards from `latestSeq`; if the most recent mention of `M` is not inside that many entries, then by definition more than `engagedWindowPosts` posts by others have landed since it, so the answer is no without reading further. Six rows by default, on the existing `(roomId, seq)` primary key.
 

@@ -168,7 +168,12 @@ describe('Database Migrations', () => {
       'room_entries',
       'room_entry_reactions',
       'room_members',
+      // The two coordination counters a restart used to erase: which session ids
+      // a runtime has renamed away from, and the hour of automatic turns already
+      // spent (migration 0067, DOR-1205).
+      'room_session_retirements',
       'room_sessions',
+      'room_turn_spend',
       'rooms',
       // The indexer's frontier — one row per container, recording what has
       // already been read (migration 0037).

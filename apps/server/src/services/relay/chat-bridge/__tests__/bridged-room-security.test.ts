@@ -46,6 +46,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import express from 'express';
 import request from 'supertest';
 import { authors as authorRows, rooms as roomRows, roomEntries as roomEntryRows } from '@dorkos/db';
+import { createTestDb } from '@dorkos/test-utils/db';
 import { createChatNoticeSender, type PublishResult, type RelayCore } from '@dorkos/relay';
 import type { RelayEnvelope } from '@dorkos/shared/relay-schemas';
 import { AdapterBindingSchema, type AdapterBinding } from '@dorkos/shared/relay-schemas';
@@ -501,11 +502,17 @@ describe('bridged-room security suite (chats-as-channels §9)', () => {
 
   describe('§9.3 lever 2 — a stranger cannot make an agent run repeatedly', () => {
     it("the turn budget's per-room and global ceilings both refuse past their cap", () => {
-      const perRoomBudget = new RoomTurnBudget({ limits: { perRoom: () => 1, global: () => 100 } });
+      const perRoomBudget = new RoomTurnBudget({
+        db: createTestDb(),
+        limits: { perRoom: () => 1, global: () => 100 },
+      });
       expect(perRoomBudget.tryReserve('room-1').allowed).toBe(true);
       expect(perRoomBudget.tryReserve('room-1')).toEqual({ allowed: false, scope: 'room' });
 
-      const globalBudget = new RoomTurnBudget({ limits: { perRoom: () => 100, global: () => 1 } });
+      const globalBudget = new RoomTurnBudget({
+        db: createTestDb(),
+        limits: { perRoom: () => 100, global: () => 1 },
+      });
       expect(globalBudget.tryReserve('room-a').allowed).toBe(true);
       // A different room — only the GLOBAL cap can be what refuses it.
       expect(globalBudget.tryReserve('room-b')).toEqual({ allowed: false, scope: 'global' });

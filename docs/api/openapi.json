@@ -6735,6 +6735,7 @@
           "agent_busy",
           "turn_failed",
           "agent_gone",
+          "agent_unavailable",
           "awaiting_approval",
           "halted",
           "addressing_changed",

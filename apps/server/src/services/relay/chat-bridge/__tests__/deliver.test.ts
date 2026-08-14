@@ -674,8 +674,9 @@ describe('ChatBridgeDelivery (chats-as-channels §6, §10)', () => {
       // isolates the NOTICE-CODE eligibility test from the deliverNotices gate
       // itself: each must be 'skipped' even though THIS bridge delivers notices.
       // One `it` per excluded code — `cascade_stopped`, `budget_reached`,
-      // `agent_busy`, `agent_gone`, `awaiting_approval` — so a future code added
-      // to the wrong set fails a named test, not a shared one.
+      // `agent_busy`, `agent_gone`, `agent_unavailable`, `awaiting_approval` —
+      // so a future code added to the wrong set fails a named test, not a
+      // shared one.
       function dmDelivery(chatId: string) {
         const dm = harness.service.createBridgedRoom(bridgeRequest(chatId));
         binding = makeBinding({ canReply: true, canInitiate: true });
@@ -714,6 +715,15 @@ describe('ChatBridgeDelivery (chats-as-channels §6, §10)', () => {
         const notice = harness.service.postNotice(dm.id, {
           text: "Ana isn't set up on this machine any more, so it can't answer here.",
           notice: 'agent_gone',
+        });
+        expect(await delivery.deliverEntry(notice)).toBe('skipped');
+      });
+
+      it('agent_unavailable is never delivered (a bind failure is a DorkOS-side fault, not something the platform person can act on)', async () => {
+        const { dm, delivery } = dmDelivery('606');
+        const notice = harness.service.postNotice(dm.id, {
+          text: "Ana couldn't be made ready to answer here just now. Send another message to try again.",
+          notice: 'agent_unavailable',
         });
         expect(await delivery.deliverEntry(notice)).toBe('skipped');
       });
