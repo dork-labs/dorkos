@@ -1482,7 +1482,10 @@ export class RoomStore {
    * transcript is under — always.
    *
    * **Refuses to move a binding back onto a RETIRED id** — an id the projector
-   * has re-keyed away from, recorded by {@link RoomSessionLedger.retire}.
+   * has re-keyed away from, recorded by {@link RoomSessionLedger.retire}. That
+   * record is durable (DOR-1205), so the refusal holds on the first request
+   * after a restart rather than only once this process has watched a rename
+   * itself — which is exactly the window a turn still in flight lands in.
    *
    * The reversal is not hypothetical and it is not the first turn. On turn 1 the
    * rekey listener wins and no rebind here has anything stale to say. It is the

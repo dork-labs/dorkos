@@ -3,18 +3,25 @@
  * not, so every number here is a pinned literal and the clock is injected —
  * nothing in this file reads config, and nothing waits on a real hour.
  */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
+import { createTestDb } from '@dorkos/test-utils/db';
+import { roomTurnSpend } from '@dorkos/db';
 import { RoomTurnBudget } from '../turn-budget.js';
 
-/** A budget with a hand-cranked clock and a global cap high enough to stay out of the way. */
+/**
+ * A budget with a hand-cranked clock, its own database, and a global cap high
+ * enough to stay out of the way.
+ *
+ * `restart()` is what a restart IS here: a brand-new budget over the same
+ * database and the same hour. Nothing in this process is carried across — if a
+ * ceiling still holds after one, it held because the spend was written down.
+ */
 function budgetOf(perRoom: number, windowMs = 60_000, global = 100_000) {
   let now = 1_000_000;
-  const budget = new RoomTurnBudget({
-    limits: { perRoom: () => perRoom, global: () => global },
-    windowMs,
-    now: () => now,
-  });
-  return { budget, advance: (ms: number) => (now += ms) };
+  const db = createTestDb();
+  const limits = { perRoom: () => perRoom, global: () => global };
+  const boot = () => new RoomTurnBudget({ limits, db, windowMs, now: () => now });
+  return { db, budget: boot(), restart: boot, advance: (ms: number) => (now += ms) };
 }
 
 describe('RoomTurnBudget', () => {
@@ -68,6 +75,7 @@ describe('RoomTurnBudget', () => {
   it('reads the cap per call, so raising it in Settings takes effect at once', () => {
     let max = 1;
     const budget = new RoomTurnBudget({
+      db: createTestDb(),
       limits: { perRoom: () => max, global: () => 100_000 },
     });
     expect(budget.tryReserve('room-1').allowed).toBe(true);
@@ -140,6 +148,88 @@ describe('RoomTurnBudget — the global cap', () => {
   });
 });
 
+describe('RoomTurnBudget — surviving a restart (DOR-1205)', () => {
+  it('does not hand a room a fresh allowance halfway through its hour', () => {
+    const { budget, restart } = budgetOf(2);
+    budget.tryReserve('room-1');
+    budget.tryReserve('room-1');
+    expect(budget.tryReserve('room-1').allowed).toBe(false);
+
+    // The whole point: a caller who can restart the server used to clear both
+    // windows, roughly 36 times an hour through the rate-limited admin route.
+    const rebooted = restart();
+    expect(rebooted.tryReserve('room-1')).toEqual({ allowed: false, scope: 'room' });
+  });
+
+  it('carries the global ceiling across too, not just the per-room one', () => {
+    const { budget, restart } = budgetOf(100, 60_000, 1);
+    expect(budget.tryReserve('room-a').allowed).toBe(true);
+
+    // A DIFFERENT room after the restart, so only the global window can refuse
+    // it — which is the window that has to be exact.
+    expect(restart().tryReserve('room-b')).toEqual({ allowed: false, scope: 'global' });
+  });
+
+  it('reports the surviving spend through remaining(), not only through refusals', () => {
+    const { budget, restart } = budgetOf(3, 60_000, 10);
+    budget.tryReserve('room-1');
+    budget.tryReserve('room-2');
+
+    expect(restart().remaining('room-1')).toEqual({ room: 2, global: 8 });
+  });
+
+  it('starts clean once the window has rolled past what it wrote down', () => {
+    const { budget, restart, advance } = budgetOf(1);
+    budget.tryReserve('room-1');
+    advance(60_001);
+
+    expect(restart().tryReserve('room-1').allowed).toBe(true);
+  });
+
+  it('keeps only the last hour on disk, so the table cannot grow forever', () => {
+    const { db, budget, advance } = budgetOf(100, 60_000);
+    for (let i = 0; i < 5; i += 1) budget.tryReserve('room-1');
+    advance(60_001);
+    budget.tryReserve('room-1');
+
+    // The prune rides the write: the six spends are one hour apart, and only
+    // the one inside the current window is still there.
+    expect(db.select().from(roomTurnSpend).all()).toHaveLength(1);
+  });
+
+  it('still bounds this process when the write fails, rather than refusing the turn', () => {
+    const { db, budget } = budgetOf(2);
+    const insert = vi.spyOn(db, 'insert').mockImplementation(() => {
+      throw new Error('database is locked');
+    });
+
+    // A counter that cannot be persisted must not cost an agent its reply — but
+    // the ceiling this process is enforcing still holds.
+    expect(budget.tryReserve('room-1').allowed).toBe(true);
+    expect(budget.tryReserve('room-1').allowed).toBe(true);
+    expect(budget.tryReserve('room-1').allowed).toBe(false);
+    insert.mockRestore();
+  });
+
+  it('boots with an empty window rather than throwing when the table cannot be read', () => {
+    const { db } = budgetOf(2);
+    const select = vi.spyOn(db, 'select').mockImplementation(() => {
+      throw new Error('database is locked');
+    });
+
+    const budget = new RoomTurnBudget({
+      db,
+      limits: { perRoom: () => 2, global: () => 100 },
+    });
+    select.mockRestore();
+
+    // Unreadable is the pre-DOR-1205 behaviour, not a refusal to start: a
+    // server that will not boot because a counter is unreadable is worse than
+    // one whose ceiling reset.
+    expect(budget.tryReserve('room-1').allowed).toBe(true);
+  });
+});
+
 describe('RoomTurnBudget.remaining', () => {
   it('reports what is left, per room and in total', () => {
     const { budget } = budgetOf(3, 60_000, 10);
@@ -170,6 +260,7 @@ describe('RoomTurnBudget.remaining', () => {
   it('never goes below zero when a cap is lowered under a spent window', () => {
     let cap = 5;
     const budget = new RoomTurnBudget({
+      db: createTestDb(),
       limits: { perRoom: () => cap, global: () => 100_000 },
       windowMs: 60_000,
       now: () => 1_000_000,

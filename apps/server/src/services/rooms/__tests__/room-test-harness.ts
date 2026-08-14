@@ -296,6 +296,7 @@ export function createRoomHarness(opts: {
     agents: agentLookup,
     turns: runner,
     budget: new RoomTurnBudget({
+      db,
       limits: { perRoom: () => perRoom, global: () => global },
       ...(opts.budgetNow && { now: opts.budgetNow }),
     }),

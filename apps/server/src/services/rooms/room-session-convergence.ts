@@ -25,21 +25,24 @@
  * next message probes for a transcript, finds none, reports `hasStarted: false`,
  * and the agent starts over from nothing — every time, silently, forever.
  *
- * **At boot the sweep reports; it does not repair, and cannot.** Repair needs a
- * successor, and the only thing that knows one is {@link RoomSessionLedger},
- * whose memory of retired ids is per-process and therefore empty at startup. So
- * on a fresh process every dead binding takes the warn branch by construction,
- * and that is the whole of what the boot sweep delivers: a loud, specific line
- * naming the room, the agent and the id, where before there was nothing at all.
+ * **At boot the sweep now repairs what it can prove, and reports the rest**
+ * (DOR-1205). Repair needs a successor, and the only thing that knows one is
+ * {@link RoomSessionLedger} — whose memory of retired ids used to be
+ * per-process and therefore empty at startup, so on a fresh process every dead
+ * binding took the warn branch by construction. Retirements are written to
+ * `room_session_retirements` now, so a rename recorded by ANY previous process
+ * repairs its binding at the next boot, and the branch that was a seam waiting
+ * for a durable ledger is the one that does the work.
  *
- * The repair branch is not decoration. It serves a sweep run AFTER a rekey this
- * same process observed, and it is the seam a durable retirement ledger plugs
- * into — at which point boot-time repair becomes real without this file
- * changing shape. Keeping it costs one map lookup and keeps that seam honest;
- * removing it would mean re-deriving it in the slice that needs it.
+ * **A stranding with no recorded successor is still only reported, and that is
+ * a decision rather than a gap.** The obvious next guess — "the newest
+ * transcript in this agent's directory" — would silently graft one room's
+ * conversation onto another's, which is worse than the amnesia it would be
+ * curing. Unknown stays unknown, out loud, with everything a person needs to
+ * find the transcript by hand.
  *
- * Nothing here deletes a binding. A binding pointing somewhere useless is a
- * conversation whose transcript may still be found by hand; a deleted one is a
+ * Nothing here deletes a binding either. A binding pointing somewhere useless is
+ * a conversation whose transcript may still be found by hand; a deleted one is a
  * decision nobody can review.
  *
  * @module server/services/rooms/room-session-convergence
@@ -148,13 +151,18 @@ export interface RoomBindingRepairReport {
  * test-mode all return `undefined` from `getInternalSessionId`, so their ids
  * never moved and there is nothing to look for.
  *
- * **At boot, expect the warn branch and only the warn branch.** A binding is
- * repaired only when the ledger can NAME its successor, and the ledger's memory
- * is per-process, so at startup it knows nothing (see this module's header).
- * Guessing instead — "the newest transcript in this agent's directory" — would
+ * **A binding is repaired only when the ledger can NAME its successor**, which
+ * since DOR-1205 includes renames recorded by an earlier process — that is the
+ * case boot-time repair exists for. The successor is followed to the end of its
+ * chain, so a session renamed twice lands on the id that is live rather than on
+ * another dead one, and the move goes through `RoomStore.rebindRoomSession` so
+ * it obeys the same retired-id refusal every other rebind does.
+ *
+ * When the ledger knows nothing, the sweep says what it found — with everything
+ * a person needs to find the transcript by hand — and leaves the row alone.
+ * Guessing instead ("the newest transcript in this agent's directory") would
  * silently graft one room's conversation onto another's, which is worse than the
- * amnesia it would be curing. So the sweep says what it found, with everything a
- * person needs to find the transcript by hand, and leaves the row alone.
+ * amnesia it would be curing.
  *
  * Never throws, and never goes quiet: a sweep that could judge nothing says so.
  *

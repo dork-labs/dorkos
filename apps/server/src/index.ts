@@ -932,11 +932,13 @@ async function start() {
   // the rename is announced the instant it happens, while the return value is
   // read once at the end of a turn that routinely lost the race (DOR-784).
   followSessionRekeys(roomStore);
-  // Then report what was stranded before that listener existed. Bounded to
-  // rooms that have a binding and agents that run on claude-code, and detached:
-  // a disk probe must not sit in front of the port opening. At boot this only
-  // ever REPORTS — repair needs a successor and the ledger's memory is
-  // per-process, so it is empty here by construction. Nothing is deleted.
+  // Then fix, or report, what was stranded before this process started. Bounded
+  // to rooms that have a binding and agents that run on claude-code, and
+  // detached: a disk probe must not sit in front of the port opening. Renames
+  // are recorded durably (DOR-1205), so a binding whose successor any earlier
+  // process wrote down is rebound here; one with no recorded successor is
+  // reported and left exactly as it is. Nothing is deleted, and nothing is
+  // guessed.
   //
   // Gated on the claude-code runtime being in this process at all: the probe IS
   // its transcript reader, so without one there is no claude-code binding

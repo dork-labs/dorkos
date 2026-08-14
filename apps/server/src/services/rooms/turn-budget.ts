@@ -45,30 +45,47 @@
  * The per-room cap stays because it is what keeps one runaway room from eating
  * the whole global allowance and starving every other room.
  *
- * ## What it deliberately is not
+ * ## Durable, so an hour means an hour (DOR-1205)
  *
- * **In-memory: both windows reset when the server restarts.** For an accidental
- * loop that costs nothing — it runs in seconds and never sees a restart. For a
- * deliberate caller it is a real limit, and the honest statement is that it does
- * not bound one: `POST /api/admin/restart` sits behind the same pass-through
- * gate in this posture and is rate-limited to 3 per 5 minutes, so a caller
- * willing to use it can clear both windows roughly 36 times an hour.
+ * Both windows are written to `room_turn_spend` and read back at construction,
+ * so a restart inside a busy hour resumes the ceilings it left rather than
+ * handing every room a fresh allowance. That closes what this module used to
+ * document as a deliberate residual: `POST /api/admin/restart` sits behind the
+ * same pass-through gate in the default posture and is rate-limited to 3 per 5
+ * minutes, so a caller willing to use it could clear both windows roughly 36
+ * times an hour. It cannot any more.
  *
- * Closing that needs a durable counter, which means a write on the hot path of
- * every turn and a table to hold it. It is a deliberate follow-up, and the
- * reason is stronger than the cost: **a caller who can omit the header already
- * has a shell on this machine, and a shell can spend the model budget directly**
- * without going near a room. Hardening this counter against them hardens one
- * door in a building whose walls are elsewhere; DOR-505 (turning login on) is
- * the actual fix.
+ * The old note said the durable counter was not worth "a write on the hot path
+ * of every turn". It costs one INSERT and one indexed DELETE per turn ACTUALLY
+ * RUN, against a table holding at most the last hour of spends — beside a turn
+ * that is about to spend seconds of model time. Nothing is written on a refusal
+ * and nothing is read after boot: {@link RoomTurnBudget.tryReserve} and
+ * {@link RoomTurnBudget.remaining} both decide from the in-memory windows, so
+ * the dispatch path runs no query at all.
+ *
+ * **Durability is not the reason to trust the ceiling, though, and the honest
+ * statement about a deliberate caller has not changed**: a caller who can omit
+ * the `X-DorkOS-Agent` header already has a shell on this machine, and a shell
+ * can spend the model budget directly without going near a room. DOR-505
+ * (turning login on) is still the actual fix for that one.
  *
  * What these caps completely bound is the case with no attacker in it: two
  * `always` agents talking each other in circles, which is a configuration a
  * reasonable person reaches on purpose and which costs real money for no work.
- * That is the common case and worth having on its own. See ADR 260726-170127.
+ * That is the common case, it is exactly the case that survives a restart —
+ * misconfigured agents are still misconfigured after one — and it is worth
+ * having on its own. See ADR 260726-170127.
+ *
+ * ## What it deliberately is not
+ *
+ * **Not a spend log.** Rows older than the window are deleted as new ones land;
+ * nothing here can answer "how much did this room cost last Tuesday". This is a
+ * counter, and the activity log is where history lives.
  *
  * @module server/services/rooms/turn-budget
  */
+import { roomTurnSpend, gt, lte, type Db } from '@dorkos/db';
+import { logger } from '../../lib/logger.js';
 
 /** One hour, the window both config fields are denominated in. */
 const WINDOW_MS = 60 * 60_000;
@@ -112,27 +129,43 @@ export interface TurnBudgetLimits {
 }
 
 /**
- * A rolling count of automatic turns, per room and in total.
+ * A rolling count of automatic turns, per room and in total, held in memory and
+ * written down.
  *
  * Insertion-ordered `Map`, so the least recently touched room is always the
  * first key — which is what makes the eviction above one `keys().next()`.
+ *
+ * **The in-memory windows are the whole decision; the table is how they are
+ * recovered.** Every read of a window is a read of these two fields, and the
+ * database is touched exactly twice in a process's life per turn spent: once at
+ * construction, to load the hour that was already running, and once per
+ * reservation, to record it. A budget whose database is unavailable therefore
+ * still bounds this process — it just cannot hand what it counted to the next
+ * one, which is what the whole install did before DOR-1205.
  */
 export class RoomTurnBudget {
   private readonly limits: TurnBudgetLimits;
+  private readonly db: Db;
   private readonly now: () => number;
   private readonly windowMs: number;
   private readonly perRoom = new Map<string, number[]>();
   private globalRuns: number[] = [];
 
   /**
+   * Load the window this install is already inside, then bound what is left of
+   * it.
+   *
    * @param opts.limits - The two live caps.
+   * @param opts.db - Where the spent window is written, so it survives a restart.
    * @param opts.now - Clock, injectable so a test can move a window without sleeping.
    * @param opts.windowMs - Window length; defaults to one hour.
    */
-  constructor(opts: { limits: TurnBudgetLimits; now?: () => number; windowMs?: number }) {
+  constructor(opts: { limits: TurnBudgetLimits; db: Db; now?: () => number; windowMs?: number }) {
     this.limits = opts.limits;
+    this.db = opts.db;
     this.now = opts.now ?? (() => Date.now());
     this.windowMs = opts.windowMs ?? WINDOW_MS;
+    this.hydrate();
   }
 
   /**
@@ -163,6 +196,7 @@ export class RoomTurnBudget {
     room.push(at);
     this.globalRuns.push(at);
     this.store(roomId, room);
+    this.record(roomId, at, floor);
     return { allowed: true };
   }
 
@@ -189,6 +223,76 @@ export class RoomTurnBudget {
       room: Math.max(0, this.limits.perRoom() - room),
       global: Math.max(0, this.limits.global() - global),
     };
+  }
+
+  /**
+   * Load the hour that was already running when this process started.
+   *
+   * One indexed range read of `at > floor`, at construction and never again.
+   * Rows arrive oldest-first so the per-room map is rebuilt in the same
+   * least-recently-touched order {@link RoomTurnBudget.store} maintains, and the
+   * same eviction applies — a machine that visited 600 rooms in an hour comes
+   * back holding the 256 it touched last, which is the identical trade the live
+   * map makes, in the identical direction (an evicted room reads as unspent).
+   * The GLOBAL window is rebuilt in full, because that is the one that has to be
+   * exact.
+   *
+   * **Fails open, loudly.** A budget that cannot read its own table starts empty
+   * — which is exactly the pre-DOR-1205 behaviour, and the alternative is a
+   * server that will not boot because a counter is unreadable.
+   */
+  private hydrate(): void {
+    const floor = this.now() - this.windowMs;
+    let rows: { roomId: string; at: number }[];
+    try {
+      rows = this.db
+        .select({ roomId: roomTurnSpend.roomId, at: roomTurnSpend.at })
+        .from(roomTurnSpend)
+        .where(gt(roomTurnSpend.at, floor))
+        .orderBy(roomTurnSpend.at)
+        .all();
+    } catch (err) {
+      logger.warn('[rooms] could not read the turn budget already spent this hour', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return;
+    }
+    for (const row of rows) {
+      this.globalRuns.push(row.at);
+      const window = this.perRoom.get(row.roomId) ?? [];
+      window.push(row.at);
+      this.store(row.roomId, window);
+    }
+  }
+
+  /**
+   * Write one spent turn down, and drop what has aged out of the window.
+   *
+   * The whole durable cost of a turn: one INSERT and one indexed DELETE, on the
+   * path of a turn that is about to spend seconds of model time. Pruning HERE
+   * rather than on a timer is what keeps the table at most one hour of spends
+   * without anything having to remember to sweep it.
+   *
+   * **A write that fails does not refuse the turn.** The reservation is already
+   * made in memory and this process will honour it; all that is lost is handing
+   * the count to the next process, which is what every process did before
+   * DOR-1205. Refusing an agent's reply because a counter could not be persisted
+   * would be a worse trade in both directions.
+   *
+   * @param roomId - The room that spent it.
+   * @param at - When, epoch ms.
+   * @param floor - The oldest instant still inside the window.
+   */
+  private record(roomId: string, at: number, floor: number): void {
+    try {
+      this.db.insert(roomTurnSpend).values({ roomId, at }).run();
+      this.db.delete(roomTurnSpend).where(lte(roomTurnSpend.at, floor)).run();
+    } catch (err) {
+      logger.warn('[rooms] could not record a turn against the durable budget', {
+        roomId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
   }
 
   /** Write a room's pruned window back, re-inserting it as most recently used. */

@@ -23,6 +23,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { eq, roomSessions } from '@dorkos/db';
 import { RoomStore } from '../room-store.js';
+import { RoomSessionLedger } from '../room-session-ledger.js';
 import {
   followSessionRekeys,
   repairRoomSessionBindings,
@@ -144,6 +145,91 @@ describe('a binding is never moved back onto a retired id', () => {
     expect(store.sessionLedger.successorFor(CANONICAL)).toBeUndefined();
   });
 
+  it('refuses the reversal on the first request after a restart (DOR-1205)', () => {
+    // The retirement used to live in one process's memory, so the refusal did
+    // not exist until THIS process had personally watched the rename — and the
+    // write that reverses a binding is exactly the one a turn still in flight
+    // makes across a restart.
+    const { store, db } = storeBoundToPlaceholder();
+    store.sessionLedger.rebindBySessionId(PLACEHOLDER, CANONICAL);
+
+    // A brand-new store over the same database: nothing is carried across.
+    const rebooted = new RoomStore(db);
+    expect(rebooted.sessionLedger.successorFor(PLACEHOLDER)).toBe(CANONICAL);
+
+    rebooted.rebindRoomSession(ROOM, ANA, PLACEHOLDER);
+    expect(bound(db)).toBe(CANONICAL);
+  });
+
+  it('follows a chain of renames to the id that is live now', () => {
+    // The SDK can rename a session again on a resume, and across restarts a
+    // second rename is no longer an event one process saw the whole of. A
+    // binding stranded on the FIRST id has to reach the last one — repairing it
+    // to a middle id would move it onto another dead session.
+    const { store } = storeBoundToPlaceholder();
+    store.sessionLedger.rebindBySessionId(PLACEHOLDER, CANONICAL);
+    store.sessionLedger.rebindBySessionId(CANONICAL, 'sdk-third-name');
+
+    expect(store.sessionLedger.successorFor(PLACEHOLDER)).toBe('sdk-third-name');
+    expect(store.sessionLedger.successorFor(CANONICAL)).toBe('sdk-third-name');
+  });
+
+  it('never answers with the id it was asked about, however tangled the table', () => {
+    // Two processes writing renames across a restart is not a structure SQLite
+    // enforces anything about, and a chase that came back to where it started
+    // would let the repair sweep "fix" a binding onto the same dead session and
+    // count it as repaired.
+    const db = createTestDb();
+    const ledger = new RoomSessionLedger(db);
+    ledger.retire(PLACEHOLDER, CANONICAL);
+    ledger.retire(CANONICAL, PLACEHOLDER);
+
+    expect(ledger.successorFor(PLACEHOLDER)).toBe(CANONICAL);
+    expect(ledger.successorFor(CANONICAL)).toBe(PLACEHOLDER);
+  });
+
+  it('forgets a retirement older than the horizon, so the table cannot grow forever', () => {
+    const db = createTestDb();
+    let now = Date.UTC(2026, 0, 1);
+    const ledger = new RoomSessionLedger(db, () => now);
+    ledger.retire('ancient', 'ancient-successor');
+
+    // A year later, another rename lands and prunes what has aged out.
+    now += 365 * 24 * 60 * 60_000;
+    ledger.retire(PLACEHOLDER, CANONICAL);
+
+    expect(ledger.successorFor('ancient')).toBeUndefined();
+    expect(ledger.successorFor(PLACEHOLDER)).toBe(CANONICAL);
+  });
+
+  it('keeps a retirement that is merely old, well inside the horizon', () => {
+    const db = createTestDb();
+    let now = Date.UTC(2026, 0, 1);
+    const ledger = new RoomSessionLedger(db, () => now);
+    ledger.retire(PLACEHOLDER, CANONICAL);
+
+    now += 20 * 24 * 60 * 60_000;
+    ledger.retire('other', 'other-successor');
+
+    expect(ledger.successorFor(PLACEHOLDER)).toBe(CANONICAL);
+  });
+
+  it('treats an unreadable ledger as "not retired", rather than throwing at a turn', () => {
+    const { store, db } = storeBoundToPlaceholder();
+    store.sessionLedger.rebindBySessionId(PLACEHOLDER, CANONICAL);
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => {});
+    const select = vi.spyOn(db, 'select').mockImplementation(() => {
+      throw new Error('database is locked');
+    });
+
+    // Unknown is the pre-DOR-784 behaviour — a rebind that may be wrong — and
+    // it is the better of the two: the alternative is a turn that throws where
+    // it used to write a binding.
+    expect(store.sessionLedger.successorFor(PLACEHOLDER)).toBeUndefined();
+    select.mockRestore();
+    warn.mockRestore();
+  });
+
   it('records nothing when the rename touched no room', () => {
     // A rekey is announced for every brand-new session on the machine, and the
     // overwhelming majority have nothing to do with a room. Remembering all of
@@ -190,6 +276,22 @@ describe('the repair sweep', () => {
     expect(bound(db)).toBe(PLACEHOLDER);
 
     const report = await repairRoomSessionBindings(sweepDeps(store, [CANONICAL]));
+
+    expect(bound(db)).toBe(CANONICAL);
+    expect(report).toEqual({ checked: 1, repaired: 1, stranded: 0, unreadable: 0 });
+  });
+
+  it('repairs a stranding a PREVIOUS process recorded (DOR-1205)', async () => {
+    // The boot sweep used to be able to REPORT only, and this is the case it
+    // could not touch: the rename happened before the restart, so a per-process
+    // memory of retired ids was empty by the time the sweep ran. The whole
+    // point of writing retirements down is that this row is repairable now.
+    const { store, db } = storeBoundToPlaceholder();
+    store.sessionLedger.rebindBySessionId(PLACEHOLDER, CANONICAL);
+    db.update(roomSessions).set({ sessionId: PLACEHOLDER }).run();
+
+    const rebooted = new RoomStore(db);
+    const report = await repairRoomSessionBindings(sweepDeps(rebooted, [CANONICAL]));
 
     expect(bound(db)).toBe(CANONICAL);
     expect(report).toEqual({ checked: 1, repaired: 1, stranded: 0, unreadable: 0 });
