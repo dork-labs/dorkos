@@ -5,7 +5,7 @@
  * The production {@link WelcomeBackWorkSource}. It is a separate module from
  * the greeter for one reason: this is the half that knows sessions exist, and
  * sessions are runtime-owned (ADR-0310). Keeping it here leaves
- * `welcome-back.ts` — the gate, the caps and the copy — provable without a
+ * `greeter.ts` — the gate, the caps and the copy — provable without a
  * runtime anywhere near it.
  *
  * **It wakes nobody.** Every number below comes from a session LISTING, which

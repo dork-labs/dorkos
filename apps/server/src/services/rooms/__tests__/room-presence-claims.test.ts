@@ -658,7 +658,7 @@ describe('a claim lives until its turn is done', () => {
 
     it('says an agent is busy only when it is busy somewhere this room cannot reach', async () => {
       // The two ceilings, the two outcomes, and the reason there is now only one
-      // busy line left (`room-notices.ts`, room-participation spec §10.4).
+      // busy line left (`notices/notice-copy.ts`, room-participation spec §10.4).
       //
       // The old copy said "was busy with something else and did not pick this
       // up. Send it again when Ana is free" — false in the commonest case,

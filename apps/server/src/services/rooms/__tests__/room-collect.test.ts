@@ -59,8 +59,12 @@ interface HeldRunner extends ScriptedTurnRunner {
  * Holding is what makes any of this observable: a turn that answered would take
  * and release its claim inside one `await`, and "a message arrived while the
  * agent was working" would be a state the test never got to look at.
+ *
+ * @param say - What a released turn answers. The default names nobody, which is
+ *   what keeps most scenarios free of cascades they did not ask for; a scenario
+ *   about one agent handing work to another overrides it.
  */
-function heldRunner(): HeldRunner {
+function heldRunner(say: (request: RoomTurnRequest) => string = () => 'on it'): HeldRunner {
   const turns: RecordedTurn[] = [];
   const interrupted: ScriptedTurnRunner['interrupted'] = [];
   const open = new Map<string, Array<() => void>>();
@@ -93,7 +97,9 @@ function heldRunner(): HeldRunner {
       paths.set(request.authorId, request.agentPath);
       return new Promise<RoomTurnResult>((resolve) => {
         const queued = open.get(request.authorId) ?? [];
-        queued.push(() => resolve({ sessionId: request.sessionId ?? 'session-1', text: 'on it' }));
+        queued.push(() =>
+          resolve({ sessionId: request.sessionId ?? 'session-1', text: say(request) })
+        );
         open.set(request.authorId, queued);
       });
     },
@@ -157,6 +163,11 @@ describe('a room gathers a burst into one turn', () => {
   /** Just the notices — the room speaking in its own voice. */
   function notices(): RoomEntry[] {
     return log().filter((entry) => entry.kind === 'notice');
+  }
+
+  /** Posts by one author. */
+  function postsBy(authorId: string): RoomEntry[] {
+    return log().filter((entry) => entry.kind === 'post' && entry.authorId === authorId);
   }
 
   describe('collect, do not interrupt or drop', () => {
@@ -226,6 +237,50 @@ describe('a room gathers a burst into one turn', () => {
       // And the fourth is not lost: it is sitting in the next window, which this
       // test deliberately never waits out.
       expect(runner.turns).toHaveLength(1);
+    });
+
+    it('covers one message per answer at a cap of one', async () => {
+      // The documented floor of `collectMaxEntries`, and the boundary the cap
+      // check has to run on CREATION to honour: at one, the FIRST message
+      // already fills the batch. Checked only when a collection grew, this
+      // setting quietly meant two messages per turn — the opposite of what it
+      // says — because the batch had to be joined before it was measured.
+      //
+      // Both messages land in the same tick and the window is a minute wide, so
+      // nothing here can be the timer closing anything: the cap is the only
+      // thing that can produce a turn, and it has to produce two.
+      open(scriptedRunner(), { debounceMs: 60_000, maxEntries: 1 });
+
+      service.post(room.id, { authorId: human, text: '@ana one' });
+      service.post(room.id, { authorId: human, text: '@ana two' });
+      await settleUntil(() => runner.turns.length === 2, 'one turn per message');
+
+      expect(runner.turns.map((turn) => turn.prompt)).toEqual(['@ana one', '@ana two']);
+      // Each answer covers its own message and gathers nothing behind it.
+      expect(runner.turns.every((turn) => turn.roomContext.pending.length === 0)).toBe(true);
+    });
+
+    it('settles, and loses nothing, when a burst at the cap parks more than one batch', async () => {
+      // At a cap of one, three messages in a tick close three batches at once.
+      // The first claims and the other two both park — onto the SAME
+      // `(room, agent)` key. Parking that overwrote instead of merging dropped
+      // the middle batch and the pending turn it was owed, so the room never
+      // settled and one message was never anybody's trigger.
+      //
+      // `triggersIdle()` resolving at all is half of what this measures.
+      open(scriptedRunner(), { debounceMs: 60_000, maxEntries: 1 });
+
+      for (const text of ['one', 'two', 'three']) {
+        service.post(room.id, { authorId: human, text: `@ana ${text}` });
+      }
+      await service.triggersIdle();
+
+      // Two turns: the cap says an answer covers one message, and a parked batch
+      // that outgrows it keeps the newest.
+      expect(runner.turns.map((turn) => turn.prompt)).toEqual(['@ana one', '@ana three']);
+      // And the message the cap dropped from the batch is not lost — it is
+      // still unread, so it rides the very next turn's window.
+      expect(runner.turns[1].roomContext.pending.map((entry) => entry.text)).toEqual(['@ana two']);
     });
 
     it('gathers per agent, so one burst is one turn each and neither waits for the other', async () => {
@@ -348,6 +403,111 @@ describe('a room gathers a burst into one turn', () => {
     });
   });
 
+  describe('the guard judges the batch one message at a time', () => {
+    it('still answers a parked question when an agent reply joins the batch behind it', async () => {
+      // **The defect this exists for.** A person asks Ana something directly
+      // while she is mid-turn, so it is parked. Bo then answers the room and
+      // names Ana, and that reply joins the same batch. Judged as a batch — one
+      // verdict, taken from the newest entry — Bo's reply is vetoed by the
+      // ancestry rule and the WHOLE batch went with it: the person's question
+      // was discarded, no turn ran for it, and the room said nothing about it.
+      //
+      // A person's message mints its own cascade root at depth 0, which every
+      // rule here allows. That carve-out is the whole point of `deriveCascade`,
+      // and aggregating the verdict is exactly how it gets lost.
+      const held = heldRunner((request) =>
+        request.authorId === ana ? 'looking' : 'no idea — @ana ran that one'
+      );
+      open(held, { debounceMs: DEBOUNCE_MS, maxEntries: 20 }, ['/agents/ana', '/agents/bo']);
+      const bo = authors.resolveAgent('/agents/bo', 'Bo').id;
+
+      // **The ordering is the whole scenario, so it is spelled out.** Bo's reply
+      // is ALLOWED when it is collected — Ana has not spoken in that exchange
+      // yet, because her turn is still running — and REFUSED when the batch
+      // finally runs, because by then that very turn has posted and the
+      // ancestry rule can see it. That gap between the two verdicts is exactly
+      // what re-asking the guard exists for, and it is what made a batch-level
+      // verdict swallow the person's question.
+      service.post(room.id, { authorId: human, text: '@ana @bo what broke the build?' });
+      await settleUntil(
+        () => held.holdsFor(ana) === 1 && held.holdsFor(bo) === 1,
+        'both agents mid-turn'
+      );
+
+      // The person asks Ana something else. Parked behind her claim, on its own
+      // fresh root at depth 0.
+      service.post(room.id, { authorId: human, text: '@ana can you also check the cache?' });
+
+      // Bo answers, naming Ana. Ana has still said nothing in that exchange, so
+      // the guard lets this into her batch — on top of the person's question.
+      held.release(bo);
+      await settleUntil(() => postsBy(bo).length === 1, 'Bo answered, naming Ana');
+
+      // Ana's running turn now posts into that same exchange, and only then does
+      // her claim release and the batch run.
+      held.release(ana);
+      await settleUntil(
+        () => runner.turns.filter((turn) => turn.authorId === ana).length === 2,
+        'the parked question to become a turn of its own'
+      );
+
+      // The person's question ran, on its own fresh root, at depth 0 — not Bo's
+      // reply, which is the entry the guard actually refused.
+      const steered = runner.turns.filter((turn) => turn.authorId === ana)[1];
+      expect(steered.prompt).toBe('@ana can you also check the cache?');
+      const asked = log().find((entry) => entry.body.text === '@ana can you also check the cache?');
+      expect(asked?.cascadeRoot).toBe(asked?.id);
+      expect(asked?.cascadeDepth).toBe(0);
+
+      // Bo's refused reply is not consumed by that turn: it sits above the
+      // trigger, so it is still unread and still the next turn's to read.
+      expect(steered.roomContext.pending.map((entry) => entry.text)).not.toContain(
+        'no idea — @ana ran that one'
+      );
+
+      // And the refusal was said out loud, once.
+      const refusals = notices().filter((entry) => entry.body.notice === 'cascade_stopped');
+      expect(refusals).toHaveLength(1);
+      expect(refusals[0].body.subjectAuthorId).toBe(ana);
+      held.release(ana);
+      await service.triggersIdle();
+    });
+
+    it('refuses the whole batch, visibly, only when every message in it is refused', async () => {
+      // The other side of the rule. Nothing in this batch is a person's fresh
+      // question — both entries are agent replies inside an exchange Ana has
+      // already spoken in — so there is nothing left to answer and the batch is
+      // refused. That refusal is on the log (I3): a batch is not a way to make a
+      // refusal quiet.
+      const held = heldRunner((request) =>
+        request.authorId === ana ? 'looking' : 'no idea — @ana ran that one'
+      );
+      open(held, { debounceMs: DEBOUNCE_MS, maxEntries: 20 }, ['/agents/ana', '/agents/bo']);
+      const bo = authors.resolveAgent('/agents/bo', 'Bo').id;
+
+      service.post(room.id, { authorId: human, text: '@ana @bo what broke the build?' });
+      await settleUntil(
+        () => held.holdsFor(ana) === 1 && held.holdsFor(bo) === 1,
+        'both agents mid-turn'
+      );
+
+      // Same ordering as the scenario above, with nothing else in the batch:
+      // Bo's reply is collected while it is still allowed, and refused when the
+      // batch runs because Ana's own turn has posted into that exchange by then.
+      held.release(bo);
+      await settleUntil(() => postsBy(bo).length === 1, 'Bo answered, naming Ana');
+      held.release(ana);
+      await service.triggersIdle();
+
+      // No second turn for Ana — and the room said why.
+      expect(runner.turns.filter((turn) => turn.authorId === ana)).toHaveLength(1);
+      const refusals = notices().filter((entry) => entry.body.notice === 'cascade_stopped');
+      expect(refusals).toHaveLength(1);
+      expect(refusals[0].body.subjectAuthorId).toBe(ana);
+      expect(refusals[0].body.text).toContain('automatic-reply limit');
+    });
+  });
+
   describe('a message that lands mid-turn steers rather than restarting', () => {
     it('does not cancel the running turn, and runs the held message when the claim goes', async () => {
       const held = heldRunner();
@@ -464,6 +624,58 @@ describe('a room gathers a burst into one turn', () => {
       expect(runner.turns).toHaveLength(1);
       const halted = notices().filter((entry) => entry.body.notice === 'halted');
       expect(halted).toHaveLength(1);
+    });
+
+    it('drops the gathered messages BEFORE it releases any claim', async () => {
+      // **The ordering, pinned with a runtime that takes its time stopping.**
+      // Releasing a claim is what runs a held batch, so a halt that dropped the
+      // buffers after the release loop would start those turns one macrotask
+      // later — answering, seconds after Stop, exactly the messages the person
+      // pressed it over.
+      //
+      // Two things make that reachable and neither is decoration. TWO agents,
+      // so there is a second `await` inside the loop for the first agent's
+      // resumed batch to fire during; and an `interrupt` that yields for real
+      // rather than resolving on a microtask, because the resume rides a
+      // `setTimeout(0)` and a loop that only awaits microtasks completes before
+      // any macrotask runs — which would let a broken order pass.
+      const held = heldRunner();
+      const slow: HeldRunner = {
+        ...held,
+        async interrupt(request) {
+          await new Promise((resolve) => setTimeout(resolve, 30));
+          await held.interrupt(request);
+        },
+      };
+      open(slow, { debounceMs: DEBOUNCE_MS, maxEntries: 20 }, ['/agents/ana', '/agents/bo']);
+      const bo = authors.resolveAgent('/agents/bo', 'Bo').id;
+
+      service.post(room.id, { authorId: human, text: '@ana @bo can you both look?' });
+      await settleUntil(
+        () => held.holdsFor(ana) === 1 && held.holdsFor(bo) === 1,
+        'both agents mid-turn'
+      );
+      // One held message apiece, so either agent's release could start a turn.
+      service.post(room.id, { authorId: human, text: '@ana and the migration?' });
+      service.post(room.id, { authorId: human, text: '@bo and the cache?' });
+
+      const stopped = await service.haltRoom(room.id, human);
+      expect(stopped).toBe(2);
+
+      // **Asserted the instant the halt returns, before anything is awaited.**
+      // A resumed batch fires DURING the halt's own interrupt await, so by the
+      // time this line runs a wrong order has already started the turn — and
+      // asserting after `triggersIdle()` would meet it as a hang rather than as
+      // a countable third turn.
+      expect(runner.turns).toHaveLength(2);
+      expect(runner.turns.map((turn) => turn.prompt)).toEqual([
+        '@ana @bo can you both look?',
+        '@ana @bo can you both look?',
+      ]);
+
+      // And it stays two: nothing is waiting to start.
+      await service.triggersIdle();
+      expect(runner.turns).toHaveLength(2);
     });
 
     it('drops a window that has not closed yet, so nothing answers a stopped room', async () => {

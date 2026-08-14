@@ -40,12 +40,30 @@
  *    would split one person's half-second of typing into two turns, and the
  *    disclosure DOR-1207 built is exactly what makes the cheaper answer honest.
  *
- * 4. **Nothing here is a place a message can be lost.** The collection is a
- *    marker of what the next turn is FOR — the messages themselves live in the
- *    room log, and the ambient window (spec §8.3) is what actually puts them in
- *    front of the model. That is why dropping the oldest entry when a parked
- *    collection overflows costs nothing but the `arrivedDuringPrevTurn` mark on
- *    that one line, and why a halt can drop every collection outright.
+ * 4. **A message survives losing its collection; a PENDING TURN does not.** The
+ *    two halves of that are worth separating, because only the first is a
+ *    guarantee.
+ *
+ *    The MESSAGE is safe. A collection is a marker of what the next turn is FOR
+ *    — the messages themselves are committed room entries, and they stay behind
+ *    the agent's read cursor until a turn is actually shown them, so the ambient
+ *    window (spec §8.3) delivers them whenever the next turn runs. That is why
+ *    dropping the oldest entry when a parked collection overflows costs nothing
+ *    but the `arrivedDuringPrevTurn` mark on that one line, and why a halt can
+ *    drop every collection outright.
+ *
+ *    The pending TURN is process memory, and a restart loses it. Nothing here is
+ *    persisted: a server that goes down holding a parked collection comes back
+ *    with an unread message and no turn owed for it, so it is answered when the
+ *    next post triggers that agent rather than on its own. That is the same
+ *    exposure the claim map has (`room-trigger.ts`) and it is recorded in
+ *    `.claude/rules/room-conduct.md`'s known gaps rather than worked around
+ *    here — durability for this would be the scheduler this domain has declined
+ *    twice, and it should be argued as one.
+ *
+ *    The third way a collection ends is neither: a message the guard refuses
+ *    when the batch runs is DISCARDED on purpose, and visibly — see
+ *    {@link import('./room-trigger').RoomTriggerDispatcher.chooseTrigger}.
  *
  * @module server/services/rooms/room-collect
  */
@@ -53,13 +71,8 @@ import type { Room, RoomEntry } from '@dorkos/shared/room-schemas';
 import type { EngagementWindow } from './engagement.js';
 import { agentKey } from './room-claims.js';
 
-/**
- * One message waiting for a turn, with what the guard already decided about it.
- *
- * Not exported: every reader reaches it through {@link RoomCollection.entries},
- * structurally, so a second name for it would be a second thing to keep true.
- */
-interface CollectedTrigger {
+/** One message waiting for a turn, with what the guard already decided about it. */
+export interface CollectedTrigger {
   /** The committed entry. */
   entry: RoomEntry;
   /** The depth the cascade guard allowed this trigger at, decided when it arrived. */
@@ -228,6 +241,11 @@ export class RoomCollector {
     // released by {@link RoomCollector.resume}, and a deadline would fire a turn
     // into an agent that is demonstrably busy.
     if (!collection.parked) this.arm(collection, undefined, input.arrivedAt);
+    // The cap is checked on CREATION too, not only when a collection grows. At
+    // `collectMaxEntries: 1` — the documented "answer every message on its own"
+    // setting — the first message already fills the batch, and checking only on
+    // growth meant the second message joined it and every turn covered two.
+    this.bound(key, collection);
     return true;
   }
 
@@ -238,12 +256,33 @@ export class RoomCollector {
    * nothing to cancel — what it restores is the collection's place in the map,
    * which the sweep removed.
    *
+   * **It MERGES rather than overwrites, and that is not defensive coding.** One
+   * sweep can hand back two collections for the same agent — the cap closes a
+   * batch and the next message in the same tick opens another, which is the
+   * ordinary shape at `collectMaxEntries: 1`. The first of them claims and the
+   * rest park, so a plain `set` would drop every one but the last: its messages
+   * would never be answered, and the turn it was owed would never settle.
+   *
+   * Appending is order-safe because a sweep hands back collections in the order
+   * they were opened, so anything parking onto an existing one is newer.
+   *
    * @param collection - The collection whose flush found the agent busy here.
+   * @returns `true` when it merged into a collection already waiting — the
+   *   caller's cue that one pending turn fewer is now owed.
    */
-  park(collection: RoomCollection): void {
+  park(collection: RoomCollection): boolean {
+    const key = agentKey(collection.room.id, collection.authorId);
+    const waiting = this.collections.get(key);
+    if (waiting && waiting !== collection) {
+      waiting.room = collection.room;
+      waiting.entries.push(...collection.entries);
+      this.trim(waiting);
+      return true;
+    }
     collection.parked = true;
     collection.dueAt = null;
-    this.collections.set(agentKey(collection.room.id, collection.authorId), collection);
+    this.collections.set(key, collection);
+    return false;
   }
 
   /**
@@ -366,7 +405,7 @@ export class RoomCollector {
     const max = Math.max(1, this.window().maxEntries);
     if (collection.entries.length < max) return;
     if (collection.parked) {
-      collection.entries.splice(0, collection.entries.length - max);
+      this.trim(collection);
       return;
     }
     // Out of the map NOW, run one macrotask later. See {@link closing} for why
@@ -375,6 +414,23 @@ export class RoomCollector {
     collection.dueAt = null;
     this.closing.push(collection);
     this.schedule();
+  }
+
+  /**
+   * Drop the oldest tracked messages from a parked collection that has outgrown
+   * the cap.
+   *
+   * A parked collection cannot close — its agent is mid-turn — so the cap can
+   * only be honoured by forgetting. That costs the `arrivedDuringPrevTurn` mark
+   * on the dropped lines and nothing else: the messages themselves are in the
+   * room log, behind the agent's cursor, and the ambient window delivers them.
+   *
+   * @param collection - The parked collection to trim.
+   */
+  private trim(collection: RoomCollection): void {
+    const max = Math.max(1, this.window().maxEntries);
+    if (collection.entries.length <= max) return;
+    collection.entries.splice(0, collection.entries.length - max);
   }
 
   /**

@@ -1103,7 +1103,7 @@ export class RoomService {
     // seeded correctly (A3.6b) and the row still on the old binding; re-running
     // sees the new agent already present, takes the same-agent branch, and
     // finishes the re-point. The only write a retry does not replay is the swap
-    // notice — best-effort by design (`room-notice-log.ts`'s degrade contract),
+    // notice — best-effort by design (`notices/notice-log.ts`'s degrade contract),
     // never the durable state.
     if (room.archived) this.unarchiveBridgedRoom(room);
     this.bridges.unarchiveBridge(bridge.roomId);

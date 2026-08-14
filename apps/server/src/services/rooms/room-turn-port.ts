@@ -11,7 +11,7 @@
  * The vocabulary of an OUTCOME is deliberately here rather than in the
  * dispatcher: `late`, `unanswered` and "chose to stay quiet" are the things a
  * turn can do, and what the room SAYS about each is a separate decision that
- * belongs to `room-notice-log.ts`.
+ * belongs to `notices/notice-log.ts`.
  *
  * @module server/services/rooms/room-turn-port
  */

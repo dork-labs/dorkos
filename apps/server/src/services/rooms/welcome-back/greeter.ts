@@ -95,7 +95,7 @@ export interface AgentAbsenceWork {
  *
  * A port, because the answer comes from SESSION state and sessions are
  * runtime-owned (ADR-0310) — this domain must not learn to read a transcript.
- * The production implementation is `welcome-back-work.ts`; a test supplies its
+ * The production implementation is `work-source.ts`; a test supplies its
  * own and can therefore prove that a disabled feature never asks at all.
  *
  * **Implementations must wake nobody.** Everything an implementation reads is

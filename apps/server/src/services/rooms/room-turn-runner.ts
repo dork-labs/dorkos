@@ -74,7 +74,7 @@ const ROOM_CLIENT_ID = 'dorkos-room';
  * **`waitMs` bounds the WAIT, not the turn.** The turn itself is never
  * cancelled: it keeps running and keeps streaming to its own session, and when
  * it finally closes its answer is posted into the room with the delay said out
- * loud (the late-answer note in `room-notices.ts`). An earlier revision dropped
+ * loud (the late-answer note in `notices/notice-copy.ts`). An earlier revision dropped
  * it at this deadline on the theory that a very late reply is worse than none —
  * which gets the trade backwards. Silence is the worse failure, and a person who
  * waited ten minutes for an answer deserves it more than the room deserves to be

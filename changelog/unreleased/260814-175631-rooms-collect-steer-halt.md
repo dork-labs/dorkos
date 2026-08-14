@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(server,shared): a room gathers a burst into one turn, and a mid-turn message steers it (DOR-1201)'
+  - 'fix(server): judge a gathered batch one message at a time, and pin the halt ordering (DOR-1201)'
 ---
 
 ### Added

@@ -239,12 +239,13 @@ model. See ADR `260726-170127` and `research/20260727_buzz-conversational-behavi
   that agent: a human author at `cascadeDepth: 0` whose entry names the agent in
   its stored `mentions`, or any human message in a DM, where naming is implicit.
   A direct question deserves a direct answer, and the count cannot run away
-  because the bound is per ADDRESSED message and the sender is the one
-  addressing — one TURN answers each agent once, so a person gets back exactly
-  as many lines as they wrote separate messages naming it. Three questions typed
-  in one breath are one turn since RP8, so they earn one line between them:
-  that is the collect window, not damping, and it is why those scenarios ask one
-  question at a time. `turn_failed` is never
+  because the bound is the SENDER's own typing: one turn answers each agent
+  once, and messages that arrive together are answered together, so a line comes
+  back per gathered turn rather than per keystroke. Since RP8 that means three
+  questions typed in one breath are one turn and earn one line between them —
+  the collect window, not damping, which is why those scenarios ask one question
+  at a time and never assert a line count against a message count.
+  `turn_failed` is never
   damped at all: each error is a distinct event (room-participation spec §5.2,
   as amended by DOR-781). `agent_gone` follows the same split for the same
   reason: damped when the member was merely SELECTED (an agent that is not
@@ -282,6 +283,15 @@ model. See ADR `260726-170127` and `research/20260727_buzz-conversational-behavi
 
 Current as of 2026-07-31; fix them rather than working around them.
 
+- **A restart forgets the turns a room owed but had not started.** The collect
+  buffers (`room-collect.ts`) are process memory, exactly like the claim map
+  beside them, and nothing persists them. A server that goes down while a
+  message is gathered — or held behind a working agent — comes back with that
+  message still UNREAD and no turn owed for it: it reaches the agent on the next
+  turn something else triggers, rather than on its own. Nothing is lost from the
+  log and nothing is shown twice; what is lost is the promptness. Making it
+  durable is the scheduler this domain has declined twice
+  (ADR `260726-170125`), so it needs arguing as one rather than adding a table.
 - No room is bridged to a chat platform. Room presence reaches the cockpit
   (`RoomService.publishSignal` → the room's event stream) and stops there. The
   Telegram adapter keeps a signal seam for it (`handleTypingSignal`), but
