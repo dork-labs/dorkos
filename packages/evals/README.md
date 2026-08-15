@@ -75,7 +75,8 @@ channel does can be measured with no model at all.
   one turn charged once; Stop interrupts a running turn and the room says so
   exactly once. They read the room's own event stream and the `room_turn_spend`
   rows, so none of them can be satisfied by an agent that merely said something
-  plausible.
+  plausible. The suite's other eight cases appear in that run as
+  `skipped-wrong-tier` — see below.
 - **The eight credentialed cases are quarantined**: the context-recall probes
   X-01 to X-06 from `meta/chat-capabilities.md` §7, plus restraint (an engaged
   agent staying out of a conversation that is not about it) and the adversarial
@@ -83,12 +84,23 @@ channel does can be measured with no model at all.
   implemented, and `src/suite/rooms.ts` says why rather than shipping a case that
   asserts nothing.
 
+**A declared tier is enforced, not described.** A case whose `runtimeTier` is
+credentialed is SKIPPED on a `test-mode` run (`skipped-wrong-tier`) instead of
+being run against the deterministic runtime. It is not a tidiness rule: the
+injection case reported `pass` on test-mode, because a scripted echo obeys no
+injected instruction — a green about a security property nothing had exercised.
+A skipped case neither gates nor counts as quarantined coverage, so the GATING
+line still says what a run actually proved.
+
 **A rooms case reports `unmetered`, and it is not lying about that.** The only
 cost signal the harness can see rides the per-SESSION stream, and a room drive
 collects the ROOM's stream — the room binds its session internally and never
 names it. So `--budget` cannot see a room turn and `perEvalCeilingUsd` cannot
-abort one. What bounds these cases is construction: a handful of posts, one
-triggered agent, and a cheap model.
+abort one. What bounds a rooms case is its DRIVE CEILING: one budget from the
+subscribe to the last settle, five minutes for the credentialed cases (they run
+at most two model turns each), one minute for the structural ones. That is the
+honest wall-clock bound; the dollar ceiling each case declares is a statement of
+intent.
 
 Writing one: `runner/room-drive.ts` posts as a person and collects the room
 stream; `oracles/rooms.ts` answers "was a turn triggered for agent X"; a case
@@ -100,10 +112,12 @@ seeding works on both tiers, because both servers adopt an agents home at boot.
 
 Two lines at the bottom of the table matter more than the rows above them:
 
-- **GATING** says how many cases could actually fail the run. Most cases are
-  quarantined, which means they run and report but never fail anything. A green
-  run that gated on zero cases proves nothing, so the harness treats that as a
-  failure rather than a pass.
+- **GATING** says how many of the cases a run STARTED could actually fail it.
+  Most cases are quarantined, which means they run and report but never fail
+  anything; cases that declare a credentialed runtime are not started at all on a
+  `test-mode` run (`skipped-wrong-tier`) and count as neither. A green run that
+  gated on zero cases proves nothing, so the harness treats that as a failure
+  rather than a pass.
 - **CREDENTIAL** says which of the three credentials the run used, so nobody has
   to guess.
 

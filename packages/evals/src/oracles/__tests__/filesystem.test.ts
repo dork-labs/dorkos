@@ -10,7 +10,7 @@ import path from 'node:path';
 import { emptyApprovalLog, type EvalSandbox, type OracleContext } from '../../types.js';
 import {
   fileExists,
-  dirAbsent,
+  pathAbsent,
   fileMatches,
   jsonFileMatches,
   noBackupSiblings,
@@ -58,16 +58,16 @@ describe('fileExists', () => {
   });
 });
 
-describe('dirAbsent', () => {
+describe('pathAbsent', () => {
   it('passes when the directory is gone (uninstall removed it)', async () => {
-    const result = await dirAbsent((s) => path.join(s.projectCwd, '.dork/plugins/foo'))(ctx());
+    const result = await pathAbsent((s) => path.join(s.projectCwd, '.dork/plugins/foo'))(ctx());
     expect(result.passed).toBe(true);
   });
 
   it('fails when the directory still exists', async () => {
     const dir = path.join(sandbox.projectCwd, '.dork/plugins/foo');
     await mkdir(dir, { recursive: true });
-    const result = await dirAbsent((s) => path.join(s.projectCwd, '.dork/plugins/foo'))(ctx());
+    const result = await pathAbsent((s) => path.join(s.projectCwd, '.dork/plugins/foo'))(ctx());
     expect(result.passed).toBe(false);
   });
 });

@@ -96,11 +96,31 @@ function columnWidth(values: string[], minimum: number): number {
   return values.reduce((widest, v) => Math.max(widest, v.length), minimum);
 }
 
-/** Whether an eval's terminal status counts as a failure for its own row. */
+/**
+ * Whether an eval's terminal status counts as a failure for its own row.
+ *
+ * `skipped-over-budget` is one: the run ran out of money before that case got a
+ * verdict, which is a run that did not do its job. `skipped-wrong-tier` is NOT,
+ * and the difference matters — a credentialed case on a free structural run was
+ * never going to run, was never asked to, and reporting it as a failure would
+ * make the nightly structural job permanently red for doing exactly the right
+ * thing.
+ */
 function isFailure(result: EvalResult): boolean {
   return (
     result.status === 'fail' || result.status === 'error' || result.status === 'skipped-over-budget'
   );
+}
+
+/**
+ * Whether this case was never started because the run booted the wrong tier.
+ *
+ * Such a case is neither gating nor quarantined-reporting: it produced no
+ * evidence at all, so counting it either way would misstate what the run
+ * covered.
+ */
+function isWrongTier(result: EvalResult): boolean {
+  return result.status === 'skipped-wrong-tier';
 }
 
 /**
@@ -160,15 +180,17 @@ export function formatSummaryTable(summary: RunSummary): string {
   const failed = summary.results.filter((r) => r.status === 'fail' && !r.quarantined).length;
   const errored = summary.results.filter((r) => r.status === 'error' && !r.quarantined).length;
   const skipped = summary.results.filter((r) => r.status === 'skipped-over-budget').length;
+  const wrongTier = summary.results.filter(isWrongTier).length;
 
   const footer =
     `${passed} passed, ${failed} failed, ${errored} errored, ${skipped} skipped, ` +
+    (wrongTier > 0 ? `${wrongTier} needing a credentialed tier, ` : '') +
     `${gate.quarantinedCases} quarantined (${gate.failingQuarantinedCases} of them failing)` +
     ` · $${summary.totalCostUsd.toFixed(4)} / $${summary.budgetUsd.toFixed(2)} budget`;
 
   const gatingLine =
     gate.gatingCases === 0
-      ? `GATING: 0 of ${gate.totalCases} cases gate this run — every case is quarantined, so a green run proves nothing.`
+      ? `GATING: 0 of ${gate.totalCases} cases gate this run — nothing this run started can fail it, so a green run proves nothing.`
       : `GATING: ${gate.gatingCases} of ${gate.totalCases} cases gate this run; ${gate.quarantinedCases} quarantined case(s) report but cannot fail it.`;
 
   const lines = [header, ...rows, '', footer, gatingLine];
@@ -260,7 +282,11 @@ function unmeteredSpendLine(summary: RunSummary): string | undefined {
 
 /** How much of a run actually gated, and whether the run must be treated as failed. */
 export interface RunGateVerdict {
-  /** Every case in the run. */
+  /**
+   * Every case the run ATTEMPTED — cases skipped for the wrong tier are not
+   * counted, because "4 of 12 gate this run" reads as eight cases silently
+   * exempted when in fact eight were never started.
+   */
   totalCases: number;
   /** Cases that could fail the run (non-quarantined). */
   gatingCases: number;
@@ -289,9 +315,14 @@ export interface RunGateVerdict {
  * @returns The {@link RunGateVerdict} for this run.
  */
 export function evaluateRunGate(summary: RunSummary): RunGateVerdict {
-  const totalCases = summary.results.length;
-  const quarantined = summary.results.filter((r) => r.quarantined);
-  const gating = summary.results.filter((r) => !r.quarantined);
+  // A case skipped for the wrong tier is neither gating nor reporting: nothing
+  // ran, so it can neither fail the run nor stand in for coverage. Counting it
+  // as gating would be the nastiest version of that mistake — a run whose only
+  // "gating" cases were never started would report a confident green.
+  const attempted = summary.results.filter((r) => !isWrongTier(r));
+  const totalCases = attempted.length;
+  const quarantined = attempted.filter((r) => r.quarantined);
+  const gating = attempted.filter((r) => !r.quarantined);
   const failingGating = gating.filter(isFailure);
 
   const base = {
@@ -308,12 +339,22 @@ export function evaluateRunGate(summary: RunSummary): RunGateVerdict {
       reason: `${failingGating.length} gating eval(s) did not pass: ${failingGating.map((r) => `${r.id} (${r.status})`).join(', ')}`,
     };
   }
+  if (attempted.length === 0 && summary.results.length > 0) {
+    return {
+      ...base,
+      failed: true,
+      reason:
+        `This run started none of its ${summary.results.length} selected case(s): every one of ` +
+        `them declares a credentialed runtime and this run booted ${summary.tier}. Run them with ` +
+        '`pnpm evals:local --suite <case-id>`, which pays for a real model.',
+    };
+  }
   if (gating.length === 0) {
     return {
       ...base,
       failed: true,
       reason:
-        `This run gated on 0 of ${totalCases} case(s) — every selected case is quarantined, ` +
+        `This run gated on 0 of ${totalCases} case(s) — every case it started is quarantined, ` +
         'so passing proves nothing. Select a suite with at least one gating case, or promote a ' +
         'case out of quarantine on credentialed evidence.',
     };

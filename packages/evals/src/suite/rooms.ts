@@ -71,12 +71,14 @@
  *    pnpm --filter @dorkos/evals run evals -- --suite rooms --tier test-mode
  *    ```
  *
- * 3. **what to expect.** Structural: `rooms-addressed-runs-a-turn` fails with
- *    ALL THREE of its oracles red — no indicator, nothing posted, nothing
- *    charged — and the burst and halt cases fail too, since both address the
- *    agent to get a turn at all. `rooms-unaddressed-is-free` stays GREEN, which
- *    is the half of the result that says the oracles discriminate rather than
- *    failing together. Measured on 2026-08-15, not predicted;
+ * 3. **what to expect.** `rooms-addressed-runs-a-turn` fails with ALL THREE of
+ *    its oracles red — no indicator, nothing posted, nothing charged — and the
+ *    burst and halt cases fail too, since both address the agent to get a turn at
+ *    all. `rooms-unaddressed-is-free` stays GREEN, which is the half of the
+ *    result that says the oracles discriminate rather than failing together. The
+ *    suite's eight credentialed cases take no part in the drill: a `test-mode`
+ *    run does not start them (`skipped-wrong-tier`). Measured on 2026-08-15, not
+ *    predicted;
  * 4. **reproduction versus noise**: a real drill red names the agent's author id
  *    in oracle 1's detail (`no working indicator named ada (01M…)`). A run where
  *    the case ERRORS instead — a stream that never settled, a boot fault — proves
@@ -136,8 +138,14 @@ const QUIET_MS = 2_000;
  */
 const WIND_DOWN_QUIET_MS = 2_500;
 
-/** Hard ceiling on one structural room drive. */
-const STRUCTURAL_TIMEOUT_MS = 45_000;
+/**
+ * Hard ceiling on one structural room drive, from the subscribe to the last
+ * `settle()` — one budget for the whole case, not one per settle call.
+ *
+ * Generous against measured runs (the slowest, the halt case, takes about 13
+ * seconds) because it is a guard against a hang, not a performance target.
+ */
+const STRUCTURAL_TIMEOUT_MS = 60_000;
 
 /**
  * The gathering window the burst case sets, in ms.

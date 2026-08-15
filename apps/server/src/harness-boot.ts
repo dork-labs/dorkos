@@ -21,6 +21,7 @@
  * @module harness-boot
  */
 import path from 'node:path';
+import { mkdir } from 'node:fs/promises';
 import type { Express } from 'express';
 import { createDb, runMigrations, type Db } from '@dorkos/db';
 import { MeshCore } from '@dorkos/mesh';
@@ -97,7 +98,14 @@ export async function bootInProcessTestServer(dorkHome: string): Promise<InProce
   // what lets a rooms eval seed the SAME way on both tiers: write the manifest
   // under `<DORK_HOME>/agents/<slug>/` and let the server find it, exactly as
   // `start()` does.
-  const mesh = new MeshCore({ db, agentsHomeDir: path.join(dorkHome, 'agents'), logger });
+  const agentsHomeDir = path.join(dorkHome, 'agents');
+  // Created before the reconcile so a sandbox with no agents in it does not warn
+  // on every boot: the scanner logs an ENOENT for a missing agents home, which
+  // is noise on the eval runs that seat no agents and a distraction on the ones
+  // that do. `start()` never sees it because `ensureDorkBot()` has already made
+  // the directory by the time it reconciles.
+  await mkdir(agentsHomeDir, { recursive: true });
+  const mesh = new MeshCore({ db, agentsHomeDir, logger });
   await mesh.reconcileOnStartup();
 
   // The rooms graph. `/api/rooms` is mounted by `createApp()` unconditionally,

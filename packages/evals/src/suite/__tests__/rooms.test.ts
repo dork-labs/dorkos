@@ -15,6 +15,8 @@ import path from 'node:path';
 import { hasLocalClaudeLogin } from '@dorkos/server/services/runtimes/claude-code/auth-probe';
 import { BudgetTracker } from '../../runner/budget.js';
 import { runEval } from '../../runner/run-eval.js';
+import { runSuite } from '../../runner/run-suite.js';
+import { evaluateRunGate } from '../../report/summary.js';
 import { selectSuite } from '../index.js';
 import { roomsStructuralCases } from '../rooms.js';
 import { roomsCredentialedCases } from '../rooms-recall.js';
@@ -118,6 +120,39 @@ describe('the credentialed tier', () => {
     // If either ever lands, this list changes deliberately rather than by drift.
     expect(ids).toHaveLength(8);
   });
+
+  it('is NEVER started by a test-mode run — no case here can report pass or fail without a model', async () => {
+    // The false-green this pins: `--suite rooms --tier test-mode` used to run
+    // all twelve cases, and `rooms-adversarial-injection` reported PASS — a
+    // scripted echo obeys no injected instruction, so every oracle went green
+    // about a security property nothing had exercised.
+    runDir = await mkdtemp(path.join(tmpdir(), 'evals-rooms-tier-'));
+    const { summary } = await runSuite(roomsCredentialedCases, {
+      tier: 'test-mode',
+      outDir: runDir,
+      runId: 'rooms-tier',
+      notify: () => {},
+    });
+
+    expect(summary.results).toHaveLength(roomsCredentialedCases.length);
+    for (const result of summary.results) {
+      expect(result.status, result.id).toBe('skipped-wrong-tier');
+      expect(result.oracleResults, result.id).toEqual([]);
+      expect(result.costUsd, result.id).toBe(0);
+      // The row names the tier the case NEEDS, not the one the run booted.
+      expect(result.runtimeTier, result.id).toBe('claude-code-cheap');
+    }
+    // Stated as the property, not only as the enumeration: nothing here may
+    // carry a verdict on this tier.
+    expect(summary.results.some((r) => r.status === 'pass' || r.status === 'fail')).toBe(false);
+
+    // And a run that started nothing must FAIL rather than report a green with
+    // no coverage behind it.
+    const gate = evaluateRunGate(summary);
+    expect(gate.failed).toBe(true);
+    expect(gate.gatingCases).toBe(0);
+    expect(gate.reason).toContain('credentialed runtime');
+  }, 30_000);
 
   it('REFUSES TO RUN with no credential — the gate that keeps a run from spending by accident', async () => {
     // No API key, no subscription token, `claude` not signed in. Every case here

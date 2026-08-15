@@ -49,7 +49,7 @@ import http from 'node:http';
 import { parseFrames, type SseFrame } from '@dorkos/test-utils/sse-test-helpers';
 import type { RoomFacts, RoomMemberFacts } from '../types.js';
 
-/** Default hard ceiling (ms) on one room drive. */
+/** Default hard ceiling (ms) on one room drive, from subscribe to teardown. */
 const DEFAULT_ROOM_TIMEOUT_MS = 60_000;
 
 /** Default quiet window (ms): no frame for this long ends the collection. */
@@ -386,6 +386,12 @@ interface QuietSignalData {
   state?: string;
 }
 
+/** A reaction frame's payload — the entry and its whole current pill set. */
+interface QuietReactionData {
+  entryId?: string;
+  reactions?: Array<{ emoji?: string; authorIds?: string[] }>;
+}
+
 /**
  * What "the room has gone quiet" is measured on: everything the room has SAID,
  * with repeats of what it already said folded away.
@@ -406,15 +412,31 @@ interface QuietSignalData {
  * entries and DISTINCT `(agent, trigger, state)` indicators — the things a room
  * only ever says once.
  *
+ * REACTIONS COUNT TOO. They are the third thing on this stream, they are durable
+ * state, and a reaction landing during a collection is news by any reading — an
+ * acknowledgments case reacts mid-drive and then asks about it. Each frame
+ * carries the entry's WHOLE set rather than a delta, so folding the set into the
+ * key makes a removal register as loudly as an addition.
+ *
  * @param frames - The frames collected so far.
  * @returns A string that changes only when the room says something new.
  */
 function quietSignature(frames: SseFrame[]): string {
   let entries = 0;
   const signals = new Set<string>();
+  const reactions = new Set<string>();
   for (const frame of frames) {
     if (frame.event === 'entry') {
       entries += 1;
+      continue;
+    }
+    if (frame.event === 'reaction') {
+      const data = frame.data as QuietReactionData;
+      const pills = (data.reactions ?? [])
+        .map((r) => `${r.emoji ?? ''}x${(r.authorIds ?? []).length}`)
+        .sort()
+        .join(',');
+      reactions.add(`${data.entryId ?? ''}:${pills}`);
       continue;
     }
     if (frame.event !== 'signal') continue;
@@ -423,7 +445,40 @@ function quietSignature(frames: SseFrame[]): string {
       `${data.signal ?? ''}:${data.authorId ?? ''}:${data.entryId ?? ''}:${data.state ?? ''}`
     );
   }
-  return `${entries}/${signals.size}`;
+  return `${entries}/${signals.size}/${reactions.size}`;
+}
+
+/**
+ * Turns the room has STARTED and not yet released — `(agent, trigger)` pairs
+ * with a working indicator and no `done`.
+ *
+ * The other half of the quiet check, and the one that keeps quiet from lying.
+ * A working indicator is republished every ten seconds with identical contents,
+ * so once the first one has been counted the signature stops changing — and a
+ * room where an agent has been thinking for a minute looks exactly like a room
+ * that finished. Measured: the restraint case settled `quiet` while a turn was
+ * still running and reported the agent silent, which is a PASS on a case whose
+ * whole subject is whether the agent says anything.
+ *
+ * So a collection may only settle on quiet when nothing is outstanding. A turn
+ * that never releases is caught by the drive's hard deadline instead, and
+ * reported as the runner error it is.
+ *
+ * @param frames - The frames collected so far.
+ * @returns One entry per turn still running.
+ */
+function openTurns(frames: SseFrame[]): string[] {
+  const working = new Set<string>();
+  const released = new Set<string>();
+  for (const frame of frames) {
+    if (frame.event !== 'signal') continue;
+    const data = frame.data as QuietSignalData;
+    if (data.signal !== 'progress' || !data.authorId) continue;
+    const key = `${data.authorId}::${data.entryId ?? ''}`;
+    if (data.state === 'working' || data.state === 'working_late') working.add(key);
+    if (data.state === 'done') released.add(key);
+  }
+  return [...working].filter((key) => !released.has(key));
 }
 
 /** Options for {@link openRoomStream}. */
@@ -432,7 +487,10 @@ export interface OpenRoomStreamOptions {
   baseUrl: string;
   /** The room to subscribe to. */
   roomId: string;
-  /** Hard ceiling on the whole collection. Default 60000. */
+  /**
+   * Hard ceiling on THIS DRIVE, measured from the subscribe and shared by every
+   * `settle()` call on the stream. Default 60000.
+   */
   timeoutMs?: number;
   /** Subscribe-gate timeout for the cold snapshot. Default 15000. */
   readyTimeoutMs?: number;
@@ -479,6 +537,12 @@ export function openRoomStream(opts: OpenRoomStreamOptions): RoomStream {
   let raw = '';
   let closed = false;
   let failure: Error | undefined;
+  // **One budget for the whole drive, not one per `settle()` call.** A case that
+  // settles twice — post, wait for the answer, react, ask again — would
+  // otherwise be bounded by `2 × timeoutMs`, and the number a case writes down
+  // as its ceiling would not be the number it is bounded by. Set at subscribe,
+  // which is the first thing a drive does.
+  const driveDeadline = Date.now() + timeoutMs;
 
   let signalReady!: () => void;
   let failReady!: (err: Error) => void;
@@ -571,7 +635,6 @@ export function openRoomStream(opts: OpenRoomStreamOptions): RoomStream {
     quietMs?: number;
   }): Promise<SseFrame[]> => {
     const quietMs = settleOpts?.quietMs ?? DEFAULT_QUIET_MS;
-    const deadline = Date.now() + timeoutMs;
     // Restarted here rather than carried from the last frame, so a `settle()`
     // called after a long-running step gives the room its full quiet window.
     let lastChangeAt = Date.now();
@@ -585,10 +648,17 @@ export function openRoomStream(opts: OpenRoomStreamOptions): RoomStream {
         previous = current;
         lastChangeAt = Date.now();
       }
-      if (Date.now() - lastChangeAt >= quietMs) return collected;
-      if (Date.now() > deadline) {
+      // **Quiet is only quiet when nobody is still working.** An indicator that
+      // has been republished unchanged for a minute is not news, so the
+      // signature stops moving — and without this a room mid-turn is
+      // indistinguishable from a room that finished. See {@link openTurns}.
+      const outstanding = openTurns(collected);
+      if (outstanding.length === 0 && Date.now() - lastChangeAt >= quietMs) return collected;
+      if (Date.now() > driveDeadline) {
         throw new RoomDriveError(
-          `the room did not settle within ${timeoutMs}ms (last new event ${Date.now() - lastChangeAt}ms ago)`,
+          `the room did not settle within this drive's ${timeoutMs}ms budget ` +
+            `(last new event ${Date.now() - lastChangeAt}ms ago; ` +
+            `${outstanding.length} turn(s) still running: ${outstanding.join(', ') || 'none'})`,
           'STREAM_ERROR',
           undefined
         );
@@ -630,9 +700,14 @@ export async function waitForRoomFrames(
  * (`POST /api/test/scenario`), so a structural case can decide whether an agent
  * turn finishes at once or keeps working until it is stopped.
  *
- * Only reachable on the in-process tier, which boots with `DORKOS_TEST_RUNTIME`
- * set. It is a no-op returning `false` anywhere else — a credentialed case
- * neither needs it nor should silently depend on it.
+ * **Reachable exactly where the harness mounts it.** These routes are gated on
+ * `env.DORKOS_TEST_RUNTIME`, which the server validates ONCE at module load —
+ * before the runner sets it — so `createApp()` decides it is false and does not
+ * mount them. `harness-boot.ts` mounts them by hand for that reason, which is
+ * what makes this callable on the in-process tier at all. A credentialed
+ * child-process server mounts them only if the variable was set in its
+ * environment, which the harness never does; this returns `false` there rather
+ * than throwing, so a case cannot silently depend on a scenario it did not get.
  *
  * @param opts.baseUrl - The running harness server.
  * @param opts.scenario - The scenario name (`simple-text`, `long-turn`, …).

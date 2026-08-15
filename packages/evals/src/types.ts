@@ -451,7 +451,21 @@ export const EvalCaseMetaSchema = z.object({
    * real turn belongs to the credentialed tiers (Phase 2+).
    */
   prompt: z.union([z.string(), z.array(z.string())]),
-  /** Backend tier. */
+  /**
+   * Backend tier — LOAD-BEARING, not a label.
+   *
+   * A case declaring a credentialed tier is SKIPPED (`skipped-wrong-tier`) on a
+   * `test-mode` run rather than being run against the deterministic runtime.
+   * Before that skip existed, `--suite <name> --tier test-mode` ran every case
+   * the tag selected and the adversarial-injection case reported `pass` with no
+   * model attached — a green about a security property nothing had exercised,
+   * which is the worst shape a false green can take.
+   *
+   * The asymmetry is deliberate: a `test-mode` case is NOT skipped on a
+   * credentialed run. `widget-round-trip` is runtime-agnostic by construction
+   * and is meant to run on both, and skipping it there would remove coverage
+   * rather than a lie.
+   */
   runtimeTier: RuntimeTierSchema,
   /** Cost envelope. */
   costClass: CostClassSchema,
@@ -578,8 +592,18 @@ export interface EvalCase extends EvalCaseMeta {
  * - `error` — a runner/infra error (a `409 SESSION_LOCKED`, a boot timeout, a
  *   thrown exception) distinct from a product regression.
  * - `skipped-over-budget` — the per-run budget cap was hit before this eval ran.
+ * - `skipped-wrong-tier` — the case DECLARES a credentialed runtime and the run
+ *   booted `test-mode`, so it was never started. See {@link EvalCaseMeta}'s
+ *   `runtimeTier`: without this the tier field was decorative, and a case whose
+ *   whole subject is model behaviour could report `pass` with no model attached.
  */
-export const EvalStatusSchema = z.enum(['pass', 'fail', 'error', 'skipped-over-budget']);
+export const EvalStatusSchema = z.enum([
+  'pass',
+  'fail',
+  'error',
+  'skipped-over-budget',
+  'skipped-wrong-tier',
+]);
 
 /** Inferred type for {@link EvalStatusSchema}. */
 export type EvalStatus = z.infer<typeof EvalStatusSchema>;
