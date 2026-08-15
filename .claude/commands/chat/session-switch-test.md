@@ -37,8 +37,10 @@ Drive the browser with the **Playwright MCP** (`mcp__plugin_playwright_playwrigh
 - `browser_click` takes a **`target`** (ref from snapshot, or a CSS/`text=` selector), not `ref`.
 - New sessions **reset the model to the default (Opus)** — you must set the model **per session** after each "New session".
 - The status bar has **two** "Default"-labelled buttons: the first is **Permission Mode**, the second ("Default (recommended)") is the **Model** selector. Don't confuse them.
-- The model picker is a Radix dialog; click the option via `text=Sonnet 4.6 · Best for everyday tasks` (a raw `el.click()` in `browser_evaluate` does **not** trigger the Radix handler reliably).
+- The model picker is a Radix dialog; click the option whose row names **`$MODEL`** — read the visible options from the snapshot and match on the model's own name (e.g. a Haiku row under the default, a Sonnet row when `model:sonnet` was passed). Do **not** hard-code one model's row text: the default is now Haiku, and a runner that clicks a remembered "Sonnet 4.6 · Best for everyday tasks" would silently test a different model than the one it logs. A raw `el.click()` in `browser_evaluate` does **not** trigger the Radix handler reliably.
+- Haiku is the right default here because this suite tests **UI plumbing**, not model capability — the gates below (streaming, queueing, prompts, switching) do not care which model answers. The one place it shows is check #2/#3: a smaller model may spin up fewer or shorter subagents, so a thin subagent observation is a **judgment-quality** limitation to note, not a gate failure. Re-run with `model:sonnet` if the subagent checks need more to look at.
 - Multi-line prompts: type the whole text (newlines are fine) then submit with **`Meta+Enter`**.
+- **Every Bash call is a fresh shell** — `$TEST_URL`, `$API_PORT`, `$D`, `$SDK_ID` do not survive between blocks. Substitute the resolved literals into every block you run, and record them in the report header.
 - Sidebar session entries are buttons with no stable id and (bug) **identical titles**. Tag them via `browser_evaluate` (assign `el.id`) ordered by `getBoundingClientRect().y`, then click by `#id`. Re-tag after each navigation (React re-renders drop the ids).
 
 ## Results File

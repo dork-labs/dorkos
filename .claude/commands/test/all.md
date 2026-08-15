@@ -98,8 +98,10 @@ Also note: turbo strips `ANTHROPIC_API_KEY`, so the one money-spending test in t
 
 ## Tier 3 — Playwright browser tests (mock leg + cockpit leg, no model spend)
 
+Run it from the repo root — every other tier here does, and a `cd` that persists would send the later tiers' logs somewhere else:
+
 ```bash
-cd apps/e2e && npx playwright test 2>&1 | tee "../../$RESULTS_DIR/$TIMESTAMP-e2e.log"
+pnpm --filter @dorkos/e2e exec playwright test 2>&1 | tee "$RESULTS_DIR/$TIMESTAMP-e2e.log"
 ```
 
 **This tier boots its own servers.** `apps/e2e/playwright.config.ts` sets `REUSE_EXISTING_SERVER = false` deliberately (a default-port run once attached to the operator's real cockpit on 4242 and mutated the real `~/.dork`). Consequences:
@@ -120,7 +122,7 @@ cd apps/e2e && npx playwright test 2>&1 | tee "../../$RESULTS_DIR/$TIMESTAMP-e2e
 
 The marketing-site specs (`marketplace.spec.ts`, `features.spec.ts`) are **excluded** unless `E2E_SITE=1`, because that leg is a heavy Next.js boot and reaches the live registry over the network. Leave them out of the default ladder; note the exclusion in the report so nobody reads this tier as full browser coverage.
 
-To run only the test-mode legs: `npx playwright test --project chromium-mock --project chromium-streams --project chromium-team-room --project chromium-bridge`.
+To run only the test-mode legs: `pnpm --filter @dorkos/e2e exec playwright test --project chromium-mock --project chromium-streams --project chromium-team-room --project chromium-bridge`.
 
 Verdict from Playwright's own summary line (`N passed, M failed`) plus the exit code. Read `apps/e2e/test-results/results.json` for the per-spec breakdown, and name every failing spec in the report — not just the count.
 

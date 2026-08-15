@@ -1,6 +1,7 @@
 ---
 description: 'Self-test DorkOS rooms in a live browser — two agents in one channel, driven through bursts, mid-turn steering, halt, reactions, threads, and the three-way DM rule, cross-checked against the API and SQLite. Logs an evidence-based findings report.'
 argument-hint: '[url] [mode:sandbox|live] [perm:default|acceptEdits|bypassPermissions] [model:claude-haiku-4-5] [agents:ana,bo]'
+allowed-tools: Read, Write, Edit, Bash, Grep, Glob, AskUserQuestion, Skill, WebSearch, WebFetch, mcp__plugin_playwright_playwright__browser_navigate, mcp__plugin_playwright_playwright__browser_snapshot, mcp__plugin_playwright_playwright__browser_click, mcp__plugin_playwright_playwright__browser_type, mcp__plugin_playwright_playwright__browser_press_key, mcp__plugin_playwright_playwright__browser_evaluate, mcp__plugin_playwright_playwright__browser_take_screenshot, mcp__plugin_playwright_playwright__browser_console_messages, mcp__plugin_playwright_playwright__browser_network_requests, mcp__plugin_playwright_playwright__browser_hover, mcp__plugin_playwright_playwright__browser_wait_for
 category: testing
 ---
 
@@ -32,7 +33,8 @@ Store as `TEST_URL`, `MODE`, `PERM_MODE`, `MODEL`, `AGENT_A`, `AGENT_B`.
 Drive the browser with the **Playwright MCP** (`mcp__plugin_playwright_playwright__browser_*`). `claude-in-chrome` is often unavailable in this repo; Playwright MCP is the supported path. Gotchas carried over from `/chat:session-switch-test`, plus the rooms-specific ones:
 
 - `browser_click` takes a **`target`** (ref from snapshot, or a CSS/`text=` selector), not `ref`.
-- Multi-line composer text: type the whole text (newlines are fine), then submit. **The room composer submits on plain `Enter`**, unlike the session composer's `Meta+Enter`. Sending three messages fast means three `Enter` presses, not one paste.
+- **The room composer submits on plain `Enter`**, unlike the session composer's `Meta+Enter`. So a newline inside a room message is `Shift+Enter`, and pasting multi-line text sends the first line and strands the rest. Keep room messages to one line wherever the check allows it.
+- **Every Bash call is a fresh shell.** `$ROOM_ID`, `$API_PORT`, `$TIMESTAMP` and friends do **not** survive from one block to the next — they read as empty, and an empty variable inside a `mkdir`/`POST` is how a preflight writes into the wrong directory. **Substitute the resolved literals into every block you run**, and record them in the report header so the run is reproducible. The blocks below are written with variables for readability; you are expected to expand them.
 - Radix dialogs and popovers (create-channel, reaction picker, member menus) need a real click on the option element — a raw `el.click()` inside `browser_evaluate` does not reliably fire the Radix handler.
 - **Do not assert which emoji the quick-reaction row shows.** It is the reader's own most-used set, computed across rooms, so it differs per machine and per run. Read what is there, then assert against what you read (`apps/e2e/pages/RoomsPage.ts` carries the same warning).
 - **The halt button does not exist when nothing is working.** `room-header-halt` renders only while `working > 0`, so "the button is missing" is a timing statement, not a bug — re-check while an agent is actually mid-turn.
@@ -80,13 +82,14 @@ curl -sf -X PATCH http://localhost:4248/api/config -H 'content-type: application
 
 A fresh sandbox `DORK_HOME` has no agents. Seed the two this test needs the way the e2e fixtures do (`apps/e2e/fixtures/team-room-api.ts` uses `POST /api/agents`, deliberately not `POST /api/mesh/agents`, because only the former puts an agent on the team):
 
+**Write this block with the two agent names inlined as literals** — a fresh shell has no `$AGENT_A`, and an empty name would `mkdir` a stray directory and POST `{"name":""}`. Agent directories go under the repo's own `.temp/` (or your session scratchpad), never `$HOME`:
+
 ```bash
-# `path` must exist and sit inside DORKOS_BOUNDARY (defaults to your home dir),
-# or the call answers 403 "Path outside boundary" — the single most common way
-# this preflight fails.
-for name in "$AGENT_A" "$AGENT_B"; do
-  slug=$(echo "$name" | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9' '-')
-  path="$HOME/.dork-rooms-test/$slug"
+# `path` must exist and sit inside DORKOS_BOUNDARY, or the call answers
+# 403 "Path outside boundary" — the most common way this preflight fails.
+# The e2e legs set the boundary to the checkout root, so .temp is in bounds.
+for name in ana bo; do            # <- the two resolved names, inline
+  path="$PWD/.temp/rooms-test/$name"
   mkdir -p "$path"
   curl -sf -X POST "http://localhost:4243/api/agents" -H 'content-type: application/json' \
     -d "{\"path\":\"$path\",\"name\":\"$name\",\"runtime\":\"claude-code\"}" | head -c 200; echo
@@ -94,6 +97,23 @@ done
 ```
 
 Seating is asynchronous — the seam that puts a new agent on `#team` runs **after** the creation response, so poll the roster rather than reading it once.
+
+`runtime: 'claude-code'` is right even here, and it still answers: the test-mode leg sets `DORKOS_TEST_RUNTIME_CLAUDE_ALIAS=true`, which registers a `TestModeRuntime` under the `claude-code` type. A claude-code-seeded agent therefore resolves to the mock, spends nothing, and needs no credentials.
+
+**The scenario levers — without these, half this test is unreachable in sandbox.** The default scenario is `simple-text`, a zero-delay echo: the reply lands before you can observe anything, so there is no mid-turn for check 2 and the halt button (which renders only while `working > 0`) never appears for check 3a. Switch the leg to a turn that actually takes time, and end it on command:
+
+```bash
+# Every new turn on this leg now works until told to stop (180 heartbeats).
+curl -sf -X POST http://localhost:4243/api/test/scenario \
+  -H 'content-type: application/json' -d '{"name":"long-turn"}'
+
+# ...drive the check, then release every running long-turn at its next heartbeat:
+curl -sf -X POST http://localhost:4243/api/test/finish-turn
+```
+
+Both are mounted only when `DORKOS_TEST_RUNTIME` is on (`apps/server/src/routes/test-control.ts`); in production every `/api/test/*` path is a 404. `POST /api/test/reset` returns the default scenario to `simple-text`.
+
+**One honest caveat for check 3a in sandbox:** `TestModeRuntime.interruptQuery` returns `false` — there is no process to signal. So a halt in sandbox is observable through the **claim being dropped and the `halted` notice being written**, not through a killed process. Do not read the no-op interrupt as a halt bug; that is exactly why `finish-turn` exists. The "the model actually stopped mid-sentence" half of A-16 is `live` only.
 
 Then set `API_PORT=4243`, `TEST_URL=http://localhost:4248/channels`, `DORK_DIR=/tmp/dorkos-test-mode-4243`, `DORK_DB=$DORK_DIR/dork.db`, and record `Model: n/a (test-mode)`.
 
@@ -163,13 +183,31 @@ Run these in order; each writes its own block to the results file as it complete
 
 ### Check 1 — A-03: a burst of three quick messages produces exactly ONE reply
 
-Post three short, **individually answerable** messages to `AGENT_A` inside the collect window, as fast as the composer allows:
+**Post the burst through the API, not the browser.** This is the primary method and not a shortcut: three Playwright-MCP round trips cannot land inside a 500ms window — each click-type-Enter cycle costs far more than that on its own — so a browser-driven burst would produce three separate turns and you would log a product FAIL for a test-harness limitation. The API burst puts the three messages in the window the feature is actually about.
 
+Posting unauthenticated is the **same author** as the browser: `resolveCaller` (`apps/server/src/routes/room-caller.ts`) resolves anything that is not an agent token or a signed-in account to the person at the keyboard — this install's owner. So these three arrive exactly as if you had typed them.
+
+```bash
+for q in "what's 2+2?" "name a primary colour" "what day comes after Tuesday?"; do
+  curl -sf -X POST "http://localhost:$API_PORT/api/rooms/$ROOM_ID/entries" \
+    -H 'content-type: application/json' \
+    -d "{\"text\":\"@ana $q\"}" &
+done
+wait
 ```
-@ana what's 2+2?
-@ana name a primary colour
-@ana what day comes after Tuesday?
+
+(Expand `$API_PORT`, `$ROOM_ID` and the agent handle to literals before running — fresh shell, see Tooling.)
+
+**Alternative, when you want the burst driven through the real composer:** widen the window first, since it is read live on every collect and needs no restart —
+
+```bash
+curl -sf -X PATCH "http://localhost:$API_PORT/api/config" -H 'content-type: application/json' \
+  -d '{"rooms":{"collectDebounceMs":8000}}'
 ```
+
+then type the three messages in the UI, and **restore the original value afterwards** — this is a real config write on a live install, not a test fixture. Two caveats on that write: `rooms.collectDebounceMs` is `operator-only` (`config-write-policy.ts`), which a plain `curl` clears by simply not sending agent-identity headers; but **with login on it also needs a real session cookie**, so on such an install make the change from the cockpit's own settings rather than the shell. Whichever route you take, **print the window value in force beside the verdict** — a verdict about gathering is meaningless without the window it gathered in.
+
+In `mode:sandbox`, use the API burst too, and for the same reason twice over: the `simple-text` echo returns before a second browser-driven post could even be typed.
 
 The window is `rooms.collectDebounceMs` (default **500ms**), capped at `rooms.collectMaxEntries` (default **20**) — declared in `packages/shared/src/config-schema.ts`, read into the collector in `apps/server/src/services/rooms/index.ts`. It opens on the first message and **does not slide**, so three messages inside half a second are one turn's worth of input.
 
@@ -185,6 +223,8 @@ PY
 ```
 
 If the debounce has been tuned down near zero on this machine, three messages will legitimately produce three turns — that is a configured room, not a broken one. Record the value you read next to the verdict.
+
+**Then verify in the browser**, which is the half that matters for a UI self-test: the three human messages and **one** agent reply render in `[data-testid="room-timeline"]`, arriving live over the room stream without a refresh. The API is where the burst is posted; the browser is where the result is judged.
 
 **Expect:** exactly **one** new agent entry from `AGENT_A`, and its text addresses **all three** questions. Count entries by author, not by eye:
 
@@ -203,18 +243,22 @@ for e in json.load(open('/tmp/rt-entries.json'))['entries']:
 "
 ```
 
-| Verdict | When                                                                                             |
-| ------- | ------------------------------------------------------------------------------------------------ |
-| PASS    | One agent entry, and (live) it answers 2+2, a colour, and Wednesday                              |
-| FAIL    | Two or three separate replies — the collector did not gather the burst                           |
-| PARTIAL | One reply that answers only the last message — gathering worked, folding into the answer did not |
+| Verdict | When                                                                                                     |
+| ------- | -------------------------------------------------------------------------------------------------------- |
+| PASS    | One agent entry, and (live) it answers 2+2, a colour, and Wednesday                                      |
+| FAIL    | Two or three separate replies, **with all three posts inside the window** — the collector did not gather |
+| PARTIAL | One reply that answers only the last message — gathering worked, folding into the answer did not         |
+| BLOCKED | The three posts did not land inside the window in force — re-run, do not record a product verdict        |
+
+The BLOCKED row is the one that keeps this check honest: before writing FAIL, confirm from the entries' own timestamps that the three human posts really were within `collectDebounceMs` of each other. A spread-out burst answered three times is correct behavior.
 
 In `mode:sandbox`, the **count** is the check and it is fully valid; "addresses all three" is `N/A (sandbox)` — a canned runtime has no opinion about arithmetic.
 
 ### Check 2 — A-03: a message sent mid-turn folds into the NEXT answer
 
-1. Post a message that makes `AGENT_A` work for a few seconds (`@ana write a four-line poem about lakes, slowly`).
+1. Make `AGENT_A` work long enough to interrupt. **Live:** ask for something slow (`@ana write a four-line poem about lakes, slowly`). **Sandbox:** switch the leg to `long-turn` first (Phase 1a) — the default `simple-text` echo returns before there is any "mid" to send into, so without this the check is not merely hard, it is impossible.
 2. The moment the working signal appears — `[data-testid="room-header-working"]` reading "1 agent working", or the presence line `[data-testid="room-presence"]` under the composer — post a second, unrelated message: `@ana also, what's the capital of France?`.
+3. **Sandbox only:** release the first turn with `POST /api/test/finish-turn` so the parked message can be claimed. Live turns end on their own.
 
 **Expect** three things, and check all three:
 
@@ -241,9 +285,12 @@ Two halves, and the second is the one that catches the regression.
 
 **3a. Halt stops all in-flight turns and says so exactly once.** Get **both** agents working at the same time (`@ana and @bo each write a slow eight-line poem about lakes`), wait for `[data-testid="room-header-working"]` to read **"2 agents working"**, then click `[data-testid="room-header-halt"]` (visible text "Stop"). It calls `POST /api/rooms/:id/halt`.
 
+**In sandbox this check needs the `long-turn` scenario**, for a blunt reason: the halt button renders only while `working > 0`, and under the default echo scenario `working` is never above zero long enough to click. With `long-turn` set, both agents stay working until you halt them or call `finish-turn`.
+
 Expect:
 
 - Both turns stop; the working chip and the presence line disappear.
+  - **Sandbox caveat:** `TestModeRuntime.interruptQuery` returns `false` — there is no process to signal — so what you are observing here is the **claim being dropped and the notice being written**, not a killed generation. A no-op interrupt in sandbox is expected and is not a halt bug. The "the model really stopped mid-sentence" half of A-16 is `live` only; record it as `N/A (sandbox)`.
 - **Exactly one** notice row appears: `[data-testid="room-notice"][data-notice="halted"]`, reading `Everything here was stopped. 2 agents were working and have been interrupted; send a message to start again.` (One agent → `One agent was working and has been interrupted…`; nothing running → `Nothing was running at the time.`)
 - Two notices for one halt is a FAIL. The notice is damped per room and re-armed by the next claim, and the ordering is load-bearing: the notice is written **before** any claim is released, so a vanished working indicator is never left unexplained.
 
