@@ -83,28 +83,34 @@ interface ExecutionDefaultsView {
   };
 }
 
-/** The two values this file moves, as they were before it ran. */
-interface PriorDefaults {
+/** The two settings this file moves, as the server reports them. */
+interface RuntimeDefaults {
   /** Which runtime new conversations start on. */
   runtime: string;
   /**
    * The non-default runtime's model, or `null` for "the runtime's choice".
    *
-   * `undefined` means the server did not report that runtime at all, which is
-   * what a DISABLED runtime looks like from here (`describeExecutionDefaults`
-   * covers the registered ones). Its stored model still exists in config and is
-   * simply not visible — so the restore below leaves that key alone rather than
-   * writing a `null` it never read.
+   * `null` is what the server reports for BOTH a stored `null` and a key that
+   * was never written — `describeExecutionDefaults` fills the default in, and
+   * this read cannot tell those apart. That is why the restore below writes only
+   * what it sees CHANGED: a `PATCH` cannot express absence, so writing `null`
+   * back over a never-stored key would leave the key behind. The only way this
+   * file's restore writes `null` is when one of its own tests set a model, at
+   * which point the key exists and `null` is the true prior value.
+   *
+   * `undefined` is different: the server did not report that runtime at all,
+   * which is what a DISABLED runtime looks like from here. Its stored model is
+   * untouched and invisible, so the restore leaves that key alone entirely.
    */
   otherModel: string | null | undefined;
 }
 
 /**
- * Read the two settings this file moves, so they can be put back as found.
+ * Read the two settings this file moves — before it moves them, and again after.
  *
  * @param request - Playwright's request fixture, based at the cockpit leg.
  */
-async function readPriorDefaults(request: APIRequestContext): Promise<PriorDefaults> {
+async function readRuntimeDefaults(request: APIRequestContext): Promise<RuntimeDefaults> {
   const response = await request.get('/api/config');
   expect(response.ok()).toBe(true);
   const { executionDefaults } = (await response.json()) as ExecutionDefaultsView;
@@ -115,20 +121,33 @@ async function readPriorDefaults(request: APIRequestContext): Promise<PriorDefau
   };
 }
 
+/** The `runtimes` block shape this file PATCHes — only the keys it changed. */
+interface RuntimesPatch {
+  /** Which runtime new conversations start on. */
+  default?: string;
+  /** A per-runtime settings section, keyed by runtime type. */
+  [runtime: string]: { defaultModel: string | null } | string | undefined;
+}
+
 test.describe('Settings — Runtimes tab @smoke', () => {
   /**
-   * Captured once, before the first test moves anything — so the `afterEach`
-   * below restores what this machine HAD rather than what the schema says a
-   * fresh install would have. Those two agree on a leg whose `DORK_HOME` is
-   * thrown away every boot, and nowhere else: point a run at a home that
-   * persists — an operator's own install, a leg someone rewired — and the old
-   * hardcoded reset silently retyped their chosen default runtime to
-   * `claude-code` on every run. Restoring what you found costs one GET (DOR-1223).
+   * Captured once, before the first test moves anything, so the `afterEach`
+   * below puts back what this machine HAD rather than what the schema says a
+   * fresh install would have.
+   *
+   * To be clear about what this does and does not buy, because the difference
+   * is easy to overstate: the tests below still ASSERT `DEFAULT_RUNTIME`, so on
+   * an install that starts conversations on codex this file goes red either
+   * way. What changed is what it leaves behind on the way to that red. The old
+   * `afterEach` wrote the schema constants unconditionally, so a run against
+   * somebody's install retyped their chosen default to `claude-code` and then
+   * failed — the damage landed BEFORE the failure told anyone. Reading first
+   * costs one GET and means a red run is only a red run (DOR-1223).
    */
-  let prior: PriorDefaults;
+  let prior: RuntimeDefaults;
 
   test.beforeAll(async ({ request }) => {
-    prior = await readPriorDefaults(request);
+    prior = await readRuntimeDefaults(request);
   });
 
   test.beforeEach(async ({ basePage, settingsPage }) => {
@@ -138,22 +157,29 @@ test.describe('Settings — Runtimes tab @smoke', () => {
     await settingsPage.switchTab('Runtimes');
   });
 
-  // Everything this file writes, undone — whether the test that wrote it passed,
-  // failed halfway, or timed out. Both keys are global to the server, and a run
-  // that left either one moved would hand the next spec (or the next run against
-  // a persistent DORK_HOME) a machine configured by a test.
+  // Everything this file MOVED, put back — whether the test that moved it
+  // passed, failed halfway, or timed out. Both keys are global to the server, so
+  // a run that left either one moved would hand the next spec (or the next run
+  // against a persistent DORK_HOME) a machine configured by a test.
+  //
+  // Differential on purpose: it reads the current values and writes only the
+  // ones that actually differ from what it found, so a test that touched
+  // nothing writes nothing. Anything else would make the cleanup itself a
+  // config write — and for the model that write is not harmless, because
+  // `defaultModel: null` is indistinguishable from the key never having existed
+  // (see `RuntimeDefaults.otherModel`), so an unconditional restore would store
+  // a key this file invented.
   test.afterEach(async ({ request }) => {
-    const restored = await request.patch('/api/config', {
-      data: {
-        runtimes: {
-          default: prior.runtime,
-          // Only when the server reported it — see `PriorDefaults.otherModel`.
-          ...(prior.otherModel !== undefined
-            ? { [OTHER_RUNTIME]: { defaultModel: prior.otherModel } }
-            : {}),
-        },
-      },
-    });
+    const current = await readRuntimeDefaults(request);
+
+    const patch: RuntimesPatch = {};
+    if (current.runtime !== prior.runtime) patch.default = prior.runtime;
+    if (prior.otherModel !== undefined && current.otherModel !== prior.otherModel) {
+      patch[OTHER_RUNTIME] = { defaultModel: prior.otherModel };
+    }
+    if (Object.keys(patch).length === 0) return;
+
+    const restored = await request.patch('/api/config', { data: { runtimes: patch } });
     expect(restored.ok()).toBe(true);
   });
 

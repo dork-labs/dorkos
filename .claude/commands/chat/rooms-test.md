@@ -132,33 +132,50 @@ done
 **Ask the server where it keeps its data rather than deriving it.** `GET /api/config` reports the resolved `dorkHome`, so the guess this used to make (`DORK_HOME`, else `apps/server/.temp/.dork`, else `~/.dork`) can be wrong in a way nothing notices — it would happily read one install's database while driving another:
 
 ```bash
-curl -s "http://localhost:$API_PORT/api/config" | python3 -c "
-import sys, json
-d = json.load(sys.stdin)
+curl -s "http://localhost:$API_PORT/api/config" > /tmp/rt-config.json
+python3 -c "
+import json
+d = json.load(open('/tmp/rt-config.json'))
 print('port:', d.get('port'))
 print('dorkHome:', d.get('dorkHome'))
 print('version:', d.get('version'), '| dev build:', d.get('isDevMode'))
 print('workingDirectory:', d.get('workingDirectory'))
 "
-# DORK_DIR = the reported dorkHome; DORK_DB = "$DORK_DIR/dork.db"
+DORK_DIR=$(python3 -c "import json;print(json.load(open('/tmp/rt-config.json')).get('dorkHome',''))")
+[ -n "$DORK_DIR" ] || { echo "ERROR: the server reported no dorkHome — stop here, do not write anything."; exit 1; }
+DORK_DB="$DORK_DIR/dork.db"
+echo "DORK_DIR=$DORK_DIR"
+echo "DORK_DB=$DORK_DB"
 ```
 
-Put all four lines in the report header.
+Put all four lines in the report header. An empty `DORK_DIR` is a hard stop rather than a shrug: every path built from it below collapses to `/dork.db` and `/config.json`, which exist nowhere, so the checks would read nothing and the snapshot would protect nothing while the run wrote for real.
 
-**And if `dorkHome` is the operator's real home directory (`$HOME/.dork` — which is what port 4242 means), STOP and ask before driving anything.** The probe above falls through to 4242 whenever the dev server is simply down, so landing on the real install is the accident case, not a choice. Use `AskUserQuestion`: name the port, the `dorkHome` and the version, say that the run creates a channel, posts in it, starts real billable agent turns and reacts to messages there, and offer **drive this install** / **cancel** (starting `pnpm dev` and re-running lands on the dev stack instead). Never infer a yes from `mode:live` or from the probe having found something.
+**Then ask for a yes — UNLESS `dorkHome` starts with `/tmp/dorkos-`.** That prefix is the browser suite's own throwaway home, deleted before every boot and owned by nobody; it is the single exemption:
+
+| `dorkHome`                | What it is                                             |
+| ------------------------- | ------------------------------------------------------ |
+| `/tmp/dorkos-*`           | throwaway — go ahead                                   |
+| `~/.dork`                 | the installed cockpit (what port 4242 means)           |
+| `apps/server/.temp/.dork` | the dev stack's own data — real work lives here        |
+| anything else             | a `DORK_HOME` override, a Docker mount, someone's copy |
+
+For every row but the first, **STOP and ask with `AskUserQuestion` before driving anything**: name the port, the `dorkHome` and the version, say that the run creates a channel, posts in it, starts real billable agent turns and reacts to messages there, and offer **drive this install** / **cancel** (starting `pnpm dev` and re-running lands on the dev stack instead). Default to asking — a gate that recognises only `~/.dork` waves the dev directory straight through, and writing the dev directory is the whole reason this rule exists (DOR-1223). Never infer a yes from `mode:live` or from the probe having found something.
 
 **Live mode writes to real rooms.** This test creates a channel, posts in it, halts turns, and reacts. It never deletes anything, but the room and its entries persist — name the channel so it is obviously disposable (Phase 2) and say so in the report.
 
 **Snapshot the config before any write.** Check 1 changes `rooms.collectDebounceMs` on purpose, and a file copy is the only restore that can put back a key that was never stored (see that check):
 
 ```bash
+[ -n "$DORK_DIR" ] || { echo "ERROR: DORK_DIR unset — refusing to snapshot or write."; exit 1; }
 CONFIG_SNAPSHOT="$RESULTS_DIR/$TIMESTAMP-config.json.bak"
 if [ -f "$DORK_DIR/config.json" ]; then
   cp "$DORK_DIR/config.json" "$CONFIG_SNAPSHOT" && echo "config snapshot: $CONFIG_SNAPSHOT"
 else
-  echo "no config.json at $DORK_DIR — nothing to snapshot (an absent file is itself the state to restore: delete the one the run creates)"
+  echo "no config.json at $DORK_DIR — an ABSENT file is itself the state to restore: delete the one this run creates."
 fi
 ```
+
+The first line is the load-bearing one. Without it an empty `DORK_DIR` makes this test `[ -f "/config.json" ]`, which is false, so the step prints "nothing to snapshot" and the run proceeds to widen the collect window on a live install with nothing to put back.
 
 Report the snapshot path with its restore — `cp "$CONFIG_SNAPSHOT" "$DORK_DIR/config.json"`, then reload the tab; the server re-reads the file on every access, so no restart is needed — and **offer that restore explicitly in the final report**.
 

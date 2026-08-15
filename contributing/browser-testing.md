@@ -328,12 +328,15 @@ Browser tests that don't need real Claude API calls use `TestModeRuntime` — a 
 
 ### Port Layout
 
-| Port                              | Service                                                                   |
+Every row names the env var that MOVES the leg — the name you set, not the
+`playwright.config.ts` constant it lands in:
+
+| Env var (default)                 | Service                                                                   |
 | --------------------------------- | ------------------------------------------------------------------------- |
 | `DORKOS_COCKPIT_PORT` (4245)      | Cockpit Express server                                                    |
 | `DORKOS_COCKPIT_VITE_PORT` (4244) | Vite client proxying to the cockpit server                                |
-| `MOCK_PORT` (4243)                | Test-mode Express server                                                  |
-| `MOCK_VITE_PORT` (4248)           | Vite client proxying to mock server — 6244 is reserved for `@dorkos/site` |
+| `DORKOS_MOCK_PORT` (4243)         | Test-mode Express server                                                  |
+| `DORKOS_MOCK_VITE_PORT` (4248)    | Vite client proxying to mock server — 6244 is reserved for `@dorkos/site` |
 
 Both Express legs run against a throwaway `DORK_HOME` under `/tmp`, keyed by that
 leg's port and deleted before every boot — `/tmp/dorkos-cockpit-<port>` and

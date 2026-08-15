@@ -159,22 +159,35 @@ done
 
 ### Name the install before you drive it — and get a yes for the real one
 
-**The probe above falls through to 4242, which is the operator's installed cockpit on their real `~/.dork`.** That is the accident case, not a choice: it is what answers whenever the dev server is simply not running. This test then creates sessions, writes files, and changes settings there, and nothing it does is undone afterwards. So identify the install first — the server says so itself:
+**The probe above falls through to 4242, which is the operator's installed cockpit on their real `~/.dork`.** That is the accident case, not a choice: it is what answers whenever the dev server is simply not running. This test then creates sessions, writes files, and changes settings there, and nothing it does is undone afterwards. So identify the install first — the server says so itself, and it is the only thing that knows:
 
 ```bash
-curl -s "http://localhost:$API_PORT/api/config" | python3 -c "
-import sys, json
-d = json.load(sys.stdin)
+curl -s "http://localhost:$API_PORT/api/config" > /tmp/st-config.json
+python3 -c "
+import json
+d = json.load(open('/tmp/st-config.json'))
 print('port:', d.get('port'))
 print('dorkHome:', d.get('dorkHome'))
 print('version:', d.get('version'), '| dev build:', d.get('isDevMode'))
 print('workingDirectory:', d.get('workingDirectory'))
 "
+DORK_DIR=$(python3 -c "import json;print(json.load(open('/tmp/st-config.json')).get('dorkHome',''))")
+[ -n "$DORK_DIR" ] || { echo "ERROR: the server reported no dorkHome — stop here, do not write anything."; exit 1; }
+echo "DORK_DIR=$DORK_DIR"
 ```
 
-Record `DORK_DIR` = the reported `dorkHome` (authoritative — never guess it from the port), and **put all four lines in the report header**.
+`DORK_DIR` is the reported `dorkHome` — authoritative, never guessed from the port. **Put all four lines in the report header.** An empty `DORK_DIR` is a hard stop, not a shrug: every path built from it below would silently become `/config.json`.
 
-Then, if `dorkHome` is the operator's real home directory (`$HOME/.dork` — which is what 4242 means), **STOP and ask before driving anything**, with `AskUserQuestion`:
+**Then ask for a yes — UNLESS `dorkHome` starts with `/tmp/dorkos-`.** That prefix is the browser suite's own throwaway home, wiped before every boot and owned by nobody; it is the single exemption. **Everything else is somebody's real data and needs an explicit yes** (`AskUserQuestion`) before you drive anything:
+
+| `dorkHome`                | What it is                                             |
+| ------------------------- | ------------------------------------------------------ |
+| `/tmp/dorkos-*`           | throwaway — go ahead                                   |
+| `~/.dork`                 | the installed cockpit (what port 4242 means)           |
+| `apps/server/.temp/.dork` | the dev stack's own data — real work lives here        |
+| anything else             | a `DORK_HOME` override, a Docker mount, someone's copy |
+
+Default to asking. A gate that only recognises one bad path lets every other one through, which is how the dev directory got written to for months (DOR-1223). When you ask:
 
 - say which install answered: the port, the `dorkHome` path, and the version;
 - say what the run will do to it: real sessions, real turns billed to this machine's sign-in, and settings changes this test makes on purpose;
@@ -187,13 +200,16 @@ A yes has to be given. Never infer one from the invocation, from `mode:live`, or
 This test changes settings on purpose (model, permission mode). Take a copy of the file first, so any write is undoable:
 
 ```bash
+[ -n "$DORK_DIR" ] || { echo "ERROR: DORK_DIR unset — refusing to snapshot or write."; exit 1; }
 CONFIG_SNAPSHOT="$RESULTS_DIR/$TIMESTAMP-config.json.bak"
 if [ -f "$DORK_DIR/config.json" ]; then
   cp "$DORK_DIR/config.json" "$CONFIG_SNAPSHOT" && echo "config snapshot: $CONFIG_SNAPSHOT"
 else
-  echo "no config.json at $DORK_DIR — nothing to snapshot"
+  echo "no config.json at $DORK_DIR — an ABSENT file is the state to restore: delete the one this run creates."
 fi
 ```
+
+The guard is not ceremony. With `DORK_DIR` empty the test reads `[ -f "/config.json" ]`, finds nothing, prints "nothing to snapshot" and carries on to make real writes with no way back — a silent downgrade from "protected" to "unprotected" at exactly the moment protection was requested.
 
 Name the snapshot path in the report, with the one-line restore beside it:
 

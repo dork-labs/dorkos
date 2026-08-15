@@ -106,30 +106,39 @@ Confirm `$MODEL` is in the model list. Navigate to `TEST_URL`, capture baseline 
 **The probe above falls through to 4242, the operator's installed cockpit on their real `~/.dork`** — which is what answers whenever the dev server is simply down. That is the accident case, not a choice, and this test creates two sessions and drives real tool-heavy turns in whatever it found. Ask the server which install it is:
 
 ```bash
-curl -s "http://localhost:$API_PORT/api/config" | python3 -c "
-import sys, json
-d = json.load(sys.stdin)
+curl -s "http://localhost:$API_PORT/api/config" > /tmp/ss-config.json
+python3 -c "
+import json
+d = json.load(open('/tmp/ss-config.json'))
 print('port:', d.get('port'))
 print('dorkHome:', d.get('dorkHome'))
 print('version:', d.get('version'), '| dev build:', d.get('isDevMode'))
 print('workingDirectory:', d.get('workingDirectory'))
 "
+DORK_DIR=$(python3 -c "import json;print(json.load(open('/tmp/ss-config.json')).get('dorkHome',''))")
+[ -n "$DORK_DIR" ] || { echo "ERROR: the server reported no dorkHome — stop here, do not write anything."; exit 1; }
+echo "DORK_DIR=$DORK_DIR"
 ```
 
-Record `DORK_DIR` = the reported `dorkHome` (authoritative — never guess it from the port) and put all four lines in the report header. If `dorkHome` is the operator's real home directory (`$HOME/.dork`), **STOP and ask with `AskUserQuestion` before driving anything**: name the port, the `dorkHome` and the version, say that the run creates two sessions and spends real model credit there, and offer **drive this install** / **cancel** (starting `pnpm dev` and re-running lands on the dev stack instead). Never infer a yes from `mode:live` or from the probe having found something.
+`DORK_DIR` is the reported `dorkHome` — authoritative, never guessed from the port — and an empty one is a hard stop, because every path built from it below would silently become `/config.json`. Put all four lines in the report header.
+
+**Then ask for a yes — UNLESS `dorkHome` starts with `/tmp/dorkos-`**, the browser suite's own throwaway home, wiped before every boot. That prefix is the only exemption: `~/.dork` is the installed cockpit, `apps/server/.temp/.dork` is the dev stack's own data (real work lives there), and anything else is a `DORK_HOME` override, a Docker mount, or someone's copy. All of those need an explicit `AskUserQuestion` before you drive anything: name the port, the `dorkHome` and the version, say that the run creates two sessions and spends real model credit there, and offer **drive this install** / **cancel** (starting `pnpm dev` and re-running lands on the dev stack instead). Default to asking — a gate that recognises only one bad path waves every other one through. Never infer a yes from `mode:live` or from the probe having found something.
 
 ### 1d. Snapshot the config before any write
 
 This test sets the model and the permission mode per session, and those are real writes. Copy the file aside first so every one of them is undoable:
 
 ```bash
+[ -n "$DORK_DIR" ] || { echo "ERROR: DORK_DIR unset — refusing to snapshot or write."; exit 1; }
 CONFIG_SNAPSHOT="$RESULTS_DIR/$TIMESTAMP-config.json.bak"
 if [ -f "$DORK_DIR/config.json" ]; then
   cp "$DORK_DIR/config.json" "$CONFIG_SNAPSHOT" && echo "config snapshot: $CONFIG_SNAPSHOT"
 else
-  echo "no config.json at $DORK_DIR — nothing to snapshot"
+  echo "no config.json at $DORK_DIR — an ABSENT file is the state to restore: delete the one this run creates."
 fi
 ```
+
+The guard earns its line: with `DORK_DIR` empty the test tests `[ -f "/config.json" ]`, finds nothing, prints "nothing to snapshot" and proceeds to make real writes with no way back.
 
 Report the snapshot path with its restore (`cp "$CONFIG_SNAPSHOT" "$DORK_DIR/config.json"`, then reload the tab — the server re-reads the file on every access, so no restart is needed), and **offer the restore explicitly in the final report**. The file copy is the only restore that reinstates a key the run ADDED where none existed: a `PATCH` writing a schema default stores that key, which is not the same as it being absent.
 
