@@ -56,7 +56,13 @@ function createMockReq(
 }
 
 function createMockRes(): Partial<Response> & { statusCode?: number; body?: unknown } {
-  const res: Partial<Response> & { statusCode?: number; body?: unknown } = {};
+  // `locals` is not decoration: Express always provides it, and the middleware
+  // records the person it verified there so a capability can act as THEM rather
+  // than as the install owner (`CapabilityInvocationContext.userId`). A fake
+  // without it is a fake of a response that cannot exist.
+  const res: Partial<Response> & { statusCode?: number; body?: unknown } = {
+    locals: {} as Response['locals'],
+  };
   res.status = vi.fn().mockImplementation((code: number) => {
     res.statusCode = code;
     return res;
@@ -333,6 +339,30 @@ describe('createMcpAuth — surface "mcp", login off, each acceptor authorizes a
       next
     );
     expect(next).toHaveBeenCalled();
+    // And it RECORDS who that was. Accepting the request and forgetting the
+    // person is how a downstream capability came to treat "authenticated" as
+    // "the install owner" (`CapabilityInvocationContext.userId`).
+    expect(res.locals?.user).toEqual({ userId: 'owner-1', credential: 'api-key' });
+  });
+
+  it('leaves no person recorded when it admits a call on a token alone', async () => {
+    // The complement, and the half that matters for the capability surfaces: a
+    // local-token call names nobody, and `res.locals.user` must stay empty so a
+    // login-on caller downstream is refused rather than promoted to the owner.
+    mockConfig({ authEnabled: false });
+    vi.mocked(verifyRequestAuth).mockResolvedValue(null);
+    const next = vi.fn() as NextFunction;
+    const res = createMockRes();
+    await mcpAuth(
+      createMockReq({
+        body: rpc('tools/call', 'relay_send'),
+        authHeader: `Bearer ${LOCAL_TOKEN}`,
+      }) as Request,
+      res as Response,
+      next
+    );
+    expect(next).toHaveBeenCalled();
+    expect(res.locals?.user).toBeUndefined();
   });
 
   it('accepts the legacy config mcp.apiKey on a mutating call', async () => {

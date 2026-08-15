@@ -615,6 +615,19 @@ So RP6 ships:
 
 **This is the one item the six decisions did not cover**, and §18 records the question it leaves for a human.
 
+**Amended 2026-08-14 (DOR-1202) — RP6 shipped in two halves, and this is the line between them.** The original text above is intact; this paragraph says what of it is running and what is not, because a spec that reads as shipped when half of it is not is worse than one that never made the claim.
+
+**What shipped.** The `rooms` capability domain (`apps/server/src/services/rooms/room-capabilities.ts`), on both MCP surfaces, carrying `post_to_room` at tier `act` — channels and threads only, refusing a DM with `TOOL_POST_NOT_IN_DM` (§2.6) — and routed through `RoomService.postFromTool`, which is `post` plus two things and minus nothing, so membership, the archive check, mention resolution, the cascade stamp, the SSE publish and the dispatch are all the shipped path's. Provenance follows the turn exactly as §10.2 requires: a mid-turn tool post inherits the live cascade through `activeTurnFor`, and one made with nothing in flight is stamped at the ceiling under its own root. RP7's two reads and the `react_to_room_entry` verb (ADR `260814-195522`) ship beside it.
+
+**What is deferred, and to where.** Four items of §10.2 and §10.2.1 are **not** built, tracked as **DOR-1212**:
+
+- **Silence is not yet the default outcome of a turn.** A turn's text still posts automatically, so `post_to_room` is an ADDITIONAL affordance rather than the only way to speak. What stands in for the flip is narrower and honest: a turn that posted into the room it was triggered from does not ALSO get its narration posted (`ActiveClaim.spokeViaTool`), so the room never shows the update and a summary of the update. The chokepoint property §10.2 wants — one bounded posting mechanism — holds for what goes through the tool; it does not yet hold for the turn's own text.
+- **`agent_declined` is not built**, because §10.2.2's obligation only arises once silence is the default. Until then an addressed turn still answers with its text, so there is no silence to discharge.
+- **`ROOM_AGENT_CANNOT_POST` is not built.** No shipped runtime is in the state it guards, and the check is only meaningful once the gated/automatic distinction exists.
+- **The per-membership gated/automatic fact is not built**, so the members panel and `room_context.addressing` do not yet tell a person that a Codex agent answers every time it is triggered.
+
+The reason for the split is the dispatcher: three of the four live in `room-trigger.ts`, which RP8 (DOR-1201) rewrote in parallel, and landing both rewrites in one branch would have made neither reviewable. The runtime constraint in §10.2.1 is unaffected and holds as written — claude-code reaches these in-session, and Codex or OpenCode reach them through the external `/mcp` server or not at all.
+
 #### 10.2.2 Silence is free when nobody asked, and never free when somebody did
 
 `post_to_room` makes the default outcome of a turn silence, and that collides head-on with `E1`: _"When addressed, answer or explicitly decline. Never leave a direct question hanging. Being asked creates an obligation, and silence after a direct question is not neutral, it reads as a failure. If the agent cannot or will not answer, that is a reply too."_ Without the split below, a person `@`-mentions an agent, a turn runs, and the room shows nothing, which is verbatim the situation §2.5 exists to prevent. An explanation in a session trace is an explanation where the person who noticed will never look.

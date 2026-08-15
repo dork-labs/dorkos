@@ -39,6 +39,21 @@ export const STATUS_BY_CODE: Record<RoomErrorCode, number> = {
   // the answer. The remedy is in the message, not in who asks.
   OWNER_MUST_BE_PRESENT: 403,
   PEOPLE_ONLY: 403,
+  // `post_to_room` is an MCP verb with no HTTP route, so this code reaches a
+  // response only if one is ever added; it is mapped because the table is total
+  // by type, and 400 because a DM is the wrong room to ask this of.
+  TOOL_POST_NOT_IN_DM: 400,
+  // This one IS reachable over HTTP today, and the comment above it used to say
+  // otherwise: `POST /api/rooms/:id/entries/:entryId/reactions` resolves an
+  // agent from `X-DorkOS-Agent` and goes through the same `toggleReaction`, so
+  // an agent that has spent its hour gets this from the route as readily as from
+  // the tool. The canonical 429.
+  REACTION_RATE_LIMITED: 429,
+  // A 401 rather than a 403: the caller presented nothing this surface could
+  // resolve, so a credential IS what would change the answer. Not reachable from
+  // the room routes, which resolve a caller for themselves and always find one —
+  // it belongs to the capability surfaces, where "nobody" is a real answer.
+  UNIDENTIFIED_CALLER: 401,
   BROADCAST_NOT_BRIDGEABLE: 400,
   CHAT_ALREADY_BRIDGED: 409,
   BRIDGE_SECOND_AGENT_REFUSED: 409,

@@ -164,7 +164,7 @@ import {
   type CollectWindow,
   type RoomCollection,
 } from './room-collect.js';
-import type { ReactionStore } from './reaction-store.js';
+import type { ReactionStore } from './reactions/reaction-store.js';
 import { buildRoomContext } from './room-context.js';
 import {
   RoomNoticeLog,
@@ -1048,6 +1048,7 @@ export class RoomTriggerDispatcher {
       // A real trigger, so a post this agent makes mid-turn inherits this
       // exchange and the guard sees the whole chain.
       aside: false,
+      spokeViaTool: false,
       claimedAt: new Date().toISOString(),
       pastDeadline: false,
     });
@@ -1134,6 +1135,56 @@ export class RoomTriggerDispatcher {
    */
   activeTurnFor(authorId: string): CascadeStamp | undefined {
     return deepestClaimOf(this.claimed, authorId);
+  }
+
+  /**
+   * Record that an agent spoke into this room deliberately, from inside its own
+   * turn — `post_to_room` (room-participation spec §10.2).
+   *
+   * The whole effect is on the automatic post at the end of that turn: see
+   * {@link ActiveClaim.spokeViaTool}. A post made with no claim held here is an
+   * ordinary un-provenanced agent post and this does nothing, which is right —
+   * there is no turn narration coming to suppress.
+   *
+   * @param roomId - The room the post landed in.
+   * @param authorId - The agent that wrote it.
+   */
+  noteDeliberatePost(roomId: string, authorId: string): void {
+    const claim = this.claimed.get(agentKey(roomId, authorId));
+    if (claim) claim.spokeViaTool = true;
+  }
+
+  /**
+   * Take the "this agent has already spoken here" mark, if one is standing.
+   *
+   * **Consume-once, and the clear is defence in depth rather than a behaviour.**
+   * Be exact about that, because the tempting version of this comment overstates
+   * it: today one claim serves exactly ONE delivery — `runOneInDispatch` either
+   * delivers in frame or hands the turn to `deliverLate`, never both — so nothing
+   * observable depends on the mark being cleared, and removing the clear leaves
+   * every test green. It was measured.
+   *
+   * The clear is here for what changes underneath it. A claim already outlives
+   * its own turn (a late answer holds it while the collector parks the next
+   * message behind it, RP8), and the day something delivers twice under one claim
+   * a standing mark would swallow an answer nobody had spoken for — silently, in
+   * somebody else's room. Binding the mark to one delivery makes that impossible
+   * structurally, instead of by an argument about claim lifetimes that the next
+   * change to this file could quietly invalidate.
+   *
+   * What IS observable, and what the tests pin, is the mark's scope: it is per
+   * `(room, agent)`, so a post into another room suppresses nothing here, and a
+   * fresh claim starts unmarked, so the next turn's answer always lands.
+   *
+   * @param roomId - The room the answer is being delivered into.
+   * @param authorId - The agent delivering it.
+   * @returns `true` when this delivery has already been made by hand.
+   */
+  private takeSpokeViaTool(roomId: string, authorId: string): boolean {
+    const claim = this.claimed.get(agentKey(roomId, authorId));
+    if (claim?.spokeViaTool !== true) return false;
+    claim.spokeViaTool = false;
+    return true;
   }
 
   /**
@@ -1372,6 +1423,16 @@ export class RoomTriggerDispatcher {
     // claims.test.ts` pins it as chosen behaviour so it cannot be closed by
     // accident.
     if (!said) return 'quiet';
+    // **The agent already spoke here, on purpose.** `post_to_room` put its words
+    // in front of the reader mid-turn; what is left in `said` is the narration it
+    // wrote back to its own session, which belongs to whoever is watching THAT.
+    // Posting it as well gives the room two messages for one thought — the
+    // "I posted the deploy note" that follows the deploy note. The obligation to
+    // be visible is discharged either way, which is what makes this a suppression
+    // rather than a silence: there is a durable entry beside this release.
+    // Taken rather than read, so it covers this delivery and no other — see
+    // {@link RoomTriggerDispatcher.takeSpokeViaTool}.
+    if (this.takeSpokeViaTool(room.id, target.authorId)) return 'answered';
     if (opts.late !== undefined) {
       logger.info('[rooms] a late answer landed and was posted', {
         roomId: room.id,
@@ -1611,6 +1672,7 @@ export class RoomTriggerDispatcher {
       // Nothing in the room asked for this turn, so it has no cascade to hand
       // to a post the agent makes while it runs. See {@link ActiveClaim.aside}.
       aside: true,
+      spokeViaTool: false,
       claimedAt: new Date().toISOString(),
       pastDeadline: false,
     });
@@ -1698,6 +1760,16 @@ export class RoomTriggerDispatcher {
       }
       const said = settled.text?.trim();
       if (!said) return null;
+      // The same suppression the triggered path applies, for the same reason: an
+      // aside turn that reached for `post_to_room` has already put its words in
+      // front of the reader, and handing `said` back would have the greeter post
+      // the narration of that post a tick later. The claim is still held here —
+      // the `finally` below is what releases it — so the mark is still readable,
+      // and taking it keeps it bound to this one delivery.
+      if (this.takeSpokeViaTool(room.id, authorId)) {
+        outcome = 'answered';
+        return null;
+      }
       outcome = 'answered';
       return said;
     } catch (err) {

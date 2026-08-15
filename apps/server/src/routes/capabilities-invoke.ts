@@ -47,6 +47,7 @@ import {
   CapabilityToolError,
 } from '../services/core/capabilities/index.js';
 import { getRequestAgentIdentity } from '../middleware/agent-identity.js';
+import type { RequestUser } from '../services/core/auth/index.js';
 import { logger } from '../lib/logger.js';
 
 /**
@@ -93,8 +94,15 @@ export function createCapabilitiesInvokeRouter(registry: CapabilityRegistry): Ro
       // call`), and the product cost of gating it is one Allow click for a person
       // running a destructive capability from a shell, which is what spec
       // `agent-trust` §UX describes anyway.
+      // The signed-in person, when login is on and `sessionGate` verified one.
+      // A capability that acts on somebody's own data needs to know WHICH
+      // person, and "no agent token" is not the same fact as "the owner" —
+      // reading it that way is how an invited user's key reached the owner's
+      // rooms (see `CapabilityInvocationContext.userId`).
+      const user = res.locals.user as RequestUser | undefined;
       const result = await registry.invoke(id, input, {
         ...(identity ? { identity } : {}),
+        ...(user ? { userId: user.userId } : {}),
         ...(approvalToken ? { approvalToken } : {}),
         retryChannel: 'http-header',
       });

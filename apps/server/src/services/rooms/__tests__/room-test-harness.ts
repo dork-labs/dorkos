@@ -16,10 +16,12 @@ import type { Db } from '@dorkos/db';
 import { BridgeStore } from '../../relay/chat-bridge/bridge-store.js';
 import { ReadCursorService } from '../../core/read-cursor-service.js';
 import { ReadCursorStore } from '../../core/read-cursor-store.js';
+import { roomsSource, searchMessages, SearchIndexer } from '../../search/index.js';
 import { AuthorRegistry } from '../author-registry.js';
 import type { EngagedWindow } from '../engagement.js';
 import type { CollectWindow } from '../room-collect.js';
-import { ReactionStore } from '../reaction-store.js';
+import { ReactionBudget } from '../reactions/reaction-budget.js';
+import { ReactionStore } from '../reactions/reaction-store.js';
 import { AttachmentRowStore } from '../attachments/attachment-row-store.js';
 import type { RoomAgent, RoomAgentLookup } from '../room-errors.js';
 import { RoomService } from '../room-service.js';
@@ -225,6 +227,14 @@ export interface RoomHarness {
    * @returns The owner's author id, which does not change.
    */
   setOwner(userId: string): string;
+  /**
+   * Sweep the message index once, so a `searchHistory` test has something to find.
+   *
+   * In production a background indexer does this every few minutes; a test does
+   * it explicitly, which also makes the staleness the tool documents visible
+   * rather than magical — nothing posted after the last call is findable.
+   */
+  indexMessages(): Promise<void>;
 }
 
 /**
@@ -309,6 +319,27 @@ export function createRoomHarness(opts: {
       limits: { perRoom: () => perRoom, global: () => global },
       ...(opts.budgetNow && { now: opts.budgetNow }),
     }),
+    // The real budget over the real reaction rows, on the same clock the turn
+    // budget takes — so a test can roll an hour without sleeping for one. The
+    // ceiling is deliberately NOT overridable here: a reaction test that set its
+    // own would only ever prove the code agrees with itself.
+    reactionBudget: new ReactionBudget({
+      db,
+      ...(opts.budgetNow && { now: opts.budgetNow }),
+    }),
+    // The REAL index reader over the REAL index, composed exactly as
+    // `createRoomSubsystem` composes it. A fake finder here would make every
+    // `search_room_history` test a test of the fake — including the scope rules,
+    // which are the half worth proving. `indexMessages()` below is what puts rows
+    // in front of it.
+    findMessages: ({ roomIds, query, limit, afterSeq }) =>
+      searchMessages(db, {
+        sourceId: roomsSource.id,
+        originKeys: roomIds,
+        query,
+        limit,
+        afterOrdinal: afterSeq,
+      }).map((hit) => ({ roomId: hit.originKey, seq: hit.ordinal })),
     maxAgentDepth: () => maxAgentDepth,
     engagedWindow: () => engagedWindow,
     collect: () => collect,
@@ -331,6 +362,9 @@ export function createRoomHarness(opts: {
     setOwner(userId) {
       ownerUserId = userId;
       return authors.bindOwner(userId).id;
+    },
+    async indexMessages() {
+      await new SearchIndexer(db).sweep();
     },
   };
 }

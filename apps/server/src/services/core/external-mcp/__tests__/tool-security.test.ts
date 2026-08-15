@@ -44,7 +44,7 @@ vi.mock('@dorkos/shared/manifest', () => ({
 }));
 
 import { createExternalMcpServer } from '../../mcp-server.js';
-import { READ_ONLY_MCP_TOOL_NAMES } from '../tool-security.js';
+import { GUARDED_READ_ONLY_TOOL_NAMES, READ_ONLY_MCP_TOOL_NAMES } from '../tool-security.js';
 import { readOnlyCarveOutToolNames } from '../../capabilities/index.js';
 import { operatorDomain } from '../../operator/operator-capabilities.js';
 import { marketplaceDomain } from '../../../marketplace-mcp/marketplace-capabilities.js';
@@ -52,6 +52,7 @@ import { connectorDomain } from '../../../connectors/connector-capabilities.js';
 import type { ConnectorCapabilityDeps } from '../../../connectors/connector-capabilities.js';
 import { mcpDomain } from '../../../mesh/mcp-capabilities.js';
 import type { McpCapabilityDeps } from '../../../mesh/mcp-capability-deps.js';
+import { roomsDomain } from '../../../rooms/room-capabilities.js';
 import { capabilitiesDomain } from '../../self-description/capabilities-domain.js';
 import { composeDorkOsCapabilityRegistry } from '../../self-description/dorkos-registry.js';
 import type { McpToolDeps } from '../../../runtimes/claude-code/mcp-tools/types.js';
@@ -100,6 +101,12 @@ function createStatelessTestApp() {
         marketplaceDeps,
         connectorDeps: {} as ConnectorCapabilityDeps,
         mcpDeps: {} as McpCapabilityDeps,
+        // Composed in so the rooms tools are LIVE on the server this test reads
+        // `tools/list` from. They contribute nothing to the carve-out, which is
+        // exactly the claim worth guarding: without the domain here, a later
+        // `readOnlyCarveOut: true` on a room read would widen the tokenless
+        // surface and every assertion below would still pass.
+        roomDeps: {} as never,
       });
       const server = createExternalMcpServer(deps, marketplaceDeps, registry);
       const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
@@ -154,15 +161,57 @@ describe('READ_ONLY_MCP_TOOL_NAMES drift guard', () => {
     expect(READ_ONLY_MCP_TOOL_NAMES.size).toBe(32);
   });
 
-  it('every live tool with readOnlyHint === true is in the constant', async () => {
-    // Direction A: no live read-only tool may be missing from the carve-out.
+  it('every live tool with readOnlyHint === true is accounted for', async () => {
+    // Direction A: a live read-only tool is either tokenless or DELIBERATELY
+    // guarded — never merely absent. That is what keeps the two sets from
+    // leaving a tool between them, now that read-only no longer implies
+    // tokenless (the rooms history tools return other people's messages).
     const tools = await fetchLiveTools();
     const liveReadOnly = tools
       .filter((t) => t.annotations?.readOnlyHint === true)
       .map((t) => t.name);
     expect(liveReadOnly.length).toBeGreaterThan(0);
     for (const name of liveReadOnly) {
-      expect(READ_ONLY_MCP_TOOL_NAMES.has(name)).toBe(true);
+      expect(
+        READ_ONLY_MCP_TOOL_NAMES.has(name) || GUARDED_READ_ONLY_TOOL_NAMES.has(name),
+        `${name} is read-only but neither in the carve-out nor deliberately guarded`
+      ).toBe(true);
+    }
+  });
+
+  it('names a deliberately guarded tool only when that tool is live and read-only', async () => {
+    // The exclusion list is not a place to park a name. Every entry has to be a
+    // real read-only tool on this server, or it is documenting a decision about
+    // something that does not exist.
+    const tools = await fetchLiveTools();
+    const liveReadOnly = new Set(
+      tools.filter((t) => t.annotations?.readOnlyHint === true).map((t) => t.name)
+    );
+    for (const name of GUARDED_READ_ONLY_TOOL_NAMES) {
+      expect(liveReadOnly.has(name), `${name} is not a live read-only tool`).toBe(true);
+    }
+    // And the two sets are disjoint — a tool cannot be both tokenless and held back.
+    for (const name of GUARDED_READ_ONLY_TOOL_NAMES) {
+      expect(READ_ONLY_MCP_TOOL_NAMES.has(name), `${name} is in both sets`).toBe(false);
+    }
+  });
+
+  it('keeps the rooms history tools out of the tokenless surface', async () => {
+    // Named rather than left to the general rule, because this is the security
+    // decision the general rule exists to protect: an unauthenticated local
+    // caller may run a health check, and may not read somebody's conversations.
+    const tools = await fetchLiveTools();
+    const roomReads = tools
+      .filter((t) => t.name === 'read_room_history' || t.name === 'search_room_history')
+      .map((t) => t.name)
+      .sort();
+
+    expect(roomReads, 'both tools are live on the external server').toEqual([
+      'read_room_history',
+      'search_room_history',
+    ]);
+    for (const name of roomReads) {
+      expect(READ_ONLY_MCP_TOOL_NAMES.has(name)).toBe(false);
     }
   });
 
@@ -177,16 +226,19 @@ describe('READ_ONLY_MCP_TOOL_NAMES drift guard', () => {
     }
   });
 
-  it('the constant equals the live read-only set exactly (both directions, sorted)', async () => {
-    // The single equality that catches any drift the two directions above might
-    // individually pass — same membership, same size.
+  it('the two sets together equal the live read-only set exactly', async () => {
+    // The single equality that catches any drift the directions above might
+    // individually pass — same membership, same size, across both sets. It is a
+    // union rather than the carve-out alone because a read-only tool may be
+    // deliberately guarded; what may never happen is a read-only tool belonging
+    // to neither, or either set naming something that is not live.
     const tools = await fetchLiveTools();
     const liveReadOnly = tools
       .filter((t) => t.annotations?.readOnlyHint === true)
       .map((t) => t.name)
       .sort();
-    const constant = [...READ_ONLY_MCP_TOOL_NAMES].sort();
-    expect(liveReadOnly).toEqual(constant);
+    const accounted = [...READ_ONLY_MCP_TOOL_NAMES, ...GUARDED_READ_ONLY_TOOL_NAMES].sort();
+    expect(liveReadOnly).toEqual(accounted);
   });
 
   it("the migrated tools' carve-out is a registry derivation, not a hand list", async () => {
@@ -199,6 +251,7 @@ describe('READ_ONLY_MCP_TOOL_NAMES drift guard', () => {
       ...marketplaceDomain.capabilities,
       ...connectorDomain.capabilities,
       ...mcpDomain.capabilities,
+      ...roomsDomain.capabilities,
       ...capabilitiesDomain.capabilities,
     ];
     const derived = readOnlyCarveOutToolNames(migratedCapabilities);
@@ -210,7 +263,15 @@ describe('READ_ONLY_MCP_TOOL_NAMES drift guard', () => {
 
     const tools = await fetchLiveTools();
     const liveMigratedReadOnly = tools
-      .filter((t) => t.annotations?.readOnlyHint === true && migratedToolNames.has(t.name))
+      .filter(
+        (t) =>
+          t.annotations?.readOnlyHint === true &&
+          migratedToolNames.has(t.name) &&
+          // A read-only tool a domain deliberately kept out of the carve-out is
+          // not a derivation failure — it is the derivation working. The set of
+          // such tools is itself pinned, two tests above.
+          !GUARDED_READ_ONLY_TOOL_NAMES.has(t.name)
+      )
       .map((t) => t.name)
       .sort();
 

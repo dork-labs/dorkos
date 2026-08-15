@@ -311,6 +311,7 @@ function invokeThroughRegistry(
 ): Promise<unknown> {
   return registry.invoke(id, input, {
     ...(context?.identity ? { identity: context.identity } : {}),
+    ...(context?.userId ? { userId: context.userId } : {}),
     ...(context?.sessionId ? { sessionId: context.sessionId } : {}),
     ...(approvalToken ? { approvalToken } : {}),
     retryChannel: 'mcp-argument',

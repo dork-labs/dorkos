@@ -15,17 +15,17 @@ import type Database from 'better-sqlite3';
 import type { Db } from '@dorkos/db';
 import type { RoomEntry, RoomEvent, RoomWithRoster } from '@dorkos/shared/room-schemas';
 import { REACTION_FREQUENTS_DEFAULT } from '@dorkos/shared/room-schemas';
-import type { AuthorRegistry } from '../author-registry.js';
+import type { AuthorRegistry } from '../../author-registry.js';
 import type { ReactionStore } from '../reaction-store.js';
-import { RoomError } from '../room-errors.js';
-import type { RoomService } from '../room-service.js';
-import type { RoomStore } from '../room-store.js';
+import { RoomError } from '../../room-errors.js';
+import type { RoomService } from '../../room-service.js';
+import type { RoomStore } from '../../room-store.js';
 import {
   agentLookupFor,
   createRoomHarness,
   scriptedRunner,
   type ScriptedTurnRunner,
-} from './room-test-harness.js';
+} from '../../__tests__/room-test-harness.js';
 
 const agents = agentLookupFor({
   '/agents/ana': { name: 'ana', displayName: 'Ana', responseMode: 'always' },
@@ -319,16 +319,16 @@ describe('reactions', () => {
   });
 
   describe('who may react', () => {
-    it('refuses an agent, even one sitting in the room', () => {
+    it('lets an agent in the room react, bounded rather than banned', () => {
+      // The reversal of etiquette E16b (ADR 260814-195522). The BOUND that
+      // replaced the ban is `room-tool-hand.test.ts`'s; this pins that the door
+      // is open at all, because it used to be a `PEOPLE_ONLY` refusal here.
       const entry = service.post(room.id, { authorId: human, text: 'shipping today' });
 
-      expect(() => service.toggleReaction(room.id, entry.id, ana, '👍')).toThrow(
-        expect.objectContaining({ code: 'PEOPLE_ONLY' })
-      );
-      expect(
-        service.reactionsFor(room.id, entry.id),
-        'the refusal is a refusal, not a message'
-      ).toEqual([]);
+      expect(service.toggleReaction(room.id, entry.id, ana, '👍').reacted).toBe(true);
+      expect(service.reactionsFor(room.id, entry.id)).toEqual([
+        { emoji: '👍', authorIds: [ana], firstAt: expect.any(String) },
+      ]);
     });
 
     it('refuses a person who is not a member of the room', () => {
@@ -607,9 +607,9 @@ describe('reactions', () => {
   });
 
   it('exposes the typed refusal every route maps to a status code', () => {
-    const entry = anaSaid();
+    anaSaid();
     try {
-      service.toggleReaction(room.id, entry.id, ana, '👍');
+      service.toggleReaction(room.id, 'entry_that_is_not_here', human, '👍');
       throw new Error('expected a refusal');
     } catch (err) {
       expect(err).toBeInstanceOf(RoomError);
