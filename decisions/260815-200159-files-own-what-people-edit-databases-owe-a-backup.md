@@ -14,11 +14,12 @@ amends: null
 
 Accepted.
 
-It generalises a rule three earlier ADRs each reached for their own storage and none stated
-in general — [0010](0010-use-maildir-for-relay-message-storage.md) /
-[0013](0013-hybrid-maildir-sqlite-storage.md) for relay messages,
+It generalises a rule two earlier ADRs each reached for their own storage and neither stated
+in general — [0013](0013-hybrid-maildir-sqlite-storage.md) for relay messages (which supersedes
+the deprecated [0010](0010-use-maildir-for-relay-message-storage.md), where the Maildir half of
+the reasoning was first written down), and
 [0043](0043-file-canonical-source-of-truth-for-mesh-registry.md) for the agent registry — and
-adds the obligation half, which none of them carries. Nothing in those ADRs is retired.
+adds the obligation half, which neither carries. This ADR retires nothing in them.
 
 ## Context
 
@@ -69,10 +70,11 @@ and an export.**
    `backup.test.ts` copies the main file and shows the row missing from the copy and present in
    the `VACUUM INTO` snapshot.
 2. **An export** — a way to get the contents out as files, in a format that outlives DorkOS.
-   **This half is not built.** Rooms have no export today. Recording it here as an obligation
-   rather than an aspiration is the point: a ledger that can only be read by the software that
-   wrote it is a lock-in this project does not accept, and the debt is named so it can be paid
-   (rooms first).
+   **At the time of this decision no ledger had one**; rooms, the largest, had none, and DOR-1225
+   is landing exactly that in parallel. Recording it here as an obligation rather than an
+   aspiration is the point, and the obligation outlives the first payment of it: a ledger that
+   can only be read by the software that wrote it is a lock-in this project does not accept, so
+   every ledger added after this one inherits the requirement rather than the exemption.
 
 **A database that fails to open is never backed-up-and-recreated.** It is not renamed, not
 repaired, not started fresh over the top. `createDb` throws `DatabaseOpenError`, boot stops, and
@@ -105,8 +107,10 @@ and because an extension manifest is the one place third-party `DROP TABLE` is l
   rather than a mechanism.
 - Losing a year of conversations to a bad migration now requires losing the snapshots too. The
   window that mattered — an unattended migration at boot — is closed.
-- The cost is nil in practice: `dork.db` is ~2 MB, `VACUUM INTO` takes milliseconds, and a
-  fresh install writes no snapshot at all (nothing to lose).
+- The cost is nil in practice: `dork.db` is ~2 MB, `VACUUM INTO` takes milliseconds, and a first
+  boot writes no snapshot at all — neither the pre-migration one (nothing to lose) nor the
+  daily, which `index.ts` skips on the strength of a freshness reading taken _before_ migrations
+  run, because afterwards a new install and an old one are the same shape.
 - The export obligation is written down. It was previously not even a known gap.
 
 ### Negative
@@ -116,9 +120,10 @@ and because an extension manifest is the one place third-party `DROP TABLE` is l
   means the safety net only works for somebody who knows the folder exists, which today is
   nobody who has not read this ADR.
 - **A full disk can now stop a boot that would previously have succeeded**, on the one boot per
-  upgrade where a migration is pending. The error says what to do, but it is a new way to fail.
-- **The export half is a promise, not a feature.** An ADR that states an obligation the codebase
-  does not meet is only worth something if it is paid; until rooms export, this document is
-  partly a debt note.
+  upgrade where a migration is pending. It surfaces as `SnapshotFailedError`, which names the
+  folder and says what to do and that nothing was migrated — but it is a new way to fail.
+- **The export half is an obligation this ADR creates, not one it discharges.** A rule that
+  states a requirement the codebase does not yet meet everywhere is only worth something if it
+  is enforced on the next ledger as well as paid on the current one.
 - Seven daily snapshots of a database that grows will eventually be a real number of megabytes.
   Retention is a constant, not a policy the operator can set.

@@ -1,6 +1,7 @@
 ---
 covers:
   - 'feat(db,server): automatic database snapshots, and never recreate a broken database (DOR-1224)'
+  - "fix(db,server): a file at a snapshot's path is not a snapshot until it is read (DOR-1224)"
 ---
 
 ### Added

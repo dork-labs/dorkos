@@ -179,9 +179,11 @@ export {
   snapshotSqlite,
   pruneSnapshots,
   readMigrationState,
+  databaseHoldsUserData,
   snapshotBeforeMigrations,
   snapshotDaily,
   snapshotBeforeExtensionMigration,
+  SnapshotFailedError,
   SNAPSHOT_RETENTION,
 } from './backup.js';
 export type { MigrationState, SnapshotOptions } from './backup.js';

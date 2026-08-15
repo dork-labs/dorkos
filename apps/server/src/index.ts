@@ -206,8 +206,11 @@ import { buildMcpRateLimiter } from './middleware/mcp-rate-limit.js';
 import {
   createDb,
   runMigrations,
+  databaseHoldsUserData,
   snapshotBeforeMigrations,
   snapshotDaily,
+  DatabaseOpenError,
+  SnapshotFailedError,
   agents,
   type Db,
 } from '@dorkos/db';
@@ -481,6 +484,11 @@ async function start() {
   const backupsDir = path.join(dorkHome, 'backups');
   const db = createDb(dbPath);
 
+  // Asked BEFORE migrating, because afterwards it can no longer be answered: a
+  // first boot comes out of `runMigrations` holding every table and not one row,
+  // indistinguishable by shape from an install that has been running for a year.
+  const firstBoot = !databaseHoldsUserData(db);
+
   // Snapshot BEFORE migrating, and only when a migration is actually about to
   // change something. This database holds the only copy of every room, DM and
   // thread conversation on the machine, and migrations apply themselves at every
@@ -498,7 +506,11 @@ async function start() {
   // per UTC day, here and again on the timer started after listen() so a server
   // left running for a week still takes one. A failure here is logged and
   // survived: unlike the pre-migration snapshot, nothing irreversible follows it.
-  takeDailySnapshot(db, backupsDir);
+  //
+  // Skipped on a first boot so a brand-new install is not handed a `backups`
+  // folder holding a copy of an empty database. The hourly tick picks the day up
+  // later, by which time there may be something in it worth copying.
+  if (!firstBoot) takeDailySnapshot(db, backupsDir);
 
   // Durable session-event store for LOG-BACKED runtimes (codex/opencode/
   // test-mode), injected once here so their completed-turn history survives a
@@ -2861,6 +2873,16 @@ async function start() {
   // check is cheap and idempotent (one file per UTC day), so it runs on a plain
   // hourly tick rather than trying to compute when midnight is — which is the
   // sort of arithmetic that quietly stops working across a DST change.
+  //
+  // The tick that DOES take a snapshot blocks the event loop while it runs:
+  // better-sqlite3 is synchronous, so `VACUUM INTO` holds the thread for the
+  // whole copy — measured at ~464 ms for a 61 MB database, and it scales with
+  // file size. Once a day, on a local single-operator server, that is a pause
+  // nobody is positioned to notice. It stops being free if this database grows
+  // to the point where the copy takes long enough to stall a streaming turn (a
+  // second or more, so roughly 150 MB+); the fix then is a size threshold that
+  // hands large databases to better-sqlite3's incremental `db.backup()` API,
+  // which yields between pages. Not worth the second code path at 2 MB.
   dailySnapshotInterval = setInterval(() => {
     takeDailySnapshot(db, backupsDir);
   }, INTERVALS.DAILY_SNAPSHOT_CHECK_MS);
@@ -3023,6 +3045,16 @@ process.on('unhandledRejection', (reason) => {
 });
 
 start().catch((err) => {
+  // Two startup failures are addressed to the operator rather than to whoever
+  // maintains DorkOS: a database that will not open, and a backup that could not
+  // be written. Both carry instructions in their message and both are resolved
+  // by doing something to the filesystem, so they print as that message and
+  // nothing else — a stack trace above it only buries the sentence that matters.
+  if (err instanceof DatabaseOpenError || err instanceof SnapshotFailedError) {
+    logger.error(`[DorkOS] Cannot start.\n\n${err.message}\n`);
+    process.exit(1);
+  }
+
   const info = logError(err);
   logger.error('[DorkOS] Fatal error during startup', info);
 

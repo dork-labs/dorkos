@@ -1,6 +1,7 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import Database from 'better-sqlite3';
 import {
+  chmodSync,
   copyFileSync,
   existsSync,
   mkdirSync,
@@ -17,6 +18,7 @@ import { fileURLToPath } from 'node:url';
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
 import {
   createDb,
+  databaseHoldsUserData,
   DatabaseOpenError,
   pruneSnapshots,
   readMigrationState,
@@ -25,6 +27,7 @@ import {
   snapshotBeforeMigrations,
   snapshotDaily,
   snapshotSqlite,
+  SnapshotFailedError,
   SNAPSHOT_RETENTION,
 } from '../index';
 
@@ -110,6 +113,48 @@ describe('readMigrationState', () => {
     // applied entry, in journal order.
     expect(state.pending).toEqual(JOURNAL_TAGS.slice(PARTIAL_MIGRATION_IDX + 1));
     expect(state.pending.length).toBeGreaterThan(0);
+  });
+
+  it('treats an empty migrations ledger as a first boot, the way Drizzle does', () => {
+    // Reachable: Drizzle creates `__drizzle_migrations` OUTSIDE its migration
+    // transaction, so a first run that rolls back leaves the ledger behind,
+    // present and empty. Drizzle reads no row and applies everything; if this
+    // were read as "has migrated" the state would be wrong in the direction that
+    // skips a snapshot.
+    const db = createDb(':memory:');
+    db.$client.exec(
+      'CREATE TABLE __drizzle_migrations (id SERIAL PRIMARY KEY, hash text NOT NULL, created_at numeric)'
+    );
+
+    expect(readMigrationState(db)).toEqual({ pending: JOURNAL_TAGS, fresh: true });
+  });
+
+  it('treats a NULL created_at as nothing applied, the way Drizzle does', () => {
+    // Drizzle compares `Number(lastDbMigration[2]) < folderMillis`, and
+    // `Number(null)` is 0, so a NULL-stamped row means every migration applies.
+    const db = createDb(':memory:');
+    db.$client.exec(
+      'CREATE TABLE __drizzle_migrations (id SERIAL PRIMARY KEY, hash text NOT NULL, created_at numeric)'
+    );
+    db.$client
+      .prepare('INSERT INTO __drizzle_migrations (hash, created_at) VALUES (?, NULL)')
+      .run('whatever');
+
+    expect(readMigrationState(db).pending).toEqual(JOURNAL_TAGS);
+  });
+
+  it('calls a database with tables in it not fresh, whatever the ledger says', () => {
+    // `fresh` is measured, not inferred: a database holding a year of rooms with
+    // an empty ledger must still be snapshotted before anything migrates it.
+    const db = createDb(':memory:');
+    runMigrations(db);
+    db.$client.exec('DELETE FROM __drizzle_migrations');
+
+    const state = readMigrationState(db);
+
+    expect(state.fresh).toBe(false);
+    expect(state.pending).toEqual(JOURNAL_TAGS);
+    expect(databaseHoldsUserData(db)).toBe(true);
   });
 });
 
@@ -208,7 +253,10 @@ describe('snapshotBeforeMigrations', () => {
     const backups = path.join(home, 'backups');
 
     expect(snapshotBeforeMigrations(db, { dir: backups })).toBeNull();
-    // Not even the directory: a first boot leaves no trace of a backup system.
+    // Not even the directory. Whether the PRODUCT leaves a first boot with no
+    // backups folder is a separate question this cannot answer, because the
+    // daily snapshot is a different call: `index.ts` is what has to skip it, and
+    // it does, keyed on `databaseHoldsUserData` read before migrations run.
     expect(existsSync(backups)).toBe(false);
   });
 
@@ -239,6 +287,65 @@ describe('snapshotBeforeMigrations', () => {
     expect(readdirSync(backups)).toHaveLength(1);
   });
 
+  it('rejects a zero-byte decoy at its destination and takes a real snapshot', () => {
+    // THE FAILURE THIS EXISTS FOR. An interrupted `VACUUM INTO` leaves a
+    // zero-byte file, and a zero-byte file is a VALID EMPTY SQLite database: it
+    // opens and `integrity_check` says ok. Trusting it by existence alone means
+    // boot 2 logs "snapshot taken" and migrates with no snapshot at all.
+    const home = tempDir();
+    const db = createDb(path.join(home, 'dork.db'));
+    migrate(db, { migrationsFolder: migrationsFolderThrough(PARTIAL_MIGRATION_IDX) });
+    const backups = path.join(home, 'backups');
+    const now = new Date('2026-08-15T09:07:03Z');
+    const dest = path.join(
+      backups,
+      `dork-20260815-090703-pre-${JOURNAL_TAGS[PARTIAL_MIGRATION_IDX + 1]}.db`
+    );
+    mkdirSync(backups, { recursive: true });
+    writeFileSync(dest, '');
+
+    // The decoy really does pass the naive checks, or this proves nothing.
+    expect(existsSync(dest)).toBe(true);
+    const decoy = new Database(dest);
+    expect(decoy.pragma('integrity_check')).toEqual([{ integrity_check: 'ok' }]);
+    decoy.close();
+
+    const written = snapshotBeforeMigrations(db, { dir: backups, now });
+
+    expect(written).toBe(dest);
+    expect(statSync(dest).size).toBeGreaterThan(0);
+    const snapshot = new Database(dest, { readonly: true });
+    try {
+      expect(
+        snapshot.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='rooms'").get()
+      ).toBeDefined();
+    } finally {
+      snapshot.close();
+    }
+  });
+
+  it('leaves nothing behind when the snapshot write fails', () => {
+    // A failed VACUUM INTO must not leave a partial file, or the next boot
+    // inherits exactly the decoy the test above has to defend against.
+    const home = tempDir();
+    const db = createDb(path.join(home, 'dork.db'));
+    runMigrations(db);
+    const locked = path.join(home, 'locked');
+    mkdirSync(locked, { recursive: true });
+    chmodSync(locked, 0o500);
+
+    try {
+      const target = path.join(locked, 'snap.db');
+
+      expect(() => snapshotSqlite(db.$client, target)).toThrow();
+
+      expect(existsSync(target)).toBe(false);
+      expect(readdirSync(locked)).toEqual([]);
+    } finally {
+      chmodSync(locked, 0o700);
+    }
+  });
+
   it('throws rather than letting a migration run unprotected', () => {
     const home = tempDir();
     const db = createDb(path.join(home, 'dork.db'));
@@ -248,7 +355,22 @@ describe('snapshotBeforeMigrations', () => {
     const blocked = path.join(home, 'backups');
     writeFileSync(blocked, 'not a directory');
 
-    expect(() => snapshotBeforeMigrations(db, { dir: blocked })).toThrow();
+    let thrown: unknown;
+    try {
+      snapshotBeforeMigrations(db, { dir: blocked });
+    } catch (err) {
+      thrown = err;
+    }
+
+    // Typed, and addressed to the operator: this stops a boot, so the message is
+    // the only thing standing between them and a server that will not start for
+    // reasons it never explained.
+    expect(thrown).toBeInstanceOf(SnapshotFailedError);
+    const error = thrown as SnapshotFailedError;
+    expect(error.backupsDir).toBe(blocked);
+    expect(error.message).toContain(blocked);
+    expect(error.message).toMatch(/Nothing was changed and your data has not been touched/);
+    expect(error.message).toMatch(/Free up disk space/);
   });
 
   it('keeps only the ten newest pre-migration snapshots', () => {
@@ -318,6 +440,27 @@ describe('snapshotDaily', () => {
     expect(readdirSync(backups)).toHaveLength(SNAPSHOT_RETENTION.daily);
   });
 
+  it('retakes a day whose snapshot is a zero-byte decoy', () => {
+    // Without this, one disk-full failure marks the UTC day permanently
+    // "covered" by an empty file — silently, and while holding one of the seven
+    // slots a real snapshot would otherwise occupy.
+    const home = tempDir();
+    const db = createDb(path.join(home, 'dork.db'));
+    runMigrations(db);
+    const backups = path.join(home, 'backups');
+    const now = new Date('2026-08-15T12:00:00Z');
+    const dest = path.join(backups, 'dork-20260815-daily.db');
+    mkdirSync(backups, { recursive: true });
+    writeFileSync(dest, '');
+
+    const written = snapshotDaily(db, { dir: backups, now });
+
+    expect(written).toBe(dest);
+    expect(statSync(dest).size).toBeGreaterThan(0);
+    // And a real one on the same day is still left alone.
+    expect(snapshotDaily(db, { dir: backups, now })).toBeNull();
+  });
+
   it('opens on its own, holding what the database held', () => {
     const home = tempDir();
     const db = createDb(path.join(home, 'dork.db'));
@@ -343,6 +486,15 @@ describe('snapshotDaily', () => {
 });
 
 describe('pruneSnapshots', () => {
+  /** Write a real (tiny but valid) snapshot file at `dir/name`. */
+  function plantSnapshot(dir: string, name: string): void {
+    const source = new Database(':memory:');
+    source.exec('CREATE TABLE t (id INTEGER PRIMARY KEY)');
+    mkdirSync(dir, { recursive: true });
+    snapshotSqlite(source, path.join(dir, name));
+    source.close();
+  }
+
   it('deletes only files matching its own pattern', () => {
     const dir = tempDir();
     for (const name of [
@@ -350,10 +502,10 @@ describe('pruneSnapshots', () => {
       'dork-20260802-daily.db',
       'dork-20260803-daily.db',
       'dork-20260801-120000-pre-0001_thing.db',
-      'notes.txt',
     ]) {
-      writeFileSync(path.join(dir, name), 'x');
+      plantSnapshot(dir, name);
     }
+    writeFileSync(path.join(dir, 'notes.txt'), 'x');
 
     const deleted = pruneSnapshots(dir, /^dork-\d{8}-daily\.db$/, 1);
 
@@ -361,6 +513,22 @@ describe('pruneSnapshots', () => {
     expect(readdirSync(dir).sort()).toEqual(
       ['dork-20260803-daily.db', 'dork-20260801-120000-pre-0001_thing.db', 'notes.txt'].sort()
     );
+  });
+
+  it('sweeps wreckage first, so a decoy never costs a real snapshot its slot', () => {
+    // A process killed mid-VACUUM leaves a zero-byte file under a name nothing
+    // will ever write again. Counting it toward `keep` would quietly shrink how
+    // far back the operator can reach, for as long as it took to age out.
+    const dir = tempDir();
+    plantSnapshot(dir, 'dork-20260801-daily.db');
+    plantSnapshot(dir, 'dork-20260802-daily.db');
+    writeFileSync(path.join(dir, 'dork-20260731-daily.db'), '');
+
+    const deleted = pruneSnapshots(dir, /^dork-\d{8}-daily\.db$/, 2);
+
+    // The decoy goes even though the pool is only at its limit once it is gone.
+    expect(deleted).toEqual(['dork-20260731-daily.db']);
+    expect(readdirSync(dir).sort()).toEqual(['dork-20260801-daily.db', 'dork-20260802-daily.db']);
   });
 
   it('is a no-op on a directory that does not exist', () => {
@@ -376,8 +544,20 @@ describe('snapshotSqlite', () => {
     const dest = path.join(home, 'backups', 'snap.db');
 
     snapshotSqlite(db.$client, dest);
+    const sizeBefore = statSync(dest).size;
 
     expect(() => snapshotSqlite(db.$client, dest)).toThrow(/already exists/i);
+
+    // And the refusal leaves the snapshot it refused to overwrite ALONE. The
+    // failure cleanup only removes a file this call created — tidying up after a
+    // write that never started would destroy a good backup.
+    expect(statSync(dest).size).toBe(sizeBefore);
+    const survivor = new Database(dest, { readonly: true });
+    try {
+      expect(survivor.pragma('integrity_check')).toEqual([{ integrity_check: 'ok' }]);
+    } finally {
+      survivor.close();
+    }
   });
 });
 
