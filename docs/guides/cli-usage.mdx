@@ -230,6 +230,19 @@ dorkos task runs --limit 10                          # List recent task runs
 dorkos task runs --schedule <id> --status failed     # Filter runs by task and status
 ```
 
+**`dorkos room export`**: save a channel or a direct message as a file you can read, search, and keep. One message per line, as JSON. See [Rooms](/docs/concepts/rooms#saving-a-room-as-a-file) for what's in it.
+
+```bash
+dorkos room export #backend                          # Save it in the current folder
+dorkos room export backend --out ~/archive/backend.jsonl
+dorkos room export #backend --out - | grep deploy    # Send it to another command instead
+```
+
+<Callout type="info">
+  Exporting is a copy: the room is unchanged, and there is no way to load a file back in. An
+  existing file is never overwritten unless you pass `--force`.
+</Callout>
+
 **`dorkos activity`**: read the activity feed.
 
 ```bash

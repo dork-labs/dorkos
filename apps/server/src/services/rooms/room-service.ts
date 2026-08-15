@@ -96,7 +96,9 @@ import type {
 } from '@dorkos/shared/room-schemas';
 import { RoomMomentSchema, THREAD_PREVIEW_MAX_CHARS } from '@dorkos/shared/room-schemas';
 import { sanitizeIdentity } from '@dorkos/shared/untrusted-text';
+import type { RoomExportAuthor, RoomExportLine } from '@dorkos/shared/room-export-schemas';
 import { logger } from '../../lib/logger.js';
+import { SERVER_VERSION } from '../../lib/version.js';
 import { eventFanOut } from '../core/event-fan-out.js';
 import type { ReadCursorService } from '../core/read-cursor-service.js';
 import type {
@@ -117,6 +119,13 @@ import type { ReactionBudget } from './reactions/reaction-budget.js';
 import type { ReactionStore } from './reactions/reaction-store.js';
 import type { AttachmentRowStore } from './attachments/attachment-row-store.js';
 import { RoomError, type RoomAgentLookup } from './room-errors.js';
+import {
+  toExportAuthor,
+  toExportEntry,
+  toExportHeader,
+  unknownExportAuthor,
+  type ExportAuthorResolver,
+} from './room-export.js';
 import {
   buildBridgeAgentSwappedNotice,
   buildBridgeDisconnectedNotice,
@@ -241,6 +250,15 @@ export interface RoomServiceDeps {
  * into exactly one query, which is the case that runs constantly.
  */
 const REACTION_LOOKUP_CHUNK = 500;
+
+/**
+ * How many entries one page of an export reads (DOR-1225).
+ *
+ * The same 500 as {@link REACTION_LOOKUP_CHUNK}, deliberately: an export rolls
+ * its reactions and attachments up per page, so a page that matched the lookup
+ * chunk exactly costs one query for each rather than two.
+ */
+const EXPORT_PAGE_ENTRIES = REACTION_LOOKUP_CHUNK;
 
 /**
  * The most entries either history tool will return in one page
@@ -1974,7 +1992,7 @@ export class RoomService {
     viewerAuthorId: string,
     opts: { limit: number; before?: number; threadRootEntryId?: string }
   ): RoomEntry[] {
-    const floor = this.requireHistoryFloor(roomId, viewerAuthorId);
+    const { floor } = this.requireHistoryFloor(roomId, viewerAuthorId);
     const page = this.store.listEntries(roomId, {
       afterSeq: floor,
       limit: clampHistoryLimit(opts.limit),
@@ -2025,7 +2043,7 @@ export class RoomService {
     viewerAuthorId: string,
     opts: { query: string; limit: number; threadRootEntryId?: string }
   ): RoomEntry[] {
-    const floor = this.requireHistoryFloor(roomId, viewerAuthorId);
+    const { floor } = this.requireHistoryFloor(roomId, viewerAuthorId);
     const wanted = clampHistoryLimit(opts.limit);
     const hits = this.findMessages({
       roomIds: [roomId],
@@ -2061,16 +2079,118 @@ export class RoomService {
    *
    * @param roomId - The room.
    * @param viewerAuthorId - The caller.
-   * @returns The exclusive `seq` floor — entries strictly above it are readable.
+   * @returns The room, and the exclusive `seq` floor — entries strictly above it
+   *   are readable. The room rides along because the one caller that needs it
+   *   ({@link RoomService.exportRoom}) would otherwise read it a second time to
+   *   get what this method already had in its hand.
    */
-  private requireHistoryFloor(roomId: string, viewerAuthorId: string): number {
-    this.requireVisibleRoom(roomId, viewerAuthorId);
+  private requireHistoryFloor(
+    roomId: string,
+    viewerAuthorId: string
+  ): { room: Room; floor: number } {
+    const room = this.requireVisibleRoom(roomId, viewerAuthorId);
     const member = this.store.getMember(roomId, viewerAuthorId);
     // The same `ROOM_NOT_FOUND` a missing room gets, deliberately: a room id is
     // not a capability, and a distinct code here would let a caller holding an id
     // tell "exists, not yours" from "does not exist".
     if (!member) throw new RoomError('ROOM_NOT_FOUND', 'No such room');
-    return member.joinedSeq;
+    return { room, floor: member.joinedSeq };
+  }
+
+  /**
+   * A room's whole history as JSONL — `GET /api/rooms/:id/export` (DOR-1225).
+   *
+   * Rooms live only in SQLite, and this is the projection that pays back what
+   * that costs them: a file you can grep, copy, and keep. **It is a copy and
+   * never a sync target** — nothing reads one back in, and this method touches
+   * no writer, so the database stays the truth.
+   *
+   * **A generator, because a room's log is never trimmed.** The lines come out
+   * one at a time and the route writes each as it arrives, so a ten-year channel
+   * is never assembled in memory before the download can start. That is also why
+   * the header cannot state a count and why the last line is a `summary`: a
+   * truncated download is otherwise a perfectly valid file of the messages that
+   * made it, with nothing inside it saying so.
+   *
+   * **Membership is the gate**, exactly as it is for `read_room_history`: the
+   * same {@link RoomService.requireHistoryFloor} both history tools use, so
+   * seeing a room is still not being in it and "not a member" answers exactly as
+   * "no such room".
+   *
+   * **The join floor is NOT applied to the operator exporting their own room**,
+   * and that is the one deliberate difference from those tools. The floor exists
+   * so a member does not retroactively read what was said before they arrived —
+   * a rule about one participant's view of a shared conversation. An export is
+   * not a view: it is the exit path (the community exit promise, DOR-596 C2),
+   * and an owner handed a copy of their own room with the first months missing
+   * has not been given their data. Everybody else — every agent, and any second
+   * person — exports strictly above their own `joinedSeq`, and the file says
+   * which of the two it is in `scope.joinFloorApplied` rather than leaving a
+   * reader to guess from where the seqs start.
+   *
+   * @param roomId - The room to copy.
+   * @param viewerAuthorId - Who is asking; must be on the roster.
+   * @yields The header, then every entry in ascending `seq`, then the summary.
+   */
+  *exportRoom(roomId: string, viewerAuthorId: string): Generator<RoomExportLine> {
+    const { room, floor } = this.requireHistoryFloor(roomId, viewerAuthorId);
+    const wholeRoom = this.isOwnerAuthor(viewerAuthorId);
+    const fromSeq = wholeRoom ? 0 : floor;
+    const resolve = this.exportAuthorResolver();
+
+    yield toExportHeader({
+      room,
+      members: this.roster.list(roomId),
+      exportedBy: resolve(viewerAuthorId),
+      exportedAt: new Date().toISOString(),
+      dorkosVersion: SERVER_VERSION,
+      scope: { fromSeq, joinFloorApplied: !wholeRoom },
+    });
+
+    let cursor = fromSeq;
+    let entryCount = 0;
+    let firstSeq: number | null = null;
+    let lastSeq: number | null = null;
+    for (;;) {
+      const page = this.withRollups(
+        roomId,
+        this.store.listEntriesForExport(roomId, { afterSeq: cursor, limit: EXPORT_PAGE_ENTRIES })
+      );
+      if (page.length === 0) break;
+      for (const entry of page) {
+        yield toExportEntry(entry, resolve);
+        entryCount += 1;
+        firstSeq ??= entry.seq;
+        lastSeq = entry.seq;
+      }
+      cursor = page[page.length - 1].seq;
+      if (page.length < EXPORT_PAGE_ENTRIES) break;
+    }
+
+    yield { type: 'summary', entryCount, firstSeq, lastSeq };
+  }
+
+  /**
+   * An author resolver that reads each id from the registry once.
+   *
+   * An export names the same handful of authors on every line — that repetition
+   * is the point, since it is what makes the file greppable — so without the
+   * cache a thousand-message room would be a thousand indexed reads of the same
+   * three rows.
+   */
+  private exportAuthorResolver(): ExportAuthorResolver {
+    const seen = new Map<string, RoomExportAuthor>();
+    return (authorId) => {
+      const hit = seen.get(authorId);
+      if (hit) return hit;
+      const record = this.authors.getById(authorId);
+      // A retired author still wrote what they wrote. Keeping the id with an
+      // honest placeholder is the only answer that does not quietly change what
+      // the room said.
+      const resolved = record ? toExportAuthor(record) : unknownExportAuthor(authorId);
+      seen.set(authorId, resolved);
+      return resolved;
+    };
   }
 
   /**

@@ -1201,6 +1201,36 @@ export class RoomStore {
   }
 
   /**
+   * A bounded FORWARD page over EVERY entry in a room, oldest-first — the export
+   * read (DOR-1225).
+   *
+   * The third forward reader on this table, and the distinction from the two
+   * beside it is the whole reason it exists. {@link RoomStore.listEntriesFrom}
+   * pages the top-level TIMELINE (`parent_entry_id IS NULL`) or one thread,
+   * because that is what a reader looking at a room sees;
+   * {@link RoomStore.listEntriesAfter} is unbounded, because a replay must be
+   * complete in one answer. An export needs both halves of what neither gives:
+   * every entry, thread replies included — it is a copy of the room, not a view
+   * of it — and a bound, because a room's log is never trimmed and a copy must
+   * not have to fit in memory before it can start.
+   *
+   * @param roomId - The room.
+   * @param opts.afterSeq - Return entries with `seq` strictly above this.
+   * @param opts.limit - How many of the oldest matching entries to return.
+   */
+  listEntriesForExport(roomId: string, opts: { afterSeq: number; limit: number }): RoomEntry[] {
+    if (opts.limit <= 0) return [];
+    const rows = this.db
+      .select()
+      .from(roomEntries)
+      .where(and(eq(roomEntries.roomId, roomId), gt(roomEntries.seq, opts.afterSeq)))
+      .orderBy(roomEntries.seq)
+      .limit(opts.limit)
+      .all();
+    return rows.map(toEntry);
+  }
+
+  /**
    * One entry by its stable id.
    *
    * @param roomId - The room.

@@ -360,6 +360,7 @@ if (process.argv[2] === 'telemetry') {
 if (
   process.argv[2] === 'agent' ||
   process.argv[2] === 'task' ||
+  process.argv[2] === 'room' ||
   process.argv[2] === 'activity' ||
   process.argv[2] === 'capabilities' ||
   process.argv[2] === 'call' ||
@@ -375,6 +376,10 @@ if (
   if (process.argv[2] === 'task') {
     const { runTaskDispatcher } = await import('./commands/task.js');
     process.exit(await runTaskDispatcher(subArgs));
+  }
+  if (process.argv[2] === 'room') {
+    const { runRoomDispatcher } = await import('./commands/room.js');
+    process.exit(await runRoomDispatcher(subArgs));
   }
   if (process.argv[2] === 'activity') {
     if (subArgs[0] === '--help' || subArgs[0] === '-h') {
@@ -514,6 +519,7 @@ Commands:
   cache <sub>          Inspect the marketplace cache (list|prune|clear)
   agent <sub>          Manage agents (list|show|create|update) — add --json for machine output
   task <sub>           Manage scheduled tasks (list|create|trigger|runs)
+  room export <room>   Save a channel or DM's history as a file (--out|--force)
   activity             Show the activity feed (--actor|--category|--type|--limit)
   capabilities         List capabilities you can invoke by id (--json for raw catalog)
   call <capability-id> Invoke any capability by id (--input <json>; prints JSON)

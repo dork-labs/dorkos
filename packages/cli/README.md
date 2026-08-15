@@ -207,6 +207,7 @@ These talk to a running DorkOS server so you (or an agent in any runtime) can dr
 | `dorkos task create ...`                         | Create a scheduled task                                               |
 | `dorkos task trigger <id>`                       | Run a task now                                                        |
 | `dorkos task runs`                               | List recent task runs                                                 |
+| `dorkos room export <room>`                      | Save a channel or DM's history as a file (`--out`, `--force`)         |
 | `dorkos activity`                                | Show the activity feed (`--actor`, `--category`, `--type`, `--limit`) |
 | `dorkos capabilities`                            | List the actions this DorkOS accepts by name (the live catalog)       |
 | `dorkos call <capability-id>`                    | Invoke any capability by id (`--input <json>`, prints raw JSON)       |
