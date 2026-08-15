@@ -103,6 +103,7 @@ export const TEST_MODE_CAPABILITIES: RuntimeCapabilities = {
       'tool-call',
       'todo-write',
       'error',
+      'long-turn',
       'compacting',
       'compacting-hold',
     ],

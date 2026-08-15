@@ -21,13 +21,25 @@
  * @module harness-boot
  */
 import path from 'node:path';
+import { mkdir } from 'node:fs/promises';
 import type { Express } from 'express';
 import { createDb, runMigrations, type Db } from '@dorkos/db';
+import { MeshCore } from '@dorkos/mesh';
 import { createApp, finalizeApp } from './app.js';
+import { env } from './env.js';
+import { testControlRouter } from './routes/test-control.js';
 import { initBoundary } from './lib/boundary.js';
+import { logger } from './lib/logger.js';
 import { initConfigManager } from './services/core/config-manager.js';
 import { runtimeRegistry } from './services/core/runtime-registry.js';
 import { SessionEventStore, setSessionEventStore } from './services/session/index.js';
+import {
+  createRoomSubsystem,
+  setRoomAttachmentStores,
+  setRoomInternals,
+  setRoomService,
+} from './services/rooms/index.js';
+import { LocalRoomAttachmentStore } from './services/rooms/attachments/local-room-attachment-store.js';
 
 /** A booted in-process harness server: the Express app plus a DB-closing teardown. */
 export interface InProcessTestServer {
@@ -80,7 +92,53 @@ export async function bootInProcessTestServer(dorkHome: string): Promise<InProce
   runtimeRegistry.register(new TestModeRuntime());
   runtimeRegistry.setDefault('test-mode');
 
+  // Mesh, then rooms. A room resolves an agent through the mesh cache
+  // (`agents.project_path`), so an agent an eval seeded on disk is invisible to
+  // `POST /api/rooms/:id/members` until this reconcile adopts it — which is
+  // what lets a rooms eval seed the SAME way on both tiers: write the manifest
+  // under `<DORK_HOME>/agents/<slug>/` and let the server find it, exactly as
+  // `start()` does.
+  const agentsHomeDir = path.join(dorkHome, 'agents');
+  // Created before the reconcile so a sandbox with no agents in it does not warn
+  // on every boot: the scanner logs an ENOENT for a missing agents home, which
+  // is noise on the eval runs that seat no agents and a distraction on the ones
+  // that do. `start()` never sees it because `ensureDorkBot()` has already made
+  // the directory by the time it reconciles.
+  await mkdir(agentsHomeDir, { recursive: true });
+  const mesh = new MeshCore({ db, agentsHomeDir, logger });
+  await mesh.reconcileOnStartup();
+
+  // The rooms graph. `/api/rooms` is mounted by `createApp()` unconditionally,
+  // so without this every room route answers 500 ("RoomService not initialized")
+  // — including the SSE stream a rooms eval collects.
+  const rooms = createRoomSubsystem({ db });
+  setRoomService(rooms.service);
+  setRoomInternals(rooms.bridges, rooms.authors);
+  setRoomAttachmentStores({
+    attachments: new LocalRoomAttachmentStore(dorkHome),
+    rows: rooms.attachments,
+  });
+
   const app = createApp();
+  // `POST /api/test/seed-agent` reads it; harness cases seed on disk instead,
+  // but a route that answers 500 for a missing local is worse than one wired.
+  app.locals.meshCore = mesh;
+
+  // **The test-control routes, mounted here rather than left to `createApp()`.**
+  // `env.ts` validates the environment ONCE at module load, so `createApp()`
+  // reads whatever `DORKOS_TEST_RUNTIME` was when the server's module graph was
+  // first imported — which, in the eval harness, is before the runner sets it
+  // (the CLI loads the suite, and the suite imports `@dorkos/server` subpaths,
+  // at startup). The visible symptom was `/api/test/scenario` answering 404 on a
+  // server that IS running the test-mode runtime, so a rooms case could not hold
+  // a turn open long enough to stop it.
+  //
+  // This boot needs no env var to know the answer: it registers `TestModeRuntime`
+  // itself, unconditionally, so these routes belong on it by construction. The
+  // guard is only against mounting the same router twice when the variable
+  // happened to be set early enough for `createApp()` to have done it. It must
+  // stay ABOVE `finalizeApp`, which installs the `/api` catch-all 404.
+  if (!env.DORKOS_TEST_RUNTIME) app.use('/api/test', testControlRouter);
   finalizeApp(app);
 
   return {

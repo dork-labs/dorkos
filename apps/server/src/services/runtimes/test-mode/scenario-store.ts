@@ -158,7 +158,49 @@ const BUILT_IN_SCENARIOS: Record<string, ScenarioFn> = {
     // session_status data cast needed because data union requires sessionId
     yield {
       type: 'session_status',
-      data: { sessionId: 'test-mode', model: 'claude-haiku-4-5' },
+      data: {
+        sessionId: 'test-mode',
+        model: 'claude-haiku-4-5',
+        // **Reported on purpose, and it must never reach the screen.**
+        //
+        // Test-mode declares `supportsCostTracking: false`, and the status bar
+        // gates its whole usage item on that flag. Until this scenario reported
+        // usage at all, the first half of that condition
+        // (`input.usage && hasRenderableUsage(input.usage)`) was false for every
+        // test-mode session — so a browser test asserting "no cost item" passed
+        // no matter what the capability said, and kept passing with the flag
+        // flipped to `true`. It was a test that could not fail.
+        //
+        // **The SHAPE is chosen, not incidental.** A bare `pay-as-you-go` cost
+        // is renderable but is never PROMOTED into the visible bar: the registry
+        // promotes `usage` only at `warning` or `exhausted`
+        // (`status-bar-registry.ts`), so with a plain cost the item was still
+        // absent from the bar with the capability on, and the flipped-flag probe
+        // still passed. A subscription at warning level is the one honest shape
+        // that both renders and earns a slot, which is what finally made the
+        // capability the ONLY thing between this figure and the status bar.
+        //
+        // **And it carries no `costUsd`, which is not an oversight.**
+        // `test-mode` is free BY DESIGN, and the evals harness leans on that:
+        // it treats a credentialed turn reporting no cost as spend it could not
+        // measure, and exempts `test-mode` because there its $0 is a real
+        // measurement (`run-eval.ts`, `costUnmetered`). A fabricated cost here
+        // reached that harness and turned a free tier into one that had spent
+        // 1.23 cents — a made-up number corrupting another subsystem's
+        // invariant. Utilization alone satisfies `hasRenderableUsage` for a
+        // subscription, so the gate is just as observable without inventing
+        // money.
+        //
+        // Inert for every other spec by construction: while the flag is false
+        // the item is never built at all, so it is in neither the bar nor the
+        // overflow panel.
+        usage: {
+          kind: 'subscription' as const,
+          utilization: 0.82,
+          windowLabel: '5-hour window',
+          state: 'warning' as const,
+        },
+      },
     } as StreamEvent;
     yield { type: 'text_delta', data: { text: `Echo: ${content}` } } as StreamEvent;
     yield { type: 'done', data: { sessionId: 'test-mode' } } as StreamEvent;
@@ -314,3 +356,17 @@ class ScenarioStore {
 }
 
 export const scenarioStore = new ScenarioStore();
+
+/**
+ * Every scenario key this store actually serves.
+ *
+ * @internal Exported so `capabilities.test.ts` can check
+ *   `features.testModeScenarios` against the real thing. That test used to
+ *   restate the list as a literal, which made it a second copy of the very
+ *   register it was meant to police — adding `long-turn` to the capability list
+ *   duly broke it, and the failure said nothing about the drift it exists to
+ *   catch.
+ */
+export function builtInScenarioNames(): string[] {
+  return Object.keys(BUILT_IN_SCENARIOS);
+}

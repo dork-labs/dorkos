@@ -40,6 +40,9 @@ pnpm evals:local --suite activity-read --budget 0.50
 # the free structural suite: no model, no spend, seconds
 pnpm evals -- --suite core --tier test-mode
 
+# the channel suite's free half: four mechanism cases, no model, seconds
+pnpm evals -- --suite rooms --tier test-mode
+
 # clean up sandboxes and containers an interrupted run left behind
 pnpm evals:sweep
 ```
@@ -47,14 +50,74 @@ pnpm evals:sweep
 If you are not signed in, the run stops before it boots anything and tells you
 the three ways to fix it. It never quietly passes.
 
+## The suites, and which of them spend
+
+`--suite <name>` takes a suite name or a single case id. The name decides the
+bill, so it is worth knowing which is which:
+
+| Suite          | What is in it                                                   | Spends?                             |
+| -------------- | --------------------------------------------------------------- | ----------------------------------- |
+| `core`         | the product suite: governance, operate, agents, the widget case | yes, on `pnpm evals:local`          |
+| `smoke`        | the cheap label-gated subset (the harness self-test today)      | only if you run it credentialed     |
+| `rooms`        | channels: four free mechanism cases + eight quarantined probes  | only the probes, and only on a tier |
+| `connector`    | connector routing, quarantined                                  | yes, credentialed                   |
+| `experimental` | cases kept out of `core` by a known harness gap                 | yes, credentialed                   |
+| `all`          | everything registered                                           | yes                                 |
+
+### The `rooms` suite (channels)
+
+It is the only suite split across two tiers on purpose, because half of what a
+channel does can be measured with no model at all.
+
+- **`--suite rooms --tier test-mode` is free and it GATES.** Four mechanism
+  cases: a mentioned agent always runs a turn; a message that addresses nobody
+  runs none and spends none; three messages inside the gathering window become
+  one turn charged once; Stop interrupts a running turn and the room says so
+  exactly once. They read the room's own event stream and the `room_turn_spend`
+  rows, so none of them can be satisfied by an agent that merely said something
+  plausible. The suite's other eight cases appear in that run as
+  `skipped-wrong-tier` — see below.
+- **The eight credentialed cases are quarantined**: the context-recall probes
+  X-01 to X-06 from `meta/chat-capabilities.md` §7, plus restraint (an engaged
+  agent staying out of a conversation that is not about it) and the adversarial
+  injection case A-15. X-07 (bridged rooms) and X-08 (after compaction) are NOT
+  implemented, and `src/suite/rooms.ts` says why rather than shipping a case that
+  asserts nothing.
+
+**A declared tier is enforced, not described.** A case whose `runtimeTier` is
+credentialed is SKIPPED on a `test-mode` run (`skipped-wrong-tier`) instead of
+being run against the deterministic runtime. It is not a tidiness rule: the
+injection case reported `pass` on test-mode, because a scripted echo obeys no
+injected instruction — a green about a security property nothing had exercised.
+A skipped case neither gates nor counts as quarantined coverage, so the GATING
+line still says what a run actually proved.
+
+**A rooms case reports `unmetered`, and it is not lying about that.** The only
+cost signal the harness can see rides the per-SESSION stream, and a room drive
+collects the ROOM's stream — the room binds its session internally and never
+names it. So `--budget` cannot see a room turn and `perEvalCeilingUsd` cannot
+abort one. What bounds a rooms case is its DRIVE CEILING: one budget from the
+subscribe to the last settle, five minutes for the credentialed cases (they run
+at most two model turns each), one minute for the structural ones. That is the
+honest wall-clock bound; the dollar ceiling each case declares is a statement of
+intent.
+
+Writing one: `runner/room-drive.ts` posts as a person and collects the room
+stream; `oracles/rooms.ts` answers "was a turn triggered for agent X"; a case
+carries a `roomScript` instead of a prompt. Seed agents by writing their
+manifests into `<DORK_HOME>/agents/<slug>/` (`suite/rooms-setup.ts`) — the same
+seeding works on both tiers, because both servers adopt an agents home at boot.
+
 ## Reading the output
 
 Two lines at the bottom of the table matter more than the rows above them:
 
-- **GATING** says how many cases could actually fail the run. Most cases are
-  quarantined, which means they run and report but never fail anything. A green
-  run that gated on zero cases proves nothing, so the harness treats that as a
-  failure rather than a pass.
+- **GATING** says how many of the cases a run STARTED could actually fail it.
+  Most cases are quarantined, which means they run and report but never fail
+  anything; cases that declare a credentialed runtime are not started at all on a
+  `test-mode` run (`skipped-wrong-tier`) and count as neither. A green run that
+  gated on zero cases proves nothing, so the harness treats that as a failure
+  rather than a pass.
 - **CREDENTIAL** says which of the three credentials the run used, so nobody has
   to guess.
 
@@ -326,7 +389,8 @@ a run. Without the image, `auto` falls back to a child process and says so.
 ## What runs in CI
 
 See `.github/workflows/evals.yml`. Nothing runs on a pull request unless someone
-adds the `run-evals` label. A nightly job runs the free structural suite. The
+adds the `run-evals` label. A nightly job runs the free structural suites — both
+of them, `core` and `rooms`, as two steps, because `--suite` takes one name. The
 credentialed suite is manual only, and promoting a case out of quarantine stays a
 human decision made on the evidence it uploads.
 
@@ -337,3 +401,9 @@ oracles that read the API, the filesystem, or the collected stream, and start it
 `quarantined: true` until credentialed runs show it is stable — see the bar above.
 A case that drives a tool also needs an `approvalPolicy`, or its turn will park on
 the first permission prompt. Each new oracle owes a drill.
+
+**Mind the tags, because they decide the bill.** `pnpm evals:local` runs `core`
+against a real model, so a free `test-mode` case tagged `core` would quietly
+spend on every local run. Tag a free case with the suite it belongs to and keep
+it out of `core`; `src/suite/__tests__/rooms.test.ts` pins that for the rooms
+suite rather than leaving it to review.

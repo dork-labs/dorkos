@@ -20,6 +20,8 @@ import {
   capabilityDiscoveryCase,
 } from './operate.js';
 import { governanceCases } from './governance.js';
+import { roomsStructuralCases } from './rooms.js';
+import { roomsCredentialedCases } from './rooms-recall.js';
 
 /** Every registered eval case, across all suites. */
 export const ALL_CASES: EvalCase[] = [
@@ -34,14 +36,16 @@ export const ALL_CASES: EvalCase[] = [
   marketplaceInstallCase,
   capabilityDiscoveryCase,
   ...governanceCases,
+  ...roomsStructuralCases,
+  ...roomsCredentialedCases,
 ];
 
 /** The tag values a `--suite` name may select. */
-const TAGS: readonly EvalTag[] = ['smoke', 'core', 'connector', 'experimental'];
+const TAGS: readonly EvalTag[] = ['smoke', 'core', 'connector', 'experimental', 'rooms'];
 
 /**
  * Resolve a `--suite` name to the cases to run. A name matching a tag
- * (`smoke`/`core`/`connector`/`experimental`) selects every case carrying it;
+ * (`smoke`/`core`/`connector`/`experimental`/`rooms`) selects every case carrying it;
  * `all` selects every case; otherwise the name is matched against a case id.
  *
  * @param name - The suite selector.
@@ -67,6 +71,24 @@ export {
   capabilityDiscoveryCase,
   operateDorkOsCases,
 } from './operate.js';
+export {
+  roomsAddressedRunsATurnCase,
+  roomsUnaddressedIsFreeCase,
+  roomsBurstCollectsCase,
+  roomsHaltStopsCase,
+  roomsStructuralCases,
+} from './rooms.js';
+export {
+  roomsRecallMemberSaidCase,
+  roomsRecallRosterCase,
+  roomsRecallThreadSubjectCase,
+  roomsRecallAcknowledgmentsCase,
+  roomsRecallAttachmentCase,
+  roomsRecallHonestRefusalCase,
+  roomsRestraintCase,
+  roomsAdversarialInjectionCase,
+  roomsCredentialedCases,
+} from './rooms-recall.js';
 export {
   approvalGrantedCase,
   approvalDeniedCase,

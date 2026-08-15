@@ -50,6 +50,22 @@ const APPROVAL_PROBE_SHAPE = 'e2e-approval-probe';
 /** How long to give a server round trip. Same ceiling, same reasoning, as `rooms-api.ts`. */
 export const SERVER_ROUND_TRIP_MS = 30_000;
 
+/**
+ * Entries per page when walking #team's history.
+ *
+ * `ROOM_ENTRY_PAGE_SIZE_MAX` — the largest page the route will serve — so the
+ * walk costs the fewest requests.
+ */
+const ENTRY_PAGE_SIZE = 200;
+
+/**
+ * How many pages back {@link TeamRoomApi.entries} will walk before giving up.
+ *
+ * A guard against a pagination bug looping forever, not a real ceiling: #team on
+ * a test leg holds tens of entries, and this allows forty thousand.
+ */
+const MAX_HISTORY_PAGES = 200;
+
 /** A room as `GET /api/rooms` lists it, in the fields home cares about. */
 export interface TeamRoomSummary {
   id: string;
@@ -80,11 +96,30 @@ export interface TeamRoomEntry {
   seq: number;
   authorId: string;
   /**
-   * `moment` is what makes an entry a milestone — a moment is a POST, so
-   * nothing but the body says so, which is exactly how the cockpit tells them
-   * apart too (`RoomEntryRow`).
+   * The conversation this entry belongs to — a post's own id, and every answer
+   * to it.
+   *
+   * **The only sound way to ask "who answered ME" in #team**, and the reason two
+   * tests here were flaky (DOR-1213). Every test on this leg shares this room,
+   * and `POST /entries` is trigger-only: a test that asserts its timeline and
+   * moves on leaves its agent's reply still coming. That straggler lands during
+   * the NEXT test, arrives after that test's `before` snapshot, and is counted
+   * as an answer to a message it has nothing to do with — which is how "the
+   * default agent answered a post that named somebody else" was reported about a
+   * reply to a post two tests earlier.
+   *
+   * Filtering by id-not-seen-before cannot tell those apart. The cascade can:
+   * it is the server's own answer to which conversation a line is part of.
    */
-  body: { text?: string; moment?: TeamRoomMoment; subjectAuthorId?: string };
+  cascadeRoot: string;
+  /**
+   * `moment` is what makes an entry a milestone and `notice` is what makes it
+   * the ROOM speaking rather than somebody in it — both are ordinary posts whose
+   * body says what they are, which is exactly how the cockpit tells them apart
+   * too (`RoomEntryRow`, `RoomNoticeRow`). An assertion about who ANSWERED has
+   * to exclude notices, or the room's own helpful line counts as a participant.
+   */
+  body: { text?: string; notice?: string; moment?: TeamRoomMoment; subjectAuthorId?: string };
   mentions: string[];
 }
 
@@ -111,6 +146,8 @@ export class TeamRoomApi {
   private readonly agentIds: string[] = [];
   private readonly seededApprovalIds: string[] = [];
   private archivedByUs = false;
+  /** How many settle markers this instance has posted, so each one is distinct. */
+  private settles = 0;
 
   /** A short id, unique per instance, for naming fixtures apart. */
   readonly runId = randomUUID().slice(0, 8);
@@ -150,13 +187,44 @@ export class TeamRoomApi {
     return team;
   }
 
-  /** #team's entries, oldest first. */
+  /**
+   * #team's entries, oldest first — **all of them**, not the newest page.
+   *
+   * `GET /:id/entries` is paginated: it serves the newest 50 unless asked
+   * otherwise, and 200 at most. That default is the right one for a cockpit
+   * hydrating a feed and completely wrong for a test asking a question about the
+   * room's whole history — and the difference is silent, because a truncated
+   * page is a valid answer that looks like the room.
+   *
+   * It bit exactly that way (DOR-1213). #team is never deleted, so on a
+   * `--repeat-each` run its history grows past 50, and the moment marked on the
+   * first pass fell off the back of the window. `moments()` reads this, so the
+   * moments test saw an empty list, concluded it had never run, declined to
+   * skip, and then failed waiting for a milestone the hour-long quiet period was
+   * correctly suppressing. Every count in this file has the same exposure.
+   *
+   * So this walks the pages back to the beginning. The cap is a guard against a
+   * pagination bug turning a test into an infinite loop, not a limit anybody is
+   * expected to reach.
+   */
   async entries(): Promise<TeamRoomEntry[]> {
     const { id } = await this.teamRoom();
-    const res = await this.request.get(`/api/rooms/${id}/entries`);
-    if (!res.ok()) throw new Error(`Could not read #team: ${await res.text()}`);
-    const { entries } = (await res.json()) as { entries: TeamRoomEntry[] };
-    return entries;
+    const all: TeamRoomEntry[] = [];
+    let before: number | undefined;
+    for (let page = 0; page < MAX_HISTORY_PAGES; page += 1) {
+      const query = `limit=${ENTRY_PAGE_SIZE}${before === undefined ? '' : `&before=${before}`}`;
+      const res = await this.request.get(`/api/rooms/${id}/entries?${query}`);
+      if (!res.ok()) throw new Error(`Could not read #team: ${await res.text()}`);
+      const { entries } = (await res.json()) as { entries: TeamRoomEntry[] };
+      all.unshift(...entries);
+      if (entries.length < ENTRY_PAGE_SIZE) return all;
+      before = entries[0]!.seq;
+    }
+    throw new Error(
+      `#team holds more than ${MAX_HISTORY_PAGES * ENTRY_PAGE_SIZE} entries, or its ` +
+        `pagination is not advancing. Either way this read cannot answer a question ` +
+        `about the whole room.`
+    );
   }
 
   /**
@@ -266,26 +334,46 @@ export class TeamRoomApi {
   }
 
   /**
-   * Wait until an agent is on #team's roster, and answer with its author id.
+   * Wait until an agent is on #team's roster **and answers to an `@handle`**,
+   * and answer with its author id.
    *
-   * The seam that seats it runs after the creation response, so a test that read
-   * the roster straight away would be racing it.
+   * Two seams, not one, and waiting on only the first is what made
+   * "naming an agent stands the default agent down" flaky (DOR-1213). Seating
+   * runs after the creation response, so reading the roster straight away races
+   * it — that much was already handled. But a seat is addressable only once its
+   * handle is in the roster's projection, and `@name` in a composer is plain
+   * text until the server resolves it: post one message too early and the
+   * mention resolves to NOBODY, the fallback seat correctly answers an
+   * unaddressed post, and the test fails saying the default agent piled on. The
+   * product was right and the setup was early.
+   *
+   * `author.handle` is the roster's own answer to "can this member be
+   * addressed" — `null` means it cannot (`room-roster.ts`) — so waiting for it
+   * to be non-null is waiting for exactly the thing a mention needs.
    *
    * @param name - The display name to look for.
    */
   async waitForMember(name: string): Promise<string> {
     const { id } = await this.teamRoom();
     const deadline = Date.now() + SERVER_ROUND_TRIP_MS;
+    let seen: string | null | undefined;
     for (;;) {
       const res = await this.request.get(`/api/rooms/${id}`);
       if (res.ok()) {
         const { members } = (await res.json()) as {
-          members: { author: { id: string; displayName: string } }[];
+          members: { author: { id: string; displayName: string; handle?: string | null } }[];
         };
         const seat = members.find((member) => member.author.displayName === name);
-        if (seat) return seat.author.id;
+        seen = seat?.author.handle;
+        if (seat && seat.author.handle) return seat.author.id;
       }
-      if (Date.now() > deadline) throw new Error(`${name} never joined #team`);
+      if (Date.now() > deadline) {
+        throw new Error(
+          seen === undefined
+            ? `${name} never joined #team`
+            : `${name} joined #team but never became addressable — its roster row still carries no @handle`
+        );
+      }
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
   }
@@ -321,6 +409,122 @@ export class TeamRoomApi {
     if (!res.ok()) throw new Error(`Could not read approvals: ${await res.text()}`);
     const { approvals } = (await res.json()) as { approvals: { approvalId: string }[] };
     return approvals.map((approval) => approval.approvalId);
+  }
+
+  /**
+   * The display names of every #team member set to answer EVERYTHING (`always`).
+   *
+   * A precondition, not an assertion target. "Typing here reaches your default
+   * agent and nobody else piles on" is a claim about a room with ONE such seat —
+   * with two, two agents answering an unaddressed post is the product working,
+   * and the test would be reporting correct behaviour as a regression.
+   *
+   * The seat moves (`syncDefaultAgent` re-points it whenever an agent is
+   * created), so on a leg where tests have been creating and deleting agents —
+   * every repeat of this file does — more than one membership can end up
+   * holding it. Reading it is how the test tells "this leg has drifted" from
+   * "the product piled on".
+   */
+  async seatsThatAnswerEverything(): Promise<string[]> {
+    return (await this.agentSeats())
+      .filter((seat) => seat.responseMode === 'always')
+      .map((seat) => seat.name);
+  }
+
+  /**
+   * Every agent on #team's roster with the mode it answers in — the whole
+   * picture, for a failure message that has to say what the room looked like.
+   */
+  async roster(): Promise<string[]> {
+    return (await this.agentSeats()).map((seat) => `${seat.name}:${seat.responseMode}`);
+  }
+
+  /** #team's agent memberships, as `GET /api/rooms/:id` returns them. */
+  private async agentSeats(): Promise<{ name: string; responseMode: string }[]> {
+    const { id } = await this.teamRoom();
+    const res = await this.request.get(`/api/rooms/${id}`);
+    if (!res.ok()) throw new Error(`Could not read #team's roster: ${await res.text()}`);
+    const { members } = (await res.json()) as {
+      members: { responseMode?: string; author: { kind: string; displayName: string } }[];
+    };
+    return members
+      .filter((member) => member.author.kind === 'agent')
+      .map((member) => ({
+        name: member.author.displayName,
+        responseMode: member.responseMode ?? 'unknown',
+      }));
+  }
+
+  /**
+   * Post into #team as the local person — the same route the composer's Enter
+   * reaches.
+   *
+   * @param text - What to say.
+   */
+  async post(text: string): Promise<void> {
+    const { id } = await this.teamRoom();
+    const res = await this.request.post(`/api/rooms/${id}/entries`, { data: { text } });
+    if (res.status() !== 202) {
+      throw new Error(`Posting to #team answered ${res.status()}: ${await res.text()}`);
+    }
+  }
+
+  /**
+   * How many agents are working in #team right now, as the room list reports it.
+   *
+   * The same live read of the claim map the cockpit's own working indicator
+   * uses (`use-room-working.ts`), which makes it the one honest answer to "has
+   * everything this room was doing finished".
+   */
+  async workingCount(): Promise<number> {
+    const { id } = await this.teamRoom();
+    const res = await this.request.get('/api/rooms');
+    if (!res.ok()) throw new Error(`Could not read the room list: ${await res.text()}`);
+    const { rooms } = (await res.json()) as { rooms: { id: string; working?: number }[] };
+    return rooms.find((room) => room.id === id)?.working ?? 0;
+  }
+
+  /**
+   * Wait until #team has finished everything it was doing.
+   *
+   * **Why counting answers needs this at all.** An assertion of the form "only
+   * one agent answered" is read off a snapshot, and a snapshot taken the instant
+   * the FIRST answer lands cannot see a second one that is still being written.
+   * Such a test does not fail when a second agent piles on — it passes, because
+   * it looked too early. That is the same "settle before you count" problem
+   * `tests/rooms/room-autonomy.spec.ts` solves for a burst, and this is the
+   * #team-shaped version of it.
+   *
+   * Two barriers, because one is not enough. A marker message that gets its OWN
+   * answer proves the room has processed something posted LATER than the message
+   * under test — but only for the agent that answered it. So the working count
+   * is then read down to zero, which is a claim about every agent: nothing in
+   * this room still holds a claim, so nothing else is coming.
+   */
+  async settle(): Promise<void> {
+    const marker = `settle ${this.runId}-${this.settles++}`;
+    const before = await this.entries();
+    await this.post(marker);
+    const posted = await this.waitForEntry(
+      (entry) => entry.body.text === marker && !before.some((e) => e.id === entry.id),
+      `the settle marker "${marker}" to be stored`
+    );
+    const root = posted.find((entry) => entry.body.text === marker)!.cascadeRoot;
+    await this.waitForEntry(
+      (entry) =>
+        entry.cascadeRoot === root && entry.body.text !== marker && entry.body.notice === undefined,
+      `an answer to the settle marker "${marker}"`
+    );
+
+    const deadline = Date.now() + SERVER_ROUND_TRIP_MS;
+    for (;;) {
+      const working = await this.workingCount();
+      if (working === 0) return;
+      if (Date.now() > deadline) {
+        throw new Error(`#team still reports ${working} agent(s) working after a full settle`);
+      }
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
   }
 
   /** Put #team away, the way its owner can. Restored by {@link TeamRoomApi.cleanup}. */

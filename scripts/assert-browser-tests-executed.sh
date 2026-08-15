@@ -165,9 +165,19 @@ FILTERED_SPECS=(
 #     real sends, which are free and deterministic only against TestModeRuntime
 #     — on the cockpit leg each one would bill the machine's own `claude`
 #     sign-in. Same directory, same extension rule, same reason.
+#   chat/runtime-capability-parity.ts — the cockpit reading a runtime's DECLARED
+#     capability descriptors rather than Claude-shaped ones (L-10, ADR-0256).
+#     Registered into chat-mock.spec.ts because this leg is the only place a
+#     browser can see a runtime that is not Claude Code at all: real Codex and
+#     OpenCode need model credentials a PR runner must not have, so
+#     TestModeRuntime's deliberately divergent permission-mode ids and its
+#     `supportsCostTracking: false` are the whole available surface. Same
+#     directory as the two chat modules above, and the extension matters for the
+#     same reason — `tests/chat/` is otherwise a cockpit-leg directory.
 REGISTERED_MODULES=(
   'chat/compaction.ts'
   'chat/composer-escape-and-ime.ts'
+  'chat/runtime-capability-parity.ts'
   'chat/session-read-state.ts'
   'dashboard-sidebar/now-survives-reload.ts'
   'dashboard-sidebar/send-lands-in-today.ts'

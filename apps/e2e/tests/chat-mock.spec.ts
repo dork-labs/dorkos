@@ -7,6 +7,7 @@ import { ChatPage } from '../pages/ChatPage.js';
 import { caretOffset, composerText, expectComposerText } from '../pages/composer-probe.js';
 import { registerCompactionTests } from './chat/compaction.js';
 import { registerComposerEscapeAndImeTests } from './chat/composer-escape-and-ime.js';
+import { registerRuntimeCapabilityParityTests } from './chat/runtime-capability-parity.js';
 import { registerSessionReadStateTests } from './chat/session-read-state.js';
 import { registerNowSurvivesReloadTests } from './dashboard-sidebar/now-survives-reload.js';
 import { registerSendLandsInTodayTests } from './dashboard-sidebar/send-lands-in-today.js';
@@ -943,6 +944,14 @@ registerComposerEscapeAndImeTests({ apiUrl: API_URL, agentDir: () => agentDir })
 // turns and a `/compact` against the shared test-mode server — see the module
 // header for why it must ride this file's worker rather than be its own spec.
 registerCompactionTests({ apiUrl: API_URL, agentDir: () => agentDir });
+
+// The cockpit adapting to the runtime it is talking to (L-10). Registered here
+// because this leg is the ONLY place a browser can see a runtime that is not
+// Claude Code: real Codex and OpenCode need model credentials a PR runner does
+// not have, so the divergent descriptors TestModeRuntime declares are the whole
+// available surface. See the module header for what that does and does not
+// cover.
+registerRuntimeCapabilityParityTests({ agentDir: () => agentDir });
 
 /**
  * Conversations in ⌘K (spec `sidebar-now-today-library` P3, §15).
