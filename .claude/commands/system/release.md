@@ -158,10 +158,11 @@ options:
 **On "Yes, add the scaffolded migration":**
 
 1. Append the migration entry to the module-level `CONFIG_MIGRATIONS` constant in `apps/server/src/services/core/config-manager.ts`, keyed to `[next_version]`. Do NOT touch `projectVersion` — it's sourced from `SERVER_VERSION` (see `lib/version.ts`) and updates automatically when `VERSION` and `package.json` are bumped in Phase 6.
-2. Add `apps/server/src/services/core/config-manager.ts` to the Phase 6 `git add` list — it must be staged alongside VERSION/CHANGELOG/package.json.
-3. Log the scaffold action for the final report: `✓ Auto-scaffolded config migration for v[next_version]`.
+2. **Pin the new key.** A new migration is unpinned until it is listed in `apps/server/src/services/core/__tests__/merged-migration-hashes.ts`, and CI fails while it is (DOR-1222 — a merged body is frozen, so it is recorded the moment it exists). Run `pnpm vitest run apps/server/src/services/core/__tests__/config-manager.test.ts -t 'hashes to what it was pinned at'`; the failure prints the exact `'[next_version]': '<hash>'` line to add. Add it, then re-run until green.
+3. Add `apps/server/src/services/core/config-manager.ts` and `apps/server/src/services/core/__tests__/merged-migration-hashes.ts` to the Phase 6 `git add` list — both must be staged alongside VERSION/CHANGELOG/package.json.
+4. Log the scaffold action for the final report: `✓ Auto-scaffolded config migration for v[next_version]`.
 
-**On "Let me write it myself":** exit cleanly, telling the user to add a migration entry keyed to `'[next_version]'` in `CONFIG_MIGRATIONS` (no need to touch `projectVersion`; see `.claude/skills/adding-config-fields/SKILL.md`), then re-run `/system:release`.
+**On "Let me write it myself":** exit cleanly, telling the user to add a migration entry keyed to `'[next_version]'` in `CONFIG_MIGRATIONS` and its pin in `__tests__/merged-migration-hashes.ts` (no need to touch `projectVersion`; see `.claude/skills/adding-config-fields/SKILL.md`), then re-run `/system:release`.
 
 **On "No migration needed":** log the acknowledgment and continue. Include in the final report: `⚠ Config schema changed but user declined migration (acknowledged)`.
 

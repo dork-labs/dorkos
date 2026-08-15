@@ -47,7 +47,7 @@ DorkOS uses the [`conf`](https://github.com/sindresorhus/conf) library (v15.1.0)
 
 ### Things to know before you start
 
-1. **`projectVersion` is sourced from `SERVER_VERSION`**, not hardcoded. `config-manager.ts` imports `SERVER_VERSION` from `../../lib/version.js` and hands it to Conf. That resolver honors `DORKOS_VERSION_OVERRIDE` → esbuild-injected `__CLI_VERSION__` → `package.json` dev fallback, in that order. Do not reintroduce a hardcoded `projectVersion` string — migration keys must match real release boundaries.
+1. **`projectVersion` is sourced from `SERVER_VERSION`**, not hardcoded. `config-manager.ts` imports `SERVER_VERSION` from `../../lib/version.js` and hands it to Conf. That resolver honors `DORKOS_VERSION_OVERRIDE` → esbuild-injected `__CLI_VERSION__` → `package.json` dev fallback, in that order. Do not reintroduce a hardcoded `projectVersion` string — migration keys must match real release boundaries. Read that order once more before you edit any migration: it is why a key runs on machines that are not on a release, and why a merged body is frozen even when nothing has been tagged.
 2. **Migrations live in the module-level `CONFIG_MIGRATIONS` constant.** Append new entries there, not inside the constructor. The constructor reuses the same `confOptions` object for both the primary and corrupt-recovery Conf instantiations, so every migration runs equally in both paths.
 3. **`USER_CONFIG_DEFAULTS` at `config-schema.ts:191-193`** is computed from `UserConfigSchema.parse({ version: 1 })` **at import time**. Adding a required field without a default will crash the server on startup for every new install. Always use `.default(...)` unless the field is genuinely optional.
 
@@ -88,7 +88,21 @@ If this fails, your field is required without a default. Fix before proceeding.
 
 Edit `apps/server/src/services/core/config-manager.ts`. You do **not** need to bump `projectVersion` — it's sourced from `SERVER_VERSION` via `lib/version.ts`, which updates automatically every release. Your only job is to append a new entry to the module-level `CONFIG_MIGRATIONS` constant, keyed to the app version that will ship your change.
 
-**Pick that key as strictly greater than the newest `v*` tag** (`git tag -l 'v*' | sort -V | tail -1`), and never extend a key that has already shipped. `conf` runs a key only in `(storedVersion, projectVersion]`, so a key at or below a released version — or a body appended to one — never runs for anybody already on it. A guard enforces both (`apps/server/src/services/core/__tests__/migration-safety.ts`), so getting this wrong reddens CI rather than shipping silently.
+**Pick that key as strictly greater than the newest `v*` tag** (`git tag -l 'v*' | sort -V | tail -1`), and never extend a key that already exists. `conf` runs a key only in `(storedVersion, projectVersion]`, so a key at or below a released version — or a body appended to one — never runs for anybody already on it. A guard enforces both (`apps/server/src/services/core/__tests__/migration-safety.ts`), so getting this wrong reddens CI rather than shipping silently.
+
+**Then pin your new key**, in the same pull request, by adding one line to `apps/server/src/services/core/__tests__/merged-migration-hashes.ts`. A second guard fails until you do, and prints the exact line to paste. That pin is what freezes the body from the moment it merges — see [Append-only, from merge](#append-only-from-merge) for why "it is not tagged yet" is not a licence to edit it later.
+
+#### Append-only, from merge
+
+The rule used to be that a key above the newest tag had run for nobody and could be amended freely. It is not true, and correcting it is DOR-1222.
+
+What runs a migration is `projectVersion`, which is `SERVER_VERSION`: the version compiled into a built CLI bundle (`__CLI_VERSION__`) or the desktop app, `DORKOS_VERSION_OVERRIDE` when set, and `0.0.0` only in a raw dev tree. Those versions are bumped in the repository **before** the tag exists. So anyone who builds and runs DorkOS during the merge-to-release window is stamped with the new version, has run whatever the body said that day, and never runs the key again.
+
+The operator's own config was stamped `0.59.0` on 2026-08-12 while `0.59.0` was still "unreleased". Two later amendments to that key skipped him without a word. **The dogfood machine is always somebody.**
+
+So: a merged body is frozen. A change of mind opens a NEW key above the newest tag, written so it can tell a value the earlier body seeded from one a person chose. If it cannot tell them apart, appending overwrites somebody's choice and is the more destructive option — which usually means living with the seed that shipped.
+
+Bumping an existing pin in `merged-migration-hashes.ts` is the only escape hatch. It shows up as one changed line in a file that exists for nothing else, and it needs a justification in the pull request naming the population that could have run the old body and why it is empty. On this repository, it never has been.
 
 The shape to match:
 
@@ -246,7 +260,7 @@ Also add the flag to the `dorkos config set` shell-completion list if one exists
 
 ## Best practices
 
-- **Append-only migrations.** Never edit a shipped migration body. If you need to fix a broken migration, append a new one at the next version that reverses the damage and applies the correct change. Editing in place leaves users in divergent states.
+- **Append-only migrations, from the merge and not from the tag.** Never edit a migration body that has already merged. If you need to fix a broken migration, append a new one at a key above the newest tag that reverses the damage and applies the correct change. Editing in place leaves users in divergent states — including the untagged case, where the divergent user is whoever built and ran DorkOS that week.
 - **Semver keys matching real release versions.** If a migration ships in v0.35.0, key it `'0.35.0'`, not `'0.35'` or `'35'`. This makes the release-notes → migration mapping straightforward and lets `/system:release`'s drift check validate the pairing.
 - **Idempotent migrations.** Always guard mutations. Corrupt-recovery or manual `__internal__.migrations.version` edits can cause a migration to re-run; non-idempotent bodies corrupt data.
 - **Flag data-loss changes loudly.** Any migration that deletes a user's data should have a comment explaining why and pointing at the ADR or spec that authorized it.
@@ -255,7 +269,7 @@ Also add the flag to the `dorkos config set` shell-completion list if one exists
 
 ## Common pitfalls
 
-- **Editing `'1.0.0'` migration body** (or any shipped migration) after it's been released. Users who already ran the old body won't re-run it; you'll have split-brain state.
+- **Editing `'1.0.0'` migration body** (or any migration that has merged), released or not. Whoever already ran the old body won't re-run it; you'll have split-brain state, and you cannot see who is in it.
 - **Hardcoding `projectVersion` in the constructor.** It's sourced from `SERVER_VERSION` — never pass a string literal. If the resolver ever breaks (e.g., `DORKOS_VERSION_OVERRIDE` unset, esbuild banner missing, package.json missing), fix `lib/version.ts`, not `config-manager.ts`.
 - **Adding a required field without a default.** Crashes at import time because `USER_CONFIG_DEFAULTS = UserConfigSchema.parse({ version: 1 })` can't satisfy the required field without a value.
 - **Writing non-idempotent migrations** (e.g., `store.set('counter', store.get('counter') + 1)`) — re-running doubles the value. Always check state before mutating.

@@ -35,9 +35,13 @@ Adding a field to `UserConfigSchema` means doing all three of these, or the buil
   their choice.
 
 A migration goes under a **new key strictly greater than the newest `v*` tag**, and never onto a key
-that has already shipped — `conf` runs a key only in `(storedVersion, projectVersion]`, so a body
-added to a released key never runs for anybody already past it. Enforced by the guard in
-`apps/server/src/services/core/__tests__/migration-safety.ts`. See `contributing/configuration.md`.
+that has already MERGED — `conf` runs a key only in `(storedVersion, projectVersion]`, so a body
+added to a key somebody already ran never runs for them again. "Somebody" includes anyone on a
+built CLI or the desktop app before the tag exists, which is why an untagged key is closed too
+(DOR-1222). Enforced by two guards in `apps/server/src/services/core/__tests__/`:
+`migration-safety.ts` (against the newest tag) and `migration-append-only.ts` with
+`merged-migration-hashes.ts` (against a pinned hash, which a new key must add). See
+`contributing/configuration.md`.
 
 ## Testing
 
