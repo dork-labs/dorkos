@@ -97,7 +97,7 @@ export const TEST_MODE_CAPABILITIES: RuntimeCapabilities = {
      * Scenario keys served by the built-in `scenario-store`. Keys here MUST
      * match `BUILT_IN_SCENARIOS` entries — do not invent names.
      */
-    testModeScenarios: ['simple-text', 'tool-call', 'todo-write', 'error'],
+    testModeScenarios: ['simple-text', 'tool-call', 'todo-write', 'error', 'long-turn'],
     /** Artificial per-event latency used by the fake stream generators. */
     deterministicLatencyMs: 0,
   },

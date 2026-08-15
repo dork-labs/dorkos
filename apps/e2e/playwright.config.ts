@@ -378,6 +378,12 @@ export default defineConfig({
         '**/home-surface/team-room.spec.ts',
         // Runs against the test-mode leg in `chromium-streams` below.
         '**/streams/**',
+        // Both run against the test-mode leg in `chromium-rooms-agents` below,
+        // and both must NEVER run here. They are the only rooms specs that
+        // un-silence an agent, so on this leg every turn they start would be a
+        // real, billable claude-code turn — see their headers.
+        '**/rooms/room-autonomy.spec.ts',
+        '**/rooms/agent-reactions.spec.ts',
         // Needs the test-mode server's `/api/test/seed-bridge` seam, so it runs
         // in `chromium-bridge` below, never against the real cockpit leg.
         '**/relay/bridged-channel.spec.ts',
@@ -485,6 +491,30 @@ export default defineConfig({
         baseURL: `http://localhost:${MOCK_VITE_PORT}`,
       },
       testMatch: ['**/home-surface/team-room.spec.ts'],
+    },
+    {
+      // Rooms that let an agent ACT (room-participation RP6–RP8) — against the
+      // test-mode leg, and that is a safety property rather than a convenience,
+      // exactly as it is for `chromium-team-room`. Every spec here un-silences a
+      // room agent, which the `roomsApi` fixture otherwise guarantees never
+      // happens; on the cockpit leg that is a real claude-code turn on the
+      // machine's own sign-in, once per test. This leg's
+      // `DORKOS_TEST_RUNTIME_CLAUDE_ALIAS` answers the same seat for free, and
+      // each spec re-checks the leg before it seeds anything.
+      //
+      // TWO spec files rather than one suite because they need nothing from each
+      // other: `room-autonomy` drives turns (and borrows the server-global
+      // scenario store, as `streams/session-queue.spec.ts` does), while
+      // `agent-reactions` drives no turn at all — it acts as an agent over HTTP
+      // with a real minted token. Neither reads state the other writes, and both
+      // assert only on rooms they seeded, so they run beside each other and
+      // beside the other test-mode projects.
+      name: 'chromium-rooms-agents',
+      use: {
+        ...devices['Desktop Chrome'],
+        baseURL: `http://localhost:${MOCK_VITE_PORT}`,
+      },
+      testMatch: ['**/rooms/room-autonomy.spec.ts', '**/rooms/agent-reactions.spec.ts'],
     },
     {
       // Chats-as-channels cockpit proof — also against the test-mode server,
