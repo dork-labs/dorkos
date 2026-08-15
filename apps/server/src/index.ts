@@ -36,7 +36,7 @@ import { initCloudLinkManager, getCloudLinkManager } from './services/core/auth/
 import {
   initConfigManager,
   configManager,
-  ConfigUnreadableError,
+  ConfigBootError,
 } from './services/core/config-manager.js';
 import {
   credentialProvider,
@@ -402,9 +402,9 @@ async function start() {
   try {
     initConfigManager(dorkHome);
   } catch (error) {
-    if (!(error instanceof ConfigUnreadableError)) throw error;
-    // The settings file is intact and unreadable, so stopping is the honest
-    // outcome: booting on defaults would quietly run with someone else's
+    if (!(error instanceof ConfigBootError)) throw error;
+    // The settings file is intact and DorkOS cannot use it, so stopping is the
+    // honest outcome: booting on defaults would quietly run with someone else's
     // security posture. Same stderr reasoning as the instance lock above — an
     // operator starting from a terminal has to see this.
     logger.error(error.message);

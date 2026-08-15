@@ -57,6 +57,23 @@ function makeDir(slug: string): string {
   return dir;
 }
 
+/**
+ * Every backup of the config file in a data directory, oldest first.
+ *
+ * Matched by suffix rather than by the production module's own pattern, so a
+ * change to the naming shows up here as a real result rather than being agreed
+ * with. Backups are timestamped now (DOR-1221): a fixed `config.json.bak` was
+ * overwritten by the NEXT recovery, so a machine that recovered twice kept only
+ * the second wipe's evidence.
+ */
+function backupsIn(dir: string): string[] {
+  return fs
+    .readdirSync(dir)
+    .filter((name) => name.endsWith('.bak'))
+    .sort()
+    .map((name) => path.join(dir, name));
+}
+
 /** An `fs` error carrying an errno code, the shape a real I/O failure has. */
 function errnoError(code: string, message: string): NodeJS.ErrnoException {
   const error = new Error(`${code}: ${message}`) as NodeJS.ErrnoException;
@@ -121,11 +138,29 @@ describe('classifyConfigLoadFailure', () => {
     // bare TypeError from inside its migration machinery, which really is
     // about the file, so this class cannot simply be treated as unreadable.
     expect(classifyConfigLoadFailure(new TypeError('Invalid Version: 0.5@.0'))).toBe('unknown');
-    expect(classifyConfigLoadFailure(new Error('Something went wrong during the migration!'))).toBe(
-      'unknown'
-    );
     expect(classifyConfigLoadFailure('not even an error')).toBe('unknown');
     expect(classifyConfigLoadFailure(undefined)).toBe('unknown');
+  });
+
+  it('blames DorkOS, not the file, when a migration body threw', () => {
+    // DOR-1221. This used to be `unknown`, which meant a bug in DorkOS's own
+    // upgrade code failed four times, looked deterministic, and condemned a
+    // perfectly good config. `conf` marks the case for us: everything thrown
+    // inside its per-migration `try` comes back under this sentence.
+    expect(
+      classifyConfigLoadFailure(
+        new Error('Something went wrong during the migration! Cannot read properties of undefined')
+      )
+    ).toBe('migration');
+    // But an errno laundered through that same wrapper is still the machine's
+    // fault, and must keep the never-replace protection it already had.
+    expect(
+      classifyConfigLoadFailure(
+        new Error(
+          "Something went wrong during the migration! EMFILE: too many open files, open '/x'"
+        )
+      )
+    ).toBe('io');
   });
 
   it("does not mistake Node's ERR_ codes for a disk problem", () => {
@@ -155,9 +190,53 @@ describe('a genuinely damaged config is still replaced', () => {
 
     const manager = new ConfigManager(dir, FAST_RETRIES);
 
-    expect(fs.existsSync(configPath + '.bak')).toBe(true);
+    expect(backupsIn(dir)).toHaveLength(1);
     expect(manager.get('server').port).toBe(4242);
     expect(manager.validate()).toEqual({ valid: true });
+  });
+
+  it('does not let a second recovery overwrite what the first one saved', () => {
+    // DOR-1221, and the seam the defect actually lived at: the manager's own
+    // backup call. Everything else here asserts "a backup exists", which the old
+    // single fixed `config.json.bak` satisfied identically — it just held the
+    // WRONG settings by the time anyone looked. Five recoveries were logged on
+    // one machine and one backup survived them, holding a config that had
+    // already been replaced with defaults.
+    const dir = makeDir('load-two-wipes');
+    const configPath = path.join(dir, 'config.json');
+    fs.writeFileSync(
+      configPath,
+      JSON.stringify({
+        version: 1,
+        server: { port: 'the settings the person actually had' },
+        auth: { enabled: true },
+      })
+    );
+
+    new ConfigManager(dir, FAST_RETRIES);
+    const [firstBackup] = backupsIn(dir);
+    expect(firstBackup).toBeDefined();
+
+    // The file is damaged a second time, days later as far as this cares.
+    fs.writeFileSync(
+      configPath,
+      JSON.stringify({ version: 1, server: { port: 'damaged again, much later' } })
+    );
+    new ConfigManager(dir, FAST_RETRIES);
+
+    // Two backups, two names, and — the point — the FIRST one still holds the
+    // settings from before the FIRST wipe. Compared by value, not by bytes:
+    // conf merges its defaults into the file before any of this code gets a
+    // verdict, so the backup is the person's settings, not their file.
+    const backups = backupsIn(dir);
+    expect(backups).toHaveLength(2);
+    expect(new Set(backups).size).toBe(2);
+    const saved = JSON.parse(fs.readFileSync(firstBackup!, 'utf-8')) as {
+      server: { port: string };
+      auth: { enabled: boolean };
+    };
+    expect(saved.server.port).toBe('the settings the person actually had');
+    expect(saved.auth.enabled).toBe(true);
   });
 
   it('salvages nothing from a truncated file, and lands on the safe defaults anyway', () => {
@@ -202,7 +281,7 @@ describe('a genuinely damaged config is still replaced', () => {
 
     const manager = new ConfigManager(dir, FAST_RETRIES);
 
-    expect(fs.existsSync(configPath + '.bak')).toBe(true);
+    expect(backupsIn(dir)).toHaveLength(1);
     expect(manager.get('server').port).toBe(4242);
     // DOR-584: a wipe may lose preferences, never a protection.
     expect(manager.get('auth').enabled).toBe(true);
@@ -247,7 +326,7 @@ describe('a file that breaks the migration chain is recovered, not left to block
       const manager = new ConfigManager(dir, FAST_RETRIES);
 
       // Booted, backed up, and the protection carried across.
-      expect(fs.existsSync(configPath + '.bak')).toBe(true);
+      expect(backupsIn(dir)).toHaveLength(1);
       expect(manager.validate()).toEqual({ valid: true });
       expect(manager.get('auth').enabled).toBe(true);
       // And the next boot is an ordinary one, rather than repeating this.
@@ -269,7 +348,7 @@ describe('a file that breaks the migration chain is recovered, not left to block
 
     expect(injected.failed).toBe(1);
     expect(manager.get('auth').enabled).toBe(true);
-    expect(fs.existsSync(configPath + '.bak')).toBe(false);
+    expect(backupsIn(dir)).toEqual([]);
     expect(fs.readFileSync(configPath, 'utf-8')).toBe(before);
   });
 });
@@ -301,7 +380,7 @@ describe('a config the OS refused is left alone', () => {
     // any of this code gets a verdict. What DorkOS promises is that it does not
     // replace or delete the file, which is what the message now says.
     expect(fs.readFileSync(configPath, 'utf-8')).toBe(before);
-    expect(fs.existsSync(configPath + '.bak')).toBe(false);
+    expect(backupsIn(dir)).toEqual([]);
     expect(new ConfigManager(dir, FAST_RETRIES).getDot('ui.statusBar.pins')).toEqual([
       'permission',
     ]);
@@ -321,7 +400,7 @@ describe('a config the OS refused is left alone', () => {
     fs.chmodSync(configPath, 0o600);
 
     expect(fs.readFileSync(configPath, 'utf-8')).toBe(before);
-    expect(fs.existsSync(configPath + '.bak')).toBe(false);
+    expect(backupsIn(dir)).toEqual([]);
     expect(new ConfigManager(dir, FAST_RETRIES).getDot('server.port')).toBe(5123);
   });
 
@@ -390,7 +469,7 @@ describe('a config the OS refused is left alone', () => {
 
     expect(injected.failed).toBe(1);
     expect(manager.getDot('server.port')).toBe(5199);
-    expect(fs.existsSync(configPath + '.bak')).toBe(false);
+    expect(backupsIn(dir)).toEqual([]);
   });
 
   it('never replaces a file it could not read, even one it just condemned', () => {
@@ -412,7 +491,7 @@ describe('a config the OS refused is left alone', () => {
     expect(() => new ConfigManager(dir, FAST_RETRIES)).toThrow(ConfigUnreadableError);
     vi.restoreAllMocks();
 
-    expect(fs.existsSync(configPath + '.bak')).toBe(false);
+    expect(backupsIn(dir)).toEqual([]);
     expect(fs.readFileSync(configPath, 'utf-8')).toBe(before);
   });
 
@@ -432,7 +511,7 @@ describe('a config the OS refused is left alone', () => {
     const manager = new ConfigManager(dir, FAST_RETRIES);
 
     expect(injected.failed).toBe(1);
-    expect(fs.existsSync(configPath + '.bak')).toBe(true);
+    expect(backupsIn(dir)).toHaveLength(1);
     expect(manager.validate()).toEqual({ valid: true });
   });
 
@@ -451,7 +530,7 @@ describe('a config the OS refused is left alone', () => {
     vi.restoreAllMocks();
 
     expect(fs.existsSync(configPath)).toBe(true);
-    expect(fs.existsSync(configPath + '.bak')).toBe(false);
+    expect(backupsIn(dir)).toEqual([]);
   });
 
   it('tells someone with a full disk to free up space, not to rename a file', () => {
@@ -509,7 +588,11 @@ describe('a config the OS refused is left alone', () => {
 
     expect(thrown).toBeInstanceOf(ConfigUnreadableError);
     const error = thrown as ConfigUnreadableError;
-    expect(error.message).toContain(configPath + '.bak');
+    // Guarded: `toContain(undefined)` would throw rather than fail cleanly, and
+    // "no backup was written" is itself a result worth naming.
+    const [backup] = backupsIn(dir);
+    expect(backup).toBeDefined();
+    expect(error.message).toContain(backup);
     // This is the one branch that reaches the fallback advice with a backup in
     // play: the condemning error carries no errno, so no errno branch fires.
     // The rename hatch must NOT be offered here. The person's settings are in
@@ -546,9 +629,11 @@ describe('a config the OS refused is left alone', () => {
 
     expect(thrown).toBeInstanceOf(ConfigUnreadableError);
     const message = (thrown as ConfigUnreadableError).message;
-    expect(message).toContain(configPath + '.bak');
+    const [backup] = backupsIn(dir);
+    expect(backup).toBeDefined();
+    expect(message).toContain(backup);
     expect(message).not.toContain('did not replace or delete your settings');
     // And the claim it does make is true: the old settings are in the backup.
-    expect(fs.readFileSync(configPath + '.bak', 'utf-8')).toBe(before);
+    expect(fs.readFileSync(backup!, 'utf-8')).toBe(before);
   });
 });

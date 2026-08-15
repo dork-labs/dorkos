@@ -37,7 +37,12 @@ vi.hoisted(() => {
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
-import { ConfigManager, ConfigUnreadableError } from '../config-manager.js';
+import {
+  ConfigBootError,
+  ConfigManager,
+  ConfigMigrationFailedError,
+  ConfigUnreadableError,
+} from '../config-manager.js';
 import { SERVER_VERSION } from '../../../lib/version.js';
 
 /** Reads that happen before `_migrate` enters its per-migration `try`. */
@@ -84,6 +89,21 @@ function seedUpgradeBoot(extra: Record<string, unknown> = {}): {
     })
   );
   return { dir, configPath };
+}
+
+/**
+ * Every backup of the config file in a data directory, oldest first.
+ *
+ * Matched by suffix rather than by the production module's own pattern, so a
+ * change to the naming shows up here as a real result rather than being agreed
+ * with.
+ */
+function backupsIn(dir: string): string[] {
+  return fs
+    .readdirSync(dir)
+    .filter((name) => name.endsWith('.bak'))
+    .sort()
+    .map((name) => path.join(dir, name));
 }
 
 /** An `fs` error carrying an errno code, the shape a real I/O failure has. */
@@ -143,7 +163,7 @@ describe('an upgrade boot on a machine that is struggling', () => {
     // Not byte-for-byte: `conf` merges its defaults into the file before any
     // migration runs, which is a legitimate write on an upgrade boot. The claim
     // that matters is that nothing was condemned and the settings survived.
-    expect(fs.existsSync(configPath + '.bak')).toBe(false);
+    expect(backupsIn(dir)).toEqual([]);
     expect(new ConfigManager(dir, FAST_RETRIES).get('auth').enabled).toBe(true);
   });
 
@@ -171,7 +191,7 @@ describe('an upgrade boot on a machine that is struggling', () => {
     expect(() => new ConfigManager(dir, FAST_RETRIES)).toThrow(ConfigUnreadableError);
     vi.restoreAllMocks();
 
-    expect(fs.existsSync(configPath + '.bak')).toBe(false);
+    expect(backupsIn(dir)).toEqual([]);
     expect(new ConfigManager(dir, FAST_RETRIES).getDot('ui.statusBar.pins')).toEqual([
       'permission',
     ]);
@@ -202,7 +222,7 @@ describe('an upgrade boot on a machine that is struggling', () => {
           }
           vi.restoreAllMocks();
 
-          if (fs.existsSync(configPath + '.bak')) condemned++;
+          if (backupsIn(dir).length > 0) condemned++;
           // Whatever happened, the settings are readable once the storm passes.
           expect(new ConfigManager(dir, FAST_RETRIES).get('auth').enabled).toBe(true);
         }
@@ -221,8 +241,73 @@ describe('an upgrade boot on a machine that is struggling', () => {
 
     const manager = new ConfigManager(dir, FAST_RETRIES);
 
-    expect(fs.existsSync(configPath + '.bak')).toBe(false);
+    expect(backupsIn(dir)).toEqual([]);
     expect(manager.get('auth').enabled).toBe(true);
     expect(manager.validate()).toEqual({ valid: true });
+  });
+});
+
+describe('a migration body that throws', () => {
+  /**
+   * Break the FIRST read inside `_migrate`'s per-migration `try`, and only that
+   * one, with a failure carrying no errno.
+   *
+   * That is a migration body throwing: the body calls `store.get`, the read
+   * raises, and `conf` rethrows it under its own wrapper sentence with the code
+   * and the cause stripped.
+   *
+   * Breaking exactly one read is what makes the "it does not retry" claim
+   * testable. A second attempt would read cleanly and boot, so a manager that
+   * retried would not throw at all.
+   *
+   * @param configPath - The config file being read.
+   */
+  function throwFromInsideAMigration(configPath: string): void {
+    let reads = 0;
+    const real = fs.readFileSync.bind(fs);
+    const fake = (file: unknown, options?: unknown): unknown => {
+      if (typeof file === 'string' && path.resolve(file) === configPath) {
+        if (++reads === READS_BEFORE_THE_TRY + 1) {
+          throw new Error('a migration body threw, injected by test');
+        }
+      }
+      return (real as (f: unknown, o?: unknown) => unknown)(file, options);
+    };
+    vi.spyOn(fs, 'readFileSync').mockImplementation(fake as unknown as typeof fs.readFileSync);
+  }
+
+  it('stops the boot and leaves the settings exactly where they are', () => {
+    // DOR-1221. A defect in DorkOS's own upgrade code used to be read as proof
+    // that the file was damaged: it failed the same way on all four attempts,
+    // looked deterministic, and the config was replaced with defaults. Whoever
+    // fixed the migration then had nothing left to boot into.
+    const { dir, configPath } = seedUpgradeBoot({ auth: { enabled: true } });
+    const before = fs.readFileSync(configPath, 'utf-8');
+
+    throwFromInsideAMigration(configPath);
+
+    let thrown: unknown;
+    try {
+      new ConfigManager(dir, FAST_RETRIES);
+    } catch (error) {
+      thrown = error;
+    }
+    vi.restoreAllMocks();
+
+    expect(thrown).toBeInstanceOf(ConfigMigrationFailedError);
+    const error = thrown as ConfigMigrationFailedError;
+    // It is a `ConfigBootError`, so both entry points already know to print it
+    // rather than let it escape as a stack trace.
+    expect(error).toBeInstanceOf(ConfigBootError);
+    expect(error.configPath).toBe(configPath);
+    expect(error.message).toContain('did not replace or delete your settings');
+    // And it does not send the person chasing a file problem they do not have.
+    expect(error.advice).toContain('the problem is in');
+
+    // Nothing was condemned, nothing was backed up, and the settings are still
+    // readable on the next boot — which is the whole point.
+    expect(backupsIn(dir)).toEqual([]);
+    expect(JSON.parse(fs.readFileSync(configPath, 'utf-8')).auth).toEqual(JSON.parse(before).auth);
+    expect(new ConfigManager(dir, FAST_RETRIES).get('auth').enabled).toBe(true);
   });
 });

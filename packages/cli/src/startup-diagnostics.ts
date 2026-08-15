@@ -181,7 +181,8 @@ export function diagnoseStartupError(err: unknown): Diagnostic {
         'Or reset to defaults:',
         '  dorkos config reset',
         '',
-        'A backup of your previous config may be at ~/.dork/config.json.bak',
+        'A copy of your previous settings may be in ~/.dork, named',
+        'config-<date>.json.bak',
       ].join('\n'),
     };
   }
