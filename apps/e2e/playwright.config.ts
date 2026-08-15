@@ -23,9 +23,10 @@ const REPO_ROOT = join(import.meta.dirname, '..', '..');
 /**
  * Read a port override, refusing anything that is not digits.
  *
- * Every port here ends up interpolated into a shell command, and one of them
- * (`DORKOS_MOCK_PORT`) names a directory that gets `rm -rf`'d on boot. The fixed
- * `/tmp/dorkos-test-mode-` prefix means no port-shaped value can reach anything
+ * Every port here ends up interpolated into a shell command, and two of them
+ * (`DORKOS_COCKPIT_PORT`, `DORKOS_MOCK_PORT`) name a directory that gets
+ * `rm -rf`'d on boot. The fixed `/tmp/dorkos-cockpit-` and
+ * `/tmp/dorkos-test-mode-` prefixes mean no port-shaped value can reach anything
  * that matters, but a value containing a space or a quote would end the argument
  * and start a new one — so the shape is checked rather than assumed. These are
  * operator-supplied, so this is a footgun to close, not an attack to repel; it
@@ -44,8 +45,35 @@ function port(name: string, fallback: string): string {
 }
 
 const CI = !!process.env.CI;
-const PORT = port('DORKOS_PORT', '4242');
-const VITE_PORT = port('VITE_PORT', '4241');
+
+// THE COCKPIT LEG'S OWN PORTS AND DATA DIRECTORY — never the operator's (DOR-1223).
+//
+// This leg used to boot with no `DORK_HOME` at all, so the server resolved its
+// dev default, `apps/server/.temp/.dork`. That is the SAME directory
+// `pnpm dev` and `pnpm dev:dogfood` read: every default `pnpm test:browser`
+// wrote onboarding timestamps, sidebar groups, rooms (the rooms fixture ARCHIVES
+// on cleanup, it never deletes) and agent registrations straight into the
+// operator's live dev data. The mock leg had had a throwaway, port-keyed,
+// wiped-per-boot home for a long time; this one simply never got one.
+//
+// So it gets the same treatment, and isolation stops being a recipe in README.md
+// that a run has to remember: a home under /tmp, keyed by port so two runs never
+// share (or wipe) one another's, deleted before every boot.
+//
+// AND ITS OWN ENV NAMES, which is the other half. Reading `DORKOS_PORT` looked
+// harmless and was not: the root `.env` sets `DORKOS_PORT=6242` for dev, turbo
+// passes it through, and `pnpm test:browser` wraps the run in `dotenv` — so from
+// the repo root this leg aimed itself at the DEV server's port. A suite that
+// borrows the variable naming the machine's other DorkOS cannot be isolated from
+// it by construction. `DORKOS_COCKPIT_PORT` / `DORKOS_COCKPIT_VITE_PORT` are read
+// by nothing else, so an ambient dev environment cannot move this leg; the leg
+// then passes `DORKOS_PORT` DOWN to the server it starts, which is where that
+// name belongs.
+const PORT = port('DORKOS_COCKPIT_PORT', '4245');
+const VITE_PORT = port('DORKOS_COCKPIT_VITE_PORT', '4244');
+// Throwaway data directory for the cockpit server, keyed by its port. Deleted
+// before every boot — see the leg below.
+const COCKPIT_DORK_HOME = `/tmp/dorkos-cockpit-${PORT}`;
 
 // Test-mode server port (TestModeRuntime). Separate port avoids conflicting
 // with the real server when both are running locally.
@@ -89,10 +117,12 @@ const INCLUDE_INTEGRATION = process.env.E2E_INTEGRATION === '1';
 // Never adopt a server this run did not start.
 //
 // This was `!CI`, so any local run whose ports were already answering attached
-// to whatever was there — and the default cockpit port is 4242, which is where
-// `pnpm dev:dogfood` puts the operator's own DorkOS. A default-port run then
-// drove the suite against the real `~/.dork`: real agents, real rooms, real
-// config, mutated by tests that archive and delete things.
+// to whatever was there — and the cockpit leg used to default to 4242, which is
+// where `pnpm dev:dogfood` puts the operator's own DorkOS. A default-port run
+// then drove the suite against the real `~/.dork`: real agents, real rooms, real
+// config, mutated by tests that archive and delete things. (The leg's ports have
+// since moved off both of the operator's stacks — see COCKPIT_DORK_HOME above —
+// so this is now the second lock rather than the only one.)
 //
 // It also silently voided this file's guarantees. An adopted server was started
 // by somebody else, so it has none of the env below — not the boundary that
@@ -254,13 +284,35 @@ export default defineConfig({
       // itself. Inheriting them from the developer's `.env` — which is
       // untracked — made whether those specs could pass a property of the
       // machine rather than of the code.
-      command: apiLegCommand({
-        DORKOS_TASKS_ENABLED: 'true',
-        DORKOS_RELAY_ENABLED: 'true',
-        // Keeps the fixtures' scratch dir in bounds wherever the checkout is —
-        // see REPO_ROOT.
-        DORKOS_BOUNDARY: REPO_ROOT,
-      }),
+      command: apiLegCommand(
+        {
+          DORKOS_TASKS_ENABLED: 'true',
+          DORKOS_RELAY_ENABLED: 'true',
+          // Keeps the fixtures' scratch dir in bounds wherever the checkout is —
+          // see REPO_ROOT.
+          DORKOS_BOUNDARY: REPO_ROOT,
+          // Named explicitly rather than left to the `dotenv` inside the command:
+          // dotenv does not clobber an already-set variable, so setting them here
+          // is what stops the root `.env`'s dev values (DORKOS_PORT=6242) from
+          // deciding where this leg listens and where it keeps its data.
+          DORKOS_PORT: PORT,
+          DORK_HOME: COCKPIT_DORK_HOME,
+          // The SERVER reads VITE_PORT too, and not for listening: in dev its
+          // trusted-origin list is localhost/127.0.0.1 on the API port AND on
+          // the Vite port (`getStaticLocalOrigins`), and the same value picks
+          // the origin OAuth callbacks land on. Leave it out and the server
+          // trusts 4241 while the browser is on this leg's client — measured as
+          // 12 `Origin http://localhost:4244 not allowed by CORS` refusals in a
+          // run that still went green, because the smoke spec never needed one
+          // of the refused calls. The mock leg passes it for the same reason.
+          VITE_PORT,
+        },
+        // Wiped before every boot, for the reason the mock leg is: a server that
+        // keeps yesterday's rows hands the specs that count them "expected 1,
+        // received 2" a run later, and a home that survives at all is a home some
+        // future default could point back at the operator's.
+        `rm -rf ${COCKPIT_DORK_HOME}`
+      ),
       url: `http://localhost:${PORT}/api/health`,
       name: 'Express API',
       timeout: 240_000,
@@ -269,7 +321,11 @@ export default defineConfig({
       stderr: 'pipe',
     },
     {
-      command: 'dotenv -- turbo dev --filter=@dorkos/client',
+      // Both ports named for the same reason the API leg names its own: without
+      // them the root `.env` decides which port this client binds and which
+      // server it proxies `/api` to, which on a developer machine is the dev
+      // stack rather than the leg above.
+      command: `DORKOS_PORT=${PORT} VITE_PORT=${VITE_PORT} dotenv -- turbo dev --filter=@dorkos/client`,
       url: `http://localhost:${VITE_PORT}`,
       name: 'Vite Client',
       timeout: 120_000,

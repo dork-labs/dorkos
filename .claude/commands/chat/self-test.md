@@ -157,6 +157,52 @@ done
 [ -z "$API_PORT" ] && { echo "ERROR: DorkOS server not responding. Run 'pnpm dev' first."; exit 1; }
 ```
 
+### Name the install before you drive it — and get a yes for the real one
+
+**The probe above falls through to 4242, which is the operator's installed cockpit on their real `~/.dork`.** That is the accident case, not a choice: it is what answers whenever the dev server is simply not running. This test then creates sessions, writes files, and changes settings there, and nothing it does is undone afterwards. So identify the install first — the server says so itself:
+
+```bash
+curl -s "http://localhost:$API_PORT/api/config" | python3 -c "
+import sys, json
+d = json.load(sys.stdin)
+print('port:', d.get('port'))
+print('dorkHome:', d.get('dorkHome'))
+print('version:', d.get('version'), '| dev build:', d.get('isDevMode'))
+print('workingDirectory:', d.get('workingDirectory'))
+"
+```
+
+Record `DORK_DIR` = the reported `dorkHome` (authoritative — never guess it from the port), and **put all four lines in the report header**.
+
+Then, if `dorkHome` is the operator's real home directory (`$HOME/.dork` — which is what 4242 means), **STOP and ask before driving anything**, with `AskUserQuestion`:
+
+- say which install answered: the port, the `dorkHome` path, and the version;
+- say what the run will do to it: real sessions, real turns billed to this machine's sign-in, and settings changes this test makes on purpose;
+- offer **drive this install** / **cancel** (and mention that starting `pnpm dev` and re-running lands on the dev stack instead).
+
+A yes has to be given. Never infer one from the invocation, from `mode:live`, or from the fact that the probe found something.
+
+### Snapshot the config before any write
+
+This test changes settings on purpose (model, permission mode). Take a copy of the file first, so any write is undoable:
+
+```bash
+CONFIG_SNAPSHOT="$RESULTS_DIR/$TIMESTAMP-config.json.bak"
+if [ -f "$DORK_DIR/config.json" ]; then
+  cp "$DORK_DIR/config.json" "$CONFIG_SNAPSHOT" && echo "config snapshot: $CONFIG_SNAPSHOT"
+else
+  echo "no config.json at $DORK_DIR — nothing to snapshot"
+fi
+```
+
+Name the snapshot path in the report, with the one-line restore beside it:
+
+```bash
+cp "$CONFIG_SNAPSHOT" "$DORK_DIR/config.json"   # then reload the browser tab
+```
+
+The server re-reads `config.json` on every access, so a restore takes effect without a restart; the reload is only to drop the cockpit's cached copy. **Offer that restore explicitly in the final report** — say which settings the run changed, and that the snapshot puts back the exact file, including keys the run added that were never there before (a `PATCH` cannot: writing a schema default is a stored key, not an absent one).
+
 Check server config for Pulse status:
 
 ```bash
@@ -449,6 +495,13 @@ Only after completing this research: form a concrete recommendation with file pa
 ## Observations (No Issues)
 
 [What worked well — important to preserve in future changes]
+
+## What this run left behind
+
+- **Install driven:** port [N], `dorkHome` [path], version [v]
+- **Settings changed:** [model, permission mode, anything else — or "none"]
+- **Sessions created:** [ids]
+- **Config snapshot:** `[path]` — restore with `cp [path] [dorkHome]/config.json`, then reload the tab
 
 ## Passing Verdict (if applicable)
 

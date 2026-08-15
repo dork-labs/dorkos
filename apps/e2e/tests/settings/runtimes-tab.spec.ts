@@ -1,4 +1,5 @@
 import { test, expect } from '../../fixtures';
+import type { APIRequestContext } from '@playwright/test';
 
 /**
  * Settings → Runtimes: the status board, and the two writes it owns.
@@ -68,7 +69,68 @@ const DEFAULT_RUNTIME = 'claude-code';
 /** The non-default runtime this file drives. */
 const OTHER_RUNTIME = 'codex';
 
+/**
+ * What `GET /api/config` says about the two settings this file moves.
+ *
+ * The curated read, not the raw config block: `executionDefaults` is what the
+ * Runtimes card itself renders (`describeExecutionDefaults`), so reading it here
+ * asks the same question the screen asks.
+ */
+interface ExecutionDefaultsView {
+  executionDefaults?: {
+    runtime?: string;
+    perRuntime?: { runtime: string; model: string | null }[];
+  };
+}
+
+/** The two values this file moves, as they were before it ran. */
+interface PriorDefaults {
+  /** Which runtime new conversations start on. */
+  runtime: string;
+  /**
+   * The non-default runtime's model, or `null` for "the runtime's choice".
+   *
+   * `undefined` means the server did not report that runtime at all, which is
+   * what a DISABLED runtime looks like from here (`describeExecutionDefaults`
+   * covers the registered ones). Its stored model still exists in config and is
+   * simply not visible — so the restore below leaves that key alone rather than
+   * writing a `null` it never read.
+   */
+  otherModel: string | null | undefined;
+}
+
+/**
+ * Read the two settings this file moves, so they can be put back as found.
+ *
+ * @param request - Playwright's request fixture, based at the cockpit leg.
+ */
+async function readPriorDefaults(request: APIRequestContext): Promise<PriorDefaults> {
+  const response = await request.get('/api/config');
+  expect(response.ok()).toBe(true);
+  const { executionDefaults } = (await response.json()) as ExecutionDefaultsView;
+  const other = executionDefaults?.perRuntime?.find((entry) => entry.runtime === OTHER_RUNTIME);
+  return {
+    runtime: executionDefaults?.runtime ?? DEFAULT_RUNTIME,
+    otherModel: other ? other.model : undefined,
+  };
+}
+
 test.describe('Settings — Runtimes tab @smoke', () => {
+  /**
+   * Captured once, before the first test moves anything — so the `afterEach`
+   * below restores what this machine HAD rather than what the schema says a
+   * fresh install would have. Those two agree on a leg whose `DORK_HOME` is
+   * thrown away every boot, and nowhere else: point a run at a home that
+   * persists — an operator's own install, a leg someone rewired — and the old
+   * hardcoded reset silently retyped their chosen default runtime to
+   * `claude-code` on every run. Restoring what you found costs one GET (DOR-1223).
+   */
+  let prior: PriorDefaults;
+
+  test.beforeAll(async ({ request }) => {
+    prior = await readPriorDefaults(request);
+  });
+
   test.beforeEach(async ({ basePage, settingsPage }) => {
     await basePage.goto();
     await basePage.waitForAppReady();
@@ -83,7 +145,13 @@ test.describe('Settings — Runtimes tab @smoke', () => {
   test.afterEach(async ({ request }) => {
     const restored = await request.patch('/api/config', {
       data: {
-        runtimes: { default: DEFAULT_RUNTIME, [OTHER_RUNTIME]: { defaultModel: null } },
+        runtimes: {
+          default: prior.runtime,
+          // Only when the server reported it — see `PriorDefaults.otherModel`.
+          ...(prior.otherModel !== undefined
+            ? { [OTHER_RUNTIME]: { defaultModel: prior.otherModel } }
+            : {}),
+        },
       },
     });
     expect(restored.ok()).toBe(true);

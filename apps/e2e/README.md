@@ -25,11 +25,41 @@ every run, regardless of `--project`. The legs are:
 
 | Leg                     | Default port | Env override                           |
 | ----------------------- | ------------ | -------------------------------------- |
-| Express API             | 4242         | `DORKOS_PORT`                          |
-| Vite client             | 4241         | `VITE_PORT`                            |
+| Express API             | 4245         | `DORKOS_COCKPIT_PORT`                  |
+| Vite client             | 4244         | `DORKOS_COCKPIT_VITE_PORT`             |
 | Express API (test-mode) | 4243         | `DORKOS_MOCK_PORT`                     |
 | Vite client (test-mode) | 4248         | `DORKOS_MOCK_VITE_PORT`                |
 | Marketing site          | 6244         | `DORKOS_SITE_PORT` (opt-in, see below) |
+
+Note the override names: the cockpit leg reads `DORKOS_COCKPIT_PORT`, **not**
+`DORKOS_PORT`. That is deliberate. `DORKOS_PORT` is what the root `.env` sets for
+your own dev server (6242), turbo passes it through, and `pnpm test:browser` runs
+under `dotenv` — so a leg reading it aimed itself at your dev stack from the repo
+root. The leg passes `DORKOS_PORT` down to the server it starts; nothing outside
+this suite reads the `DORKOS_COCKPIT_*` names.
+
+## Every leg keeps its own data, and throws it away
+
+Both Express legs boot with a `DORK_HOME` under `/tmp`, keyed by that leg's port,
+deleted before every boot:
+
+| Leg                     | `DORK_HOME`                    |
+| ----------------------- | ------------------------------ |
+| Express API             | `/tmp/dorkos-cockpit-<port>`   |
+| Express API (test-mode) | `/tmp/dorkos-test-mode-<port>` |
+
+So a run cannot reach your data, and cannot inherit yesterday's rows. The cockpit
+leg used to have no `DORK_HOME` of its own, which meant it resolved the server's
+dev default — `apps/server/.temp/.dork`, the same directory `pnpm dev` and
+`pnpm dev:dogfood` read — and every default run wrote onboarding timestamps,
+sidebar groups, rooms and agent registrations into live dev data (DOR-1223).
+Keying each home by port is also what lets two runs on different ports coexist:
+neither wipes the other's.
+
+A spec still has to put back anything global it changes, because within one run
+the whole suite shares these servers. "Restore what you found" means reading the
+value first, not writing the schema default back over it: those two agree on a
+freshly wiped home and nowhere else.
 
 ## The marketing-site leg is opt-in (`E2E_SITE`)
 
@@ -119,16 +149,16 @@ your machine.
 
 ## Isolated run recipe
 
-To run the cockpit suite (or one spec) on a machine whose default ports are busy
-— for example your live cockpit on 4242 — override every port and point the
-server at a throwaway `DORK_HOME`. `E2E_SITE` stays unset, so no site leg boots.
+Isolation from your DATA is not a recipe any more — every leg has its own
+throwaway `DORK_HOME` (see above). What is left is port arithmetic: to run
+alongside another run, or on a machine whose e2e ports are busy, move every leg.
+`E2E_SITE` stays unset, so no site leg boots.
 
 ```bash
 # from apps/e2e
 env -u E2E_SITE \
-  DORKOS_PORT=4252 VITE_PORT=4251 \
+  DORKOS_COCKPIT_PORT=4255 DORKOS_COCKPIT_VITE_PORT=4254 \
   DORKOS_MOCK_PORT=4253 DORKOS_MOCK_VITE_PORT=4258 \
-  DORK_HOME=/tmp/dork-e2e-iso \
   pnpm exec playwright test tests/smoke/app-loads.spec.ts --project chromium
 ```
 
@@ -136,22 +166,19 @@ Notes:
 
 - **Every run boots the mock leg, whichever spec you asked for.** The web
   servers are configured per-run, not per-project, so selecting a single cockpit
-  spec still starts the test-mode server and its Vite client. Overriding
-  `DORKOS_PORT` / `VITE_PORT` alone therefore is not an isolated run — the mock
-  leg stays on 4243/4248 and collides with any other worktree already there,
-  failing a run whose specs never touch it.
-- Override the mock ports too (`DORKOS_MOCK_PORT` / `DORKOS_MOCK_VITE_PORT`).
+  spec still starts the test-mode server and its Vite client. Moving the cockpit
+  ports alone therefore is not an isolated run — the mock leg stays on 4243/4248
+  and collides with any other worktree already there, failing a run whose specs
+  never touch it.
+- Move the mock ports too (`DORKOS_MOCK_PORT` / `DORKOS_MOCK_VITE_PORT`).
   No run adopts a server it did not start, so a leg whose port is already busy
   is a **startup error naming that port** — not, as it once was, a silent
-  attachment to whatever was answering. Fresh ports are what let this run
-  alongside a live cockpit; without them you get a loud refusal instead of a
-  quiet one. The mock leg also deletes its `DORK_HOME` on boot, and that
-  directory is keyed by `DORKOS_MOCK_PORT`, so overriding the port is also what
-  keeps two concurrent runs from wiping each other's.
-- Use a fresh `DORK_HOME` so the run never touches your real `~/.dork` data. Any
-  path works, including one inside the checkout — the API legs no longer run
-  under a file watcher, so a `DORK_HOME` the server writes to on boot can no
-  longer restart it (see "Why the API legs do not watch" below).
+  attachment to whatever was answering. Both legs key their `DORK_HOME` by port,
+  so moving the ports is also what keeps two concurrent runs from wiping each
+  other's data.
+- **Do not set `DORK_HOME` yourself.** Each leg names its own on the command line
+  it boots with, which wins over anything you export — and a `DORK_HOME` you
+  chose would be a home nothing wipes.
 - A never-onboarded `DORK_HOME` opens on the first-run wizard, which renders
   _instead of_ the app shell — so every spec would time out waiting for
   `[data-testid="app-shell"]`. `global-setup.ts` dismisses it on every API leg
@@ -171,10 +198,10 @@ watches everything the process requires, so it treats that write as a source
 change and restarts, which rewrites the file, which restarts again: a measured
 ~23 restarts in 45 seconds until the run dies.
 
-The default `DORK_HOME` (`apps/server/.temp/.dork`) hides this by accident,
-because `tsx` ignores dot-directories under its own cwd. Point `DORK_HOME`
-anywhere else and the loop is back — which is why the isolated recipe above used
-to be unrunnable. Tests never edit source, so nothing is lost by not watching.
+The server's default `DORK_HOME` (`apps/server/.temp/.dork`) hid this by
+accident, because `tsx` ignores dot-directories under its own cwd. Every leg now
+keeps its home under `/tmp` instead, so the loop would be live for all of them if
+any of them watched. Tests never edit source, so nothing is lost by not watching.
 
 - Moving the site leg to another port takes two env vars, not one.
   `DORKOS_SITE_PORT` relocates the leg, and both site specs
