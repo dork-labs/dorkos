@@ -6925,6 +6925,415 @@
         ],
         "description": "Non-null only when the BYTES were verified as that kind. A declared Content-Type never sets this."
       },
+      "RoomExportLine": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/RoomExportHeader"
+          },
+          {
+            "$ref": "#/components/schemas/RoomExportEntry"
+          },
+          {
+            "$ref": "#/components/schemas/RoomExportSummary"
+          }
+        ],
+        "discriminator": {
+          "propertyName": "type",
+          "mapping": {
+            "room-export": "#/components/schemas/RoomExportHeader",
+            "entry": "#/components/schemas/RoomExportEntry",
+            "summary": "#/components/schemas/RoomExportSummary"
+          }
+        }
+      },
+      "RoomExportHeader": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "room-export"
+            ]
+          },
+          "format": {
+            "type": "string",
+            "enum": [
+              "dorkos.room-export"
+            ]
+          },
+          "version": {
+            "type": "number",
+            "enum": [
+              1
+            ]
+          },
+          "exportedAt": {
+            "type": "string",
+            "description": "When the file was written (ISO 8601)."
+          },
+          "exportedBy": {
+            "$ref": "#/components/schemas/RoomExportAuthor"
+          },
+          "dorkosVersion": {
+            "type": "string",
+            "description": "The DorkOS version that wrote it."
+          },
+          "room": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "kind": {
+                "$ref": "#/components/schemas/RoomKind"
+              },
+              "slug": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "Channels only."
+              },
+              "title": {
+                "type": "string",
+                "minLength": 1
+              },
+              "topic": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "archived": {
+                "type": "boolean"
+              },
+              "wellKnown": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "`'team'` for the channel every install is opened with, else `null`."
+              },
+              "createdAt": {
+                "type": "string"
+              },
+              "lastActivityAt": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "kind",
+              "slug",
+              "title",
+              "topic",
+              "archived",
+              "wellKnown",
+              "createdAt",
+              "lastActivityAt"
+            ],
+            "description": "The room itself, as it stood when the file was written."
+          },
+          "members": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RoomExportMember"
+            },
+            "description": "The roster, oldest membership first."
+          },
+          "scope": {
+            "$ref": "#/components/schemas/RoomExportScope"
+          }
+        },
+        "required": [
+          "type",
+          "format",
+          "version",
+          "exportedAt",
+          "exportedBy",
+          "dorkosVersion",
+          "room",
+          "members",
+          "scope"
+        ]
+      },
+      "RoomExportAuthor": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Opaque author id (ULID), exactly as the room stored it."
+          },
+          "kind": {
+            "$ref": "#/components/schemas/AuthorKind"
+          },
+          "displayName": {
+            "type": "string",
+            "minLength": 1,
+            "description": "What this author was called at the time of export."
+          },
+          "handle": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "What you typed after an `@` to reach them, or `null` when nothing did."
+          },
+          "agentRef": {
+            "type": "string",
+            "description": "Agents only: the stable reference derived from the agent directory."
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "displayName",
+          "handle"
+        ],
+        "description": "Who asked for it."
+      },
+      "RoomExportMember": {
+        "type": "object",
+        "properties": {
+          "author": {
+            "$ref": "#/components/schemas/RoomExportAuthor"
+          },
+          "responseMode": {
+            "type": "string",
+            "enum": [
+              "always",
+              "engaged",
+              "direct-only",
+              "mention-only",
+              "silent"
+            ],
+            "description": "This member's per-room response mode."
+          },
+          "joinedAt": {
+            "type": "string",
+            "description": "When they joined."
+          },
+          "joinedSeq": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "The room's highest seq when they joined — the floor under what they can read."
+          }
+        },
+        "required": [
+          "author",
+          "responseMode",
+          "joinedAt",
+          "joinedSeq"
+        ]
+      },
+      "RoomExportScope": {
+        "type": "object",
+        "properties": {
+          "fromSeq": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "The exclusive floor: entries strictly above this are in the file. `0` means the room from its first message."
+          },
+          "joinFloorApplied": {
+            "type": "boolean",
+            "description": "Whether `fromSeq` is the exporter's own join point. `false` on the operator's export of their own room — the whole-room copy that is the exit path — and `true` for everybody else, who does not retroactively read what was said before they arrived."
+          }
+        },
+        "required": [
+          "fromSeq",
+          "joinFloorApplied"
+        ]
+      },
+      "RoomExportEntry": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "entry"
+            ]
+          },
+          "seq": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "The entry's position in the room. Ascending, no gaps."
+          },
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "kind": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RoomEntryKind"
+              },
+              {
+                "description": "`post` for somebody talking, `notice` for the room's own voice."
+              }
+            ]
+          },
+          "author": {
+            "$ref": "#/components/schemas/RoomExportAuthor"
+          },
+          "text": {
+            "type": "string"
+          },
+          "notice": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RoomNoticeCode"
+              },
+              {
+                "description": "Notices only: which of the room's standing lines this is."
+              }
+            ]
+          },
+          "subject": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RoomExportAuthor"
+              },
+              {
+                "description": "Who a notice or a moment is ABOUT, when that is not its author."
+              }
+            ]
+          },
+          "moment": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RoomMoment"
+              },
+              {
+                "description": "The milestone this post marks, if any."
+              }
+            ]
+          },
+          "mentions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RoomExportAuthor"
+            },
+            "description": "Who this message addressed, resolved once at write time and never re-parsed from the text."
+          },
+          "sessionId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The agent session that produced this, when one did."
+          },
+          "parentEntryId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The entry this answers, for a thread reply."
+          },
+          "threadRootEntryId": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The head of this entry's thread, or `null` when it is top-level."
+          },
+          "reactions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RoomExportReaction"
+            },
+            "description": "Oldest pill first. `[]` when none."
+          },
+          "attachments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RoomAttachment"
+            },
+            "description": "The files posted with this message, by reference. `[]` when none."
+          }
+        },
+        "required": [
+          "type",
+          "seq",
+          "id",
+          "createdAt",
+          "kind",
+          "author",
+          "text",
+          "mentions",
+          "sessionId",
+          "parentEntryId",
+          "threadRootEntryId",
+          "reactions",
+          "attachments"
+        ]
+      },
+      "RoomExportReaction": {
+        "type": "object",
+        "properties": {
+          "emoji": {
+            "$ref": "#/components/schemas/ReactionEmoji"
+          },
+          "firstAt": {
+            "type": "string",
+            "description": "When the first of these landed."
+          },
+          "by": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RoomExportAuthor"
+            },
+            "description": "Who reacted, in the order they did."
+          }
+        },
+        "required": [
+          "emoji",
+          "firstAt",
+          "by"
+        ]
+      },
+      "RoomExportSummary": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "summary"
+            ]
+          },
+          "entryCount": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "How many `entry` lines precede this one."
+          },
+          "firstSeq": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 1,
+            "description": "The seq of the first entry in the file, or `null` when it holds none."
+          },
+          "lastSeq": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 1,
+            "description": "The seq of the last entry in the file, or `null` when it holds none."
+          }
+        },
+        "required": [
+          "type",
+          "entryCount",
+          "firstSeq",
+          "lastSeq"
+        ]
+      },
       "PostToRoomResponse": {
         "type": "object",
         "properties": {
@@ -16038,6 +16447,66 @@
           },
           "409": {
             "description": "The room is archived",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/rooms/{id}/export": {
+      "get": {
+        "tags": [
+          "Rooms"
+        ],
+        "summary": "Export a room's whole history as a JSONL file",
+        "description": "Rooms live only in SQLite, so this is the projection that gives them what a file gives you for free: something you can grep, copy, and keep when you leave (DOR-1225). The body is `application/x-ndjson` — one JSON object per line, the same family a session transcript is in — served as a download. Three line types, always in this order: one `RoomExportHeader` (the room, its roster, who exported it and when), then one `RoomExportEntry` per entry in ascending `seq`, then one `RoomExportSummary`. Thread replies ride in the same stream as everything else, since a thread is a relation between entries rather than a room of its own; `threadRootEntryId` puts one back in its thread. **Every author id is resolved inline on the line that uses it** — the message author, everyone it mentioned, and everyone behind each reaction — so one line answers who said what to whom without a reader that holds the header. Attachments are carried by REFERENCE (id, name, size, type and URL), never as bytes. **The last line is the receipt**: a download that dies half-way is a valid JSONL file with nothing inside it saying so, so a reader checks that the final line is a `summary` and that its `entryCount` matches. **Membership gates it**, exactly as it gates `read_room_history` — \"not a member\" answers as \"no such room\", so a room id is never a capability. One deliberate difference from that tool: **the join-seq floor is not applied to the operator exporting their own room.** The floor stops a member retroactively reading what was said before they arrived, which is a rule about one participant's view; an export is the exit path, and an owner handed a copy of their own room with the first months missing has not been given their data. Everybody else exports strictly above their own `joinedSeq`, and `scope.joinFloorApplied` says which of the two this file is. Read-only: the database stays the truth and nothing reads one of these files back in.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The export, one JSON object per line",
+            "headers": {
+              "Content-Disposition": {
+                "schema": {
+                  "type": "string",
+                  "description": "Always `attachment; filename=\"room-<slug-or-id>-<YYYY-MM-DD>.jsonl\"`. Part of the contract, not a courtesy: `dorkos room export` reads the name out of it when no `--out` is given, so a client may rely on the filename being present and quoted. The date is the EXPORT's, so two exports of one room a month apart do not overwrite each other."
+                },
+                "required": true,
+                "description": "Always `attachment; filename=\"room-<slug-or-id>-<YYYY-MM-DD>.jsonl\"`. Part of the contract, not a courtesy: `dorkos room export` reads the name out of it when no `--out` is given, so a client may rely on the filename being present and quoted. The date is the EXPORT's, so two exports of one room a month apart do not overwrite each other."
+              },
+              "X-Content-Type-Options": {
+                "schema": {
+                  "type": "string",
+                  "description": "Always `nosniff` — this is a file of other people's words."
+                },
+                "required": true,
+                "description": "Always `nosniff` — this is a file of other people's words."
+              }
+            },
+            "content": {
+              "application/x-ndjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoomExportLine"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such room, or the caller may not see it (an agent sees only its own rooms)",
             "content": {
               "application/json": {
                 "schema": {

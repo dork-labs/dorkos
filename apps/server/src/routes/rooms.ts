@@ -16,9 +16,15 @@
  * @module routes/rooms
  */
 import path from 'path';
+import { pipeline, Readable } from 'node:stream';
 import { Router } from 'express';
 import multer from 'multer';
 import { ulid } from 'ulidx';
+import {
+  ROOM_EXPORT_CONTENT_TYPE,
+  roomExportFilename,
+  type RoomExportHeader,
+} from '@dorkos/shared/room-export-schemas';
 import {
   AddRoomMemberRequestSchema,
   CreateRoomRequestSchema,
@@ -164,6 +170,73 @@ router.get('/:id/entries', (req, res) => {
     });
   } catch (err) {
     sendRoomError(res, err, 'GET /:id/entries');
+  }
+});
+
+/**
+ * GET /:id/export — this room's whole history as a JSONL file (DOR-1225).
+ *
+ * **A GET, not a POST that writes a path**, and the alternative is worth naming
+ * because it is the one somebody will suggest. A room export exists to be
+ * portable, and the thing that already lives on the operator's own machine — the
+ * `dorkos` CLI — is what should decide where a file lands. A POST taking a
+ * destination would give any HTTP caller a filesystem write through the cockpit,
+ * which is a capability no room route has and none should grow for a read. So
+ * this route stays what it is: a read, gated exactly as every other room read,
+ * answering bytes. `dorkos room export` writes them down.
+ *
+ * **Streamed, one line at a time.** A room's log is never trimmed, so the body
+ * is piped from the service's generator rather than assembled first — and the
+ * header line is pulled BEFORE any HTTP header is set, because a generator's
+ * body does not run until its first `next()` and that is where a refusal
+ * surfaces. Pulling it here is what keeps a non-member's answer a clean 404
+ * instead of a truncated download.
+ *
+ * `Content-Disposition: attachment` plus `nosniff` for the same reason the
+ * attachment route carries them: this is a file of other people's words, and
+ * nothing about it should ever render as a document on the cockpit's own origin.
+ */
+router.get('/:id/export', (req, res) => {
+  try {
+    const caller = resolveCaller(res);
+    const lines = getRoomService().exportRoom(req.params.id, caller.id);
+    const first = lines.next();
+    // Checked rather than cast. The generator's contract is that its first line
+    // is the header, and this route depends on it for the filename — so a future
+    // change that stops honouring it has to fail here, loudly and before a byte
+    // is sent, rather than serve a file named after `undefined`.
+    if (first.done || first.value.type !== 'room-export') {
+      throw new Error('room export did not begin with its header');
+    }
+    const header: RoomExportHeader = first.value;
+
+    res.setHeader('Content-Type', `${ROOM_EXPORT_CONTENT_TYPE}; charset=utf-8`);
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="${roomExportFilename(header.room, header.exportedAt)}"`
+    );
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Cache-Control', 'no-store');
+
+    const body = Readable.from(
+      (function* serialize() {
+        yield `${JSON.stringify(header)}\n`;
+        for (const line of lines) yield `${JSON.stringify(line)}\n`;
+      })()
+    );
+    // `pipeline` rather than `pipe`, because the reader here is a generator over
+    // a live database cursor: a client that closes the tab mid-download must
+    // tear the source down with it, and `pipe` would leave it producing pages
+    // nobody is reading.
+    pipeline(body, res, (streamErr) => {
+      if (!streamErr) return;
+      logger.error('[rooms] export stream failed', { err: streamErr });
+      // Headers are already out, so there is no status left to send. The
+      // truncated file is the message, and the missing trailing `summary` line
+      // is how a reader tells it apart from a whole one.
+    });
+  } catch (err) {
+    sendRoomError(res, err, 'GET /:id/export');
   }
 });
 

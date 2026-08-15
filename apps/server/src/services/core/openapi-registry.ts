@@ -115,6 +115,7 @@ import {
   UpdateMembershipRequestSchema,
   UpdateRoomRequestSchema,
 } from '@dorkos/shared/room-schemas';
+import { ROOM_EXPORT_CONTENT_TYPE, RoomExportLineSchema } from '@dorkos/shared/room-export-schemas';
 import {
   ReadCursorParamsSchema,
   ReadCursorResponseSchema,
@@ -3392,6 +3393,33 @@ registry.registerPath({
       content: { 'application/json': { schema: RoomEntryListResponseSchema } },
     },
     400: roomValidationError,
+    404: roomNotFound,
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/rooms/{id}/export',
+  tags: ['Rooms'],
+  summary: "Export a room's whole history as a JSONL file",
+  description:
+    'Rooms live only in SQLite, so this is the projection that gives them what a file gives you for free: something you can grep, copy, and keep when you leave (DOR-1225). The body is `application/x-ndjson` — one JSON object per line, the same family a session transcript is in — served as a download. Three line types, always in this order: one `RoomExportHeader` (the room, its roster, who exported it and when), then one `RoomExportEntry` per entry in ascending `seq`, then one `RoomExportSummary`. Thread replies ride in the same stream as everything else, since a thread is a relation between entries rather than a room of its own; `threadRootEntryId` puts one back in its thread. **Every author id is resolved inline on the line that uses it** — the message author, everyone it mentioned, and everyone behind each reaction — so one line answers who said what to whom without a reader that holds the header. Attachments are carried by REFERENCE (id, name, size, type and URL), never as bytes. **The last line is the receipt**: a download that dies half-way is a valid JSONL file with nothing inside it saying so, so a reader checks that the final line is a `summary` and that its `entryCount` matches. **Membership gates it**, exactly as it gates `read_room_history` — "not a member" answers as "no such room", so a room id is never a capability. One deliberate difference from that tool: **the join-seq floor is not applied to the operator exporting their own room.** The floor stops a member retroactively reading what was said before they arrived, which is a rule about one participant\'s view; an export is the exit path, and an owner handed a copy of their own room with the first months missing has not been given their data. Everybody else exports strictly above their own `joinedSeq`, and `scope.joinFloorApplied` says which of the two this file is. Read-only: the database stays the truth and nothing reads one of these files back in.',
+  request: { params: RoomIdParams },
+  responses: {
+    200: {
+      description: 'The export, one JSON object per line',
+      headers: z.object({
+        'Content-Disposition': z
+          .string()
+          .describe(
+            'Always `attachment; filename="room-<slug-or-id>-<YYYY-MM-DD>.jsonl"`. Part of the contract, not a courtesy: `dorkos room export` reads the name out of it when no `--out` is given, so a client may rely on the filename being present and quoted. The date is the EXPORT\'s, so two exports of one room a month apart do not overwrite each other.'
+          ),
+        'X-Content-Type-Options': z
+          .string()
+          .describe("Always `nosniff` — this is a file of other people's words."),
+      }),
+      content: { [ROOM_EXPORT_CONTENT_TYPE]: { schema: RoomExportLineSchema } },
+    },
     404: roomNotFound,
   },
 });

@@ -71,7 +71,8 @@ and an export.**
    the `VACUUM INTO` snapshot.
 2. **An export** — a way to get the contents out as files, in a format that outlives DorkOS.
    **At the time of this decision no ledger had one**; rooms, the largest, had none, and DOR-1225
-   is landing exactly that in parallel. Recording it here as an obligation rather than an
+   was landing exactly that in parallel — it has since landed, as ADR `260815-205935`, which is
+   the first payment against this obligation. Recording it here as an obligation rather than an
    aspiration is the point, and the obligation outlives the first payment of it: a ledger that
    can only be read by the software that wrote it is a lock-in this project does not accept, so
    every ledger added after this one inherits the requirement rather than the exemption.

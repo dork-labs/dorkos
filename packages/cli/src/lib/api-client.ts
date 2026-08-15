@@ -240,6 +240,42 @@ export async function apiCall<T>(
   body?: unknown,
   headers?: Record<string, string>
 ): Promise<T> {
+  const res = await apiRequest(method, apiPath, body, headers);
+
+  // 204 No Content: nothing to parse — return undefined as T.
+  if (res.status === 204) {
+    return undefined as T;
+  }
+
+  return (await res.json()) as T;
+}
+
+/**
+ * Make an HTTP call and hand back the raw {@link Response}, unparsed.
+ *
+ * The half of {@link apiCall} that does not assume JSON: credentials, the agent
+ * identity header, unreachable-server wrapping and the {@link ApiError} mapping
+ * are all identical, and only the body is left alone. It exists for the handful
+ * of endpoints whose body is not a JSON document — a room export is JSONL, and
+ * one of these can be a room's whole history, so it is streamed to disk rather
+ * than buffered through `JSON.parse`.
+ *
+ * The response is only handed back on a 2xx: a failure is still raised as an
+ * {@link ApiError} here, so no caller has to re-implement the error mapping to
+ * get at a stream.
+ *
+ * @param method - HTTP method (e.g. `'GET'`, `'POST'`).
+ * @param apiPath - Path on the server (must start with `/`).
+ * @param body - Optional request body to JSON-encode.
+ * @param headers - Extra request headers, merged last.
+ * @returns The successful response, body untouched.
+ */
+export async function apiRequest(
+  method: string,
+  apiPath: string,
+  body?: unknown,
+  headers?: Record<string, string>
+): Promise<Response> {
   const url = `${getServerBaseUrl()}${apiPath}`;
   const keyHeaders = apiKeyHeaders();
   // Whether this request carried any bearer credential at all — ours or a
@@ -278,10 +314,5 @@ export async function apiCall<T>(
     throw new ApiError(res.status, parsed);
   }
 
-  // 204 No Content: nothing to parse — return undefined as T.
-  if (res.status === 204) {
-    return undefined as T;
-  }
-
-  return (await res.json()) as T;
+  return res;
 }

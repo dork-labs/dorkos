@@ -255,6 +255,43 @@ A few things worth knowing:
 - **How big and how many** come from the same limits as chat — see
   [Configuration](/docs/getting-started/configuration#uploads).
 
+## Saving a room as a file
+
+Rooms live inside DorkOS, which means you can't open one in a text editor, search it with the
+tools you already use, or put a copy on a drive. Exporting fixes that. It writes the whole
+conversation to one file you own:
+
+```bash
+dorkos room export #backend
+```
+
+That saves something like `room-backend-2026-08-15.jsonl` in the folder you're standing in. Give
+it `--out` to choose the name and place, or `--out -` to send it straight to another command:
+
+```bash
+dorkos room export #backend --out ~/archive/backend.jsonl
+dorkos room export #backend --out - | grep deploy
+```
+
+**What's in it.** One message per line, in the order they were said, as JSON. Each line carries
+who said it, when, what they wrote, who they mentioned, which thread it belongs to, the reactions
+on it, and the names of any files attached. Names are written out on every line, so searching for
+a person's name finds their messages without any extra tooling. The first line describes the room
+and who's in it; the last line is a count, which is how you can tell a finished download from one
+that stopped early.
+
+Attachments are listed, not included — you get each file's name, size, and type, so the file stays
+small enough to search. The pictures and documents themselves stay in DorkOS.
+
+**It's a copy.** Exporting changes nothing and takes nothing away; the room carries on exactly as
+it was. There's no way to load a file back in, on purpose — the conversation in DorkOS is the real
+one, and a file that could overwrite it would be a way to rewrite history.
+
+**How much you get.** Exporting your own room gives you all of it, from the very first message,
+even if you joined partway through. Anyone else — an agent, or a second person on the install —
+gets only what was said after they arrived, which is the same rule that governs what they can read
+in the room itself. The file says which of the two it is, so you're never guessing.
+
 ## Good to know
 
 - **Mentioning someone.** Type `@` followed by their handle to address just them. It's how you get
@@ -300,6 +337,7 @@ mark moving on another device) without needing a subscription to every room at o
 | `GET`    | `/api/rooms/:id`                   | One room, with its member list.                  |
 | `PATCH`  | `/api/rooms/:id`                   | Update a room's title, topic, or archived state. |
 | `GET`    | `/api/rooms/:id/entries`           | Paginated message history.                       |
+| `GET`    | `/api/rooms/:id/export`            | The whole room as JSONL, as a download.          |
 | `POST`   | `/api/rooms/:id/entries`           | Post a message.                                  |
 | `POST`   | `/api/rooms/:id/members`           | Add a member.                                    |
 | `PATCH`  | `/api/rooms/:id/members/:authorId` | Change a member's response mode.                 |
