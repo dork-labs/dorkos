@@ -16,10 +16,22 @@
  * crash recovery via SQLite's WAL — is the sole rollback mechanism; this module
  * creates no `.bak` files.
  *
+ * **It does take a snapshot first, which is a different thing.** The transaction
+ * covers a migration that FAILS. It does nothing about one that succeeds and is
+ * wrong — a `DROP TABLE` in the manifest of an extension update commits happily
+ * and takes the rows with it. So before the first pending migration runs against
+ * a store that already holds a schema, `snapshotBeforeExtensionMigration` writes
+ * a self-contained `VACUUM INTO` copy to `backups/` beside the database (never a
+ * file copy, for the WAL reason above). Nothing restores it automatically; it is
+ * there for a person. A snapshot that cannot be written is `BACKUP_FAILED` and
+ * the migration does not run — same rule as `dork.db` at boot (ADR
+ * 260815-200159).
+ *
  * @module services/extensions/extension-migrator
  */
 import type { StorageMigration } from '@dorkos/extension-api';
 import type BetterSqlite3 from 'better-sqlite3';
+import { snapshotBeforeExtensionMigration } from '@dorkos/db';
 import {
   openExtensionDb,
   ensureMeta,
@@ -36,11 +48,14 @@ import {
  * - `MIGRATION_FAILED` — a migration threw; the transaction rolled back, so the
  *   schema, data, and `schema_version` are unchanged. `version` names the
  *   migration that failed.
+ * - `BACKUP_FAILED` — the pre-migration snapshot could not be written, so
+ *   nothing was attempted. The database is untouched.
  */
 export type MigrationResult =
   | { ok: true; appliedThrough: number }
   | { ok: false; code: 'SCHEMA_DOWNGRADE'; message: string }
-  | { ok: false; code: 'MIGRATION_FAILED'; version: number; message: string };
+  | { ok: false; code: 'MIGRATION_FAILED'; version: number; message: string }
+  | { ok: false; code: 'BACKUP_FAILED'; message: string };
 
 /** Extract a human-readable message from an unknown thrown value. */
 function errorMessage(err: unknown): string {
@@ -51,7 +66,11 @@ function errorMessage(err: unknown): string {
  * Apply pending migrations to an already-open database. Shared core of
  * {@link runMigrations} (on-disk) and {@link dryRun} (in-memory).
  */
-function applyPending(db: BetterSqlite3.Database, migrations: StorageMigration[]): MigrationResult {
+function applyPending(
+  db: BetterSqlite3.Database,
+  migrations: StorageMigration[],
+  beforeApply?: (fromVersion: number, toVersion: number) => void
+): MigrationResult {
   ensureMeta(db);
   const applied = getSchemaVersion(db);
 
@@ -70,6 +89,18 @@ function applyPending(db: BetterSqlite3.Database, migrations: StorageMigration[]
     .sort((a, b) => a.version - b.version);
   if (pending.length === 0) {
     return { ok: true, appliedThrough: applied };
+  }
+
+  if (beforeApply) {
+    try {
+      beforeApply(applied, pending[0].version);
+    } catch (err) {
+      return {
+        ok: false,
+        code: 'BACKUP_FAILED',
+        message: `Could not snapshot this extension's database before migrating it, so nothing was migrated: ${errorMessage(err)}`,
+      };
+    }
   }
 
   // Track the version currently executing so a failure names the right one.
@@ -110,10 +141,11 @@ function applyPending(db: BetterSqlite3.Database, migrations: StorageMigration[]
 /**
  * Apply an extension's pending migrations to its `store.db`.
  *
- * Opens the database, ensures the `_dork_meta` table, and applies every
- * migration whose version exceeds the recorded `schema_version`, in ascending
- * order, inside one transaction. Refuses (without mutating) when the DB is ahead
- * of the manifest. On any migration error the transaction rolls back and the
+ * Opens the database, ensures the `_dork_meta` table, snapshots the store if it
+ * already holds a schema, and applies every migration whose version exceeds the
+ * recorded `schema_version`, in ascending order, inside one transaction. Refuses
+ * (without mutating) when the DB is ahead of the manifest, or when the snapshot
+ * cannot be written. On any migration error the transaction rolls back and the
  * database is left exactly as it was — no `.bak` files are ever created.
  *
  * @param dbPath - Absolute path to the extension's `store.db`
@@ -122,7 +154,13 @@ function applyPending(db: BetterSqlite3.Database, migrations: StorageMigration[]
 export function runMigrations(dbPath: string, migrations: StorageMigration[]): MigrationResult {
   const db = openExtensionDb(dbPath);
   try {
-    return applyPending(db, migrations);
+    return applyPending(db, migrations, (fromVersion, toVersion) => {
+      // Version 0 is a store with no schema in it yet — the extension's first
+      // install. There is nothing to snapshot, and writing one would leave every
+      // fresh install with an empty file in a backups folder.
+      if (fromVersion === 0) return;
+      snapshotBeforeExtensionMigration(db, { dbPath, toVersion });
+    });
   } finally {
     db.close();
   }

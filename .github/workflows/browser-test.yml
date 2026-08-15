@@ -130,15 +130,16 @@ jobs:
     # what guarantees output either way.
     timeout-minutes: 60
     env:
-      # Pins the server's data directory inside the checkout, on purpose.
-      # `resolveDorkHome()` (apps/server/src/lib/dork-home.ts) falls back to the
-      # runner's real `~/.dork` ONLY when NODE_ENV === 'production'; declaring
-      # development means no future change to the runner image can silently
-      # redirect the suite at a real home directory. The cockpit leg resolves to
-      # apps/server/.temp/.dork inside the ephemeral checkout; the test-mode leg
-      # sets its own throwaway DORK_HOME, port-keyed and wiped per run. The
-      # cockpit boundary needs no wiring here — playwright.config.ts scopes
-      # DORKOS_BOUNDARY to the checkout itself, wherever it lives.
+      # Belt and braces on where the server keeps data. Both Express legs now
+      # name their OWN throwaway DORK_HOME in playwright.config.ts — port-keyed,
+      # under /tmp, wiped before every boot (DOR-1223) — so nothing here resolves
+      # a default at all. This stays because `resolveDorkHome()`
+      # (apps/server/src/lib/dork-home.ts) falls back to the runner's real
+      # `~/.dork` when NODE_ENV === 'production', and declaring development means
+      # a future leg that forgets its DORK_HOME lands in the checkout rather than
+      # in a home directory. The cockpit boundary needs no wiring here —
+      # playwright.config.ts scopes DORKOS_BOUNDARY to the checkout itself,
+      # wherever it lives.
       NODE_ENV: development
       # Boot the marketing-site leg and run the two specs that target it
       # (marketplace.spec.ts, features.spec.ts). The config already defaults

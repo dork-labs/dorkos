@@ -1,5 +1,9 @@
 /**
- * Puts the first-run onboarding wizard away before any spec runs.
+ * Checks that every API leg is on a throwaway data directory, then puts the
+ * first-run onboarding wizard away — both before any spec runs.
+ *
+ * The isolation check comes first and is the reason this file may write at all:
+ * see {@link assertThrowawayHome}.
  *
  * `AppShell` renders the wizard *instead of* the cockpit, not on top of it — the
  * two are the branches of one ternary, and only the cockpit branch carries
@@ -26,6 +30,48 @@
 import { chromium, request, type FullConfig } from '@playwright/test';
 
 /**
+ * Where a leg's `DORK_HOME` is allowed to be.
+ *
+ * Both Express legs name a throwaway home under `/tmp`, keyed by port and
+ * deleted before every boot (`playwright.config.ts`). macOS resolves `/tmp` to
+ * `/private/tmp`, so both spellings are accepted — the server echoes the path it
+ * was handed, but a leg pointed at a realpath is the same directory.
+ */
+const THROWAWAY_HOME_PREFIXES = ['/tmp/dorkos-', '/private/tmp/dorkos-'];
+
+/**
+ * Refuse to run against a data directory this suite does not own.
+ *
+ * THE GUARANTEE THIS MAKES EXECUTABLE (DOR-1223). The cockpit leg used to boot
+ * with no `DORK_HOME` at all, so the server resolved its dev default —
+ * `apps/server/.temp/.dork`, the directory `pnpm dev` and `pnpm dev:dogfood`
+ * read — and every run wrote onboarding timestamps, sidebar groups, rooms and
+ * agent registrations into the operator's live data. The fix was one `DORK_HOME:`
+ * line per leg, and deleting that line again would fail NOTHING: the suite would
+ * go green while quietly editing somebody's cockpit. A guarantee no test can
+ * break is a comment, not a guarantee.
+ *
+ * So it is asserted here, from the server's own answer rather than from the
+ * config that was supposed to set it — `GET /api/config` reports the `DORK_HOME`
+ * the process actually resolved, which is the only thing that can disagree with
+ * intent. Checked per leg, before any spec runs, because the first write this
+ * file makes is the onboarding dismissal below.
+ *
+ * @param baseURL - The Vite dev server that proxies to the leg being checked.
+ * @param dorkHome - The data directory that leg reported.
+ */
+function assertThrowawayHome(baseURL: string, dorkHome: string | undefined): void {
+  if (dorkHome && THROWAWAY_HOME_PREFIXES.some((prefix) => dorkHome.startsWith(prefix))) return;
+  throw new Error(
+    `Refusing to run: the API leg behind ${baseURL} keeps its data in ${dorkHome ?? '(not reported)'}, ` +
+      `which is not a throwaway this run owns (expected a path under ${THROWAWAY_HOME_PREFIXES[0]}).\n` +
+      `That directory is somebody's real data — the installed cockpit's ~/.dork, or the dev stack's ` +
+      `apps/server/.temp/.dork — and this suite archives rooms, registers agents and rewrites config.\n` +
+      `Check that the leg still sets DORK_HOME in apps/e2e/playwright.config.ts (DOR-1223).`
+  );
+}
+
+/**
  * Mark onboarding dismissed — and the follow-up role prompt with it — on the
  * server behind one base URL.
  *
@@ -50,10 +96,13 @@ async function dismissOnboarding(baseURL: string): Promise<void> {
     if (!current.ok()) {
       throw new Error(`Could not read config at ${baseURL}: ${current.status()}`);
     }
-    const { onboarding, profile } = (await current.json()) as {
+    const { onboarding, profile, dorkHome } = (await current.json()) as {
       onboarding?: { dismissedAt?: string };
       profile?: { rolePromptDismissedAt?: string | null };
+      dorkHome?: string;
     };
+    // Before the first write, and on the same read that was already happening.
+    assertThrowawayHome(baseURL, dorkHome);
     if (onboarding?.dismissedAt && profile?.rolePromptDismissedAt) return;
 
     const now = new Date().toISOString();

@@ -218,4 +218,4 @@ await request.post(`http://localhost:${MOCK_PORT}/api/test/scenario`, {
 
 Mock tests import from `@playwright/test` directly (not fixtures) and use `ChatPage` from `pages/ChatPage.ts`. They live in `tests/chat-mock.spec.ts` and are matched by `testMatch: ['**/chat-mock.spec.ts']` in the `chromium-mock` project config.
 
-The mock Vite client runs on port 6244 (proxying to the mock server on port 4243), keeping it isolated from the real Vite client on port 6241.
+The mock Vite client runs on port 4248 (proxying to the mock server on 4243), keeping it clear of the cockpit leg's own pair (4245 API / 4244 Vite, `DORKOS_COCKPIT_PORT` / `DORKOS_COCKPIT_VITE_PORT`). Every leg keeps its data in a throwaway `DORK_HOME` under `/tmp`, keyed by its port and deleted before every boot, so no run reads or writes the dev data directory or a real `~/.dork` (DOR-1223).

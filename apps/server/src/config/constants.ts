@@ -3,6 +3,15 @@
 export const INTERVALS = {
   /** How often to run session health checks (ms). */
   HEALTH_CHECK_MS: 5 * 60 * 1000,
+  /**
+   * How often to ask whether today's database snapshot has been taken (ms).
+   *
+   * The snapshot itself is once per UTC day; this is only the tick that notices
+   * the day has turned. Hourly rather than daily so a server started at 23:50
+   * does not wait until the following evening for its first one, and so nothing
+   * here has to work out when midnight is.
+   */
+  DAILY_SNAPSHOT_CHECK_MS: 60 * 60 * 1000,
 } as const;
 
 export const FILE_LIMITS = {

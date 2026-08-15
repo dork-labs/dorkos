@@ -4473,6 +4473,19 @@
       ]
     },
     {
+      "id": "260815-200159",
+      "slug": "files-own-what-people-edit-databases-owe-a-backup",
+      "title": "Files own what a person edits, the database owns what concurrency owns, and every ledger owes a backup",
+      "status": "accepted",
+      "created": "2026-08-15",
+      "affects": [
+        "packages/db/src/backup.ts",
+        "packages/db/src/index.ts",
+        "apps/server/src/index.ts",
+        "apps/server/src/services/extensions/extension-migrator.ts"
+      ]
+    },
+    {
       "id": "260815-205935",
       "slug": "room-export-is-a-versioned-projection",
       "title": "A room export is a versioned JSONL projection, and the owner's copy ignores the join floor",

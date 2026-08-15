@@ -101,6 +101,47 @@ curl -s "http://localhost:$API_PORT/api/models" | python3 -c "import sys,json;[p
 
 Confirm `$MODEL` is in the model list. Navigate to `TEST_URL`, capture baseline console errors (the `linear-issues` extension 404 and a "Session not found" for any placeholder `?session=` id are **benign**).
 
+### 1c. Name the install before you drive it — and get a yes for the real one
+
+**The probe above falls through to 4242, the operator's installed cockpit on their real `~/.dork`** — which is what answers whenever the dev server is simply down. That is the accident case, not a choice, and this test creates two sessions and drives real tool-heavy turns in whatever it found. Ask the server which install it is:
+
+```bash
+curl -s "http://localhost:$API_PORT/api/config" > /tmp/ss-config.json
+python3 -c "
+import json
+d = json.load(open('/tmp/ss-config.json'))
+print('port:', d.get('port'))
+print('dorkHome:', d.get('dorkHome'))
+print('version:', d.get('version'), '| dev build:', d.get('isDevMode'))
+print('workingDirectory:', d.get('workingDirectory'))
+"
+DORK_DIR=$(python3 -c "import json;print(json.load(open('/tmp/ss-config.json')).get('dorkHome',''))")
+[ -n "$DORK_DIR" ] || { echo "ERROR: the server reported no dorkHome — stop here, do not write anything."; exit 1; }
+echo "DORK_DIR=$DORK_DIR"
+```
+
+`DORK_DIR` is the reported `dorkHome` — authoritative, never guessed from the port — and an empty one is a hard stop, because every path built from it below would silently become `/config.json`. Put all four lines in the report header.
+
+**Then ask for a yes — UNLESS `dorkHome` starts with `/tmp/dorkos-`**, the browser suite's own throwaway home, wiped before every boot. That prefix is the only exemption: `~/.dork` is the installed cockpit, `apps/server/.temp/.dork` is the dev stack's own data (real work lives there), and anything else is a `DORK_HOME` override, a Docker mount, or someone's copy. All of those need an explicit `AskUserQuestion` before you drive anything: name the port, the `dorkHome` and the version, say that the run creates two sessions and spends real model credit there, and offer **drive this install** / **cancel** (starting `pnpm dev` and re-running lands on the dev stack instead). Default to asking — a gate that recognises only one bad path waves every other one through. Never infer a yes from `mode:live` or from the probe having found something.
+
+### 1d. Snapshot the config before any write
+
+This test sets the model and the permission mode per session, and those are real writes. Copy the file aside first so every one of them is undoable:
+
+```bash
+[ -n "$DORK_DIR" ] || { echo "ERROR: DORK_DIR unset — refusing to snapshot or write."; exit 1; }
+CONFIG_SNAPSHOT="$RESULTS_DIR/$TIMESTAMP-config.json.bak"
+if [ -f "$DORK_DIR/config.json" ]; then
+  cp "$DORK_DIR/config.json" "$CONFIG_SNAPSHOT" && echo "config snapshot: $CONFIG_SNAPSHOT"
+else
+  echo "no config.json at $DORK_DIR — an ABSENT file is the state to restore: delete the one this run creates."
+fi
+```
+
+The guard earns its line: with `DORK_DIR` empty the test tests `[ -f "/config.json" ]`, finds nothing, prints "nothing to snapshot" and proceeds to make real writes with no way back.
+
+Report the snapshot path with its restore (`cp "$CONFIG_SNAPSHOT" "$DORK_DIR/config.json"`, then reload the tab — the server re-reads the file on every access, so no restart is needed), and **offer the restore explicitly in the final report**. The file copy is the only restore that reinstates a key the run ADDED where none existed: a `PATCH` writing a schema default stores that key, which is not the same as it being absent.
+
 ## Phase 2 — Create & configure both sessions
 
 For **each** of A (`TOPIC_A`) and B (`TOPIC_B`):
@@ -197,7 +238,7 @@ Record PASS / FAIL / BLOCKED for each, with evidence:
 
 ## Phase 7 — Write report
 
-Append a `## Summary`, a `## Findings` section (one block per issue: Observed / Expected / Evidence / Root cause file:line / Recommendation), the verification matrix, and flip `Status: IN PROGRESS` → `COMPLETE`. For any genuine bug, trace the code before writing the recommendation (see the root-cause map in the 2026-06-09 report: `interactive-handlers.ts`, `routes/sessions.ts`, `stream-tool-handlers.ts`, `session-chat-store.ts`, `use-session-id.ts`, `ToolApproval.tsx`).
+Append a `## Summary`, a `## Findings` section (one block per issue: Observed / Expected / Evidence / Root cause file:line / Recommendation), the verification matrix, a **`## What this run left behind`** block (install driven — port, `dorkHome`, version; settings changed; session ids created; the config snapshot path and its `cp` restore), and flip `Status: IN PROGRESS` → `COMPLETE`. For any genuine bug, trace the code before writing the recommendation (see the root-cause map in the 2026-06-09 report: `interactive-handlers.ts`, `routes/sessions.ts`, `stream-tool-handlers.ts`, `session-chat-store.ts`, `use-session-id.ts`, `ToolApproval.tsx`).
 
 ## Phase 8 — Re-test loop
 
