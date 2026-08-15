@@ -112,10 +112,10 @@
       "specFile": "tests/chat-mock.spec.ts",
       "feature": "chat-mock.spec.ts",
       "description": "scenario endpoint rejects unknown scenario names, renders tool call card for tool-call scenario, renders streamed text response from simple-text scenario",
-      "lastRun": "2026-08-11T04:00:18.244Z",
+      "lastRun": "2026-08-15T07:27:29.949Z",
       "lastStatus": "passed",
-      "runCount": 19,
-      "passCount": 7,
+      "runCount": 20,
+      "passCount": 8,
       "failCount": 11,
       "relatedCode": [],
       "lastModified": ""
@@ -580,10 +580,10 @@
       "specFile": "tests/chat/session-read-state.ts",
       "feature": "chat",
       "description": "reading to the end on one device takes the rule down on the other, a device opening cold lands the rule where the other one stopped",
-      "lastRun": "2026-08-11T04:00:18.244Z",
+      "lastRun": "2026-08-15T07:27:29.949Z",
       "lastStatus": "passed",
-      "runCount": 2,
-      "passCount": 2,
+      "runCount": 3,
+      "passCount": 3,
       "failCount": 0,
       "relatedCode": [],
       "lastModified": ""
@@ -592,10 +592,10 @@
       "specFile": "tests/dashboard-sidebar/now-survives-reload.ts",
       "feature": "dashboard-sidebar",
       "description": "an errored session is still in Heads up after a reload, a session waiting on a permission answer is still in Heads up after a reload, the Ask DorkBot seed still names the errored session after a reload",
-      "lastRun": "2026-08-11T04:00:18.244Z",
+      "lastRun": "2026-08-15T07:27:29.949Z",
       "lastStatus": "passed",
-      "runCount": 1,
-      "passCount": 1,
+      "runCount": 2,
+      "passCount": 2,
       "failCount": 0,
       "relatedCode": [],
       "lastModified": ""
@@ -656,10 +656,10 @@
       "specFile": "tests/dashboard-sidebar/send-lands-in-today.ts",
       "feature": "dashboard-sidebar",
       "description": "a conversation you only wrote in is still in Today after you walk away, Today is ordered by when you wrote, newest first",
-      "lastRun": "2026-08-11T16:10:25.567Z",
+      "lastRun": "2026-08-15T07:27:29.949Z",
       "lastStatus": "passed",
-      "runCount": 1,
-      "passCount": 1,
+      "runCount": 2,
+      "passCount": 2,
       "failCount": 0,
       "relatedCode": [],
       "lastModified": ""
@@ -704,10 +704,10 @@
       "specFile": "tests/chat/compaction.ts",
       "feature": "chat",
       "description": "running /compact draws the boundary, keeps the history above it, and the next turn still answers, an auto-compaction fired by context pressure says so, and survives the reload",
-      "lastRun": "2026-08-15T05:15:52.607Z",
+      "lastRun": "2026-08-15T07:27:29.949Z",
       "lastStatus": "passed",
-      "runCount": 1,
-      "passCount": 1,
+      "runCount": 2,
+      "passCount": 2,
       "failCount": 0,
       "relatedCode": [
         "apps/client/src/layers/features/chat/ui/message/CompactBoundaryRow.tsx",
@@ -728,18 +728,21 @@
         "The scenario answers 'Echo: <prompt>', so a prompt lookup needs { exact: true } or it matches the echo too and trips non-retriable strict mode.",
         "Stability-check with --repeat-each=3 --workers=1. Without --workers=1 the repeats spread across workers and race each other's resets on the shared server (measured 2/6 red, 0/6 red single-worker)."
       ]
+    },
+    "composer-escape-and-ime": {
+      "specFile": "tests/chat/composer-escape-and-ime.ts",
+      "feature": "chat",
+      "description": "two Escapes clear the rich field and one never does, Enter during an IME composition commits the candidate and sends nothing, two Escapes clear the plain field and one never does",
+      "lastRun": "2026-08-15T07:27:29.949Z",
+      "lastStatus": "passed",
+      "runCount": 1,
+      "passCount": 1,
+      "failCount": 0,
+      "relatedCode": [],
+      "lastModified": ""
     }
   },
   "runHistory": [
-    {
-      "id": "2026-08-04T09-51-37",
-      "timestamp": "2026-08-04T09:51:37.527Z",
-      "total": 1,
-      "passed": 0,
-      "failed": 1,
-      "skipped": 0,
-      "duration": 13062
-    },
     {
       "id": "2026-08-04T09-54-34",
       "timestamp": "2026-08-04T09:54:34.219Z",
@@ -1630,6 +1633,15 @@
       "failed": 0,
       "skipped": 0,
       "duration": 109921
+    },
+    {
+      "id": "2026-08-15T07-27-29",
+      "timestamp": "2026-08-15T07:27:29.949Z",
+      "total": 35,
+      "passed": 35,
+      "failed": 0,
+      "skipped": 0,
+      "duration": 194205
     }
   ]
 }
