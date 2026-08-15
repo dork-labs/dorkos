@@ -165,6 +165,18 @@ FILTERED_SPECS=(
 #     real sends, which are free and deterministic only against TestModeRuntime
 #     — on the cockpit leg each one would bill the machine's own `claude`
 #     sign-in. Same directory, same extension rule, same reason.
+#   chat/interactive-prompts.ts — the prompts a turn STOPS on: tool approvals,
+#     the batch bar, AskUserQuestion, MCP elicitation (capability rows
+#     I-01…I-04, DOR-1214). Registered into chat-mock.spec.ts because every one
+#     of its turns PARKS waiting for an answer, and that file's `POST
+#     /api/test/reset` tears down every tracked session — a parked turn on a
+#     concurrent worker would be disposed mid-click. Its scenarios exist only
+#     behind DORKOS_TEST_RUNTIME, and tests/chat/ is a cockpit-leg directory, so
+#     the extension is doing the same job it does for session-read-state.ts.
+#   chat/live-turn-visibility.ts — what a live turn shows while it runs and how
+#     Stop settles it (C-10, R-05, R-06, R-07, DOR-1214). Same registration and
+#     the same extension rule: it holds a turn open across several assertions
+#     using step barriers, which only survives on that file's sequential worker.
 #   chat/runtime-capability-parity.ts — the cockpit reading a runtime's DECLARED
 #     capability descriptors rather than Claude-shaped ones (L-10, ADR-0256).
 #     Registered into chat-mock.spec.ts because this leg is the only place a
@@ -177,6 +189,8 @@ FILTERED_SPECS=(
 REGISTERED_MODULES=(
   'chat/compaction.ts'
   'chat/composer-escape-and-ime.ts'
+  'chat/interactive-prompts.ts'
+  'chat/live-turn-visibility.ts'
   'chat/runtime-capability-parity.ts'
   'chat/session-read-state.ts'
   'dashboard-sidebar/now-survives-reload.ts'

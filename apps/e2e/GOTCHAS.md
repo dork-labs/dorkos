@@ -30,6 +30,33 @@ all of them, so the budget is never approached), and not asserting that any
 stream actually connected — "everything was fast" proves nothing if the sockets
 never opened. Count them.
 
+## `--repeat-each` needs `--workers=1` on the shared test-mode legs
+
+**`--repeat-each=N` alone does not prove stability on `chromium-mock`. It
+manufactures failures.** Playwright creates N copies of each test and schedules
+them like any other tests, and locally `workers` is unset — so repeats of ONE
+file land on SEVERAL workers at once. `test.describe.configure({ mode: 'default' })`
+serializes tests _within_ a worker and does nothing across them, so the copies
+race each other's `POST /api/test/reset`, which wipes scenarios, tracked sessions
+and projectors for everybody.
+
+Measured twice, independently, on the same day, which is how confident to be
+about it. On three untouched, long-standing `chat-mock.spec.ts` tests:
+`--repeat-each=6` → **10 of 18 failed**; the same command with `--workers=1` →
+**18 of 18 passed**. And on the compaction suite (DOR-1215): **2 of 6 red** at
+`--repeat-each=3`, **0 of 6** with `--workers=1`. The failures look like product
+bugs — an empty transcript reading "Start a conversation", a card that never
+rendered — and none of them is one.
+
+So: **`--repeat-each=N --workers=1`**, which is also what CI runs
+(`workers: CI ? 1 : undefined`). A flake hunt without `--workers=1` on these
+projects will send you after a race that only your own command created. The same
+applies to any other project on a shared leg (`chromium-connections`,
+`chromium-streams`, `chromium-team-room`, `chromium-bridge`).
+
+**And reap the ports between back-to-back local runs** — see the stale-Vite note
+at the end of this file. Two of the "failures" above were that instead.
+
 ## Timing & Waits
 
 - SSE streaming indicators have three states (`streaming`, `waiting`, `complete`) — always wait for the full lifecycle, not just `visible`
@@ -40,11 +67,87 @@ never opened. Count them.
 - Creating a new session via the UI changes the `?session=` URL param; tests that check session count must re-query after URL stabilizes
 - Settings dialog is a modal overlay — it does not change the URL, so `toHaveURL` won't help; use `waitFor({ state: 'visible' })` on the dialog locator
 
+## Sending a message
+
+- **`ChatPage.sendMessage` can silently send nothing.** It fills the composer and
+  clicks send; the composer is a CONTROLLED field, so a fill that lands before
+  the session and its agent have hydrated is reverted by the next render, and the
+  click then sends an empty box. Nothing errors. The spec times out later on
+  whatever the turn was meant to produce and reports a missing CARD rather than a
+  missing SEND. Use **`ChatPage.sendAndLand`**, which waits for the composer, for
+  the send button to appear after the fill, for the person's message, and for the
+  agent to have BEGUN answering.
+- **Waiting for the user's own message is not enough**, which is why
+  `sendAndLand` also waits for an assistant message: an optimistic user bubble
+  can be wiped when the session snapshot arrives, leaving the transcript back at
+  "Start a conversation" with no turn ever started — and a barrier that stopped
+  at the user bubble passes in exactly that case.
+- **A consequence for fixtures: every scripted scenario must SAY something before
+  it blocks.** `todo-progress` originally emitted its three task creations and
+  parked in silence, which is indistinguishable from a dropped send; it cost
+  three failures until it was given an opening line.
+- **The send button does not exist on an empty composer** — the action slot only
+  becomes "send" once there is text — so a readiness wait on it _before_ filling
+  can never pass.
+
 ## Dynamic Content
 
 - Assistant messages stream in token-by-token; never assert exact text content mid-stream — wait for the inference indicator to reach `hidden` first
 - Optimistic UI updates (e.g., message appears before server confirms) can cause stale element handles; re-locate after any mutation
 - A tool call that is already `complete` on the frame its part first mounts is never put in the DOM at all — auto-hide drops it, rather than hiding it with CSS. The mock scenarios are zero-latency and `turn_end` remounts the part as complete, so a tool-call assertion is racing a 0ms turn and will eventually lose. Turn the preference off for that test: `page.addInitScript(() => localStorage.setItem('dorkos-auto-hide-tool-calls', 'false'))`, before `goto`.
+
+## Interactive prompts (approvals, questions, elicitation)
+
+Learned while writing the DOR-1214 suites (`tests/chat/interactive-prompts.ts`,
+`tests/chat/live-turn-visibility.ts`). All of these produced a green-looking
+locator that was pointing at the wrong thing.
+
+- **Button accessible names carry their keyboard hint.** Approve's name is
+  `"Approve Enter"`, Always Allow's is `"Always Allow Shift+Enter"`, Deny's is
+  `"Deny Esc"` — a `<Kbd>` child folds into the name, and it only renders while
+  the card is ACTIVE, so the name is not stable either. `{ name: 'Approve',
+exact: true }` never matches.
+- **`/^Approve\b/` does NOT exclude "Approve All".** The word boundary sits
+  between `Approve` and the space, so it is satisfied by the exact string it
+  looks like it rules out — same for `/^Deny\b/` and "Deny All". Use a negative
+  lookahead: `/^Approve(?!\s+All)/`. Scoping the locator to the card hides this
+  today (the batch bar lives in the composer, not the transcript), which is
+  exactly why the comment claiming the guard outlived the guard.
+- **`tool-approval-decided` and `question-prompt-submitted` are TRANSIENT.** Both
+  are live in-place rows that exist only until the turn ends and the message is
+  rebuilt from history. Asserting them is a race against the turn closing (it
+  lost, twice, in three repeats). Assert the durable `approval-receipt` and its
+  `data-outcome` (`allowed` / `denied` / `expired`) instead, or assert the card
+  is simply gone.
+- **A completed tool call's RESULT needs two things**: auto-hide off
+  (`localStorage['dorkos-auto-hide-tool-calls'] = 'false'`, see Dynamic Content
+  below) _and_ an expand click — the card renders collapsed to a one-line header.
+  Wait for `inference-indicator-streaming` to be hidden before that click, or
+  Playwright refuses to click a still-reflowing element and reports it as a click
+  timeout rather than as an animation.
+- **`permission_denied` never reaches a client.** The session-event normalizer
+  maps it to `null` (it is an SDK pre-`canUseTool` denial, not an operator's), so
+  a fixture emitting it, and any assertion resting on it, is dead weight. An
+  operator's refusal reaches the transcript via `interaction_resolved`.
+- **Elicitation form fields are labelled by the schema's `description`, not its
+  `title`** — `ElicitationPrompt.tsx` uses `prop.description ?? key` and ignores
+  `title` entirely. A fixture that sets only `title` renders the raw property key.
+- **A subagent's description is on screen twice while it runs** — in its
+  transcript block and in the background task bar — so a bare `getByText` is a
+  strict-mode violation. Scope it to `[data-testid="subagent-block"]`.
+- **Subagent blocks are DROPPED, not collapsed, when the turn ends.** The rebuild
+  from history removes settled sub-agent parts the way it removes finished tool
+  calls. Assert `toHaveCount(0)`; `data-status="complete"` exists only in the
+  window before the rebuild.
+- **The todos reducer discards the id you send on a `create`** and assigns its own
+  `String(nextId++)` counter (`use-task-state.ts`), then looks an `update` up by
+  the id the event carries. A fixture whose tasks are not numbered `'1'`, `'2'`,
+  `'3'` renders fine and never advances — the updates find nothing and are
+  dropped in silence.
+- **`not.toContainText` fails when the element is absent.** An interrupted turn
+  can leave a session with no history, and the transcript then unmounts for the
+  empty state — so a negative assertion on `transcript-feed` errors with "element
+  not found" instead of passing. Use `expect(page.getByText(...)).toHaveCount(0)`.
 
 ## The live compaction row is transient — you cannot assert on it twice
 
@@ -76,22 +179,26 @@ Two ways to write it safely, both in `tests/chat/compaction.ts`:
 on that path is racy by construction. Pin the live row on the held scenario, and
 pin the durable row everywhere else.
 
-## `--repeat-each` on `chat-mock.spec.ts` needs `--workers=1`
-
-The mock server is shared mutable state and that file opts into sequential
-execution to survive it. `--repeat-each=N` does **not** inherit that: Playwright
-spreads the copies across workers, so one repeat's `POST /api/test/reset` lands
-in the middle of another's turn and both fail on assertions that name the
-feature rather than the collision (measured: 2 of 6 red at `--repeat-each=3`,
-0 of 6 with `--workers=1`).
-
-Stability-check that file with `--repeat-each=3 --workers=1`. It is also what CI
-runs (`workers: CI ? 1 : undefined`), so a green there is the honest signal.
-
 ## Known coverage gaps
 
 Worth knowing before you assume a behaviour is tested.
 
+- **A turn blocked on an approval offers no Stop, so C-10 cannot be driven for
+  that case.** The approval card REPLACES the composer, and the composer is where
+  the Stop button lives — there is no affordance to click. The runtime itself
+  handles it correctly (`interruptQuery` aborts a parked scenario and closes the
+  turn, pinned in `test-mode/__tests__/interactive-scenarios.test.ts`), so this is
+  a UI gap rather than a broken stop. `live-turn-visibility.ts` pins the current
+  behaviour instead, and will go red the day a Stop is offered there.
+- **Steering a message into a live turn (capability C-09) has no coverage,
+  because there is nothing to drive.** P4.1 landed the runtime and dispatcher
+  halves — `AgentRuntime.deliverIntoTurn` and `deliverSteer` in
+  `message-dispatcher.ts` — but `deliverSteer` has **no caller**: no HTTP route
+  reaches it, and no client control asks for it. `POST /messages` accepts
+  `disposition: 'steer'` and `resolveDisposition` degrades every one of them to
+  `queue`; every runtime including claude-code still declares
+  `supportsSteer: false`. There is no composer Steer affordance to click. This
+  needs the product half before a browser test can exist.
 - **Auto-hide of completed tool calls has no browser coverage.** `chat-mock.spec.ts` switches the preference OFF to assert the card renders, and nothing asserts what it does when it is ON — which is the shipped default, so the default path is the untested one.
 - **Relay's Mode A empty state has no coverage.** DorkOS registers a built-in `claude-code` adapter, so a running server always has one connection and always renders the tabs. Reaching the "Connect your agents to the world" state needs a server with that adapter removed.
 - **Creating a session from the roster has no coverage.** The old spec drove a "New session" control that no longer exists; session creation is exercised only against `TestModeRuntime` in `chat-mock.spec.ts`.

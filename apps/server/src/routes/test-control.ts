@@ -8,6 +8,7 @@ import type { AgentManifest, McpServerTransport } from '@dorkos/shared/mesh-sche
 import { getBoundary, validateBoundary } from '../lib/boundary.js';
 import { localDialHost } from '../lib/local-dial-host.js';
 import { env } from '../env.js';
+import { interactionGate } from '../services/runtimes/test-mode/interaction-gate.js';
 import { requestFinishTurn, scenarioStore } from '../services/runtimes/test-mode/scenario-store.js';
 import { runtimeRegistry } from '../services/core/runtime-registry.js';
 import { getRoomService, getBridgeStore, getRoomAuthors } from '../services/rooms/index.js';
@@ -52,14 +53,50 @@ testControlRouter.post('/scenario', (req, res) => {
  * `POST /api/test/finish-turn` — end every running `long-turn` at its next
  * heartbeat.
  *
- * The lever a browser test needs to decide WHEN a turn ends. Stop cannot do it:
- * `TestModeRuntime.interruptQuery` answers `false`, because there is no process
- * to signal. Without this a test has to pick a turn short enough to wait out,
- * and then races its own setup against it.
+ * A lever for ending a turn on the test's schedule WITHOUT stopping it. Stop is
+ * a different thing and now genuinely works (`interruptQuery` aborts the
+ * scenario, DOR-1214), but it ends the turn as `aborted_streaming` — which is
+ * the wrong terminal state for a test watching a queue drain into the NEXT turn.
+ * This lets the turn finish normally instead. The alternative, picking a turn
+ * short enough to wait out, races the test's own setup.
+ *
+ * Process-wide and sticky, unlike `POST /api/test/step`; see `requestFinishTurn`.
  */
 testControlRouter.post('/finish-turn', (_req, res) => {
   requestFinishTurn();
   res.json({ ok: true });
+});
+
+const stepSchema = z.object({ sessionId: z.string().uuid() });
+
+/**
+ * `POST /api/test/step` — release ONE step barrier on a session's running
+ * scenario (DOR-1214).
+ *
+ * The clock a browser test needs when what it is watching is a PROGRESSION
+ * rather than a single blocking ask: todos advancing pending → in_progress →
+ * completed, sub-agents starting and settling, a turn held open long enough for
+ * Stop to have something real to stop. The alternative is racing a paced
+ * scenario's own timers, which is how a test ends up asserting whichever frame
+ * it happened to catch on a runner slower than the author's machine.
+ *
+ * Keyed by SESSION, unlike `finish-turn`, which is process-wide and sticky.
+ * These barriers are released one at a time and often several times per test, so
+ * a global lever would let one spec advance a neighbour's scenario — and the
+ * test-mode server is shared by four concurrent Playwright projects.
+ *
+ * `released: false` (still 200) when no scenario was parked. That is a race a
+ * test can legitimately lose — the scenario may not have reached the barrier yet
+ * — so it is reported rather than raised, and callers poll.
+ */
+testControlRouter.post('/step', (req, res) => {
+  const result = stepSchema.safeParse(req.body);
+  if (!result.success) {
+    return res
+      .status(400)
+      .json({ error: 'Validation failed', details: z.flattenError(result.error) });
+  }
+  res.json({ ok: true, released: interactionGate.step(result.data.sessionId) });
 });
 
 /** What `POST /api/test/agent-token` needs to name the agent it speaks for. */

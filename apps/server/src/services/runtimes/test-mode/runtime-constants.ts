@@ -31,7 +31,12 @@ export const TEST_MODE_CAPABILITIES: RuntimeCapabilities = {
   supportsCostTracking: false,
   // Test-mode uses approval events to drive deterministic scenario scripts.
   supportsToolApproval: true,
-  supportsQuestionPrompt: false,
+  // True since DOR-1214: the `question-prompt` scenario emits a real
+  // `question_prompt` and PARKS on the answer, which `submitAnswers` delivers.
+  // It was `false` while `submitAnswers` was a stub returning `false`, and that
+  // was the honest declaration then — a runtime must not claim an interaction it
+  // cannot complete. Now it can, so it says so.
+  supportsQuestionPrompt: true,
   // Capability-gated: asClaudePluginTransport() returns null for this runtime.
   supportsPlugins: false,
   // `false` while the contract is types only (spec `persistent-session-runtime`
@@ -97,6 +102,21 @@ export const TEST_MODE_CAPABILITIES: RuntimeCapabilities = {
     /**
      * Scenario keys served by the built-in `scenario-store`. Keys here MUST
      * match `BUILT_IN_SCENARIOS` entries — do not invent names.
+     *
+     * This is the ADVERTISED list, not the whole registry. The `demo-*`,
+     * `q3-*`, `long-turn` and interactive (DOR-1214) families are all served and
+     * all deliberately absent: each is a fixture a specific harness names
+     * explicitly via `POST /api/test/scenario`, never something a reader picks
+     * from a list.
+     *
+     * **The test for adding one is whether a chooser could be left stranded by
+     * it, not which family it belongs to.** A scenario that BLOCKS — parked on
+     * an approval, an answer, or a step barrier only its own test releases —
+     * must stay out: offered as a general-purpose choice it would hang whoever
+     * picked it, with no affordance in the list to say so. A scenario that runs
+     * to completion on its own is safe to advertise on its merits, whatever file
+     * it lives in. So a new self-contained scenario may be added here; a new
+     * gated one may not.
      */
     testModeScenarios: [
       'simple-text',

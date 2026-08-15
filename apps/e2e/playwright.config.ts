@@ -400,6 +400,13 @@ export default defineConfig({
         // It drives a send and flips a server-global preference, so it must
         // never reach this leg (DOR-948).
         '**/chat/composer-escape-and-ime*',
+        // Two more of the same shape (DOR-1214). Both drive turns that PARK on
+        // an operator answer or a step barrier, and both depend on the
+        // interactive scenarios that exist only under `DORKOS_TEST_RUNTIME`. On
+        // this leg they would neither find their scenario nor be free: every
+        // send would start a real, billable claude-code turn.
+        '**/chat/interactive-prompts*',
+        '**/chat/live-turn-visibility*',
         // And again: the compaction suite (L-04, DOR-1215) drives three turns
         // and a `/compact` per run, so reaching this leg would bill the
         // machine's own `claude` sign-in for every one of them.

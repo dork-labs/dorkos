@@ -1,6 +1,6 @@
 # Chat Capabilities — Master List
 
-**Status:** Living (created 2026-08-13; §6 states re-audited 2026-08-14 after the chat-architecture landing run — PRs #1005–#1015, DOR-773/1201–1209; L-04/L-05/M-05/M-06 re-audited 2026-08-15 in DOR-1215, which closed the compaction gap and corrected two rows that named gaps that were not there). First inventory of everything a user should be able to do in DorkOS chat, across all four chat surfaces, with the current test coverage for each. This is the contract our chat tests should check against. When a capability ships, it gets a row here; when a row has no coverage, that is a named gap, not an unknown one.
+**Status:** Living (created 2026-08-13; §6 states re-audited 2026-08-14 after the chat-architecture landing run — PRs #1005–#1015, DOR-773/1201–1209; re-audited again 2026-08-15 across the DOR-1214…1218 wave, which closed every one of §9's first five gaps: L-04/L-05/M-05/M-06 in DOR-1215 (the compaction gap, and two rows that named gaps that were not there), and I-01…I-04, C-10, R-05, R-06, R-07 in DOR-1214, which gave the test-mode runtime an interactive half and put them under deterministic Playwright coverage). First inventory of everything a user should be able to do in DorkOS chat, across all four chat surfaces, with the current test coverage for each. This is the contract our chat tests should check against. When a capability ships, it gets a row here; when a row has no coverage, that is a named gap, not an unknown one.
 
 Coverage legend — where each capability is verified today:
 
@@ -30,8 +30,12 @@ A capability is only "done" when it behaves correctly on the surface(s) it appli
 | C-06 | Attach files                                                                       | rooms    | U, E                    |
 | C-07 | Queue a message while the agent is working ("Compose next"); it drains on turn end | session  | U, E, S                 |
 | C-08 | Edit or cancel a queued message before it sends                                    | session  | U, E                    |
-| C-09 | Steer a message **into** a live turn (`deliverIntoTurn`)                           | session  | U                       |
-| C-10 | Stop a running turn; Stop reaches a still-starting agent                           | session  | U                       |
+| C-09 | Steer a message **into** a live turn (`deliverIntoTurn`)                           | session  | U only — see note       |
+| C-10 | Stop a running turn; Stop reaches a still-starting agent                           | session  | U, E                    |
+
+**C-09 is not a coverage gap — it is a missing product half, and the row says `U only` for that reason.** The runtime and dispatcher halves landed with P4.1 (`AgentRuntime.deliverIntoTurn`, `deliverSteer` in `message-dispatcher.ts`), and both are unit-tested. Nothing reaches them: `deliverSteer` has **no caller**, no HTTP route exposes it, `resolveDisposition` degrades every `disposition: 'steer'` on `POST /messages` back to `queue`, and every runtime — claude-code included — still declares `supportsSteer: false`. The composer affordance from DOR-1198 never landed. So there is no user-facing steer to drive, and no e2e can exist until there is (DOR-1214 audit, 2026-08-15).
+
+**C-10's e2e covers the running-turn case only.** A turn BLOCKED on an approval offers no Stop at all — the approval card replaces the composer, which is where the Stop button lives. The runtime handles that interrupt correctly (pinned in `test-mode/__tests__/interactive-scenarios.test.ts`); the UI simply never asks it to.
 
 ## 2. Receiving & rendering
 
@@ -41,9 +45,9 @@ A capability is only "done" when it behaves correctly on the surface(s) it appli
 | R-02 | Markdown: headings, lists, tables, links                                  | all      | S                                      |
 | R-03 | Code blocks: highlighting, copy button, HTML shown as code not injected   | session  | E, S                                   |
 | R-04 | Tool-call cards: visible, ordered, expand/collapse                        | session  | E, S                                   |
-| R-05 | Subagent blocks appear while running, clear when done                     | session  | S                                      |
-| R-06 | Todos/tasks pill: counts and statuses advance with TodoWrite              | session  | S                                      |
-| R-07 | Background task bar for async agents                                      | session  | —                                      |
+| R-05 | Subagent blocks appear while running, clear when done                     | session  | E, S                                   |
+| R-06 | Todos/tasks pill: counts and statuses advance with TodoWrite              | session  | E, S                                   |
+| R-07 | Background task bar for async agents                                      | session  | E                                      |
 | R-08 | Reactions on room entries                                                 | rooms    | E                                      |
 | R-09 | Agent stall/silence notice in rooms                                       | rooms    | U                                      |
 | R-10 | Error states: failed send, retry                                          | session  | E                                      |
@@ -52,15 +56,15 @@ A capability is only "done" when it behaves correctly on the surface(s) it appli
 
 ## 3. Interactive prompts (the agent asks you something)
 
-| ID   | Capability                                                                                     | Surfaces | Coverage       |
-| ---- | ---------------------------------------------------------------------------------------------- | -------- | -------------- |
-| I-01 | Tool approval card renders; Approve runs the tool; Deny refuses it                             | session  | U, S           |
-| I-02 | Batch approval bar for multiple pending tools                                                  | session  | —              |
-| I-03 | AskUserQuestion prompt renders; answer is delivered                                            | session  | U (partial), S |
-| I-04 | Elicitation prompt (MCP)                                                                       | session  | —              |
-| I-05 | Pending prompts survive switch-away-and-back and hard refresh (snapshot `pendingInteractions`) | session  | U, S           |
-| I-06 | Approval answered outside DorkOS (e.g. OpenCode CLI) shows the real outcome                    | session  | U              |
-| I-07 | Approval timeout (~10-min auto-deny) is visible and honest                                     | session  | U              |
+| ID   | Capability                                                                                     | Surfaces | Coverage |
+| ---- | ---------------------------------------------------------------------------------------------- | -------- | -------- |
+| I-01 | Tool approval card renders; Approve runs the tool; Deny refuses it                             | session  | U, E, S  |
+| I-02 | Batch approval bar for multiple pending tools                                                  | session  | U, E     |
+| I-03 | AskUserQuestion prompt renders; answer is delivered                                            | session  | U, E, S  |
+| I-04 | Elicitation prompt (MCP)                                                                       | session  | U, E     |
+| I-05 | Pending prompts survive switch-away-and-back and hard refresh (snapshot `pendingInteractions`) | session  | U, S     |
+| I-06 | Approval answered outside DorkOS (e.g. OpenCode CLI) shows the real outcome                    | session  | U        |
+| I-07 | Approval timeout (~10-min auto-deny) is visible and honest                                     | session  | U        |
 
 ## 4. Session lifecycle & context
 
@@ -163,9 +167,9 @@ Ranked by user pain if broken:
 
 1. ~~**Compaction end-to-end (L-04)**~~ — **CLOSED 2026-08-15 (DOR-1215)**, and it was not only untested: the boundary rendered NOWHERE. The live turn dropped `compact_boundary` (missing from the client store's `TURN_EVENT_TYPES`, so the shipped `foldCompactBoundary`/`CompactBoundaryRow` were unreachable), and the event-log history fold dropped it again, so a log-backed runtime lost it permanently — claude-code recovered only because its boundary also lives in JSONL. The runtime that actually gains from the fold is **opencode**: it is the only other adapter that emits `compact_boundary` (`opencode/event-mapper.ts`), and only on its EventLog fallback, since its history normally comes from the sidecar. **Codex gains nothing** — it declares `commandIntents.compact.supported: false` and emits no boundary anywhere, so it is `logBackedHistory: true` with nothing to fold. Every unit test around it passed throughout, each proving its own link. Now pinned by `apps/e2e/tests/chat/compaction.ts` (both triggers, live + reload + the turn after). Still open underneath it: compaction while a message is queued, mid-multi-turn, in a room-bound session, and on opencode (not codex, which cannot compact). Two named limits ride the fix — the turn AFTER a compaction is only proven to answer, not to have the right context (test-mode echoes, so no test-mode assertion can prove context), and a mid-turn boundary reconstructs above the text that preceded it (`reconstructHistoryFromEvents — mixed turn` pins that shape).
 2. ~~**Threads (M-05, M-06)**~~ — **was never a gap; this row was wrong.** `apps/e2e/tests/rooms/room-entry-actions.spec.ts` has covered threads since 2026-07-30/31 (#641, #654, #655): reply lands in the panel, replies stay out of the main timeline, the reply row opens the thread, keyboard crosses the panel, unread arrivals wear the accent, the `?thread=` address restores it, and the phone push-surface. The 2026-08-14 re-audit missed them. The one real hole — the deep link restoring FOCUS, the second half of M-06 — was closed in DOR-1215.
-3. **Approve/Deny + AskUserQuestion in e2e (I-01…I-04)** — only the live self-test sees them; nothing deterministic pins them.
-4. **Steering + stop (C-09, C-10)** — server-tested only; never exercised through the UI.
-5. **Subagents, todos pill, background task bar in e2e (R-05, R-06, R-07)** — dev-simulator scenarios exist but aren't wired into Playwright.
+3. ~~**Approve/Deny + AskUserQuestion in e2e (I-01…I-04)**~~ — **CLOSED by DOR-1214** (2026-08-15). `apps/e2e/tests/chat/interactive-prompts.ts` drives all four deterministically against the test-mode runtime, including the MCP elicitation prompt that had no coverage at all. What made it possible was giving the test-mode runtime an interactive half: scenarios that genuinely PARK until the real product route (`/approve`, `/deny`, `/submit-answers`, `/submit-elicitation`) delivers an answer, so each branch is distinguishable in the transcript rather than only on the card.
+4. **Stop is CLOSED; steering (C-09) is not a test gap at all** — **DOR-1214** (2026-08-15). C-10's running-turn case is pinned by `apps/e2e/tests/chat/live-turn-visibility.ts`, against a scenario with no self-ending path so the assertion is about Stop rather than about elapsed time. Two things remain, both product-side rather than test-side: a turn blocked on an approval offers no Stop affordance, and C-09 has no user-facing steer to drive at all (see the note under §1).
+5. ~~**Subagents, todos pill, background task bar in e2e (R-05, R-06, R-07)**~~ — **CLOSED by DOR-1214** (2026-08-15). All three are in `live-turn-visibility.ts`. Each is a claim about a MOMENT — "visible WHILE the work runs" — which no pre-existing scenario could hold open, so the new scenarios park on a step barrier the test releases (`POST /api/test/step`) instead of racing a paced scenario's own clock.
 6. **Cross-runtime chat parity at the e2e layer (L-10 beyond unit conformance)**.
 7. **Fork/resume (L-05)** and **agent etiquette (M-04)**. M-04 has no automated signal at all. L-05 does have signal, but weaker than it looks: `session-switcher.spec.ts` stubs `POST /:id/fork` with `page.route` and asserts only that `⇧↵` posts to the right URL, so nothing anywhere proves a fork is actually created. It cannot, deterministically, until `TestModeRuntime.forkSession` stops returning `null` (codex returns `null` too; only claude-code and opencode implement it). Also UI-dead: the server, shared schema and SDK all support `upToMessageId`, and all **three** client call sites — `SessionSwitcher.tsx`, `agent-hub/tabs/SessionsTab.tsx`, `session-list/EmbedSidebar.tsx` — pass `undefined` for the opts, so "branch from message N" exists everywhere except where a person could ask for it.
 8. **Agent context comprehension (X-07, X-08)** — X-01…X-06 now have credentialed probes in the `rooms` eval suite (DOR-1217), so comprehension has a measurable signal for the first time; the two that remain need a bridged room and a compaction the harness cannot reach yet (§7).

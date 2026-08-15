@@ -112,10 +112,10 @@
       "specFile": "tests/chat-mock.spec.ts",
       "feature": "chat-mock.spec.ts",
       "description": "scenario endpoint rejects unknown scenario names, renders tool call card for tool-call scenario, renders streamed text response from simple-text scenario",
-      "lastRun": "2026-08-11T04:00:18.244Z",
+      "lastRun": "2026-08-15T15:13:46.184Z",
       "lastStatus": "passed",
-      "runCount": 19,
-      "passCount": 7,
+      "runCount": 20,
+      "passCount": 8,
       "failCount": 11,
       "relatedCode": [],
       "lastModified": ""
@@ -580,10 +580,10 @@
       "specFile": "tests/chat/session-read-state.ts",
       "feature": "chat",
       "description": "reading to the end on one device takes the rule down on the other, a device opening cold lands the rule where the other one stopped",
-      "lastRun": "2026-08-11T04:00:18.244Z",
+      "lastRun": "2026-08-15T15:13:46.184Z",
       "lastStatus": "passed",
-      "runCount": 2,
-      "passCount": 2,
+      "runCount": 3,
+      "passCount": 3,
       "failCount": 0,
       "relatedCode": [],
       "lastModified": ""
@@ -592,10 +592,10 @@
       "specFile": "tests/dashboard-sidebar/now-survives-reload.ts",
       "feature": "dashboard-sidebar",
       "description": "an errored session is still in Heads up after a reload, a session waiting on a permission answer is still in Heads up after a reload, the Ask DorkBot seed still names the errored session after a reload",
-      "lastRun": "2026-08-11T04:00:18.244Z",
+      "lastRun": "2026-08-15T15:13:46.184Z",
       "lastStatus": "passed",
-      "runCount": 1,
-      "passCount": 1,
+      "runCount": 2,
+      "passCount": 2,
       "failCount": 0,
       "relatedCode": [],
       "lastModified": ""
@@ -656,10 +656,10 @@
       "specFile": "tests/dashboard-sidebar/send-lands-in-today.ts",
       "feature": "dashboard-sidebar",
       "description": "a conversation you only wrote in is still in Today after you walk away, Today is ordered by when you wrote, newest first",
-      "lastRun": "2026-08-11T16:10:25.567Z",
+      "lastRun": "2026-08-15T15:13:46.184Z",
       "lastStatus": "passed",
-      "runCount": 1,
-      "passCount": 1,
+      "runCount": 2,
+      "passCount": 2,
       "failCount": 0,
       "relatedCode": [],
       "lastModified": ""
@@ -759,10 +759,10 @@
       "specFile": "tests/chat/compaction.ts",
       "feature": "chat",
       "description": "running /compact draws the boundary, keeps the history above it, and the next turn still answers, an auto-compaction fired by context pressure says so, and survives the reload",
-      "lastRun": "2026-08-15T07:27:29.949Z",
+      "lastRun": "2026-08-15T15:13:46.184Z",
       "lastStatus": "passed",
-      "runCount": 2,
-      "passCount": 2,
+      "runCount": 3,
+      "passCount": 3,
       "failCount": 0,
       "relatedCode": [
         "apps/client/src/layers/features/chat/ui/message/CompactBoundaryRow.tsx",
@@ -788,7 +788,77 @@
       "specFile": "tests/chat/composer-escape-and-ime.ts",
       "feature": "chat",
       "description": "two Escapes clear the rich field and one never does, Enter during an IME composition commits the candidate and sends nothing, two Escapes clear the plain field and one never does",
-      "lastRun": "2026-08-15T07:27:29.949Z",
+      "lastRun": "2026-08-15T15:13:46.184Z",
+      "lastStatus": "passed",
+      "runCount": 2,
+      "passCount": 2,
+      "failCount": 0,
+      "relatedCode": [],
+      "lastModified": ""
+    },
+    "interactive-prompts": {
+      "specFile": "tests/chat/interactive-prompts.ts",
+      "feature": "chat",
+      "description": "Tool approval card + Approve/Deny outcomes (I-01), batch approval bar (I-02), AskUserQuestion delivery (I-03), MCP elicitation (I-04) — driven against the test-mode runtime's interactive scenarios.",
+      "lastRun": "2026-08-15T15:13:46.184Z",
+      "lastStatus": "passed",
+      "runCount": 1,
+      "passCount": 1,
+      "failCount": 0,
+      "relatedCode": [
+        "apps/server/src/services/runtimes/test-mode/interactive-scenarios.ts",
+        "apps/server/src/services/runtimes/test-mode/interaction-gate.ts",
+        "apps/client/src/layers/features/chat/ui/tools/ToolApproval.tsx",
+        "apps/client/src/layers/features/chat/ui/tools/ApprovalReceipt.tsx",
+        "apps/client/src/layers/features/chat/ui/tools/BatchApprovalBar.tsx",
+        "apps/client/src/layers/features/chat/ui/tools/QuestionPrompt.tsx",
+        "apps/client/src/layers/features/chat/ui/tools/ElicitationPrompt.tsx"
+      ],
+      "lastModified": "",
+      "explorationNotes": [
+        "Registered INTO chat-mock.spec.ts (not a *.spec.ts): the test-mode leg is shared mutable state and POST /api/test/reset wipes sessions globally, so a parked turn on a concurrent worker gets torn down mid-click. The .ts extension also keeps it off the cockpit leg, where every send would be a billable claude-code turn.",
+        "Scenario is bound PER SESSION (POST /api/test/scenario with a sessionId), never as the server default: several scenarios park on a step barrier only their own test releases, and four Playwright projects share this leg — as the default, one would hang a neighbour's turn.",
+        "Bind AFTER the app settles on a session id (poll the ?session= URL param), not before. Navigating straight to a self-minted id raced the route loader: it re-minted after the send, dropping the optimistic message and leaving the transcript at 'Start a conversation' with the scenario bound to a dead id.",
+        "Buttons carry their keyboard hint in the accessible name ('Approve Enter', 'Deny Esc', 'Always Allow Shift+Enter'), and the hint only renders while the card is active. Anchor with /^Approve\\b/ — exact never matches, and a loose /approve/i also hits the batch bar's 'Approve All'.",
+        "Assert the DURABLE approval-receipt (data-outcome allowed/denied), not the transient tool-approval-decided or question-prompt-submitted rows: those are replaced when the turn ends and the message is rebuilt from history.",
+        "Every assertion names a branch the scenario only reaches on that answer (APPROVED-BRANCH / DENIED-BRANCH / ANSWER-RECEIVED: <choice> / ELICITATION-ACCEPTED: <value>), so 'the card went away' can never pass for 'the answer was delivered'.",
+        "Stability: --repeat-each=3 --workers=1, 36/36. WITHOUT --workers=1 repeats land on parallel workers and race the shared /api/test/reset — that alone fails long-standing untouched tests 10/18."
+      ]
+    },
+    "live-turn-visibility": {
+      "specFile": "tests/chat/live-turn-visibility.ts",
+      "feature": "chat",
+      "description": "Stop ends a running turn and the UI settles honestly (C-10), subagent blocks appear and clear (R-05), the todos pill advances (R-06), the background task bar (R-07).",
+      "lastRun": "2026-08-15T15:13:46.184Z",
+      "lastStatus": "passed",
+      "runCount": 1,
+      "passCount": 1,
+      "failCount": 0,
+      "relatedCode": [
+        "apps/server/src/services/runtimes/test-mode/interactive-scenarios.ts",
+        "apps/server/src/services/runtimes/test-mode/interaction-gate.ts",
+        "apps/client/src/layers/features/composer/ui/InputActionButton.tsx",
+        "apps/client/src/layers/features/chat/ui/message/SubagentBlock.tsx",
+        "apps/client/src/layers/features/chat/ui/tasks/TaskProgressHeader.tsx",
+        "apps/client/src/layers/features/chat/ui/tasks/BackgroundTaskBar.tsx"
+      ],
+      "lastModified": "",
+      "explorationNotes": [
+        "These rows are all about a MOMENT, and every pre-existing scenario closes that window in the same pass that opens it. Scenarios here park on POST /api/test/step barriers, so the running window is held open for as long as the assertions need on any machine.",
+        "releaseStep POLLS the step route: it answers released:false until the scenario has actually reached the barrier, and firing a step blind drops it, leaving the turn waiting on a barrier nobody releases again.",
+        "The Stop case uses a scenario with NO self-ending path, so 'the turn stopped' is a claim about Stop rather than about elapsed time; its text past the barrier is unreachable unless the turn kept running.",
+        "A turn BLOCKED on an approval offers no Stop at all — the card replaces the composer. The runtime handles the interrupt correctly (unit-pinned); the UI has no affordance, so the spec pins that instead. See GOTCHAS.",
+        "Subagent blocks are DROPPED on settle, not collapsed — assert toHaveCount(0); data-status='complete' exists only briefly before the history rebuild. And a subagent's description is on screen twice while running (block + task bar), so scope getByText to the block.",
+        "The todos fixture must number tasks '1','2','3': the client's reducer discards the id on a create and assigns its own counter, so updates with any other id are silently dropped and the count never moves.",
+        "Negative assertions use toHaveCount(0), not not.toContainText: an interrupted turn can leave no history, the transcript unmounts for the empty state, and not.toContainText then errors on a missing element.",
+        "Stability: --repeat-each=3 --workers=1, 36/36 across both modules; full chromium-mock project 45/45."
+      ]
+    },
+    "runtime-capability-parity": {
+      "specFile": "tests/chat/runtime-capability-parity.ts",
+      "feature": "chat",
+      "description": "the permission control names a mode only THIS runtime declares, a runtime that cannot track cost shows no cost, rather than zero",
+      "lastRun": "2026-08-15T15:13:46.184Z",
       "lastStatus": "passed",
       "runCount": 1,
       "passCount": 1,
@@ -798,15 +868,6 @@
     }
   },
   "runHistory": [
-    {
-      "id": "2026-08-04T09-49-12",
-      "timestamp": "2026-08-04T09:49:12.478Z",
-      "total": 1,
-      "passed": 0,
-      "failed": 1,
-      "skipped": 0,
-      "duration": 43001
-    },
     {
       "id": "2026-08-04T09-51-07",
       "timestamp": "2026-08-04T09:51:07.919Z",
@@ -1697,6 +1758,15 @@
       "failed": 0,
       "skipped": 0,
       "duration": 57574
+    },
+    {
+      "id": "2026-08-15T15-13-46",
+      "timestamp": "2026-08-15T15:13:46.184Z",
+      "total": 49,
+      "passed": 49,
+      "failed": 0,
+      "skipped": 0,
+      "duration": 163408
     }
   ]
 }
