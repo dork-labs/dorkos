@@ -181,7 +181,10 @@ async function loadConfig(
  */
 export function configFailureCheck(err: unknown, dorkHome: string): CheckResult {
   return {
-    label: 'Your settings could not be read',
+    // "Used", not "read": the same row now covers a config DorkOS refused to
+    // update as well as one the operating system would not let it open, and
+    // both leave the file where the person left it.
+    label: 'Your settings could not be used',
     status: 'fail',
     detail: describeConfigFailure(err),
     fix:

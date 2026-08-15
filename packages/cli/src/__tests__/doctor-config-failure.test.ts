@@ -51,7 +51,28 @@ describe('configFailureCheck', () => {
     // `runDoctor` exits 1 when any check fails, so this status IS the exit code.
     const check = configFailureCheck(unreadableError('advice'), dorkHome);
     expect(check.status).toBe('fail');
-    expect(check.label).toBe('Your settings could not be read');
+    // Covers both refusals: a file the OS would not open, and one DorkOS's own
+    // migration could not update (DOR-1221).
+    expect(check.label).toBe('Your settings could not be used');
+  });
+
+  it('reports a failed migration the same way, without blaming the file', () => {
+    const cause = new Error(
+      'Something went wrong during the migration! Cannot read properties of undefined'
+    );
+    const error = new Error(
+      'DorkOS could not update your settings to this version, so it stopped\nrather than replacing them.',
+      { cause }
+    ) as Error & { advice: string };
+    error.name = 'ConfigMigrationFailedError';
+    error.advice = 'Nothing you can change in that file will help.';
+
+    const check = configFailureCheck(error, dorkHome);
+
+    expect(check.status).toBe('fail');
+    expect(check.fix).toContain('did not replace or delete the file');
+    expect(check.fix).toContain('Nothing you can change in that file will help.');
+    expect(describeConfigFailure(error)).toContain('Something went wrong during the migration!');
   });
 
   it('says the file was not replaced or deleted, and names it', () => {

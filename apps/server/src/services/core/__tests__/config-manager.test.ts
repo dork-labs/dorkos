@@ -94,6 +94,20 @@ const RUNTIMES_DEFAULTS = {
   },
 };
 
+/**
+ * Whether a config file in this directory has been backed up and replaced.
+ *
+ * Backups are timestamped and rotated (DOR-1221), so there is no one name to
+ * look for. Matched by suffix rather than by the production module's own
+ * pattern, so a change to the naming shows up here as a result rather than
+ * being agreed with.
+ *
+ * @param dir - The data directory holding `config.json`.
+ */
+function wasBackedUp(dir: string): boolean {
+  return fs.readdirSync(dir).some((name) => name.endsWith('.bak'));
+}
+
 /** Minimal stand-in for the `conf` store used by migration bodies. */
 function createMockStore(initial: Record<string, unknown>) {
   const data: Record<string, unknown> = { ...initial };
@@ -246,9 +260,8 @@ describe('ConfigManager', () => {
 
     // Should recover and create backup
     const configManager2 = initConfigManager(testDir);
-    const backupPath = configPath + '.bak';
 
-    expect(fs.existsSync(backupPath)).toBe(true);
+    expect(wasBackedUp(testDir)).toBe(true);
     expect(configManager2.get('server').port).toBe(4242); // Reset to defaults
   });
 
@@ -3358,9 +3371,9 @@ describe('a populated pre-redesign sidebar through the real conf load path', () 
   }
 
   it('is not condemned — no backup is written and the file is not replaced', () => {
-    const { dir, configPath } = seedPreRedesign();
+    const { dir } = seedPreRedesign();
     new ConfigManager(dir);
-    expect(fs.existsSync(configPath + '.bak')).toBe(false);
+    expect(wasBackedUp(dir)).toBe(false);
   });
 
   it('keeps every unrelated section, including a telemetry opt-out', () => {
@@ -3427,7 +3440,7 @@ describe('a populated pre-redesign sidebar through the real conf load path', () 
     expect(sidebar.pinned).toEqual([{ kind: 'agent', path: '/projects/alpha' }]);
     expect(sidebar.muted).toEqual([{ kind: 'agent', path: '/projects/beta' }]);
     // Nothing was condemned on the way through.
-    expect(fs.existsSync(configPath + '.bak')).toBe(false);
+    expect(wasBackedUp(dir)).toBe(false);
   });
 
   it('still condemns a section whose stored value is nonsense', () => {
@@ -3444,7 +3457,7 @@ describe('a populated pre-redesign sidebar through the real conf load path', () 
       })
     );
     new ConfigManager(dir);
-    expect(fs.existsSync(configPath + '.bak')).toBe(true);
+    expect(wasBackedUp(dir)).toBe(true);
   });
 
   // ── A section id this build has never heard of ──
@@ -3509,7 +3522,7 @@ describe('a populated pre-redesign sidebar through the real conf load path', () 
   it('is not condemned by the unknown section either', () => {
     const dir = seedWithUnknownSection();
     new ConfigManager(dir);
-    expect(fs.existsSync(path.join(dir, 'config.json') + '.bak')).toBe(false);
+    expect(wasBackedUp(dir)).toBe(false);
   });
 
   it('accepts a config already in the new shape', () => {
@@ -3533,7 +3546,7 @@ describe('a populated pre-redesign sidebar through the real conf load path', () 
       })
     );
     const manager = new ConfigManager(dir);
-    expect(fs.existsSync(configPath + '.bak')).toBe(false);
+    expect(wasBackedUp(dir)).toBe(false);
     expect(manager.getAll().ui.sidebar.sections).toEqual({ channels: { collapsed: true } });
     expect(manager.getAll().ui.sidebar.digest.lastShownDate).toBe('2026-08-09');
   });
@@ -3590,8 +3603,8 @@ describe('a config written before DOR-579 survives the migration being skipped',
   }
 
   it('is not condemned — no backup is written and the file is not replaced', () => {
-    const { configPath } = bootOverPriorShape();
-    expect(fs.existsSync(configPath + '.bak')).toBe(false);
+    const { dir } = bootOverPriorShape();
+    expect(wasBackedUp(dir)).toBe(false);
   });
 
   it('keeps every unrelated section, including a telemetry opt-out', () => {
@@ -3708,7 +3721,7 @@ describe('a config written before DOR-579 survives the migration being skipped',
       })
     );
     const manager = new ConfigManager(dir);
-    expect(fs.existsSync(configPath + '.bak')).toBe(false);
+    expect(wasBackedUp(dir)).toBe(false);
     expect(manager.getAll().ui.sidebar.groups[0]!.items).toEqual([
       { kind: 'room', roomId: '01JROOM' },
     ]);
@@ -3725,7 +3738,7 @@ describe('a config written before DOR-579 survives the migration being skipped',
       JSON.stringify({ version: 1, ui: { sidebar: { pinned: [{ kind: 'nonsense' }] } } })
     );
     new ConfigManager(dir);
-    expect(fs.existsSync(configPath + '.bak')).toBe(true);
+    expect(wasBackedUp(dir)).toBe(true);
   });
 });
 

@@ -21,6 +21,25 @@
  *    a protection can be carried across, and it is a stronger guarantee than
  *    any judgement about an error's shape.
  *
+ * Two more things are not the file's fault, and neither condemns it. A key this
+ * build does not declare belongs to another build — see
+ * `config/version-skew.ts`, which is why an unrecognized key is no longer a
+ * schema violation at all. And a migration body that throws is a defect in
+ * DorkOS, which stops the boot loudly ({@link ConfigMigrationFailedError})
+ * rather than replacing anything.
+ *
+ * **One skew this does NOT cover.** A newer build that WIDENS a key both builds
+ * declare — a new enum member, a raised bound, a retyped leaf — writes a VALUE
+ * the older build's schema refuses (`ui.theme: 'midnight'` is the shape of it).
+ * That is still skew rather than damage, and the older build still condemns and
+ * replaces the file. Tolerating it means accepting values a build cannot
+ * interpret, which is a separate decision with its own risks; it is deliberately
+ * not made here.
+ *
+ * When a file really is replaced, the copy is timestamped and rotated
+ * (`config/backups.ts`), so a second recovery cannot overwrite the settings the
+ * first one saved.
+ *
  * ## Migration semantics (conf's `projectVersion` model)
  *
  * `conf` tracks migration state **inside the config file itself**, in an
@@ -89,6 +108,8 @@ import type { UserConfig, SidebarItemRef } from '@dorkos/shared/config-schema';
 import { logger, logError } from '../../lib/logger.js';
 import { SERVER_VERSION } from '../../lib/version.js';
 import { latestInstant, restoreProtectedState } from './safe-defaults/protected-state.js';
+import { backupConfigFile } from './config/backups.js';
+import { preserveUnknownKeys, schemaNodeAt, tolerateUnknownKeys } from './config/version-skew.js';
 
 /**
  * The result of reading a config file that `conf` refused, before replacing it.
@@ -147,22 +168,32 @@ function readStoredConfigForSalvage(
 /**
  * What a failed `conf` load says about the file on disk.
  *
- * The three kinds differ in exactly one way that matters: whether the file may
+ * The four kinds differ in exactly one way that matters: whether the file may
  * be replaced, and after how long.
  *
  * - `corrupt` — the stored bytes are unusable and only replacing the file gets
  *   past it: the JSON does not parse, the contents fail the schema, or they
  *   cannot be decrypted. Condemned immediately, because re-reading the same
- *   bytes cannot change the answer.
+ *   bytes cannot change the answer. Note what is NOT in this class any more: a
+ *   key this build does not declare is another build's key, and the validator
+ *   no longer treats it as a violation at all (`config/version-skew.ts`). So a
+ *   schema violation now always names a key this build DOES declare — which is
+ *   not the same as proving the file is damaged. A value a NEWER build wrote
+ *   under a key it widened lands here too, and is condemned; see the module
+ *   header for why that residual is left open rather than fixed alongside.
  * - `io` — the READ failed and the contents were never in question. An `EMFILE`
  *   while the machine is out of file descriptors, an `EACCES` after an
  *   ownership change, an `EBUSY` while another program holds the file, an `EIO`
  *   off a flaky disk. **Never condemns the file, however long it lasts.**
- * - `unknown` — neither. Retried, and condemned only if it survives the whole
- *   backoff staircase, at which point it is deterministic and the file is the
- *   only thing it can be about.
+ * - `migration` — a migration BODY threw. That is a defect in DorkOS's own
+ *   upgrade code, and it says nothing about the file, so it condemns nothing:
+ *   the boot stops loudly and the settings stay where they are. Same principle
+ *   as `io`, one layer up — the code was wrong, not the data.
+ * - `unknown` — none of those. Retried, and condemned only if it survives the
+ *   whole backoff staircase, at which point it is deterministic and the file is
+ *   the only thing it can be about.
  */
-export type ConfigLoadFailureKind = 'corrupt' | 'io' | 'unknown';
+export type ConfigLoadFailureKind = 'corrupt' | 'io' | 'migration' | 'unknown';
 
 /**
  * Decide what a `conf` load failure says about the stored file.
@@ -195,13 +226,27 @@ export type ConfigLoadFailureKind = 'corrupt' | 'io' | 'unknown';
  * `TypeError: Invalid Version` from inside the constructor. That is as
  * file-caused as a syntax error, and treating it as unreadable would brick boot
  * permanently while telling the person to try again. So the residual class is
- * condemned once the staircase has proved it deterministic. A migration body
- * that throws (wrapped by `conf` as `Something went wrong during the
- * migration!`) lands in the same class, for the same reason.
+ * condemned once the staircase has proved it deterministic.
  *
  * That is the general rule rather than a list of conf's internals: the caller
  * retries, and time does the classifying. It costs a broken file one 750ms
  * staircase before it is recovered.
+ *
+ * ## Why a throwing migration body is NOT in that class
+ *
+ * It used to be, and it was the same mistake as the errno class in a different
+ * costume: a bug in DorkOS's own upgrade code failed identically four times,
+ * looked deterministic, and was read as proof that the file was bad. The file
+ * was fine. Whoever fixed the migration would have been able to boot straight
+ * into their settings — except the settings had already been replaced.
+ *
+ * `conf` marks that case for us. `_migrate` wraps everything thrown inside its
+ * per-migration `try` with {@link CONF_MIGRATION_WRAPPER}, and the semver check
+ * above sits OUTSIDE that `try` (`conf@15`, `_migrate`: the version filter runs
+ * before the loop), so a corrupt migration version still arrives bare and still
+ * lands in `unknown`. The errno check runs first, so a laundered `EMFILE` from
+ * inside a migration body is still `io`. What is left under the wrapper is
+ * DorkOS's own code throwing, which condemns nothing.
  *
  * ## The three `corrupt` shapes
  *
@@ -227,7 +272,11 @@ export function classifyConfigLoadFailure(error: unknown): ConfigLoadFailureKind
   // DorkOS passes no `encryptionKey`, and kept so it stays right if one is ever
   // added.
   if (error.message === 'Failed to decrypt config data.') return 'corrupt';
-  return isIoFailure(error) ? 'io' : 'unknown';
+  // Before the wrapper check, because a wrapped errno is still the machine's
+  // fault rather than the migration's.
+  if (isIoFailure(error)) return 'io';
+  if (error.message.startsWith(CONF_MIGRATION_WRAPPER)) return 'migration';
+  return 'unknown';
 }
 
 /**
@@ -284,18 +333,18 @@ function isIoFailure(error: Error): boolean {
 }
 
 /**
- * Raised when the operating system would not let DorkOS read the config file,
- * after retrying.
+ * A reason DorkOS stopped instead of touching somebody's settings.
  *
- * Carries the underlying failure as `cause` and the path as
- * {@link ConfigUnreadableError.configPath} so a caller can report both. The
- * message is written for the person reading a terminal, because that is where
- * it lands: the server prints it and stops.
+ * Every subclass means the same thing to a caller — print the message, stop —
+ * and both entry points (`apps/server/src/index.ts` and the CLI) branch on this
+ * base rather than on the individual classes, so a new reason to refuse cannot
+ * arrive as an uncaught stack trace.
  *
- * @see {@link unreadableMessage} for why there are two of them.
+ * The message is written for the person reading a terminal, because that is
+ * where it lands. The underlying failure travels as `cause`.
  */
-export class ConfigUnreadableError extends Error {
-  /** Absolute path of the config file that could not be read. */
+export abstract class ConfigBootError extends Error {
+  /** Absolute path of the config file this is about. */
   readonly configPath: string;
 
   /**
@@ -307,6 +356,28 @@ export class ConfigUnreadableError extends Error {
   readonly advice: string;
 
   /**
+   * Build one, from a message a subclass has already written.
+   *
+   * @param message - The whole terminal message, advice included.
+   * @param configPath - Absolute path of the config file.
+   * @param advice - The next step, repeated on doctor's checklist.
+   * @param cause - The failure being reported.
+   */
+  protected constructor(message: string, configPath: string, advice: string, cause: unknown) {
+    super(message, { cause });
+    this.configPath = configPath;
+    this.advice = advice;
+  }
+}
+
+/**
+ * Raised when the operating system would not let DorkOS read the config file,
+ * after retrying.
+ *
+ * @see {@link unreadableMessage} for why there are two of them.
+ */
+export class ConfigUnreadableError extends ConfigBootError {
+  /**
    * Build the message a person sees when their settings could not be read.
    *
    * @param configPath - Absolute path of the config file.
@@ -316,10 +387,49 @@ export class ConfigUnreadableError extends Error {
    */
   constructor(configPath: string, cause: unknown, backupPath?: string) {
     const advice = adviceFor(cause, configPath, backupPath);
-    super(unreadableMessage(configPath, cause, advice, backupPath), { cause });
+    super(unreadableMessage(configPath, cause, advice, backupPath), configPath, advice, cause);
     this.name = 'ConfigUnreadableError';
-    this.configPath = configPath;
-    this.advice = advice;
+  }
+}
+
+/**
+ * Raised when one of DorkOS's own migration bodies threw while updating a
+ * config file to this version.
+ *
+ * The file is not the problem here, so it is not touched — not backed up, not
+ * replaced, not deleted. This is the same rule the errno class follows, applied
+ * one layer up: DorkOS's code was wrong, and a person's settings must not pay
+ * for that. Whoever ships the fix boots straight back into them.
+ */
+export class ConfigMigrationFailedError extends ConfigBootError {
+  /**
+   * Build the message a person sees when an update to their settings failed.
+   *
+   * @param configPath - Absolute path of the config file.
+   * @param cause - The failure `conf` wrapped and rethrew.
+   */
+  constructor(configPath: string, cause: unknown) {
+    const advice =
+      `Nothing you can change in that file will help, because the problem is in\n` +
+      `DorkOS. Start the version you were using before, or install a newer one.\n` +
+      `If you would rather not wait, rename the file: DorkOS will make a new one\n` +
+      `and your settings stay in the file you renamed.`;
+    super(
+      [
+        `DorkOS could not update your settings to this version, so it stopped`,
+        `rather than replacing them.`,
+        ``,
+        `  file: ${configPath}`,
+        `  why:  ${describeLoadError(cause)}`,
+        ``,
+        `DorkOS did not replace or delete your settings.`,
+        advice,
+      ].join('\n'),
+      configPath,
+      advice,
+      cause
+    );
+    this.name = 'ConfigMigrationFailedError';
   }
 }
 
@@ -544,6 +654,9 @@ type ConfConstructorOptions = ConstructorParameters<typeof Conf<UserConfig>>[0];
  *    **The file is never touched on this path, however long the failure
  *    lasts.** Losing the ability to read a file is not evidence that the file
  *    is bad, and the person's settings are sitting in it, intact.
+ * 4. A migration body threw (`migration`) — thrown straight away, with the file
+ *    untouched. Not retried, because DorkOS's own code failing is deterministic
+ *    and a staircase would only delay the same answer.
  *
  * @param options - Constructor options, shared with the recovery construction.
  * @param configPath - Absolute path of the config file, for logs.
@@ -552,6 +665,7 @@ type ConfConstructorOptions = ConstructorParameters<typeof Conf<UserConfig>>[0];
  *   the second leg of corrupt-recovery. Only changes what an error says.
  * @returns The opened store, or the error that condemned the file.
  * @throws {ConfigUnreadableError} When every attempt was refused by the OS.
+ * @throws {ConfigMigrationFailedError} When a migration body threw.
  */
 function loadConfigStore(
   options: ConfConstructorOptions,
@@ -570,6 +684,14 @@ function loadConfigStore(
         corruptedBy: error instanceof Error ? error : new Error(String(error)),
       });
       if (kind === 'corrupt') return condemn();
+      if (kind === 'migration') {
+        logger.error(
+          `[Config] A migration failed while updating ${configPath}. ` +
+            `Leaving the file exactly as it is.`,
+          logError(error)
+        );
+        throw new ConfigMigrationFailedError(configPath, error);
+      }
       const delay = retryDelaysMs[attempt];
       if (delay === undefined) {
         // The staircase is spent. An `io` failure still says nothing about the
@@ -2708,6 +2830,14 @@ const jsonSchemaFull = z.toJSONSchema(UserConfigSchema, {
   target: 'jsonSchema2019-09',
   override: tolerateLegacySidebarEncoding,
 }) as { properties?: Record<string, unknown> };
+
+// A key this build does not declare is another build's key, not damage. Zod
+// closes every object it generates, and conf validates on every read, so one
+// such key made the whole file unloadable and cost a person their settings.
+// See `config/version-skew.ts` — this call is what keeps an unrecognized-key
+// violation from ever reaching the recovery path below.
+tolerateUnknownKeys(jsonSchemaFull);
+
 /**
  * The per-top-level-key JSON Schema conf validates against, tolerances included.
  *
@@ -2858,9 +2988,11 @@ export class ConfigManager {
           throw new ConfigUnreadableError(configPath, salvage.error);
         }
         stored = salvage.value;
-        backupPath = configPath + '.bak';
         try {
-          fs.copyFileSync(configPath, backupPath);
+          // Timestamped and rotated, never one fixed `.bak`: the backup holds
+          // the person's settings, and a second recovery used to overwrite the
+          // first one's copy. See `config/backups.ts`.
+          backupPath = backupConfigFile(configPath);
           fs.unlinkSync(configPath);
         } catch (error) {
           // Same rule, one step later: if the backup or the removal is
@@ -2954,9 +3086,31 @@ export class ConfigManager {
   set<K extends keyof UserConfig>(key: K, value: UserConfig[K]): void {
     const licensedBefore = this.standingGrantsLicensed();
     const floorBefore = this.standingGrantVoidFloor();
-    this.store.set(key, value);
+    this.write(key, value);
     this.stampStandingGrantVoidFloor(licensedBefore, floorBefore);
     this.emitChange([key as string]);
+  }
+
+  /**
+   * Write one path, keeping any settings underneath it that belong to another
+   * build of DorkOS.
+   *
+   * Every write here arrives having been through Zod, which strips what this
+   * build does not declare. Left alone, an older build saving a theme would
+   * delete a newer build's settings from the file one section at a time — the
+   * same loss as a wipe, just quieter. So the keys the schema does not know
+   * about are carried across from what is already on disk.
+   *
+   * See `config/version-skew.ts` for what does and does not get carried.
+   *
+   * @param keyPath - A top-level section, or a dot-path into one.
+   * @param value - The value to store.
+   */
+  private write(keyPath: string, value: unknown): void {
+    const node = schemaNodeAt(CONF_JSON_SCHEMA, keyPath);
+    const stored = this.store.get(keyPath as keyof UserConfig);
+    const merged = preserveUnknownKeys(node, stored, value);
+    this.store.set(keyPath as keyof UserConfig, merged as UserConfig[keyof UserConfig]);
   }
 
   /**
@@ -3029,7 +3183,7 @@ export class ConfigManager {
     }
     const licensedBefore = this.standingGrantsLicensed();
     const floorBefore = this.standingGrantVoidFloor();
-    this.store.set(key as keyof UserConfig, value as UserConfig[keyof UserConfig]);
+    this.write(key, value);
     this.stampStandingGrantVoidFloor(licensedBefore, floorBefore);
     // Subscribers speak in top-level sections, so a dot-path reports the section
     // it wrote into: `runtimes.default` and `runtimes` are the same news.
@@ -3059,6 +3213,11 @@ export class ConfigManager {
    * Resetting one key is the escape hatch and stays literal: `reset('telemetry')`
    * really does put the telemetry block back to its defaults, because naming the
    * section IS the explicit act that the blanket reset lacks.
+   *
+   * Reset is also the one write that does NOT carry another build's keys across
+   * ({@link ConfigManager.write}), for the same reason: "put this back to the
+   * defaults" is an instruction, not an accident, and a build that owns those
+   * keys writes them again the next time it starts.
    *
    * @param key - The top-level section to reset, or omitted for all of them.
    */

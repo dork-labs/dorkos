@@ -617,21 +617,22 @@ process.env.DORK_HOME = DORK_HOME;
 /**
  * Open the config store, or stop with a message a person can act on.
  *
- * When the operating system will not let DorkOS read the config file, the
- * manager raises `ConfigUnreadableError` rather than replacing it, and that
- * error's message is written for exactly this moment. Printing it on its own
- * beats letting it escape as an uncaught exception, where the same text arrives
- * wrapped in a stack trace.
+ * When DorkOS will not use the config file — the operating system refused to
+ * read it, or one of DorkOS's own migrations failed — the manager raises a
+ * `ConfigBootError` rather than replacing it, and that error's message is
+ * written for exactly this moment. Printing it on its own beats letting it
+ * escape as an uncaught exception, where the same text arrives wrapped in a
+ * stack trace.
  *
  * @returns The initialized config manager.
  */
 async function openConfigStore() {
-  const { initConfigManager, ConfigUnreadableError } =
+  const { initConfigManager, ConfigBootError } =
     await import('../server/services/core/config-manager.js');
   try {
     return initConfigManager(DORK_HOME);
   } catch (err) {
-    if (!(err instanceof ConfigUnreadableError)) throw err;
+    if (!(err instanceof ConfigBootError)) throw err;
     // The server is bundled in at build time, so its module has no types here
     // and `instanceof` against it narrows nothing. The check above is still the
     // real one; this cast only tells the compiler what it proved.

@@ -470,7 +470,9 @@ Every additive migration here degrades safely: skip the key, the field is absent
 
 Since DOR-584 the reset is no longer total. `safe-defaults/protected-state.ts` reads the doomed file before it is replaced and re-applies the person's consent decision and any value they had moved to the protective side (ADR 260727-181825). That narrows the blast radius; it does not remove it. Preferences still go, and salvage depends on the file being readable as JSON — so widening the schema for a rename, as `tolerateLegacySidebarEncoding` does below, is still the primary defence rather than a belt-and-braces extra.
 
-**Downgrading is not a supported way back.** These two reshapes are one-way: a config that `migrateSidebarSectionPrefs` has rewritten carries `sections`, `gettingStarted` and `digest`, and an older build's Zod schema does not describe them — so v0.58.0 condemns the file, backs it up to `config.json.bak` and starts a fresh one. `safe-defaults/protected-state.ts` salvages the consent and permission side of it (ADR 260727-181825); preferences are in the `.bak` and stay there. The migration is written to be idempotent so a re-upgrade is a clean no-op, which is the recovery path — not the downgrade.
+**Downgrading is still not a supported way back**, though since DOR-1221 a NEW KEY no longer costs the file. A config that `migrateSidebarSectionPrefs` has rewritten carries `sections`, `gettingStarted` and `digest`, and an older build's schema does not describe them; that build now ignores those keys and leaves them on disk ([Keys from another build](#keys-from-another-build)) instead of condemning the whole config. What the older build cannot do is honour a preference it has no field for, and a RENAME still loses the value in both directions unless the old name is tolerated too. The migration is written to be idempotent so a re-upgrade is a clean no-op.
+
+**The residual, stated plainly: a WIDENED key still costs the file.** DOR-1221 covers keys the running build does not declare, and nothing more. When a newer build adds an enum member, raises a bound, or retypes a leaf both builds have — `ui.theme: 'midnight'` written by a newer release, read by an older one — the value sits under a key the older schema declares and fails its own rule, so that build condemns the config and replaces it exactly as before. Tolerating that means accepting values a build cannot interpret, which is a separate decision with its own failure modes and is deliberately out of scope here.
 
 Migrations are skipped more often than the table suggests. conf runs a key only when `key > storedVersion && key <= projectVersion`, so a dev tree — where `SERVER_VERSION` resolves to `0.0.0` — runs **none** of them, and shipping a schema in a patch release below its migration key skips that key for every user.
 
@@ -866,7 +868,7 @@ The execution defaults (spec `execution-defaults`, E1). They answer one question
 - **Per runtime, and it has to be.** A model id only means something inside the runtime that offers it — `opus` is meaningless to Codex, `gpt-5.3-codex` to Claude Code, and OpenCode addresses models as `provider/model`. A single shared default would be wrong for at least two of the three the moment anyone set it, and wrong silently.
 - **`null` is the shipped value and means "let the runtime choose"** — byte-for-byte the behavior before the fields existed. An upgrade starts nobody's sessions somewhere new.
 - **OpenCode has `defaultModel` and no `defaultEffort`.** Its prompt API accepts no effort at all, in both the pinned and current SDK; effort exists there only as config-file variants with no API selection. A field would be a setting that does nothing, so the schema does not have one and the UI says "Not supported by OpenCode" rather than hiding the row.
-- **An unrecognized key is not ignored — it condemns the file.** Ajv validates the config on load with `additionalProperties: false`, so writing something the schema does not have (`runtimes.opencode.defaultEffort` is the typo this section invites) makes the whole file invalid: the manager backs it up to `config.json.bak` and starts from defaults, salvaging only the protective values (`safe-defaults/protected-state.ts`). Pre-existing posture, not new here, but this is the first block whose shape differs per runtime.
+- **An unrecognized key is ignored, not obeyed — and since DOR-1221 it no longer costs the file.** Writing something the schema does not have (`runtimes.opencode.defaultEffort` is the typo this section invites) does nothing at all: it is kept on disk and skipped on read ([Keys from another build](#keys-from-another-build)). It used to condemn the whole config, because Ajv validated with `additionalProperties: false`. Nothing tells you the setting is inert, so the typo is still worth avoiding — this is the first block whose shape differs per runtime.
 - **`effort` is the shared ladder** (`EFFORT_LEVELS`: `none`, `minimal`, `low`, `medium`, `high`, `max`, `xhigh`), and the two runtimes that honor it read the bottom two rungs differently on purpose: claude-code's `none` turns thinking off, while codex's clamps up to `minimal`; `max` is real on claude-code and clamps down to `xhigh` on codex. Both clamp sites carry the note (`claude-code/messaging/thinking-config.ts`, `codex/turn-input.ts`); change neither without the other.
 
 **Where the value lands.** `resolveSessionDefaults` (`services/session/resolve-session-defaults.ts`) answers the question, and `RuntimeRegistry` applies it to whatever CREATES a session's `session_metadata` row — the same row every adapter already resolves a turn from (`per-send override → persisted → the runtime's own default`). So no adapter knows about config.
@@ -1328,17 +1330,20 @@ Two consequences worth knowing when you touch this code:
 
 ## Error Recovery
 
-Recovery **replaces the config file**, so what counts as "corrupt" is a data-loss decision. `classifyConfigLoadFailure` (`config-manager.ts`) owns it, and sorts a `conf` constructor throw into three kinds:
+Recovery **replaces the config file**, so what counts as "corrupt" is a data-loss decision. `classifyConfigLoadFailure` (`config-manager.ts`) owns it, and sorts a `conf` constructor throw into four kinds:
 
-| Failure                                     | Raised by             | Kind      | Effect                                     |
-| ------------------------------------------- | --------------------- | --------- | ------------------------------------------ |
-| `SyntaxError` (JSON does not parse)         | conf's `_deserialize` | `corrupt` | replaced immediately                       |
-| message starts `Config schema violation:`   | conf's Ajv wrapper    | `corrupt` | replaced immediately                       |
-| message is `Failed to decrypt config data.` | conf's decrypt        | `corrupt` | replaced immediately                       |
-| any errno error (`EMFILE`, `EACCES`, `EIO`) | the OS                | `io`      | **never replaced**, retried, then reported |
-| anything else                               | code `conf` ran       | `unknown` | retried, replaced only if it never clears  |
+| Failure                                        | Raised by             | Kind        | Effect                                     |
+| ---------------------------------------------- | --------------------- | ----------- | ------------------------------------------ |
+| `SyntaxError` (JSON does not parse)            | conf's `_deserialize` | `corrupt`   | replaced immediately                       |
+| message starts `Config schema violation:`      | conf's Ajv wrapper    | `corrupt`   | replaced immediately                       |
+| message is `Failed to decrypt config data.`    | conf's decrypt        | `corrupt`   | replaced immediately                       |
+| any errno error (`EMFILE`, `EACCES`, `EIO`)    | the OS                | `io`        | **never replaced**, retried, then reported |
+| message starts `Something went wrong during …` | a migration body      | `migration` | **never replaced**, reported immediately   |
+| anything else                                  | code `conf` ran       | `unknown`   | retried, replaced only if it never clears  |
 
 `conf` rethrows all of these identically — DorkOS sets `clearInvalidConfig: false`, so conf clears nothing itself — which is why the decision lives here.
+
+**A schema violation now always names a key this build declares.** An unrecognized key is version skew, not damage, and `config/version-skew.ts` takes it out of the validator's hands entirely — see [Keys from another build](#keys-from-another-build) below.
 
 **Why `io` is its own kind, rather than "has not cleared yet".** An errno failure is never evidence about what a file contains, and that stays true however many times it repeats. The fd-exhaustion storm that destroyed a real config ran far longer than any sensible boot-time backoff, so a rule of "it failed four times, therefore the file is bad" would hand the same defect back on a timer.
 
@@ -1346,20 +1351,24 @@ Recovery **replaces the config file**, so what counts as "corrupt" is a data-los
 
 **And behind all of it, one absolute rule: nothing is replaced that was not read first.** `readStoredConfigForSalvage` runs before the backup, on the same retry staircase, and a read that never succeeded aborts the replacement with `ConfigUnreadableError` instead. A successful read is both the evidence that the file is the problem and the only way `restoreProtectedState` can carry a protection across, so a verdict that cannot be checked is never acted on. This is what makes the guarantee hold even where the classification above is wrong: a message format is a weaker thing to trust than a read that worked.
 
-**Why `unknown` is eventually replaced.** `conf` runs the migration chain inside its constructor, and `_migrate` feeds the file's own `__internal__.migrations.version` into `semver` (`_shouldPerformMigration`). That value sits outside the Ajv schema and conf skips validation while migrating, so one flipped byte in it throws a bare `TypeError: Invalid Version` from a place the allowlist never sees. That is as file-caused as a syntax error. Leaving it in `io` would block every future boot while telling the person their file was fine. A migration body that throws (wrapped by conf as `Something went wrong during the migration!`) lands here for the same reason. The retry staircase does the classifying, so this needs no knowledge of which conf internals can throw.
+**Why `unknown` is eventually replaced.** `conf` runs the migration chain inside its constructor, and `_migrate` feeds the file's own `__internal__.migrations.version` into `semver` (`_shouldPerformMigration`). That value sits outside the Ajv schema and conf skips validation while migrating, so one flipped byte in it throws a bare `TypeError: Invalid Version` from a place the allowlist never sees. That is as file-caused as a syntax error. Leaving it in `io` would block every future boot while telling the person their file was fine. The retry staircase does the classifying, so this needs no knowledge of which conf internals can throw.
+
+**Why a throwing migration body is not in that class (DOR-1221).** It used to be, and it was the `io` mistake in a different costume: a bug in DorkOS's own upgrade code fails identically on all four attempts, looks deterministic, and used to condemn a file that was never the problem — so whoever shipped the fix had no settings left to boot into. `conf` marks the case for us. `_migrate` wraps everything thrown inside its per-migration `try`, and the semver check above runs **outside** that `try`, so a corrupt migration version still arrives bare and still lands in `unknown`. The errno check runs first, so a laundered `EMFILE` is still `io`. What is left under the wrapper is DorkOS's own code throwing: the boot stops with `ConfigMigrationFailedError` and the file is not touched.
 
 **A `corrupt` verdict** (or an `unknown` one that outlived the staircase) runs the recovery path on startup:
 
-1. The file is read for salvage (`readStoredConfigForSalvage`), then backed up to `~/.dork/config.json.bak`
+1. The file is read for salvage (`readStoredConfigForSalvage`), then backed up to a timestamped `~/.dork/config-<date>-<time>.json.bak`
 2. The original is deleted and a fresh config created with defaults
 3. `restoreProtectedState` re-applies the protections in `PROTECTIVE_CARRYOVERS` (DOR-584)
 4. The underlying error and the backup path are logged
 
 ```
 [Config] /Users/you/.dork/config.json could not be used: Config schema violation: `server/port` must be integer
-Corrupt config backed up to /Users/you/.dork/config.json.bak
+Corrupt config backed up to /Users/you/.dork/config-20260815-093012-441.json.bak
 Creating fresh config with defaults.
 ```
+
+**Backups rotate; they never overwrite (`config/backups.ts`).** One fixed `config.json.bak` meant the second recovery destroyed what the first one saved — five recoveries on one machine left a single backup holding a config that had already been replaced with defaults. Each recovery now writes its own timestamped file and the newest ten are kept (`CONFIG_BACKUPS_KEPT`). The pre-rotation `config.json.bak` does not match the pattern, so pruning never removes it.
 
 **An `io` verdict never replaces or deletes the file.** The load is retried on a short backoff (`CONFIG_LOAD_RETRY_DELAYS_MS`, four attempts over ~750ms), and if it still fails the constructor throws `ConfigUnreadableError`. The server prints that message and exits 1 rather than booting on defaults, because defaults are a different security posture (`auth.enabled` off, `mcp.enabled` on) than the file it could not read.
 
@@ -1369,7 +1378,20 @@ Say "did not replace or delete", never "nothing was changed". `conf`'s `#runMigr
 
 Guessing wrong toward `io` costs a restart. Guessing wrong toward `corrupt` costs a person their settings. So `io` membership is decided by a bare errno code (`/^E[A-Z0-9]+$/`, excluding Node's underscore-bearing `ERR_*` codes, which report a bad call rather than a refused syscall), and widening it needs the same scrutiny as a destructive migration.
 
-Coverage sits in two files, and the split is load-bearing. `__tests__/config-load-failure.test.ts` holds the steady-state cases: the `__internal__.migrations.version` repros, a persistent `EMFILE` that must leave the file byte-for-byte intact, the salvage gate, and the message wording. `__tests__/config-load-failure-migration.test.ts` holds the upgrade boot, and needs its own module registry because `conf` runs a migration only when its key is `<= projectVersion`: `SERVER_VERSION` is `0.0.0` in a dev tree, so **no migration body runs in the default test environment** and every laundered-errno case is unreachable. That file sets `DORKOS_VERSION_OVERRIDE` in a `vi.hoisted` block before its imports, and asserts the override took effect, because a suite that silently stopped exercising migrations is how the defect survived a review.
+### Keys from another build
+
+A key in `config.json` that this build's schema does not declare is **version skew, not corruption**. A newer build writes a setting and an older one starts; a migration retires a key and the file has not met that migration yet; a dogfooding machine runs several builds a day and does both before lunch. Zod closes every object it generates (`additionalProperties: false`) and `conf` validates on **every read of the file**, so one such key used to make the whole config unloadable — and the recovery path above read that as damage and replaced it. Five wipes on one machine; the last was `ui`, `ui/sidebar` (three times) and `runtimes/claudeCode` complaining together.
+
+`config/version-skew.ts` fixes it structurally rather than by reading Ajv's error text:
+
+- **`tolerateUnknownKeys`** rewrites every `additionalProperties: false` in the generated schema to `true`, once, before conf ever sees it. A node whose `additionalProperties` is a _schema_ (a record type) is left alone. Everything else the schema says still applies — a declared key with the wrong type, a value outside an enum, a missing required field all still fail, which is what keeps the tolerance from becoming "validate nothing". `config/__tests__/version-skew.test.ts` fails if any object in the generated schema closes again.
+- **`preserveUnknownKeys`**, called from `ConfigManager`'s write path, carries the unrecognized keys from disk onto every section it writes — with two carve-outs. Tolerating a key on the way in is only half of it: every write goes through Zod, which strips what it does not declare, so an older build saving a theme would otherwise delete the newer build's settings one section at a time. Records and arrays are left to the writer, and a key this build _does_ declare can still be deleted.
+
+Two things that follow from the array carve-out, because they are easy to read past. An unknown key nested inside an ARRAY ITEM — `ui.sidebar.groups[]`, `runtimes.claudeCode.accounts[]` — is **dropped** when this build writes that whole section, since position is not identity and re-attaching by index would be a guess. It survives every boot and every write that does not touch its section, which is the common case, but a Zod-parsed write of the section it lives in loses it. And a record's keys (`ui.sidebar.sections`) are the writer's to remove, which is what keeps `dropUnknownSectionIds` working.
+
+Nothing reads these keys, and they are absent from the `UserConfig` type. They are tolerated, preserved, and otherwise ignored. What this does NOT cover is a key both builds declare whose VALUE a newer build widened — see the residual above.
+
+Coverage sits in four files, and the split is load-bearing. `config/__tests__/version-skew.test.ts` and `config/__tests__/backups.test.ts` cover this section and the rotation above. `__tests__/config-load-failure.test.ts` holds the steady-state cases: the `__internal__.migrations.version` repros, a persistent `EMFILE` that must leave the file byte-for-byte intact, the salvage gate, and the message wording. `__tests__/config-load-failure-migration.test.ts` holds the upgrade boot, and needs its own module registry because `conf` runs a migration only when its key is `<= projectVersion`: `SERVER_VERSION` is `0.0.0` in a dev tree, so **no migration body runs in the default test environment** and every laundered-errno case is unreachable. That file sets `DORKOS_VERSION_OVERRIDE` in a `vi.hoisted` block before its imports, and asserts the override took effect, because a suite that silently stopped exercising migrations is how the defect survived a review.
 
 You can manually validate your config at any time:
 

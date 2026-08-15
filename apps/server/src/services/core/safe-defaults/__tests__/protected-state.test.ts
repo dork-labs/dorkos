@@ -379,9 +379,11 @@ describe('ConfigManager recovery keeps protections (real conf + Ajv)', () => {
   }
 
   it('is genuinely a condemned file — the recovery path really runs', () => {
-    const { dir, configPath } = seedInvalidConfig({});
+    const { dir } = seedInvalidConfig({});
     new ConfigManager(dir);
-    expect(fs.existsSync(configPath + '.bak')).toBe(true);
+    // Backups are timestamped and rotated (DOR-1221), so there is no one name
+    // to look for.
+    expect(fs.readdirSync(dir).some((name) => name.endsWith('.bak'))).toBe(true);
   });
 
   it('does NOT resurrect telemetry after an explicit opt-out (the reported defect)', () => {
