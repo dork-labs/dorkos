@@ -2,6 +2,7 @@
 covers:
   - 'fix(client,server): compaction boundaries render live and from history (DOR-1215, review)'
   - 'test(e2e,server,client): a compaction you can actually see — L-04 end to end (DOR-1215)'
+  - 'fix(scripts): the browser-gate fixture counts EIGHT modules after the merge (DOR-1215)'
 ---
 
 ### Fixed
