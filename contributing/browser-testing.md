@@ -357,7 +357,8 @@ await chatPage.goto(undefined, { dir: agentDir });
 
 // Set a specific scenario
 await request.post(`${API_URL}/api/test/scenario`, {
-  data: { name: 'simple-text' }, // 'tool-call', 'todo-write', 'error'
+  // Others: 'tool-call', 'todo-write', 'error', 'compacting', 'compacting-hold'
+  data: { name: 'simple-text' },
 });
 ```
 

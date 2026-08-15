@@ -180,7 +180,30 @@ export class TestModeRuntime implements AgentRuntime {
     _intent: RuntimeCommandIntentId,
     _opts?: CommandIntentOpts
   ): AsyncGenerator<StreamEvent> {
-    yield { type: 'compact_boundary', data: { trigger: 'manual' } };
+    // Full-fidelity, in the Claude adapter's own shape: the progress pair its
+    // system-event mapper builds from `status:'compacting'` and
+    // `compact_result:'success'`, around a boundary carrying the same four
+    // camelCased fields it forwards from `compact_metadata`. A bare
+    // `{trigger:'manual'}` satisfied the conformance suite but left every
+    // reading the boundary row exists to report empty, so nothing downstream
+    // was ever driven with real numbers.
+    yield {
+      type: 'operation_progress',
+      data: {
+        operation: 'compaction',
+        state: 'started',
+        determinate: false,
+        message: 'Compacting context…',
+      },
+    };
+    yield {
+      type: 'compact_boundary',
+      data: { trigger: 'manual', preTokens: 51_226, postTokens: 4_151, durationMs: 63_275 },
+    };
+    yield {
+      type: 'operation_progress',
+      data: { operation: 'compaction', state: 'done', determinate: false },
+    };
   }
 
   setRelay(_relay: RelayCore): void {

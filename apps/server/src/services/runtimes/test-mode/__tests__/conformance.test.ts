@@ -34,6 +34,15 @@ runtimeConformance(() => new TestModeRuntime(), {
     scenarioStore.setDefault('error');
     return new TestModeRuntime();
   },
+  // Compaction rides the scenario store too: the built-in 'compacting'
+  // scenario is a turn that compacts instead of answering, which is what an
+  // AUTO compaction looks like. Wiring it activates the suite's
+  // operation_progress block (DOR-110), which had no runtime driving it here —
+  // test-mode is the only adapter that can reach it without a real model.
+  makeCompactingRuntime: () => {
+    scenarioStore.setDefault('compacting');
+    return new TestModeRuntime();
+  },
   // DOR-189: a completed turn must survive a restart via the durable store.
   durableHistory: (runtime, sessionId, content) =>
     driveDurableTurn(runtime, sessionId, content, '/projects/conformance'),

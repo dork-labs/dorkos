@@ -394,6 +394,10 @@ export default defineConfig({
         // It drives a send and flips a server-global preference, so it must
         // never reach this leg (DOR-948).
         '**/chat/composer-escape-and-ime*',
+        // And again: the compaction suite (L-04, DOR-1215) drives three turns
+        // and a `/compact` per run, so reaching this leg would bill the
+        // machine's own `claude` sign-in for every one of them.
+        '**/chat/compaction*',
         ...(INCLUDE_SITE ? [] : SITE_SPECS),
       ],
       // Skips the specs that need real model credentials — see INCLUDE_INTEGRATION.

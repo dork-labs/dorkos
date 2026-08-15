@@ -1,6 +1,6 @@
 # Chat Capabilities — Master List
 
-**Status:** Living (created 2026-08-13; §6 states re-audited 2026-08-14 after the chat-architecture landing run — PRs #1005–#1015, DOR-773/1201–1209). First inventory of everything a user should be able to do in DorkOS chat, across all four chat surfaces, with the current test coverage for each. This is the contract our chat tests should check against. When a capability ships, it gets a row here; when a row has no coverage, that is a named gap, not an unknown one.
+**Status:** Living (created 2026-08-13; §6 states re-audited 2026-08-14 after the chat-architecture landing run — PRs #1005–#1015, DOR-773/1201–1209; L-04/L-05/M-05/M-06 re-audited 2026-08-15 in DOR-1215, which closed the compaction gap and corrected two rows that named gaps that were not there). First inventory of everything a user should be able to do in DorkOS chat, across all four chat surfaces, with the current test coverage for each. This is the contract our chat tests should check against. When a capability ships, it gets a row here; when a row has no coverage, that is a named gap, not an unknown one.
 
 Coverage legend — where each capability is verified today:
 
@@ -64,18 +64,18 @@ A capability is only "done" when it behaves correctly on the surface(s) it appli
 
 ## 4. Session lifecycle & context
 
-| ID   | Capability                                                                                                                                        | Surfaces | Coverage                           |
-| ---- | ------------------------------------------------------------------------------------------------------------------------------------------------- | -------- | ---------------------------------- |
-| L-01 | New session; model and permission mode selectable per session                                                                                     | session  | E, S                               |
-| L-02 | Rename a session (incl. via palette)                                                                                                              | session  | U, E                               |
-| L-03 | Resume an old session; full history renders identically to live (reload-from-history parity)                                                      | session  | S                                  |
-| L-04 | **Compaction**: `/compact` and auto-compaction produce a visible boundary; history before it still renders; the turn after it has correct context | session  | — (palette row enabled-check only) |
-| L-05 | Session fork / branch                                                                                                                             | session  | —                                  |
-| L-06 | Session lock (`X-Client-Id`): two writers don't corrupt a session                                                                                 | session  | U                                  |
-| L-07 | Cross-client sync: same session in two windows agrees (messages, queue, edits)                                                                    | session  | E                                  |
-| L-08 | SSE reconnection: gap-free replay via `Last-Event-ID` after network drop                                                                          | session  | U, E                               |
-| L-09 | Switching between two concurrently-working sessions loses no live state (streaming, prompts, queue, todos, subagents)                             | session  | S                                  |
-| L-10 | Per-runtime parity: the same chat behaviors on claude-code, codex, opencode                                                                       | session  | U (conformance)                    |
+| ID   | Capability                                                                                                                                        | Surfaces | Coverage                 |
+| ---- | ------------------------------------------------------------------------------------------------------------------------------------------------- | -------- | ------------------------ |
+| L-01 | New session; model and permission mode selectable per session                                                                                     | session  | E, S                     |
+| L-02 | Rename a session (incl. via palette)                                                                                                              | session  | U, E                     |
+| L-03 | Resume an old session; full history renders identically to live (reload-from-history parity)                                                      | session  | S                        |
+| L-04 | **Compaction**: `/compact` and auto-compaction produce a visible boundary; history before it still renders; the turn after it has correct context | session  | U, E                     |
+| L-05 | Session fork / branch — a full-transcript copy only: `⇧↵` in the session switcher, no dialog, no "branch from message N"                          | session  | U, E (fork POST stubbed) |
+| L-06 | Session lock (`X-Client-Id`): two writers don't corrupt a session                                                                                 | session  | U                        |
+| L-07 | Cross-client sync: same session in two windows agrees (messages, queue, edits)                                                                    | session  | E                        |
+| L-08 | SSE reconnection: gap-free replay via `Last-Event-ID` after network drop                                                                          | session  | U, E                     |
+| L-09 | Switching between two concurrently-working sessions loses no live state (streaming, prompts, queue, todos, subagents)                             | session  | S                        |
+| L-10 | Per-runtime parity: the same chat behaviors on claude-code, codex, opencode                                                                       | session  | U (conformance)          |
 
 ## 5. Rooms, threads, DMs
 
@@ -85,8 +85,8 @@ A capability is only "done" when it behaves correctly on the surface(s) it appli
 | M-02 | Post in a channel; everyone (and every window) sees it live                                             | channel  | E                                    |
 | M-03 | Agent room turns: an addressed/mentioned agent replies in the room; turn budget respected               | channel  | U                                    |
 | M-04 | Etiquette: agents don't over-participate (see `meta/agent-etiquette.md`)                                | channel  | —                                    |
-| M-05 | **Threads**: open a thread, reply in it, replies stay out of the main timeline, thread arrivals surface | thread   | —                                    |
-| M-06 | Thread deep-link (`?thread=`) restores the panel and focus                                              | thread   | — (hooks unit-tested only)           |
+| M-05 | **Threads**: open a thread, reply in it, replies stay out of the main timeline, thread arrivals surface | thread   | U, E (desktop + phone)               |
+| M-06 | Thread deep-link (`?thread=`) restores the panel and focus                                              | thread   | U, E                                 |
 | M-07 | DMs: open, post, agent replies                                                                          | dm       | E (open/post)                        |
 | M-08 | Unread/read state, correct across devices                                                               | rooms    | E                                    |
 | M-09 | Presence (who's here, incl. sidebar)                                                                    | rooms    | E                                    |
@@ -139,7 +139,7 @@ The check we're missing is a **context-recall probe suite** (natural fit: a `roo
 
 - **Concurrency**: two sessions streaming at once while switching (covered by `/chat:session-switch-test`); an agent active in a **room and a direct session at the same time**; two humans posting in one thread simultaneously.
 - **Interruption**: refresh mid-stream; network drop mid-stream; server restart mid-turn; stop pressed during tool execution; queued message pending when the turn errors.
-- **Compaction**: compaction firing **while** a message is queued; compaction mid-multi-turn task; transcript rendering across the boundary; compaction in a room-bound session.
+- **Compaction**: compaction firing **while** a message is queued; compaction mid-multi-turn task; compaction in a room-bound session. (Transcript rendering across the boundary is now covered — DOR-1215.)
 - **Prompts**: approval pending during a session switch, a refresh, a compaction, and a second incoming prompt; question prompt answered from a second window; approval answered outside DorkOS.
 - **Scale**: 500+ message session reload; very long single message; rapid-fire sends; many rooms with unread counts.
 - **Identity**: URL session id ≠ SDK session id (the JSONL mapping trap); duplicate session titles in the sidebar; placeholder ids in `room_sessions`.
@@ -151,13 +151,13 @@ The check we're missing is a **context-recall probe suite** (natural fit: a `roo
 
 Ranked by user pain if broken:
 
-1. **Compaction end-to-end (L-04)** — no test asserts a compaction actually happens and the session stays coherent.
-2. **Threads (M-05, M-06)** — UI and hooks exist, zero dedicated e2e.
+1. ~~**Compaction end-to-end (L-04)**~~ — **CLOSED 2026-08-15 (DOR-1215)**, and it was not only untested: the boundary rendered NOWHERE. The live turn dropped `compact_boundary` (missing from the client store's `TURN_EVENT_TYPES`, so the shipped `foldCompactBoundary`/`CompactBoundaryRow` were unreachable), and the event-log history fold dropped it again, so log-backed runtimes (test-mode, codex) lost it permanently — claude-code recovered only because its boundary also lives in JSONL. Every unit test around it passed throughout, each proving its own link. Now pinned by `apps/e2e/tests/chat/compaction.ts` (both triggers, live + reload + the turn after). Still open underneath it: compaction while a message is queued, mid-multi-turn, in a room-bound session, and on codex/opencode.
+2. ~~**Threads (M-05, M-06)**~~ — **was never a gap; this row was wrong.** `apps/e2e/tests/rooms/room-entry-actions.spec.ts` has covered threads since 2026-07-30/31 (#641, #654, #655): reply lands in the panel, replies stay out of the main timeline, the reply row opens the thread, keyboard crosses the panel, unread arrivals wear the accent, the `?thread=` address restores it, and the phone push-surface. The 2026-08-14 re-audit missed them. The one real hole — the deep link restoring FOCUS, the second half of M-06 — was closed in DOR-1215.
 3. **Approve/Deny + AskUserQuestion in e2e (I-01…I-04)** — only the live self-test sees them; nothing deterministic pins them.
 4. **Steering + stop (C-09, C-10)** — server-tested only; never exercised through the UI.
 5. **Subagents, todos pill, background task bar in e2e (R-05, R-06, R-07)** — dev-simulator scenarios exist but aren't wired into Playwright.
 6. **Cross-runtime chat parity at the e2e layer (L-10 beyond unit conformance)**.
-7. **Fork/resume (L-05)** and **agent etiquette (M-04)** — no automated signal at all.
+7. **Fork/resume (L-05)** and **agent etiquette (M-04)**. M-04 has no automated signal at all. L-05 does have signal, but weaker than it looks: `session-switcher.spec.ts` stubs `POST /:id/fork` with `page.route` and asserts only that `⇧↵` posts to the right URL, so nothing anywhere proves a fork is actually created. It cannot, deterministically, until `TestModeRuntime.forkSession` stops returning `null` (codex returns `null` too; only claude-code and opencode implement it). Also UI-dead: the server, shared schema and SDK all support `upToMessageId`, and no client call site ever sends one — "branch from message N" exists everywhere except where a person could ask for it.
 8. **Agent context comprehension (X-01…X-08)** — context assembly is unit-tested; whether agents can actually use it is untested. Needs the context-recall probe suite (§7).
 9. **Autonomy behaviors (§6)** — largely BUILT as of 2026-08-14 (A-03/A-04/A-06/A-07 shipped; A-05/A-10/A-12/A-13 partial) with unit coverage, but nothing above the unit layer: no e2e drives an agent burst/steer/halt through the UI, and no eval judges restraint or comprehension. A-15's fence mechanics are pinned; the adversarial injection eval is still the security-relevant gap before Mesh+Relay leaves the demo-claim gate.
 10. **No rooms self-test exists.** `/chat:self-test` and `/chat:session-switch-test` are session-only, written before channels matured — and this run grew rooms the most (collect/steer/halt, 3-way DMs, reactions, tool hand, DM notifications). A `/chat:rooms-test` sibling (live browser, two agents in a channel, burst → one reply; halt; reaction; thread) is now the highest-value new self-test, and the `rooms` eval suite (§7's probes + the gate's tuning loop, shapes specced in `specs/engaged-response-gate`) is its deterministic counterpart.

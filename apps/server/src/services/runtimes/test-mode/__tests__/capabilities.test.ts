@@ -51,7 +51,14 @@ describe('TEST_MODE_CAPABILITIES', () => {
     const scenarios = TEST_MODE_CAPABILITIES.features.testModeScenarios;
     expect(Array.isArray(scenarios)).toBe(true);
     // Keys must match BUILT_IN_SCENARIOS in scenario-store.ts.
-    expect(scenarios).toEqual(['simple-text', 'tool-call', 'todo-write', 'error']);
+    expect(scenarios).toEqual([
+      'simple-text',
+      'tool-call',
+      'todo-write',
+      'error',
+      'compacting',
+      'compacting-hold',
+    ]);
   });
 
   it('is the object returned by TestModeRuntime.getCapabilities()', () => {

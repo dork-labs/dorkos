@@ -13,8 +13,12 @@
  *     merged by toolCallId, `tool_progress` appended) emits one assistant
  *     message per turn, only once the turn closes with `turn_end` — the open
  *     turn's events are delivered separately as `inProgressTurn`.
- *   - Message ids are deterministic from the turn's `turn_start` seq, so a
- *     rebuilt snapshot yields stable ids across reconnects.
+ *   - `compact_boundary` emits a `messageType: 'compaction'` message at its own
+ *     seq — the same shape the Claude adapter builds from JSONL, so one row
+ *     renders both. It is the only fold that does not require an open turn.
+ *   - Message ids are deterministic from the turn's `turn_start` seq (the
+ *     boundary's from its own), so a rebuilt snapshot yields stable ids across
+ *     reconnects.
  *
  * Deliberate simplifications vs Claude's JSONL history: a clean turn carries no
  * `parts` array (all turn text concatenates ahead of the tool list, so
@@ -182,6 +186,37 @@ export function reconstructHistoryFromEvents(events: SessionEvent[]): HistoryMes
         if (!turn) break;
         const entry = turn.tools.get(event.toolCallId);
         if (entry) entry.progressOutput = (entry.progressOutput ?? '') + event.content;
+        break;
+      }
+      case 'compact_boundary': {
+        // Deliberately NOT guarded on an open turn, unlike every fold above it.
+        // A compaction belongs to the conversation rather than to a turn — it
+        // can arrive inside the turn a `/compact` opened, or between turns when
+        // context pressure fires it — and a boundary dropped for want of an
+        // open turn is a reader told nothing about why the history above it
+        // ends. It is also pushed HERE, at its own seq, rather than at
+        // `turn_end`: its whole job is to mark a position in the transcript.
+        //
+        // The shape mirrors what the Claude adapter builds from JSONL
+        // (transcript-parser.ts: `messageType: 'compaction'` + `compactMetadata`)
+        // so one row renders both. Content is empty because this stream carries
+        // no summary text — Claude's summary lives in the record the boundary
+        // annotates, and a log-backed runtime has no equivalent. Fields are
+        // copied one at a time on `!== undefined`, not truthiness, so a
+        // measured zero survives.
+        const meta = {
+          ...(event.trigger !== undefined ? { trigger: event.trigger } : {}),
+          ...(event.preTokens !== undefined ? { preTokens: event.preTokens } : {}),
+          ...(event.postTokens !== undefined ? { postTokens: event.postTokens } : {}),
+          ...(event.durationMs !== undefined ? { durationMs: event.durationMs } : {}),
+        };
+        messages.push({
+          id: `compaction-${event.seq}`,
+          role: 'user',
+          content: '',
+          messageType: 'compaction',
+          ...(Object.keys(meta).length > 0 ? { compactMetadata: meta } : {}),
+        });
         break;
       }
       case 'error':

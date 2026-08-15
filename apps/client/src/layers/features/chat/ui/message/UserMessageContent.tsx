@@ -38,21 +38,43 @@ export function UserMessageContent({ message }: { message: ChatMessage }) {
   }
 
   if (message.messageType === 'compaction') {
+    const label = formatCompactionLabel(message.compactMetadata);
+    // Claude's boundary annotates a summary record, so there is something to
+    // open. A log-backed runtime reconstructs the boundary from the event
+    // stream, which carries no summary at all — so the rule is still drawn (it
+    // is what marks where the history above was summarized away) but without a
+    // control that would open onto nothing (DOR-1215).
+    const summary = message.content.trim();
+    const rule = <div className="bg-border/40 h-px flex-1" />;
+
+    if (summary.length === 0) {
+      return (
+        <div
+          data-testid="compaction-row"
+          className="text-msg-compaction-fg flex w-full items-center gap-2 text-xs"
+        >
+          {rule}
+          <span>{label}</span>
+          {rule}
+        </div>
+      );
+    }
+
     return (
-      <div className="w-full">
+      <div className="w-full" data-testid="compaction-row">
         <button
           onClick={() => setCompactionExpanded(!compactionExpanded)}
           className="text-msg-compaction-fg flex w-full items-center gap-2 text-xs"
         >
-          <div className="bg-border/40 h-px flex-1" />
+          {rule}
           <ChevronRight
             className={cn(
               'size-3 transition-transform duration-200',
               compactionExpanded && 'rotate-90'
             )}
           />
-          <span>{formatCompactionLabel(message.compactMetadata)}</span>
-          <div className="bg-border/40 h-px flex-1" />
+          <span>{label}</span>
+          {rule}
         </button>
         {compactionExpanded && (
           <div className="text-msg-compaction-fg mt-2 text-xs whitespace-pre-wrap">
