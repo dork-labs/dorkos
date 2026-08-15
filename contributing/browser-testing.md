@@ -328,12 +328,23 @@ Browser tests that don't need real Claude API calls use `TestModeRuntime` — a 
 
 ### Port Layout
 
-| Port                    | Service                                                                   |
-| ----------------------- | ------------------------------------------------------------------------- |
-| `DORKOS_PORT` (4242)    | Real Express server                                                       |
-| `VITE_PORT` (4241)      | Vite client proxying to real server                                       |
-| `MOCK_PORT` (4243)      | Test-mode Express server                                                  |
-| `MOCK_VITE_PORT` (4248) | Vite client proxying to mock server — 6244 is reserved for `@dorkos/site` |
+Every row names the env var that MOVES the leg — the name you set, not the
+`playwright.config.ts` constant it lands in:
+
+| Env var (default)                 | Service                                                                   |
+| --------------------------------- | ------------------------------------------------------------------------- |
+| `DORKOS_COCKPIT_PORT` (4245)      | Cockpit Express server                                                    |
+| `DORKOS_COCKPIT_VITE_PORT` (4244) | Vite client proxying to the cockpit server                                |
+| `DORKOS_MOCK_PORT` (4243)         | Test-mode Express server                                                  |
+| `DORKOS_MOCK_VITE_PORT` (4248)    | Vite client proxying to mock server — 6244 is reserved for `@dorkos/site` |
+
+Both Express legs run against a throwaway `DORK_HOME` under `/tmp`, keyed by that
+leg's port and deleted before every boot — `/tmp/dorkos-cockpit-<port>` and
+`/tmp/dorkos-test-mode-<port>`. No run reads or writes the dev data directory
+(`apps/server/.temp/.dork`) or a real `~/.dork` (DOR-1223). The cockpit leg reads
+`DORKOS_COCKPIT_PORT` rather than `DORKOS_PORT` for the same reason: `DORKOS_PORT`
+is the dev server's own variable, set in the root `.env` and passed through by
+turbo.
 
 ### Test Control API
 

@@ -119,7 +119,7 @@ Then set `API_PORT=4243`, `TEST_URL=http://localhost:4248/channels`, `DORK_DIR=/
 
 Do not run the Playwright suite during a sandbox run: its config sets `reuseExistingServer: false`, so it fails on the busy ports rather than adopting your leg.
 
-**`mode:live`** — the dev stack (`pnpm dev` / `pnpm dev:dogfood`). Probe for it, and take the DB path from the same rule the server uses (`apps/server/src/lib/dork-home.ts`: `DORK_HOME` wins; otherwise dev is `apps/server/.temp/.dork`, production is `~/.dork`):
+**`mode:live`** — the dev stack (`pnpm dev` / `pnpm dev:dogfood`). Probe for it:
 
 ```bash
 DORKOS_PORT="${DORKOS_PORT:-6242}"
@@ -127,12 +127,57 @@ for port in $DORKOS_PORT 4242 6241; do
   curl -sf "http://localhost:$port/api/health" | grep -q '"ok"' && API_PORT=$port && break
 done
 [ -z "$API_PORT" ] && { echo "ERROR: server down — run 'pnpm dev' or 'pnpm dev:dogfood'"; exit 1; }
-DORK_DIR="${DORK_HOME:-apps/server/.temp/.dork}"
-[ -f "$DORK_DIR/dork.db" ] || DORK_DIR="$HOME/.dork"
-DORK_DB="$DORK_DIR/dork.db"
 ```
 
+**Ask the server where it keeps its data rather than deriving it.** `GET /api/config` reports the resolved `dorkHome`, so the guess this used to make (`DORK_HOME`, else `apps/server/.temp/.dork`, else `~/.dork`) can be wrong in a way nothing notices — it would happily read one install's database while driving another:
+
+```bash
+curl -s "http://localhost:$API_PORT/api/config" > /tmp/rt-config.json
+python3 -c "
+import json
+d = json.load(open('/tmp/rt-config.json'))
+print('port:', d.get('port'))
+print('dorkHome:', d.get('dorkHome'))
+print('version:', d.get('version'), '| dev build:', d.get('isDevMode'))
+print('workingDirectory:', d.get('workingDirectory'))
+"
+DORK_DIR=$(python3 -c "import json;print(json.load(open('/tmp/rt-config.json')).get('dorkHome',''))")
+[ -n "$DORK_DIR" ] || { echo "ERROR: the server reported no dorkHome — stop here, do not write anything."; exit 1; }
+DORK_DB="$DORK_DIR/dork.db"
+echo "DORK_DIR=$DORK_DIR"
+echo "DORK_DB=$DORK_DB"
+```
+
+Put all four lines in the report header. An empty `DORK_DIR` is a hard stop rather than a shrug: every path built from it below collapses to `/dork.db` and `/config.json`, which exist nowhere, so the checks would read nothing and the snapshot would protect nothing while the run wrote for real.
+
+**Then ask for a yes — UNLESS `dorkHome` starts with `/tmp/dorkos-`.** That prefix is the browser suite's own throwaway home, deleted before every boot and owned by nobody; it is the single exemption:
+
+| `dorkHome`                | What it is                                             |
+| ------------------------- | ------------------------------------------------------ |
+| `/tmp/dorkos-*`           | throwaway — go ahead                                   |
+| `~/.dork`                 | the installed cockpit (what port 4242 means)           |
+| `apps/server/.temp/.dork` | the dev stack's own data — real work lives here        |
+| anything else             | a `DORK_HOME` override, a Docker mount, someone's copy |
+
+For every row but the first, **STOP and ask with `AskUserQuestion` before driving anything**: name the port, the `dorkHome` and the version, say that the run creates a channel, posts in it, starts real billable agent turns and reacts to messages there, and offer **drive this install** / **cancel** (starting `pnpm dev` and re-running lands on the dev stack instead). Default to asking — a gate that recognises only `~/.dork` waves the dev directory straight through, and writing the dev directory is the whole reason this rule exists (DOR-1223). Never infer a yes from `mode:live` or from the probe having found something.
+
 **Live mode writes to real rooms.** This test creates a channel, posts in it, halts turns, and reacts. It never deletes anything, but the room and its entries persist — name the channel so it is obviously disposable (Phase 2) and say so in the report.
+
+**Snapshot the config before any write.** Check 1 changes `rooms.collectDebounceMs` on purpose, and a file copy is the only restore that can put back a key that was never stored (see that check):
+
+```bash
+[ -n "$DORK_DIR" ] || { echo "ERROR: DORK_DIR unset — refusing to snapshot or write."; exit 1; }
+CONFIG_SNAPSHOT="$RESULTS_DIR/$TIMESTAMP-config.json.bak"
+if [ -f "$DORK_DIR/config.json" ]; then
+  cp "$DORK_DIR/config.json" "$CONFIG_SNAPSHOT" && echo "config snapshot: $CONFIG_SNAPSHOT"
+else
+  echo "no config.json at $DORK_DIR — an ABSENT file is itself the state to restore: delete the one this run creates."
+fi
+```
+
+The first line is the load-bearing one. Without it an empty `DORK_DIR` makes this test `[ -f "/config.json" ]`, which is false, so the step prints "nothing to snapshot" and the run proceeds to widen the collect window on a live install with nothing to put back.
+
+Report the snapshot path with its restore — `cp "$CONFIG_SNAPSHOT" "$DORK_DIR/config.json"`, then reload the tab; the server re-reads the file on every access, so no restart is needed — and **offer that restore explicitly in the final report**.
 
 ### 1b. Baseline
 
@@ -198,14 +243,27 @@ wait
 
 (Expand `$API_PORT`, `$ROOM_ID` and the agent handle to literals before running — fresh shell, see Tooling.)
 
-**Alternative, when you want the burst driven through the real composer:** widen the window first, since it is read live on every collect and needs no restart —
+**Alternative, when you want the burst driven through the real composer:** widen the window first, since it is read live on every collect and needs no restart.
+
+**Read the stored value before you write, and restore exactly what you read — including its absence.** `rooms.collectDebounceMs` usually has no stored key at all; the 500ms is the schema default filling in. So "restore the default" by PATCHing `500` is not a restore: it leaves a key behind where there was none, on a live install, forever. Capture the real prior state first:
 
 ```bash
+python3 - "$DORK_DIR/config.json" <<'PY'
+import json, sys
+rooms = json.load(open(sys.argv[1])).get('rooms', {})
+print('PRIOR:', 'absent' if 'collectDebounceMs' not in rooms else rooms['collectDebounceMs'])
+PY
+
 curl -sf -X PATCH "http://localhost:$API_PORT/api/config" -H 'content-type: application/json' \
   -d '{"rooms":{"collectDebounceMs":8000}}'
 ```
 
-then type the three messages in the UI, and **restore the original value afterwards** — this is a real config write on a live install, not a test fixture. Two caveats on that write: `rooms.collectDebounceMs` is `operator-only` (`config-write-policy.ts`), which a plain `curl` clears by simply not sending agent-identity headers; but **with login on it also needs a real session cookie**, so on such an install make the change from the cockpit's own settings rather than the shell. Whichever route you take, **print the window value in force beside the verdict** — a verdict about gathering is meaningless without the window it gathered in.
+Then type the three messages in the UI, and put it back:
+
+- **Prior value was a number** → `PATCH` that number back, and re-read the file to confirm.
+- **Prior key was absent** → a `PATCH` cannot express absence. Restore the config snapshot taken in Phase 1 instead (`cp "$CONFIG_SNAPSHOT" "$DORK_DIR/config.json"`), then reload the tab; the server re-reads the file on every access. Re-read the file and confirm the key is gone.
+
+This is a real config write on a live install, not a test fixture. Two caveats on the write itself: `rooms.collectDebounceMs` is `operator-only` (`config-write-policy.ts`), which a plain `curl` clears by simply not sending agent-identity headers; but **with login on it also needs a real session cookie**, so on such an install make the change from the cockpit's own settings rather than the shell. Whichever route you take, **print the window value in force beside the verdict** — a verdict about gathering is meaningless without the window it gathered in — and **say in the report which restore path you took and what the file holds now**.
 
 In `mode:sandbox`, use the API burst too, and for the same reason twice over: the `simple-text` echo returns before a second browser-driven post could even be typed.
 

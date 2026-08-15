@@ -26,9 +26,6 @@ import type { Locator, Page } from '@playwright/test';
  * and no item may paint over the trailing `⋯`.
  */
 
-// eslint-disable-next-line no-restricted-syntax -- E2E test config; no env.ts available
-const API_URL = `http://localhost:${process.env.DORKOS_PORT || '4242'}`;
-
 /** The widths in the bug report, plus a desktop width for the non-degraded case. */
 const WIDTHS = [900, 520, 375, 330] as const;
 
@@ -253,15 +250,16 @@ function revealTrigger(page: Page): Locator {
 // without needing it costs coverage for nothing. Nothing below sends a message,
 // sets a scenario, or waits on a turn: the file opens the composer and measures
 // where the status line paints. It passes with no credentials of any kind.
+//
+// Onboarding is NOT dismissed here, deliberately (DOR-1223). This file used to
+// open with a `beforeAll` that PATCHed `onboarding.dismissedAt` to `now` on every
+// run — an unconditional overwrite of a real timestamp, with no restore, against
+// whatever `DORK_HOME` the leg happened to hold. `global-setup.ts` already does
+// the same job once per run, for every API leg, and does it read-before-write so
+// a home that was already onboarded is left exactly as it was. A second,
+// unconditional copy of that write bought this file nothing and cost the
+// operator a stomped field.
 test.describe('Chat — status line fits its row', () => {
-  test.beforeAll(async ({ request }) => {
-    // A fresh DORK_HOME has no completed onboarding steps, so the wizard would sit
-    // in front of the cockpit. Same dismissal chat-mock.spec.ts uses.
-    await request.patch(`${API_URL}/api/config`, {
-      data: { onboarding: { dismissedAt: new Date().toISOString() } },
-    });
-  });
-
   for (const width of WIDTHS) {
     test.describe(`at ${width}px`, () => {
       // Touch emulation is what puts the `⋯` on its 44px coarse-pointer target, so

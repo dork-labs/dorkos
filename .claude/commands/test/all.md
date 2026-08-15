@@ -49,7 +49,7 @@ A dirty tree is fine (that is usually the point), but record it: a run against u
 Check for a live stack, because it changes what tier 3 can do:
 
 ```bash
-for port in 4241 4242 4243 4248; do
+for port in 4244 4245 4243 4248; do
   lsof -nP -iTCP:$port -sTCP:LISTEN >/dev/null 2>&1 && echo "PORT $port BUSY"
 done
 ```
@@ -104,16 +104,16 @@ Run it from the repo root — every other tier here does, and a `cd` that persis
 pnpm --filter @dorkos/e2e exec playwright test 2>&1 | tee "$RESULTS_DIR/$TIMESTAMP-e2e.log"
 ```
 
-**This tier boots its own servers.** `apps/e2e/playwright.config.ts` sets `REUSE_EXISTING_SERVER = false` deliberately (a default-port run once attached to the operator's real cockpit on 4242 and mutated the real `~/.dork`). Consequences:
+**This tier boots its own servers.** `apps/e2e/playwright.config.ts` sets `REUSE_EXISTING_SERVER = false` deliberately (a default-port run once attached to the operator's real cockpit on 4242 and mutated the real `~/.dork`). Every leg also boots on its own ports, against its own throwaway `DORK_HOME` under `/tmp`, wiped before every boot — so this tier can no longer read or write the operator's data (DOR-1223). Consequences:
 
-- Ports **4242** (Express API), **4241** (Vite), **4243** (test-mode API), **4248** (test-mode Vite) must be **free**. If Phase 0 found any busy — a running `pnpm dev` or `pnpm dev:dogfood` is the usual cause — this tier will fail on startup with a port error. Report it as `BLOCKED (port in use)`, never as FAIL, and tell the operator which port and which command to stop. The isolated-run recipe in `apps/e2e/README.md` (override `DORKOS_PORT` / `VITE_PORT` / `DORKOS_MOCK_PORT` / `DORKOS_MOCK_VITE_PORT`) lets it run alongside a live cockpit.
+- Ports **4245** (Express API), **4244** (Vite), **4243** (test-mode API), **4248** (test-mode Vite) must be **free**. None is a dev port (6xxx) or the production default (4242), so a plain `pnpm dev` / `pnpm dev:dogfood` does not collide — but do not read that as "nothing else can be there": the desktop app starts at 4242 and walks up to the next free port across a ten-port range, which covers every port in this list. A collision is loud either way (`reuseExistingServer: false` makes a busy port a startup error naming it), never a silent adoption. If Phase 0 found any busy, this tier will fail on startup with a port error. Report it as `BLOCKED (port in use)`, never as FAIL, and tell the operator which port and which command to stop. The isolated-run recipe in `apps/e2e/README.md` (move `DORKOS_COCKPIT_PORT` / `DORKOS_COCKPIT_VITE_PORT` / `DORKOS_MOCK_PORT` / `DORKOS_MOCK_VITE_PORT`) lets two runs coexist.
 - Playwright starts every configured `webServer` leg for the run, so the boot cost is paid even for a narrow project selection.
 
 **Which projects run without a live stack — all of them, and none of them spends money:**
 
 | Project                | Leg                            | Runtime                                                                            |
 | ---------------------- | ------------------------------ | ---------------------------------------------------------------------------------- |
-| `chromium`             | Express API 4242 + Vite 4241   | real claude-code, but `@integration` specs are excluded unless `E2E_INTEGRATION=1` |
+| `chromium`             | Express API 4245 + Vite 4244   | real claude-code, but `@integration` specs are excluded unless `E2E_INTEGRATION=1` |
 | `chromium-mock`        | test-mode API 4243 + Vite 4248 | `TestModeRuntime` (no model)                                                       |
 | `chromium-connections` | test-mode                      | `TestModeRuntime`                                                                  |
 | `chromium-streams`     | test-mode                      | `TestModeRuntime` (incl. the multi-window connection-budget guard)                 |

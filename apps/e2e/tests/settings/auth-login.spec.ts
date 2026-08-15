@@ -17,9 +17,11 @@ import { test, expect } from '../../fixtures';
  * suite against a shared instance, and they assume a CLEAN instance at start (no
  * owner, auth off). They are therefore OPT-IN: skipped unless `DORKOS_E2E_AUTH`
  * is set, so a normal `pnpm e2e` run never touches auth state. Run them against a
- * throwaway DORK_HOME, e.g.:
+ * throwaway DORK_HOME — which the cockpit leg now gives itself (DOR-1223), so
+ * this is only about keeping the run off another leg's ports:
  *
- *   DORKOS_E2E_AUTH=1 DORK_HOME=/tmp/dorkos-auth-e2e DORKOS_PORT=4242 VITE_PORT=4241 \
+ *   DORKOS_E2E_AUTH=1 DORKOS_COCKPIT_PORT=4255 DORKOS_COCKPIT_VITE_PORT=4254 \
+ *     DORKOS_MOCK_PORT=4253 DORKOS_MOCK_VITE_PORT=4258 \
  *     pnpm --filter @dorkos/e2e exec playwright test tests/settings/auth-login.spec.ts --workers=1
  *
  * (or wire a dedicated isolated webServer + project in playwright.config.ts,
