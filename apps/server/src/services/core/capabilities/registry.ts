@@ -81,6 +81,23 @@ export interface CapabilityInvocationContext {
    */
   retryChannel?: ApprovalRetryChannel;
   /**
+   * The signed-in PERSON behind this call, when login is on and the surface
+   * verified one — a session cookie or a per-user API key.
+   *
+   * It exists because "no agent identity" is not the same fact as "the owner".
+   * A capability that acts on somebody's own data (the rooms domain reads and
+   * writes rooms scoped to one member) has to know WHICH person is asking, and
+   * the honest answers are three, not two: an agent, a named person, or nobody
+   * this surface could name. Resolving the third case to the owner is how an
+   * invited user's API key came to read the owner's direct messages.
+   *
+   * Absent when login is off — where there is genuinely nothing to tell a local
+   * program from the person at the keyboard (the documented DOR-505 residual) —
+   * and absent on any surface that verifies no person. Informational, never an
+   * authorization: it says who the caller is, not what they may do.
+   */
+  userId?: string;
+  /**
    * The session the call was made FROM, when the surface has one — the
    * in-session `dorkos` server sets it from the live session (connector
    * capabilities default their session-scoped actions to it). The external
@@ -113,6 +130,12 @@ export interface CapabilityInvocationContext {
 export interface CapabilityHandlerContext {
   /** The agent behind this call, when one presented a resolved identity token. */
   identity?: AgentIdentity;
+  /**
+   * The signed-in person behind this call, when the surface verified one. See
+   * {@link CapabilityInvocationContext.userId} for why its ABSENCE is a distinct
+   * fact from "the owner" and must be treated as one.
+   */
+  userId?: string;
   /**
    * The approval the tier gate spent to let this call through, when the call was
    * gated (`destructive` tier) and a person granted it.
@@ -410,6 +433,7 @@ export function composeRegistry(
       // guarding for an absent context on every call site. The invoking session
       // id and its directory are adapter facts that ride through on either branch.
       const surface = {
+        ...(supplied.userId ? { userId: supplied.userId } : {}),
         ...(supplied.sessionId ? { sessionId: supplied.sessionId } : {}),
         ...(supplied.cwd ? { cwd: supplied.cwd } : {}),
       };

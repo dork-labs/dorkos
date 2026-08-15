@@ -1788,19 +1788,21 @@ async function start() {
     requireMcpEnabled,
     createMcpAuth({ surface: 'mcp' }),
     mcpRateLimiter,
-    createMcpRouter((agentIdentity) => {
+    createMcpRouter((caller) => {
       if (!claudeRuntime || !mcpToolDeps) {
         throw new Error(
           'ClaudeCodeRuntime not available — external MCP server cannot handle requests'
         );
       }
-      // The server is rebuilt per request, so the caller's resolved identity
-      // (if any) is captured by the capability tool handlers it registers.
+      // The server is rebuilt per request, so who is calling — the agent that
+      // presented a token, the person the auth middleware verified, or neither
+      // — is captured by the capability tool handlers it registers.
       return createExternalMcpServer(
         mcpToolDeps,
         marketplaceMcpDeps,
         capabilityRegistry,
-        agentIdentity
+        caller.identity,
+        caller.userId
       );
     })
   );
@@ -2644,6 +2646,11 @@ async function start() {
       // The MCP-server-management domain — its deps are built above so the
       // `mcp.import` fallback closure narrows `meshCore`.
       ...(mcpDeps && { mcpDeps }),
+      // The rooms domain (room-participation spec §10.2, §10.3): the four verbs
+      // an agent has in the rooms it belongs to. The SAME service instance the
+      // REST routes and the trigger dispatcher hold — one set of membership
+      // rules, one cascade guard, one budget, whichever surface reaches them.
+      roomDeps: { rooms: roomService },
     },
     createCapabilityAttributionObserver(activityService)
   );

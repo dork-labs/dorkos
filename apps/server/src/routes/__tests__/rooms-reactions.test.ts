@@ -2,10 +2,11 @@
  * `POST /api/rooms/:id/entries/:entryId/reactions` and what a reaction does to
  * the room's SSE stream, driven through the REAL app mount.
  *
- * Two things are under test that a service-level test cannot reach. The route's
- * refusals — above all that an agent presenting a real identity token is turned
- * away (`meta/agent-etiquette.md` E16b) — because that gate only means anything
- * against the identity middleware that ships. And the stream's resume contract:
+ * Two things are under test that a service-level test cannot reach. WHO a
+ * reaction belongs to — an agent presenting a real identity token leaves a pill
+ * in its OWN name (ADR 260814-195522, which reverses etiquette E16b's ban) —
+ * because that only means anything against the identity middleware that ships.
+ * And the stream's resume contract:
  * a reader that comes back with a `Last-Event-ID` has to end up with the right
  * pills, including on messages BELOW its cursor, which is the one case an entry
  * replay structurally cannot carry.
@@ -139,13 +140,17 @@ describe('POST /api/rooms/:id/entries/:entryId/reactions', () => {
   let roomId: string;
   let entryId: string;
   let entrySeq: number;
+  /** Ana's author id — who a pill she left belongs to. */
+  let anaAuthorId: string;
 
   beforeEach(async () => {
     vi.clearAllMocks();
     resetAgentIdentityService();
     db = createTestDb();
     registerAgent(db, 'ana', ANA_PATH);
-    setRoomService(createRoomSubsystem({ db }).service);
+    const subsystem = createRoomSubsystem({ db });
+    setRoomService(subsystem.service);
+    anaAuthorId = subsystem.authors.resolveAgent(ANA_PATH, 'Ana').id;
     const created = await request(app)
       .post('/api/rooms')
       .send({ kind: 'channel', title: 'Backend', agentPaths: [ANA_PATH] });
@@ -250,7 +255,12 @@ describe('POST /api/rooms/:id/entries/:entryId/reactions', () => {
     expect([...stored].sort()).toEqual([...sent].sort());
   });
 
-  it('refuses an agent presenting a real identity token', async () => {
+  it('accepts an agent presenting a real identity token, as itself', async () => {
+    // This route used to answer `403 PEOPLE_ONLY` here. ADR 260814-195522
+    // reverses etiquette E16b: an agent may react, bounded by an hourly ceiling
+    // per room rather than by what kind of author it is. The pill it leaves
+    // carries the AGENT's author id, which is the half worth pinning — the token
+    // decides who reacted, and nothing in the body can.
     const identity = initAgentIdentityService(db);
     const token = await identity.mint({ agentPath: ANA_PATH, displayName: 'Ana' });
 
@@ -259,14 +269,21 @@ describe('POST /api/rooms/:id/entries/:entryId/reactions', () => {
       .set('X-DorkOS-Agent', token)
       .send({ emoji: '👍' });
 
-    expect(res.status).toBe(403);
-    expect(res.body.code).toBe('PEOPLE_ONLY');
+    expect(res.status).toBe(202);
 
     const page = await request(app).get(`/api/rooms/${roomId}/entries`);
-    expect(page.body.entries[0].reactions, 'a refused reaction leaves nothing behind').toEqual([]);
+    const pills = page.body.entries[0].reactions as Array<{
+      emoji: string;
+      authorIds: string[];
+    }>;
+    expect(pills).toHaveLength(1);
+    expect(pills[0]!.emoji).toBe('👍');
+    expect(pills[0]!.authorIds, 'the pill is the agent"s, not the operator"s').toEqual([
+      anaAuthorId,
+    ]);
   });
 
-  it('lets that same agent post, so the refusal is about reacting and not about the token', async () => {
+  it('lets that same agent post too', async () => {
     const identity = initAgentIdentityService(db);
     const token = await identity.mint({ agentPath: ANA_PATH, displayName: 'Ana' });
 

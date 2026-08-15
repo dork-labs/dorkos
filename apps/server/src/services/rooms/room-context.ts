@@ -50,7 +50,7 @@ import {
   type AuthorRecord,
   type AuthorRegistry,
 } from './author-registry.js';
-import type { ReactionStore } from './reaction-store.js';
+import type { ReactionStore } from './reactions/reaction-store.js';
 import type { RoomAgentLookup } from './room-errors.js';
 import type { RoomStore } from './room-store.js';
 import { projectedAttachmentPath, storedExtension } from './attachments/attachment-paths.js';

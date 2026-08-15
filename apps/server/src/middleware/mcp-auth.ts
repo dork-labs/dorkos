@@ -71,6 +71,12 @@ export function createMcpAuth({
     // 2. Per-user Better Auth API key or session cookie (shared verifier).
     const identity = await verifyRequestAuth(req);
     if (identity) {
+      // Recorded, not just accepted. A capability that acts on somebody's own
+      // data has to know WHICH person is asking, and this is the only place on
+      // this surface that ever knows — the same `res.locals.user` slot
+      // `sessionGate` fills, so downstream readers have one shape to read.
+      // Discarding it is how "authenticated" collapsed into "the owner".
+      res.locals.user = identity;
       next();
       return;
     }

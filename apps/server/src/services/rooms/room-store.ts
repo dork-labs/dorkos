@@ -781,13 +781,30 @@ export class RoomStore {
   /**
    * A page of history, oldest-first within the page.
    *
+   * **One predicate over one table, and it stays that way.** A thread is an
+   * entry-level relation (ADR 260728-022013), so a thread's replies live in the
+   * channel's own log carrying `threadRootEntryId` — narrowing to a thread is one
+   * more `AND`, where the child-room model would have needed a `UNION` across
+   * every thread hanging off the channel (room-participation spec §3.3).
+   *
    * @param roomId - The room.
    * @param opts.before - Return entries with `seq` strictly below this.
+   * @param opts.afterSeq - Return entries with `seq` strictly above this. The
+   *   history tools pass a member's `joinedSeq`, so nobody retroactively reads
+   *   what was said before they were in the room (spec §8.3, §10.3).
+   * @param opts.threadRootEntryId - Narrow to one thread's replies.
    * @param opts.limit - Page size.
    */
-  listEntries(roomId: string, opts: { before?: number; limit: number }): RoomEntry[] {
+  listEntries(
+    roomId: string,
+    opts: { before?: number; afterSeq?: number; threadRootEntryId?: string; limit: number }
+  ): RoomEntry[] {
     const conditions = [eq(roomEntries.roomId, roomId)];
     if (opts.before !== undefined) conditions.push(lt(roomEntries.seq, opts.before));
+    if (opts.afterSeq !== undefined) conditions.push(gt(roomEntries.seq, opts.afterSeq));
+    if (opts.threadRootEntryId !== undefined) {
+      conditions.push(eq(roomEntries.threadRootEntryId, opts.threadRootEntryId));
+    }
     const rows = this.db
       .select()
       .from(roomEntries)
@@ -796,6 +813,29 @@ export class RoomStore {
       .limit(opts.limit)
       .all();
     return rows.reverse().map(toEntry);
+  }
+
+  /**
+   * Specific entries of one room, by `seq`, in position order.
+   *
+   * The resolve half of `search_room_history`: the message index answers in
+   * coordinates, and a coordinate becomes a message only by coming back through
+   * the store that owns it. Scoped to ONE room by construction, so a coordinate
+   * from anywhere else resolves to nothing rather than to somebody's message.
+   *
+   * @param roomId - The room the coordinates belong to.
+   * @param seqs - The positions to read. An empty list reads nothing.
+   */
+  listEntriesBySeq(roomId: string, seqs: readonly number[]): RoomEntry[] {
+    const wanted = [...new Set(seqs)];
+    if (wanted.length === 0) return [];
+    return this.db
+      .select()
+      .from(roomEntries)
+      .where(and(eq(roomEntries.roomId, roomId), inArray(roomEntries.seq, wanted)))
+      .orderBy(roomEntries.seq)
+      .all()
+      .map(toEntry);
   }
 
   /**

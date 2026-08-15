@@ -806,5 +806,6 @@ No open questions remain for spec review.
 - `.claude/rules/room-conduct.md`, `.claude/rules/dork-home.md`, `.claude/rules/fsd-layers.md`,
   `.claude/rules/api.md`
 - Prior art in-tree: `apps/server/src/services/identity/{avatar-store,local-avatar-store}.ts`,
-  `apps/server/src/routes/profile.ts`, `apps/server/src/services/rooms/reaction-store.ts`,
+  `apps/server/src/routes/profile.ts`,
+  `apps/server/src/services/rooms/reactions/reaction-store.ts`,
   `apps/client/src/layers/features/chat/model/use-file-upload.ts`

@@ -12,7 +12,8 @@
  *
  * A domain is included only when its service handles are present in `deps`:
  * `operatorDeps` gates the operator domain, `marketplaceDeps` the marketplace
- * domain, and the self-description domain is always present. Every included
+ * domain, `roomDeps` the rooms domain, and the self-description domain is always
+ * present. Every included
  * domain's `assertDeps` runs inside `composeRegistry`, so a domain admitted
  * without its deps fails fast at boot.
  *
@@ -31,6 +32,7 @@ import { operatorDomain } from '../operator/operator-capabilities.js';
 import { marketplaceDomain } from '../../marketplace-mcp/marketplace-capabilities.js';
 import { connectorDomain } from '../../connectors/connector-capabilities.js';
 import { mcpDomain } from '../../mesh/mcp-capabilities.js';
+import { roomsDomain } from '../../rooms/room-capabilities.js';
 import { capabilitiesDomain } from './capabilities-domain.js';
 
 /**
@@ -39,9 +41,9 @@ import { capabilitiesDomain } from './capabilities-domain.js';
  *
  * @param deps - The boot-time dependency bag. `operatorDeps` includes the
  *   operator domain; `marketplaceDeps` the marketplace domain; `connectorDeps`
- *   the connector domain; `mcpDeps` the MCP-server-management domain; the
- *   self-description domain is always included. The composed registry is written
- *   back onto `deps.registry`.
+ *   the connector domain; `mcpDeps` the MCP-server-management domain; `roomDeps`
+ *   the rooms domain; the self-description domain is always included. The composed
+ *   registry is written back onto `deps.registry`.
  * @param onInvocation - Optional observer called after every invocation. Boot
  *   passes the Activity attribution observer so an identified agent's calls are
  *   recorded in the feed (spec `agent-trust` §3.1); omitted in unit tests.
@@ -56,6 +58,7 @@ export function composeDorkOsCapabilityRegistry(
   if (deps.marketplaceDeps) domains.push(marketplaceDomain);
   if (deps.connectorDeps) domains.push(connectorDomain);
   if (deps.mcpDeps) domains.push(mcpDomain);
+  if (deps.roomDeps) domains.push(roomsDomain);
   domains.push(capabilitiesDomain);
 
   const registry = composeRegistry(domains, deps, onInvocation);
@@ -87,6 +90,7 @@ export function composeCapabilityRegistryForDocs(): CapabilityRegistry {
     marketplaceDomain,
     connectorDomain,
     mcpDomain,
+    roomsDomain,
     capabilitiesDomain,
   ];
   const deps: CapabilityDeps = {
@@ -95,6 +99,7 @@ export function composeCapabilityRegistryForDocs(): CapabilityRegistry {
     marketplaceDeps: {} as CapabilityDeps['marketplaceDeps'],
     connectorDeps: {} as CapabilityDeps['connectorDeps'],
     mcpDeps: {} as CapabilityDeps['mcpDeps'],
+    roomDeps: {} as CapabilityDeps['roomDeps'],
   };
   return composeRegistry(domains, deps);
 }

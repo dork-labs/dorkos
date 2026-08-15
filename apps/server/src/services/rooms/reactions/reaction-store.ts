@@ -95,6 +95,35 @@ export class ReactionStore {
   }
 
   /**
+   * Whether this exact reaction is standing right now.
+   *
+   * The one caller is the agent rate bound (ADR 260814-195522), which spends only
+   * on a reaction that will LAND: without this it could not tell an addition from
+   * a retraction or from a no-op re-assert, and would charge all three. Reading
+   * the primary key directly rather than through {@link ReactionStore.listFor},
+   * which would fetch and group an entry's whole pill row to answer a yes/no.
+   *
+   * @param key - The room, entry, author and emoji.
+   * @returns `true` when the row exists.
+   */
+  has(key: ReactionKey): boolean {
+    return (
+      this.db
+        .select({ emoji: roomEntryReactions.emoji })
+        .from(roomEntryReactions)
+        .where(
+          and(
+            eq(roomEntryReactions.roomId, key.roomId),
+            eq(roomEntryReactions.entryId, key.entryId),
+            eq(roomEntryReactions.authorId, key.authorId),
+            eq(roomEntryReactions.emoji, key.emoji)
+          )
+        )
+        .get() !== undefined
+    );
+  }
+
+  /**
    * The reactions on several entries at once, grouped by entry then by emoji.
    *
    * Batched for the reason {@link RoomStore.countThreadRepliesFor} is: a page of
