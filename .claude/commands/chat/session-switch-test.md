@@ -1,6 +1,6 @@
 ---
 description: 'Self-test switching between two concurrently-working DorkOS chat sessions in a live browser — drives real interactions, watches both JSONL transcripts, and asserts that streaming, subagents, queued messages, todos, and permission prompts survive session switches. Logs an evidence-based findings report.'
-argument-hint: '[url] [topics:lakes,fruit] [perm:default|acceptEdits|bypassPermissions] [model:sonnet]'
+argument-hint: '[url] [topics:lakes,fruit] [perm:default|acceptEdits|bypassPermissions] [model:claude-haiku-4-5] [mode:sandbox|live]'
 category: testing
 ---
 
@@ -22,9 +22,13 @@ Parse `$ARGUMENTS`:
    - `default` — **prompts on tool use**. Use this to reproduce/regress the permission-prompt-on-switch bug (checks #6). The downstream checks (#2–#4) will be **blocked** if that bug is present, because the agents stall at the first tool gate.
    - `bypassPermissions` / `acceptEdits` — no blocking gate. Use this to exercise subagents, queued messages, and file ops end-to-end (checks #2–#4).
    - **Run both variants** for full coverage.
-4. **`model:<id>`** — default `sonnet` (fast, cheap; this tests UI plumbing, not model capability).
+4. **`model:<id>`** — default `claude-haiku-4-5` (fastest, cheapest; this tests UI plumbing, not model capability). Ignored under `mode:sandbox`, where no model answers.
+5. **`mode:sandbox|live`** — which stack the run drives (`meta/chat-capabilities.md` §11).
+   - `mode:sandbox` — the **test-mode runtime**: throwaway data dir, deterministic, **no model spend**. Verifies UI plumbing: switching, queueing, stream lifecycle.
+   - `mode:live` — the dev stack with a real runtime. Verifies streaming feel, real tool loops, timing, and permission gates as they actually behave.
+   - **If the invocation does not state a mode, ASK the user before spending anything** (`AskUserQuestion`, offering both, with the cost of each). Never assume `live`.
 
-Store as `TEST_URL`, `TOPIC_A`, `TOPIC_B`, `PERM_MODE`, `MODEL`.
+Store as `TEST_URL`, `TOPIC_A`, `TOPIC_B`, `PERM_MODE`, `MODEL`, `MODE`.
 
 ## Tooling
 
@@ -46,11 +50,43 @@ mkdir -p "$RESULTS_DIR"
 RESULTS_FILE="$RESULTS_DIR/$TIMESTAMP.md"
 ```
 
-Write the header immediately (config + `Status: IN PROGRESS`) and **append after every phase** so partial runs are preserved. Screenshots go in the same dir (`$RESULTS_DIR/$TIMESTAMP-<label>.png`), not the repo root.
+Write the header immediately (config — **including `MODE`**, since a sandbox run and a live run answer different questions — plus `Status: IN PROGRESS`) and **append after every phase** so partial runs are preserved. Screenshots go in the same dir (`$RESULTS_DIR/$TIMESTAMP-<label>.png`), not the repo root.
 
 ---
 
 ## Phase 1 — Preflight (deterministic, live server)
+
+### 1a. Mode resolution — do this before probing anything
+
+The two modes drive **different stacks on different ports**. If `MODE` is unset, ask first (see argument 5).
+
+**`mode:sandbox`** — the test-mode runtime leg (`TestModeRuntime`, no model, no spend). Ports and data dir are the ones `apps/e2e/playwright.config.ts` uses: API **4243**, Vite **4248**, `DORK_HOME=/tmp/dorkos-test-mode-4243`. If nothing answers there, boot it the way the e2e suite does — two panes, from the repo root:
+
+```bash
+# API leg — throwaway data dir, wiped on every boot
+DORKOS_TEST_RUNTIME=true DORKOS_PORT=4243 VITE_PORT=4248 \
+  DORK_HOME=/tmp/dorkos-test-mode-4243 DORKOS_RELAY_ENABLED=true \
+  dotenv -- sh -c 'rm -rf /tmp/dorkos-test-mode-4243 && turbo run build --filter=@dorkos/server && pnpm --filter @dorkos/server exec tsx src/index.ts'
+
+# Client leg — Vite on 4248, proxying /api to 4243
+DORKOS_PORT=4243 VITE_PORT=4248 dotenv -- turbo dev --filter=@dorkos/client
+```
+
+A never-onboarded `DORK_HOME` renders the **first-run wizard instead of the cockpit**, so every wait for the app shell times out. Dismiss it once, exactly as `apps/e2e/global-setup.ts` does:
+
+```bash
+NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+curl -sf -X PATCH http://localhost:4248/api/config -H 'content-type: application/json' \
+  -d "{\"onboarding\":{\"dismissedAt\":\"$NOW\"},\"profile\":{\"rolePromptDismissedAt\":\"$NOW\"}}" >/dev/null
+```
+
+Then set `TEST_URL`'s host to `localhost:4248`, `API_PORT=4243`, and record `Model: n/a (test-mode)`. Phase 3's JSONL mapping does **not** apply — the test-mode runtime writes no `~/.claude/projects` transcript, so cross-check against `GET /api/sessions/:id/messages` and the durable event stream only, and mark every JSONL row `N/A (sandbox)` rather than PASS.
+
+Do not run the Playwright suite at the same time as a sandbox run: its config sets `reuseExistingServer: false`, so it fails on the busy ports instead of adopting your leg.
+
+**`mode:live`** — the dev stack (`pnpm dev` / `pnpm dev:dogfood`), the port probe below, `$MODEL` honored, **real spend on every turn**. Both sessions stream concurrently, so budget for two.
+
+### 1b. Server probe (live mode; skip if sandbox resolved its own ports above)
 
 ```bash
 DORKOS_PORT="${DORKOS_PORT:-6242}"

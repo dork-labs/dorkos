@@ -1,6 +1,6 @@
 ---
 description: 'Self-test the DorkOS chat UI in a live browser session — drives real interactions, monitors JSONL transcript, compares API vs UI, researches issues, and produces an evidence-based findings report'
-argument-hint: '[url] [focus:area1,area2]'
+argument-hint: '[url] [focus:area1,area2] [mode:sandbox|live]'
 allowed-tools: Read, Write, Edit, Bash, Grep, Glob, AskUserQuestion, Skill, WebSearch, WebFetch, mcp__claude-in-chrome__computer, mcp__claude-in-chrome__read_page, mcp__claude-in-chrome__find, mcp__claude-in-chrome__navigate, mcp__claude-in-chrome__read_console_messages, mcp__claude-in-chrome__read_network_requests, mcp__claude-in-chrome__javascript_tool, mcp__claude-in-chrome__tabs_context_mcp, mcp__claude-in-chrome__tabs_create_mcp, mcp__claude-in-chrome__get_page_text
 category: testing
 ---
@@ -41,7 +41,12 @@ Parse `$ARGUMENTS` for two optional inputs:
 
    When no focus is specified, run the full default test suite.
 
-Store parsed values as `TEST_URL` and `FOCUS_AREAS` (array, possibly empty).
+3. **`mode:sandbox|live`** — which stack the run drives (`meta/chat-capabilities.md` §11).
+   - `mode:sandbox` — the **test-mode runtime**: throwaway data dir, deterministic, **no model spend**. Verifies UI plumbing (rendering, history reload, stream lifecycle).
+   - `mode:live` — the dev stack with a real runtime. Model defaults to `claude-haiku-4-5` (Phase 3). Verifies streaming feel, real tool loops, timing.
+   - **If the invocation does not state a mode, ASK the user before spending anything** (`AskUserQuestion`, offering both, with the cost of each). Never assume `live`.
+
+Store parsed values as `TEST_URL`, `FOCUS_AREAS` (array, possibly empty), and `MODE`.
 
 ---
 
@@ -66,6 +71,7 @@ RESULTS_FILE="$RESULTS_DIR/$TIMESTAMP.md"
 ## Test Config
 
 - **URL:** [test URL]
+- **Mode:** [sandbox (test-mode runtime, no spend) | live (real runtime)]
 - **Focus areas:** [areas or "Full suite"]
 - **Started:** [timestamp]
 - **Status:** IN PROGRESS
@@ -84,6 +90,38 @@ TEST_URL="http://localhost:6241/?dir=$HOME/Keep/temp/empty"
 ```
 
 Extract the `dir` query param value from `TEST_URL` for JSONL resolution later.
+
+### Mode resolution — do this before probing anything
+
+The two modes drive **different stacks on different ports**. If `MODE` is unset, ask first (see argument 3).
+
+**`mode:sandbox`** — the test-mode runtime leg (`TestModeRuntime`, no model, no spend). Ports and data dir are the ones `apps/e2e/playwright.config.ts` uses: API **4243**, Vite **4248**, `DORK_HOME=/tmp/dorkos-test-mode-4243`. If nothing answers there, boot it the way the e2e suite does — two panes, from the repo root:
+
+```bash
+# API leg — throwaway data dir, wiped on every boot
+DORKOS_TEST_RUNTIME=true DORKOS_PORT=4243 VITE_PORT=4248 \
+  DORK_HOME=/tmp/dorkos-test-mode-4243 DORKOS_RELAY_ENABLED=true \
+  dotenv -- sh -c 'rm -rf /tmp/dorkos-test-mode-4243 && turbo run build --filter=@dorkos/server && pnpm --filter @dorkos/server exec tsx src/index.ts'
+
+# Client leg — Vite on 4248, proxying /api to 4243
+DORKOS_PORT=4243 VITE_PORT=4248 dotenv -- turbo dev --filter=@dorkos/client
+```
+
+A never-onboarded `DORK_HOME` renders the **first-run wizard instead of the cockpit**, so every wait for the app shell times out. Dismiss it once, exactly as `apps/e2e/global-setup.ts` does:
+
+```bash
+NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+curl -sf -X PATCH http://localhost:4248/api/config -H 'content-type: application/json' \
+  -d "{\"onboarding\":{\"dismissedAt\":\"$NOW\"},\"profile\":{\"rolePromptDismissedAt\":\"$NOW\"}}" >/dev/null
+```
+
+Then set `TEST_URL`'s host to `localhost:4248` and `API_PORT=4243`, and skip Phase 3's model/permission configuration — neither is meaningful when no model answers. The test-mode runtime writes **no `~/.claude/projects` JSONL**, so every JSONL comparison below is `N/A (sandbox)`, never PASS; cross-check the DOM against `GET /api/sessions/:id/messages` and the durable event stream instead.
+
+Do not run the Playwright suite at the same time as a sandbox run: its config sets `reuseExistingServer: false`, so it fails on the busy ports instead of adopting your leg.
+
+**`mode:live`** — the dev stack, the port probe below, real model spend per message.
+
+### Server probe (live mode; skip if sandbox resolved its own ports above)
 
 Verify the dev server is up. Try multiple ports since the server may run on `DORKOS_PORT` (from `.env`), the default 4242 (when `.env` isn't loaded), or be proxied through Vite on 6241:
 
