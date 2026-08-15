@@ -134,13 +134,15 @@ pnpm evals -- --suite core --tier test-mode 2>&1 | tee "$RESULTS_DIR/$TIMESTAMP-
 
 `--tier test-mode` reaches no model, so this costs nothing. The CLI prints a pass/fail table and exits non-zero when the run gate fails — **including when it gated on zero cases**, which is deliberate, because a run that selected nothing otherwise looks exactly like a pass (`packages/evals/bin/evals.ts`).
 
-**Conditional second run — the `rooms` suite:** once DOR-1217 lands and registers rooms eval cases, add:
+**Second run — the `rooms` suite** (landed with DOR-1217; run it, it is not conditional any more):
 
 ```bash
-pnpm evals -- --suite rooms --tier test-mode
+pnpm evals -- --suite rooms --tier test-mode 2>&1 | tee "$RESULTS_DIR/$TIMESTAMP-evals-rooms.log"
 ```
 
-Check before running it, rather than assuming: `--suite` resolves against the tag list in `packages/evals/src/suite/index.ts` (today: `smoke`, `core`, `connector`, `experimental`) or a case id. Until rooms cases exist, that command prints `No eval cases matched suite 'rooms'` and exits 2 — report that as `NOT AVAILABLE YET (DOR-1217)`, never as a failure of the ladder and never as a pass.
+Two runs rather than one selector, because `--suite` takes a single name. This one gates on **four** cases — a mentioned agent runs a turn, an unaddressed message runs none and spends no budget, a burst collects into one charged turn, and Stop interrupts a live turn and writes one notice — and prints eight further rows as `skipped-wrong-tier`. Those eight declare a credentialed runtime, so the runner never starts them here; that is the designed outcome, not a gap, and it is why the GATING line reads `4 of 4` rather than `4 of 12`.
+
+Still check rather than assume, because the mechanism is what it always was: `--suite` resolves against the tag list in `packages/evals/src/suite/index.ts` (today: `smoke`, `core`, `connector`, `experimental`, `rooms`) or a case id. A name that matches nothing prints `No eval cases matched suite '<name>'` and exits 2 — report that as `NOT AVAILABLE YET`, never as a failure of the ladder and never as a pass.
 
 ---
 
@@ -151,12 +153,13 @@ Append to the report:
 ```markdown
 ## Summary — free tiers
 
-| #   | Tier                    | Verdict | Duration | Notes                     |
-| --- | ----------------------- | ------- | -------- | ------------------------- |
-| 1   | pnpm verify (affected)  |         |          |                           |
-| 2   | Full unit suite         |         |          | executed / cache-replayed |
-| 3   | Playwright (6 projects) |         |          | site specs excluded       |
-| 4   | Evals — core, test-mode |         |          | rooms suite: [status]     |
+| #   | Tier                     | Verdict | Duration | Notes                     |
+| --- | ------------------------ | ------- | -------- | ------------------------- |
+| 1   | pnpm verify (affected)   |         |          |                           |
+| 2   | Full unit suite          |         |          | executed / cache-replayed |
+| 3   | Playwright (6 projects)  |         |          | site specs excluded       |
+| 4   | Evals — core, test-mode  |         |          |                           |
+| 4b  | Evals — rooms, test-mode |         |          | 4 gating + 8 wrong-tier   |
 ```
 
 Then list every failure with: tier, the failing package/spec/case name, the first real error line, and the log file path. If everything passed, say so in one sentence and move on — no victory paragraphs.

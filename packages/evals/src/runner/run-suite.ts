@@ -1,8 +1,9 @@
 /**
- * Run a whole suite: select the cases, run each through {@link runEval} under a
- * shared per-run {@link BudgetTracker}, retry the one measured infrastructure
- * signature once (`runner/retry.ts`), skip the remainder once the run budget is
- * spent, and emit `results.json`. Phase 1 runs cases SERIALLY because the
+ * Run a whole suite: select the cases, SKIP the ones whose declared runtime the
+ * run cannot provide, run the rest through {@link runEval} under a shared
+ * per-run {@link BudgetTracker}, retry the one measured infrastructure signature
+ * once (`runner/retry.ts`), skip the remainder once the run budget is spent, and
+ * emit `results.json`. Phase 1 runs cases SERIALLY because the
  * in-process server is a process-level singleton; bounded concurrency arrives
  * with the child-process tier (Phase 2).
  *
@@ -58,13 +59,20 @@ export interface RunSuiteResult {
   resultsPath: string;
 }
 
-/** A skipped-over-budget result for a case that never ran. */
-function skippedResult(evalCase: EvalCase, tier: RuntimeTier): EvalResult {
+/** A result for a case that never ran, carrying why. */
+function skippedResult(
+  evalCase: EvalCase,
+  tier: RuntimeTier,
+  status: 'skipped-over-budget' | 'skipped-wrong-tier'
+): EvalResult {
   return {
     id: evalCase.id,
     title: evalCase.title,
-    status: 'skipped-over-budget',
-    runtimeTier: tier,
+    status,
+    // The tier RECORDED is the one the case declares, not the one the run
+    // booted: on a wrong-tier skip they differ, and the row's job is to say
+    // which tier this case would need.
+    runtimeTier: status === 'skipped-wrong-tier' ? evalCase.runtimeTier : tier,
     costClass: evalCase.costClass,
     costUsd: 0,
     costUnmetered: false,
@@ -73,6 +81,33 @@ function skippedResult(evalCase: EvalCase, tier: RuntimeTier): EvalResult {
     quarantined: evalCase.quarantined ?? false,
     retried: false,
   };
+}
+
+/**
+ * Whether this case cannot run on the tier the run booted.
+ *
+ * A case that declares a credentialed runtime is about MODEL behaviour — a real
+ * agent choosing a tool, recalling a conversation, refusing an injected
+ * instruction. Run against the deterministic `test-mode` runtime it does not
+ * become a weaker test; it becomes a different one whose verdict means nothing,
+ * and the `rooms-adversarial-injection` case measured that the hard way: it
+ * reported `pass` on a test-mode run because a scripted echo obeys no
+ * instructions, injected or otherwise.
+ *
+ * So the declared tier is enforced rather than described. Enforced HERE, at
+ * selection, rather than inside {@link runEval}: `runEval` is the single-case
+ * primitive that unit tests deliberately drive off-tier, and a guard there would
+ * make those tests unable to test anything.
+ *
+ * One direction only — see {@link EvalCaseMeta}'s `runtimeTier` for why a
+ * `test-mode` case still runs on a credentialed tier.
+ *
+ * @param evalCase - The case being selected.
+ * @param tier - The tier the run booted on.
+ * @returns True when the case must be skipped.
+ */
+function needsCredentialedTier(evalCase: EvalCase, tier: RuntimeTier): boolean {
+  return tier === 'test-mode' && evalCase.runtimeTier !== 'test-mode';
 }
 
 /** Generate a filesystem-safe, sortable run id. */
@@ -122,8 +157,15 @@ export async function runSuite(cases: EvalCase[], opts: RunSuiteOptions): Promis
 
   const results: EvalResult[] = [];
   for (const evalCase of cases) {
+    // Before the budget check: a case that cannot run on this tier was never a
+    // spend question, and reporting it as "skipped over budget" would say the
+    // run ran out of money rather than that the case needs a model.
+    if (needsCredentialedTier(evalCase, opts.tier)) {
+      results.push(skippedResult(evalCase, opts.tier, 'skipped-wrong-tier'));
+      continue;
+    }
     if (tracker.isOverRunBudget()) {
-      results.push(skippedResult(evalCase, opts.tier));
+      results.push(skippedResult(evalCase, opts.tier, 'skipped-over-budget'));
       continue;
     }
     // `test-mode` boots in-process and never consults a launcher; only the

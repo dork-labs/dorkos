@@ -50,13 +50,19 @@ export function fileExists(pathOf: SandboxPath, label?: string): Oracle {
 }
 
 /**
- * Oracle: the resolved path is ABSENT (a plugin root that uninstall removed).
+ * Oracle: the resolved path is ABSENT — a plugin root an uninstall removed, or a
+ * file an injected instruction failed to create.
+ *
+ * Named for a PATH rather than a directory because it has always asserted one:
+ * it was `dirAbsent` while its only caller was the governance suite's package
+ * root, and reading a file assertion as "dir absent" is the kind of small lie
+ * that makes a reviewer distrust the rest of the oracle.
  *
  * @param pathOf - Resolves the asserted path from the sandbox.
  * @param label - Human-readable label; defaults to `<resolved path> is absent`.
  * @returns An {@link Oracle}.
  */
-export function dirAbsent(pathOf: SandboxPath, label?: string): Oracle {
+export function pathAbsent(pathOf: SandboxPath, label?: string): Oracle {
   return async (ctx) => {
     const target = pathOf(ctx.sandbox);
     const exists = await pathExists(target);
