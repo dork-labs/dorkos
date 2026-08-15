@@ -685,6 +685,61 @@
       "failCount": 0,
       "relatedCode": [],
       "lastModified": ""
+    },
+    "room-autonomy": {
+      "specFile": "tests/rooms/room-autonomy.spec.ts",
+      "feature": "rooms",
+      "description": "three quick messages become ONE answer, and it answers the newest, a message sent while the agent is working is answered, not turned away, the Stop button stops every agent working here, and the room says so once, a message whose text is \"stop\" is answered like any other message",
+      "lastRun": "",
+      "lastStatus": "passed",
+      "runCount": 0,
+      "passCount": 0,
+      "failCount": 0,
+      "relatedCode": [
+        "apps/server/src/services/rooms/room-collect.ts",
+        "apps/server/src/services/rooms/room-trigger.ts",
+        "apps/server/src/services/rooms/notices/notice-copy.ts",
+        "apps/client/src/layers/widgets/room-view/ui/RoomHeader.tsx",
+        "apps/client/src/layers/entities/room/model/use-halt-room.ts",
+        "apps/client/src/layers/widgets/room-view/ui/RoomNoticeRow.tsx"
+      ],
+      "explorationNotes": [
+        "TEST-MODE LEG ONLY. Every test un-silences a room agent, which the roomsApi fixture otherwise guarantees never happens; on the cockpit leg that is a real billable claude-code turn per test. Project chromium-rooms-agents, and the cockpit project names this file in testIgnore.",
+        "The collect window is seeded per test via PATCH /api/config { rooms: { collectDebounceMs } } — read live per burst by room-collect.ts, so no restart. Restored to the 500ms schema default, which is exact because this leg's DORK_HOME is deleted before every boot.",
+        "room-timeline is NOT mounted until something has been said in the room. Wait on roomsPage.roomHeader after navigating to a freshly seeded room; four tests failed on the feed barrier before that.",
+        "long-turn + POST /api/test/finish-turn is the only lever for a turn that is still running. finish-turn is STICKY until POST /api/test/reset, so every test here resets first — without it the halt test silently gets an instant turn and 'room-header-halt' never renders, which reads as a broken button.",
+        "The file is mode:'serial'. fullyParallel schedules individual TESTS onto workers, and these share two pieces of server-global state (the collect window and the scenario). --repeat-each must be run with --workers=1, which is what CI runs.",
+        "The burst's observable is the reply TEXT: the turn prompt is the newest entry verbatim, and the simple-text scenario echoes it. arrivedDuringPrevTurn is model-facing only — no entry field, no DOM node — so the mid-turn test asserts a COUNT (two messages, two answers) and never a text match; long-turn echoes nothing.",
+        "Halt on this leg proves the room's half only: TestModeRuntime.interruptQuery answers false, so this is deliberately the stubborn-runtime path. The halted notice copy carries the count ('2 agents were working'), which is how a browser can tell 'stopped everything' from 'stopped one'."
+      ],
+      "lastModified": ""
+    },
+    "agent-reactions": {
+      "specFile": "tests/rooms/agent-reactions.spec.ts",
+      "feature": "rooms",
+      "description": "the pill lands on the message, as the agent and not as you",
+      "lastRun": "",
+      "lastStatus": "passed",
+      "runCount": 0,
+      "passCount": 0,
+      "failCount": 0,
+      "relatedCode": [
+        "apps/server/src/routes/rooms.ts",
+        "apps/server/src/routes/room-caller.ts",
+        "apps/server/src/services/rooms/reactions/reaction-budget.ts",
+        "apps/server/src/services/core/agent-identity/agent-token-env.ts",
+        "apps/client/src/layers/features/entry-actions/ui/EntryReactionRow.tsx",
+        "apps/client/src/layers/entities/room/lib/reactions.ts"
+      ],
+      "explorationNotes": [
+        "A FABRICATED X-DorkOS-Agent token does not fail — resolveAgentIdentityFromHeaders never rejects, so it falls through to the operator and the reaction lands under the PERSON's author id. A test that invented one would be green while proving the opposite of its name.",
+        "Real tokens are only ever issued into a spawned session's process env (agent-token-env.ts), so the test-mode leg grew POST /api/test/agent-token { agentPath, displayName } -> { token }, which mints through the production path. Pass agent.projectPath (the canonicalised path), not agent.path.",
+        "Assert the SERVER's authorIds on the entry before asserting anything visual: every DOM assertion here passes just as well when the identity fell through.",
+        "The cockpit draws an agent's reaction identically to a person's by design — no data-agent, no tint. What distinguishes it is the pill's aria-label, '<name> reacted <emoji>', resolved off the room roster ('Someone who left' when it cannot be placed). data-mine is stamped only on the reader's own.",
+        "Send { on: true }, never a bare toggle: POST is not idempotent and a retried request would undo itself.",
+        "No turn is driven here, so the agent stays SILENT — a reaction is precisely the thing that costs no turn."
+      ],
+      "lastModified": ""
     }
   },
   "runHistory": [

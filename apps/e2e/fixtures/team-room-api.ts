@@ -80,11 +80,30 @@ export interface TeamRoomEntry {
   seq: number;
   authorId: string;
   /**
-   * `moment` is what makes an entry a milestone — a moment is a POST, so
-   * nothing but the body says so, which is exactly how the cockpit tells them
-   * apart too (`RoomEntryRow`).
+   * The conversation this entry belongs to — a post's own id, and every answer
+   * to it.
+   *
+   * **The only sound way to ask "who answered ME" in #team**, and the reason two
+   * tests here were flaky (DOR-1213). Every test on this leg shares this room,
+   * and `POST /entries` is trigger-only: a test that asserts its timeline and
+   * moves on leaves its agent's reply still coming. That straggler lands during
+   * the NEXT test, arrives after that test's `before` snapshot, and is counted
+   * as an answer to a message it has nothing to do with — which is how "the
+   * default agent answered a post that named somebody else" was reported about a
+   * reply to a post two tests earlier.
+   *
+   * Filtering by id-not-seen-before cannot tell those apart. The cascade can:
+   * it is the server's own answer to which conversation a line is part of.
    */
-  body: { text?: string; moment?: TeamRoomMoment; subjectAuthorId?: string };
+  cascadeRoot: string;
+  /**
+   * `moment` is what makes an entry a milestone and `notice` is what makes it
+   * the ROOM speaking rather than somebody in it — both are ordinary posts whose
+   * body says what they are, which is exactly how the cockpit tells them apart
+   * too (`RoomEntryRow`, `RoomNoticeRow`). An assertion about who ANSWERED has
+   * to exclude notices, or the room's own helpful line counts as a participant.
+   */
+  body: { text?: string; notice?: string; moment?: TeamRoomMoment; subjectAuthorId?: string };
   mentions: string[];
 }
 
@@ -266,26 +285,46 @@ export class TeamRoomApi {
   }
 
   /**
-   * Wait until an agent is on #team's roster, and answer with its author id.
+   * Wait until an agent is on #team's roster **and answers to an `@handle`**,
+   * and answer with its author id.
    *
-   * The seam that seats it runs after the creation response, so a test that read
-   * the roster straight away would be racing it.
+   * Two seams, not one, and waiting on only the first is what made
+   * "naming an agent stands the default agent down" flaky (DOR-1213). Seating
+   * runs after the creation response, so reading the roster straight away races
+   * it — that much was already handled. But a seat is addressable only once its
+   * handle is in the roster's projection, and `@name` in a composer is plain
+   * text until the server resolves it: post one message too early and the
+   * mention resolves to NOBODY, the fallback seat correctly answers an
+   * unaddressed post, and the test fails saying the default agent piled on. The
+   * product was right and the setup was early.
+   *
+   * `author.handle` is the roster's own answer to "can this member be
+   * addressed" — `null` means it cannot (`room-roster.ts`) — so waiting for it
+   * to be non-null is waiting for exactly the thing a mention needs.
    *
    * @param name - The display name to look for.
    */
   async waitForMember(name: string): Promise<string> {
     const { id } = await this.teamRoom();
     const deadline = Date.now() + SERVER_ROUND_TRIP_MS;
+    let seen: string | null | undefined;
     for (;;) {
       const res = await this.request.get(`/api/rooms/${id}`);
       if (res.ok()) {
         const { members } = (await res.json()) as {
-          members: { author: { id: string; displayName: string } }[];
+          members: { author: { id: string; displayName: string; handle?: string | null } }[];
         };
         const seat = members.find((member) => member.author.displayName === name);
-        if (seat) return seat.author.id;
+        seen = seat?.author.handle;
+        if (seat && seat.author.handle) return seat.author.id;
       }
-      if (Date.now() > deadline) throw new Error(`${name} never joined #team`);
+      if (Date.now() > deadline) {
+        throw new Error(
+          seen === undefined
+            ? `${name} never joined #team`
+            : `${name} joined #team but never became addressable — its roster row still carries no @handle`
+        );
+      }
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
   }
@@ -321,6 +360,50 @@ export class TeamRoomApi {
     if (!res.ok()) throw new Error(`Could not read approvals: ${await res.text()}`);
     const { approvals } = (await res.json()) as { approvals: { approvalId: string }[] };
     return approvals.map((approval) => approval.approvalId);
+  }
+
+  /**
+   * The display names of every #team member set to answer EVERYTHING (`always`).
+   *
+   * A precondition, not an assertion target. "Typing here reaches your default
+   * agent and nobody else piles on" is a claim about a room with ONE such seat —
+   * with two, two agents answering an unaddressed post is the product working,
+   * and the test would be reporting correct behaviour as a regression.
+   *
+   * The seat moves (`syncDefaultAgent` re-points it whenever an agent is
+   * created), so on a leg where tests have been creating and deleting agents —
+   * every repeat of this file does — more than one membership can end up
+   * holding it. Reading it is how the test tells "this leg has drifted" from
+   * "the product piled on".
+   */
+  async seatsThatAnswerEverything(): Promise<string[]> {
+    return (await this.agentSeats())
+      .filter((seat) => seat.responseMode === 'always')
+      .map((seat) => seat.name);
+  }
+
+  /**
+   * Every agent on #team's roster with the mode it answers in — the whole
+   * picture, for a failure message that has to say what the room looked like.
+   */
+  async roster(): Promise<string[]> {
+    return (await this.agentSeats()).map((seat) => `${seat.name}:${seat.responseMode}`);
+  }
+
+  /** #team's agent memberships, as `GET /api/rooms/:id` returns them. */
+  private async agentSeats(): Promise<{ name: string; responseMode: string }[]> {
+    const { id } = await this.teamRoom();
+    const res = await this.request.get(`/api/rooms/${id}`);
+    if (!res.ok()) throw new Error(`Could not read #team's roster: ${await res.text()}`);
+    const { members } = (await res.json()) as {
+      members: { responseMode?: string; author: { kind: string; displayName: string } }[];
+    };
+    return members
+      .filter((member) => member.author.kind === 'agent')
+      .map((member) => ({
+        name: member.author.displayName,
+        responseMode: member.responseMode ?? 'unknown',
+      }));
   }
 
   /** Put #team away, the way its owner can. Restored by {@link TeamRoomApi.cleanup}. */

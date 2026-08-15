@@ -131,4 +131,25 @@ Concretely, do not assert:
 - that a palette's **first** row is anything in particular — another spec's unread room may be above yours;
 - that pressing Enter on an unfiltered list opens _your_ thing — filter to your own run id first.
 
+And in a room an agent answers in — `#team`, or a channel on the test-mode leg —
+three more, all of which cost a debugging cycle in DOR-1213:
+
+- **"Entries I have not seen before" is not "answers to my message."** `POST
+/entries` is trigger-only, so a test that asserts its timeline and moves on
+  leaves its agent's reply still coming; it lands during the NEXT test, after
+  that test's `before` snapshot, and is counted as an answer to a message it has
+  nothing to do with. Scope by `cascadeRoot` — the server's own answer to which
+  conversation a line belongs to — not by id-not-seen-before.
+- **A notice is not a participant.** The room speaks in the same feed and in the
+  same cascade. An agent unregistered by an earlier run leaves an `engaged` seat
+  behind in `#team`, and the room says so ("… isn't set up on this machine any
+  more, so it can't answer here") _inside your cascade_. Counting it made
+  "nobody else piles on" fail against a working product. Filter
+  `body.notice === undefined` whenever the claim is about who ANSWERED.
+- **`#team` marks at most one moment an hour, so a moment test cannot repeat.**
+  A second attempt — `--repeat-each`, a Playwright retry — creates its agent, is
+  correctly suppressed, and fails on a precondition as if the ordering rule had
+  broken. Tell "I already ran" from "somebody else ran first" by whose agent the
+  existing moment names, and skip only for the first.
+
 That last one is not hypothetical: `rooms-in-palette` pressed Enter on the untyped palette's first unread row, which on a busy suite was a _neighbour's_ room — and arriving at a room marks it read, so it silently cleared another spec's unread badge and made that spec fail about half the time. It looked like a product bug for a while (DOR-692, since closed as an artefact).

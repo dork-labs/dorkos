@@ -12,6 +12,10 @@ import { requestFinishTurn, scenarioStore } from '../services/runtimes/test-mode
 import { runtimeRegistry } from '../services/core/runtime-registry.js';
 import { getRoomService, getBridgeStore, getRoomAuthors } from '../services/rooms/index.js';
 import { readOwnerAccount } from '../services/core/auth/index.js';
+import {
+  AGENT_TOKEN_ENV_VAR,
+  resolveAgentTokenEnv,
+} from '../services/core/agent-identity/agent-token-env.js';
 import { MOCK_MCP_OAUTH_MCP_PATH, resetMockMcpOAuthState } from './mock-mcp-oauth-server.js';
 import type { AgentMcpServerService } from '../services/mesh/agent-mcp-server-service.js';
 
@@ -58,6 +62,61 @@ testControlRouter.post('/scenario', (req, res) => {
 testControlRouter.post('/finish-turn', (_req, res) => {
   requestFinishTurn();
   res.json({ ok: true });
+});
+
+/** What `POST /api/test/agent-token` needs to name the agent it speaks for. */
+const agentTokenSchema = z.object({
+  agentPath: z.string().min(1),
+  displayName: z.string().min(1).optional(),
+});
+
+/**
+ * `POST /api/test/agent-token` — mint the identity token a spawned agent would
+ * have been given, and hand it to the test.
+ *
+ * **Why this seam has to exist.** An agent proves who it is with
+ * `X-DorkOS-Agent`, and the ONLY place a token is ever issued is
+ * `resolveAgentTokenEnv`, which puts it in a spawned session's **process env**
+ * (spec `agent-trust` §3.1) — deliberately somewhere no model and no transcript
+ * can read it. A browser test has no spawned process to read it out of, so
+ * without this route there is no way for a Playwright spec to act as an agent
+ * at all.
+ *
+ * **And a wrong token does not fail — it degrades.**
+ * `resolveAgentIdentityFromHeaders` never rejects a request, so a made-up
+ * header falls through to the operator and the write lands under the PERSON's
+ * author id. A reaction test that fabricated a token would therefore pass while
+ * proving the opposite of its name. That is the trap this closes: a real token,
+ * or no test.
+ *
+ * Mints through the production path, so what a spec gets is byte-for-byte what
+ * a real spawn gets and every check downstream is the shipped one. Gated the
+ * same way the rest of this router is — mounted only under
+ * `DORKOS_TEST_RUNTIME`, absent in production.
+ */
+testControlRouter.post('/agent-token', async (req, res) => {
+  const result = agentTokenSchema.safeParse(req.body);
+  if (!result.success) {
+    return res
+      .status(400)
+      .json({ error: 'Validation failed', details: z.flattenError(result.error) });
+  }
+  const { agentPath, displayName } = result.data;
+  const env_ = await resolveAgentTokenEnv(agentPath, displayName);
+  const token = env_[AGENT_TOKEN_ENV_VAR];
+  if (!token) {
+    // `resolveAgentTokenEnv` answers `{}` for every failure — no agent at that
+    // path, no identity service, a mint that threw — because an unattributed
+    // session must still run. A TEST that asked for a token and got none is the
+    // opposite case: it is about to act as a person while believing it is an
+    // agent, so it hears about it here rather than in an assertion.
+    return res.status(404).json({
+      error:
+        `No identity could be minted for ${agentPath}. That path hosts no registered ` +
+        `agent, or the identity service is not running on this server.`,
+    });
+  }
+  res.json({ token });
 });
 
 testControlRouter.post('/reset', async (_req, res) => {

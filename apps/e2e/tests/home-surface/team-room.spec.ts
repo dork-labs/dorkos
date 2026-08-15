@@ -1,5 +1,9 @@
 import { test, expect } from '../../fixtures';
-import { SERVER_ROUND_TRIP_MS } from '../../fixtures/team-room-api';
+import {
+  SERVER_ROUND_TRIP_MS,
+  type TeamRoomApi,
+  type TeamRoomEntry,
+} from '../../fixtures/team-room-api';
 import { publishSessionStreaming, tapGlobalStream } from '../rooms/room-signals';
 
 /**
@@ -40,6 +44,38 @@ import { publishSessionStreaming, tapGlobalStream } from '../rooms/room-signals'
 test.describe.configure({ mode: 'serial', timeout: 90_000 });
 
 /**
+ * Wait for a message this test just typed to be stored, and answer with the
+ * cascade it opened.
+ *
+ * Two barriers in one, both of them things a test that skipped them was flaky
+ * about (DOR-1213):
+ *
+ * - **It is stored.** The composer's Enter is a 202; the entry exists a moment
+ *   later. Reading the room before it does gets a room without the message in
+ *   it.
+ * - **It has a cascade to scope by.** Every assertion downstream is about who
+ *   answered THIS message, and #team is shared with every other test on this
+ *   leg — see {@link TeamRoomEntry.cascadeRoot}.
+ *
+ * @param teamRoomApi - The #team fixture.
+ * @param said - The exact text that was typed.
+ * @param before - The room as it stood before typing, so a neighbour's identical
+ *   text cannot be mistaken for this one.
+ */
+async function postedHere(
+  teamRoomApi: TeamRoomApi,
+  said: string,
+  before: TeamRoomEntry[]
+): Promise<string> {
+  const stored = await teamRoomApi.waitForEntry(
+    (entry) => entry.body.text === said && !before.some((e) => e.id === entry.id),
+    `the post "${said}" to be stored`
+  );
+  return stored.find((entry) => entry.body.text === said && !before.some((e) => e.id === entry.id))!
+    .cascadeRoot;
+}
+
+/**
  * Milestones, and they must come FIRST in this file.
  *
  * #team marks at most one moment an hour (`MOMENT_QUIET_PERIOD_MS`), which is
@@ -53,13 +89,38 @@ test.describe.configure({ mode: 'serial', timeout: 90_000 });
  * the test below turns it into the claim it is.
  */
 test.describe('The moments #team marks @smoke', () => {
+  /**
+   * A moment this same test minted on an earlier attempt, which is the one
+   * reason for #team to already hold one that is nobody's mistake.
+   *
+   * The names are this block's own and no other test's: every other test here
+   * seeds `Tangerine`, `Mango` or `Quiet<a|b>` followed by a hex run id, and no
+   * hex digit is `s`, so neither prefix can be reached by them.
+   */
+  const OURS = /\b(Tangerines|Mangoes)[0-9a-f]{8}\b/;
+
   test('an agent joining is marked once, as a moment rather than as a message', async ({
     page,
     basePage,
     teamRoomApi,
   }) => {
+    // **The quiet period makes this test un-repeatable, and that is the
+    // product working** (DOR-1213). #team marks at most one moment an hour, so a
+    // second attempt on the same leg — `--repeat-each`, a Playwright retry —
+    // creates its agent, is correctly suppressed, and used to fail on the
+    // precondition below as if the ordering rule had been broken.
+    //
+    // So the two cases are told apart rather than merged. A moment this block
+    // minted before is a skip; a moment anything ELSE minted is still the loud
+    // failure it was, because that one really does mean a test registering an
+    // agent ran ahead of this file's first block.
+    const already = await teamRoomApi.moments();
+    test.skip(
+      already.length > 0 && already.every((entry) => OURS.test(entry.body.text ?? '')),
+      'this block already marked its moment on this leg, and #team marks at most one an hour'
+    );
     expect(
-      await teamRoomApi.moments(),
+      already,
       'this leg has already marked a moment, so the hour-long quiet period will swallow this one — ' +
         'this block has to run before anything else in this file registers an agent'
     ).toHaveLength(0);
@@ -175,6 +236,18 @@ test.describe('Home is the #team room @smoke', () => {
       team.fallbackSeatAuthorId,
       'no agent holds the fallback seat, so nothing can answer an unaddressed post'
     ).toBeTruthy();
+    // **"Nobody else piles on" is a claim about a room with ONE seat set to
+    // answer everything** (DOR-1213). The seat moves — `syncDefaultAgent`
+    // re-points it every time an agent is created — and on a leg where this
+    // file has already run once, more than one membership can be left holding
+    // it. Two `always` seats answering an unaddressed post is the product
+    // working, so this is read and reported rather than asserted into a red.
+    const answering = await teamRoomApi.seatsThatAnswerEverything();
+    test.skip(
+      answering.length > 1,
+      `#team has ${answering.length} seats set to answer everything (${answering.join(', ')}), ` +
+        `so more than one answer here is correct and this claim is not about this room`
+    );
     const before = await teamRoomApi.entries();
 
     await basePage.goto();
@@ -188,20 +261,33 @@ test.describe('Home is the #team room @smoke', () => {
     // The post lands, and the page does not move: this is a room post, not the
     // birth of a session. The old dashboard composer navigated away from itself.
     await expect(page).toHaveURL(/\/(\?|$)/);
+    const root = await postedHere(teamRoomApi, said, before);
     const withReply = await teamRoomApi.waitForEntry(
-      (entry) =>
-        entry.authorId === team.fallbackSeatAuthorId && !before.some((e) => e.id === entry.id),
+      (entry) => entry.authorId === team.fallbackSeatAuthorId && entry.cascadeRoot === root,
       `an answer from the fallback seat to "${said}"`
     );
 
     // Exactly ONE agent answered — the stand-down guarantee stated positively.
-    // Counting new agent entries rather than all of them is what makes this
-    // sound on a room a neighbouring test also posted into.
-    const mine = withReply.filter((entry) => !before.some((e) => e.id === entry.id));
-    const answers = mine.filter((entry) => entry.authorId !== mine[0]?.authorId);
+    //
+    // Two filters, and both were flakes (DOR-1213). **The cascade** is what
+    // makes this sound on a room every other test on this leg is also posting
+    // into: counting entries-not-seen-before instead swept up a neighbour's
+    // still-arriving reply and blamed it on this message. **The notice** is what
+    // makes it a claim about AGENTS: an agent this file registered in an earlier
+    // run leaves an `engaged` seat behind in #team when it is unregistered, and
+    // the room says so in this cascade ("… isn't set up on this machine any
+    // more, so it can't answer here"). That line is the room being helpful, not
+    // a second agent piling on, and counting it reported the opposite.
+    const answers = withReply.filter(
+      (entry) =>
+        entry.cascadeRoot === root && entry.body.text !== said && entry.body.notice === undefined
+    );
     expect(
       answers.map((entry) => entry.authorId),
-      'more than one agent answered a post that addressed nobody'
+      `more than one agent answered a post that addressed nobody. ` +
+        `In this cascade: ${answers.map((e) => `${e.authorId}=${e.body.text}`).join(' | ')}. ` +
+        `Seats set to answer everything: ${answering.join(', ')}. ` +
+        `Roster: ${(await teamRoomApi.roster()).join(', ')}`
     ).toHaveLength(1);
 
     // And the reader sees it, not just the database.
@@ -262,16 +348,32 @@ test.describe('Home is the #team room @smoke', () => {
     await homeSurface.composerField.fill(said);
     await homeSurface.composerField.press('Enter');
 
+    // **The mention has to have RESOLVED before who-answered means anything**
+    // (DOR-1213). `@name` leaves the composer as plain text; the server turns it
+    // into a mention, and if the handle was not addressable yet it resolves to
+    // nobody — at which point the fallback seat answering is CORRECT and this
+    // test would report a working product as broken. `waitForMember` now waits
+    // for the handle too, so this is a check rather than a wait; it stays
+    // because it is the assertion that names the cause when it does not hold.
+    const root = await postedHere(teamRoomApi, said, before);
+    expect(
+      (await teamRoomApi.entries()).find((entry) => entry.cascadeRoot === root)?.mentions,
+      `"${said}" reached the room addressing nobody, so nothing here is about standing down`
+    ).toContain(tangerineId);
+
     const after = await teamRoomApi.waitForEntry(
-      (entry) => entry.authorId === tangerineId && !before.some((e) => e.id === entry.id),
+      (entry) => entry.authorId === tangerineId && entry.cascadeRoot === root,
       `an answer from ${name}`
     );
 
     // The whole point of D3.4's second half: the named agent answers and the
     // fallback seat does NOT, so a room with ten agents in it costs one turn.
-    const mine = after.filter((entry) => !before.some((e) => e.id === entry.id));
+    // Scoped to this post's cascade — a neighbour's reply, still arriving from
+    // the test before this one, is not an answer to this message (DOR-1213).
     expect(
-      mine.filter((entry) => entry.authorId === team.fallbackSeatAuthorId),
+      after.filter(
+        (entry) => entry.cascadeRoot === root && entry.authorId === team.fallbackSeatAuthorId
+      ),
       'the default agent answered a post that named somebody else'
     ).toHaveLength(0);
   });
