@@ -4471,6 +4471,19 @@
         "apps/server/src/routes/room-error-response.ts",
         "meta/agent-etiquette.md"
       ]
+    },
+    {
+      "id": "260815-200159",
+      "slug": "files-own-what-people-edit-databases-owe-a-backup",
+      "title": "Files own what a person edits, the database owns what concurrency owns, and every ledger owes a backup",
+      "status": "accepted",
+      "created": "2026-08-15",
+      "affects": [
+        "packages/db/src/backup.ts",
+        "packages/db/src/index.ts",
+        "apps/server/src/index.ts",
+        "apps/server/src/services/extensions/extension-migrator.ts"
+      ]
     }
   ]
 }

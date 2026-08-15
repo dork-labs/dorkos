@@ -203,7 +203,17 @@ import { createMcpAuth } from './middleware/mcp-auth.js';
 import { validateMcpOrigin } from './middleware/mcp-origin.js';
 import { requireMcpEnabled } from './middleware/mcp-enabled.js';
 import { buildMcpRateLimiter } from './middleware/mcp-rate-limit.js';
-import { createDb, runMigrations, agents } from '@dorkos/db';
+import {
+  createDb,
+  runMigrations,
+  databaseHoldsUserData,
+  snapshotBeforeMigrations,
+  snapshotDaily,
+  DatabaseOpenError,
+  SnapshotFailedError,
+  agents,
+  type Db,
+} from '@dorkos/db';
 import { INTERVALS } from './config/constants.js';
 import { resolveDorkHome } from './lib/dork-home.js';
 import { acquireInstanceLock } from './lib/instance-lock.js';
@@ -317,6 +327,7 @@ let taskFileWatcher: TaskFileWatcher | undefined;
 let taskReconciler: TaskReconciler | undefined;
 let searchIndexer: SearchIndexer | undefined;
 let healthCheckInterval: ReturnType<typeof setInterval> | undefined;
+let dailySnapshotInterval: ReturnType<typeof setInterval> | undefined;
 // Embedded-terminal PTY manager (ADR 260708-185521). Always-on, boundary-confined;
 // the WebSocket byte channel is attached to the HTTP server after listen().
 let terminalManager: TerminalManager | undefined;
@@ -356,6 +367,25 @@ async function warmMcpOAuthTokens(
     }
   }
   await oauth.warm(targets);
+}
+
+/**
+ * Take the day's snapshot of `dork.db`, if today has not had one yet.
+ *
+ * Best-effort by design, and that is the difference from the pre-migration
+ * snapshot: nothing irreversible happens next, so a full disk should cost a
+ * warning in the log rather than a server that will not start.
+ *
+ * @param db - The consolidated database.
+ * @param backupsDir - `<dorkHome>/backups`.
+ */
+function takeDailySnapshot(db: Db, backupsDir: string): void {
+  try {
+    const written = snapshotDaily(db, { dir: backupsDir });
+    if (written) logger.info(`[DB] Daily snapshot written to ${written}`);
+  } catch (err) {
+    logger.warn('[DB] Daily snapshot failed — your data is fine, the backup is not', logError(err));
+  }
 }
 
 async function start() {
@@ -451,9 +481,36 @@ async function start() {
   // Individual services still manage their own legacy databases for now — they will
   // be migrated to accept this `db` instance in subsequent tasks.
   const dbPath = path.join(dorkHome, 'dork.db');
+  const backupsDir = path.join(dorkHome, 'backups');
   const db = createDb(dbPath);
+
+  // Asked BEFORE migrating, because afterwards it can no longer be answered: a
+  // first boot comes out of `runMigrations` holding every table and not one row,
+  // indistinguishable by shape from an install that has been running for a year.
+  const firstBoot = !databaseHoldsUserData(db);
+
+  // Snapshot BEFORE migrating, and only when a migration is actually about to
+  // change something. This database holds the only copy of every room, DM and
+  // thread conversation on the machine, and migrations apply themselves at every
+  // boot with nobody asked. Deliberately NOT wrapped in a try/catch: if the
+  // snapshot cannot be written, the right answer is to stop and say so rather
+  // than take an irreversible step with no way back (`snapshotBeforeMigrations`).
+  const preMigrationSnapshot = snapshotBeforeMigrations(db, { dir: backupsDir });
+  if (preMigrationSnapshot) {
+    logger.info(`[DB] Snapshot taken before migrating: ${preMigrationSnapshot}`);
+  }
   runMigrations(db);
   logger.info(`[DB] Consolidated database ready at ${dbPath}`);
+
+  // The daily safety net, under everything a migration cannot see coming. Once
+  // per UTC day, here and again on the timer started after listen() so a server
+  // left running for a week still takes one. A failure here is logged and
+  // survived: unlike the pre-migration snapshot, nothing irreversible follows it.
+  //
+  // Skipped on a first boot so a brand-new install is not handed a `backups`
+  // folder holding a copy of an empty database. The hourly tick picks the day up
+  // later, by which time there may be something in it worth copying.
+  if (!firstBoot) takeDailySnapshot(db, backupsDir);
 
   // Durable session-event store for LOG-BACKED runtimes (codex/opencode/
   // test-mode), injected once here so their completed-turn history survives a
@@ -2812,6 +2869,24 @@ async function start() {
     sweepOrphanedMessageQueues();
   }, INTERVALS.HEALTH_CHECK_MS);
 
+  // Keep the daily snapshot honest on a server that is never restarted. The
+  // check is cheap and idempotent (one file per UTC day), so it runs on a plain
+  // hourly tick rather than trying to compute when midnight is — which is the
+  // sort of arithmetic that quietly stops working across a DST change.
+  //
+  // The tick that DOES take a snapshot blocks the event loop while it runs:
+  // better-sqlite3 is synchronous, so `VACUUM INTO` holds the thread for the
+  // whole copy — measured at ~464 ms for a 61 MB database, and it scales with
+  // file size. Once a day, on a local single-operator server, that is a pause
+  // nobody is positioned to notice. It stops being free if this database grows
+  // to the point where the copy takes long enough to stall a streaming turn (a
+  // second or more, so roughly 150 MB+); the fix then is a size threshold that
+  // hands large databases to better-sqlite3's incremental `db.backup()` API,
+  // which yields between pages. Not worth the second code path at 2 MB.
+  dailySnapshotInterval = setInterval(() => {
+    takeDailySnapshot(db, backupsDir);
+  }, INTERVALS.DAILY_SNAPSHOT_CHECK_MS);
+
   // Start ngrok tunnel if enabled. The exposure guard (task 1.3) also gates the
   // boot-time autostart: skip (and log) rather than expose without a login.
   if (env.TUNNEL_ENABLED) {
@@ -2871,6 +2946,9 @@ async function shutdownServices() {
   logger.info('[DorkOS] shutting down services');
   if (healthCheckInterval) {
     clearInterval(healthCheckInterval);
+  }
+  if (dailySnapshotInterval) {
+    clearInterval(dailySnapshotInterval);
   }
   // Kill any live PTYs so shutdown never leaves an orphaned shell.
   terminalManager?.destroyAll();
@@ -2967,6 +3045,16 @@ process.on('unhandledRejection', (reason) => {
 });
 
 start().catch((err) => {
+  // Two startup failures are addressed to the operator rather than to whoever
+  // maintains DorkOS: a database that will not open, and a backup that could not
+  // be written. Both carry instructions in their message and both are resolved
+  // by doing something to the filesystem, so they print as that message and
+  // nothing else — a stack trace above it only buries the sentence that matters.
+  if (err instanceof DatabaseOpenError || err instanceof SnapshotFailedError) {
+    logger.error(`[DorkOS] Cannot start.\n\n${err.message}\n`);
+    process.exit(1);
+  }
+
   const info = logError(err);
   logger.error('[DorkOS] Fatal error during startup', info);
 

@@ -11,20 +11,80 @@ import Database from 'better-sqlite3';
 import { drizzle } from 'drizzle-orm/better-sqlite3';
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
 import * as schema from './schema/index.js';
-import path from 'path';
-import { fileURLToPath } from 'url';
+import { MIGRATIONS_FOLDER } from './migrations-folder.js';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
+/**
+ * Thrown when the database at a path exists but will not open.
+ *
+ * **DorkOS never recovers from this by itself.** It does not rename the file, it
+ * does not recreate an empty one beside it, and it does not attempt a repair.
+ * `dork.db` holds the only copy of every room, DM and thread conversation, and a
+ * database that will not open is far more often a volume that has not mounted
+ * yet, a half-finished copy, or a path typo than it is a lost cause — all three
+ * of which a helpful auto-recovery would turn into real, permanent data loss by
+ * starting fresh over the top. So boot stops here, loudly, with the file exactly
+ * as it was found, and a person decides what happens next.
+ */
+export class DatabaseOpenError extends Error {
+  /** Absolute path of the database that could not be opened. */
+  readonly dbPath: string;
+
+  /**
+   * Build the operator-facing message: what failed, and what DorkOS did not do
+   * about it.
+   *
+   * @param dbPath - Path that failed to open
+   * @param cause - The underlying SQLite or filesystem error
+   */
+  constructor(dbPath: string, cause: unknown) {
+    const detail = cause instanceof Error ? cause.message : String(cause);
+    super(
+      `Could not open the DorkOS database at ${dbPath}: ${detail}\n` +
+        'Your data has not been touched — DorkOS never recreates, renames or repairs a ' +
+        'database it cannot open. Restore the newest snapshot from the "backups" folder ' +
+        'beside it, or move the file aside yourself if you accept losing what it holds, ' +
+        'then start DorkOS again.',
+      { cause }
+    );
+    this.name = 'DatabaseOpenError';
+    this.dbPath = dbPath;
+  }
+}
 
 /**
  * Opens (or creates) the DorkOS SQLite database at the given path.
  * Applies WAL mode, NORMAL sync, 5s busy timeout, foreign key enforcement, and
  * recursive triggers.
  *
+ * A path that does not exist yet is created — that is how every install gets its
+ * first database. A path that exists but does not open is a
+ * {@link DatabaseOpenError} and nothing else: see that class for why this
+ * function has no recovery branch.
+ *
  * @param dbPath - Absolute path to the database file, or ':memory:' for tests
+ * @throws {DatabaseOpenError} When the file cannot be opened or configured.
  */
 export function createDb(dbPath: string) {
-  const sqlite = new Database(dbPath);
+  let sqlite: Database.Database;
+  try {
+    sqlite = new Database(dbPath);
+  } catch (err) {
+    throw new DatabaseOpenError(dbPath, err);
+  }
+
+  try {
+    return configureAndWrap(sqlite);
+  } catch (err) {
+    // better-sqlite3 opens lazily, so a file that is not a database gets past
+    // the constructor and fails on the first pragma instead. Close the handle we
+    // opened; leave the file alone.
+    sqlite.close();
+    throw new DatabaseOpenError(dbPath, err);
+  }
+}
+
+/** Apply the house pragmas to an open connection and wrap it in Drizzle. */
+function configureAndWrap(sqlite: Database.Database) {
   sqlite.pragma('journal_mode = WAL');
   sqlite.pragma('synchronous = NORMAL');
   sqlite.pragma('busy_timeout = 5000');
@@ -71,13 +131,15 @@ export function createDb(dbPath: string) {
 /**
  * Applies all pending Drizzle migrations synchronously.
  * Safe to call before server.listen() — no async required.
- * Resolves migrations folder relative to this file (works in both dev and CLI bundle).
+ *
+ * Take a snapshot first: `snapshotBeforeMigrations` (in `./backup.ts`) is the
+ * only thing standing between a migration that succeeds wrongly and the loss of
+ * every conversation the database holds.
  *
  * @param db - Drizzle database instance from createDb()
  */
 export function runMigrations(db: ReturnType<typeof createDb>): void {
-  const migrationsFolder = path.join(__dirname, '../drizzle');
-  migrate(db, { migrationsFolder });
+  migrate(db, { migrationsFolder: MIGRATIONS_FOLDER });
 }
 
 /** The Drizzle DB instance type. Use as the parameter type for all stores. */
@@ -110,6 +172,21 @@ export type DbTransaction = Parameters<Parameters<Db['transaction']>[0]>[0];
 
 // Re-export all schema tables and inferred types
 export * from './schema/index.js';
+
+// Snapshots — the pre-migration and daily safety nets under this database, and
+// the primitives an extension's own migrator reuses.
+export {
+  snapshotSqlite,
+  pruneSnapshots,
+  readMigrationState,
+  databaseHoldsUserData,
+  snapshotBeforeMigrations,
+  snapshotDaily,
+  snapshotBeforeExtensionMigration,
+  SnapshotFailedError,
+  SNAPSHOT_RETENTION,
+} from './backup.js';
+export type { MigrationState, SnapshotOptions } from './backup.js';
 
 // Re-export the percentile-extension feature probe (DOR-166) — shared by any
 // store that aggregates with `percentile_cont()` so a build predating
