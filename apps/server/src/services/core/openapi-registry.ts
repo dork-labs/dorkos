@@ -3408,6 +3408,16 @@ registry.registerPath({
   responses: {
     200: {
       description: 'The export, one JSON object per line',
+      headers: z.object({
+        'Content-Disposition': z
+          .string()
+          .describe(
+            'Always `attachment; filename="room-<slug-or-id>-<YYYY-MM-DD>.jsonl"`. Part of the contract, not a courtesy: `dorkos room export` reads the name out of it when no `--out` is given, so a client may rely on the filename being present and quoted. The date is the EXPORT\'s, so two exports of one room a month apart do not overwrite each other.'
+          ),
+        'X-Content-Type-Options': z
+          .string()
+          .describe("Always `nosniff` — this is a file of other people's words."),
+      }),
       content: { [ROOM_EXPORT_CONTENT_TYPE]: { schema: RoomExportLineSchema } },
     },
     404: roomNotFound,

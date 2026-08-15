@@ -1,14 +1,17 @@
 /**
- * Turning a room's rows into export lines (DOR-1225).
+ * Building a room's export, line by line (DOR-1225).
  *
- * The pure half of `GET /api/rooms/:id/export`: given a room, a roster and an
- * entry, produce the JSONL objects `@dorkos/shared/room-export-schemas`
- * describes. The gating, the paging and the roll-ups live on
- * {@link RoomService.exportRoom}, which is the only caller.
+ * The whole shape of `GET /api/rooms/:id/export` lives here: the header, every
+ * entry, the trailing receipt, and the paging loop that walks a log with no
+ * upper bound. {@link RoomService.exportRoom} is the only caller — it decides
+ * WHO may export and HOW MUCH, and hands the answer over as a
+ * {@link RoomExportSource}.
  *
- * **Read-only, and structurally so.** Nothing here touches the store, so no
- * amount of misuse can make an export write to the room it is copying. The
- * database stays the truth; the file is a copy, never a sync target.
+ * **The split is the point.** Everything the export needs arrives as data or as
+ * a reader function, so this module holds no reference to the store, the roster
+ * or the registry — which is what makes "an export is read-only" structural
+ * rather than a promise in a comment. The database stays the truth; the file is
+ * a copy, never a sync target.
  *
  * @module server/services/rooms/room-export
  */
@@ -18,11 +21,20 @@ import {
   type RoomExportAuthor,
   type RoomExportEntry,
   type RoomExportHeader,
+  type RoomExportLine,
   type RoomExportMember,
   type RoomExportScope,
 } from '@dorkos/shared/room-export-schemas';
 import type { Room, RoomEntry, RoomRosterEntry } from '@dorkos/shared/room-schemas';
 import { toAuthorRef, type AuthorRecord } from './author-registry.js';
+
+/**
+ * How many entries one page of an export reads.
+ *
+ * Matched to the reaction/attachment roll-up chunk in `room-service.ts` (500),
+ * so a page costs one query for each rather than two.
+ */
+const EXPORT_PAGE_ENTRIES = 500;
 
 /**
  * Resolves an author id to the identity an export line carries.
@@ -33,6 +45,98 @@ import { toAuthorRef, type AuthorRecord } from './author-registry.js';
 export type ExportAuthorResolver = (authorId: string) => RoomExportAuthor;
 
 /**
+ * Everything an export needs, with nothing left for this module to fetch.
+ *
+ * A reader function rather than a store handle, because the page it returns has
+ * already had its reactions and attachments rolled up — that is a service
+ * concern, and passing the store would have dragged the roll-up in with it.
+ */
+export interface RoomExportSource {
+  /** The room being copied, as it stands. */
+  room: Room;
+  /** Its roster, oldest membership first. */
+  members: readonly RoomRosterEntry[];
+  /** Who asked for the file. */
+  exportedBy: RoomExportAuthor;
+  /** The version writing it. */
+  dorkosVersion: string;
+  /** When it was written, ISO 8601. */
+  exportedAt: string;
+  /** How much of the room this file holds, and why. */
+  scope: RoomExportScope;
+  /** How to turn an author id into an identity. */
+  resolve: ExportAuthorResolver;
+  /**
+   * One forward page of the room's log, oldest first, strictly above `afterSeq`
+   * and at most `limit` long — with reactions and attachments already attached.
+   * Threads included: an export is a copy of the room, not a view of it.
+   */
+  page: (afterSeq: number, limit: number) => readonly RoomEntry[];
+}
+
+/**
+ * An author resolver that reads each id through `lookup` at most once.
+ *
+ * An export names the same handful of authors on every line — that repetition is
+ * the point, since it is what makes the file greppable — so without the cache a
+ * thousand-message room would be a thousand indexed reads of the same three rows.
+ *
+ * @param lookup - How to read one stored author, or `null` when none has that id.
+ */
+export function createExportAuthorResolver(
+  lookup: (authorId: string) => AuthorRecord | null
+): ExportAuthorResolver {
+  const seen = new Map<string, RoomExportAuthor>();
+  return (authorId) => {
+    const hit = seen.get(authorId);
+    if (hit) return hit;
+    // A retired author still wrote what they wrote. Keeping the id with an
+    // honest placeholder is the only answer that does not quietly change what
+    // the room said.
+    const record = lookup(authorId);
+    const resolved = record ? toExportAuthor(record) : unknownExportAuthor(authorId);
+    seen.set(authorId, resolved);
+    return resolved;
+  };
+}
+
+/**
+ * The export itself: a header, every entry in ascending `seq`, then the receipt.
+ *
+ * **A generator, because a room's log is never trimmed.** The lines come out one
+ * at a time and the route writes each as it arrives, so a ten-year channel is
+ * never assembled in memory before the download can start. That is also why the
+ * header cannot state a count and why the last line is a `summary`: a truncated
+ * download is otherwise a perfectly valid file of the messages that made it,
+ * with nothing inside it saying so.
+ *
+ * @param source - The room, the roster, the scope, and how to read a page.
+ * @yields Each line of the export, in file order.
+ */
+export function* buildRoomExport(source: RoomExportSource): Generator<RoomExportLine> {
+  yield toExportHeader(source);
+
+  let cursor = source.scope.fromSeq;
+  let entryCount = 0;
+  let firstSeq: number | null = null;
+  let lastSeq: number | null = null;
+  for (;;) {
+    const page = source.page(cursor, EXPORT_PAGE_ENTRIES);
+    if (page.length === 0) break;
+    for (const entry of page) {
+      yield toExportEntry(entry, source.resolve);
+      entryCount += 1;
+      firstSeq ??= entry.seq;
+      lastSeq = entry.seq;
+    }
+    cursor = page[page.length - 1].seq;
+    if (page.length < EXPORT_PAGE_ENTRIES) break;
+  }
+
+  yield { type: 'summary', entryCount, firstSeq, lastSeq };
+}
+
+/**
  * The identity fields an export keeps, out of a stored author.
  *
  * The render cache (`emoji`, `color`, `imageUrl`) is deliberately dropped: those
@@ -41,7 +145,7 @@ export type ExportAuthorResolver = (authorId: string) => RoomExportAuthor;
  *
  * @param record - The stored author.
  */
-export function toExportAuthor(record: AuthorRecord): RoomExportAuthor {
+function toExportAuthor(record: AuthorRecord): RoomExportAuthor {
   const ref = toAuthorRef(record);
   return {
     id: ref.id,
@@ -61,7 +165,7 @@ export function toExportAuthor(record: AuthorRecord): RoomExportAuthor {
  *
  * @param authorId - The id that resolved to no row.
  */
-export function unknownExportAuthor(authorId: string): RoomExportAuthor {
+function unknownExportAuthor(authorId: string): RoomExportAuthor {
   return { id: authorId, kind: 'system', displayName: 'Unknown author', handle: null };
 }
 
@@ -95,7 +199,7 @@ function toExportMember(member: RoomRosterEntry): RoomExportMember {
  * @param input.dorkosVersion - The version that wrote it.
  * @param input.scope - How much of the room the file holds, and why.
  */
-export function toExportHeader(input: {
+function toExportHeader(input: {
   room: Room;
   members: readonly RoomRosterEntry[];
   exportedBy: RoomExportAuthor;
@@ -139,7 +243,7 @@ export function toExportHeader(input: {
  *   says.
  * @param resolve - How to turn an author id into an identity.
  */
-export function toExportEntry(entry: RoomEntry, resolve: ExportAuthorResolver): RoomExportEntry {
+function toExportEntry(entry: RoomEntry, resolve: ExportAuthorResolver): RoomExportEntry {
   return {
     type: 'entry',
     seq: entry.seq,

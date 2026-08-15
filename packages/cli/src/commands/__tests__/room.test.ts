@@ -10,6 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { Writable } from 'node:stream';
 
 vi.mock('../../lib/api-client.js', () => {
   class ApiError extends Error {
@@ -61,6 +62,29 @@ function exportResponse(body: string, filename = 'room-backend-2026-08-15.jsonl'
       },
     }),
   } as unknown as Response;
+}
+
+/**
+ * A response whose body dies part-way, the way a dropped connection does.
+ *
+ * `TypeError: terminated` is verbatim what undici raises when the socket goes
+ * away mid-body, which is the error the friendly message has to replace.
+ */
+function droppedResponse(prefix: string): Response {
+  return {
+    headers: new Headers({ 'content-disposition': 'attachment; filename="room-backend.jsonl"' }),
+    body: new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode(prefix));
+        controller.error(new TypeError('terminated'));
+      },
+    }),
+  } as unknown as Response;
+}
+
+/** Everything in the work directory, so a leftover staging directory is visible. */
+function workDirEntries(): string[] {
+  return fs.readdirSync(workDir).sort();
 }
 
 beforeEach(() => {
@@ -190,9 +214,9 @@ describe('runRoomExport', () => {
     expect(fs.readFileSync(out, 'utf-8')).toBe(WHOLE_EXPORT);
   });
 
-  it('reports a truncated download as a failure, not a success', async () => {
-    // The same export with its receipt cut off — which is exactly what a
-    // connection dropped mid-download leaves behind.
+  it('reports a truncated download as a failure, and writes no file at all', async () => {
+    // The same export with its receipt cut off — which is exactly what a body
+    // that ended early leaves behind.
     const truncated = WHOLE_EXPORT.split('\n').slice(0, 2).join('\n');
     apiRequestMock.mockResolvedValue(exportResponse(truncated));
     const out = path.join(workDir, 'backend.jsonl');
@@ -200,9 +224,57 @@ describe('runRoomExport', () => {
     const code = await runRoomExport({ room: ROOM_ID, out, force: false });
 
     expect(code).toBe(1);
-    expect(vi.mocked(console.error).mock.calls.flat().join(' ')).toContain('incomplete');
-    // The partial file is kept and named, so nobody loses what did arrive.
-    expect(fs.existsSync(out)).toBe(true);
+    expect(vi.mocked(console.error).mock.calls.flat().join(' ')).toContain('not complete');
+    // All-or-nothing: an export with no receipt cannot be read as one, so
+    // leaving the fragment behind would only be a trap for whoever found it.
+    expect(fs.existsSync(out)).toBe(false);
+    expect(workDirEntries(), 'no staging directory survives').toEqual([]);
+  });
+
+  it('leaves a previous export untouched when the download dies mid-stream', async () => {
+    // The reviewer's reproduction, and the reason this command stages: --force
+    // is exactly what somebody retrying a failed export reaches for, and the
+    // retry must not be able to destroy the copy they already had.
+    const out = path.join(workDir, 'backend.jsonl');
+    const lastMonth = `${WHOLE_EXPORT}\n`;
+    fs.writeFileSync(out, lastMonth);
+    apiRequestMock.mockResolvedValue(droppedResponse('{"type":"room-export"'));
+
+    const code = await runRoomExport({ room: ROOM_ID, out, force: true });
+
+    expect(code).toBe(1);
+    expect(fs.readFileSync(out, 'utf-8'), 'the month-old export survives').toBe(lastMonth);
+    expect(workDirEntries()).toEqual(['backend.jsonl']);
+
+    const said = vi.mocked(console.error).mock.calls.flat().join(' ');
+    // The bare `Error: terminated` a rejected pipeline produces is never what a
+    // person is shown about their own history — but the cause is still named.
+    expect(said).toContain('stopped before it finished');
+    expect(said).toContain('exactly as it was');
+    expect(said).toContain('Reason: terminated');
+  });
+
+  it('does not claim success when the write fails after the last line arrived', async () => {
+    // A receipt that reached this process is not a receipt that reached the
+    // disk. Without the `reason === null` guard the outcome below reads as a
+    // complete export and the rename fires on a half-written file.
+    apiRequestMock.mockResolvedValue(exportResponse(WHOLE_EXPORT));
+    const out = path.join(workDir, 'backend.jsonl');
+    const failing = vi.spyOn(fs, 'createWriteStream').mockImplementation(
+      () =>
+        new Writable({
+          write(_chunk, _encoding, done) {
+            done(new Error('ENOSPC: no space left on device'));
+          },
+        }) as unknown as fs.WriteStream
+    );
+
+    const code = await runRoomExport({ room: ROOM_ID, out, force: false });
+
+    expect(code).toBe(1);
+    expect(fs.existsSync(out)).toBe(false);
+    expect(vi.mocked(console.error).mock.calls.flat().join(' ')).toContain('ENOSPC');
+    failing.mockRestore();
   });
 });
 

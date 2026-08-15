@@ -157,6 +157,21 @@ function suggestedFilename(disposition: string | null, roomId: string): string {
   return name && name !== '.' && name !== '..' ? name : `room-${roomId}.jsonl`;
 }
 
+/** What a finished (or unfinished) download turned out to be. */
+interface ExportOutcome {
+  /**
+   * How many messages the trailing summary claimed, or `null` when there was no
+   * trailing summary — which is exactly what a truncated download leaves.
+   */
+  entryCount: number | null;
+  /**
+   * Why it stopped, when it stopped for a reason this process saw: a dropped
+   * connection, a full disk. `null` when the body simply ended short, which the
+   * missing receipt already reports.
+   */
+  reason: string | null;
+}
+
 /**
  * Stream the export into a writable, keeping only the last line in memory.
  *
@@ -166,19 +181,25 @@ function suggestedFilename(disposition: string | null, roomId: string): string {
  * whole. Chunks do not arrive line-aligned, so it is tracked across them rather
  * than read off the last chunk.
  *
+ * **A stream failure is reported, not thrown.** A dropped connection rejects the
+ * pipeline with something like `terminated`, and letting that reach the caller's
+ * generic error handler is how a person ends up reading `Error: terminated`
+ * about their own history. It comes back as an outcome with no receipt and a
+ * reason instead, so there is exactly one "this export is not whole" path and it
+ * says the useful thing.
+ *
  * @param body - The response body.
  * @param destination - Where the bytes go.
  * @param closeDestination - Whether to close it when the body ends. False for
  *   `process.stdout`, which this command does not own and must leave open for
  *   the message it writes afterwards.
- * @returns How many messages the trailing summary claimed, or `null` when there
- *   was no trailing summary — a truncated download.
+ * @returns What arrived, and why it stopped if it stopped badly.
  */
 async function streamExport(
   body: ReadableStream<Uint8Array>,
   destination: NodeJS.WritableStream,
   closeDestination: boolean
-): Promise<number | null> {
+): Promise<ExportOutcome> {
   const decoder = new TextDecoder();
   let pending = '';
   let lastLine = '';
@@ -194,17 +215,61 @@ async function streamExport(
     }
   };
 
-  await pipeline(watched(), destination, { end: closeDestination });
+  let reason: string | null = null;
+  try {
+    await pipeline(watched(), destination, { end: closeDestination });
+  } catch (err) {
+    reason = err instanceof Error ? err.message : String(err);
+  }
 
   try {
     const trailing = pending.trim() || lastLine;
     const parsed = JSON.parse(trailing) as { type?: string; entryCount?: number };
-    if (parsed.type === 'summary' && typeof parsed.entryCount === 'number')
-      return parsed.entryCount;
+    if (parsed.type === 'summary' && typeof parsed.entryCount === 'number') {
+      // A receipt that arrived before a late failure still means the export is
+      // whole — but only if nothing went wrong on the way, since a write that
+      // failed after the last line landed did not put those bytes on disk.
+      if (reason === null) return { entryCount: parsed.entryCount, reason: null };
+    }
   } catch {
-    // Not JSON at all — the body stopped mid-line, which `null` reports.
+    // Not JSON at all — the body stopped mid-line, which the null receipt says.
   }
-  return null;
+  return { entryCount: null, reason };
+}
+
+/**
+ * Write the export to a file, or leave the file exactly as it was.
+ *
+ * **The staging directory is the whole point.** Writing straight to the target
+ * truncates it the moment the stream opens, so a `--force` retry whose download
+ * then died replaced a good export from last month with two partial lines — and
+ * `--force` is precisely what somebody retrying a failed export reaches for. The
+ * bytes land in a scratch directory beside the target instead, and the rename
+ * only happens once the trailing receipt has been read. Beside it, not in the
+ * system temp directory, so the rename stays on one filesystem and is therefore
+ * atomic; a fresh `mkdtemp` rather than a predictable `.partial`, so two runs of
+ * this command cannot write to one staging file. It is the same shape the
+ * marketplace installer uses (stage → atomic rename → clean up).
+ *
+ * @param body - The response body.
+ * @param target - The absolute path the export should end up at.
+ * @returns What arrived. The target is untouched unless this reports a receipt.
+ */
+async function writeExportFile(
+  body: ReadableStream<Uint8Array>,
+  target: string
+): Promise<ExportOutcome> {
+  const staging = fs.mkdtempSync(path.join(path.dirname(target), '.dorkos-export-'));
+  const scratch = path.join(staging, path.basename(target));
+  try {
+    const outcome = await streamExport(body, fs.createWriteStream(scratch), true);
+    if (outcome.entryCount !== null) fs.renameSync(scratch, target);
+    return outcome;
+  } finally {
+    // All-or-nothing: a file with no receipt cannot be read as an export, so
+    // leaving one behind would only be a trap for whoever found it later.
+    fs.rmSync(staging, { recursive: true, force: true });
+  }
 }
 
 /**
@@ -214,13 +279,13 @@ async function streamExport(
  * @returns The intended process exit code.
  */
 export async function runRoomExport(args: RoomExportArgs): Promise<number> {
-  let target: string | null = null;
   try {
     const roomId = await resolveRoomId(args.room);
     const res = await apiRequest('GET', `/api/rooms/${encodeURIComponent(roomId)}/export`);
     if (!res.body) throw new Error('The server sent no export.');
 
     const toStdout = args.out === STDOUT_TARGET;
+    let target: string | null = null;
     if (!toStdout) {
       target = path.resolve(
         args.out ?? suggestedFilename(res.headers.get('content-disposition'), roomId)
@@ -234,20 +299,25 @@ export async function runRoomExport(args: RoomExportArgs): Promise<number> {
       }
     }
 
-    const destination = toStdout ? process.stdout : fs.createWriteStream(target as string);
-    const entryCount = await streamExport(res.body, destination, !toStdout);
+    const outcome = target
+      ? await writeExportFile(res.body, target)
+      : await streamExport(res.body, process.stdout, false);
 
-    if (entryCount === null) {
-      // Never reported as a success. A file with no trailing summary is a
-      // truncated download, and it is a copy of somebody's history that they
-      // may be about to rely on.
+    if (outcome.entryCount === null) {
+      // Never reported as a success. An export with no trailing summary stopped
+      // part-way, and it is a copy of somebody's history that they may be about
+      // to rely on.
+      console.error('Error: the export stopped before it finished, so it is not complete.');
+      if (outcome.reason) console.error(`Reason: ${outcome.reason}`);
       console.error(
-        'Error: the export stopped early and is incomplete. Run the command again.' +
-          (target ? ` The partial file is at ${target}.` : '')
+        target
+          ? `Nothing was written — ${target} is exactly as it was. Run the command again.`
+          : 'What you have above is incomplete. Run the command again.'
       );
       return 1;
     }
 
+    const { entryCount } = outcome;
     const messages = `${entryCount} ${entryCount === 1 ? 'message' : 'messages'}`;
     // On stderr even in the file case, so `--out -` pipes cleanly into anything.
     console.error(target ? `Saved ${messages} to ${target}` : `Exported ${messages}`);

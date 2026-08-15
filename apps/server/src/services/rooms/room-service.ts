@@ -96,7 +96,7 @@ import type {
 } from '@dorkos/shared/room-schemas';
 import { RoomMomentSchema, THREAD_PREVIEW_MAX_CHARS } from '@dorkos/shared/room-schemas';
 import { sanitizeIdentity } from '@dorkos/shared/untrusted-text';
-import type { RoomExportAuthor, RoomExportLine } from '@dorkos/shared/room-export-schemas';
+import type { RoomExportLine } from '@dorkos/shared/room-export-schemas';
 import { logger } from '../../lib/logger.js';
 import { SERVER_VERSION } from '../../lib/version.js';
 import { eventFanOut } from '../core/event-fan-out.js';
@@ -119,13 +119,7 @@ import type { ReactionBudget } from './reactions/reaction-budget.js';
 import type { ReactionStore } from './reactions/reaction-store.js';
 import type { AttachmentRowStore } from './attachments/attachment-row-store.js';
 import { RoomError, type RoomAgentLookup } from './room-errors.js';
-import {
-  toExportAuthor,
-  toExportEntry,
-  toExportHeader,
-  unknownExportAuthor,
-  type ExportAuthorResolver,
-} from './room-export.js';
+import { buildRoomExport, createExportAuthorResolver } from './room-export.js';
 import {
   buildBridgeAgentSwappedNotice,
   buildBridgeDisconnectedNotice,
@@ -250,15 +244,6 @@ export interface RoomServiceDeps {
  * into exactly one query, which is the case that runs constantly.
  */
 const REACTION_LOOKUP_CHUNK = 500;
-
-/**
- * How many entries one page of an export reads (DOR-1225).
- *
- * The same 500 as {@link REACTION_LOOKUP_CHUNK}, deliberately: an export rolls
- * its reactions and attachments up per page, so a page that matched the lookup
- * chunk exactly costs one query for each rather than two.
- */
-const EXPORT_PAGE_ENTRIES = REACTION_LOOKUP_CHUNK;
 
 /**
  * The most entries either history tool will return in one page
@@ -2128,6 +2113,11 @@ export class RoomService {
    * which of the two it is in `scope.joinFloorApplied` rather than leaving a
    * reader to guess from where the seqs start.
    *
+   * **What this method owns is the two questions only the service can answer** —
+   * who may export, and how much of the room they get. The file's shape, its
+   * paging and its receipt live in `room-export.ts`, which is handed the answers
+   * and never reaches back for a store.
+   *
    * @param roomId - The room to copy.
    * @param viewerAuthorId - Who is asking; must be on the roster.
    * @yields The header, then every entry in ascending `seq`, then the summary.
@@ -2135,62 +2125,19 @@ export class RoomService {
   *exportRoom(roomId: string, viewerAuthorId: string): Generator<RoomExportLine> {
     const { room, floor } = this.requireHistoryFloor(roomId, viewerAuthorId);
     const wholeRoom = this.isOwnerAuthor(viewerAuthorId);
-    const fromSeq = wholeRoom ? 0 : floor;
-    const resolve = this.exportAuthorResolver();
+    const resolve = createExportAuthorResolver((authorId) => this.authors.getById(authorId));
 
-    yield toExportHeader({
+    yield* buildRoomExport({
       room,
       members: this.roster.list(roomId),
       exportedBy: resolve(viewerAuthorId),
       exportedAt: new Date().toISOString(),
       dorkosVersion: SERVER_VERSION,
-      scope: { fromSeq, joinFloorApplied: !wholeRoom },
+      scope: { fromSeq: wholeRoom ? 0 : floor, joinFloorApplied: !wholeRoom },
+      resolve,
+      page: (afterSeq, limit) =>
+        this.withRollups(roomId, this.store.listEntriesForExport(roomId, { afterSeq, limit })),
     });
-
-    let cursor = fromSeq;
-    let entryCount = 0;
-    let firstSeq: number | null = null;
-    let lastSeq: number | null = null;
-    for (;;) {
-      const page = this.withRollups(
-        roomId,
-        this.store.listEntriesForExport(roomId, { afterSeq: cursor, limit: EXPORT_PAGE_ENTRIES })
-      );
-      if (page.length === 0) break;
-      for (const entry of page) {
-        yield toExportEntry(entry, resolve);
-        entryCount += 1;
-        firstSeq ??= entry.seq;
-        lastSeq = entry.seq;
-      }
-      cursor = page[page.length - 1].seq;
-      if (page.length < EXPORT_PAGE_ENTRIES) break;
-    }
-
-    yield { type: 'summary', entryCount, firstSeq, lastSeq };
-  }
-
-  /**
-   * An author resolver that reads each id from the registry once.
-   *
-   * An export names the same handful of authors on every line — that repetition
-   * is the point, since it is what makes the file greppable — so without the
-   * cache a thousand-message room would be a thousand indexed reads of the same
-   * three rows.
-   */
-  private exportAuthorResolver(): ExportAuthorResolver {
-    const seen = new Map<string, RoomExportAuthor>();
-    return (authorId) => {
-      const hit = seen.get(authorId);
-      if (hit) return hit;
-      const record = this.authors.getById(authorId);
-      // A retired author still wrote what they wrote. Keeping the id with an
-      // honest placeholder is the only answer that does not quietly change what
-      // the room said.
-      const resolved = record ? toExportAuthor(record) : unknownExportAuthor(authorId);
-      seen.set(authorId, resolved);
-      return resolved;
-    };
   }
 
   /**

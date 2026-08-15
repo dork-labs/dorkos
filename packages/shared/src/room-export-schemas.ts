@@ -61,12 +61,24 @@ extendZodWithOpenApi(z);
 export const ROOM_EXPORT_FORMAT = 'dorkos.room-export';
 
 /**
- * The format version, bumped only when an existing field changes meaning or
- * leaves.
+ * The format version.
  *
- * Adding a field does not bump it: every reader here is expected to ignore what
- * it does not know, and a version bump that fires on additions trains people to
- * ignore the version.
+ * **What bumps it: anything a reader of version 1 would get wrong.** An existing
+ * field that changes meaning or leaves, and — the case worth spelling out —
+ * **a new `type` of line.** {@link RoomExportLineSchema} is a discriminated
+ * union, so a fourth line type is not an addition a reader can shrug off: a
+ * strict reader refuses the file outright and a lenient one silently skips
+ * whatever the new line was carrying. Either way it is a break, so it is a bump.
+ *
+ * **What does not bump it: a new FIELD on an existing line type.** Readers are
+ * expected to ignore fields they do not know, and a version that moved on every
+ * addition would train people to stop reading it.
+ *
+ * The obligation that makes both halves work is on the reader, and it is the one
+ * thing a consumer of this format must implement: **parse each line, and treat
+ * an unrecognized `type` as a reason to check the header's `version` — not as a
+ * corrupt file.** That is what lets a version-1 reader give an honest "this file
+ * is newer than I am" instead of a parse error.
  */
 export const ROOM_EXPORT_VERSION = 1;
 
@@ -268,10 +280,16 @@ export type RoomExportSummary = z.infer<typeof RoomExportSummarySchema>;
 /**
  * Any one line of an export, told apart by `type`.
  *
- * The schema a reader parses each line against. It is a discriminated union
- * rather than a loose object so that a line with an unknown `type` — a future
- * format's addition — fails loudly at the line rather than silently as a message
- * with no text.
+ * The schema a reader parses each line against. A discriminated union rather
+ * than a loose object, so an unrecognized `type` fails at that line instead of
+ * quietly parsing as a message with no text.
+ *
+ * **That strictness is why a new line type bumps {@link ROOM_EXPORT_VERSION}.**
+ * This schema refuses a `type` it does not know, so a fourth kind of line is a
+ * breaking change for every existing reader and is versioned as one — see the
+ * version constant for the full policy, and for the reader's side of it: a
+ * refusal here means "check the header's `version`", never "this file is
+ * corrupt".
  */
 export const RoomExportLineSchema = z
   .discriminatedUnion('type', [

@@ -4471,6 +4471,23 @@
         "apps/server/src/routes/room-error-response.ts",
         "meta/agent-etiquette.md"
       ]
+    },
+    {
+      "id": "260815-205935",
+      "slug": "room-export-is-a-versioned-projection",
+      "title": "A room export is a versioned JSONL projection, and the owner's copy ignores the join floor",
+      "status": "accepted",
+      "created": "2026-08-15",
+      "specSlug": "room-participation",
+      "affects": [
+        "packages/shared/src/room-export-schemas.ts",
+        "apps/server/src/services/rooms/room-export.ts",
+        "apps/server/src/services/rooms/room-service.ts",
+        "apps/server/src/services/rooms/room-store.ts",
+        "apps/server/src/routes/rooms.ts",
+        "packages/cli/src/commands/room.ts",
+        ".claude/rules/room-conduct.md"
+      ]
     }
   ]
 }

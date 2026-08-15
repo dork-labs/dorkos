@@ -289,7 +289,21 @@ model. See ADR `260726-170127` and `research/20260727_buzz-conversational-behavi
   rather than a gap: the flag would make them reachable on the login-off external
   `/mcp` surface with no token at all, and what they return is other people's
   messages. Do not add it to make a client's life easier. **A member reads only
-  above its `joinedSeq`** — the same floor the ambient window keeps. And **posting is
+  above its `joinedSeq`** — the same floor the ambient window keeps, and the same
+  floor `GET /api/rooms/:id/export` keeps for every caller **but one**. The export
+  is this domain's fifth read path and the only one that can drop the floor: the
+  install's OWNER exporting a room they are a member of gets it from `seq` 0,
+  because an export is the exit path (DOR-596 C2) rather than one participant's
+  view, and an owner handed a copy of their own room with the first months missing
+  has not been given their data. Every agent, and any second person, still exports
+  strictly above their own `joinedSeq`; membership still gates it through the same
+  `requireHistoryFloor`, which requires a member row even for the owner; and the
+  file states which of the two it is in `scope.joinFloorApplied`, so nothing has to
+  infer it from where the seqs start. The carve-out keys on the OWNER predicate
+  (`isOwnerAuthor`), never on `kind === 'human'` — an invited person is not the
+  operator, for the same reason `seesEveryRoom` was narrowed. Do not tidy the
+  exception away as an oversight: ADR `260815-205935` is why it is there. And
+  **posting is
   channels and threads only** (spec §2.6): in a DM the reply IS the message, so
   the tool refuses there, spelled `kind !== 'channel'` like every other room-kind
   branch. An agent that posts through the tool mid-turn does not ALSO get its

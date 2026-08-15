@@ -201,12 +201,14 @@ router.get('/:id/export', (req, res) => {
     const caller = resolveCaller(res);
     const lines = getRoomService().exportRoom(req.params.id, caller.id);
     const first = lines.next();
-    if (first.done) {
-      // Unreachable: the generator always yields a header. Stated rather than
-      // cast away, so a future change that stops doing so fails loudly here.
-      throw new Error('room export produced no header');
+    // Checked rather than cast. The generator's contract is that its first line
+    // is the header, and this route depends on it for the filename — so a future
+    // change that stops honouring it has to fail here, loudly and before a byte
+    // is sent, rather than serve a file named after `undefined`.
+    if (first.done || first.value.type !== 'room-export') {
+      throw new Error('room export did not begin with its header');
     }
-    const header = first.value as RoomExportHeader;
+    const header: RoomExportHeader = first.value;
 
     res.setHeader('Content-Type', `${ROOM_EXPORT_CONTENT_TYPE}; charset=utf-8`);
     res.setHeader(
