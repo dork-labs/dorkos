@@ -74,11 +74,18 @@ Curious exactly what gets removed? Here's the full inventory.
 | Location              | Contents                                                                   | Owned by    |
 | --------------------- | -------------------------------------------------------------------------- | ----------- |
 | `~/.dork/config.json` | User configuration                                                         | DorkOS      |
-| `~/.dork/dork.db`     | SQLite database (agents, schedules, relay state)                           | DorkOS      |
+| `~/.dork/dork.db`     | SQLite database (agents, schedules, relay state, conversations)            | DorkOS      |
+| `~/.dork/backups/`    | Automatic spare copies of that database (see the warning below)            | DorkOS      |
 | `~/.dork/logs/`       | Server log files                                                           | DorkOS      |
 | `~/.dork/relay/`      | Saved connections to relay and other tools (adapter state and credentials) | DorkOS      |
 | `<project>/.dork/`    | Agent manifest, uploads                                                    | DorkOS      |
 | `~/.claude/`          | Claude Code sessions and config                                            | Claude Code |
+
+<Callout type="warn">
+  `~/.dork/backups/` holds the only spare copies of your channels, DMs, and threads. Deleting
+  `~/.dork` deletes those too. If you might want that history later, move the newest file out of
+  `backups/` first. Each one is a complete database on its own.
+</Callout>
 
 <Callout type="info">
   DorkOS never modifies `~/.claude/`. That directory is managed by Claude Code and is unaffected by

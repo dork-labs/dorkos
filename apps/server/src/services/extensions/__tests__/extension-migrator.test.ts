@@ -210,3 +210,78 @@ describe('dryRun', () => {
     expect(fs.readdirSync(tmpDir)).toHaveLength(0);
   });
 });
+
+describe('runMigrations — pre-migration snapshot', () => {
+  const v1 = { version: 1, up: 'CREATE TABLE notes (id TEXT PRIMARY KEY, body TEXT)' };
+  /** A migration that succeeds and destroys data — what the transaction cannot catch. */
+  const v2Lossy = { version: 2, up: 'DROP TABLE notes' };
+
+  /** Names of the files in the store's `backups` folder, sorted. */
+  function backups(): string[] {
+    try {
+      return fs.readdirSync(path.join(tmpDir, 'backups')).sort();
+    } catch {
+      return [];
+    }
+  }
+
+  it("takes no snapshot on an extension's first install", () => {
+    expect(runMigrations(dbPath(), [v1])).toEqual({ ok: true, appliedThrough: 1 });
+
+    // Nothing to snapshot at version 0, so a fresh install leaves no backups
+    // folder behind at all.
+    expect(backups()).toEqual([]);
+  });
+
+  it('snapshots the store before an upgrade, and the snapshot survives a lossy migration', () => {
+    runMigrations(dbPath(), [v1]);
+    const seed = openExtensionDb(dbPath());
+    seed.prepare("INSERT INTO notes (id, body) VALUES ('n1', 'do not lose me')").run();
+    seed.close();
+
+    expect(runMigrations(dbPath(), [v1, v2Lossy])).toEqual({ ok: true, appliedThrough: 2 });
+
+    // The migration committed and the table is gone from the live store — this
+    // is a SUCCESSFUL migration, so the transaction rolled nothing back.
+    const live = openExtensionDb(dbPath());
+    expect(
+      live.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='notes'").get()
+    ).toBeUndefined();
+    live.close();
+
+    // The snapshot, named for the version that was about to run, still has it.
+    const names = backups();
+    expect(names).toHaveLength(1);
+    expect(names[0]).toMatch(/^store-\d{8}-\d{6}-pre-v2\.db$/);
+
+    const snapshot = openExtensionDb(path.join(tmpDir, 'backups', names[0]));
+    try {
+      expect(snapshot.prepare('SELECT id, body FROM notes').all()).toEqual([
+        { id: 'n1', body: 'do not lose me' },
+      ]);
+    } finally {
+      snapshot.close();
+    }
+  });
+
+  it('refuses to migrate at all when the snapshot cannot be written', () => {
+    runMigrations(dbPath(), [v1]);
+    // A file where the backups directory belongs: the snapshot fails.
+    fs.writeFileSync(path.join(tmpDir, 'backups'), 'not a directory');
+
+    const result = runMigrations(dbPath(), [v1, v2Lossy]);
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.code).toBe('BACKUP_FAILED');
+    // And the store is exactly where it was — still at v1, table intact.
+    const live = openExtensionDb(dbPath());
+    try {
+      expect(getSchemaVersion(live)).toBe(1);
+      expect(
+        live.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='notes'").get()
+      ).toEqual({ name: 'notes' });
+    } finally {
+      live.close();
+    }
+  });
+});

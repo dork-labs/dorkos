@@ -203,7 +203,14 @@ import { createMcpAuth } from './middleware/mcp-auth.js';
 import { validateMcpOrigin } from './middleware/mcp-origin.js';
 import { requireMcpEnabled } from './middleware/mcp-enabled.js';
 import { buildMcpRateLimiter } from './middleware/mcp-rate-limit.js';
-import { createDb, runMigrations, agents } from '@dorkos/db';
+import {
+  createDb,
+  runMigrations,
+  snapshotBeforeMigrations,
+  snapshotDaily,
+  agents,
+  type Db,
+} from '@dorkos/db';
 import { INTERVALS } from './config/constants.js';
 import { resolveDorkHome } from './lib/dork-home.js';
 import { acquireInstanceLock } from './lib/instance-lock.js';
@@ -317,6 +324,7 @@ let taskFileWatcher: TaskFileWatcher | undefined;
 let taskReconciler: TaskReconciler | undefined;
 let searchIndexer: SearchIndexer | undefined;
 let healthCheckInterval: ReturnType<typeof setInterval> | undefined;
+let dailySnapshotInterval: ReturnType<typeof setInterval> | undefined;
 // Embedded-terminal PTY manager (ADR 260708-185521). Always-on, boundary-confined;
 // the WebSocket byte channel is attached to the HTTP server after listen().
 let terminalManager: TerminalManager | undefined;
@@ -356,6 +364,25 @@ async function warmMcpOAuthTokens(
     }
   }
   await oauth.warm(targets);
+}
+
+/**
+ * Take the day's snapshot of `dork.db`, if today has not had one yet.
+ *
+ * Best-effort by design, and that is the difference from the pre-migration
+ * snapshot: nothing irreversible happens next, so a full disk should cost a
+ * warning in the log rather than a server that will not start.
+ *
+ * @param db - The consolidated database.
+ * @param backupsDir - `<dorkHome>/backups`.
+ */
+function takeDailySnapshot(db: Db, backupsDir: string): void {
+  try {
+    const written = snapshotDaily(db, { dir: backupsDir });
+    if (written) logger.info(`[DB] Daily snapshot written to ${written}`);
+  } catch (err) {
+    logger.warn('[DB] Daily snapshot failed — your data is fine, the backup is not', logError(err));
+  }
 }
 
 async function start() {
@@ -451,9 +478,27 @@ async function start() {
   // Individual services still manage their own legacy databases for now — they will
   // be migrated to accept this `db` instance in subsequent tasks.
   const dbPath = path.join(dorkHome, 'dork.db');
+  const backupsDir = path.join(dorkHome, 'backups');
   const db = createDb(dbPath);
+
+  // Snapshot BEFORE migrating, and only when a migration is actually about to
+  // change something. This database holds the only copy of every room, DM and
+  // thread conversation on the machine, and migrations apply themselves at every
+  // boot with nobody asked. Deliberately NOT wrapped in a try/catch: if the
+  // snapshot cannot be written, the right answer is to stop and say so rather
+  // than take an irreversible step with no way back (`snapshotBeforeMigrations`).
+  const preMigrationSnapshot = snapshotBeforeMigrations(db, { dir: backupsDir });
+  if (preMigrationSnapshot) {
+    logger.info(`[DB] Snapshot taken before migrating: ${preMigrationSnapshot}`);
+  }
   runMigrations(db);
   logger.info(`[DB] Consolidated database ready at ${dbPath}`);
+
+  // The daily safety net, under everything a migration cannot see coming. Once
+  // per UTC day, here and again on the timer started after listen() so a server
+  // left running for a week still takes one. A failure here is logged and
+  // survived: unlike the pre-migration snapshot, nothing irreversible follows it.
+  takeDailySnapshot(db, backupsDir);
 
   // Durable session-event store for LOG-BACKED runtimes (codex/opencode/
   // test-mode), injected once here so their completed-turn history survives a
@@ -2812,6 +2857,14 @@ async function start() {
     sweepOrphanedMessageQueues();
   }, INTERVALS.HEALTH_CHECK_MS);
 
+  // Keep the daily snapshot honest on a server that is never restarted. The
+  // check is cheap and idempotent (one file per UTC day), so it runs on a plain
+  // hourly tick rather than trying to compute when midnight is — which is the
+  // sort of arithmetic that quietly stops working across a DST change.
+  dailySnapshotInterval = setInterval(() => {
+    takeDailySnapshot(db, backupsDir);
+  }, INTERVALS.DAILY_SNAPSHOT_CHECK_MS);
+
   // Start ngrok tunnel if enabled. The exposure guard (task 1.3) also gates the
   // boot-time autostart: skip (and log) rather than expose without a login.
   if (env.TUNNEL_ENABLED) {
@@ -2871,6 +2924,9 @@ async function shutdownServices() {
   logger.info('[DorkOS] shutting down services');
   if (healthCheckInterval) {
     clearInterval(healthCheckInterval);
+  }
+  if (dailySnapshotInterval) {
+    clearInterval(dailySnapshotInterval);
   }
   // Kill any live PTYs so shutdown never leaves an orphaned shell.
   terminalManager?.destroyAll();
