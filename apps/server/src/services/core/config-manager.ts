@@ -2407,9 +2407,10 @@ export function backfillClaudeCodePersistentSession(store: {
  *   (both sit outside every key's slice), not inside the body.
  * - `__tests__/migration-append-only.ts` pins a hash per merged key against
  *   `__tests__/merged-migration-hashes.ts`. It covers the whole CLOSURE — the
- *   table slice plus every top-level function in this file the key reaches — so
- *   it sees an edit to a helper the table merely calls, which the slice-only
- *   rule cannot. It normalizes comments and formatting away, so it is the rule
+ *   table slice plus every top-level function AND constant in this file the key
+ *   reaches — so it sees an edit to a helper the table merely calls, and to a
+ *   list like `RETIRED_SIDEBAR_KEYS` that decides what a helper does. The
+ *   slice-only rule sees neither. It normalizes comments and formatting away, so it is the rule
  *   that stays quiet when prose is corrected. It needs no tag, which is what
  *   lets it hold inside the window where no tag exists yet.
  *

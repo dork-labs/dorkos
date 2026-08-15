@@ -3,8 +3,8 @@
  *
  * One line per key in `CONFIG_MIGRATIONS`, holding the hash of everything that
  * key reaches — its slice of the table plus the source of every top-level
- * function in `config-manager.ts` it calls, transitively. How the hash is
- * computed, and what it deliberately does not cover, is in
+ * function and constant in `config-manager.ts` it reaches, transitively. How the
+ * hash is computed, and what it deliberately does not cover, is in
  * `migration-append-only.ts`. The check runs against the real file in
  * `config-manager.test.ts`.
  *
@@ -57,6 +57,6 @@ export const MERGED_MIGRATION_HASHES: Readonly<Record<string, string>> = {
   '0.52.0': 'e890f012cf25c0eb',
   '0.55.0': '73ed2c988c6fcada',
   '0.57.0': '954f0446102992bc',
-  '0.59.0': '0ad7e30a01b71fb3',
+  '0.59.0': '0afd094bc50a5128',
   '0.60.0': 'b62005fab21738cc',
 };

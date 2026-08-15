@@ -12,7 +12,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   checkAppendOnly,
-  extractTopLevelFunctions,
+  extractTopLevelDeclarations,
   migrationClosure,
   migrationHash,
   normalizeForHash,
@@ -57,29 +57,66 @@ const PINS = {
   '0.60.0': migrationHash('0.60.0', SOURCE),
 };
 
-describe('extractTopLevelFunctions', () => {
+describe('extractTopLevelDeclarations', () => {
   it('captures the whole declaration, not just the parameter list', () => {
     // The regression this rule was first written with: every helper here takes
     // an inline object type that Prettier closes with `}): void {` at column
     // zero, so a terminator search that accepts a leading `}` stops there and
     // pins a signature while the body drifts freely underneath.
-    const fns = extractTopLevelFunctions(SEED);
+    const fns = extractTopLevelDeclarations(SEED);
     expect(fns['backfillSeed']).toContain("store.set('seed', true);");
   });
 
   it('ignores a function keyword that is only prose or a string', () => {
     const source = [
       '// export function notReal(a: string) {',
-      "const s = 'export function alsoNotReal(a: string) {';",
+      "const decoy = 'export function alsoNotReal(a: string) {';",
       SEED,
     ].join('\n');
-    expect(Object.keys(extractTopLevelFunctions(source))).toEqual(['backfillSeed']);
+    const names = Object.keys(extractTopLevelDeclarations(source));
+    expect(names).toContain('backfillSeed');
+    expect(names).toContain('decoy');
+    expect(names).not.toContain('notReal');
+    expect(names).not.toContain('alsoNotReal');
+  });
+
+  it('captures a binding whole, through the brackets inside it', () => {
+    // `RETIRED_SIDEBAR_KEYS` is the real shape: an array with a spread call in
+    // it, closed with `] as const;`. Stopping at the first `;` regardless of
+    // depth would cut it, and stopping at the first `}` would cut the object
+    // above it.
+    const source = [
+      'const RETIRED = [',
+      '  ...Object.keys({ a: 1, b: 2 }),',
+      "  'ungroupedSortMode',",
+      '] as const;',
+      '',
+      SEED,
+    ].join('\n');
+    expect(extractTopLevelDeclarations(source)['RETIRED']).toContain('ungroupedSortMode');
+    expect(extractTopLevelDeclarations(source)['RETIRED']).toMatch(/\] as const;$/);
+  });
+
+  it('never follows the migration table itself', () => {
+    // A body that mentions CONFIG_MIGRATIONS must not drag the whole table into
+    // its closure: every key's hash would then depend on every other key, and
+    // adding one migration would break every pin at once.
+    const source = sourceWith(
+      ["  '0.59.0': backfillSeed,"],
+      [helper('backfillSeed', 'void CONFIG_MIGRATIONS;'), OTHER]
+    );
+    expect(Object.keys(extractTopLevelDeclarations(source))).not.toContain('CONFIG_MIGRATIONS');
+    expect(migrationClosure('0.59.0', source)).not.toContain("store.set('other', 1);");
   });
 
   it('raises rather than truncating when a declaration never closes', () => {
     expect(() =>
-      extractTopLevelFunctions('export function open(a: string) {\n  return a;')
+      extractTopLevelDeclarations('export function open(a: string) {\n  return a;')
     ).toThrow(/no closing line of its own/);
+  });
+
+  it('raises when a binding never terminates', () => {
+    expect(() => extractTopLevelDeclarations('const dangling = [1, 2')).toThrow(/never terminates/);
   });
 });
 
@@ -119,6 +156,20 @@ describe('migrationClosure', () => {
     const outer = helper('backfillOuter', 'backfillInner(store);');
     const source = sourceWith(["  '0.60.0': backfillOuter,"], [outer, inner]);
     expect(migrationClosure('0.60.0', source)).toContain("store.set('inner', 1);");
+  });
+
+  it('follows a helper into the constant that decides what it does', () => {
+    // The DOR-1222 shape a call-only closure misses: the code is frozen and the
+    // list it acts on is not. `migrateSidebarSectionPrefs` / `RETIRED_SIDEBAR_KEYS`
+    // is the real pair.
+    const source = sourceWith(
+      ["  '0.60.0': backfillFromList,"],
+      [
+        "const RETIRED_KEYS = ['ungroupedSortMode'] as const;",
+        helper('backfillFromList', 'for (const k of RETIRED_KEYS) store.set(k, null);'),
+      ]
+    );
+    expect(migrationClosure('0.60.0', source)).toContain('ungroupedSortMode');
   });
 
   it('does not pull in a helper the key never reaches', () => {

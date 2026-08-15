@@ -34,8 +34,12 @@
  * which is exactly the hole `contributing/configuration.md` recorded: DOR-1121
  * edited `backfillWelcomeBackDefaults`, a helper the table merely calls, and no
  * guard could see it. So the closure is the table slice plus the source of every
- * top-level function in `config-manager.ts` it reaches, transitively, sorted by
- * name so moving a function within the file is not a change.
+ * top-level declaration in `config-manager.ts` it reaches, transitively, sorted
+ * by name so moving a declaration within the file is not a change.
+ *
+ * Bindings count, not only functions. `migrateSidebarSectionPrefs` deletes
+ * exactly the keys named in `RETIRED_SIDEBAR_KEYS`, so a closure that followed
+ * calls alone would freeze the code and leave the list it acts on editable.
  *
  * The text is normalized before hashing: comments removed, trailing commas
  * before a closer removed, whitespace runs collapsed to one space. That is
@@ -46,12 +50,14 @@
  * refuses; the two rules disagree there on purpose, and the stricter one wins
  * for keys that have shipped.
  *
- * **The boundary, stated so nobody over-trusts it.** The closure follows
- * function calls inside `config-manager.ts`. It does NOT follow module-level
- * constants, and does not leave the file — a helper that spreads
- * `ROOMS_DEFAULTS` is pinned, the constant it spreads is not. Pinning shared
- * default constants would fire on every ordinary schema addition and the guard
- * would be repinned reflexively, which is worse than a boundary written down.
+ * **The boundary, stated so nobody over-trusts it.** The closure never leaves
+ * `config-manager.ts`: an imported constant, a schema default in
+ * `packages/shared`, or a change in `conf` itself can all change what a
+ * migration does with no pin moving. Following imports was considered and left
+ * out on purpose — it would reach the whole config schema, so every ordinary
+ * field addition would break every pin and the pins would be bumped
+ * reflexively, which is worse than a boundary written down. The migration table
+ * itself is also never followed into (see {@link MIGRATION_TABLE}).
  *
  * Pure on purpose, like `migration-safety.ts`: text in, verdict out, so the
  * cases that must FAIL are fixture-testable. `migration-append-only.test.ts`
@@ -67,6 +73,19 @@ const HASH_LENGTH = 16;
 
 /** A top-level function declaration, at column zero. */
 const TOP_LEVEL_FUNCTION = /^(?:export )?function ([A-Za-z_$][\w$]*)\s*\(/gm;
+
+/** A top-level `const`/`let` declaration, at column zero. */
+const TOP_LEVEL_BINDING = /^(?:export )?(?:const|let) ([A-Za-z_$][\w$]*)(?=\s*[:=])/gm;
+
+/**
+ * The migration table itself, which is never followed into a closure.
+ *
+ * It is a top-level binding like any other, so a stray mention of its name
+ * inside a body would pull the WHOLE table into that key's closure — and then
+ * every key's hash would depend on every other key, so adding one migration
+ * would break every pin at once. Excluded by name rather than by luck.
+ */
+const MIGRATION_TABLE = 'CONFIG_MIGRATIONS';
 
 /** Any identifier-shaped token, used to find the calls a body makes. */
 const IDENTIFIER = /[A-Za-z_$][\w$]*/g;
@@ -174,19 +193,25 @@ const CLOSING_LINE = /\n\}(?=\n|$)/;
  * `}`?") passed, because a slice cut short at the parameter list ends in `}`
  * too.
  *
+ * Top-level `const`/`let` bindings are collected the same way, ending at the
+ * first `;` outside any bracket. They matter because a migration's behavior can
+ * live in one: `migrateSidebarSectionPrefs` deletes exactly the keys listed in
+ * `RETIRED_SIDEBAR_KEYS`, so a pin that followed only function calls would leave
+ * that list editable underneath a shipped migration.
+ *
  * @param source - The full `config-manager.ts` source text.
- * @returns Each function name mapped to its declaration text.
- * @throws When a declaration has no closing line of its own.
+ * @returns Each declared name mapped to its declaration text.
+ * @throws When a declaration has no terminator, which means this reader has
+ *   drifted from the file rather than that the file is safe.
  */
-export function extractTopLevelFunctions(source: string): Record<string, string> {
+export function extractTopLevelDeclarations(source: string): Record<string, string> {
   const masked = maskNonCode(source);
   const found: Record<string, string> = {};
 
   TOP_LEVEL_FUNCTION.lastIndex = 0;
   for (let m = TOP_LEVEL_FUNCTION.exec(masked); m !== null; m = TOP_LEVEL_FUNCTION.exec(masked)) {
     const name = m[1]!;
-    const rest = masked.slice(m.index);
-    const close = rest.search(CLOSING_LINE);
+    const close = masked.slice(m.index).search(CLOSING_LINE);
     if (close === -1) {
       throw new Error(
         `function ${name} has no closing line of its own — the append-only guard cannot read ` +
@@ -195,7 +220,39 @@ export function extractTopLevelFunctions(source: string): Record<string, string>
     }
     found[name] = source.slice(m.index, m.index + close + 2);
   }
+
+  TOP_LEVEL_BINDING.lastIndex = 0;
+  for (let m = TOP_LEVEL_BINDING.exec(masked); m !== null; m = TOP_LEVEL_BINDING.exec(masked)) {
+    const name = m[1]!;
+    if (name === MIGRATION_TABLE) continue;
+    const end = endOfStatement(masked, m.index);
+    if (end === -1) {
+      throw new Error(
+        `binding ${name} never terminates — the append-only guard cannot read this file, which ` +
+          'means the guard is stale rather than that the file is safe.'
+      );
+    }
+    found[name] = source.slice(m.index, end);
+  }
   return found;
+}
+
+/**
+ * Index just past the `;` that ends a statement, ignoring any inside brackets.
+ *
+ * @param masked - Source with comments and string contents blanked.
+ * @param from - Where the statement starts.
+ * @returns The end index, or -1 when the statement never terminates.
+ */
+function endOfStatement(masked: string, from: number): number {
+  let depth = 0;
+  for (let i = from; i < masked.length; i++) {
+    const ch = masked[i]!;
+    if (ch === '(' || ch === '[' || ch === '{') depth++;
+    else if (ch === ')' || ch === ']' || ch === '}') depth--;
+    else if (ch === ';' && depth === 0) return i + 1;
+  }
+  return -1;
 }
 
 /**
@@ -263,7 +320,7 @@ export function migrationClosure(key: string, source: string): string {
   if (slice === undefined) {
     throw new Error(`migration key "${key}" is not in CONFIG_MIGRATIONS`);
   }
-  const functions = extractTopLevelFunctions(source);
+  const functions = extractTopLevelDeclarations(source);
 
   const reached = new Set<string>();
   const queue = [slice];
