@@ -7,8 +7,9 @@ import {
   drivePresenceTurn,
 } from '../../../session/__tests__/durable-turn-harness.js';
 
-// The failing factory below flips the module-level scenario store's DEFAULT,
-// so restore it after every test: the passing tests rely on 'simple-text'.
+// The failing and compacting factories below each flip the module-level
+// scenario store's DEFAULT, so restore it after every test: the passing tests
+// rely on 'simple-text'.
 afterEach(() => {
   scenarioStore.reset();
 });
@@ -32,6 +33,15 @@ runtimeConformance(() => new TestModeRuntime(), {
   // the runtime's production failing turn (typed error, then terminal done).
   makeFailingRuntime: () => {
     scenarioStore.setDefault('error');
+    return new TestModeRuntime();
+  },
+  // Compaction rides the scenario store too: the built-in 'compacting'
+  // scenario is a turn that compacts instead of answering, which is what an
+  // AUTO compaction looks like. Wiring it activates the suite's
+  // operation_progress block (DOR-110), which had no runtime driving it here —
+  // test-mode is the only adapter that can reach it without a real model.
+  makeCompactingRuntime: () => {
+    scenarioStore.setDefault('compacting');
     return new TestModeRuntime();
   },
   // DOR-189: a completed turn must survive a restart via the durable store.

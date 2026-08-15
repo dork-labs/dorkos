@@ -8,7 +8,7 @@
 import { mkdir, writeFile, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { SseFrame } from '@dorkos/test-utils/sse-test-helpers';
-import type { ApprovalDriverLog, OracleResult, RubricJudgeResult } from '../types.js';
+import type { ApprovalDriverLog, OracleResult, RoomFacts, RubricJudgeResult } from '../types.js';
 
 /** One line in a transcript: a discriminated record (`kind`). */
 export type TranscriptRecord =
@@ -23,7 +23,14 @@ export type TranscriptRecord =
    * judged — a reader tracing a red needs to see the decision before the verdict
    * that rests on it.
    */
-  | { kind: 'approvals'; log: ApprovalDriverLog };
+  | { kind: 'approvals'; log: ApprovalDriverLog }
+  /**
+   * The room a rooms case built, and the ids it minted (DOR-1217). Written
+   * BEFORE the oracle records for the same reason the approval log is: a room
+   * oracle's verdict names an author id, and a reader who cannot map that id to
+   * an agent cannot check the verdict.
+   */
+  | { kind: 'room'; room: RoomFacts };
 
 /** Everything one eval contributes to its transcript. */
 export interface TranscriptInput {
@@ -55,6 +62,8 @@ export interface TranscriptInput {
   rubricResult?: RubricJudgeResult;
   /** What the approval driver answered, when the case carried an approval policy. */
   approvals?: ApprovalDriverLog;
+  /** The room a rooms case built, when it carried a `roomScript`. */
+  room?: RoomFacts;
 }
 
 /** The JSONL path for one eval within a run directory. */
@@ -76,6 +85,7 @@ export function toRecords(input: TranscriptInput): TranscriptRecord[] {
   input.prompts.forEach((content, index) => records.push({ kind: 'prompt', index, content }));
   input.frames.forEach((frame) => records.push({ kind: 'frame', frame }));
   if (input.approvals) records.push({ kind: 'approvals', log: input.approvals });
+  if (input.room) records.push({ kind: 'room', room: input.room });
   input.oracleResults.forEach((result) => records.push({ kind: 'oracle', result }));
   if (input.rubricResult) records.push({ kind: 'rubric', result: input.rubricResult });
   return records;

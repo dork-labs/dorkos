@@ -198,19 +198,46 @@ export class TestModeRuntime implements AgentRuntime {
 
   /**
    * Fulfill the runtime-fulfilled `compact` intent by yielding a synthetic
-   * `compact_boundary` — the deterministic e2e/conformance vehicle, mirroring
+   * compaction — the deterministic e2e/conformance vehicle, mirroring
    * {@link FakeAgentRuntime}'s final form. Lets the palette-gating + dispatch
    * e2e (Phase 4) and the conformance suite assert a supported runtime's
    * dispatch reached the adapter and produced a boundary the durable projector
    * drives. `TEST_MODE_CAPABILITIES.commandIntents` gates the route before this
    * is ever called.
+   *
+   * Yields the Claude adapter's full three-event shape (progress `started` →
+   * boundary → progress `done`), not a bare boundary — see the note in the body
+   * for why the readings matter.
    */
   async *executeCommandIntent(
     _sessionId: string,
     _intent: RuntimeCommandIntentId,
     _opts?: CommandIntentOpts
   ): AsyncGenerator<StreamEvent> {
-    yield { type: 'compact_boundary', data: { trigger: 'manual' } };
+    // Full-fidelity, in the Claude adapter's own shape: the progress pair its
+    // system-event mapper builds from `status:'compacting'` and
+    // `compact_result:'success'`, around a boundary carrying the same four
+    // camelCased fields it forwards from `compact_metadata`. A bare
+    // `{trigger:'manual'}` satisfied the conformance suite but left every
+    // reading the boundary row exists to report empty, so nothing downstream
+    // was ever driven with real numbers.
+    yield {
+      type: 'operation_progress',
+      data: {
+        operation: 'compaction',
+        state: 'started',
+        determinate: false,
+        message: 'Compacting context…',
+      },
+    };
+    yield {
+      type: 'compact_boundary',
+      data: { trigger: 'manual', preTokens: 51_226, postTokens: 4_151, durationMs: 63_275 },
+    };
+    yield {
+      type: 'operation_progress',
+      data: { operation: 'compaction', state: 'done', determinate: false },
+    };
   }
 
   setRelay(_relay: RelayCore): void {

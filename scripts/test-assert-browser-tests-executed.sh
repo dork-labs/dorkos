@@ -43,9 +43,11 @@ make_workspace() {
   : >"$root/apps/e2e/tests/beta.spec.ts"
   : >"$root/apps/e2e/tests/settings/auth-login.spec.ts"
   : >"$root/apps/e2e/tests/chat/send-message.spec.ts"
+  : >"$root/apps/e2e/tests/chat/compaction.ts"
   : >"$root/apps/e2e/tests/chat/composer-escape-and-ime.ts"
   : >"$root/apps/e2e/tests/chat/interactive-prompts.ts"
   : >"$root/apps/e2e/tests/chat/live-turn-visibility.ts"
+  : >"$root/apps/e2e/tests/chat/runtime-capability-parity.ts"
   : >"$root/apps/e2e/tests/chat/session-read-state.ts"
   : >"$root/apps/e2e/tests/dashboard-sidebar/now-survives-reload.ts"
   : >"$root/apps/e2e/tests/dashboard-sidebar/send-lands-in-today.ts"
@@ -58,6 +60,9 @@ make_workspace() {
     { "title": "beta.spec.ts", "file": "beta.spec.ts",
       "specs": [ { "title": "beta runs", "file": "beta.spec.ts",
                    "tests": [ { "status": "expected" } ] } ] },
+    { "title": "chat/compaction.ts", "file": "chat/compaction.ts",
+      "specs": [ { "title": "the compaction module's suite runs", "file": "chat/compaction.ts",
+                   "tests": [ { "status": "expected" } ] } ] },
     { "title": "chat/composer-escape-and-ime.ts", "file": "chat/composer-escape-and-ime.ts",
       "specs": [ { "title": "the escape-and-ime module's suite runs", "file": "chat/composer-escape-and-ime.ts",
                    "tests": [ { "status": "expected" } ] } ] },
@@ -66,6 +71,9 @@ make_workspace() {
                    "tests": [ { "status": "expected" } ] } ] },
     { "title": "chat/live-turn-visibility.ts", "file": "chat/live-turn-visibility.ts",
       "specs": [ { "title": "the live-turn-visibility module's suite runs", "file": "chat/live-turn-visibility.ts",
+                   "tests": [ { "status": "expected" } ] } ] },
+    { "title": "chat/runtime-capability-parity.ts", "file": "chat/runtime-capability-parity.ts",
+      "specs": [ { "title": "the parity module's suite runs", "file": "chat/runtime-capability-parity.ts",
                    "tests": [ { "status": "expected" } ] } ] },
     { "title": "chat/session-read-state.ts", "file": "chat/session-read-state.ts",
       "specs": [ { "title": "the module's suite runs", "file": "chat/session-read-state.ts",
@@ -81,7 +89,7 @@ make_workspace() {
                     "specs": [ { "title": "auth runs", "file": "settings/auth-login.spec.ts",
                                  "tests": [ { "status": "skipped" } ] } ] } ] }
   ],
-  "stats": { "expected": 8, "unexpected": 0, "flaky": 0, "skipped": 1 }
+  "stats": { "expected": 10, "unexpected": 0, "flaky": 0, "skipped": 1 }
 }
 JSON
 }
@@ -123,7 +131,7 @@ make_workspace "$tmp/healthy"
 # The count is the FIXTURE's, not the real suite's — two ordinary specs plus one
 # test per registered module — so it moves when make_workspace does and never
 # because somebody added a browser test.
-check 'a healthy run passes' "$tmp/healthy" 0 '8 test(s) executed'
+check 'a healthy run passes' "$tmp/healthy" 0 '10 test(s) executed'
 
 # A spec on disk that the run never collected — the testIgnore/testMatch hole.
 make_workspace "$tmp/uncollected"

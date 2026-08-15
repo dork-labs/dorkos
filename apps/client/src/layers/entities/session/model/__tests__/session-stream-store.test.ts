@@ -395,6 +395,31 @@ describe('useSessionStreamStore', () => {
     ]);
   });
 
+  it('retains compact_boundary in the turn so the boundary row is drawn live (DOR-1215)', () => {
+    // The same failure `system_status` had above, on the event that matters
+    // most: `compact_boundary` was missing from TURN_EVENT_TYPES, so the
+    // default arm dropped it and `foldCompactBoundary` — the projection that
+    // exists solely to draw `CompactBoundaryRow` (DOR-118) — was never reached
+    // by a live turn. The asymmetry that gives it away: a FAILED compaction
+    // already drew its row, because that one is synthesized from
+    // `operation_progress`, which IS retained. Success drew nothing.
+    useSessionStreamStore.getState().applySnapshot(SID, snapshot({ cursor: 0 }));
+    const store = useSessionStreamStore.getState();
+    store.applyEvent(SID, { type: 'turn_start', seq: 1 });
+    store.applyEvent(SID, {
+      type: 'compact_boundary',
+      seq: 2,
+      trigger: 'manual',
+      preTokens: 51_226,
+      postTokens: 4_151,
+    });
+    const s = useSessionStreamStore.getState().getSession(SID);
+    expect(s.inProgressTurn.map((e) => e.type)).toEqual(['turn_start', 'compact_boundary']);
+    // The metadata rides with it — the row reports the numbers, so an event
+    // retained but stripped would render a boundary that says nothing.
+    expect(s.inProgressTurn[1]).toMatchObject({ trigger: 'manual', preTokens: 51_226 });
+  });
+
   it('applyEvent advances lastAppliedSeq and folds the event', () => {
     useSessionStreamStore.getState().applySnapshot(SID, snapshot({ cursor: 0 }));
     const store = useSessionStreamStore.getState();

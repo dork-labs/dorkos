@@ -67,6 +67,24 @@ export interface SeededAgent {
   emoji: string;
 }
 
+/**
+ * One entry of a seeded room, as the history route returns it.
+ *
+ * `body.notice` is what makes an entry the room speaking rather than somebody
+ * in it — a notice is an ordinary row whose body says so, which is how the
+ * cockpit tells them apart too (`RoomNoticeRow`). `authorId` is the only handle
+ * on WHO said something: a reply carries no name on it, only the id its author
+ * resolved to.
+ */
+export interface SeededEntry {
+  id: string;
+  seq: number;
+  authorId: string;
+  kind: string;
+  body: { text: string; notice?: string; subjectAuthorId?: string };
+  mentions: string[];
+}
+
 /** One person or agent on a room's roster, as `GET /api/rooms/:id` returns it. */
 interface RosterEntry {
   author: { id: string; kind: 'human' | 'agent' | 'system'; displayName: string; emoji?: string };
@@ -284,15 +302,77 @@ export class RoomsApi {
    * The resolved list is the only place a mention's EFFECT is visible: the text
    * looks the same whether it addressed somebody or posted as plain prose.
    *
+   * **This is the newest PAGE, not the whole room** — the route serves 50 by
+   * default. Sound here only because every room this fixture seeds is created by
+   * one test and archived at the end of it, so it never approaches the window.
+   * A caller reading a long-lived room needs the paginated walk
+   * `TeamRoomApi.entries` does, and the reason is written out there: a truncated
+   * page is a valid answer that looks exactly like the room, so the failure is
+   * silent (DOR-1213).
+   *
    * @param roomId - The room to read.
    */
-  async listEntries(roomId: string): Promise<{ body: { text: string }; mentions: string[] }[]> {
+  async listEntries(roomId: string): Promise<SeededEntry[]> {
     const res = await this.request.get(`/api/rooms/${roomId}/entries`);
     if (!res.ok()) throw new Error(`Could not read entries of ${roomId}: ${await res.text()}`);
-    const { entries } = (await res.json()) as {
-      entries: { body: { text: string }; mentions: string[] }[];
-    };
+    const { entries } = (await res.json()) as { entries: SeededEntry[] };
     return entries;
+  }
+
+  /**
+   * Wait until a room holds an entry matching `predicate`, and answer with every
+   * entry as it stood then.
+   *
+   * A poll rather than a fixed wait, for the reason `POST /entries` gives: it
+   * answers **202**, and an agent's reply lands whenever its turn ends, so there
+   * is no moment to sleep until. The twin of `TeamRoomApi.waitForEntry`, which
+   * exists there because #team is a room no test may create; this one is for the
+   * rooms a test seeds itself.
+   *
+   * @param roomId - The room to watch.
+   * @param predicate - What the awaited entry looks like.
+   * @param what - Named in the timeout message, so a failure says what never came.
+   */
+  async waitForEntry(
+    roomId: string,
+    predicate: (entry: SeededEntry) => boolean,
+    what: string
+  ): Promise<SeededEntry[]> {
+    const deadline = Date.now() + SERVER_ROUND_TRIP_MS;
+    for (;;) {
+      const entries = await this.listEntries(roomId);
+      if (entries.some(predicate)) return entries;
+      if (Date.now() > deadline) {
+        throw new Error(
+          `Room ${roomId} never got ${what}. It holds ${entries.length} entries: ` +
+            entries.map((e) => `${e.authorId.slice(-6)}:${e.body.text ?? ''}`).join(' | ')
+        );
+      }
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+  }
+
+  /**
+   * Set one room membership's response mode.
+   *
+   * The counterpart to {@link RoomsApi.silenceAgents}, and deliberately NOT
+   * folded into it: silence is this fixture's standing guarantee, and a caller
+   * that wants an agent to answer has to say so in its own file, where the
+   * safety argument for doing it can be read next to the test that needs it. A
+   * spec that calls this on the cockpit leg is asking a real model for a real
+   * turn.
+   *
+   * @param roomId - The room the membership is in.
+   * @param authorId - Whose seat to change.
+   * @param responseMode - What it should answer.
+   */
+  async setResponseMode(roomId: string, authorId: string, responseMode: string): Promise<void> {
+    const res = await this.request.patch(`/api/rooms/${roomId}/members/${authorId}`, {
+      data: { responseMode },
+    });
+    if (!res.ok()) {
+      throw new Error(`Could not set ${authorId} to ${responseMode}: ${await res.text()}`);
+    }
   }
 
   /**

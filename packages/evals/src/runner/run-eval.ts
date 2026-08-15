@@ -26,6 +26,7 @@ import type {
   IsolationRecord,
   OracleContext,
   OracleResult,
+  RoomFacts,
   RuntimeTier,
 } from '../types.js';
 import { emptyApprovalLog } from '../types.js';
@@ -258,6 +259,7 @@ export async function runEval(evalCase: EvalCase, opts: RunEvalOptions): Promise
   const sandbox = await createSandbox();
   let server: HarnessServer | undefined;
   let frames: SseFrame[] = [];
+  let room: RoomFacts | undefined;
   let sessionId: string = randomUUID();
   // One client identity for the whole eval — the multi-turn conversation AND a
   // trailing widget turn share it, so each re-acquires the same re-entrant
@@ -349,6 +351,23 @@ export async function runEval(evalCase: EvalCase, opts: RunEvalOptions): Promise
       failed = applyNonDoneOutcome(result, widget.outcome);
     }
 
+    // A ROOM case drives the room API instead of a session (DOR-1217). Its
+    // frames REPLACE whatever the session drive collected — which is nothing, a
+    // room case carries no prompt — because the oracles that read them are the
+    // room ones, and mixing two stream vocabularies in one array would make
+    // every frame predicate ambiguous.
+    if (!failed && evalCase.roomScript) {
+      turnAttempted = true;
+      const scripted = await evalCase.roomScript({
+        baseUrl: server.baseUrl,
+        sandbox,
+        cwd: driveCwd,
+        ...(opts.timeoutMs !== undefined ? { timeoutMs: opts.timeoutMs } : {}),
+      });
+      frames = scripted.frames;
+      room = scripted.room;
+    }
+
     // Stop the driver BEFORE the oracles read its log: a decision POSTed in the
     // last moments of a turn must be recorded, or a case would fail on evidence
     // that was still being written.
@@ -365,6 +384,7 @@ export async function runEval(evalCase: EvalCase, opts: RunEvalOptions): Promise
       sessionId,
       frames,
       approvals: approvalDriver?.log ?? emptyApprovalLog(),
+      ...(room ? { room } : {}),
     };
 
     if (!failed) {
@@ -419,6 +439,7 @@ export async function runEval(evalCase: EvalCase, opts: RunEvalOptions): Promise
       oracleResults: result.oracleResults,
       rubricResult: result.rubricResult,
       ...(approvalDriver ? { approvals: approvalDriver.log } : {}),
+      ...(room ? { room } : {}),
     });
     const retain = failed && retainOnFailure;
     await server?.dispose({ failed: retain });

@@ -40,11 +40,13 @@ serializes tests _within_ a worker and does nothing across them, so the copies
 race each other's `POST /api/test/reset`, which wipes scenarios, tracked sessions
 and projectors for everybody.
 
-Measured on three untouched, long-standing `chat-mock.spec.ts` tests
-(2026-08-14): `--repeat-each=6` → **10 of 18 failed**; the same command with
-`--workers=1` → **18 of 18 passed**. The failures look like product bugs — an
-empty transcript reading "Start a conversation", a card that never rendered —
-and none of them is one.
+Measured twice, independently, on the same day, which is how confident to be
+about it. On three untouched, long-standing `chat-mock.spec.ts` tests:
+`--repeat-each=6` → **10 of 18 failed**; the same command with `--workers=1` →
+**18 of 18 passed**. And on the compaction suite (DOR-1215): **2 of 6 red** at
+`--repeat-each=3`, **0 of 6** with `--workers=1`. The failures look like product
+bugs — an empty transcript reading "Start a conversation", a card that never
+rendered — and none of them is one.
 
 So: **`--repeat-each=N --workers=1`**, which is also what CI runs
 (`workers: CI ? 1 : undefined`). A flake hunt without `--workers=1` on these
@@ -146,6 +148,36 @@ exact: true }` never matches.
   can leave a session with no history, and the transcript then unmounts for the
   empty state — so a negative assertion on `transcript-feed` errors with "element
   not found" instead of passing. Use `expect(page.getByText(...)).toHaveCount(0)`.
+
+## The live compaction row is transient — you cannot assert on it twice
+
+A successful compaction draws **two different rows, from two different sources**,
+one after the other:
+
+- **live** — `[data-testid="compact-boundary-row"]`, projected from the turn's
+  `compact_boundary` event (`CompactBoundaryRow`);
+- **durable** — `[data-testid="compaction-row"]`, the `messageType: 'compaction'`
+  history message (`UserMessageContent`).
+
+At `turn_end` the client reconciles against canonical history and the durable row
+**replaces** the live one. So a test that asserts `toBeVisible()` on the live row
+and then asserts anything else about it is racing that handover — and on a loaded
+machine it loses. That failure is badly disguised: the second assertion reports
+`compact-boundary-trigger` "element(s) not found", which reads exactly like the
+boundary having arrived without its metadata.
+
+Two ways to write it safely, both in `tests/chat/compaction.ts`:
+
+- Assert everything about the live row **in one locator**
+  (`.filter({ hasText: … })`), or
+- drive the `compacting-hold` scenario, which holds the turn open after the
+  boundary until `POST /api/test/finish-turn` — then the live row stands still,
+  and the handover itself becomes assertable instead of being the thing that
+  beats you.
+
+`/compact` (the command intent) **cannot** be held open, so a live-row assertion
+on that path is racy by construction. Pin the live row on the held scenario, and
+pin the durable row everywhere else.
 
 ## Known coverage gaps
 
@@ -249,3 +281,35 @@ Concretely, do not assert:
 - that pressing Enter on an unfiltered list opens _your_ thing — filter to your own run id first.
 
 That last one is not hypothetical: `rooms-in-palette` pressed Enter on the untyped palette's first unread row, which on a busy suite was a _neighbour's_ room — and arriving at a room marks it read, so it silently cleared another spec's unread badge and made that spec fail about half the time. It looked like a product bug for a while (DOR-692, since closed as an artefact).
+
+## Counting answers in a room an agent replies in
+
+`#team`, or a channel on the test-mode leg. Four traps, every one of them found
+the hard way in DOR-1213, and three of the four produce a test that passes when
+it should fail rather than one that errors.
+
+- **"Entries I have not seen before" is not "answers to my message."** `POST
+/entries` is trigger-only, so a test that asserts its timeline and moves on
+  leaves its agent's reply still coming; it lands during the NEXT test, after
+  that test's `before` snapshot, and is counted as an answer to a message it has
+  nothing to do with. Scope by `cascadeRoot` — the server's own answer to which
+  conversation a line belongs to — not by id-not-seen-before.
+- **A notice is not a participant.** The room speaks in the same feed and in the
+  same cascade. An agent unregistered by an earlier run leaves an `engaged` seat
+  behind in `#team`, and the room says so ("… isn't set up on this machine any
+  more, so it can't answer here") _inside your cascade_. Counting it made
+  "nobody else piles on" fail against a working product. Filter
+  `body.notice === undefined` whenever the claim is about who ANSWERED.
+- **Counting on the first answer cannot see the second.** "Only one agent
+  answered" read off the snapshot taken when the first reply lands does not fail
+  when another agent piles on — it passes, because it looked too early. Settle
+  first: post a marker, wait for ITS answer, then wait for the room's `working`
+  count to reach zero (`TeamRoomApi.settle`). The marker proves the room
+  processed something later; the working count proves no other agent is still
+  holding a claim. `tests/rooms/room-autonomy.spec.ts` does the seeded-room
+  version of the same thing with a fourth message.
+- **`#team` marks at most one moment an hour, so a moment test cannot repeat.**
+  A second attempt — `--repeat-each`, a Playwright retry — creates its agent, is
+  correctly suppressed, and fails on a precondition as if the ordering rule had
+  broken. Tell "I already ran" from "somebody else ran first" by whose agent the
+  existing moment names, and skip only for the first.

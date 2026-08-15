@@ -86,6 +86,76 @@ function workingTurn(ticks: number): ScenarioFn {
 }
 
 /**
+ * How long a held compaction waits to be told the turn is over before ending
+ * anyway. Same bound-as-well-as-signal reasoning as {@link workingTurn}: a turn
+ * nothing ever ends would outlive the run holding a projector open.
+ */
+const COMPACT_HOLD_TICKS = 60;
+
+/**
+ * A turn that compacts instead of answering — an AUTO compaction, the kind
+ * context pressure fires rather than a person typing `/compact`.
+ *
+ * The event shape is the Claude adapter's, not an invention: its system-event
+ * mapper turns `status: 'compacting'` into
+ * `operation_progress{operation:'compaction',state:'started'}`, the SDK's
+ * `compact_boundary` into the boundary below (camelCased from
+ * `compact_metadata`), and `compact_result: 'success'` into the closing
+ * `state:'done'`. Reproducing all three is what makes this a stand-in for a
+ * real compaction rather than a bare boundary.
+ *
+ * It emits no assistant text on purpose. The event-log history fold places a
+ * boundary at its own seq but an assistant message only at `turn_end` (see
+ * `event-log-history.ts` — intra-turn interleaving is not reconstructible), so
+ * a scenario mixing text and a boundary in one turn would reconstruct in an
+ * order it never happened in. A compaction turn that says nothing is both the
+ * honest shape and the one that survives a reload unchanged.
+ *
+ * **Why `hold` exists.** The live boundary row is TRANSIENT in the product: at
+ * `turn_end` the client reconciles against canonical history and the durable
+ * compaction row replaces it. A browser test asserting on the live row is
+ * therefore racing that handover — and loses on a loaded machine, which is
+ * what it did (1 run in 6). Holding the turn open leaves the live row standing
+ * until the test asks for the turn to end, so the assertion is deterministic
+ * instead of lucky, and the handover itself becomes observable rather than a
+ * thing that happens too fast to see.
+ *
+ * @param options - `hold`: keep the turn open after the boundary until
+ *   `POST /api/test/finish-turn`.
+ */
+function compactingTurn(options: { hold: boolean }): ScenarioFn {
+  return async function* () {
+    yield {
+      type: 'session_status',
+      data: { sessionId: 'test-mode', model: 'claude-haiku-4-5' },
+    } as StreamEvent;
+    yield {
+      type: 'operation_progress',
+      data: {
+        operation: 'compaction',
+        state: 'started',
+        determinate: false,
+        message: 'Compacting context…',
+      },
+    } as StreamEvent;
+    yield {
+      type: 'compact_boundary',
+      data: { trigger: 'auto', preTokens: 51_226, postTokens: 4_151, durationMs: 63_275 },
+    } as StreamEvent;
+    yield {
+      type: 'operation_progress',
+      data: { operation: 'compaction', state: 'done', determinate: false },
+    } as StreamEvent;
+    if (options.hold) {
+      for (let tick = 0; tick < COMPACT_HOLD_TICKS && !finishRequested; tick += 1) {
+        await new Promise((resolve) => setTimeout(resolve, WORKING_TICK_MS));
+      }
+    }
+    yield { type: 'done', data: { sessionId: 'test-mode' } } as StreamEvent;
+  };
+}
+
+/**
  * Built-in scenarios available without explicit configuration. The `demo-*`
  * entries (rich streaming, tool approval, canvas) come from
  * {@link DEMO_SCENARIOS} and exist for the marketing product-capture pipeline;
@@ -109,7 +179,49 @@ const BUILT_IN_SCENARIOS: Record<string, ScenarioFn> = {
     // session_status data cast needed because data union requires sessionId
     yield {
       type: 'session_status',
-      data: { sessionId: 'test-mode', model: 'claude-haiku-4-5' },
+      data: {
+        sessionId: 'test-mode',
+        model: 'claude-haiku-4-5',
+        // **Reported on purpose, and it must never reach the screen.**
+        //
+        // Test-mode declares `supportsCostTracking: false`, and the status bar
+        // gates its whole usage item on that flag. Until this scenario reported
+        // usage at all, the first half of that condition
+        // (`input.usage && hasRenderableUsage(input.usage)`) was false for every
+        // test-mode session — so a browser test asserting "no cost item" passed
+        // no matter what the capability said, and kept passing with the flag
+        // flipped to `true`. It was a test that could not fail.
+        //
+        // **The SHAPE is chosen, not incidental.** A bare `pay-as-you-go` cost
+        // is renderable but is never PROMOTED into the visible bar: the registry
+        // promotes `usage` only at `warning` or `exhausted`
+        // (`status-bar-registry.ts`), so with a plain cost the item was still
+        // absent from the bar with the capability on, and the flipped-flag probe
+        // still passed. A subscription at warning level is the one honest shape
+        // that both renders and earns a slot, which is what finally made the
+        // capability the ONLY thing between this figure and the status bar.
+        //
+        // **And it carries no `costUsd`, which is not an oversight.**
+        // `test-mode` is free BY DESIGN, and the evals harness leans on that:
+        // it treats a credentialed turn reporting no cost as spend it could not
+        // measure, and exempts `test-mode` because there its $0 is a real
+        // measurement (`run-eval.ts`, `costUnmetered`). A fabricated cost here
+        // reached that harness and turned a free tier into one that had spent
+        // 1.23 cents — a made-up number corrupting another subsystem's
+        // invariant. Utilization alone satisfies `hasRenderableUsage` for a
+        // subscription, so the gate is just as observable without inventing
+        // money.
+        //
+        // Inert for every other spec by construction: while the flag is false
+        // the item is never built at all, so it is in neither the bar nor the
+        // overflow panel.
+        usage: {
+          kind: 'subscription' as const,
+          utilization: 0.82,
+          windowLabel: '5-hour window',
+          state: 'warning' as const,
+        },
+      },
     } as StreamEvent;
     yield { type: 'text_delta', data: { text: `Echo: ${content}` } } as StreamEvent;
     yield { type: 'done', data: { sessionId: 'test-mode' } } as StreamEvent;
@@ -161,6 +273,18 @@ const BUILT_IN_SCENARIOS: Record<string, ScenarioFn> = {
     yield { type: 'text_delta', data: { text: 'Created 3 tasks.' } } as StreamEvent;
     yield { type: 'done', data: { sessionId: 'test-mode' } } as StreamEvent;
   },
+  /**
+   * A turn that compacts instead of answering — what an AUTO compaction looks
+   * like when context pressure fires it rather than a person typing `/compact`.
+   * Finishes on its own.
+   */
+  compacting: compactingTurn({ hold: false }),
+  /**
+   * The same compaction, with the turn held OPEN afterwards until
+   * `POST /api/test/finish-turn` — see {@link compactingTurn} for why a browser
+   * test needs that.
+   */
+  'compacting-hold': compactingTurn({ hold: true }),
   error: async function* (_content) {
     yield {
       type: 'session_status',
@@ -259,3 +383,17 @@ class ScenarioStore {
 }
 
 export const scenarioStore = new ScenarioStore();
+
+/**
+ * Every scenario key this store actually serves.
+ *
+ * @internal Exported so `capabilities.test.ts` can check
+ *   `features.testModeScenarios` against the real thing. That test used to
+ *   restate the list as a literal, which made it a second copy of the very
+ *   register it was meant to police — adding `long-turn` to the capability list
+ *   duly broke it, and the failure said nothing about the drift it exists to
+ *   catch.
+ */
+export function builtInScenarioNames(): string[] {
+  return Object.keys(BUILT_IN_SCENARIOS);
+}

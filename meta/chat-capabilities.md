@@ -1,6 +1,6 @@
 # Chat Capabilities — Master List
 
-**Status:** Living (created 2026-08-13; §6 states re-audited 2026-08-14 after the chat-architecture landing run — PRs #1005–#1015, DOR-773/1201–1209; §9 gaps 3/4/5 closed 2026-08-15 by DOR-1214, which gave the test-mode runtime an interactive half and put I-01…I-04, C-10, R-05, R-06 and R-07 under deterministic Playwright coverage). First inventory of everything a user should be able to do in DorkOS chat, across all four chat surfaces, with the current test coverage for each. This is the contract our chat tests should check against. When a capability ships, it gets a row here; when a row has no coverage, that is a named gap, not an unknown one.
+**Status:** Living (created 2026-08-13; §6 states re-audited 2026-08-14 after the chat-architecture landing run — PRs #1005–#1015, DOR-773/1201–1209; re-audited again 2026-08-15 across the DOR-1214…1218 wave, which closed every one of §9's first five gaps: L-04/L-05/M-05/M-06 in DOR-1215 (the compaction gap, and two rows that named gaps that were not there), and I-01…I-04, C-10, R-05, R-06, R-07 in DOR-1214, which gave the test-mode runtime an interactive half and put them under deterministic Playwright coverage). First inventory of everything a user should be able to do in DorkOS chat, across all four chat surfaces, with the current test coverage for each. This is the contract our chat tests should check against. When a capability ships, it gets a row here; when a row has no coverage, that is a named gap, not an unknown one.
 
 Coverage legend — where each capability is verified today:
 
@@ -68,18 +68,18 @@ A capability is only "done" when it behaves correctly on the surface(s) it appli
 
 ## 4. Session lifecycle & context
 
-| ID   | Capability                                                                                                                                        | Surfaces | Coverage                           |
-| ---- | ------------------------------------------------------------------------------------------------------------------------------------------------- | -------- | ---------------------------------- |
-| L-01 | New session; model and permission mode selectable per session                                                                                     | session  | E, S                               |
-| L-02 | Rename a session (incl. via palette)                                                                                                              | session  | U, E                               |
-| L-03 | Resume an old session; full history renders identically to live (reload-from-history parity)                                                      | session  | S                                  |
-| L-04 | **Compaction**: `/compact` and auto-compaction produce a visible boundary; history before it still renders; the turn after it has correct context | session  | — (palette row enabled-check only) |
-| L-05 | Session fork / branch                                                                                                                             | session  | —                                  |
-| L-06 | Session lock (`X-Client-Id`): two writers don't corrupt a session                                                                                 | session  | U                                  |
-| L-07 | Cross-client sync: same session in two windows agrees (messages, queue, edits)                                                                    | session  | E                                  |
-| L-08 | SSE reconnection: gap-free replay via `Last-Event-ID` after network drop                                                                          | session  | U, E                               |
-| L-09 | Switching between two concurrently-working sessions loses no live state (streaming, prompts, queue, todos, subagents)                             | session  | S                                  |
-| L-10 | Per-runtime parity: the same chat behaviors on claude-code, codex, opencode                                                                       | session  | U (conformance)                    |
+| ID   | Capability                                                                                                                                        | Surfaces | Coverage                                                      |
+| ---- | ------------------------------------------------------------------------------------------------------------------------------------------------- | -------- | ------------------------------------------------------------- |
+| L-01 | New session; model and permission mode selectable per session                                                                                     | session  | E, S                                                          |
+| L-02 | Rename a session (incl. via palette)                                                                                                              | session  | U, E                                                          |
+| L-03 | Resume an old session; full history renders identically to live (reload-from-history parity)                                                      | session  | S                                                             |
+| L-04 | **Compaction**: `/compact` and auto-compaction produce a visible boundary; history before it still renders; the turn after it has correct context | session  | U, E (context-after-compaction unverified — test-mode echoes) |
+| L-05 | Session fork / branch — a full-transcript copy only: `⇧↵` in the session switcher, no dialog, no "branch from message N"                          | session  | U, E (fork POST stubbed)                                      |
+| L-06 | Session lock (`X-Client-Id`): two writers don't corrupt a session                                                                                 | session  | U                                                             |
+| L-07 | Cross-client sync: same session in two windows agrees (messages, queue, edits)                                                                    | session  | E                                                             |
+| L-08 | SSE reconnection: gap-free replay via `Last-Event-ID` after network drop                                                                          | session  | U, E                                                          |
+| L-09 | Switching between two concurrently-working sessions loses no live state (streaming, prompts, queue, todos, subagents)                             | session  | S                                                             |
+| L-10 | Per-runtime parity: the same chat behaviors on claude-code, codex, opencode                                                                       | session  | U (conformance)                                               |
 
 ## 5. Rooms, threads, DMs
 
@@ -89,8 +89,8 @@ A capability is only "done" when it behaves correctly on the surface(s) it appli
 | M-02 | Post in a channel; everyone (and every window) sees it live                                             | channel  | E                                    |
 | M-03 | Agent room turns: an addressed/mentioned agent replies in the room; turn budget respected               | channel  | U                                    |
 | M-04 | Etiquette: agents don't over-participate (see `meta/agent-etiquette.md`)                                | channel  | —                                    |
-| M-05 | **Threads**: open a thread, reply in it, replies stay out of the main timeline, thread arrivals surface | thread   | —                                    |
-| M-06 | Thread deep-link (`?thread=`) restores the panel and focus                                              | thread   | — (hooks unit-tested only)           |
+| M-05 | **Threads**: open a thread, reply in it, replies stay out of the main timeline, thread arrivals surface | thread   | U, E (desktop + phone)               |
+| M-06 | Thread deep-link (`?thread=`) restores the panel and focus                                              | thread   | U, E                                 |
 | M-07 | DMs: open, post, agent replies                                                                          | dm       | E (open/post)                        |
 | M-08 | Unread/read state, correct across devices                                                               | rooms    | E                                    |
 | M-09 | Presence (who's here, incl. sidebar)                                                                    | rooms    | E                                    |
@@ -139,32 +139,42 @@ The check we're missing is a **context-recall probe suite** (natural fit: a `roo
 | X-07 | Same probes in a bridged (Buzz/relay) room                            | context parity across community backends     |
 | X-08 | Probe after the room's bound session compacted                        | room context survives compaction             |
 
+**Built (2026-08-15, DOR-1217).** X-01 to X-06 are now cases in the `rooms` eval
+suite (`packages/evals/src/suite/rooms-recall.ts`), beside a restraint case
+(M-04 / A-02) and the A-15 injection case §6 called the missing security signal.
+They are credentialed and quarantined: they run under `pnpm evals:local --suite
+<case-id>` and report, and promoting one is a human decision on green evidence.
+X-07 and X-08 are **not built** — a bridged room can only be minted under the
+test-mode runtime, where there is no model to answer a probe, and nothing exposes
+"compact the session this room bound". The suite header says so rather than
+shipping two cases that assert nothing.
+
 ## 8. Edge cases the tests should force
 
 - **Concurrency**: two sessions streaming at once while switching (covered by `/chat:session-switch-test`); an agent active in a **room and a direct session at the same time**; two humans posting in one thread simultaneously.
 - **Interruption**: refresh mid-stream; network drop mid-stream; server restart mid-turn; stop pressed during tool execution; queued message pending when the turn errors.
-- **Compaction**: compaction firing **while** a message is queued; compaction mid-multi-turn task; transcript rendering across the boundary; compaction in a room-bound session.
+- **Compaction**: compaction firing **while** a message is queued; compaction mid-multi-turn task; compaction in a room-bound session. (Transcript rendering across the boundary is now covered — DOR-1215.)
 - **Prompts**: approval pending during a session switch, a refresh, a compaction, and a second incoming prompt; question prompt answered from a second window; approval answered outside DorkOS.
 - **Scale**: 500+ message session reload; very long single message; rapid-fire sends; many rooms with unread counts.
 - **Identity**: URL session id ≠ SDK session id (the JSONL mapping trap); duplicate session titles in the sidebar; placeholder ids in `room_sessions`.
 - **Mobile**: every capability above on a phone viewport (composer, thread panel via room-sheet-phone, approval cards).
-- **Runtime spread**: C-07 queueing, I-01 approvals, and L-04 compaction on codex and opencode, not just claude-code.
+- **Runtime spread**: C-07 queueing and I-01 approvals on codex and opencode, not just claude-code. L-04 compaction on **opencode** — codex declares `compact` unsupported and emits no boundary, so there is nothing to spread there.
 - **Autonomy** (new, from §6): mention loops (A mentions B mentions A — budget must break it, and the break must be visible); two agents answering the same mention at once; a human answering a question while an agent is mid-compose on it; a message **deleted or edited** after an agent started replying to it; an agent mentioned inside a thread (does it get thread scope or channel scope?); a reaction used as an answer ("👍 to approve?") — is that ever an approval signal, and if not, is that explicit; an `engaged`-mode agent in a high-traffic channel (does restraint hold at volume); bridged-room members with external identities mentioning a local agent; prompt-injection posted by a bridged external user (A-15).
 
 ## 9. Known coverage gaps (2026-08-13)
 
 Ranked by user pain if broken:
 
-1. **Compaction end-to-end (L-04)** — no test asserts a compaction actually happens and the session stays coherent.
-2. **Threads (M-05, M-06)** — UI and hooks exist, zero dedicated e2e.
+1. ~~**Compaction end-to-end (L-04)**~~ — **CLOSED 2026-08-15 (DOR-1215)**, and it was not only untested: the boundary rendered NOWHERE. The live turn dropped `compact_boundary` (missing from the client store's `TURN_EVENT_TYPES`, so the shipped `foldCompactBoundary`/`CompactBoundaryRow` were unreachable), and the event-log history fold dropped it again, so a log-backed runtime lost it permanently — claude-code recovered only because its boundary also lives in JSONL. The runtime that actually gains from the fold is **opencode**: it is the only other adapter that emits `compact_boundary` (`opencode/event-mapper.ts`), and only on its EventLog fallback, since its history normally comes from the sidecar. **Codex gains nothing** — it declares `commandIntents.compact.supported: false` and emits no boundary anywhere, so it is `logBackedHistory: true` with nothing to fold. Every unit test around it passed throughout, each proving its own link. Now pinned by `apps/e2e/tests/chat/compaction.ts` (both triggers, live + reload + the turn after). Still open underneath it: compaction while a message is queued, mid-multi-turn, in a room-bound session, and on opencode (not codex, which cannot compact). Two named limits ride the fix — the turn AFTER a compaction is only proven to answer, not to have the right context (test-mode echoes, so no test-mode assertion can prove context), and a mid-turn boundary reconstructs above the text that preceded it (`reconstructHistoryFromEvents — mixed turn` pins that shape).
+2. ~~**Threads (M-05, M-06)**~~ — **was never a gap; this row was wrong.** `apps/e2e/tests/rooms/room-entry-actions.spec.ts` has covered threads since 2026-07-30/31 (#641, #654, #655): reply lands in the panel, replies stay out of the main timeline, the reply row opens the thread, keyboard crosses the panel, unread arrivals wear the accent, the `?thread=` address restores it, and the phone push-surface. The 2026-08-14 re-audit missed them. The one real hole — the deep link restoring FOCUS, the second half of M-06 — was closed in DOR-1215.
 3. ~~**Approve/Deny + AskUserQuestion in e2e (I-01…I-04)**~~ — **CLOSED by DOR-1214** (2026-08-15). `apps/e2e/tests/chat/interactive-prompts.ts` drives all four deterministically against the test-mode runtime, including the MCP elicitation prompt that had no coverage at all. What made it possible was giving the test-mode runtime an interactive half: scenarios that genuinely PARK until the real product route (`/approve`, `/deny`, `/submit-answers`, `/submit-elicitation`) delivers an answer, so each branch is distinguishable in the transcript rather than only on the card.
 4. **Stop is CLOSED; steering (C-09) is not a test gap at all** — **DOR-1214** (2026-08-15). C-10's running-turn case is pinned by `apps/e2e/tests/chat/live-turn-visibility.ts`, against a scenario with no self-ending path so the assertion is about Stop rather than about elapsed time. Two things remain, both product-side rather than test-side: a turn blocked on an approval offers no Stop affordance, and C-09 has no user-facing steer to drive at all (see the note under §1).
 5. ~~**Subagents, todos pill, background task bar in e2e (R-05, R-06, R-07)**~~ — **CLOSED by DOR-1214** (2026-08-15). All three are in `live-turn-visibility.ts`. Each is a claim about a MOMENT — "visible WHILE the work runs" — which no pre-existing scenario could hold open, so the new scenarios park on a step barrier the test releases (`POST /api/test/step`) instead of racing a paced scenario's own clock.
 6. **Cross-runtime chat parity at the e2e layer (L-10 beyond unit conformance)**.
-7. **Fork/resume (L-05)** and **agent etiquette (M-04)** — no automated signal at all.
-8. **Agent context comprehension (X-01…X-08)** — context assembly is unit-tested; whether agents can actually use it is untested. Needs the context-recall probe suite (§7).
-9. **Autonomy behaviors (§6)** — largely BUILT as of 2026-08-14 (A-03/A-04/A-06/A-07 shipped; A-05/A-10/A-12/A-13 partial) with unit coverage, but nothing above the unit layer: no e2e drives an agent burst/steer/halt through the UI, and no eval judges restraint or comprehension. A-15's fence mechanics are pinned; the adversarial injection eval is still the security-relevant gap before Mesh+Relay leaves the demo-claim gate.
-10. **No rooms self-test exists.** `/chat:self-test` and `/chat:session-switch-test` are session-only, written before channels matured — and this run grew rooms the most (collect/steer/halt, 3-way DMs, reactions, tool hand, DM notifications). A `/chat:rooms-test` sibling (live browser, two agents in a channel, burst → one reply; halt; reaction; thread) is now the highest-value new self-test, and the `rooms` eval suite (§7's probes + the gate's tuning loop, shapes specced in `specs/engaged-response-gate`) is its deterministic counterpart.
+7. **Fork/resume (L-05)** and **agent etiquette (M-04)**. M-04 has no automated signal at all. L-05 does have signal, but weaker than it looks: `session-switcher.spec.ts` stubs `POST /:id/fork` with `page.route` and asserts only that `⇧↵` posts to the right URL, so nothing anywhere proves a fork is actually created. It cannot, deterministically, until `TestModeRuntime.forkSession` stops returning `null` (codex returns `null` too; only claude-code and opencode implement it). Also UI-dead: the server, shared schema and SDK all support `upToMessageId`, and all **three** client call sites — `SessionSwitcher.tsx`, `agent-hub/tabs/SessionsTab.tsx`, `session-list/EmbedSidebar.tsx` — pass `undefined` for the opts, so "branch from message N" exists everywhere except where a person could ask for it.
+8. **Agent context comprehension (X-07, X-08)** — X-01…X-06 now have credentialed probes in the `rooms` eval suite (DOR-1217), so comprehension has a measurable signal for the first time; the two that remain need a bridged room and a compaction the harness cannot reach yet (§7).
+9. **Autonomy behaviors (§6)** — largely BUILT as of 2026-08-14 (A-03/A-04/A-06/A-07 shipped; A-05/A-10/A-12/A-13 partial) with unit coverage. Above the unit layer: no e2e drives an agent burst/steer/halt through the UI, but the `rooms` eval suite now judges restraint and comprehension (DOR-1217), and A-15's adversarial injection case exists there too — quarantined, so it reports rather than gates until a credentialed run promotes it. A-15's fence mechanics stay pinned by unit tests.
+10. **Rooms above the unit layer — half-closed.** `/chat:self-test` and `/chat:session-switch-test` are session-only, written before channels matured, and this run grew rooms the most (collect/steer/halt, 3-way DMs, reactions, tool hand, DM notifications). `/chat:rooms-test` now exists (DOR-1218) and covers the agentic half — live browser, two agents in a channel, burst → one reply, mid-turn fold, halt, reaction, thread, three-way rule. The deterministic counterpart arrived alongside it and is narrower than it looks: `apps/e2e/tests/rooms/` already holds 18 specs (conversation, reactions, entry actions, DMs, presence, attachments, mobile sheet, palette), and the `rooms` eval suite's free tier (DOR-1217) now drives **the halt route and the collect window** against a real room on the test-mode runtime and gates on both — the two mechanisms this landing run added. What is still missing is the BROWSER leg of those two — nothing clicks the halt button or types a burst into the composer — and the gate's tuning loop (`specs/engaged-response-gate` §13.1, a labelled corpus and a confusion matrix), which is unbuilt.
 
 ## 10. The test surface today (all of it)
 
@@ -176,14 +186,15 @@ Everything in the repo that verifies behavior, not just the two chat self-tests:
 - Playwright e2e — `apps/e2e` (54 tracked specs, `manifest.json`, `GOTCHAS.md`); mock leg runs against the test-mode runtime in a throwaway `/tmp` data dir.
 - `apps/e2e/tests/streams/multi-window.spec.ts` — the CI regression guard for the connection budget.
 - CLI smoke — `pnpm smoke:docker`, `pnpm smoke:integration` (Docker, packaging-level).
-- Free structural evals — `pnpm evals -- --suite core --tier test-mode` (no spend; runs nightly).
+- Free structural evals — `pnpm evals -- --suite core --tier test-mode` and `--suite rooms --tier test-mode` (no spend; both run nightly). The rooms half boots a real channel on the test-mode runtime and asserts on the room's own event stream and turn-budget rows: a mentioned agent runs a turn, an unaddressed message runs none and costs nothing, a burst collects into one charged turn, halt interrupts and writes one notice.
 
 **Agentic / live-model (spends tokens, needs a running stack)**
 
 - `/chat:self-test` — single-session depth (this doc §1–§4).
 - `/chat:session-switch-test` — two concurrent sessions + switching (§L-09).
+- `/chat:rooms-test` — two agents in one channel: burst → one reply (A-03), mid-turn fold (A-03), halt and the typed-"stop" guard (A-16), reactions (A-06), threads (M-05), the three-way rule (A-04), and a DOM/API/SQLite triangulation.
 - `/multiwindow` — N cockpit windows against a live instance; wraps `pnpm --filter @dorkos/e2e multi-window`, prints a PASS/FAIL table.
-- Agent evals — `pnpm evals:local` (`packages/evals`): suites `governance`, `agents`, `operate`, `connectors`, `ui` (widget round-trip), `selftest` (harness boots + health). Oracle-judged, budget-capped. **No chat/rooms suite exists yet** — its intended shape (tuning + gating loops, drive-a-room-post harness gap) is specced in `specs/engaged-response-gate/01-ideation.md`.
+- Agent evals — `pnpm evals:local` (`packages/evals`). `--suite` resolves against **tags** — `smoke`, `core`, `connector`, `experimental`, `rooms` — or a single case id, so names like `governance` or `operate` are groups of cases in the registry (`packages/evals/src/suite/index.ts`), not selectable suite names; `--suite all` runs everything. Cases today cover governance/approvals, agent self-edit, activity reads, config toggles, marketplace install, capability discovery, connectors, the widget round-trip, the harness self-test, and — since DOR-1217 — rooms: four free mechanism cases listed under the deterministic tier above, plus a quarantined credentialed half holding the X-01…X-06 probes, restraint, and the A-15 injection case. Oracle-judged, budget-capped. A case that declares a credentialed runtime is skipped rather than run on `--tier test-mode`, so a free run reports no verdict about a model it never asked. The gate's own tuning loop (a labelled corpus and a confusion matrix) is still unbuilt — `specs/engaged-response-gate/01-ideation.md` §13.1.
 
 **Meta-tooling (manages or exercises tests, is not itself a test)**
 
@@ -194,13 +205,13 @@ Everything in the repo that verifies behavior, not just the two chat self-tests:
 
 ## 11. Run modes and the single entry point
 
-**Run-mode convention for agentic self-tests** (to be wired into `/chat:self-test`, `/chat:session-switch-test`, and any future self-test):
+**Run-mode convention for agentic self-tests** — wired into `/chat:self-test`, `/chat:session-switch-test`, and `/chat:rooms-test` (DOR-1218), and required of any future self-test:
 
-- `mode:sandbox` — run against the **test-mode runtime** (throwaway data dir, no model spend, deterministic). Verifies UI plumbing.
+- `mode:sandbox` — run against the **test-mode runtime** (throwaway data dir, no model spend, deterministic). Verifies UI plumbing. Ports and data dir are the e2e suite's: API 4243, Vite 4248, `DORK_HOME=/tmp/dorkos-test-mode-4243`. Anything whose verdict is a judgment about what the agent chose to say is `N/A (sandbox)`, never a pass.
 - `mode:live` — run against the dev environment with a real runtime. **Default model: Haiku** (`claude-haiku-4-5`) unless the run is explicitly about model behavior. Verifies streaming feel, real tool loops, timing.
 - If the invocation doesn't state a mode, the command **asks the user** before spending anything.
 
-**Run-everything entry point** (planned): one command that runs the whole ladder and produces a single report —
+**Run-everything entry point**: `/test:all` (DOR-1218) runs the whole ladder and produces a single report at `test-results/test-all/<timestamp>.md` —
 
 1. `pnpm verify` (typecheck + lint + affected unit tests)
 2. `pnpm test -- --run` (full unit suite)
@@ -208,7 +219,7 @@ Everything in the repo that verifies behavior, not just the two chat self-tests:
 4. `pnpm evals -- --suite core --tier test-mode` (free structural evals)
 5. **Gated, ask-first**: live evals (`pnpm evals:local`), the agentic self-tests, `/multiwindow`, Docker smokes
 
-Steps 1–4 are free and deterministic; step 5 spends money or needs a live stack, so it is opt-in per run. Candidate shape: a `/test:all` command (or `pnpm test:everything`) that runs 1–4, then asks about 5, and writes one summary with pass/fail per tier.
+Steps 1–4 are free and deterministic; step 5 spends money or needs a live stack, so it is opt-in per run — `/test:all` runs 1–4, then **stops and asks** about 5, and writes one summary with pass/fail per tier. Its one hard rule: a tier that did not execute is never green, because turbo's cache replay prints a full-run summary in a few hundred milliseconds (which is why `scripts/assert-tests-executed.sh` exists in CI). Step 4's `--suite rooms` half becomes real once DOR-1217 registers rooms eval cases; until then that selector matches nothing and the command reports it as unavailable rather than passing.
 
 ## 12. How this list is used
 

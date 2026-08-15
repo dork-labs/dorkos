@@ -57,6 +57,39 @@ describe('UserMessageContent', () => {
     expect(screen.queryByTestId('output-renderer')).not.toBeInTheDocument();
   });
 
+  it('renders a compaction boundary as a labelled rule carrying its metadata', () => {
+    render(
+      <UserMessageContent
+        message={makeMessage({
+          messageType: 'compaction',
+          content: 'The conversation so far…',
+          compactMetadata: { trigger: 'manual', preTokens: 51_226 },
+        })}
+      />
+    );
+    expect(screen.getByText('Context compacted · 51.2k tokens · manual')).toBeInTheDocument();
+  });
+
+  it('offers no expander on a boundary that has no summary to expand (DOR-1215)', () => {
+    // Log-backed runtimes (test-mode, codex) reconstruct the boundary from the
+    // event stream, which carries no summary text — Claude's summary lives in
+    // the JSONL record the boundary annotates and has no equivalent here. The
+    // rule still has to be drawn, because it is what tells the reader the
+    // history above it was summarized away; what it must not do is hand them a
+    // control that opens onto nothing.
+    render(
+      <UserMessageContent
+        message={makeMessage({
+          messageType: 'compaction',
+          content: '',
+          compactMetadata: { trigger: 'manual' },
+        })}
+      />
+    );
+    expect(screen.getByText('Context compacted · manual')).toBeInTheDocument();
+    expect(screen.queryByRole('button')).not.toBeInTheDocument();
+  });
+
   it('renders a widget interaction as a calm chip, not the raw <ui_action> XML', () => {
     const content = formatUiActionMessage({
       actionId: 'move-1-1',

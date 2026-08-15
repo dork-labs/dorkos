@@ -13,8 +13,12 @@
  *     merged by toolCallId, `tool_progress` appended) emits one assistant
  *     message per turn, only once the turn closes with `turn_end` — the open
  *     turn's events are delivered separately as `inProgressTurn`.
- *   - Message ids are deterministic from the turn's `turn_start` seq, so a
- *     rebuilt snapshot yields stable ids across reconnects.
+ *   - `compact_boundary` emits a `messageType: 'compaction'` message at its own
+ *     seq — the same shape the Claude adapter builds from JSONL, so one row
+ *     renders both. It is the only fold that does not require an open turn.
+ *   - Message ids are deterministic from the turn's `turn_start` seq (the
+ *     boundary's from its own), so a rebuilt snapshot yields stable ids across
+ *     reconnects.
  *
  * Deliberate simplifications vs Claude's JSONL history: a clean turn carries no
  * `parts` array (all turn text concatenates ahead of the tool list, so
@@ -182,6 +186,63 @@ export function reconstructHistoryFromEvents(events: SessionEvent[]): HistoryMes
         if (!turn) break;
         const entry = turn.tools.get(event.toolCallId);
         if (entry) entry.progressOutput = (entry.progressOutput ?? '') + event.content;
+        break;
+      }
+      case 'compact_boundary': {
+        // Pushed HERE, at its own seq, rather than at `turn_end`: its whole job
+        // is to mark a position in the transcript.
+        //
+        // The shape mirrors what the Claude adapter builds from JSONL
+        // (transcript-parser.ts: `messageType: 'compaction'` + `compactMetadata`)
+        // so one row renders both. Content is empty because this stream carries
+        // no summary text — Claude's summary lives in the record the boundary
+        // annotates, and a log-backed runtime has no equivalent. Fields are
+        // copied one at a time on `!== undefined`, not truthiness, so a
+        // measured zero survives.
+        //
+        // NOT guarded on an open turn, unlike every fold above it — but be
+        // precise about what that buys, because the durable store makes the
+        // unguarded case narrower than it looks. `SessionEventStore.appendTurn`
+        // flushes only turn events, so a boundary INSIDE a turn (every path
+        // that exists today: `/compact` wraps one, and OpenCode's mid-turn
+        // boundary rides the turn it fires in) is persisted and survives a
+        // restart, while a boundary arriving OUTSIDE any turn is given a seq
+        // and never written. So the unguarded arm serves exactly one topology:
+        // the no-store fallback in `readLogBackedHistory` — the live
+        // projector's in-memory log, i.e. unit tests and embedded hosts with no
+        // Db. It stays unguarded because dropping it there too would trade a
+        // reader's only explanation for the history above it against nothing,
+        // not because a durable out-of-turn boundary is a case we serve.
+        //
+        // ORDERING, unresolved on purpose. A boundary lands at its own seq but
+        // this turn's assistant message is only pushed at `turn_end`, so a
+        // MID-TURN compaction reconstructs as user → compaction → assistant:
+        // the rule is drawn ABOVE text that was written before it. Live, the
+        // client folds the boundary into the turn's parts at the position it
+        // arrived, so the same compaction reads correctly until the first
+        // reload and differently afterwards. This is the general limitation
+        // this module's header already names — intra-turn interleaving is not
+        // reconstructible without per-part seqs — surfacing on the one event
+        // where the position IS the meaning. It bites OpenCode alone (the only
+        // runtime that emits a mid-turn boundary), and only on its EventLog
+        // fallback, since its history normally comes from the sidecar. Fixing
+        // it means giving the assistant message ordered parts rather than
+        // special-casing compaction; `reconstructHistoryFromEvents — mixed
+        // turn` pins today's shape so that change is a decision and not a
+        // surprise.
+        const meta = {
+          ...(event.trigger !== undefined ? { trigger: event.trigger } : {}),
+          ...(event.preTokens !== undefined ? { preTokens: event.preTokens } : {}),
+          ...(event.postTokens !== undefined ? { postTokens: event.postTokens } : {}),
+          ...(event.durationMs !== undefined ? { durationMs: event.durationMs } : {}),
+        };
+        messages.push({
+          id: `compaction-${event.seq}`,
+          role: 'user',
+          content: '',
+          messageType: 'compaction',
+          ...(Object.keys(meta).length > 0 ? { compactMetadata: meta } : {}),
+        });
         break;
       }
       case 'error':
