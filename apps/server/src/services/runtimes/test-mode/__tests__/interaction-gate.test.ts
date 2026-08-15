@@ -162,6 +162,30 @@ describe('interactionGate — stopping a turn', () => {
     expect(interactionGate.abort('never-opened')).toBe(false);
   });
 
+  it('names every interaction it is about to strand, so a stop can resolve them', async () => {
+    // What `interruptQuery` reads before aborting. Without it the projector goes
+    // on advertising cards whose scenario no longer exists.
+    const ctx = interactionGate.open(SESSION);
+    void ctx.awaitApproval('tool-1').catch(() => {});
+    void ctx.awaitAnswers('q-1').catch(() => {});
+    void ctx.awaitElicitation('e-1').catch(() => {});
+
+    expect(interactionGate.pendingInteractionIds(SESSION).sort()).toEqual(['e-1', 'q-1', 'tool-1']);
+
+    // And they are gone once the turn is aborted — read BEFORE, never after.
+    interactionGate.abort(SESSION);
+    expect(interactionGate.pendingInteractionIds(SESSION)).toEqual([]);
+  });
+
+  it('names nothing for a session with no turn, and nothing for a turn parked on a step', () => {
+    expect(interactionGate.pendingInteractionIds('never-opened')).toEqual([]);
+    const ctx = interactionGate.open(SESSION);
+    void ctx.awaitStep().catch(() => {});
+    // A step barrier is not an interaction: it has no card in the projection, so
+    // reporting it would make `interruptQuery` resolve an id nobody ever posted.
+    expect(interactionGate.pendingInteractionIds(SESSION)).toEqual([]);
+  });
+
   it('wakes a sleeping scenario immediately instead of waiting out the delay', async () => {
     // `long-turn` sleeps a second per heartbeat; an abort that could not
     // interrupt a sleep would leave Stop looking slow and, on a long delay,
@@ -195,10 +219,44 @@ describe('interactionGate — turn lifecycle', () => {
     const parked = ctx.awaitStep();
     expect(interactionGate.isOpen(SESSION)).toBe(true);
 
-    interactionGate.close(SESSION);
+    interactionGate.close(SESSION, ctx.token);
 
     expect(interactionGate.isOpen(SESSION)).toBe(false);
     await expect(parked).rejects.toBeInstanceOf(ScenarioAborted);
+  });
+
+  it("a finished turn's late close cannot tear down the turn that replaced it", async () => {
+    // THE EXACT INTERLEAVING, and it is not hypothetical: `sendMessage` closes
+    // in a `finally`, and a generator is disposed lazily — so on a busy session
+    // turn A's cleanup routinely runs AFTER turn B has opened. With an
+    // identity-blind close, B's card becomes unanswerable, every wait it holds
+    // rejects, and B dies as `aborted_streaming` for a reason nothing in B's own
+    // code can explain. On a shared mock leg that is a flake generator.
+    const a = interactionGate.open(SESSION);
+    const b = interactionGate.open(SESSION);
+    const bWaiting = b.awaitApproval('gated-edit-1');
+
+    // A finishes LATE, after B is already live.
+    interactionGate.close(SESSION, a.token);
+
+    // B is untouched: still open, still answerable, still unaborted.
+    expect(interactionGate.isOpen(SESSION)).toBe(true);
+    expect(b.signal.aborted).toBe(false);
+    expect(interactionGate.resolveApproval(SESSION, 'gated-edit-1', { approved: true })).toBe(true);
+    await expect(bWaiting).resolves.toEqual({ approved: true });
+  });
+
+  it('a stale token closes nothing, and the owner can still close normally', async () => {
+    const a = interactionGate.open(SESSION);
+    const b = interactionGate.open(SESSION);
+
+    // Replayed / duplicated cleanup from the superseded turn: a no-op.
+    interactionGate.close(SESSION, a.token);
+    interactionGate.close(SESSION, a.token);
+    expect(interactionGate.isOpen(SESSION)).toBe(true);
+
+    interactionGate.close(SESSION, b.token);
+    expect(interactionGate.isOpen(SESSION)).toBe(false);
   });
 
   it('reset() aborts every session at once', async () => {

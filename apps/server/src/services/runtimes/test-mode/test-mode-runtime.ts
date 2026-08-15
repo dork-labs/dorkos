@@ -188,7 +188,11 @@ export class TestModeRuntime implements AgentRuntime {
       } as StreamEvent;
       yield { type: 'done', data: { sessionId: 'test-mode' } } as StreamEvent;
     } finally {
-      interactionGate.close(sessionId);
+      // Scoped to THIS turn's token. The generator is disposed lazily, so on a
+      // busy session this can run after the NEXT turn has already opened its own
+      // gate — and closing that one would make its card unanswerable and kill it
+      // as `aborted_streaming`. See `InteractionGate.close`.
+      interactionGate.close(sessionId, ctx.token);
     }
   }
 
@@ -421,12 +425,25 @@ export class TestModeRuntime implements AgentRuntime {
    * {@link ScenarioAborted}, which {@link sendMessage} turns into a terminal
    * `aborted_streaming` + `done` so the turn closes and the composer comes back.
    *
+   * **Resolves the projector's pending interactions too**, exactly as
+   * {@link approveTool}, {@link submitAnswers} and {@link submitElicitation} do.
+   * Stopping a turn that is parked on an approval makes that card unanswerable —
+   * the scenario waiting on it is gone — so leaving it in `pendingInteractions`
+   * would strand an immortal card in every window's snapshot, answerable-looking
+   * and answering only 409s. Resolved with NO outcome: nobody approved or denied
+   * it, and claiming either would be a lie in the transcript.
+   *
    * Answers `false` when no turn is open, which is the honest report and what
    * the interrupt route passes through as `ok: false` — a stop that arrives
    * after a turn finished on its own is a race, not an error.
    */
   async interruptQuery(sessionId: string): Promise<boolean> {
-    return interactionGate.abort(sessionId);
+    // Read before the abort, which clears them.
+    const pending = interactionGate.pendingInteractionIds(sessionId);
+    if (!interactionGate.abort(sessionId)) return false;
+    const projector = peekProjector(sessionId);
+    for (const interactionId of pending) projector?.resolveInteraction(interactionId);
+    return true;
   }
 
   /**

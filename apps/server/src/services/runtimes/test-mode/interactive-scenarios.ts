@@ -317,9 +317,9 @@ const elicitationPrompt: ScenarioFn = async function* (_content, ctx) {
  * The built-in `todo-write` scenario numbers them this way for the same reason.
  */
 const PROGRESS_TASKS = [
-  { id: '1', subject: 'Read the current middleware' },
-  { id: '2', subject: 'Add the token bucket' },
-  { id: '3', subject: 'Run the API tests' },
+  { id: '1', subject: 'Read the current middleware', activeForm: 'Reading the middleware' },
+  { id: '2', subject: 'Add the token bucket', activeForm: 'Adding the token bucket' },
+  { id: '3', subject: 'Run the API tests', activeForm: 'Running the API tests' },
 ] as const;
 
 /**
@@ -353,7 +353,18 @@ const todoProgress: ScenarioFn = async function* (_content, ctx) {
       type: 'task_update',
       data: {
         action: 'update',
-        task: { id: task.id, subject: task.subject, status: 'in_progress' },
+        task: {
+          id: task.id,
+          subject: task.subject,
+          status: 'in_progress',
+          // The client renders the IN-PROGRESS task's `activeForm` as a line of
+          // its own and clears it the moment nothing is in progress. That makes
+          // it the one signal a browser test can use to prove a pending →
+          // in_progress transition actually happened: the done/total count does
+          // not move on this step, so asserting the count here would be
+          // satisfied by the state that already existed before it.
+          activeForm: task.activeForm,
+        },
       },
     } as StreamEvent;
     await ctx.awaitStep();

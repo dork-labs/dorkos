@@ -106,8 +106,16 @@ export const TEST_MODE_CAPABILITIES: RuntimeCapabilities = {
      * `q3-*`, `long-turn` and interactive (DOR-1214) families are all served and
      * all deliberately absent: each is a fixture a specific harness names
      * explicitly via `POST /api/test/scenario`, never something a reader picks
-     * from a list. Adding one here would offer a browser test's step-gated
-     * scenario as a general-purpose choice, and it would hang whoever chose it.
+     * from a list.
+     *
+     * **The test for adding one is whether a chooser could be left stranded by
+     * it, not which family it belongs to.** A scenario that BLOCKS — parked on
+     * an approval, an answer, or a step barrier only its own test releases —
+     * must stay out: offered as a general-purpose choice it would hang whoever
+     * picked it, with no affordance in the list to say so. A scenario that runs
+     * to completion on its own is safe to advertise on its merits, whatever file
+     * it lives in. So a new self-contained scenario may be added here; a new
+     * gated one may not.
      */
     testModeScenarios: ['simple-text', 'tool-call', 'todo-write', 'error'],
     /** Artificial per-event latency used by the fake stream generators. */

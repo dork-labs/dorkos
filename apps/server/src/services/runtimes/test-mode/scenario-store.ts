@@ -23,13 +23,13 @@ const WORKING_TICK_MS = 1_000;
  * Raised by `POST /api/test/finish-turn` to end every running
  * {@link workingTurn} at its next heartbeat.
  *
- * A browser test that needs a turn to END at a moment of its choosing has no
- * other lever: `TestModeRuntime.interruptQuery` answers `false` (there is no
- * process to signal), so the composer's Stop cannot close a scripted turn. A
- * test that instead waited out a deliberately SHORT turn is racing its own
- * setup — which is exactly how this spec's second case failed on CI, where
- * opening a second window took longer than the turn it was supposed to be
- * queued behind.
+ * How a browser test ends a turn NORMALLY at a moment of its choosing. Stop is
+ * not a substitute: `TestModeRuntime.interruptQuery` does close a scripted turn
+ * since DOR-1214, but it closes it as `aborted_streaming`, and a test watching a
+ * queue drain needs the turn to complete rather than to be interrupted. A test
+ * that instead waited out a deliberately SHORT turn is racing its own setup —
+ * which is exactly how this spec's second case failed on CI, where opening a
+ * second window took longer than the turn it was supposed to be queued behind.
  *
  * STICKY until {@link ScenarioStore.reset}, deliberately: a queue drains by
  * starting the next turn, so a one-shot flag would end the turn a test was

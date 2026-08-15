@@ -104,8 +104,13 @@ locator that was pointing at the wrong thing.
   `"Approve Enter"`, Always Allow's is `"Always Allow Shift+Enter"`, Deny's is
   `"Deny Esc"` — a `<Kbd>` child folds into the name, and it only renders while
   the card is ACTIVE, so the name is not stable either. `{ name: 'Approve',
-exact: true }` never matches. Anchor instead: `{ name: /^Approve\b/ }`, which
-  also keeps it off the batch bar's "Approve All".
+exact: true }` never matches.
+- **`/^Approve\b/` does NOT exclude "Approve All".** The word boundary sits
+  between `Approve` and the space, so it is satisfied by the exact string it
+  looks like it rules out — same for `/^Deny\b/` and "Deny All". Use a negative
+  lookahead: `/^Approve(?!\s+All)/`. Scoping the locator to the card hides this
+  today (the batch bar lives in the composer, not the transcript), which is
+  exactly why the comment claiming the guard outlived the guard.
 - **`tool-approval-decided` and `question-prompt-submitted` are TRANSIENT.** Both
   are live in-place rows that exist only until the turn ends and the message is
   rebuilt from history. Asserting them is a race against the turn closing (it

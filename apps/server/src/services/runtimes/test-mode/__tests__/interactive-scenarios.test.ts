@@ -364,6 +364,7 @@ describe('stoppable-turn (C-10) — Stop ends a turn that would never end itself
     const { projector } = startTurn(runtime, 'edit the notes');
     await waitForPending(projector);
     expect(projector.getStatus().lifecycle).toBe('blocked');
+    expect((await runtime.getSessionSnapshot(CTX, SESSION)).pendingInteractions).toHaveLength(1);
 
     expect(await runtime.interruptQuery(SESSION)).toBe(true);
     await waitForSettled(projector, 'interrupted');
@@ -371,5 +372,27 @@ describe('stoppable-turn (C-10) — Stop ends a turn that would never end itself
     expect(replay(projector).some((e) => e.type === 'turn_end')).toBe(true);
     expect(streamedText(projector)).not.toContain('APPROVED-BRANCH');
     expect(streamedText(projector)).not.toContain('DENIED-BRANCH');
+
+    // THE HALF THAT WAS MISSING. The scenario waiting on that card is gone, so
+    // the card can never be answered — and a snapshot that still advertises it
+    // hands every window an immortal prompt that replies 409 to anyone who
+    // presses it. `interruptQuery` resolves the interaction like the other three
+    // interactive methods, and this is what proves it did.
+    const snapshot = await runtime.getSessionSnapshot(CTX, SESSION);
+    expect(snapshot.pendingInteractions).toEqual([]);
+    expect(replay(projector).some((e) => e.type === 'interaction_resolved')).toBe(true);
+  });
+
+  it('resolves EVERY stranded card when a batch of them is interrupted', async () => {
+    scenarioStore.setForSession(SESSION, 'approval-batch');
+    const runtime = new TestModeRuntime();
+    const { projector } = startTurn(runtime, 'do the three things');
+    await waitForPending(projector, 3);
+
+    expect(await runtime.interruptQuery(SESSION)).toBe(true);
+    await waitForSettled(projector, 'interrupted');
+
+    // All three, not just the first: a stop resolves the whole parked set.
+    expect((await runtime.getSessionSnapshot(CTX, SESSION)).pendingInteractions).toEqual([]);
   });
 });

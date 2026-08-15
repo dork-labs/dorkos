@@ -66,6 +66,11 @@ export class ScenarioAborted extends Error {
 export interface ScenarioContext {
   /** The session this turn belongs to. */
   readonly sessionId: string;
+  /**
+   * This turn's identity, which {@link InteractionGate.close} requires so a
+   * finished turn can never tear down the one that replaced it.
+   */
+  readonly token: TurnToken;
   /** Aborted when the turn is stopped; also drives {@link ScenarioContext.delay}. */
   readonly signal: AbortSignal;
   /** Park until the operator approves or denies `toolCallId`. */
@@ -87,8 +92,19 @@ export interface ScenarioContext {
   delay(ms: number): Promise<void>;
 }
 
+/**
+ * Identity for ONE turn's gate on a session.
+ *
+ * Opaque on purpose: a caller may only ever pass back the token it was handed,
+ * which is what makes {@link InteractionGate.close} unable to close a turn it
+ * does not own.
+ */
+export type TurnToken = symbol;
+
 /** One session's outstanding waits. */
 interface SessionGate {
+  /** This turn's identity — see {@link TurnToken}. */
+  readonly token: TurnToken;
   readonly controller: AbortController;
   /** Keyed by tool-call id. */
   readonly approvals: Map<string, (decision: ToolDecision) => void>;
@@ -114,15 +130,23 @@ class InteractionGate {
   /**
    * Begin a turn and hand back the context its scenario will wait on.
    *
-   * Replaces any gate left by a previous turn on the same session — a turn that
-   * ended (naturally or by a stop) has no waits worth keeping, and carrying them
-   * forward would let a stale approval answer the next turn's card.
+   * Tears down any gate left by a previous turn on the same session — a turn
+   * that ended (naturally or by a stop) has no waits worth keeping, and carrying
+   * them forward would let a stale approval answer the next turn's card.
+   *
+   * The returned context carries this turn's {@link TurnToken}, which
+   * {@link close} requires. See that method for why.
    *
    * @param sessionId - The session opening a turn.
    */
   open(sessionId: string): ScenarioContext {
-    this.close(sessionId);
+    const previous = this.sessions.get(sessionId);
+    if (previous) {
+      this.sessions.delete(sessionId);
+      this.rejectAll(previous);
+    }
     const gate: SessionGate = {
+      token: Symbol('test-mode-turn'),
       controller: new AbortController(),
       approvals: new Map(),
       answers: new Map(),
@@ -134,10 +158,27 @@ class InteractionGate {
     return this.contextFor(sessionId, gate);
   }
 
-  /** Drop a session's gate once its turn has finished, aborting any leftovers. */
-  close(sessionId: string): void {
+  /**
+   * Drop a turn's gate once it has finished, aborting anything still parked.
+   *
+   * **Closes only the turn that owns `token`, and that is the whole point.**
+   * This is called from `sendMessage`'s `finally`, which runs when the generator
+   * is disposed — and on a busy session that can happen AFTER the next turn has
+   * already opened its own gate. A close that simply deleted whatever was
+   * registered would then destroy the live turn's gate: its approval card
+   * becomes unanswerable, every parked wait rejects, and the turn dies as
+   * `aborted_streaming` for no reason anybody can see from the outside. On a
+   * shared mock leg driven by several specs that is a flake generator.
+   *
+   * A token that no longer matches means this turn was already superseded, so
+   * there is nothing left to clean up and this is a no-op.
+   *
+   * @param sessionId - The session the turn belonged to.
+   * @param token - The token {@link open} returned on that turn's context.
+   */
+  close(sessionId: string, token: TurnToken): void {
     const gate = this.sessions.get(sessionId);
-    if (!gate) return;
+    if (!gate || gate.token !== token) return;
     this.sessions.delete(sessionId);
     this.rejectAll(gate);
   }
@@ -191,7 +232,30 @@ class InteractionGate {
   }
 
   /**
+   * The ids of every interaction this session's turn is currently parked on.
+   *
+   * Read BEFORE {@link abort}, which clears them: a stop has to resolve these on
+   * the projector, or the cards it just made unanswerable stay in
+   * `pendingInteractions` forever. See `TestModeRuntime.interruptQuery`.
+   *
+   * @param sessionId - The session to inspect.
+   */
+  pendingInteractionIds(sessionId: string): string[] {
+    const gate = this.sessions.get(sessionId);
+    if (!gate) return [];
+    return [...gate.approvals.keys(), ...gate.answers.keys(), ...gate.elicitations.keys()];
+  }
+
+  /**
    * Stop a running turn: abort its signal and reject every outstanding wait.
+   *
+   * Deliberately targets whatever gate is REGISTERED rather than taking a
+   * {@link TurnToken} the way {@link close} does, and the asymmetry is the
+   * point. A close is a finished turn tidying up after itself, so it must prove
+   * it still owns what it is tearing down. An abort is an operator pressing Stop
+   * — "end whatever is running on this session now" — and its only caller,
+   * `interruptQuery`, is handed a session id and nothing else. There is no
+   * stale-abort path: nobody holds an abort across a turn boundary.
    *
    * @returns Whether a turn was actually open — what `interruptQuery` reports,
    *   and therefore what the Stop route answers `ok` with.
@@ -248,6 +312,7 @@ class InteractionGate {
 
     return {
       sessionId,
+      token: gate.token,
       signal: gate.controller.signal,
       awaitApproval: (toolCallId) =>
         parked<ToolDecision>((resolve) => gate.approvals.set(toolCallId, resolve)),

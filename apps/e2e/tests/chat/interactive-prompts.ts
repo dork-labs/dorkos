@@ -145,13 +145,18 @@ export function registerInteractivePromptTests(deps: InteractivePromptsDeps): vo
       await expect(transcript(page)).not.toContainText('APPROVED-BRANCH');
       await expect(transcript(page)).not.toContainText('DENIED-BRANCH');
 
-      // Anchored at the start, and NOT `exact`. The button's accessible name is
-      // "Approve Enter" — it carries a `<Kbd>` shortcut hint that the name
-      // concatenates, and that hint only renders while the card is the active
-      // one, so the name is not even stable. Anchoring is what keeps this from
-      // matching the batch bar's "Approve All", which is the one confusion that
-      // would let this suite and the I-02 suite silently swap.
-      await card.getByRole('button', { name: /^Approve\b/ }).click();
+      // NOT `exact`: the button's accessible name is "Approve Enter" — it
+      // carries a `<Kbd>` shortcut hint that the name concatenates, and the hint
+      // only renders while the card is the active one, so the name is not even
+      // stable.
+      //
+      // And the exclusion is a LOOKAHEAD, not a `\b`. `/^Approve\b/` matches
+      // "Approve All" — the boundary sits between "Approve" and the space, so it
+      // is satisfied by exactly the string it was meant to exclude. Scoping to
+      // the card hides that today (the batch bar lives in the composer), but the
+      // comment would have been a lie and the guard would evaporate the moment
+      // anyone reused this selector page-wide.
+      await card.getByRole('button', { name: /^Approve(?!\s+All)/ }).click();
 
       // The tool RAN — the branch only an approval reaches, and the result it
       // produced, both in the transcript.
@@ -195,7 +200,7 @@ export function registerInteractivePromptTests(deps: InteractivePromptsDeps): vo
 
       const card = page.getByTestId('tool-approval');
       await expect(card).toBeVisible({ timeout: SERVER_ROUND_TRIP_MS });
-      await card.getByRole('button', { name: /^Deny\b/ }).click();
+      await card.getByRole('button', { name: /^Deny(?!\s+All)/ }).click();
 
       await expect(transcript(page)).toContainText('DENIED-BRANCH', {
         timeout: SERVER_ROUND_TRIP_MS,
@@ -222,14 +227,14 @@ export function registerInteractivePromptTests(deps: InteractivePromptsDeps): vo
 
       const card = page.getByTestId('tool-approval');
       await expect(card).toBeVisible({ timeout: SERVER_ROUND_TRIP_MS });
-      await card.getByRole('button', { name: /^Approve\b/ }).click();
+      await card.getByRole('button', { name: /^Approve(?!\s+All)/ }).click();
       await expect(transcript(page)).toContainText('APPROVED-BRANCH', {
         timeout: SERVER_ROUND_TRIP_MS,
       });
 
       // No pending card, and no Approve button left to press.
       await expect(card).toHaveCount(0, { timeout: SERVER_ROUND_TRIP_MS });
-      await expect(page.getByRole('button', { name: /^Approve\b/ })).toHaveCount(0);
+      await expect(page.getByRole('button', { name: /^Approve(?!\s+All)/ })).toHaveCount(0);
     });
   });
 
@@ -246,7 +251,7 @@ export function registerInteractivePromptTests(deps: InteractivePromptsDeps): vo
       const bar = page.getByText('3 tools awaiting approval');
       await expect(bar).toBeVisible({ timeout: SERVER_ROUND_TRIP_MS });
 
-      await page.getByRole('button', { name: /^Approve All\b/ }).click();
+      await page.getByRole('button', { name: /^Approve All/ }).click();
 
       // Every one of the three was answered: the scenario counts them itself and
       // only reaches this sentence once all three have come back.
@@ -263,7 +268,7 @@ export function registerInteractivePromptTests(deps: InteractivePromptsDeps): vo
       await expect(page.getByText('3 tools awaiting approval')).toBeVisible({
         timeout: SERVER_ROUND_TRIP_MS,
       });
-      await page.getByRole('button', { name: /^Deny All\b/ }).click();
+      await page.getByRole('button', { name: /^Deny All/ }).click();
 
       // `0 of 3` rather than merely "the bar went away": a Deny All that quietly
       // approved would clear the bar just as convincingly.
@@ -326,7 +331,9 @@ export function registerInteractivePromptTests(deps: InteractivePromptsDeps): vo
 
       await expect(feed).not.toContainText('ELICITATION-ACCEPTED');
 
-      // The form field comes from the requested JSON schema's `title`.
+      // The form field is labelled by the requested schema's `description` —
+      // the client's form builder uses `prop.description ?? key` and ignores
+      // `title` entirely (`ElicitationPrompt.tsx`).
       await page.getByLabel('Environment').fill('staging');
       await page.getByRole('button', { name: /^Accept\b/ }).click();
 

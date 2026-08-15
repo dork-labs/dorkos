@@ -192,7 +192,7 @@ export function registerLiveTurnVisibilityTests(deps: LiveTurnVisibilityDeps): v
       await expect(page.getByRole('button', { name: 'Stop generating' })).toHaveCount(0);
 
       // The way out is answering it, and that does end the turn.
-      await card.getByRole('button', { name: /^Deny\b/ }).click();
+      await card.getByRole('button', { name: /^Deny(?!\s+All)/ }).click();
       await expect(transcript(page)).toContainText('DENIED-BRANCH', {
         timeout: SERVER_ROUND_TRIP_MS,
       });
@@ -262,18 +262,39 @@ export function registerLiveTurnVisibilityTests(deps: LiveTurnVisibilityDeps): v
       await expect(pill).toContainText('0/3 tasks');
 
       // The scenario walks each task pending → in_progress → completed, one
-      // released step per transition, so the count moves only on the steps that
-      // complete something — which is what makes each number below discriminate.
+      // released step per transition. The done/total count only moves on the
+      // steps that COMPLETE something, so the in-progress half is asserted on
+      // the active-form line instead — the client renders it for whichever task
+      // is in progress and clears it when none is.
+      //
+      // Asserting `0/3 tasks` after the in_progress step would prove nothing:
+      // it was already 0/3 before, so the assertion passes on the pre-step state
+      // and would still pass if the transition never arrived. STATUSES advancing
+      // is half of what this row claims, and this is the half that checks it.
+      const activeForm = (form: string) => page.getByText(form, { exact: true });
+
       await releaseStep(request, sessionId); // task 1 → in_progress
+      await expect(activeForm('Reading the middleware')).toBeVisible({
+        timeout: SERVER_ROUND_TRIP_MS,
+      });
       await expect(pill).toContainText('0/3 tasks');
+
       await releaseStep(request, sessionId); // task 1 → completed
       await expect(pill).toContainText('1/3 tasks', { timeout: SERVER_ROUND_TRIP_MS });
+      // Nothing is in progress between two tasks, so the line clears.
+      await expect(activeForm('Reading the middleware')).toHaveCount(0);
 
       await releaseStep(request, sessionId); // task 2 → in_progress
+      await expect(activeForm('Adding the token bucket')).toBeVisible({
+        timeout: SERVER_ROUND_TRIP_MS,
+      });
       await releaseStep(request, sessionId); // task 2 → completed
       await expect(pill).toContainText('2/3 tasks', { timeout: SERVER_ROUND_TRIP_MS });
 
       await releaseStep(request, sessionId); // task 3 → in_progress
+      await expect(activeForm('Running the API tests')).toBeVisible({
+        timeout: SERVER_ROUND_TRIP_MS,
+      });
       await releaseStep(request, sessionId); // task 3 → completed
       await expect(pill).toContainText('3/3 tasks', { timeout: SERVER_ROUND_TRIP_MS });
 

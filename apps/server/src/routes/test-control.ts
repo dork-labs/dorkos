@@ -51,10 +51,14 @@ testControlRouter.post('/scenario', (req, res) => {
  * `POST /api/test/finish-turn` — end every running `long-turn` at its next
  * heartbeat.
  *
- * The lever a browser test needs to decide WHEN a turn ends. Stop cannot do it:
- * `TestModeRuntime.interruptQuery` answers `false`, because there is no process
- * to signal. Without this a test has to pick a turn short enough to wait out,
- * and then races its own setup against it.
+ * A lever for ending a turn on the test's schedule WITHOUT stopping it. Stop is
+ * a different thing and now genuinely works (`interruptQuery` aborts the
+ * scenario, DOR-1214), but it ends the turn as `aborted_streaming` — which is
+ * the wrong terminal state for a test watching a queue drain into the NEXT turn.
+ * This lets the turn finish normally instead. The alternative, picking a turn
+ * short enough to wait out, races the test's own setup.
+ *
+ * Process-wide and sticky, unlike `POST /api/test/step`; see `requestFinishTurn`.
  */
 testControlRouter.post('/finish-turn', (_req, res) => {
   requestFinishTurn();
