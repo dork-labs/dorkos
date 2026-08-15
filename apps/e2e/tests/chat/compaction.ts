@@ -117,10 +117,11 @@ export function registerCompactionTests(ctx: { apiUrl: string; agentDir: () => s
       await expect(feed.getByText('said before the compaction', { exact: true })).toBeVisible();
       await expect(feed.getByText(/Echo: said before the compaction/)).toBeVisible();
 
-      // AFTER A RELOAD, from history alone. A different component draws it here
-      // (the durable `compaction` message, not the live turn part), which is why
-      // both are asserted: the live row survived a reload for no runtime, and
-      // the durable row was reconstructed for no log-backed runtime.
+      // AFTER A RELOAD, from history alone — the half the server fold dropped.
+      // A different component draws it here (the durable `compaction` message
+      // rebuilt from the event log, not the live turn's part), so this is a
+      // separate claim from the live row the sibling test pins, and it is the
+      // one that decides whether a compaction is still there tomorrow.
       await page.reload();
       await chatPage.basePage.waitForAppReady();
 
