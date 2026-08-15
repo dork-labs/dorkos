@@ -19,6 +19,7 @@ vi.mock('../../../../lib/dork-home.js', () => ({
 
 const { Q3_SCENARIOS, Q3_VOCABULARIES, Q3_VOCABULARY_NAMES, parseCanaryMap, q3ScenarioName } =
   await import('../q3-contention-scenarios.js');
+const { interactionGate } = await import('../interaction-gate.js');
 
 /** Drain a scenario generator into its concatenated text and raw events. */
 async function drain(name: string): Promise<{ text: string; events: StreamEvent[] }> {
@@ -26,7 +27,9 @@ async function drain(name: string): Promise<{ text: string; events: StreamEvent[
   if (!scenario) throw new Error(`missing scenario ${name}`);
   const events: StreamEvent[] = [];
   let text = '';
-  for await (const event of scenario('go')) {
+  // The q3 scenarios never park on the context, but every ScenarioFn now takes
+  // one — a real gate rather than a cast, so this stays honest if one ever does.
+  for await (const event of scenario('go', interactionGate.open('q3-drain'))) {
     events.push(event);
     if (event.type === 'text_delta') text += (event.data as { text: string }).text;
   }

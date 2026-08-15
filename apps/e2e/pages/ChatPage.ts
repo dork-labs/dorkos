@@ -1,3 +1,4 @@
+import { expect } from '@playwright/test';
 import type { Page, Locator } from '@playwright/test';
 import { BasePage } from './BasePage';
 
@@ -52,6 +53,51 @@ export class ChatPage {
   async sendMessage(text: string) {
     await this.input.fill(text);
     await this.sendButton.click();
+  }
+
+  /**
+   * Send `text` and only return once a turn has really started on it.
+   *
+   * `goto` waits for the app shell and the chat panel, and neither proves a send
+   * can land. The composer is a CONTROLLED field: until the session and its
+   * agent have hydrated, a `fill` can be reverted by the next render, after
+   * which `sendMessage`'s click sends an empty composer and silently does
+   * nothing. The spec then waits out its timeout on whatever the turn was
+   * supposed to produce and reports a missing CARD instead of a missing SEND —
+   * which is a diagnosis pointing at the wrong half of the system.
+   *
+   * So this is a barrier that proves the thing the assertions depend on rather
+   * than something standing next to it (DOR-1213's lesson):
+   *
+   * 1. the composer is editable — NOT the send button, which does not exist on
+   *    an empty composer, so waiting for it here could never pass;
+   * 2. the send button appears after the fill, which is the app's own signal
+   *    that a session and an agent resolved AND that the field kept the draft;
+   * 3. the person's message is in the transcript, and
+   * 4. the agent has BEGUN answering it.
+   *
+   * Step 4 is the one worth arguing for. An optimistic user message can be wiped
+   * when the session's snapshot arrives, leaving the transcript back at "Start a
+   * conversation" with no turn ever started — and a barrier that stopped at step
+   * 3 passes in exactly that case. It follows that every scenario a caller
+   * drives must SAY something before it blocks; `todo-progress` did not, and
+   * that cost three failures until it was given an opening line.
+   *
+   * @param text - The message to send; must be distinctive enough to find.
+   * @param timeoutMs - Ceiling for each wait; a web-first assertion returns as
+   *   soon as it is satisfied, so this costs nothing on a healthy run.
+   */
+  async sendAndLand(text: string, timeoutMs = 30_000) {
+    await expect(this.input).toBeEnabled({ timeout: timeoutMs });
+    await this.input.fill(text);
+    await expect(this.sendButton).toBeEnabled({ timeout: timeoutMs });
+    await this.sendButton.click();
+    await expect(
+      this.page.locator('[data-testid="message-item"][data-role="user"]').filter({ hasText: text })
+    ).toBeVisible({ timeout: timeoutMs });
+    await expect(
+      this.page.locator('[data-testid="message-item"][data-role="assistant"]').first()
+    ).toBeVisible({ timeout: timeoutMs });
   }
 
   /** Wait for a full streaming response cycle to complete. */

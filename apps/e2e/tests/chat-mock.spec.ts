@@ -6,6 +6,8 @@ import { BasePage } from '../pages/BasePage.js';
 import { ChatPage } from '../pages/ChatPage.js';
 import { caretOffset, composerText, expectComposerText } from '../pages/composer-probe.js';
 import { registerComposerEscapeAndImeTests } from './chat/composer-escape-and-ime.js';
+import { registerInteractivePromptTests } from './chat/interactive-prompts.js';
+import { registerLiveTurnVisibilityTests } from './chat/live-turn-visibility.js';
 import { registerSessionReadStateTests } from './chat/session-read-state.js';
 import { registerNowSurvivesReloadTests } from './dashboard-sidebar/now-survives-reload.js';
 import { registerSendLandsInTodayTests } from './dashboard-sidebar/send-lands-in-today.js';
@@ -928,6 +930,20 @@ registerSendLandsInTodayTests({ agentDir: () => agentDir });
 // which is server-global — only this file's sequential single worker makes that
 // safe. See the module header.
 registerComposerEscapeAndImeTests({ apiUrl: API_URL, agentDir: () => agentDir });
+
+// The prompts a turn STOPS on — tool approvals, the batch bar, AskUserQuestion,
+// MCP elicitation (capability rows I-01..I-04, DOR-1214). Registered here
+// because each drives a turn that PARKS waiting for an answer, and the
+// `POST /api/test/reset` at the top of this file tears every tracked session
+// down: a parked turn living on a concurrent worker would be disposed mid-click.
+// See the module header.
+registerInteractivePromptTests({ apiUrl: API_URL, agentDir: () => agentDir });
+
+// What a live turn shows while it runs, and how Stop settles it (capability rows
+// C-10, R-05, R-06, R-07, DOR-1214). Same lock, same reason: these hold a turn
+// open across several assertions using step barriers, which only survives on
+// this file's sequential worker.
+registerLiveTurnVisibilityTests({ apiUrl: API_URL, agentDir: () => agentDir });
 
 /**
  * Conversations in ⌘K (spec `sidebar-now-today-library` P3, §15).

@@ -8,6 +8,7 @@ import type {
   SseResponse,
   ManagedMcpServerResolver,
   McpAppServerConnection,
+  ToolDecisionOptions,
 } from '@dorkos/shared/agent-runtime';
 import type { McpServerEntry } from '@dorkos/shared/transport';
 import type {
@@ -31,10 +32,12 @@ import {
   disposeProjector,
   getOrCreateProjector,
   getSessionEventStore,
+  peekProjector,
 } from '../../session/session-state-projector.js';
 import { logger } from '../../../lib/logger.js';
 import { reconstructHistoryFromEvents } from '../../session/event-log-history.js';
 import { readLogBackedHistory } from '../../session/log-backed-history.js';
+import { ScenarioAborted, interactionGate } from './interaction-gate.js';
 import { scenarioStore } from './scenario-store.js';
 import { TestModeSessionRegistry } from './session-registry.js';
 import { TEST_MODE_CAPABILITIES } from './runtime-constants.js';
@@ -163,7 +166,30 @@ export class TestModeRuntime implements AgentRuntime {
       ...(opts?.cwd !== undefined ? { cwd: opts.cwd } : {}),
     });
     const scenario = scenarioStore.getScenario(sessionId);
-    yield* scenario(content);
+    // The gate is what makes an interactive scenario possible: it hands the
+    // scenario the handle it parks on, and gives `approveTool`/`submitAnswers`/
+    // `submitElicitation`/`interruptQuery` something real to resolve.
+    const ctx = interactionGate.open(sessionId);
+    try {
+      yield* scenario(content, ctx);
+    } catch (error) {
+      // A stop is not a failure, and it must not be reported as one. Anything
+      // else IS a failure and has to keep propagating — a scenario that threw a
+      // genuine bug would otherwise be laundered into a tidy "interrupted".
+      if (!(error instanceof ScenarioAborted)) throw error;
+      // The honest terminal shape for an interrupt, mirroring the Claude
+      // adapter's: a final status naming why, then the `done` that closes the
+      // turn so the projector synthesizes `turn_end` and every window's composer
+      // comes back. Without these the turn would hang `streaming` forever and
+      // the UI would settle dishonestly — or not at all.
+      yield {
+        type: 'session_status',
+        data: { sessionId: 'test-mode', terminalReason: 'aborted_streaming' },
+      } as StreamEvent;
+      yield { type: 'done', data: { sessionId: 'test-mode' } } as StreamEvent;
+    } finally {
+      interactionGate.close(sessionId);
+    }
   }
 
   /**
@@ -314,29 +340,93 @@ export class TestModeRuntime implements AgentRuntime {
 
   checkSessionHealth(): void {}
 
-  approveTool(_id: string, _toolCallId: string, _approved: boolean): boolean {
-    return false;
-  }
-
-  submitAnswers(_id: string, _toolCallId: string, _answers: Record<string, string>): boolean {
-    return false;
-  }
-
-  submitElicitation(
-    _id: string,
-    _interactionId: string,
-    _action: 'accept' | 'decline' | 'cancel',
-    _content?: Record<string, unknown>
+  /**
+   * @inheritdoc
+   *
+   * Answers the pending approval a scenario is parked on, then resolves the
+   * projector's interaction so the card is dropped from every window through the
+   * same seq'd stream a production runtime uses.
+   *
+   * The projector resolve is what earns the transcript receipt: without it a
+   * decision would unblock the scenario while every window went on showing an
+   * answerable card, which is exactly the OpenCode ghost DOR-1148 closed.
+   * `false` when nothing was waiting — the signal the `/approve` and `/deny`
+   * routes turn into a 409 rather than a silent 200.
+   */
+  approveTool(
+    id: string,
+    toolCallId: string,
+    approved: boolean,
+    opts?: ToolDecisionOptions
   ): boolean {
-    return false;
+    const resolved = interactionGate.resolveApproval(id, toolCallId, {
+      approved,
+      ...(opts?.alwaysAllow !== undefined ? { alwaysAllow: opts.alwaysAllow } : {}),
+      ...(opts?.denyReason !== undefined ? { denyReason: opts.denyReason } : {}),
+    });
+    if (!resolved) return false;
+    peekProjector(id)?.resolveInteraction(toolCallId, approved ? 'approved' : 'denied', {
+      // Only claimable when the words were actually carried to the scenario,
+      // which is precisely when a reason was given.
+      ...(opts?.denyReason !== undefined ? { reasonGiven: true } : {}),
+    });
+    return true;
+  }
+
+  /**
+   * @inheritdoc
+   *
+   * Delivers an AskUserQuestion answer to the parked scenario and resolves the
+   * projector's interaction. See {@link approveTool} for why both halves matter.
+   */
+  submitAnswers(id: string, toolCallId: string, answers: Record<string, string>): boolean {
+    if (!interactionGate.resolveAnswers(id, toolCallId, answers)) return false;
+    peekProjector(id)?.resolveInteraction(toolCallId, 'answered');
+    return true;
+  }
+
+  /**
+   * @inheritdoc
+   *
+   * Delivers an MCP elicitation response to the parked scenario and resolves the
+   * projector's interaction. An `accept` is recorded as `answered`; a decline or
+   * a cancel is a refusal, and says so.
+   */
+  submitElicitation(
+    id: string,
+    interactionId: string,
+    action: 'accept' | 'decline' | 'cancel',
+    content?: Record<string, unknown>
+  ): boolean {
+    const resolved = interactionGate.resolveElicitation(id, interactionId, {
+      action,
+      ...(content !== undefined ? { content } : {}),
+    });
+    if (!resolved) return false;
+    peekProjector(id)?.resolveInteraction(
+      interactionId,
+      action === 'accept' ? 'answered' : 'denied'
+    );
+    return true;
   }
 
   async stopTask(_sessionId: string, _taskId: string): Promise<boolean> {
     return false;
   }
 
-  async interruptQuery(_sessionId: string): Promise<boolean> {
-    return false;
+  /**
+   * @inheritdoc
+   *
+   * Aborts the running scenario: every wait it is parked on rejects with
+   * {@link ScenarioAborted}, which {@link sendMessage} turns into a terminal
+   * `aborted_streaming` + `done` so the turn closes and the composer comes back.
+   *
+   * Answers `false` when no turn is open, which is the honest report and what
+   * the interrupt route passes through as `ok: false` — a stop that arrives
+   * after a turn finished on its own is a race, not an error.
+   */
+  async interruptQuery(sessionId: string): Promise<boolean> {
+    return interactionGate.abort(sessionId);
   }
 
   /**

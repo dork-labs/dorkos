@@ -31,16 +31,22 @@ describe('TEST_MODE_CAPABILITIES', () => {
     }
   });
 
-  it('disables MCP, plugins, cost tracking, and interactive question prompts', () => {
+  it('disables MCP, plugins, and cost tracking', () => {
     expect(TEST_MODE_CAPABILITIES.supportsMcp).toBe(false);
     expect(TEST_MODE_CAPABILITIES.supportsPlugins).toBe(false);
     expect(TEST_MODE_CAPABILITIES.supportsCostTracking).toBe(false);
-    expect(TEST_MODE_CAPABILITIES.supportsQuestionPrompt).toBe(false);
   });
 
   it('keeps supportsResume and supportsToolApproval enabled for integration tests', () => {
     expect(TEST_MODE_CAPABILITIES.supportsResume).toBe(true);
     expect(TEST_MODE_CAPABILITIES.supportsToolApproval).toBe(true);
+  });
+
+  // Was `false` while `submitAnswers` was a stub. DOR-1214 gave the runtime a
+  // real question path (the `question-prompt` scenario parks; `submitAnswers`
+  // delivers), so the declaration follows the mechanism rather than leading it.
+  it('declares question prompts, which it now genuinely completes', () => {
+    expect(TEST_MODE_CAPABILITIES.supportsQuestionPrompt).toBe(true);
   });
 
   it('exposes the deterministic latency feature flag as 0', () => {

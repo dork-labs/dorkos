@@ -685,6 +685,64 @@
       "failCount": 0,
       "relatedCode": [],
       "lastModified": ""
+    },
+    "interactive-prompts": {
+      "specFile": "tests/chat/interactive-prompts.ts",
+      "feature": "chat",
+      "description": "Tool approval card + Approve/Deny outcomes (I-01), batch approval bar (I-02), AskUserQuestion delivery (I-03), MCP elicitation (I-04) — driven against the test-mode runtime's interactive scenarios.",
+      "lastRun": "",
+      "lastStatus": "",
+      "runCount": 0,
+      "passCount": 0,
+      "failCount": 0,
+      "relatedCode": [
+        "apps/server/src/services/runtimes/test-mode/interactive-scenarios.ts",
+        "apps/server/src/services/runtimes/test-mode/interaction-gate.ts",
+        "apps/client/src/layers/features/chat/ui/tools/ToolApproval.tsx",
+        "apps/client/src/layers/features/chat/ui/tools/ApprovalReceipt.tsx",
+        "apps/client/src/layers/features/chat/ui/tools/BatchApprovalBar.tsx",
+        "apps/client/src/layers/features/chat/ui/tools/QuestionPrompt.tsx",
+        "apps/client/src/layers/features/chat/ui/tools/ElicitationPrompt.tsx"
+      ],
+      "lastModified": "",
+      "explorationNotes": [
+        "Registered INTO chat-mock.spec.ts (not a *.spec.ts): the test-mode leg is shared mutable state and POST /api/test/reset wipes sessions globally, so a parked turn on a concurrent worker gets torn down mid-click. The .ts extension also keeps it off the cockpit leg, where every send would be a billable claude-code turn.",
+        "Scenario is bound PER SESSION (POST /api/test/scenario with a sessionId), never as the server default: several scenarios park on a step barrier only their own test releases, and four Playwright projects share this leg — as the default, one would hang a neighbour's turn.",
+        "Bind AFTER the app settles on a session id (poll the ?session= URL param), not before. Navigating straight to a self-minted id raced the route loader: it re-minted after the send, dropping the optimistic message and leaving the transcript at 'Start a conversation' with the scenario bound to a dead id.",
+        "Buttons carry their keyboard hint in the accessible name ('Approve Enter', 'Deny Esc', 'Always Allow Shift+Enter'), and the hint only renders while the card is active. Anchor with /^Approve\\b/ — exact never matches, and a loose /approve/i also hits the batch bar's 'Approve All'.",
+        "Assert the DURABLE approval-receipt (data-outcome allowed/denied), not the transient tool-approval-decided or question-prompt-submitted rows: those are replaced when the turn ends and the message is rebuilt from history.",
+        "Every assertion names a branch the scenario only reaches on that answer (APPROVED-BRANCH / DENIED-BRANCH / ANSWER-RECEIVED: <choice> / ELICITATION-ACCEPTED: <value>), so 'the card went away' can never pass for 'the answer was delivered'.",
+        "Stability: --repeat-each=3 --workers=1, 36/36. WITHOUT --workers=1 repeats land on parallel workers and race the shared /api/test/reset — that alone fails long-standing untouched tests 10/18."
+      ]
+    },
+    "live-turn-visibility": {
+      "specFile": "tests/chat/live-turn-visibility.ts",
+      "feature": "chat",
+      "description": "Stop ends a running turn and the UI settles honestly (C-10), subagent blocks appear and clear (R-05), the todos pill advances (R-06), the background task bar (R-07).",
+      "lastRun": "",
+      "lastStatus": "",
+      "runCount": 0,
+      "passCount": 0,
+      "failCount": 0,
+      "relatedCode": [
+        "apps/server/src/services/runtimes/test-mode/interactive-scenarios.ts",
+        "apps/server/src/services/runtimes/test-mode/interaction-gate.ts",
+        "apps/client/src/layers/features/composer/ui/InputActionButton.tsx",
+        "apps/client/src/layers/features/chat/ui/message/SubagentBlock.tsx",
+        "apps/client/src/layers/features/chat/ui/tasks/TaskProgressHeader.tsx",
+        "apps/client/src/layers/features/chat/ui/tasks/BackgroundTaskBar.tsx"
+      ],
+      "lastModified": "",
+      "explorationNotes": [
+        "These rows are all about a MOMENT, and every pre-existing scenario closes that window in the same pass that opens it. Scenarios here park on POST /api/test/step barriers, so the running window is held open for as long as the assertions need on any machine.",
+        "releaseStep POLLS the step route: it answers released:false until the scenario has actually reached the barrier, and firing a step blind drops it, leaving the turn waiting on a barrier nobody releases again.",
+        "The Stop case uses a scenario with NO self-ending path, so 'the turn stopped' is a claim about Stop rather than about elapsed time; its text past the barrier is unreachable unless the turn kept running.",
+        "A turn BLOCKED on an approval offers no Stop at all — the card replaces the composer. The runtime handles the interrupt correctly (unit-pinned); the UI has no affordance, so the spec pins that instead. See GOTCHAS.",
+        "Subagent blocks are DROPPED on settle, not collapsed — assert toHaveCount(0); data-status='complete' exists only briefly before the history rebuild. And a subagent's description is on screen twice while running (block + task bar), so scope getByText to the block.",
+        "The todos fixture must number tasks '1','2','3': the client's reducer discards the id on a create and assigns its own counter, so updates with any other id are silently dropped and the count never moves.",
+        "Negative assertions use toHaveCount(0), not not.toContainText: an interrupted turn can leave no history, the transcript unmounts for the empty state, and not.toContainText then errors on a missing element.",
+        "Stability: --repeat-each=3 --workers=1, 36/36 across both modules; full chromium-mock project 45/45."
+      ]
     }
   },
   "runHistory": [

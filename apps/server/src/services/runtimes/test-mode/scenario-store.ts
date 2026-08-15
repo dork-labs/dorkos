@@ -1,8 +1,20 @@
 import type { StreamEvent } from '@dorkos/shared/types';
 import { DEMO_SCENARIOS } from './demo-scenarios.js';
+import { interactionGate, type ScenarioContext } from './interaction-gate.js';
+import { INTERACTIVE_SCENARIOS } from './interactive-scenarios.js';
 import { Q3_SCENARIOS } from './q3-contention-scenarios.js';
 
-export type ScenarioFn = (content: string) => AsyncGenerator<StreamEvent>;
+/**
+ * One scripted turn.
+ *
+ * `ctx` is how a scenario WAITS — for an operator's approval, an answer, an
+ * elicitation response, or a step the test releases (see
+ * {@link ScenarioContext}). It is a second parameter rather than a wrapper so
+ * every scenario written before it, which declares only `(content)`, keeps
+ * type-checking and behaving identically: a function may always ignore
+ * arguments it does not name.
+ */
+export type ScenarioFn = (content: string, ctx: ScenarioContext) => AsyncGenerator<StreamEvent>;
 
 /** Heartbeat interval for the working-turn scenarios. */
 const WORKING_TICK_MS = 1_000;
@@ -50,18 +62,23 @@ export function requestFinishTurn(): void {
  * Bounded as well as signalled: a turn nothing ever ends would outlive the run
  * and leave a projector holding it.
  *
+ * Also endable by Stop, which is newer than the paragraph above: the heartbeat
+ * sleeps through {@link ScenarioContext.delay}, so an interrupt wakes it
+ * immediately instead of waiting out the current second, and the loop stops
+ * rather than streaming another dot into a turn that is being torn down.
+ *
  * @param ticks - Heartbeats to stream, one a second, before the turn gives up
  *   waiting to be told and finishes anyway.
  */
 function workingTurn(ticks: number): ScenarioFn {
-  return async function* () {
+  return async function* (_content, ctx) {
     yield {
       type: 'session_status',
       data: { sessionId: 'test-mode', model: 'claude-haiku-4-5' },
     } as StreamEvent;
     yield { type: 'text_delta', data: { text: 'Working on it' } } as StreamEvent;
-    for (let tick = 0; tick < ticks && !finishRequested; tick += 1) {
-      await new Promise((resolve) => setTimeout(resolve, WORKING_TICK_MS));
+    for (let tick = 0; tick < ticks && !finishRequested && !ctx.signal.aborted; tick += 1) {
+      await ctx.delay(WORKING_TICK_MS);
       yield { type: 'text_delta', data: { text: '.' } } as StreamEvent;
     }
     yield { type: 'done', data: { sessionId: 'test-mode' } } as StreamEvent;
@@ -73,12 +90,16 @@ function workingTurn(ticks: number): ScenarioFn {
  * entries (rich streaming, tool approval, canvas) come from
  * {@link DEMO_SCENARIOS} and exist for the marketing product-capture pipeline;
  * the `q3-*` entries come from {@link Q3_SCENARIOS} and exist for the DOR-500
- * resource-contention measurement. Both families are inert unless selected via
+ * resource-contention measurement; the interactive entries come from
+ * {@link INTERACTIVE_SCENARIOS} and back the interactive-session rows of
+ * `meta/chat-capabilities.md` (DOR-1214) by PARKING until a person — or a test —
+ * answers. All three families are inert unless selected via
  * `POST /api/test/scenario`.
  */
 const BUILT_IN_SCENARIOS: Record<string, ScenarioFn> = {
   ...DEMO_SCENARIOS,
   ...Q3_SCENARIOS,
+  ...INTERACTIVE_SCENARIOS,
   /**
    * A turn that stays busy until `POST /api/test/finish-turn` says otherwise,
    * and gives up after three minutes regardless — see {@link workingTurn}.
@@ -228,6 +249,12 @@ class ScenarioStore {
     // A finish raised by one test must not end the next test's first turn
     // before it has begun.
     finishRequested = false;
+    // Same argument, one rung further in: a turn parked on an approval nobody is
+    // going to give would otherwise survive the reset holding a projector open,
+    // and its scenario would still be waiting when the next test's answer
+    // arrived. Aborting them here is what makes `reset` mean "no turn is in
+    // flight" rather than "no scenario is selected".
+    interactionGate.reset();
   }
 }
 
