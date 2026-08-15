@@ -135,17 +135,25 @@ export function registerRuntimeCapabilityParityTests(deps: { agentDir: () => str
     test('a runtime that cannot track cost shows no cost, rather than zero', async ({ page }) => {
       const chatPage = new ChatPage(page);
       await chatPage.goto(undefined, { dir: deps.agentDir() });
-      // A real turn, so there IS usage to report. Without one the absence below
-      // would be true for a reason that has nothing to do with capabilities, and
-      // the test would pass against a client that ignored the flag entirely.
+      // **A turn, because the turn is what reports the usage this gate is
+      // about.** The item's condition is
+      // `usage && hasRenderableUsage(usage) && supportsCostTracking`, and for a
+      // long time the `simple-text` scenario reported no usage at all — so the
+      // FIRST conjunct was false for every test-mode session and this assertion
+      // was true no matter what the capability said. It stayed green with the
+      // flag flipped to `true`, which is a test that cannot fail.
+      //
+      // The scenario now reports a real pay-as-you-go cost
+      // (`scenario-store.ts`), so after this turn the only thing between that
+      // number and the status bar is `supportsCostTracking: false`. Flip that
+      // constant and this line goes red — which is the drill that proved it.
       await chatPage.sendMessage('what does this cost');
       await expect(page.getByTestId('transcript-feed')).toContainText(/Echo:/, {
         timeout: SERVER_ROUND_TRIP_MS,
       });
 
-      // `supportsCostTracking: false` gates the whole usage item, subscription
-      // utilization included. A count of zero, not a hidden class: an item drawn
-      // and hidden is still an item that read the wrong descriptor.
+      // A count of zero, not a hidden class: an item drawn and hidden is still an
+      // item that read the wrong descriptor.
       await expect(page.getByTestId('status-item-usage')).toHaveCount(0);
     });
   });

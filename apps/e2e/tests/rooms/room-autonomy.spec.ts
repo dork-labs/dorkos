@@ -127,6 +127,34 @@ async function requireTestModeLeg(request: APIRequestContext): Promise<void> {
 }
 
 /**
+ * Install a scenario and prove it took.
+ *
+ * **The read-back is the guard, not politeness.** The scenario store is
+ * server-global, so a neighbour that resets it between this call and the turn
+ * that needs it leaves the test driving a runtime it did not choose — and the
+ * two ways that shows up both read as product bugs: an instant turn means
+ * `room-header-halt` never renders ("the Stop button is broken"), and an
+ * unexpected `long-turn` means a reply says `Working on it` instead of echoing
+ * ("the room answered the wrong message"). Both happened here before this file
+ * was made serial. Serial fixes it TODAY; this is what will name the cause if
+ * anyone ever runs these with more than one worker.
+ *
+ * @param request - The test's API context.
+ * @param name - The scenario to install.
+ */
+async function useScenario(request: APIRequestContext, name: string): Promise<void> {
+  const res = await request.post('/api/test/scenario', { data: { name } });
+  if (!res.ok()) throw new Error(`Could not set the scenario to ${name}: ${await res.text()}`);
+  const { scenario } = (await res.json()) as { scenario?: string };
+  if (scenario !== name) {
+    throw new Error(
+      `Asked for the '${name}' scenario and the server acknowledged '${scenario}'. ` +
+        `The scenario store is server-global — something else on this leg is writing it.`
+    );
+  }
+}
+
+/**
  * Set how long a room gathers messages before answering.
  *
  * @param request - The test's API context.
@@ -218,7 +246,7 @@ test.describe('A room gathers what is said at once @smoke', () => {
 
   test.afterEach(async ({ request }) => {
     await setCollectWindow(request, COLLECT_WINDOW_DEFAULT_MS);
-    await request.post('/api/test/scenario', { data: { name: 'simple-text' } }).catch(() => {});
+    await useScenario(request, 'simple-text').catch(() => {});
   });
 
   test('three quick messages become ONE answer, and it answers the newest', async ({
@@ -299,7 +327,7 @@ test.describe('A room gathers what is said at once @smoke', () => {
     // A turn that is still running when the second message lands. Without it
     // there is no mid-turn to arrive during: every built-in scenario finishes
     // inside a frame, and the test would be racing a turn it cannot see.
-    await request.post('/api/test/scenario', { data: { name: 'long-turn' } });
+    await useScenario(request, 'long-turn');
     try {
       await roomsApi.postEntries(room.id, [`first ${tag}`]);
 
@@ -335,8 +363,20 @@ test.describe('A room gathers what is said at once @smoke', () => {
             message: 'the message that arrived mid-turn never got an answer',
           }
         )
-        .toBe(2);
+        .toBeGreaterThanOrEqual(2);
       const settled = await roomsApi.listEntries(room.id);
+      const answers = settled.filter((entry) => entry.authorId === seat);
+
+      // **Then the count, read off the settled room rather than off the poll.**
+      // A poll that insisted on exactly 2 would keep waiting through a THIRD
+      // answer and then report "never got an answer", which is the opposite of
+      // what went wrong: two messages that produced three turns is a
+      // double-trigger, not a dropped message. The poll waits for the answer;
+      // this says how many there were.
+      expect(
+        answers.map((entry) => entry.body.text),
+        'two messages did not produce exactly two answers'
+      ).toHaveLength(2);
 
       // And no refusal. `working-here` is gone from `BusyContext` (RP8), so the
       // room has nothing to say about a message it is about to answer — a
@@ -349,7 +389,7 @@ test.describe('A room gathers what is said at once @smoke', () => {
       // Sticky, and that is what is wanted: from here on every `long-turn`
       // finishes at once, so nothing this file started can outlive it.
       await request.post('/api/test/finish-turn').catch(() => {});
-      await request.post('/api/test/scenario', { data: { name: 'simple-text' } }).catch(() => {});
+      await useScenario(request, 'simple-text').catch(() => {});
     }
   });
 });
@@ -362,7 +402,7 @@ test.describe('Stopping a room @smoke', () => {
 
   test.afterEach(async ({ request }) => {
     await setCollectWindow(request, COLLECT_WINDOW_DEFAULT_MS);
-    await request.post('/api/test/scenario', { data: { name: 'simple-text' } }).catch(() => {});
+    await useScenario(request, 'simple-text').catch(() => {});
   });
 
   test('the Stop button stops every agent working here, and the room says so once', async ({
@@ -385,7 +425,7 @@ test.describe('Stopping a room @smoke', () => {
 
     await openRoom(page, basePage, roomsPage, room.id);
 
-    await request.post('/api/test/scenario', { data: { name: 'long-turn' } });
+    await useScenario(request, 'long-turn');
     try {
       // One message, two seats that answer everything: two turns, which is what
       // makes "every in-flight turn" a claim with a number in it.
@@ -425,7 +465,7 @@ test.describe('Stopping a room @smoke', () => {
       // must not be left holding a claim either way.
       await request.post(`/api/rooms/${room.id}/halt`).catch(() => {});
       await request.post('/api/test/finish-turn').catch(() => {});
-      await request.post('/api/test/scenario', { data: { name: 'simple-text' } }).catch(() => {});
+      await useScenario(request, 'simple-text').catch(() => {});
     }
   });
 

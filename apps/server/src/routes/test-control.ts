@@ -12,10 +12,8 @@ import { requestFinishTurn, scenarioStore } from '../services/runtimes/test-mode
 import { runtimeRegistry } from '../services/core/runtime-registry.js';
 import { getRoomService, getBridgeStore, getRoomAuthors } from '../services/rooms/index.js';
 import { readOwnerAccount } from '../services/core/auth/index.js';
-import {
-  AGENT_TOKEN_ENV_VAR,
-  resolveAgentTokenEnv,
-} from '../services/core/agent-identity/agent-token-env.js';
+import type { CapabilityTier } from '@dorkos/shared/capabilities';
+import { getAgentIdentityService } from '../services/core/agent-identity/agent-identity-service.js';
 import { MOCK_MCP_OAUTH_MCP_PATH, resetMockMcpOAuthState } from './mock-mcp-oauth-server.js';
 import type { AgentMcpServerService } from '../services/mesh/agent-mcp-server-service.js';
 
@@ -67,15 +65,35 @@ testControlRouter.post('/finish-turn', (_req, res) => {
 /** What `POST /api/test/agent-token` needs to name the agent it speaks for. */
 const agentTokenSchema = z.object({
   agentPath: z.string().min(1),
-  displayName: z.string().min(1).optional(),
 });
 
 /**
- * `POST /api/test/agent-token` — mint the identity token a spawned agent would
- * have been given, and hand it to the test.
+ * The highest tier a token minted here may ever reach.
+ *
+ * **`mint` defaults to `destructive`, which is the top of the ladder** — higher
+ * than the ceiling an unidentified caller gets (`DEFAULT_ANONYMOUS_TIER_CEILING`
+ * in `tier-enforcement.ts`). So a test seam that took the default would hand out
+ * a MORE powerful identity than presenting no identity at all, which is the
+ * wrong direction for a route that exists only to let a test pretend.
+ *
+ * `act` is the narrowest ceiling that still covers what this seam is for: the
+ * rooms verbs a test drives as an agent — `post_to_room`, `react_to_room_entry`
+ * — are `act` (`room-capabilities.ts`). Anything destructive is refused, which
+ * is a property worth having on a token handed out over an unauthenticated
+ * local route.
+ *
+ * It is a deliberate divergence from production, where nothing passes a ceiling
+ * yet and every real spawn is therefore `destructive`. Named here rather than
+ * silently inherited so the difference is a decision somebody can read.
+ */
+const TEST_TOKEN_TIER_CEILING: CapabilityTier = 'act';
+
+/**
+ * `POST /api/test/agent-token` — mint an identity token for an agent that is
+ * really registered here, and hand it to the test.
  *
  * **Why this seam has to exist.** An agent proves who it is with
- * `X-DorkOS-Agent`, and the ONLY place a token is ever issued is
+ * `X-DorkOS-Agent`, and the only place a token is ever issued in production is
  * `resolveAgentTokenEnv`, which puts it in a spawned session's **process env**
  * (spec `agent-trust` §3.1) — deliberately somewhere no model and no transcript
  * can read it. A browser test has no spawned process to read it out of, so
@@ -89,9 +107,21 @@ const agentTokenSchema = z.object({
  * proving the opposite of its name. That is the trap this closes: a real token,
  * or no test.
  *
- * Mints through the production path, so what a spec gets is byte-for-byte what
- * a real spawn gets and every check downstream is the shipped one. Gated the
- * same way the rest of this router is — mounted only under
+ * **The registry check is this route's own, because `mint` has none.**
+ * `AgentIdentityService.mint` stores whatever `agentPath` it is handed without
+ * looking it up, and `resolveCaller` downstream mints an author row for whatever
+ * path the token carries — so an unchecked seam here is a forgery seam, and a
+ * 404 message describing a registration check would have been describing
+ * something that never ran. `meshCore.getByPath` is the same gate the two
+ * production runtimes put in front of `resolveAgentTokenEnv`
+ * (`launch-resolver.ts`, `codex-runtime.ts`), so this refuses exactly what a
+ * real spawn refuses.
+ *
+ * The display name comes from the manifest for the same reason it does there —
+ * a caller-supplied one would let a real agent's token carry a name nobody gave
+ * it.
+ *
+ * Gated the same way the rest of this router is: mounted only under
  * `DORKOS_TEST_RUNTIME`, absent in production.
  */
 testControlRouter.post('/agent-token', async (req, res) => {
@@ -101,21 +131,33 @@ testControlRouter.post('/agent-token', async (req, res) => {
       .status(400)
       .json({ error: 'Validation failed', details: z.flattenError(result.error) });
   }
-  const { agentPath, displayName } = result.data;
-  const env_ = await resolveAgentTokenEnv(agentPath, displayName);
-  const token = env_[AGENT_TOKEN_ENV_VAR];
-  if (!token) {
-    // `resolveAgentTokenEnv` answers `{}` for every failure — no agent at that
-    // path, no identity service, a mint that threw — because an unattributed
-    // session must still run. A TEST that asked for a token and got none is the
-    // opposite case: it is about to act as a person while believing it is an
-    // agent, so it hears about it here rather than in an assertion.
+  const { agentPath } = result.data;
+
+  const meshCore = req.app.locals.meshCore as
+    | { getByPath(projectPath: string): { name: string } | undefined }
+    | undefined;
+  const agent = meshCore?.getByPath(agentPath);
+  if (!agent) {
     return res.status(404).json({
       error:
-        `No identity could be minted for ${agentPath}. That path hosts no registered ` +
-        `agent, or the identity service is not running on this server.`,
+        `No agent is registered at ${agentPath}, so no identity can be minted for it. ` +
+        `Register it first — a token for an unregistered path would be a forgery, ` +
+        `not a test fixture.`,
     });
   }
+
+  const service = getAgentIdentityService();
+  if (!service) {
+    return res
+      .status(503)
+      .json({ error: 'The agent identity service is not running on this server.' });
+  }
+
+  const token = await service.mint({
+    agentPath,
+    displayName: agent.name,
+    tierCeiling: TEST_TOKEN_TIER_CEILING,
+  });
   res.json({ token });
 });
 

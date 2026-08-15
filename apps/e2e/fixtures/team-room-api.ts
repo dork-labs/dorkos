@@ -50,6 +50,22 @@ const APPROVAL_PROBE_SHAPE = 'e2e-approval-probe';
 /** How long to give a server round trip. Same ceiling, same reasoning, as `rooms-api.ts`. */
 export const SERVER_ROUND_TRIP_MS = 30_000;
 
+/**
+ * Entries per page when walking #team's history.
+ *
+ * `ROOM_ENTRY_PAGE_SIZE_MAX` — the largest page the route will serve — so the
+ * walk costs the fewest requests.
+ */
+const ENTRY_PAGE_SIZE = 200;
+
+/**
+ * How many pages back {@link TeamRoomApi.entries} will walk before giving up.
+ *
+ * A guard against a pagination bug looping forever, not a real ceiling: #team on
+ * a test leg holds tens of entries, and this allows forty thousand.
+ */
+const MAX_HISTORY_PAGES = 200;
+
 /** A room as `GET /api/rooms` lists it, in the fields home cares about. */
 export interface TeamRoomSummary {
   id: string;
@@ -130,6 +146,8 @@ export class TeamRoomApi {
   private readonly agentIds: string[] = [];
   private readonly seededApprovalIds: string[] = [];
   private archivedByUs = false;
+  /** How many settle markers this instance has posted, so each one is distinct. */
+  private settles = 0;
 
   /** A short id, unique per instance, for naming fixtures apart. */
   readonly runId = randomUUID().slice(0, 8);
@@ -169,13 +187,44 @@ export class TeamRoomApi {
     return team;
   }
 
-  /** #team's entries, oldest first. */
+  /**
+   * #team's entries, oldest first — **all of them**, not the newest page.
+   *
+   * `GET /:id/entries` is paginated: it serves the newest 50 unless asked
+   * otherwise, and 200 at most. That default is the right one for a cockpit
+   * hydrating a feed and completely wrong for a test asking a question about the
+   * room's whole history — and the difference is silent, because a truncated
+   * page is a valid answer that looks like the room.
+   *
+   * It bit exactly that way (DOR-1213). #team is never deleted, so on a
+   * `--repeat-each` run its history grows past 50, and the moment marked on the
+   * first pass fell off the back of the window. `moments()` reads this, so the
+   * moments test saw an empty list, concluded it had never run, declined to
+   * skip, and then failed waiting for a milestone the hour-long quiet period was
+   * correctly suppressing. Every count in this file has the same exposure.
+   *
+   * So this walks the pages back to the beginning. The cap is a guard against a
+   * pagination bug turning a test into an infinite loop, not a limit anybody is
+   * expected to reach.
+   */
   async entries(): Promise<TeamRoomEntry[]> {
     const { id } = await this.teamRoom();
-    const res = await this.request.get(`/api/rooms/${id}/entries`);
-    if (!res.ok()) throw new Error(`Could not read #team: ${await res.text()}`);
-    const { entries } = (await res.json()) as { entries: TeamRoomEntry[] };
-    return entries;
+    const all: TeamRoomEntry[] = [];
+    let before: number | undefined;
+    for (let page = 0; page < MAX_HISTORY_PAGES; page += 1) {
+      const query = `limit=${ENTRY_PAGE_SIZE}${before === undefined ? '' : `&before=${before}`}`;
+      const res = await this.request.get(`/api/rooms/${id}/entries?${query}`);
+      if (!res.ok()) throw new Error(`Could not read #team: ${await res.text()}`);
+      const { entries } = (await res.json()) as { entries: TeamRoomEntry[] };
+      all.unshift(...entries);
+      if (entries.length < ENTRY_PAGE_SIZE) return all;
+      before = entries[0]!.seq;
+    }
+    throw new Error(
+      `#team holds more than ${MAX_HISTORY_PAGES * ENTRY_PAGE_SIZE} entries, or its ` +
+        `pagination is not advancing. Either way this read cannot answer a question ` +
+        `about the whole room.`
+    );
   }
 
   /**
@@ -404,6 +453,78 @@ export class TeamRoomApi {
         name: member.author.displayName,
         responseMode: member.responseMode ?? 'unknown',
       }));
+  }
+
+  /**
+   * Post into #team as the local person — the same route the composer's Enter
+   * reaches.
+   *
+   * @param text - What to say.
+   */
+  async post(text: string): Promise<void> {
+    const { id } = await this.teamRoom();
+    const res = await this.request.post(`/api/rooms/${id}/entries`, { data: { text } });
+    if (res.status() !== 202) {
+      throw new Error(`Posting to #team answered ${res.status()}: ${await res.text()}`);
+    }
+  }
+
+  /**
+   * How many agents are working in #team right now, as the room list reports it.
+   *
+   * The same live read of the claim map the cockpit's own working indicator
+   * uses (`use-room-working.ts`), which makes it the one honest answer to "has
+   * everything this room was doing finished".
+   */
+  async workingCount(): Promise<number> {
+    const { id } = await this.teamRoom();
+    const res = await this.request.get('/api/rooms');
+    if (!res.ok()) throw new Error(`Could not read the room list: ${await res.text()}`);
+    const { rooms } = (await res.json()) as { rooms: { id: string; working?: number }[] };
+    return rooms.find((room) => room.id === id)?.working ?? 0;
+  }
+
+  /**
+   * Wait until #team has finished everything it was doing.
+   *
+   * **Why counting answers needs this at all.** An assertion of the form "only
+   * one agent answered" is read off a snapshot, and a snapshot taken the instant
+   * the FIRST answer lands cannot see a second one that is still being written.
+   * Such a test does not fail when a second agent piles on — it passes, because
+   * it looked too early. That is the same "settle before you count" problem
+   * `tests/rooms/room-autonomy.spec.ts` solves for a burst, and this is the
+   * #team-shaped version of it.
+   *
+   * Two barriers, because one is not enough. A marker message that gets its OWN
+   * answer proves the room has processed something posted LATER than the message
+   * under test — but only for the agent that answered it. So the working count
+   * is then read down to zero, which is a claim about every agent: nothing in
+   * this room still holds a claim, so nothing else is coming.
+   */
+  async settle(): Promise<void> {
+    const marker = `settle ${this.runId}-${this.settles++}`;
+    const before = await this.entries();
+    await this.post(marker);
+    const posted = await this.waitForEntry(
+      (entry) => entry.body.text === marker && !before.some((e) => e.id === entry.id),
+      `the settle marker "${marker}" to be stored`
+    );
+    const root = posted.find((entry) => entry.body.text === marker)!.cascadeRoot;
+    await this.waitForEntry(
+      (entry) =>
+        entry.cascadeRoot === root && entry.body.text !== marker && entry.body.notice === undefined,
+      `an answer to the settle marker "${marker}"`
+    );
+
+    const deadline = Date.now() + SERVER_ROUND_TRIP_MS;
+    for (;;) {
+      const working = await this.workingCount();
+      if (working === 0) return;
+      if (Date.now() > deadline) {
+        throw new Error(`#team still reports ${working} agent(s) working after a full settle`);
+      }
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
   }
 
   /** Put #team away, the way its owner can. Restored by {@link TeamRoomApi.cleanup}. */

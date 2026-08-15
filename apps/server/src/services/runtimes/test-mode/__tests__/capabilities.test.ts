@@ -10,6 +10,7 @@ import { describe, it, expect } from 'vitest';
 import { TEST_MODE_CAPABILITIES } from '../runtime-constants.js';
 import { CLAUDE_CODE_CAPABILITIES } from '../../claude-code/runtime-constants.js';
 import { TestModeRuntime } from '../test-mode-runtime.js';
+import { builtInScenarioNames } from '../scenario-store.js';
 
 describe('TEST_MODE_CAPABILITIES', () => {
   it('declares exactly three permission modes', () => {
@@ -48,10 +49,21 @@ describe('TEST_MODE_CAPABILITIES', () => {
   });
 
   it('lists only real built-in scenarios under features.testModeScenarios', () => {
-    const scenarios = TEST_MODE_CAPABILITIES.features.testModeScenarios;
+    const scenarios = TEST_MODE_CAPABILITIES.features.testModeScenarios as string[];
     expect(Array.isArray(scenarios)).toBe(true);
-    // Keys must match BUILT_IN_SCENARIOS in scenario-store.ts.
-    expect(scenarios).toEqual(['simple-text', 'tool-call', 'todo-write', 'error']);
+    expect(scenarios.length).toBeGreaterThan(0);
+
+    // Checked against the store itself, not against a literal. A hardcoded
+    // expected list here was a SECOND copy of the register this test exists to
+    // police, so the two could only ever drift together or fail for the wrong
+    // reason — which is what happened when `long-turn` was published.
+    //
+    // A subset, deliberately, not equality: the store also holds the `demo-*`
+    // and `q3-*` families, which are capture- and measurement-only and are not
+    // advertised as capabilities. What must never happen is the reverse — a
+    // capability naming a scenario nothing serves.
+    const known = builtInScenarioNames();
+    expect(scenarios.filter((name) => !known.includes(name))).toEqual([]);
   });
 
   it('is the object returned by TestModeRuntime.getCapabilities()', () => {

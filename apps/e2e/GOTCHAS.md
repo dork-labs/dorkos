@@ -131,8 +131,13 @@ Concretely, do not assert:
 - that a palette's **first** row is anything in particular — another spec's unread room may be above yours;
 - that pressing Enter on an unfiltered list opens _your_ thing — filter to your own run id first.
 
-And in a room an agent answers in — `#team`, or a channel on the test-mode leg —
-three more, all of which cost a debugging cycle in DOR-1213:
+That last one is not hypothetical: `rooms-in-palette` pressed Enter on the untyped palette's first unread row, which on a busy suite was a _neighbour's_ room — and arriving at a room marks it read, so it silently cleared another spec's unread badge and made that spec fail about half the time. It looked like a product bug for a while (DOR-692, since closed as an artefact).
+
+## Counting answers in a room an agent replies in
+
+`#team`, or a channel on the test-mode leg. Four traps, every one of them found
+the hard way in DOR-1213, and three of the four produce a test that passes when
+it should fail rather than one that errors.
 
 - **"Entries I have not seen before" is not "answers to my message."** `POST
 /entries` is trigger-only, so a test that asserts its timeline and moves on
@@ -146,10 +151,16 @@ three more, all of which cost a debugging cycle in DOR-1213:
   more, so it can't answer here") _inside your cascade_. Counting it made
   "nobody else piles on" fail against a working product. Filter
   `body.notice === undefined` whenever the claim is about who ANSWERED.
+- **Counting on the first answer cannot see the second.** "Only one agent
+  answered" read off the snapshot taken when the first reply lands does not fail
+  when another agent piles on — it passes, because it looked too early. Settle
+  first: post a marker, wait for ITS answer, then wait for the room's `working`
+  count to reach zero (`TeamRoomApi.settle`). The marker proves the room
+  processed something later; the working count proves no other agent is still
+  holding a claim. `tests/rooms/room-autonomy.spec.ts` does the seeded-room
+  version of the same thing with a fourth message.
 - **`#team` marks at most one moment an hour, so a moment test cannot repeat.**
   A second attempt — `--repeat-each`, a Playwright retry — creates its agent, is
   correctly suppressed, and fails on a precondition as if the ordering rule had
   broken. Tell "I already ran" from "somebody else ran first" by whose agent the
   existing moment names, and skip only for the first.
-
-That last one is not hypothetical: `rooms-in-palette` pressed Enter on the untyped palette's first unread row, which on a busy suite was a _neighbour's_ room — and arriving at a room marks it read, so it silently cleared another spec's unread badge and made that spec fail about half the time. It looked like a product bug for a while (DOR-692, since closed as an artefact).

@@ -302,6 +302,14 @@ export class RoomsApi {
    * The resolved list is the only place a mention's EFFECT is visible: the text
    * looks the same whether it addressed somebody or posted as plain prose.
    *
+   * **This is the newest PAGE, not the whole room** — the route serves 50 by
+   * default. Sound here only because every room this fixture seeds is created by
+   * one test and archived at the end of it, so it never approaches the window.
+   * A caller reading a long-lived room needs the paginated walk
+   * `TeamRoomApi.entries` does, and the reason is written out there: a truncated
+   * page is a valid answer that looks exactly like the room, so the failure is
+   * silent (DOR-1213).
+   *
    * @param roomId - The room to read.
    */
   async listEntries(roomId: string): Promise<SeededEntry[]> {

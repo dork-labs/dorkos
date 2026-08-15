@@ -262,10 +262,17 @@ test.describe('Home is the #team room @smoke', () => {
     // birth of a session. The old dashboard composer navigated away from itself.
     await expect(page).toHaveURL(/\/(\?|$)/);
     const root = await postedHere(teamRoomApi, said, before);
-    const withReply = await teamRoomApi.waitForEntry(
+    await teamRoomApi.waitForEntry(
       (entry) => entry.authorId === team.fallbackSeatAuthorId && entry.cascadeRoot === root,
       `an answer from the fallback seat to "${said}"`
     );
+    // **Then wait for the room to go quiet before counting.** Snapshotting on
+    // the first answer cannot see a second one still being written, so a test
+    // that counted there would PASS when another agent piled on — it looked too
+    // early. `settle` posts a marker, waits for its answer, and then waits for
+    // the room's working count to reach zero.
+    await teamRoomApi.settle();
+    const settled = await teamRoomApi.entries();
 
     // Exactly ONE agent answered — the stand-down guarantee stated positively.
     //
@@ -278,7 +285,7 @@ test.describe('Home is the #team room @smoke', () => {
     // the room says so in this cascade ("… isn't set up on this machine any
     // more, so it can't answer here"). That line is the room being helpful, not
     // a second agent piling on, and counting it reported the opposite.
-    const answers = withReply.filter(
+    const answers = settled.filter(
       (entry) =>
         entry.cascadeRoot === root && entry.body.text !== said && entry.body.notice === undefined
     );
@@ -361,15 +368,20 @@ test.describe('Home is the #team room @smoke', () => {
       `"${said}" reached the room addressing nobody, so nothing here is about standing down`
     ).toContain(tangerineId);
 
-    const after = await teamRoomApi.waitForEntry(
+    await teamRoomApi.waitForEntry(
       (entry) => entry.authorId === tangerineId && entry.cascadeRoot === root,
       `an answer from ${name}`
     );
+    // The named agent answering is not proof the default agent stayed out of it
+    // — the fallback seat's own turn could still be in flight. So the room is
+    // taken to quiet first, and only then counted (DOR-1213).
+    await teamRoomApi.settle();
+    const after = await teamRoomApi.entries();
 
     // The whole point of D3.4's second half: the named agent answers and the
     // fallback seat does NOT, so a room with ten agents in it costs one turn.
     // Scoped to this post's cascade — a neighbour's reply, still arriving from
-    // the test before this one, is not an answer to this message (DOR-1213).
+    // the test before this one, is not an answer to this message.
     expect(
       after.filter(
         (entry) => entry.cascadeRoot === root && entry.authorId === team.fallbackSeatAuthorId
