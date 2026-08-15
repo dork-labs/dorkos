@@ -7,8 +7,9 @@ import {
   drivePresenceTurn,
 } from '../../../session/__tests__/durable-turn-harness.js';
 
-// The failing factory below flips the module-level scenario store's DEFAULT,
-// so restore it after every test: the passing tests rely on 'simple-text'.
+// The failing and compacting factories below each flip the module-level
+// scenario store's DEFAULT, so restore it after every test: the passing tests
+// rely on 'simple-text'.
 afterEach(() => {
   scenarioStore.reset();
 });

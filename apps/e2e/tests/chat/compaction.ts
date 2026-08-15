@@ -158,9 +158,16 @@ export function registerCompactionTests(ctx: { apiUrl: string; agentDir: () => s
       // started → boundary → progress done), and then STAYS OPEN until this
       // test ends it — which is what makes the live row observable rather than
       // a flash this assertion has to win a race against.
-      await request.post(`${ctx.apiUrl}/api/test/scenario`, {
+      // Checked, not fired and forgotten: a rejected scenario leaves the server
+      // on `simple-text`, and this test would then fail on a missing boundary —
+      // naming the row rather than the setup that never took (DOR-1213).
+      const scenarioSet = await request.post(`${ctx.apiUrl}/api/test/scenario`, {
         data: { name: 'compacting-hold' },
       });
+      expect(
+        scenarioSet.ok(),
+        `could not select the compacting-hold scenario (${scenarioSet.status()}): ${await scenarioSet.text()}`
+      ).toBe(true);
 
       const chatPage = new ChatPage(page);
       await chatPage.goto(undefined, { dir: ctx.agentDir() });

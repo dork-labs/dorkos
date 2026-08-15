@@ -11,7 +11,8 @@ import { OutputRenderer } from './OutputRenderer';
 /**
  * Renders user message content based on messageType.
  * Handles plain text, command (monospace), local-command output (terminal-style),
- * and compaction (expandable).
+ * and compaction (a labelled rule, expandable only when the boundary carries a
+ * summary to expand — a log-backed runtime's does not).
  */
 export function UserMessageContent({ message }: { message: ChatMessage }) {
   const [compactionExpanded, setCompactionExpanded] = useState(false);

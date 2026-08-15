@@ -211,7 +211,7 @@
     "connections": {
       "specFile": "tests/connections/connections.spec.ts",
       "feature": "connections",
-      "description": "walks unconfigured \u2192 key saved \u2192 connect Gmail twice with custody disclosed before every auth step, attaches Gmail (work) to a session, shows it with exposure state, and detaches",
+      "description": "walks unconfigured → key saved → connect Gmail twice with custody disclosed before every auth step, attaches Gmail (work) to a session, shows it with exposure state, and detaches",
       "lastRun": "2026-08-07T02:12:57.019Z",
       "lastStatus": "passed",
       "runCount": 12,
@@ -235,7 +235,7 @@
     "room-entry-actions": {
       "specFile": "tests/rooms/room-entry-actions.spec.ts",
       "feature": "rooms",
-      "description": "the toolbar appears on hover and offers what can be done to the message, the toolbar encloses the buttons it is drawn around, the toolbar straddles a message, and covers no word of one at rest, the toolbar rides the viewport edge on a message taller than the window, right-click offers the same actions as the toolbar, the keyboard alone reaches the actions and lands in the composer, a room costs one Tab per message, not one per action, a message is announced before the things you can do to it, Page Down crosses the room a message at a time, whatever each one carries, Page Down crosses the thread, and Ctrl+End lands in the thread\u2019s own composer, a reply lands in the panel beside the room, and a reply to a reply joins it, a reply row opens the thread it counts, and Escape closes it again, a reply that arrives after you last looked wears the accent, a thread has an address, and following it lands the reader and the keyboard on it, a long press opens the drawer, and a short one or a drag does not, the thread takes the whole screen, and Back returns to the room",
+      "description": "the toolbar appears on hover and offers what can be done to the message, the toolbar encloses the buttons it is drawn around, the toolbar straddles a message, and covers no word of one at rest, the toolbar rides the viewport edge on a message taller than the window, right-click offers the same actions as the toolbar, the keyboard alone reaches the actions and lands in the composer, a room costs one Tab per message, not one per action, a message is announced before the things you can do to it, Page Down crosses the room a message at a time, whatever each one carries, Page Down crosses the thread, and Ctrl+End lands in the thread’s own composer, a reply lands in the panel beside the room, and a reply to a reply joins it, a reply row opens the thread it counts, and Escape closes it again, a reply that arrives after you last looked wears the accent, a thread has an address, and following it lands the reader and the keyboard on it, a long press opens the drawer, and a short one or a drag does not, the thread takes the whole screen, and Back returns to the room",
       "lastRun": "2026-08-15T05:17:56.459Z",
       "lastStatus": "passed",
       "runCount": 58,
@@ -411,7 +411,7 @@
     "mobile-sidebar-navigation": {
       "specFile": "tests/dashboard-sidebar/mobile-sidebar-navigation.spec.ts",
       "feature": "dashboard-sidebar",
-      "description": "there is no drawer to open \u2014 no sheet, no hamburger, tapping a channel in Library lands on the room, and the tabs stay, re-opening the room you are already in still gets out of the way, the top-level destinations are reachable from You, picking inside the New message sheet dismisses nothing until the conversation starts, Home comes back where you left it after a look at Library (AC-1), the Home badge is Heads up\u2019s count, and Library never carries one (AC-2), an approval is answered from Home, and nothing moves (AC-5), Catch up clears Today\u2019s unread in one press (AC-4), a press and hold in Home offers what the \u201c\u22ee\u201d offers (AC-3)",
+      "description": "there is no drawer to open — no sheet, no hamburger, tapping a channel in Library lands on the room, and the tabs stay, re-opening the room you are already in still gets out of the way, the top-level destinations are reachable from You, picking inside the New message sheet dismisses nothing until the conversation starts, Home comes back where you left it after a look at Library (AC-1), the Home badge is Heads up’s count, and Library never carries one (AC-2), an approval is answered from Home, and nothing moves (AC-5), Catch up clears Today’s unread in one press (AC-4), a press and hold in Home offers what the “⋮” offers (AC-3)",
       "lastRun": "2026-08-12T03:03:26.873Z",
       "lastStatus": "passed",
       "runCount": 13,
@@ -423,7 +423,7 @@
     "pulse-panel": {
       "specFile": "tests/pulse/pulse-panel.spec.ts",
       "feature": "pulse",
-      "description": "opens on the dashboard to Pulse with its attention + activity sections, opens on a session to the contextual default (Agent Profile), not Pulse, the attention badge is honest \u2014 hidden when nothing needs the operator",
+      "description": "opens on the dashboard to Pulse with its attention + activity sections, opens on a session to the contextual default (Agent Profile), not Pulse, the attention badge is honest — hidden when nothing needs the operator",
       "lastRun": "2026-08-12T11:54:32.659Z",
       "lastStatus": "passed",
       "runCount": 7,
@@ -471,7 +471,7 @@
     "room-reactions": {
       "specFile": "tests/rooms/room-reactions.spec.ts",
       "feature": "rooms",
-      "description": "a reaction from the capsule becomes a pill, and pressing the pill takes it back, a reaction made outside this page arrives on the stream, with no reload, the picker finds an emoji the quick row does not hold, the keyboard alone reaches the quick row, reacts, and then reaches the pill, a room that has stopped listening stops offering reactions, the long-press drawer opens with a reaction row on top, the drawer\u2019s \ud83d\ude42+ opens the same picker inline",
+      "description": "a reaction from the capsule becomes a pill, and pressing the pill takes it back, a reaction made outside this page arrives on the stream, with no reload, the picker finds an emoji the quick row does not hold, the keyboard alone reaches the quick row, reacts, and then reaches the pill, a room that has stopped listening stops offering reactions, the long-press drawer opens with a reaction row on top, the drawer’s 🙂+ opens the same picker inline",
       "lastRun": "2026-08-11T22:28:59.005Z",
       "lastStatus": "passed",
       "runCount": 5,
@@ -495,7 +495,7 @@
     "mcp-oauth-signin": {
       "specFile": "tests/connections/mcp-oauth-signin.spec.ts",
       "feature": "connections",
-      "description": "add \u2192 needs sign-in \u2192 Sign in \u2192 approve \u2192 connected with N tools",
+      "description": "add → needs sign-in → Sign in → approve → connected with N tools",
       "lastRun": "2026-08-07T09:53:20.277Z",
       "lastStatus": "passed",
       "runCount": 4,
@@ -519,7 +519,7 @@
     "home-shell": {
       "specFile": "tests/home-surface/home-shell.spec.ts",
       "feature": "home-surface",
-      "description": "the tab bar is Home, Activity, Scheduled, Workspaces \u2014 and Home is lit on /, each tab goes to the address it has always had, a filtered Activity deep link keeps its filter, and survives leaving and coming back, the sidebar has four places \u2014 nothing else, the dashboard is gone, not hidden \u2014 Home is the #team room, the tab bar takes the overflow, and the page never scrolls sideways, says there is more to the right, and swaps sides at the end (light), says there is more to the right, and swaps sides at the end (dark), a deep link to the last tab opens with that tab on screen, draws no cue on a desktop, where all four already fit",
+      "description": "the tab bar is Home, Activity, Scheduled, Workspaces — and Home is lit on /, each tab goes to the address it has always had, a filtered Activity deep link keeps its filter, and survives leaving and coming back, the sidebar has four places — nothing else, the dashboard is gone, not hidden — Home is the #team room, the tab bar takes the overflow, and the page never scrolls sideways, says there is more to the right, and swaps sides at the end (light), says there is more to the right, and swaps sides at the end (dark), a deep link to the last tab opens with that tab on screen, draws no cue on a desktop, where all four already fit",
       "lastRun": "2026-08-12T11:54:32.659Z",
       "lastStatus": "passed",
       "runCount": 8,
@@ -543,7 +543,7 @@
     "team-room": {
       "specFile": "tests/home-surface/team-room.spec.ts",
       "feature": "home-surface",
-      "description": "`/` opens the room: its masthead, its feed, its composer, typing here reaches your default agent, and nobody else piles on, naming an agent stands the default agent down, nothing waiting draws nothing \u2014 no empty box, no border, an approval can be answered from home, and the card resolves where it stands, an attention deep link still opens its sheet on /, somebody working elsewhere shows up, and clicking follows them, home offers to bring it back, and does not do it behind your back",
+      "description": "`/` opens the room: its masthead, its feed, its composer, typing here reaches your default agent, and nobody else piles on, naming an agent stands the default agent down, nothing waiting draws nothing — no empty box, no border, an approval can be answered from home, and the card resolves where it stands, an attention deep link still opens its sheet on /, somebody working elsewhere shows up, and clicking follows them, home offers to bring it back, and does not do it behind your back",
       "lastRun": "2026-08-09T00:06:19.907Z",
       "lastStatus": "passed",
       "runCount": 7,
@@ -603,7 +603,7 @@
     "session-switcher": {
       "specFile": "tests/dashboard-sidebar/session-switcher.spec.ts",
       "feature": "dashboard-sidebar",
-      "description": "groups an agent\u2019s sessions Live now / Recent / Automated, with Automated collapsed, is a dialog on the desktop and a bottom sheet on a phone, each footer key does what the footer says it does, opens from the agent row\u2019s \"N live\" chip, and the chip clears the row\u2019s text, the chip belongs to its row \u2014 it rides the drag, and right-click opens the row\u2019s menu, opens from the agent sub-menu, tags the open session, and forks with \u21e7\u21b5, clicking the agent row opens the conversation, not the room-triggered run (BC-34)",
+      "description": "groups an agent’s sessions Live now / Recent / Automated, with Automated collapsed, is a dialog on the desktop and a bottom sheet on a phone, each footer key does what the footer says it does, opens from the agent row’s \"N live\" chip, and the chip clears the row’s text, the chip belongs to its row — it rides the drag, and right-click opens the row’s menu, opens from the agent sub-menu, tags the open session, and forks with ⇧↵, clicking the agent row opens the conversation, not the room-triggered run (BC-34)",
       "lastRun": "2026-08-11T22:36:46.593Z",
       "lastStatus": "passed",
       "runCount": 10,
@@ -619,7 +619,7 @@
     "mobile-touch": {
       "specFile": "tests/dashboard-sidebar/mobile-touch.spec.ts",
       "feature": "dashboard-sidebar",
-      "description": "long-press on a row opens the same menu the \"\u22ee\" opens, a scroll that begins on a row never opens a menu, every row and every control a thumb can reach is at least 40px, You reads as a nav with names on it, not a row of unlabelled glyphs, the phone cockpit and its long-press sheet in the light theme, the phone cockpit and its long-press sheet in the dark theme",
+      "description": "long-press on a row opens the same menu the \"⋮\" opens, a scroll that begins on a row never opens a menu, every row and every control a thumb can reach is at least 40px, You reads as a nav with names on it, not a row of unlabelled glyphs, the phone cockpit and its long-press sheet in the light theme, the phone cockpit and its long-press sheet in the dark theme",
       "lastRun": "2026-08-12T00:46:15.246Z",
       "lastStatus": "passed",
       "runCount": 16,
@@ -631,7 +631,7 @@
     "sidebar-row-gutter": {
       "specFile": "tests/dashboard-sidebar/sidebar-row-gutter.spec.ts",
       "feature": "dashboard-sidebar",
-      "description": "really reserves the gutter it declares, keeps the gutter even when a caller passes padding of its own, keeps the \u22ee inside the gutter rather than over the row\u2019s words, truncates a long title with an ellipsis instead of running it under the chip, parks the trailing control exactly on the width the row really reserved, walks the row\u2019s lane with the arrow keys, ending on the \u22ee, leaves the section one Tab stop however far out the lane focus has walked, carries the trailing control with the row under a drag transform, looks right in both themes, at the cockpit width and narrowed",
+      "description": "really reserves the gutter it declares, keeps the gutter even when a caller passes padding of its own, keeps the ⋮ inside the gutter rather than over the row’s words, truncates a long title with an ellipsis instead of running it under the chip, parks the trailing control exactly on the width the row really reserved, walks the row’s lane with the arrow keys, ending on the ⋮, leaves the section one Tab stop however far out the lane focus has walked, carries the trailing control with the row under a drag transform, looks right in both themes, at the cockpit width and narrowed",
       "lastRun": "2026-08-11T22:28:59.005Z",
       "lastStatus": "passed",
       "runCount": 5,
@@ -643,7 +643,7 @@
     "sidebar-today": {
       "specFile": "tests/dashboard-sidebar/sidebar-today.spec.ts",
       "feature": "dashboard-sidebar",
-      "description": "the conversation you have open is Today\u2019s first row, on every switch, lights the thread you opened, not the channel it lives in, scrolls the anchor into view on a switch, and on nothing else, never opens a folded Library section to reach the same conversation, jumps to the anchor instead of travelling to it",
+      "description": "the conversation you have open is Today’s first row, on every switch, lights the thread you opened, not the channel it lives in, scrolls the anchor into view on a switch, and on nothing else, never opens a folded Library section to reach the same conversation, jumps to the anchor instead of travelling to it",
       "lastRun": "2026-08-11T22:28:59.005Z",
       "lastStatus": "passed",
       "runCount": 5,

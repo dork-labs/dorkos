@@ -88,9 +88,10 @@ export const TEST_MODE_CAPABILITIES: RuntimeCapabilities = {
   // under `runtimes.*` in user config — which is why it must stay absent from
   // `executionDefaults.perRuntime[]`. No effort, no bespoke sections.
   settings: { configSection: null, supportsEffort: false, sections: [] },
-  // Test-mode fulfills `compact` by yielding a synthetic `compact_boundary`
-  // (DOR-109 task 2.3) — the deterministic e2e/conformance vehicle for
-  // per-runtime intent gating.
+  // Test-mode fulfills `compact` by yielding a synthetic compaction in the
+  // Claude adapter's shape — progress `started`, a `compact_boundary` carrying
+  // real token readings, progress `done` (DOR-109 task 2.3, DOR-1215) — the
+  // deterministic e2e/conformance vehicle for per-runtime intent gating.
   commandIntents: { compact: { supported: true } },
   features: {
     /**

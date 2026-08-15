@@ -540,10 +540,53 @@ describe('reconstructHistoryFromEvents — compaction boundaries', () => {
     ]);
   });
 
-  it('folds a boundary that arrives outside any turn', () => {
-    // An auto-compaction can land between turns rather than inside one. The
-    // other folds all guard on an open turn and drop what they cannot attribute;
-    // a boundary belongs to the conversation, not to a turn, so it must not be.
+  it('mixed turn: the rule lands ABOVE text written before it — today’s shape, pinned', () => {
+    // NOT an endorsement. A boundary is pushed at its own seq while the turn's
+    // assistant message is pushed at `turn_end`, so a mid-turn compaction
+    // reconstructs as user → compaction → assistant: the rule sits above the
+    // sentence that preceded it, and the two sentences either side of the
+    // boundary are merged into one bubble beneath it. LIVE, the client folds
+    // the boundary into the turn's parts where it arrived, so the same
+    // compaction reads correctly until the first reload and differently after.
+    //
+    // This is the module header's intra-turn-interleaving limitation landing on
+    // the one event whose POSITION is its meaning. It reaches OpenCode alone —
+    // the only runtime emitting a mid-turn boundary — and only on its EventLog
+    // fallback, since its history normally comes from the sidecar. Pinned so
+    // that giving assistant messages ordered parts (the real fix, versus
+    // special-casing compaction) is a deliberate change and not a surprise: if
+    // you are here because this test failed, you probably fixed it, and the
+    // expectation below is what to rewrite.
+    const messages = reconstructHistoryFromEvents(
+      events(
+        { seq: 1, type: 'turn_start', userMessage: 'summarize the thread' },
+        { seq: 2, type: 'text_delta', text: 'before the boundary. ' },
+        { seq: 3, type: 'compact_boundary', trigger: 'auto', preTokens: 51_226 },
+        { seq: 4, type: 'text_delta', text: 'after the boundary.' },
+        { seq: 5, type: 'turn_end' }
+      )
+    );
+
+    expect(messages.map((m) => [m.id, m.messageType ?? m.role])).toEqual([
+      ['user-1', 'user'],
+      ['compaction-3', 'compaction'],
+      ['assistant-1', 'assistant'],
+    ]);
+    // Both halves of the turn's text end up in the one bubble BELOW the rule,
+    // which is the visible consequence: nothing is lost, the order is wrong.
+    expect(messages[2].content).toBe('before the boundary. after the boundary.');
+  });
+
+  it('folds a boundary that arrives outside any turn (in-memory fallback only)', () => {
+    // The unguarded arm, and worth being exact about which topology it serves.
+    // `SessionEventStore.appendTurn` flushes only turn events, so an
+    // out-of-turn boundary is given a seq and NEVER persisted — this fold can
+    // only meet one where the events come from the live projector's in-memory
+    // log, which is `readLogBackedHistory`'s no-store fallback: unit tests and
+    // embedded hosts with no Db. Every boundary a real deployment produces
+    // today rides a turn (see the mixed-turn and between-turns cases above).
+    // Pinned so the fold stays total rather than because a durable out-of-turn
+    // boundary is a case we serve.
     const messages = reconstructHistoryFromEvents(
       events({ seq: 1, type: 'compact_boundary', trigger: 'auto' })
     );

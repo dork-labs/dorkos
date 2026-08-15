@@ -168,12 +168,16 @@ export class TestModeRuntime implements AgentRuntime {
 
   /**
    * Fulfill the runtime-fulfilled `compact` intent by yielding a synthetic
-   * `compact_boundary` — the deterministic e2e/conformance vehicle, mirroring
+   * compaction — the deterministic e2e/conformance vehicle, mirroring
    * {@link FakeAgentRuntime}'s final form. Lets the palette-gating + dispatch
    * e2e (Phase 4) and the conformance suite assert a supported runtime's
    * dispatch reached the adapter and produced a boundary the durable projector
    * drives. `TEST_MODE_CAPABILITIES.commandIntents` gates the route before this
    * is ever called.
+   *
+   * Yields the Claude adapter's full three-event shape (progress `started` →
+   * boundary → progress `done`), not a bare boundary — see the note in the body
+   * for why the readings matter.
    */
   async *executeCommandIntent(
     _sessionId: string,
