@@ -170,7 +170,7 @@ Ranked by user pain if broken:
 7. **Fork/resume (L-05)** and **agent etiquette (M-04)** — no automated signal at all.
 8. **Agent context comprehension (X-07, X-08)** — X-01…X-06 now have credentialed probes in the `rooms` eval suite (DOR-1217), so comprehension has a measurable signal for the first time; the two that remain need a bridged room and a compaction the harness cannot reach yet (§7).
 9. **Autonomy behaviors (§6)** — largely BUILT as of 2026-08-14 (A-03/A-04/A-06/A-07 shipped; A-05/A-10/A-12/A-13 partial) with unit coverage. Above the unit layer: no e2e drives an agent burst/steer/halt through the UI, but the `rooms` eval suite now judges restraint and comprehension (DOR-1217), and A-15's adversarial injection case exists there too — quarantined, so it reports rather than gates until a credentialed run promotes it. A-15's fence mechanics stay pinned by unit tests.
-10. **No rooms self-test exists.** `/chat:self-test` and `/chat:session-switch-test` are session-only, written before channels matured — and this run grew rooms the most (collect/steer/halt, 3-way DMs, reactions, tool hand, DM notifications). A `/chat:rooms-test` sibling (live browser, two agents in a channel, burst → one reply; halt; reaction; thread) is now the highest-value new self-test, and the `rooms` eval suite is its deterministic counterpart — its free half (four mechanism cases) ships and gates, its probes ship quarantined, and the gate's tuning loop (`specs/engaged-response-gate` §13.1) is still unbuilt.
+10. **Rooms above the unit layer — half-closed.** `/chat:self-test` and `/chat:session-switch-test` are session-only, written before channels matured, and this run grew rooms the most (collect/steer/halt, 3-way DMs, reactions, tool hand, DM notifications). `/chat:rooms-test` now exists (DOR-1218) and covers the agentic half — live browser, two agents in a channel, burst → one reply, mid-turn fold, halt, reaction, thread, three-way rule. The deterministic counterpart arrived alongside it and is narrower than it looks: `apps/e2e/tests/rooms/` already holds 18 specs (conversation, reactions, entry actions, DMs, presence, attachments, mobile sheet, palette), and the `rooms` eval suite's free tier (DOR-1217) now drives **the halt route and the collect window** against a real room on the test-mode runtime and gates on both — the two mechanisms this landing run added. What is still missing is the BROWSER leg of those two — nothing clicks the halt button or types a burst into the composer — and the gate's tuning loop (`specs/engaged-response-gate` §13.1, a labelled corpus and a confusion matrix), which is unbuilt.
 
 ## 10. The test surface today (all of it)
 
@@ -188,8 +188,9 @@ Everything in the repo that verifies behavior, not just the two chat self-tests:
 
 - `/chat:self-test` — single-session depth (this doc §1–§4).
 - `/chat:session-switch-test` — two concurrent sessions + switching (§L-09).
+- `/chat:rooms-test` — two agents in one channel: burst → one reply (A-03), mid-turn fold (A-03), halt and the typed-"stop" guard (A-16), reactions (A-06), threads (M-05), the three-way rule (A-04), and a DOM/API/SQLite triangulation.
 - `/multiwindow` — N cockpit windows against a live instance; wraps `pnpm --filter @dorkos/e2e multi-window`, prints a PASS/FAIL table.
-- Agent evals — `pnpm evals:local` (`packages/evals`): suites `governance`, `agents`, `operate`, `connectors`, `ui` (widget round-trip), `selftest` (harness boots + health), and `rooms` (channels, DOR-1217). Oracle-judged, budget-capped. The rooms suite's credentialed half holds the X-01…X-06 probes, restraint, and the A-15 injection case; its free half is listed under the deterministic tier above. The gate's own tuning loop (a labelled corpus and a confusion matrix) is still unbuilt — `specs/engaged-response-gate/01-ideation.md` §13.1.
+- Agent evals — `pnpm evals:local` (`packages/evals`). `--suite` resolves against **tags** — `smoke`, `core`, `connector`, `experimental`, `rooms` — or a single case id, so names like `governance` or `operate` are groups of cases in the registry (`packages/evals/src/suite/index.ts`), not selectable suite names; `--suite all` runs everything. Cases today cover governance/approvals, agent self-edit, activity reads, config toggles, marketplace install, capability discovery, connectors, the widget round-trip, the harness self-test, and — since DOR-1217 — rooms: four free mechanism cases listed under the deterministic tier above, plus a quarantined credentialed half holding the X-01…X-06 probes, restraint, and the A-15 injection case. Oracle-judged, budget-capped. A case that declares a credentialed runtime is skipped rather than run on `--tier test-mode`, so a free run reports no verdict about a model it never asked. The gate's own tuning loop (a labelled corpus and a confusion matrix) is still unbuilt — `specs/engaged-response-gate/01-ideation.md` §13.1.
 
 **Meta-tooling (manages or exercises tests, is not itself a test)**
 
@@ -200,13 +201,13 @@ Everything in the repo that verifies behavior, not just the two chat self-tests:
 
 ## 11. Run modes and the single entry point
 
-**Run-mode convention for agentic self-tests** (to be wired into `/chat:self-test`, `/chat:session-switch-test`, and any future self-test):
+**Run-mode convention for agentic self-tests** — wired into `/chat:self-test`, `/chat:session-switch-test`, and `/chat:rooms-test` (DOR-1218), and required of any future self-test:
 
-- `mode:sandbox` — run against the **test-mode runtime** (throwaway data dir, no model spend, deterministic). Verifies UI plumbing.
+- `mode:sandbox` — run against the **test-mode runtime** (throwaway data dir, no model spend, deterministic). Verifies UI plumbing. Ports and data dir are the e2e suite's: API 4243, Vite 4248, `DORK_HOME=/tmp/dorkos-test-mode-4243`. Anything whose verdict is a judgment about what the agent chose to say is `N/A (sandbox)`, never a pass.
 - `mode:live` — run against the dev environment with a real runtime. **Default model: Haiku** (`claude-haiku-4-5`) unless the run is explicitly about model behavior. Verifies streaming feel, real tool loops, timing.
 - If the invocation doesn't state a mode, the command **asks the user** before spending anything.
 
-**Run-everything entry point** (planned): one command that runs the whole ladder and produces a single report —
+**Run-everything entry point**: `/test:all` (DOR-1218) runs the whole ladder and produces a single report at `test-results/test-all/<timestamp>.md` —
 
 1. `pnpm verify` (typecheck + lint + affected unit tests)
 2. `pnpm test -- --run` (full unit suite)
@@ -214,7 +215,7 @@ Everything in the repo that verifies behavior, not just the two chat self-tests:
 4. `pnpm evals -- --suite core --tier test-mode` (free structural evals)
 5. **Gated, ask-first**: live evals (`pnpm evals:local`), the agentic self-tests, `/multiwindow`, Docker smokes
 
-Steps 1–4 are free and deterministic; step 5 spends money or needs a live stack, so it is opt-in per run. Candidate shape: a `/test:all` command (or `pnpm test:everything`) that runs 1–4, then asks about 5, and writes one summary with pass/fail per tier.
+Steps 1–4 are free and deterministic; step 5 spends money or needs a live stack, so it is opt-in per run — `/test:all` runs 1–4, then **stops and asks** about 5, and writes one summary with pass/fail per tier. Its one hard rule: a tier that did not execute is never green, because turbo's cache replay prints a full-run summary in a few hundred milliseconds (which is why `scripts/assert-tests-executed.sh` exists in CI). Step 4's `--suite rooms` half becomes real once DOR-1217 registers rooms eval cases; until then that selector matches nothing and the command reports it as unavailable rather than passing.
 
 ## 12. How this list is used
 
