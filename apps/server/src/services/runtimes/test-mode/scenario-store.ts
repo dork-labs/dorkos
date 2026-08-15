@@ -69,6 +69,76 @@ function workingTurn(ticks: number): ScenarioFn {
 }
 
 /**
+ * How long a held compaction waits to be told the turn is over before ending
+ * anyway. Same bound-as-well-as-signal reasoning as {@link workingTurn}: a turn
+ * nothing ever ends would outlive the run holding a projector open.
+ */
+const COMPACT_HOLD_TICKS = 60;
+
+/**
+ * A turn that compacts instead of answering — an AUTO compaction, the kind
+ * context pressure fires rather than a person typing `/compact`.
+ *
+ * The event shape is the Claude adapter's, not an invention: its system-event
+ * mapper turns `status: 'compacting'` into
+ * `operation_progress{operation:'compaction',state:'started'}`, the SDK's
+ * `compact_boundary` into the boundary below (camelCased from
+ * `compact_metadata`), and `compact_result: 'success'` into the closing
+ * `state:'done'`. Reproducing all three is what makes this a stand-in for a
+ * real compaction rather than a bare boundary.
+ *
+ * It emits no assistant text on purpose. The event-log history fold places a
+ * boundary at its own seq but an assistant message only at `turn_end` (see
+ * `event-log-history.ts` — intra-turn interleaving is not reconstructible), so
+ * a scenario mixing text and a boundary in one turn would reconstruct in an
+ * order it never happened in. A compaction turn that says nothing is both the
+ * honest shape and the one that survives a reload unchanged.
+ *
+ * **Why `hold` exists.** The live boundary row is TRANSIENT in the product: at
+ * `turn_end` the client reconciles against canonical history and the durable
+ * compaction row replaces it. A browser test asserting on the live row is
+ * therefore racing that handover — and loses on a loaded machine, which is
+ * what it did (1 run in 6). Holding the turn open leaves the live row standing
+ * until the test asks for the turn to end, so the assertion is deterministic
+ * instead of lucky, and the handover itself becomes observable rather than a
+ * thing that happens too fast to see.
+ *
+ * @param options - `hold`: keep the turn open after the boundary until
+ *   `POST /api/test/finish-turn`.
+ */
+function compactingTurn(options: { hold: boolean }): ScenarioFn {
+  return async function* () {
+    yield {
+      type: 'session_status',
+      data: { sessionId: 'test-mode', model: 'claude-haiku-4-5' },
+    } as StreamEvent;
+    yield {
+      type: 'operation_progress',
+      data: {
+        operation: 'compaction',
+        state: 'started',
+        determinate: false,
+        message: 'Compacting context…',
+      },
+    } as StreamEvent;
+    yield {
+      type: 'compact_boundary',
+      data: { trigger: 'auto', preTokens: 51_226, postTokens: 4_151, durationMs: 63_275 },
+    } as StreamEvent;
+    yield {
+      type: 'operation_progress',
+      data: { operation: 'compaction', state: 'done', determinate: false },
+    } as StreamEvent;
+    if (options.hold) {
+      for (let tick = 0; tick < COMPACT_HOLD_TICKS && !finishRequested; tick += 1) {
+        await new Promise((resolve) => setTimeout(resolve, WORKING_TICK_MS));
+      }
+    }
+    yield { type: 'done', data: { sessionId: 'test-mode' } } as StreamEvent;
+  };
+}
+
+/**
  * Built-in scenarios available without explicit configuration. The `demo-*`
  * entries (rich streaming, tool approval, canvas) come from
  * {@link DEMO_SCENARIOS} and exist for the marketing product-capture pipeline;
@@ -182,6 +252,18 @@ const BUILT_IN_SCENARIOS: Record<string, ScenarioFn> = {
     yield { type: 'text_delta', data: { text: 'Created 3 tasks.' } } as StreamEvent;
     yield { type: 'done', data: { sessionId: 'test-mode' } } as StreamEvent;
   },
+  /**
+   * A turn that compacts instead of answering — what an AUTO compaction looks
+   * like when context pressure fires it rather than a person typing `/compact`.
+   * Finishes on its own.
+   */
+  compacting: compactingTurn({ hold: false }),
+  /**
+   * The same compaction, with the turn held OPEN afterwards until
+   * `POST /api/test/finish-turn` — see {@link compactingTurn} for why a browser
+   * test needs that.
+   */
+  'compacting-hold': compactingTurn({ hold: true }),
   error: async function* (_content) {
     yield {
       type: 'session_status',

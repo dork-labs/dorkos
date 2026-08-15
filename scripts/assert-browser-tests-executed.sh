@@ -143,6 +143,14 @@ FILTERED_SPECS=(
 # runtime. A rename would both put it there and double-count it here; refusing
 # the name keeps the two facts from drifting apart.
 #
+#   chat/compaction.ts — compaction end to end: the boundary a person can see,
+#     live and after a reload (DOR-1215). Registered into chat-mock.spec.ts for
+#     both of that file's reasons: it drives `/compact` and the `compacting-hold`
+#     scenario, which exist only behind DORKOS_TEST_RUNTIME, and it reloads the
+#     page mid-test, so its transcript has to outlive that file's
+#     `POST /api/test/reset`. Its neighbours in tests/chat/ are cockpit specs
+#     driving a real runtime, so the extension is what keeps three turns per run
+#     off the machine's own `claude` sign-in.
 #   chat/session-read-state.ts — cross-device read state for chat sessions
 #     (DOR-1040). Registered into chat-mock.spec.ts, which is what puts it on
 #     that file's worker and out of reach of its own beforeEach resets.
@@ -167,6 +175,7 @@ FILTERED_SPECS=(
 #     directory as the two chat modules above, and the extension matters for the
 #     same reason — `tests/chat/` is otherwise a cockpit-leg directory.
 REGISTERED_MODULES=(
+  'chat/compaction.ts'
   'chat/composer-escape-and-ime.ts'
   'chat/runtime-capability-parity.ts'
   'chat/session-read-state.ts'

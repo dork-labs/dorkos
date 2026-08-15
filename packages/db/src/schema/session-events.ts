@@ -13,10 +13,14 @@ import { sqliteTable, text, integer, primaryKey, index } from 'drizzle-orm/sqlit
 // slightly more turns than the live log).
 // The stored seq space is deliberately SPARSE: the projector stamps seq on
 // every ingested event, but only turn events (turn_start … turn_end) are
-// flushed — a non-turn event ingested outside a turn (e.g. a bare
-// status_change) gets a seq yet never lands here. Harmless by design:
-// `reconstructHistoryFromEvents` ignores such events anyway, and hydration
-// restores the counter from MAX(seq), past any gap.
+// flushed — an event ingested outside a turn (e.g. a bare status_change) gets a
+// seq yet never lands here. Hydration restores the counter from MAX(seq), past
+// any gap. This was once harmless by design, because nothing skipped was
+// history-bearing; since DOR-1215 `reconstructHistoryFromEvents` folds
+// compact_boundary into a durable `compaction` row, so an out-of-turn boundary
+// would be lost here. No runtime emits one (every boundary today rides a turn),
+// so the case is unreachable — but the invariant is now "only turn events are
+// history-bearing", not "only turn events matter".
 // `seq` is duplicated out of the payload for the PK / ordered reads / trim; the
 // fold in `reconstructHistoryFromEvents` already discriminates on `event.type`,
 // so no per-`type` column is needed. `created_at` is ISO 8601 text for parity

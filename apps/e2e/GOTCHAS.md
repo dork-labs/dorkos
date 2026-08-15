@@ -46,6 +46,48 @@ never opened. Count them.
 - Optimistic UI updates (e.g., message appears before server confirms) can cause stale element handles; re-locate after any mutation
 - A tool call that is already `complete` on the frame its part first mounts is never put in the DOM at all — auto-hide drops it, rather than hiding it with CSS. The mock scenarios are zero-latency and `turn_end` remounts the part as complete, so a tool-call assertion is racing a 0ms turn and will eventually lose. Turn the preference off for that test: `page.addInitScript(() => localStorage.setItem('dorkos-auto-hide-tool-calls', 'false'))`, before `goto`.
 
+## The live compaction row is transient — you cannot assert on it twice
+
+A successful compaction draws **two different rows, from two different sources**,
+one after the other:
+
+- **live** — `[data-testid="compact-boundary-row"]`, projected from the turn's
+  `compact_boundary` event (`CompactBoundaryRow`);
+- **durable** — `[data-testid="compaction-row"]`, the `messageType: 'compaction'`
+  history message (`UserMessageContent`).
+
+At `turn_end` the client reconciles against canonical history and the durable row
+**replaces** the live one. So a test that asserts `toBeVisible()` on the live row
+and then asserts anything else about it is racing that handover — and on a loaded
+machine it loses. That failure is badly disguised: the second assertion reports
+`compact-boundary-trigger` "element(s) not found", which reads exactly like the
+boundary having arrived without its metadata.
+
+Two ways to write it safely, both in `tests/chat/compaction.ts`:
+
+- Assert everything about the live row **in one locator**
+  (`.filter({ hasText: … })`), or
+- drive the `compacting-hold` scenario, which holds the turn open after the
+  boundary until `POST /api/test/finish-turn` — then the live row stands still,
+  and the handover itself becomes assertable instead of being the thing that
+  beats you.
+
+`/compact` (the command intent) **cannot** be held open, so a live-row assertion
+on that path is racy by construction. Pin the live row on the held scenario, and
+pin the durable row everywhere else.
+
+## `--repeat-each` on `chat-mock.spec.ts` needs `--workers=1`
+
+The mock server is shared mutable state and that file opts into sequential
+execution to survive it. `--repeat-each=N` does **not** inherit that: Playwright
+spreads the copies across workers, so one repeat's `POST /api/test/reset` lands
+in the middle of another's turn and both fail on assertions that name the
+feature rather than the collision (measured: 2 of 6 red at `--repeat-each=3`,
+0 of 6 with `--workers=1`).
+
+Stability-check that file with `--repeat-each=3 --workers=1`. It is also what CI
+runs (`workers: CI ? 1 : undefined`), so a green there is the honest signal.
+
 ## Known coverage gaps
 
 Worth knowing before you assume a behaviour is tested.

@@ -693,7 +693,7 @@ test.describe('Rooms — every message gets a menu', () => {
     await expect(row).toContainText('1 new');
   });
 
-  test('a thread has an address, and a reload lands back on it', async ({
+  test('a thread has an address, and following it lands the reader and the keyboard on it', async ({
     page,
     roomsApi,
     roomsPage,
@@ -710,6 +710,26 @@ test.describe('Rooms — every message gets a menu', () => {
     await expect(roomsPage.threadPanel).toBeVisible({ timeout: SERVER_ROUND_TRIP_MS });
     await expect(roomsPage.threadEntries).toHaveCount(2);
     await expect(roomsPage.threadEntries.first()).toContainText('why is the build slow?');
+
+    // And the keyboard arrives WITH it. A link is followed to read, so the
+    // panel itself takes focus and the composer does not — the same landing
+    // the reply-row route gets, and load-bearing for the same reason: Escape
+    // only reaches the panel's handler from inside it, so a linked-to panel
+    // that took no focus could be opened from the address bar and never closed
+    // by a keyboard. The panel mounts before its entries arrive, so this is
+    // asserted after the history above rather than racing it (DOR-1215).
+    await expect(roomsPage.threadPanel).toBeFocused();
+    await expect(roomsPage.threadComposer).not.toBeFocused();
+
+    // Proof that the focus is real and not merely reported: Escape closes from
+    // where the link left the reader, with nothing clicked in between.
+    await page.keyboard.press('Escape');
+    await expect(roomsPage.threadPanel).toHaveCount(0);
+    await expect(page).not.toHaveURL(/thread=/);
+
+    // Re-open by address for the close-button half below.
+    await page.goto(`/channels?id=${room.id}&thread=${rootId}`);
+    await expect(roomsPage.threadPanel).toBeVisible({ timeout: SERVER_ROUND_TRIP_MS });
 
     // Closing writes the address back, so the URL and the screen never disagree
     // — and it REPLACES rather than pushes, so Back leaves the room instead of

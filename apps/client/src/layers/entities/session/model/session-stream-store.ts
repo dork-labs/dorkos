@@ -297,6 +297,13 @@ const TURN_EVENT_TYPES: ReadonlySet<SessionEvent['type']> = new Set([
   // (compaction start→done) and the projection's failed-compaction row. The
   // bubble projection produces a part only for a `failed` phase (DOR-110).
   'operation_progress',
+  // The boundary a SUCCESSFUL compaction leaves, so the reader sees it land
+  // rather than only meeting it on the next history reload (DOR-1215). Its
+  // projection (`foldCompactBoundary`, DOR-118) and row (`CompactBoundaryRow`)
+  // both shipped; only this line was missing, so nothing live ever reached
+  // them — while a FAILED compaction drew its row all along, because that one
+  // is synthesized from the `operation_progress` above.
+  'compact_boundary',
   // An in-session capability approval hold and its resolution (DOR-939) ride the
   // turn so the inline approval card folds into the bubble and retires on the
   // resolution. They do NOT enter `pendingInteractions` — the hold has no

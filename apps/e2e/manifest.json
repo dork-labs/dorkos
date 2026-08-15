@@ -235,14 +235,28 @@
     "room-entry-actions": {
       "specFile": "tests/rooms/room-entry-actions.spec.ts",
       "feature": "rooms",
-      "description": "the toolbar appears on hover and offers what can be done to the message, the toolbar encloses the buttons it is drawn around, the toolbar straddles a message, and covers no word of one at rest, the toolbar rides the viewport edge on a message taller than the window, right-click offers the same actions as the toolbar, the keyboard alone reaches the actions and lands in the composer, a room costs one Tab per message, not one per action, a message is announced before the things you can do to it, Page Down crosses the room a message at a time, whatever each one carries, Page Down crosses the thread, and Ctrl+End lands in the thread’s own composer, a reply lands in the panel beside the room, and a reply to a reply joins it, a reply row opens the thread it counts, and Escape closes it again, a reply that arrives after you last looked wears the accent, a thread has an address, and a reload lands back on it, a long press opens the drawer, and a short one or a drag does not, the thread takes the whole screen, and Back returns to the room",
+      "description": "the toolbar appears on hover and offers what can be done to the message, the toolbar encloses the buttons it is drawn around, the toolbar straddles a message, and covers no word of one at rest, the toolbar rides the viewport edge on a message taller than the window, right-click offers the same actions as the toolbar, the keyboard alone reaches the actions and lands in the composer, a room costs one Tab per message, not one per action, a message is announced before the things you can do to it, Page Down crosses the room a message at a time, whatever each one carries, Page Down crosses the thread, and Ctrl+End lands in the thread’s own composer, a reply lands in the panel beside the room, and a reply to a reply joins it, a reply row opens the thread it counts, and Escape closes it again, a reply that arrives after you last looked wears the accent, a thread has an address, and following it lands the reader and the keyboard on it, a long press opens the drawer, and a short one or a drag does not, the thread takes the whole screen, and Back returns to the room",
       "lastRun": "2026-08-12T00:46:51.156Z",
       "lastStatus": "passed",
       "runCount": 57,
       "passCount": 26,
       "failCount": 31,
-      "relatedCode": [],
-      "lastModified": ""
+      "relatedCode": [
+        "apps/client/src/layers/widgets/room-view/ui/RoomThreadPanel.tsx",
+        "apps/client/src/layers/widgets/room-view/ui/RoomThreadReplyRow.tsx",
+        "apps/client/src/layers/widgets/room-view/model/use-thread-url-sync.ts",
+        "apps/client/src/layers/widgets/room-view/model/use-thread-arrivals.ts",
+        "apps/client/src/layers/widgets/room-view/lib/room-timeline.ts",
+        "apps/client/src/layers/features/entry-actions/ui/EntryActionBar.tsx"
+      ],
+      "lastModified": "",
+      "explorationNotes": [
+        "Capabilities M-05 and M-06 (meta/chat-capabilities.md) live here - threads have been covered since 2026-07-30/31, which the 2026-08-14 capability audit missed.",
+        "Thread state lives in a zustand store (use-room-open-thread), not the URL; use-thread-url-sync mirrors it to ?thread= with replace:true, so Back leaves the room rather than walking every thread glanced at.",
+        "A deep link opens the thread to READ: the panel section (tabIndex -1) takes focus and the composer does not. That is load-bearing, not manners - Escape only reaches the panel's handler from inside it, so a linked-to panel that took no focus could be opened from the address bar and never closed by keyboard.",
+        "Replies are kept out of the main timeline by one choke point, groupByThread in room-timeline.ts; assert the timeline's room-entry count is unchanged plus a single room-thread-replies row, which is what the panel costs the room.",
+        "Under 768px the panel is a full-screen PUSH, not a sheet - the room column unmounts, so assert the room is gone rather than covered."
+      ]
     },
     "rooms-in-palette": {
       "specFile": "tests/rooms/rooms-in-palette.spec.ts",
@@ -739,6 +753,47 @@
         "Send { on: true }, never a bare toggle: POST is not idempotent and a retried request would undo itself.",
         "No turn is driven here, so the agent stays SILENT — a reaction is precisely the thing that costs no turn."
       ],
+      "lastModified": ""
+    },
+    "compaction": {
+      "specFile": "tests/chat/compaction.ts",
+      "feature": "chat",
+      "description": "running /compact draws the boundary, keeps the history above it, and the next turn still answers, an auto-compaction fired by context pressure says so, and survives the reload",
+      "lastRun": "2026-08-15T07:27:29.949Z",
+      "lastStatus": "passed",
+      "runCount": 2,
+      "passCount": 2,
+      "failCount": 0,
+      "relatedCode": [
+        "apps/client/src/layers/features/chat/ui/message/CompactBoundaryRow.tsx",
+        "apps/client/src/layers/features/chat/ui/message/UserMessageContent.tsx",
+        "apps/client/src/layers/features/chat/model/stream/project-session-turn.ts",
+        "apps/client/src/layers/entities/session/model/session-stream-store.ts",
+        "apps/server/src/services/session/event-log-history.ts",
+        "apps/server/src/services/runtimes/test-mode/scenario-store.ts",
+        "apps/server/src/services/runtimes/test-mode/test-mode-runtime.ts",
+        "apps/server/src/routes/session-command-intent-handler.ts"
+      ],
+      "lastModified": "",
+      "explorationNotes": [
+        "Capability L-04 (meta/chat-capabilities.md). Registered from chat-mock.spec.ts, never its own spec: the test-mode server is shared mutable state and POST /api/test/reset runs before each of that file's tests.",
+        "A successful compaction draws TWO rows in sequence, from different sources: the live [data-testid=compact-boundary-row] projected from the turn event, then the durable [data-testid=compaction-row] rebuilt from history, which REPLACES it at turn_end. Never assert twice on the live row - the second assertion races the handover and reports the trigger badge as 'element(s) not found', which looks like missing metadata and is not.",
+        "The live row is only observable deterministically on the 'compacting-hold' scenario, which holds the turn open until POST /api/test/finish-turn. /compact (the command intent) cannot be held, so that path pins the durable row only.",
+        "Driving /compact takes TWO Enters: the first selects the palette row and fills the composer, the second submits. The suite asserts the resulting POST /command-intents/compact returns 202 rather than inferring dispatch from a row appearing later.",
+        "The scenario answers 'Echo: <prompt>', so a prompt lookup needs { exact: true } or it matches the echo too and trips non-retriable strict mode.",
+        "Stability-check with --repeat-each=3 --workers=1. Without --workers=1 the repeats spread across workers and race each other's resets on the shared server (measured 2/6 red, 0/6 red single-worker)."
+      ]
+    },
+    "composer-escape-and-ime": {
+      "specFile": "tests/chat/composer-escape-and-ime.ts",
+      "feature": "chat",
+      "description": "two Escapes clear the rich field and one never does, Enter during an IME composition commits the candidate and sends nothing, two Escapes clear the plain field and one never does",
+      "lastRun": "2026-08-15T07:27:29.949Z",
+      "lastStatus": "passed",
+      "runCount": 1,
+      "passCount": 1,
+      "failCount": 0,
+      "relatedCode": [],
       "lastModified": ""
     }
   },

@@ -447,3 +447,158 @@ describe('reconstructHistoryFromEvents — answered approvals', () => {
     );
   });
 });
+
+// A compaction is the one turn that produces no text and no tool call, so
+// before DOR-1215 it folded to NOTHING: a log-backed runtime lost every trace
+// of it the moment the turn closed, and the row the reader is owed — the line
+// saying the conversation above was summarized away — never came back on a
+// reload. The Claude adapter has always produced that row from JSONL
+// (`messageType: 'compaction'` + `compactMetadata`, transcript-parser.ts), so
+// these pin the SAME shape here and both history sources render through one row.
+describe('reconstructHistoryFromEvents — compaction boundaries', () => {
+  it('folds a compact_boundary into a compaction message carrying its metadata', () => {
+    const messages = reconstructHistoryFromEvents(
+      events(
+        { seq: 1, type: 'turn_start' },
+        {
+          seq: 2,
+          type: 'compact_boundary',
+          trigger: 'manual',
+          preTokens: 51_226,
+          postTokens: 4_151,
+          durationMs: 63_275,
+        },
+        { seq: 3, type: 'turn_end' }
+      )
+    );
+
+    expect(messages).toEqual([
+      {
+        id: 'compaction-2',
+        role: 'user',
+        content: '',
+        messageType: 'compaction',
+        compactMetadata: {
+          trigger: 'manual',
+          preTokens: 51_226,
+          postTokens: 4_151,
+          durationMs: 63_275,
+        },
+      },
+    ]);
+  });
+
+  it('folds a metadata-less boundary without inventing metadata', () => {
+    const messages = reconstructHistoryFromEvents(
+      events(
+        { seq: 1, type: 'turn_start' },
+        { seq: 2, type: 'compact_boundary' },
+        { seq: 3, type: 'turn_end' }
+      )
+    );
+
+    expect(messages).toEqual([
+      { id: 'compaction-2', role: 'user', content: '', messageType: 'compaction' },
+    ]);
+  });
+
+  it('keeps a zero token count, which is a reading and not an absence', () => {
+    const messages = reconstructHistoryFromEvents(
+      events(
+        { seq: 1, type: 'turn_start' },
+        { seq: 2, type: 'compact_boundary', trigger: 'auto', postTokens: 0 },
+        { seq: 3, type: 'turn_end' }
+      )
+    );
+
+    expect(messages[0].compactMetadata).toEqual({ trigger: 'auto', postTokens: 0 });
+  });
+
+  it('lands the boundary between the turns it separates, in stream order', () => {
+    const messages = reconstructHistoryFromEvents(
+      events(
+        { seq: 1, type: 'turn_start', userMessage: 'before' },
+        { seq: 2, type: 'text_delta', text: 'said before' },
+        { seq: 3, type: 'turn_end' },
+        { seq: 4, type: 'turn_start' },
+        { seq: 5, type: 'compact_boundary', trigger: 'manual' },
+        { seq: 6, type: 'turn_end' },
+        { seq: 7, type: 'turn_start', userMessage: 'after' },
+        { seq: 8, type: 'text_delta', text: 'said after' },
+        { seq: 9, type: 'turn_end' }
+      )
+    );
+
+    // The history a reader scrolls: the turn before the boundary still renders,
+    // the boundary sits between them, and the turn after is unaffected.
+    expect(messages.map((m) => m.id)).toEqual([
+      'user-1',
+      'assistant-1',
+      'compaction-5',
+      'user-7',
+      'assistant-7',
+    ]);
+  });
+
+  it('mixed turn: the rule lands ABOVE text written before it — today’s shape, pinned', () => {
+    // NOT an endorsement. A boundary is pushed at its own seq while the turn's
+    // assistant message is pushed at `turn_end`, so a mid-turn compaction
+    // reconstructs as user → compaction → assistant: the rule sits above the
+    // sentence that preceded it, and the two sentences either side of the
+    // boundary are merged into one bubble beneath it. LIVE, the client folds
+    // the boundary into the turn's parts where it arrived, so the same
+    // compaction reads correctly until the first reload and differently after.
+    //
+    // This is the module header's intra-turn-interleaving limitation landing on
+    // the one event whose POSITION is its meaning. It reaches OpenCode alone —
+    // the only runtime emitting a mid-turn boundary — and only on its EventLog
+    // fallback, since its history normally comes from the sidecar. Pinned so
+    // that giving assistant messages ordered parts (the real fix, versus
+    // special-casing compaction) is a deliberate change and not a surprise: if
+    // you are here because this test failed, you probably fixed it, and the
+    // expectation below is what to rewrite.
+    const messages = reconstructHistoryFromEvents(
+      events(
+        { seq: 1, type: 'turn_start', userMessage: 'summarize the thread' },
+        { seq: 2, type: 'text_delta', text: 'before the boundary. ' },
+        { seq: 3, type: 'compact_boundary', trigger: 'auto', preTokens: 51_226 },
+        { seq: 4, type: 'text_delta', text: 'after the boundary.' },
+        { seq: 5, type: 'turn_end' }
+      )
+    );
+
+    expect(messages.map((m) => [m.id, m.messageType ?? m.role])).toEqual([
+      ['user-1', 'user'],
+      ['compaction-3', 'compaction'],
+      ['assistant-1', 'assistant'],
+    ]);
+    // Both halves of the turn's text end up in the one bubble BELOW the rule,
+    // which is the visible consequence: nothing is lost, the order is wrong.
+    expect(messages[2].content).toBe('before the boundary. after the boundary.');
+  });
+
+  it('folds a boundary that arrives outside any turn (in-memory fallback only)', () => {
+    // The unguarded arm, and worth being exact about which topology it serves.
+    // `SessionEventStore.appendTurn` flushes only turn events, so an
+    // out-of-turn boundary is given a seq and NEVER persisted — this fold can
+    // only meet one where the events come from the live projector's in-memory
+    // log, which is `readLogBackedHistory`'s no-store fallback: unit tests and
+    // embedded hosts with no Db. Every boundary a real deployment produces
+    // today rides a turn (see the mixed-turn and between-turns cases above).
+    // Pinned so the fold stays total rather than because a durable out-of-turn
+    // boundary is a case we serve.
+    const messages = reconstructHistoryFromEvents(
+      events({ seq: 1, type: 'compact_boundary', trigger: 'auto' })
+    );
+
+    expect(messages).toEqual([
+      {
+        id: 'compaction-1',
+        role: 'user',
+        content: '',
+        messageType: 'compaction',
+        compactMetadata: { trigger: 'auto' },
+      },
+    ]);
+  });
+});

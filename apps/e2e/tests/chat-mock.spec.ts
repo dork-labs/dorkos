@@ -5,6 +5,7 @@ import path from 'path';
 import { BasePage } from '../pages/BasePage.js';
 import { ChatPage } from '../pages/ChatPage.js';
 import { caretOffset, composerText, expectComposerText } from '../pages/composer-probe.js';
+import { registerCompactionTests } from './chat/compaction.js';
 import { registerComposerEscapeAndImeTests } from './chat/composer-escape-and-ime.js';
 import { registerRuntimeCapabilityParityTests } from './chat/runtime-capability-parity.js';
 import { registerSessionReadStateTests } from './chat/session-read-state.js';
@@ -29,6 +30,15 @@ import { registerSendLandsInTodayTests } from './dashboard-sidebar/send-lands-in
  *   'error'        → session_status → session_status{terminalReason:'error'}
  *                    → error → done (the turn closes in error — drives the
  *                    turn-failed notice)
+ *   'compacting'   → session_status → operation_progress{compaction,started}
+ *                    → compact_boundary{auto,…} → operation_progress{done}
+ *                    → done (an AUTO compaction — a turn that compacts
+ *                    instead of answering)
+ *   'compacting-hold' → the same, but the turn stays OPEN after the boundary
+ *                    until `POST /api/test/finish-turn`. The live boundary row
+ *                    is transient (the durable row replaces it at turn_end), so
+ *                    holding the turn is what makes it assertable rather than a
+ *                    race — see `tests/chat/compaction.ts` and GOTCHAS.
  */
 
 // eslint-disable-next-line no-restricted-syntax -- E2E test config; no env.ts available
@@ -929,6 +939,11 @@ registerSendLandsInTodayTests({ agentDir: () => agentDir });
 // which is server-global — only this file's sequential single worker makes that
 // safe. See the module header.
 registerComposerEscapeAndImeTests({ apiUrl: API_URL, agentDir: () => agentDir });
+
+// Compaction end to end (L-04, DOR-1215). Registered here because it drives
+// turns and a `/compact` against the shared test-mode server — see the module
+// header for why it must ride this file's worker rather than be its own spec.
+registerCompactionTests({ apiUrl: API_URL, agentDir: () => agentDir });
 
 // The cockpit adapting to the runtime it is talking to (L-10). Registered here
 // because this leg is the ONLY place a browser can see a runtime that is not
