@@ -11,6 +11,7 @@ export * from './runner/sandbox.js';
 export * from './runner/harness-server.js';
 export * from './runner/isolation/index.js';
 export * from './runner/drive.js';
+export * from './runner/room-drive.js';
 export * from './runner/approval-driver.js';
 export * from './runner/budget.js';
 export * from './runner/retry.js';

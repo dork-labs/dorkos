@@ -5,7 +5,8 @@
  * `transcript.js`, which reads assistant text but only through DETERMINISTIC
  * structural checks (a literal question count, a fixed-phrase offer signal), not
  * judgment — see its module doc for why that preserves the "no flaky prose"
- * spirit.
+ * spirit, and `rooms.js`, whose recall probes read an agent's room post the same
+ * deterministic way.
  *
  * @module evals/oracles
  */
@@ -14,4 +15,5 @@ export * from './filesystem.js';
 export * from './api.js';
 export * from './stream.js';
 export * from './transcript.js';
+export * from './rooms.js';
 export * from './judge.js';

@@ -3,8 +3,9 @@ name: Evals
 # Eval cadence (spec `agent-trust`, task 3.5), scoped honestly to what runs
 # credential-free in CI:
 #
-#   1. structural (per-PR)   — label-gated on `run-evals`, `--suite core
-#                              --tier test-mode`. Free, no model, minutes.
+#   1. structural (per-PR)   — label-gated on `run-evals`. Two free runs on
+#                              `--tier test-mode`: `--suite core` and
+#                              `--suite rooms`. No model, minutes.
 #   2. structural (nightly)  — the same run on a schedule, so drift surfaces
 #                              without anyone remembering to ask.
 #   3. credentialed          — manual `workflow_dispatch` only. Runs the
@@ -37,7 +38,7 @@ on:
   workflow_dispatch:
     inputs:
       suite:
-        description: 'Eval suite to run (core, smoke, experimental, connector, all, or a case id)'
+        description: 'Eval suite to run (core, smoke, rooms, experimental, connector, all, or a case id)'
         required: false
         default: 'core'
       budget_usd:
@@ -107,6 +108,19 @@ jobs:
       # A run that gates on ZERO cases now FAILS rather than reporting green.
       - name: Run structural suite
         run: pnpm --filter @dorkos/evals run evals -- --suite core --tier test-mode --out "$RUNNER_TEMP/evals-runs"
+
+      # A SECOND step rather than a longer selector: `--suite` takes one name,
+      # and the rooms structural cases are deliberately not tagged `core` —
+      # `core` is what `pnpm evals:local` runs against a real model, so a free
+      # case tagged into it would spend on every local run.
+      #
+      # These four gate. They boot a real room on the test-mode runtime and
+      # assert on the room's own event stream and its `room_turn_spend` rows:
+      # a mentioned agent runs a turn, an unaddressed message runs none and
+      # costs nothing, a burst collects into one charged turn, and Stop
+      # interrupts a live turn and says so once.
+      - name: Run rooms structural suite
+        run: pnpm --filter @dorkos/evals run evals -- --suite rooms --tier test-mode --out "$RUNNER_TEMP/evals-runs"
 
       - name: Upload results
         if: always()

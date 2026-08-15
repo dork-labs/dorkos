@@ -131,8 +131,16 @@ export type CostClass = z.infer<typeof CostClassSchema>;
  * that runs and reports but is deliberately kept OUT of `core` because a known
  * harness gap blocks it from being a reliable live gate (e.g. the multi-turn
  * credentialed drive's claude-code session-remap timeout).
+ *
+ * `rooms` is the channel suite (DOR-1217), and it is a tag of its own rather
+ * than more `core` for one reason with money in it: `core` is run BOTH ways —
+ * free on `--tier test-mode` in CI and CREDENTIALED by `pnpm evals:local` — so a
+ * free structural case tagged `core` would quietly spend on every local run. The
+ * rooms structural cases gate on `--suite rooms --tier test-mode` instead, and
+ * the credentialed rooms cases carry `experimental` beside it like every other
+ * not-yet-gating case.
  */
-export const EvalTagSchema = z.enum(['smoke', 'core', 'connector', 'experimental']);
+export const EvalTagSchema = z.enum(['smoke', 'core', 'connector', 'experimental', 'rooms']);
 
 /** Inferred type for {@link EvalTagSchema}. */
 export type EvalTag = z.infer<typeof EvalTagSchema>;
@@ -279,6 +287,67 @@ export function emptyApprovalLog(): ApprovalDriverLog {
   return { toolPermissions: [], decisions: [], ignored: [], errors: [] };
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Rooms (DOR-1217)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** One room member as the roster reports it. */
+export interface RoomMemberFacts {
+  /** The member's author id — what `mentions` and every signal carry. */
+  authorId: string;
+  /** The `@handle` an agent is addressed by, or null for a member with none. */
+  handle: string | null;
+  /** Human or agent. */
+  kind: string;
+  /** The member's response mode in THIS room. */
+  responseMode: string;
+}
+
+/**
+ * The room a case built, and the identities its oracles assert against.
+ *
+ * A room's identities are MINTED, not declared: an author id is a ULID the
+ * server allocates the first time an agent joins a room, and a handle is derived
+ * from the manifest name and suffixed on a collision. So a rooms oracle cannot
+ * name its subject in advance the way a filesystem oracle names a path — the
+ * script that built the room hands the ids forward here instead.
+ */
+export interface RoomFacts {
+  /** The room's id. */
+  roomId: string;
+  /** Every member, keyed by author id. */
+  members: Record<string, RoomMemberFacts>;
+  /** Agent author ids keyed by the slug the case seeded them under. */
+  agents: Record<string, string>;
+  /** The author id every post in the drive was made as (the operator). */
+  operatorAuthorId: string;
+  /** Whatever the script recorded for its own oracles (a halt count, ids). */
+  notes: Record<string, unknown>;
+}
+
+/** What a {@link EvalCase.roomScript} is handed. */
+export interface RoomScriptContext {
+  /** Base URL of the running harness server. */
+  baseUrl: string;
+  /** The eval sandbox — where seeded agents and their files live. */
+  sandbox: EvalSandbox;
+  /**
+   * The project cwd as THIS SERVER sees it (the docker tier's mount point),
+   * already resolved by the runner.
+   */
+  cwd: string;
+  /** The run's per-turn timeout guard in ms, for a script that bounds its waits. */
+  timeoutMs?: number;
+}
+
+/** What a {@link EvalCase.roomScript} hands back to the oracles. */
+export interface RoomScriptResult {
+  /** Every frame collected off `GET /api/rooms/:id/events`, in order. */
+  frames: SseFrame[];
+  /** The room the script built, and the identities it minted. */
+  room: RoomFacts;
+}
+
 /**
  * Everything an oracle needs to assert an outcome: the sandbox filesystem, the
  * running server's base URL, the driven session id, every SSE frame the drive
@@ -301,6 +370,12 @@ export interface OracleContext {
    * it on a case that forgot its policy fails loudly instead of vacuously.
    */
   approvals: ApprovalDriverLog;
+  /**
+   * The room a {@link EvalCase.roomScript} built, when this case drove one.
+   * Undefined for every session-shaped case — a rooms oracle that finds it
+   * missing fails rather than passing vacuously.
+   */
+  room?: RoomFacts;
 }
 
 /** The result of one oracle: whether the intended side effect occurred, with evidence. */
@@ -458,6 +533,29 @@ export interface EvalCase extends EvalCaseMeta {
    * @param sandbox - The eval sandbox, so the probe can read the host filesystem.
    */
   probeBeforeDecision?: (sandbox: EvalSandbox) => Promise<unknown>;
+  /**
+   * Drive a ROOM instead of (or as well as) a session — the `rooms` suite's
+   * mechanism (DOR-1217).
+   *
+   * A room case cannot be expressed as a prompt list, and the reason is
+   * structural rather than cosmetic: a room drive builds a roster, sets response
+   * modes, posts several messages as a person with deliberate timing, and may
+   * press Stop halfway through. What it collects is the ROOM's stream, so the
+   * frames it hands back are `entry` / `signal` / `reaction` frames rather than
+   * session events, and its oracles are the ones in `oracles/rooms.ts`.
+   *
+   * Runs AFTER the server boots and after any `prompt` turns, and its frames
+   * REPLACE the session frames on the oracle context (a room case sets
+   * `prompt: ''`, so there are none). The room it built rides
+   * {@link OracleContext.room}.
+   *
+   * **A room turn's cost is invisible to `--budget`.** The cost signal rides the
+   * per-SESSION stream (`status_change`), and a room drive collects the room's
+   * stream, so a credentialed rooms case reports `unmetered` — see
+   * `suite/rooms.ts`. Every such case is bounded by construction instead: a
+   * fixed, small number of posts and a cheap model.
+   */
+  roomScript?: (ctx: RoomScriptContext) => Promise<RoomScriptResult>;
   /** The outcome oracle(s) — ALL must pass. Asserts API/FS/stream state, never prose. */
   oracles: Oracle[];
   /** Optional rubric judge, only where the outcome is inherently a judgment. */
