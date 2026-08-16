@@ -334,6 +334,67 @@ describe('dispatchMessage — a busy session is a queue, not a refusal (task 2.4
     expect(runtime.sendMessage).toHaveBeenCalledTimes(1);
   });
 
+  it("waits out the caller's OWN turn rather than refusing it (whenBusy: refuse-foreign)", async () => {
+    // DOR-1230. A room holds a re-mention until its agent's turn here ends and
+    // then dispatches it — so what it meets is its own tail: the turn ahead has
+    // closed on the projector and hands its slot back a beat later. Refusing
+    // that beat is what made the room post "didn't pick this up, send it again"
+    // over a message it was about to answer. The trigger waits and then runs.
+    const first = gate();
+    runtime.withScenarios([heldTurn(first.wait), quickTurn()]);
+
+    await send('the turn the room is already running');
+    const held = await send('re-mentioned mid-turn', { whenBusy: 'refuse-foreign' });
+
+    expect(held.accepted).toBe(true);
+    expect(held.queued).toBe(true);
+    first.open();
+    await settle();
+    // Both ran, and nothing is left waiting to run a third time.
+    expect(runtime.sendMessage).toHaveBeenCalledTimes(2);
+    expect(store.list(session)).toEqual([]);
+  });
+
+  it('keeps a refuse-foreign message that already waited, when the lock then refuses it', async () => {
+    // The narrow race the wait above opens: a stranger takes the session in the
+    // beat between the trigger being accepted and its launch. The refusal the
+    // caller asked for is gone by then — it is holding an `accepted: true` — so
+    // dropping the row would leave it waiting on a turn nothing will start. It
+    // goes back in line, which is what the acceptance promised.
+    const first = gate();
+    runtime.withScenarios([heldTurn(first.wait), quickTurn()]);
+
+    await send('the turn the room is already running');
+    const held = await send('re-mentioned mid-turn', { whenBusy: 'refuse-foreign' });
+    expect(held.accepted).toBe(true);
+
+    runtime.acquireLock.mockReturnValue(false);
+    first.open();
+    await settle();
+
+    expect(runtime.sendMessage).toHaveBeenCalledTimes(1);
+    expect(store.list(session).map((row) => row.content)).toEqual(['re-mentioned mid-turn']);
+  });
+
+  it('still refuses a turn another client opened (whenBusy: refuse-foreign)', async () => {
+    // The other half, and the one the busy notice was written for: somebody
+    // typing into the very agent a room addressed. Nothing the room does will
+    // finish that turn, so the trigger is dropped with its row exactly as a
+    // blanket refusal drops it.
+    const first = gate();
+    runtime.withScenarios([heldTurn(first.wait), quickTurn()]);
+
+    await send('somebody typing in the cockpit', { clientId: 'window-b' });
+    const refused = await send('a room turn', { whenBusy: 'refuse-foreign' });
+
+    expect(refused.accepted).toBe(false);
+    expect(refused.queued).toBe(false);
+    expect(store.list(session)).toEqual([]);
+    first.open();
+    await settle();
+    expect(runtime.sendMessage).toHaveBeenCalledTimes(1);
+  });
+
   it('leaves nothing behind when the write-lock refuses a whenBusy: refuse caller', async () => {
     // The other way a refuse-caller can fail: the session looks free, so the
     // message is written, and the lock turns it down at the launch. Its row has

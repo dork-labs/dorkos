@@ -75,9 +75,10 @@
  * than accepted, whose sender is long gone and cannot retype it. A message that
  * did not start goes back in line instead.
  *
- * The one exception is a `whenBusy: 'refuse'` caller, whose row IS removed when
- * its launch fails: it has said the message has no value later, and leaving it
- * behind would put a prompt nobody typed into somebody's composer for good.
+ * The one exception is a refusing caller — `whenBusy: 'refuse'` or
+ * `'refuse-foreign'` — whose row IS removed when its launch fails: it has said
+ * the message has no value later, and leaving it behind would put a prompt
+ * nobody typed into somebody's composer for good.
  *
  * {@link SessionTurnQueue} (DOR-1088) is kept, underneath: it is the
  * intra-process ordering primitive inside `triggerTurn` and this does not
@@ -565,9 +566,12 @@ export interface DispatchMessageOpts {
    *   durable, every window can see it, and they can edit or remove it while it
    *   waits.
    * - `'refuse'` — answer `{ accepted: false }` and write nothing. For a trigger
-   *   a machine generated on somebody's behalf (a room turn, an MCP sign-in
-   *   resume), where the reason it was sent may not survive the wait and firing
+   *   a machine generated on somebody's behalf (an MCP sign-in resume, a UI
+   *   action), where the reason it was sent may not survive the wait and firing
    *   it late is worse than not firing it.
+   * - `'refuse-foreign'` — refuse a turn ANOTHER client opened, and wait behind
+   *   one of the caller's own. For a caller that already sequences its own turns
+   *   and only needs protecting from a stranger; see {@link WhenBusy}.
    */
   whenBusy?: WhenBusy;
 }
@@ -575,9 +579,24 @@ export interface DispatchMessageOpts {
 /**
  * What a caller wants done when the session is already working.
  *
+ * **`'refuse-foreign'` is the same promise as `'refuse'`, asked of the right
+ * question.** A refusing caller is saying "do not queue my trigger behind
+ * somebody else's work" — and a turn the CALLER ITSELF opened is not somebody
+ * else's work. Rooms are why the distinction exists: a room already allows one
+ * turn per `(room, agent)` and holds a re-mention until that turn's claim
+ * releases (RP8, `room-collect.ts`), so by the time the held message is
+ * dispatched the previous turn has ended on the projector — but the in-flight
+ * slot it took is cleared a beat later, when the turn settles. A blanket
+ * `'refuse'` lost that race and told the room its own agent was busy with
+ * something else, so the room wrote "didn't pick this up, send it again" over a
+ * message it was about to answer (DOR-1230).
+ *
+ * A foreign turn is still refused, which is the case the notice was written for:
+ * somebody typing into the very agent a room addressed.
+ *
  * @see DispatchMessageOpts.whenBusy
  */
-export type WhenBusy = 'queue' | 'refuse';
+export type WhenBusy = 'queue' | 'refuse' | 'refuse-foreign';
 
 /** What happened to a message the dispatcher accepted. */
 export interface MessageDispatchResult extends TriggerTurnResult {
@@ -617,9 +636,25 @@ interface DispatchPlan {
   /**
    * What a launch that started no turn means for this message: go back in line
    * (`'queue'`, the default everywhere except the callers that opt out) or be
-   * dropped with its row (`'refuse'`).
+   * dropped with its row (either refusing mode) — unless
+   * {@link DispatchPlan.answered}, which outranks it.
    */
   whenBusy: WhenBusy;
+  /**
+   * Somebody has already been told this message was accepted.
+   *
+   * True wherever that is so: a `'refuse-foreign'` plan that waited out the
+   * caller's own turn, and every row {@link adoptQueuedMessages} recovered,
+   * whose original caller was answered by a process that is now gone.
+   *
+   * It only CHANGES anything for a refusing plan, and there it outranks
+   * `whenBusy`. Dropping the message is the promise `'refuse'` makes about
+   * words nobody has been promised anything about; once an `accepted: true` is
+   * out there it cannot be taken back, so the message goes back in line like
+   * anybody else's rather than evaporating (the DOR-480 rule, in the module doc
+   * above).
+   */
+  answered: boolean;
   /** What the caller passes straight through to the turn. */
   turn: Pick<
     DispatchMessageOpts,
@@ -636,6 +671,29 @@ interface DispatchPlan {
 }
 
 /**
+ * Whether the turn that is open right now is one this caller refuses to wait
+ * behind.
+ *
+ * The whole difference between the two refusing modes lives here, and it is a
+ * question about WHOSE turn is open rather than about whether one is. See
+ * {@link WhenBusy} for why a caller that sequences its own turns — a room —
+ * must not be told its own tail is a stranger.
+ *
+ * @param whenBusy - What the caller asked for.
+ * @param open - The turn holding the session's in-flight slot, if any.
+ * @param clientId - The caller's lock identity.
+ * @returns True when this message should be refused rather than accepted.
+ */
+function refusesOpenTurn(
+  whenBusy: WhenBusy,
+  open: InFlightTurn | undefined,
+  clientId: string
+): boolean {
+  if (open === undefined || whenBusy === 'queue') return false;
+  return whenBusy === 'refuse' || open.clientId !== clientId;
+}
+
+/**
  * Give up on a message whose launch started no turn, or put it back in line.
  *
  * Which of the two is the caller's `whenBusy`, and the difference is a promise
@@ -643,12 +701,20 @@ interface DispatchPlan {
  * a launch the write-lock refused, while a machine-generated trigger that asked
  * not to wait must not be left sitting in their composer.
  *
+ * **{@link DispatchPlan.answered} outranks `whenBusy`**, because by then the
+ * refusal the caller asked for is no longer available: it is holding an
+ * `accepted: true` and there is no channel to take that back. Dropping the
+ * message would leave it waiting for a turn nothing will ever start — for a room
+ * that is a claim held to its ceiling and a "something went wrong" an hour
+ * later, over a message the model never saw. It goes back in line instead, which
+ * is what the acceptance promised.
+ *
  * A message already gone from the queue — removed from another window between
  * the launch and its refusal — is left gone.
  */
 function returnToQueue(plan: DispatchPlan): void {
   const store = getMessageQueueStore();
-  if (plan.whenBusy === 'refuse') {
+  if (plan.whenBusy !== 'queue' && !plan.answered) {
     if (store?.remove(plan.messageId)) emitQueueUpdate(plan.sessionKey);
     return;
   }
@@ -862,7 +928,7 @@ export async function dispatchMessage(opts: DispatchMessageOpts): Promise<Messag
 
   // Asked and answered before anything is written: a caller that refuses rather
   // than waits must not leave a row behind for a message it is about to disown.
-  if (whenBusy === 'refuse' && inFlight.has(sessionKey)) {
+  if (refusesOpenTurn(whenBusy, inFlight.get(sessionKey), clientId)) {
     return {
       accepted: false,
       queued: false,
@@ -921,6 +987,7 @@ export async function dispatchMessage(opts: DispatchMessageOpts): Promise<Messag
     budgetMs,
     startedWaitingAt: Date.now(),
     whenBusy,
+    answered: false,
     turn: opts,
   };
 
@@ -938,6 +1005,10 @@ export async function dispatchMessage(opts: DispatchMessageOpts): Promise<Messag
   // an idle composer (DOR-1088), and refusing the second window instead is what
   // task 2.4 retires.
   if (inFlight.has(sessionKey)) {
+    // Told it was accepted, so it can no longer be quietly dropped — including
+    // for the refusing caller that reaches here, which is a `'refuse-foreign'`
+    // waiting out its own turn. See {@link DispatchPlan.answered}.
+    plan.answered = true;
     parkDispatch(plan, unwatchedSettle(plan));
     return waiting();
   }
@@ -950,14 +1021,17 @@ export async function dispatchMessage(opts: DispatchMessageOpts): Promise<Messag
     // decided what becomes of the message; a caller that asked to refuse still
     // wants the throw, and one that is queueing has an accepted message either
     // way and learns about the failure through `onError`.
-    if (whenBusy === 'refuse') throw err;
+    if (whenBusy !== 'queue') throw err;
     return waiting();
   }
   if (result.accepted) return { ...result, queued: false, outcome, queuePosition };
-  // The write-lock said no. For a refusing caller that is the answer; for
-  // everybody else the message kept its place in the queue and runs when the
-  // holder lets go.
-  if (whenBusy === 'refuse') {
+  // The write-lock said no. For a refusing caller that is the answer — and for
+  // `'refuse-foreign'` too, because the lock is the one place a caller's OWN
+  // turn never refuses it: a same-client trigger waits in `SessionTurnQueue`
+  // before it ever reaches the lock, so a refusal here is a stranger by
+  // construction. For everybody else the message kept its place in the queue and
+  // runs when the holder lets go.
+  if (whenBusy !== 'queue') {
     return { accepted: false, queued: false, outcome, queuePosition: 0 };
   }
   return waiting();
@@ -1032,6 +1106,10 @@ export function adoptQueuedMessages(opts: AdoptQueuedMessagesOpts): number {
       // A recovered row is somebody's words with nobody left to retype them, so
       // it queues rather than being dropped if its first launch is refused.
       whenBusy: 'queue',
+      // Its sender was told this was accepted by a process that no longer
+      // exists, which is the strongest form of the reason the `'queue'` above
+      // gives: there is nobody left to retype it.
+      answered: true,
       turn: {
         ...(opts.cwd !== undefined ? { cwd: opts.cwd } : {}),
         ...(row.context !== null ? { context: row.context } : {}),
