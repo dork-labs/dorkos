@@ -103,17 +103,18 @@ export const TeamAgentFactsSchema = z
      * way.** It restates `healthStatus === 'active'`, and the mesh's `active`
      * threshold is 60 minutes (`ACTIVE_THRESHOLD_MINUTES`), so an agent that
      * finished an hour ago is still `recentlyActive`. A renderer that wants a
-     * live-turn dot needs a different source — see the note in
-     * `services/identity/aggregate-team.ts`.
+     * live-turn dot reads {@link TeamAgentActivitySchema.shape.working} instead,
+     * which is on this same object and is the only field that means "now".
      */
     recentlyActive: z.boolean(),
     /**
      * The project-directory namespace used for cross-agent messaging permissions.
      *
-     * Stripped from the mesh's public listing along with `projectPath` (both are
-     * internal registry fields), so nothing production serves today fills it.
-     * Optional rather than dropped so a future source entitled to it can fill it
-     * without a schema change.
+     * Stripped from the mesh's public listing, and — unlike `projectPath`, which
+     * the roster now joins back for its one entitled reader — nothing puts it
+     * back, so nothing production serves today fills it. Optional rather than
+     * dropped so a future source entitled to it can fill it without a schema
+     * change.
      */
     namespace: z.string().optional(),
     /**

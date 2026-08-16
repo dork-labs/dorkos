@@ -438,6 +438,30 @@ describe('aggregateTeamRoster', () => {
       );
     });
 
+    it('never puts an unreadable stamp on the wire when the other one is readable', async () => {
+      // Both directions, because only one of them is a comparison: every `>`
+      // against `NaN` is false, so the corrupt value wins by DEFAULT when it is
+      // the mesh's, and a client asked to render `"whenever"` shows the person
+      // "Invalid Date". Neither half of `lastActiveAt` is trusted to be a date
+      // just because its column is text.
+      const meshCorrupt = await aggregateTeamRoster(
+        sources({
+          listAgents: () => [{ ...ANA, lastSeenAt: 'whenever' }],
+          sessionActivity: () => ({ [ANA_PATH]: '2026-08-11T09:00:00.000Z' }),
+        })
+      );
+      expect(meshCorrupt.members.find((m) => m.id === ANA.id)?.agent?.activity.lastActiveAt).toBe(
+        '2026-08-11T09:00:00.000Z'
+      );
+
+      const sessionCorrupt = await aggregateTeamRoster(
+        sources({ sessionActivity: () => ({ [ANA_PATH]: 'whenever' }) })
+      );
+      expect(
+        sessionCorrupt.members.find((m) => m.id === ANA.id)?.agent?.activity.lastActiveAt
+      ).toBe(ANA.lastSeenAt);
+    });
+
     it('says nothing rather than something for an agent that has never run', async () => {
       // DorkBot: no mesh stamp, no session, no claim. Both members null is the
       // state the header renders as "Hasn't run yet" — which is a different
