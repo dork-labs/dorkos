@@ -423,6 +423,18 @@ describe('what the block tells an agent', () => {
       --- END UNTRUSTED ROOM MESSAGES aaaa1111 ---"
     `);
   });
+
+  it('teaches no tool, because this block is shared with runtimes that carry none (DOR-1234)', () => {
+    // Codex and OpenCode render nothing but this body for a room turn — neither
+    // has a `<room_tools>` block, so a tool nudge written HERE would tell a
+    // runtime with no `react_to_room_entry` to react anyway. That nudge lives in
+    // the claude-code adapter's `ROOM_TOOLS_CONTEXT`
+    // (`context-builder-room-tools.test.ts` pins its presence there) — never in
+    // this runtime-neutral function.
+    const block = formatRoomContext(context(), { nonce: NONCE });
+    expect(block).not.toContain('react_to_room_entry');
+    expect(block).not.toContain('Ack');
+  });
 });
 
 /**
