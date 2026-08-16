@@ -1268,6 +1268,15 @@ dorkos init --yes
 
 Update config settings via the REST API. Accepts partial updates -- only the keys you include are changed.
 
+**A PATCH that changes something writes one `info` line naming the leaves that changed** — capped at eight with a count of the rest (`[Config] Patched: runtimes.claudeCode.defaultTrustStop`). Four properties are load-bearing, and `describeConfigWrite` in `services/core/operator/config-patch.ts` owns all four:
+
+- **Derived from the write, not the request.** It diffs stored-before against stored-after, so a key Zod stripped is named by nobody, a patch that re-sends the stored value produces no line, and a leaf the server folded in itself — the Reset demotion below — is named alongside the rest.
+- **Paths only, never values.** Config holds `tunnel.authtoken`, `mcp.apiKey` and `cloud.instanceToken`, and logs get pasted into issues. Arrays are leaves, so their contents never reach the line either.
+- **Every segment escaped.** Three sections are `z.record`s (`ui.shapes.agentDefaults`, `workbench.defaultViewers`, `providers`), so their leaf segments are caller-chosen — and the first is `agent-writable`. A key holding a newline and a counterfeit `[Config] Patched: …` forged this very line during review, so segments outside `[A-Za-z0-9_-]` are clipped, JSON-quoted, and swept for what JSON leaves alone.
+- **Operator-only paths named first.** The cap is a readability bound, not a number sized to hold a section (`runtimes` is 22 leaves, `ui` is 32), so ordering is what stops it from truncating away the setting an investigation came for.
+
+`config-patch-paths.test.ts` pins all four, deriving its secret list from `SENSITIVE_CONFIG_KEYS` and its record sections from the schema, so a new one is covered the day it lands. This exists because an operator-only setting drifted twice with nothing on disk that could name the writer: the line used to be `debug` (never written by a production install, which logs at info) and named only the top-level section (DOR-1237). It does **not** cover every write — see [Writers that never reach this route](#writers-that-never-reach-this-route).
+
 **Request:**
 
 ```http
@@ -1348,6 +1357,17 @@ Two consequences worth knowing when you touch this code:
 
 - **The enable-login flow is unaffected on purpose.** `OwnerSetupHost.tsx` writes `auth.enabled: true` while login is still off, so the cookie bar does not apply to it. A guard that read the POST-patch state instead of the current state would make login impossible to turn on.
 - **`approvals.*` has a login bar in front of both of these**, `REQUIRES_LOGIN_CONFIG_PATHS`, which refuses those writes outright while login is off. See [the `approvals` section](#settings-reference).
+
+#### Writers that never reach this route
+
+The table above describes `PATCH /api/config` and the `config_patch` operator tool. **It is not the whole set of things that write your config**, and reading it as such is how DOR-1237 lost three hours. Two gaps are worth naming, because a program on your machine can use either:
+
+- **`dorkos config set <key> <value>`.** `handleConfigSet` (`packages/cli/src/config-commands.ts`) calls `ConfigManager.setDot` directly: no `CONFIG_WRITE_POLICY` check, no cookie bar, no agent bar, no `428 AUTONOMY_ACK_REQUIRED`, and no audit line. During review it set `runtimes.claudeCode.defaultTrustStop` to `autonomy` on an install whose `ui.autonomyAcknowledgedAt` was `null` — a state the HTTP door exists to make unreachable. It is deliberate that the CLI works with no server and no login (`standing-grant-posture.ts` says so for `approvals.standingGrants`), but the consequence is that any agent with a shell has an unpoliced, unlogged write path. Routing `setDot` through the policy and the log is filed as follow-up work.
+- **`curl` under login-off.** The residual above: with no cookie for anyone, a caller that simply omits `X-DorkOS-Agent` clears both bars and can write every `operator-only` setting. This one _is_ logged, being the same route.
+
+Server-side callers that bypass `applyConfigPatch` also write without a line — `configManager.set`/`setDot` in `index.ts`, `routes/tunnel.ts`, `routes/config.ts`'s `agents/defaultAgent` handler, `agent-creator.ts`, `cloud-link.ts`, `seed-legacy-mcp-key.ts`, `shape-services.ts`, `extension-manager.ts` and `hook-approval.ts`.
+
+**So never read a silent log as proof a setting did not change.** The audit line answers "which `PATCH` moved this?", not "did anything move this?".
 
 ## Error Recovery
 

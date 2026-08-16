@@ -232,4 +232,149 @@ describe('a standing Full-autonomy default, end to end', () => {
     // The runtime's own first-declared mode at that stop, never a stop word.
     expect(settings?.permissionMode).toBe('acceptEdits');
   });
+
+  describe('the write leaves a trail a person can read (DOR-1237)', () => {
+    /**
+     * Every `info` line this request wrote.
+     *
+     * Spied on the real singleton rather than mocked at the module: the router
+     * was imported in `beforeEach`, into the same module registry this import
+     * resolves against, so it is the very object the route calls. A module mock
+     * would also have to stand in for every other logger method the two routers
+     * use, and would go stale the moment one of them used another.
+     */
+    async function infoLines(run: () => Promise<unknown>): Promise<string[]> {
+      const { logger } = await import('../../lib/logger.js');
+      const lines: string[] = [];
+      const spy = vi.spyOn(logger, 'info').mockImplementation((...args: unknown[]) => {
+        lines.push(String(args[0]));
+      });
+      try {
+        await run();
+      } finally {
+        spy.mockRestore();
+      }
+      return lines;
+    }
+
+    /** The one line this feature exists to write. */
+    function patchedLine(lines: string[]): string | undefined {
+      return lines.find((line) => line.startsWith('[Config] Patched:'));
+    }
+
+    it('names the operator-only leaf that moved, at info', async () => {
+      // DOR-1237 in one assertion. `runtimes.claudeCode.defaultTrustStop` moved
+      // twice on a real install with nothing on disk that could name the write:
+      // the line was `debug`, which a production install never writes, and it
+      // named only the section. Both halves are fixed here.
+      const lines = await infoLines(() =>
+        request(app)
+          .patch('/api/config')
+          .send({ runtimes: { claudeCode: { defaultTrustStop: 'act' } } })
+          .expect(200)
+      );
+
+      expect(patchedLine(lines)).toBe('[Config] Patched: runtimes.claudeCode.defaultTrustStop');
+    });
+
+    it('names the leaves the SERVER demoted, not just the ones asked for', async () => {
+      // Reset clears the acknowledgement and takes every standing autonomy
+      // default with it, in the same write. Those leaves are the ones nobody
+      // asked to change, so they are the ones most worth having in the log —
+      // and reading the WRITE rather than the request is what catches them.
+      await request(app)
+        .patch('/api/config')
+        .send({
+          ui: { autonomyAcknowledgedAt: '2026-08-01T09:30:00.000Z' },
+          runtimes: { defaultTrustStop: 'autonomy' },
+        })
+        .expect(200);
+
+      const lines = await infoLines(() =>
+        request(app)
+          .patch('/api/config')
+          .send({ ui: { autonomyAcknowledgedAt: null } })
+          .expect(200)
+      );
+
+      expect(patchedLine(lines)).toBe(
+        '[Config] Patched: runtimes.defaultTrustStop, ui.autonomyAcknowledgedAt'
+      );
+    });
+
+    it('never writes a value — a path names a setting, a value can be a token', async () => {
+      // Logs get read by people, attached to bug reports and pasted into
+      // issues. `mcp.apiKey` is declared sensitive by the schema, and the write
+      // is allowed; what must never happen is the key landing in the log.
+      const lines = await infoLines(() =>
+        request(app)
+          .patch('/api/config')
+          .send({ mcp: { apiKey: 'sk-do-not-log-me-4242' } })
+          .expect(200)
+      );
+
+      expect(patchedLine(lines)).toBe('[Config] Patched: mcp.apiKey');
+      expect(lines.join('\n')).not.toContain('sk-do-not-log-me-4242');
+    });
+
+    it('says nothing about a request that changes nothing', async () => {
+      // An empty body, and a body that re-sends what is already stored. The
+      // second is the one that matters: a client refreshing its whole section
+      // must not fill the log with writes that never happened.
+      await request(app)
+        .patch('/api/config')
+        .send({ ui: { theme: 'dark' } })
+        .expect(200);
+
+      const empty = await infoLines(() => request(app).patch('/api/config').send({}).expect(200));
+      const unchanged = await infoLines(() =>
+        request(app)
+          .patch('/api/config')
+          .send({ ui: { theme: 'dark' } })
+          .expect(200)
+      );
+
+      expect(patchedLine(empty)).toBeUndefined();
+      expect(patchedLine(unchanged)).toBeUndefined();
+    });
+
+    it('says nothing about a key the schema threw away', async () => {
+      // Zod strips what it does not declare, so this request changed nothing.
+      // A line reporting it would send the next investigation after a setting
+      // that does not exist.
+      const lines = await infoLines(() =>
+        request(app)
+          .patch('/api/config')
+          .send({ ui: { totallyMadeUpKey: 'x' } })
+          .expect(200)
+      );
+
+      expect(patchedLine(lines)).toBeUndefined();
+    });
+
+    it('cannot be forged by an agent through a caller-chosen key', async () => {
+      // Reproduced against this route during review. `ui.shapes.agentDefaults`
+      // is a `z.record`, so its keys are whatever the caller typed, and it is
+      // `agent-writable` — the route's agent bar never applies. A key carrying
+      // a newline and a counterfeit `[Config] Patched: …` line wrote a perfect
+      // fake of the record this feature exists to make trustworthy.
+      const forged = 'proj\n[info] [Config] Patched: runtimes.claudeCode.defaultTrustStop';
+
+      const lines = await infoLines(() =>
+        request(app)
+          .patch('/api/config')
+          .send({ ui: { shapes: { agentDefaults: { [forged]: 'shapeA' } } } })
+          .expect(200)
+      );
+
+      const line = patchedLine(lines);
+      expect(line).toBeDefined();
+      // One line, and the counterfeit is inside a quoted segment rather than
+      // standing on its own. Reported, not dropped: the write really happened.
+      expect(line).not.toContain('\n');
+      expect(line).toContain('ui.shapes.agentDefaults.');
+      expect(line).toContain('\\n');
+      expect(lines.filter((l) => l.startsWith('[Config] Patched:'))).toHaveLength(1);
+    });
+  });
 });
