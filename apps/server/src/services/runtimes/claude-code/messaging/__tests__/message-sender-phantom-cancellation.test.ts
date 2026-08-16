@@ -14,7 +14,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { executeSdkQuery, type MessageSenderOpts } from '../message-sender.js';
 import type { AgentSession } from '../../agent-types.js';
 import { CLI_INTERRUPT_SENTINEL } from '../phantom-cancellation.js';
-import { DEFERRED_CLOSE_TIMEOUT_MS } from '../turn-segments.js';
+import { DEFERRED_CLOSE_TIMEOUT_MS } from '../stdin-hold.js';
 import { logger } from '../../../../../lib/logger.js';
 import { query, type SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import type { StreamEvent } from '@dorkos/shared/types';
@@ -129,17 +129,19 @@ function taskSettledMsg(taskId: string): SDKMessage {
   } as unknown as SDKMessage;
 }
 
-/** The queued notification arriving as a user message — the delivery segment. */
-function taskDeliveredMsg(taskId: string): SDKMessage {
+/**
+ * The `system/init` that opens a query segment. One AFTER a `result` is how the
+ * CLI announces a delivery segment on the stream, and it is what drains the
+ * queued notifications into it — there is no user message for this (DOR-1238).
+ */
+function initMsg(): SDKMessage {
   return {
-    type: 'user',
-    uuid: `task-delivered-${taskId}`,
+    type: 'system',
+    subtype: 'init',
     session_id: 'sdk-1',
-    parent_tool_use_id: null,
-    message: {
-      role: 'user',
-      content: `<task-notification><task-id>${taskId}</task-id><status>completed</status></task-notification>`,
-    },
+    uuid: 'init-uuid',
+    tools: [],
+    slash_commands: [],
   } as unknown as SDKMessage;
 }
 
@@ -279,9 +281,9 @@ describe('executeSdkQuery — phantom cancellation mitigation (DOR-1087)', () =>
   });
 
   // A turn that runs background tasks is MULTI-SEGMENT: a task settles, the CLI
-  // ends the segment with a `result`, and only THEN delivers the queued
-  // `<task-notification>` as a new segment in the same stream. Phantoms land in
-  // that delivery segment — where steering used to be dead, because the first
+  // ends the segment with a `result`, and only THEN opens a new segment — a
+  // second `system/init` — to drain the queued notification into. Phantoms land
+  // in that delivery segment, where steering used to be dead because the first
   // `result` both tripped the gate and closed the held prompt (DOR-1149).
   describe('multi-segment turns (DOR-1149)', () => {
     it('steers a phantom in the delivery segment of a SINGLE background task', async () => {
@@ -289,9 +291,10 @@ describe('executeSdkQuery — phantom cancellation mitigation (DOR-1087)', () =>
       // missed: the task settles BEFORE the segment-ending result, so keying on
       // "tasks still running" left nothing outstanding at the deferring result.
       const { events, promptMessages } = await runTurn(makeSession(), [
+        initMsg(),
         taskSettledMsg('task-1'),
         resultMsg(),
-        taskDeliveredMsg('task-1'),
+        initMsg(),
         sentinelMsg('toolu_in_delivery_segment'),
         resultMsg(),
       ]);
@@ -302,10 +305,14 @@ describe('executeSdkQuery — phantom cancellation mitigation (DOR-1087)', () =>
       expect(note).toContain('not by the user');
     });
 
-    it('stops steering once the owed notification has been delivered', async () => {
+    it('stops steering once the delivery segment has closed', async () => {
       const { promptMessages } = await runTurn(makeSession(), [
+        initMsg(),
         taskSettledMsg('task-1'),
-        taskDeliveredMsg('task-1'),
+        resultMsg(),
+        // The delivery segment opens (draining the queue) and closes again, so
+        // the next `result` finds nothing outstanding and stdin goes.
+        initMsg(),
         resultMsg(),
         sentinelMsg('toolu_after_delivery'),
       ]);
@@ -313,12 +320,11 @@ describe('executeSdkQuery — phantom cancellation mitigation (DOR-1087)', () =>
       expect(promptMessages).toEqual(['hello']);
     });
 
-    it('releases the input stream when a deferred delivery never arrives', async () => {
-      // The pathological case the deferral cap cannot reach on its own: a
-      // notification that settles, defers a close, and is never delivered, with
-      // no further `result` to re-check the cap. The fake CLI models the real
-      // one — it only finishes once stdin closes — so without the deadline this
-      // turn would never end.
+    it('releases the input stream when no delivery segment ever opens', async () => {
+      // The pathological case nothing else reaches: a notification that settles,
+      // holds a close, and whose segment never opens, with no further `result`
+      // to re-decide. The fake CLI models the real one — it only finishes once
+      // stdin closes — so without the deadline this turn would never end.
       vi.useFakeTimers();
       try {
         let stdinClosed!: () => void;
@@ -366,9 +372,10 @@ describe('executeSdkQuery — phantom cancellation mitigation (DOR-1087)', () =>
       // `runTurn` awaits the prompt generator to completion, so this can only
       // pass if the held prompt was closed rather than left open.
       const { events } = await runTurn(makeSession(), [
+        initMsg(),
         taskSettledMsg('task-1'),
         resultMsg(),
-        taskDeliveredMsg('task-1'),
+        initMsg(),
         resultMsg(),
       ]);
 

@@ -10,7 +10,7 @@ import {
   type PumpState,
   type SessionPumpOptions,
 } from '../session-pump.js';
-import { FakeQuery, initMessage } from './fake-pump-query.js';
+import { backgroundTasksMessage, FakeQuery, initMessage } from './fake-pump-query.js';
 
 /** A plain assistant-ish message, for asserting the demux sees the whole stream. */
 function otherMessage(): SDKMessage {
@@ -402,6 +402,63 @@ describe('SessionPump — guards', () => {
     await expect(h.pump.reap()).resolves.toBe(false);
     expect(h.pump.state).toBe('warm');
     expect(h.live().closed).toBe(0);
+  });
+
+  // Purpose: a background subagent OUTLIVES the turn that launched it, so a
+  // pump can be warm with an agent still working. Closing stdin then EOFs the
+  // CLI's control stream, and the CLI answers that by cancelling every
+  // hook-matched tool the agent runs afterwards — its work is thrown away and
+  // it is told the person refused (DOR-1238).
+  it('refuses a reap while a background subagent is still running', async () => {
+    const h = harness();
+    await warmed(h);
+
+    h.live().emit(backgroundTasksMessage([{ id: 'agent-1', type: 'local_agent' }]));
+    await vi.waitFor(() => expect(h.messages).toHaveLength(2));
+
+    await expect(h.pump.reap()).resolves.toBe(false);
+    expect(h.pump.state).toBe('warm');
+    expect(h.live().closed).toBe(0);
+
+    // The level signal is what ends the hold: the agent leaves the set, and the
+    // next ask goes through.
+    h.live().emit(backgroundTasksMessage([]));
+    await vi.waitFor(() => expect(h.messages).toHaveLength(3));
+
+    await expect(h.pump.reap()).resolves.toBe(true);
+    expect(h.live().closed).toBe(1);
+  });
+
+  // Purpose: background SHELLS are out of scope. The CLI kills them shortly
+  // after stdin ends and always has; a reap must not start waiting on one.
+  it('reaps a session whose only background task is a shell', async () => {
+    const h = harness();
+    await warmed(h);
+
+    h.live().emit(backgroundTasksMessage([{ id: 'shell-1', type: 'local_bash' }]));
+    await vi.waitFor(() => expect(h.messages).toHaveLength(2));
+
+    await expect(h.pump.reap()).resolves.toBe(true);
+    expect(h.live().closed).toBe(1);
+  });
+
+  // Purpose: the level signal is per-PROCESS and is not replayed at startup, so
+  // a set left over from a process that crashed mid-agent would keep the next
+  // one from ever being reaped.
+  it('forgets the background tasks of a process that has gone', async () => {
+    const h = harness();
+    await warmed(h);
+    h.live().emit(backgroundTasksMessage([{ id: 'agent-1', type: 'local_agent' }]));
+    await vi.waitFor(() => expect(h.messages).toHaveLength(2));
+    h.live().failStream(new Error('killed'));
+    await vi.waitFor(() => expect(h.pump.state).toBe('crashed'));
+
+    const rewarming = h.pump.warm();
+    await vi.waitFor(() => expect(h.queries).toHaveLength(2));
+    h.live().emit(initMessage());
+    await rewarming;
+
+    await expect(h.pump.reap()).resolves.toBe(true);
   });
 
   // Purpose: only a WARM pump may be reaped. Reaping mid-turn would kill a turn

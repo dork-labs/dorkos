@@ -6,7 +6,7 @@ import {
   shutdownSessionPumps,
   type AcquirePumpOptions,
 } from '../session-pump-registry.js';
-import { FakeQuery, initMessage } from './fake-pump-query.js';
+import { backgroundTasksMessage, FakeQuery, initMessage } from './fake-pump-query.js';
 
 /** The idle window these tests measure against, unless one overrides it. */
 const IDLE_MS = 5 * 60 * 1000;
@@ -410,6 +410,32 @@ describe('the process idle timer', () => {
     expect(vi.getTimerCount()).toBe(1);
 
     parked = false;
+    await vi.advanceTimersByTimeAsync(IDLE_MS + 100);
+    expect(registry.warmth('s1')).toBe('cold');
+  });
+
+  // Purpose: the same decline, for the other reason a warm process is still
+  // needed. A background subagent outlives the turn that launched it, and
+  // reaping under it cancels the tools it runs next (DOR-1238). The idle timer
+  // has to keep asking rather than give up, or the process would sit warm for
+  // the life of the server.
+  it('never reaps a session running a background subagent, and asks again a window later', async () => {
+    const queries: FakeQuery[] = [];
+    const registry = new SessionPumpRegistry();
+    const pump = registry.acquire('s1', launchOpts(queries));
+    const reaps = vi.spyOn(pump, 'reap');
+    await pump.warm();
+    queries[0]!.emit(backgroundTasksMessage([{ id: 'agent-1', type: 'local_agent' }]));
+    await vi.advanceTimersByTimeAsync(0);
+
+    await vi.advanceTimersByTimeAsync(IDLE_MS * 3);
+    expect(registry.warmth('s1')).toBe('warm');
+    expect(queries[0]!.closed).toBe(0);
+    // Once per window, not a retry loop: three windows, three asks.
+    expect(reaps).toHaveBeenCalledTimes(3);
+    expect(vi.getTimerCount()).toBe(1);
+
+    queries[0]!.emit(backgroundTasksMessage([]));
     await vi.advanceTimersByTimeAsync(IDLE_MS + 100);
     expect(registry.warmth('s1')).toBe('cold');
   });
