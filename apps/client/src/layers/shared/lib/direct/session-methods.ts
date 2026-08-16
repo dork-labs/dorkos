@@ -367,19 +367,26 @@ export function createDirectSessionMethods(
       }
     },
 
-    /** Interrupt the active query. DirectTransport delegates to the in-process runtime if supported. */
-    async interruptSession(sessionId: string): Promise<{ ok: boolean }> {
+    /**
+     * Interrupt the active query. DirectTransport delegates to the in-process
+     * runtime if supported. Embedded hosts run without a queue store, so nothing
+     * is ever waiting and `cancelledQueued` is always empty — the same reason
+     * the queue-mutation methods above refuse honestly rather than pretend.
+     */
+    async interruptSession(
+      sessionId: string
+    ): Promise<{ ok: boolean; cancelledQueued: QueuedMessage[] }> {
       try {
         const runtime = services.runtime as {
           interruptQuery?: (s: string) => Promise<boolean>;
         };
         if (typeof runtime.interruptQuery !== 'function') {
-          return { ok: false };
+          return { ok: false, cancelledQueued: [] };
         }
         const ok = await runtime.interruptQuery(sessionId);
-        return { ok };
+        return { ok, cancelledQueued: [] };
       } catch {
-        return { ok: false };
+        return { ok: false, cancelledQueued: [] };
       }
     },
 

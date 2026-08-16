@@ -23,6 +23,7 @@
 import type { QueuedMessage } from '@dorkos/shared/schemas';
 import { getMessageQueueStore, toQueuedMessage } from './message-queue-store.js';
 import type { MoveTarget } from './message-queue-store.js';
+import { queueKeyOf } from './session-key-registry.js';
 import {
   cancelPendingDispatch,
   emitQueueUpdate,
@@ -104,4 +105,46 @@ export function cancelQueuedMessage(
   const removed = store.remove(messageId);
   if (removed) emitQueueUpdate(sessionId);
   return removed ? toQueuedMessage(removed) : undefined;
+}
+
+/**
+ * Empty a session's queue and hand every removed message back, in order.
+ *
+ * This is what a Stop does to the queue (spec `persistent-session-runtime` §3.5,
+ * D4): "stop means stop everything queued." A person who pressed Stop and then
+ * watched the next queued message fire has been lied to, so the whole queue goes
+ * — but nothing they typed is destroyed. The returned rows travel back to the
+ * composer as a draft, the same promise {@link cancelQueuedMessage}'s single-row
+ * remove keeps (DOR-480).
+ *
+ * Two removals in lock-step, exactly as the single-row path pairs them:
+ *
+ * - **The in-memory pending dispatch of every waiting message is disarmed
+ *   first.** `MessageQueueStore.clear` only deletes the durable rows; an armed
+ *   pending entry runs from the plan it captured regardless of whether its row
+ *   still exists, so clearing the store alone would still let the head fire one
+ *   turn boundary later — precisely the "watched the next queued message fire"
+ *   lie. Disarm before delete, never after.
+ * - **A booting first turn's row is swept here too.** Such a row retires only on
+ *   `turn_start` (`message-dispatcher.ts` `onTurnStart` → `store.remove`), which
+ *   a boot stopped before it opens never reaches. Left in place it is re-adopted
+ *   and re-run on the next dispatch (DOR-1192). Clearing the store row retires
+ *   it, and `returnToQueue`'s own guard (it re-parks nothing whose row is
+ *   already gone) keeps the interrupted launch from resurrecting it.
+ *
+ * Call this BEFORE the interrupt, so the turn ending there cannot let the pump
+ * release the head of the queue on its way out.
+ *
+ * @param sessionId - The session whose queue to empty (request uuid or canonical)
+ * @returns The removed messages, head first; empty when no store is wired or the
+ *   queue was already empty
+ */
+export function clearQueuedMessages(sessionId: string): QueuedMessage[] {
+  const store = getMessageQueueStore();
+  if (!store) return [];
+  const queueKey = queueKeyOf(sessionId);
+  for (const row of store.list(queueKey)) cancelPendingDispatch(row.id);
+  const removed = store.clear(queueKey);
+  if (removed.length > 0) emitQueueUpdate(sessionId);
+  return removed.map(toQueuedMessage);
 }

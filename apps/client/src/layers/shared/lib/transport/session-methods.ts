@@ -479,12 +479,22 @@ export function createSessionMethods(
       );
     },
 
-    /** Interrupt the active query for a session (best-effort, short timeout). */
-    interruptSession(sessionId: string): Promise<{ ok: boolean }> {
-      return fetchJSON<{ ok: boolean }>(baseUrl, `/sessions/${sessionId}/interrupt`, {
-        method: 'POST',
-        timeout: 5_000,
-      });
+    /**
+     * Interrupt the active query for a session and empty its queue
+     * (best-effort, short timeout). The removed messages ride back on
+     * `cancelledQueued` so the composer can return the words to the person.
+     */
+    interruptSession(
+      sessionId: string
+    ): Promise<{ ok: boolean; cancelledQueued: QueuedMessage[] }> {
+      return fetchJSON<{ ok: boolean; cancelledQueued: QueuedMessage[] }>(
+        baseUrl,
+        `/sessions/${sessionId}/interrupt`,
+        {
+          method: 'POST',
+          timeout: 5_000,
+        }
+      );
     },
 
     async getTasks(sessionId: string, cwd?: string): Promise<{ tasks: TaskItem[] }> {

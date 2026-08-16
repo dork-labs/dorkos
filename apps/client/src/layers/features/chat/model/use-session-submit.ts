@@ -26,7 +26,7 @@ import { useCallback, useEffect, useRef } from 'react';
 import type { QueryClient } from '@tanstack/react-query';
 import type { Session } from '@dorkos/shared/types';
 import type { Transport } from '@dorkos/shared/transport';
-import type { MessageDisposition } from '@dorkos/shared/schemas';
+import type { MessageDisposition, QueuedMessage } from '@dorkos/shared/schemas';
 import type { ClientContext } from '@dorkos/shared/additional-context';
 import { useTransport, useAppStore, useAgentBirthStore } from '@/layers/shared/model';
 import { TIMING, buildUiStateSnapshot, prepareUiStateForSend } from '@/layers/shared/lib';
@@ -587,12 +587,21 @@ export function useSessionSubmit({
     [deliverWithDisposition]
   );
 
-  /** Interrupt the active turn; `/events` reports the resulting status. */
-  const stop = useCallback(() => {
-    if (sessionId) {
-      void transport.interruptSession(sessionId).catch(() => {
-        // Best-effort — the session may already be idle.
-      });
+  /**
+   * Interrupt the active turn and empty its queue; `/events` reports the
+   * resulting status and the emptied queue. Resolves with the messages the
+   * server took off the queue, head first, so the caller can hand the words
+   * back to the composer — nothing typed is destroyed by a Stop. Resolves empty
+   * when there was no session, nothing queued, or the interrupt failed.
+   */
+  const stop = useCallback(async (): Promise<QueuedMessage[]> => {
+    if (!sessionId) return [];
+    try {
+      const { cancelledQueued } = await transport.interruptSession(sessionId);
+      return cancelledQueued ?? [];
+    } catch {
+      // Best-effort — the session may already be idle.
+      return [];
     }
   }, [sessionId, transport]);
 
