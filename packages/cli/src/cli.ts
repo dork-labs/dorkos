@@ -508,6 +508,8 @@ Commands:
   config edit          Open in $EDITOR
   config path          Print config file location
   config validate      Check config validity
+  config acknowledge-autonomy
+                       Read what Full autonomy means, and confirm it
   init                 Interactive setup wizard
   init --yes           Accept all defaults
   package init <name>  Scaffold a new marketplace package
@@ -671,7 +673,8 @@ async function openConfigStore() {
 
 if (subcommand === 'config') {
   const cfgMgr = await openConfigStore();
-  const { handleConfigCommand, createServerConfigWriter } = await import('./config-commands.js');
+  const { handleConfigCommand } = await import('./config-commands.js');
+  const { createServerConfigWriter } = await import('./config-write.js');
   // The writer carries the data directory and the log level, so a WRITE can open
   // the audit log and a read never touches it (DOR-1247: opening it for every
   // subcommand made `dorkos config get` die on a data directory it could not

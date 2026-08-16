@@ -9,9 +9,10 @@ import {
   handleConfigPath,
   handleConfigValidate,
   handleConfigCommand,
-  handleConfigAcknowledgeAutonomy,
 } from '../config-commands.js';
-import type { CliConfigWriter, ConfigStore } from '../config-commands.js';
+import { handleConfigAcknowledgeAutonomy } from '../config-write.js';
+import type { ConfigStore } from '../config-commands.js';
+import type { CliConfigWriter, ConsentPrompt } from '../config-write.js';
 import type { GuardedConfigWriteResult } from '../../server/services/core/operator/config-write.js';
 import type { UserConfig } from '@dorkos/shared/config-schema';
 
@@ -344,7 +345,7 @@ describe('handleConfigAcknowledgeAutonomy', () => {
 
     await handleConfigAcknowledgeAutonomy(storeWithAck(null), writer, {
       available: () => true,
-      ask: async (message) => {
+      ask: async (message: string) => {
         asked.push(message);
         // The text has to be on screen BEFORE the question, or it is a dialog
         // whose body renders after the button.
