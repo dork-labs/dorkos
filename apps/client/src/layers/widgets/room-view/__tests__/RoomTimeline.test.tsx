@@ -13,6 +13,19 @@ import { RoomTimeline } from '../ui/RoomTimeline';
 import { unreadPlacement } from '@/layers/shared/lib';
 import { toMessageAuthor, authorsById, groupByThread } from '../lib/room-timeline';
 
+// Every row reads route state to decide where its author face leads
+// (`useProfileDeepLink`), and this file mounts the timeline with no router.
+// Where that link goes has its own file —
+// `RoomEntryRow.click-to-profile.test.tsx`, which mounts a real router and
+// asserts the id that travels.
+vi.mock('@/layers/shared/model', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/layers/shared/model')>();
+  return {
+    ...actual,
+    useProfileDeepLink: () => ({ isOpen: false, memberId: null, open: vi.fn(), close: vi.fn() }),
+  };
+});
+
 beforeAll(() => {
   Object.defineProperty(window, 'matchMedia', {
     writable: true,

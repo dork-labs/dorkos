@@ -11,13 +11,14 @@
  */
 import { useId, useMemo, useRef, useState } from 'react';
 import {
+  useProfileDeepLink,
   type FeedPosition,
   type MessageGrouping,
   type MessageAuthor,
   type LongPressState,
 } from '@/layers/shared/model';
 import { cn } from '@/layers/shared/lib';
-import type { RoomEntry } from '@/layers/entities/room';
+import { profileMemberIdOf, type RoomEntry } from '@/layers/entities/room';
 import { messageItem } from '@/layers/features/chat';
 import {
   EntryActionMenu,
@@ -30,6 +31,7 @@ import { entryRowArticleProps } from '../lib/entry-row-article';
 import { entrySummary } from '../lib/entry-summary';
 import { formatAbsoluteTime, formatTime } from '../lib/entry-time';
 import type { RosterAuthor } from '../lib/room-timeline';
+import { useAgentInfo } from '../model/agent-info-context';
 import { useEntryReactions } from '../model/use-entry-reactions';
 import { useEntryRowKeys } from '../model/use-entry-row-keys';
 import { RoomEntryActions } from './RoomEntryActions';
@@ -204,6 +206,18 @@ export function RoomEntryRow({
     pillsRef,
     hasReactions: reactions.length > 0,
   });
+  // Where this row's own face leads, in ROSTER ids — the same two-space join a
+  // mention pill in the body makes, and made in the same place for the same
+  // reason: the row is the part that holds both the roster author and the fleet
+  // answer. An author who has left the room, the room's own voice, and an agent
+  // the fleet could not name all resolve to `undefined`, and the gutter draws
+  // plain art rather than a control that opens an empty profile.
+  const authorAgent = useAgentInfo(authorRef?.agentRef);
+  const { open: openProfile } = useProfileDeepLink();
+  const profileMemberId =
+    authorRef === undefined ? undefined : profileMemberIdOf(authorRef, authorAgent?.manifestId);
+  const viewAuthorProfile =
+    profileMemberId === undefined ? undefined : () => openProfile(profileMemberId);
 
   if (entry.kind === 'notice') {
     return <RoomNoticeRow entry={entry} feedPosition={feedPosition} rowId={rowId} />;
@@ -291,6 +305,7 @@ export function RoomEntryRow({
           createdAt={entry.createdAt}
           time={time}
           absoluteTime={absoluteTime}
+          onViewProfile={viewAuthorProfile}
           className={styles.gutter()}
           timestampClassName={styles.avatarTimestamp()}
         />

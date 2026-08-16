@@ -11,7 +11,7 @@ import {
   ResponsiveDialogBody,
   ResponsiveDialogContent,
 } from '@/layers/shared/ui';
-import { useAgentCreationStore, useIsTouchOnly } from '@/layers/shared/model';
+import { useAgentCreationStore, useIsTouchOnly, useProfileDeepLink } from '@/layers/shared/model';
 import { RoomLoudnessLine, roomDisplayTitle, type LoudnessPreview } from '@/layers/entities/room';
 import type { RoomDetailsFocus, RoomDetailsRoom } from '../model/room-details';
 import { useRoomDetailsView } from '../model/use-room-details-view';
@@ -76,6 +76,22 @@ export function RoomDetailsDialog({ room, open, onOpenChange, focus }: RoomDetai
     roomTitle: title,
     agentPathOf: view.agentPathOf,
   });
+
+  const { open: openProfile } = useProfileDeepLink();
+  /**
+   * What one member's row does when its face and name are pressed, or
+   * `undefined` for a member whose profile this client cannot address.
+   *
+   * The handler is minted here rather than in the row so the row never has to
+   * know what a profile is — and so the id it opens on comes from the one join
+   * the sheet already holds (`view.profileMemberIdOf`), not from the author id
+   * the row happens to be carrying, which belongs to a different id space
+   * entirely for an agent.
+   */
+  const viewProfileHandler = (member: RoomRosterEntry): (() => void) | undefined => {
+    const memberId = view.profileMemberIdOf(member);
+    return memberId === undefined ? undefined : () => openProfile(memberId);
+  };
 
   /** The member whose removal is waiting to be confirmed, by author id. */
   const [pendingRemoval, setPendingRemoval] = useState<string | null>(null);
@@ -318,6 +334,7 @@ export function RoomDetailsDialog({ room, open, onOpenChange, focus }: RoomDetai
                     : null
                 }
                 presence={view.working.find((agent) => agent.authorId === member.authorId) ?? null}
+                onViewProfile={viewProfileHandler(member)}
                 lastSpokeAt={view.lastSpokeByAuthor.get(member.authorId) ?? null}
                 expanded={expandedMember === member.authorId}
                 onExpandedChange={(next) => setExpandedMember(next ? member.authorId : null)}

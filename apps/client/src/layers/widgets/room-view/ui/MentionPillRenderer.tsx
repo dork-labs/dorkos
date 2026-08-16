@@ -19,8 +19,8 @@ import type { Components } from 'streamdown';
 import { IdentityHoverCard, MentionPill } from '@/layers/shared/ui';
 import { resolveIdentityFace } from '@/layers/shared/lib';
 import { useProfileDeepLink } from '@/layers/shared/model';
+import { profileMemberIdOf } from '@/layers/entities/room';
 import { MENTION_AUTHOR_ATTR } from '../lib/mention-markup';
-import type { RosterAuthor } from '../lib/room-timeline';
 import { useAgentInfo } from '../model/agent-info-context';
 import { useMentionAuthor } from '../model/mention-roster-context';
 
@@ -40,34 +40,6 @@ interface MentionPillRendererProps {
 /** The mention's own text with its leading `@` trimmed — `MentionPill` adds one back. */
 function handleLabel(children: ReactNode): string {
   return typeof children === 'string' ? children.replace(/^@/, '') : '';
-}
-
-/**
- * The id the TEAM roster files this author under, or `undefined` when nothing
- * here can say.
- *
- * **Two id spaces meet at this line, and they only overlap for people.** A
- * person's roster row IS their author row, so the id a room entry already
- * carries opens their profile directly. An agent's does not: its roster row is
- * keyed by the manifest ULID the mesh registered, while the room knows the
- * separate author ULID minted for it the first time it spoke. The bridge is
- * the manifest the room already resolved for the runtime chip
- * ({@link RosterAgentInfo.manifestId}) — so an agent the fleet could not name
- * yields nothing, and the pill stays inert rather than pointing at an id the
- * roster does not hold.
- *
- * `system` — the room's own voice — is on nobody's roster and never will be.
- *
- * @param author - The room roster's entry for this mention.
- * @param agent - What the fleet knows about it, when it is an agent.
- */
-function profileMemberIdOf(
-  author: RosterAuthor,
-  agent: { manifestId: string } | undefined
-): string | undefined {
-  if (author.kind === 'human') return author.id;
-  if (author.kind === 'agent') return agent?.manifestId;
-  return undefined;
 }
 
 /**
@@ -122,7 +94,7 @@ export function MentionPillRenderer({ authorId, children }: MentionPillRendererP
   // `author.emoji` straight off the render cache is what left the two
   // disagreeing: 🦊 in the gutter, a grey letter in the card describing it.
   const face = resolveIdentityFace({ record: author, override: agent?.visual });
-  const memberId = profileMemberIdOf(author, agent);
+  const memberId = profileMemberIdOf(author, agent?.manifestId);
   const viewProfile = memberId === undefined ? undefined : () => openProfile(memberId);
   // A `<span>` that acts like a button has to say so and be reachable: Radix's
   // hover card gives the trigger focus already, and this is what makes that

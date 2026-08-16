@@ -83,6 +83,19 @@ export interface PresenceStripProps {
   rows: readonly PresenceRow[];
   /** Watch one agent's work. Never claims it — see {@link PresenceFollowTarget}. */
   onFollow: (target: PresenceFollowTarget) => void;
+  /**
+   * Open one agent's profile, from the hover card's own footer.
+   *
+   * A **prop, never an import**, for the same reason `IdentityHoverCard` takes
+   * one: this strip is handed its rows and calls back, and nothing in it should
+   * know what a profile is. Omitted — the dev playground, or any host with
+   * nowhere to send a reader — leaves the footer the inert line marked
+   * **soon**, which is what it says today for every row.
+   *
+   * Only ever called with a row that named one, so a caller never has to guard
+   * against an empty id.
+   */
+  onViewProfile?: (memberId: string) => void;
   /** Extra classes for the strip's own element. */
   className?: string;
 }
@@ -94,22 +107,38 @@ export interface PresenceStripProps {
  * watch. There is no menu, no stop, no take-over: an agent mid-turn is somebody
  * else's work, and the strip's entire offer is a window onto it
  * (`meta/agent-etiquette.md`). The absence of controls here is the feature.
+ *
+ * **The profile is on the card, not on the press.** Pressing a chip still
+ * follows the work — that is the strip's whole subject, and re-pointing it at a
+ * settings surface would take away the one thing this line exists to offer. The
+ * hover card the same chip already opens is where "View profile" belongs, and
+ * until now that footer said **soon** on a strip whose every row could name its
+ * agent (spec `profile-unification` §3, bug 7).
  */
 function PresenceRowButton({
   row,
   onFollow,
+  onViewProfile,
 }: {
   row: PresenceRow;
   onFollow: (target: PresenceFollowTarget) => void;
+  onViewProfile?: (memberId: string) => void;
 }) {
   // The instant the chip was looked at, not a boolean: reading the clock in an
   // event handler is free of every purity question a render-time read raises,
   // and it is the only reading the card below needs.
   const [watchedAt, setWatchedAt] = useState<number | null>(null);
   const forMs = elapsedWhenWatched(row.since, watchedAt);
+  // Both halves have to be in hand: a host with nowhere to send a reader and a
+  // row whose agent the fleet could not name are the same answer here — leave
+  // the footer inert rather than dress it as a control.
+  const memberId = row.profileMemberId;
+  const viewProfile =
+    onViewProfile === undefined || memberId === null ? undefined : () => onViewProfile(memberId);
 
   return (
     <IdentityHoverCard
+      onViewProfile={viewProfile}
       identity={{
         kind: row.face.kind,
         displayName: row.name,
@@ -215,7 +244,7 @@ function PresenceRowButton({
  *
  * @param props - See {@link PresenceStripProps}.
  */
-export function PresenceStrip({ rows, onFollow, className }: PresenceStripProps) {
+export function PresenceStrip({ rows, onFollow, onViewProfile, className }: PresenceStripProps) {
   if (rows.length === 0) return null;
 
   const drawn = rows.slice(0, VISIBLE_LIMIT);
@@ -233,7 +262,7 @@ export function PresenceStrip({ rows, onFollow, className }: PresenceStripProps)
     >
       {drawn.map((row) => (
         <li key={row.id} className="min-w-0">
-          <PresenceRowButton row={row} onFollow={onFollow} />
+          <PresenceRowButton row={row} onFollow={onFollow} onViewProfile={onViewProfile} />
         </li>
       ))}
       {counted > 0 && (

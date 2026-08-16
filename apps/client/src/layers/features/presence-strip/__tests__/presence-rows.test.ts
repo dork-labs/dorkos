@@ -190,6 +190,44 @@ describe('buildPresenceRows — room claims', () => {
     expect(rows[0]!.face.emoji).toBe('🍊');
     expect(rows[0]!.runtime).toBe('claude-code');
   });
+
+  it('carries the manifest id for a profile, never the claim’s author id', () => {
+    // The two id spaces this file's join sits between: the ROOM speaks in
+    // author ids, the team roster keys agents by their manifest id, and the
+    // hover card's "View profile" opens the latter. Handing over `authorId`
+    // would open an empty profile for every agent on the strip.
+    const rows = buildPresenceRows(
+      input({
+        claims: [claim()],
+        rosters: {
+          'room-1': roomWithRoster('room-1', [
+            author({ id: 'author-1', agentRef: agentAuthorRef(TANGERINES_PATH) }),
+          ]),
+        },
+        rooms: { 'room-1': roomSummary({ id: 'room-1' }) },
+        agents: { [TANGERINES_PATH]: manifest() },
+      })
+    );
+
+    expect(rows[0]!.profileMemberId).toBe('01JZAGENT0000000000000001');
+    expect(rows[0]!.profileMemberId).not.toBe('author-1');
+  });
+
+  it('offers no profile for an agent the fleet could not name', () => {
+    // The row still draws — the roster named it, so there is a face and a
+    // sentence — but there is no roster id behind it, and the card's footer
+    // stays the inert line rather than becoming a control that opens nothing.
+    const rows = buildPresenceRows(
+      input({
+        claims: [claim()],
+        rosters: { 'room-1': roomWithRoster('room-1', [author({ id: 'author-1' })]) },
+        rooms: { 'room-1': roomSummary({ id: 'room-1' }) },
+      })
+    );
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.profileMemberId).toBeNull();
+  });
 });
 
 describe('buildPresenceRows — running sessions', () => {

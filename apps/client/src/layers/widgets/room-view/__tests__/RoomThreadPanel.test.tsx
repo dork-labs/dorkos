@@ -11,6 +11,19 @@ import { TransportProvider } from '@/layers/shared/model';
 import { TooltipProvider } from '@/layers/shared/ui';
 import { RoomThreadPanel } from '../ui/RoomThreadPanel';
 
+// The entry rows inside the panel read route state to decide where an author
+// face leads (`useProfileDeepLink`), and this file mounts them with no router.
+// Where that link goes has its own file —
+// `RoomEntryRow.click-to-profile.test.tsx`, which mounts a real router and
+// asserts the id that travels.
+vi.mock('@/layers/shared/model', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/layers/shared/model')>();
+  return {
+    ...actual,
+    useProfileDeepLink: () => ({ isOpen: false, memberId: null, open: vi.fn(), close: vi.fn() }),
+  };
+});
+
 beforeAll(() => {
   Object.defineProperty(window, 'matchMedia', {
     writable: true,

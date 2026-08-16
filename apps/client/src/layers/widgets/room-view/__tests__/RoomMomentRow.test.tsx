@@ -8,7 +8,7 @@
  * post, so a client that only checked `entry.kind` would draw it as an ordinary
  * message and the milestone would read as somebody talking.
  */
-import { describe, it, expect, beforeAll, afterEach } from 'vitest';
+import { describe, it, expect, beforeAll, afterEach, vi } from 'vitest';
 import { render, screen, cleanup } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -18,6 +18,18 @@ import { TransportProvider } from '@/layers/shared/model';
 import { TooltipProvider } from '@/layers/shared/ui';
 import { RoomEntryRow } from '../ui/RoomEntryRow';
 import { toMessageAuthor, type RosterAuthor } from '../lib/room-timeline';
+
+// The row reads route state to decide where its author face leads
+// (`useProfileDeepLink`), and this file mounts it with no router. Where that
+// link goes has its own file — `RoomEntryRow.click-to-profile.test.tsx`, which
+// mounts a real router and asserts the id that travels.
+vi.mock('@/layers/shared/model', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/layers/shared/model')>();
+  return {
+    ...actual,
+    useProfileDeepLink: () => ({ isOpen: false, memberId: null, open: vi.fn(), close: vi.fn() }),
+  };
+});
 
 /** The room's roster: the system voice that wrote it, and the agent it is about. */
 const AUTHORS = new Map<string, RosterAuthor>([

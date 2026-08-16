@@ -119,6 +119,18 @@ export interface PresenceRow {
   roomTitle: string | null;
   /** The runtime the agent runs on, when the fleet knows it — for the hover card. */
   runtime: string | null;
+  /**
+   * The id the team roster files this agent under — what the hover card's
+   * "View profile" opens — or `null` when the fleet could not name one.
+   *
+   * A row is drawn from a room claim whose author id belongs to a different id
+   * space entirely (see `profileMemberIdOf`), so this is the ONLY id here that
+   * addresses a profile; `id` above is a React key and nothing else. `null`
+   * leaves the card's footer inert and marked **soon**, which is the honest
+   * answer for work this client can see happening and cannot attribute to a
+   * roster row.
+   */
+  profileMemberId: string | null;
   /** What the whole row says, for the accessible name. */
   line: string;
   /** What is drawn after the name, or `null` when there is nothing true to add. */
@@ -318,6 +330,10 @@ export function buildPresenceRows(input: PresenceRowsInput): PresenceRow[] {
         since: claim.since,
         roomTitle,
         runtime: agent?.manifest.runtime ?? null,
+        // The manifest's own id, never the claim's author id: the roster keys
+        // agents by the former and rooms speak in the latter. An agent the
+        // fleet could not name has neither, and says so.
+        profileMemberId: agent?.manifest.id ?? null,
         follow: { kind: 'room', roomId: claim.roomId },
       })
     );
@@ -356,6 +372,10 @@ export function buildPresenceRows(input: PresenceRowsInput): PresenceRow[] {
         since: null,
         roomTitle: null,
         runtime: manifest.runtime,
+        // This half only draws agents it could resolve a manifest for, so
+        // there is always an id to open — the room half above is the one that
+        // has to answer `null`.
+        profileMemberId: manifest.id,
         follow: { kind: 'session', sessionId: session.sessionId, cwd: session.cwd },
       })
     );
