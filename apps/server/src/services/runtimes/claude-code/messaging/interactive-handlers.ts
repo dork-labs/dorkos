@@ -7,6 +7,7 @@ import type {
 import type { StreamEvent, QuestionItem } from '@dorkos/shared/types';
 import { UI_COMMAND_REACH, UiCommandSchema } from '@dorkos/shared/schemas';
 import type { PermissionMode } from '@dorkos/shared/schemas';
+import { createInSessionContextResolver } from '../../../core/agent-identity/index.js';
 import { logRefusal } from '../../../observability/refusals.js';
 import { SESSIONS } from '../../../../config/constants.js';
 import { toSdkQuestionAnswers } from '../sessions/question-answers.js';
@@ -76,25 +77,9 @@ const READ_ONLY_TOOLS = new Set([
  * the question.
  */
 export const DORKOS_AGENT_TOOLS = new Set([
-  // The `rooms` domain — an agent's own hand in a room it is a member of
-  // (`services/rooms/room-capabilities.ts`, DOR-1229). All four resolve
-  // membership before anything else and answer "not a member" exactly as "no
-  // such room", so membership is the authorization and a card adds none.
-  //
-  // Without them here, a room turn wedged: a room triggers a turn INTO THE DARK
-  // — nobody is holding that session's stream — under the runtime's strictest
-  // permission mode, so an agent reaching for the channel it was just addressed
-  // in raised a card no one was positioned to answer. Measured on 2026-08-16:
-  // `search_room_history` asked at 15s, the room said the agent was waiting at
-  // 75s, and the turn made no further progress until the interaction window
-  // auto-denied it ten minutes later. Eleven minutes to answer one question.
-  //
-  // That is also what the rooms domain already says it wants: "A card on every
-  // message an agent posts into its own room would be the over-tiering that
-  // teaches people to click through", with the two writes bounded by mechanisms
-  // instead — the cascade guard and the two-ceiling turn budget for a post, the
-  // hourly `ReactionBudget` for a reaction. This list was the one place that had
-  // not been told.
+  // The `rooms` domain. Auto-allowed only for a session that HAS an agent
+  // identity — see {@link IDENTITY_SCOPED_TOOLS}, which is where the whole
+  // argument for these four lives.
   'mcp__dorkos__post_to_room',
   'mcp__dorkos__react_to_room_entry',
   'mcp__dorkos__read_room_history',
@@ -115,6 +100,60 @@ export const DORKOS_AGENT_TOOLS = new Set([
   // through `isAutoAllowedCall` below rather than riding this membership alone.
   'mcp__dorkos__control_ui',
   'mcp__dorkos__get_ui_state',
+]);
+
+/**
+ * The members of {@link DORKOS_AGENT_TOOLS} whose auto-allow holds only while
+ * the SESSION HAS AN AGENT IDENTITY (DOR-1229).
+ *
+ * ## Why these four need the qualifier
+ *
+ * The rooms verbs authorize on MEMBERSHIP: each resolves the caller's roster row
+ * before doing anything, and the two reads answer "not a member" with the same
+ * `ROOM_NOT_FOUND` they answer "no such room" with, so a room id is not a
+ * capability and a probe learns nothing.
+ *
+ * **That bound only exists for an AGENT caller**, which is the whole reason this
+ * set is separate. Who the caller IS comes from `callerAuthor`
+ * (`services/rooms/room-capabilities.ts`): with no identity in the invocation
+ * context and no login on this install, it falls back to the person who OWNS the
+ * install. The owner is exempt from the membership check by design —
+ * `seesEveryRoom` short-circuits `canSee`, so every room on the machine is
+ * readable, the owner's own DMs with agents included — and an owner-attributed
+ * post lands as a human message at cascade depth zero, which triggers every
+ * always/mentioned agent in the channel and is bounded by no claim. So without
+ * the qualifier these four would have been a no-prompt path to the operator's
+ * whole room history from any ordinary coding session.
+ *
+ * Identity on that surface comes from ONE place: the session's working
+ * directory, resolved by {@link createInSessionContextResolver} — the same
+ * function, with the same argument, that `mcp-tools/index.ts` builds the
+ * capability resolver from, so this gate and the caller the tool actually runs
+ * as can never disagree. A room turn is handed the addressed agent's own
+ * directory (`room-turn-runner.ts`), so it resolves an identity and these four
+ * are frictionless exactly where they were meant to be. An ordinary cockpit
+ * session in a plain project directory resolves none, and keeps today's card.
+ *
+ * ## Why they are auto-allowed at all, once identity holds
+ *
+ * A room triggers a turn INTO THE DARK — nobody is holding that session's
+ * stream — under the runtime's strictest permission mode, so a card raised
+ * there is a card nobody is positioned to answer. Measured on 2026-08-16:
+ * `search_room_history` asked at 15s, the room said the agent was waiting at
+ * 75s, and the turn made no further progress until the interaction window
+ * auto-denied it ten minutes later. Eleven minutes to answer one question.
+ *
+ * It is also what the rooms domain already asks for: "A card on every message
+ * an agent posts into its own room would be the over-tiering that teaches
+ * people to click through", with the writes bounded by mechanisms instead — the
+ * cascade guard and the two-ceiling turn budget for a post, the hourly
+ * `ReactionBudget` for a reaction. This list was the one place not told.
+ */
+export const IDENTITY_SCOPED_TOOLS = new Set([
+  'mcp__dorkos__post_to_room',
+  'mcp__dorkos__react_to_room_entry',
+  'mcp__dorkos__read_room_history',
+  'mcp__dorkos__search_room_history',
 ]);
 
 /** The multiplexer on {@link DORKOS_AGENT_TOOLS}: one name, 22 different effects. */
@@ -347,6 +386,16 @@ export interface InteractiveSession {
    * ({@link logInteractionTimeout}) can name the session a person has to open.
    */
   sdkSessionId?: string;
+  /**
+   * The session's working directory — the ONLY thing the in-session surface
+   * resolves an agent identity from, and therefore what decides who the rooms
+   * verbs act as ({@link IDENTITY_SCOPED_TOOLS}).
+   *
+   * Optional for the same reason `sdkSessionId` is: a real `AgentSession`
+   * always carries it, a test fake need not. Absent means no identity, which is
+   * the conservative answer — those four ask rather than skip the card.
+   */
+  cwd?: string;
 }
 
 /**
@@ -689,15 +738,45 @@ export interface ToolApprovalContext {
 }
 
 /**
+ * Whether this session resolves to an agent identity, for the rooms gate.
+ *
+ * **Fails CLOSED, and that is the whole point of not inlining it.** The
+ * resolver reads the agent index off disk; a throw there must mean "ask", never
+ * "skip the card", because the fallback caller on the other side of these four
+ * verbs is the person who owns the install. `createInSessionContextResolver`
+ * already swallows its own errors, so this catch is the belt to that braces —
+ * a future resolver that throws cannot silently widen the auto-allow.
+ *
+ * @param resolveIdentity - The memoized session-identity resolver.
+ * @param log - Where a failed lookup is reported.
+ */
+async function hasAgentIdentity(
+  resolveIdentity: () => Promise<unknown>,
+  log: ToolGateLogger
+): Promise<boolean> {
+  try {
+    return (await resolveIdentity()) !== undefined;
+  } catch (err) {
+    log.info('[canUseTool] could not resolve this session identity; asking instead', {
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return false;
+  }
+}
+
+/**
  * Create the `canUseTool` callback for an SDK query.
  *
  * Routes `AskUserQuestion` to the question handler, auto-allows calls to the two
  * safe-listed tool sets ({@link READ_ONLY_TOOLS}, {@link DORKOS_AGENT_TOOLS})
- * that {@link isAutoAllowedCall} also clears, and hands every remaining call to
- * {@link resolveModeDecision}, which either allows it or raises an approval card.
+ * that {@link isAutoAllowedCall} also clears — and, for the rooms subset, that
+ * this session has an agent identity ({@link IDENTITY_SCOPED_TOOLS}) — and hands
+ * every remaining call to {@link resolveModeDecision}, which either allows it or
+ * raises an approval card.
  *
  * Nothing reaches a person's machine on a fall-through: a tool that matches no
- * safe list and no permissive mode asks. `Bash` under `acceptEdits` asks.
+ * safe list and no permissive mode asks. `Bash` under `acceptEdits` asks, and so
+ * does a rooms verb from a session that names nobody.
  *
  * @param session - The interactive session state (with its permission mode).
  * @param log - Where the gate reports its verdicts; see {@link ToolGateLogger}.
@@ -706,11 +785,18 @@ export interface ToolApprovalContext {
  *   snapshot a file's pre-edit bytes for the diff base (DOR-212). Awaited so the
  *   snapshot is guaranteed captured before the SDK applies the edit; a rejection
  *   is swallowed by the caller's wiring so capture never blocks a tool.
+ * @param resolveIdentity - Answers "whose identity does this session call as?",
+ *   for {@link IDENTITY_SCOPED_TOOLS}. Defaults to a resolver over the session's
+ *   own `cwd` — the SAME call `mcp-tools/index.ts` builds the capability
+ *   resolver from, so the gate and the caller the tool runs as cannot disagree.
+ *   Injectable so a test can state the identity instead of staging an agent on
+ *   disk.
  */
 export function createCanUseTool(
   session: InteractiveSession & { permissionMode: PermissionMode },
   log: ToolGateLogger,
-  onToolPreflight?: (toolName: string, input: Record<string, unknown>) => Promise<void>
+  onToolPreflight?: (toolName: string, input: Record<string, unknown>) => Promise<void>,
+  resolveIdentity: () => Promise<unknown> = createInSessionContextResolver(session.cwd)
 ): (
   toolName: string,
   input: Record<string, unknown>,
@@ -732,7 +818,13 @@ export function createCanUseTool(
     // table below, which raises a card.
     if (
       (READ_ONLY_TOOLS.has(toolName) || DORKOS_AGENT_TOOLS.has(toolName)) &&
-      isAutoAllowedCall(toolName, input)
+      isAutoAllowedCall(toolName, input) &&
+      // The rooms verbs skip the card only for a session that resolves an agent
+      // identity, because without one they run as the OWNER — who sees every
+      // room on the install and posts as a person (see IDENTITY_SCOPED_TOOLS).
+      // The resolver memoizes, so this costs one indexed read per query however
+      // many times the agent reaches for a room.
+      (!IDENTITY_SCOPED_TOOLS.has(toolName) || (await hasAgentIdentity(resolveIdentity, log)))
     ) {
       log.debug('[canUseTool] auto-allow safe tool', { toolName, toolUseID: context.toolUseID });
       return { behavior: 'allow', updatedInput: input };

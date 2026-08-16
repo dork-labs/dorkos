@@ -90,6 +90,10 @@ vi.mock('../../../../core/credential-env.js', () => ({
 vi.mock('../../../../core/agent-identity/index.js', () => ({
   resolveAgentTokenEnv: vi.fn().mockResolvedValue({}),
   AGENT_TOKEN_ENV_VAR: 'DORKOS_AGENT_TOKEN',
+  // `interactive-handlers.ts` builds the rooms auto-allow gate from this at
+  // launch (DOR-1229). Nothing here calls a rooms verb, so the resolver only has
+  // to exist — but it must, or every launch on this path throws on the mock.
+  createInSessionContextResolver: () => () => Promise.resolve(undefined),
 }));
 // One warm process at a time, so warming a second session reclaims the first's
 // pump through the registry WITHOUT telling PersistentDispatch — the stale-bundle

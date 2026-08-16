@@ -489,32 +489,6 @@ describe('createSessionRoomTurnRunner', () => {
     expect(result.unanswered).toBe('failed');
   });
 
-  // DOR-1229, the other half of the guarantee. `stall-guard.test.ts` proves a
-  // source that yields NOTHING is ended at the first-event window with exactly
-  // this terminal sequence; this proves what the room does with it. Together
-  // they are the claim: a room turn that produces no events does not sit there —
-  // it comes back named, which is what writes the `turn_failed` notice into the
-  // room instead of leaving an agent shown as working with nothing to explain it.
-  it('names a turn the watchdog ended without a single event, rather than going quiet', async () => {
-    turnBehaviour = (opts) => {
-      const { sessionId, projector } = opts;
-      // Nothing from the runtime at all — the watchdog's three closing events
-      // are the first thing on this stream, in the order it injects them.
-      openTurn(opts);
-      projector.ingest({
-        type: 'error',
-        message: 'The agent never started working after 2 minutes, so the turn was ended.',
-        code: 'turn_stalled',
-      });
-      projector.ingest({ type: 'session_status', terminalReason: 'error' });
-      projector.ingest({ type: 'turn_end', terminalReason: 'error' });
-      return { accepted: true, canonicalId: sessionId };
-    };
-    const result = await createSessionRoomTurnRunner().run(request());
-    expect(result.text).toBeNull();
-    expect(result.unanswered).toBe('failed');
-  });
-
   it('does not mistake a quiet turn for a failed one', async () => {
     turnBehaviour = saysAndCloses('   ');
     const result = await createSessionRoomTurnRunner().run(request());

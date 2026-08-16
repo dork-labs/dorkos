@@ -95,8 +95,15 @@ export interface StallGuardOpts {
   timeoutMs: number;
   /**
    * The window (ms) that applies BEFORE the turn's first event, when a shorter
-   * one is wanted. Defaults to {@link StallGuardOpts.timeoutMs}, which is the
-   * single-window behavior this guard shipped with.
+   * one is wanted. Defaults to {@link StallGuardOpts.timeoutMs}.
+   *
+   * Omitting it leaves the TIMING exactly as this guard shipped it — one window,
+   * one bound. It does not leave the COPY unchanged: the injected error names
+   * which of the two faults happened, so a caller with no first-event window
+   * whose source never yielded now reads "the agent never started working after
+   * 10 minutes" where it used to read "no activity … for 10 minutes". That is a
+   * more accurate sentence for the same event, and the fixtures that pin it were
+   * updated rather than the wording being made conditional on the option.
    *
    * See {@link SESSIONS.TURN_FIRST_EVENT_TIMEOUT_MS} for why the two differ: the
    * generous window buys a RUNNING agent room to be quiet, and a turn that has

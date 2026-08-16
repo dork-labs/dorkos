@@ -181,8 +181,18 @@ export const SESSIONS = {
    *
    * Two minutes because a real cold launch is nowhere near it: the measured
    * claude-code launch on 2026-08-16 — fresh session, MCP servers connecting, 88
-   * commands and 9 subagents cached — produced its first event 4 seconds in. This
-   * leaves thirty times that headroom for a machine already running ten agents.
+   * commands and 9 subagents cached — produced its first event 4 seconds in,
+   * leaving thirty times that headroom for a machine already running ten agents.
+   *
+   * **What that 4 seconds actually was, because it is conditional.** The SDK's
+   * `system`/`init` message is the earliest thing a turn can emit, and
+   * `system-event-mapper.ts` turns it into a `session_status` ONLY when that
+   * message carries a model (`if (initModel)`). So on an SDK build that omits the
+   * model, the first event is instead whatever the turn produces next — its first
+   * assistant delta or tool call — and the margin is the model's time-to-first-
+   * token rather than process boot. That is still seconds, not minutes, on every
+   * runtime here; the number is sized for the slower of the two on purpose, and
+   * this is the dependency to re-measure if it is ever tightened.
    *
    * A turn parked on a person cannot trip it, and not by luck: an approval,
    * question or elicitation IS an event, so a turn that has one has already left
