@@ -52,6 +52,14 @@ type HeldPromptMessage = {
   message: { role: 'user'; content: string };
   parent_tool_use_id: null;
   session_id: string;
+  /**
+   * When `false`, the SDK appends this message to the transcript WITHOUT running
+   * an assistant turn, and merges it into the next user message that does query
+   * (`SDKUserMessage.shouldQuery`, `sdk.d.ts:4764`). This is the native path for
+   * a `stage` disposition (spec `persistent-session-runtime` §2.5, task 4.2).
+   * Omitted for an ordinary message, which queries as usual.
+   */
+  shouldQuery?: boolean;
   /** The server-minted correlation id, carried as the SDK message's own `uuid`. */
   uuid?: UUID;
 };
@@ -61,6 +69,12 @@ interface HeldPromptInput {
   content: string;
   /** Server-minted correlation id, or `undefined` for an uncorrelated message. */
   messageId?: string;
+  /**
+   * `false` to stage this message — appended to the transcript with no assistant
+   * turn (see {@link HeldPromptMessage.shouldQuery}). Omitted for a querying
+   * message.
+   */
+  shouldQuery?: boolean;
 }
 
 /**
@@ -80,6 +94,7 @@ function userMessage(input: HeldPromptInput): HeldPromptMessage {
     message: { role: 'user', content: input.content },
     parent_tool_use_id: null,
     session_id: '',
+    ...(input.shouldQuery === false ? { shouldQuery: false } : {}),
     ...(input.messageId !== undefined ? { uuid: input.messageId as UUID } : {}),
   };
 }
@@ -130,6 +145,23 @@ export interface HeldUserPrompt {
    *   accepted message undelivered.
    */
   push: (content: string, messageId?: string) => boolean;
+  /**
+   * Stage a message into the still-open stream: appended to the transcript with
+   * `shouldQuery: false`, so the SDK runs NO assistant turn and merges it into
+   * the next user message that does query (`sdk.d.ts:4764`). The disposition's
+   * native path (spec `persistent-session-runtime` §2.5, task 4.2) — no window
+   * opens, no `result` answers it.
+   *
+   * @param content - The message text, exactly as it will reach the model.
+   * @param messageId - The server-minted correlation id, stamped as the SDK
+   *   message's `uuid`. Unlike a querying push there is no `result` to match it
+   *   against — a staged message answers nothing — but the id still identifies
+   *   the entry on the durable stream.
+   * @returns `false`, having sent nothing, once the stream has ended; `true`
+   *   when the staged message was accepted onto the open stream — with the same
+   *   caveat as {@link push} that acceptance is not delivery.
+   */
+  stage: (content: string, messageId?: string) => boolean;
 }
 
 /**
@@ -210,6 +242,16 @@ function createHeldPrompt(messages: readonly HeldPromptInput[]): HeldUserPrompt 
     push: (content: string, messageId?: string) => {
       if (closed) return false;
       queue.push({ content, ...(messageId !== undefined ? { messageId } : {}) });
+      wakeUp();
+      return true;
+    },
+    stage: (content: string, messageId?: string) => {
+      if (closed) return false;
+      queue.push({
+        content,
+        shouldQuery: false,
+        ...(messageId !== undefined ? { messageId } : {}),
+      });
       wakeUp();
       return true;
     },

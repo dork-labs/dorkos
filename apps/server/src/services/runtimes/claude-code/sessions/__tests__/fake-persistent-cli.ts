@@ -66,6 +66,14 @@ export class FakeCliProcess {
    * context rode its own tagged block (spec §2.3, task 4.1).
    */
   readonly inbox: Array<{ uuid?: string; content: string }> = [];
+  /**
+   * Every message STAGED onto this process — read off the stream with
+   * `shouldQuery: false`, so the real CLI appends it to the transcript and runs
+   * NO turn for it (spec §2.5, task 4.2). Tracked apart from {@link inbox}
+   * because it is exactly what a stage test asserts: the text landed, in order,
+   * and — crucially — was never answered.
+   */
+  readonly staged: Array<{ uuid?: string; content: string }> = [];
   /** Messages waiting for the consumer. */
   private readonly pending: SDKMessage[] = [];
   private wake: (() => void) | undefined;
@@ -188,6 +196,15 @@ export class FakeCliProcess {
       if (this.ended) return;
       const id = (message as { uuid?: string }).uuid;
       const content = (message as { message?: { content?: string } }).message?.content ?? '';
+      // A staged message (`shouldQuery: false`) is appended to the transcript and
+      // answered by NOTHING: no assistant turn, no `result`. The real CLI merges
+      // it into the next querying message; this double records it and moves on,
+      // deliberately NOT calling `answer`, so a stage that provoked a turn would
+      // show up as an unexpected `result` in the test.
+      if ((message as { shouldQuery?: boolean }).shouldQuery === false) {
+        this.staged.push({ ...(id !== undefined ? { uuid: id } : {}), content });
+        continue;
+      }
       this.received.push(id ?? '<unnamed>');
       this.inbox.push({ ...(id !== undefined ? { uuid: id } : {}), content });
       if (this.autoAnswer) this.answer(id);

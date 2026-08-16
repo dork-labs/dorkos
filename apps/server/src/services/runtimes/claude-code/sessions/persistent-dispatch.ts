@@ -417,13 +417,128 @@ export class PersistentDispatch {
     if (!bundle.windows.steerOpenWindow(opts.messageId)) {
       return { delivered: false, reason: 'no-open-turn' };
     }
-    const enriched = enrichSteerContent(content, opts.additionalContext);
+    const enriched = enrichDeliveredContent(content, opts.additionalContext);
     const outcome = bundle.pump.steer(enriched, opts.messageId);
     // A push that fails after the tag (the amnesiac stream-closed race) leaves
     // the id on the window with nothing sent under it — harmless: the window
     // still closes on its own `result` (or the crash that abandoned the stream),
     // and an id no `result` ever names correlates nothing.
     if (outcome !== 'delivered') return { delivered: false, reason: outcome };
+    return { delivered: true };
+  }
+
+  /**
+   * Stage a message onto a session's transcript WITHOUT opening a turn — the
+   * claude-code half of P4's `deliverIntoTurn(mode: 'stage')` (spec §2.5, task
+   * 4.2).
+   *
+   * Two things make this different from {@link steer}, and both are the same
+   * difference: a stage needs no open turn.
+   *
+   * - **A warm or running session** already holds a live stream, so the staged
+   *   message is appended to it directly ({@link SessionPump.stage}, `shouldQuery:
+   *   false`). No window opens and no `result` is expected, so — unlike a steer —
+   *   there is no window to tag and nothing to correlate: the receipt is the whole
+   *   of it. Legal during the owner's own running turn too; the caller's write
+   *   authorization gate has already settled who may write.
+   * - **A COLD session warms first**, because the message has to REACH a
+   *   transcript and a cold session has none live. The process is booted under
+   *   the resolved plan — the same launch the turn path builds — and then the
+   *   message is appended. This is the one case where staging starts a process;
+   *   it still opens no turn.
+   *
+   * Unlike {@link steer}, this takes the `session` and the sender/message options,
+   * because warming a cold session needs the launch plan that a bare
+   * {@link DeliverIntoTurnOpts} cannot carry. On the warm fast path they go
+   * unused — there is nothing to launch.
+   *
+   * **Never throws for an ordinary refusal**, per the `deliverIntoTurn` contract:
+   * a boundary a warm cwd would fail, a stream that closed under a warm process,
+   * a launch that could not boot — all come back as `{ delivered: false }`.
+   *
+   * @param sessionId - The session to stage onto; either id a caller might hold
+   * @param content - The person's text, pristine; context rides `opts`
+   * @param opts - The mode, correlation id, and the neutral context bag
+   * @param session - The session record, for a cold warm-up
+   * @param senderOpts - The runtime ports a launch needs
+   * @param messageOpts - Per-turn options a launch reads (cwd, settings)
+   * @returns Whether the staged message reached the process, and why not when not
+   */
+  async stage(
+    sessionId: string,
+    content: string,
+    opts: DeliverIntoTurnOpts,
+    session: AgentSession,
+    senderOpts: MessageSenderOpts,
+    messageOpts?: MessageOpts
+  ): Promise<RuntimeDeliveryResult> {
+    const enriched = enrichDeliveredContent(content, opts.additionalContext);
+    const existing = this.bundles.get(sessionId);
+    // A bundle the registry still backs holds a live (warm or running) process.
+    // A bundle it no longer backs — an idle reap or a warm-ceiling reclaim this
+    // class was never told about — is as good as cold: touching its spent pump
+    // would throw, so it falls through to the cold path and builds a fresh one.
+    const live = existing !== undefined && this.registry.peek(sessionId) === existing.pump;
+
+    let bundle: SessionBundle;
+    if (live) {
+      bundle = existing;
+    } else {
+      const effectiveCwd = resolveEffectiveCwd(senderOpts, messageOpts);
+      try {
+        // Warming boots a process in this cwd, so the boundary that gates the
+        // turn path gates this too — a staged note is not a reason to start a
+        // subprocess somewhere the person is not allowed to run one.
+        await validateDispatchBoundary(effectiveCwd);
+      } catch {
+        logger.warn('[persistent-dispatch] boundary violation on stage', {
+          session: sessionId,
+          effectiveCwd,
+        });
+        return { delivered: false };
+      }
+      const resolved = await resolveLaunch({
+        sessionId,
+        content,
+        session,
+        opts: senderOpts,
+        ...(messageOpts !== undefined ? { messageOpts } : {}),
+        effectiveCwd,
+      });
+      const plan: PumpLaunchPlan = {
+        effectiveCwd,
+        // `enrichedContent` is unused on the stage path: `warm()` boots with the
+        // IDLE prompt (no first message), and the staged text arrives separately
+        // via the `shouldQuery: false` append below — not through the launch. The
+        // plan is built whole anyway because `warm()` consumes the rest of it
+        // (`sdkOptions`, `fingerprint`) through the shared launcher.
+        enrichedContent: resolved.enrichedContent,
+        meshAgentId: resolved.meshAgentId,
+        statusEvents: resolved.statusEvents,
+        sdkOptions: resolved.sdkOptions,
+        fingerprint: captureLaunchFingerprint(resolved.launch),
+      };
+      bundle = this.acquire(sessionId, session, senderOpts);
+      bundle.plan = plan;
+    }
+
+    try {
+      // A no-op when the process is already warm or running; awaits an in-flight
+      // launch when it is warming; boots one from cold. Either way, this returns
+      // only once there is a live stream to append to (or it threw trying).
+      await bundle.pump.warm();
+    } catch (err) {
+      logger.warn('[persistent-dispatch] failed to warm a session for staging', {
+        session: sessionId,
+        err,
+      });
+      return { delivered: false, reason: 'stream-closed' };
+    }
+    const outcome = bundle.pump.stage(enriched, opts.messageId);
+    // `no-process` after a resolved `warm()` means the process went away between
+    // the two — the same amnesiac race as a `stream-closed`, reported the same
+    // way so the caller degrades rather than believing a dropped message landed.
+    if (outcome !== 'delivered') return { delivered: false, reason: 'stream-closed' };
     return { delivered: true };
   }
 
@@ -609,8 +724,11 @@ export class PersistentDispatch {
 }
 
 /**
- * Prepend a steer's context bag to its pristine content, the SAME way a normal
- * turn does it (`launch-resolver.ts`).
+ * Prepend a delivered message's context bag to its pristine content, the SAME
+ * way a normal turn does it (`launch-resolver.ts`). Shared by {@link
+ * PersistentDispatch.steer} and {@link PersistentDispatch.stage}: both carry the
+ * person's words pristine and any context out of band, so both enrich the same
+ * way.
  *
  * The person's `content` is never mutated: the render produces a separate
  * enriched string, the context blocks carry their own tags, and the adapter
@@ -620,7 +738,7 @@ export class PersistentDispatch {
  * @param content - The user's text, pristine
  * @param additionalContext - The neutral context bag, or undefined
  */
-function enrichSteerContent(content: string, additionalContext?: AdditionalContext): string {
+function enrichDeliveredContent(content: string, additionalContext?: AdditionalContext): string {
   const contextBlocks = (additionalContext ?? []).map(renderContextEntry).filter(Boolean);
   if (contextBlocks.length === 0) return content;
   return `${contextBlocks.join('\n\n')}\n\n${content}`;

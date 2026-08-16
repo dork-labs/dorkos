@@ -2303,6 +2303,33 @@
               "type",
               "queue"
             ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "context_staged"
+                ]
+              },
+              "content": {
+                "type": "string"
+              },
+              "messageId": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "seq",
+              "type",
+              "content",
+              "messageId"
+            ]
           }
         ]
       },
@@ -9581,6 +9608,33 @@
                         "seq",
                         "type",
                         "queue"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "seq": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "context_staged"
+                          ]
+                        },
+                        "content": {
+                          "type": "string"
+                        },
+                        "messageId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "seq",
+                        "type",
+                        "content",
+                        "messageId"
                       ]
                     }
                   ],

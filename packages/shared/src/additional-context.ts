@@ -26,6 +26,7 @@ export type ContextKind =
   | 'git_status'
   | 'ui_state'
   | 'queue_note'
+  | 'staged_context'
   | 'env'
   | 'relay_context'
   | 'room_context'
@@ -546,6 +547,25 @@ export interface SeedContextData {
 }
 
 /**
+ * Text a person STAGED — attached ahead of the next message so the agent has it
+ * to work with, without provoking a turn of its own (spec
+ * `persistent-session-runtime` §2.5). This is the fallback carrier for a runtime
+ * that cannot append to its own transcript natively (`supportsContextStaging`
+ * false): the server holds the text and folds it into the NEXT dispatched
+ * message as one of these entries, so it reaches the model out of band while the
+ * person's own `content` stays pristine (ADR-0273). A runtime that CAN stage
+ * natively never produces one — its staged message goes straight to the
+ * transcript, so there is nothing to fold.
+ *
+ * Modeled on `queue_note`: a small per-turn note the person's action produced,
+ * carried in the neutral bag rather than concatenated into `content`.
+ */
+export interface StagedContextData {
+  /** The staged text, exactly as the person wrote it. */
+  text: string;
+}
+
+/**
  * Discriminated union of the canonical server-assembled entries. Each member
  * pairs a {@link ContextKind} with its structured `data` payload and a
  * {@link ContextScope}.
@@ -554,6 +574,7 @@ export type AdditionalContextEntry =
   | { kind: 'git_status'; scope: 'per-turn'; data: GitStatusData }
   | { kind: 'ui_state'; scope: 'per-turn'; data: UiState }
   | { kind: 'queue_note'; scope: 'per-turn'; data: { composedDuringPrevTurn: true } }
+  | { kind: 'staged_context'; scope: 'per-turn'; data: StagedContextData }
   | { kind: 'env'; scope: 'per-session'; data: EnvData }
   | { kind: 'relay_context'; scope: 'per-turn'; data: RelayContextData }
   | { kind: 'room_context'; scope: 'per-turn'; data: RoomContextData }
@@ -585,6 +606,7 @@ export const CONTEXT_TAG = {
   git_status: 'git_status',
   ui_state: 'ui_state',
   queue_note: 'queue_note',
+  staged_context: 'staged_context',
   env: 'env',
   relay_context: 'relay_context',
   room_context: 'room_context',
@@ -733,6 +755,9 @@ export const RoomContextDataSchema = z.object({
 /** Zod schema for {@link SeedContextData}. */
 export const SeedContextDataSchema = z.object({ text: z.string().min(1) });
 
+/** Zod schema for {@link StagedContextData}. */
+export const StagedContextDataSchema = z.object({ text: z.string().min(1) });
+
 /** Zod schema for {@link AdditionalContextEntry} (discriminated on `kind`). */
 export const AdditionalContextEntrySchema = z.discriminatedUnion('kind', [
   z.object({
@@ -749,6 +774,11 @@ export const AdditionalContextEntrySchema = z.discriminatedUnion('kind', [
     kind: z.literal('queue_note'),
     scope: z.literal('per-turn'),
     data: z.object({ composedDuringPrevTurn: z.literal(true) }),
+  }),
+  z.object({
+    kind: z.literal('staged_context'),
+    scope: z.literal('per-turn'),
+    data: StagedContextDataSchema,
   }),
   z.object({
     kind: z.literal('env'),

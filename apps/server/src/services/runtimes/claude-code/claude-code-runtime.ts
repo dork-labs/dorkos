@@ -309,6 +309,70 @@ export class ClaudeCodeRuntime implements AgentRuntime {
   // Messaging
   // ---------------------------------------------------------------------------
 
+  /**
+   * Assemble the runtime ports one turn (or one staged warm-up) launches with.
+   *
+   * Extracted from {@link sendMessage} so {@link deliverIntoTurn}'s `stage` path
+   * can boot a cold session with the SAME options a turn would — a stage that
+   * warms a process must not build it differently from the message that follows
+   * it, or the two would disagree about model, plugins and connectors.
+   *
+   * @param sessionId - The id this call was asked with (a hint the store resolves)
+   * @param session - The resolved session record
+   * @param cwdKey - The working directory the caches and command list key on
+   */
+  private buildSenderOpts(
+    sessionId: string,
+    session: AgentSession,
+    cwdKey: string
+  ): MessageSenderOpts {
+    // Resolve the selected model's capabilities once: thinking config + whether it
+    // supports auto permission mode (undefined when the model isn't cached yet).
+    const modelCapability = this.cache.resolveModelCapability(session.model);
+    const cacheCallbacks = this.cache.buildSendCallbacks(cwdKey);
+
+    return {
+      cwd: this.cwd,
+      sessionCwd: session.cwd,
+      claudeCliPath: this.claudeCliPath,
+      meshCore: this.meshCore,
+      bindingRouter: this.bindingRouter,
+      bindingStore: this.bindingStore,
+      adapterManager: this.adapterManager,
+      mcpServerFactory: this.mcpServerFactory,
+      ...cacheCallbacks,
+      // Composed over the cache's own handler rather than replacing it: the
+      // per-turn status snapshot is one observation with two readers — the
+      // cache, which answers "what is connected?", and the revocation watch,
+      // which acts on the single status that means "the token you sent me was
+      // refused" (DOR-981). The session id is read when the snapshot ARRIVES,
+      // not now, so a session that was assigned its canonical id mid-turn
+      // reports the id its projector is keyed by.
+      onMcpStatusReceived: (servers) => {
+        cacheCallbacks.onMcpStatusReceived?.(servers);
+        this.reportMcpAuthFailures(session.sdkSessionId || sessionId, cwdKey, servers);
+      },
+      // `sessionId` is the id THIS turn was asked with, which is only a hint:
+      // after the session's first rename it is an alias, not the key the
+      // store holds it under. The store resolves the real key itself.
+      onSdkSessionRebind: (previousSdkSessionId, nextSdkSessionId) =>
+        this.sessionStore.rebindSdkSession(previousSdkSessionId, nextSdkSessionId, sessionId),
+      modelThinkingCapability: modelCapability,
+      modelSupportsAutoMode: modelCapability
+        ? (modelCapability.supportsAutoMode ?? false)
+        : undefined,
+      plugins: this.activatedPlugins,
+      getKnownCommands: async () => {
+        // Cold SDK cache → null: built-ins are unknowable before the first
+        // query for this cwd, so the sender passes command-shaped content
+        // through unverified (DOR-107).
+        if (!this.cache.hasSdkCommands(cwdKey)) return null;
+        const { commands } = await this.cache.getCommands(this.getOrCreateRegistry(cwdKey), cwdKey);
+        return commands.map((c) => c.fullCommand);
+      },
+    };
+  }
+
   /** @inheritdoc */
   async *sendMessage(
     sessionId: string,
@@ -358,51 +422,7 @@ export class ClaudeCodeRuntime implements AgentRuntime {
       }
     }
 
-    // Resolve the selected model's capabilities once: thinking config + whether it
-    // supports auto permission mode (undefined when the model isn't cached yet).
-    const modelCapability = this.cache.resolveModelCapability(session.model);
-    const cacheCallbacks = this.cache.buildSendCallbacks(cwdKey);
-
-    const senderOpts: MessageSenderOpts = {
-      cwd: this.cwd,
-      sessionCwd: session.cwd,
-      claudeCliPath: this.claudeCliPath,
-      meshCore: this.meshCore,
-      bindingRouter: this.bindingRouter,
-      bindingStore: this.bindingStore,
-      adapterManager: this.adapterManager,
-      mcpServerFactory: this.mcpServerFactory,
-      ...cacheCallbacks,
-      // Composed over the cache's own handler rather than replacing it: the
-      // per-turn status snapshot is one observation with two readers — the
-      // cache, which answers "what is connected?", and the revocation watch,
-      // which acts on the single status that means "the token you sent me was
-      // refused" (DOR-981). The session id is read when the snapshot ARRIVES,
-      // not now, so a session that was assigned its canonical id mid-turn
-      // reports the id its projector is keyed by.
-      onMcpStatusReceived: (servers) => {
-        cacheCallbacks.onMcpStatusReceived?.(servers);
-        this.reportMcpAuthFailures(session.sdkSessionId || sessionId, cwdKey, servers);
-      },
-      // `sessionId` is the id THIS turn was asked with, which is only a hint:
-      // after the session's first rename it is an alias, not the key the
-      // store holds it under. The store resolves the real key itself.
-      onSdkSessionRebind: (previousSdkSessionId, nextSdkSessionId) =>
-        this.sessionStore.rebindSdkSession(previousSdkSessionId, nextSdkSessionId, sessionId),
-      modelThinkingCapability: modelCapability,
-      modelSupportsAutoMode: modelCapability
-        ? (modelCapability.supportsAutoMode ?? false)
-        : undefined,
-      plugins: this.activatedPlugins,
-      getKnownCommands: async () => {
-        // Cold SDK cache → null: built-ins are unknowable before the first
-        // query for this cwd, so the sender passes command-shaped content
-        // through unverified (DOR-107).
-        if (!this.cache.hasSdkCommands(cwdKey)) return null;
-        const { commands } = await this.cache.getCommands(this.getOrCreateRegistry(cwdKey), cwdKey);
-        return commands.map((c) => c.fullCommand);
-      },
-    };
+    const senderOpts = this.buildSenderOpts(sessionId, session, cwdKey);
 
     // The one branch. A session that already holds a process stays on this path
     // whatever the setting says now, and a session that holds none reads the
@@ -703,11 +723,21 @@ export class ClaudeCodeRuntime implements AgentRuntime {
     content: string,
     opts: DeliverIntoTurnOpts
   ): Promise<RuntimeDeliveryResult> {
-    // `'stage'` is P4 task 4.2's; claude-code declares `supportsContextStaging`
-    // false until then, so the server never routes a stage here — but a runtime
-    // must never throw for a mode it has not built, so this reports it as an
-    // ordinary refusal the ladder degrades around.
-    if (opts.mode === 'stage') return { delivered: false, reason: 'unsupported' };
+    if (opts.mode === 'stage') {
+      // A stage may have to WARM a cold session — the message has to reach a
+      // transcript, and a cold one has none live — so it needs the session
+      // record and the launch ports, exactly as a turn does. They are resolved
+      // here, from the session's own persisted settings (a stage carries no
+      // per-send cwd or model of its own), and handed to the pump.
+      const session = await this.sessionStore.ensureForMessage(
+        sessionId,
+        this.transcriptReader,
+        this.cwd
+      );
+      const cwdKey = session.cwd || this.cwd;
+      const senderOpts = this.buildSenderOpts(sessionId, session, cwdKey);
+      return this.persistent.stage(sessionId, content, opts, session, senderOpts);
+    }
     // A steer rides the persistent pump's held input stream. On the resume path
     // there is no held stream that outlives a turn to reach, so a steer there is
     // simply "no open turn" — which `PersistentDispatch.steer` returns for a

@@ -360,6 +360,43 @@ export class SessionPump {
   }
 
   /**
+   * Stage a message onto the held stream WITHOUT opening a turn — the claude-code
+   * half of P4's `deliverIntoTurn(mode: 'stage')` (spec §2.5, task 4.2).
+   *
+   * Unlike {@link steer}, this does not require an open turn: it rides
+   * `shouldQuery: false`, which the SDK appends to the transcript and runs no
+   * assistant turn for, merging it into the next user message that does query
+   * (`sdk.d.ts:4764`). So it is legal whenever there is a live process to append
+   * to — WARM (idle) or RUNNING alike — and it leaves the state machine untouched
+   * either way: no window opens, and no `result` is expected, because a staged
+   * message provokes none.
+   *
+   * A COLD session has no held stream to append to; warming one is the caller's
+   * job ({@link PersistentDispatch.stage} boots the process first), so this
+   * reports `no-process` rather than warming implicitly — a pump takes a message,
+   * never a launch plan.
+   *
+   * Amnesiac exactly as {@link steer} is: a `'delivered'` means the stream
+   * accepted the message, never that the model received it.
+   *
+   * @param content - The message text, already enriched with any context bag
+   * @param messageId - The server-minted correlation id, stamped as the SDK
+   *   message's `uuid`
+   * @returns `'no-process'` when the session is cold with no stream to append to,
+   *   `'stream-closed'` when the process's input stream has already ended, and
+   *   `'delivered'` when the staged message was accepted onto it
+   */
+  stage(content: string, messageId: string): 'delivered' | 'no-process' | 'stream-closed' {
+    this.assertUsable();
+    // WARM or RUNNING both hold a live stream; COLD, CRASHED and WARMING-before-
+    // ready hold none. The held stream's own `false` covers the amnesiac race
+    // where the process went away after this check.
+    if (this.currentState !== 'warm' && this.currentState !== 'running') return 'no-process';
+    if (this.held?.stage(content, messageId) === true) return 'delivered';
+    return 'stream-closed';
+  }
+
+  /**
    * Close the open turn window: `RUNNING → WARM`. The process stays up.
    *
    * The windower (`session-turn-windows.ts`) calls this once the `result`

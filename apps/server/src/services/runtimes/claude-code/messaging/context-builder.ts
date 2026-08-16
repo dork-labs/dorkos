@@ -13,6 +13,7 @@ import { GEN_UI_CONTEXT } from '../../shared/gen-ui-context.js';
 import { buildAgentContextAppend } from '../../shared/agent-context.js';
 import { formatRoomContext } from '../../shared/room-context-block.js';
 import { formatSeedContext } from '../../shared/seed-context-block.js';
+import { formatStagedContext } from '../../shared/staged-context-block.js';
 import type { AgentRegistryPort } from '@dorkos/shared/agent-runtime';
 import type { BindingRouter } from '../../../relay/binding-router.js';
 import type { BindingStore } from '../../../relay/binding-store.js';
@@ -549,6 +550,11 @@ export function renderContextEntry(entry: AdditionalContextEntry): string {
       return wrapTag(tag, JSON.stringify(entry.data, null, 2));
     case 'queue_note':
       return `<${tag}>composed while the agent was responding to the previous message</${tag}>`;
+    case 'staged_context':
+      // Shared with Codex and OpenCode for the same reason as `seed_context`:
+      // the body is a person's prose and carries a defused-tag security seam, so
+      // it is written once and reads identically on every runtime.
+      return wrapTag(tag, formatStagedContext(entry.data));
     case 'env':
       return wrapTag(tag, formatEnv(entry.data));
     case 'relay_context':

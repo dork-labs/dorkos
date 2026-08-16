@@ -169,6 +169,11 @@ const DEFAULT_PERMISSION_MODE: PermissionMode = 'default';
  *   runtime's history and — worse — replay a STALE copy of the queue behind the
  *   snapshot's fresh `queuedMessages` on every reconnect, so a client applying
  *   the turn would overwrite a correct queue with an older one.
+ * - **`context_staged`** is the receipt for a stage, which opens no turn (spec
+ *   §2.5, task 4.2). It rides the stream so a window can show that a note landed,
+ *   but it belongs to no turn's transcript: a staged message is not a turn the
+ *   agent ran, and folding it into `inProgressTurn` would attach it to whatever
+ *   window happened to be open, or strand it in a phantom one when none is.
  *
  * This is a rule about turn MEMBERSHIP only. It has nothing to do with the
  * reopen predicate (`TURN_REOPENING_STREAM_EVENT_TYPES`, #909), which acts on
@@ -178,6 +183,7 @@ const DEFAULT_PERMISSION_MODE: PermissionMode = 'default';
 const EVENTS_OUTSIDE_THE_TURN: ReadonlySet<SessionEvent['type']> = new Set([
   'turn_end',
   'queue_update',
+  'context_staged',
 ]);
 
 /**

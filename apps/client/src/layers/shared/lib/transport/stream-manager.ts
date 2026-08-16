@@ -173,6 +173,12 @@ const SESSION_EVENT_TYPES = [
   // the silent drop this list exists to prevent, and the composer's queue view
   // would be debugged for hours before anyone suspected the allowlist.
   'queue_update',
+  // A person staged context — attached information without provoking a turn
+  // (spec `persistent-session-runtime`, task 4.2). Registered with the contract:
+  // this is the receipt that a stage landed, and a dropped receipt is
+  // indistinguishable from a dropped message, which is the exact failure the
+  // event exists to prevent.
+  'context_staged',
 ] as const;
 
 /**

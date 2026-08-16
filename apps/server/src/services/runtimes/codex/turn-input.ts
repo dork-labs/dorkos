@@ -19,6 +19,7 @@ import type { EffortLevel, SessionSettings } from '@dorkos/shared/types';
 import { GEN_UI_CONTEXT } from '../shared/gen-ui-context.js';
 import { formatRoomContext } from '../shared/room-context-block.js';
 import { formatSeedContext } from '../shared/seed-context-block.js';
+import { formatStagedContext } from '../shared/staged-context-block.js';
 
 /**
  * DorkOS permission mode → Codex sandbox level (NOTES.md Verdict 2).
@@ -117,6 +118,8 @@ function renderContextBody(entry: AdditionalContextEntry): string {
       return formatRoomContext(entry.data);
     case 'seed_context':
       return formatSeedContext(entry.data);
+    case 'staged_context':
+      return formatStagedContext(entry.data);
     default:
       return JSON.stringify(entry.data, null, 2);
   }
