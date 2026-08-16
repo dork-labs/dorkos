@@ -218,11 +218,38 @@ describe('the current link', () => {
     );
 
     // Somebody clicks "View profile" on another identity in the sidebar.
-    await harness.navigate((prev) => ({ ...prev, profilePage: undefined, profile: 'person-dorian' }));
+    await harness.navigate((prev) => ({
+      ...prev,
+      profilePage: undefined,
+      profile: 'person-dorian',
+    }));
 
     await waitFor(() => expect(harness.search().profile).toBe('person-dorian'));
     expect(harness.search().profilePage).toBeUndefined();
     expect(entriesFor(AGENT)).toEqual([{ kind: 'page', page: 'instructions' }]);
+  });
+
+  it('does not reset it when there is no draft either — the rule is the hook’s own', async () => {
+    // The case above renders a dirty editor, so the STORE's own guard
+    // (`homeHasUnsavedProfileEdits`) keeps the page whether this hook's rule is
+    // there or not — removing the rule leaves that test green. With a clean
+    // stack only the rule is holding the reader's place, which is what this
+    // pins: losing where you were reading is the defect even when nothing is
+    // lost with it.
+    const harness = renderHooks(
+      `/?panel=profile&profilePage=rooms&agentPath=${encodeURIComponent(AGENT)}`
+    );
+    await harness.ready();
+    await waitFor(() => expect(entriesFor(AGENT)).toEqual([{ kind: 'page', page: 'rooms' }]));
+
+    await harness.navigate((prev) => ({
+      ...prev,
+      profilePage: undefined,
+      profile: 'person-dorian',
+    }));
+
+    await waitFor(() => expect(harness.search().profile).toBe('person-dorian'));
+    expect(entriesFor(AGENT)).toEqual([{ kind: 'page', page: 'rooms' }]);
   });
 
   it('still applies a genuinely new link — a different page', async () => {
@@ -248,7 +275,11 @@ describe('the current link', () => {
       expect(entriesFor(AGENT)).toEqual([{ kind: 'page', page: 'instructions' }])
     );
 
-    await harness.navigate((prev) => ({ ...prev, agentPath: '/repo/scout', profilePage: undefined }));
+    await harness.navigate((prev) => ({
+      ...prev,
+      agentPath: '/repo/scout',
+      profilePage: undefined,
+    }));
 
     await waitFor(() => expect(useAppStore.getState().explicitAgentPath).toBe('/repo/scout'));
     expect(entriesFor('/repo/scout')).toEqual([]);
