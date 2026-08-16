@@ -215,6 +215,13 @@ export async function* executeSdkQuery(
       while (session.eventQueue.length > 0) {
         const queuedEvent = session.eventQueue.shift()!;
         if (queuedEvent.type === 'done') emittedDone = true;
+        // `interactive-handlers.ts` pushes approval/question/elicitation prompts
+        // onto this queue directly — they never reach the guard through
+        // `mapSdkMessage` below, so this is the ONLY place on this path that can
+        // ever see one. Without this check `wasInteractive` could never become
+        // true here, and an interactive-only turn (nothing but an unanswered
+        // prompt, no content) would misreport as a dead stream (DOR-1240).
+        if (isInteractiveEvent(queuedEvent)) wasInteractive = true;
         eventCount++;
         yield queuedEvent;
       }

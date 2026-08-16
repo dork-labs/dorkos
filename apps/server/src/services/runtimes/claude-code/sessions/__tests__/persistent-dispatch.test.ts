@@ -844,3 +844,34 @@ describe('a compaction is not a silent turn (DOR-1235)', () => {
     expect(events.find((e) => e.type === 'done')).toBeDefined();
   });
 });
+
+describe('an elicitation-only turn is not a silent turn (DOR-1240)', () => {
+  beforeEach(() => {
+    optIn.persistentSession = true;
+  });
+
+  it('does not call an unanswered elicitation a crash', async () => {
+    const sessionId = nextSession();
+    await turn(sessionId);
+    const process = cli.processes[0]!;
+    process.goSilent();
+
+    const running = turn(sessionId, 'ask the server for my token');
+    await vi.waitFor(() => expect(process.received).toHaveLength(2));
+    // An MCP server's elicitation reaches the SDK consumer via the `onElicitation`
+    // option the launch resolver registers — real `interactive-handlers.ts`
+    // code, which pushes `elicitation_prompt` straight onto `session.eventQueue`
+    // and holds its returned promise open until a person answers. Nobody
+    // answers here: the turn closes with nothing else said.
+    void process.options.onElicitation?.(
+      { serverName: 'test-server', message: 'Which environment?' },
+      { signal: new AbortController().signal }
+    );
+    process.emit(resultMessage(process.received[1]!));
+    const events = await running;
+
+    expect(events.find((e) => e.type === 'error')).toBeUndefined();
+    expect(events.find((e) => e.type === 'elicitation_prompt')).toBeDefined();
+    expect(events.find((e) => e.type === 'done')).toBeDefined();
+  });
+});
