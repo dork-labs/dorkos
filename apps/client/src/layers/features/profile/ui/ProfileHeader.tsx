@@ -9,10 +9,11 @@
  */
 import type { ReactNode } from 'react';
 import { toast } from 'sonner';
+import { ChevronRight } from 'lucide-react';
 import type { TeamMember } from '@dorkos/shared/team-schemas';
 import { cn, useCopyFeedback } from '@/layers/shared/lib';
 import { Badge, Button, IdentityAvatar, IDENTITY_MARK_GROUP } from '@/layers/shared/ui';
-import { teamMemberFace, teamMemberLabel } from '@/layers/entities/team';
+import { teamMemberFace } from '@/layers/entities/team';
 import type { ProfileRelationship } from '../lib/profile-relationship';
 import { profileStatusText } from '../lib/profile-status';
 import { ProfileFace } from './ProfileFace';
@@ -162,7 +163,7 @@ export function ProfileHeader({
           <button
             type="button"
             onClick={onOpenOwner}
-            className="focus-ring bg-muted/60 hover:bg-muted mt-2 flex max-w-full items-center gap-1.5 rounded-full py-0.5 pr-2.5 pl-0.5 text-xs transition-colors"
+            className="focus-ring bg-muted/60 hover:bg-muted mt-2 flex max-w-full items-center gap-1.5 rounded-full py-0.5 pr-1.5 pl-0.5 text-xs transition-colors"
           >
             <IdentityAvatar
               size="xs"
@@ -175,9 +176,13 @@ export function ProfileHeader({
               badge={null}
               className="size-4 text-[0.5rem]"
             />
-            <span className="truncate">
-              Managed by {owner.isSelf ? 'You' : teamMemberLabel(owner)}
-            </span>
+            {/* The owner's NAME, not their handle. The line names a person the
+                way the portrait above names one — `teamMemberLabel` would read
+                "Managed by @priya", which is an address, not who they are. */}
+            <span className="truncate">Managed by {owner.isSelf ? 'You' : owner.displayName}</span>
+            {/* The pill pushes their profile, so it wears the same promise a
+                `nav` row does (design 05, state 5). */}
+            <ChevronRight aria-hidden className="text-muted-foreground/70 size-3 shrink-0" />
           </button>
         )
       )}

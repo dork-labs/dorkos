@@ -238,9 +238,22 @@ describe('who it belongs to', () => {
     expect(screen.getByRole('button', { name: 'Managed by You' })).toBeInTheDocument();
   });
 
-  it('names the other person on their agent', async () => {
+  // Priya has a handle, so this is the case that tells the two apart: the line
+  // names a person the way the portrait above names one, and `@priya` is an
+  // address rather than who they are (design 05, state 5).
+  it('names the other person on their agent, and not their handle', async () => {
     await renderProfile(OTHERS_AGENT);
-    expect(screen.getByRole('button', { name: 'Managed by @priya' })).toBeInTheDocument();
+
+    expect(screen.getByRole('button', { name: 'Managed by Priya' })).toBeInTheDocument();
+    expect(screen.queryByText(/@priya/)).toBeNull();
+  });
+
+  it('promises the push with a chevron, the way a nav row does', async () => {
+    await renderProfile(OTHERS_AGENT);
+
+    const pill = screen.getByRole('button', { name: /Managed by/ });
+    // `aria-hidden`, so it says nothing twice — the pill is already a button.
+    expect(pill.querySelector('svg[aria-hidden]')).not.toBeNull();
   });
 
   it('says DorkBot belongs to the install, and offers no owner to open', async () => {
