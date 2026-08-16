@@ -88,6 +88,36 @@ describe('formatSummaryTable', () => {
     expect(table).toMatch(/1 quarantined \(0 of them failing\)/);
   });
 
+  it('prints the retained sandbox and copied logs path under a retained row (DOR-1241)', () => {
+    const table = formatSummaryTable(
+      summary([
+        result({ id: 'widget-round-trip', status: 'pass' }),
+        result({
+          id: 'connector-slack',
+          status: 'fail',
+          quarantined: true,
+          retainedSandbox: '/tmp/dorkos-evals-abc123/.dork',
+          retainedLogsPath: 'connector-slack/logs',
+        }),
+      ])
+    );
+    // The gating case (no retention) prints no such line; the quarantined
+    // failure, which retained under the SAME rule, prints both paths.
+    const lines = table.split('\n');
+    const rowIndex = lines.findIndex((l) => l.includes('connector-slack'));
+    expect(lines[rowIndex + 1]).toBe(
+      '  ↳ retained: /tmp/dorkos-evals-abc123/.dork; logs copied to connector-slack/logs'
+    );
+    expect(table).not.toMatch(/widget-round-trip\n {2}↳/);
+  });
+
+  it('prints no retention line for a case nothing was retained for', () => {
+    const table = formatSummaryTable(
+      summary([result({ id: 'widget-round-trip', status: 'pass' })])
+    );
+    expect(table).not.toContain('↳ retained');
+  });
+
   it('never shows `quarantined:` on a skipped-wrong-tier row, matching the footer that excludes it (DOR-1228 review, NIT 5)', () => {
     // The row and the footer disagreed before this: a quarantined credentialed
     // case skipped downward or upward showed `quarantined:skipped-wrong-tier`
