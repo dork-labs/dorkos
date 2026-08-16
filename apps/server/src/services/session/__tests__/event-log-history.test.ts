@@ -28,6 +28,34 @@ describe('reconstructHistoryFromEvents', () => {
     ]);
   });
 
+  it('reconstructs a steer (turn_input) as an inline user message (AC6)', () => {
+    // A steer joined the turn mid-flight. For a log-backed runtime this stream
+    // IS the transcript, so the steered words survive only if rebuilt here — as
+    // a user message at the point they arrived, between the trigger and the
+    // assistant reply.
+    const messages = reconstructHistoryFromEvents(
+      events(
+        { seq: 1, type: 'turn_start', userMessage: 'do the thing' },
+        { seq: 2, type: 'text_delta', text: 'starting' },
+        {
+          seq: 3,
+          type: 'turn_input',
+          content: 'also run the tests',
+          disposition: 'steer',
+          messageId: 'm-1',
+        },
+        { seq: 4, type: 'text_delta', text: ' and testing' },
+        { seq: 5, type: 'turn_end' }
+      )
+    );
+
+    expect(messages).toEqual([
+      { id: 'user-1', role: 'user', content: 'do the thing' },
+      { id: 'steer-m-1', role: 'user', content: 'also run the tests' },
+      { id: 'assistant-1', role: 'assistant', content: 'starting and testing' },
+    ]);
+  });
+
   it('merges tool_call/tool_progress/tool_result into one HistoryToolCall', () => {
     const messages = reconstructHistoryFromEvents(
       events(

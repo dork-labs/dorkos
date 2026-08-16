@@ -107,6 +107,30 @@ describe('useSessionStreamStore', () => {
     });
   });
 
+  it('a turn_input SURVIVES the event-handling path and rides the open turn (AC5)', () => {
+    // Real failure mode this pins: a SessionEvent member not routed by the store
+    // is silently dropped — a steer that renders in dev and vanishes in prod.
+    // The store must fold turn_input onto the open turn, without opening or
+    // closing one, so it reaches the projection that renders it inline.
+    const store = useSessionStreamStore.getState();
+    store.applySnapshot(SID, snapshot({ cursor: 0 }));
+    store.applyEvent(SID, { type: 'turn_start', seq: 1 });
+    store.applyEvent(SID, { type: 'text_delta', seq: 2, text: 'working on it' });
+    store.applyEvent(SID, {
+      type: 'turn_input',
+      seq: 3,
+      content: 'also check the docs',
+      disposition: 'steer',
+      messageId: 'm-1',
+    });
+    const s = useSessionStreamStore.getState().getSession(SID);
+    // Not dropped: it is on the open turn, in arrival order, and no turn boundary
+    // was manufactured by it.
+    expect(s.inProgressTurn.map((e) => e.type)).toEqual(['turn_start', 'text_delta', 'turn_input']);
+    const steer = s.inProgressTurn.find((e) => e.type === 'turn_input');
+    expect(steer).toMatchObject({ content: 'also check the docs', messageId: 'm-1' });
+  });
+
   it('setHistoryMessages clears inProgressTurn by default but preserves it on request', () => {
     // Real failure mode: the turn_end reconcile reload resolves AFTER the next
     // turn already started (queued-flush race) — clearing then would wipe the

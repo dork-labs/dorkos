@@ -2205,6 +2205,40 @@
               "type": {
                 "type": "string",
                 "enum": [
+                  "turn_input"
+                ]
+              },
+              "content": {
+                "type": "string"
+              },
+              "disposition": {
+                "type": "string",
+                "enum": [
+                  "steer"
+                ]
+              },
+              "messageId": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "seq",
+              "type",
+              "content",
+              "disposition",
+              "messageId"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "seq": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "type": {
+                "type": "string",
+                "enum": [
                   "ui_command"
                 ]
               },
@@ -9438,6 +9472,40 @@
                       "required": [
                         "seq",
                         "type"
+                      ]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "seq": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "turn_input"
+                          ]
+                        },
+                        "content": {
+                          "type": "string"
+                        },
+                        "disposition": {
+                          "type": "string",
+                          "enum": [
+                            "steer"
+                          ]
+                        },
+                        "messageId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "seq",
+                        "type",
+                        "content",
+                        "disposition",
+                        "messageId"
                       ]
                     },
                     {

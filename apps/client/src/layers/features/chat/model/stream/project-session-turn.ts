@@ -52,6 +52,28 @@ function buildOptimisticUserMessage(content: string): ChatMessage {
   };
 }
 
+/**
+ * Build the inline user bubble for a steer (`turn_input`).
+ *
+ * A steer JOINED the running turn — it did not open one — so it renders as an
+ * ordinary user message at the point it arrived, keyed by its server-minted
+ * `messageId` so the bubble is stable across re-renders and replays. It carries
+ * `_streaming` because it is a live-turn synthetic: at `turn_end` the canonical
+ * history reload replaces it (claude-code's own JSONL records the steered input,
+ * and a log-backed runtime rebuilds it from the persisted `turn_input`), so this
+ * only bridges the gap until then.
+ */
+function buildSteerUserMessage(event: Extract<SessionEvent, { type: 'turn_input' }>): ChatMessage {
+  return {
+    id: `steer-${event.messageId}`,
+    role: 'user',
+    content: event.content,
+    parts: [{ type: 'text', text: event.content }],
+    timestamp: '',
+    _streaming: true,
+  };
+}
+
 /** Find the last `tool_call` part matching `toolCallId`, or `undefined`. */
 function findToolCallPart(
   parts: MessagePart[],
@@ -757,14 +779,19 @@ export function projectInProgressTurn(events: SessionEvent[]): MessagePart[] {
 }
 
 /**
- * Build the trailing in-progress assistant {@link ChatMessage} from the folded
- * parts, or `null` when the turn produced no renderable parts.
+ * Build an in-progress assistant {@link ChatMessage} from the folded parts, or
+ * `null` when the segment produced no renderable parts.
+ *
+ * @param parts - The folded message parts for this assistant segment.
+ * @param id - The bubble id. The TRAILING segment keeps
+ *   {@link IN_PROGRESS_ASSISTANT_ID}; a segment that precedes a steer gets a
+ *   distinct id so the two bubbles reconcile independently.
  */
-function buildInProgressMessage(parts: MessagePart[]): ChatMessage | null {
+function buildInProgressMessage(parts: MessagePart[], id: string): ChatMessage | null {
   if (parts.length === 0) return null;
   const derived = deriveFromParts(parts);
   return {
-    id: IN_PROGRESS_ASSISTANT_ID,
+    id,
     role: 'assistant',
     content: derived.content,
     toolCalls: derived.toolCalls.length > 0 ? derived.toolCalls : [],
@@ -775,14 +802,66 @@ function buildInProgressMessage(parts: MessagePart[]): ChatMessage | null {
 }
 
 /**
+ * Fold the in-progress turn into rendered {@link ChatMessage}s, splitting it at
+ * each steer (`turn_input`) so a steer renders as an inline user bubble in
+ * reading order rather than being folded into the assistant bubble.
+ *
+ * With no steer this is one assistant bubble, byte-for-byte the pre-steer
+ * behaviour: the single trailing segment keeps {@link IN_PROGRESS_ASSISTANT_ID}
+ * and takes the snapshot's pending interactions. With steers the turn becomes
+ * assistant-segment / user-steer / assistant-segment…: each run of assistant
+ * events before a steer is its own bubble, the steer is a user bubble between
+ * them, and the snapshot's pending interactions fold into the TRAILING segment —
+ * the one still open — exactly as they did when the turn was one bubble.
+ *
+ * @param inProgressTurn - The in-progress turn's events, in seq order.
+ * @param pendingInteractions - Snapshot's recoverable pending interactions.
+ */
+function projectInProgressSegments(
+  inProgressTurn: SessionEvent[],
+  pendingInteractions: PendingInteractionDTO[]
+): ChatMessage[] {
+  const out: ChatMessage[] = [];
+  let run: SessionEvent[] = [];
+  let precedingSegments = 0;
+  for (const event of inProgressTurn) {
+    if (event.type !== 'turn_input') {
+      run.push(event);
+      continue;
+    }
+    // Close the assistant run that arrived before this steer as its own bubble.
+    // No pending-interaction fold here — those belong to the turn's OPEN tail,
+    // which is a later segment.
+    const parts = projectInProgressTurn(run);
+    const bubble = buildInProgressMessage(
+      parts,
+      `${IN_PROGRESS_ASSISTANT_ID}-${precedingSegments}`
+    );
+    if (bubble) out.push(bubble);
+    precedingSegments += 1;
+    out.push(buildSteerUserMessage(event));
+    run = [];
+  }
+  // The trailing (open) segment: it takes the pending interactions and keeps the
+  // stable trailing id, so a turn with no steer is identical to the old output.
+  const parts = projectInProgressTurn(run);
+  foldPendingInteractions(parts, pendingInteractions);
+  const trailing = buildInProgressMessage(parts, IN_PROGRESS_ASSISTANT_ID);
+  if (trailing) out.push(trailing);
+  return out;
+}
+
+/**
  * Project the per-session stream store's server state into the rendered
  * {@link ChatMessage}[]: completed history mapped via {@link mapHistoryMessage},
- * followed by the trailing in-progress assistant bubble.
+ * followed by the in-progress turn ({@link projectInProgressSegments}) — one
+ * trailing assistant bubble, or, when a steer joined the turn, a sequence of
+ * assistant bubbles with the steer's inline user bubble in reading order.
  *
- * The bubble folds the in-progress turn's events AND any snapshot-authoritative
- * `pendingInteractions` not already represented by the turn (dedup strictly by
- * interaction id). This surfaces a recovered interaction in the
- * `blocked`-after-`turn_end` state, where the turn was cleared and the
+ * The trailing bubble folds the in-progress turn's events AND any
+ * snapshot-authoritative `pendingInteractions` not already represented by the
+ * turn (dedup strictly by interaction id). This surfaces a recovered interaction
+ * in the `blocked`-after-`turn_end` state, where the turn was cleared and the
  * interaction lives ONLY in `pendingInteractions` — without it, a refreshed
  * blocked session would show no Approve/Deny card (regressing DOR-73 recovery).
  *
@@ -809,9 +888,6 @@ export function projectSessionMessages(
   if (optimisticUserMessage) {
     messages.push(buildOptimisticUserMessage(optimisticUserMessage.content));
   }
-  const parts = projectInProgressTurn(inProgressTurn);
-  foldPendingInteractions(parts, pendingInteractions);
-  const inProgress = buildInProgressMessage(parts);
-  if (inProgress) messages.push(inProgress);
+  messages.push(...projectInProgressSegments(inProgressTurn, pendingInteractions));
   return messages;
 }

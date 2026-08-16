@@ -160,6 +160,11 @@ const SESSION_EVENT_TYPES = [
   'error',
   'turn_start',
   'turn_end',
+  // A steer delivered into the open turn (spec `persistent-session-runtime` §P4).
+  // Registered with the contract, not the UI that reads it: a steer that renders
+  // in dev and vanishes in prod is the exact silent-drop this list exists to
+  // prevent, and it rides the turn like any other member once it is allowlisted.
+  'turn_input',
   'ui_command',
   'devtools_capture_request',
   // The session's message queue, whole, on every change (spec

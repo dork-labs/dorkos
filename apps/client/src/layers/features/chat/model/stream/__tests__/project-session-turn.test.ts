@@ -599,6 +599,55 @@ describe('projectSessionMessages', () => {
     expect(messages.map((m) => m.id)).toEqual(['h1', 'h2']);
   });
 
+  it('renders a steer as an inline user bubble, in reading order, splitting the turn (AC3/AC4)', () => {
+    // Purpose (task 4.3): a steer (turn_input) JOINED the open turn — it did not
+    // open one — so it renders as a user bubble at the point it arrived, between
+    // the assistant text before it and the assistant text after it. It is not a
+    // separate turn and must not look like one.
+    const messages = projectSessionMessages(history, [
+      { seq: 1, type: 'turn_start', userMessage: 'do the thing' },
+      { seq: 2, type: 'text_delta', text: 'starting the thing' },
+      {
+        seq: 3,
+        type: 'turn_input',
+        content: 'actually, run the tests too',
+        disposition: 'steer',
+        messageId: 'm-1',
+      },
+      { seq: 4, type: 'text_delta', text: 'ok, running the tests' },
+    ]);
+    // history(2) + assistant-before + user-steer + assistant-after
+    expect(messages).toHaveLength(5);
+    expect(messages.slice(2).map((m) => m.role)).toEqual(['assistant', 'user', 'assistant']);
+    expect(messages[2].content).toBe('starting the thing');
+    expect(messages[3].id).toBe('steer-m-1');
+    expect(messages[3].content).toBe('actually, run the tests too');
+    expect(messages[4].content).toBe('ok, running the tests');
+    // The trailing (open) segment keeps the stable id; the earlier one does not,
+    // so the two bubbles reconcile independently.
+    expect(messages[4].id).toBe('__in_progress_turn__');
+    expect(messages[2].id).not.toBe('__in_progress_turn__');
+  });
+
+  it('renders a steer even when it arrives before any assistant output', () => {
+    // Purpose: a steer that lands before the agent has said anything still shows,
+    // and does not manufacture an empty assistant bubble ahead of it.
+    const messages = projectSessionMessages(history, [
+      { seq: 1, type: 'turn_start', userMessage: 'go' },
+      {
+        seq: 2,
+        type: 'turn_input',
+        content: 'wait, do it this way',
+        disposition: 'steer',
+        messageId: 'm-2',
+      },
+      { seq: 3, type: 'text_delta', text: 'doing it that way' },
+    ]);
+    expect(messages.slice(2).map((m) => m.role)).toEqual(['user', 'assistant']);
+    expect(messages[2].id).toBe('steer-m-2');
+    expect(messages[3].content).toBe('doing it that way');
+  });
+
   it('renders the optimistic user message after history and before the in-progress bubble', () => {
     // Purpose (DOR-74): the just-sent user message has no /events event and is not
     // yet in the snapshot, so the projection must render it from
