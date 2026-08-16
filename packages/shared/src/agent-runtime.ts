@@ -538,8 +538,9 @@ export interface RuntimeCapabilities {
   commandIntents: Record<RuntimeCommandIntentId, CommandIntentSupport>;
 
   /**
-   * Required - every adapter declares its settings surface. Compile-time
-   * forcing per the `commandIntents` precedent in this interface: a new runtime
+   * Every adapter declares its settings surface. A first-class structured
+   * field per ADR-0256, not the `features` bag. Required — compile-time forcing
+   * per the `commandIntents` precedent in this interface, so a new runtime
    * cannot silently omit it. Static only: account lists, current provider and
    * readiness stay on the refetched surfaces (`GET /api/config`,
    * `GET /api/system/requirements`) so capabilities remain safe to cache with
