@@ -13,13 +13,16 @@ import type {
   RoomWithRoster,
 } from '@dorkos/shared/room-schemas';
 import { useInteractionStore } from '@/layers/entities/interactions';
-import { usePendingPostStore, useRoomDraftStore } from '@/layers/entities/room';
+import { useRoom, usePendingPostStore, useRoomDraftStore } from '@/layers/entities/room';
 import { createQueryClientConfig } from '@/layers/shared/lib';
 import { TransportProvider } from '@/layers/shared/model';
 import { RoomComposer } from '../ui/RoomComposer';
 
-const { toastError } = vi.hoisted(() => ({ toastError: vi.fn() }));
-vi.mock('sonner', () => ({ toast: { error: toastError } }));
+const { toastError, toastSuccess } = vi.hoisted(() => ({
+  toastError: vi.fn(),
+  toastSuccess: vi.fn(),
+}));
+vi.mock('sonner', () => ({ toast: { error: toastError, success: toastSuccess } }));
 
 /** A desktop: a real pointer, so Enter sends rather than inserting a newline. */
 beforeAll(() => {
@@ -41,6 +44,7 @@ beforeAll(() => {
 afterEach(() => {
   cleanup();
   toastError.mockClear();
+  toastSuccess.mockClear();
   // Drafts outlive components on purpose, which means they also outlive tests.
   useRoomDraftStore.setState({ drafts: {} });
   // Pending rows outlive their composer for the same reason drafts do — a
@@ -61,22 +65,40 @@ function roomWith(overrides: Partial<RoomWithRoster> = {}): RoomWithRoster {
     ambientMaxEntries: 30,
     createdAt: '2026-07-26T09:00:00.000Z',
     lastActivityAt: '2026-07-26T10:00:00.000Z',
-    members: [],
+    // The viewer themselves, on the roster — the ordinary case every test in
+    // this file but the "you left" block below is about. `members: []` used
+    // to be the default here, from before the composer read membership at
+    // all (DOR-1233): every test below assumes a live, postable composer, so
+    // the fixture has to put the viewer on their own room's roster.
+    members: [
+      {
+        roomId: 'room-1',
+        authorId: 'author-you',
+        responseMode: 'always',
+        joinedAt: '2026-07-26T09:00:00.000Z',
+        joinedSeq: 0,
+        lastReadSeq: 0,
+        author: { id: 'author-you', kind: 'human', displayName: 'You', handle: null },
+        origin: 'local',
+      },
+    ],
     viewerAuthorId: 'author-you',
     reactionFrequents: [...REACTION_FREQUENTS_DEFAULT],
     ...overrides,
   };
 }
 
-function renderComposer(
+/**
+ * Mount the composer with the app's real cache configuration, retries off. A
+ * bare `new QueryClient()` has no MutationCache — and the MutationCache is
+ * where a failed post's toast now comes from, so a re-declared config would
+ * leave these assertions with nothing to assert against.
+ */
+function mountComposer(
   transport: Transport,
   room: RoomWithRoster = roomWith(),
   props: { offerJumpBackIn?: boolean; threadRootId?: string } = {}
 ) {
-  // The app's real cache configuration, retries off. A bare `new QueryClient()`
-  // has no MutationCache — and the MutationCache is where a failed post's toast
-  // now comes from, so a re-declared config would leave these assertions with
-  // nothing to assert against.
   const config = createQueryClientConfig();
   const queryClient = new QueryClient({
     ...config,
@@ -91,7 +113,15 @@ function renderComposer(
       <TransportProvider transport={transport}>{children}</TransportProvider>
     </QueryClientProvider>
   );
-  render(<RoomComposer room={room} {...props} />, { wrapper });
+  return render(<RoomComposer room={room} {...props} />, { wrapper });
+}
+
+function renderComposer(
+  transport: Transport,
+  room: RoomWithRoster = roomWith(),
+  props: { offerJumpBackIn?: boolean; threadRootId?: string } = {}
+) {
+  mountComposer(transport, room, props);
   // The shared composer names its textarea a combobox — it hosts the slash and
   // mention palettes in session chat, and the role does not vary by host.
   return screen.getByRole('combobox') as HTMLTextAreaElement;
@@ -360,6 +390,130 @@ describe('RoomComposer', () => {
 
     expect(transport.postToRoom).toHaveBeenCalledTimes(1);
     expect(transport.postToRoom).toHaveBeenCalledWith('room-1', { text: 'ship it' });
+  });
+});
+
+describe('RoomComposer — a room you left (DOR-1233)', () => {
+  // A room the operator sees but is not a member of is real and reachable —
+  // they left it — and posting into one was a DEFINITE server refusal
+  // (`MEMBER_NOT_FOUND`) with no gate on it client-side at all, before this.
+  function leftRoom(overrides: Partial<RoomWithRoster> = {}): RoomWithRoster {
+    return roomWith({ members: [], ...overrides });
+  }
+
+  it('offers no composer at all — not even a disabled one', () => {
+    mountComposer(createMockTransport(), leftRoom());
+
+    expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Attach file' })).not.toBeInTheDocument();
+  });
+
+  it('says why, in place of the field', () => {
+    mountComposer(createMockTransport(), leftRoom());
+
+    expect(
+      screen.getByText('You left this channel. You can read it, but not add to it.')
+    ).toBeInTheDocument();
+  });
+
+  it('offers Rejoin, which reaches the SAME wire route "Add agents" uses — named by the viewer', async () => {
+    const transport = createMockTransport({
+      addRoomMember: vi.fn().mockResolvedValue({
+        roomId: 'room-1',
+        authorId: 'author-you',
+        responseMode: 'silent',
+        joinedAt: '2026-07-26T09:00:00.000Z',
+        joinedSeq: 0,
+        lastReadSeq: 0,
+        author: { id: 'author-you', kind: 'human', displayName: 'You', handle: null },
+        origin: 'local',
+      }),
+    });
+    mountComposer(transport, leftRoom());
+
+    fireEvent.click(screen.getByRole('button', { name: 'Rejoin' }));
+
+    await waitFor(() =>
+      expect(transport.addRoomMember).toHaveBeenCalledWith('room-1', { authorId: 'author-you' })
+    );
+    await waitFor(() => expect(toastSuccess).toHaveBeenCalledWith('You rejoined #general'));
+  });
+
+  it('offers a live composer once membership resolves as present', () => {
+    // The other side of the same fact: a room that DOES carry the viewer on
+    // its roster gets the ordinary, interactive composer — `roomWith()`'s own
+    // default, which every test above this block already exercises.
+    mountComposer(createMockTransport(), roomWith());
+
+    expect(screen.getByRole('combobox')).toBeInTheDocument();
+    expect(
+      screen.queryByText('You left this channel. You can read it, but not add to it.')
+    ).not.toBeInTheDocument();
+  });
+
+  it('brings the live composer back once the roster query actually refetches after Rejoin', async () => {
+    // DIAGNOSTIC — routed through a real `useRoom()` rather than a static
+    // `room` prop, which is what `RoomSurface` actually does and what every
+    // other test in this file (including the ones above) does NOT: they hand
+    // `RoomComposer` a fixed prop, so none of them can tell whether
+    // invalidating `roomKeys.detail` actually reaches this component through
+    // the query cache. This is the one that can.
+    const initial = leftRoom();
+    const rejoined: RoomWithRoster = {
+      ...initial,
+      members: [
+        {
+          roomId: 'room-1',
+          authorId: 'author-you',
+          responseMode: 'always',
+          joinedAt: '2026-07-26T09:00:00.000Z',
+          joinedSeq: 0,
+          lastReadSeq: 0,
+          author: { id: 'author-you', kind: 'human', displayName: 'You', handle: null },
+          origin: 'local',
+        },
+      ],
+    };
+    let calls = 0;
+    const transport = createMockTransport({
+      getRoom: vi.fn().mockImplementation(() => {
+        calls += 1;
+        return Promise.resolve(calls === 1 ? initial : rejoined);
+      }),
+      addRoomMember: vi.fn().mockResolvedValue(rejoined.members[0]),
+    });
+
+    const config = createQueryClientConfig();
+    const queryClient = new QueryClient({
+      ...config,
+      defaultOptions: {
+        ...config.defaultOptions,
+        queries: { ...config.defaultOptions?.queries, retry: false, gcTime: 0 },
+        mutations: { ...config.defaultOptions?.mutations, retry: false },
+      },
+    });
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={queryClient}>
+        <TransportProvider transport={transport}>{children}</TransportProvider>
+      </QueryClientProvider>
+    );
+
+    function Harness() {
+      const query = useRoom('room-1');
+      if (!query.data) return null;
+      return <RoomComposer room={query.data} />;
+    }
+    render(<Harness />, { wrapper });
+
+    await screen.findByText('You left this channel. You can read it, but not add to it.');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Rejoin' }));
+
+    await waitFor(() => expect(transport.addRoomMember).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(transport.getRoom).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.getByRole('combobox')).toBeInTheDocument(), {
+      timeout: 3000,
+    });
   });
 });
 

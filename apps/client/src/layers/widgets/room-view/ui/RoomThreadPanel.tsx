@@ -4,6 +4,7 @@ import { cn } from '@/layers/shared/lib';
 import { Feed, Skeleton } from '@/layers/shared/ui';
 import type { RoomEntry, RoomWithRoster } from '@/layers/entities/room';
 import {
+  isRoomMember,
   roomDisplayTitle,
   threadRootIdOf,
   usePendingPosts,
@@ -119,6 +120,10 @@ export function RoomThreadPanel({
   onClose,
 }: RoomThreadPanelProps) {
   const authors = useMemo(() => authorsById(room.members), [room.members]);
+  // Same reason the room's own timeline reads it (DOR-1233): a reaction here
+  // refuses `MEMBER_NOT_FOUND` too, once the room this thread lives in is one
+  // the viewer left.
+  const isMember = isRoomMember(room.members, room.viewerAuthorId);
   // The same fleet read the room's own feed makes — a reply draws the same
   // faces the message it hangs off does.
   const agents = useRoomAgentDirectory();
@@ -332,6 +337,7 @@ export function RoomThreadPanel({
                 authorNames={authorNames}
                 reactionFrequents={reactionFrequents}
                 streamStalled={streamStalled}
+                isMember={isMember}
                 grouping={{ position: 'only' }}
                 feedPosition={{ index: 1, total: articleCount }}
               />
@@ -379,6 +385,7 @@ export function RoomThreadPanel({
                           authorNames={authorNames}
                           reactionFrequents={reactionFrequents}
                           streamStalled={streamStalled}
+                          isMember={isMember}
                           grouping={{ position: 'only' }}
                           feedPosition={{
                             // After the root where there is one. An orphaned thread

@@ -132,9 +132,11 @@ export const SERVER_ROUND_TRIP_MS = 30_000;
  * Seeds and cleans up the rooms, agents and entries one browser test needs.
  *
  * Every call records what it made, and {@link RoomsApi.cleanup} undoes it. Rooms
- * are archived rather than deleted because archiving is the only removal the
- * product has (spec `rooms` §12.4 — there is no Leave), and an archived room
- * leaves the sidebar and releases its `#slug`.
+ * are archived rather than deleted because there is still no delete verb on a
+ * room at all (spec `rooms` §12.4); archiving is what releases a fixture's
+ * `#slug` for the next run and takes it off the sidebar, which leaving would
+ * not — the owner still sees a room they left (`seesEveryRoom`), only unable
+ * to post in it.
  */
 export class RoomsApi {
   private readonly request: APIRequestContext;

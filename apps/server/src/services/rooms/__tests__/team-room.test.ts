@@ -605,4 +605,50 @@ describe('#team is a system room', () => {
     expect(reopened.id).toBe(dm.id);
     expect(reopened.archived).toBe(false);
   });
+
+  it('refuses the owner leaving #team, even with only one agent seated', () => {
+    // The three-way rule alone would allow this: #team ships with exactly
+    // one agent (DorkBot's fallback seat), never two, so the guard that
+    // refuses removing the owner from a two-agent room never fires here.
+    // This is the narrower, unconditional refusal DOR-1233 added.
+    const { harness, roomId } = seated();
+
+    expect(() => harness.service.removeMember(roomId, harness.human, harness.human)).toThrow(
+      expect.objectContaining({ code: 'SYSTEM_ROOM' })
+    );
+    expect(harness.store.getRoom(roomId)?.slug).toBe('team');
+    expect(
+      harness.service.getRoom(roomId, harness.human)?.members.map((m) => m.authorId)
+    ).toContain(harness.human);
+  });
+
+  it('still lets the owner take an agent OUT of #team', () => {
+    // The system-room guard is about the OWNER specifically — DorkBot's own
+    // seat is not protected by it, only by the three-way rule (which never
+    // fires here: taking the only agent out leaves nobody to witness).
+    const { harness, roomId, agent } = seated();
+
+    harness.service.removeMember(roomId, harness.human, agent);
+
+    expect(
+      harness.service.getRoom(roomId, harness.human)?.members.map((m) => m.authorId)
+    ).not.toContain(agent);
+  });
+
+  it('leaves an ordinary room’s Leave untouched — the guard cannot reach it', () => {
+    const harness = install();
+    ensureTeamRoom(harness.deps);
+    const dorkbot = harness.authors.resolveAgent(DORKBOT, 'DorkBot').id;
+    const ordinary = harness.service.createRoom(
+      { kind: 'channel', title: 'Backend', members: [], agentPaths: [DORKBOT] },
+      harness.human
+    );
+
+    expect(() =>
+      harness.service.removeMember(ordinary.id, harness.human, harness.human)
+    ).not.toThrow();
+    expect(
+      harness.service.getRoom(ordinary.id, harness.human)?.members.map((m) => m.authorId)
+    ).toEqual([dorkbot]);
+  });
 });

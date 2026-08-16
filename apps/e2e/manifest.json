@@ -865,36 +865,21 @@
       "failCount": 0,
       "relatedCode": [],
       "lastModified": ""
+    },
+    "room-row-menu": {
+      "specFile": "tests/rooms/room-row-menu.spec.ts",
+      "feature": "rooms",
+      "description": "leaves a one-agent room, and takes the reader back to the empty state, refuses to leave a two-agent room, and says why in its own words",
+      "lastRun": "2026-08-16T06:24:02.981Z",
+      "lastStatus": "passed",
+      "runCount": 3,
+      "passCount": 2,
+      "failCount": 1,
+      "relatedCode": [],
+      "lastModified": ""
     }
   },
   "runHistory": [
-    {
-      "id": "2026-08-04T09-51-07",
-      "timestamp": "2026-08-04T09:51:07.919Z",
-      "total": 1,
-      "passed": 0,
-      "failed": 1,
-      "skipped": 0,
-      "duration": 24631
-    },
-    {
-      "id": "2026-08-04T09-51-37",
-      "timestamp": "2026-08-04T09:51:37.527Z",
-      "total": 1,
-      "passed": 0,
-      "failed": 1,
-      "skipped": 0,
-      "duration": 13062
-    },
-    {
-      "id": "2026-08-04T09-54-34",
-      "timestamp": "2026-08-04T09:54:34.219Z",
-      "total": 1,
-      "passed": 1,
-      "failed": 0,
-      "skipped": 0,
-      "duration": 25926
-    },
     {
       "id": "2026-08-04T10-13-42",
       "timestamp": "2026-08-04T10:13:42.204Z",
@@ -1767,6 +1752,33 @@
       "failed": 0,
       "skipped": 0,
       "duration": 163408
+    },
+    {
+      "id": "2026-08-16T06-20-40",
+      "timestamp": "2026-08-16T06:20:40.998Z",
+      "total": 2,
+      "passed": 0,
+      "failed": 2,
+      "skipped": 0,
+      "duration": 160852
+    },
+    {
+      "id": "2026-08-16T06-22-38",
+      "timestamp": "2026-08-16T06:22:38.892Z",
+      "total": 2,
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0,
+      "duration": 66285
+    },
+    {
+      "id": "2026-08-16T06-24-02",
+      "timestamp": "2026-08-16T06:24:02.981Z",
+      "total": 4,
+      "passed": 4,
+      "failed": 0,
+      "skipped": 0,
+      "duration": 72908
     }
   ]
 }

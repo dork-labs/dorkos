@@ -697,6 +697,22 @@ export function SidebarMenuSurface({
     [longPress]
   );
   const closeSheet = useCallback(() => setSheetOpen(false), []);
+  /**
+   * Swallow the ghost click a long press leaves behind — wherever it lands.
+   *
+   * The touch that opened the sheet is still "down" at the row's own screen
+   * position when the finger lifts, and the browser's touch-to-mouse
+   * compatibility pass fires a `click` at that same point a moment later —
+   * after the sheet has already risen from the bottom of the screen. A tall
+   * enough node list puts one of ITS OWN rows exactly where the row used to
+   * be, so the ghost click can land on a menu item rather than passing
+   * through to nothing: the same gesture that opened "Leave channel" could
+   * also fire it, unattended, the instant the finger lifts (DOR-1233). This
+   * one guard is wired to both surfaces the ghost click can reach — the
+   * pressed row (via `Root`'s capture) and the sheet the press just raised
+   * over it (via {@link SidebarMenuSheetContent}) — because a click a person
+   * never made must not reach either.
+   */
   const onClickCapture = useCallback((event: ReactMouseEvent) => {
     if (!openedByPress.current) return;
     openedByPress.current = false;
@@ -795,6 +811,7 @@ export function SidebarMenuSurface({
             title={actionsLabel}
             onCloseAutoFocus={onCloseAutoFocus}
             onClose={closeSheet}
+            onClickCapture={onClickCapture}
           />
         </Drawer>
       </DropdownMenu>
@@ -829,6 +846,13 @@ interface SidebarMenuSheetContentProps {
   onCloseAutoFocus: (event: Event) => void;
   /** Put the sheet away, which is what a chosen row does after it acts. */
   onClose: () => void;
+  /**
+   * {@link SidebarMenuSurface}'s ghost-click guard, armed for the SAME press
+   * that just raised this sheet. Capture-phase, so it runs before any node's
+   * own `onClick` — the only way to stop the click from firing whatever row
+   * the finger happens to still be over.
+   */
+  onClickCapture: (event: ReactMouseEvent) => void;
 }
 
 /**
@@ -846,18 +870,29 @@ interface SidebarMenuSheetContentProps {
  * `max-h-[85vh]` with one scrolling region inside, per `drawer.tsx`: a phone
  * with eight groups to move an agent into would otherwise grow the sheet off
  * the top of the screen, taking its first rows with it.
+ *
+ * **`onClickCapture` is load-bearing, not defensive.** The sheet rises to
+ * cover the row that opened it, so the ghost click the long press leaves
+ * behind (the browser's touch-to-mouse compatibility pass, fired at the
+ * press's own screen position after the finger lifts) can land on one of
+ * THESE rows instead of passing through empty space — a long enough list
+ * puts a real menu item exactly where the row used to be. Without this, that
+ * unattended click could run whatever item ended up there, immediately after
+ * the sheet opened and before anyone chose anything (DOR-1233).
  */
 function SidebarMenuSheetContent({
   nodes,
   title,
   onCloseAutoFocus,
   onClose,
+  onClickCapture,
 }: SidebarMenuSheetContentProps) {
   return (
     <DrawerContent
       data-testid="sidebar-menu-sheet"
       className="max-h-[85vh]"
       onCloseAutoFocus={onCloseAutoFocus}
+      onClickCapture={onClickCapture}
     >
       <DrawerTitle className="text-sidebar-foreground/70 px-4 pt-4 pb-1 text-xs font-medium">
         {title}
