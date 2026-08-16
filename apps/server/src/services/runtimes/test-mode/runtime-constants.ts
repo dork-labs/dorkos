@@ -39,12 +39,20 @@ export const TEST_MODE_CAPABILITIES: RuntimeCapabilities = {
   supportsQuestionPrompt: true,
   // Capability-gated: asClaudePluginTransport() returns null for this runtime.
   supportsPlugins: false,
-  // `false` while the contract is types only (spec `persistent-session-runtime`
-  // P2). Test-mode exists to exercise the contract deterministically, so it is
-  // the runtime that flips these first once there is behavior to exercise.
+  // `false`: test-mode starts a fresh scripted turn per message and holds no
+  // process across turns — it has no warm state to report, so `getSessionWarmth`
+  // is honestly absent and every session reads `cold`.
   supportsPersistentSession: false,
-  supportsSteer: false,
-  supportsContextStaging: false,
+  // Both `true` (spec `persistent-session-runtime` P4). Test-mode exists to
+  // exercise the contract deterministically, and it can honestly do both without
+  // cross-turn warmth: a steer joins a turn that is ALREADY open (the scripted
+  // generator is live, `interactionGate.isOpen`), and a stage needs no open turn
+  // at all — neither depends on holding a process BETWEEN turns, which is all
+  // `supportsPersistentSession` denotes. `deliverIntoTurn` returns a truthful
+  // receipt for each; the dispatcher mints the `turn_input`/`context_staged` that
+  // surface them (task 4.4).
+  supportsSteer: true,
+  supportsContextStaging: true,
   // Test-mode injects nothing natively; the assembler bag is rendered verbatim.
   nativeContext: [],
   // Stateless: completed history lives only in the DorkOS EventLog, so the

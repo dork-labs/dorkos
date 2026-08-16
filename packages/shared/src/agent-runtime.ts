@@ -562,10 +562,15 @@ export interface RuntimeCapabilities {
    * `commandIntents` precedent (ADR-0256), so a new adapter cannot silently
    * omit it and inherit a behavior it never declared.
    *
-   * The prerequisite for the other two: there is nothing to steer into or stage
-   * onto if each turn is its own subprocess. `false` for every runtime through
-   * P2 of spec `persistent-session-runtime` — the shape lands before any
-   * behavior does.
+   * Usually the prerequisite for the other two: a runtime whose every turn is
+   * its OWN subprocess has nothing to steer into or stage onto between turns, so
+   * it holds a process across turns FIRST. The dependency is architectural, not
+   * absolute — an in-process runtime (test-mode) can steer a turn that is already
+   * open and stage onto a transcript it owns without keeping a process warm
+   * between turns, so it may declare {@link supportsSteer}/
+   * {@link supportsContextStaging} `true` with this `false`. `false` for every
+   * runtime through P2 of spec `persistent-session-runtime` — the shape lands
+   * before any behavior does.
    */
   supportsPersistentSession: boolean;
 

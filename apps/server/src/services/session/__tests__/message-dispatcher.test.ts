@@ -25,6 +25,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { FakeAgentRuntime } from '@dorkos/test-utils';
 import type { StreamEvent } from '@dorkos/shared/types';
+import type { RuntimeCapabilities } from '@dorkos/shared/agent-runtime';
 import type { Db } from '@dorkos/db';
 import { isDispatchId } from '@dorkos/shared/dispatch-id';
 
@@ -459,22 +460,242 @@ describe('dispatchMessage — never into an open permission ask', () => {
   });
 });
 
-describe('dispatchMessage — the disposition ladder', () => {
-  it.each(['steer', 'stage'] as const)(
-    'degrades %s to queue, and says why',
-    async (disposition) => {
-      runtime.withScenarios([quickTurn()]);
+describe('dispatchMessage — the degradation ladder (task 4.4)', () => {
+  /** Re-declare the runtime's capabilities for one case. */
+  function withCapabilities(overrides: Partial<RuntimeCapabilities>): void {
+    runtime.getCapabilities.mockReturnValue({ ...runtime.getCapabilities(), ...overrides });
+  }
 
-      const result = await send('course-correct', { disposition });
+  /** A scenario that parks a turn on an approval, then ends when `release`s. */
+  function approvalTurn(release: Promise<void>) {
+    return async function* (): AsyncGenerator<StreamEvent> {
+      yield {
+        type: 'approval_required',
+        data: {
+          toolCallId: 'call-1',
+          toolName: 'Bash',
+          input: '{}',
+          timeoutMs: 60_000,
+          remainingMs: 60_000,
+        },
+      } as unknown as StreamEvent;
+      await release;
+      yield { type: 'done', data: {} } as StreamEvent;
+    };
+  }
 
-      expect(result.outcome).toEqual({
-        messageId: expect.any(String),
-        requested: disposition,
-        applied: 'queue',
-        degradedBecause: 'unsupported',
-      });
-    }
-  );
+  it('steers natively when the runtime supports it and a turn is open (AC1)', async () => {
+    withCapabilities({ supportsSteer: true });
+    const first = gate();
+    runtime.withScenarios([heldTurn(first.wait)]);
+    await send('long turn');
+    await settle();
+    expect(projectorStatus()).toBe('streaming');
+    const turnsBefore = runtime.sendMessage.mock.calls.length;
+
+    const result = await send('course-correct', { disposition: 'steer' });
+
+    expect(result.outcome).toEqual({
+      messageId: expect.any(String),
+      requested: 'steer',
+      applied: 'steer',
+    });
+    expect(result.outcome.degradedBecause).toBeUndefined();
+    expect(result.queued).toBe(false);
+    // A steer JOINS the open turn — the runtime is asked to deliver into it, and
+    // no second turn is ever started.
+    expect(runtime.deliverIntoTurn).toHaveBeenCalledWith(
+      session,
+      'course-correct',
+      expect.objectContaining({ mode: 'steer' })
+    );
+    expect(runtime.sendMessage.mock.calls.length).toBe(turnsBefore);
+    // It is not a queue row: it delivered, it did not wait.
+    expect(listQueuedMessages(session)).toHaveLength(0);
+
+    first.open();
+    await settle();
+  });
+
+  it('queues a steer the runtime cannot take, and says why (AC2)', async () => {
+    // Capabilities stay at the default (supportsSteer: false) — Codex/OpenCode.
+    const first = gate();
+    runtime.withScenarios([heldTurn(first.wait), quickTurn()]);
+    await send('long turn');
+    await settle();
+
+    const result = await send('course-correct', { disposition: 'steer' });
+    await settle();
+
+    expect(result.outcome).toEqual({
+      messageId: expect.any(String),
+      requested: 'steer',
+      applied: 'queue',
+      degradedBecause: 'unsupported',
+    });
+    expect(result.queued).toBe(true);
+    // The flag is the routing authority: a runtime that cannot steer is never
+    // asked to, so no native attempt is made behind a false declaration.
+    expect(runtime.deliverIntoTurn).not.toHaveBeenCalled();
+    expect(listQueuedMessages(session)).toHaveLength(1);
+
+    first.open();
+    await settle();
+  });
+
+  it('runs a steer on an idle session immediately, and stays quiet about it (AC3)', async () => {
+    withCapabilities({ supportsSteer: true });
+    // No turn is open, so the runtime reports there is nothing to join.
+    runtime.deliverIntoTurn.mockResolvedValue({ delivered: false, reason: 'no-open-turn' });
+    runtime.withScenarios([quickTurn()]);
+
+    const result = await send('course-correct', { disposition: 'steer' });
+    await settle();
+
+    expect(result.outcome).toEqual({
+      messageId: expect.any(String),
+      requested: 'steer',
+      applied: 'queue',
+      degradedBecause: 'session-idle',
+    });
+    // `session-idle` is the ONE downgrade the composer renders nothing for
+    // (task 4.6): the message ran now, which lost nothing. The server records it
+    // regardless, which is what this asserts.
+    expect(result.queued).toBe(false);
+    expect(runtime.sendMessage).toHaveBeenCalledTimes(1);
+  });
+
+  it('queues a steer behind an open interaction and never fires it into the ask (AC4)', async () => {
+    withCapabilities({ supportsSteer: true });
+    const first = gate();
+    runtime.withScenarios([approvalTurn(first.wait), quickTurn()]);
+
+    await send('run something dangerous');
+    await settle();
+    const projector = getOrCreateProjector(session);
+    expect(projector.hasPendingInteractions()).toBe(true);
+
+    const result = await send('actually, stop that', { disposition: 'steer' });
+    await settle();
+
+    expect(result.outcome).toEqual({
+      messageId: expect.any(String),
+      requested: 'steer',
+      applied: 'queue',
+      degradedBecause: 'pending-interaction',
+    });
+    expect(result.queued).toBe(true);
+    // The steer was NEVER delivered into the running turn — firing it into the
+    // open ask is the exact failure the gate exists for.
+    expect(runtime.deliverIntoTurn).not.toHaveBeenCalled();
+
+    // The turn ENDS with the approval still unanswered: the queue must not move.
+    first.open();
+    await settle();
+    expect(runtime.sendMessage).toHaveBeenCalledTimes(1);
+
+    // Answered — now, and only now, the steered message runs.
+    projector.resolveInteraction('call-1', 'approved');
+    await settle();
+    expect(runtime.sendMessage).toHaveBeenCalledTimes(2);
+  });
+
+  it('folds a stage the runtime cannot take into the next dispatch, and says so (AC5)', async () => {
+    // Capabilities stay at the default (supportsContextStaging: false).
+    const projector = getOrCreateProjector(session);
+    const ingest = vi.spyOn(projector, 'ingest');
+
+    const result = await send('use the staging bucket', { disposition: 'stage' });
+
+    expect(result.outcome).toEqual({
+      messageId: expect.any(String),
+      requested: 'stage',
+      applied: 'stage',
+      degradedBecause: 'unsupported',
+    });
+    expect(result.queued).toBe(false);
+    // Folded WITHOUT a native attempt behind the false flag.
+    expect(runtime.deliverIntoTurn).not.toHaveBeenCalled();
+    // The fold emits the SAME context_staged receipt the native path does — a
+    // silent hold is indistinguishable from a dropped message.
+    expect(ingest).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'context_staged', content: 'use the staging bucket' })
+    );
+
+    // The NEXT dispatch carries the staged text as a `staged_context` entry.
+    runtime.withScenarios([quickTurn()]);
+    await send('now do the thing');
+    await settle();
+    const call = runtime.sendMessage.mock.calls.find(
+      ([, content]) => content === 'now do the thing'
+    );
+    expect(call?.[2]?.additionalContext).toContainEqual({
+      kind: 'staged_context',
+      scope: 'per-turn',
+      data: { text: 'use the staging bucket' },
+    });
+  });
+
+  it('stages natively when the runtime supports it, no downgrade', async () => {
+    withCapabilities({ supportsContextStaging: true });
+    runtime.deliverIntoTurn.mockResolvedValue({ delivered: true });
+    const projector = getOrCreateProjector(session);
+    const ingest = vi.spyOn(projector, 'ingest');
+
+    const result = await send('attach this', { disposition: 'stage' });
+
+    expect(result.outcome).toEqual({
+      messageId: expect.any(String),
+      requested: 'stage',
+      applied: 'stage',
+    });
+    expect(result.outcome.degradedBecause).toBeUndefined();
+    expect(runtime.deliverIntoTurn).toHaveBeenCalledWith(
+      session,
+      'attach this',
+      expect.objectContaining({ mode: 'stage' })
+    );
+    expect(ingest).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'context_staged', content: 'attach this' })
+    );
+  });
+
+  it('folds a declared-but-undeliverable stage exactly once (no double-fold)', async () => {
+    // The adapter-bug path: the runtime DECLARES staging but its deliverIntoTurn
+    // comes back `unsupported`. deliverStage folds internally and reports
+    // viaFallback; the ladder must NOT fold a second time.
+    withCapabilities({ supportsContextStaging: true });
+    runtime.deliverIntoTurn.mockResolvedValue({ delivered: false, reason: 'unsupported' });
+    const projector = getOrCreateProjector(session);
+    const ingest = vi.spyOn(projector, 'ingest');
+
+    const result = await send('stage me', { disposition: 'stage' });
+
+    expect(result.outcome).toEqual({
+      messageId: expect.any(String),
+      requested: 'stage',
+      applied: 'stage',
+      degradedBecause: 'unsupported',
+    });
+    // Exactly ONE receipt — a double-fold would emit two.
+    const receipts = ingest.mock.calls.filter(
+      ([event]) => (event as { type?: string }).type === 'context_staged'
+    );
+    expect(receipts).toHaveLength(1);
+
+    // And the next dispatch carries the staged text exactly ONCE, not twice.
+    runtime.withScenarios([quickTurn()]);
+    await send('go');
+    await settle();
+    const call = runtime.sendMessage.mock.calls.find(([, content]) => content === 'go');
+    const staged = (call?.[2]?.additionalContext ?? []).filter((e) => e.kind === 'staged_context');
+    expect(staged).toHaveLength(1);
+    expect(staged[0]).toEqual({
+      kind: 'staged_context',
+      scope: 'per-turn',
+      data: { text: 'stage me' },
+    });
+  });
 
   it('records what was REQUESTED on the row, never what was applied', async () => {
     const first = gate();

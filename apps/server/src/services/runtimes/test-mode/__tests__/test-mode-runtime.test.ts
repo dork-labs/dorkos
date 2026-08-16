@@ -10,6 +10,7 @@ import {
 import { SessionEventStore, setSessionEventStore } from '../../../session/index.js';
 import { triggerTurn } from '../../../session/trigger-turn.js';
 import { scenarioStore } from '../scenario-store.js';
+import { interactionGate } from '../interaction-gate.js';
 import { TEST_MODE_CAPABILITIES } from '../runtime-constants.js';
 import { TestModeRuntime } from '../test-mode-runtime.js';
 
@@ -263,6 +264,49 @@ describe('TestModeRuntime — stateless log-backed contract adapter', () => {
     expect(runtime.updateSession(SESSION_A, { permissionMode: 'plan' })).toBe(true);
     expect((await runtime.getSession('/projects/test', SESSION_A))?.permissionMode).toBe('plan');
     expect(runtime.updateSession(SESSION_B, { permissionMode: 'plan' })).toBe(false);
+  });
+});
+
+describe('TestModeRuntime — deliverIntoTurn (the honest steer/stage receipt, task 4.4)', () => {
+  afterEach(() => {
+    interactionGate.reset();
+  });
+
+  it('declares both dispositions, so the flags it flipped are backed by a method', () => {
+    const caps = new TestModeRuntime().getCapabilities();
+    expect(caps.supportsSteer).toBe(true);
+    expect(caps.supportsContextStaging).toBe(true);
+    expect(typeof new TestModeRuntime().deliverIntoTurn).toBe('function');
+  });
+
+  it('reports no-open-turn for a steer when no turn is running', async () => {
+    const runtime = new TestModeRuntime();
+    // No turn open — interactionGate.isOpen(SESSION_A) is false.
+    const result = await runtime.deliverIntoTurn(SESSION_A, 'change course', {
+      mode: 'steer',
+      messageId: 'steer-1',
+    });
+    expect(result).toEqual({ delivered: false, reason: 'no-open-turn' });
+  });
+
+  it('delivers a steer when a turn is genuinely open', async () => {
+    const runtime = new TestModeRuntime();
+    // Open a scripted turn the way sendMessage does — now there is one to join.
+    interactionGate.open(SESSION_A);
+    const result = await runtime.deliverIntoTurn(SESSION_A, 'also check the tests', {
+      mode: 'steer',
+      messageId: 'steer-2',
+    });
+    expect(result).toEqual({ delivered: true });
+  });
+
+  it('accepts a stage with no open turn — a stage needs none', async () => {
+    const runtime = new TestModeRuntime();
+    const result = await runtime.deliverIntoTurn(SESSION_A, 'attach this', {
+      mode: 'stage',
+      messageId: 'stage-1',
+    });
+    expect(result).toEqual({ delivered: true });
   });
 });
 

@@ -234,3 +234,64 @@ write churn described above no longer applies. Not re-verified live (no re-probe
    as a `command_execution` item with non-zero `exit_code`).
 3. Behavior of `web_search` / `mcp_tool_call` items under `read-only` sandbox.
 4. Re-check `on-failure` acceptance on the next SDK re-pin (latest docs dropped it).
+
+---
+
+## Verdict: `supportsSteer: false`, `supportsContextStaging: false` — task 4.4 (persistent-session-runtime)
+
+Probed 2026-08-15 against `@openai/codex-sdk@0.147.0` (the version `apps/server` resolves —
+`~0.147.0` in `apps/server/package.json`) and the system `codex-cli 0.145.0`
+(`/Users/doriancollier/.local/bin/codex`). Both capability flags stay `false`: the SDK
+exposes **no primitive to hand a message to a running turn**, so there is nothing to steer
+into or stage onto mid-turn. AC6 asks for a probe rather than a declaration; here is what
+was run.
+
+### (a) Static probe — the SDK surface (definitive for "does a primitive exist")
+
+`node_modules/.pnpm/@openai+codex-sdk@0.147.0/node_modules/@openai/codex-sdk/dist/index.d.ts`
+(278 lines). The `Thread` class (the SDK's whole turn API) declares exactly:
+
+```ts
+declare class Thread {
+  runStreamed(input: Input, turnOptions?: TurnOptions): Promise<StreamedTurn>;
+  run(input: Input, turnOptions?: TurnOptions): Promise<Turn>;
+  // id getter; private runStreamedInternal
+}
+type TurnOptions = { model?: ...; signal?: AbortSignal };   // the ONLY interrupt primitive
+```
+
+Both `run` and `runStreamed` START a turn — "a turn encompasses all events that happen while
+the agent is processing the prompt" and "completes when the turn ends" (dist docstrings).
+There is no `steer`, `inject`, `append`, `input`, or mid-turn `send`. The sole way to affect
+an in-flight turn is `TurnOptions.signal` — an `AbortSignal` that CANCELS it. Cancelling is
+not steering, and there is no non-turn-opening append, so `supportsContextStaging` is false
+for the same reason: every `run`/`runStreamed` opens a turn.
+
+### (b) Live probe — the real installed objects (no model turn, no spend)
+
+Codex is authenticated on this machine (`~/.codex/auth.json` present), but a live model turn
+cannot reveal a primitive that does not exist in the API — there is no method to call — and
+would spend credits, so the live probe instantiated the REAL SDK objects and enumerated
+their methods instead of driving a turn. Run from `apps/server` so module resolution matches
+the adapter's:
+
+```
+Thread.prototype methods: ["id","runStreamed","runStreamedInternal","run"]
+Codex.prototype  methods: ["startThread","resumeThread"]
+mid-turn/steer methods  : []          # filtered for steer|inject|append|send|push|feed|interrupt|cancel|abort
+```
+
+Corroborated at the CLI: `codex exec --help` (system `codex-cli 0.145.0`) lists no
+steer/inject/mid-turn-input flag; stdin is appended as a `<stdin>` block at turn START, and
+`resume` starts a NEW turn on a persisted thread — neither reaches a running turn.
+
+### Consequence for the dispatcher (task 4.4)
+
+The codex adapter therefore does NOT implement `deliverIntoTurn` (it omits the optional
+method). With both flags `false`, the degradation ladder never asks it to: a `steer` degrades
+to `queue` with `degradedBecause: 'unsupported'`, and a `stage` folds into the next dispatch
+as an `additionalContext` entry. Nothing a person typed is lost, and the runtime is never
+described as able to do something it cannot.
+
+**If a future SDK adds a mid-turn primitive, that is a FOLLOW-UP (declare + implement +
+conformance), not a scope expansion here — what was measured on 0.147.0 is `false`.**
