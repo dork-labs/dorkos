@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(server): agents react instead of replying "Ack" for ack-only messages (DOR-1234)'
+  - 'fix(server): move the react-not-reply nudge to the claude-code-only surface (DOR-1234)'
 ---
 
 ### Fixed
