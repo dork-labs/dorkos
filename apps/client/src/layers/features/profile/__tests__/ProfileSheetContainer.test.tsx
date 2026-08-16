@@ -286,6 +286,23 @@ describe('the address rule', () => {
     expect(panel()).toBeNull();
   });
 
+  it('holds the panel open against the layout that hydrates after the link', async () => {
+    // The address rule hands a `?profile=` link to the panel and strips the URL.
+    // The per-agent layout binds on a DIFFERENT query and may land a beat later
+    // with "this agent's panel was closed" — with the URL already gone, nothing
+    // could retell the link. The link opener's pending mark is what outranks it.
+    useAppStore.setState({ selectedCwd: WARDEN_PATH });
+    const harness = renderContainer({ url: `/session?profile=${WARDEN}&profilePage=rooms` });
+    await harness.ready();
+    await waitFor(() => expect(useAppStore.getState().rightPanelOpen).toBe(true));
+
+    // The stored layout for this agent says closed; it hydrates after the link.
+    useAppStore.getState().loadRightPanelForAgent(WARDEN_PATH, WARDEN_PATH);
+
+    expect(useAppStore.getState().rightPanelOpen).toBe(true);
+    expect(useAppStore.getState().activeRightPanelTab).toBe('profile');
+  });
+
   it('sheets a link to anybody else, even on /session', async () => {
     useAppStore.setState({ selectedCwd: WARDEN_PATH });
     const harness = renderContainer({ url: `/session?profile=${OPERATOR}` });
