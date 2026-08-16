@@ -9,11 +9,7 @@ import { motion, useReducedMotion } from 'motion/react';
 import type { TeamMember } from '@dorkos/shared/team-schemas';
 import { IdentityAvatar } from '@/layers/shared/ui';
 import { teamMemberFace } from '@/layers/entities/team';
-import {
-  profileScopeKey,
-  useProfileScope,
-  type ProfileScopeValue,
-} from '../model/profile-scope';
+import { profileScopeKey, useProfileScope, type ProfileScopeValue } from '../model/profile-scope';
 
 /**
  * The shared-layout id the portrait and the strip share.
