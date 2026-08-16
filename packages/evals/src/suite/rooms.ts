@@ -312,13 +312,20 @@ export const roomsBurstCollectsCase: EvalCase = {
  * `rooms-halt-stops-and-says-so` — Stop reaches a running turn, and the room
  * says so exactly once (A-16 / RP8, `room-participation` §10.4).
  *
- * Two things are asserted and the second is the one with a rule behind it. The
- * halt must reach a LIVE turn (`stopped >= 1`, which only the route's answer
- * carries), and the room must write ONE `halted` notice — written BEFORE the
- * claims are dropped, because an indicator that vanishes ahead of the entry
- * explaining it is a room going quiet for no visible reason, which
- * `.claude/rules/room-conduct.md` forbids. The notice is damped per room, so
- * "exactly one" is the assertion rather than "at least one".
+ * Three things are asserted and each has a rule behind it. The halt must reach a
+ * LIVE turn (`stopped >= 1`, which only the route's answer carries); the room
+ * must write ONE `halted` notice — written BEFORE the claims are dropped,
+ * because an indicator that vanishes ahead of the entry explaining it is a room
+ * going quiet for no visible reason, which `.claude/rules/room-conduct.md`
+ * forbids, and damped per room, so "exactly one" is the assertion rather than
+ * "at least one"; and **the stopped turn must post nothing at all**.
+ *
+ * That third one is the one a person would notice missing. An interrupt is
+ * delivered rather than obeyed, so the scripted turn here keeps running after
+ * the halt and closes normally when the case winds it down — and until DOR-1232
+ * the room posted the answer it came back with, two seconds under its own
+ * "everything here was stopped" line. The case therefore judges the frames from
+ * after that wind-down, not the ones from the halt.
  *
  * **Test-mode only, and structurally so.** It needs a turn that is still running
  * when Stop is pressed, which the `long-turn` scenario provides deterministically
@@ -362,19 +369,28 @@ export const roomsHaltStopsCase: EvalCase = {
         timeoutMs: 20_000,
       });
       room.notes.stopped = await haltRoom({ baseUrl: ctx.baseUrl, roomId: room.roomId });
-      const frames = await stream.settle({ quietMs: QUIET_MS });
+      await stream.settle({ quietMs: QUIET_MS });
 
       // **Wind the scripted turn down BEFORE this case returns, and wait for it.**
       // A halt interrupts the room's WAIT; the runtime's own stream still closes
-      // the ordinary way, and `TestModeRuntime.interruptQuery` answers false
-      // because there is no process to signal — so the `long-turn` scenario is
-      // still ticking here. Left running, it outlives the eval: the runner
+      // the ordinary way, and `TestModeRuntime.interruptQuery` reports `true`
+      // for aborting the interaction gate without stopping the scripted turn
+      // behind it — so the `long-turn` scenario is still ticking here, and it
+      // still has its whole answer to deliver. Left running, it outlives the
+      // eval: the runner
       // disposes the server, closes the sandbox database, and the turn's own
       // completion path then writes into a closed handle and takes the whole run
       // down with an uncaught `The database connection is not open`. Measured,
       // not theorised — that is exactly how this case first failed.
       await finishTestTurns({ baseUrl: ctx.baseUrl });
-      await stream.settle({ quietMs: WIND_DOWN_QUIET_MS });
+      // **The frames the oracles judge are the ones from AFTER the wind-down**,
+      // and that is the whole of what makes the third oracle able to fail. The
+      // stopped turn's answer arrives when its stream closes, which is here —
+      // seconds after the halt — so a frame set collected at the halt could not
+      // see the post it is asserting the absence of (DOR-1232). `settle` returns
+      // every frame since the subscribe, so nothing from the earlier window is
+      // lost by reading the later one.
+      const frames = await stream.settle({ quietMs: WIND_DOWN_QUIET_MS });
       return { frames, room };
     } finally {
       // Hand the scenario store back the way it was found: it is a module
@@ -392,6 +408,9 @@ export const roomsHaltStopsCase: EvalCase = {
       'the halt reached at least one live turn'
     ),
     roomNoticeCount('halted', 1, 'the room said it was stopped, exactly once'),
+    agentStayedQuietInRoom('ada', {
+      label: 'the stopped turn posted no answer',
+    }),
   ],
 };
 
