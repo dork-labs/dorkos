@@ -237,7 +237,12 @@ export function StatusLineShowcases() {
         </ShowcaseLabel>
         <ShowcaseDemo className="overflow-x-auto">
           <div className="space-y-5">
-            {[460, 380].map((width) => (
+            {/* The `compact` and `identity` floors — the two tiers whose right-cluster
+                budget (3 slots) actually contests `permission` against `plan`. Drawn at
+                their real tier floors, not an arbitrary narrow width: this page's own
+                e2e guard (`status-line-fit.spec.ts`) asserts every row here sits at a
+                floor `resolveStatusBudget` defines, so a reproduction has to use one. */}
+            {TIER_WIDTHS.filter((width) => width === 440 || width === 340).map((width) => (
               <BudgetedLine key={width} scenario={PLANNING} width={width} />
             ))}
           </div>
