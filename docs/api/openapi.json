@@ -7913,6 +7913,9 @@
           "projectPath": {
             "type": "string"
           },
+          "activity": {
+            "$ref": "#/components/schemas/TeamAgentActivity"
+          },
           "isDefault": {
             "type": "boolean"
           },
@@ -7928,6 +7931,7 @@
           "runtime",
           "healthStatus",
           "recentlyActive",
+          "activity",
           "isDefault",
           "isSystem",
           "registeredAt"
@@ -7942,6 +7946,47 @@
           "unreachable"
         ]
       },
+      "TeamAgentActivity": {
+        "type": "object",
+        "properties": {
+          "working": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "roomId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "roomName": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "since": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "roomId",
+              "roomName",
+              "since"
+            ]
+          },
+          "lastActiveAt": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "working",
+          "lastActiveAt"
+        ]
+      },
       "TeamPersonFacts": {
         "type": "object",
         "properties": {
@@ -7953,10 +7998,17 @@
           },
           "email": {
             "type": "string"
+          },
+          "lastSeenAt": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "required": [
-          "role"
+          "role",
+          "lastSeenAt"
         ]
       },
       "TeamSourceWarning": {

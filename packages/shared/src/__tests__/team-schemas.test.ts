@@ -27,7 +27,7 @@ const FULL_PERSON = {
   isSelf: true,
   ownerId: null,
   origin: 'local',
-  person: { role: 'owner', email: 'dorian@dorkos.ai' },
+  person: { role: 'owner', email: 'dorian@dorkos.ai', lastSeenAt: '2026-08-16T10:00:00.000Z' },
 };
 
 /** An agent row with every optional field present. */
@@ -49,6 +49,10 @@ const FULL_AGENT = {
     recentlyActive: true,
     namespace: 'dorkos',
     projectPath: '/Users/dorian/agents/ana',
+    activity: {
+      working: { roomId: 'room-1', roomName: 'team', since: '2026-08-16T09:55:00.000Z' },
+      lastActiveAt: '2026-08-16T09:55:00.000Z',
+    },
     isDefault: false,
     isSystem: false,
     registeredAt: '2026-08-06T00:00:00.000Z',
@@ -79,6 +83,72 @@ describe('TeamMemberSchema', () => {
     expect(parsed.ownerId).toBe('author-1');
     expect(parsed.agent?.recentlyActive).toBe(true);
     expect(parsed.agent?.runtime).toBe('claude-code');
+  });
+
+  describe('activity (spec `profile-unification` §3.1)', () => {
+    // The whole point of the field: one object, always there, both members
+    // nullable — so a renderer distinguishes "working", "idle since" and "never
+    // run" without ever having to read an absent field as a state.
+    it('refuses an agent row that omits it', () => {
+      const { activity: _omitted, ...withoutActivity } = FULL_AGENT.agent;
+      expect(TeamMemberSchema.safeParse({ ...FULL_AGENT, agent: withoutActivity }).success).toBe(
+        false
+      );
+    });
+
+    it('accepts the idle and never-run states, which are not the same state', () => {
+      const idle = TeamMemberSchema.parse({
+        ...FULL_AGENT,
+        agent: {
+          ...FULL_AGENT.agent,
+          activity: { working: null, lastActiveAt: '2026-08-16T09:00:00.000Z' },
+        },
+      });
+      expect(idle.agent?.activity.working).toBeNull();
+      expect(idle.agent?.activity.lastActiveAt).toBe('2026-08-16T09:00:00.000Z');
+
+      const never = TeamMemberSchema.parse({
+        ...FULL_AGENT,
+        agent: { ...FULL_AGENT.agent, activity: { working: null, lastActiveAt: null } },
+      });
+      expect(never.agent?.activity).toEqual({ working: null, lastActiveAt: null });
+    });
+
+    it('keeps working without a room name, because the label is what degrades', () => {
+      const parsed = TeamMemberSchema.parse({
+        ...FULL_AGENT,
+        agent: {
+          ...FULL_AGENT.agent,
+          activity: {
+            working: { roomId: 'room-1', roomName: null, since: '2026-08-16T09:55:00.000Z' },
+            lastActiveAt: null,
+          },
+        },
+      });
+      expect(parsed.agent?.activity.working?.roomName).toBeNull();
+    });
+
+    it('refuses a working block that omits the room name rather than nulling it', () => {
+      expect(
+        TeamMemberSchema.safeParse({
+          ...FULL_AGENT,
+          agent: {
+            ...FULL_AGENT.agent,
+            activity: {
+              working: { roomId: 'room-1', since: '2026-08-16T09:55:00.000Z' },
+              lastActiveAt: null,
+            },
+          },
+        }).success
+      ).toBe(false);
+    });
+  });
+
+  it('refuses a person row that omits lastSeenAt rather than nulling it', () => {
+    const { lastSeenAt: _omitted, ...withoutLastSeen } = FULL_PERSON.person;
+    expect(TeamMemberSchema.safeParse({ ...FULL_PERSON, person: withoutLastSeen }).success).toBe(
+      false
+    );
   });
 
   it('parses a minimal row — every render-cache field is optional', () => {
