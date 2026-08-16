@@ -170,6 +170,14 @@ export interface AgentExecutionRowsProps {
    * inheriting", which is exactly what the wire's `null` means.
    */
   onUpdate: (updates: AgentManifestUpdate) => void;
+  /**
+   * Classes for the two-column grid the rows sit in.
+   *
+   * Pass `grid-cols-1` where the surface is narrow: at a popover's width the
+   * two provenance chips collide into each other rather than sitting beside
+   * their labels.
+   */
+  className?: string;
 }
 
 /**
@@ -189,7 +197,7 @@ export interface AgentExecutionRowsProps {
  *
  * @param props - See {@link AgentExecutionRowsProps}.
  */
-export function AgentExecutionRows({ agent, onUpdate }: AgentExecutionRowsProps) {
+export function AgentExecutionRows({ agent, onUpdate, className }: AgentExecutionRowsProps) {
   const isMobile = useIsMobile();
   const { data: config } = useConfig();
   const { data: capabilityMap, isPending: capabilitiesPending } = useRuntimeCapabilities();
@@ -252,7 +260,7 @@ export function AgentExecutionRows({ agent, onUpdate }: AgentExecutionRowsProps)
   const runtimeLabel = getRuntimeDescriptor(runtime).label;
 
   return (
-    <div className="grid grid-cols-2 gap-3">
+    <div className={cn('grid grid-cols-2 gap-3', className)}>
       <ExecutionRow
         label="Model"
         valueLabel={selectedModel?.displayName ?? effectiveModel ?? "Runtime's choice"}

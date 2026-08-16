@@ -306,6 +306,9 @@ describe('About, where an agent is named', () => {
       const keys = invalidate.mock.calls.map((call) => JSON.stringify(call[0]?.queryKey));
       expect(keys).toContain(JSON.stringify(['team']));
       expect(keys.some((key) => key?.includes('byPath'))).toBe(true);
+      // And the fleet the sidebar draws (`agentKeys.resolved`), which is a
+      // third reader of the same name — the prefix covers it.
+      expect(keys).toContain(JSON.stringify(['agents']));
     });
   });
 
@@ -335,8 +338,14 @@ describe('Instructions and Boundaries', () => {
 
     const editor = await screen.findByPlaceholderText('Write markdown content...');
     expect(editor).toHaveValue('Be careful.');
-    await userEvent.type(editor, ' Twice.');
-    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+    // `clear` + `type` rather than `type` alone: the caret's starting position
+    // is not something this test should be asserting about, and typing into an
+    // un-cleared field made the whole case depend on it.
+    await userEvent.clear(editor);
+    await userEvent.type(editor, 'Be careful. Twice.');
+    const save = screen.getByRole('button', { name: 'Save' });
+    await waitFor(() => expect(save).toBeEnabled());
+    await userEvent.click(save);
 
     const [, updates] = vi.mocked(transport.updateAgentByPath).mock.calls[0];
     const soul = (updates as { soulContent: string }).soulContent;

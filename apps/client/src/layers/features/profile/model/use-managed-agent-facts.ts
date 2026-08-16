@@ -10,7 +10,12 @@
  * @module features/profile/model/use-managed-agent-facts
  */
 import type { TeamMember } from '@dorkos/shared/team-schemas';
-import { useAgentMcpServers, useAgentToolStatus } from '@/layers/entities/agent';
+import {
+  findMatchingPreset,
+  useAgentMcpServers,
+  useAgentToolStatus,
+  useCurrentAgent,
+} from '@/layers/entities/agent';
 import { useInstalledPackages } from '@/layers/entities/marketplace';
 import { useAgentSessions } from '@/layers/entities/session';
 import { useTasks } from '@/layers/entities/tasks';
@@ -22,6 +27,7 @@ const NOTHING: ProfileAgentFacts = {
   tasks: null,
   skills: null,
   tools: null,
+  personality: null,
   tasksAvailable: true,
 };
 
@@ -51,8 +57,15 @@ export function useManagedAgentFacts(member: TeamMember, enabled: boolean): Prof
   const { data: schedules } = useTasks(tasksEnabled);
   const { data: packages } = useInstalledPackages(projectPath ?? '');
   const { data: mcpServers } = useAgentMcpServers(agentId);
+  // A cache hit: the profile root reads the same manifest for the About row.
+  const { data: manifest } = useCurrentAgent(projectPath);
 
   if (projectPath === null) return NOTHING;
+
+  // "Custom" only once the traits are known and match no archetype — before the
+  // manifest lands the row says nothing rather than guessing at one.
+  const traits = manifest?.traits;
+  const personality = traits ? (findMatchingPreset(traits)?.name ?? 'Custom') : null;
 
   const mine = (schedules ?? []).filter((schedule) => schedule.agentId === agentId);
   // Only a schedule that is going to run has a "next": a paused one still
@@ -74,6 +87,7 @@ export function useManagedAgentFacts(member: TeamMember, enabled: boolean): Prof
     tasks: { count: mine.length, nextRunAt: next ?? null },
     skills: packages ? packages.filter((pkg) => pkg.type === 'skill-pack').length : null,
     tools: mcpServers ? mcpServers.filter((server) => server.enabled).length : null,
+    personality,
     tasksAvailable: toolStatus.tasks !== 'disabled-by-server',
   };
 }

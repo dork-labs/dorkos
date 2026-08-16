@@ -44,7 +44,12 @@ export function ProfilePage({ member, title, meta, onBack, children }: ProfilePa
 
   return (
     <div data-slot="profile-page" className="flex min-h-0 flex-1 flex-col">
-      <div className="flex items-center gap-2 px-2 pt-2 pb-1">
+      {/* The sheet home pins its own close X in this corner (`SheetContent`, at
+          top-4 right-4), so the strip steps aside for it there — the same
+          allowance the portrait's kebab makes. Without it the status sentence
+          runs underneath the X on a phone, where the strip is widest relative
+          to the panel. */}
+      <div className="flex items-center gap-2 px-2 pt-2 pb-1 group-data-[home=sheet]/profile:pr-9">
         <button
           type="button"
           onClick={onBack}
@@ -77,7 +82,12 @@ export function ProfilePage({ member, title, meta, onBack, children }: ProfilePa
         {meta && <span className="text-muted-foreground text-xs">{meta}</span>}
       </div>
 
-      <div className="min-h-0 flex-1 overflow-auto px-3 pb-4">{children}</div>
+      {/* A flex column, not a block: §1.3 gives the content the remaining
+          height, and a page that wants to USE it — the full-height convention
+          editors, the Sessions list with its own scroll — needs a parent whose
+          `flex-1` means something. A page that only wants its content height is
+          unaffected; it simply does not ask to grow. */}
+      <div className="flex min-h-0 flex-1 flex-col overflow-auto px-3 pb-4">{children}</div>
     </div>
   );
 }

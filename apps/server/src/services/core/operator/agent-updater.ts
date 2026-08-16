@@ -139,8 +139,22 @@ export async function updateAgentManifest(opts: {
   }
 
   // traits and conventions go into agent.json via the manifest update.
-  // Null values signal "clear this field" (undefined can't travel over JSON).
-  const merged: Record<string, unknown> = { ...existing, ...parsed.data };
+  //
+  // **Only the keys the caller actually SENT.** `UpdateAgentRequestSchema` is
+  // `AgentManifestSchema.pick(...).partial()`, and several of the picked fields
+  // carry a Zod `.default()` — so parsing `{"model":"sonnet"}` hands back a
+  // `description` and a `capabilities` the caller never mentioned, and spreading
+  // the whole parse result over the manifest wrote those defaults on top of real
+  // values. A PATCH that set a model erased the agent's description and every
+  // capability with it (DOR-1253): silent data loss on the most ordinary edit
+  // there is. The patch is intersected with the raw body's own keys, which is
+  // the only thing that says what the caller meant.
+  //
+  // `null` still means "clear this field" — `undefined` cannot travel over JSON,
+  // so the wire needs a value for the absence and `null` is it.
+  const sent = new Set(Object.keys(rawBody));
+  const patch = Object.fromEntries(Object.entries(parsed.data).filter(([key]) => sent.has(key)));
+  const merged: Record<string, unknown> = { ...existing, ...patch };
   for (const key of Object.keys(merged)) {
     if (merged[key] === null) delete merged[key];
   }

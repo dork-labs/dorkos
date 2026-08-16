@@ -75,6 +75,11 @@ export interface ProfileAgentFacts {
   /** Enabled managed MCP servers. */
   tools: number | null;
   /**
+   * What this agent's traits currently add up to — a preset's name, or
+   * "Custom" once they have been tuned off one.
+   */
+  personality: string | null;
+  /**
    * Whether this install has tasks at all.
    *
    * False when the server has the tasks tool switched off, and then the Tasks
@@ -108,10 +113,17 @@ const SYSTEM_LOCK_REASON = 'DorkBot’s name, face and personality are part of D
 const EMAIL_LOCK_REASON =
   'Your email comes from the account you signed in with. Change it in Settings › Security.';
 
-/** A room list as one value: the first two names, then how many more. */
+/**
+ * A room list as one value: the first two names, then how many more.
+ *
+ * The names are used **verbatim** — `GET /api/team/:id/rooms` already sends a
+ * channel wearing its `#`, and adding a second one read `##team`. It is also the
+ * only correct answer for a DM, whose name is the people in it and has no hash
+ * to wear. The page this row pushes draws them the same way.
+ */
 function roomsValue(rooms: ProfileRoomsSummary | null | undefined): string | null {
   if (!rooms || rooms.count === 0) return null;
-  const shown = rooms.names.slice(0, 2).map((name) => `#${name}`);
+  const shown = rooms.names.slice(0, 2);
   const rest = rooms.count - shown.length;
   return rest > 0 ? `${shown.join(', ')}, +${rest}` : shown.join(', ');
 }
@@ -286,7 +298,15 @@ function managedAgentRows(member: TeamMember, ctx: ProfileRowsContext): ProfileR
   const setup: ProfileRowModel[] = [
     { id: 'about', kind: 'nav', label: 'About', value: ctx.description ?? null, page: 'about' },
     { id: 'runs-on', kind: 'pick', label: 'Runs on', value: runsOnValue(member), pick: 'runs-on' },
-    { id: 'personality', kind: 'pick', label: 'Personality', value: null, pick: 'personality' },
+    {
+      id: 'personality',
+      kind: 'pick',
+      label: 'Personality',
+      // A control that makes you open it to find out what it is set to is worse
+      // than the fact it replaced.
+      value: ctx.facts?.personality ?? null,
+      pick: 'personality',
+    },
   ];
   if (folder) {
     setup.push({
@@ -388,7 +408,7 @@ function systemAgentRows(member: TeamMember, ctx: ProfileRowsContext): ProfileRo
           id: 'personality',
           kind: 'locked',
           label: 'Personality',
-          value: null,
+          value: ctx.facts?.personality ?? null,
           lockedReason: SYSTEM_LOCK_REASON,
         },
       ],

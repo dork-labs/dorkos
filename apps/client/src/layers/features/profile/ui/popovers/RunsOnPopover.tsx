@@ -74,14 +74,16 @@ export function RunsOnPopover({ member }: ProfilePickContentProps) {
         </Select>
       </div>
 
-      <AgentExecutionRows agent={agent} onUpdate={update} />
+      {/* Stacked, not side by side: at a popover's width the model and
+          effort chips have nowhere to sit beside their labels. */}
+      <AgentExecutionRows agent={agent} onUpdate={update} className="grid-cols-1" />
 
       {/* Where it runs, as a fact rather than a control — the folder is what an
           agent IS, and there is no changing it from here. */}
       {projectPath && (
-        <div className="text-muted-foreground flex items-center gap-1.5">
+        <div className="text-muted-foreground flex min-w-0 items-center gap-1.5">
           <Folder aria-hidden className="size-3.5 shrink-0" />
-          <span className="truncate font-mono text-xs">{shortenHomePath(projectPath)}</span>
+          <span className="min-w-0 truncate font-mono text-xs">{shortenHomePath(projectPath)}</span>
         </div>
       )}
     </div>

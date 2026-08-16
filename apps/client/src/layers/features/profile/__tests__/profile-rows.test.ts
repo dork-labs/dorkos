@@ -206,10 +206,22 @@ describe('DorkBot', () => {
 
 describe('rooms, wherever they appear', () => {
   it('names the first two and counts the rest', () => {
+    // The names as the ENDPOINT sends them — a channel arrives wearing its own
+    // `#` (`GET /api/team/:id/rooms`). This fixture used to drop it, and the row
+    // added one of its own, which read `##team` against the real server.
     const rooms = flat(
-      build(SELF, { rooms: { count: 4, names: ['team', 'general', 'ops', 'design'] } })
+      build(SELF, { rooms: { count: 4, names: ['#team', '#general', '#ops', '#design'] } })
     ).find((row) => row.id === 'rooms')!;
     expect(rooms.value).toBe('#team, #general, +2');
+  });
+
+  it('does not invent a hash for a room that has none', () => {
+    // A DM's name is the people in it. Adding `#` to it would be a channel that
+    // does not exist.
+    const rooms = flat(build(SELF, { rooms: { count: 1, names: ['Priya'] } })).find(
+      (row) => row.id === 'rooms'
+    )!;
+    expect(rooms.value).toBe('Priya');
   });
 
   it('says nothing at all rather than "0" while nobody has read them', () => {

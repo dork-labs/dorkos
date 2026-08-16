@@ -5,6 +5,10 @@
  * @module entities/agent
  */
 
+// Query-key factory — the one place an agent cache key is built, so a writer
+// can refresh every entry about an agent without guessing at their shapes.
+export { agentKeys } from './api/queries';
+
 // Model — hooks and stores
 export { useCurrentAgent } from './model/use-current-agent';
 export { useSyncCurrentAgentId } from './model/use-sync-current-agent-id';

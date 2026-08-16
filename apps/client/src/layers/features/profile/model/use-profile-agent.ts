@@ -19,7 +19,7 @@ import type {
   AgentManifestUpdate,
   UpdateAgentConventions,
 } from '@dorkos/shared/mesh-schemas';
-import { useCurrentAgent, useUpdateAgent } from '@/layers/entities/agent';
+import { agentKeys, useCurrentAgent, useUpdateAgent } from '@/layers/entities/agent';
 import { TEAM_ROSTER_KEY } from '@/layers/entities/team';
 
 /**
@@ -87,7 +87,13 @@ export function useProfileAgent(member: TeamMember): ProfileAgent {
         { path: projectPath, updates: updates as AgentManifestUpdate },
         {
           onSettled: () => {
+            // The roster the portrait and the rows are drawn from…
             void queryClient.invalidateQueries({ queryKey: TEAM_ROSTER_KEY });
+            // …and every OTHER cache entry about this agent. `useUpdateAgent`
+            // already refreshes `byPath`, but the sidebar's fleet reads
+            // `agentKeys.resolved`, so a rename left the panel saying one name
+            // and the list beside it saying the old one. The prefix covers both.
+            void queryClient.invalidateQueries({ queryKey: agentKeys.all });
           },
         }
       );
