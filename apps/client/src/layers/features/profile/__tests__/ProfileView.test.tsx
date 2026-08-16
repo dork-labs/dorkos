@@ -519,6 +519,21 @@ describe('pushing a page', () => {
     expect(document.querySelector('[data-profile-row="manages"]')).toHaveFocus();
   });
 
+  it('comes back to the FACE when the page the face pushed is popped', async () => {
+    // Appearance is the one page no row opens — its control is the portrait
+    // itself — so the pop has nothing named `data-profile-row` to restore. The
+    // face carries `data-profile-return` for exactly this, and without it focus
+    // falls to the frame and the next Tab starts the panel over.
+    await renderStateful(MANAGED);
+
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Change Warden’s face and personality' })
+    );
+    await userEvent.click(await screen.findByRole('button', { name: 'Back to profile' }));
+
+    expect(document.querySelector('[data-profile-return="appearance"]')).toHaveFocus();
+  });
+
   // `?profilePage=` is an address anybody can type, and the pages that edit an
   // identity all write the OPERATOR's own profile. Without this gate,
   // `?profile=<DorkBot>&profilePage=name` drew "What DorkOS calls you" seeded

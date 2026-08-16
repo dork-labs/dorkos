@@ -2,6 +2,7 @@ import { useMemo, useCallback } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
 import type { TopologyAgent } from '@dorkos/shared/mesh-schemas';
+import { useMeshMemberIds } from '@/layers/entities/mesh';
 import { useAgentAttentionMap } from '@/layers/entities/session';
 import {
   findTeamOwner,
@@ -10,7 +11,7 @@ import {
   type TeamRosterFilters,
 } from '@/layers/entities/team';
 import { applySortAndFilter } from '@/layers/shared/lib';
-import { useFilterState, useTransport } from '@/layers/shared/model';
+import { useFilterState, useProfileDeepLink, useTransport } from '@/layers/shared/model';
 import { FilterBar } from '@/layers/shared/ui/filter-bar';
 import { ScrollArea } from '@/layers/shared/ui/scroll-area';
 import { Skeleton } from '@/layers/shared/ui/skeleton';
@@ -51,6 +52,11 @@ interface AgentsListProps {
 export function AgentsList({ agents, isLoading, rosterFilters }: AgentsListProps) {
   const navigate = useNavigate();
   const transport = useTransport();
+  const { open: openProfile } = useProfileDeepLink();
+  // The table knows an agent by its DIRECTORY; the profile is addressed by the
+  // id the mesh registered, so the row action needs the same join the sidebar's
+  // faces use (`SidebarChrome.viewProfileFor`).
+  const memberIdByPath = useMeshMemberIds();
 
   const filterState = useFilterState(agentFilterSchema, {
     debounce: { search: 200 },
@@ -161,9 +167,29 @@ export function AgentsList({ agents, isLoading, rosterFilters }: AgentsListProps
     filterState.sortDirection,
   ]);
 
-  const handleViewProfile = useCallback((projectPath: string) => {
-    useProfileStore.getState().openProfileDocked(projectPath);
-  }, []);
+  // One profile, one address (spec `profile-unification` §1.6): the docked panel
+  // belongs to `/session`, and everywhere else the profile is the sheet at
+  // `?profile=<id>`. This table is one of `/team`'s views, so its row action
+  // opens exactly what the same page's cards open — a table that docked instead
+  // gave one page two answers.
+  //
+  // The fallback is `SidebarChrome.viewProfileFor`'s, and so is its honesty:
+  // with no roster id there is no sheet to address, so the panel opens on the
+  // directory the row always has. **It will not draw a profile** — `ProfileDock`
+  // resolves the identity through that same map and settles on `AgentNotFound`,
+  // naming the directory that went dead. That is the whole of what it buys: a
+  // panel that opens and says the agent is gone, rather than a dead control.
+  const handleViewProfile = useCallback(
+    (projectPath: string) => {
+      const memberId = memberIdByPath.get(projectPath);
+      if (memberId === undefined) {
+        useProfileStore.getState().openProfileDocked(projectPath);
+        return;
+      }
+      openProfile(memberId);
+    },
+    [memberIdByPath, openProfile]
+  );
 
   // ── Callbacks for column cell renderers ────────────────────────
   const handleNavigate = useCallback(

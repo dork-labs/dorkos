@@ -172,6 +172,27 @@ test.describe('Team — the roster @smoke', () => {
     );
   });
 
+  test('the table’s View profile opens the same profile the cards do', async ({
+    page,
+    basePage,
+    roomsApi,
+  }) => {
+    // One page, one answer (spec `profile-unification` §1.6). The table used to
+    // dock the profile in the right panel while the cards beside it opened the
+    // sheet — the same page answering "show me this agent" two different ways.
+    // The mesh id is the assertion for the same reason it is on the card: the
+    // table knows an agent by its DIRECTORY, and a row that handed that over
+    // would open a sheet that finds nobody.
+    const agent = await roomsApi.registerAgent(`E2E Table ${roomsApi.runId}`, '🧮', '#14b8a6');
+    await page.goto(`/team?view=table&q=${encodeURIComponent(agent.name)}`);
+    await basePage.waitForAppReady();
+
+    await page.getByRole('button', { name: `Open ${agent.name}’s profile` }).click();
+
+    await expect(page).toHaveURL(new RegExp(`[?&]profile=${agent.id}`));
+    await expect(page.locator('[data-slot="profile"]')).toHaveAttribute('data-member-id', agent.id);
+  });
+
   test('the card’s hit area covers the whole tile, but not its own attribution', async ({
     page,
     basePage,
