@@ -91,6 +91,7 @@ import {
   useAgentProfileShortcut,
   RIGHT_PANEL_GROUP_ID,
 } from '@/layers/features/right-panel';
+import { useLegacyProfileLinkRedirect, useProfileDockDeepLink } from '@/layers/features/profile';
 
 // ── Private slot types ────────────────────────────────────────
 
@@ -321,6 +322,10 @@ export function AppShell() {
   useShortcutsPanel();
   useRightPanelShortcut();
   useAgentProfileShortcut();
+  // Mounted at the shell, not inside the panel: a link that opens the profile
+  // has to work when the profile is not already what you are looking at.
+  useLegacyProfileLinkRedirect();
+  useProfileDockDeepLink();
   useRightPanelPersistence();
   // In-window tabs (DOR-540). The sync hook is the single reconciliation point
   // between the router's location and the tab set — every navigation, whatever

@@ -231,12 +231,33 @@ export interface RightPanelStateEntry {
   activeTab: string | null;
 }
 
+/**
+ * Right-panel tabs that have been renamed, mapped to what they are called now.
+ *
+ * A stored tab id is a contribution id, and a contribution that no longer exists
+ * makes the container fall back to whichever tab happens to be first — quietly
+ * throwing away a preference somebody set. Translating on read keeps the
+ * preference instead, and is idempotent, so it can stay for as long as the old
+ * id might still be sitting in somebody's browser.
+ *
+ * `agent-hub` became `profile` when the Agent Hub and the profile drawer became
+ * one surface (spec `profile-unification`).
+ */
+const RENAMED_RIGHT_PANEL_TABS: Record<string, string> = { 'agent-hub': 'profile' };
+
+/** Translate a stored tab id through {@link RENAMED_RIGHT_PANEL_TABS}. */
+function currentTabId(activeTab: unknown): string | null {
+  if (typeof activeTab !== 'string') return null;
+  return RENAMED_RIGHT_PANEL_TABS[activeTab] ?? activeTab;
+}
+
 /** Read the global right panel state from localStorage. Returns null if missing or corrupt. */
 export function readRightPanelState(): RightPanelStateEntry | null {
   try {
     const raw = localStorage.getItem(STORAGE_KEYS.RIGHT_PANEL_STATE);
     if (!raw) return null;
-    return JSON.parse(raw) as RightPanelStateEntry;
+    const { open, activeTab } = JSON.parse(raw) as Record<string, unknown>;
+    return { open: open === true, activeTab: currentTabId(activeTab) };
   } catch {
     return null;
   }
@@ -271,10 +292,7 @@ export function readRightPanelLayout(agentKey: string): RightPanelStateEntry | n
     const entry = map[agentKey];
     if (entry == null || typeof entry !== 'object') return null;
     const { open, activeTab } = entry as Record<string, unknown>;
-    return {
-      open: open === true,
-      activeTab: typeof activeTab === 'string' ? activeTab : null,
-    };
+    return { open: open === true, activeTab: currentTabId(activeTab) };
   } catch {
     return null;
   }

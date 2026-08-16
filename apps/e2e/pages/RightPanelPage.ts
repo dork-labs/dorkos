@@ -7,8 +7,8 @@ import { BasePage } from './BasePage';
  *
  * The panel defaults CLOSED on every route; {@link open} reveals it. On routes
  * with no contextual tab (Home, Activity, Scheduled) Pulse fills the panel; on
- * `/session` a contextual tab (Agent Profile) wins the default per the
- * container's auto-select.
+ * `/session` a contextual tab (Profile) wins the default per the container's
+ * auto-select.
  */
 export class RightPanelPage {
   readonly page: Page;
@@ -28,8 +28,8 @@ export class RightPanelPage {
   readonly activityHeading: Locator;
   /** The header's single-tab title shown when only Pulse is visible. */
   readonly singleTabTitle: Locator;
-  /** The Agent Profile contextual tab (visible on `/session`). */
-  readonly agentProfileTab: Locator;
+  /** The Profile contextual tab (visible on `/session`). */
+  readonly profileTab: Locator;
   /** The Pulse tab in the strip (present alongside contextual tabs on `/session`). */
   readonly pulseTab: Locator;
   /** The tab strip's scroll container — the box the edge fades are measured against. */
@@ -53,7 +53,7 @@ export class RightPanelPage {
     this.attentionHeading = this.pulsePanel.getByRole('heading', { name: 'Needs attention' });
     this.activityHeading = this.pulsePanel.getByRole('heading', { name: 'Activity' });
     this.singleTabTitle = this.header.getByText('Pulse', { exact: true });
-    this.agentProfileTab = this.header.getByRole('tab', { name: 'Agent Profile' });
+    this.profileTab = this.header.getByRole('tab', { name: 'Profile' });
     this.pulseTab = this.header.getByRole('tab', { name: 'Pulse' });
     // The scroller is the tablist's parent; there is no test id on it, and adding
     // one would put a test hook in the shell header for a box the DOM already

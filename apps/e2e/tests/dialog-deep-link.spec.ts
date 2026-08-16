@@ -44,33 +44,42 @@ test.describe('Settings — URL Deep Links @smoke', () => {
     await expect(page).toHaveURL(/[?&]settings=open/);
   });
 
-  test('navigating to ?panel=agent-hub opens the agent hub on a fresh tab', async ({
+  test('navigating to ?panel=profile opens the profile on a fresh tab', async ({
     page,
     rightPanel,
     roomsApi,
   }) => {
-    // This was `?agent=identity&agentPath=…`, a regression lock on a dialog
-    // wrapper that no longer exists: nothing contributes an `agent` dialog and
-    // `DialogHost` has no `agent` case, so that link is inert and the test was
-    // pinning a dead contract. `dialog-search-schema.ts` names the successor —
-    // "Agent dialog (legacy — use panel=agent-hub for new links)".
-    //
-    // The intent is worth keeping, and it is specifically a browser-level one:
-    // the hub's deep link has unit coverage, but only a real fresh tab proves it
-    // survives with no in-app opener having populated the store first.
-    //
-    // On `/session`, where the Agent Profile tab is registered unconditionally,
-    // Pulse is the default tab — so selecting the hub instead is the deep link's
-    // doing and nothing else's. (On `/` the tab is `visibleWhen` an agent was
-    // explicitly chosen, and an `agentPath` in the URL is not by itself that
-    // choice, so the tab never appears there at all.)
-    const agent = await roomsApi.registerAgent(`E2E Hub ${roomsApi.runId}`, '🛠️', '#22c55e');
+    // A browser-level check on purpose: the deep link has unit coverage, but
+    // only a real fresh tab proves it survives with no in-app opener having
+    // populated any store first.
+    const agent = await roomsApi.registerAgent(`E2E Profile ${roomsApi.runId}`, '🛠️', '#22c55e');
+    await page.goto(
+      `/session?panel=profile&profilePage=sessions&dir=${encodeURIComponent(agent.projectPath)}`
+    );
+    await page.waitForSelector('[data-testid="app-shell"]');
+
+    await expect(rightPanel.header).toBeVisible();
+    await expect(rightPanel.profileTab).toHaveAttribute('aria-selected', 'true');
+    await expect(page.locator('[data-slot="profile"][data-home="docked"]')).toBeVisible();
+  });
+
+  test('an old ?panel=agent-hub link still lands on the profile', async ({
+    page,
+    rightPanel,
+    roomsApi,
+  }) => {
+    // The Agent Hub's own links are out there in bookmarks and in other
+    // people's notes. They must open the surface that replaced it, and leave
+    // the reader on a URL this build speaks — not on the dead one.
+    const agent = await roomsApi.registerAgent(`E2E Legacy ${roomsApi.runId}`, '🛠️', '#22c55e');
     await page.goto(
       `/session?panel=agent-hub&hubTab=sessions&dir=${encodeURIComponent(agent.projectPath)}`
     );
     await page.waitForSelector('[data-testid="app-shell"]');
 
     await expect(rightPanel.header).toBeVisible();
-    await expect(rightPanel.agentProfileTab).toHaveAttribute('aria-selected', 'true');
+    await expect(rightPanel.profileTab).toHaveAttribute('aria-selected', 'true');
+    await expect(page).toHaveURL(/[?&]panel=profile/);
+    await expect(page).not.toHaveURL(/hubTab=/);
   });
 });

@@ -13,12 +13,21 @@ import { cn } from '@/layers/shared/lib';
 
 export interface ProfileStackProps {
   /**
-   * What is showing: the page id, or `null` for the profile root.
+   * What is showing: the page id, `profile:<member id>` for a chained profile,
+   * or `null` for the profile root.
    *
    * Also the frame's React key — a change remounts the frame, which is what
    * replays the entrance animation.
    */
   frameKey: string | null;
+  /**
+   * How many frames are on top of the root.
+   *
+   * The direction, and the only thing that can tell it: a chained profile
+   * replaces another chained profile without either being the root, so "arrived
+   * at null" cannot say whether that was a push or a pop.
+   */
+  depth: number;
   /** The frame's content. */
   children: ReactNode;
 }
@@ -41,26 +50,37 @@ export interface ProfileStackProps {
  * *during render* — React's own "adjusting state when a prop changes" — rather
  * than from a ref, which cannot be read while rendering.
  */
-export function ProfileStack({ frameKey, children }: ProfileStackProps) {
+export function ProfileStack({ frameKey, depth, children }: ProfileStackProps) {
   const container = useRef<HTMLDivElement>(null);
   const [seen, setSeen] = useState<string | null>(frameKey);
+  const [seenDepth, setSeenDepth] = useState(depth);
   const [goingBack, setGoingBack] = useState(false);
-  /** The page just popped, so the control that opened it can take focus back. */
+  /** The frame just popped, so the control that opened it can take focus back. */
   const [returnTo, setReturnTo] = useState<string | null>(null);
 
   if (seen !== frameKey) {
-    const popped = frameKey === null && seen !== null;
+    const popped = depth < seenDepth;
     setSeen(frameKey);
+    setSeenDepth(depth);
     setGoingBack(popped);
     setReturnTo(popped ? seen : null);
   }
 
   // Not cleared afterwards, deliberately: every frame change sets it (a push to
-  // `null`, a pop to the page it left), so it is already one-shot — and clearing
-  // it here would be a second render for nothing.
+  // `null`, a pop to the frame it left), so it is already one-shot — and
+  // clearing it here would be a second render for nothing.
   useEffect(() => {
     if (returnTo === null) return;
-    container.current?.querySelector<HTMLElement>(`[data-profile-return="${returnTo}"]`)?.focus();
+    const restored = container.current?.querySelector<HTMLElement>(
+      `[data-profile-return="${returnTo}"]`
+    );
+    // A pushed profile can outlive the control that pushed it — pushing a
+    // profile clears the pages above it, so the Manages row you came from is
+    // gone by the time you come back. Focus the frame rather than let it fall
+    // to the document body, where the next Tab starts the panel over.
+    (
+      restored ?? container.current?.querySelector<HTMLElement>('[data-slot="profile-frame"]')
+    )?.focus();
   }, [returnTo]);
 
   return (
@@ -69,7 +89,9 @@ export function ProfileStack({ frameKey, children }: ProfileStackProps) {
         key={frameKey ?? 'root'}
         data-slot="profile-frame"
         data-frame={frameKey ?? 'root'}
+        tabIndex={-1}
         className={cn(
+          'outline-none',
           'animate-in fade-in flex min-h-0 flex-1 flex-col duration-200',
           goingBack ? 'slide-in-from-left-4' : 'slide-in-from-right-4'
         )}

@@ -145,12 +145,12 @@ describe('RightPanelSlice', () => {
       const cwd = '/Users/dev/projects/untracked';
       useAppStore.getState().loadRightPanelForAgent(cwd);
       useAppStore.getState().setRightPanelOpen(true);
-      useAppStore.getState().setActiveRightPanelTab('agent-hub');
+      useAppStore.getState().setActiveRightPanelTab('canvas');
 
       useAppStore.getState().loadRightPanelForAgent('other');
       useAppStore.getState().loadRightPanelForAgent(cwd);
       expect(useAppStore.getState().rightPanelOpen).toBe(true);
-      expect(useAppStore.getState().activeRightPanelTab).toBe('agent-hub');
+      expect(useAppStore.getState().activeRightPanelTab).toBe('canvas');
     });
 
     it('detaching with a null key leaves in-memory state untouched (no flash)', () => {
@@ -242,6 +242,50 @@ describe('RightPanelSlice', () => {
 
       useAppStore.getState().setActiveRightPanelTab('files');
       expect(readLayouts()['agent-a'].activeTab).toBe('files');
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Renamed tabs
+  // -------------------------------------------------------------------------
+
+  describe('a tab that was renamed under an existing user', () => {
+    it('restores the Agent Hub’s stored layout as the Profile tab, per agent', () => {
+      // What is in the browser of anybody who used the Agent Hub before it
+      // became the Profile. Without the translation the id names no
+      // contribution, the container falls back to whichever tab is first, and a
+      // preference somebody set is silently thrown away.
+      localStorage.setItem(
+        'dorkos-right-panel-layouts',
+        JSON.stringify({ 'agent-a': { open: true, activeTab: 'agent-hub', accessedAt: 1 } })
+      );
+
+      useAppStore.getState().loadRightPanelForAgent('agent-a');
+
+      expect(useAppStore.getState().rightPanelOpen).toBe(true);
+      expect(useAppStore.getState().activeRightPanelTab).toBe('profile');
+    });
+
+    it('restores it from the global surface too', () => {
+      localStorage.setItem(
+        'dorkos-right-panel-state',
+        JSON.stringify({ open: true, activeTab: 'agent-hub' })
+      );
+
+      useAppStore.getState().loadRightPanelState();
+
+      expect(useAppStore.getState().activeRightPanelTab).toBe('profile');
+    });
+
+    it('leaves every other tab id alone', () => {
+      localStorage.setItem(
+        'dorkos-right-panel-state',
+        JSON.stringify({ open: true, activeTab: 'terminal' })
+      );
+
+      useAppStore.getState().loadRightPanelState();
+
+      expect(useAppStore.getState().activeRightPanelTab).toBe('terminal');
     });
   });
 });

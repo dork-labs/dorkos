@@ -1,0 +1,307 @@
+/**
+ * @vitest-environment jsdom
+ *
+ * The docked home: the right-panel tab on a session (spec
+ * `profile-unification` §1.6).
+ *
+ * The sheet is handed an identity; the dock is handed a DIRECTORY and has to
+ * find one. So what is pinned here is the resolution chain and its three
+ * failures — nobody picked an agent, the chain is still running, and it settled
+ * on nobody — plus the two rules the Agent Hub had before it that must survive:
+ * the ambient working directory is only honest on `/session`, and the agent you
+ * were looking at stays on screen while the next one resolves.
+ */
+import { createContext, useContext, type ReactNode } from 'react';
+import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
+import { render, screen, cleanup, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import '@testing-library/jest-dom/vitest';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import {
+  createMemoryHistory,
+  createRootRoute,
+  createRoute,
+  createRouter,
+  Outlet,
+  RouterProvider,
+} from '@tanstack/react-router';
+import { zodValidator } from '@tanstack/zod-adapter';
+import { z } from 'zod';
+import type { Transport } from '@dorkos/shared/transport';
+import { createMockTransport } from '@dorkos/test-utils';
+import { TransportProvider, mergeDialogSearch, useAppStore } from '@/layers/shared/model';
+import { TooltipProvider } from '@/layers/shared/ui';
+import { MOCK_TEAM_ROSTER } from '@/dev/mock-samples';
+import { useProfileStore } from '../model/profile-store';
+import { ProfileDock } from '../ui/ProfileDock';
+
+const WARDEN_PATH = '/Users/dorian/agents/warden';
+const WARDEN = 'agent-warden';
+const SCOUT_PATH = '/Users/dorian/agents/scout';
+
+/** The fleet as `GET /api/mesh/agent-paths` returns it. */
+const FLEET = [
+  { id: WARDEN, name: 'Warden', projectPath: WARDEN_PATH },
+  { id: 'agent-scout', name: 'Scout', projectPath: SCOUT_PATH },
+];
+
+const testSearchSchema = mergeDialogSearch(z.object({}));
+const HookSlotContext = createContext<ReactNode>(null);
+
+function HookSlot() {
+  return <>{useContext(HookSlotContext)}</>;
+}
+
+beforeAll(() => {
+  Object.defineProperty(window, 'matchMedia', {
+    writable: true,
+    value: vi.fn().mockImplementation((query: string) => ({
+      matches: false,
+      media: query,
+      onchange: null,
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    })),
+  });
+});
+
+/**
+ * Mount the dock under a real router and a mock transport — no hook stubs, so
+ * the resolution chain under test is the one that runs in the app.
+ */
+function renderDock({
+  url = '/session',
+  fleet = FLEET,
+  pendingFleet = false,
+}: {
+  url?: string;
+  fleet?: typeof FLEET;
+  /** Leave the path → id read in flight, the one state that is a skeleton. */
+  pendingFleet?: boolean;
+} = {}) {
+  const rootRoute = createRootRoute({ component: () => <Outlet /> });
+  const makeRoute = (path: string) =>
+    createRoute({
+      getParentRoute: () => rootRoute,
+      path,
+      validateSearch: zodValidator(testSearchSchema.extend({ dir: z.string().optional() })),
+      component: HookSlot,
+    });
+  const router = createRouter({
+    routeTree: rootRoute.addChildren([makeRoute('/'), makeRoute('/session')]),
+    history: createMemoryHistory({ initialEntries: [url] }),
+  });
+
+  const transport = createMockTransport({
+    getTeamRoster: vi.fn().mockResolvedValue({ members: MOCK_TEAM_ROSTER }),
+    listMeshAgentPaths: pendingFleet
+      ? vi.fn().mockReturnValue(new Promise(() => {}))
+      : vi.fn().mockResolvedValue({ agents: fleet }),
+    getAgentByPath: vi.fn().mockResolvedValue(null),
+    listMemberRooms: vi.fn().mockResolvedValue({ rooms: [] }),
+  } as Partial<Transport>);
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+
+  const view = render(
+    <HookSlotContext.Provider
+      value={
+        <QueryClientProvider client={queryClient}>
+          <TransportProvider transport={transport}>
+            <TooltipProvider>
+              <ProfileDock />
+            </TooltipProvider>
+          </TransportProvider>
+        </QueryClientProvider>
+      }
+    >
+      <RouterProvider router={router} />
+    </HookSlotContext.Provider>
+  );
+
+  return {
+    ...view,
+    ready: () => waitFor(() => expect(router.state.status).toBe('idle')),
+  };
+}
+
+/** The profile panel, if one is drawn. */
+const panel = () => document.body.querySelector('[data-slot="profile"]');
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  useProfileStore.setState({ dockedEntries: {}, sheetChain: [] });
+  useAppStore.setState({
+    selectedCwd: null,
+    explicitAgentPath: null,
+    rightPanelOpen: true,
+    activeRightPanelTab: 'profile',
+    rightPanelLayoutKey: null,
+  });
+  localStorage.clear();
+});
+
+afterEach(cleanup);
+
+describe('which agent the panel is pointed at', () => {
+  it('says so plainly when nobody has picked one', async () => {
+    const harness = renderDock({ url: '/' });
+    await harness.ready();
+
+    expect(await screen.findByText('No agent selected')).toBeInTheDocument();
+  });
+
+  it('profiles the session’s own agent on /session', async () => {
+    useAppStore.setState({ selectedCwd: WARDEN_PATH });
+    const harness = renderDock();
+    await harness.ready();
+
+    expect(await screen.findByText('Warden')).toBeInTheDocument();
+    expect(panel()?.getAttribute('data-home')).toBe('docked');
+    expect(panel()?.getAttribute('data-member-id')).toBe(WARDEN);
+  });
+
+  it('never resolves the ambient working directory off /session', async () => {
+    // Off a session, `selectedCwd` is the server's startup directory — nobody
+    // picked it. Profiling it would put a stranger in the panel.
+    useAppStore.setState({ selectedCwd: WARDEN_PATH });
+    const harness = renderDock({ url: '/' });
+    await harness.ready();
+
+    expect(await screen.findByText('No agent selected')).toBeInTheDocument();
+  });
+
+  it('does profile an agent that WAS explicitly opened, on any route', async () => {
+    useAppStore.setState({ selectedCwd: null, explicitAgentPath: WARDEN_PATH });
+    const harness = renderDock({ url: '/' });
+    await harness.ready();
+
+    expect(await screen.findByText('Warden')).toBeInTheDocument();
+  });
+
+  it('prefers the explicitly opened agent over the session’s own', async () => {
+    useAppStore.setState({ selectedCwd: WARDEN_PATH, explicitAgentPath: SCOUT_PATH });
+    const harness = renderDock();
+    await harness.ready();
+
+    expect(await screen.findByText('Scout')).toBeInTheDocument();
+  });
+});
+
+describe('when the chain cannot finish', () => {
+  it('waits on a skeleton rather than guessing, while it is still running', async () => {
+    useAppStore.setState({ selectedCwd: WARDEN_PATH });
+    const harness = renderDock({ pendingFleet: true });
+    await harness.ready();
+
+    expect(document.body.querySelector('[data-slot="profile-dock-skeleton"]')).not.toBeNull();
+    expect(screen.queryByText('Agent not found')).not.toBeInTheDocument();
+  });
+
+  it('says the agent is not here once every read has answered with nothing', async () => {
+    useAppStore.setState({ selectedCwd: '/repo/not-an-agent' });
+    const harness = renderDock({ fleet: [] });
+    await harness.ready();
+
+    expect(await screen.findByText('Agent not found')).toBeInTheDocument();
+    expect(await screen.findByText('/repo/not-an-agent')).toBeInTheDocument();
+  });
+
+  it('switches straight to the next agent, with no skeleton in between', async () => {
+    // Both reads are shared caches, so a switch resolves out of data already in
+    // hand. The Agent Hub had to hold the old agent painted through a per-agent
+    // manifest fetch; there is nothing here to paint over.
+    useAppStore.setState({ selectedCwd: WARDEN_PATH });
+    const harness = renderDock();
+    await harness.ready();
+    expect(await screen.findByText('Warden')).toBeInTheDocument();
+
+    useAppStore.setState({ selectedCwd: SCOUT_PATH });
+
+    expect(await screen.findByText('Scout')).toBeInTheDocument();
+    expect(document.body.querySelector('[data-slot="profile-dock-skeleton"]')).toBeNull();
+  });
+
+  it('goes back to "not found" when the panel is pointed somewhere dead', async () => {
+    useAppStore.setState({ selectedCwd: WARDEN_PATH });
+    const harness = renderDock();
+    await harness.ready();
+    expect(await screen.findByText('Warden')).toBeInTheDocument();
+
+    useAppStore.setState({ selectedCwd: '/repo/gone' });
+
+    expect(await screen.findByText('Agent not found')).toBeInTheDocument();
+  });
+});
+
+describe('the stack, and how long it lasts', () => {
+  it('opens on the page a deep link seeded, and can come back off it', async () => {
+    useAppStore.setState({ selectedCwd: WARDEN_PATH });
+    useProfileStore.setState({
+      dockedEntries: { [WARDEN_PATH]: [{ kind: 'page', page: 'rooms' }] },
+    });
+    const harness = renderDock();
+    await harness.ready();
+
+    expect(await screen.findByRole('heading', { name: 'Rooms' })).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Back to profile' }));
+
+    await waitFor(() => expect(useProfileStore.getState().dockedEntries[WARDEN_PATH]).toEqual([]));
+  });
+
+  it('survives the tab flip that unmounts it, while the panel stays open', async () => {
+    useAppStore.setState({ selectedCwd: WARDEN_PATH });
+    useProfileStore.setState({
+      dockedEntries: { [WARDEN_PATH]: [{ kind: 'page', page: 'rooms' }] },
+    });
+    const harness = renderDock();
+    await harness.ready();
+    expect(await screen.findByRole('heading', { name: 'Rooms' })).toBeInTheDocument();
+
+    // Flipping to Files drops this component; the panel itself is still open.
+    cleanup();
+
+    expect(useProfileStore.getState().dockedEntries[WARDEN_PATH]).toEqual([
+      { kind: 'page', page: 'rooms' },
+    ]);
+  });
+
+  it('is dropped when the panel closes, so a fresh open lands on the root', async () => {
+    useAppStore.setState({ selectedCwd: WARDEN_PATH });
+    useProfileStore.setState({
+      dockedEntries: { [WARDEN_PATH]: [{ kind: 'page', page: 'rooms' }] },
+    });
+    const harness = renderDock();
+    await harness.ready();
+    expect(await screen.findByRole('heading', { name: 'Rooms' })).toBeInTheDocument();
+
+    useAppStore.getState().setRightPanelOpen(false);
+
+    await waitFor(() =>
+      expect(useProfileStore.getState().dockedEntries[WARDEN_PATH] ?? []).toEqual([])
+    );
+  });
+});
+
+describe('a chained profile in the panel', () => {
+  it('shows the owner, and a way back to the agent underneath', async () => {
+    useAppStore.setState({ selectedCwd: WARDEN_PATH });
+    const harness = renderDock();
+    await harness.ready();
+    expect(await screen.findByText('Warden')).toBeInTheDocument();
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Managed by You' }));
+
+    // The owner's own profile is now the subject — and the panel has no browser
+    // Back button, so the bar is the only way out.
+    await waitFor(() => expect(panel()?.getAttribute('data-member-id')).toBe('person-dorian'));
+    const back = await screen.findByRole('button', { name: 'Back to Warden' });
+
+    await userEvent.click(back);
+
+    await waitFor(() => expect(panel()?.getAttribute('data-member-id')).toBe(WARDEN));
+  });
+});

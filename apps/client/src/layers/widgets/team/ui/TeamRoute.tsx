@@ -5,7 +5,7 @@ import { useSearch, useNavigate } from '@tanstack/react-router';
 import { Button } from '@/layers/shared/ui/button';
 import { Drawer, DrawerContent } from '@/layers/shared/ui';
 import { useIsMobile } from '@/layers/shared/model';
-import { useAgentHubStore } from '@/layers/features/agent-hub';
+import { useProfileStore } from '@/layers/features/profile';
 import { useAppStore, useOpenConnections } from '@/layers/shared/model';
 import { useDirectoryState } from '@/layers/entities/session';
 import { useTopology } from '@/layers/entities/mesh';
@@ -47,8 +47,6 @@ export function TeamRoute() {
   const search = useSearch({ from: '/_shell/team' });
   const navigate = useNavigate();
   const isMobile = useIsMobile();
-  const setRightPanelOpen = useAppStore((s) => s.setRightPanelOpen);
-  const setActiveRightPanelTab = useAppStore((s) => s.setActiveRightPanelTab);
   const openConnections = useOpenConnections();
   const [, setDir] = useDirectoryState();
   const { data: topology, isLoading, isError, refetch } = useTopology();
@@ -161,9 +159,7 @@ export function TeamRoute() {
                         })
                       }
                       onOpenSettings={(_agentId, projectPath) => {
-                        useAgentHubStore.getState().openHub(projectPath);
-                        setActiveRightPanelTab('agent-hub');
-                        setRightPanelOpen(true);
+                        useProfileStore.getState().openProfileDocked(projectPath);
                       }}
                       onOpenChat={(projectPath) => setDir(projectPath)}
                       onOpenAdapterCatalog={() => openConnections('messaging')}

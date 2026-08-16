@@ -37,7 +37,7 @@ import { PalettePrefixLegend } from './PalettePrefixLegend';
 import { PaletteRootPage } from './PaletteRootPage';
 import { usePreviewData } from '../model/use-preview-data';
 import { dialogVariants } from './palette-constants';
-import { useAgentHubStore } from '@/layers/features/agent-hub';
+import { useProfileStore } from '@/layers/features/profile';
 import { resolveAgentVisual } from '@/layers/entities/agent';
 import { useLegacyFrecencyMigration } from '@/layers/entities/interactions';
 // Composition across features, which the layer rules permit for UI: the
@@ -334,8 +334,6 @@ export function CommandPaletteDialog() {
 
   // Preview data for the sub-menu (agent-actions page); always call hook but use subMenuAgent
   const previewData = usePreviewData(subMenuAgent?.id ?? '', subMenuAgent?.projectPath ?? '');
-  const setRightPanelOpen = useAppStore((s) => s.setRightPanelOpen);
-  const setActiveRightPanelTab = useAppStore((s) => s.setActiveRightPanelTab);
 
   // Navigate back one page in the pages stack
   const goBack = useCallback(() => {
@@ -656,9 +654,7 @@ export function CommandPaletteDialog() {
                           closePalette();
                         }}
                         onEditSettings={() => {
-                          useAgentHubStore.getState().openHub(subMenuAgent.projectPath);
-                          setActiveRightPanelTab('agent-hub');
-                          setRightPanelOpen(true);
+                          useProfileStore.getState().openProfileDocked(subMenuAgent.projectPath);
                           closePalette();
                         }}
                         // Offered only when there is something to browse. The

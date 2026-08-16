@@ -11,7 +11,6 @@ export {
   useAgentHubContext,
   type AgentHubContextValue,
 } from './model/agent-hub-context';
-export { useAgentHubDeepLink, useAgentDialogRedirect } from './model/use-agent-hub-deep-link';
 export {
   type PersonalityPreset,
   type PresetColors,

@@ -1,13 +1,14 @@
 import { useEffect } from 'react';
 import { useAppStore } from '@/layers/shared/model';
+import { PROFILE_PANEL_ID } from '@/layers/features/profile';
 
 /**
  * Register the `Cmd+Shift+A` / `Ctrl+Shift+A` key handler that toggles the
- * agent hub in the right panel for the currently selected agent.
+ * profile in the right panel for the currently selected agent.
  *
  * Toggle behavior:
- * - If the right panel is open and showing the agent-hub tab → close the panel.
- * - Otherwise → switch to the agent-hub tab and open the panel.
+ * - If the right panel is open and showing the Profile tab → close the panel.
+ * - Otherwise → switch to the Profile tab and open the panel.
  *
  * Follows the same document-level listener pattern as useRightPanelShortcut.
  */
@@ -20,10 +21,10 @@ export function useAgentProfileShortcut(): void {
       if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === 'A') {
         e.preventDefault();
         const { rightPanelOpen, activeRightPanelTab } = useAppStore.getState();
-        if (rightPanelOpen && activeRightPanelTab === 'agent-hub') {
+        if (rightPanelOpen && activeRightPanelTab === PROFILE_PANEL_ID) {
           setRightPanelOpen(false);
         } else {
-          setActiveRightPanelTab('agent-hub');
+          setActiveRightPanelTab(PROFILE_PANEL_ID);
           setRightPanelOpen(true);
         }
       }

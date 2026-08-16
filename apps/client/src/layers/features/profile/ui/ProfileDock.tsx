@@ -1,0 +1,140 @@
+/**
+ * The profile's docked home — the right-panel tab on a session (spec
+ * `profile-unification` §1.6).
+ *
+ * The counterpart of `ProfileSheetContainer`: where the sheet is addressed by a
+ * member id in the URL, the dock is bound to a DIRECTORY — the agent whose
+ * session you are in, or the one you opened deliberately — and resolves the
+ * identity from it. That is the whole reason this file exists rather than the
+ * sheet's container growing a second mode.
+ *
+ * @module features/profile/ui/ProfileDock
+ */
+import { useCallback, useEffect, useMemo } from 'react';
+import { useAppStore } from '@/layers/shared/model';
+import { useMeshAgentPaths, useMeshMemberId } from '@/layers/entities/mesh';
+import { useTeamRoster } from '@/layers/entities/team';
+import { useDockedAgentPath, useSessionAgent } from '../model/use-docked-agent';
+import { useDockedEntries, useProfileStore } from '../model/profile-store';
+import {
+  popEntry,
+  profileStack,
+  pushEntry,
+  stackMemberId,
+  type ProfileStackEntry,
+} from '../model/profile-stack';
+import { AgentNotFound, NoAgentSelected, ProfileDockSkeleton } from './ProfileDockStates';
+import { ProfileView } from './ProfileView';
+
+/**
+ * Draw the docked profile for whichever agent the panel is pointed at.
+ *
+ * **The resolution chain** is directory → roster id → roster row (§1.6). Each
+ * step can come up empty for a different reason, and only the last is worth an
+ * error: a directory nobody picked is "no agent selected", a chain still
+ * resolving is a skeleton, and a directory that settles with no identity behind
+ * it is "agent not found".
+ *
+ * **There is no "keep the last agent painted" here, and there does not need to
+ * be.** The Agent Hub held one, because it re-fetched a per-directory manifest
+ * on every switch and would otherwise blank for that second. Both reads below
+ * are shared caches the sidebar and every agent picker already keep warm, and
+ * neither is per-agent — so switching sessions resolves the next identity out of
+ * data already in hand, with no gap to paint over.
+ */
+export function ProfileDock() {
+  const agentPath = useDockedAgentPath();
+  const session = useSessionAgent();
+  const rightPanelOpen = useAppStore((s) => s.rightPanelOpen);
+
+  // The fleet's path → id map is the honest join and the only one: an agent on
+  // disk but absent from it has no roster row either, so a manifest read would
+  // only tell us something we could not act on. Both reads here are ones the
+  // sidebar and every agent picker already keep warm — the dock asks the server
+  // for nothing of its own.
+  const fleet = useMeshAgentPaths();
+  const memberId = useMeshMemberId(agentPath ?? undefined);
+  const roster = useTeamRoster({ enabled: memberId !== undefined });
+
+  const members = roster.data?.members;
+  const member = memberId === undefined ? undefined : members?.find((row) => row.id === memberId);
+
+  // Nothing has answered yet, vs everything has answered with nothing. A
+  // disabled roster read reports `isLoading: false`, so a directory the fleet
+  // cannot name settles on "not found" rather than spinning forever.
+  const settled = !fleet.isLoading && !roster.isLoading;
+
+  const display = member ?? null;
+
+  const entries = useDockedEntries(agentPath);
+  const setDockedEntries = useProfileStore((s) => s.setDockedEntries);
+  const clearDockedStacks = useProfileStore((s) => s.clearDockedStacks);
+
+  const stack = useMemo(
+    () => (display ? profileStack(display.id, [...entries]) : null),
+    [display, entries]
+  );
+
+  // Whose profile is actually on screen: the docked agent, or whoever has been
+  // chained onto it — an owner, an agent it manages. The roster read is already
+  // in hand, so a chained identity costs nothing extra; one it does not hold
+  // falls back to the agent underneath rather than blanking the panel.
+  const subjectId = stack === null ? null : stackMemberId(stack);
+  const subject =
+    (subjectId === display?.id ? display : members?.find((row) => row.id === subjectId)) ?? display;
+
+  const handlePush = useCallback(
+    (entry: ProfileStackEntry) => {
+      if (!agentPath || !stack) return;
+      setDockedEntries(agentPath, pushEntry(stack, entry).entries);
+    },
+    [agentPath, stack, setDockedEntries]
+  );
+
+  const handlePop = useCallback(() => {
+    if (!agentPath || !stack) return;
+    setDockedEntries(agentPath, popEntry(stack).entries);
+  }, [agentPath, stack, setDockedEntries]);
+
+  // Root on re-open (§1.6): the stack is memory for flipping between tabs while
+  // the panel is open, not a place you left off.
+  //
+  // Armed only while the panel IS open, and cleared from the teardown, which is
+  // what makes one rule cover three endings: the panel collapsing on a desktop
+  // (this stays mounted, the effect re-runs), the overlay closing on a phone
+  // (this unmounts), and a flip to another tab (this unmounts too — but the
+  // panel is still open, which is why the teardown asks). Not armed while the
+  // panel is closed, so a deep link that seeded a page and then lost a race
+  // with the per-agent layout restore is not wiped before it is ever seen.
+  useEffect(() => {
+    if (!rightPanelOpen) return;
+    return () => {
+      if (!useAppStore.getState().rightPanelOpen) clearDockedStacks();
+    };
+  }, [rightPanelOpen, clearDockedStacks]);
+
+  if (!agentPath) return <NoAgentSelected />;
+
+  if (!display || !stack || !subject) {
+    return settled ? <AgentNotFound agentPath={agentPath} /> : <ProfileDockSkeleton />;
+  }
+
+  return (
+    <div data-slot="profile-dock" className="flex h-full min-h-0 flex-col overflow-hidden">
+      <ProfileView
+        member={subject}
+        roster={members ?? []}
+        home="docked"
+        // The composer for this agent is a few pixels to the left, so a button
+        // offering to take you to it is the surface arguing with itself. Only
+        // true for the session's OWN agent, and only while the panel is on it:
+        // a profile you opened deliberately, or chained onto this one, belongs
+        // to someone else's conversation and Message is the way to get to it.
+        inOwnSession={agentPath === session.agentPath && subject.id === display.id}
+        stack={stack}
+        onPush={handlePush}
+        onPop={handlePop}
+      />
+    </div>
+  );
+}

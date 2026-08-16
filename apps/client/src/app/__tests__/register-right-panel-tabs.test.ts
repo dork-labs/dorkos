@@ -32,13 +32,13 @@ describe('registerRightPanelTabs', () => {
       .getState()
       .getContributions('right-panel')
       .map((c) => c.id);
-    for (const id of ['pulse', 'agent-hub', 'session', 'files', 'canvas', 'terminal']) {
+    for (const id of ['pulse', 'profile', 'session', 'files', 'canvas', 'terminal']) {
       expect(ids).toContain(id);
     }
   });
 
-  it('puts the Session readout beside Agent Profile, and only where a session exists', () => {
-    // Priority 12 sits it between Agent Profile (10) and Files (15) — the two
+  it('puts the Session readout beside Profile, and only where a session exists', () => {
+    // Priority 12 sits it between Profile (10) and Files (15) — the two
     // session-scoped tabs read left to right as "who" then "what it is doing".
     const { register } = useExtensionRegistry.getState();
     registerRightPanelTabs(register);
@@ -51,7 +51,7 @@ describe('registerRightPanelTabs', () => {
     expect(session?.visibleWhen?.({ ...ctx(true), pathname: '/team' })).toBe(false);
 
     const order = contributions.map((c) => c.id);
-    expect(order.indexOf('session')).toBeGreaterThan(order.indexOf('agent-hub'));
+    expect(order.indexOf('session')).toBeGreaterThan(order.indexOf('profile'));
     expect(order.indexOf('session')).toBeLessThan(order.indexOf('files'));
   });
 

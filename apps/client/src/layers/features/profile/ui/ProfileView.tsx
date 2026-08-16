@@ -20,11 +20,15 @@ import { deriveRelationship } from '../lib/profile-relationship';
 import { messageTarget } from '../lib/profile-message';
 import { rowsFor, type ProfileRowsContext } from '../lib/profile-rows';
 import {
+  beneathMemberId,
   currentPage,
+  stackFrameKey,
   type ProfileStackEntry,
   type ProfileStackState,
 } from '../model/profile-stack';
 import { ProfileActionsMenu } from './ProfileActionsMenu';
+import { ProfileBackBar } from './ProfileBackBar';
+import { ProfileFaceScope } from './ProfileFace';
 import { ProfileHeader } from './ProfileHeader';
 import { ProfilePage } from './ProfilePage';
 import { ProfileRows } from './ProfileRows';
@@ -122,6 +126,15 @@ export function ProfileView({
   const definition = shown ? profilePage(shown) : null;
   const PageContent = definition?.component;
 
+  // A chained profile is a frame like a page is, and needs the same way out.
+  // Only on this profile's own root: from a page pushed off it, `ProfilePage`'s
+  // own bar is the way back, one step at a time.
+  const beneath = beneathMemberId(stack);
+  const beneathMember = beneath === null ? undefined : roster.find((row) => row.id === beneath);
+  // The frame the stack is on. A page the gate turned away is the root, so this
+  // is derived from what is SHOWN rather than from the stack's top entry.
+  const frameKey = shown ?? (beneath === null ? null : stackFrameKey(stack));
+
   return (
     <div
       data-slot="profile"
@@ -134,29 +147,36 @@ export function ProfileView({
       // this one is read from inside the header for the kebab's corner.
       className="group/profile flex min-h-0 flex-1 flex-col"
     >
-      <ProfileStack frameKey={shown}>
-        {definition && PageContent ? (
-          <ProfilePage member={member} title={definition.title} onBack={onPop}>
-            <Suspense fallback={<Skeleton className="h-24 w-full" />}>
-              <PageContent member={member} roster={roster} onPush={onPush} />
-            </Suspense>
-          </ProfilePage>
-        ) : (
-          <div className="min-h-0 flex-1 overflow-y-auto">
-            <ProfileHeader
-              member={member}
-              relationship={relationship}
-              owner={owner}
-              onOpenOwner={
-                owner ? () => onPush({ kind: 'profile', memberId: owner.id }) : undefined
-              }
-              onMessage={canMessage ? message : undefined}
-              actionsMenu={<ProfileActionsMenu member={member} />}
-            />
-            <ProfileRows member={member} ctx={ctx} onPush={onPush} />
-          </div>
-        )}
-      </ProfileStack>
+      {/* Two homes can be on screen at once — the docked profile of the session
+          you are in, and a sheet over it for somebody else. Their faces must not
+          try to become each other, so the shared-layout id is scoped to the
+          home and the identity rather than being one global name. */}
+      <ProfileFaceScope home={home} memberId={member.id}>
+        <ProfileStack frameKey={frameKey} depth={stack.entries.length}>
+          {definition && PageContent ? (
+            <ProfilePage member={member} title={definition.title} onBack={onPop}>
+              <Suspense fallback={<Skeleton className="h-24 w-full" />}>
+                <PageContent member={member} roster={roster} onPush={onPush} />
+              </Suspense>
+            </ProfilePage>
+          ) : (
+            <div className="min-h-0 flex-1 overflow-y-auto">
+              {beneathMember && <ProfileBackBar label={beneathMember.displayName} onBack={onPop} />}
+              <ProfileHeader
+                member={member}
+                relationship={relationship}
+                owner={owner}
+                onOpenOwner={
+                  owner ? () => onPush({ kind: 'profile', memberId: owner.id }) : undefined
+                }
+                onMessage={canMessage ? message : undefined}
+                actionsMenu={<ProfileActionsMenu member={member} />}
+              />
+              <ProfileRows member={member} ctx={ctx} onPush={onPush} />
+            </div>
+          )}
+        </ProfileStack>
+      </ProfileFaceScope>
     </div>
   );
 }

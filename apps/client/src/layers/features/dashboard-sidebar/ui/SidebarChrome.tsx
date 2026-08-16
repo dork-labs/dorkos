@@ -42,7 +42,7 @@ import {
   resolveSessionForCwd,
   useStartNewSession,
 } from '@/layers/entities/session';
-import { useAgentHubStore } from '@/layers/features/agent-hub';
+import { useProfileStore } from '@/layers/features/profile';
 import type { SidebarTarget, SuggestionId } from '../model/build-sidebar-model';
 import { useCreateFlowStore, type GroupCreationState } from '../model/create-flow-store';
 import { NOW_OVERFLOW_HREF } from '../model/rules/cap-now-items';
@@ -349,9 +349,7 @@ export function SidebarChrome({ activeTarget, children }: SidebarChromeProps) {
       openTarget,
       newSession: (dir?: string) => startNewSession(dir),
       openHub: (agentPath: string) => {
-        useAgentHubStore.getState().openHub(agentPath);
-        setRightPanelOpen(true);
-        setActiveRightPanelTab('agent-hub');
+        useProfileStore.getState().openProfileDocked(agentPath);
       },
       // `undefined` — never a no-op handler — for an agent the mesh cannot name,
       // so the face renders as plain art instead of a control that opens nothing.

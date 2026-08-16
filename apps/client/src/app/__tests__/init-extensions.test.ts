@@ -39,51 +39,59 @@ describe('initializeExtensions — right-panel contributions', () => {
     }
   });
 
-  it('registers the Agent Profile (agent-hub) contribution', () => {
-    expect(getRightPanelContribution('agent-hub')).toBeDefined();
+  it('registers the Profile contribution, under that name', () => {
+    const profile = getRightPanelContribution('profile');
+    expect(profile).toBeDefined();
+    // The tab reads "Profile", not "Agent Profile" and not "Agent Hub": one
+    // surface, one word (spec `profile-unification` D9). Pinned because the
+    // strip's label is the whole of what a person sees of this registration.
+    expect(profile?.title).toBe('Profile');
+    // Nothing may register under the old id — a second contribution would put
+    // two profile tabs in the strip.
+    expect(getRightPanelContribution('agent-hub')).toBeUndefined();
   });
 
-  it('hides the Agent Profile on the marketplace browse route', () => {
-    const agentHub = getRightPanelContribution('agent-hub');
+  it('hides the Profile on the marketplace browse route', () => {
+    const profile = getRightPanelContribution('profile');
     // A visibleWhen predicate is required to keep the panel off /marketplace,
     // where it would otherwise default to a misleading "Agent not found" error.
-    expect(agentHub?.visibleWhen).toBeDefined();
-    expect(agentHub?.visibleWhen?.({ pathname: '/marketplace' })).toBe(false);
+    expect(profile?.visibleWhen).toBeDefined();
+    expect(profile?.visibleWhen?.({ pathname: '/marketplace' })).toBe(false);
   });
 
-  it('hides the Agent Profile on the marketplace sources route', () => {
-    const agentHub = getRightPanelContribution('agent-hub');
-    expect(agentHub?.visibleWhen?.({ pathname: '/marketplace/sources' })).toBe(false);
+  it('hides the Profile on the marketplace sources route', () => {
+    const profile = getRightPanelContribution('profile');
+    expect(profile?.visibleWhen?.({ pathname: '/marketplace/sources' })).toBe(false);
   });
 
-  it('always shows the Agent Profile on the session route', () => {
-    const agentHub = getRightPanelContribution('agent-hub');
+  it('always shows the Profile on the session route', () => {
+    const profile = getRightPanelContribution('profile');
     // /session profiles the session's own agent — no explicit pick required.
-    expect(agentHub?.visibleWhen?.({ pathname: '/session' })).toBe(true);
-    expect(agentHub?.visibleWhen?.({ pathname: '/session', explicitAgentPath: null })).toBe(true);
+    expect(profile?.visibleWhen?.({ pathname: '/session' })).toBe(true);
+    expect(profile?.visibleWhen?.({ pathname: '/session', explicitAgentPath: null })).toBe(true);
   });
 
-  it('hides the Agent Profile off /session until an agent is explicitly opened', () => {
-    const agentHub = getRightPanelContribution('agent-hub');
+  it('hides the Profile off /session until an agent is explicitly opened', () => {
+    const profile = getRightPanelContribution('profile');
     // Selection-honest: with no explicit selection, the ambient startup agent
     // must NOT surface on the dashboard/activity/tasks/workspaces routes.
     for (const pathname of ['/', '/team', '/tasks', '/activity', '/workspaces']) {
-      expect(agentHub?.visibleWhen?.({ pathname, explicitAgentPath: null })).toBe(false);
+      expect(profile?.visibleWhen?.({ pathname, explicitAgentPath: null })).toBe(false);
     }
   });
 
-  it('shows the Agent Profile off /session once an agent is explicitly opened', () => {
-    const agentHub = getRightPanelContribution('agent-hub');
+  it('shows the Profile off /session once an agent is explicitly opened', () => {
+    const profile = getRightPanelContribution('profile');
     for (const pathname of ['/', '/team', '/tasks', '/activity', '/workspaces']) {
-      expect(agentHub?.visibleWhen?.({ pathname, explicitAgentPath: '/repo/a' })).toBe(true);
+      expect(profile?.visibleWhen?.({ pathname, explicitAgentPath: '/repo/a' })).toBe(true);
     }
   });
 
-  it('keeps the Agent Profile hidden on marketplace even with an explicit selection', () => {
-    const agentHub = getRightPanelContribution('agent-hub');
-    expect(
-      agentHub?.visibleWhen?.({ pathname: '/marketplace', explicitAgentPath: '/repo/a' })
-    ).toBe(false);
+  it('keeps the Profile hidden on marketplace even with an explicit selection', () => {
+    const profile = getRightPanelContribution('profile');
+    expect(profile?.visibleWhen?.({ pathname: '/marketplace', explicitAgentPath: '/repo/a' })).toBe(
+      false
+    );
   });
 
   it('registers the Files contribution', () => {

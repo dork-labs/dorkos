@@ -4,7 +4,7 @@ import type { RightPanelPage } from '../../pages/RightPanelPage';
 /**
  * The right panel's tab strip when six tabs do not fit.
  *
- * `/session` registers six contributions (Pulse, Agent Profile, Session, Files,
+ * `/session` registers six contributions (Pulse, Profile, Session, Files,
  * Canvas, Terminal), which is wider than the strip at the 45% split this was filed
  * at — so the strip scrolls, and two things have to hold once it does: the
  * selected tab is on screen, and an edge with tabs behind it says so.

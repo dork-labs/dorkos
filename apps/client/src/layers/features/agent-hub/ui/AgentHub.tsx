@@ -5,7 +5,6 @@ import { useAppStore, useSafePathname } from '@/layers/shared/model';
 import { Skeleton } from '@/layers/shared/ui';
 import { AgentHubProvider } from '../model/agent-hub-context';
 import { useAgentHubStore } from '../model/agent-hub-store';
-import { useAgentHubDeepLink, useAgentDialogRedirect } from '../model/use-agent-hub-deep-link';
 import { AgentHubHero } from './AgentHubHero';
 import { AgentHubTabBar } from './AgentHubTabBar';
 import { AgentHubTabContent } from './AgentHubTabContent';
@@ -55,9 +54,6 @@ function AgentHubSkeleton() {
  * when switching between agents.
  */
 export function AgentHub() {
-  useAgentHubDeepLink();
-  useAgentDialogRedirect();
-
   const [heroPanel, setHeroPanel] = useState<HeroPanel>(null);
   const [previewColor, setPreviewColor] = useState<string | null>(null);
 

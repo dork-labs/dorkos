@@ -198,8 +198,11 @@ vi.mock('../model/use-preview-data', () => ({
   usePreviewData: () => ({ sessionCount: 0, recentSessions: [], health: null }),
 }));
 
-vi.mock('@/layers/features/agent-hub', () => ({
-  useAgentHubStore: Object.assign(() => ({}), { getState: () => ({ openHub: vi.fn() }) }),
+vi.mock('@/layers/features/profile', () => ({
+  PROFILE_PANEL_ID: 'profile',
+  useProfileStore: Object.assign(() => ({}), {
+    getState: () => ({ openProfileDocked: vi.fn() }),
+  }),
 }));
 
 vi.mock('motion/react', () => ({

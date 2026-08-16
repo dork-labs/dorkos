@@ -16,6 +16,7 @@ import { Badge, Button, IdentityAvatar, IDENTITY_MARK_GROUP } from '@/layers/sha
 import { teamMemberFace } from '@/layers/entities/team';
 import type { ProfileRelationship } from '../lib/profile-relationship';
 import { profileStatusText } from '../lib/profile-status';
+import { profileFrameKey } from '../model/profile-stack';
 import { ProfileFace } from './ProfileFace';
 
 export interface ProfileHeaderProps {
@@ -163,6 +164,9 @@ export function ProfileHeader({
           <button
             type="button"
             onClick={onOpenOwner}
+            // Tagged with the frame it pushes, so popping the owner's profile
+            // puts focus back here — the same restore a nav row gets.
+            data-profile-return={profileFrameKey(owner.id)}
             className="focus-ring bg-muted/60 hover:bg-muted mt-2 flex max-w-full items-center gap-1.5 rounded-full py-0.5 pr-1.5 pl-0.5 text-xs transition-colors"
           >
             <IdentityAvatar
