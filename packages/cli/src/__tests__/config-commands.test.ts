@@ -214,6 +214,45 @@ describe('handleConfigValidate', () => {
     spy.mockRestore();
     exitSpy.mockRestore();
   });
+
+  it('names a setting a newer version wrote, and still exits 0 (DOR-1227)', () => {
+    // The file is fine and DorkOS started; telling somebody "validation failed"
+    // here is what sends them off to delete it. But it must not be silent —
+    // `auth.enabled` decides whether the login gate is on.
+    const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => {
+      throw new Error('exit');
+    });
+    const store = createMockStore();
+    vi.mocked(store.validate).mockReturnValue({
+      valid: true,
+      warnings: ['auth.enabled: "sso" (using false)'],
+    });
+
+    expect(() => handleConfigValidate(store)).toThrow('exit');
+
+    expect(exitSpy).toHaveBeenCalledWith(0);
+    const printed = spy.mock.calls.map((call) => String(call[0])).join('\n');
+    expect(printed).toContain('Config is valid');
+    expect(printed).toContain('auth.enabled: "sso" (using false)');
+    expect(printed).toContain('newer version of DorkOS');
+    spy.mockRestore();
+    exitSpy.mockRestore();
+  });
+
+  it('says nothing extra when every value is readable', () => {
+    const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => {
+      throw new Error('exit');
+    });
+    const store = createMockStore();
+
+    expect(() => handleConfigValidate(store)).toThrow('exit');
+
+    expect(spy.mock.calls.map((call) => String(call[0])).join('\n')).not.toContain('newer version');
+    spy.mockRestore();
+    exitSpy.mockRestore();
+  });
 });
 
 describe('handleConfigCommand', () => {

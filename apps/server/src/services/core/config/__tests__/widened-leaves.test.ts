@@ -14,17 +14,39 @@
  * mock store never reaches it, and `UserConfigSchema.parse` cannot stand in for
  * it: Zod strips and defaults where Ajv rejects.
  */
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import { UserConfigSchema, USER_CONFIG_DEFAULTS } from '@dorkos/shared/config-schema';
+import { logger } from '../../../../lib/logger.js';
 import { ConfigManager, WIDENED_LEAF_POLICY } from '../../config-manager.js';
 import {
   preserveWidenedLeaves,
   relaxWidenedLeaves,
   repairWidenedLeaves,
 } from '../widened-leaves.js';
+
+vi.mock('../../../../lib/logger.js', () => ({
+  logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
+  logError: vi.fn(() => ({})),
+}));
+
+/** Every `logger.warn` line since the current test began. */
+const warnings: string[] = [];
+
+beforeEach(() => {
+  vi.mocked(logger.warn).mockClear();
+  vi.mocked(logger.warn).mockImplementation((message: unknown) => {
+    warnings.push(String(message));
+  });
+  warnings.length = 0;
+});
+
+/** How many times `needle` appears in `haystack`. */
+function occurrencesOf(haystack: string, needle: string): number {
+  return haystack.split(needle).length - 1;
+}
 
 /** The retry staircase with the waiting taken out; see `config-load-failure.test.ts`. */
 const FAST_RETRIES = { retryDelaysMs: [0, 0, 0] } as const;
@@ -161,9 +183,86 @@ describe('a leaf holding a value a newer build widened', () => {
     expect(manager.getDot('server.port')).toBe(4242);
     expect(manager.getDot('ui.theme')).toBe('system');
     expect(manager.getAll().ui.theme).toBe('system');
+    // Repairing at the read boundary must not cost `dot-prop`'s escaping: a
+    // record key with a literal dot in it is still reachable, because `conf`
+    // still does the lookup and the repair is applied to what came back.
+    manager.setDot('workbench.defaultViewers', { '/notes/a.tex': 'markdown' });
+    expect(manager.getDot('workbench.defaultViewers./notes/a\\.tex')).toBe('markdown');
     // And `dorkos config validate` does not tell the person their settings are
-    // broken over a value that costs them nothing.
-    expect(manager.validate()).toEqual({ valid: true });
+    // broken over a value that costs them nothing — it names them instead.
+    expect(manager.validate()).toEqual({
+      valid: true,
+      warnings: ['server.port: 80 (using 4242)', 'ui.theme: "midnight" (using "system")'],
+    });
+  });
+});
+
+describe('saying which settings it could not read', () => {
+  it('names them once at boot, and says nothing about a clean file', () => {
+    // Tolerated is not silent. `auth.enabled` decides whether the login gate is
+    // on; before this feature a file it could not read was condemned LOUDLY,
+    // with a backup and a line the operator saw. Falling back quietly would turn
+    // that into a gate off with nothing anywhere to say so.
+    const { dir } = seed({ version: 1, ui: { theme: 'midnight' }, auth: { enabled: 'sso' } });
+
+    new ConfigManager(dir, FAST_RETRIES);
+
+    const lines = warnings.filter((line) => line.includes('cannot read'));
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toContain('2 settings hold values');
+    expect(occurrencesOf(lines[0]!, 'ui.theme')).toBe(1);
+    expect(occurrencesOf(lines[0]!, 'auth.enabled')).toBe(1);
+    // What it fell back to, because "we ignored auth.enabled" and "the login
+    // gate is off" are the same news and only one of them is actionable.
+    expect(lines[0]).toContain('"midnight" (using "system")');
+    expect(lines[0]).toContain('(using false)');
+
+    warnings.length = 0;
+    new ConfigManager(seed({ version: 1, ui: { theme: 'dark' } }).dir, FAST_RETRIES);
+    expect(warnings.filter((line) => line.includes('cannot read'))).toEqual([]);
+  });
+
+  it('says it once per boot, not once per read', () => {
+    // `get` runs the same repair on every call, so a warning per read would bury
+    // the one that matters under thousands of copies of itself.
+    const { dir } = seed({ version: 1, ui: { theme: 'midnight' } });
+
+    const manager = new ConfigManager(dir, FAST_RETRIES);
+    for (let i = 0; i < 5; i++) manager.get('ui');
+    manager.getAll();
+
+    expect(warnings.filter((line) => line.includes('cannot read'))).toHaveLength(1);
+  });
+
+  it('never prints a credential, only the path that holds one', () => {
+    // The four SENSITIVE_CONFIG_KEYS are nullable strings with defaults, so they
+    // are all relaxed — a newer build changing how a token is encoded would
+    // otherwise put that token in a log file the moment an older build read it.
+    const { dir } = seed({ version: 1, mcp: { apiKey: { v2: 'sk-live-do-not-log' } } });
+
+    const manager = new ConfigManager(dir, FAST_RETRIES);
+
+    const printed = [...warnings, ...(manager.validate().warnings ?? [])].join('\n');
+    expect(printed).toContain('mcp.apiKey');
+    expect(printed).toContain('<hidden>');
+    expect(printed).not.toContain('sk-live-do-not-log');
+  });
+
+  it('reports them from validate as warnings, and still says the config is valid', () => {
+    // `dorkos config validate` keeps its point for the hand-edit case without
+    // telling somebody their settings are broken — which is what sends people to
+    // delete the file this exists to keep.
+    const { dir } = seed({ version: 1, approvals: { trustWindowMinutes: '5m' } });
+
+    const result = new ConfigManager(dir, FAST_RETRIES).validate();
+
+    expect(result.valid).toBe(true);
+    expect(result.warnings).toEqual(['approvals.trustWindowMinutes: "5m" (using 480)']);
+  });
+
+  it('reports nothing from validate when every value is readable', () => {
+    const { dir } = seed({ version: 1, ui: { theme: 'dark' } });
+    expect(new ConfigManager(dir, FAST_RETRIES).validate()).toEqual({ valid: true });
   });
 });
 
@@ -190,6 +289,24 @@ describe('writing from the build that cannot read the value', () => {
     // And the writes themselves still landed.
     expect(stored.ui?.dismissedUpgradeVersions).toEqual(['0.59.0']);
     expect(stored.server?.open).toBe(false);
+  });
+
+  it('keeps a widened leaf when a sibling of it is written by dot-path', () => {
+    // The nested case, which the section-level test above cannot reach: the
+    // write names `runtimes.codex.enabled`, and `defaultEffort` beside it — two
+    // levels down, in the same object — has to come through untouched.
+    const { dir, configPath } = seed({
+      version: 1,
+      runtimes: { default: 'claude-code', codex: { enabled: true, defaultEffort: 'ludicrous' } },
+    });
+
+    const manager = new ConfigManager(dir, FAST_RETRIES);
+    manager.setDot('runtimes.codex', { ...manager.get('runtimes').codex, enabled: false });
+
+    const codex = onDisk(configPath).runtimes?.codex as Record<string, unknown>;
+    expect(backupsIn(dir)).toEqual([]);
+    expect(codex.defaultEffort).toBe('ludicrous');
+    expect(codex.enabled).toBe(false);
   });
 
   it('lets a person on this build overwrite it', () => {

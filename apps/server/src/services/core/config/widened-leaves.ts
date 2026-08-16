@@ -89,7 +89,7 @@
  * @module services/core/config/widened-leaves
  */
 import { isDeepStrictEqual } from 'node:util';
-import { UserConfigSchema } from '@dorkos/shared/config-schema';
+import { SENSITIVE_CONFIG_KEYS, UserConfigSchema } from '@dorkos/shared/config-schema';
 import type { z } from 'zod';
 import { isPlainObject } from './version-skew.js';
 
@@ -149,7 +149,12 @@ function isScalarNode(node: Record<string, unknown>): boolean {
  * The `default` has to stay. conf builds Ajv with `useDefaults`, so a leaf
  * missing from the file is filled in during validation; dropping the default
  * along with the constraints would turn "tolerate a widened value" into "forget
- * every unset preference". The description is kept because `/api/docs` reads it.
+ * every unset preference".
+ *
+ * The `description` is kept only so that a person reading the schema conf holds
+ * — in a debugger, or dumped from `CONF_JSON_SCHEMA` — still sees what the field
+ * is for. Nothing renders it: `/api/docs` and the OpenAPI export build their own
+ * schema from Zod and never see this copy.
  *
  * @param node - The leaf node being replaced.
  */
@@ -163,8 +168,6 @@ function leafStub(node: Record<string, unknown>): Record<string, unknown> {
 interface RelaxedLeaf {
   /** The top-level section it belongs to, e.g. `runtimes`. */
   section: string;
-  /** Path within that section, e.g. `['codex', 'defaultEffort']`. */
-  segments: readonly string[];
   /** Dot-path from the top of the config, e.g. `runtimes.codex.defaultEffort`. */
   path: string;
   /** The Zod field itself — enum, bound, nullability and all. */
@@ -257,7 +260,6 @@ function relaxIn(
       properties[key] = leafStub(child);
       leaves.push({
         section: here[0]!,
-        segments: here.slice(1),
         path: here.join('.'),
         schema,
         fallback: fallback.data,
@@ -317,6 +319,28 @@ function withPath(root: unknown, segments: readonly string[], value: unknown): u
   return { ...root, [head]: withPath(root[head], rest, value) };
 }
 
+/** No relaxed leaf lives here — shared so the common path allocates nothing. */
+const NO_RELAXED: readonly RelaxedLeaf[] = [];
+
+/**
+ * The relaxed leaves at or under a config path.
+ *
+ * @param path - A top-level section, a dot-path into one, or a leaf itself.
+ * @param policy - What {@link relaxWidenedLeaves} opened.
+ */
+function leavesUnder(path: string, policy: WidenedLeafPolicy): readonly RelaxedLeaf[] {
+  const section = path.split('.')[0]!;
+  const candidates = policy.bySection.get(section);
+  if (candidates === undefined) return NO_RELAXED;
+  if (path === section) return candidates;
+  return candidates.filter((leaf) => leaf.path === path || leaf.path.startsWith(`${path}.`));
+}
+
+/** A leaf's path relative to the value being read, e.g. `['codex','defaultModel']`. */
+function relativeSegments(path: string, leafPath: string): readonly string[] {
+  return leafPath === path ? [] : leafPath.slice(path.length + 1).split('.');
+}
+
 /**
  * Fall back to the schema default on any leaf whose stored value this build
  * cannot interpret.
@@ -324,35 +348,43 @@ function withPath(root: unknown, segments: readonly string[], value: unknown): u
  * Each relaxed leaf is checked against its OWN Zod field — the authoritative
  * schema, and the only thing still guarding those positions now that
  * {@link relaxWidenedLeaves} has taken them away from Ajv. A leaf Zod refuses is
- * replaced by its own default and nothing else in the section is touched, so an
- * unrecognized key beside it survives in memory as well as on disk, and a
- * failure the schema has elsewhere cannot suppress the repair.
+ * replaced by its own default and nothing else is touched, so an unrecognized
+ * key beside it survives in memory as well as on disk, and a failure the schema
+ * has elsewhere cannot suppress the repair.
  *
  * Per leaf rather than per section for a reason worth keeping: parsing the whole
  * `ui` section on every read cost 230µs, six times what reading it cost in the
  * first place, and this accessor is called several times per request.
  *
+ * `path` may be a section, a dot-path into one, or a leaf itself — one function
+ * for `get`, `getAll`, `getDot` and the write path, so all four agree about what
+ * a value means. A path naming nothing relaxed comes back untouched, which is
+ * also what keeps `dorkos config get 'workbench.defaultViewers.a\.tex'` honest:
+ * an escaped dot can only address a RECORD key, records hold no relaxed leaves,
+ * and the value `conf`'s own dot-prop lookup returned is passed straight
+ * through rather than re-navigated here.
+ *
  * Returns its input by reference when there was nothing to repair.
  *
- * @param section - The top-level section name, e.g. `ui`.
- * @param value - The section as `conf` handed it over.
+ * @param path - What is being read, as `conf` was asked for it.
+ * @param value - The value `conf` handed over.
  * @param policy - What {@link relaxWidenedLeaves} opened. Nothing outside it is
  *   ever repaired, so a leaf Ajv still guards cannot be silently defaulted here
  *   instead.
- * @returns The section this build should run on, plus what it could not read.
+ * @returns The value this build should run on, plus what it could not read.
  */
 export function repairWidenedLeaves(
-  section: string,
+  path: string,
   value: unknown,
   policy: WidenedLeafPolicy
 ): { value: unknown; skewed: readonly WidenedLeaf[] } {
-  const leaves = policy.bySection.get(section);
-  if (leaves === undefined || !isPlainObject(value)) return { value, skewed: NO_LEAVES };
+  const leaves = leavesUnder(path, policy);
 
   let repaired: unknown = value;
   let skewed: WidenedLeaf[] | undefined;
   for (const leaf of leaves) {
-    const stored = valueAt(value, leaf.segments);
+    const relative = relativeSegments(path, leaf.path);
+    const stored = relative.length === 0 ? value : valueAt(value, relative);
     // Absent is not skew: conf's Ajv has already written the default in, and a
     // leaf nested under a section whose SHAPE is wrong never gets this far —
     // Ajv condemns that file before DorkOS is handed anything.
@@ -366,7 +398,7 @@ export function repairWidenedLeaves(
     if (leaf.schema.safeParse(stored).success) continue;
     skewed ??= [];
     skewed.push({ path: leaf.path, stored, used: leaf.fallback });
-    repaired = withPath(repaired, leaf.segments, leaf.fallback);
+    repaired = relative.length === 0 ? leaf.fallback : withPath(repaired, relative, leaf.fallback);
   }
 
   if (skewed === undefined) return { value, skewed: NO_LEAVES };
@@ -383,10 +415,15 @@ export function repairWidenedLeaves(
  * section it saves `'system'`, and the person's real choice is gone from the
  * file — the same loss as a wipe, arriving one preference at a time.
  *
- * The test is whether the write NAMES the leaf. A write carrying exactly the
+ * **The test is EQUALITY, not absence.** A write that carries back exactly the
  * value this build handed out is a write that never knew about the stored one,
  * so the stored one survives; a write carrying anything else is somebody
- * choosing, and choosing wins.
+ * choosing, and choosing wins. Say it that way rather than "a write that did not
+ * name the leaf", because the two come apart: a PARTIAL write that omits the
+ * leaf entirely is not carried, and the stored value goes. That is deliberate —
+ * an absent key is what deleting a setting looks like, and `preserveUnknownKeys`
+ * makes the same call for the same reason — but every caller in DorkOS writes a
+ * Zod-parsed section, where every leaf is present.
  *
  * **The one case this gets wrong, stated plainly.** Deliberately setting the
  * leaf to the very value already on screen — picking `System` while the file
@@ -395,7 +432,7 @@ export function repairWidenedLeaves(
  * sees no change either way, because there was none to see.
  *
  * @param skewed - What {@link repairWidenedLeaves} could not read, from the
- *   stored section.
+ *   stored value at `keyPath`.
  * @param keyPath - The path being written: a top-level section, or a dot-path
  *   into one.
  * @param next - The value about to be stored.
@@ -411,11 +448,31 @@ export function preserveWidenedLeaves(
   let result = next;
   for (const leaf of skewed) {
     if (leaf.path !== keyPath && !leaf.path.startsWith(`${keyPath}.`)) continue;
-    const rest = leaf.path === keyPath ? [] : leaf.path.slice(keyPath.length + 1).split('.');
+    const rest = relativeSegments(keyPath, leaf.path);
     const written = rest.length === 0 ? result : valueAt(result, rest);
     if (written === MISSING) continue;
     if (!isDeepStrictEqual(written, leaf.used)) continue;
     result = rest.length === 0 ? leaf.stored : withPath(result, rest, leaf.stored);
   }
   return result;
+}
+
+/**
+ * One line naming a setting this build could not read, for a log, a checklist
+ * row, or `dorkos config validate`.
+ *
+ * **A stored value is redacted when its path is sensitive.** Four leaves hold
+ * credentials (`SENSITIVE_CONFIG_KEYS`), they are all nullable strings with
+ * defaults, and so they are all relaxed — which means a newer build changing how
+ * a token is encoded would otherwise print that token into a log file the moment
+ * an older build read it. The path and the fact of the skew are the whole point
+ * of the message; the secret is not part of it.
+ *
+ * @param leaf - What {@link repairWidenedLeaves} could not read.
+ * @returns e.g. `ui.theme: "midnight" (using "system")`.
+ */
+export function describeWidenedLeaf(leaf: WidenedLeaf): string {
+  const sensitive = (SENSITIVE_CONFIG_KEYS as readonly string[]).includes(leaf.path);
+  const stored = sensitive ? '<hidden>' : JSON.stringify(leaf.stored);
+  return `${leaf.path}: ${stored} (using ${JSON.stringify(leaf.used)})`;
 }
