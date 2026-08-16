@@ -88,9 +88,25 @@ channel does can be measured with no model at all.
 credentialed is SKIPPED on a `test-mode` run (`skipped-wrong-tier`) instead of
 being run against the deterministic runtime. It is not a tidiness rule: the
 injection case reported `pass` on test-mode, because a scripted echo obeys no
-injected instruction — a green about a security property nothing had exercised.
-A skipped case neither gates nor counts as quarantined coverage, so the GATING
-line still says what a run actually proved.
+injected instruction — a green about a security property nothing had
+exercised.
+
+**Merely declaring `test-mode` does NOT skip a case on a credentialed run
+(DOR-1228).** `widget-round-trip` is runtime-agnostic by construction — its
+`/ui-action` trigger needs no model — and is meant to run, and gate, on a
+credentialed tier too; skipping it there would remove coverage rather than a
+lie, and that coverage is what catches DOR-1239, a real `409 SESSION_LOCKED`
+race between a widget action and its own seed turn's lock release. Only a case
+marked `testModeOnly: true` skips downward: one that leans on a mechanism
+`test-mode` alone offers, with no real-runtime equivalent at all.
+`rooms-halt-stops-and-says-so` is the one case that needs it — it needs a turn
+that holds still for Stop, which only the `test-mode` scenario control
+provides deterministically. Before the flag existed, `--suite rooms --tier
+claude-code-cheap` ran it anyway, into its own "test-mode only" throw,
+reported as `error` and gating the run for a verdict it could never produce
+there; now it reports an honest skip instead. A skipped case neither gates nor
+counts as quarantined coverage, so the GATING line still says what a run
+actually proved.
 
 **A rooms case reports `unmetered`, and it is not lying about that.** The only
 cost signal the harness can see rides the per-SESSION stream, and a room drive
@@ -114,10 +130,13 @@ Two lines at the bottom of the table matter more than the rows above them:
 
 - **GATING** says how many of the cases a run STARTED could actually fail it.
   Most cases are quarantined, which means they run and report but never fail
-  anything; cases that declare a credentialed runtime are not started at all on a
-  `test-mode` run (`skipped-wrong-tier`) and count as neither. A green run that
-  gated on zero cases proves nothing, so the harness treats that as a failure
-  rather than a pass.
+  anything; cases that cannot run on the tier the run booted — a credentialed
+  case on a `test-mode` run, or a `testModeOnly` case on a credentialed run —
+  are not started at all (`skipped-wrong-tier`) and count as neither. The
+  footer names the count and direction: "N needing a credentialed tier" on a
+  `test-mode` run, "N needing test-mode" on a credentialed one. A green run
+  that gated on zero cases proves nothing, so
+  the harness treats that as a failure rather than a pass.
 - **CREDENTIAL** says which of the three credentials the run used, so nobody has
   to guess.
 

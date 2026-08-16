@@ -261,9 +261,15 @@ export async function runEval(evalCase: EvalCase, opts: RunEvalOptions): Promise
   let frames: SseFrame[] = [];
   let room: RoomFacts | undefined;
   let sessionId: string = randomUUID();
-  // One client identity for the whole eval — the multi-turn conversation AND a
-  // trailing widget turn share it, so each re-acquires the same re-entrant
-  // session lock instead of colliding (a `409 SESSION_LOCKED`) on a real runtime.
+  // One client identity for the whole eval, shared by the multi-turn
+  // conversation AND a trailing widget turn — matching what a real cockpit
+  // client sends. That guarantees the conversation's OWN turns never collide
+  // (SessionTurnQueue makes a later `/messages` trigger from the SAME client
+  // wait rather than race the lock). A trailing widget turn is NOT covered the
+  // same way: `/ui-action` opts out of that queue and can still 409 under this
+  // same client id, in the window between a turn's `turn_end` frame and its
+  // runtime stream fully settling (DOR-1239; see
+  // `drive.ts`'s `DriveWidgetActionOptions.clientId`).
   const clientId = randomUUID();
   let failed = false;
   let approvalDriver: ApprovalDriver | undefined;

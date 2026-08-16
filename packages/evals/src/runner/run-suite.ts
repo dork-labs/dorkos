@@ -1,8 +1,10 @@
 /**
- * Run a whole suite: select the cases, SKIP the ones whose declared runtime the
- * run cannot provide, run the rest through {@link runEval} under a shared
- * per-run {@link BudgetTracker}, retry the one measured infrastructure signature
- * once (`runner/retry.ts`), skip the remainder once the run budget is spent, and
+ * Run a whole suite: select the cases, SKIP the ones that cannot run on the
+ * tier the run booted — a case declaring a credentialed runtime on a
+ * `test-mode` run, or a `testModeOnly` case on a credentialed run (DOR-1228)
+ * — run the rest through {@link runEval} under a shared per-run
+ * {@link BudgetTracker}, retry the one measured infrastructure signature once
+ * (`runner/retry.ts`), skip the remainder once the run budget is spent, and
  * emit `results.json`. Phase 1 runs cases SERIALLY because the
  * in-process server is a process-level singleton; bounded concurrency arrives
  * with the child-process tier (Phase 2).
@@ -84,30 +86,50 @@ function skippedResult(
 }
 
 /**
- * Whether this case cannot run on the tier the run booted.
+ * Whether this case must be skipped on the tier the run booted.
  *
- * A case that declares a credentialed runtime is about MODEL behaviour — a real
- * agent choosing a tool, recalling a conversation, refusing an injected
- * instruction. Run against the deterministic `test-mode` runtime it does not
- * become a weaker test; it becomes a different one whose verdict means nothing,
- * and the `rooms-adversarial-injection` case measured that the hard way: it
- * reported `pass` on a test-mode run because a scripted echo obeys no
- * instructions, injected or otherwise.
+ * UPWARD (the case needs more than the run has): a case that declares a
+ * credentialed runtime is about MODEL behaviour — a real agent choosing a
+ * tool, recalling a conversation, refusing an injected instruction. Run
+ * against the deterministic `test-mode` runtime it does not become a weaker
+ * test; it becomes a different one whose verdict means nothing, and the
+ * `rooms-adversarial-injection` case measured that the hard way: it reported
+ * `pass` on a test-mode run because a scripted echo obeys no instructions,
+ * injected or otherwise.
+ *
+ * DOWNWARD (the case structurally CANNOT run anywhere but `test-mode`,
+ * DOR-1228): merely declaring `runtimeTier: 'test-mode'` is NOT by itself a
+ * reason to skip downward. `widget-round-trip`'s `/ui-action` trigger is
+ * runtime-agnostic by construction and is MEANT to run — and gate — on a
+ * credentialed tier too; skipping it there would remove coverage rather than
+ * a lie. That coverage caught a real bug: DOR-1239 is a genuine
+ * `409 SESSION_LOCKED` a credentialed `widget-round-trip` run can hit (a race
+ * between a widget action and its own seed turn's lock release), and an
+ * earlier version of this fix skipped the case downward on the strength of
+ * its declared tier alone — which would have hidden that race again, not
+ * reported it. Only a case marked {@link EvalCaseMeta.testModeOnly} — one that
+ * leans on a mechanism only `test-mode` offers, with no real-runtime
+ * equivalent at all — skips downward. `rooms-halt-stops-and-says-so` is the
+ * one case that needs it today: it needs a turn that holds still until Stop
+ * interrupts it, which only the `long-turn` scenario control
+ * (`POST /api/test/scenario`) provides deterministically; without the flag it
+ * used to throw its own "test-mode only" error on a forced credentialed run,
+ * landing as `error` and gating the run for a case that was never asked to
+ * run there.
  *
  * So the declared tier is enforced rather than described. Enforced HERE, at
  * selection, rather than inside {@link runEval}: `runEval` is the single-case
- * primitive that unit tests deliberately drive off-tier, and a guard there would
- * make those tests unable to test anything.
- *
- * One direction only — see {@link EvalCaseMeta}'s `runtimeTier` for why a
- * `test-mode` case still runs on a credentialed tier.
+ * primitive that unit tests deliberately drive off-tier, and a guard there
+ * would make those tests unable to test anything.
  *
  * @param evalCase - The case being selected.
  * @param tier - The tier the run booted on.
  * @returns True when the case must be skipped.
  */
-function needsCredentialedTier(evalCase: EvalCase, tier: RuntimeTier): boolean {
-  return tier === 'test-mode' && evalCase.runtimeTier !== 'test-mode';
+function tierMismatch(evalCase: EvalCase, tier: RuntimeTier): boolean {
+  const needsCredentialedTier = tier === 'test-mode' && evalCase.runtimeTier !== 'test-mode';
+  const needsTestMode = tier !== 'test-mode' && (evalCase.testModeOnly ?? false);
+  return needsCredentialedTier || needsTestMode;
 }
 
 /** Generate a filesystem-safe, sortable run id. */
@@ -159,8 +181,8 @@ export async function runSuite(cases: EvalCase[], opts: RunSuiteOptions): Promis
   for (const evalCase of cases) {
     // Before the budget check: a case that cannot run on this tier was never a
     // spend question, and reporting it as "skipped over budget" would say the
-    // run ran out of money rather than that the case needs a model.
-    if (needsCredentialedTier(evalCase, opts.tier)) {
+    // run ran out of money rather than that the tiers do not match.
+    if (tierMismatch(evalCase, opts.tier)) {
       results.push(skippedResult(evalCase, opts.tier, 'skipped-wrong-tier'));
       continue;
     }

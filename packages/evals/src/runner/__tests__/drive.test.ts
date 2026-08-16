@@ -21,8 +21,8 @@ import { FakeAgentRuntime } from '@dorkos/test-utils';
 import { driveTurn, driveConversation, driveWidgetAction, DriveError } from '../drive.js';
 
 let server: http.Server | undefined;
-/** The last trigger POST the fake server received (path + parsed body). */
-let capturedPost: { path: string; body: unknown } | undefined;
+/** The last trigger POST the fake server received (path + parsed body + headers). */
+let capturedPost: { path: string; body: unknown; headers: http.IncomingHttpHeaders } | undefined;
 
 afterEach(async () => {
   server?.closeAllConnections?.();
@@ -84,7 +84,11 @@ async function startFakeServer(
       let body = '';
       req.on('data', (chunk: Buffer) => (body += chunk.toString()));
       req.on('end', () => {
-        capturedPost = { path: url.pathname, body: body ? JSON.parse(body) : undefined };
+        capturedPost = {
+          path: url.pathname,
+          body: body ? JSON.parse(body) : undefined,
+          headers: req.headers,
+        };
         if (opts.lockCode) {
           res.writeHead(opts.lockCode, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ code: 'SESSION_LOCKED' }));
@@ -157,7 +161,11 @@ async function startRemapFakeServer(
       let body = '';
       req.on('data', (chunk: Buffer) => (body += chunk.toString()));
       req.on('end', () => {
-        capturedPost = { path: url.pathname, body: body ? JSON.parse(body) : undefined };
+        capturedPost = {
+          path: url.pathname,
+          body: body ? JSON.parse(body) : undefined,
+          headers: req.headers,
+        };
         res.writeHead(202, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ sessionId: remappedId }));
         // Stream the turn onto the REMAPPED id's /events connection only —
@@ -482,6 +490,89 @@ describe('driveWidgetAction', () => {
       cwd: '/tmp/proj',
       payload: { choice: 'yes' },
     });
+  });
+
+  it('sends X-Client-Id on the /ui-action POST when a clientId is given (DOR-1228)', async () => {
+    const runtime = new FakeAgentRuntime();
+    runtime.withScenarios([
+      async function* () {
+        yield { type: 'done', data: {} } as StreamEvent;
+      },
+    ]);
+    const baseUrl = await startFakeServer(runtime);
+
+    await driveWidgetAction({
+      baseUrl,
+      sessionId: 'sess-w2',
+      cwd: '/tmp/proj',
+      action: { actionId: 'confirm' },
+      clientId: 'client-abc',
+    });
+
+    expect(capturedPost?.headers['x-client-id']).toBe('client-abc');
+  });
+
+  it('omits X-Client-Id when no clientId is given', async () => {
+    const runtime = new FakeAgentRuntime();
+    runtime.withScenarios([
+      async function* () {
+        yield { type: 'done', data: {} } as StreamEvent;
+      },
+    ]);
+    const baseUrl = await startFakeServer(runtime);
+
+    await driveWidgetAction({
+      baseUrl,
+      sessionId: 'sess-w3',
+      cwd: '/tmp/proj',
+      action: { actionId: 'confirm' },
+    });
+
+    expect(capturedPost?.headers['x-client-id']).toBeUndefined();
+  });
+
+  it('reuses the SAME client id a seed turn used — what run-eval.ts sends, whether or not it is enough (DOR-1228/DOR-1239)', async () => {
+    // widget-round-trip's real shape: driveConversation runs the seed turn,
+    // then driveWidgetAction fires a second turn on the SAME session with the
+    // SAME client id — matching what a real cockpit client sends. This is NOT
+    // a re-entrant-lock guarantee the way a same-client `/messages` retry gets
+    // from SessionTurnQueue: `/ui-action` opts out of that queue
+    // (`whenBusy: 'refuse'`) and can still 409 even under a matching client id
+    // if it lands before the runtime's stream fully settles (DOR-1239). This
+    // test only pins that the header is sent and matches; it does not (and
+    // cannot, on a fake server) prove the settle-timing race is absent.
+    const runtime = new FakeAgentRuntime();
+    runtime.withScenarios([
+      async function* () {
+        yield { type: 'done', data: {} } as StreamEvent;
+      },
+      async function* () {
+        yield { type: 'done', data: {} } as StreamEvent;
+      },
+    ]);
+    const baseUrl = await startFakeServer(runtime);
+    const clientId = 'shared-client-id';
+
+    await driveTurn({
+      baseUrl,
+      sessionId: 'sess-share',
+      content: 'seed',
+      cwd: '/tmp/proj',
+      clientId,
+    });
+    const seedHeader = capturedPost?.headers['x-client-id'];
+
+    await driveWidgetAction({
+      baseUrl,
+      sessionId: 'sess-share',
+      cwd: '/tmp/proj',
+      action: { actionId: 'confirm' },
+      clientId,
+    });
+    const widgetHeader = capturedPost?.headers['x-client-id'];
+
+    expect(seedHeader).toBe(clientId);
+    expect(widgetHeader).toBe(clientId);
   });
 
   it('throws a DriveError on a 409 SESSION_LOCKED', async () => {

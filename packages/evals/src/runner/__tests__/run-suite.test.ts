@@ -16,19 +16,61 @@
  * injected attempt function in `retry.test.ts`; this file only pins that
  * threading it through did not disturb the ordinary path.
  */
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 import { mkdtemp, readFile, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { RunSummarySchema } from '../../types.js';
+import { hasLocalClaudeLogin } from '@dorkos/server/services/runtimes/claude-code/auth-probe';
+import { RunSummarySchema, type EvalCase, type RuntimeTier } from '../../types.js';
 import { selfTestCase } from '../../suite/selftest.js';
+import { roomsHaltStopsCase } from '../../suite/rooms.js';
+import { widgetRoundTripCase } from '../../suite/ui.js';
 import { runSuite } from '../run-suite.js';
+import { evaluateRunGate } from '../../report/summary.js';
+
+// The local-sign-in probe shells out to the real `claude` binary; left real, a
+// tier-mismatch test that boots a credentialed run on a machine that happens to
+// be signed in could probe it for no reason (the case never runs either way,
+// but resolveModelCredential still runs once per run before the per-case skip).
+vi.mock('@dorkos/server/services/runtimes/claude-code/auth-probe', () => ({
+  hasLocalClaudeLogin: vi.fn(async () => false),
+}));
+const mockedLocalLogin = vi.mocked(hasLocalClaudeLogin);
 
 let outDir: string | undefined;
+/**
+ * A private, empty `~/.claude` stand-in for THIS file's credentialed-tier
+ * tests. `startChildProcessServer`'s launcher deliberately inherits the
+ * parent env so the spawned server can find `PATH`/`HOME` and the `claude`
+ * binary (`child-process-launcher.ts`) — which means a mocked
+ * `hasLocalClaudeLogin` in THIS process protects nothing once a real
+ * subprocess is spawned; the subprocess reads `$CLAUDE_CONFIG_DIR ?? ~/.claude`
+ * on its own (`claude-config-dir.ts`). A measured fact in AGENTS.md: a fake
+ * `ANTHROPIC_API_KEY` alone does not stop that subprocess from falling back to
+ * and billing a real local sign-in. Pointing both vars at a directory that
+ * cannot contain one is the actual guard (DOR-1228 review, Important 4) —
+ * belt-and-suspenders alongside the credential-gate tests below, which are
+ * designed to never boot a subprocess at all.
+ */
+let claudeHome: string | undefined;
+
+beforeEach(async () => {
+  mockedLocalLogin.mockResolvedValue(false);
+  // Fail-closed by default: no pinned credential var, no local sign-in. A test
+  // that needs a resolved credential sets one explicitly.
+  vi.stubEnv('ANTHROPIC_API_KEY', '');
+  vi.stubEnv('CLAUDE_CODE_OAUTH_TOKEN', '');
+  claudeHome = await mkdtemp(path.join(tmpdir(), 'evals-suite-claude-home-'));
+  vi.stubEnv('CLAUDE_CONFIG_DIR', claudeHome);
+  vi.stubEnv('HOME', claudeHome);
+});
 
 afterEach(async () => {
+  vi.unstubAllEnvs();
   if (outDir) await rm(outDir, { recursive: true, force: true });
   outDir = undefined;
+  if (claudeHome) await rm(claudeHome, { recursive: true, force: true });
+  claudeHome = undefined;
 });
 
 describe('runSuite', () => {
@@ -52,5 +94,138 @@ describe('runSuite', () => {
     // The transcript pointer resolves to a file that is actually there.
     expect(result.transcript).toBe('harness-selftest.jsonl');
     expect((await stat(path.join(runDir, result.transcript ?? ''))).isFile()).toBe(true);
+  });
+});
+
+/** A minimal case that never actually drives anything — only its declared tier (and flag) matter. */
+function fixtureCase(
+  id: string,
+  tier: RuntimeTier,
+  opts: { testModeOnly?: boolean } = {}
+): EvalCase {
+  return {
+    id,
+    title: `Fixture (${tier})`,
+    prompt: '',
+    runtimeTier: tier,
+    ...(opts.testModeOnly !== undefined ? { testModeOnly: opts.testModeOnly } : {}),
+    costClass: tier === 'test-mode' ? 'free' : 'cheap',
+    tags: ['core'],
+    oracles: [],
+  };
+}
+
+describe('tier mismatch classification (DOR-1228)', () => {
+  it('skips a testModeOnly case on a credentialed request (downward) as skipped-wrong-tier, non-gating', async () => {
+    // The regression this pins: `--suite rooms --tier claude-code-cheap` used to
+    // run `rooms-halt-stops-and-says-so` anyway and let it fail as `error` (its
+    // own "test-mode only" scenario-guard throw) — which GATES the run. A tier
+    // the case structurally cannot run on must be an honest skip instead.
+    //
+    // No credential is stubbed here on purpose: this fixture is skipped BEFORE
+    // `runSuite` ever reaches the credential gate or a launcher, so the
+    // file's fail-closed default (no env var, mocked local login = false, plus
+    // the CLAUDE_CONFIG_DIR/HOME sandbox above) is what a REGRESSION here would
+    // fall through to — a runner `error`, never a real boot.
+    outDir = await mkdtemp(path.join(tmpdir(), 'evals-suite-downward-'));
+    const { summary } = await runSuite(
+      [fixtureCase('needs-test-mode', 'test-mode', { testModeOnly: true })],
+      {
+        tier: 'claude-code-cheap',
+        outDir,
+        runId: 'downward',
+        notify: () => {},
+      }
+    );
+
+    const [result] = summary.results;
+    expect(result.status).toBe('skipped-wrong-tier');
+    expect(result.oracleResults).toEqual([]);
+    expect(result.costUsd).toBe(0);
+    // The row names the tier the case NEEDS, not the one the run booted.
+    expect(result.runtimeTier).toBe('test-mode');
+    // And it does not GATE — a mismatched case is coverage for nothing,
+    // never a case the run could fail.
+    const gate = evaluateRunGate(summary);
+    expect(gate.totalCases).toBe(0);
+    expect(gate.gatingCases).toBe(0);
+  });
+
+  it('does NOT skip a plain `test-mode` case downward — only `testModeOnly` does (DOR-1228 review, Blocker 1)', async () => {
+    // The bug the review caught: treating `runtimeTier: 'test-mode'` alone as
+    // "skip downward" would have removed real coverage. `widget-round-trip` is
+    // declared `test-mode` (free, deterministic) but is runtime-agnostic by
+    // construction and MUST still be attempted on a credentialed tier — see the
+    // real-case proof below. This fixture pins the same boundary in isolation.
+    outDir = await mkdtemp(path.join(tmpdir(), 'evals-suite-downward-attempted-'));
+    const { summary } = await runSuite([fixtureCase('plain-test-mode', 'test-mode')], {
+      tier: 'claude-code-cheap',
+      outDir,
+      runId: 'downward-attempted',
+      notify: () => {},
+    });
+
+    const [result] = summary.results;
+    // Attempted, not skipped — and with no credential resolved (this file's
+    // fail-closed default), it comes back a runner `error` rather than ever
+    // booting a subprocess.
+    expect(result.status).not.toBe('skipped-wrong-tier');
+    expect(result.status).toBe('error');
+  });
+
+  it('still skips a credentialed case on a test-mode request (upward) as skipped-wrong-tier', async () => {
+    outDir = await mkdtemp(path.join(tmpdir(), 'evals-suite-upward-'));
+    const { summary } = await runSuite([fixtureCase('needs-credentialed', 'claude-code-cheap')], {
+      tier: 'test-mode',
+      outDir,
+      runId: 'upward',
+    });
+
+    const [result] = summary.results;
+    expect(result.status).toBe('skipped-wrong-tier');
+    expect(result.runtimeTier).toBe('claude-code-cheap');
+  });
+
+  it('runs a case normally when its declared tier matches the requested one (no false skip)', async () => {
+    outDir = await mkdtemp(path.join(tmpdir(), 'evals-suite-match-'));
+    const { summary } = await runSuite([selfTestCase], {
+      tier: 'test-mode',
+      outDir,
+      runId: 'matched',
+    });
+
+    expect(summary.results[0]?.status).not.toBe('skipped-wrong-tier');
+  });
+
+  it('the REAL cases: rooms-halt is skipped-wrong-tier at claude-code-cheap, widget-round-trip is attempted/gating there (DOR-1228 review)', async () => {
+    // No credential is stubbed (this file's fail-closed default), so
+    // `widget-round-trip` — attempted, unlike `rooms-halt` — hits the
+    // credential gate INSIDE `runEval` and returns a runner `error` before
+    // `createSandbox`/`bootServerForTier` ever run (see run-eval.ts's
+    // `credentialGateError`). That is what makes this safe to run in every
+    // regular test invocation: nothing here can spawn a subprocess or reach a
+    // model, with or without the CLAUDE_CONFIG_DIR/HOME sandbox above.
+    outDir = await mkdtemp(path.join(tmpdir(), 'evals-suite-real-cases-'));
+    const { summary } = await runSuite([roomsHaltStopsCase, widgetRoundTripCase], {
+      tier: 'claude-code-cheap',
+      outDir,
+      runId: 'real-cases',
+      notify: () => {},
+    });
+
+    const halt = summary.results.find((r) => r.id === roomsHaltStopsCase.id);
+    const widget = summary.results.find((r) => r.id === widgetRoundTripCase.id);
+    expect(halt?.status).toBe('skipped-wrong-tier');
+    expect(widget?.status).not.toBe('skipped-wrong-tier');
+    expect(widget?.status).toBe('error');
+    expect(widget?.error).toContain('needs a way to reach a model');
+
+    const gate = evaluateRunGate(summary);
+    // rooms-halt is excluded entirely (never attempted); widget-round-trip is
+    // the one case this run could have failed on.
+    expect(gate.totalCases).toBe(1);
+    expect(gate.gatingCases).toBe(1);
+    expect(gate.failed).toBe(true);
+    expect(gate.reason).toContain(widgetRoundTripCase.id);
   });
 });

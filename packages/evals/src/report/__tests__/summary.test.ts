@@ -88,6 +88,28 @@ describe('formatSummaryTable', () => {
     expect(table).toMatch(/1 quarantined \(0 of them failing\)/);
   });
 
+  it('never shows `quarantined:` on a skipped-wrong-tier row, matching the footer that excludes it (DOR-1228 review, NIT 5)', () => {
+    // The row and the footer disagreed before this: a quarantined credentialed
+    // case skipped downward or upward showed `quarantined:skipped-wrong-tier`
+    // while `evaluateRunGate` (and the footer's quarantined COUNT) excludes
+    // every wrong-tier result entirely — the row claiming quarantined coverage
+    // the footer said was zero.
+    const table = formatSummaryTable(
+      summary([
+        result({ id: 'widget-round-trip', status: 'pass' }),
+        result({
+          id: 'rooms-recall-member-said',
+          status: 'skipped-wrong-tier',
+          quarantined: true,
+          runtimeTier: 'claude-code-cheap',
+        }),
+      ])
+    );
+    expect(table).toContain('skipped-wrong-tier');
+    expect(table).not.toContain('quarantined:skipped-wrong-tier');
+    expect(table).toMatch(/0 quarantined \(0 of them failing\)/);
+  });
+
   it('states how many cases actually gate the run', () => {
     const table = formatSummaryTable(
       summary([
@@ -263,6 +285,22 @@ describe('formatSummaryTable', () => {
     expect(table).not.toMatch(/WARNING/);
   });
 
+  it('counts a downward wrong-tier skip as "needing test-mode" (DOR-1228)', () => {
+    // The upward direction already reads "needing a credentialed tier" — see
+    // suite/__tests__/rooms.test.ts. A `test-mode`-only case skipped on a
+    // credentialed run must say the opposite of what it needs, not repeat the
+    // upward wording.
+    const table = formatSummaryTable({
+      ...summary([
+        result({ id: 'widget-round-trip', status: 'skipped-wrong-tier', runtimeTier: 'test-mode' }),
+        result({ id: 'agent-self-edit', status: 'pass', runtimeTier: 'claude-code-cheap' }),
+      ]),
+      tier: 'claude-code-cheap',
+    });
+    expect(table).toMatch(/1 needing test-mode/);
+    expect(table).not.toMatch(/needing a credentialed tier/);
+  });
+
   it('reports the isolation each eval actually ran inside', () => {
     const table = formatSummaryTable(
       summary([
@@ -310,6 +348,22 @@ describe('evaluateRunGate', () => {
     );
     expect(verdict.failed).toBe(true);
     expect(verdict.reason).toMatch(/ran-out \(skipped-over-budget\)/);
+  });
+
+  it('FAILS a run that started none of its cases, and phrases the reason for the downward direction (DOR-1228)', () => {
+    // The upward phrasing ("declares a credentialed runtime") is pinned by
+    // suite/__tests__/rooms.test.ts against a real `runSuite` call. This is its
+    // mirror: every selected case declares `test-mode` and the run booted
+    // `claude-code-cheap`, so the reason must name THAT mismatch, not the
+    // upward one.
+    const verdict = evaluateRunGate({
+      ...summary([result({ id: 'rooms-halt-stops-and-says-so', status: 'skipped-wrong-tier' })]),
+      tier: 'claude-code-cheap',
+    });
+    expect(verdict.failed).toBe(true);
+    expect(verdict.gatingCases).toBe(0);
+    expect(verdict.reason).toContain('test-mode');
+    expect(verdict.reason).not.toContain('credentialed runtime');
   });
 
   it('counts coverage even on a clean run', () => {
