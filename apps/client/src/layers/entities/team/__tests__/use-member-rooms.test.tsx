@@ -16,7 +16,13 @@ import { TransportProvider } from '@/layers/shared/model';
 import { memberRoomsKey, TEAM_ROSTER_KEY } from '../api/query-keys';
 import { useMemberRooms } from '../model/use-member-rooms';
 
-const TEAM_ROOM: MemberRoom = { id: 'room-1', name: '#team', kind: 'channel', memberCount: 3 };
+const TEAM_ROOM: MemberRoom = {
+  id: 'room-1',
+  name: 'Team',
+  slug: 'team',
+  kind: 'channel',
+  memberCount: 3,
+};
 
 function setup(listMemberRooms: Transport['listMemberRooms']) {
   const transport = createMockTransport({ listMemberRooms } as Partial<Transport>);

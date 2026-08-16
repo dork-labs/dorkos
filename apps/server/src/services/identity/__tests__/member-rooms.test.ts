@@ -96,25 +96,25 @@ describe('listMemberRooms', () => {
   });
 
   it('lists a person’s rooms by their author id, with the roster size', () => {
-    room('team', '#team', [personId, anaAuthorId, dorkbotAuthorId]);
+    room('team', 'Team', [personId, anaAuthorId, dorkbotAuthorId]);
     room('side', 'Side quest', [personId, anaAuthorId]);
 
     const result = listMemberRooms(personId, sources());
 
     expect(result).toEqual({
       rooms: [
-        { id: 'side', name: 'Side quest', kind: 'channel', memberCount: 2 },
-        { id: 'team', name: '#team', kind: 'channel', memberCount: 3 },
+        { id: 'side', name: 'Side quest', slug: 'side', kind: 'channel', memberCount: 2 },
+        { id: 'team', name: 'Team', slug: 'team', kind: 'channel', memberCount: 3 },
       ],
     });
   });
 
   it('resolves an agent through its manifest ULID, not its author id', () => {
-    room('team', '#team', [personId, anaAuthorId]);
+    room('team', 'Team', [personId, anaAuthorId]);
     room('alone', 'Just Dorkbot', [dorkbotAuthorId]);
 
     expect(listMemberRooms(ANA_MANIFEST, sources())).toEqual({
-      rooms: [{ id: 'team', name: '#team', kind: 'channel', memberCount: 2 }],
+      rooms: [{ id: 'team', name: 'Team', slug: 'team', kind: 'channel', memberCount: 2 }],
     });
     // And the author id itself is NOT a member id: the roster never hands one
     // out, so accepting it here would be a second id space nothing produces.
@@ -122,21 +122,41 @@ describe('listMemberRooms', () => {
   });
 
   it('resolves a system agent the same way as any other', () => {
-    room('team', '#team', [personId, dorkbotAuthorId]);
+    room('team', 'Team', [personId, dorkbotAuthorId]);
 
     expect(listMemberRooms(DORKBOT_MANIFEST, sources())).toEqual({
-      rooms: [{ id: 'team', name: '#team', kind: 'channel', memberCount: 2 }],
+      rooms: [{ id: 'team', name: 'Team', slug: 'team', kind: 'channel', memberCount: 2 }],
     });
   });
 
-  it('carries a direct message’s kind through', () => {
+  it('gives a direct message its kind and no slug', () => {
+    // A DM has no address to print after a `#`, so `slug` is null and the
+    // renderer falls back to the title — the same branch `roomName` takes.
     room('dm-1', 'Ana', [personId, anaAuthorId], 'dm');
 
-    expect(listMemberRooms(personId, sources())?.rooms[0]?.kind).toBe('dm');
+    expect(listMemberRooms(personId, sources())?.rooms[0]).toEqual({
+      id: 'dm-1',
+      name: 'Ana',
+      slug: null,
+      kind: 'dm',
+      memberCount: 2,
+    });
+  });
+
+  it('carries a channel’s slug, which is not its title', () => {
+    // The reason the slug travels at all: the cockpit prints `#general` from
+    // this field, never from the name. Red if the service ever maps
+    // `slug: room.title`.
+    room('general', 'General chat', [personId]);
+
+    expect(listMemberRooms(personId, sources())?.rooms[0]).toMatchObject({
+      name: 'General chat',
+      slug: 'general',
+    });
   });
 
   it('leaves archived rooms out', () => {
-    room('team', '#team', [personId]);
+    room('team', 'Team', [personId]);
     room('old', 'Old news', [personId]);
     store.updateRoom('old', { archived: true });
 
@@ -168,7 +188,7 @@ describe('listMemberRooms', () => {
       .set({ retiredAt: '2026-08-05T00:00:00.000Z' })
       .where(eq(authors.id, anaAuthorId))
       .run();
-    room('team', '#team', [personId, anaAuthorId]);
+    room('team', 'Team', [personId, anaAuthorId]);
 
     expect(listMemberRooms(ANA_MANIFEST, sources())).toBeNull();
   });

@@ -134,6 +134,10 @@ export function listMemberRooms(
     rooms: rooms.map((room) => ({
       id: room.id,
       name: room.title,
+      // Carried rather than rendered into `#slug` here: the cockpit's
+      // `roomName` owns that rule, and deciding it server-side would be a
+      // second copy of it. `null` for a DM.
+      slug: room.slug,
       kind: room.kind,
       // A room this member is in always has at least them on its roster, so the
       // fallback is unreachable — and it stays, because "unreachable" is a claim

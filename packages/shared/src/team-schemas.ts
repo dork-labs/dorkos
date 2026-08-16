@@ -371,24 +371,45 @@ export const OPERATOR_FALLBACK_DISPLAY_NAME = 'You';
  * One room a roster member is in, as a profile lists it (spec
  * `profile-unification` §3.2).
  *
- * Four fields and no more, because a profile's Rooms page is a list of places
+ * Five fields and no more, because a profile's Rooms page is a list of places
  * to go rather than a second room list: the row draws a name, a glyph for the
  * kind and how many people are in it, and taps through to the room itself by
  * `id`. Everything else a room carries — its topic, its unread count, its
  * roster — belongs to the surface that opens it, and duplicating any of it here
  * would be a second projection of the room domain free to disagree with the
  * first.
+ *
+ * **`kind`, `slug` and `name` carry exactly what `roomName` and
+ * `roomDisplayTitle` need** (`entities/room/lib/room-display`, whose input is
+ * `Pick<Room, 'kind' | 'slug' | 'title'>` — so a consumer passes
+ * `{ kind, slug, title: room.name }`, this payload's only renaming). That is
+ * the whole reason `slug` rides along rather than the server pre-rendering
+ * `#general`: a channel reads as its slug and a DM as its title, and the
+ * cockpit already owns that rule in one place. A payload that decided it here
+ * would be a second copy of the rule, free to drift from the sidebar.
  */
 export const MemberRoomSchema = z
   .object({
     /** The room id — what a row navigates by, never a slug. */
     id: z.string().min(1),
     /**
-     * The room's title. **Not `#slug`**: the slug is a channel's address, and
-     * the renderer decides how to draw a channel, so what travels is the name
-     * the room was given.
+     * The room's title — `Room.title`, which `roomDisplayTitle` calls `title`.
+     *
+     * **Not the rendered `#general`.** For a channel the name people read is
+     * the slug below; this is what the room was called. For a DM it is the
+     * whole answer.
      */
     name: z.string().min(1),
+    /**
+     * A channel's address — `Room.slug`, and what the cockpit prints after the
+     * `#`.
+     *
+     * `null` for a direct message, which has no slug at all, and `null` is
+     * possible on a channel too (the column is nullable). Both cases fall back
+     * to {@link MemberRoomSchema} `name`, which is exactly what `roomName`
+     * does — so a consumer defers to it rather than branching itself.
+     */
+    slug: z.string().nullable(),
     kind: RoomKindSchema,
     /**
      * How many members the room's roster holds.
