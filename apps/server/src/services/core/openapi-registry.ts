@@ -3878,7 +3878,10 @@ registry.registerPath({
     'agent included — it is the mesh manifest ULID, whose author row is found by the ' +
     'generation stamp `minted_for_manifest_id`. An agent’s own author id is deliberately ' +
     'NOT accepted; the roster never hands one out. Archived rooms are left out, and rooms come ' +
-    'back newest activity first. A member who is in no rooms answers 200 with an empty list — ' +
+    'back newest activity first. Each room carries the three fields a renderer needs to name it — ' +
+    '`kind`, `slug` and `name` (the title) — rather than a pre-rendered `#general`: a channel ' +
+    'reads as its slug and a direct message as its title, and the client owns that rule in one ' +
+    'place. `slug` is null on a DM. A member who is in no rooms answers 200 with an empty list — ' +
     'only an id this install has never heard of is a 404, so a client can tell "nobody by that ' +
     'name" from "nowhere yet". A newly registered agent has no author row until it is first in ' +
     'a room, and is answered as the empty list rather than as unknown. ' +

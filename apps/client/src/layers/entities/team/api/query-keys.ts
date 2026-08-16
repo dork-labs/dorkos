@@ -10,7 +10,15 @@
  * Deliberately unparameterised: filtering, grouping and search all run in
  * memory over this single payload (spec §W2.4), so a filter change must never
  * become a second key and a second request. Anything that changes who is on
- * this install invalidates exactly this.
+ * this install invalidates exactly this entry.
+ *
+ * **It is also the root of a key FAMILY, not a lone key**: `['team']` is a
+ * PREFIX of {@link memberRoomsKey}, so invalidating it refreshes every member's
+ * rooms too — intended, since the things that change the roster can change who
+ * is in a room. What that costs is the right to write through this prefix:
+ * `setQueryData(TEAM_ROSTER_KEY, …)` on this exact key stays fine, but nothing
+ * may ever `setQueriesData` across `['team']`, because the entries under it
+ * hold a different shape and a prefixed writer cannot know it.
  */
 export const TEAM_ROSTER_KEY = ['team'] as const;
 

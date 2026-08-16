@@ -219,7 +219,7 @@ describe('GET /api/team/:memberId/rooms', () => {
         id: 'team-room',
         kind: 'channel',
         slug: 'team',
-        title: '#team',
+        title: 'Team',
         topic: null,
         workspaceId: null,
         createdAt: '2026-08-01T00:00:00.000Z',
@@ -238,7 +238,7 @@ describe('GET /api/team/:memberId/rooms', () => {
     expect(res.status).toBe(200);
     expect(MemberRoomsResponseSchema.safeParse(res.body).success).toBe(true);
     expect(res.body.rooms).toEqual([
-      { id: 'team-room', name: '#team', kind: 'channel', memberCount: 3 },
+      { id: 'team-room', name: 'Team', slug: 'team', kind: 'channel', memberCount: 3 },
     ]);
   });
 
