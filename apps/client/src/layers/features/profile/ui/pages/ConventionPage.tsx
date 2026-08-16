@@ -221,7 +221,8 @@ function ConventionPage({ member, file }: ProfilePageContentProps & { file: Conv
           sends, so the preview is what saving right now would produce. */}
       <div className="shrink-0">
         <InjectionPreview
-          name={agent.displayName || agent.name}
+          name={agent.name}
+          displayName={agent.displayName || agent.name}
           id={agent.id}
           description={agent.description}
           capabilities={agent.capabilities}

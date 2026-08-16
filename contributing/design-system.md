@@ -359,7 +359,7 @@ This is the whole contract a zoned nav panel must meet, and it is what shipped: 
 
 ### Sidebar Tabs
 
-Retired. The four-tab `SessionSidebar` strip this section used to document (Overview / Sessions / Schedules / Connections, switched via a CSS `hidden`-toggle so all three stayed mounted) no longer exists. DOR-401 retired it: the Obsidian embed's chrome is now the single-view `EmbedSidebar` roster (see [Sidebar](#sidebar) above), and the Overview/Schedules/Connections context it carried moved to the right-panel Inspector (Pulse, Agent Profile) or was dropped. ADR-0107, which decided the CSS `hidden`-toggle mechanism, is deprecated as of the 2026-08-06 audit — kept as the archival record of a component that no longer ships.
+Retired. The four-tab `SessionSidebar` strip this section used to document (Overview / Sessions / Schedules / Connections, switched via a CSS `hidden`-toggle so all three stayed mounted) no longer exists. DOR-401 retired it: the Obsidian embed's chrome is now the single-view `EmbedSidebar` roster (see [Sidebar](#sidebar) above), and the Overview/Schedules/Connections context it carried moved to the right-panel Inspector (Pulse, Profile) or was dropped. ADR-0107, which decided the CSS `hidden`-toggle mechanism, is deprecated as of the 2026-08-06 audit — kept as the archival record of a component that no longer ships.
 
 ### Tooltip
 

@@ -28,8 +28,18 @@ import { soulFile } from '../lib/soul-file';
 
 /** The agent facts the preview reads, which is every field the server's block carries. */
 export interface InjectionPreviewProps {
-  /** What the agent is called — also the word in the disclosure's label. */
+  /**
+   * The manifest's `name` — the slug fixed at creation, and the ONE the server
+   * writes into `<agent_identity>` (`agent-context.ts`, `Name: ${manifest.name}`).
+   *
+   * Deliberately not the display name, which is what a rename actually changes
+   * (`displayName`, the only one the About page can write). Showing that here
+   * would put a string in the preview that no turn ever receives — on every
+   * agent anyone has renamed, which is most of them.
+   */
   name: string;
+  /** What a person calls the agent — the word in the disclosure's own label. */
+  displayName: string;
   /** The manifest ULID, which the identity block names. */
   id: string;
   /** Its description, when it has one. */
@@ -104,7 +114,7 @@ export function InjectionPreview(props: InjectionPreviewProps) {
           aria-hidden
           className={cn('size-3.5 transition-transform', open && 'rotate-90')}
         />
-        Preview what {props.name} will see
+        Preview what {props.displayName} will see
       </CollapsibleTrigger>
       <CollapsibleContent>
         <pre

@@ -595,7 +595,13 @@ describe('Instructions and Boundaries', () => {
     const prompt = await openPreview();
 
     expect(prompt).toContain('<agent_identity>');
-    expect(prompt).toContain('Name: Warden');
+    // The SLUG, which is the only name the server writes into the block
+    // (`agent-context.ts`: `Name: ${manifest.name}`). The fixture's display name
+    // is "Warden" and its slug is "warden", so this line is the one that can
+    // tell the two apart — the disclosure's own label says "Warden" and the
+    // identity block must not.
+    expect(prompt).toContain('Name: warden');
+    expect(prompt).not.toContain('Name: Warden');
     expect(prompt).toContain('Description: Watches the build.');
     expect(prompt).toContain('Capabilities: review');
     expect(prompt).toContain('<agent_persona>');
