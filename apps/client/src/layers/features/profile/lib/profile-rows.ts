@@ -9,7 +9,7 @@
  *
  * @module features/profile/lib/profile-rows
  */
-import type { TeamMember } from '@dorkos/shared/team-schemas';
+import type { MemberRoom, TeamMember } from '@dorkos/shared/team-schemas';
 import { shortenHomePath } from '@/layers/shared/lib';
 import { formatRuntimeIdentity } from '@/layers/entities/runtime';
 import type { ProfilePageId } from '../model/profile-stack';
@@ -60,8 +60,8 @@ export interface ProfileRowGroup {
 export interface ProfileRoomsSummary {
   /** How many rooms. */
   count: number;
-  /** Their names, in the order the endpoint returned them. */
-  names: string[];
+  /** The rooms themselves, in the order the endpoint returned them. */
+  rooms: Array<Pick<MemberRoom, 'name' | 'kind'>>;
 }
 
 /** Everything the row table needs that is not on the roster row itself. */
@@ -85,10 +85,23 @@ const SYSTEM_LOCK_REASON = 'DorkBot’s name, face and personality are part of D
 const EMAIL_LOCK_REASON =
   'Your email comes from the account you signed in with. Change it in Settings › Security.';
 
+/**
+ * One room, written the way its address is written.
+ *
+ * Only a channel wears a `#`, and only when its stored name is not already
+ * carrying one — a room literally named `#team` rendered as `##team` on this
+ * install. A DM has no address of that shape at all, so it wears its name
+ * plain, exactly as the Rooms page draws it.
+ */
+function roomLabel(room: Pick<MemberRoom, 'name' | 'kind'>): string {
+  if (room.kind === 'dm') return room.name;
+  return room.name.startsWith('#') ? room.name : `#${room.name}`;
+}
+
 /** A room list as one value: the first two names, then how many more. */
 function roomsValue(rooms: ProfileRoomsSummary | null | undefined): string | null {
   if (!rooms || rooms.count === 0) return null;
-  const shown = rooms.names.slice(0, 2).map((name) => `#${name}`);
+  const shown = rooms.rooms.slice(0, 2).map(roomLabel);
   const rest = rooms.count - shown.length;
   return rest > 0 ? `${shown.join(', ')}, +${rest}` : shown.join(', ');
 }

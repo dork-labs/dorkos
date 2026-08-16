@@ -18,7 +18,7 @@ import { useInteractionStore } from '@/layers/entities/interactions';
 import { findTeamOwner, teamMemberFace, useMemberRooms } from '@/layers/entities/team';
 import { deriveRelationship } from '../lib/profile-relationship';
 import { messageTarget } from '../lib/profile-message';
-import type { ProfileRowsContext } from '../lib/profile-rows';
+import { rowsFor, type ProfileRowsContext } from '../lib/profile-rows';
 import {
   currentPage,
   type ProfileStackEntry,
@@ -86,9 +86,7 @@ export function ProfileView({
     relationship,
     manages: roster.filter((row) => row.kind === 'agent' && row.ownerId === member.id),
     description: manifest.data?.description ?? null,
-    rooms: rooms.data
-      ? { count: rooms.data.rooms.length, names: rooms.data.rooms.map((room) => room.name) }
-      : null,
+    rooms: rooms.data ? { count: rooms.data.rooms.length, rooms: rooms.data.rooms } : null,
   };
 
   // Three ways to have no button, and they are all the same answer: don't draw
@@ -107,7 +105,21 @@ export function ProfileView({
     void navigate({ to: '/session', search: { dir: target.projectPath } });
   }
 
-  const definition = page ? profilePage(page) : null;
+  // A page is only reachable when a row of THIS profile pushes it. The row
+  // table is the permission model (§1.4), and `?profilePage=` is an address
+  // anyone can type — without this gate, `?profile=<someone else>&profilePage=name`
+  // drew the operator's own Name editor seeded with that person's name, and
+  // its Save renamed the operator. A link naming a page this identity has no
+  // row for lands on the root, the same self-healing a stale `?profile=` gets.
+  const reachable =
+    page !== null &&
+    rowsFor(member, ctx).some((group) =>
+      group.rows.some((row) => row.kind === 'nav' && row.page === page)
+    );
+  // What is actually on screen, which is what the frame is keyed on — a page
+  // the gate turned away is the root, and must animate and remount like one.
+  const shown = reachable ? page : null;
+  const definition = shown ? profilePage(shown) : null;
   const PageContent = definition?.component;
 
   return (
@@ -122,7 +134,7 @@ export function ProfileView({
       // this one is read from inside the header for the kebab's corner.
       className="group/profile flex min-h-0 flex-1 flex-col"
     >
-      <ProfileStack frameKey={page}>
+      <ProfileStack frameKey={shown}>
         {definition && PageContent ? (
           <ProfilePage member={member} title={definition.title} onBack={onPop}>
             <Suspense fallback={<Skeleton className="h-24 w-full" />}>

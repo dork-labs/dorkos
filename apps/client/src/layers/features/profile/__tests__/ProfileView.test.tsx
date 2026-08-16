@@ -463,6 +463,28 @@ describe('pushing a page', () => {
     expect(document.querySelector('[data-profile-row="manages"]')).toHaveFocus();
   });
 
+  // `?profilePage=` is an address anybody can type, and the pages that edit an
+  // identity all write the OPERATOR's own profile. Without this gate,
+  // `?profile=<DorkBot>&profilePage=name` drew "What DorkOS calls you" seeded
+  // with DorkBot's name over a Save that renamed the operator.
+  it('refuses a page no row of this identity offers, and stays on the portrait', async () => {
+    await renderProfile(DORKBOT, {
+      stack: profileStack(DORKBOT.id, [{ kind: 'page', page: 'name' }]),
+    });
+
+    expect(screen.queryByRole('heading', { name: 'Name' })).toBeNull();
+    expect(screen.queryByLabelText('Display name')).toBeNull();
+    expect(document.querySelector('[data-slot="profile-header"]')).not.toBeNull();
+  });
+
+  it('still opens a page the identity’s own rows do offer', async () => {
+    await renderProfile(DORKBOT, {
+      stack: profileStack(DORKBOT.id, [{ kind: 'page', page: 'rooms' }]),
+    });
+
+    expect(await screen.findByRole('heading', { name: 'Rooms' })).toBeInTheDocument();
+  });
+
   it('lists the agents you manage, each a door into its own profile', async () => {
     await renderStateful(SELF);
 
