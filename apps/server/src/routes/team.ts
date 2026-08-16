@@ -33,7 +33,7 @@ import {
 } from '../services/identity/aggregate-team.js';
 import { listMemberRooms } from '../services/identity/member-rooms.js';
 import type { RoomStore } from '../services/rooms/room-store.js';
-import { AGENT_IDENTITY_HEADER, getRequestAgentIdentity } from '../middleware/agent-identity.js';
+import { readCallerAuthority } from '../lib/caller-authority.js';
 
 /** The mesh reads this router needs, narrowed to them. */
 export interface TeamMeshReader {
@@ -173,9 +173,10 @@ export function createTeamRouter(deps: TeamRouterDeps): Router {
     // route takes ANY member's id, so an agent that could call it would read
     // the titles of every DM the operator has with every other agent — the
     // exact enumeration `RoomStore.listRoomsForMember` exists to prevent, walked
-    // around by asking about somebody else. `read-cursors` refuses agents the
-    // same way and with the same code. 403 rather than 404: there is nothing to
-    // hide about the route existing.
+    // around by asking about somebody else. `read-cursors` draws the same
+    // boundary with the same `PEOPLE_ONLY` code, though it asks a different
+    // question to get there — see {@link callerIsAgent}. 403 rather than 404:
+    // there is nothing to hide about the route existing.
     if (callerIsAgent(req, res)) {
       return sendError(res, 403, 'Only people read a profile', 'PEOPLE_ONLY');
     }
@@ -211,20 +212,26 @@ export function createTeamRouter(deps: TeamRouterDeps): Router {
 /**
  * Whether a machine is calling.
  *
- * The same test `readCallerAuthority` uses, and for its reason: a header that
- * did NOT resolve — a revoked or expired agent token — still means an agent is
- * on the other end, and a person in the cockpit never sends one at all. Asking
- * the header rather than `resolveCaller` also keeps this route off the room
- * service singleton, which `resolveCaller` reaches through and which would MINT
- * an author row as a side effect of a read.
+ * {@link readCallerAuthority}'s own test, CALLED rather than copied — that
+ * module exists so several surfaces cannot quietly disagree about what counts
+ * as a machine, and a second inline spelling of the header check here would be
+ * exactly that disagreement waiting to happen. Its reason carries over: a
+ * header that did NOT resolve — a revoked or expired agent token — still means
+ * an agent is on the other end, and a person in the cockpit never sends one at
+ * all.
+ *
+ * **`read-cursors` asks a different question** — the RESOLVED author's `kind`,
+ * via `resolveCaller` — and this route deliberately does not, because
+ * `resolveCaller` reaches through the room service singleton and MINTS an
+ * author row as a side effect. The roster and everything under it mint nothing
+ * (ADR 260806-222535), and a read that created a person to answer "no" would
+ * break that on the first anonymous request.
  *
  * @param req - The incoming request, for the raw header.
  * @param res - The response carrying the middleware's resolved identity.
  */
 function callerIsAgent(req: Request, res: Response): boolean {
-  return (
-    getRequestAgentIdentity(res) !== undefined || req.headers[AGENT_IDENTITY_HEADER] !== undefined
-  );
+  return readCallerAuthority(req, res).agentIdentityPresented;
 }
 
 /**

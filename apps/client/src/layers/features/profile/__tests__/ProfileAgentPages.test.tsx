@@ -397,6 +397,15 @@ describe('the Appearance page', () => {
 
     expect(screen.queryByRole('button', { name: /face and personality/ })).toBeNull();
   });
+
+  it('refuses a typed ?profilePage=appearance on an identity that has no face button', async () => {
+    // No row pushes this page, so the row table cannot gate it — but it is an
+    // editor, and the address bar reaches it. It lands on the root instead.
+    await renderProfile(DORKBOT, { start: 'appearance' });
+
+    expect(screen.queryByRole('heading', { name: 'Appearance' })).toBeNull();
+    expect(await screen.findByRole('heading', { name: 'DorkBot' })).toBeInTheDocument();
+  });
 });
 
 describe('the kebab', () => {

@@ -121,6 +121,47 @@ function isFailure(result: EvalResult): boolean {
   );
 }
 
+/** One `  ↳ <label>: <path>[; logs copied to <path>]` line, or undefined when the path is unset. */
+function pointerLine(
+  label: string,
+  sandbox: string | undefined,
+  logs: string | undefined
+): string | undefined {
+  if (!sandbox) return undefined;
+  const logsNote = logs ? `; logs copied to ${logs}` : '';
+  return `  ↳ ${label}: ${sandbox}${logsNote}`;
+}
+
+/**
+ * The line(s) printed under a row whose sandbox was retained for debugging
+ * (DOR-1241) — gating and quarantined failures get the SAME treatment, because
+ * a quarantined case's failure is exactly the one a reader opens next. Reports
+ * both the sandbox `DORK_HOME` itself (removed by a later `pnpm evals:sweep`)
+ * and the copied `logs/` directory beside `results.json` (which survives it),
+ * when there was a server log to copy.
+ *
+ * A retried case can print a SECOND line: `priorAttemptRetainedSandbox` is
+ * attempt 1's own retention, carried onto the recorded (attempt 2) result by
+ * `runWithInfrastructureRetry` (DOR-1241 review, Important 2) — otherwise a
+ * double timeout would retain attempt 1's evidence with nothing on screen
+ * pointing at it.
+ *
+ * @param result - The eval result to check for retention.
+ * @returns The lines to print under the row, or undefined when nothing was
+ *   retained.
+ */
+function retentionLine(result: EvalResult): string | undefined {
+  const lines = [
+    pointerLine('retained', result.retainedSandbox, result.retainedLogsPath),
+    pointerLine(
+      'attempt 1 retained',
+      result.priorAttemptRetainedSandbox,
+      result.priorAttemptRetainedLogsPath
+    ),
+  ].filter((line): line is string => line !== undefined);
+  return lines.length > 0 ? lines.join('\n') : undefined;
+}
+
 /**
  * Whether this case was never started because the run booted the wrong tier.
  *
@@ -179,10 +220,13 @@ export function formatSummaryTable(summary: RunSummary): string {
   };
 
   const header = `${pad('STATUS', w.status)} ${pad('ID', w.id)} ${pad('TIER', w.tier)} ${pad('ISOLATION', w.isolation)} ${pad('COST', w.cost)} DURATION`;
-  const rows = cells.map(
-    (c) =>
-      `${pad(c.status, w.status)} ${pad(c.id, w.id)} ${pad(c.tier, w.tier)} ${pad(c.isolation, w.isolation)} ${pad(c.cost, w.cost)} ${c.duration}`
-  );
+  const rows = summary.results.flatMap((result, i) => {
+    const c = cells[i];
+    if (!c) return [];
+    const row = `${pad(c.status, w.status)} ${pad(c.id, w.id)} ${pad(c.tier, w.tier)} ${pad(c.isolation, w.isolation)} ${pad(c.cost, w.cost)} ${c.duration}`;
+    const retention = retentionLine(result);
+    return retention ? [row, retention] : [row];
+  });
 
   const gate = evaluateRunGate(summary);
   const passed = summary.results.filter((r) => r.status === 'pass' && !r.quarantined).length;

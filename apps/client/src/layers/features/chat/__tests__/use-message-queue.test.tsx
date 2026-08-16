@@ -113,7 +113,7 @@ describe('useMessageQueue — the chips', () => {
     sync();
 
     expect(view.result.current.queue[0]!.notice).toBe(
-      'Queued — this agent cannot take a message mid-task'
+      "Queued. This agent can't take a message mid-task."
     );
   });
 

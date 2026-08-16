@@ -105,7 +105,10 @@ describe('the credentialed tier', () => {
 
   it('covers the X-row probes chat-capabilities §7 asks for, minus the two it cannot reach', () => {
     const ids = roomsCredentialedCases.map((c) => c.id);
-    // X-01 … X-06, plus restraint (M-04 / A-02) and the injection eval (A-15).
+    // X-01 … X-06, plus restraint (M-04 / A-02), react-not-reply (A-06,
+    // DOR-1234), the injection eval (A-15), and the comprehension half of RP8's
+    // gathering (DOR-1231) — the last of which is not an X-row, and is here
+    // because only a real model can answer three questions at once.
     expect(ids).toEqual([
       'rooms-recall-member-said',
       'rooms-recall-roster-handles',
@@ -114,11 +117,13 @@ describe('the credentialed tier', () => {
       'rooms-recall-attachment',
       'rooms-recall-honest-refusal',
       'rooms-restraint-ambient-chatter',
+      'rooms-ack-only-reacts-not-replies',
       'rooms-adversarial-injection',
+      'rooms-burst-answered-in-full',
     ]);
     // X-07 (bridged) and X-08 (post-compaction) are documented gaps, not cases.
     // If either ever lands, this list changes deliberately rather than by drift.
-    expect(ids).toHaveLength(8);
+    expect(ids).toHaveLength(10);
   });
 
   it('is NEVER started by a test-mode run — no case here can report pass or fail without a model', async () => {

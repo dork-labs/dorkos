@@ -205,23 +205,25 @@ describe('DorkBot', () => {
 });
 
 describe('rooms, wherever they appear', () => {
+  /** The Rooms row's value for a given room list. */
+  const roomsValue = (rooms: { name: string; kind: 'channel' | 'dm' }[]) =>
+    flat(build(SELF, { rooms: { count: rooms.length, rooms } })).find((row) => row.id === 'rooms')!
+      .value;
+
+  const channel = (name: string) => ({ name, kind: 'channel' as const });
+
   it('names the first two and counts the rest', () => {
-    // The names as the ENDPOINT sends them — a channel arrives wearing its own
-    // `#` (`GET /api/team/:id/rooms`). This fixture used to drop it, and the row
-    // added one of its own, which read `##team` against the real server.
-    const rooms = flat(
-      build(SELF, { rooms: { count: 4, names: ['#team', '#general', '#ops', '#design'] } })
-    ).find((row) => row.id === 'rooms')!;
-    expect(rooms.value).toBe('#team, #general, +2');
+    expect(roomsValue(['team', 'general', 'ops', 'design'].map(channel))).toBe(
+      '#team, #general, +2'
+    );
   });
 
-  it('does not invent a hash for a room that has none', () => {
-    // A DM's name is the people in it. Adding `#` to it would be a channel that
-    // does not exist.
-    const rooms = flat(build(SELF, { rooms: { count: 1, names: ['Priya'] } })).find(
-      (row) => row.id === 'rooms'
-    )!;
-    expect(rooms.value).toBe('Priya');
+  it('does not give a channel a second # when its own name already carries one', () => {
+    expect(roomsValue([channel('#team'), channel('general')])).toBe('#team, #general');
+  });
+
+  it('leaves a DM its plain name — it has no # address to wear', () => {
+    expect(roomsValue([{ name: 'dopel', kind: 'dm' }, channel('team')])).toBe('dopel, #team');
   });
 
   it('says nothing at all rather than "0" while nobody has read them', () => {

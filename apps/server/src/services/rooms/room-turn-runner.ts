@@ -41,6 +41,7 @@ import {
   type BlockingInteractionEventType,
 } from '@dorkos/shared/session-stream';
 import { logger } from '../../lib/logger.js';
+import { ROOMS } from '../../config/constants.js';
 import { projectRoomAttachments } from './attachments/attachment-projection.js';
 import { getRoomAttachmentStore } from './index.js';
 import { runtimeRegistry } from '../core/runtime-registry.js';
@@ -61,12 +62,10 @@ import type {
 } from './room-trigger.js';
 
 /**
- * Lock identity every room-triggered turn takes. One id, not one per turn: the
- * session write-lock is per session and a room binds one session per agent, so
- * two turns for the same agent in the same room are the same writer and the
- * second must queue rather than be refused as a foreign client.
+ * Lock identity every room-triggered turn takes — see {@link ROOMS.CLIENT_ID},
+ * which owns it because the message dispatcher has to recognise it too.
  */
-const ROOM_CLIENT_ID = 'dorkos-room';
+const ROOM_CLIENT_ID = ROOMS.CLIENT_ID;
 
 /**
  * The two bounds on how long a room pays attention to one turn.
@@ -295,6 +294,23 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
         whenBusy: 'refuse-foreign',
         onTurnStart: (seq) => {
           ownTurn.startSeq = seq;
+        },
+        // **The one signal that an ACCEPTED trigger will never run** (DOR-1242).
+        // A `refuse-foreign` trigger that waited out its own tail and then lost
+        // the session to a stranger is dropped once its original wait is spent,
+        // and `onSettled('failed')` is how the dispatcher says so. Without this
+        // the room would keep waiting on a turn nothing would ever start: the
+        // collector would report a late answer at `waitMs` and then "something
+        // went wrong" at its ceiling, an hour after the message, over words the
+        // model never saw.
+        //
+        // `startSeq === null` is what makes this safe to act on. It means no
+        // `turn_start` was ever stamped for this dispatch, so no turn ran and
+        // there is nothing left to hear. A turn that ran and genuinely FAILED
+        // has a seq, keeps its existing path, and is reported by the collector
+        // that watched it — this must not cut that short.
+        onSettled: (outcome) => {
+          if (outcome === 'failed' && ownTurn.startSeq === null) collecting.cancel();
         },
         onError: (err) => {
           logger.warn('[rooms] triggered turn errored', {

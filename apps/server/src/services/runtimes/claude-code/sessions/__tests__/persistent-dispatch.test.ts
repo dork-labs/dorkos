@@ -94,6 +94,10 @@ vi.mock('../../../../core/credential-env.js', () => ({
 vi.mock('../../../../core/agent-identity/index.js', () => ({
   resolveAgentTokenEnv: vi.fn().mockResolvedValue({}),
   AGENT_TOKEN_ENV_VAR: 'DORKOS_AGENT_TOKEN',
+  // `interactive-handlers.ts` builds the rooms auto-allow gate from this at
+  // launch (DOR-1229). Nothing here calls a rooms verb, so the resolver only has
+  // to exist — but it must, or every launch on this path throws on the mock.
+  createInSessionContextResolver: () => () => Promise.resolve(undefined),
 }));
 // One warm process at a time, so warming a second session reclaims the first's
 // pump through the registry WITHOUT telling PersistentDispatch — the stale-bundle
@@ -841,6 +845,37 @@ describe('a compaction is not a silent turn (DOR-1235)', () => {
       error: 'context too large to summarize',
     });
     expect(events.filter((e) => e.type === 'error')).toEqual([]);
+    expect(events.find((e) => e.type === 'done')).toBeDefined();
+  });
+});
+
+describe('an elicitation-only turn is not a silent turn (DOR-1240)', () => {
+  beforeEach(() => {
+    optIn.persistentSession = true;
+  });
+
+  it('does not call an unanswered elicitation a crash', async () => {
+    const sessionId = nextSession();
+    await turn(sessionId);
+    const process = cli.processes[0]!;
+    process.goSilent();
+
+    const running = turn(sessionId, 'ask the server for my token');
+    await vi.waitFor(() => expect(process.received).toHaveLength(2));
+    // An MCP server's elicitation reaches the SDK consumer via the `onElicitation`
+    // option the launch resolver registers — real `interactive-handlers.ts`
+    // code, which pushes `elicitation_prompt` straight onto `session.eventQueue`
+    // and holds its returned promise open until a person answers. Nobody
+    // answers here: the turn closes with nothing else said.
+    void process.options.onElicitation?.(
+      { serverName: 'test-server', message: 'Which environment?' },
+      { signal: new AbortController().signal }
+    );
+    process.emit(resultMessage(process.received[1]!));
+    const events = await running;
+
+    expect(events.find((e) => e.type === 'error')).toBeUndefined();
+    expect(events.find((e) => e.type === 'elicitation_prompt')).toBeDefined();
     expect(events.find((e) => e.type === 'done')).toBeDefined();
   });
 });

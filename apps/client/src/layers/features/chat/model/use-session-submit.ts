@@ -26,6 +26,7 @@ import { useCallback, useEffect, useRef } from 'react';
 import type { QueryClient } from '@tanstack/react-query';
 import type { Session } from '@dorkos/shared/types';
 import type { Transport } from '@dorkos/shared/transport';
+import type { MessageDisposition } from '@dorkos/shared/schemas';
 import type { ClientContext } from '@dorkos/shared/additional-context';
 import { useTransport, useAppStore, useAgentBirthStore } from '@/layers/shared/model';
 import { TIMING, buildUiStateSnapshot, prepareUiStateForSend } from '@/layers/shared/lib';
@@ -465,40 +466,51 @@ export function useSessionSubmit({
   );
 
   /**
-   * Put a message on the SESSION's queue, where it waits for the running turn to
-   * finish (spec `persistent-session-runtime`).
+   * Deliver a message to a session that is already working, under the requested
+   * disposition (spec `persistent-session-runtime` §2). The server resolves what
+   * actually happens — queue behind the turn, steer into it, or stage context
+   * for the next one — and degrades honestly when the runtime cannot honour the
+   * ask, so this only states the intent and lets the outcome ride back on the
+   * event stream.
    *
-   * Deliberately NOT {@link executeSubmission}. A queued message starts no turn,
-   * so it gets none of that path's turn machinery: no optimistic user bubble (it
-   * has not been said to the agent yet — the chip is what stands for it), no
-   * trigger latch, and no rekey handling (a session with a queue has already run
-   * a turn, so its id is already canonical).
+   * Deliberately NOT {@link executeSubmission}. None of these three open a turn
+   * of their own, so they get none of that path's turn machinery: no optimistic
+   * user bubble (a queued message has not been said yet — its chip stands for it;
+   * a steer's inline bubble arrives on the stream as `turn_input`; a staged note
+   * is a `context_staged` receipt), no trigger latch, and no rekey handling (a
+   * session already working has run a turn, so its id is already canonical).
    *
-   * What it DOES share is everything about the message itself: attachments are
-   * uploaded now rather than at dispatch, and the client's UI-state snapshot is
+   * What all three DO share is everything about the message itself: attachments
+   * upload now rather than at dispatch, and the client's UI-state snapshot is
    * taken now, because now is when the person was looking at it.
    *
-   * @param content - The message text to queue (PRISTINE — never annotated).
+   * @param content - The message text to deliver (PRISTINE — never annotated).
+   * @param disposition - What to do with it mid-turn: `queue`, `steer`, `stage`.
+   * @param errorHeading - The heading for the "it did not go through" banner.
    * @returns `true` once the server has the message. The composer holds the
-   *   words until this resolves, so a refused enqueue leaves them exactly where
-   *   they were typed rather than needing an undo (DOR-480).
+   *   words until this resolves, so a refusal leaves them exactly where they
+   *   were typed rather than needing an undo (DOR-480).
    */
-  const enqueueContent = useCallback(
-    async (content: string): Promise<boolean> => {
+  const deliverWithDisposition = useCallback(
+    async (
+      content: string,
+      disposition: MessageDisposition,
+      errorHeading: string
+    ): Promise<boolean> => {
       if (!sessionId) return false;
       const targetSessionId = sessionId;
       const cwd = selectedCwdRef.current;
       setError(null);
 
-      // Sequence this session's enqueue POSTs so the server accepts them in
-      // keystroke order (DOR-1165). Each queued message is its own POST and the
-      // server orders the queue by acceptance, so two POSTs fired ~20ms apart
-      // (a fast typist, a paste-and-Enter hammer) could be accepted out of order
-      // and transpose what the person typed. The chain claims its slot HERE, at
-      // the synchronous head of the call — before the attachment transform's
-      // await — so ordering follows the order Enter was pressed, not the order
-      // uploads happen to finish. This is request ordering only: no queue state,
-      // no gating on turn status (see enqueue-sequencer).
+      // Sequence this session's delivery POSTs so the server accepts them in
+      // keystroke order (DOR-1165). Each message is its own POST and the server
+      // orders by acceptance, so two POSTs fired ~20ms apart (a fast typist, a
+      // paste-and-Enter hammer) could be accepted out of order and transpose what
+      // the person typed. The chain claims its slot HERE, at the synchronous head
+      // of the call — before the attachment transform's await — so ordering
+      // follows the order the keys were pressed, not the order uploads happen to
+      // finish. This is request ordering only: no queue state, no gating on turn
+      // status (see enqueue-sequencer).
       return sequenceEnqueue(targetSessionId, async (): Promise<boolean> => {
         let finalContent: string;
         try {
@@ -507,7 +519,7 @@ export function useSessionSubmit({
             : content;
         } catch (err) {
           setError({
-            heading: 'Could not queue message',
+            heading: errorHeading,
             message: (err as Error).message || 'The attachment did not upload. Please try again.',
             retryable: false,
           });
@@ -521,20 +533,26 @@ export function useSessionSubmit({
             uiSnapshot
           );
           // `queued: true` becomes the server's `<queue_note>` — the same
-          // out-of-band signal the old client-side flush carried (ADR-0273). The
-          // content itself is never annotated.
-          const context: ClientContext = { ...(uiState ? { uiState } : {}), queued: true };
+          // out-of-band signal the old client-side flush carried (ADR-0273). It
+          // belongs to a QUEUED message alone: a steer joins the live turn and a
+          // staged note rides the next dispatch, and neither is a queue note. The
+          // content itself is never annotated, whatever the disposition.
+          const contextEntries: ClientContext = {
+            ...(uiState ? { uiState } : {}),
+            ...(disposition === 'queue' ? { queued: true } : {}),
+          };
+          const context = Object.keys(contextEntries).length > 0 ? contextEntries : undefined;
           const { sessionId: canonicalId } = await transport.postMessage(
             targetSessionId,
             finalContent,
             cwd ?? undefined,
-            { context, disposition: 'queue' }
+            { context, disposition }
           );
           commitUiState(canonicalId);
           return true;
         } catch (err) {
           setError({
-            heading: 'Could not queue message',
+            heading: errorHeading,
             message: (err as Error).message || 'The request failed. Please try again.',
             // The words are still in the composer, so the retry is a keystroke
             // away. A Retry button here would re-send the PREVIOUS user message,
@@ -546,6 +564,27 @@ export function useSessionSubmit({
       });
     },
     [sessionId, transport, setError]
+  );
+
+  /** Put a message on the session's queue, behind the running turn. */
+  const enqueueContent = useCallback(
+    (content: string): Promise<boolean> =>
+      deliverWithDisposition(content, 'queue', 'Could not queue message'),
+    [deliverWithDisposition]
+  );
+
+  /** Send a message into the running turn now (steer), so the agent changes course. */
+  const steerContent = useCallback(
+    (content: string): Promise<boolean> =>
+      deliverWithDisposition(content, 'steer', 'Could not steer the agent'),
+    [deliverWithDisposition]
+  );
+
+  /** Add context the agent uses next, without cutting into the running turn (stage). */
+  const addContextContent = useCallback(
+    (content: string): Promise<boolean> =>
+      deliverWithDisposition(content, 'stage', 'Could not add context'),
+    [deliverWithDisposition]
   );
 
   /** Interrupt the active turn; `/events` reports the resulting status. */
@@ -612,6 +651,8 @@ export function useSessionSubmit({
     handleSubmit,
     submitContent,
     enqueueContent,
+    steerContent,
+    addContextContent,
     stop,
     retryMessage,
     submitKickoff,

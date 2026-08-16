@@ -2,6 +2,14 @@
   "version": 1,
   "specs": [
     {
+      "id": "260816-070451",
+      "slug": "profile-unification",
+      "title": "One Profile — fold the Agent Hub and the profile drawer into a single identity surface",
+      "created": "2026-08-16",
+      "status": "specified",
+      "project": "Team, Identity & Profiles"
+    },
+    {
       "id": "260814-025025",
       "slug": "community-remote-trigger",
       "title": "The remote trigger path — turning a mention in someone else's community into a turn on my machine",

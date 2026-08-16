@@ -306,8 +306,6 @@ describe('GET /api/team/:memberId/rooms', () => {
         authors: registry,
         rooms,
         meshCore: mesh,
-        // The roster's own sources answer nothing here: this block is about
-        // the rooms route, which reads neither.
         activeClaims: () => [],
         listRooms: () => [],
         sessionActivity: () => Promise.resolve({}),
@@ -348,7 +346,7 @@ describe('GET /api/team/:memberId/rooms', () => {
         id: 'team-room',
         kind: 'channel',
         slug: 'team',
-        title: '#team',
+        title: 'Team',
         topic: null,
         workspaceId: null,
         createdAt: '2026-08-01T00:00:00.000Z',
@@ -367,7 +365,7 @@ describe('GET /api/team/:memberId/rooms', () => {
     expect(res.status).toBe(200);
     expect(MemberRoomsResponseSchema.safeParse(res.body).success).toBe(true);
     expect(res.body.rooms).toEqual([
-      { id: 'team-room', name: '#team', kind: 'channel', memberCount: 3 },
+      { id: 'team-room', name: 'Team', slug: 'team', kind: 'channel', memberCount: 3 },
     ]);
   });
 
@@ -398,12 +396,7 @@ describe('GET /api/team/:memberId/rooms', () => {
     // profile of a perfectly ordinary agent.
     const fresh: TeamAgentSource = { ...ANA, id: 'agent-new', name: 'new' };
     const res = await request(
-      app({
-        meshCore: {
-          listWithHealth: () => [ANA, DORKBOT, fresh],
-          listWithPaths: () => [{ id: ANA.id, projectPath: ANA_PATH }],
-        },
-      })
+      app({ meshCore: { listWithHealth: () => [ANA, DORKBOT, fresh], listWithPaths: () => [] } })
     ).get('/api/team/agent-new/rooms');
 
     expect(res.status).toBe(200);

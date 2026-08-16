@@ -43,6 +43,7 @@ import {
   dispatchCommandIntent,
   listQueuedMessages,
   noteSessionOrphaned,
+  noteTurnBoundary,
   resetMessageDispatcher,
   sweepOrphanedMessageQueues,
 } from '../message-dispatcher.js';
@@ -55,6 +56,7 @@ import { recentDispatches, resetDispatchBuffers } from '../../observability/disp
 // dispatcher then RUNS — the edit and the turn are one promise, not two.
 import { cancelQueuedMessage, editQueuedMessage } from '../queued-message-edits.js';
 import { MessageQueueStore, setMessageQueueStore } from '../message-queue-store.js';
+import { ROOMS } from '../../../config/constants.js';
 import {
   getOrCreateProjector,
   disposeProjector,
@@ -114,6 +116,20 @@ function heldTurn(hold: Promise<void>, marks?: { order: string[]; label: string 
     await hold;
     marks?.order.push(`${marks.label}:end`);
     yield { type: 'done', data: {} } as StreamEvent;
+  };
+}
+
+/**
+ * A turn that ENDS and then keeps its stream open, the way a runtime draining
+ * background work does: `done` closes the turn, and the iterator returns later.
+ */
+function drainingTurn(hold: Promise<void>, marks?: { order: string[]; label: string }) {
+  return async function* (): AsyncGenerator<StreamEvent> {
+    marks?.order.push(`${marks.label}:start`);
+    yield { type: 'text_delta', data: { text: 'here is a widget' } } as StreamEvent;
+    yield { type: 'done', data: {} } as StreamEvent;
+    await hold;
+    marks?.order.push(`${marks.label}:stream-closed`);
   };
 }
 
@@ -334,6 +350,148 @@ describe('dispatchMessage — a busy session is a queue, not a refusal (task 2.4
     expect(runtime.sendMessage).toHaveBeenCalledTimes(1);
   });
 
+  it('takes a refusing caller once the turn has ENDED, though the stream is still closing', async () => {
+    // DOR-1239. claude-code keeps its subprocess alive past `done` so a finished
+    // background task can wake the agent again, and the write-lock and the
+    // in-flight slot are both released on that late signal — so for the whole
+    // drain the session LOOKS busy while the agent has stopped and its reply
+    // (widget buttons and all) is on screen. A click there was refused over a
+    // session nothing was using.
+    const drain = gate();
+    runtime.withScenarios([drainingTurn(drain.wait), quickTurn()]);
+
+    await send('render a widget');
+    // The turn has closed on the projector; the stream behind it has not.
+    await vi.waitFor(() => expect(getOrCreateProjector(session).peekInProgressTurn()).toBeNull());
+    expect(projectorStatus()).toBe('idle');
+
+    const clicked = await send('a widget click', { whenBusy: 'refuse' });
+
+    expect(clicked.accepted).toBe(true);
+    // And it waits in nobody's composer. A refusing caller's trigger must never
+    // become a queue row: this one's content is a machine-generated block, and a
+    // row is editable, removable, and what the launch would send.
+    expect(clicked.queuePosition).toBe(0);
+    expect(listQueuedMessages(session)).toEqual([]);
+    expect(store.list(session)).toEqual([]);
+
+    // It runs when the slot clears. Ordering holds — one turn at a time — but
+    // ADJACENCY to the clicked turn is not promised: a self-woken window
+    // (DOR-1100) can open and close inside the same stream first.
+    drain.open();
+    await settle();
+    expect(runtime.sendMessage).toHaveBeenCalledTimes(2);
+    expect(runtime.sendMessage).toHaveBeenLastCalledWith(
+      session,
+      'a widget click',
+      expect.anything()
+    );
+    expect(listQueuedMessages(session)).toEqual([]);
+  });
+
+  it('drops a refusing caller’s trigger rather than forcing it into a stream still open', async () => {
+    // Fast, or never. The wait bound normally FORCE-launches what it is holding,
+    // deliberately skipping the in-flight slot — which here would put a second
+    // `sendMessage` on a session whose first stream has not closed. And a
+    // re-park would hand it a fresh full budget and start the cycle again. So an
+    // expired transient plan is dropped, and says so.
+    const drain = gate();
+    runtime.withScenarios([drainingTurn(drain.wait), quickTurn()]);
+
+    await send('render a widget');
+    await vi.waitFor(() => expect(getOrCreateProjector(session).peekInProgressTurn()).toBeNull());
+
+    const clicked = await send('a widget click', { whenBusy: 'refuse', queueWaitMs: 20 });
+    expect(clicked.accepted).toBe(true);
+
+    // Past the bound, with the stream still open.
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    expect(runtime.sendMessage).toHaveBeenCalledTimes(1);
+
+    // And gone: the slot clearing finds nothing waiting behind it.
+    drain.open();
+    await settle();
+    expect(runtime.sendMessage).toHaveBeenCalledTimes(1);
+    expect(store.list(session)).toEqual([]);
+  });
+
+  it('drops a refusing caller’s waiting trigger when the lock refuses it, rather than saving it for a later turn', async () => {
+    // The mirror of the refuse-foreign case above, and deliberately the opposite
+    // answer. A room's message is a person's words, so it goes back in line; a
+    // machine-generated trigger has no later moment worth running at. Put back,
+    // it would sit in the pending set with nothing to show for it — no row, so
+    // nobody can see it or take it back — until some LATER turn's boundary
+    // pumped it into work it has nothing to do with.
+    //
+    // Driven with no queue store, which is every embedded host: with one wired
+    // the store's own rear-view drops the message anyway, so this is the
+    // configuration where the rule itself is what decides.
+    setMessageQueueStore(undefined);
+    const drain = gate();
+    runtime.withScenarios([drainingTurn(drain.wait), quickTurn(), quickTurn()]);
+
+    await send('render a widget');
+    await vi.waitFor(() => expect(getOrCreateProjector(session).peekInProgressTurn()).toBeNull());
+
+    const clicked = await send('a widget click', { whenBusy: 'refuse' });
+    expect(clicked.accepted).toBe(true);
+
+    // A stranger takes the session in the beat between acceptance and launch.
+    runtime.acquireLock.mockReturnValue(false);
+    drain.open();
+    await settle();
+    expect(runtime.sendMessage).toHaveBeenCalledTimes(1);
+
+    // The session frees up and somebody types. The click must not ride in on
+    // that turn's boundary.
+    runtime.acquireLock.mockReturnValue(true);
+    await send('a later message');
+    await settle();
+
+    expect(runtime.sendMessage).toHaveBeenCalledTimes(2);
+    expect(runtime.sendMessage.mock.calls.map((call) => call[1])).toEqual([
+      'render a widget',
+      'a later message',
+    ]);
+  });
+
+  it('names the turn a refusal was refused for, so a 409 cannot invent a holder', async () => {
+    // The 409 body used to be built from a second authority (the runtime lock,
+    // asked under the request's id rather than the canonical one), which could
+    // report `lockedBy: "unknown"` for a refusal the dispatcher had just made.
+    const first = gate();
+    runtime.withScenarios([heldTurn(first.wait), quickTurn()]);
+
+    await send('long turn');
+    const refused = await send('a widget click', {
+      clientId: 'window-b',
+      whenBusy: 'refuse',
+    });
+
+    expect(refused.accepted).toBe(false);
+    expect(refused.refusedBy?.clientId).toBe(TAB);
+    expect(refused.refusedBy?.since).toBeGreaterThan(0);
+  });
+
+  it('names the LOCK holder when the write-lock is what refused the launch', async () => {
+    // The other refusal path, and the reason the dispatcher answers this rather
+    // than the route: the lock is keyed by the canonical id, which the caller
+    // does not necessarily hold.
+    runtime.getInternalSessionId.mockReturnValue('canonical-id');
+    runtime.acquireLock.mockReturnValue(false);
+    runtime.getLockInfo.mockImplementation((id: string) =>
+      id === 'canonical-id' ? { clientId: 'somebody-else', acquiredAt: 1_700_000_000_000 } : null
+    );
+
+    const refused = await send('a widget click', { whenBusy: 'refuse' });
+
+    expect(refused.accepted).toBe(false);
+    expect(refused.refusedBy).toEqual({
+      clientId: 'somebody-else',
+      since: 1_700_000_000_000,
+    });
+  });
+
   it("waits out the caller's OWN turn rather than refusing it (whenBusy: refuse-foreign)", async () => {
     // DOR-1230. A room holds a re-mention until its agent's turn here ends and
     // then dispatches it — so what it meets is its own tail: the turn ahead has
@@ -355,12 +513,12 @@ describe('dispatchMessage — a busy session is a queue, not a refusal (task 2.4
     expect(store.list(session)).toEqual([]);
   });
 
-  it('keeps a refuse-foreign message that already waited, when the lock then refuses it', async () => {
+  it('keeps a refuse-foreign trigger that already waited, when the lock then refuses it', async () => {
     // The narrow race the wait above opens: a stranger takes the session in the
     // beat between the trigger being accepted and its launch. The refusal the
     // caller asked for is gone by then — it is holding an `accepted: true` — so
-    // dropping the row would leave it waiting on a turn nothing will start. It
-    // goes back in line, which is what the acceptance promised.
+    // giving up would leave it waiting on a turn nothing will start. It goes
+    // back in line, which is what the acceptance promised.
     const first = gate();
     runtime.withScenarios([heldTurn(first.wait), quickTurn()]);
 
@@ -372,8 +530,165 @@ describe('dispatchMessage — a busy session is a queue, not a refusal (task 2.4
     first.open();
     await settle();
 
+    // Refused at the launch, so no second turn — and it waits IN MEMORY. There
+    // is no row, because a room's trigger is not a person's words and has no
+    // business sitting in their composer (DOR-1242).
     expect(runtime.sendMessage).toHaveBeenCalledTimes(1);
-    expect(store.list(session).map((row) => row.content)).toEqual(['re-mentioned mid-turn']);
+    expect(store.list(session)).toEqual([]);
+
+    // Still armed, which is the half the missing row must not have cost: the
+    // stranger lets go, the next boundary re-arms it, and it runs.
+    runtime.acquireLock.mockReturnValue(true);
+    noteTurnBoundary(session);
+    await settle();
+
+    expect(runtime.sendMessage).toHaveBeenCalledTimes(2);
+    expect(runtime.sendMessage).toHaveBeenLastCalledWith(
+      session,
+      're-mentioned mid-turn',
+      expect.anything()
+    );
+  });
+
+  it('drops a refuse-foreign trigger ONCE when the stranger outlasts its whole budget', async () => {
+    // DOR-1242, the other end of the wait above. Every re-park used to arm a
+    // FRESH budget while `startedWaitingAt` stayed put, so a holder that never
+    // let go kept the cycle turning for the life of the process — a trigger
+    // whose whole point was not to run late, retrying forever. What is re-parked
+    // is now what is LEFT of the original wait, and when nothing is left the
+    // plan is dropped once and reported.
+    const settled: string[] = [];
+    const first = gate();
+    runtime.withScenarios([heldTurn(first.wait), quickTurn()]);
+
+    await send('the turn the room is already running');
+    const held = await send('re-mentioned mid-turn', {
+      whenBusy: 'refuse-foreign',
+      queueWaitMs: 60,
+      onSettled: (outcome: string) => settled.push(outcome),
+    });
+    expect(held.accepted).toBe(true);
+
+    // A stranger takes the session and keeps it.
+    runtime.acquireLock.mockReturnValue(false);
+    first.open();
+
+    // The budget runs out while the holder is still there. One `failed`, not a
+    // stream of them: this is the assertion that the retry stopped.
+    await vi.waitFor(() => expect(settled).toEqual(['failed']), { timeout: 2_000 });
+    expect(runtime.sendMessage).toHaveBeenCalledTimes(1);
+    expect(store.list(session)).toEqual([]);
+
+    // And it is GONE, not merely quiet. Were it still parked, the freed lock and
+    // these boundaries would start its turn — which is exactly what the
+    // unbounded requeue did, days later, into a conversation that had ended.
+    runtime.acquireLock.mockReturnValue(true);
+    noteTurnBoundary(session);
+    await settle();
+    noteTurnBoundary(session);
+    await settle();
+
+    expect(runtime.sendMessage).toHaveBeenCalledTimes(1);
+    expect(settled).toEqual(['failed']);
+  });
+
+  it('writes no queue row for a refusing trigger, so a restart cannot adopt one', async () => {
+    // The restart half of DOR-1242. A row outlives the process, and
+    // `adoptQueuedMessages` re-arms whatever it finds as an ordinary
+    // `whenBusy: 'queue'` plan — so a room prompt from a conversation that ended
+    // days ago would fire into that session with nobody listening, and show in
+    // the composer queue on the way. The fix is upstream of adoption: a refusing
+    // caller never gets a row to leave behind.
+    const first = gate();
+    runtime.withScenarios([heldTurn(first.wait), quickTurn()]);
+
+    // One that RUNS: nothing in the composer while its turn is live either.
+    const ran = await send('a room turn', { whenBusy: 'refuse' });
+    expect(store.list(session)).toEqual([]);
+    expect(listQueuedMessages(session)).toEqual([]);
+    // On no queue at all, so there is no position to report (DOR-1242).
+    expect(ran.queuePosition).toBe(0);
+
+    // ...and one that WAITS, which is the plan that used to survive a restart.
+    const held = await send('re-mentioned mid-turn', { whenBusy: 'refuse-foreign' });
+    expect(held.accepted).toBe(true);
+    expect(held.queued).toBe(true);
+    expect(store.list(session)).toEqual([]);
+
+    // The restart: in-memory state dies, the store is all that carries over.
+    resetMessageDispatcher();
+    expect(
+      adoptQueuedMessages({ sessionId: session, projector: getOrCreateProjector(session), runtime })
+    ).toBe(0);
+    await settle();
+
+    expect(runtime.sendMessage).toHaveBeenCalledTimes(1);
+    first.open();
+    await settle();
+    expect(runtime.sendMessage).toHaveBeenCalledTimes(1);
+  });
+
+  it('sweeps a room row an earlier build persisted, rather than adopting it', async () => {
+    // The population this fix is FOR (DOR-1242). A refusing caller gets no row
+    // now, but builds before this wrote one, and adoption re-arms whatever it
+    // finds as an ordinary `whenBusy: 'queue'` plan — so a room prompt from a
+    // conversation that ended days ago would fire into this session with nobody
+    // listening. Nothing is left that wants it, so it is removed.
+    const stale = store.enqueue({
+      sessionId: session,
+      content: '@ada what did we decide about the importer?',
+      clientId: ROOMS.CLIENT_ID,
+    });
+    // A person's own queued words, side by side, to prove the sweep is targeted
+    // rather than a blanket clear of everything a restart found.
+    const mine = store.enqueue({
+      sessionId: session,
+      content: 'my own words, still waiting',
+      clientId: TAB,
+    });
+
+    // One adopted, not two: the room's row is gone from disk before anything is
+    // armed around it, while the person's is still there waiting to run.
+    expect(
+      adoptQueuedMessages({ sessionId: session, projector: getOrCreateProjector(session), runtime })
+    ).toBe(1);
+    expect(store.get(stale.id)).toBeUndefined();
+    expect(store.get(mine.id)).toBeDefined();
+
+    await settle();
+
+    // ...and what actually reached the model is the person's words, once. The
+    // room's prompt was never sent, which is the whole point.
+    expect(runtime.sendMessage).toHaveBeenCalledTimes(1);
+    expect(runtime.sendMessage).toHaveBeenCalledWith(
+      session,
+      'my own words, still waiting',
+      expect.anything()
+    );
+  });
+
+  it('reports a dropped refuse-foreign trigger to the caller that registered for it', async () => {
+    // The BLOCKER the review caught: `returnToQueue` documents the drop as
+    // "terminal and REPORTED", and rooms are the only refuse-foreign caller, so
+    // if `onSettled` never reaches a registered callback the room waits on a turn
+    // nothing will start — a late notice at its wait bound and "something went
+    // wrong" at its ceiling, an hour later. This pins the dispatcher half: the
+    // callback the caller passed is the one that fires.
+    const settled: string[] = [];
+    const first = gate();
+    runtime.withScenarios([heldTurn(first.wait), quickTurn()]);
+
+    await send('the turn the room is already running');
+    await send('re-mentioned mid-turn', {
+      whenBusy: 'refuse-foreign',
+      queueWaitMs: 60,
+      onSettled: (outcome: string) => settled.push(outcome),
+    });
+
+    runtime.acquireLock.mockReturnValue(false);
+    first.open();
+
+    await vi.waitFor(() => expect(settled).toEqual(['failed']), { timeout: 2_000 });
   });
 
   it('still refuses a turn another client opened (whenBusy: refuse-foreign)', async () => {

@@ -37,12 +37,19 @@ function delta(text: string): StreamEvent {
   return { type: 'text_delta', data: { text } } as StreamEvent;
 }
 
-/** The three events the guard injects when an interrupt aborts the turn. */
+/**
+ * The three events the guard injects when an interrupt aborts the turn.
+ *
+ * The never-started wording, because every source in this file yields nothing
+ * before the stall — the guard distinguishes a turn that went quiet from one
+ * that never got going (DOR-1229). The WINDOW is unchanged at ten minutes: no
+ * test here supplies a first-event bound.
+ */
 const STALL_CLOSE: StreamEvent[] = [
   {
     type: 'error',
     data: {
-      message: 'No activity from the agent for 10 minutes, so the turn was interrupted.',
+      message: 'The agent never started working after 10 minutes, so the turn was ended.',
       code: 'turn_stalled',
       category: 'execution_error',
       details: 'The in-flight turn was aborted.',

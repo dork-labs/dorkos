@@ -526,7 +526,7 @@ describe('a claim lives until its turn is done', () => {
         // asked about. The question she was asked first is right behind it,
         // marked as having landed while she was working.
         expect(turnsBy(ana)[1].prompt).toBe('on it');
-        expect(turnsBy(ana)[1].roomContext.pending).toContainEqual(
+        expect(turnsBy(ana)[1].roomContext.gathered).toContainEqual(
           expect.objectContaining({ text: 'and the migration?', arrivedDuringPrevTurn: true })
         );
         expect(postsBy(ana)).toHaveLength(1);
@@ -794,7 +794,7 @@ describe('a claim lives until its turn is done', () => {
       // Ana's turn lands, and the two held messages become her ONE next turn.
       runner.land(ana, { text: 'green', waitedMs: 12 * 60_000 });
       await settleUntil(() => turnsBy(ana).length === 2, 'the held messages to become one turn');
-      expect(turnsBy(ana)[1].roomContext.pending.map((entry) => entry.text)).toContain(
+      expect(turnsBy(ana)[1].roomContext.gathered?.map((entry) => entry.text)).toContain(
         '@ana and the migration?'
       );
 

@@ -76,6 +76,17 @@ interface RoomSignalFrameData {
   entryId?: string;
 }
 
+/**
+ * A room `reaction` frame's payload — one entry's COMPLETE current reaction
+ * set, not a delta (`RoomReactionEventSchema`). A later frame for the same
+ * `entryId` replaces what an earlier one said, including down to nothing.
+ */
+interface RoomReactionFrameData {
+  type?: string;
+  entryId?: string;
+  reactions?: Array<{ emoji?: string; authorIds?: string[] }>;
+}
+
 /** One committed entry, as these oracles read it. */
 export interface ObservedEntry {
   /** The entry's id. */
@@ -145,6 +156,33 @@ export function observedTurns(frames: SseFrame[]): ObservedTurn[] {
     if (!seen.has(key)) seen.set(key, { authorId: data.authorId, entryId });
   }
   return [...seen.values()];
+}
+
+/**
+ * Who has a reaction standing on one entry, right now.
+ *
+ * A `reaction` frame carries the entry's WHOLE current set, never a delta
+ * (`RoomReactionEventSchema`), so the last frame for `entryId` is the answer —
+ * folding every frame instead would count an author twice if they reacted,
+ * took it back, and reacted again.
+ *
+ * @param frames - The collected room frames.
+ * @param entryId - The entry whose reactions are being read.
+ * @returns Every author id with a standing reaction on that entry.
+ */
+function reactorsOn(frames: SseFrame[], entryId: string): Set<string> {
+  let last: RoomReactionFrameData | undefined;
+  for (const frame of frames) {
+    if (frame.event !== 'reaction') continue;
+    const data = frame.data as RoomReactionFrameData;
+    if (data.entryId !== entryId) continue;
+    last = data;
+  }
+  const authors = new Set<string>();
+  for (const reaction of last?.reactions ?? []) {
+    for (const authorId of reaction.authorIds ?? []) authors.add(authorId);
+  }
+  return authors;
 }
 
 /**
@@ -384,6 +422,52 @@ export function agentStayedQuietInRoom(
         posts: posts.map((p) => p.text.slice(0, 400)),
       },
       detail: posts.length === 0 ? undefined : `${slug} posted ${posts.length} message(s)`,
+    };
+  };
+}
+
+/**
+ * Oracle: this agent has a standing reaction on one entry — the react-instead-
+ * of-a-word assertion (DOR-1234, `meta/agent-etiquette.md` E11/E16b).
+ *
+ * Reads the room's `reaction` frames rather than an entry, because a reaction
+ * is durable state carried outside `room_entries` and never becomes one
+ * (`room-conduct.md`: "reactions still never cascade"). `entryIdNote` names the
+ * {@link RoomFacts.notes} key the script recorded the acknowledged message's id
+ * under, the same pattern {@link roomScriptNote} and the thread cases use for a
+ * fact that exists only in the drive, not on the stream in advance.
+ *
+ * @param slug - The seeded agent's slug.
+ * @param opts.entryIdNote - The `RoomFacts.notes` key holding the entry id the
+ *   agent was expected to react to.
+ * @param opts.label - Human-readable label.
+ * @returns An {@link Oracle}.
+ */
+export function agentReactedInRoom(
+  slug: string,
+  opts: { entryIdNote: string; label?: string }
+): Oracle {
+  const oracleLabel = opts.label ?? `"${slug}" reacted to the message`;
+  return async (ctx) => {
+    const resolved = requireRoom(ctx, oracleLabel);
+    if ('failure' in resolved) return resolved.failure;
+    const authorId = agentAuthorId(resolved.room, slug);
+    const entryId = resolved.room.notes[opts.entryIdNote];
+    if (typeof entryId !== 'string') {
+      return {
+        label: oracleLabel,
+        passed: false,
+        evidence: { entryIdNote: opts.entryIdNote, recorded: entryId },
+        detail: `the script recorded no entry id under "${opts.entryIdNote}", so there is nothing to check reactions on`,
+      };
+    }
+    const reactors = reactorsOn(ctx.frames, entryId);
+    const passed = reactors.has(authorId);
+    return {
+      label: oracleLabel,
+      passed,
+      evidence: { authorId, entryId, reactors: [...reactors] },
+      detail: passed ? undefined : `${slug} (${authorId}) left no standing reaction on ${entryId}`,
     };
   };
 }

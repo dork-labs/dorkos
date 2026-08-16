@@ -21,6 +21,7 @@ import {
   eq,
   and,
   inArray,
+  notInArray,
   lt,
   lte,
   gt,
@@ -839,6 +840,34 @@ export class RoomStore {
   }
 
   /**
+   * Specific entries of one room, by id, oldest first.
+   *
+   * The gathered half of a collected turn (§10.4): the dispatcher knows WHICH
+   * messages one turn was asked, by id, and this is how those messages are read
+   * — **never by slicing them out of the ambient page**, whose cap sizes the
+   * background an agent reads and must not decide whether a question it was
+   * asked reaches the model at all (DOR-1231).
+   *
+   * Scoped to ONE room by construction, like {@link RoomStore.listEntriesBySeq}
+   * beside it, so an id from anywhere else reads nothing rather than somebody
+   * else's message.
+   *
+   * @param roomId - The room the ids belong to.
+   * @param ids - The entries to read. An empty list reads nothing.
+   */
+  listEntriesByIds(roomId: string, ids: readonly string[]): RoomEntry[] {
+    const wanted = [...new Set(ids)];
+    if (wanted.length === 0) return [];
+    return this.db
+      .select()
+      .from(roomEntries)
+      .where(and(eq(roomEntries.roomId, roomId), inArray(roomEntries.id, wanted)))
+      .orderBy(roomEntries.seq)
+      .all()
+      .map(toEntry);
+  }
+
+  /**
    * The newest entries above a cursor that one member has not read, oldest-first
    * within the page — the unread window a room turn shows an agent.
    *
@@ -876,7 +905,12 @@ export class RoomStore {
    * @param opts.excludeAuthorId - Drop this author's own entries, and the room's
    *   notices about it; the first are reported separately outside the untrusted
    *   fence, and the second are the room talking about the reader.
-   * @param opts.excludeEntryId - Drop the triggering entry; it IS the message.
+   * @param opts.excludeEntryIds - Drop entries that reach the model somewhere
+   *   else: the triggering entry, which IS the message, and the gathered ones,
+   *   which are read separately and rendered as the rest of what the turn
+   *   answers (§10.4). **In SQL rather than filtered afterwards**, for the same
+   *   reason the cap is: a page filtered in JS returns fewer than `limit` rows
+   *   and makes the truncation flag lie.
    * @param opts.limit - How many of the newest to return.
    * @param opts.threadRootEntryId - Scope the window to one thread's replies.
    *   Omit for the whole room, which is what a top-level turn reads. A turn
@@ -891,7 +925,7 @@ export class RoomStore {
       afterSeq: number;
       throughSeq: number;
       excludeAuthorId: string;
-      excludeEntryId: string;
+      excludeEntryIds: readonly string[];
       limit: number;
       threadRootEntryId?: string;
     }
@@ -905,7 +939,13 @@ export class RoomStore {
           gt(roomEntries.seq, opts.afterSeq),
           lte(roomEntries.seq, opts.throughSeq),
           ne(roomEntries.authorId, opts.excludeAuthorId),
-          ne(roomEntries.id, opts.excludeEntryId),
+          // `notInArray` over an EMPTY list is `false` in some dialects, so the
+          // clause is omitted rather than emitted empty. Unreachable today — the
+          // triggering entry is always in it — and left as a property of the
+          // method rather than of its one caller.
+          ...(opts.excludeEntryIds.length === 0
+            ? []
+            : [notInArray(roomEntries.id, [...opts.excludeEntryIds])]),
           // Reads `idx_room_entries_thread_root`, whose third column is `seq` —
           // so a thread scattered through a long channel is paged rather than
           // sorted (migration 0040, and the measurement in

@@ -2,6 +2,7 @@
 covers:
   - "refactor(client): the hub's reusable guts move to the entities that own them (DOR-1253)"
   - 'feat(client): profile pages and pickers for the agents you manage (DOR-1253)'
+  - 'fix(client,server): a profile edit changes what it names, and nothing else (DOR-1253)'
 ---
 
 ### Added
@@ -15,3 +16,5 @@ covers:
 ### Fixed
 
 - Writing an agent's instructions (SOUL.md) or boundaries (NOPE.md) now actually saves them. The old Agent Hub let you type in both editors and quietly threw the text away (DOR-1253)
+- Changing one thing about an agent no longer erases another. Setting its model used to wipe its description and everything in its capabilities list (DOR-1253)
+- Renaming an agent updates its name everywhere at once — the profile, the team page and the sidebar (DOR-1253)

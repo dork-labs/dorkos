@@ -682,6 +682,11 @@ export async function triggerTurn(opts: TriggerTurnOpts): Promise<TriggerTurnRes
     const stallGuarded = withStallGuard(tapped, {
       sessionId,
       timeoutMs: opts.stallTimeoutMs ?? SESSIONS.TURN_STALL_TIMEOUT_MS,
+      // A turn that has not yielded once has not shown it is running, so its
+      // first gap gets the tighter window (DOR-1229). Not a caller option: no
+      // caller has a reason to want a launch that never starts to sit longer,
+      // and the guard already takes the shorter of this and `timeoutMs`.
+      firstEventTimeoutMs: SESSIONS.TURN_FIRST_EVENT_TIMEOUT_MS,
       isPaused: waitingOnPerson,
       onStall: () => deps.interruptQuery(sessionId),
       onError: (err) => opts.onError?.(err),

@@ -218,6 +218,10 @@ export async function triggerCommandIntent(
   const stallGuarded = withStallGuard(source, {
     sessionId,
     timeoutMs: opts.stallTimeoutMs ?? SESSIONS.TURN_STALL_TIMEOUT_MS,
+    // Same first-event window as an ordinary turn (DOR-1229): a `/compact` that
+    // never yields has not started either, and this path is the one a person is
+    // most likely to be staring at.
+    firstEventTimeoutMs: SESSIONS.TURN_FIRST_EVENT_TIMEOUT_MS,
     isPaused: waitingOnPerson,
     onStall: () => deps.interruptQuery(sessionId),
     onError: (err) => opts.onError?.(err),

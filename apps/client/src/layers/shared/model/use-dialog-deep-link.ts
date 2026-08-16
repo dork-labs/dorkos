@@ -262,17 +262,21 @@ export interface ProfileDeepLink {
 }
 
 /**
- * Profile drawer deep-link state and actions (spec `identity-consistency` §W3.2).
+ * Profile deep-link state and actions (specs `identity-consistency` §W3.2,
+ * `profile-unification` §1.6).
  *
  * The same dual-signal shape as {@link useSettingsDeepLink}, with one
  * difference: the param carries a *subject* rather than a tab, so `?profile=<id>`
- * is a shareable address for one identity and the phone's back gesture dismisses
- * the drawer for free — `open` pushes a history entry rather than replacing one,
+ * is a shareable address for one identity and the phone's back gesture closes
+ * the profile for free — `open` pushes a history entry rather than replacing one,
  * which is what makes back mean "close this" instead of "leave the page".
+ * `?profilePage=` rides alongside it as the page pushed on top, so a page of a
+ * profile is an address too.
  *
- * With no router (the Obsidian embed) the store carries both the open flag and
- * the subject, so the drawer still opens on the right identity — the one thing a
- * store fallback for Settings cannot do, since a tab has no equivalent.
+ * With no router (the Obsidian embed) the store carries the open flag, the
+ * subject and the page, so the profile still opens on the right identity — the
+ * one thing a store fallback for Settings cannot do, since a tab has no
+ * equivalent.
  */
 export function useProfileDeepLink(): ProfileDeepLink {
   const search = useSafeSearch() as { profile?: string; profilePage?: string };
