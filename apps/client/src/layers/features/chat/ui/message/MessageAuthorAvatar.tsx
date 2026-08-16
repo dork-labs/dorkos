@@ -119,7 +119,18 @@ export function MessageAuthorAvatar({
   const control = onViewProfile
     ? {
         role: 'button',
-        tabIndex: 0,
+        // **Out of the tab order on purpose, and this is the whole design.** A
+        // room is a feed that costs ONE Tab per message by contract
+        // (`room-entry-actions.spec.ts`), which is why the message's own action
+        // capsule is `tabIndex={-1}` and walked with arrow keys. A focusable
+        // disc per author group broke that budget — three messages went from two
+        // presses to cross to five — so the keyboard reaches this destination
+        // through the capsule's "View profile" instead, at no Tab cost at all.
+        //
+        // Still a named `role="button"`: a screen reader's virtual cursor walks
+        // the document rather than the tab order, so this stays reachable and
+        // activatable there, and `-1` keeps it focusable programmatically.
+        tabIndex: -1,
         'aria-label': isSelf ? 'Open your profile' : `Open ${author.displayName}’s profile`,
         onClick: onViewProfile,
         onKeyDown: (event: KeyboardEvent<HTMLSpanElement>) => {

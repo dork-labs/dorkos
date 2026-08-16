@@ -7,7 +7,12 @@ import { useEffect, useId, useRef, type ReactNode } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { ChevronDown, MoreHorizontal } from 'lucide-react';
 import type { RoomKind, RoomRosterEntry } from '@dorkos/shared/room-schemas';
-import { cn, resolveIdentityFace, type AgentVisual } from '@/layers/shared/lib';
+import {
+  cn,
+  resolveIdentityFace,
+  LONG_PRESS_DRIFT_PX,
+  type AgentVisual,
+} from '@/layers/shared/lib';
 import { useIsMobile } from '@/layers/shared/model';
 import {
   Button,
@@ -127,6 +132,16 @@ export interface RoomMemberRowProps {
  * control would simply vanish for a screen reader — `aria-describedby` points
  * back at it so the row still says who, what they did, and where pressing goes.
  *
+ * **A press that travelled is a drag, and a drag is not a tap.** On a phone this
+ * sheet is a vaul drawer: a downward drag over the roster moves the whole
+ * drawer WITH the pointer, so the element under the finger at the end of the
+ * gesture is the same one it started on — and the browser fires a click. Before
+ * this control existed the lockup was an inert `<div>` and that click landed on
+ * nothing; as a button it opened a profile every time somebody tried to put the
+ * sheet away, which is how `room-sheet-phone.spec.ts` found it. The same
+ * {@link LONG_PRESS_DRIFT_PX} the long-press gesture uses decides here: past it,
+ * the reader was moving the sheet, not choosing a member.
+ *
  * @param props.onViewProfile - Open this member's profile, or `undefined` for a
  *   member with none to open.
  * @param props.displayName - Whose profile it is, for the accessible name.
@@ -148,12 +163,32 @@ function ProfileLink({
   describedById: string;
   children: ReactNode;
 }) {
+  // Where the press started, so a click can be told from the tail of a drag.
+  // Read at `pointerdown` because that is the only moment the origin exists.
+  const pressedAt = useRef<{ x: number; y: number } | null>(null);
+
   if (onViewProfile === undefined) return <>{children}</>;
 
   return (
     <button
       type="button"
-      onClick={onViewProfile}
+      onPointerDown={(event) => {
+        pressedAt.current = { x: event.clientX, y: event.clientY };
+      }}
+      onClick={(event) => {
+        const from = pressedAt.current;
+        pressedAt.current = null;
+        // `detail > 0` is a click a POINTER made. A keyboard's click reports 0
+        // and carries no coordinates, so it is never measured against a stale
+        // origin left behind by a press that ended somewhere else.
+        const travelled =
+          event.detail > 0 &&
+          from !== null &&
+          (Math.abs(event.clientX - from.x) > LONG_PRESS_DRIFT_PX ||
+            Math.abs(event.clientY - from.y) > LONG_PRESS_DRIFT_PX);
+        if (travelled) return;
+        onViewProfile();
+      }}
       // Names the ACTION with the name inside it, the shape the sidebar face,
       // the Team card and the mention pill all use — so "open Ana's profile" is
       // sayable by voice and the visible text is a prefix of what is spoken.
@@ -162,9 +197,23 @@ function ProfileLink({
       // profile" — which is the row every operator sees about themselves.
       aria-label={isReader ? 'Open your profile' : `Open ${displayName}’s profile`}
       aria-describedby={describedById}
-      // The negative margin gives the press a hit area without moving the face:
-      // the disc stays exactly where the loudness scale's own indent expects it.
-      className="focus-visible:ring-ring hover:bg-accent/60 -mx-1 flex min-w-0 flex-1 items-center gap-3 rounded-md px-1 py-1 text-left outline-hidden transition-colors focus-visible:ring-2"
+      // **Occupies exactly the space the lockup already did.** No padding of
+      // its own, so the row keeps the height it had before this control existed
+      // — the sheet's own rhythm, the loudness scale's indent, and everything
+      // the phone spec measures are all downstream of that. A `py-1` here read
+      // as harmless and made every row 8px taller, which moved the scale out
+      // from under a resting pointer and cost the room-sheet specs two reds.
+      className={cn(
+        'focus-visible:ring-ring hover:bg-accent/60 relative -mx-1 flex min-w-0 flex-1 items-center gap-3 rounded-md px-1 text-left outline-hidden transition-colors focus-visible:ring-2',
+        // The house recipe for a control shorter than a thumb (`PresenceStrip`,
+        // the loudness pill): invisible reach rather than real height, so the
+        // 44px target costs the row none of its own rhythm. VERTICAL only — the
+        // 12px gap to the loudness pill is all that keeps the two apart, and the
+        // pill spends 7px of it on its own outset. The row is 56px under a thumb
+        // and this lockup about 36, so 8px each way stays inside the row and
+        // cannot steal a tap from the member above or below.
+        'after:absolute after:-inset-y-2 after:right-0 after:left-0 md:after:hidden'
+      )}
     >
       {children}
     </button>

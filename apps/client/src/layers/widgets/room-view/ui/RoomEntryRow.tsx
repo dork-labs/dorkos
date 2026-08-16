@@ -9,7 +9,7 @@
  *
  * @module widgets/room-view/ui/RoomEntryRow
  */
-import { useId, useMemo, useRef, useState } from 'react';
+import { useCallback, useId, useMemo, useRef, useState } from 'react';
 import {
   useProfileDeepLink,
   type FeedPosition,
@@ -190,7 +190,7 @@ export function RoomEntryRow({
   const rowRef = useRef<HTMLDivElement>(null);
   const barRef = useRef<EntryActionBarHandle>(null);
   const pillsRef = useRef<RovingGroupHandle>(null);
-  const actions = useEntryActions({ roomId, entry, author: authorRef, viewerAuthorId });
+
   // How the touch press is going, so the message can give under the finger
   // (design record §5.6). Idle on a pointer device, which never reports one.
   const [press, setPress] = useState<LongPressState | null>(null);
@@ -200,11 +200,6 @@ export function RoomEntryRow({
     viewerAuthorId,
     reactionFrequents,
     streamStalled,
-  });
-  const handleKeyDown = useEntryRowKeys({
-    barRef,
-    pillsRef,
-    hasReactions: reactions.length > 0,
   });
   // Where this row's own face leads, in ROSTER ids — the same two-space join a
   // mention pill in the body makes, and made in the same place for the same
@@ -216,8 +211,27 @@ export function RoomEntryRow({
   const { open: openProfile } = useProfileDeepLink();
   const profileMemberId =
     authorRef === undefined ? undefined : profileMemberIdOf(authorRef, authorAgent?.memberId);
-  const viewAuthorProfile =
-    profileMemberId === undefined ? undefined : () => openProfile(profileMemberId);
+  // Stable across renders, because the action set memoises on it: a fresh
+  // closure each pass would rebuild every message's capsule on every render of
+  // the feed.
+  const openAuthorProfile = useCallback(() => {
+    if (profileMemberId !== undefined) openProfile(profileMemberId);
+  }, [openProfile, profileMemberId]);
+  const viewAuthorProfile = profileMemberId === undefined ? undefined : openAuthorProfile;
+  // The capsule carries the same destination as the face, which is what lets the
+  // face stay out of the tab order — see `EntryActionsInput.onViewProfile`.
+  const actions = useEntryActions({
+    roomId,
+    entry,
+    author: authorRef,
+    viewerAuthorId,
+    onViewProfile: viewAuthorProfile,
+  });
+  const handleKeyDown = useEntryRowKeys({
+    barRef,
+    pillsRef,
+    hasReactions: reactions.length > 0,
+  });
 
   if (entry.kind === 'notice') {
     return <RoomNoticeRow entry={entry} feedPosition={feedPosition} rowId={rowId} />;

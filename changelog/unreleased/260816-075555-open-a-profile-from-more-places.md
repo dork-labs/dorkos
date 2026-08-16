@@ -2,11 +2,13 @@
 covers:
   - 'feat(client): view a profile from member lists, message faces and the presence strip (DOR-1251)'
   - 'fix(client): profile entry points open the roster''s id, and your own face says "your" (DOR-1251)'
+  - 'fix(client): profile faces stay out of the tab order; room sheet rows scroll and slide as before (DOR-1251)'
 ---
 
 ### Added
 
 - Open somebody's profile from three more places in a room: the face beside any message, the face and name of anyone in the members list, and the card that pops up when you point at an agent on the "working right now" strip. Each one opens the same profile you already get from your team page or a mention (DOR-1251)
+- A message's own actions — the row you get on hover, right-click, or a long press — now include "View profile", so you can get there without leaving the keyboard (DOR-1251)
 
 ### Fixed
 

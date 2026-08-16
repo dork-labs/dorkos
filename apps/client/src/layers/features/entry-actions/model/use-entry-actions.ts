@@ -4,7 +4,7 @@
  * @module features/entry-actions/model/use-entry-actions
  */
 import { useMemo } from 'react';
-import { AtSign, Copy, Reply } from 'lucide-react';
+import { AtSign, Copy, Reply, User } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   replyRootFor,
@@ -27,6 +27,26 @@ export interface EntryActionsInput {
   author: AuthorRef | undefined;
   /** The reader's own author id in this room, so they are not offered to themselves. */
   viewerAuthorId: string;
+  /**
+   * Open this message's author's profile, or `undefined` when the roster cannot
+   * address them.
+   *
+   * **This is the KEYBOARD's way to an author's profile, and the reason the
+   * face beside the message can stay out of the tab order.** The face is a
+   * pointer and touch affordance; a room is a feed that costs one Tab per
+   * message by contract (`room-entry-actions.spec.ts`), and a focusable disc
+   * per author group broke that — a three-message room went from two presses to
+   * cross to five. Routed through here it costs no Tab at all: the capsule is
+   * reached with one arrow key from the message and walked with more, exactly
+   * as Reply and Copy already are.
+   *
+   * Resolved by the row, which is the only part that can join the room's author
+   * to the fleet — see `profileMemberIdOf`. Absent, the action is simply not
+   * offered, the same way Mention is withheld from an author no `@` can reach.
+   *
+   * Must be referentially stable, like every other value this memo closes over.
+   */
+  onViewProfile?: (() => void) | undefined;
 }
 
 /**
@@ -77,6 +97,7 @@ export function useEntryActions({
   entry,
   author,
   viewerAuthorId,
+  onViewProfile,
 }: EntryActionsInput): EntryAction[] {
   const rootEntryId = replyRootFor(entry);
   const text = entry.body.text;
@@ -119,6 +140,15 @@ export function useEntryActions({
       },
     };
 
+    if (onViewProfile !== undefined) {
+      available.profile = {
+        id: 'profile',
+        label: 'View profile',
+        icon: User,
+        run: onViewProfile,
+      };
+    }
+
     if (handle !== undefined) {
       available.mention = {
         id: 'mention',
@@ -138,5 +168,5 @@ export function useEntryActions({
     return ENTRY_ACTION_ORDER.map((slot) => available[slot]).filter(
       (action): action is EntryAction => action !== undefined
     );
-  }, [roomId, rootEntryId, text, handle, authorName]);
+  }, [roomId, rootEntryId, text, handle, authorName, onViewProfile]);
 }

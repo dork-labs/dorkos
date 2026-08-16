@@ -11,7 +11,7 @@
  * and what a reload reopens.
  */
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
-import { render, cleanup, waitFor } from '@testing-library/react';
+import { render, screen, cleanup, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -220,10 +220,50 @@ describe('the face beside a message opens its author’s profile', () => {
     expect(harness.openProfileId()).not.toBe(WARDEN_AUTHOR_ID);
   });
 
+  it('stays OUT of the tab order — a room costs one Tab per message', async () => {
+    // The budget this face broke on its first outing: a room's rows are the tab
+    // stops, and everything inside a message is reached with arrow keys instead
+    // (`room-entry-actions.spec.ts`, "a room costs one Tab per message"). A
+    // focusable disc per author group turned a three-message room from two
+    // presses to cross into five.
+    renderRow(ANA);
+
+    const face = await faceOf();
+    expect(face).toHaveAttribute('tabindex', '-1');
+    // Still named and still a button: a screen reader's virtual cursor walks the
+    // document, not the tab order, so it reaches and activates this.
+    expect(face).toHaveAttribute('role', 'button');
+  });
+
+  it('puts the same profile in the message’s own action capsule', async () => {
+    // Where the KEYBOARD goes instead. The capsule is reached with one arrow
+    // key from the message and costs no Tab of its own, so this is the path
+    // that keeps the budget above and keyboard reachability at the same time.
+    const user = userEvent.setup();
+    renderRow(ANA);
+    await faceOf();
+
+    const capsule = within(screen.getByTestId('entry-actions'));
+    await user.click(capsule.getByRole('button', { name: 'View profile' }));
+
+    expect(harness.openProfileId()).toBe(ANA_AUTHOR_ID);
+  });
+
+  it('offers no capsule action for an author it cannot name to the roster', async () => {
+    // Withheld the same way the face is, and for the same reason — an action
+    // that opened an empty profile is worse than one that is not there.
+    renderRow(SYSTEM);
+    await faceOf();
+
+    expect(
+      within(screen.getByTestId('entry-actions')).queryByRole('button', { name: 'View profile' })
+    ).not.toBeInTheDocument();
+  });
+
   it.each([
     ['Enter', '{Enter}'],
     ['Space', '[Space]'],
-  ])('opens on %s — a role of button promises both, so both are wired', async (_name, keys) => {
+  ])('activates on %s once something has focused it', async (_name, keys) => {
     const user = userEvent.setup();
     renderRow(ANA);
 

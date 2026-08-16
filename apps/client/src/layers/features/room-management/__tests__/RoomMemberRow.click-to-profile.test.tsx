@@ -16,7 +16,7 @@
  */
 import type { ReactNode } from 'react';
 import { describe, it, expect, vi, beforeAll, afterEach } from 'vitest';
-import { render, screen, cleanup } from '@testing-library/react';
+import { render, screen, cleanup, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -271,6 +271,34 @@ describe('a room member row opens that member’s profile', () => {
 
     await profileControl('Priya');
     expect(screen.queryByRole('button', { name: 'Open Ana’s profile' })).not.toBeInTheDocument();
+  });
+
+  it('ignores a press that travelled — dragging the sheet is not choosing a member', async () => {
+    // On a phone this sheet is a vaul drawer, and a downward drag over the
+    // roster moves the whole drawer WITH the pointer: the element under the
+    // finger when it lifts is the one it pressed, so the browser fires a click.
+    // As an inert `<div>` the lockup swallowed that; as a button it opened a
+    // profile every time somebody put the sheet away
+    // (`room-sheet-phone.spec.ts`, "dragging the sheet itself puts it away").
+    const harness = renderSheet([READER, PRIYA, ANA]);
+    const control = await profileControl('Priya');
+
+    fireEvent.pointerDown(control, { clientX: 100, clientY: 100 });
+    fireEvent.click(control, { clientX: 100, clientY: 260, detail: 1 });
+
+    expect(harness.openProfileId()).toBeNull();
+  });
+
+  it('opens on a press that stayed put, drag guard and all', async () => {
+    // The other side of the guard: without this, "ignores a press that
+    // travelled" would pass just as well on a control that never opens at all.
+    const harness = renderSheet([READER, PRIYA, ANA]);
+    const control = await profileControl('Priya');
+
+    fireEvent.pointerDown(control, { clientX: 100, clientY: 100 });
+    fireEvent.click(control, { clientX: 103, clientY: 104, detail: 1 });
+
+    expect(harness.openProfileId()).toBe('author-priya');
   });
 
   it('still says what a member has been doing, inside the control', async () => {
