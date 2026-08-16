@@ -215,7 +215,7 @@ export function RoomEntryRow({
   const authorAgent = useAgentInfo(authorRef?.agentRef);
   const { open: openProfile } = useProfileDeepLink();
   const profileMemberId =
-    authorRef === undefined ? undefined : profileMemberIdOf(authorRef, authorAgent?.manifestId);
+    authorRef === undefined ? undefined : profileMemberIdOf(authorRef, authorAgent?.memberId);
   const viewAuthorProfile =
     profileMemberId === undefined ? undefined : () => openProfile(profileMemberId);
 
@@ -306,6 +306,7 @@ export function RoomEntryRow({
           time={time}
           absoluteTime={absoluteTime}
           onViewProfile={viewAuthorProfile}
+          isSelf={entry.authorId === viewerAuthorId}
           className={styles.gutter()}
           timestampClassName={styles.avatarTimestamp()}
         />

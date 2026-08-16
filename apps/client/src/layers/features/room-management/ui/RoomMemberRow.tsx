@@ -130,17 +130,21 @@ export interface RoomMemberRowProps {
  * @param props.onViewProfile - Open this member's profile, or `undefined` for a
  *   member with none to open.
  * @param props.displayName - Whose profile it is, for the accessible name.
+ * @param props.isReader - True when that is the person reading, who is named in
+ *   the second person rather than by a display name that is literally "You".
  * @param props.describedById - The id of the row's secondary line.
  * @param props.children - The face and the name lines.
  */
 function ProfileLink({
   onViewProfile,
   displayName,
+  isReader,
   describedById,
   children,
 }: {
   onViewProfile: (() => void) | undefined;
   displayName: string;
+  isReader: boolean;
   describedById: string;
   children: ReactNode;
 }) {
@@ -153,7 +157,10 @@ function ProfileLink({
       // Names the ACTION with the name inside it, the shape the sidebar face,
       // the Team card and the mention pill all use — so "open Ana's profile" is
       // sayable by voice and the visible text is a prefix of what is spoken.
-      aria-label={`Open ${displayName}’s profile`}
+      // Second person for your own row. The reader's display name is the
+      // literal string "You", so the ordinary template says "Open You’s
+      // profile" — which is the row every operator sees about themselves.
+      aria-label={isReader ? 'Open your profile' : `Open ${displayName}’s profile`}
       aria-describedby={describedById}
       // The negative margin gives the press a hit area without moving the face:
       // the disc stays exactly where the loudness scale's own indent expects it.
@@ -268,6 +275,7 @@ export function RoomMemberRow({
         <ProfileLink
           onViewProfile={onViewProfile}
           displayName={author.displayName}
+          isReader={isReader}
           describedById={secondaryId}
         >
           <IdentityAvatar

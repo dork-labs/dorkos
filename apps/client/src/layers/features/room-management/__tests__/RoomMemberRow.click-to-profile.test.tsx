@@ -78,6 +78,16 @@ const ROOM: RoomSummary = {
   participants: null,
 };
 
+/**
+ * The reader's own row, under a name that is NOT "You".
+ *
+ * Production mints the operator's author row with the literal display name
+ * `'You'` (`services/rooms/author-registry.ts`), and `youAs` below renders that
+ * faithful version. This one is deliberately named something else, because the
+ * second-person label must key on WHO THIS IS (`isReader`) and not on the
+ * string — a check against the name would pass here and break the day the
+ * operator's row is minted with their real profile name.
+ */
 const READER: RoomRosterEntry = {
   roomId: ROOM.id,
   authorId: READER_AUTHOR_ID,
@@ -88,6 +98,11 @@ const READER: RoomRosterEntry = {
   author: { id: READER_AUTHOR_ID, kind: 'human', displayName: 'Dorian', handle: 'dorian' },
   origin: 'local',
 };
+
+/** The reader's own roster row, under whatever name the server gave them. */
+function youAs(displayName: string): RoomRosterEntry {
+  return { ...READER, author: { ...READER.author, displayName } };
+}
 
 function agentMember(displayName: string, authorId: string, agentPath: string): RoomRosterEntry {
   return {
@@ -107,6 +122,18 @@ function agentMember(displayName: string, authorId: string, agentPath: string): 
     origin: 'local',
   };
 }
+
+/** Somebody else in the room — the third-person case, and a person not an agent. */
+const PRIYA: RoomRosterEntry = {
+  roomId: ROOM.id,
+  authorId: 'author-priya',
+  responseMode: 'always',
+  joinedAt: '2026-07-26T10:00:00.000Z',
+  joinedSeq: 0,
+  lastReadSeq: 0,
+  author: { id: 'author-priya', kind: 'human', displayName: 'Priya', handle: 'priya' },
+  origin: 'local',
+};
 
 const ANA = agentMember('Ana', ANA_AUTHOR_ID, ANA_PATH);
 /** An agent in the room that the fleet read never returned — nothing can place it. */
@@ -184,9 +211,31 @@ function profileControl(name: string): Promise<HTMLElement> {
 describe('a room member row opens that member’s profile', () => {
   it('carries a person’s AUTHOR id — their roster row is their author row', async () => {
     const user = userEvent.setup();
-    const harness = renderSheet([READER, ANA]);
+    const harness = renderSheet([READER, PRIYA, ANA]);
 
-    await user.click(await profileControl('Dorian'));
+    await user.click(await profileControl('Priya'));
+
+    expect(harness.openProfileId()).toBe('author-priya');
+  });
+
+  it('says “your profile” on your own row, not “You’s”', async () => {
+    // The reader's display name in a room is whatever their author row says,
+    // but the local human's is the literal string "You" — so the ordinary
+    // possessive template produced "Open You’s profile" on the one row every
+    // operator sees about themselves.
+    const harness = renderSheet([youAs('You'), ANA]);
+
+    expect(
+      await screen.findByRole('button', { name: 'Open your profile' }, ROSTER_WAIT)
+    ).toBeInTheDocument();
+    expect(harness.openProfileId()).toBeNull();
+  });
+
+  it('still opens the right id when the row is your own', async () => {
+    const user = userEvent.setup();
+    const harness = renderSheet([youAs('You'), ANA]);
+
+    await user.click(await screen.findByRole('button', { name: 'Open your profile' }, ROSTER_WAIT));
 
     expect(harness.openProfileId()).toBe(READER_AUTHOR_ID);
   });
@@ -204,11 +253,11 @@ describe('a room member row opens that member’s profile', () => {
   });
 
   it('leaves an agent the fleet cannot place as plain text — no id, no control', async () => {
-    const harness = renderSheet([READER, STRANGER]);
+    const harness = renderSheet([READER, PRIYA, STRANGER]);
 
     // Waited on through somebody the sheet CAN place, so the absence below is
     // read after the roster landed rather than before it.
-    await profileControl('Dorian');
+    await profileControl('Priya');
     expect(screen.getByText('Zed')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Open Zed’s profile' })).not.toBeInTheDocument();
     expect(harness.openProfileId()).toBeNull();
@@ -218,9 +267,9 @@ describe('a room member row opens that member’s profile', () => {
     // The degradation that matters most: the fleet resolved a DIRECTORY for Ana
     // but the roster's own id space answered nothing, so there is no id to open
     // on. Half a join is not a profile.
-    renderSheet([READER, ANA], []);
+    renderSheet([READER, PRIYA, ANA], []);
 
-    await profileControl('Dorian');
+    await profileControl('Priya');
     expect(screen.queryByRole('button', { name: 'Open Ana’s profile' })).not.toBeInTheDocument();
   });
 

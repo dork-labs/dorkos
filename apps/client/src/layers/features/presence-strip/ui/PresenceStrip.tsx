@@ -114,6 +114,18 @@ export interface PresenceStripProps {
  * hover card the same chip already opens is where "View profile" belongs, and
  * until now that footer said **soon** on a strip whose every row could name its
  * agent (spec `profile-unification` §3, bug 7).
+ *
+ * **A keyboard cannot reach that footer, and this is the known gap.** Radix's
+ * hover-card content is deliberately not a keyboard surface — focusing a chip
+ * opens the card, but everything inside it stays `tabindex="-1"`, so Tab moves
+ * to the next chip rather than into the card. A pointer reaches the footer by
+ * hovering and a touch screen reaches it by long-pressing the chip
+ * (`IdentityHoverCard`'s own gesture); a keyboard reaches it from neither. The
+ * fix is not to make the chip open the profile — that costs every reader the
+ * follow — but to give the strip a second control, which is a design decision
+ * this slice does not get to make alone. Until then a keyboard opens an agent's
+ * profile from the sidebar face, `/team`, or a mention pill, all of which are
+ * real buttons.
  */
 function PresenceRowButton({
   row,

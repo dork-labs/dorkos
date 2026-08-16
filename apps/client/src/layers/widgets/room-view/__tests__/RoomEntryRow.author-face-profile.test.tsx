@@ -64,7 +64,7 @@ const WARDEN_REF = agentAuthorRef(WARDEN_PATH);
 /** The two id spaces, spelled out so the assertions read as what they are. */
 const ANA_AUTHOR_ID = 'author-ana';
 const WARDEN_AUTHOR_ID = 'author-warden';
-const WARDEN_MANIFEST_ID = '01JWARDENMANIFESTULID';
+const WARDEN_MEMBER_ID = '01JWARDENREGISTRYULID';
 
 const ANA: RosterAuthor = {
   id: ANA_AUTHOR_ID,
@@ -93,6 +93,9 @@ const SYSTEM: RosterAuthor = {
   origin: 'local',
 };
 
+/** Whoever is reading, when the case is not about them. Never rendered. */
+const VIEWER_AUTHOR_ID = 'author-viewer';
+
 const AUTHORS = new Map<string, RosterAuthor>([
   [ANA_AUTHOR_ID, ANA],
   [WARDEN_AUTHOR_ID, WARDEN],
@@ -103,7 +106,7 @@ const FLEET_INFO: ReadonlyMap<string, RosterAgentInfo> = new Map([
   [
     WARDEN_REF,
     {
-      manifestId: WARDEN_MANIFEST_ID,
+      memberId: WARDEN_MEMBER_ID,
       visual: { color: '#6d5ae0', emoji: '🛡️' },
       runtime: 'Claude Code',
       model: 'opus',
@@ -136,7 +139,11 @@ function entry(authorId: string): RoomEntry {
   };
 }
 
-function renderRow(author: RosterAuthor, fleet: RoomAgentDirectory = FLEET) {
+function renderRow(
+  author: RosterAuthor,
+  fleet: RoomAgentDirectory = FLEET,
+  viewerAuthorId: string = VIEWER_AUTHOR_ID
+) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
@@ -147,7 +154,7 @@ function renderRow(author: RosterAuthor, fleet: RoomAgentDirectory = FLEET) {
       author={toMessageAuthor(author.id, AUTHORS, fleet.faces)}
       authorRef={author}
       authors={AUTHORS}
-      viewerAuthorId={ANA_AUTHOR_ID}
+      viewerAuthorId={viewerAuthorId}
       authorNames={new Map([[author.id, author.displayName]])}
       reactionFrequents={[]}
       grouping={{ position: 'only' }}
@@ -201,13 +208,13 @@ describe('the face beside a message opens its author’s profile', () => {
     expect(harness.openProfileId()).toBe(ANA_AUTHOR_ID);
   });
 
-  it('carries an agent’s MANIFEST id, never the author id the room holds', async () => {
+  it('carries an agent’s ROSTER id, never the author id the room holds', async () => {
     const user = userEvent.setup();
     renderRow(WARDEN);
 
     await user.click(await faceOf());
 
-    expect(harness.openProfileId()).toBe(WARDEN_MANIFEST_ID);
+    expect(harness.openProfileId()).toBe(WARDEN_MEMBER_ID);
     // Spelled out because this is the whole point: the id the row already had
     // is the one that would have opened an empty profile.
     expect(harness.openProfileId()).not.toBe(WARDEN_AUTHOR_ID);
@@ -234,6 +241,26 @@ describe('the face beside a message opens its author’s profile', () => {
     renderRow(ANA);
 
     expect(await faceOf()).toHaveAttribute('aria-label', 'Open Ana’s profile');
+  });
+
+  it('says “your profile” on your own face, not “You’s”', async () => {
+    // The local human's display name is the literal string "You", so the
+    // ordinary possessive template produces "Open You’s profile" — on every
+    // message the operator has ever sent. Second person is the only way to
+    // write this one.
+    renderRow(ANA, FLEET, ANA_AUTHOR_ID);
+
+    expect(await faceOf()).toHaveAttribute('aria-label', 'Open your profile');
+  });
+
+  it('still opens the right id when the face is your own', async () => {
+    // The wording changes; the destination must not.
+    const user = userEvent.setup();
+    renderRow(ANA, FLEET, ANA_AUTHOR_ID);
+
+    await user.click(await faceOf());
+
+    expect(harness.openProfileId()).toBe(ANA_AUTHOR_ID);
   });
 
   it('stays plain art for the room’s own voice — no roster row, no control', async () => {

@@ -94,7 +94,7 @@ export function MentionPillRenderer({ authorId, children }: MentionPillRendererP
   // `author.emoji` straight off the render cache is what left the two
   // disagreeing: 🦊 in the gutter, a grey letter in the card describing it.
   const face = resolveIdentityFace({ record: author, override: agent?.visual });
-  const memberId = profileMemberIdOf(author, agent?.manifestId);
+  const memberId = profileMemberIdOf(author, agent?.memberId);
   const viewProfile = memberId === undefined ? undefined : () => openProfile(memberId);
   // A `<span>` that acts like a button has to say so and be reachable: Radix's
   // hover card gives the trigger focus already, and this is what makes that
@@ -135,7 +135,7 @@ export function MentionPillRenderer({ authorId, children }: MentionPillRendererP
         // The card draws a chip per fact it is handed and nothing at all for
         // one it is not, so an agent whose manifest never resolved reads as
         // name and handle alone rather than as an invented runtime. Spelled
-        // out rather than passed whole because `manifestId` is a routing fact,
+        // out rather than passed whole because `memberId` is a routing fact,
         // not something the card should be able to draw.
         agent: agent && { runtime: agent.runtime, ...(agent.model && { model: agent.model }) },
       }}

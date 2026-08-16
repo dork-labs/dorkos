@@ -42,6 +42,8 @@ interface RoomEntryGutterProps {
    * the fleet; the disc itself only draws what it is handed.
    */
   onViewProfile?: () => void;
+  /** True when this entry's author is the person reading — see the avatar's own doc. */
+  isSelf?: boolean;
   /** The identity column's own layout (`messageItem`'s `gutter` slot). */
   className: string;
   /** The continuation timestamp's own layout (`messageItem`'s `avatarTimestamp` slot). */
@@ -94,12 +96,15 @@ export function RoomEntryGutter({
   time,
   absoluteTime,
   onViewProfile,
+  isSelf,
   className,
   timestampClassName,
 }: RoomEntryGutterProps) {
   return (
     <div className={className}>
-      {showAuthorHeader && <MessageAuthorAvatar author={author} onViewProfile={onViewProfile} />}
+      {showAuthorHeader && (
+        <MessageAuthorAvatar author={author} onViewProfile={onViewProfile} isSelf={isSelf} />
+      )}
       {!showAuthorHeader && time.length > 0 && (
         <time
           dateTime={createdAt}

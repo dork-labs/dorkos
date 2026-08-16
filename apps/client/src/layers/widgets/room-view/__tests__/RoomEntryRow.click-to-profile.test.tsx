@@ -70,7 +70,7 @@ const WARDEN_REF = agentAuthorRef(WARDEN_PATH);
  */
 const ANA_AUTHOR_ID = 'author-ana';
 const WARDEN_AUTHOR_ID = 'author-warden';
-const WARDEN_MANIFEST_ID = '01JWARDENMANIFESTULID';
+const WARDEN_MEMBER_ID = '01JWARDENREGISTRYULID';
 
 const AUTHORS = new Map<string, RosterAuthor>([
   [
@@ -96,7 +96,7 @@ const FLEET_INFO: ReadonlyMap<string, RosterAgentInfo> = new Map([
   [
     WARDEN_REF,
     {
-      manifestId: WARDEN_MANIFEST_ID,
+      memberId: WARDEN_MEMBER_ID,
       visual: { color: '#6d5ae0', emoji: '🛡️' },
       runtime: 'Claude Code',
       model: 'opus',
@@ -200,14 +200,14 @@ describe('a mention pill opens the mentioned identity’s profile', () => {
     expect(harness.openProfileId()).toBe(ANA_AUTHOR_ID);
   });
 
-  it('carries an agent’s MANIFEST id, never the author id the room holds', async () => {
+  it('carries an agent’s ROSTER id, never the author id the room holds', async () => {
     const user = userEvent.setup();
     const text = 'can you look, @warden?';
     renderMention(text, [spanFor(text, '@warden', WARDEN_AUTHOR_ID)]);
 
     await user.click(await pillOf());
 
-    expect(harness.openProfileId()).toBe(WARDEN_MANIFEST_ID);
+    expect(harness.openProfileId()).toBe(WARDEN_MEMBER_ID);
     // Spelled out because this is the whole point: the id the pill already had
     // is the one that would have opened an empty drawer.
     expect(harness.openProfileId()).not.toBe(WARDEN_AUTHOR_ID);
@@ -260,7 +260,7 @@ describe('a mention pill opens the mentioned identity’s profile', () => {
     await user.hover(await pillOf());
     await user.click(await screen.findByRole('button', { name: 'View profile' }));
 
-    expect(harness.openProfileId()).toBe(WARDEN_MANIFEST_ID);
+    expect(harness.openProfileId()).toBe(WARDEN_MEMBER_ID);
   });
 
   it('leaves the footer marked “soon” where the pill itself has no profile to open', async () => {

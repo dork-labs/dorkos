@@ -31,6 +31,16 @@ export interface MessageAuthorAvatarProps {
    * nothing.
    */
   onViewProfile?: () => void;
+  /**
+   * True when this author is the person reading — which changes what the
+   * control is CALLED, not what it does.
+   *
+   * The local human's display name is the literal string `"You"`
+   * (`resolve-message-author.ts`), so the ordinary template produces
+   * "Open You’s profile". Second person needs the possessive, not the
+   * apostrophe: "Open your profile".
+   */
+  isSelf?: boolean;
   className?: string;
 }
 
@@ -87,6 +97,7 @@ export interface MessageAuthorAvatarProps {
 export function MessageAuthorAvatar({
   author,
   onViewProfile,
+  isSelf = false,
   className,
 }: MessageAuthorAvatarProps) {
   const brand = author.emoji || !author.runtime ? null : getRuntimeDescriptor(author.runtime);
@@ -109,7 +120,7 @@ export function MessageAuthorAvatar({
     ? {
         role: 'button',
         tabIndex: 0,
-        'aria-label': `Open ${author.displayName}’s profile`,
+        'aria-label': isSelf ? 'Open your profile' : `Open ${author.displayName}’s profile`,
         onClick: onViewProfile,
         onKeyDown: (event: KeyboardEvent<HTMLSpanElement>) => {
           if (event.key !== 'Enter' && event.key !== ' ') return;

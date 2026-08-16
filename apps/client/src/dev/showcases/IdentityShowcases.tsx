@@ -75,14 +75,14 @@ const WARDEN_REF = agentAuthorRef(WARDEN_PATH);
 
 /**
  * What the fleet would have said about Warden, keyed the way the real join keys
- * it. `manifestId` is the roster id the pill's click carries — the id space the
+ * it. `memberId` is the roster id the pill's click carries — the id space the
  * room itself does not hold for an agent.
  */
 const BENCH_AGENT_INFO: ReadonlyMap<string, RosterAgentInfo> = new Map([
   [
     WARDEN_REF,
     {
-      manifestId: 'agent-warden-manifest',
+      memberId: 'agent-warden-manifest',
       // The face the real join would have resolved off Warden's manifest.
       visual: { color: '#6d5ae0', emoji: '🛡️' },
       runtime: 'Claude Code',

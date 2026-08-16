@@ -121,14 +121,17 @@ export interface PresenceRow {
   runtime: string | null;
   /**
    * The id the team roster files this agent under — what the hover card's
-   * "View profile" opens — or `null` when the fleet could not name one.
+   * "View profile" opens — or `null` when nothing here can name one.
    *
-   * A row is drawn from a room claim whose author id belongs to a different id
-   * space entirely (see `profileMemberIdOf`), so this is the ONLY id here that
-   * addresses a profile; `id` above is a React key and nothing else. `null`
-   * leaves the card's footer inert and marked **soon**, which is the honest
-   * answer for work this client can see happening and cannot attribute to a
-   * roster row.
+   * The ONLY id on this row that addresses a profile. `id` above is a React key;
+   * a room claim's `authorId` is a room fact in a different space entirely (see
+   * `profileMemberIdOf`); and an agent's manifest id is what it calls itself on
+   * disk, which the roster is not keyed by. This one comes from the mesh
+   * registry — see {@link PresenceRowsInput.meshIdByPath}.
+   *
+   * `null` leaves the card's footer inert and marked **soon**, which is the
+   * honest answer for work this client can see happening and cannot attribute
+   * to a roster row.
    */
   profileMemberId: string | null;
   /** What the whole row says, for the accessible name. */
@@ -159,6 +162,22 @@ export interface PresenceRowsInput {
   sessions: readonly WorkingSession[];
   /** Registered agents by project directory — the read that names a session. */
   agents: Readonly<Record<string, AgentManifest | null>>;
+  /**
+   * The id the TEAM roster files each agent under, by project directory — what
+   * a profile opens on.
+   *
+   * A separate map from {@link PresenceRowsInput.agents} because it comes from a
+   * different read and a different id space. `agents` is the on-disk manifest,
+   * which names and dresses an agent; this is the mesh registry, which is what
+   * `GET /api/team` keys its rows by. The manifest's own id usually agrees and
+   * is not guaranteed to — a directory re-registered after its manifest was
+   * rewritten keeps the registry row it had — so reading the id off the manifest
+   * produced `?profile=<id nothing holds>` and a drawer that closed itself.
+   *
+   * A path absent here yields a row with no profile to open, which is honest:
+   * this client can see the work and cannot name whose it is to the roster.
+   */
+  meshIdByPath: Readonly<Record<string, string>>;
   /**
    * Rooms whose work is already visible somewhere else on the page, and so
    * must not be repeated here.
@@ -330,10 +349,11 @@ export function buildPresenceRows(input: PresenceRowsInput): PresenceRow[] {
         since: claim.since,
         roomTitle,
         runtime: agent?.manifest.runtime ?? null,
-        // The manifest's own id, never the claim's author id: the roster keys
-        // agents by the former and rooms speak in the latter. An agent the
-        // fleet could not name has neither, and says so.
-        profileMemberId: agent?.manifest.id ?? null,
+        // The REGISTRY's id — not the claim's author id, which is a room fact,
+        // and not the manifest's own id, which is what the agent calls itself
+        // on disk. Only the registry's is what the team roster is keyed by.
+        // See {@link PresenceRowsInput.meshIdByPath}.
+        profileMemberId: agent === undefined ? null : (input.meshIdByPath[agent.path] ?? null),
         follow: { kind: 'room', roomId: claim.roomId },
       })
     );
@@ -372,10 +392,11 @@ export function buildPresenceRows(input: PresenceRowsInput): PresenceRow[] {
         since: null,
         roomTitle: null,
         runtime: manifest.runtime,
-        // This half only draws agents it could resolve a manifest for, so
-        // there is always an id to open — the room half above is the one that
-        // has to answer `null`.
-        profileMemberId: manifest.id,
+        // The registry's id for this directory, same rule as the room half.
+        // Nullable for the same reason too: this half draws an agent as soon as
+        // its MANIFEST resolves, and the registry is a separate read that can
+        // be missing an entry the manifest has.
+        profileMemberId: input.meshIdByPath[session.cwd] ?? null,
         follow: { kind: 'session', sessionId: session.sessionId, cwd: session.cwd },
       })
     );

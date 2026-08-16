@@ -42,8 +42,15 @@ const ROOM_ID = 'room-1';
 /** The id the ROOM speaks in — the one that must never reach a profile. */
 const AUTHOR_ID = 'author-1';
 const AGENT_PATH = '/code/tangerines';
-/** The id the TEAM roster speaks in — the one a profile opens on. */
-const MANIFEST_ID = '01JZAGENT0000000000000001';
+/**
+ * The id the TEAM roster speaks in — the one a profile opens on. It comes from
+ * the mesh REGISTRY, and is deliberately not the id the manifest below carries:
+ * the two usually agree, and a fixture where they did would let the strip read
+ * either one and stay green.
+ */
+const REGISTRY_ID = '01JZREGISTRY000000000001';
+/** What the agent calls itself on disk. Never a profile address. */
+const ON_DISK_ID = '01JZONDISK00000000000001';
 
 const ROOM_DETAIL = {
   id: ROOM_ID,
@@ -84,7 +91,7 @@ const ROOM_LISTED = {
 };
 
 const MANIFEST = {
-  id: MANIFEST_ID,
+  id: ON_DISK_ID,
   name: 'tangerines',
   displayName: 'tangerines',
   runtime: 'claude-code',
@@ -121,7 +128,11 @@ function renderStrip(resolved: AgentManifest | null = MANIFEST) {
   const transport = createMockTransport({
     listRooms: vi.fn().mockResolvedValue([ROOM_LISTED]),
     getRoom: vi.fn().mockResolvedValue(ROOM_DETAIL),
-    listMeshAgentPaths: vi.fn().mockResolvedValue({ agents: [{ projectPath: AGENT_PATH }] }),
+    listMeshAgentPaths: vi
+      .fn()
+      .mockResolvedValue({
+        agents: [{ id: REGISTRY_ID, name: 'tangerines', projectPath: AGENT_PATH }],
+      }),
     resolveAgents: vi.fn().mockResolvedValue({ [AGENT_PATH]: resolved }),
   } as Partial<Transport>);
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
@@ -181,7 +192,7 @@ describe('the presence strip’s hover card opens a profile', () => {
     vi.clearAllMocks();
   });
 
-  it('opens the agent’s MANIFEST id, never the author id the claim carries', async () => {
+  it('opens the agent’s REGISTRY id — not the author id, not the on-disk id', async () => {
     const user = userEvent.setup();
     const { transport, openProfileId } = renderStrip();
     await waitFor(() => expect(transport.listRooms).toHaveBeenCalled());
@@ -190,10 +201,11 @@ describe('the presence strip’s hover card opens a profile', () => {
     await user.hover(await chip());
     await user.click(await screen.findByRole('button', { name: 'View profile' }));
 
-    expect(openProfileId()).toBe(MANIFEST_ID);
-    // Spelled out because this is the whole point: the id the row was built
-    // from is the one that would have opened an empty profile.
+    expect(openProfileId()).toBe(REGISTRY_ID);
+    // Spelled out because this is the whole point: BOTH of the other ids this
+    // row was built from would have opened a profile the roster does not hold.
     expect(openProfileId()).not.toBe(AUTHOR_ID);
+    expect(openProfileId()).not.toBe(ON_DISK_ID);
   });
 
   it('still follows the work when the chip itself is pressed', async () => {
