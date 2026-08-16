@@ -128,11 +128,9 @@ function renderStrip(resolved: AgentManifest | null = MANIFEST) {
   const transport = createMockTransport({
     listRooms: vi.fn().mockResolvedValue([ROOM_LISTED]),
     getRoom: vi.fn().mockResolvedValue(ROOM_DETAIL),
-    listMeshAgentPaths: vi
-      .fn()
-      .mockResolvedValue({
-        agents: [{ id: REGISTRY_ID, name: 'tangerines', projectPath: AGENT_PATH }],
-      }),
+    listMeshAgentPaths: vi.fn().mockResolvedValue({
+      agents: [{ id: REGISTRY_ID, name: 'tangerines', projectPath: AGENT_PATH }],
+    }),
     resolveAgents: vi.fn().mockResolvedValue({ [AGENT_PATH]: resolved }),
   } as Partial<Transport>);
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
