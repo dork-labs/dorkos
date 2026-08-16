@@ -27,7 +27,7 @@
  */
 import { z } from 'zod';
 import { extendZodWithOpenApi } from '@asteasolutions/zod-to-openapi';
-import { AuthorKindSchema, AuthorOriginSchema } from './room-schemas.js';
+import { AuthorKindSchema, AuthorOriginSchema, RoomKindSchema } from './room-schemas.js';
 import { AgentHealthStatusSchema, AgentRuntimeSchema } from './mesh-schemas.js';
 
 extendZodWithOpenApi(z);
@@ -296,3 +296,67 @@ export type ProfileUpdateResponse = z.infer<typeof ProfileUpdateResponseSchema>;
  * to. Only the second one has a client that must detect it.
  */
 export const OPERATOR_FALLBACK_DISPLAY_NAME = 'You';
+
+/**
+ * One room a roster member is in, as a profile lists it (spec
+ * `profile-unification` §3.2).
+ *
+ * Four fields and no more, because a profile's Rooms page is a list of places
+ * to go rather than a second room list: the row draws a name, a glyph for the
+ * kind and how many people are in it, and taps through to the room itself by
+ * `id`. Everything else a room carries — its topic, its unread count, its
+ * roster — belongs to the surface that opens it, and duplicating any of it here
+ * would be a second projection of the room domain free to disagree with the
+ * first.
+ */
+export const MemberRoomSchema = z
+  .object({
+    /** The room id — what a row navigates by, never a slug. */
+    id: z.string().min(1),
+    /**
+     * The room's title. **Not `#slug`**: the slug is a channel's address, and
+     * the renderer decides how to draw a channel, so what travels is the name
+     * the room was given.
+     */
+    name: z.string().min(1),
+    kind: RoomKindSchema,
+    /**
+     * How many members the room's roster holds.
+     *
+     * A count of memberships, which is what every other projection of a room's
+     * roster counts (`RoomRoster.authorsIn` included) — a membership outlives
+     * the author row that holds it, so a directory that has changed hands can
+     * leave one behind. That is the same arithmetic the room's own header does,
+     * and one endpoint quietly disagreeing with it would be worse than the
+     * edge itself.
+     */
+    memberCount: z.number().int().min(0),
+  })
+  .openapi('MemberRoom');
+
+/** One room a roster member is in (see {@link MemberRoomSchema}). */
+export type MemberRoom = z.infer<typeof MemberRoomSchema>;
+
+/**
+ * Response envelope for `GET /api/team/:memberId/rooms` (spec
+ * `profile-unification` §3.2).
+ *
+ * An envelope rather than a bare array, for the reason every list endpoint here
+ * has one: an array cannot grow a sibling field without breaking every caller,
+ * and this one has an obvious future sibling (the ADR-0310 `warnings[]`, the
+ * day a room lives in a community rather than on this machine).
+ *
+ * **A member with no rooms answers `{ rooms: [] }`, not 404.** The 404 is
+ * reserved for an id this install has never heard of, so the client can tell
+ * "nobody by that name" from "nowhere yet" — which are different sentences on a
+ * profile.
+ */
+export const MemberRoomsResponseSchema = z
+  .object({
+    /** The member's rooms, newest activity first. Archived rooms are out. */
+    rooms: z.array(MemberRoomSchema),
+  })
+  .openapi('MemberRoomsResponse');
+
+/** The `GET /api/team/:memberId/rooms` envelope (see {@link MemberRoomsResponseSchema}). */
+export type MemberRoomsResponse = z.infer<typeof MemberRoomsResponseSchema>;

@@ -76,6 +76,9 @@ describe('/api/profile/avatar', () => {
       '/api/team',
       createTeamRouter({
         authors: registry,
+        // The roster is what these tests read back; the rooms reader is a
+        // required dependency of the router and answers nothing here.
+        rooms: { listRoomsForMember: () => [], listMembersForRooms: () => [] },
         ownerAccount: () => ({ id: OWNER_USER_ID, name: 'Dorian' }),
         ownerEmail: () => 'dorian@dorkos.ai',
         configDisplayName: () => null,

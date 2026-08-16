@@ -8,8 +8,9 @@
  *
  * @module entities/team
  */
-export { TEAM_ROSTER_KEY } from './api/query-keys';
+export { memberRoomsKey, TEAM_ROSTER_KEY } from './api/query-keys';
 export { useTeamRoster, type UseTeamRosterOptions } from './model/use-team-roster';
+export { useMemberRooms, type UseMemberRoomsOptions } from './model/use-member-rooms';
 export {
   countOwnedAgents,
   DEFAULT_TEAM_FILTERS,

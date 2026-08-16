@@ -7976,6 +7976,46 @@
           "message"
         ]
       },
+      "MemberRoomsResponse": {
+        "type": "object",
+        "properties": {
+          "rooms": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MemberRoom"
+            }
+          }
+        },
+        "required": [
+          "rooms"
+        ]
+      },
+      "MemberRoom": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "kind": {
+            "$ref": "#/components/schemas/RoomKind"
+          },
+          "memberCount": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "kind",
+          "memberCount"
+        ]
+      },
       "ProfileUpdateResponse": {
         "type": "object",
         "properties": {
@@ -17551,6 +17591,68 @@
           },
           "500": {
             "description": "The roster itself could not be assembled (not a per-source failure)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/team/{memberId}/rooms": {
+      "get": {
+        "tags": [
+          "Team"
+        ],
+        "summary": "List the rooms one roster member is in",
+        "description": "Where a member can be found, for their profile (spec `profile-unification` §3.2). `memberId` is a ROSTER id, which is why this lives under `/api/team` rather than `/api/rooms`: for a person it is their `authors` row id, and for an agent — a system agent included — it is the mesh manifest ULID, whose author row is found by the generation stamp `minted_for_manifest_id`. An agent’s own author id is deliberately NOT accepted; the roster never hands one out. Archived rooms are left out, and rooms come back newest activity first. A member who is in no rooms answers 200 with an empty list — only an id this install has never heard of is a 404, so a client can tell \"nobody by that name\" from \"nowhere yet\". A newly registered agent has no author row until it is first in a room, and is answered as the empty list rather than as unknown. **People only.** The path takes any member’s id, so an agent that could call it would read the title of every direct message the operator has — the membership scope the rooms domain imposes, walked around by asking about somebody else. An agent presenting `X-DorkOS-Agent` is refused (403 `PEOPLE_ONLY`), the same way read state is.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "memberId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The member’s rooms, newest activity first",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemberRoomsResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is an agent — a profile is read by people (`PEOPLE_ONLY`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No member on this install carries that id (`MEMBER_NOT_FOUND`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "The membership read failed (`MEMBER_ROOMS_FAILED`)",
             "content": {
               "application/json": {
                 "schema": {

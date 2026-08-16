@@ -8,8 +8,10 @@ import express from 'express';
 import request from 'supertest';
 import { createTestDb } from '@dorkos/test-utils/db';
 import type { Db } from '@dorkos/db';
-import { TeamRosterResponseSchema } from '@dorkos/shared/team-schemas';
+import { MemberRoomsResponseSchema, TeamRosterResponseSchema } from '@dorkos/shared/team-schemas';
+import { authors } from '@dorkos/db';
 import { AuthorRegistry } from '../../services/rooms/author-registry.js';
+import { RoomStore } from '../../services/rooms/room-store.js';
 import { createTeamRouter, type TeamMeshReader, type TeamRouterDeps } from '../team.js';
 import type { TeamAgentSource } from '../../services/identity/aggregate-team.js';
 
@@ -37,6 +39,7 @@ const DORKBOT: TeamAgentSource = {
 describe('GET /api/team', () => {
   let db: Db;
   let registry: AuthorRegistry;
+  let rooms: RoomStore;
   let ownerAuthorId: string;
 
   function app(overrides: Partial<TeamRouterDeps> = {}) {
@@ -46,6 +49,7 @@ describe('GET /api/team', () => {
       '/api/team',
       createTeamRouter({
         authors: registry,
+        rooms,
         meshCore: mesh,
         ownerAccount: () => ({ id: OWNER_USER_ID, name: 'Dorian' }),
         ownerEmail: () => 'dorian@dorkos.ai',
@@ -60,6 +64,7 @@ describe('GET /api/team', () => {
   beforeEach(() => {
     db = createTestDb();
     registry = new AuthorRegistry(db);
+    rooms = new RoomStore(db);
     ownerAuthorId = registry.bindOwner(OWNER_USER_ID).id;
   });
 
@@ -159,5 +164,161 @@ describe('GET /api/team', () => {
     expect((await request(server).post('/api/team').send({ id: 'x' })).status).toBe(404);
     expect((await request(server).patch('/api/team/x').send({})).status).toBe(404);
     expect((await request(server).delete('/api/team/x')).status).toBe(404);
+  });
+});
+
+describe('GET /api/team/:memberId/rooms', () => {
+  let db: Db;
+  let registry: AuthorRegistry;
+  let rooms: RoomStore;
+  let ownerAuthorId: string;
+
+  function app(overrides: Partial<TeamRouterDeps> = {}) {
+    const mesh: TeamMeshReader = { listWithHealth: () => [ANA, DORKBOT] };
+    const server = express();
+    server.use(
+      '/api/team',
+      createTeamRouter({
+        authors: registry,
+        rooms,
+        meshCore: mesh,
+        ownerAccount: () => ({ id: OWNER_USER_ID, name: 'Dorian' }),
+        ownerEmail: () => 'dorian@dorkos.ai',
+        configDisplayName: () => null,
+        defaultAgentName: () => 'ana',
+        ...overrides,
+      })
+    );
+    return server;
+  }
+
+  /** The author row an agent gets the first time it is in a room. */
+  function agentAuthor(id: string, path: string, manifestId: string): string {
+    db.insert(authors)
+      .values({
+        id,
+        kind: 'agent',
+        naturalKey: path,
+        displayName: id,
+        mintedForManifestId: manifestId,
+        createdAt: '2026-08-01T00:00:00.000Z',
+      })
+      .run();
+    return id;
+  }
+
+  beforeEach(() => {
+    db = createTestDb();
+    registry = new AuthorRegistry(db);
+    rooms = new RoomStore(db);
+    ownerAuthorId = registry.bindOwner(OWNER_USER_ID).id;
+    const anaAuthorId = agentAuthor('author-ana', '/work/ana', ANA.id);
+    const dorkbotAuthorId = agentAuthor('author-dorkbot', '/dork/dorkbot', DORKBOT.id);
+    rooms.createRoom(
+      {
+        id: 'team-room',
+        kind: 'channel',
+        slug: 'team',
+        title: '#team',
+        topic: null,
+        workspaceId: null,
+        createdAt: '2026-08-01T00:00:00.000Z',
+      },
+      [ownerAuthorId, anaAuthorId, dorkbotAuthorId].map((authorId) => ({
+        authorId,
+        responseMode: 'engaged' as const,
+        joinedAt: '2026-08-01T00:00:00.000Z',
+      }))
+    );
+  });
+
+  it('lists the rooms a person is in', async () => {
+    const res = await request(app()).get(`/api/team/${ownerAuthorId}/rooms`);
+
+    expect(res.status).toBe(200);
+    expect(MemberRoomsResponseSchema.safeParse(res.body).success).toBe(true);
+    expect(res.body.rooms).toEqual([
+      { id: 'team-room', name: '#team', kind: 'channel', memberCount: 3 },
+    ]);
+  });
+
+  it('lists the rooms an agent is in, addressed by its manifest id', async () => {
+    const res = await request(app()).get(`/api/team/${ANA.id}/rooms`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.rooms.map((room: { id: string }) => room.id)).toEqual(['team-room']);
+  });
+
+  it('lists the rooms the system agent is in', async () => {
+    const res = await request(app()).get(`/api/team/${DORKBOT.id}/rooms`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.rooms.map((room: { id: string }) => room.id)).toEqual(['team-room']);
+  });
+
+  it('answers 404 for an id this install has never heard of', async () => {
+    const res = await request(app()).get('/api/team/nobody/rooms');
+
+    expect(res.status).toBe(404);
+    expect(res.body.code).toBe('MEMBER_NOT_FOUND');
+  });
+
+  it('answers an empty list for an agent that has not been in a room yet', async () => {
+    // On the roster (the mesh has it), with no author row — the state every
+    // newly registered agent is in. A 404 here would put an error on the
+    // profile of a perfectly ordinary agent.
+    const fresh: TeamAgentSource = { ...ANA, id: 'agent-new', name: 'new' };
+    const res = await request(
+      app({ meshCore: { listWithHealth: () => [ANA, DORKBOT, fresh] } })
+    ).get('/api/team/agent-new/rooms');
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ rooms: [] });
+  });
+
+  it('still answers for authors when the mesh never started', async () => {
+    // The degraded case: without the registry, an id with no author row can no
+    // longer be told from an unknown one — but everybody who has ever been in a
+    // room still resolves, which is everybody this page asks about.
+    const res = await request(app({ meshCore: undefined })).get(`/api/team/${ANA.id}/rooms`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.rooms).toHaveLength(1);
+  });
+
+  it('answers 500 when the room store cannot be read', async () => {
+    const res = await request(
+      app({
+        rooms: {
+          listRoomsForMember: () => {
+            throw new Error('database is locked');
+          },
+          listMembersForRooms: () => [],
+        },
+      })
+    ).get(`/api/team/${ownerAuthorId}/rooms`);
+
+    expect(res.status).toBe(500);
+    expect(res.body.code).toBe('MEMBER_ROOMS_FAILED');
+  });
+
+  it('refuses an agent, which could otherwise enumerate the operator’s DMs', async () => {
+    // The route takes ANY member's id, so an agent that could call it would read
+    // the title of every DM the operator has — walking around the membership
+    // scope `listRoomsForMember` exists to impose by asking about somebody else.
+    const res = await request(app())
+      .get(`/api/team/${ownerAuthorId}/rooms`)
+      .set('x-dorkos-agent', 'some-agent-token');
+
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe('PEOPLE_ONLY');
+  });
+
+  it('leaves an agent’s author id out of the id space it answers for', async () => {
+    // The roster hands out manifest ULIDs for agents and author ids for people.
+    // Accepting an agent's author id would be a third id space nothing produces.
+    const res = await request(app()).get('/api/team/author-ana/rooms');
+
+    expect(res.status).toBe(404);
   });
 });

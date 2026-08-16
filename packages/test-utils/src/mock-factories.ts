@@ -749,6 +749,11 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     // `warnings` is OMITTED on a clean read, never `[]`, so a test that does
     // not opt into degradation never renders the banner by accident.
     getTeamRoster: vi.fn().mockResolvedValue({ members: [] }),
+    // The rooms a member is in (spec `profile-unification` §3.2). Empty rather
+    // than rejecting, because "in no rooms" is the state a fresh install is
+    // actually in — a default that threw would make every profile test opt out
+    // of an error nothing real produces.
+    listMemberRooms: vi.fn().mockResolvedValue({ rooms: [] }),
     // The operator's own profile (spec `identity-consistency` §W3.3, §W3.5).
     // Each resolves with what the real route answers, so a component under test
     // takes its success path unless a test deliberately makes one reject.
