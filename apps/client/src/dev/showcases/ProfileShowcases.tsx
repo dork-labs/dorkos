@@ -47,6 +47,8 @@ const STATES: { id: string; label: string; page?: ProfilePageId }[] = [
   { id: 'agent-cartographer', label: 'Someone else’s agent' },
   { id: 'agent-dorkbot', label: 'DorkBot' },
   { id: 'person-dorian', label: 'Pushed page: Manages', page: 'manages' },
+  { id: 'agent-warden', label: 'Pushed page: Sessions', page: 'sessions' },
+  { id: 'agent-warden', label: 'Pushed page: Instructions', page: 'instructions' },
 ];
 
 /**
@@ -62,7 +64,7 @@ export function ProfileShowcases() {
   return (
     <PlaygroundSection
       title="Profile"
-      description="One panel for any identity, in the six shapes it takes: your own row, another person, somebody bridged in over Telegram, an agent you manage, an agent somebody else manages, and DorkBot. What changes between them is which facts are true — the status line, who is above the button, whether the button exists at all, and which rows have arrows. One thing this fixture invents: a second local person, so the 'another person' rows have somebody to be about. Rows whose page has not been built yet are not drawn — that is the registry doing its job, not a gap."
+      description="One panel for any identity, in the six shapes it takes: your own row, another person, somebody bridged in over Telegram, an agent you manage, an agent somebody else manages, and DorkBot. What changes between them is which facts are true — the status line, who is above the button, whether the button exists at all, and which rows have arrows. Two things this fixture invents: a second local person, so the 'another person' rows have somebody to be about, and an agent whose folder does not exist on this machine — so the pushed pages below show their empty states rather than real work."
     >
       <ShowcaseLabel>The six relationships, and one pushed page</ShowcaseLabel>
       <ShowcaseDemo>

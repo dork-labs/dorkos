@@ -100,6 +100,11 @@ export function ProfileHeader({
           type="button"
           onClick={onFaceActivate}
           aria-label={`Change ${member.displayName}’s face and personality`}
+          // Where focus comes back to when the Appearance page is popped, found
+          // by the destination it pushed exactly as a `nav` row is
+          // (`ProfileStack`). The face is a control that pushes a page, so it is
+          // restored the same way one.
+          data-profile-return="appearance"
           className={cn(IDENTITY_MARK_GROUP, 'focus-ring relative rounded-2xl active:scale-[0.94]')}
         >
           <ProfileFace member={member} size="lg" />

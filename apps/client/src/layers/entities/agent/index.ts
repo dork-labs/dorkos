@@ -48,19 +48,15 @@ export type { AgentIdentityProps } from './ui/AgentIdentity';
 export { AgentOptionRow } from './ui/AgentOptionRow';
 export { AvatarColorGrid, AvatarEmojiGrid } from './ui/AvatarPickerGrid';
 export { AvatarPickerPanel } from './ui/AvatarPickerPanel';
-export type { AvatarPickerPanelProps } from './ui/AvatarPickerPanel';
 export { AgentExecutionRows } from './ui/AgentExecutionRows';
-export type { AgentExecutionRowsProps } from './ui/AgentExecutionRows';
+// The personality picker and the presets behind it. `PersonalityRadar` stays
+// slice-private: it is the picker's own drawing, not a thing a surface composes.
 export { PersonalityPicker } from './ui/PersonalityPicker';
-export type { PersonalityPickerProps, PersonalityPickerLayout } from './ui/PersonalityPicker';
-export { PersonalityRadar } from './ui/PersonalityRadar';
-export type { PersonalityRadarProps, PersonalityTraits } from './ui/PersonalityRadar';
+export type { PersonalityPickerLayout } from './ui/PersonalityPicker';
 export {
   PERSONALITY_PRESETS,
   DEFAULT_PRESET_COLORS,
   findMatchingPreset,
-  type PersonalityPreset,
-  type PresetColors,
 } from './lib/personality-presets';
 export { PresetPill } from './ui/PresetPill';
 export type { PresetPillProps, PresetPillColors } from './ui/PresetPill';

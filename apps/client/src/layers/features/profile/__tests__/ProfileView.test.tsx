@@ -12,7 +12,7 @@
  */
 import { useState, type ReactNode } from 'react';
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
-import { render, screen, cleanup, within } from '@testing-library/react';
+import { render, screen, cleanup, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -327,20 +327,60 @@ describe('the rows', () => {
     expect(about.getAttribute('aria-describedby')).not.toBeNull();
   });
 
-  it('does not draw a row whose page this build has not got', async () => {
+  it('draws the whole §1.4 list for an agent you manage, in order', async () => {
     await renderProfile(MANAGED);
-    // Sessions, Tasks, Skills, Tools, Connections, Instructions, Boundaries all
-    // arrive with W2.2's pages. Personality is a `pick` whose popover is also
-    // W2.2's, and it carries no value to fall back to — a label with empty
-    // space beside it is not a fact, so it waits too.
-    expect(rowLabels()).toEqual(['about', 'runs-on', 'folder', 'rooms']);
+    expect(rowLabels()).toEqual([
+      'about',
+      'runs-on',
+      'personality',
+      'folder',
+      'sessions',
+      'tasks',
+      'rooms',
+      'skills',
+      'tools',
+      'connections',
+      'instructions',
+      'boundaries',
+    ]);
   });
 
-  it('draws a pick with no popover behind it yet as the plain fact it carries', async () => {
+  it('draws a pick as a control, and opens its popover on tap', async () => {
     await renderProfile(MANAGED);
     const runsOn = document.querySelector('[data-profile-row="runs-on"]')!;
-    expect(runsOn.getAttribute('data-row-kind')).toBe('text');
+    expect(runsOn.getAttribute('data-row-kind')).toBe('pick');
+    // The row still says what it currently is — a control you have to open to
+    // read would be worse than the fact it replaced.
     expect(runsOn.textContent).toContain('Claude Code · opus-4.8');
+    expect(runsOn).toHaveAttribute('aria-haspopup', 'dialog');
+
+    await userEvent.click(runsOn);
+
+    // The row IS the trigger, so the row is what reports the open panel — what
+    // is inside it is `ProfileAgentPages.test`'s subject, not this one's.
+    await waitFor(() => expect(runsOn).toHaveAttribute('aria-expanded', 'true'));
+  });
+
+  it('gives DorkBot the same work rows and none of the identity ones', async () => {
+    await renderProfile(DORKBOT);
+    // Its personality and its About are part of DorkOS; what it has been doing
+    // is not, and neither is what it runs on.
+    expect(rowLabels()).toEqual([
+      'about',
+      'runs-on',
+      'personality',
+      'sessions',
+      'tasks',
+      'rooms',
+      'skills',
+      'tools',
+    ]);
+    const kind = (id: string) =>
+      document.querySelector(`[data-profile-row="${id}"]`)!.getAttribute('data-row-kind');
+    expect(kind('about')).toBe('locked');
+    expect(kind('personality')).toBe('locked');
+    // The one thing that IS yours to set on it: the model it runs on.
+    expect(kind('runs-on')).toBe('pick');
   });
 
   it('copies the real folder, not the shortened one', async () => {

@@ -31,9 +31,7 @@ export { useAddMarketplaceSource } from './model/use-add-marketplace-source';
 export { useRemoveMarketplaceSource } from './model/use-remove-marketplace-source';
 
 // --- UI ---
-// Where a package is installed, and what an agent has installed. Both are
-// package facts with no surface of their own, so they live with the queries
-// that serve them rather than in whichever feature drew them first.
-export { ScopeBadge } from './ui/ScopeBadge';
+// What an agent has installed: a package fact with no surface of its own, so it
+// lives with the query that serves it rather than in whichever feature drew it
+// first. `ScopeBadge` stays slice-private — it is a cell of this list.
 export { SkillPacksList } from './ui/SkillPacksList';
-export type { SkillPacksListProps } from './ui/SkillPacksList';

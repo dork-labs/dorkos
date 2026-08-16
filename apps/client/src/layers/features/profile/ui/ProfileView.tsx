@@ -19,6 +19,7 @@ import { findTeamOwner, teamMemberFace, useMemberRooms } from '@/layers/entities
 import { deriveRelationship } from '../lib/profile-relationship';
 import { messageTarget } from '../lib/profile-message';
 import type { ProfileRowsContext } from '../lib/profile-rows';
+import { useManagedAgentFacts } from '../model/use-managed-agent-facts';
 import {
   currentPage,
   type ProfileStackEntry,
@@ -81,6 +82,11 @@ export function ProfileView({
   // say where somebody is before you open it — and so the page it pushes is a
   // cache hit rather than a second wait.
   const rooms = useMemberRooms(member.id);
+  // The counts the work and toolkit rows carry. Only asked for on the two
+  // relationships that draw those rows — a teammate's agent shows none of this
+  // and must not be asked about it.
+  const ownsWork = relationship === 'managed' || relationship === 'system';
+  const facts = useManagedAgentFacts(member, ownsWork);
 
   const ctx: ProfileRowsContext = {
     relationship,
@@ -89,6 +95,7 @@ export function ProfileView({
     rooms: rooms.data
       ? { count: rooms.data.rooms.length, names: rooms.data.rooms.map((room) => room.name) }
       : null,
+    facts,
   };
 
   // Three ways to have no button, and they are all the same answer: don't draw
@@ -139,7 +146,16 @@ export function ProfileView({
                 owner ? () => onPush({ kind: 'profile', memberId: owner.id }) : undefined
               }
               onMessage={canMessage ? message : undefined}
-              actionsMenu={<ProfileActionsMenu member={member} />}
+              // Only an agent you manage: DorkBot's face is part of DorkOS
+              // (its Personality row says so), and nobody else's identity is
+              // yours to restyle. A face that opened nothing would be the dead
+              // affordance this design exists to remove.
+              onFaceActivate={
+                relationship === 'managed'
+                  ? () => onPush({ kind: 'page', page: 'appearance' })
+                  : undefined
+              }
+              actionsMenu={<ProfileActionsMenu member={member} relationship={relationship} />}
             />
             <ProfileRows member={member} ctx={ctx} onPush={onPush} />
           </div>

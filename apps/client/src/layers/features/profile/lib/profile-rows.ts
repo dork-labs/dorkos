@@ -64,6 +64,27 @@ export interface ProfileRoomsSummary {
   names: string[];
 }
 
+/** How much of an agent's own work the rows can name (`useManagedAgentFacts`). */
+export interface ProfileAgentFacts {
+  /** How many conversations, and when the newest one moved. `null` while unknown. */
+  sessions: { count: number; newestAt: string | null } | null;
+  /** How many schedules this agent has, and when the next one fires. */
+  tasks: { count: number; nextRunAt: string | null } | null;
+  /** Installed skill-packs. */
+  skills: number | null;
+  /** Enabled managed MCP servers. */
+  tools: number | null;
+  /**
+   * Whether this install has tasks at all.
+   *
+   * False when the server has the tasks tool switched off, and then the Tasks
+   * row is **not drawn** — not drawn empty, and not drawn locked. A row that
+   * pushes a page explaining that the feature does not exist is a row about
+   * DorkOS rather than about this agent.
+   */
+  tasksAvailable: boolean;
+}
+
 /** Everything the row table needs that is not on the roster row itself. */
 export interface ProfileRowsContext {
   /** What this identity is to you. */
@@ -76,6 +97,8 @@ export interface ProfileRowsContext {
   rooms?: ProfileRoomsSummary | null;
   /** When a bridged person was first seen here, when anything knows. */
   firstSeenAt?: string | null;
+  /** What this agent has been doing, when the profile has asked. */
+  facts?: ProfileAgentFacts;
 }
 
 /** Why DorkBot's identity rows do not open. */
@@ -96,6 +119,42 @@ function roomsValue(rooms: ProfileRoomsSummary | null | undefined): string | nul
 /** "12 agents" / "1 agent" — the Manages row's value beside its face stack. */
 function managesValue(count: number): string {
   return count === 1 ? '1 agent' : `${count} agents`;
+}
+
+/** A count, or `null` when nothing has answered yet — a row says nothing rather than "0" it invented. */
+function countValue(count: number | null | undefined, one: string, many: string): string | null {
+  if (count === null || count === undefined) return null;
+  return count === 1 ? `1 ${one}` : `${count} ${many}`;
+}
+
+/** How long ago, in the two or three characters a row's trailing meta can carry. */
+function lastWords(iso: string | null): string | undefined {
+  if (!iso) return undefined;
+  const then = new Date(iso).getTime();
+  if (Number.isNaN(then)) return undefined;
+  const elapsed = Math.max(0, Date.now() - then);
+  const minutes = Math.floor(elapsed / 60_000);
+  if (minutes < 1) return 'last just now';
+  if (minutes < 60) return `last ${minutes} min`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `last ${hours} h`;
+  return `last ${Math.floor(hours / 24)} d`;
+}
+
+/** When the next run fires, as a clock time — or a weekday when it is not today. */
+function nextWords(iso: string | null): string | undefined {
+  if (!iso) return undefined;
+  const when = new Date(iso);
+  if (Number.isNaN(when.getTime())) return undefined;
+  const today = new Date();
+  const sameDay =
+    when.getFullYear() === today.getFullYear() &&
+    when.getMonth() === today.getMonth() &&
+    when.getDate() === today.getDate();
+  const clock = when.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  return sameDay
+    ? `next ${clock}`
+    : `next ${when.toLocaleDateString('en-US', { weekday: 'short' })} ${clock}`;
 }
 
 /** A stored timestamp as a plain date, or `null` when it is not a date at all. */
@@ -187,6 +246,40 @@ function runsOnValue(member: TeamMember): string | null {
   return member.agent ? formatRuntimeIdentity(member.agent).text : null;
 }
 
+/**
+ * What this agent has been doing: its conversations, its schedules, its rooms.
+ *
+ * The same three rows for an agent you manage and for DorkBot — what DorkBot
+ * withholds is its identity, not its work.
+ */
+function workRows(ctx: ProfileRowsContext): ProfileRowModel[] {
+  const facts = ctx.facts;
+  const rows: ProfileRowModel[] = [
+    {
+      id: 'sessions',
+      kind: 'nav',
+      label: 'Sessions',
+      value: countValue(facts?.sessions?.count, 'conversation', 'conversations'),
+      meta: lastWords(facts?.sessions?.newestAt ?? null),
+      page: 'sessions',
+    },
+  ];
+  // Not "0 scheduled" and not a locked row: an install with the tasks tool off
+  // has no such thing as a schedule, so there is nothing here to name (§1.4).
+  if (facts?.tasksAvailable !== false) {
+    rows.push({
+      id: 'tasks',
+      kind: 'nav',
+      label: 'Tasks',
+      value: countValue(facts?.tasks?.count, 'scheduled', 'scheduled'),
+      meta: nextWords(facts?.tasks?.nextRunAt ?? null),
+      page: 'tasks',
+    });
+  }
+  rows.push(roomsRow(ctx));
+  return rows;
+}
+
 /** An agent you manage: the row IS the control, all the way down. */
 function managedAgentRows(member: TeamMember, ctx: ProfileRowsContext): ProfileRowGroup[] {
   const folder = member.agent?.projectPath;
@@ -207,19 +300,24 @@ function managedAgentRows(member: TeamMember, ctx: ProfileRowsContext): ProfileR
 
   return [
     { id: 'setup', rows: setup },
-    {
-      id: 'work',
-      rows: [
-        { id: 'sessions', kind: 'nav', label: 'Sessions', value: null, page: 'sessions' },
-        { id: 'tasks', kind: 'nav', label: 'Tasks', value: null, page: 'tasks' },
-        roomsRow(ctx),
-      ],
-    },
+    { id: 'work', rows: workRows(ctx) },
     {
       id: 'toolkit',
       rows: [
-        { id: 'skills', kind: 'nav', label: 'Skills', value: null, page: 'skills' },
-        { id: 'tools', kind: 'nav', label: 'Tools & MCP', value: null, page: 'tools' },
+        {
+          id: 'skills',
+          kind: 'nav',
+          label: 'Skills',
+          value: countValue(ctx.facts?.skills, 'skill', 'skills'),
+          page: 'skills',
+        },
+        {
+          id: 'tools',
+          kind: 'nav',
+          label: 'Tools & MCP',
+          value: countValue(ctx.facts?.tools, 'server', 'servers'),
+          page: 'tools',
+        },
         { id: 'connections', kind: 'nav', label: 'Connections', value: null, page: 'connections' },
         {
           id: 'instructions',
@@ -295,19 +393,24 @@ function systemAgentRows(member: TeamMember, ctx: ProfileRowsContext): ProfileRo
         },
       ],
     },
-    {
-      id: 'work',
-      rows: [
-        { id: 'sessions', kind: 'nav', label: 'Sessions', value: null, page: 'sessions' },
-        { id: 'tasks', kind: 'nav', label: 'Tasks', value: null, page: 'tasks' },
-        roomsRow(ctx),
-      ],
-    },
+    { id: 'work', rows: workRows(ctx) },
     {
       id: 'toolkit',
       rows: [
-        { id: 'skills', kind: 'nav', label: 'Skills', value: null, page: 'skills' },
-        { id: 'tools', kind: 'nav', label: 'Tools & MCP', value: null, page: 'tools' },
+        {
+          id: 'skills',
+          kind: 'nav',
+          label: 'Skills',
+          value: countValue(ctx.facts?.skills, 'skill', 'skills'),
+          page: 'skills',
+        },
+        {
+          id: 'tools',
+          kind: 'nav',
+          label: 'Tools & MCP',
+          value: countValue(ctx.facts?.tools, 'server', 'servers'),
+          page: 'tools',
+        },
       ],
     },
   ];
