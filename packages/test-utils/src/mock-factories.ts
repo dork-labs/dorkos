@@ -199,7 +199,7 @@ export function createMockTransport(overrides: Partial<Transport> = {}): Transpo
     submitAnswers: vi.fn().mockResolvedValue({ ok: true }),
     submitElicitation: vi.fn().mockResolvedValue({ ok: true }),
     stopTask: vi.fn().mockResolvedValue({ success: true, taskId: '' }),
-    interruptSession: vi.fn().mockResolvedValue({ ok: true }),
+    interruptSession: vi.fn().mockResolvedValue({ ok: true, cancelledQueued: [] }),
     getCommands: vi.fn(),
     health: vi.fn(),
     updateSession: vi.fn(),

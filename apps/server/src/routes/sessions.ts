@@ -40,6 +40,7 @@ import {
   getOrCreateProjector,
   persistenceModeFor,
   dispatchMessage,
+  clearQueuedMessages,
   applySessionOriginOverlays,
   sessionOriginResolvers,
   overlayStoredSettings,
@@ -944,13 +945,35 @@ router.post('/:id/interrupt', async (req, res) => {
   if (!sessionId) return sendError(res, 400, 'Invalid session ID', 'INVALID_SESSION_ID');
 
   const runtime = await runtimeRegistry.resolveForSession(sessionId);
+  // Stop means stop everything queued (spec `persistent-session-runtime` §3.5,
+  // D4). The DorkOS queue is emptied FIRST — synchronously, with no await
+  // between it and the interrupt — so the turn ending here cannot let the pump
+  // release the head of the queue on its way out. The removed messages ride
+  // back on the response: nothing a person typed is destroyed by a Stop, it
+  // returns to their composer. The narrower promise of exactly WHAT the runtime
+  // cancelled (the CLI's own in-flight queue via `cancel_queued`) is owned by
+  // the `runtime-interrupt-receipts` spec (D7) and not redefined here; until it
+  // lands `interruptQuery` stays a bare boolean and the client says "stop
+  // requested" rather than "stopped".
+  const cancelledQueued = clearQueuedMessages(sessionId);
   try {
     const interrupted = await runtime.interruptQuery(sessionId);
     // Best-effort: ok:false when the query already finished is expected (race
     // between natural completion and the interrupt arriving). Not an error.
-    res.json({ ok: interrupted });
-  } catch (_err) {
-    return sendError(res, 500, 'Failed to interrupt query', 'INTERRUPT_ERROR');
+    res.json({ ok: interrupted, cancelledQueued });
+  } catch (err) {
+    // The interrupt is best-effort, but the queue clear that ran just above is
+    // NOT — those rows are already gone. Failing the request here would drop
+    // `cancelledQueued`, and the client's best-effort `stop()` would hand the
+    // person back nothing: they pressed Stop, confirmed "put N back", and the
+    // words would be lost. So a thrown interrupt reports `ok: false` and still
+    // returns the cleared messages, keeping the "nothing typed is destroyed"
+    // promise. The failure is logged rather than swallowed.
+    logger.warn('[POST /interrupt] interrupt threw; queue was still cleared', {
+      sessionId,
+      ...logError(err),
+    });
+    res.json({ ok: false, cancelledQueued });
   }
 });
 

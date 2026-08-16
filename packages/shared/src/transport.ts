@@ -779,14 +779,19 @@ export interface Transport extends RoomTransport {
    */
   stopTask(sessionId: string, taskId: string): Promise<{ success: boolean; taskId: string }>;
   /**
-   * Interrupt the active query for a session.
+   * Interrupt the active query for a session, and empty its queue.
    *
-   * Best-effort — callers should not block on the result. The server attempts
-   * a graceful SDK interrupt, falling back to a forceful close if needed.
+   * Stop means stop everything queued (spec `persistent-session-runtime` §3.5).
+   * The server clears the session's queue and returns the removed messages in
+   * `cancelledQueued`, head first, so the caller can hand the words back to the
+   * composer rather than lose them — nothing a person typed is destroyed by a
+   * Stop. `ok` is the best-effort interrupt result and callers should not block
+   * on it; the server attempts a graceful SDK interrupt, falling back to a
+   * forceful close if needed. A surface with no queue returns an empty array.
    *
    * @param sessionId - The session whose query should be interrupted
    */
-  interruptSession(sessionId: string): Promise<{ ok: boolean }>;
+  interruptSession(sessionId: string): Promise<{ ok: boolean; cancelledQueued: QueuedMessage[] }>;
   /** Get the current task list for a session. */
   getTasks(sessionId: string, cwd?: string): Promise<{ tasks: TaskItem[] }>;
   /** Browse server filesystem directories for working directory selection. */

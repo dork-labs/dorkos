@@ -414,3 +414,73 @@ describe('POST /api/sessions/:id/messages — the receipt', () => {
     expect(res.body.code).toBe('VALIDATION_ERROR');
   });
 });
+
+describe('POST /api/sessions/:id/interrupt — Stop clears the queue (task 4.7)', () => {
+  it('empties the queue and hands every message back, in order', async () => {
+    fakeRuntime.interruptQuery.mockResolvedValue(true);
+    await post('one', 'client-a');
+    await post('two', 'client-b');
+    await post('three', 'client-a');
+
+    const res = await request(server).post(`/api/sessions/${SESSION_ID}/interrupt`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.ok).toBe(true);
+    expect(res.body.cancelledQueued.map((m: { content: string }) => m.content)).toEqual([
+      'one',
+      'two',
+      'three',
+    ]);
+    // Every window reads the same empty queue afterward.
+    expect(await readQueue()).toEqual([]);
+  });
+
+  it('makes no promise it cannot keep: still clears the queue when the runtime returns ok:false', async () => {
+    // A CLI that does not advertise `interrupt_cancel_queued_v1` (or whose turn
+    // already finished) resolves the interrupt falsy. The DorkOS queue is ours
+    // and is cleared regardless; the response never claims more than happened.
+    fakeRuntime.interruptQuery.mockResolvedValue(false);
+    await post('one', 'client-a');
+    await post('two', 'client-a');
+
+    const res = await request(server).post(`/api/sessions/${SESSION_ID}/interrupt`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.ok).toBe(false);
+    expect(res.body.cancelledQueued.map((m: { content: string }) => m.content)).toEqual([
+      'one',
+      'two',
+    ]);
+    expect(await readQueue()).toEqual([]);
+  });
+
+  it('an empty queue interrupts with nothing to hand back', async () => {
+    fakeRuntime.interruptQuery.mockResolvedValue(true);
+
+    const res = await request(server).post(`/api/sessions/${OTHER_SESSION_ID}/interrupt`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.ok).toBe(true);
+    expect(res.body.cancelledQueued).toEqual([]);
+  });
+
+  it('still hands the cleared messages back when the interrupt itself throws', async () => {
+    // The queue was already emptied before the interrupt runs. A thrown
+    // interrupt must not 500 those rows into the void — the person confirmed
+    // "put N back", and dropping them would break the one promise this feature
+    // exists to keep. It reports ok:false and still returns the words.
+    fakeRuntime.interruptQuery.mockRejectedValue(new Error('interrupt wedged'));
+    await post('one', 'client-a');
+    await post('two', 'client-a');
+
+    const res = await request(server).post(`/api/sessions/${SESSION_ID}/interrupt`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.ok).toBe(false);
+    expect(res.body.cancelledQueued.map((m: { content: string }) => m.content)).toEqual([
+      'one',
+      'two',
+    ]);
+    expect(await readQueue()).toEqual([]);
+  });
+});

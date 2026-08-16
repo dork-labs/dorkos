@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import React from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, cleanup, act } from '@testing-library/react';
+import { render, screen, cleanup, act, fireEvent, waitFor } from '@testing-library/react';
 // Mock child components to isolate ChatInputContainer behavior
 // The composer barrel is mocked as one object: `Composer.Input` and
 // `Composer.Attachments` are stand-ins so this file tests the container's
@@ -132,7 +132,7 @@ vi.mock('@/layers/entities/runtime', () => ({
 import { ChatInputContainer } from '../ui/input/ChatInputContainer';
 import { Composer } from '@/layers/features/composer';
 import { QueuePanel } from '../ui/input/QueuePanel';
-import { useSessionStreamStore } from '@/layers/entities/session';
+import { useSessionStreamStore, useSessionChatStore } from '@/layers/entities/session';
 import type { ToolCallState } from '../model/chat-types';
 import { createRef } from 'react';
 
@@ -231,6 +231,9 @@ afterEach(() => {
   // The stream store is module state shared across tests — a queue seeded by one
   // case must not decide whether the panel renders in the next.
   useSessionStreamStore.setState({ sessions: {}, sessionAccessOrder: [] });
+  // The chat store holds composer drafts; a draft seeded by one case must not
+  // leak into the next (the Stop-restore cases below write it).
+  useSessionChatStore.setState({ sessions: {} });
 });
 
 describe('ChatInputContainer mode switching', () => {
@@ -536,5 +539,97 @@ describe('ChatInputContainer — the composer only gets the verbs the runtime ho
       lastChatInputProps().onSteer!();
     });
     expect(steerContent).toHaveBeenCalledWith('Also check the tests');
+  });
+});
+
+describe('ChatInputContainer — Stop clears the queue (task 4.7)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('asks first and names the count when messages are queued, and does not stop yet', async () => {
+    seedQueue('one', 'two', 'three');
+    const stop = vi.fn().mockResolvedValue([]);
+    render(<ChatInputContainer {...baseProps} stop={stop} status="streaming" />);
+
+    await act(async () => {
+      lastChatInputProps().onStop!();
+    });
+
+    // Names the cost before it happens, and has not interrupted anything yet.
+    expect(screen.getByText('Stop, and put 3 queued messages back?')).toBeInTheDocument();
+    expect(stop).not.toHaveBeenCalled();
+  });
+
+  it('stops immediately with no dialog when nothing is queued', async () => {
+    const stop = vi.fn().mockResolvedValue([]);
+    render(<ChatInputContainer {...baseProps} stop={stop} status="streaming" />);
+
+    await act(async () => {
+      lastChatInputProps().onStop!();
+    });
+
+    expect(stop).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText(/queued message/)).not.toBeInTheDocument();
+  });
+
+  it('on confirm, stops and returns the queued text to the composer, in order', async () => {
+    seedQueue('one', 'two');
+    const stop = vi.fn().mockResolvedValue([
+      { id: 'q0', content: 'one', disposition: 'queue', enqueuedAt: 1, enqueuedBy: 'window-a' },
+      { id: 'q1', content: 'two', disposition: 'queue', enqueuedAt: 1, enqueuedBy: 'window-a' },
+    ]);
+    const setInput = vi.fn();
+    render(
+      <ChatInputContainer {...baseProps} stop={stop} setInput={setInput} status="streaming" />
+    );
+
+    await act(async () => {
+      lastChatInputProps().onStop!();
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Stop' }));
+    });
+
+    expect(stop).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(setInput).toHaveBeenCalledWith('one\n\ntwo'));
+  });
+
+  it('preserves text typed WHILE the Stop is in flight, appending the cleared messages after it', async () => {
+    // The data-safety guarantee stated directly: a person who keeps typing during
+    // the interrupt round-trip must not lose those words, and the cleared messages
+    // must land AFTER them. restoreToComposer reads the LIVE composer text from
+    // the store, not a snapshot from before `stop()`; the store update below stands
+    // in for that mid-flight typing. Reads a stale empty `input` closure ⇒ result
+    // is just the messages (no draft); overwrites ⇒ the draft is gone — both red.
+    seedQueue('one', 'two');
+    const stop = vi.fn().mockImplementation(async () => {
+      // The person types into the composer while the interrupt is in flight.
+      act(() => {
+        useSessionChatStore.getState().updateSession('test-session', {
+          input: 'a thought I had mid-stop',
+        });
+      });
+      return [
+        { id: 'q0', content: 'one', disposition: 'queue', enqueuedAt: 1, enqueuedBy: 'window-a' },
+        { id: 'q1', content: 'two', disposition: 'queue', enqueuedAt: 1, enqueuedBy: 'window-a' },
+      ];
+    });
+    const setInput = vi.fn();
+    render(
+      <ChatInputContainer {...baseProps} stop={stop} setInput={setInput} status="streaming" />
+    );
+
+    await act(async () => {
+      lastChatInputProps().onStop!();
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Stop' }));
+    });
+
+    // Typed text first, then the cleared messages after it — nothing clobbered.
+    await waitFor(() =>
+      expect(setInput).toHaveBeenCalledWith('a thought I had mid-stop\n\none\n\ntwo')
+    );
   });
 });
