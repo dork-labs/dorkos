@@ -138,6 +138,64 @@ export interface RuntimeConformanceOpts {
    */
   warmSession?: (runtime: AgentRuntime, sessionId: string) => Promise<void>;
   /**
+   * Drives ONE turn to the point where it is OPEN, calls `midTurn`, then lets it
+   * close. Required for the C1 disposition cases; without it a runtime that
+   * DECLARES a disposition SKIPs the open-turn half by name rather than passing
+   * on a manufactured absence.
+   *
+   * A steer only reaches a turn that is already running, so proving "a declared
+   * steer delivers into the open turn, minting no new `turn_start`" needs a turn
+   * genuinely open underneath the assertion — and a runtime's own `sendMessage`
+   * moves no projector, so a case driven off it alone reads `idle` for every
+   * runtime and asserts nothing. The driver holds a turn open through the same
+   * projector `getSessionSnapshot` resolves, so what the suite reads mid-`midTurn`
+   * is the adapter answering about a turn that is really streaming.
+   *
+   * Provided ONLY by runtimes that declare `supportsSteer` or
+   * `supportsContextStaging` — a runtime that declares neither has no open-turn
+   * delivery to prove and wiring one is the error the suite catches. How the
+   * driver holds a turn open (a scenario that parks, a persistent window left
+   * unanswered) is its own concern; the capability says the adapter CAN deliver
+   * into a turn, not that any given `sendMessage` stays open.
+   */
+  dispositionTurn?: (
+    runtime: AgentRuntime,
+    sessionId: string,
+    content: string,
+    probes: { midTurn: () => Promise<void> }
+  ) => Promise<void>;
+  /**
+   * Drives ONE turn window that carries TWO native terminals with no reopening
+   * content between them, and returns how many `turn_end`s the projector
+   * synthesized — the driver for the C2 terminal-exactly-once case.
+   *
+   * The collapse-to-one is the PLATFORM's job (`feedProjector`'s idempotent
+   * `closeTurn`, spec task 0.1), not any adapter's, so this is runtime-neutral:
+   * the input is a synthetic two-result backend rather than the runtime under
+   * test, because "however many native results the backend produced" is exactly
+   * the variable C2 pins and no shipped adapter emits two in one window on
+   * demand. Wire it (`driveTerminalOnce`) so C2 runs; omit it and C2 SKIPs by
+   * name. The suite asserts the count is `1` — seeding the defect makes it climb.
+   */
+  terminalOnce?: () => Promise<number>;
+  /**
+   * Exercises the server-owned queue's two durability promises against the real
+   * dispatcher and store, returning what it observed — the driver for the C3
+   * queue-durability case.
+   *
+   * The queue is server-owned by construction (spec §2.4 — no `supportsQueue`
+   * flag, no adapter opts out), so C3 is a platform invariant every runtime
+   * inherits, driven with a controllable runtime because both failure modes need
+   * a turn that PARKS on command (a held failure, an open approval) that no
+   * shipped adapter's mocked backend can be made to do here. Wire it
+   * (`driveQueueDurability`) so C3 runs; omit it and C3 SKIPs by name.
+   */
+  queueDurability?: () => Promise<{
+    ranBehindFailedTurn: boolean;
+    heldWhileInteractionPending: boolean;
+    ranAfterInteractionResolved: boolean;
+  }>;
+  /**
    * Waives the safety invariant that a runtime's DEFAULT permission mode must
    * still stop for the person — one that would need a consent ritual if a person
    * selected it (`needsConsentRitual`) may not be where a session is BORN. The
@@ -440,6 +498,23 @@ const BOOLEAN_CAPABILITY_FLAGS = [
   'supportsQuestionPrompt',
   'supportsPlugins',
 ] as const satisfies readonly (keyof RuntimeCapabilities)[];
+
+/**
+ * The three disposition flags P4 made first-class, required and compile-time
+ * forced (ADR-0256 precedent). Held in their OWN list, and asserted by the
+ * dedicated C6 case rather than folded into {@link BOOLEAN_CAPABILITY_FLAGS},
+ * because they are the flags the whole degradation ladder routes on: a runtime
+ * that declares one it cannot honor sends a person's steer somewhere it did not
+ * go, so a cast that slips a non-boolean past the compiler must still be caught.
+ */
+const DISPOSITION_CAPABILITY_FLAGS = [
+  'supportsPersistentSession',
+  'supportsSteer',
+  'supportsContextStaging',
+] as const satisfies readonly (keyof RuntimeCapabilities)[];
+
+/** The two non-turn-opening delivery modes {@link AgentRuntime.deliverIntoTurn} takes. */
+const DELIVER_MODES = ['steer', 'stage'] as const;
 
 /**
  * Assert one `operation_progress` event satisfies the DOR-110 contract: it
@@ -759,6 +834,9 @@ export function runtimeConformance(
     durableHistory,
     presenceTurn,
     warmSession,
+    dispositionTurn,
+    terminalOnce,
+    queueDurability,
     autonomyDefaultReason,
     sessionListSilentReason,
     userLastMessageAtSession,
@@ -1602,6 +1680,207 @@ export function runtimeConformance(
           `capabilities.settings is malformed:\n  ${settingsFailures.join('\n  ')}`
         ).toEqual([]);
       });
+    });
+
+    describe('dispositions (C1, C2, C3, C6)', () => {
+      const declaresSteer = (runtime: AgentRuntime): boolean =>
+        runtime.getCapabilities().supportsSteer === true;
+      const declaresStage = (runtime: AgentRuntime): boolean =>
+        runtime.getCapabilities().supportsContextStaging === true;
+      const declaresDisposition = (runtime: AgentRuntime): boolean =>
+        declaresSteer(runtime) || declaresStage(runtime);
+      const declares = (runtime: AgentRuntime, mode: (typeof DELIVER_MODES)[number]): boolean =>
+        mode === 'steer' ? declaresSteer(runtime) : declaresStage(runtime);
+
+      it('C6: declares the three disposition flags as real booleans', () => {
+        // Compile-time forced already; asserted here so a cast that slips a
+        // non-boolean past the compiler onto the flag the ladder ROUTES on cannot
+        // dodge conformance.
+        const capabilities = makeRuntime().getCapabilities();
+        for (const flag of DISPOSITION_CAPABILITY_FLAGS) {
+          expect(typeof capabilities[flag], `capabilities.${flag} must be a boolean`).toBe(
+            'boolean'
+          );
+        }
+      });
+
+      it('C1: a disposition it does not declare is absent or refused as unsupported, never thrown', async () => {
+        // The not-declared arm, proven at rest — no open turn needed. Either the
+        // method is not there at all (honest ONLY when the runtime declares
+        // neither mode), or it degrades a mode it does not support as
+        // `unsupported` without ever throwing.
+        const runtime = makeRuntime();
+
+        if (runtime.deliverIntoTurn === undefined) {
+          expect(
+            !declaresSteer(runtime) && !declaresStage(runtime),
+            'a runtime that omits deliverIntoTurn must declare neither steer nor stage — the ladder ' +
+              'calls it for a declared disposition, so a missing method behind a declared one strands it'
+          ).toBe(true);
+          return;
+        }
+
+        const sessionId = nextSessionId();
+        runtime.ensureSession(sessionId, sessionOpts(runtime));
+        for (const mode of DELIVER_MODES) {
+          if (declares(runtime, mode)) continue;
+          const receipt = await runtime.deliverIntoTurn(sessionId, messageContent, {
+            mode,
+            messageId: randomUUID(),
+          });
+          expect(receipt.delivered, `an undeclared ${mode} must not report delivered`).toBe(false);
+          expect(receipt.reason, `an undeclared ${mode} must degrade as unsupported`).toBe(
+            'unsupported'
+          );
+        }
+      });
+
+      it('C1: a runtime declaring a disposition wires a dispositionTurn driver', () => {
+        // Keyed on the CAPABILITY, mirroring the warmSession stance: declaring a
+        // disposition is what creates the obligation to prove it into an open
+        // turn, and a runtime that declared one and simply forgot the driver would
+        // otherwise skip in silence about the very thing it claims.
+        const runtime = makeRuntime();
+        if (!declaresDisposition(runtime)) {
+          expect(
+            dispositionTurn,
+            'a dispositionTurn driver was wired by a runtime that declares neither steer nor stage'
+          ).toBeUndefined();
+          return;
+        }
+        expect(
+          dispositionTurn,
+          'this runtime declares steer or stage but wired no dispositionTurn driver, so C1 would ' +
+            'assert nothing about the open-turn delivery it claims (see RuntimeConformanceOpts.dispositionTurn)'
+        ).toBeDefined();
+      });
+
+      if (dispositionTurn) {
+        it('C1: a declared disposition reaches the model inside the open turn, minting no new turn_start', async () => {
+          const runtime = makeRuntime();
+          const sessionId = nextSessionId();
+          runtime.ensureSession(sessionId, sessionOpts(runtime));
+          expect(
+            runtime.deliverIntoTurn,
+            'a runtime that reaches this case declares a disposition, so it must implement deliverIntoTurn'
+          ).toBeDefined();
+
+          let midRan = false;
+          await dispositionTurn(runtime, sessionId, messageContent, {
+            midTurn: async () => {
+              midRan = true;
+              // The driver was supposed to leave a turn genuinely open; a steer
+              // delivered onto an idle session would prove nothing.
+              const open = await runtime.getSessionSnapshot(sessionOpts(runtime), sessionId);
+              expect(
+                open.status.lifecycle,
+                'the dispositionTurn driver did not leave a turn open to deliver into'
+              ).toBe('streaming');
+
+              // Called on `runtime`, never a detached reference: an adapter's
+              // deliverIntoTurn may read `this` (claude-code reaches its
+              // persistent dispatcher through it), so pulling the method off the
+              // object would strip the binding and throw before it decided
+              // anything.
+              if (declaresSteer(runtime)) {
+                const receipt = await runtime.deliverIntoTurn!(
+                  sessionId,
+                  'steer into the running turn',
+                  {
+                    mode: 'steer',
+                    messageId: randomUUID(),
+                  }
+                );
+                expect(
+                  receipt.delivered,
+                  'a runtime that declares steer must deliver a steer into an open turn — declaring ' +
+                    'a capability it cannot honor is the exact lie C1 exists to catch'
+                ).toBe(true);
+                // The steer JOINED the turn — it did not close this one and open
+                // another. The same turn is still streaming, which is the observable
+                // face of "no new turn_start".
+                const after = await runtime.getSessionSnapshot(sessionOpts(runtime), sessionId);
+                expect(
+                  after.status.lifecycle,
+                  'a steer must join the open turn, not replace it with a new one'
+                ).toBe('streaming');
+                expect(
+                  after.inProgressTurn,
+                  'the steered turn must still be the one open turn'
+                ).not.toBeNull();
+              }
+
+              if (declaresStage(runtime)) {
+                const receipt = await runtime.deliverIntoTurn!(
+                  sessionId,
+                  'stage onto the transcript',
+                  {
+                    mode: 'stage',
+                    messageId: randomUUID(),
+                  }
+                );
+                expect(
+                  receipt.delivered,
+                  'a runtime that declares context staging must deliver a stage'
+                ).toBe(true);
+              }
+            },
+          });
+          expect(midRan, 'the dispositionTurn driver never called midTurn with a turn open').toBe(
+            true
+          );
+        });
+      } else {
+        it.skip(
+          'SKIPPED: no dispositionTurn driver — nothing proves this runtime delivers a declared ' +
+            'disposition into an open turn (a runtime that DECLARES one fails the case above instead ' +
+            'of reaching this skip; see RuntimeConformanceOpts.dispositionTurn)',
+          () => {}
+        );
+      }
+
+      if (terminalOnce) {
+        it('C2: a window emits exactly one turn_end, however many native results it carried', async () => {
+          const turnEnds = await terminalOnce();
+          expect(
+            turnEnds,
+            'a turn window that carried two native results must still synthesize exactly one ' +
+              'turn_end — a second would double-settle the lifecycle and re-flush the turn (task 0.1)'
+          ).toBe(1);
+        });
+      } else {
+        it.skip(
+          'SKIPPED: no terminalOnce driver — nothing proves this runtime collapses a multi-result ' +
+            'window to one turn_end (see RuntimeConformanceOpts.terminalOnce)',
+          () => {}
+        );
+      }
+
+      if (queueDurability) {
+        it('C3: the queue runs a message behind a failed turn, and never into an open interaction', async () => {
+          const report = await queueDurability();
+          expect(
+            report.ranBehindFailedTurn,
+            'a message queued behind a turn that FAILED must still run — a failed turn frees the ' +
+              'queue like any other rather than eating the message behind it'
+          ).toBe(true);
+          expect(
+            report.heldWhileInteractionPending,
+            'a queued message must NOT run while an interaction is open — firing a prompt into an ' +
+              'open approval is read as the person’s reply'
+          ).toBe(true);
+          expect(
+            report.ranAfterInteractionResolved,
+            'a queued message must run once the interaction it waited on is resolved'
+          ).toBe(true);
+        });
+      } else {
+        it.skip(
+          'SKIPPED: no queueDurability driver — nothing proves the server queue runs behind a ' +
+            'failure and holds for an open interaction (see RuntimeConformanceOpts.queueDurability)',
+          () => {}
+        );
+      }
     });
 
     describe('command intents (DOR-109)', () => {
