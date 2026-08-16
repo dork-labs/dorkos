@@ -819,18 +819,24 @@ function fenced(data: RoomContextData, nonce: string): string | null {
   // The rest of what this turn is ANSWERING, under its own nonced heading and
   // after the background it must not be confused with (RP8, DOR-1231).
   //
-  // **Numbered, and that is not decoration.** A model handed four unlabelled
-  // lines and told to answer all of them answers the ones it happens to hold on
-  // to; a model handed "(1 of 3)" through "(3 of 3)" can check its own reply
-  // against the count it was given two paragraphs earlier. The ordinal is
-  // DorkOS's, outside `entryLine`'s untrusted body, like every other thing this
-  // file says about a message.
+  // **Numbered, and NONCED, and neither is decoration.** A model handed four
+  // unlabelled lines and told to answer all of them answers the ones it happens
+  // to hold on to; a model handed "(1 of 3 · <nonce>)" through "(3 of 3 ·
+  // <nonce>)" can check its own reply against the count it was given two
+  // paragraphs earlier. That check is only worth running if the ordinals cannot
+  // be written by anybody but DorkOS — a body carrying its own newline and a
+  // plausible "(3 of 3)" would otherwise let one message claim to be the last
+  // thing owed an answer. The nonce is unpredictable, so it cannot; it is the
+  // same boundary the fence and the two headings use, applied per line because
+  // this is the one region whose lines make a claim of their own.
   const gathered = data.gathered ?? [];
   if (gathered.length > 0) {
     quoted.push(
       `--- ${nonce} ${GATHERED_MARK} ---`,
       GATHERED_NOTE,
-      ...gathered.map((entry, index) => `(${index + 1} of ${gathered.length}) ${entryLine(entry)}`)
+      ...gathered.map(
+        (entry, index) => `(${index + 1} of ${gathered.length} · ${nonce}) ${entryLine(entry)}`
+      )
     );
   }
   // Last, under its own NONCED heading, because it is the least relevant thing

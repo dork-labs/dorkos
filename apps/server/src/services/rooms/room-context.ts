@@ -308,6 +308,28 @@ export function buildRoomContext(
   // for the ordinary turn, which keeps every expression below reading the same
   // way whether or not a burst was gathered.
   const gatheredIds: ReadonlySet<string> = input.gathered ?? new Set<string>();
+  // THE GATHERED MESSAGES (§10.4), read BY ID and never sliced out of the
+  // ambient page below.
+  //
+  // **The cap sizes the background, and it may not decide whether a question the
+  // turn was ASKED reaches the model.** Taking them out of the windowed read
+  // looked equivalent and was not: with `ambientMaxEntries: 30`, one question,
+  // thirty-five other messages and a second question inside one collect window,
+  // the first question fell off the front of the page — out of `gathered`, out
+  // of `pending`, and the block reverted to telling the model that the only
+  // message it was answering sat outside the fence. They are bounded already,
+  // by `rooms.collectMaxEntries`, which is the ceiling that belongs to them.
+  //
+  // Scoped to the conversation this turn answers, exactly as the window below
+  // is. A collection is keyed `(room, agent)` and NOT by thread, so a burst can
+  // mix a channel post into a thread turn — and a message this turn cannot
+  // answer must not be presented as one it must answer, because its reply goes
+  // to the thread. What is dropped here is the loss DOR-1207 already declares:
+  // still unread, still delivered by `channelTail`, still counted in
+  // `channelTailOmitted`.
+  const gathered = deps.store
+    .listEntriesByIds(input.room.id, [...gatheredIds])
+    .filter((entry) => (threadRootEntryId ? entry.threadRootEntryId === threadRootEntryId : true));
   // Read one more than the cap: a full page means older entries were dropped,
   // and that is what `pendingTruncated` reports. The cap, both bounds and both
   // exclusions are in SQL — see the store method for why that matters.
@@ -327,32 +349,22 @@ export function buildRoomContext(
     // Its own posts are reported separately as `ownRecent`, outside the
     // untrusted fence, because it wrote them.
     excludeAuthorId: input.agentAuthorId,
-    // The triggering entry is the message the agent is answering; it arrives as
-    // the turn's `content`, not as history.
-    excludeEntryId: input.entry.id,
-    // The cap sizes the BACKGROUND, and the gathered messages are not
-    // background: they are the rest of what this turn is answering, already
-    // bounded by `rooms.collectMaxEntries`. Read enough for both, then partition
-    // — otherwise a room told to replay five messages would drop three of the
-    // eight somebody typed in one breath, which is the defect this whole field
-    // exists to fix (DOR-1231).
-    limit: cap + gatheredIds.size + 1,
+    // Everything that reaches the model somewhere else: the triggering entry,
+    // which arrives as the turn's `content` rather than as history, and the
+    // gathered ones, which were read above. Subtracted in SQL, so `limit` still
+    // counts what is actually shown and `pendingTruncated` stays honest.
+    excludeEntryIds: [input.entry.id, ...gathered.map((entry) => entry.id)],
+    limit: cap + 1,
     // `undefined` for a top-level turn, which is the whole room — the same
     // window it has always read.
     threadRootEntryId,
   });
-  // Partitioned by id rather than by position: a message somebody else wrote
-  // between two of the gathered ones is in this window too, and it is
-  // background.
-  const gathered = gatheredIds.size > 0 ? window.filter((e) => gatheredIds.has(e.id)) : [];
-  const background =
-    gatheredIds.size > 0 ? window.filter((e) => !gatheredIds.has(e.id)) : [...window];
-  const pendingTruncated = background.length > cap;
+  const pendingTruncated = window.length > cap;
   // Counted from the FRONT, never `slice(-cap)`. A negative index is what a
   // reader expects to mean "the last cap", and it does — except at zero, where
   // `slice(-0)` is `slice(0)` and returns the whole array. A room configured to
   // replay nothing would have replayed one entry and reported it as truncated.
-  const missed = background.slice(Math.max(0, background.length - cap));
+  const missed = window.slice(Math.max(0, window.length - cap));
   // THE CHANNEL TAIL: the last few top-level messages of the room a thread turn
   // is happening in, and nothing for a top-level turn — where the channel IS the
   // scope and there is no "rest of the room" to name.

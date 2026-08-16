@@ -240,10 +240,11 @@ describe('a room gathers a burst into one turn', () => {
       expect(turn.prompt).toBe('@ana what day comes after Tuesday?');
       const mark = input.indexOf('--- aaaa1111 SENT TO YOU IN THE SAME MOMENT ---');
       expect(mark).toBeGreaterThan(-1);
-      expect(input.indexOf('(1 of 2) ')).toBeGreaterThan(mark);
-      expect(input.indexOf('@ana what is 2+2?')).toBeGreaterThan(mark);
-      expect(input.indexOf('(2 of 2) ')).toBeGreaterThan(mark);
-      expect(input.indexOf('@ana name a primary colour')).toBeGreaterThan(mark);
+      // Numbered IN ORDER, oldest first — the ordinal has to name the right
+      // line, or the count it lets a model check is a count of nothing.
+      expect(input).toMatch(/\(1 of 2 · aaaa1111\)[^\n]*@ana what is 2\+2\?/);
+      expect(input).toMatch(/\(2 of 2 · aaaa1111\)[^\n]*@ana name a primary colour/);
+      expect(input.indexOf('(1 of 2 · aaaa1111)')).toBeGreaterThan(mark);
       expect(input).not.toContain('@ana what day comes after Tuesday?');
 
       // And the input SAYS all three are owed an answer, rather than leaving a
@@ -255,8 +256,50 @@ describe('a room gathers a burst into one turn', () => {
       expect(input).not.toContain('The message you are answering is outside this block.');
       // Each one is attributed and clock-stamped, so a burst from two people is
       // not one voice.
-      expect(input).toMatch(/\(1 of 2\) \[\d\d:\d\d\] You \(person/);
-      expect(input).toMatch(/\(2 of 2\) \[\d\d:\d\d\] You \(person/);
+      expect(input).toMatch(/\(1 of 2 · aaaa1111\) \[\d\d:\d\d\] You \(person/);
+      expect(input).toMatch(/\(2 of 2 · aaaa1111\) \[\d\d:\d\d\] You \(person/);
+    });
+
+    it('keeps a gathered question the ambient cap would have dropped', async () => {
+      // **The corner the first fix left open.** The gathered messages used to be
+      // sliced out of the ambient page, so the room's `ambientMaxEntries` — a
+      // number about BACKGROUND — silently decided whether a question the turn
+      // was asked reached the model at all. With the default cap of 30, one
+      // question, thirty-five other messages and a second question inside one
+      // window pushed the first off the front of the page: gone from `gathered`,
+      // gone from `pending`, and the block went back to telling the model the
+      // only thing it was answering sat outside the fence.
+      //
+      // The messages between them are the room's own cap-sized chatter, so this
+      // is not an exotic setup — it is one person asking twice across a busy
+      // minute.
+      open(scriptedRunner(), { debounceMs: 1_000, maxEntries: 20 });
+      const typingPause = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 40));
+
+      service.post(room.id, { authorId: human, text: '@ana what is 2+2?' });
+      for (let i = 1; i <= 35; i += 1) {
+        service.post(room.id, { authorId: human, text: `chatter ${i}` });
+      }
+      await typingPause();
+      service.post(room.id, { authorId: human, text: '@ana what day is it?' });
+      await service.triggersIdle();
+
+      const turn = runner.turns.at(-1);
+      expect(turn?.prompt).toBe('@ana what day is it?');
+      // The first question is still one of the messages this turn answers, and
+      // the block still says so.
+      expect(turn?.roomContext.gathered?.map((entry) => entry.text)).toEqual(['@ana what is 2+2?']);
+      const input = formatRoomContext(turn!.roomContext, { nonce: 'aaaa1111' });
+      expect(input).toMatch(/\(1 of 1 · aaaa1111\)[^\n]*@ana what is 2\+2\?/);
+      expect(input).not.toContain('The message you are answering is outside this block.');
+      // The background is still capped, and still says it dropped some — the fix
+      // widens nothing except the set of messages that were actually asked.
+      expect(turn?.roomContext.pending.length).toBeLessThanOrEqual(30);
+      expect(turn?.roomContext.pendingTruncated).toBe(true);
+      // And the question is in exactly one region, not two.
+      expect(turn?.roomContext.pending.map((entry) => entry.text)).not.toContain(
+        '@ana what is 2+2?'
+      );
     });
 
     it('starts a second turn for a post that lands after the window closed', async () => {

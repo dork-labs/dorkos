@@ -30,12 +30,15 @@
  * 3. **A collection is keyed `(room, agent)` and NOT by thread**, so a burst can
  *    mix a thread reply with a channel post. The turn takes the scope of the
  *    message it answers — the newest one — and the rest reach it as
- *    `room_context.gathered`, read out of whatever window that scope reads. In one direction that is free: a channel turn's window is
- *    the whole room, thread replies included. In the other it is the loss
- *    DOR-1207 already bounds and DECLARES rather than hides — a thread turn
- *    reads its thread, and the top-level messages it did not show ride
- *    `channelTail` with `channelTailOmitted` saying how many did not fit
- *    (`room-context.ts`). Gathering makes that case likelier, not new. A thread
+ *    `room_context.gathered`, scoped the same way. In one direction that is
+ *    free: a channel turn's window is the whole room, thread replies included.
+ *    In the other it is the loss DOR-1207 already bounds and DECLARES rather
+ *    than hides — a thread turn reads its thread, and the top-level messages it
+ *    did not show ride `channelTail` with `channelTailOmitted` saying how many
+ *    did not fit (`room-context.ts`). That is why a gathered message outside
+ *    this turn's scope is left OUT of `gathered` rather than promoted into it:
+ *    a message the reply cannot reach is not one the reply owes an answer to.
+ *    Gathering makes that case likelier, not new. A thread
  *    dimension on this key would remove it and was left out deliberately: it
  *    would split one person's half-second of typing into two turns, and the
  *    disclosure DOR-1207 built is exactly what makes the cheaper answer honest.

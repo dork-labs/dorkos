@@ -1,6 +1,7 @@
 ---
 covers:
   - 'fix(server): a gathered burst is answered in full, not just its newest message (DOR-1231)'
+  - 'fix(server): the ambient cap can no longer drop a question a gathered turn was asked (DOR-1231)'
 ---
 
 ### Fixed
