@@ -507,7 +507,7 @@ async function startFleetTurn(turn: FleetTurn): Promise<void> {
  * The old drive waited on `[data-testid="session-row"]`, which the redesign
  * stopped mounting in the sidebar entirely — the panel builds its rows from
  * `SidebarRowModel` now (`[data-sidebar-row]`), and `SessionRowFull`/`Compact`
- * survive only on the Agent Hub's Sessions tab.
+ * survive only on the profile's Sessions page.
  */
 async function driveMultiSession(page: Page): Promise<void> {
   const turns = planFleetTurns();

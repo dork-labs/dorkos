@@ -346,7 +346,7 @@ describe('the popovers', () => {
   it('writes the personality into SOUL.md, not only into the manifest', async () => {
     // A turn reads the trait block out of SOUL.md; the manifest alone reaches
     // the prompt only where that block already exists. Writing both is what the
-    // Agent Hub always did, and what makes the change audible (DOR-1253).
+    // panel this replaced always did, and what makes the change audible (DOR-1253).
     const { transport } = await renderProfile(MANAGED);
     await openRow('personality');
 

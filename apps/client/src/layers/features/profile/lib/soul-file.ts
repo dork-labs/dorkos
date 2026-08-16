@@ -32,7 +32,7 @@ export function soulFile(traits: Partial<Traits> | undefined, prose: string): st
  * in place and does nothing when there is no block to regenerate — so an agent
  * whose SOUL.md was hand-written, or absent, kept talking exactly as before
  * while the profile showed the personality you picked (DOR-1253). Writing the
- * file alongside the manifest is what the Agent Hub always did, and what makes
+ * file alongside the manifest is what the retired panel always did, and what makes
  * the change reach the prompt.
  *
  * @param agent - The manifest as read, for the prose already in the file.

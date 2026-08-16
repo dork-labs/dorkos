@@ -22,14 +22,15 @@ import { EmbedSessionList } from './EmbedSessionList';
  *
  * This is the current-architecture replacement for the retired `SessionSidebar`
  * (its Overview / Schedules / Connections tabs moved to the right-panel
- * Inspector — Pulse and Agent Profile — or were dropped as legacy). The embed is
+ * Inspector — Pulse and Profile — or were dropped as legacy). The embed is
  * a focused single-agent session surface, so the sidebar's whole job is session
  * switching and starting a new session; the roster ({@link EmbedSessionList})
  * carries both. Rendered inside the embed's overlay Sheet, so picking a session
  * or starting a new one closes the overlay.
  *
  * **It is drawn in the cockpit sidebar's language** (DOR-1080). The roster used
- * to be `SessionsView` — the Agent Hub's panel, which is a panel in a page — and
+ * to be `SessionsView` — the profile's Sessions panel, which is a panel in a page —
+ * and
  * the embed wore hairlines the cockpit sidebar retired: separation here is the
  * `--sidebar-accent` tint ramp and nothing else (spec `sidebar-now-today-library`
  * R1). What the embed does NOT adopt is the zone structure: Heads up / Today /

@@ -2,7 +2,7 @@
  * About — what an agent is called and what it is for (spec
  * `profile-unification` §1.5).
  *
- * **Where an agent gets renamed.** The Agent Hub renamed inline in its hero;
+ * **Where an agent gets renamed.** The retired panel renamed inline in its hero;
  * the profile's header is a fixed lockup with no controls in it (§1.2), and a
  * whole pushed page for one text field an operator changes once would be more
  * navigation than the value. So the name sits above the description on the page

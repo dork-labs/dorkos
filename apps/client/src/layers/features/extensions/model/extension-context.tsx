@@ -101,7 +101,7 @@ export function ExtensionProvider({ deps, children }: ExtensionProviderProps) {
   useSyncCurrentAgentId();
 
   // Heal the explicitly-opened agent path when that agent is deleted, so its
-  // Agent Profile tab disappears off /session instead of rendering AgentNotFound
+  // Profile tab disappears off /session instead of rendering AgentNotFound
   // on a stale selection.
   useReconcileExplicitAgentPath();
 

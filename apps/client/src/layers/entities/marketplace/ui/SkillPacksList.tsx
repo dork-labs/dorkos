@@ -15,7 +15,7 @@ export interface SkillPacksListProps {
  * What this agent knows how to do, and where each pack was installed from.
  *
  * Entity UI: a path in, a list out. Two surfaces draw it — the profile's Skills
- * page and the Agent Hub's Toolkit tab (legacy, removed with the hub) — and
+ * page and the profile's Skills page — and
  * neither owns the shape of a row.
  */
 export function SkillPacksList({ projectPath }: SkillPacksListProps) {

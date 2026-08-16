@@ -423,7 +423,7 @@
     "pulse-panel": {
       "specFile": "tests/pulse/pulse-panel.spec.ts",
       "feature": "pulse",
-      "description": "opens on the dashboard to Pulse with its attention + activity sections, opens on a session to the contextual default (Agent Profile), not Pulse, the attention badge is honest — hidden when nothing needs the operator",
+      "description": "opens on the dashboard to Pulse with its attention + activity sections, opens on a session to the contextual default (Profile), not Pulse, the attention badge is honest — hidden when nothing needs the operator",
       "lastRun": "2026-08-12T11:54:32.659Z",
       "lastStatus": "passed",
       "runCount": 7,

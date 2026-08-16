@@ -33,7 +33,7 @@ export function PersonalityPickerShowcases() {
   return (
     <PlaygroundSection
       title="PersonalityPicker"
-      description="Shared personality picker body — radar, archetype label, preset pills, custom sliders, sample voice. The inline layout is used by PersonalityPickerPanel (agent hub); the stacked layout (large centered radar + a distinct sample-voice block) is used by the onboarding conversation."
+      description="Shared personality picker body — radar, archetype label, preset pills, custom sliders, sample voice. The inline layout is used by the profile's Personality popover; the stacked layout (large centered radar + a distinct sample-voice block) is used by the onboarding conversation."
     >
       <ShowcaseLabel>Default (inline)</ShowcaseLabel>
       <ShowcaseDemo responsive>

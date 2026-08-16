@@ -3,7 +3,7 @@
  *
  * A coloured dot is the smallest thing this product draws and the one it drew
  * five different ways: a green that was `bg-green-500` in the sidebar,
- * `bg-emerald-500` in the Agent Hub, `bg-status-success` in a room and
+ * `bg-emerald-500` in an agent panel, `bg-status-success` in a room and
  * `bg-primary` in a group header — four spellings of one fact, each of which
  * moves on its own the first time a theme does. This module is the spelling.
  *

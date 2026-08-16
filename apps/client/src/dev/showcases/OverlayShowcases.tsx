@@ -199,7 +199,7 @@ export function OverlayShowcases() {
                 </ResponsiveSheetTrigger>
                 <ResponsiveSheetContent>
                   <ResponsiveSheetHeader>
-                    <ResponsiveSheetTitle>Agent Profile</ResponsiveSheetTitle>
+                    <ResponsiveSheetTitle>Profile</ResponsiveSheetTitle>
                     <ResponsiveSheetDescription>
                       On a desktop viewport this panel docks at a fixed reading width.
                     </ResponsiveSheetDescription>
@@ -223,7 +223,7 @@ export function OverlayShowcases() {
                     reaches it via useIsMobile() below 768px, not a prop. */}
                 <ResponsiveSheetContent className="w-full sm:max-w-full">
                   <ResponsiveSheetHeader>
-                    <ResponsiveSheetTitle>Agent Profile</ResponsiveSheetTitle>
+                    <ResponsiveSheetTitle>Profile</ResponsiveSheetTitle>
                     <ResponsiveSheetDescription>
                       Below 768px the same panel fills the screen instead.
                     </ResponsiveSheetDescription>

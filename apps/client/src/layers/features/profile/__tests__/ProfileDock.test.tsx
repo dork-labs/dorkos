@@ -7,7 +7,7 @@
  * The sheet is handed an identity; the dock is handed a DIRECTORY and has to
  * find one. So what is pinned here is the resolution chain and its three
  * failures — nobody picked an agent, the chain is still running, and it settled
- * on nobody — plus the two rules the Agent Hub had before it that must survive:
+ * on nobody — plus the two rules the panel it replaced had that must survive:
  * the ambient working directory is only honest on `/session`, and the agent you
  * were looking at stays on screen while the next one resolves.
  */
@@ -242,7 +242,7 @@ describe('when the chain cannot finish', () => {
 
   it('switches straight to the next agent, with no skeleton in between', async () => {
     // Both reads are shared caches, so a switch resolves out of data already in
-    // hand. The Agent Hub had to hold the old agent painted through a per-agent
+    // hand. The panel this replaced had to hold the old agent painted through a per-agent
     // manifest fetch; there is nothing here to paint over.
     useAppStore.setState({ selectedCwd: WARDEN_PATH });
     const harness = renderDock();

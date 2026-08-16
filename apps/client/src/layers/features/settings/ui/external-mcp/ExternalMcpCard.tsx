@@ -181,7 +181,7 @@ export function ExternalMcpCard({ mcp, authEnabled }: ExternalMcpCardProps) {
  * Cross-link to the outbound MCP direction (plan D7): this card gives OTHER apps
  * tools FROM DorkOS; giving one of DorkOS's own agents tools FROM another MCP
  * server is the opposite direction, managed per agent in that agent's Toolkit
- * tab (Agent Hub → Toolkit), not here. Closes this dialog before navigating so
+ * page (the profile's Tools & MCP), not here. Closes this dialog before navigating so
  * the Team page renders clean.
  */
 function OutboundToolsCrossLink() {

@@ -161,7 +161,7 @@ export function AgentsList({ agents, isLoading, rosterFilters }: AgentsListProps
     filterState.sortDirection,
   ]);
 
-  const handleManage = useCallback((projectPath: string) => {
+  const handleViewProfile = useCallback((projectPath: string) => {
     useProfileStore.getState().openProfileDocked(projectPath);
   }, []);
 
@@ -184,10 +184,10 @@ export function AgentsList({ agents, isLoading, rosterFilters }: AgentsListProps
   const callbacks = useMemo(
     () => ({
       onNavigate: handleNavigate,
-      onManage: handleManage,
+      onViewProfile: handleViewProfile,
       onStartSession: handleStartSession,
     }),
-    [handleNavigate, handleManage, handleStartSession]
+    [handleNavigate, handleViewProfile, handleStartSession]
   );
 
   /**

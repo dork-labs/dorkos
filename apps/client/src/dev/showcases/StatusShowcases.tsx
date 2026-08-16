@@ -102,7 +102,7 @@ export function StatusShowcases() {
     <>
       <PlaygroundSection
         title="Live status dots"
-        description="One dot vocabulary, four surfaces. Green means a turn is streaming as you look at it and is the only signal that ever moves; amber means something is waiting on you; red means something broke; blue means output you have not read. Idle draws nothing at all — a cockpit where every row wears a dot has no signal left in it. Every colour here is a theme token from one map, which is what stopped the same green being bg-green-500 in the sidebar, bg-emerald-500 in the Agent Hub and bg-primary in a group header."
+        description="One dot vocabulary, four surfaces. Green means a turn is streaming as you look at it and is the only signal that ever moves; amber means something is waiting on you; red means something broke; blue means output you have not read. Idle draws nothing at all — a cockpit where every row wears a dot has no signal left in it. Every colour here is a theme token from one map, which is what stopped the same green being bg-green-500 in the sidebar, bg-emerald-500 in an agent panel and bg-primary in a group header."
       >
         <ShowcaseLabel>The vocabulary — colour, and which one moves</ShowcaseLabel>
         <ShowcaseDemo>

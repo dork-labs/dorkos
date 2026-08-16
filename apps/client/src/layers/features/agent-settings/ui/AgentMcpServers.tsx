@@ -66,7 +66,7 @@ function InboundMcpCrossLink() {
 }
 
 /**
- * The managed MCP servers section of the Agent Hub Toolkit: managed servers
+ * The managed MCP servers section of the profile's Tools & MCP page: managed servers
  * (editable, joined with live status by name), servers the runtime loads from
  * elsewhere, and a gated Add affordance. Add is disabled for runtimes that cannot
  * run DorkOS-managed servers (OpenCode today, DOR-893) — the roster still shows.

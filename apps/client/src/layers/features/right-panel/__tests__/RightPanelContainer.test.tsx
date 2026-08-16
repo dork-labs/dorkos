@@ -106,7 +106,7 @@ let mockPathname = '/session';
 // visibility predicates; mutate per-test to exercise those paths.
 let mockCurrentAgentId: string | null = null;
 let mockSelectedCwd: string | null = null;
-// The explicitly-opened agent path (Agent Hub) — the click-driven selection
+// The explicitly-opened agent path (the profile) — the click-driven selection
 // signal the container threads into every visibleWhen predicate.
 let mockExplicitAgentPath: string | null = null;
 
@@ -241,13 +241,13 @@ describe('RightPanelContainer', () => {
   // The container owns the shared header now — the tab strip and close button
   // are structural, so no panel can lose them. Parametrized across the four
   // built-in tab ids to prove it holds regardless of which tab is active.
-  it.each(['agent-hub', 'canvas', 'files', 'terminal'])(
+  it.each(['profile', 'canvas', 'files', 'terminal'])(
     'renders the shared tab strip and close button when %s is the active tab',
     (activeId) => {
       mockRightPanelOpen = true;
       mockActiveRightPanelTab = activeId;
       mockContributions = [
-        makeContribution('agent-hub'),
+        makeContribution('profile'),
         makeContribution('canvas'),
         makeContribution('files'),
         makeContribution('terminal'),
@@ -264,7 +264,7 @@ describe('RightPanelContainer', () => {
     mockRightPanelOpen = true;
     mockActiveRightPanelTab = 'files';
     mockContributions = [
-      makeContribution('agent-hub'),
+      makeContribution('profile'),
       makeContribution('files', {
         headerActions: () => <button type="button">New File</button>,
       }),
@@ -279,10 +279,10 @@ describe('RightPanelContainer', () => {
     // PR #149 regression: transport gating now lives in the container, which
     // forwards `transport` to each `visibleWhen`.
     mockRightPanelOpen = true;
-    mockActiveRightPanelTab = 'agent-hub';
+    mockActiveRightPanelTab = 'profile';
     mockTransport = { supportsTerminal: false };
     mockContributions = [
-      makeContribution('agent-hub', { title: 'Agent Profile' }),
+      makeContribution('profile', { title: 'Profile' }),
       makeContribution('canvas', { title: 'Canvas' }),
       makeContribution('terminal', {
         title: 'Terminal',
@@ -292,17 +292,17 @@ describe('RightPanelContainer', () => {
 
     render(<RightPanelContainer pathname={mockPathname} />);
 
-    expect(screen.getByRole('tab', { name: 'Agent Profile' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Profile' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Canvas' })).toBeInTheDocument();
     expect(screen.queryByRole('tab', { name: 'Terminal' })).not.toBeInTheDocument();
   });
 
   it('shows a transport-gated tab when the active transport has the capability', () => {
     mockRightPanelOpen = true;
-    mockActiveRightPanelTab = 'agent-hub';
+    mockActiveRightPanelTab = 'profile';
     mockTransport = { supportsTerminal: true };
     mockContributions = [
-      makeContribution('agent-hub', { title: 'Agent Profile' }),
+      makeContribution('profile', { title: 'Profile' }),
       makeContribution('terminal', {
         title: 'Terminal',
         visibleWhen: ({ transport }) => transport?.supportsTerminal === true,
@@ -320,10 +320,10 @@ describe('RightPanelContainer', () => {
   describe('agent + folder context', () => {
     it('hides an agent-scoped tab when the active agent id does not match', () => {
       mockRightPanelOpen = true;
-      mockActiveRightPanelTab = 'agent-hub';
+      mockActiveRightPanelTab = 'profile';
       mockCurrentAgentId = 'agent-other';
       mockContributions = [
-        makeContribution('agent-hub', { title: 'Agent Profile' }),
+        makeContribution('profile', { title: 'Profile' }),
         makeContribution('canvas', { title: 'Canvas' }),
         makeContribution('scoped', {
           title: 'Scoped',
@@ -333,16 +333,16 @@ describe('RightPanelContainer', () => {
 
       render(<RightPanelContainer pathname={mockPathname} />);
 
-      expect(screen.getByRole('tab', { name: 'Agent Profile' })).toBeInTheDocument();
+      expect(screen.getByRole('tab', { name: 'Profile' })).toBeInTheDocument();
       expect(screen.queryByRole('tab', { name: 'Scoped' })).not.toBeInTheDocument();
     });
 
     it('shows an agent-scoped tab when the active agent id matches', () => {
       mockRightPanelOpen = true;
-      mockActiveRightPanelTab = 'agent-hub';
+      mockActiveRightPanelTab = 'profile';
       mockCurrentAgentId = 'agent-x';
       mockContributions = [
-        makeContribution('agent-hub', { title: 'Agent Profile' }),
+        makeContribution('profile', { title: 'Profile' }),
         makeContribution('scoped', {
           title: 'Scoped',
           visibleWhen: ({ agentId }) => agentId === 'agent-x',
@@ -356,10 +356,10 @@ describe('RightPanelContainer', () => {
 
     it('hides a folder-scoped tab when the selected cwd does not match', () => {
       mockRightPanelOpen = true;
-      mockActiveRightPanelTab = 'agent-hub';
+      mockActiveRightPanelTab = 'profile';
       mockSelectedCwd = '/repo/other';
       mockContributions = [
-        makeContribution('agent-hub', { title: 'Agent Profile' }),
+        makeContribution('profile', { title: 'Profile' }),
         makeContribution('canvas', { title: 'Canvas' }),
         makeContribution('scoped', {
           title: 'Scoped',
@@ -374,10 +374,10 @@ describe('RightPanelContainer', () => {
 
     it('shows a folder-scoped tab when the selected cwd matches', () => {
       mockRightPanelOpen = true;
-      mockActiveRightPanelTab = 'agent-hub';
+      mockActiveRightPanelTab = 'profile';
       mockSelectedCwd = '/repo/a';
       mockContributions = [
-        makeContribution('agent-hub', { title: 'Agent Profile' }),
+        makeContribution('profile', { title: 'Profile' }),
         makeContribution('scoped', {
           title: 'Scoped',
           visibleWhen: ({ cwd }) => cwd === '/repo/a',
@@ -418,12 +418,12 @@ describe('RightPanelContainer', () => {
     // Existing pathname-only predicates are unaffected by the added fields.
     it('leaves a pathname-only predicate unaffected by the agent context', () => {
       mockRightPanelOpen = true;
-      mockActiveRightPanelTab = 'agent-hub';
+      mockActiveRightPanelTab = 'profile';
       mockPathname = '/session';
       mockCurrentAgentId = 'agent-x';
       mockSelectedCwd = '/repo/a';
       mockContributions = [
-        makeContribution('agent-hub', { title: 'Agent Profile' }),
+        makeContribution('profile', { title: 'Profile' }),
         makeContribution('session-only', {
           title: 'Session Only',
           visibleWhen: ({ pathname }) => pathname === '/session',
@@ -436,7 +436,7 @@ describe('RightPanelContainer', () => {
     });
 
     // Selection honesty (fix 2): a tab gated on an explicit agent pick — the
-    // real Agent Profile rule off /session — stays hidden until the operator
+    // real Profile rule off /session — stays hidden until the operator
     // opens one, then appears. Proves the container threads `explicitAgentPath`.
     it('hides a selection-gated tab off /session when no agent is explicitly opened', () => {
       mockRightPanelOpen = true;
@@ -507,18 +507,18 @@ describe('RightPanelContainer', () => {
   describe('default-tab fallback (contextual over global)', () => {
     it('prefers the first contextual tab over the global tab when auto-selecting', () => {
       // /session with no persisted tab: Pulse is present and sorts first, but the
-      // first CONTEXTUAL tab (Agent Profile) must be the default.
+      // first CONTEXTUAL tab (Profile) must be the default.
       mockRightPanelOpen = true;
       mockActiveRightPanelTab = null;
       mockContributions = [
         makeContribution('pulse', { isGlobal: true }),
-        makeContribution('agent-hub'),
+        makeContribution('profile'),
         makeContribution('canvas'),
       ];
 
       render(<RightPanelContainer pathname={mockPathname} />);
 
-      expect(mockSetActiveRightPanelTabView).toHaveBeenCalledWith('agent-hub');
+      expect(mockSetActiveRightPanelTabView).toHaveBeenCalledWith('profile');
     });
 
     it('falls back to the global tab when no contextual tab is visible', () => {
@@ -540,7 +540,7 @@ describe('RightPanelContainer', () => {
       mockActiveRightPanelTab = 'canvas';
       mockContributions = [
         makeContribution('pulse', { isGlobal: true }),
-        makeContribution('agent-hub'),
+        makeContribution('profile'),
         makeContribution('canvas'),
       ];
 
@@ -677,11 +677,11 @@ describe('RightPanelContainer', () => {
       // gate, exercised in the overlay presentation.
       mockIsMobile = false;
       mockRightPanelOpen = true;
-      mockActiveRightPanelTab = 'agent-hub';
+      mockActiveRightPanelTab = 'profile';
       mockTransport = { supportsTerminal: false };
       mockContributions = [
         makeContribution('pulse', { title: 'Pulse', isGlobal: true }),
-        makeContribution('agent-hub', { title: 'Agent Profile' }),
+        makeContribution('profile', { title: 'Profile' }),
         makeContribution('files', { title: 'Files' }),
         makeContribution('terminal', {
           title: 'Terminal',
@@ -692,7 +692,7 @@ describe('RightPanelContainer', () => {
       render(<RightPanelContainer pathname={mockPathname} variant="overlay" />);
 
       expect(screen.getByRole('tab', { name: 'Pulse' })).toBeInTheDocument();
-      expect(screen.getByRole('tab', { name: 'Agent Profile' })).toBeInTheDocument();
+      expect(screen.getByRole('tab', { name: 'Profile' })).toBeInTheDocument();
       expect(screen.getByRole('tab', { name: 'Files' })).toBeInTheDocument();
       expect(screen.queryByRole('tab', { name: 'Terminal' })).not.toBeInTheDocument();
     });

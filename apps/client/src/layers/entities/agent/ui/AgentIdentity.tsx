@@ -105,7 +105,7 @@ interface AgentIdentityBaseProps extends VariantProps<typeof identityVariants> {
   className?: string;
   /**
    * When provided, wraps the identity in a button element.
-   * Enables interactive entry points (e.g. opening the Agent Hub).
+   * Enables interactive entry points (e.g. opening the agent's profile).
    */
   onClick?: (e: React.MouseEvent) => void;
 }
