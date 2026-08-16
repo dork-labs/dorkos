@@ -171,6 +171,36 @@ on a tool-heavy turn and neither of those arrives before the turn ends. An
 output-only floor would be low by roughly an order of magnitude, and a confident
 wrong number is worse than a blank.
 
+## Debugging a failure: what a red case leaves behind
+
+Every non-`pass` outcome — `fail`, `error`, `skipped-over-budget` — retains its
+sandbox `DORK_HOME` on disk instead of deleting it, **whether or not the case is
+quarantined.** A quarantined case fails by design on some tiers, but a
+quarantined red on a tier it is meant to run on is exactly the failure someone
+needs to read next; deleting its sandbox took the evidence with it, which is how
+the DOR-1229 hang first went unexplained. A `pass` — quarantined or gating — is
+still torn down; there is nothing to debug about a run that worked.
+
+A row's console output and its `results.json` entry both carry two paths when
+retention applies:
+
+- **`retainedSandbox`** — the sandbox's `DORK_HOME`, printed under the row as
+  `↳ retained: <path>`. This is the raw sandbox: agent manifests, the SQLite db,
+  and (on the credentialed tiers) the real server's `logs/dorkos.log`. It is
+  what `pnpm evals:sweep` removes later, so treat it as temporary — read it
+  before you clean up, not after.
+- **`retainedLogsPath`** — when the sandbox had a `logs/` directory to copy, its
+  copy lands at `<run dir>/<case id>/logs/`, beside `results.json`. This copy is
+  the durable one: a later `pnpm evals:sweep` does not touch the run directory,
+  so it is what survives after the sandbox itself is gone. `test-mode` boots
+  in-process and never calls `initLogger`, so its cases have no server log to
+  copy — `retainedLogsPath` is omitted there, and `retainedSandbox` is the only
+  read left.
+
+`pnpm evals:sweep` is still the cleanup path for every retained sandbox,
+regardless of why it was retained — it keys on the `dorkos-evals-` tmpdir
+prefix every sandbox stamps, not on quarantine or pass/fail.
+
 ## Answering an approval mid-run
 
 A credentialed case that asks the agent to _do_ something gets stopped twice, by

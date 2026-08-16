@@ -122,6 +122,24 @@ function isFailure(result: EvalResult): boolean {
 }
 
 /**
+ * The line printed under a row whose sandbox was retained for debugging
+ * (DOR-1241) — gating and quarantined failures get the SAME treatment, because
+ * a quarantined case's failure is exactly the one a reader opens next. Reports
+ * both the sandbox `DORK_HOME` itself (removed by a later `pnpm evals:sweep`)
+ * and the copied `logs/` directory beside `results.json` (which survives it),
+ * when there was a server log to copy.
+ *
+ * @param result - The eval result to check for retention.
+ * @returns The line to print under the row, or undefined when nothing was
+ *   retained.
+ */
+function retentionLine(result: EvalResult): string | undefined {
+  if (!result.retainedSandbox) return undefined;
+  const logsNote = result.retainedLogsPath ? `; logs copied to ${result.retainedLogsPath}` : '';
+  return `  ↳ retained: ${result.retainedSandbox}${logsNote}`;
+}
+
+/**
  * Whether this case was never started because the run booted the wrong tier.
  *
  * Such a case is neither gating nor quarantined-reporting: it produced no
@@ -179,10 +197,13 @@ export function formatSummaryTable(summary: RunSummary): string {
   };
 
   const header = `${pad('STATUS', w.status)} ${pad('ID', w.id)} ${pad('TIER', w.tier)} ${pad('ISOLATION', w.isolation)} ${pad('COST', w.cost)} DURATION`;
-  const rows = cells.map(
-    (c) =>
-      `${pad(c.status, w.status)} ${pad(c.id, w.id)} ${pad(c.tier, w.tier)} ${pad(c.isolation, w.isolation)} ${pad(c.cost, w.cost)} ${c.duration}`
-  );
+  const rows = summary.results.flatMap((result, i) => {
+    const c = cells[i];
+    if (!c) return [];
+    const row = `${pad(c.status, w.status)} ${pad(c.id, w.id)} ${pad(c.tier, w.tier)} ${pad(c.isolation, w.isolation)} ${pad(c.cost, w.cost)} ${c.duration}`;
+    const retention = retentionLine(result);
+    return retention ? [row, retention] : [row];
+  });
 
   const gate = evaluateRunGate(summary);
   const passed = summary.results.filter((r) => r.status === 'pass' && !r.quarantined).length;

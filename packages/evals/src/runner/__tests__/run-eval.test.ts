@@ -14,17 +14,21 @@
  * a local-only credential there is an error rather than a quiet downgrade.
  *
  * Two more contracts are pinned here because both leaked silently before: the
- * result records the isolation the eval ACTUALLY ran inside, and a QUARANTINED
- * case never retains its sandbox (it fails by design on `test-mode`, so honoring
- * retain-on-failure leaked one sandbox per case per run).
+ * result records the isolation the eval ACTUALLY ran inside, and — since
+ * DOR-1241 — retention no longer excepts quarantined cases: a QUARANTINED
+ * failure retains its sandbox (and copies its server `logs/` into the run
+ * directory) exactly like a gating one, because a quarantined case's failure
+ * is exactly the one someone needs to read next. Only a PASS, quarantined or
+ * not, still tears everything down.
  */
 import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
-import { mkdtemp, readdir, rm, stat } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { hasLocalClaudeLogin } from '@dorkos/server/services/runtimes/claude-code/auth-probe';
 import { SANDBOX_PREFIX } from '../sandbox.js';
-import type { EvalCase } from '../../types.js';
+import { sweepStrays } from '../sweep.js';
+import type { EvalCase, EvalSandbox } from '../../types.js';
 import type { IsolationLauncher } from '../isolation/index.js';
 import { httpGetAssert } from '../../oracles/api.js';
 import { selfTestCase } from '../../suite/selftest.js';
@@ -209,26 +213,46 @@ describe('runEval', () => {
     expect(result.isolation).toBe('in-process');
   });
 
-  it('retains a NON-quarantined failure’s sandbox for debugging', async () => {
+  /** Seeds a `logs/dorkos.log` file into the sandbox, mimicking a real boot's `initLogger()` output. */
+  function seedLogs(sandbox: EvalSandbox): Promise<void> {
+    return mkdir(path.join(sandbox.dorkHome, 'logs'), { recursive: true }).then(() =>
+      writeFile(path.join(sandbox.dorkHome, 'logs', 'dorkos.log'), '{"msg":"boot"}\n', 'utf8')
+    );
+  }
+
+  it('retains a NON-quarantined (gating) failure’s sandbox, and copies its logs into the run dir', async () => {
     const { runDir: dir, tracker } = await fixture();
     const before = await countSandboxes();
     const failing: EvalCase = {
       ...selfTestCase,
       id: 'selftest-retained',
+      seed: seedLogs,
       oracles: [httpGetAssert('/api/health', { status: 404 })],
     };
     const result = await runEval(failing, { tier: 'test-mode', runId: 'r', runDir: dir, tracker });
     expect(result.status).toBe('fail');
     expect(await countSandboxes()).toBe(before + 1);
+    expect(result.retainedSandbox).toBeTruthy();
+    expect((await stat(result.retainedSandbox ?? '')).isDirectory()).toBe(true);
+    expect(result.retainedLogsPath).toBe(path.join('selftest-retained', 'logs'));
+    const copied = await readFile(
+      path.join(dir, result.retainedLogsPath ?? '', 'dorkos.log'),
+      'utf8'
+    );
+    expect(copied).toBe('{"msg":"boot"}\n');
   });
 
-  it('NEVER retains a QUARANTINED failure’s sandbox (it fails by design every run)', async () => {
+  it('retains a QUARANTINED failure’s sandbox too, and copies its logs (DOR-1241)', async () => {
+    // Before DOR-1241 a quarantined failure was cleaned up exactly like a pass,
+    // which is what deleted the server log that would have explained a
+    // quarantined red — the very case whose failure someone needs to read next.
     const { runDir: dir, tracker } = await fixture();
     const before = await countSandboxes();
     const quarantined: EvalCase = {
       ...selfTestCase,
-      id: 'selftest-quarantined',
+      id: 'selftest-quarantined-fail',
       quarantined: true,
+      seed: seedLogs,
       oracles: [httpGetAssert('/api/health', { status: 404 })],
     };
     const result = await runEval(quarantined, {
@@ -239,7 +263,60 @@ describe('runEval', () => {
     });
     expect(result.status).toBe('fail');
     expect(result.quarantined).toBe(true);
-    // 76 leaked directories / 22 MB were found on one machine before this.
+    expect(await countSandboxes()).toBe(before + 1);
+    expect(result.retainedSandbox).toBeTruthy();
+    expect(result.retainedLogsPath).toBe(path.join('selftest-quarantined-fail', 'logs'));
+    const copied = await readFile(
+      path.join(dir, result.retainedLogsPath ?? '', 'dorkos.log'),
+      'utf8'
+    );
+    expect(copied).toBe('{"msg":"boot"}\n');
+  });
+
+  it('cleans up a QUARANTINED case that PASSES, exactly like before', async () => {
+    const { runDir: dir, tracker } = await fixture();
+    const before = await countSandboxes();
+    const quarantinedPass: EvalCase = {
+      ...selfTestCase,
+      id: 'selftest-quarantined-pass',
+      quarantined: true,
+    };
+    const result = await runEval(quarantinedPass, {
+      tier: 'test-mode',
+      runId: 'r',
+      runDir: dir,
+      tracker,
+    });
+    expect(result.status).toBe('pass');
+    expect(result.quarantined).toBe(true);
+    expect(result.retainedSandbox).toBeUndefined();
+    expect(result.retainedLogsPath).toBeUndefined();
+    // No leak on the pass path — quarantined or not.
     expect(await countSandboxes()).toBe(before);
+  });
+
+  it('a retained sandbox is still swept by `pnpm evals:sweep` (retention is not permanent)', async () => {
+    const { runDir: dir, tracker } = await fixture();
+    const quarantined: EvalCase = {
+      ...selfTestCase,
+      id: 'selftest-quarantined-swept',
+      quarantined: true,
+      oracles: [httpGetAssert('/api/health', { status: 404 })],
+    };
+    const result = await runEval(quarantined, {
+      tier: 'test-mode',
+      runId: 'r',
+      runDir: dir,
+      tracker,
+    });
+    expect(result.retainedSandbox).toBeTruthy();
+    expect(await countSandboxes()).toBe(1);
+
+    const report = await sweepStrays({ tempRoot: sandboxRoot });
+    expect(report.sandboxes).toHaveLength(1);
+    expect(await countSandboxes()).toBe(0);
+    // `retainedSandbox` is `<sandbox root>/.dork` — the sweep removed the whole
+    // sandbox root above it, so the retained path itself is gone too.
+    await expect(stat(result.retainedSandbox ?? '')).rejects.toThrow();
   });
 });

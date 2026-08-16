@@ -701,6 +701,23 @@ export const EvalResultSchema = z.object({
   error: z.string().optional(),
   /** Path to this eval's JSONL transcript, relative to the run directory. */
   transcript: z.string().optional(),
+  /**
+   * Absolute path of the sandbox `DORK_HOME` retained on disk for debugging
+   * (DOR-1241). Set whenever this eval's outcome triggered retention — a
+   * non-`pass` result, GATING or QUARANTINED alike — and omitted whenever it
+   * did not, including the credential-gate `error` path that never created a
+   * sandbox. `pnpm evals:sweep` is the cleanup for anything left here.
+   */
+  retainedSandbox: z.string().optional(),
+  /**
+   * Path of this eval's copied `logs/` directory, relative to the run
+   * directory (beside `results.json`), when the sandbox had a `logs/` dir to
+   * copy. This is the durable copy: it survives a later `pnpm evals:sweep`
+   * even though {@link retainedSandbox} does not. Omitted when nothing was
+   * retained, or the tier never wrote a server log — the in-process
+   * `test-mode` boot never calls `initLogger`.
+   */
+  retainedLogsPath: z.string().optional(),
 });
 
 /** Inferred type for {@link EvalResultSchema}. */

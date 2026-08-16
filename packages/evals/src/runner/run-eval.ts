@@ -19,6 +19,8 @@
  * @module evals/runner/run-eval
  */
 import { randomUUID } from 'node:crypto';
+import { cp } from 'node:fs/promises';
+import path from 'node:path';
 import type { SseFrame } from '@dorkos/test-utils/sse-test-helpers';
 import type {
   EvalCase,
@@ -31,7 +33,7 @@ import type {
 } from '../types.js';
 import { emptyApprovalLog } from '../types.js';
 import { ApprovalDriver } from './approval-driver.js';
-import { createSandbox } from './sandbox.js';
+import { createSandbox, type Sandbox } from './sandbox.js';
 import { onInterrupt } from './interrupt.js';
 import {
   startInProcessServer,
@@ -219,6 +221,38 @@ function applyNonDoneOutcome(result: EvalResult, outcome: TurnOutcome): boolean 
 }
 
 /**
+ * Best-effort copy of the sandbox's `logs/` directory into
+ * `<runDir>/<caseId>/logs/`, so the evidence a failing case needs survives BOTH
+ * a later `pnpm evals:sweep` (which still removes the retained sandbox itself)
+ * and the `test-mode` tier, whose in-process boot never calls `initLogger` and
+ * so never writes one at all. A missing source directory is not a failure —
+ * it means this tier wrote no server log — so that case returns `undefined`
+ * silently; anything else propagates, because a copy that fails for another
+ * reason is worth knowing about.
+ *
+ * @param sandbox - The eval's sandbox (source: `<dorkHome>/logs`).
+ * @param runDir - The run's output directory (`results.json`'s directory).
+ * @param caseId - The eval case id, used as the destination subfolder.
+ * @returns The copied directory's path relative to `runDir`, or `undefined`
+ *   when there was no `logs/` directory to copy.
+ */
+async function retainLogs(
+  sandbox: Pick<Sandbox, 'dorkHome'>,
+  runDir: string,
+  caseId: string
+): Promise<string | undefined> {
+  const source = path.join(sandbox.dorkHome, 'logs');
+  const destRelative = path.join(caseId, 'logs');
+  try {
+    await cp(source, path.join(runDir, destRelative), { recursive: true });
+    return destRelative;
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
+    throw err;
+  }
+}
+
+/**
  * Run one eval case end-to-end and return its scored {@link EvalResult}. Always
  * writes a transcript (prompt(s) + frames + oracle/rubric results). Never
  * throws for an eval failure — only truly unexpected internal faults propagate.
@@ -249,12 +283,6 @@ export async function runEval(evalCase: EvalCase, opts: RunEvalOptions): Promise
   }
 
   result.isolation = isolation;
-
-  // A quarantined case fails BY DESIGN on `test-mode` (its oracles need real MCP
-  // tools), so honoring retain-on-failure for it would leak one sandbox — and,
-  // on the docker tier, one stopped container — per case per run, forever.
-  // Retention exists to debug a surprise; a quarantined red is not one.
-  const retainOnFailure = !(evalCase.quarantined ?? false);
 
   const sandbox = await createSandbox();
   let server: HarnessServer | undefined;
@@ -447,8 +475,21 @@ export async function runEval(evalCase: EvalCase, opts: RunEvalOptions): Promise
       ...(approvalDriver ? { approvals: approvalDriver.log } : {}),
       ...(room ? { room } : {}),
     });
-    const retain = failed && retainOnFailure;
+    // A failed outcome retains its evidence — GATING or QUARANTINED alike
+    // (DOR-1241). A quarantined case fails BY DESIGN on `test-mode` (its
+    // oracles need real MCP tools), but on a credentialed tier a quarantined
+    // red is exactly the failure someone needs to read next; deleting its
+    // sandbox took the server log that would have explained it (DOR-1229's
+    // hang was found by mirroring `{DORK_HOME}/logs/dorkos.log` out from under
+    // a live run). One retention rule, no quarantine exception — this also
+    // fixes container retention on the docker tier, whose `dispose({ failed
+    // })` reads the same flag.
+    const retain = failed;
     await server?.dispose({ failed: retain });
+    if (retain) {
+      result.retainedSandbox = sandbox.dorkHome;
+      result.retainedLogsPath = await retainLogs(sandbox, opts.runDir, evalCase.id);
+    }
     await sandbox.cleanup({ failed: retain });
     releaseInterrupt();
   }
