@@ -539,7 +539,7 @@ export interface RuntimeCapabilities {
 
   /**
    * Required - every adapter declares its settings surface. Compile-time
-   * forcing per the `commandIntents` precedent (ADR-0256): a new runtime
+   * forcing per the `commandIntents` precedent in this interface: a new runtime
    * cannot silently omit it. Static only: account lists, current provider and
    * readiness stay on the refetched surfaces (`GET /api/config`,
    * `GET /api/system/requirements`) so capabilities remain safe to cache with
@@ -558,9 +558,12 @@ export interface RuntimeCapabilities {
 
   /**
    * Whether the runtime holds ONE live session open across turns instead of
-   * starting fresh work each time. Required — compile-time forcing per the
-   * `commandIntents` precedent (ADR-0256), so a new adapter cannot silently
-   * omit it and inherit a behavior it never declared.
+   * starting fresh work each time. A first-class boolean rather than a
+   * `features` entry, which is what ADR-0256 asks for a capability that
+   * genuinely is a boolean. Required — compile-time forcing per the
+   * `commandIntents` precedent in this interface, not ADR-0256, which does not
+   * decide that question — so a new adapter cannot silently omit it and inherit
+   * a behavior it never declared (ADR `260816-143752`).
    *
    * Usually the prerequisite for the other two: a runtime whose every turn is
    * its OWN subprocess has nothing to steer into or stage onto between turns, so
