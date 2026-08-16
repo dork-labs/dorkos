@@ -408,6 +408,7 @@ describe('what the block tells an agent', () => {
       Members: @dorian (person), @ana (you), @kai (agent), @buzz (agent, set not to reply here).
       Working right now: @kai, since 14:02.
       Automatic replies left: 41 in this room, 187 across DorkOS, 2 more in this back-and-forth.
+      When a message only needs acknowledgment — "no reply needed", "just ack this" — react (✅ seen, 👍 agreed, 👀 looking) instead of replying with a word like "Ack": a one-word reply is worse than a reaction nobody has to read.
 
       You said here recently:
       [13:58] @ana (agent): I looked at this yesterday.

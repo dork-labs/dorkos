@@ -119,6 +119,28 @@ const ATTACHMENT_PATH_MAX_LENGTH = 338;
 const UNNAMEABLE = 'unnamed';
 
 /**
+ * The nudge toward `react_to_room_entry` for an acknowledgment-only message
+ * (`meta/agent-etiquette.md` E11, E16b; DOR-1234).
+ *
+ * **Why this line exists at all.** Told "no reply needed, just ack this", an
+ * agent without it still writes a message, because writing a reply is the
+ * default shape of a turn and nothing before this line said there was another
+ * one. The tool description on `react_to_room_entry` says the same thing at
+ * the point of picking a tool; this says it at the point of deciding whether
+ * to write text in the first place, which is the decision the observed
+ * failure was actually made at.
+ *
+ * Appended as its own sentence at the end of {@link preamble}, deliberately not
+ * folded into an existing line — a distinct region from the fence machinery
+ * this module's header documents, so it can be added or removed without
+ * touching how untrusted text is fenced.
+ */
+const ACK_ONLY_NUDGE =
+  'When a message only needs acknowledgment — "no reply needed", "just ack this" — react ' +
+  '(✅ seen, 👍 agreed, 👀 looking) instead of replying with a word like "Ack": a one-word reply ' +
+  'is worse than a reaction nobody has to read.';
+
+/**
  * What a name with no address is marked with, so a bare name is never read as
  * one. Written inside the parenthetical a member or a message line already
  * carries, rather than as a line of its own: it rides every turn, and it
@@ -722,6 +744,7 @@ function preamble(data: RoomContextData, where: string): string[] {
       `${data.budget.automaticRepliesLeftInTotalThisHour} across DorkOS, ` +
       `${data.budget.repliesLeftInThisChain} more in this back-and-forth.`
   );
+  lines.push(ACK_ONLY_NUDGE);
   return lines;
 }
 
