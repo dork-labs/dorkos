@@ -78,6 +78,38 @@ test.describe('Settings — URL Deep Links @smoke', () => {
     await expect(page.locator('[data-slot="profile-page-title"]')).toHaveText('Rooms');
   });
 
+  test('?agentPath= opens THAT agent, in a different agent’s session', async ({
+    page,
+    rightPanel,
+    roomsApi,
+  }) => {
+    // The shape every other case here misses: the link names an agent the
+    // session is not about. The session binds its OWN closed layout while the
+    // panel is filled by the link's agent — and a version that let that bind
+    // answer the link closed the panel and cleared its subject, so the link
+    // opened nothing at all.
+    const inSession = await roomsApi.registerAgent(`E2E Host ${roomsApi.runId}`, '🛠️', '#22c55e');
+    const linked = await roomsApi.registerAgent(`E2E Linked ${roomsApi.runId}`, '🔭', '#f59e0b');
+    await page.goto(
+      `/session?dir=${encodeURIComponent(inSession.projectPath)}` +
+        `&panel=profile&profilePage=rooms&agentPath=${encodeURIComponent(linked.projectPath)}`
+    );
+    await page.waitForSelector('[data-testid="app-shell"]');
+
+    await expect(rightPanel.header).toBeVisible();
+    await expect(rightPanel.profileTab).toHaveAttribute('aria-selected', 'true');
+    await expect
+      .poll(() => rightPanel.tabStripWidth(), {
+        message: 'the panel a link asked for must have a real width',
+      })
+      .toBeGreaterThan(0);
+    // The LINK's agent, not the session's — read off the pushed page's strip.
+    await expect(page.locator('[data-slot="profile-page-title"]')).toHaveText('Rooms');
+    await expect(page.locator('[data-slot="profile-strip"]')).toContainText(
+      `E2E Linked ${roomsApi.runId}`
+    );
+  });
+
   test('an old ?panel=agent-hub link still lands on the profile', async ({
     page,
     rightPanel,

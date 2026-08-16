@@ -169,6 +169,7 @@ beforeEach(() => {
     rightPanelOpen: true,
     activeRightPanelTab: 'profile',
     rightPanelLayoutKey: null,
+    requestedRightPanel: null,
   });
   localStorage.clear();
 });
@@ -313,6 +314,61 @@ describe('the stack, and how long it lasts', () => {
     await waitFor(() =>
       expect(useProfileStore.getState().dockedEntries[WARDEN_PATH] ?? []).toEqual([])
     );
+  });
+});
+
+describe('a link naming an agent other than the session’s', () => {
+  it('opens the panel on the LINK’s agent, against the session agent’s closed layout', async () => {
+    // `/session?dir=<Warden>&panel=profile&agentPath=<Scout>`. The session binds
+    // Warden's layout — closed — while the panel is filled by Scout's profile.
+    // A shape that spent the mark at that bind closed the panel the link had
+    // just opened and cleared its subject with it, so the link opened nothing.
+    localStorage.setItem(
+      'dorkos-right-panel-layouts',
+      JSON.stringify({ [WARDEN_PATH]: { open: false, activeTab: 'pulse', accessedAt: 1 } })
+    );
+    useAppStore.setState({ selectedCwd: WARDEN_PATH });
+    useProfileStore.getState().openProfileDockedFromLink(SCOUT_PATH, 'rooms');
+
+    const harness = renderDock();
+    await harness.ready();
+
+    // The session's own bind, as `useRightPanelLayoutPersistence` makes it.
+    useAppStore.getState().loadRightPanelForAgent(WARDEN_PATH, WARDEN_PATH);
+
+    expect(await screen.findByText('Scout')).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Rooms' })).toBeInTheDocument();
+    expect(useAppStore.getState().rightPanelOpen).toBe(true);
+    expect(useAppStore.getState().activeRightPanelTab).toBe('profile');
+  });
+
+  it('lets go of a link whose agent this install does not have', async () => {
+    // Nothing binds an agent whose session you are not in, so without the dock
+    // reporting it the mark would outrank layouts — and its explicit-pick latch
+    // would hold the panel on a dead directory — for the rest of the session.
+    useAppStore.setState({ selectedCwd: WARDEN_PATH });
+    useProfileStore.getState().openProfileDockedFromLink('/repo/never-existed');
+
+    const harness = renderDock();
+    await harness.ready();
+
+    await waitFor(() => expect(useAppStore.getState().requestedRightPanel).toBeNull());
+    expect(useAppStore.getState().explicitAgentPath).toBeNull();
+    // And with the latch gone the panel falls back to the session's own agent,
+    // which is a better ending than "Agent not found" for the rest of the
+    // session over a directory nothing answers to.
+    expect(await screen.findByText('Warden')).toBeInTheDocument();
+  });
+
+  it('keeps holding a link whose agent is still resolving', async () => {
+    useAppStore.setState({ selectedCwd: WARDEN_PATH });
+    useProfileStore.getState().openProfileDockedFromLink(SCOUT_PATH, 'rooms');
+
+    const harness = renderDock({ pendingFleet: true });
+    await harness.ready();
+
+    expect(useAppStore.getState().requestedRightPanel).not.toBeNull();
+    expect(useAppStore.getState().explicitAgentPath).toBe(SCOUT_PATH);
   });
 });
 

@@ -340,37 +340,52 @@ describe('RightPanelSlice', () => {
       expect(useAppStore.getState().activeRightPanelTab).toBe('pulse');
     });
 
-    it('is spent by the switch even when the named agent never binds', () => {
-      // The link named an agent you then navigated away from before it
-      // resolved. The mark is not an instruction about wherever you ended up.
+    it('leaves the panel alone at a bind for SOMEBODY ELSE, and stays pending', () => {
+      // `/session?dir=<Warden>&panel=profile&agentPath=<Scout>`: the bind is
+      // about the session, the panel is about the link. Spending the mark here
+      // — which an earlier shape did — closed the panel the link had just
+      // opened and cleared the subject with it, so the link opened nothing.
       localStorage.setItem(
         'dorkos-right-panel-layouts',
-        JSON.stringify({ 'agent-b': { open: false, activeTab: 'pulse', accessedAt: 1 } })
+        JSON.stringify({ warden: { open: false, activeTab: 'pulse', accessedAt: 1 } })
       );
-      useAppStore.setState({ explicitAgentPath: '/repo/a' });
-      useAppStore.getState().requestRightPanel('profile', '/repo/a');
+      useAppStore.setState({ explicitAgentPath: '/repo/scout' });
+      useAppStore.getState().requestRightPanel('profile', '/repo/scout');
 
-      useAppStore.getState().loadRightPanelForAgent('agent-b', '/repo/b');
+      useAppStore.getState().loadRightPanelForAgent('warden', '/repo/warden');
 
-      expect(useAppStore.getState().rightPanelOpen).toBe(false);
+      expect(useAppStore.getState().rightPanelOpen).toBe(true);
+      expect(useAppStore.getState().activeRightPanelTab).toBe('profile');
+      // The subject the link chose survives — it is what the panel is showing.
+      expect(useAppStore.getState().explicitAgentPath).toBe('/repo/scout');
+      // Unanswered: only the agent it names, or the dock, can answer it.
+      expect(useAppStore.getState().requestedRightPanel).not.toBeNull();
+      // The layout key still follows the session, so writes land on the session.
+      expect(useAppStore.getState().rightPanelLayoutKey).toBe('warden');
+    });
+
+    it('is answered when the agent it named turns out not to exist', () => {
+      // The ending a bind cannot supply: nothing ever binds an agent whose
+      // session you are not in, so `ProfileDock` reports it instead.
+      useAppStore.setState({ explicitAgentPath: '/repo/gone' });
+      useAppStore.getState().requestRightPanel('profile', '/repo/gone');
+
+      useAppStore.getState().releaseRightPanelRequest('/repo/gone');
+
       expect(useAppStore.getState().requestedRightPanel).toBeNull();
-      // And the agent the LINK latched as an explicit pick goes with it, so the
-      // dock stops profiling an agent a URL chose and you never did.
+      // And the latch goes with it: a directory nothing answers to must not be
+      // the panel's subject for the rest of the session.
       expect(useAppStore.getState().explicitAgentPath).toBeNull();
     });
 
-    it('leaves an explicit pick of your own alone when a link is overtaken', () => {
-      localStorage.setItem(
-        'dorkos-right-panel-layouts',
-        JSON.stringify({ 'agent-b': { open: false, activeTab: 'pulse', accessedAt: 1 } })
-      );
-      useAppStore.getState().requestRightPanel('profile', '/repo/a');
-      // You then opened a different agent's profile by hand.
-      useAppStore.setState({ explicitAgentPath: '/repo/picked-by-hand' });
+    it('ignores a release for an agent the pending link did not name', () => {
+      useAppStore.setState({ explicitAgentPath: '/repo/scout' });
+      useAppStore.getState().requestRightPanel('profile', '/repo/scout');
 
-      useAppStore.getState().loadRightPanelForAgent('agent-b', '/repo/b');
+      useAppStore.getState().releaseRightPanelRequest('/repo/somebody-else');
 
-      expect(useAppStore.getState().explicitAgentPath).toBe('/repo/picked-by-hand');
+      expect(useAppStore.getState().requestedRightPanel).not.toBeNull();
+      expect(useAppStore.getState().explicitAgentPath).toBe('/repo/scout');
     });
 
     it('an ordinary click does NOT outrank the next agent’s layout', () => {

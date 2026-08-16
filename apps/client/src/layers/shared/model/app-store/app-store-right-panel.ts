@@ -71,8 +71,15 @@ export interface RightPanelSlice {
    * **It names the agent it was for.** A mark that only said "profile" outranked
    * the layout of every agent bound after it, so switching to an agent whose
    * panel you had left closed opened it anyway — DOR-227's per-agent layout,
-   * undone by somebody else's link. It is honoured for that agent and spent on
-   * the first bind either way, so it can never reach a second one.
+   * undone by somebody else's link. It is honoured, and spent, only by a bind
+   * for the agent it names; a bind for anybody else leaves the panel alone
+   * rather than answering a question it was not asked.
+   *
+   * The explicit-pick latch the link also sets (`explicitAgentPath`, which is
+   * what makes its agent the panel's subject) is NOT released with it in the
+   * ordinary case — it stays sticky for the session exactly as a click's does
+   * (DOR-227, founder-accepted). Only {@link releaseRightPanelRequest} drops it,
+   * for a link naming an agent that does not exist.
    */
   requestedRightPanel: { tabId: string; agentPath: string | null } | null;
   /**
@@ -90,6 +97,20 @@ export interface RightPanelSlice {
    *   comes first, which is the one the link was about).
    */
   requestRightPanel: (tabId: string, agentPath: string | null) => void;
+  /**
+   * Let go of a pending link because the agent it named is not here.
+   *
+   * The one ending a layout bind cannot supply: a link for an agent whose
+   * session you are not in is never bound at all, so without this its mark — and
+   * the explicit-pick latch that came with it — would sit pending for the rest
+   * of the session. `ProfileDock` is what can tell, because resolving that
+   * directory to an identity is its whole job.
+   *
+   * A no-op unless a mark is pending for exactly this directory.
+   *
+   * @param agentPath - The directory the link named.
+   */
+  releaseRightPanelRequest: (agentPath: string) => void;
   /**
    * The stable identity of the agent whose layout is currently in scope, or null
    * on non-session routes / before an agent resolves. Set by
@@ -166,6 +187,21 @@ export const createRightPanelSlice: StateCreator<
     set({ requestedRightPanel: { tabId, agentPath } });
   },
 
+  releaseRightPanelRequest: (agentPath) =>
+    set((s) => {
+      const requested = s.requestedRightPanel;
+      if (requested === null || requested.agentPath !== agentPath) return s;
+      return {
+        requestedRightPanel: null,
+        // The link latched the agent it named as an explicit pick, which is what
+        // keeps the tab visible off `/session`. An agent this install does not
+        // have leaves nothing worth keeping, so the latch goes with the mark
+        // rather than making every later session profile a directory a URL named
+        // and nothing answers to.
+        ...(s.explicitAgentPath === agentPath ? { explicitAgentPath: null } : {}),
+      };
+    }),
+
   rightPanelLayoutKey: null,
   loadRightPanelForAgent: (agentKey, agentPath) => {
     if (agentKey === null) {
@@ -183,28 +219,38 @@ export const createRightPanelSlice: StateCreator<
       // least-recently-written — revisiting an agent keeps its layout alive.
       writeRightPanelLayout(agentKey, entry);
     }
+    // Three cases, and only the first two touch the panel.
+    //
     // A link that asked for THIS agent's panel outranks the layout you left
     // behind: the link is an instruction, the layout is a memory, and a
-    // never-seen agent remembers "closed". A link for a DIFFERENT agent is not
-    // an instruction about this one, and this bind is the switch that ends it.
+    // never-seen agent remembers "closed". That bind is also what SPENDS the
+    // mark — it has been answered, so it can never reach a later agent.
+    //
+    // No link pending: the stored layout is the whole answer, as always.
+    //
+    // A link pending for SOMEBODY ELSE — `?panel=profile&agentPath=<Scout>` read
+    // inside Warden's session — is neither. This bind is about the session, and
+    // the panel is filled by the link; so it takes the layout key and leaves the
+    // panel exactly as the link left it. Honouring here would push the session's
+    // tab onto somebody else's profile; spending here left the link opening
+    // nothing at all, which is the regression this shape exists to prevent. It
+    // is released instead by whoever answers it: the matching bind if you walk
+    // into that agent's session, or `ProfileDock` when the agent turns out not
+    // to exist ({@link releaseRightPanelRequest}).
     const requested = get().requestedRightPanel;
     const forThisAgent =
       requested !== null && (requested.agentPath === null || requested.agentPath === agentPath);
-    set((s) => ({
+    const pendingElsewhere = requested !== null && !forThisAgent;
+    set({
       rightPanelLayoutKey: agentKey,
-      rightPanelOpen: forThisAgent || (entry?.open ?? false),
-      activeRightPanelTab: forThisAgent ? requested.tabId : (entry?.activeTab ?? null),
-      // Spent on the first bind either way: honoured here, or overtaken by a
-      // switch. A mark that outlived one bind reached the next agent too.
-      requestedRightPanel: null,
-      // The link latched the agent it named as an explicit pick, which is what
-      // keeps the tab visible off `/session`. That latch is the link's, not
-      // yours — so it goes with the mark rather than making every later session
-      // profile an agent a URL chose and you never did.
-      ...(requested !== null && !forThisAgent && s.explicitAgentPath === requested.agentPath
-        ? { explicitAgentPath: null }
-        : {}),
-    }));
+      ...(pendingElsewhere
+        ? {}
+        : {
+            rightPanelOpen: forThisAgent || (entry?.open ?? false),
+            activeRightPanelTab: forThisAgent ? requested.tabId : (entry?.activeTab ?? null),
+            requestedRightPanel: null,
+          }),
+    });
   },
 
   loadRightPanelState: () => {

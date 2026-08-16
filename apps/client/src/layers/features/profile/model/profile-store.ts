@@ -99,6 +99,13 @@ interface ProfileStoreState {
    * marks the panel's open as requested, and the hydration honours it
    * (`requestedRightPanel`), against the agent it named.
    *
+   * What it does NOT change is how long the agent it named stays the panel's
+   * subject: like a click's, that latch is sticky for the session
+   * (`explicitAgentPath`, DOR-227, founder-accepted), so following a link into
+   * Warden's profile and then switching to Scout's session shows Warden in the
+   * panel until you pick something else. Only a link naming an agent that does
+   * not exist releases it early (`releaseRightPanelRequest`).
+   *
    * @param agentPath - The agent's directory.
    * @param page - A page to open straight onto, when the link named one.
    */

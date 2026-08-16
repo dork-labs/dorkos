@@ -80,6 +80,7 @@ export function ProfileDock() {
   const setDockedEntries = useProfileStore((s) => s.setDockedEntries);
   const clearDockedStacks = useProfileStore((s) => s.clearDockedStacks);
   const setRightPanelOpen = useAppStore((s) => s.setRightPanelOpen);
+  const releaseRightPanelRequest = useAppStore((s) => s.releaseRightPanelRequest);
   /** The panel has been closed over unsaved text, and has not been answered. */
   const [confirmingClose, setConfirmingClose] = useState(false);
 
@@ -108,6 +109,17 @@ export function ProfileDock() {
     if (!agentPath || !stack) return;
     setDockedEntries(agentPath, popEntry(stack).entries);
   }, [agentPath, stack, setDockedEntries]);
+
+  // A link naming an agent this install does not have has been answered, in the
+  // only way it can be: there is nobody to draw. Nothing else can tell — a link
+  // for an agent whose session you are not in is never bound by the layout
+  // persistence at all, so its mark would otherwise outrank layouts, and its
+  // explicit-pick latch would hold this panel on a dead directory, for the rest
+  // of the session.
+  useEffect(() => {
+    if (agentPath === null || !settled || subject !== null) return;
+    releaseRightPanelRequest(agentPath);
+  }, [agentPath, settled, subject, releaseRightPanelRequest]);
 
   // Root on re-open (§1.6): the stack is memory for flipping between tabs while
   // the panel is open, not a place you left off.
