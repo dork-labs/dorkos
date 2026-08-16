@@ -165,6 +165,23 @@ export async function* mapMessageEvent(
   }
 
   // Extract tool results from user messages (MCP tools deliver results here, not via tool_use_summary)
+  //
+  // A compaction's own bookkeeping arrives here too — four messages, all
+  // deliberately dropped:
+  //
+  //  1. the replacement summary (`isCompactSummary`, "This session is being
+  //     continued from a previous conversation…"), which is context for the
+  //     model, not something the person asked the agent to say;
+  //  2. `<local-command-caveat>`, which tells the model to ignore what follows;
+  //  3. `<command-name>`, the command the person just typed, already on screen;
+  //  4. `<local-command-stdout>`, raw terminal output, ANSI escapes and all.
+  //
+  // Every one of them carries `message.content` as a bare string rather than a
+  // block array, so the guard below skips them all without a special case. None
+  // is the proof that a `/compact` succeeded — the `compact_boundary` system
+  // event is, and the empty-stream guard counts it
+  // (`messaging/empty-stream-guard.ts`, DOR-1235). Surfacing these four as
+  // transcript content would only put CLI plumbing in front of a person.
   if (message.type === 'user') {
     // Skip replay messages during session resume
     if ((message as Record<string, unknown>).isReplay) return;

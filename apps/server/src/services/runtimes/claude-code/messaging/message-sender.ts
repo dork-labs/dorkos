@@ -11,6 +11,12 @@
 import { query, type SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import type { StreamEvent, ErrorCategory } from '@dorkos/shared/types';
 import type { MessageOpts } from '@dorkos/shared/agent-runtime';
+import {
+  emptyStreamError,
+  isContentEvent,
+  isInteractiveEvent,
+  isReportedFailure,
+} from './empty-stream-guard.js';
 import { fireLaunchProbes } from './launch-probes.js';
 import type { AgentSession } from '../agent-types.js';
 import { createToolState } from '../agent-types.js';
@@ -81,20 +87,6 @@ function isResumeFailure(err: unknown): boolean {
 function isAnchorNotFound(err: unknown): boolean {
   if (!(err instanceof Error)) return false;
   return /no message found with message\.uuid/i.test(err.message);
-}
-
-/**
- * The typed error surfaced when a turn produced zero content events: the SDK
- * stream ran but the agent never said or did anything visible.
- */
-function emptyStreamError(): StreamEvent {
-  return {
-    type: 'error',
-    data: {
-      message: 'The agent did not respond. The service may be temporarily unavailable.',
-      category: 'execution_error' as ErrorCategory,
-    },
-  };
 }
 
 /**
@@ -437,20 +429,15 @@ export async function* executeSdkQuery(
             yield emptyStreamError();
           }
         }
-        // A mapped typed error (e.g. a non-success result subtype) counts as
-        // a prior error for the empty-stream guard below; without this, a
-        // failed zero-content turn would get a second generic error appended
-        // after its terminal done.
-        if (event.type === 'error') emittedError = true;
+        // A failure the turn has already reported — a mapped typed error (e.g.
+        // a non-success result subtype), or a named operation that resolved
+        // `failed` — counts as a prior error for the empty-stream guard below;
+        // without this, a failed zero-content turn would get a second, vaguer
+        // error appended after its terminal done.
+        if (isReportedFailure(event)) emittedError = true;
         // Track content events for empty-stream detection
-        if (
-          ['text_delta', 'tool_call_start', 'tool_result', 'thinking_delta'].includes(event.type)
-        ) {
-          contentEventCount++;
-        }
-        if (['approval_required', 'question_prompt'].includes(event.type)) {
-          wasInteractive = true;
-        }
+        if (isContentEvent(event)) contentEventCount++;
+        if (isInteractiveEvent(event)) wasInteractive = true;
         eventCount++;
         yield event;
       }
