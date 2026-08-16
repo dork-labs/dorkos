@@ -669,6 +669,17 @@ export const roomsRestraintCase: EvalCase = {
  * message that asked for one, AND no text reply followed it. Either alone
  * would pass a wrong shape — a reaction plus a redundant "on it" would clear
  * the first, and silence with no reaction at all would clear the second.
+ *
+ * **First credentialed attempt (2026-08-16): errored, not evidence either
+ * way.** `--suite rooms-ack-only-reacts-not-replies --tier claude-code-cheap
+ * --isolation child-process --budget 1` reported `quarantined:error` — the
+ * mention triggered a turn (the room's working indicator confirms it started),
+ * but no new event arrived for the last 222 of the drive's 300 seconds and
+ * nothing ever settled, so the run timed out before the agent's turn produced
+ * anything to judge. Not a model choosing text over a reaction; a turn that
+ * never finished, on a machine running several other agents' full-monorepo
+ * lint/typecheck at the same time. Stays quarantined until a clean run — pass
+ * or fail — actually observes what the model does.
  */
 export const roomsAckOnlyReactsCase: EvalCase = {
   id: 'rooms-ack-only-reacts-not-replies',

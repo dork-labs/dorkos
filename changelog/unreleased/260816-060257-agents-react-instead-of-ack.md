@@ -5,4 +5,4 @@ covers:
 
 ### Fixed
 
-- Agents react with an emoji instead of replying "ack" when a message only needs acknowledgment (DOR-1234)
+- Agents are now told to react with an emoji instead of replying "ack" when a message only needs acknowledgment (DOR-1234)

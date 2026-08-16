@@ -331,9 +331,8 @@ export const roomsDomain: CapabilityDomain = {
       description:
         'Put one emoji on one message in a room you are a member of — the quiet way to say ' +
         '"seen", "agreed" or "thanks" without adding a message everyone has to read. ' +
-        'When a message only asks you to acknowledge it — "no reply needed", "just ack this" — ' +
-        'react here instead of replying with a word like "Ack" or "Got it": a one-word reply is ' +
-        'worse than a reaction, because it is a message everyone still has to read. ' +
+        'When a message only needs acknowledgment ("no reply needed", "just ack this"), react ' +
+        '(✅ seen, 👍 agreed, 👀 looking) rather than posting a word like "Ack". ' +
         'Nobody is interrupted by it: it starts no turn and notifies no one. ' +
         'Calling it again with the same emoji takes the reaction back. ' +
         'You have a limited number of these per room per hour, so spend them where a word would ' +

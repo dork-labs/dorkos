@@ -298,6 +298,12 @@ describe('the rooms capability domain', () => {
   });
 
   describe('react_to_room_entry', () => {
+    it('tells the model to react instead of a filler word for an ack-only message (DOR-1234)', () => {
+      const react = roomsDomain.capabilities.find((c) => c.id === 'rooms.react');
+      expect(react?.description).toContain('"no reply needed", "just ack this"');
+      expect(react?.description).toContain('✅ seen, 👍 agreed, 👀 looking');
+    });
+
     it('puts an emoji on a message and takes it back', async () => {
       const entry = service.post(channel.id, { authorId: human, text: 'shipping' });
 

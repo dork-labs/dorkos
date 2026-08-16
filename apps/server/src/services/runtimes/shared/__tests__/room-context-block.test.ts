@@ -408,7 +408,6 @@ describe('what the block tells an agent', () => {
       Members: @dorian (person), @ana (you), @kai (agent), @buzz (agent, set not to reply here).
       Working right now: @kai, since 14:02.
       Automatic replies left: 41 in this room, 187 across DorkOS, 2 more in this back-and-forth.
-      When a message only needs acknowledgment — "no reply needed", "just ack this" — react (✅ seen, 👍 agreed, 👀 looking) instead of replying with a word like "Ack": a one-word reply is worse than a reaction nobody has to read.
 
       You said here recently:
       [13:58] @ana (agent): I looked at this yesterday.
@@ -423,6 +422,18 @@ describe('what the block tells an agent', () => {
       [14:02] @kai (agent): on it
       --- END UNTRUSTED ROOM MESSAGES aaaa1111 ---"
     `);
+  });
+
+  it('teaches no tool, because this block is shared with runtimes that carry none (DOR-1234)', () => {
+    // Codex and OpenCode render nothing but this body for a room turn — neither
+    // has a `<room_tools>` block, so a tool nudge written HERE would tell a
+    // runtime with no `react_to_room_entry` to react anyway. That nudge lives in
+    // the claude-code adapter's `ROOM_TOOLS_CONTEXT`
+    // (`context-builder-room-tools.test.ts` pins its presence there) — never in
+    // this runtime-neutral function.
+    const block = formatRoomContext(context(), { nonce: NONCE });
+    expect(block).not.toContain('react_to_room_entry');
+    expect(block).not.toContain('Ack');
   });
 });
 

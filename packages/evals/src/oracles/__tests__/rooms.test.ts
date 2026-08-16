@@ -238,6 +238,36 @@ describe('what was said', () => {
     ).resolves.toMatchObject({ passed: false });
   });
 
+  it('agentReactedInRoom checks WHO reacted, not merely that somebody did', async () => {
+    // Pins the subject: mutating `reactors.has(authorId)` to `reactors.size > 0`
+    // would still pass here, because a reaction landed — just not from the
+    // agent the oracle was asked about.
+    const someoneElseReacted = [
+      ...ONE_TURN,
+      reaction({ entryId: 'e1', emoji: '✅', authorIds: [OPERATOR] }),
+    ];
+    await expect(
+      agentReactedInRoom('ada', { entryIdNote: 'ackEntryId' })(
+        ctx(someoneElseReacted, facts({ ackEntryId: 'e1' }))
+      )
+    ).resolves.toMatchObject({ passed: false });
+  });
+
+  it('agentReactedInRoom checks WHICH entry was reacted to, not merely that the agent reacted somewhere', async () => {
+    // Pins the entry: deleting the `entryId !==` filter in `reactorsOn` would
+    // still pass here, because ada reacted to SOMETHING — just not to the
+    // message the script recorded as the one asking for acknowledgment.
+    const reactedOnTheWrongEntry = [
+      ...ONE_TURN,
+      reaction({ entryId: 'e2', emoji: '✅', authorIds: [ADA] }),
+    ];
+    await expect(
+      agentReactedInRoom('ada', { entryIdNote: 'ackEntryId' })(
+        ctx(reactedOnTheWrongEntry, facts({ ackEntryId: 'e1' }))
+      )
+    ).resolves.toMatchObject({ passed: false });
+  });
+
   it('agentReactedInRoom fails loudly when the script recorded no entry id to check', async () => {
     const result = await agentReactedInRoom('ada', { entryIdNote: 'ackEntryId' })(ctx(ONE_TURN));
     expect(result.passed).toBe(false);
