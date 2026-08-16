@@ -1,0 +1,688 @@
+<style>
+  .wrap {
+    max-width: 1180px;
+    margin: 0 auto;
+  }
+  .two {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1.5rem;
+    align-items: start;
+  }
+  @media (max-width: 900px) {
+    .two {
+      grid-template-columns: 1fr;
+    }
+  }
+  .pane {
+    background: var(--bg-secondary);
+    border: 2px solid var(--border);
+    border-radius: 14px;
+    padding: 1rem;
+    cursor: pointer;
+    transition: border-color 0.15s;
+  }
+  .pane:hover {
+    border-color: var(--accent);
+  }
+  .pane.selected {
+    border-color: var(--selected-border);
+    background: var(--selected-bg);
+  }
+  .pane h3 {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  .pane h3 .letter {
+    background: var(--bg-tertiary);
+    width: 1.6rem;
+    height: 1.6rem;
+    border-radius: 6px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.8rem;
+  }
+  .pane.selected h3 .letter {
+    background: var(--accent);
+    color: #fff;
+  }
+  .pane > p {
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+    margin: 0.25rem 0 0.9rem;
+  }
+
+  /* ===== app-like mock, dark like DorkOS ===== */
+  .prof {
+    width: 380px;
+    margin: 0 auto;
+    background: #111113;
+    color: #e7e7ea;
+    border: 1px solid #2a2a2e;
+    border-radius: 12px;
+    overflow: hidden;
+    font-size: 12.5px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+    font-family:
+      system-ui,
+      -apple-system,
+      sans-serif;
+  }
+  .prof * {
+    box-sizing: border-box;
+  }
+  .ptabs {
+    display: flex;
+    gap: 6px;
+    padding: 8px 10px;
+    border-bottom: 1px solid #232327;
+    font-size: 10.5px;
+    color: #9a9aa3;
+  }
+  .ptabs span {
+    padding: 3px 8px;
+    border-radius: 6px;
+  }
+  .ptabs span.on {
+    background: #26262b;
+    color: #fff;
+  }
+  .ptabs .x {
+    margin-left: auto;
+  }
+  .hero {
+    position: relative;
+    padding: 18px 16px 12px;
+    border-bottom: 1px solid #232327;
+  }
+  .hero::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(60% 70% at 50% 0%, rgba(62, 193, 211, 0.22), transparent 70%);
+    pointer-events: none;
+  }
+  .hero.left::before {
+    background: radial-gradient(40% 90% at 12% 20%, rgba(62, 193, 211, 0.22), transparent 70%);
+  }
+  .kebab {
+    position: absolute;
+    top: 10px;
+    right: 12px;
+    color: #8a8a92;
+    font-size: 16px;
+    line-height: 1;
+  }
+  .face {
+    width: 64px;
+    height: 64px;
+    border-radius: 16px;
+    background: #3ec1d3;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 34px;
+    position: relative;
+    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08);
+  }
+  .face.sm {
+    width: 48px;
+    height: 48px;
+    border-radius: 12px;
+    font-size: 26px;
+  }
+  .face .bot {
+    position: absolute;
+    right: -4px;
+    bottom: -4px;
+    width: 16px;
+    height: 16px;
+    border-radius: 5px;
+    background: #1c1c20;
+    border: 1px solid #3a3a40;
+    font-size: 9px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .center {
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+  }
+  .name {
+    font-size: 16px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+  .handle {
+    color: #9a9aa3;
+    font-size: 12px;
+  }
+  .handle::after {
+    content: ' ⧉';
+    opacity: 0.5;
+    font-size: 10px;
+  }
+  .desc {
+    color: #b7b7bf;
+    font-size: 12px;
+    max-width: 300px;
+    margin-top: 2px;
+  }
+  .pres {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: #cfd3d6;
+    margin-top: 6px;
+  }
+  .dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #34c759;
+    box-shadow: 0 0 0 3px rgba(52, 199, 89, 0.18);
+  }
+  .dot.idle {
+    background: #7a7a84;
+    box-shadow: none;
+  }
+  .owner {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11.5px;
+    color: #9a9aa3;
+    margin-top: 4px;
+  }
+  .owner i {
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: #5b3fd6;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-style: normal;
+    font-size: 9px;
+    color: #fff;
+  }
+  .actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 12px;
+  }
+  .btn {
+    flex: 1;
+    text-align: center;
+    padding: 7px 10px;
+    border-radius: 8px;
+    border: 1px solid #34343a;
+    background: #1c1c20;
+    font-size: 12px;
+    font-weight: 500;
+  }
+  .btn.pri {
+    background: #e7e7ea;
+    color: #111;
+    border-color: #e7e7ea;
+  }
+  .btn.ic {
+    flex: 0 0 36px;
+  }
+  .lrow {
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+  }
+  .lrow .meta {
+    flex: 1;
+    min-width: 0;
+  }
+  .lrow .meta .name {
+    font-size: 15px;
+  }
+  .chips {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    margin-top: 6px;
+  }
+  .chip {
+    font-size: 10.5px;
+    padding: 2px 7px;
+    border-radius: 999px;
+    background: #1f1f24;
+    border: 1px solid #2e2e34;
+    color: #b7b7bf;
+  }
+  .tabs {
+    display: flex;
+    border-bottom: 1px solid #232327;
+  }
+  .tabs span {
+    flex: 1;
+    text-align: center;
+    padding: 9px 0;
+    font-size: 12px;
+    color: #9a9aa3;
+    position: relative;
+  }
+  .tabs span.on {
+    color: #fff;
+  }
+  .tabs span.on::after {
+    content: '';
+    position: absolute;
+    left: 20%;
+    right: 20%;
+    bottom: -1px;
+    height: 2px;
+    background: #fff;
+    border-radius: 2px;
+  }
+  .body {
+    padding: 10px 14px 14px;
+  }
+  .sec {
+    padding: 10px 0;
+    border-bottom: 1px solid #1e1e22;
+  }
+  .sec:last-child {
+    border-bottom: 0;
+  }
+  .sec .lab {
+    font-size: 9.5px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #7f7f88;
+    margin-bottom: 6px;
+    display: flex;
+    justify-content: space-between;
+  }
+  .sec .lab a {
+    color: #8ab4f8;
+    text-transform: none;
+    letter-spacing: 0;
+    font-size: 10.5px;
+  }
+  .now {
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+    background: #171a1a;
+    border: 1px solid #223;
+    border-radius: 10px;
+    padding: 9px 10px;
+  }
+  .now .t {
+    flex: 1;
+  }
+  .now .t b {
+    display: block;
+    font-size: 12.5px;
+  }
+  .now .t span {
+    color: #9a9aa3;
+    font-size: 11.5px;
+  }
+  .kv {
+    display: grid;
+    grid-template-columns: 78px 1fr;
+    row-gap: 5px;
+    column-gap: 10px;
+    font-size: 12px;
+  }
+  .kv dt {
+    color: #8a8a92;
+  }
+  .kv dd {
+    color: #d7d7dc;
+    margin: 0;
+  }
+  .kv dd code {
+    font-family: ui-monospace, Menlo, monospace;
+    font-size: 11px;
+    color: #c9c9d0;
+  }
+  .list .it {
+    display: flex;
+    justify-content: space-between;
+    padding: 4px 0;
+    font-size: 12px;
+  }
+  .list .it span {
+    color: #8a8a92;
+  }
+  .sum {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+  .sum .chip {
+    background: #1a1a1f;
+  }
+  .legend {
+    margin-top: 0.75rem;
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+  }
+  .legend li {
+    margin-bottom: 0.15rem;
+  }
+  .blocks {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+    gap: 0.6rem;
+    margin: 0.5rem 0 1.5rem;
+  }
+  .blk {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 0.65rem 0.8rem;
+    font-size: 0.8rem;
+  }
+  .blk b {
+    display: block;
+    margin-bottom: 0.15rem;
+  }
+  .blk span {
+    color: var(--text-secondary);
+  }
+  .naming {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 0.75rem 1rem;
+    font-size: 0.82rem;
+    margin: 0.5rem 0 1.5rem;
+  }
+  .naming td {
+    padding: 0.2rem 0.8rem 0.2rem 0;
+    vertical-align: top;
+  }
+  .naming td:first-child {
+    color: var(--text-secondary);
+    white-space: nowrap;
+  }
+  .naming s {
+    color: var(--text-tertiary);
+  }
+</style>
+
+<div class="wrap">
+  <h2>The Profile — anatomy</h2>
+  <p class="subtitle">
+    One component. Shown docked on <code>/session</code>, as a sheet everywhere else. Sample: an
+    agent you manage, mid-work. Which header do you want?
+  </p>
+
+  <div class="two">
+    <!-- OPTION 1: PORTRAIT -->
+    <div class="pane" data-choice="portrait" onclick="toggleSelect(this)">
+      <h3><span class="letter">1</span> Portrait header</h3>
+      <p>
+        Face centered with its colour glow. Reads like a person’s card. Calm, a bit taller. Closest
+        to today’s hero — and to Slack.
+      </p>
+      <div class="prof">
+        <div class="ptabs">
+          <span>Pulse</span><span class="on">Profile</span><span>Session</span><span>Files</span
+          ><span>Canvas</span><span class="x">✕</span>
+        </div>
+        <div class="hero">
+          <div class="kebab">⋮</div>
+          <div class="center">
+            <div class="face">🐧<span class="bot">🤖</span></div>
+            <div class="name">lifeos-starter</div>
+            <div class="handle">@lifeos-starter</div>
+            <div class="desc">
+              Starter agent for the LifeOS app. Knows the repo, writes the weekly digest.
+            </div>
+            <div class="pres">
+              <span class="dot"></span> Working in <b>#team</b> · replying to you · 2 min
+            </div>
+            <div class="owner"><i>Y</i> Managed by You</div>
+          </div>
+          <div class="actions">
+            <div class="btn pri">Message</div>
+            <div class="btn">Manage</div>
+            <div class="btn ic">⋯</div>
+          </div>
+        </div>
+        <div class="tabs">
+          <span class="on">Overview</span><span>Sessions</span><span>Config</span
+          ><span>Toolkit</span>
+        </div>
+        <div class="body">
+          <div class="sec">
+            <div class="lab">Now <a>Go to #team →</a></div>
+            <div class="now">
+              <div class="t">
+                <b>Replying in #team</b><span>Reading 3 files · started 2 min ago</span>
+              </div>
+            </div>
+          </div>
+          <div class="sec">
+            <div class="lab">About <a>Edit</a></div>
+            <dl class="kv">
+              <dt>Runs on</dt>
+              <dd>Claude Code · Opus 4.8 · default effort</dd>
+              <dt>Personality</dt>
+              <dd>Balanced</dd>
+              <dt>Folder</dt>
+              <dd><code>~/.dork/agents/lifeos-starter</code> ⧉</dd>
+              <dt>Joined</dt>
+              <dd>Apr 15, 2026</dd>
+            </dl>
+          </div>
+          <div class="sec">
+            <div class="lab">Recent <a>All sessions →</a></div>
+            <div class="list">
+              <div class="it">Fix onboarding copy <span>2 h</span></div>
+              <div class="it">Weekly digest <span>yesterday</span></div>
+              <div class="it">In #team · #general <span>2 rooms</span></div>
+            </div>
+          </div>
+          <div class="sec">
+            <div class="lab">Toolkit <a>Open →</a></div>
+            <div class="sum">
+              <span class="chip">1 skill pack</span><span class="chip">2 MCP</span
+              ><span class="chip">Scheduling · Messaging</span><span class="chip">1 schedule</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- OPTION 2: COMPACT -->
+    <div class="pane" data-choice="compact" onclick="toggleSelect(this)">
+      <h3><span class="letter">2</span> Compact header</h3>
+      <p>
+        Face left, facts right. Denser — more of the Overview shows without scrolling. Reads like a
+        control panel. Closest to today’s drawer.
+      </p>
+      <div class="prof">
+        <div class="ptabs">
+          <span>Pulse</span><span class="on">Profile</span><span>Session</span><span>Files</span
+          ><span>Canvas</span><span class="x">✕</span>
+        </div>
+        <div class="hero left">
+          <div class="kebab">⋮</div>
+          <div class="lrow">
+            <div class="face sm">🐧<span class="bot">🤖</span></div>
+            <div class="meta">
+              <div class="name">lifeos-starter</div>
+              <div class="handle">@lifeos-starter</div>
+              <div class="pres" style="margin-top: 3px">
+                <span class="dot"></span> Working in <b>#team</b> · 2 min
+              </div>
+              <div class="chips">
+                <span class="chip">Claude Code · Opus 4.8</span><span class="chip">Balanced</span
+                ><span class="chip">Managed by You</span>
+              </div>
+            </div>
+          </div>
+          <div class="actions">
+            <div class="btn pri">Message</div>
+            <div class="btn">Manage</div>
+            <div class="btn ic">⋯</div>
+          </div>
+        </div>
+        <div class="tabs">
+          <span class="on">Overview</span><span>Sessions</span><span>Config</span
+          ><span>Toolkit</span>
+        </div>
+        <div class="body">
+          <div class="sec">
+            <div class="lab">Now <a>Go to #team →</a></div>
+            <div class="now">
+              <div class="t">
+                <b>Replying in #team</b><span>Reading 3 files · started 2 min ago</span>
+              </div>
+            </div>
+          </div>
+          <div class="sec">
+            <div class="lab">About <a>Edit</a></div>
+            <div class="desc" style="margin: 0 0 6px">
+              Starter agent for the LifeOS app. Knows the repo, writes the weekly digest.
+            </div>
+            <dl class="kv">
+              <dt>Folder</dt>
+              <dd><code>~/.dork/agents/lifeos-starter</code> ⧉</dd>
+              <dt>Joined</dt>
+              <dd>Apr 15, 2026</dd>
+            </dl>
+          </div>
+          <div class="sec">
+            <div class="lab">Recent <a>All sessions →</a></div>
+            <div class="list">
+              <div class="it">Fix onboarding copy <span>2 h</span></div>
+              <div class="it">Weekly digest <span>yesterday</span></div>
+              <div class="it">In #team · #general <span>2 rooms</span></div>
+            </div>
+          </div>
+          <div class="sec">
+            <div class="lab">Toolkit <a>Open →</a></div>
+            <div class="sum">
+              <span class="chip">1 skill pack</span><span class="chip">2 MCP</span
+              ><span class="chip">Scheduling · Messaging</span><span class="chip">1 schedule</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <h3 style="margin-top: 2rem">What the Overview answers, in order</h3>
+  <div class="blocks">
+    <div class="blk">
+      <b>1 · Now</b
+      ><span
+        >Is it doing something right now? Uses the real live-turn signal rooms already have (not the
+        60-min mesh window). Idle → “Last active 3 h ago”. Never → “Hasn’t run yet — say hi”.</span
+      >
+    </div>
+    <div class="blk">
+      <b>2 · About</b
+      ><span
+        >What is it: description, runs on, personality, folder (copy/reveal), joined.
+        Inline-editable if you manage it. Read-only otherwise.</span
+      >
+    </div>
+    <div class="blk">
+      <b>3 · Recent</b
+      ><span
+        >Where has it been: last sessions, rooms it’s in, next scheduled run. Each row is a
+        link.</span
+      >
+    </div>
+    <div class="blk">
+      <b>4 · Toolkit</b
+      ><span
+        >What can it use: skills · MCP · tool groups, as counts. One tap to the Toolkit tab.</span
+      >
+    </div>
+  </div>
+
+  <h3>Actions</h3>
+  <div class="blocks">
+    <div class="blk">
+      <b>Message</b
+      ><span
+        >Primary, always first. Agent → opens/continues its session (or DM). Person → DM. Bridged
+        person → DM via that platform.</span
+      >
+    </div>
+    <div class="blk">
+      <b>Manage</b
+      ><span
+        >Only for agents you manage. Jumps to the Config tab. This is the old “Manage” / “Agent hub”
+        verb — one door now.</span
+      >
+    </div>
+    <div class="blk">
+      <b>⋯</b
+      ><span
+        >Copy @handle · Add to room · Set as default · Block · Unregister · Delete. Danger at the
+        bottom, typed confirm stays.</span
+      >
+    </div>
+  </div>
+
+  <h3>Naming (hub is retired)</h3>
+  <div class="naming">
+    <table>
+      <tr>
+        <td>Right-panel tab</td>
+        <td>
+          <s>Agent Profile</s> → <b>Profile</b> (icon: the identity face itself when docked to an
+          agent)
+        </td>
+      </tr>
+      <tr>
+        <td>Verbs everywhere</td>
+        <td>
+          <s>Agent hub</s>, <s>Manage</s>, <s>Open profile</s> → <b>View profile</b> (one verb).
+          “Manage” survives only as the button inside the profile.
+        </td>
+      </tr>
+      <tr>
+        <td>Shortcut ⌘⇧A</td>
+        <td>“Agent profile” → toggles the docked Profile. Keep.</td>
+      </tr>
+      <tr>
+        <td>Deep link</td>
+        <td>
+          <code>?profile=&lt;id&gt;&amp;tab=config</code> — one address for both homes.
+          <s>?panel=agent-hub&amp;hubTab=</s> redirects.
+        </td>
+      </tr>
+      <tr>
+        <td>Code</td>
+        <td>
+          <s>features/agent-hub</s> folds into <b>features/profile</b>. Store:
+          <s>useAgentHubStore</s> → profile store. Personality picker + management menu move with
+          it.
+        </td>
+      </tr>
+      <tr>
+        <td>Inner tabs</td>
+        <td>
+          Overview · Sessions · <b>Config</b> · Toolkit — “Config” is techy; “Setup” is an option.
+          Your call.
+        </td>
+      </tr>
+    </table>
+  </div>
+  <p class="legend">
+    Click 1 or 2. Then tell me: does the Overview order feel right, and Config vs Setup?
+  </p>
+</div>

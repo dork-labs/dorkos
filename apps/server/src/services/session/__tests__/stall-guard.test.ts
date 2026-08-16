@@ -52,13 +52,25 @@ const STALL_DETAILS = {
   timedOut: 'Interrupting the turn did not finish in time; the runtime may have leaked a process.',
 } as const;
 
-/** The three events the guard injects on a stall, parameterized on the outcome. */
-function stallCloseEvents(outcome: keyof typeof STALL_DETAILS): StreamEvent[] {
+/**
+ * The three events the guard injects on a stall, parameterized on the outcome.
+ *
+ * The message defaults to the NEVER-STARTED wording because that is what these
+ * sources are: a controlled source the test never emits from has yielded
+ * nothing, so the guard reports the launch fault rather than the went-quiet one
+ * (DOR-1229). Pass `started: true` for a source that did emit first.
+ */
+function stallCloseEvents(
+  outcome: keyof typeof STALL_DETAILS,
+  opts: { started?: boolean } = {}
+): StreamEvent[] {
   return [
     {
       type: 'error',
       data: {
-        message: 'No activity from the agent for 10 minutes, so the turn was interrupted.',
+        message: opts.started
+          ? 'No activity from the agent for 10 minutes, so the turn was interrupted.'
+          : 'The agent never started working after 10 minutes, so the turn was ended.',
         code: 'turn_stalled',
         category: 'execution_error',
         details: STALL_DETAILS[outcome],
@@ -201,7 +213,15 @@ describe('withStallGuard', () => {
     // absence of an answer.
     expect(warned).toHaveBeenCalledWith(
       '[stall-guard] no activity from the runtime; interrupting the turn',
-      { sessionId: SESSION_ID, inactivityMs: TEN_MINUTES, timeoutMs: TEN_MINUTES }
+      {
+        sessionId: SESSION_ID,
+        inactivityMs: TEN_MINUTES,
+        timeoutMs: TEN_MINUTES,
+        // No first-event window supplied, so this source that never yielded is
+        // still judged by the one window — `neverStarted` reports the fact, it
+        // does not shorten anything on its own.
+        neverStarted: true,
+      }
     );
   });
 
@@ -374,6 +394,94 @@ describe('withStallGuard', () => {
       sessionId: SESSION_ID,
       inactivityMs: 2 * TEN_MINUTES,
       timeoutMs: TEN_MINUTES,
+      neverStarted: true,
+    });
+  });
+
+  // DOR-1229. The ten-minute window buys a RUNNING agent room to be quiet. A
+  // turn that has yielded nothing has not shown it is running, has spent
+  // nothing, and has no work to lose — so its first gap is judged on its own,
+  // shorter clock, and the person is told which of the two faults it was.
+  describe('the first-event window', () => {
+    const TWO_MINUTES = 2 * 60_000;
+
+    it('ends a turn that never yields at the first-event window, not the full one', async () => {
+      const src = createControlledSource();
+      const onStall = vi.fn(async () => true);
+      const collector = collect(
+        withStallGuard(src.source, makeOpts({ onStall, firstEventTimeoutMs: TWO_MINUTES }))
+      );
+      await flush();
+
+      // A minute short of the first-event window: still waiting.
+      await vi.advanceTimersByTimeAsync(TWO_MINUTES - 60_000);
+      await flush();
+      expect(onStall).not.toHaveBeenCalled();
+
+      await vi.advanceTimersByTimeAsync(60_000);
+      await flush();
+      expect(onStall).toHaveBeenCalledTimes(1);
+      expect(collector.isEnded()).toBe(true);
+      // The error a person reads names the fault it actually was.
+      expect(collector.events[0]).toEqual({
+        type: 'error',
+        data: {
+          message: 'The agent never started working after 2 minutes, so the turn was ended.',
+          code: 'turn_stalled',
+          category: 'execution_error',
+          details: STALL_DETAILS.aborted,
+        },
+      });
+      expect(warned).toHaveBeenCalledWith(
+        '[stall-guard] no activity from the runtime; interrupting the turn',
+        {
+          sessionId: SESSION_ID,
+          inactivityMs: TWO_MINUTES,
+          timeoutMs: TWO_MINUTES,
+          neverStarted: true,
+        }
+      );
+    });
+
+    it('hands a turn the FULL window the moment it yields once', async () => {
+      const src = createControlledSource();
+      const onStall = vi.fn(async () => true);
+      const collector = collect(
+        withStallGuard(src.source, makeOpts({ onStall, firstEventTimeoutMs: TWO_MINUTES }))
+      );
+      await flush();
+
+      src.emit(delta('working on it'));
+      await flush();
+
+      // Nine minutes of silence — four and a half first-event windows — and the
+      // turn is left alone, because it has proved it is running.
+      await vi.advanceTimersByTimeAsync(9 * 60_000);
+      await flush();
+      expect(onStall).not.toHaveBeenCalled();
+      expect(collector.isEnded()).toBe(false);
+
+      await vi.advanceTimersByTimeAsync(60_000);
+      await flush();
+      expect(onStall).toHaveBeenCalledTimes(1);
+      // And it is reported as the other fault: this one DID start.
+      expect(collector.events.slice(1)).toEqual(stallCloseEvents('aborted', { started: true }));
+    });
+
+    it('never lengthens a shorter inactivity window a caller asked for', async () => {
+      const src = createControlledSource();
+      const onStall = vi.fn(async () => true);
+      collect(
+        withStallGuard(
+          src.source,
+          makeOpts({ onStall, timeoutMs: 30_000, firstEventTimeoutMs: TWO_MINUTES })
+        )
+      );
+      await flush();
+
+      await vi.advanceTimersByTimeAsync(30_000);
+      await flush();
+      expect(onStall).toHaveBeenCalledTimes(1);
     });
   });
 

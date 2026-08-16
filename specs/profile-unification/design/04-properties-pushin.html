@@ -1,0 +1,660 @@
+<style>
+  .wrap {
+    max-width: 1240px;
+    margin: 0 auto;
+  }
+  .three {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1.1rem;
+    align-items: start;
+  }
+  @media (max-width: 1000px) {
+    .three {
+      grid-template-columns: 1fr;
+    }
+  }
+  .cap {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    margin: 0 0 0.5rem;
+    text-align: center;
+  }
+  .cap b {
+    color: var(--text-primary);
+  }
+  .arrowcol {
+    text-align: center;
+    color: var(--text-tertiary);
+    font-size: 0.75rem;
+    margin: 0.4rem 0 1.5rem;
+  }
+  .rules {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+    gap: 0.6rem;
+    margin: 0.5rem 0 1.5rem;
+  }
+  .rule {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 0.65rem 0.8rem;
+    font-size: 0.8rem;
+  }
+  .rule b {
+    display: block;
+    margin-bottom: 0.1rem;
+  }
+  .rule span {
+    color: var(--text-secondary);
+  }
+  .q {
+    background: var(--bg-secondary);
+    border: 2px solid var(--border);
+    border-radius: 12px;
+    padding: 0.8rem 1rem;
+    margin-top: 1rem;
+  }
+  .q h3 {
+    font-size: 0.95rem;
+  }
+  .q p {
+    font-size: 0.82rem;
+    color: var(--text-secondary);
+  }
+  .options {
+    margin-top: 0.6rem;
+  }
+  .option .content p {
+    font-size: 0.8rem;
+  }
+
+  /* dark mock */
+  .prof {
+    width: 100%;
+    max-width: 360px;
+    height: 640px;
+    margin: 0 auto;
+    background: #111113;
+    color: #e7e7ea;
+    border: 1px solid #2a2a2e;
+    border-radius: 12px;
+    overflow: hidden;
+    font-size: 12.5px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+    font-family:
+      system-ui,
+      -apple-system,
+      sans-serif;
+    display: flex;
+    flex-direction: column;
+  }
+  .prof * {
+    box-sizing: border-box;
+  }
+  .ptabs {
+    display: flex;
+    gap: 6px;
+    padding: 8px 10px;
+    border-bottom: 1px solid #1e1e22;
+    font-size: 10.5px;
+    color: #8a8a92;
+    flex: 0 0 auto;
+  }
+  .ptabs span {
+    padding: 3px 8px;
+    border-radius: 6px;
+  }
+  .ptabs span.on {
+    background: #26262b;
+    color: #fff;
+  }
+  .ptabs .x {
+    margin-left: auto;
+  }
+  .scroll {
+    flex: 1;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+  .hero {
+    position: relative;
+    padding: 24px 18px 16px;
+    text-align: center;
+    flex: 0 0 auto;
+  }
+  .hero::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(55% 60% at 50% 0%, rgba(62, 193, 211, 0.2), transparent 70%);
+    pointer-events: none;
+  }
+  .kebab {
+    position: absolute;
+    top: 8px;
+    right: 12px;
+    color: #6f6f78;
+    font-size: 16px;
+    line-height: 1;
+  }
+  .face {
+    width: 72px;
+    height: 72px;
+    margin: 0 auto 12px;
+    border-radius: 18px;
+    background: #3ec1d3;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 38px;
+    position: relative;
+  }
+  .face .bot {
+    position: absolute;
+    right: -4px;
+    bottom: -4px;
+    width: 17px;
+    height: 17px;
+    border-radius: 5px;
+    background: #1c1c20;
+    border: 1px solid #3a3a40;
+    font-size: 9px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .name {
+    font-size: 17px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+  .handle {
+    color: #8a8a92;
+    font-size: 12px;
+    margin-top: 1px;
+  }
+  .status {
+    margin-top: 10px;
+    font-size: 12.5px;
+    color: #d7d7dc;
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+  }
+  .dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #34c759;
+    box-shadow: 0 0 0 3px rgba(52, 199, 89, 0.16);
+  }
+  .btn {
+    display: block;
+    margin: 14px auto 0;
+    width: 100%;
+    text-align: center;
+    padding: 8px;
+    border-radius: 9px;
+    background: #e7e7ea;
+    color: #111;
+    font-weight: 500;
+    font-size: 12.5px;
+  }
+  .grp {
+    border-top: 1px solid #1e1e22;
+  }
+  .grp + .grp {
+    margin-top: 10px;
+  }
+  .row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 18px;
+    border-bottom: 1px solid #18181c;
+    font-size: 12.5px;
+  }
+  .grp .row:last-child {
+    border-bottom: 1px solid #1e1e22;
+  }
+  .row .l {
+    color: #8a8a92;
+    flex: 0 0 auto;
+  }
+  .row .v {
+    color: #e0e0e5;
+    text-align: right;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .row .v small {
+    color: #6f6f78;
+    margin-left: 6px;
+  }
+  .row .c {
+    color: #5c5c66;
+    margin-left: 6px;
+  }
+  .row.hi {
+    background: rgba(62, 193, 211, 0.08);
+  }
+  code {
+    font-family: ui-monospace, Menlo, monospace;
+    font-size: 11px;
+  }
+  /* pushed page */
+  .bar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    border-bottom: 1px solid #1e1e22;
+    flex: 0 0 auto;
+    position: relative;
+  }
+  .bar::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(90deg, rgba(62, 193, 211, 0.1), transparent 60%);
+    pointer-events: none;
+  }
+  .back {
+    color: #8ab4f8;
+    font-size: 12.5px;
+    flex: 0 0 auto;
+  }
+  .strip {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+  }
+  .strip .f {
+    width: 26px;
+    height: 26px;
+    border-radius: 7px;
+    background: #3ec1d3;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    flex: 0 0 auto;
+  }
+  .strip .n {
+    font-size: 12.5px;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .strip .s {
+    font-size: 11px;
+    color: #8a8a92;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+  }
+  .strip .s .dot {
+    width: 6px;
+    height: 6px;
+    box-shadow: none;
+  }
+  .title {
+    padding: 14px 18px 6px;
+    font-size: 16px;
+    font-weight: 600;
+    flex: 0 0 auto;
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+  }
+  .title small {
+    font-size: 11px;
+    color: #8a8a92;
+    font-weight: 400;
+  }
+  .search {
+    margin: 4px 14px 8px;
+    padding: 6px 10px;
+    border-radius: 8px;
+    background: #1a1a1f;
+    border: 1px solid #26262b;
+    color: #6f6f78;
+    font-size: 12px;
+  }
+  .grph {
+    padding: 8px 18px 4px;
+    font-size: 9.5px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #5f5f68;
+  }
+  .sess {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 9px 18px;
+    border-bottom: 1px solid #18181c;
+    font-size: 12.5px;
+  }
+  .sess .t {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .sess .m {
+    color: #6f6f78;
+    font-size: 11px;
+    flex: 0 0 auto;
+    margin-left: 10px;
+  }
+  .sess.live .t::before {
+    content: '';
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #34c759;
+    margin-right: 7px;
+    vertical-align: middle;
+  }
+  .fill {
+    flex: 1;
+  }
+  .editor {
+    flex: 1;
+    margin: 8px 14px 14px;
+    background: #0d0d0f;
+    border: 1px solid #232327;
+    border-radius: 10px;
+    padding: 12px;
+    font-family: ui-monospace, Menlo, monospace;
+    font-size: 11px;
+    color: #c9c9d0;
+    line-height: 1.55;
+    overflow: hidden;
+  }
+  .editor .cm {
+    color: #6f6f78;
+  }
+  .toolbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0 14px 12px;
+    font-size: 11px;
+    color: #8a8a92;
+    flex: 0 0 auto;
+  }
+  .toolbar b {
+    color: #e7e7ea;
+    background: #e7e7ea;
+    color: #111;
+    padding: 5px 12px;
+    border-radius: 7px;
+    font-weight: 500;
+  }
+</style>
+
+<div class="wrap">
+  <h2>B, refined — Properties + push-in pages</h2>
+  <p class="subtitle">
+    One list. Rows that go somewhere take the whole panel. Only a back link and a small identity
+    strip stay at the top.
+  </p>
+
+  <div class="three">
+    <div>
+      <p class="cap"><b>Root</b> — Portrait header, one button, grouped rows (no labels)</p>
+      <div class="prof">
+        <div class="ptabs">
+          <span>Pulse</span><span class="on">Profile</span><span>Session</span><span>Files</span
+          ><span class="x">✕</span>
+        </div>
+        <div class="scroll">
+          <div class="hero">
+            <div class="kebab">⋮</div>
+            <div class="face">🐧<span class="bot">🤖</span></div>
+            <div class="name">lifeos-starter</div>
+            <div class="handle">@lifeos-starter</div>
+            <div class="status"><span class="dot"></span> Replying to you in #team · 2 min</div>
+            <div class="btn">Message</div>
+          </div>
+          <div class="grp">
+            <div class="row">
+              <span class="l">About</span
+              ><span class="v">Starter agent for the LifeOS app…<span class="c">›</span></span>
+            </div>
+            <div class="row">
+              <span class="l">Runs on</span
+              ><span class="v">Claude Code · Opus 4.8<span class="c">▾</span></span>
+            </div>
+            <div class="row">
+              <span class="l">Personality</span
+              ><span class="v">Balanced<span class="c">▾</span></span>
+            </div>
+            <div class="row">
+              <span class="l">Folder</span
+              ><span class="v"
+                ><code>~/.dork/agents/lifeos-starter</code><span class="c">⧉</span></span
+              >
+            </div>
+          </div>
+          <div class="grp">
+            <div class="row hi">
+              <span class="l">Sessions</span
+              ><span class="v">12<small>last 2 h</small><span class="c">›</span></span>
+            </div>
+            <div class="row">
+              <span class="l">Rooms</span
+              ><span class="v">#team, #general<span class="c">›</span></span>
+            </div>
+            <div class="row">
+              <span class="l">Schedule</span
+              ><span class="v">Weekdays 9:00<span class="c">›</span></span>
+            </div>
+          </div>
+          <div class="grp">
+            <div class="row">
+              <span class="l">Skills</span><span class="v">1 pack<span class="c">›</span></span>
+            </div>
+            <div class="row">
+              <span class="l">Tools &amp; MCP</span
+              ><span class="v">2 servers<span class="c">›</span></span>
+            </div>
+            <div class="row">
+              <span class="l">Connections</span><span class="v">Slack<span class="c">›</span></span>
+            </div>
+            <div class="row">
+              <span class="l">Instructions</span
+              ><span class="v">SOUL.md<span class="c">›</span></span>
+            </div>
+            <div class="row">
+              <span class="l">Boundaries</span
+              ><span class="v">NOPE.md<span class="c">›</span></span>
+            </div>
+          </div>
+          <div class="grp">
+            <div class="row">
+              <span class="l">Managed by</span><span class="v">You<span class="c">›</span></span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <p class="cap"><b>Sessions</b> — pushed in, full height</p>
+      <div class="prof">
+        <div class="ptabs">
+          <span>Pulse</span><span class="on">Profile</span><span>Session</span><span>Files</span
+          ><span class="x">✕</span>
+        </div>
+        <div class="scroll">
+          <div class="bar">
+            <span class="back">‹ Profile</span>
+            <div class="strip">
+              <div class="f">🐧</div>
+              <div>
+                <div class="n">lifeos-starter</div>
+                <div class="s"><span class="dot"></span> Replying in #team · 2 min</div>
+              </div>
+            </div>
+          </div>
+          <div class="title">Sessions <small>12</small></div>
+          <div class="search">Search sessions…</div>
+          <div class="grph">Today</div>
+          <div class="sess live">
+            <span class="t">Reply in #team</span><span class="m">now</span>
+          </div>
+          <div class="sess">
+            <span class="t">Fix onboarding copy</span><span class="m">2 h</span>
+          </div>
+          <div class="sess">
+            <span class="t">Explain the relay bindings</span><span class="m">5 h</span>
+          </div>
+          <div class="grph">Yesterday</div>
+          <div class="sess"><span class="t">Weekly digest</span><span class="m">18:02</span></div>
+          <div class="sess"><span class="t">Triage inbox</span><span class="m">09:14</span></div>
+          <div class="grph">Earlier</div>
+          <div class="sess">
+            <span class="t">Draft the LifeOS roadmap</span><span class="m">Aug 12</span>
+          </div>
+          <div class="sess">
+            <span class="t">Migrate settings schema</span><span class="m">Aug 11</span>
+          </div>
+          <div class="sess">
+            <span class="t">Onboarding walkthrough</span><span class="m">Aug 9</span>
+          </div>
+          <div class="sess">
+            <span class="t">Read the litepaper</span><span class="m">Aug 8</span>
+          </div>
+          <div class="fill"></div>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <p class="cap"><b>Instructions</b> — an editor, also full height</p>
+      <div class="prof">
+        <div class="ptabs">
+          <span>Pulse</span><span class="on">Profile</span><span>Session</span><span>Files</span
+          ><span class="x">✕</span>
+        </div>
+        <div class="scroll">
+          <div class="bar">
+            <span class="back">‹ Profile</span>
+            <div class="strip">
+              <div class="f">🐧</div>
+              <div>
+                <div class="n">lifeos-starter</div>
+                <div class="s"><span class="dot"></span> Replying in #team · 2 min</div>
+              </div>
+            </div>
+          </div>
+          <div class="title">Instructions <small>SOUL.md · 1,240 chars</small></div>
+          <div class="editor">
+            <span class="cm"># Who you are</span><br />You are the LifeOS starter agent. You know
+            the repo layout, the release train, and how the weekly digest is built.<br /><br /><span
+              class="cm"
+              ># How you work</span
+            ><br />- Read before you write.<br />- Prefer small, reviewable changes.<br />- When
+            unsure, ask in #team.<br /><br /><span class="cm"># Voice</span><br />Plain words. Short
+            sentences. No hype.<br /><br />|
+          </div>
+          <div class="toolbar"><span>Saved 2 min ago</span><b>Save</b></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="arrowcol">
+    On push: the portrait header shrinks into the strip (same face, same colour wash), the list
+    slides left. Back reverses. ~250 ms, position-only. No celebration.
+  </div>
+
+  <h3>Rules that keep it calm</h3>
+  <div class="rules">
+    <div class="rule">
+      <b>Two kinds of rows</b
+      ><span
+        ><b>▾</b> = quick pick, opens a small popover (Runs on, Personality). <b>›</b> = a page,
+        takes the whole panel. <b>⧉</b> = copy. Nothing else.</span
+      >
+    </div>
+    <div class="rule">
+      <b>Every pushed page has the same top</b
+      ><span
+        >“‹ Profile” + the strip. Then a title. Then the content owns the height. Search only where
+        the list can grow.</span
+      >
+    </div>
+    <div class="rule">
+      <b>Groups by spacing, not labels</b
+      ><span>Identity · Work · Toolkit · Ownership. A gap says enough.</span>
+    </div>
+    <div class="rule">
+      <b>Read-only is the same list, minus arrows</b
+      ><span
+        >Someone else’s agent, a person, DorkBot’s locked fields: same rows, no ▾ / ›, no
+        Save.</span
+      >
+    </div>
+    <div class="rule">
+      <b>Managed by → is a profile too</b
+      ><span>Tapping “You” pushes your own profile onto the same stack. Profiles chain.</span>
+    </div>
+    <div class="rule">
+      <b>Kebab is only the rare stuff</b
+      ><span
+        >Set as default · Copy @handle · Block · Unregister · Delete. Danger last, typed confirm
+        stays.</span
+      >
+    </div>
+  </div>
+
+  <div class="q">
+    <h3>One thing this changes: editing yourself</h3>
+    <p>
+      The old rule was “drawer to view, Settings › Profile to edit”. With B, your own profile’s rows
+      (Name, @handle, Photo, Email) are the controls — same as an agent’s. That makes Settings ›
+      Profile a second door to the same room.
+    </p>
+    <div class="options">
+      <div class="option" data-choice="self-inplace" onclick="toggleSelect(this)">
+        <div class="letter">1</div>
+        <div class="content">
+          <h3>Edit in place, drop Settings › Profile (recommended)</h3>
+          <p>
+            One rule for everyone: if it’s yours, the row is the control. Settings loses a tab.
+            Account menu: View profile · Settings · Sign out.
+          </p>
+        </div>
+      </div>
+      <div class="option" data-choice="self-both" onclick="toggleSelect(this)">
+        <div class="letter">2</div>
+        <div class="content">
+          <h3>Keep both</h3>
+          <p>
+            Rows editable in the profile, and Settings › Profile stays as a form for people who look
+            there. Two doors, same room.
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <p class="cap" style="text-align: left; margin-top: 1.25rem">
+    Tell me: does the strip at the top of pushed pages feel right? Should Sessions carry search?
+    Then I’ll draw the states (you · other person · Telegram guest · your agent · someone else’s
+    agent · DorkBot).
+  </p>
+</div>

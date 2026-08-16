@@ -12,7 +12,15 @@ export interface ConfigStore {
   getDot(key: string): unknown;
   setDot(key: string, value: unknown): { warning?: string };
   reset(key?: string): void;
-  validate(): { valid: boolean; errors?: string[] };
+  /**
+   * Whether the config DorkOS is running on satisfies the schema.
+   *
+   * `warnings` names settings whose stored value this build cannot read — a
+   * newer build widened them, so DorkOS is running on the default and has left
+   * the value in the file (DOR-1227). Those are reported, never fatal: they are
+   * version skew, not damage.
+   */
+  validate(): { valid: boolean; errors?: string[]; warnings?: string[] };
   readonly path: string;
 }
 
@@ -171,18 +179,29 @@ export function handleConfigPath(store: ConfigStore): void {
 /**
  * Validate config against schema.
  *
- * Exits with code 0 if valid, 1 if invalid.
+ * Exits with code 0 if valid, 1 if invalid. A setting whose value was written by
+ * a newer version of DorkOS is printed as a note, not a failure — the file is
+ * fine, this version just cannot read that one value (DOR-1227).
  */
 export function handleConfigValidate(store: ConfigStore): void {
   const result = store.validate();
+  const printWarnings = (): void => {
+    if (!result.warnings?.length) return;
+    console.log('');
+    console.log('Settings saved by a newer version of DorkOS, which this one cannot read:');
+    for (const warning of result.warnings) console.log(`  - ${warning}`);
+    console.log('They are still in your file, and the version that wrote them will use them.');
+  };
   if (result.valid) {
     console.log('Config is valid');
+    printWarnings();
     process.exit(0);
   } else {
     console.error('Config validation failed:');
     for (const err of result.errors ?? []) {
       console.error(`  - ${err}`);
     }
+    printWarnings();
     process.exit(1);
   }
 }

@@ -1,0 +1,613 @@
+<style>
+  .wrap {
+    max-width: 1240px;
+    margin: 0 auto;
+  }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1.1rem 1.1rem;
+    align-items: start;
+  }
+  @media (max-width: 1000px) {
+    .grid {
+      grid-template-columns: 1fr 1fr;
+    }
+  }
+  .cap {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    margin: 0 0 0.45rem;
+    text-align: center;
+    min-height: 2.6em;
+  }
+  .cap b {
+    color: var(--text-primary);
+  }
+  .notes {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+    gap: 0.6rem;
+    margin: 1.5rem 0 0.5rem;
+  }
+  .note {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 0.65rem 0.8rem;
+    font-size: 0.8rem;
+  }
+  .note b {
+    display: block;
+    margin-bottom: 0.1rem;
+  }
+  .note span {
+    color: var(--text-secondary);
+  }
+  .ask {
+    font-size: 0.82rem;
+    color: var(--text-secondary);
+    margin-top: 1rem;
+  }
+
+  .prof {
+    width: 100%;
+    max-width: 340px;
+    margin: 0 auto;
+    background: #111113;
+    color: #e7e7ea;
+    border: 1px solid #2a2a2e;
+    border-radius: 12px;
+    overflow: hidden;
+    font-size: 12px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+    font-family:
+      system-ui,
+      -apple-system,
+      sans-serif;
+  }
+  .prof * {
+    box-sizing: border-box;
+  }
+  .hero {
+    position: relative;
+    padding: 22px 16px 14px;
+    text-align: center;
+    --ic: #3ec1d3;
+  }
+  .hero::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(
+      55% 60% at 50% 0%,
+      color-mix(in srgb, var(--ic) 22%, transparent),
+      transparent 70%
+    );
+    pointer-events: none;
+  }
+  .kebab {
+    position: absolute;
+    top: 8px;
+    right: 12px;
+    color: #6f6f78;
+    font-size: 16px;
+    line-height: 1;
+  }
+  .face {
+    width: 64px;
+    height: 64px;
+    margin: 0 auto 10px;
+    border-radius: 16px;
+    background: var(--ic);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 32px;
+    position: relative;
+    color: #fff;
+    font-weight: 600;
+  }
+  .face.person {
+    border-radius: 50%;
+    font-size: 24px;
+    background: color-mix(in srgb, var(--ic) 35%, #1a1a1f);
+    color: #fff;
+  }
+  .face .bot,
+  .face .plat {
+    position: absolute;
+    right: -4px;
+    bottom: -4px;
+    width: 17px;
+    height: 17px;
+    border-radius: 5px;
+    background: #1c1c20;
+    border: 1px solid #3a3a40;
+    font-size: 9px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .face .plat {
+    border-radius: 50%;
+    background: #2aabee;
+    border-color: #2aabee;
+  }
+  .name {
+    font-size: 16px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .name .badge {
+    font-size: 9.5px;
+    font-weight: 500;
+    padding: 1px 6px;
+    border-radius: 999px;
+    background: #26262b;
+    color: #b7b7bf;
+  }
+  .handle {
+    color: #8a8a92;
+    font-size: 11.5px;
+    margin-top: 1px;
+  }
+  .status {
+    margin-top: 8px;
+    font-size: 12px;
+    color: #d7d7dc;
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+  }
+  .dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #34c759;
+    box-shadow: 0 0 0 3px rgba(52, 199, 89, 0.16);
+  }
+  .dot.idle {
+    background: #6f6f78;
+    box-shadow: none;
+  }
+  .owner {
+    margin-top: 9px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11.5px;
+    color: #b7b7bf;
+    padding: 3px 9px 3px 4px;
+    border-radius: 999px;
+    background: #1c1c21;
+    border: 1px solid #2a2a30;
+  }
+  .owner i {
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: #5b3fd6;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-style: normal;
+    font-size: 9px;
+    color: #fff;
+  }
+  .owner i.sq {
+    border-radius: 4px;
+    background: #e0b12c;
+  }
+  .btn {
+    display: block;
+    margin: 12px auto 0;
+    width: 100%;
+    text-align: center;
+    padding: 7px;
+    border-radius: 9px;
+    background: #e7e7ea;
+    color: #111;
+    font-weight: 500;
+    font-size: 12px;
+  }
+  .btn.ghost {
+    background: transparent;
+    color: #6f6f78;
+    border: 1px dashed #2e2e34;
+  }
+  .grp {
+    border-top: 1px solid #1e1e22;
+  }
+  .grp + .grp {
+    margin-top: 8px;
+  }
+  .row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+    padding: 9px 16px;
+    border-bottom: 1px solid #18181c;
+    font-size: 12px;
+  }
+  .grp .row:last-child {
+    border-bottom: 1px solid #1e1e22;
+  }
+  .row .l {
+    color: #8a8a92;
+    flex: 0 0 auto;
+  }
+  .row .v {
+    color: #e0e0e5;
+    text-align: right;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 6px;
+  }
+  .row .v small {
+    color: #6f6f78;
+  }
+  .row .c {
+    color: #5c5c66;
+  }
+  .row .lock {
+    color: #5c5c66;
+    font-size: 10px;
+  }
+  .stack {
+    display: inline-flex;
+  }
+  .stack b {
+    width: 18px;
+    height: 18px;
+    border-radius: 5px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 10px;
+    margin-left: -5px;
+    border: 1.5px solid #111113;
+  }
+  code {
+    font-family: ui-monospace, Menlo, monospace;
+    font-size: 10.5px;
+  }
+</style>
+
+<div class="wrap">
+  <h2>The Profile across six identities</h2>
+  <p class="subtitle">
+    Same shell every time. What changes: the status line, who’s above the button, whether the button
+    exists, and which rows have arrows.
+  </p>
+
+  <div class="grid">
+    <!-- 1 YOU -->
+    <div>
+      <p class="cap">
+        <b>1 · You</b> — no Message (it’s you). Rows are your controls. Manages shows your agents.
+      </p>
+      <div class="prof">
+        <div class="hero" style="--ic: #5b3fd6">
+          <div class="kebab">⋮</div>
+          <div class="face person">D</div>
+          <div class="name">Dorian <span class="badge">you</span></div>
+          <div class="handle">@dorian</div>
+          <div class="status"><span class="dot"></span> On this machine</div>
+        </div>
+        <div class="grp">
+          <div class="row">
+            <span class="l">Name</span><span class="v">Dorian <span class="c">›</span></span>
+          </div>
+          <div class="row">
+            <span class="l">Handle</span><span class="v">@dorian <span class="c">›</span></span>
+          </div>
+          <div class="row">
+            <span class="l">Photo</span
+            ><span class="v"><small>Add a photo</small> <span class="c">›</span></span>
+          </div>
+          <div class="row">
+            <span class="l">Email</span
+            ><span class="v">dorian@dorkos.ai <span class="lock">🔒</span></span>
+          </div>
+        </div>
+        <div class="grp">
+          <div class="row">
+            <span class="l">Manages</span
+            ><span class="v"
+              ><span class="stack"
+                ><b style="background: #3ec1d3">🐧</b><b style="background: #e0b12c">🦋</b
+                ><b style="background: #e05c8a">🐸</b></span
+              >
+              12 agents <span class="c">›</span></span
+            >
+          </div>
+          <div class="row">
+            <span class="l">Rooms</span
+            ><span class="v">#team, #general, +2 <span class="c">›</span></span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 2 OTHER PERSON -->
+    <div>
+      <p class="cap">
+        <b>2 · Another person</b> (multi-user later) — Message = DM. Read-only rows. Their agents
+        listed.
+      </p>
+      <div class="prof">
+        <div class="hero" style="--ic: #e0b12c">
+          <div class="kebab">⋮</div>
+          <div class="face person">P</div>
+          <div class="name">Priya</div>
+          <div class="handle">@priya</div>
+          <div class="status"><span class="dot idle"></span> Last seen 3 h ago</div>
+          <div class="btn">Message</div>
+        </div>
+        <div class="grp">
+          <div class="row"><span class="l">Role</span><span class="v">Staff architect</span></div>
+          <div class="row">
+            <span class="l">Manages</span
+            ><span class="v"
+              ><span class="stack"
+                ><b style="background: #e0b12c">🦉</b><b style="background: #6f8f3e">🌿</b></span
+              >
+              4 agents <span class="c">›</span></span
+            >
+          </div>
+          <div class="row">
+            <span class="l">Rooms</span
+            ><span class="v">#team, #general <span class="c">›</span></span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 3 TELEGRAM GUEST -->
+    <div>
+      <p class="cap">
+        <b>3 · Someone via Telegram</b> — platform on the face and in the status. Message goes out
+        through Telegram.
+      </p>
+      <div class="prof">
+        <div class="hero" style="--ic: #2aabee">
+          <div class="kebab">⋮</div>
+          <div class="face person">M<span class="plat">✈</span></div>
+          <div class="name">Miguel</div>
+          <div class="handle">@miguel.telegram</div>
+          <div class="status">On Telegram</div>
+          <div class="btn">Message</div>
+        </div>
+        <div class="grp">
+          <div class="row">
+            <span class="l">Rooms</span><span class="v">#general <span class="c">›</span></span>
+          </div>
+          <div class="row"><span class="l">First seen</span><span class="v">Aug 3, 2026</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 4 YOUR AGENT -->
+    <div>
+      <p class="cap">
+        <b>4 · Your agent</b> — “Managed by You” above the button. Docked in its own session? The
+        Message button is simply gone.
+      </p>
+      <div class="prof">
+        <div class="hero" style="--ic: #3ec1d3">
+          <div class="kebab">⋮</div>
+          <div class="face">🐧<span class="bot">🤖</span></div>
+          <div class="name">lifeos-starter</div>
+          <div class="handle">@lifeos-starter</div>
+          <div class="status"><span class="dot"></span> Replying to you in #team · 2 min</div>
+          <div>
+            <span class="owner"><i>D</i> Managed by You</span>
+          </div>
+          <div class="btn">Message</div>
+        </div>
+        <div class="grp">
+          <div class="row">
+            <span class="l">About</span
+            ><span class="v">Starter agent for the LifeOS app… <span class="c">›</span></span>
+          </div>
+          <div class="row">
+            <span class="l">Runs on</span
+            ><span class="v">Claude Code · Opus 4.8 <span class="c">▾</span></span>
+          </div>
+          <div class="row">
+            <span class="l">Personality</span
+            ><span class="v">Balanced <span class="c">▾</span></span>
+          </div>
+          <div class="row">
+            <span class="l">Folder</span
+            ><span class="v"
+              ><code>~/.dork/agents/lifeos-starter</code> <span class="c">⧉</span></span
+            >
+          </div>
+        </div>
+        <div class="grp">
+          <div class="row">
+            <span class="l">Sessions</span
+            ><span class="v">12 <small>last 2 h</small> <span class="c">›</span></span>
+          </div>
+          <div class="row">
+            <span class="l">Tasks</span
+            ><span class="v">2 scheduled <small>next 9:00</small> <span class="c">›</span></span>
+          </div>
+          <div class="row">
+            <span class="l">Rooms</span
+            ><span class="v">#team, #general <span class="c">›</span></span>
+          </div>
+        </div>
+        <div class="grp">
+          <div class="row">
+            <span class="l">Skills</span><span class="v">1 pack <span class="c">›</span></span>
+          </div>
+          <div class="row">
+            <span class="l">Tools &amp; MCP</span
+            ><span class="v">2 servers <span class="c">›</span></span>
+          </div>
+          <div class="row">
+            <span class="l">Connections</span><span class="v">Slack <span class="c">›</span></span>
+          </div>
+          <div class="row">
+            <span class="l">Instructions</span
+            ><span class="v">SOUL.md <span class="c">›</span></span>
+          </div>
+          <div class="row">
+            <span class="l">Boundaries</span><span class="v">NOPE.md <span class="c">›</span></span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 5 SOMEONE ELSE'S AGENT -->
+    <div>
+      <p class="cap">
+        <b>5 · Someone else’s agent</b> — “Managed by Priya” (tap → her profile). Public rows only.
+        No config, no sessions, no arrows.
+      </p>
+      <div class="prof">
+        <div class="hero" style="--ic: #e0b12c">
+          <div class="kebab">⋮</div>
+          <div class="face">🦉<span class="bot">🤖</span></div>
+          <div class="name">atlas</div>
+          <div class="handle">@atlas</div>
+          <div class="status"><span class="dot idle"></span> Last active yesterday</div>
+          <div>
+            <span class="owner"><i>P</i> Managed by Priya <span class="c">›</span></span>
+          </div>
+          <div class="btn">Message</div>
+        </div>
+        <div class="grp">
+          <div class="row">
+            <span class="l">About</span
+            ><span class="v">Reads the architecture docs, answers design questions</span>
+          </div>
+          <div class="row"><span class="l">Runs on</span><span class="v">Codex</span></div>
+          <div class="row">
+            <span class="l">Rooms</span><span class="v">#team <span class="c">›</span></span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 6 DORKBOT -->
+    <div>
+      <p class="cap">
+        <b>6 · DorkBot</b> — belongs to the install, not a person. Identity rows locked with a
+        reason; model still yours to set. Kebab: Set as default only.
+      </p>
+      <div class="prof">
+        <div class="hero" style="--ic: #3b82f6">
+          <div class="kebab">⋮</div>
+          <div class="face">🌊<span class="bot">🤖</span></div>
+          <div class="name">
+            DorkBot <span class="badge">system</span> <span class="badge">default</span>
+          </div>
+          <div class="handle">@dorkbot</div>
+          <div class="status"><span class="dot idle"></span> Last active 20 min ago</div>
+          <div>
+            <span class="owner"><i class="sq">⌂</i> System agent</span>
+          </div>
+          <div class="btn">Message</div>
+        </div>
+        <div class="grp">
+          <div class="row">
+            <span class="l">About</span
+            ><span class="v">Your guide to DorkOS <span class="lock">🔒</span></span>
+          </div>
+          <div class="row">
+            <span class="l">Runs on</span
+            ><span class="v">Claude Code · Opus 4.8 <span class="c">▾</span></span>
+          </div>
+          <div class="row">
+            <span class="l">Personality</span
+            ><span class="v">Balanced <span class="lock">🔒</span></span>
+          </div>
+        </div>
+        <div class="grp">
+          <div class="row">
+            <span class="l">Sessions</span
+            ><span class="v">38 <small>last 20 min</small> <span class="c">›</span></span>
+          </div>
+          <div class="row">
+            <span class="l">Tasks</span><span class="v">1 scheduled <span class="c">›</span></span>
+          </div>
+          <div class="row">
+            <span class="l">Rooms</span
+            ><span class="v">#team, #general, +2 <span class="c">›</span></span>
+          </div>
+        </div>
+        <div class="grp">
+          <div class="row">
+            <span class="l">Skills</span><span class="v">3 packs <span class="c">›</span></span>
+          </div>
+          <div class="row">
+            <span class="l">Tools &amp; MCP</span
+            ><span class="v">4 servers <span class="c">›</span></span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="notes">
+    <div class="note">
+      <b>Header order, always</b
+      ><span
+        >face → name (+ badges) → @handle → status → who it belongs to → the one button. Nothing
+        else lives up there.</span
+      >
+    </div>
+    <div class="note">
+      <b>Message shows only when it does something</b
+      ><span
+        >Gone for yourself. Gone when the profile is docked in that agent’s own session. Otherwise:
+        agent → open/continue its session; person → DM; Telegram → DM through Telegram.</span
+      >
+    </div>
+    <div class="note">
+      <b>Managed by / Manages are the same link, both ways</b
+      ><span
+        >Agent → owner’s face + name, tap to push their profile. Person → face stack + count, tap to
+        push the list. Buzz’s vouch model, drawn.</span
+      >
+    </div>
+    <div class="note">
+      <b>Locked ≠ hidden</b
+      ><span
+        >DorkBot’s identity rows stay visible with a 🔒 and a one-line reason on tap (“DorkBot’s
+        name and face are part of DorkOS”). No more 403 surprises.</span
+      >
+    </div>
+    <div class="note">
+      <b>Private ≠ locked</b
+      ><span
+        >Someone else’s agent shows only what a teammate should see: about, runs on, rooms in
+        common. Their sessions, tools, instructions are not yours to read.</span
+      >
+    </div>
+    <div class="note">
+      <b>Tasks, not Schedule</b
+      ><span
+        >The row is “Tasks · 2 scheduled · next 9:00 ›” and pushes the agent-filtered Tasks list
+        (runs + schedules). Presets don’t appear unless the list is empty.</span
+      >
+    </div>
+  </div>
+
+  <p class="ask">
+    <b>Approved 2026-08-16.</b> DorkBot’s belongs-to line reads “System agent”. Your own profile has
+    no Sessions row. Written up in <code>specs/profile-unification/</code>.
+  </p>
+</div>

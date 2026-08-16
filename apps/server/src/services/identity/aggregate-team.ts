@@ -25,17 +25,18 @@
  * list your agents. So a failure in any of them costs exactly what it knows and
  * nothing more: the roster degrades the operator's NAME, never the roster.
  *
- * **One thing this module cannot tell you: whether an agent is mid-turn.** The
- * mesh's `active` health status means "seen within the last hour"
- * (`ACTIVE_THRESHOLD_MINUTES = 60`), which is why the payload says
- * `recentlyActive` and not `working`. A true live-turn signal exists — the room
- * claim map, `services/rooms/room-claims.ts` (`claimsWorkingIn`) — and can join
- * as a third source when a surface needs it. The client task will want this
- * pointer.
+ * **Whether an agent is mid-turn is now here too**, and it comes from the only
+ * record of it: the room claim map (`services/rooms/room-claims.ts`), joined to
+ * the agent's author row. It is a separate field from `recentlyActive` rather
+ * than a better version of it — the mesh's `active` status means "seen within
+ * the last hour" (`ACTIVE_THRESHOLD_MINUTES = 60`) and answers a different
+ * question. See {@link TeamRosterSources.listClaims} and
+ * {@link agentActivity} for which sources feed which half of `activity`.
  *
  * @module server/services/identity/aggregate-team
  */
 import type {
+  TeamAgentActivity,
   TeamAgentFacts,
   TeamMember,
   TeamRosterResponse,
@@ -44,6 +45,7 @@ import type {
 import type { AgentHealthStatus, AgentRuntime } from '@dorkos/shared/mesh-schemas';
 import { logger } from '../../lib/logger.js';
 import { authorOrigin, isOwnerRecord, type AuthorRecord } from '../rooms/author-registry.js';
+import type { ActiveClaimView } from '../rooms/room-claims.js';
 import {
   resolveOperatorProfile,
   type OperatorAccount,
@@ -87,6 +89,35 @@ export const OPERATOR_SOURCE = 'operator';
 export const CONFIG_SOURCE = 'config';
 
 /**
+ * The live claim map, named as it appears in a warning.
+ *
+ * Its own source because losing it costs exactly one thing: the roster stops
+ * being able to say an agent is working RIGHT NOW. Everything else — who is on
+ * this install, when each agent last did anything — is still answered.
+ */
+export const CLAIMS_SOURCE = 'claims';
+
+/**
+ * The room read that names the room a claim is held in, named as it appears in
+ * a warning.
+ *
+ * Separate from {@link CLAIMS_SOURCE} because the two degrade to different
+ * sentences: without the claims there is no "working" at all, while without the
+ * rooms the agent is still reported as working, just without a room label.
+ */
+export const ROOMS_SOURCE = 'rooms';
+
+/**
+ * The cross-agent session fan-out, named as it appears in a warning.
+ *
+ * The one source here that is not a SQLite read — it walks each runtime's
+ * session storage — so it is also the one most likely to spend its budget. It
+ * costs `lastActiveAt` for agents whose last run was a session rather than a
+ * room turn, and nothing else.
+ */
+export const SESSIONS_SOURCE = 'sessions';
+
+/**
  * One agent as the roster reads it — structurally what `meshCore.listWithHealth()`
  * returns.
  *
@@ -115,11 +146,43 @@ export interface TeamAgentSource {
    * silently.
    */
   namespace?: string;
-  /** Stripped by the same `toManifest()` call, for the same reason as `namespace`. */
+  /**
+   * Where the agent lives — stripped by that same `toManifest()` call, and
+   * carried here anyway because the profile needs it (spec `profile-unification`
+   * §3.1).
+   *
+   * The source is expected to put it back from the registry's own paths, which
+   * is what `routes/team.ts` does. Optional rather than required so the day a
+   * roster row comes from somewhere with no local directory behind it, the row
+   * is still expressible.
+   */
   projectPath?: string;
   isSystem?: boolean;
   registeredAt: string;
   healthStatus: AgentHealthStatus;
+  /**
+   * When the mesh last heard from this agent, or `null` when it never has.
+   *
+   * NOT stripped by `toManifest()` — the health-enriched listing carries it, and
+   * `healthStatus` is computed from it. One of the two inputs to
+   * `activity.lastActiveAt`; see {@link agentActivity} for the other and for why
+   * neither alone is enough.
+   */
+  lastSeenAt?: string | null;
+}
+
+/**
+ * One live claim as the roster reads it — a strict subset of
+ * {@link ActiveClaimView}, so a real `RoomService.listActiveClaims()` satisfies
+ * it and nothing here can start depending on a field a claim happens to carry.
+ */
+export type TeamClaimSource = Pick<ActiveClaimView, 'roomId' | 'authorId' | 'claimedAt'>;
+
+/** One room, reduced to what naming a claim needs. */
+export interface TeamRoomSource {
+  id: string;
+  /** The room's title. */
+  name: string;
 }
 
 /**
@@ -143,8 +206,39 @@ export interface TeamRosterSources {
    * table failing for the same reasons.
    */
   listAgentAuthors: () => AuthorRecord[] | Promise<AuthorRecord[]>;
-  /** The fleet with health — `meshCore.listWithHealth()`, no new mesh query. */
+  /**
+   * The fleet with health, each entry carrying the project directory the public
+   * mesh listing strips (`routes/team.ts` joins `listWithHealth()` with
+   * `listWithPaths()`).
+   */
   listAgents: () => TeamAgentSource[] | Promise<TeamAgentSource[]>;
+  /**
+   * Every room turn in flight right now — `RoomService.listActiveClaims()`.
+   *
+   * The ONLY record that an agent is working; presence, `room_context.working`
+   * and this field all read the same map, so they cannot disagree. Keyed on the
+   * agent's AUTHOR id, which is why it joins through the same
+   * `mintedForManifestId` stamp the handle and the photo already ride.
+   */
+  listClaims: () => TeamClaimSource[] | Promise<TeamClaimSource[]>;
+  /**
+   * Every room, for putting a name on the room a claim is held in.
+   *
+   * Read only when at least one claim exists — an install where nothing is
+   * working pays nothing for this — and archived rooms are included by the
+   * caller, because an agent really can be mid-turn in a room somebody archived
+   * while it worked.
+   */
+  listRooms: () => TeamRoomSource[] | Promise<TeamRoomSource[]>;
+  /**
+   * Project directory → the `updatedAt` of that agent's newest session, across
+   * every runtime — the `agentActivity` map of `listRecentSessions`.
+   *
+   * The half of `lastActiveAt` the mesh cannot see: mesh health is only stamped
+   * by the claude-code runtime's own turn paths, so a codex or opencode agent
+   * that ran an hour ago has no `lastSeenAt` at all.
+   */
+  sessionActivity: () => Record<string, string> | Promise<Record<string, string>>;
   /**
    * The account that owns this install, with its address, or `null` when nobody
    * has registered.
@@ -185,22 +279,31 @@ function withTimeout<T>(promise: Promise<T>, ms: number, source: string): Promis
   });
 }
 
-/** Read one source, degrading a failure into a warning and zero rows. */
+/**
+ * Read one source under its budget, degrading a failure into a warning and
+ * `fallback`.
+ *
+ * The fallback is a parameter rather than always `[]` because not every source
+ * is a list: the session fan-out answers with a map, and "what this read knows
+ * when it knows nothing" is the source's own answer to give.
+ */
 async function readSource<T>(
   source: string,
-  read: () => T[] | Promise<T[]>,
+  read: () => T | Promise<T>,
+  fallback: T,
   timeoutMs: number
-): Promise<{ items: T[]; warning?: TeamSourceWarning }> {
+): Promise<{ value: T; warning?: TeamSourceWarning }> {
   try {
     // `Promise.resolve().then(read)` rather than `read()` so a source that
-    // throws SYNCHRONOUSLY — which both of today's `better-sqlite3` sources do —
-    // rejects the promise instead of escaping this try in a later refactor.
-    const items = await withTimeout(Promise.resolve().then(read), timeoutMs, source);
-    return { items };
+    // throws SYNCHRONOUSLY — which every one of today's `better-sqlite3` sources
+    // does — rejects the promise instead of escaping this try in a later
+    // refactor.
+    const value = await withTimeout(Promise.resolve().then(read), timeoutMs, source);
+    return { value };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     logger.warn('[aggregateTeamRoster] identity source degraded', { source, error: message });
-    return { items: [], warning: { source, message } };
+    return { value: fallback, warning: { source, message } };
   }
 }
 
@@ -228,12 +331,23 @@ function readValue<T>(
   }
 }
 
-/** Project one active human author onto a roster row. */
+/**
+ * Project one active human author onto a roster row.
+ *
+ * @param record - The author row.
+ * @param isSelf - Whether this is the operator reading the roster.
+ * @param operatorName - The name resolved for the operator.
+ * @param operatorEmail - The operator's address, when known.
+ * @param now - The moment this roster was read, which is when the operator was
+ *   last seen: they are here, by construction. Everybody else's `lastSeenAt` is
+ *   `null` — see the field's doc for why the room log is not read for it.
+ */
 function personRow(
   record: AuthorRecord,
   isSelf: boolean,
   operatorName: string,
-  operatorEmail: string | undefined
+  operatorEmail: string | undefined,
+  now: string
 ): TeamMember {
   return {
     id: record.id,
@@ -258,7 +372,66 @@ function personRow(
       // No backend on this install declares roles yet.
       role: null,
       ...(isSelf && operatorEmail ? { email: operatorEmail } : {}),
+      lastSeenAt: isSelf ? now : null,
     },
+  };
+}
+
+/**
+ * The later of two possibly-absent, possibly-unparseable ISO timestamps.
+ *
+ * `Date.parse` answers `NaN` for anything it cannot read, and a corrupt stamp
+ * loses to a good one **in either position**. The comparison alone does not get
+ * there: every `>` against `NaN` is false, so a bare `b > a` keeps `a` even when
+ * `a` is the unreadable one, and the roster would put `"not-a-date"` on the wire
+ * for the client to render. Two bad stamps leave the first, which is as honest
+ * as this function can be about input it cannot order.
+ */
+function laterOf(a: string | null, b: string | null): string | null {
+  if (a === null) return b;
+  if (b === null) return a;
+  const left = Date.parse(a);
+  const right = Date.parse(b);
+  if (Number.isNaN(left)) return Number.isNaN(right) ? a : b;
+  return right > left ? b : a;
+}
+
+/**
+ * What one agent is doing, from the two questions that have different answers.
+ *
+ * **`working` has exactly one source and always will**: the live claim map. It
+ * is the only record that a turn is in flight, and presence, `room_context` and
+ * this field all read it, so none of them can say something the others deny.
+ *
+ * **`lastActiveAt` is the max over the two cheap sources**, and it needs both:
+ *
+ * - mesh `lastSeenAt` — stamped by the claude-code runtime's own turn paths
+ *   (`message_sent`, `response_complete`) and by `POST /api/mesh/agents/:id/heartbeat`.
+ *   Nothing stamps it for codex or opencode, so it is silent for those agents.
+ * - the session fan-out's `agentActivity[projectPath]` — the newest session
+ *   `updatedAt` across every runtime, which covers the agents mesh health does
+ *   not, and needs the project path this roster now carries.
+ *
+ * The room log is deliberately NOT a third source. It would date a room turn the
+ * claim map already reported while it ran, and dating it means an ungrouped scan
+ * of the largest table on the install, on a request a profile repeats every 15
+ * seconds.
+ *
+ * @param agent - The mesh's view of the agent.
+ * @param claim - Its live claim, or `null` when it is not mid-turn.
+ * @param roomName - The claimed room's title, or `null` when unresolved.
+ * @param sessionActivity - Project directory → newest session `updatedAt`.
+ */
+function agentActivity(
+  agent: TeamAgentSource,
+  claim: TeamClaimSource | null,
+  roomName: string | null,
+  sessionActivity: Record<string, string>
+): TeamAgentActivity {
+  const sessionSeen = agent.projectPath ? (sessionActivity[agent.projectPath] ?? null) : null;
+  return {
+    working: claim ? { roomId: claim.roomId, roomName, since: claim.claimedAt } : null,
+    lastActiveAt: laterOf(agent.lastSeenAt ?? null, sessionSeen),
   };
 }
 
@@ -272,12 +445,14 @@ function personRow(
  *   so has none. Two things live only there: the address it answers to, and any
  *   photo it has been given. Both ride the SAME row, so they cannot disagree
  *   about which occupancy generation of a directory they belong to.
+ * @param activity - What it is doing (see {@link agentActivity}).
  */
 function agentRow(
   agent: TeamAgentSource,
   operatorId: string | null,
   defaultAgentName: string | null,
-  author: AuthorRecord | null
+  author: AuthorRecord | null,
+  activity: TeamAgentActivity
 ): TeamMember {
   const isSystem = agent.isSystem === true;
   const facts: TeamAgentFacts = {
@@ -292,6 +467,7 @@ function agentRow(
     recentlyActive: agent.healthStatus === 'active',
     ...(agent.namespace ? { namespace: agent.namespace } : {}),
     ...(agent.projectPath ? { projectPath: agent.projectPath } : {}),
+    activity,
     isDefault: defaultAgentName !== null && agent.name === defaultAgentName,
     isSystem,
     registeredAt: agent.registeredAt,
@@ -329,12 +505,24 @@ function agentRow(
  */
 export async function aggregateTeamRoster(sources: TeamRosterSources): Promise<TeamRosterResponse> {
   const timeoutMs = sources.timeoutMs ?? TEAM_SOURCE_TIMEOUT_MS;
+  // One clock for the whole read: the operator's `lastSeenAt` is the moment the
+  // roster was taken, not the moment their row happened to be projected.
+  const now = new Date().toISOString();
 
-  const [people, agents, agentAuthors] = await Promise.all([
-    readSource(AUTHORS_SOURCE, () => sources.listPeople(), timeoutMs),
-    readSource(AGENTS_SOURCE, () => sources.listAgents(), timeoutMs),
-    readSource(AUTHORS_SOURCE, () => sources.listAgentAuthors(), timeoutMs),
+  const [people, agents, agentAuthors, claims, sessionActivity] = await Promise.all([
+    readSource(AUTHORS_SOURCE, () => sources.listPeople(), [] as AuthorRecord[], timeoutMs),
+    readSource(AGENTS_SOURCE, () => sources.listAgents(), [] as TeamAgentSource[], timeoutMs),
+    readSource(AUTHORS_SOURCE, () => sources.listAgentAuthors(), [] as AuthorRecord[], timeoutMs),
+    readSource(CLAIMS_SOURCE, () => sources.listClaims(), [] as TeamClaimSource[], timeoutMs),
+    readSource(SESSIONS_SOURCE, () => sources.sessionActivity(), {}, timeoutMs),
   ]);
+
+  // Named only when something is actually working: on the install this endpoint
+  // mostly serves, nothing is, and the room list is a read nobody needed.
+  const rooms =
+    claims.value.length > 0
+      ? await readSource(ROOMS_SOURCE, () => sources.listRooms(), [] as TeamRoomSource[], timeoutMs)
+      : { value: [] as TeamRoomSource[], warning: undefined };
 
   const warnings: TeamSourceWarning[] = [];
   if (people.warning) warnings.push(people.warning);
@@ -342,6 +530,9 @@ export async function aggregateTeamRoster(sources: TeamRosterSources): Promise<T
   // Only when `listPeople` did not already say the same thing about the same
   // table — one failure, one warning.
   if (agentAuthors.warning && !people.warning) warnings.push(agentAuthors.warning);
+  if (claims.warning) warnings.push(claims.warning);
+  if (rooms.warning) warnings.push(rooms.warning);
+  if (sessionActivity.warning) warnings.push(sessionActivity.warning);
 
   // Every read below is degradable. Losing the account costs the operator's
   // name and their `isSelf` mark; losing the config costs the preferred name
@@ -352,14 +543,14 @@ export async function aggregateTeamRoster(sources: TeamRosterSources): Promise<T
 
   // A pure comparison against rows already in hand — see `TeamRosterSources.account`
   // for why this is not an injected predicate.
-  const self = people.items.find((record) => isOwnerRecord(record, account?.id ?? null)) ?? null;
+  const self = people.value.find((record) => isOwnerRecord(record, account?.id ?? null)) ?? null;
   const operator: OperatorProfile = resolveOperatorProfile(
     { account: () => account, configDisplayName: () => configDisplayName },
     self?.displayName ?? null
   );
 
-  const personRows = people.items.map((record) =>
-    personRow(record, record.id === self?.id, operator.displayName, operator.email)
+  const personRows = people.value.map((record) =>
+    personRow(record, record.id === self?.id, operator.displayName, operator.email, now)
   );
   // The operator first — and this really does move a row: `listActive` orders by
   // `created_at`, and a bridged group seen before login was enabled leaves an
@@ -373,13 +564,43 @@ export async function aggregateTeamRoster(sources: TeamRosterSources): Promise<T
   // (ADR 260801-003051). The whole row is carried rather than one field off it,
   // so everything an author row contributes joins the same way and once.
   const authorByManifestId = new Map(
-    agentAuthors.items
+    agentAuthors.value
       .filter((record) => record.mintedForManifestId !== null)
       .map((record) => [record.mintedForManifestId!, record])
   );
-  const agentRows = agents.items.map((agent) =>
-    agentRow(agent, self?.id ?? null, defaultAgentName, authorByManifestId.get(agent.id) ?? null)
-  );
+
+  // The claim an agent is holding, by AUTHOR id — the id a claim carries.
+  //
+  // At most one claim per agent is reachable in practice: the second claim
+  // ceiling is the agent's directory, so a turn in one room refuses a trigger in
+  // every other (`claimBusyWith`). The reduce is here for the day that stops
+  // being true, and it keeps the one it has held LONGEST rather than whichever
+  // the map iterated first, so two reads of the same state say the same thing.
+  const claimByAuthorId = new Map<string, TeamClaimSource>();
+  for (const claim of claims.value) {
+    const held = claimByAuthorId.get(claim.authorId);
+    if (!held || Date.parse(claim.claimedAt) < Date.parse(held.claimedAt)) {
+      claimByAuthorId.set(claim.authorId, claim);
+    }
+  }
+  const roomNameById = new Map(rooms.value.map((room) => [room.id, room.name]));
+
+  const agentRows = agents.value.map((agent) => {
+    const author = authorByManifestId.get(agent.id) ?? null;
+    const claim = author ? (claimByAuthorId.get(author.id) ?? null) : null;
+    return agentRow(
+      agent,
+      self?.id ?? null,
+      defaultAgentName,
+      author,
+      agentActivity(
+        agent,
+        claim,
+        claim ? (roomNameById.get(claim.roomId) ?? null) : null,
+        sessionActivity.value
+      )
+    );
+  });
 
   const members = [...personRows, ...agentRows];
   // Omitted entirely on a clean read, never `[]` — the ADR-0310 rule, so a

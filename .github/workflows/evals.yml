@@ -128,12 +128,22 @@ jobs:
       - name: Run rooms structural suite
         run: pnpm --filter @dorkos/evals run evals -- --suite rooms --tier test-mode --out "$RUNNER_TEMP/evals-runs"
 
+      # The `logs/**` line is a no-op HERE, not decoration: `test-mode` boots
+      # in-process and never calls `initLogger` (`harness-boot.ts`), so a
+      # structural run never has a `logs/` dir to retain (DOR-1241) in the
+      # first place. It is kept for parity with the credentialed job below —
+      # an empty match costs nothing, `if-no-files-found: warn` only fires
+      # when EVERY line matches nothing, and drifting the two globs apart
+      # invites forgetting the credentialed one if this job's boot path ever
+      # changes.
       - name: Upload results
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: eval-results-structural-${{ github.run_id }}
-          path: ${{ runner.temp }}/evals-runs/**/results.json
+          path: |
+            ${{ runner.temp }}/evals-runs/**/results.json
+            ${{ runner.temp }}/evals-runs/**/logs/**
           retention-days: 14
           if-no-files-found: warn
 
@@ -229,7 +239,14 @@ jobs:
             --out "$RUNNER_TEMP/evals-runs"
 
       # `always()` so a failed or over-budget run still publishes its evidence —
-      # that transcript is the whole point of dispatching the job.
+      # that transcript is the whole point of dispatching the job. This is the
+      # run that exercises the quarantined cases for real, on an EPHEMERAL
+      # runner: a retained sandbox here dies with the job, so the `logs/**`
+      # line is the only way DOR-1241's retained server log (a quarantined
+      # case's failure, exactly the one worth reading) leaves the runner at
+      # all — without it the feature's headline value never survives the job,
+      # unlike a local `pnpm evals:local` run where the sandbox itself
+      # persists on disk until `pnpm evals:sweep`.
       - name: Upload results
         if: always() && steps.key.outputs.present == 'true'
         uses: actions/upload-artifact@v4
@@ -238,5 +255,6 @@ jobs:
           path: |
             ${{ runner.temp }}/evals-runs/**/results.json
             ${{ runner.temp }}/evals-runs/**/*.jsonl
+            ${{ runner.temp }}/evals-runs/**/logs/**
           retention-days: 30
           if-no-files-found: warn

@@ -211,8 +211,10 @@ In a room you are a member of, you can do four things besides replying.
     the text you write back to your own session is not posted as well. Posting into a
     different room leaves your answer in this one untouched.
   react_to_room_entry(roomId, entryId, emoji, on?) -- put one emoji on one message.
-    It starts no turn and notifies nobody. There is an hourly limit per room, so use
-    it where a whole message would be noise, and say something when something needs saying.
+    When a message only needs acknowledgment ("no reply needed", "just ack this"), react
+    (✅ seen, 👍 agreed, 👀 looking) rather than posting a word like "Ack" -- and when
+    something needs saying, say it. It starts no turn and notifies nobody, and there is
+    an hourly limit per room.
   read_room_history(roomId, limit, before?, threadRootEntryId?) -- read back what was said.
   search_room_history(roomId, query, limit, threadRootEntryId?) -- find where something was said.
     It matches whole words and their variants, not fragments, and the last few minutes

@@ -537,10 +537,11 @@ describe('driveWidgetAction', () => {
     // SAME client id — matching what a real cockpit client sends. This is NOT
     // a re-entrant-lock guarantee the way a same-client `/messages` retry gets
     // from SessionTurnQueue: `/ui-action` opts out of that queue
-    // (`whenBusy: 'refuse'`) and can still 409 even under a matching client id
-    // if it lands before the runtime's stream fully settles (DOR-1239). This
-    // test only pins that the header is sent and matches; it does not (and
-    // cannot, on a fake server) prove the settle-timing race is absent.
+    // (`whenBusy: 'refuse'`), so an action sent while the agent is still
+    // producing 409s whoever sends it. The settle-timing window that used to
+    // 409 an action sent AFTER `turn_end` is fixed server-side (DOR-1239) and
+    // pinned there, against the real dispatcher; this test only pins that the
+    // header is sent and matches.
     const runtime = new FakeAgentRuntime();
     runtime.withScenarios([
       async function* () {

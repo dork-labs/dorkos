@@ -146,10 +146,20 @@ describe('ProfileDrawer — an agent', () => {
   });
 
   it('offers no session when there is nowhere to open one', () => {
-    // Nothing production serves fills `projectPath` today (it is stripped from
-    // the mesh's public listing), so the common case is exactly this one: an
-    // action with no destination is not drawn rather than drawn dead.
-    render(<ProfileDrawer member={warden} open onOpenChange={() => {}} onOpenSession={vi.fn()} />);
+    // The roster now fills `projectPath` for every agent registered on this
+    // machine (spec `profile-unification` §3.1), so the pathless row is the one
+    // it genuinely cannot place — an agent whose directory the mesh's paths
+    // listing did not know. An action with no destination is not drawn rather
+    // than drawn dead.
+    const { projectPath: _nowhere, ...unplaced } = warden.agent!;
+    render(
+      <ProfileDrawer
+        member={{ ...warden, agent: unplaced }}
+        open
+        onOpenChange={() => {}}
+        onOpenSession={vi.fn()}
+      />
+    );
 
     expect(screen.queryByRole('button', { name: 'Open a session' })).toBeNull();
   });
@@ -188,7 +198,7 @@ describe('ProfileDrawer — a person', () => {
   });
 
   it('shows a declared role instead of guessing at one', () => {
-    const staffed: TeamMember = { ...miguel, person: { role: 'Design partner' } };
+    const staffed: TeamMember = { ...miguel, person: { role: 'Design partner', lastSeenAt: null } };
     render(<ProfileDrawer member={staffed} open onOpenChange={() => {}} />);
 
     expect(screen.getByText('Design partner')).toBeInTheDocument();
@@ -208,7 +218,7 @@ describe('ProfileDrawer — what `isSelf` gates', () => {
     // that true the day a second source is less careful.
     const leaky: TeamMember = {
       ...miguel,
-      person: { role: null, email: 'miguel@example.com' },
+      person: { role: null, email: 'miguel@example.com', lastSeenAt: null },
     };
     render(<ProfileDrawer member={leaky} open onOpenChange={() => {}} />);
 
@@ -238,7 +248,11 @@ describe('ProfileDrawer — what `isSelf` gates', () => {
     expect(screen.getByText('@dorian')).toBeInTheDocument();
 
     cleanup();
-    const notYou: TeamMember = { ...operator, isSelf: false, person: { role: null } };
+    const notYou: TeamMember = {
+      ...operator,
+      isSelf: false,
+      person: { role: null, lastSeenAt: null },
+    };
     render(<ProfileDrawer member={notYou} open onOpenChange={() => {}} />);
     expect(screen.queryByText('you')).toBeNull();
     expect(screen.getByText('Dorian')).toBeInTheDocument();

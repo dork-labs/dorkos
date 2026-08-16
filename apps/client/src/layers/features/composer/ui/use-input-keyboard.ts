@@ -93,6 +93,17 @@ export interface UseInputKeyboardOptions {
   onArrowDown?: () => void;
   onCommandSelect?: () => void;
   onQueue?: () => void;
+  /**
+   * Send into the running task now (steer), on ⌘/Ctrl+Enter. Present only when
+   * the agent can take a message mid-task, so the chord is inert exactly when
+   * the Steer menu row is absent — a shortcut never does what the button cannot.
+   */
+  onSteer?: () => void;
+  /**
+   * Add context for the next turn (stage), on ⌘/Ctrl+Shift+Enter. Present only
+   * when the agent can take added context. Same rule as {@link onSteer}.
+   */
+  onStage?: () => void;
   onSaveEdit?: () => void;
   onCancelEdit?: () => void;
   onQueueNavigateUp?: () => void;
@@ -144,6 +155,8 @@ export function useInputKeyboard({
   onArrowDown,
   onCommandSelect,
   onQueue,
+  onSteer,
+  onStage,
   onSaveEdit,
   onCancelEdit,
   onQueueNavigateUp,
@@ -333,6 +346,35 @@ export function useInputKeyboard({
         }
       }
 
+      // --- Steer / Add context: a running turn's alternate dispositions ---
+      // ⌘/Ctrl+Enter steers into the open turn; ⌘/Ctrl+Shift+Enter adds context
+      // for the next turn. Only while a turn is open with text to send. Fine
+      // pointer only: on a touch-only device Enter is a newline and these live on
+      // the send menu instead.
+      //
+      // A shortcut never does what the button cannot: when the runtime does not
+      // declare the verb (no `onSteer` / `onStage`), the chord QUEUES rather than
+      // doing nothing — the same fallback the button's caret makes by being
+      // absent. So both chords resolve to a disposition here explicitly, and
+      // neither is ever swallowed.
+      if (
+        e.key === 'Enter' &&
+        (e.metaKey || e.ctrlKey) &&
+        !isTouchOnly &&
+        isStreaming &&
+        !editingQueueItem &&
+        !commandPending &&
+        value.trim()
+      ) {
+        e.preventDefault();
+        if (e.shiftKey) {
+          (onStage ?? onQueue)?.();
+        } else {
+          (onSteer ?? onQueue)?.();
+        }
+        return;
+      }
+
       // --- Default Enter behavior (palette closed) ---
       // Fine pointer: Enter submits/queues/saves; Shift+Enter for a newline.
       // Coarse pointer: Enter inserts a newline, submit via the button only.
@@ -373,6 +415,8 @@ export function useInputKeyboard({
       onCommandSelect,
       editingQueueItem,
       onQueue,
+      onSteer,
+      onStage,
       onSaveEdit,
       onCancelEdit,
       queueHasItems,

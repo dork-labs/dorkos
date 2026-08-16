@@ -347,6 +347,31 @@ export class RoomTriggerDispatcher {
   private readonly claimed = new Map<string, ActiveClaim>();
 
   /**
+   * The turns a halt stopped, by dispatch id — the answers this room throws
+   * away (DOR-1232).
+   *
+   * **An interrupt is a request, not a guarantee, and this is what makes Stop
+   * mean stop anyway.** {@link RoomTurnRunner.interrupt} resolving says only
+   * that the interrupt was DELIVERED: the turn's own stream still closes the
+   * ordinary way, and a model that had all but finished streams its last words
+   * either side of the signal. Measured on 2026-08-15 against a live install —
+   * the room wrote its one `halted` notice and then posted the stopped turn's
+   * complete, well-formed answer two seconds later, so pressing Stop looked, to
+   * the person who pressed it, like nothing had happened.
+   *
+   * Keyed by DISPATCH rather than by `(room, agent)`, and both halves matter:
+   * the claim that would otherwise carry it is gone by the time the answer
+   * lands — a halt releases every claim it drops — and the NEXT turn for the
+   * same pair is a different dispatch that Stop said nothing about.
+   *
+   * Bounded by construction rather than by a sweep: every claim belongs to a
+   * frame that forgets its mark at its terminal, and a turn handed to
+   * {@link RoomTriggerDispatcher.deliverLate} is forgotten there instead,
+   * because that delivery is still ahead of it.
+   */
+  private readonly haltedTurns = new Set<string>();
+
+  /**
    * The republish loop, alive exactly while {@link RoomTriggerDispatcher.claimed}
    * is non-empty.
    *
@@ -950,6 +975,11 @@ export class RoomTriggerDispatcher {
           .filter((held) => held.arrivedDuringTurn)
           .map((held) => held.entry.id)
       ),
+      // Everything gathered behind the trigger, whenever it arrived — the rest
+      // of what this one turn is being asked (DOR-1231). Bounded the same way:
+      // above the chosen index is refused and unread, so marking it would be a
+      // claim about a line nobody will read.
+      gathered: new Set(collection.entries.slice(0, chosen.index).map((held) => held.entry.id)),
     };
 
     // The cascade guard allowed these on the merits, one message at a time. The
@@ -1245,6 +1275,12 @@ export class RoomTriggerDispatcher {
         // repeating themselves, when what actually happened is that they carried
         // on talking while the agent was busy.
         arrivedDuringPrevTurn: target.arrivedDuringPrevTurn,
+        // And which of them this turn OWES AN ANSWER TO. The two sets answer
+        // different questions and only this one decides what the reply has to
+        // cover: without it a gathered burst rendered as unread background, and
+        // an agent handed three questions answered the newest and dropped the
+        // rest (DOR-1231).
+        gathered: target.gathered,
       });
       const result = await this.deps.runner.run({
         room,
@@ -1311,7 +1347,19 @@ export class RoomTriggerDispatcher {
       // next refusal for it wrote a second apology. The answer is delivered
       // through `deliverLate` when it actually lands, which is the moment
       // recovery is honest.
-      if (result.late) {
+      if (this.wasHalted(target.dispatchId)) {
+        // Stop reached this turn while it was running, so there is nothing left
+        // to deliver — `deliver` would drop the answer anyway, and this is the
+        // branch that also declines to WAIT for one. A halted turn that outran
+        // the room's patience would otherwise hold a room dispatch open for up
+        // to `rooms.lateReplyCeilingMinutes` to post nothing at the end of it.
+        outcome = 'halted';
+        // The runner's contract is resolve-or-reject, so a promise nobody reads
+        // is still a rejection somebody must catch — the room simply is not
+        // listening to this one any more. The turn itself keeps streaming into
+        // its own session, where a person can still read what it was saying.
+        result.late?.catch(() => undefined);
+      } else if (result.late) {
         this.deliverLate({
           room,
           entry,
@@ -1364,7 +1412,12 @@ export class RoomTriggerDispatcher {
         authorId: target.authorId,
         error: err instanceof Error ? err.message : String(err),
       });
-      this.notices.reportSilence(room, entry, target, 'failed', target.dispatchId);
+      // A turn that threw because somebody stopped it did what it was told. The
+      // `halted` notice is already on the log and is the whole story; an
+      // apology under it would be the room reporting the person's own control
+      // action back to them as a fault.
+      if (this.wasHalted(target.dispatchId)) outcome = 'halted';
+      else this.notices.reportSilence(room, entry, target, 'failed', target.dispatchId);
     } finally {
       // `runner.run()` resolving is the end of the WAIT, which is only the end
       // of the TURN when the turn beat the deadline. A late turn is still
@@ -1372,7 +1425,22 @@ export class RoomTriggerDispatcher {
       // reading `room_context.working`, and to the person watching.
       // {@link RoomTriggerDispatcher.deliverLate} releases it when the answer
       // finally settles, whichever way it settles.
-      if (this.claimed.get(key)?.pastDeadline !== true) this.releaseClaim(key, outcome);
+      //
+      // Two reads of the same map entry asking two different questions, which is
+      // why they are not one condition: whether this turn is OVER (it is not, if
+      // it went late), and whether the claim under this key is still THIS turn's
+      // to release ({@link RoomTriggerDispatcher.releaseOwnClaim}).
+      if (this.claimed.get(key)?.pastDeadline !== true) {
+        this.releaseOwnClaim(key, target.dispatchId, outcome);
+      }
+      // **Unconditional, and safe even for a turn `deliverLate` still owes an
+      // answer.** A dispatch can only be MARKED while its claim is held, and a
+      // late turn's claim outlives this frame — so at this line a turn that
+      // went late is provably unmarked and this deletes nothing, while the halt
+      // that marks it later is followed by `deliverLate`'s own cleanup. A turn
+      // marked before it went late never reaches here at all: the halted branch
+      // above declines to arm the late delivery.
+      this.forgetHalt(target.dispatchId);
     }
   }
 
@@ -1399,6 +1467,34 @@ export class RoomTriggerDispatcher {
     late?: { waitedMs: number };
   }): ClaimOutcome {
     const { room, entry, target, reply } = opts;
+    // **A halted turn delivers nothing, and that includes its notices.** Stop
+    // already spoke for this turn — one `halted` line, written before the claims
+    // were dropped — and every other outcome here would speak over it: an answer
+    // makes the halt look like it did nothing, and a `turn_failed` line about an
+    // interrupt the person asked for is the room apologising for obeying.
+    // Checked ahead of `unanswered` for exactly that second reason, since a
+    // runtime that stops promptly ends its turn in an error.
+    //
+    // **It skips the RE-ARM below as well as the writes, and that is the right
+    // half of "nothing".** `notices.recovered` means "this agent answered here,
+    // so whatever was blocking it is over" — evidence a halted turn does not
+    // supply: nobody learned whether the agent is still busy, still failing or
+    // still gone, because the turn was cut off rather than finished. Re-arming
+    // on it would spend the next real refusal's one line on a question this
+    // turn never answered. The next turn that genuinely answers re-arms it.
+    if (this.wasHalted(target.dispatchId)) {
+      logger.info('[rooms] dropped a halted turn answer', {
+        roomId: room.id,
+        authorId: target.authorId,
+        entryId: entry.id,
+        dispatchId: target.dispatchId,
+        // Whether there was anything to drop, which is what tells a race the
+        // interrupt won from one it lost. Never the text: a room log line is no
+        // place for what an agent was in the middle of saying.
+        hadAnswer: (reply.text?.trim() ?? '') !== '',
+      });
+      return 'halted';
+    }
     if (reply.unanswered) {
       this.notices.reportSilence(room, entry, target, reply.unanswered, target.dispatchId);
       return reply.unanswered;
@@ -1534,7 +1630,13 @@ export class RoomTriggerDispatcher {
         );
       })
       .finally(() => {
-        this.releaseClaim(key, outcome);
+        // Guarded like the in-frame release, and for a window that is WIDER
+        // here: this claim has been held across the whole late wait, so a halt
+        // and a fresh message have had minutes rather than milliseconds to hand
+        // the key to somebody else.
+        this.releaseOwnClaim(key, opts.target.dispatchId, outcome);
+        // The last delivery this turn had, so the halt mark ends here.
+        this.forgetHalt(opts.target.dispatchId);
         this.settleOne();
       });
   }
@@ -1745,6 +1847,20 @@ export class RoomTriggerDispatcher {
       if (result.sessionId !== input.sessionId) {
         this.deps.store.rebindRoomSession(room.id, authorId, result.sessionId);
       }
+      // **An offer somebody stopped is not made**, and this is asked BEFORE the
+      // late wait for the same reason `runOne` asks before arming `deliverLate`:
+      // an offer nobody will hear must not hold a claim, and an agent reading as
+      // working, for the up-to-an-hour the ceiling allows. The aside path is
+      // silent about every other refusal already, and this one has a durable
+      // line of its own — the room's `halted` notice, written when Stop was
+      // pressed.
+      if (this.wasHalted(input.dispatchId)) {
+        outcome = 'halted';
+        // Resolve-or-reject is the runner's contract; the room has simply
+        // stopped listening. Same treatment as `runOne`'s halted branch.
+        result.late?.catch(() => undefined);
+        return null;
+      }
       // **A slow turn is late, never lost** (`.claude/rules/room-conduct.md`).
       // The room's wait bounds the WAIT; the turn keeps running, and
       // `rooms.lateReplyCeilingMinutes` is what bounds how late "late" can be —
@@ -1754,6 +1870,15 @@ export class RoomTriggerDispatcher {
       // still working in its own checkout, and released by the `finally` below
       // once this has an answer to hand back.
       const settled = result.late === undefined ? result : await this.awaitLate(result.late, key);
+      // Asked AGAIN, over the other window. The check above cannot see a Stop
+      // pressed DURING the wait, which is the longest window this method has —
+      // and the triggered path answers that same window from inside `deliver`,
+      // which an aside does not use because its answer goes back to the greeter
+      // rather than into the room.
+      if (this.wasHalted(input.dispatchId)) {
+        outcome = 'halted';
+        return null;
+      }
       if (settled.unanswered) {
         outcome = settled.unanswered;
         return null;
@@ -1788,7 +1913,14 @@ export class RoomTriggerDispatcher {
       // (`welcome-back/greeter.ts`) and written down as an exception in
       // `.claude/rules/room-conduct.md`, because a rule with an undocumented
       // exception is a rule somebody re-derives from scratch.
-      this.releaseClaim(key, outcome);
+      //
+      // Guarded by dispatch like both triggered releases: an aside waits out its
+      // own late answer, so a Stop and a fresh message can hand this key to a
+      // real turn while it is still waiting.
+      this.releaseOwnClaim(key, input.dispatchId, outcome);
+      // An aside waits out its own late answer inline, so this frame is always
+      // the turn's last one and the halt mark always ends here.
+      this.forgetHalt(input.dispatchId);
     }
   }
 
@@ -1855,6 +1987,36 @@ export class RoomTriggerDispatcher {
   }
 
   /**
+   * Whether Stop reached this turn — so its answer belongs nowhere.
+   *
+   * A READ, never a take: the two paths that ask are the in-frame delivery and
+   * the late one, and only one of them ever runs for a given turn, but which one
+   * is not known until the turn settles. The mark is dropped by
+   * {@link RoomTriggerDispatcher.forgetHalt} at the turn's real terminal
+   * instead.
+   *
+   * @param dispatchId - The turn being delivered.
+   * @returns Whether a halt stopped it.
+   */
+  private wasHalted(dispatchId: string): boolean {
+    return this.haltedTurns.has(dispatchId);
+  }
+
+  /**
+   * Forget that a turn was halted, once nothing can deliver it any more.
+   *
+   * Called from every frame that owns a turn's last delivery — never from
+   * `deliver` itself, which cannot tell whether a late delivery is still to
+   * come. Forgetting a mark nobody set is a no-op, which is the ordinary case:
+   * almost no turn is ever halted.
+   *
+   * @param dispatchId - The turn that has finished, however it finished.
+   */
+  private forgetHalt(dispatchId: string): void {
+    this.haltedTurns.delete(dispatchId);
+  }
+
+  /**
    * Take a claim, and tell the room the agent is on it.
    *
    * The publish is not a courtesy beside the write — it is the write's whole
@@ -1899,6 +2061,52 @@ export class RoomTriggerDispatcher {
   }
 
   /**
+   * Release the claim a turn is holding — **but only if it is still that turn's
+   * claim.**
+   *
+   * A claim key is `(room, agent)` and a turn is a DISPATCH, and the two part
+   * company exactly once: when something releases a claim early and the same
+   * agent is claimed again before the first turn's own terminal arrives. RP8's
+   * halt is that something. Stop drops the claim, the person types again, the
+   * next turn claims the same key — and then the stopped turn's runtime finally
+   * comes back and its `finally` releases a claim belonging to a turn that is
+   * still running. Measured: the room shows nobody working while an agent is
+   * mid-answer, the `(room, agent)` ceiling is gone, and a third message starts
+   * a SECOND concurrent turn in the same working tree — which is the contention
+   * DOR-500 measured and the ceiling exists to prevent.
+   *
+   * It also fixes what the log said. `releaseClaim` records the dispatch end
+   * against the CLAIM's dispatch id, so an unguarded release closed out the live
+   * turn's dispatch carrying the dead turn's outcome.
+   *
+   * The dead turn needs no release of its own: whatever released its claim early
+   * — the halt — already published `done` and recorded its dispatch end while it
+   * still held the key.
+   *
+   * @param key - The `(room, agent)` key this turn claimed.
+   * @param dispatchId - The turn asking to release, which must still be the
+   *   holder.
+   * @param outcome - What the turn produced, for the log. Never rendered.
+   */
+  private releaseOwnClaim(key: string, dispatchId: string, outcome: ClaimOutcome): void {
+    const held = this.claimed.get(key);
+    // Already released by whatever stopped this turn — the halt, and nothing
+    // else today. Releasing nothing has always been a no-op here.
+    if (held === undefined) return;
+    if (held.dispatchId !== dispatchId) {
+      logger.debug('[rooms] a finished turn left a newer turn holding the claim', {
+        roomId: held.roomId,
+        authorId: held.authorId,
+        finished: dispatchId,
+        holding: held.dispatchId,
+        outcome,
+      });
+      return;
+    }
+    this.releaseClaim(key, outcome);
+  }
+
+  /**
    * Release a claim, and tell the room the agent is done.
    *
    * **Every terminal releases here and only here**, which is what makes the
@@ -1909,11 +2117,16 @@ export class RoomTriggerDispatcher {
    * four call sites, and the fifth — RP8's halt, which drops every pending claim
    * — would have to remember to be the fifth.
    *
+   * **Whether a turn may release is not asked here**, and deliberately: this
+   * takes a KEY, and the two turn `finally`s must ask about a DISPATCH. They go
+   * through {@link RoomTriggerDispatcher.releaseOwnClaim} for that. Halting is
+   * the one caller that releases by key alone, because it is stopping whatever
+   * holds the key rather than finishing a turn of its own.
+   *
    * Releasing a key that is not held is a no-op rather than a throw, because
-   * {@link RoomTriggerDispatcher.runOne}'s `finally` reaches here on a path where
-   * the claim may already be gone. The map is the only record that an indicator
-   * is outstanding, so a `done` for a claim nobody holds would be an event about
-   * nothing.
+   * this is reached on paths where the claim may already be gone. The map is the
+   * only record that an indicator is outstanding, so a `done` for a claim nobody
+   * holds would be an event about nothing.
    *
    * @param key - The `(room, agent)` key being released.
    * @param outcome - What the turn produced, for the log. Never rendered.
@@ -2148,8 +2361,13 @@ export class RoomTriggerDispatcher {
    *    stopped.
    *
    * The turns themselves are not awaited. Each one's own stream still closes and
-   * its `runOne` still runs its `finally` — releasing an already-released claim
-   * is a no-op — so a halt returns as soon as every interrupt is delivered.
+   * its `runOne` still runs its `finally`, which finds this key either empty or
+   * held by a LATER turn and releases neither
+   * ({@link RoomTriggerDispatcher.releaseOwnClaim}) — so a halt returns as soon
+   * as every interrupt is delivered. "Releasing an already-released claim is a
+   * no-op" is what that used to rest on, and it was only ever true while nobody
+   * re-claimed the key: a halt plus one more message put a live turn's claim
+   * under a stopped turn's `finally`, which then dropped it.
    *
    * @param room - The room to stop.
    * @returns How many in-flight turns were interrupted. `0` is a real answer: it
@@ -2157,6 +2375,13 @@ export class RoomTriggerDispatcher {
    */
   async halt(room: Room): Promise<number> {
     const claims = [...this.claimed.values()].filter((claim) => claim.roomId === room.id);
+    // **Marked before anything else, and before the first `await`.** A turn
+    // whose stream closes while this method is still delivering interrupts must
+    // find the mark already there, or it posts the answer Stop was pressed to
+    // prevent — the two-second race measured on 2026-08-15. Nothing after this
+    // line can be reached by a turn that started AFTER the halt, because a new
+    // turn is a new dispatch id (see {@link RoomTriggerDispatcher.haltedTurns}).
+    for (const claim of claims) this.haltedTurns.add(claim.dispatchId);
     logger.info('[rooms] a room was halted', { roomId: room.id, stopped: claims.length });
     // **The durable write comes first, and the whole invariant is in that
     // order.** Releasing a claim publishes `done`, so a halt that stopped the

@@ -21,6 +21,12 @@ const SOURCE_COPY: Record<string, string> = {
   authors: "Couldn't read the people on this install — showing who we could.",
   account: "Couldn't read your account, so your own name may be missing.",
   team: 'Your team lives on the DorkOS server, and there is no server here.',
+  // The three activity sources. Each one says what is missing rather than
+  // implying the roster is: everybody is still here, we just cannot say what
+  // they are up to.
+  claims: "Couldn't tell which of your agents are working right now.",
+  rooms: "Couldn't read your rooms, so we can't name where an agent is working.",
+  sessions: "Couldn't read recent sessions, so “last active” may be missing.",
 };
 
 /**

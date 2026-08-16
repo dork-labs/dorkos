@@ -40,12 +40,18 @@ afterAll(async () => {
 });
 const TEN_MINUTES = 10 * 60 * 1000;
 
-/** The three events the guard injects when the interrupt aborts the turn. */
+/**
+ * The three events the guard injects when the interrupt aborts the turn.
+ *
+ * The never-started wording: the source this harness guards is a stub that never
+ * yields, so every stall here is a turn that produced nothing (DOR-1229). The
+ * ten-minute BOUND is untouched — nothing here supplies a first-event window.
+ */
 const STALL_CLOSE: StreamEvent[] = [
   {
     type: 'error',
     data: {
-      message: 'No activity from the agent for 10 minutes, so the turn was interrupted.',
+      message: 'The agent never started working after 10 minutes, so the turn was ended.',
       code: 'turn_stalled',
       category: 'execution_error',
       details: 'The in-flight turn was aborted.',

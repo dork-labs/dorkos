@@ -209,6 +209,8 @@ export function ChatPanel({
     handleSubmit,
     submitContent,
     enqueueContent,
+    steerContent,
+    addContextContent,
     status,
     error,
     stop,
@@ -476,6 +478,8 @@ export function ChatPanel({
         autocomplete={autocomplete}
         handleSubmit={handleSubmit}
         enqueueContent={enqueueContent}
+        steerContent={steerContent}
+        addContextContent={addContextContent}
         tryNativeCommand={tryNativeCommand}
         commandPending={commandPending}
         status={status}

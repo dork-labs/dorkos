@@ -191,7 +191,10 @@ trigger between them, and no agent message refers to having been reacted to._
 
 _Sending, as it stands (2026-08-14)._ An agent may put an emoji on a message in a
 room it is a member of, and should spend one where a whole message would be
-noise: "seen", "agreed", "thanks". It is the cheapest thing an agent can say, and
+noise: ✅ "seen", 👍 "agreed", 👀 "looking". This is the one emoji triple named
+across the product — the `react_to_room_entry` tool description and the
+claude-code room-tools context (`ROOM_TOOLS_CONTEXT`) both use it verbatim, so an
+agent reading either sees the same three choices. It is the cheapest thing an agent can say, and
 the point of allowing it is the message it replaces — an agent that has
 understood you and has nothing to add used to post filler, because filler was the
 only acknowledgment it had. The bound is a mechanism, not this rule: **20

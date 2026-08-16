@@ -60,6 +60,7 @@ vi.mock('@/layers/entities/session', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/layers/entities/session')>()),
   useDirectoryState: () => ['/test/project', vi.fn()],
   useSessionChatState: () => ({ messages: [] }),
+  useSessionRuntime: () => 'claude-code',
   useSessionStreamState: () => ({
     messages: [],
     inProgressTurn: [],
@@ -69,6 +70,12 @@ vi.mock('@/layers/entities/session', async (importOriginal) => ({
     streamReadyCursor: null,
     connectionState: 'connected',
   }),
+}));
+
+// This test drives the real container; its runtime capabilities are irrelevant
+// to the upload wedge, so they are stubbed rather than fetched off the transport.
+vi.mock('@/layers/entities/runtime', () => ({
+  useCapabilitiesForRuntime: () => undefined,
 }));
 
 import { TransportProvider } from '@/layers/shared/model';
@@ -148,6 +155,8 @@ function Composer({ attachment }: { attachment: File }) {
           void fileUpload.uploadAndGetPaths().catch(() => {});
         }}
         enqueueContent={vi.fn().mockResolvedValue(true)}
+        steerContent={vi.fn().mockResolvedValue(true)}
+        addContextContent={vi.fn().mockResolvedValue(true)}
         tryNativeCommand={vi.fn(() => ({ handled: false }) as never)}
         commandPending={false}
         status="idle"

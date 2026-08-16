@@ -9,7 +9,7 @@
  * `isOwner` predicate the rooms domain uses. A fake `listPeople` would satisfy
  * both by construction.
  */
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { createTestDb } from '@dorkos/test-utils/db';
 import { agents, authors, eq, type Db } from '@dorkos/db';
 import { AgentRegistry, toManifest } from '@dorkos/mesh';
@@ -23,6 +23,9 @@ import {
 
 const OWNER_USER_ID = 'user-1';
 
+/** Where Ana lives — the directory her sessions and her claims are keyed on. */
+const ANA_PATH = '/Users/dorian/agents/ana';
+
 /** Ana — an ordinary registered agent. */
 const ANA: TeamAgentSource = {
   id: 'agent-ana',
@@ -33,8 +36,10 @@ const ANA: TeamAgentSource = {
   icon: '🤖',
   color: '#6366f1',
   namespace: 'dorkos',
+  projectPath: ANA_PATH,
   registeredAt: '2026-08-01T00:00:00.000Z',
   healthStatus: 'active',
+  lastSeenAt: '2026-08-10T12:00:00.000Z',
 };
 
 /** DorkBot — the system agent, which belongs to the install and not to a person. */
@@ -59,6 +64,9 @@ describe('aggregateTeamRoster', () => {
       listPeople: () => registry.listActive('human'),
       listAgentAuthors: () => [],
       listAgents: () => [ANA, DORKBOT],
+      listClaims: () => [],
+      listRooms: () => [],
+      sessionActivity: () => ({}),
       account: () => ({ id: OWNER_USER_ID, name: 'Dorian', email: 'dorian@dorkos.ai' }),
       configDisplayName: () => null,
       defaultAgentName: () => 'ana',
@@ -284,13 +292,257 @@ describe('aggregateTeamRoster', () => {
     expect(members.find((m) => m.id === 'agent-dorkbot')?.agent?.recentlyActive).toBe(false);
   });
 
-  it('carries neither projectPath nor namespace, because production cannot', async () => {
+  describe('activity (spec `profile-unification` §3.1)', () => {
+    /**
+     * Ana's author row, stamped with her mesh occupancy — the join a claim
+     * arrives on. Claims are keyed by AUTHOR id, and an agent's author row is
+     * minted the first time it is in a room, so this is the whole path from
+     * "the dispatcher says author X is working" to "Ana is working".
+     */
+    function mintAnaAuthor(): string {
+      const now = new Date().toISOString();
+      db.insert(agents)
+        .values({
+          id: ANA.id,
+          name: 'ana',
+          displayName: 'Ana',
+          runtime: 'claude-code',
+          projectPath: ANA_PATH,
+          registeredAt: now,
+          updatedAt: now,
+        })
+        .run();
+      return registry.resolveAgent(ANA_PATH, 'Ana').id;
+    }
+
+    /** Sources with Ana's author row joined, as production always has it. */
+    function withAuthors(overrides: Partial<TeamRosterSources> = {}): TeamRosterSources {
+      return sources({ listAgentAuthors: () => registry.listActive('agent'), ...overrides });
+    }
+
+    it('says which room an agent is working in, and since when', async () => {
+      const authorId = mintAnaAuthor();
+
+      const { members } = await aggregateTeamRoster(
+        withAuthors({
+          listClaims: () => [{ roomId: 'room-1', authorId, claimedAt: '2026-08-16T10:00:00.000Z' }],
+          listRooms: () => [{ id: 'room-1', name: 'team' }],
+        })
+      );
+
+      expect(members.find((m) => m.id === ANA.id)?.agent?.activity.working).toEqual({
+        roomId: 'room-1',
+        roomName: 'team',
+        since: '2026-08-16T10:00:00.000Z',
+      });
+      // A claim held by one agent is not a claim held by another.
+      expect(members.find((m) => m.id === DORKBOT.id)?.agent?.activity.working).toBeNull();
+    });
+
+    it('still reports the work when the room cannot be named', async () => {
+      // The label is the part that degrades, never the fact: "Working · 5 min"
+      // is honest; silence would not be.
+      const authorId = mintAnaAuthor();
+
+      const { members } = await aggregateTeamRoster(
+        withAuthors({
+          listClaims: () => [
+            { roomId: 'room-gone', authorId, claimedAt: '2026-08-16T10:00:00.000Z' },
+          ],
+          listRooms: () => {
+            throw new Error('rooms table unreadable');
+          },
+        })
+      );
+
+      expect(members.find((m) => m.id === ANA.id)?.agent?.activity.working).toMatchObject({
+        roomId: 'room-gone',
+        roomName: null,
+      });
+    });
+
+    it('does not read the rooms at all when nothing is working', async () => {
+      // The read exists to name a claim. On the install this endpoint mostly
+      // serves there are none, and listing every room to name none of them is
+      // cost nobody asked for.
+      const listRooms = vi.fn(() => []);
+      await aggregateTeamRoster(sources({ listRooms }));
+      expect(listRooms).not.toHaveBeenCalled();
+    });
+
+    it('ignores a claim held by an author no agent on this roster answers to', async () => {
+      // The author registry has rows the mesh does not — a person, a retired
+      // agent's row, an agent registered on another machine. None of them make
+      // one of THESE agents working.
+      mintAnaAuthor();
+      const { members } = await aggregateTeamRoster(
+        withAuthors({
+          listClaims: () => [
+            { roomId: 'room-1', authorId: ownerAuthorId, claimedAt: '2026-08-16T10:00:00.000Z' },
+          ],
+          listRooms: () => [{ id: 'room-1', name: 'team' }],
+        })
+      );
+
+      for (const agent of members.filter((m) => m.kind === 'agent')) {
+        expect(agent.agent?.activity.working).toBeNull();
+      }
+    });
+
+    it('keeps the claim it has held longest when an agent somehow holds two', async () => {
+      // Unreachable today — the second claim ceiling is the agent's directory,
+      // so a turn in one room refuses a trigger in every other. Pinned anyway,
+      // because "whichever the map iterated first" would make two reads of the
+      // same state disagree.
+      const authorId = mintAnaAuthor();
+      const { members } = await aggregateTeamRoster(
+        withAuthors({
+          listClaims: () => [
+            { roomId: 'room-late', authorId, claimedAt: '2026-08-16T10:05:00.000Z' },
+            { roomId: 'room-early', authorId, claimedAt: '2026-08-16T10:00:00.000Z' },
+          ],
+          listRooms: () => [
+            { id: 'room-late', name: 'late' },
+            { id: 'room-early', name: 'early' },
+          ],
+        })
+      );
+
+      expect(members.find((m) => m.id === ANA.id)?.agent?.activity.working?.roomId).toBe(
+        'room-early'
+      );
+    });
+
+    it('dates an idle agent by the later of the mesh and its newest session', async () => {
+      const { members } = await aggregateTeamRoster(
+        sources({ sessionActivity: () => ({ [ANA_PATH]: '2026-08-11T09:00:00.000Z' }) })
+      );
+
+      // The mesh last heard from Ana on the 10th; a session of hers was touched
+      // on the 11th. The 11th is the honest answer — and only the session read
+      // knows it, because mesh health is stamped by the claude-code turn paths
+      // alone.
+      expect(members.find((m) => m.id === ANA.id)?.agent?.activity).toEqual({
+        working: null,
+        lastActiveAt: '2026-08-11T09:00:00.000Z',
+      });
+    });
+
+    it('keeps the mesh stamp when it is the later of the two', async () => {
+      const { members } = await aggregateTeamRoster(
+        sources({ sessionActivity: () => ({ [ANA_PATH]: '2026-08-01T09:00:00.000Z' }) })
+      );
+
+      expect(members.find((m) => m.id === ANA.id)?.agent?.activity.lastActiveAt).toBe(
+        ANA.lastSeenAt
+      );
+    });
+
+    it('never puts an unreadable stamp on the wire when the other one is readable', async () => {
+      // Both directions, because only one of them is a comparison: every `>`
+      // against `NaN` is false, so the corrupt value wins by DEFAULT when it is
+      // the mesh's, and a client asked to render `"whenever"` shows the person
+      // "Invalid Date". Neither half of `lastActiveAt` is trusted to be a date
+      // just because its column is text.
+      const meshCorrupt = await aggregateTeamRoster(
+        sources({
+          listAgents: () => [{ ...ANA, lastSeenAt: 'whenever' }],
+          sessionActivity: () => ({ [ANA_PATH]: '2026-08-11T09:00:00.000Z' }),
+        })
+      );
+      expect(meshCorrupt.members.find((m) => m.id === ANA.id)?.agent?.activity.lastActiveAt).toBe(
+        '2026-08-11T09:00:00.000Z'
+      );
+
+      const sessionCorrupt = await aggregateTeamRoster(
+        sources({ sessionActivity: () => ({ [ANA_PATH]: 'whenever' }) })
+      );
+      expect(
+        sessionCorrupt.members.find((m) => m.id === ANA.id)?.agent?.activity.lastActiveAt
+      ).toBe(ANA.lastSeenAt);
+    });
+
+    it('says nothing rather than something for an agent that has never run', async () => {
+      // DorkBot: no mesh stamp, no session, no claim. Both members null is the
+      // state the header renders as "Hasn't run yet" — which is a different
+      // sentence from "idle", and only distinguishable because neither half is
+      // faked.
+      const { members } = await aggregateTeamRoster(sources());
+
+      expect(members.find((m) => m.id === DORKBOT.id)?.agent?.activity).toEqual({
+        working: null,
+        lastActiveAt: null,
+      });
+    });
+
+    it('does not date an agent by a session belonging to another directory', async () => {
+      const { members } = await aggregateTeamRoster(
+        sources({
+          listAgents: () => [{ ...ANA, lastSeenAt: null }],
+          sessionActivity: () => ({
+            '/Users/dorian/agents/someone-else': '2026-08-11T09:00:00.000Z',
+          }),
+        })
+      );
+
+      expect(members.find((m) => m.id === ANA.id)?.agent?.activity.lastActiveAt).toBeNull();
+    });
+
+    it('degrades a failing claims read into a warning, never a failed roster', async () => {
+      const roster = await aggregateTeamRoster(
+        withAuthors({
+          listClaims: () => {
+            throw new Error('dispatcher unavailable');
+          },
+        })
+      );
+
+      expect(roster.members).toHaveLength(3);
+      expect(roster.members.find((m) => m.id === ANA.id)?.agent?.activity.working).toBeNull();
+      expect(roster.warnings).toEqual([{ source: 'claims', message: 'dispatcher unavailable' }]);
+    });
+
+    it('degrades a failing session read to the mesh stamp alone', async () => {
+      const roster = await aggregateTeamRoster(
+        sources({
+          sessionActivity: () => {
+            throw new Error('runtimes unavailable');
+          },
+        })
+      );
+
+      expect(roster.members.find((m) => m.id === ANA.id)?.agent?.activity.lastActiveAt).toBe(
+        ANA.lastSeenAt
+      );
+      expect(roster.warnings).toEqual([{ source: 'sessions', message: 'runtimes unavailable' }]);
+    });
+
+    it('stamps the operator as here now, and refuses to guess for anyone else', async () => {
+      const before = Date.now();
+      registry.resolveExternal({
+        platformType: 'telegram',
+        instanceId: 'inst-1',
+        platformUserId: 'tg-9',
+        displayName: 'Priya',
+      });
+
+      const { members } = await aggregateTeamRoster(sources());
+
+      const self = members.find((m) => m.isSelf);
+      expect(Date.parse(self?.person?.lastSeenAt ?? '')).toBeGreaterThanOrEqual(before);
+      // Nothing on this install dates a bridged person's presence, and the
+      // roster says so rather than reporting the moment it was read.
+      expect(members.find((m) => m.displayName === 'Priya')?.person?.lastSeenAt).toBeNull();
+    });
+  });
+
+  it('carries the projectPath production joins back, and never the namespace', async () => {
     // A hand-written fixture can claim any field it likes, so this one does not
     // write one: a REAL registry entry goes through the REAL `toManifest()` —
-    // the exact strip `meshCore.listWithHealth()` applies — and whatever
-    // survives is what the wire actually has. If the strip ever stops removing
-    // these, this test goes red and the two "nothing production fills this"
-    // comments stop being a claim nobody re-checked.
+    // the exact strip `meshCore.listWithHealth()` applies — and then through the
+    // REAL paths join `routes/team.ts` does on top of it. What survives is what
+    // the wire actually has. If the strip ever stops removing the namespace, or
+    // the join ever stops restoring the path, this test goes red.
     const mesh = new AgentRegistry(db);
     mesh.upsert({
       id: 'agent-real',
@@ -311,18 +563,26 @@ describe('aggregateTeamRoster', () => {
     });
 
     const stripped = mesh.listWithHealth().map((entry) => toManifest(entry));
-    // The premise: the registry itself DOES hold both fields, so their absence
-    // downstream is the strip's doing and not an empty fixture.
+    // The premise: the registry itself DOES hold both fields, so whatever is
+    // missing downstream is the strip's doing and not an empty fixture.
     expect(mesh.listWithHealth()[0]).toMatchObject({
       projectPath: '/Users/dorian/agents/real',
       namespace: 'dorkos',
     });
+    // The strip really did take both — including the one the route puts back.
+    expect(stripped[0]).not.toHaveProperty('projectPath');
+    expect(stripped[0]).not.toHaveProperty('namespace');
 
-    const { members } = await aggregateTeamRoster(sources({ listAgents: () => stripped }));
+    // What `routes/team.ts` composes: the public listing, with the registry's
+    // own paths joined back on by id.
+    const pathById = new Map(mesh.list().map((entry) => [entry.id, entry.projectPath]));
+    const joined = stripped.map((agent) => ({ ...agent, projectPath: pathById.get(agent.id)! }));
+
+    const { members } = await aggregateTeamRoster(sources({ listAgents: () => joined }));
     const real = members.find((m) => m.id === 'agent-real');
 
     expect(real?.agent).toBeDefined();
-    expect(real?.agent?.projectPath).toBeUndefined();
+    expect(real?.agent?.projectPath).toBe('/Users/dorian/agents/real');
     expect(real?.agent?.namespace).toBeUndefined();
   });
 
@@ -389,6 +649,9 @@ describe('aggregateTeamRoster', () => {
         listPeople: () => registry.listActive('human'),
         listAgentAuthors: () => [],
         listAgents: () => [ANA, DORKBOT],
+        listClaims: () => [],
+        listRooms: () => [],
+        sessionActivity: () => ({}),
         account: () => null,
         configDisplayName: () => null,
         defaultAgentName: () => 'ana',

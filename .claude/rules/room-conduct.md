@@ -110,9 +110,16 @@ model. See ADR `260726-170127` and `research/20260727_buzz-conversational-behavi
   it. A future fallback room reuses all of this; nothing here elects a speaker.
 - **A turn answers a MOMENT, not a message** (RP8, `room-collect.ts`). Messages
   for one `(room, agent)` pair gather for `rooms.collectDebounceMs`, capped at
-  `rooms.collectMaxEntries`, and become ONE turn: the newest is what the agent
-  answers and the ones behind it ride its ambient window. One budget
-  reservation, one claim, one cursor advance over the whole batch. The window
+  `rooms.collectMaxEntries`, and become ONE turn: the newest reaches the model
+  as the turn's own content and the ones behind it ride `room_context.gathered`.
+  One budget reservation, one claim, one cursor advance over the whole batch.
+  **Gathered is not ambient, and the difference is the whole point.** They ride
+  their own nonced heading, numbered, under a note saying the one reply owes
+  every one of them an answer — because when they rode `pending` under "you have
+  not read these yet" a live room measured exactly what that heading invites: one
+  turn, three questions, an answer to the last (DOR-1231). Anything that moves
+  them back into the background, or that tells the model the only message it is
+  answering is the one outside the fence, restores the bug. The window
   **opens once and does not slide** — a resetting timer starves the answer for
   as long as the chatter lasts, which is the opposite of gathering it — and the
   cap closes it early rather than letting a busy room never be answered.
@@ -156,6 +163,38 @@ model. See ADR `260726-170127` and `research/20260727_buzz-conversational-behavi
   like any other (spec §10.4), which is exactly why the mechanism cannot live in
   the conversation. `room-stopped-turns.test.ts` pins the guard: a message whose
   text is "stop" runs a normal turn.
+  **A stopped turn posts nothing, and the room is what guarantees that, not the
+  runtime.** `RoomTurnRunner.interrupt` resolving means the interrupt was
+  DELIVERED; the turn's own stream still closes the ordinary way, and a model
+  that had all but finished comes back with the whole answer in it. Measured on
+  a live install (DOR-1232): the room wrote its one `halted` notice and posted
+  that answer two seconds later, so Stop looked like it had done nothing. So the
+  halt marks every dispatch it drops (`RoomTriggerDispatcher.haltedTurns`,
+  synchronously, before its first `await`), and every delivery path — the
+  in-frame one, the late one, the aside — throws that turn's answer away when it
+  lands. It throws the NOTICES away too — both the writes and the RE-ARM:
+  the `halted` line is the whole story, a `turn_failed` under it is the room
+  apologising for obeying, and `notices.recovered` must not fire either, because
+  that means "this agent answered, so whatever was blocking it is over" and a
+  turn nobody let finish is evidence of nothing. The mark is keyed by dispatch
+  and not by `(room, agent)`, because the claim is already gone by then and the
+  next turn for that pair is a different dispatch that Stop said nothing about.
+  What is NOT discarded is the spend — a turn that ran a model has spent, and
+  `tryReserve` still has no counterpart — nor the turn's own session transcript,
+  where a person can still read what it was saying.
+  **A turn releases its OWN claim, never whatever holds the key.** The claim map
+  is keyed `(room, agent)` and a turn is a dispatch, and a halt is the one thing
+  that pulls the two apart: Stop drops the claim, the next message claims the
+  same key, and the stopped turn's runtime comes back minutes later still
+  believing the claim is its to release. So both turn terminals go through
+  `releaseOwnClaim`, which releases only while the holder's `dispatchId` is
+  still theirs; only `halt` itself releases by key, because it is stopping
+  whoever holds it rather than finishing a turn. Unguarded, a halt plus one
+  follow-up left the room showing nobody working while an agent was mid-answer,
+  dropped the one-transcript-per-`(room, agent)` ceiling, and let the next
+  message start a second concurrent turn in the same working tree — the
+  contention DOR-500 measured — while the dispatch log closed out the live turn
+  under the dead turn's outcome.
 - **A refusal is visible, and so is a turn that has stopped.** A dropped trigger
   that writes no room entry is indistinguishable from a broken agent, and the
   person who notices is not the person who configured it. If you add a path that

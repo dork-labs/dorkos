@@ -69,6 +69,7 @@ import {
   getOrCreateProjector,
   disposeProjector,
 } from '../../services/session/session-state-projector.js';
+import { resetMessageDispatcher } from '../../services/session/message-dispatcher.js';
 
 const app = createApp();
 finalizeApp(app);
@@ -92,6 +93,10 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  // The dispatcher's in-flight and pending maps are module state shared by every
+  // case in this file; a case that leaves a turn behind must not decide the next
+  // one's answer.
+  resetMessageDispatcher();
   disposeProjector(SESSION_ID);
 });
 
@@ -150,8 +155,102 @@ describe('POST /api/sessions/:id/ui-action', () => {
 
     expect(res.status).toBe(409);
     expect(res.body.code).toBe('SESSION_LOCKED');
+    // The body names whoever actually holds it, not a placeholder.
+    expect(res.body.lockedBy).toBe('other');
     expect(fakeRuntime.sendMessage).not.toHaveBeenCalled();
     expect(fakeRuntime.releaseLock).not.toHaveBeenCalled();
+  });
+
+  it('accepts a click that lands after the turn ended, while the stream is still closing', async () => {
+    // DOR-1239, reproduced against a real claude-code turn: the runtime keeps
+    // its subprocess alive past the end of the turn to drain background work, so
+    // for that whole window the session still holds its in-flight slot and its
+    // write-lock while the agent has stopped and the reply — buttons and all —
+    // is on screen. Clicking one of those buttons answered 409 over a session
+    // nothing was using. On test-mode the window is a microtask wide, so this
+    // case builds it explicitly.
+    let closeStream!: () => void;
+    const streamOpen = new Promise<void>((resolve) => {
+      closeStream = resolve;
+    });
+    fakeRuntime.withScenarios([
+      async function* () {
+        yield { type: 'text_delta', data: { text: 'here is a widget' } } as StreamEvent;
+        yield { type: 'done', data: {} } as StreamEvent;
+        await streamOpen;
+      },
+      async function* () {
+        yield { type: 'done', data: {} } as StreamEvent;
+      },
+    ]);
+
+    const rendered = await request(app)
+      .post(`/api/sessions/${SESSION_ID}/ui-action`)
+      .set('X-Client-Id', 'tab-1')
+      .send({ actionId: 'render' });
+    expect(rendered.status).toBe(202);
+    await vi.waitFor(() => expect(fakeRuntime.sendMessage).toHaveBeenCalledTimes(1));
+    // The turn has ended on the stream every window reads; the runtime has not
+    // finished closing behind it.
+    await vi.waitFor(() =>
+      expect(getOrCreateProjector(SESSION_ID).peekInProgressTurn()).toBeNull()
+    );
+
+    const clicked = await request(app)
+      .post(`/api/sessions/${SESSION_ID}/ui-action`)
+      .set('X-Client-Id', 'tab-1')
+      .send({ actionId: 'refresh' });
+
+    expect(clicked.status).toBe(202);
+    closeStream();
+    await vi.waitFor(() => expect(fakeRuntime.sendMessage).toHaveBeenCalledTimes(2));
+    expect(fakeRuntime.sendMessage.mock.calls[1]![1] as string).toContain('Action: refresh');
+  });
+
+  it('409s a click that lands while the agent is still producing, and never fires it later', async () => {
+    // The other half of the line: mid-turn the person can see the agent working,
+    // and a widget action is an answer to the turn it was rendered in — running
+    // it against whatever a later turn left behind is not what they clicked.
+    let finishTurn!: () => void;
+    const working = new Promise<void>((resolve) => {
+      finishTurn = resolve;
+    });
+    fakeRuntime.withScenarios([
+      async function* () {
+        yield { type: 'text_delta', data: { text: 'working' } } as StreamEvent;
+        await working;
+        yield { type: 'done', data: {} } as StreamEvent;
+      },
+    ]);
+
+    const started = await request(app)
+      .post(`/api/sessions/${SESSION_ID}/ui-action`)
+      .set('X-Client-Id', 'tab-1')
+      .send({ actionId: 'render' });
+    expect(started.status).toBe(202);
+    await vi.waitFor(() =>
+      expect(getOrCreateProjector(SESSION_ID).peekInProgressTurn()).not.toBeNull()
+    );
+
+    const clicked = await request(app)
+      .post(`/api/sessions/${SESSION_ID}/ui-action`)
+      .set('X-Client-Id', 'tab-1')
+      .send({ actionId: 'refresh' });
+
+    expect(clicked.status).toBe(409);
+    expect(clicked.body.code).toBe('SESSION_LOCKED');
+    // Truthful: the window whose turn is running, not a placeholder. The lock
+    // this route used to ask reports null here (see `beforeEach`), so `unknown`
+    // is what an answer built from it would say.
+    expect(clicked.body.lockedBy).toBe('tab-1');
+
+    finishTurn();
+    await vi.waitFor(() =>
+      expect(getOrCreateProjector(SESSION_ID).peekInProgressTurn()).toBeNull()
+    );
+    // Refused means refused: the click does not surface minutes later inside
+    // whatever the session does next.
+    expect(fakeRuntime.sendMessage).toHaveBeenCalledTimes(1);
   });
 
   it('cold-starts a session absent from the live map but present in storage (202, action delivered)', async () => {

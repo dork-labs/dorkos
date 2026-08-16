@@ -187,11 +187,11 @@ describe('QueuePanel — whose message it is, and what happened to it', () => {
     renderPanel({
       queue: [
         makeItem('Plain', 0),
-        makeItem('Steered', 1, { notice: 'Queued — this agent cannot take a message mid-task' }),
+        makeItem('Steered', 1, { notice: "Queued. This agent can't take a message mid-task." }),
       ],
     });
     expect(
-      screen.getByText('Queued — this agent cannot take a message mid-task')
+      screen.getByText("Queued. This agent can't take a message mid-task.")
     ).toBeInTheDocument();
   });
 });

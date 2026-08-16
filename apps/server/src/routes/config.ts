@@ -20,7 +20,11 @@ import {
   USER_CONFIG_DEFAULTS,
   USER_PROFILE_DEFAULTS,
 } from '@dorkos/shared/config-schema';
-import { applyConfigPatch, deepMerge } from '../services/core/operator/config-patch.js';
+import {
+  applyConfigPatch,
+  deepMerge,
+  describeConfigWrite,
+} from '../services/core/operator/config-patch.js';
 import {
   describeOperatorOnlyRefusal,
   findLoginRequiredPaths,
@@ -480,6 +484,9 @@ router.patch('/', (req, res) => {
       logger.info('[Config] Full-autonomy acknowledgement cleared; standing defaults demoted');
     }
 
+    // Read BEFORE the write, for the audit line below. `getAll()` re-reads the
+    // store, so this is a snapshot rather than a reference that moves under us.
+    const configBefore = configManager.getAll();
     const postureBefore = readStandingGrantPosture();
     const result = applyConfigPatch(patch);
     if (!result.ok) {
@@ -493,8 +500,37 @@ router.patch('/', (req, res) => {
     // posture that can no longer justify them.
     revokeStandingGrantsIfPostureNarrowed(postureBefore, readStandingGrantPosture());
 
-    if (req.body && typeof req.body === 'object') {
-      logger.debug(`[Config] Patched: ${Object.keys(req.body).join(', ')}`);
+    // ## The audit line (DOR-1237)
+    //
+    // `info`, not `debug`, and the LEAVES rather than the top-level section.
+    // `runtimes.claudeCode.defaultTrustStop` — an operator-only setting — moved
+    // twice on a real install between sign-offs, and nothing on disk could say
+    // what wrote it: a production install logs at info, so the old `debug` line
+    // was never written, and where it was written it said only `runtimes`.
+    //
+    // Derived from the WRITE, not the request: what landed, never what was
+    // asked for. So a key Zod stripped is named by nobody, a patch that re-sent
+    // the stored value produces no line, and a leaf the server folded in itself
+    // — the Reset demotion above — is named alongside the rest. Paths only,
+    // never values, and every segment escaped; `describeConfigWrite` carries the
+    // reasoning for all three.
+    //
+    // **This route is not the whole story.** Config is also written by the CLI
+    // (`dorkos config set`) and by a handful of server-side callers, none of
+    // which pass through here and none of which log a line. Do not read a silent
+    // log as proof nothing changed — see "Who may write which setting" in
+    // `contributing/configuration.md`.
+    //
+    // Every PATCH that changes something gets a line, the cockpit's own UI
+    // writes included (a pin moved, a section collapsed). Deliberate rather than
+    // overlooked: those ride discrete gestures — the sidebar's reorder writes
+    // from `onDragEnd`, the welcome-back digest from a ref-guarded effect that
+    // fires once per mount — so the volume is one line per thing a person did.
+    // An effect that lost its guard is the shape that could flood this; the
+    // no-change branch below is what keeps such a regression cheap.
+    const touched = describeConfigWrite(configBefore, result.config);
+    if (touched) {
+      logger.info(`[Config] Patched: ${touched}`);
     }
     for (const warning of result.warnings) {
       logger.warn(`[Config] ${warning}`);

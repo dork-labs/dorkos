@@ -187,6 +187,20 @@ export interface TriggerTarget {
    * turn nothing was collected behind — which is most of them.
    */
   arrivedDuringPrevTurn: ReadonlySet<string>;
+  /**
+   * The rest of what this turn answers: every message gathered behind the
+   * triggering one (room-participation spec §10.4).
+   *
+   * Ids, for the same reason {@link TriggerTarget.arrivedDuringPrevTurn} carries
+   * ids — `buildRoomContext` reads the entries themselves out of the log, and a
+   * second copy of the text would be a second answer to what the window holds.
+   * Empty for the ordinary turn, which answers one message.
+   *
+   * **A superset of `arrivedDuringPrevTurn`.** Every message that landed
+   * mid-turn was gathered; not everything gathered landed mid-turn — a burst
+   * typed at an idle agent is gathered and nothing was running.
+   */
+  gathered: ReadonlySet<string>;
 }
 
 /**
