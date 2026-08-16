@@ -295,7 +295,10 @@ describe('GET /api/team/:memberId/rooms', () => {
   let ownerAuthorId: string;
 
   function app(overrides: Partial<TeamRouterDeps> = {}) {
-    const mesh: TeamMeshReader = { listWithHealth: () => [ANA, DORKBOT] };
+    const mesh: TeamMeshReader = {
+      listWithHealth: () => [ANA, DORKBOT],
+      listWithPaths: () => [{ id: ANA.id, projectPath: ANA_PATH }],
+    };
     const server = express();
     server.use(
       '/api/team',
@@ -303,6 +306,11 @@ describe('GET /api/team/:memberId/rooms', () => {
         authors: registry,
         rooms,
         meshCore: mesh,
+        // The roster's own sources answer nothing here: this block is about
+        // the rooms route, which reads neither.
+        activeClaims: () => [],
+        listRooms: () => [],
+        sessionActivity: () => Promise.resolve({}),
         ownerAccount: () => ({ id: OWNER_USER_ID, name: 'Dorian' }),
         ownerEmail: () => 'dorian@dorkos.ai',
         configDisplayName: () => null,
@@ -390,7 +398,12 @@ describe('GET /api/team/:memberId/rooms', () => {
     // profile of a perfectly ordinary agent.
     const fresh: TeamAgentSource = { ...ANA, id: 'agent-new', name: 'new' };
     const res = await request(
-      app({ meshCore: { listWithHealth: () => [ANA, DORKBOT, fresh] } })
+      app({
+        meshCore: {
+          listWithHealth: () => [ANA, DORKBOT, fresh],
+          listWithPaths: () => [{ id: ANA.id, projectPath: ANA_PATH }],
+        },
+      })
     ).get('/api/team/agent-new/rooms');
 
     expect(res.status).toBe(200);

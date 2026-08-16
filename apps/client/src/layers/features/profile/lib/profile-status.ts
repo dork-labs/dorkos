@@ -10,57 +10,13 @@
  *
  * @module features/profile/lib/profile-status
  */
-import type { TeamAgentFacts, TeamMember } from '@dorkos/shared/team-schemas';
+import type { TeamMember } from '@dorkos/shared/team-schemas';
 import { platformLabel } from '@/layers/entities/room';
 
 /** A minute, an hour and a day in milliseconds. */
 const MINUTE_MS = 60_000;
 const HOUR_MS = 60 * MINUTE_MS;
 const DAY_MS = 24 * HOUR_MS;
-
-/**
- * What an agent is doing right now, and when it last did anything.
- *
- * The shape `TeamAgentFacts.activity` carries once the roster serves it (spec
- * §3.1, DOR-1249). Declared here rather than imported because the profile is
- * the only reader, and reading it through {@link agentActivity} is what lets
- * this slice ship before the field exists.
- */
-export interface ProfileAgentActivity {
-  /** The live turn, when there is one. */
-  working: { roomId: string; roomName: string | null; since: string } | null;
-  /** The most recent sign of life from any source, or `null` for never. */
-  lastActiveAt: string | null;
-}
-
-/**
- * Read the roster's activity block off an agent.
- *
- * **A seam, and a temporary one.** `TeamAgentFacts.activity` is W1.1's field
- * (DOR-1249); until that lands the roster does not carry it, and this returns
- * `null` — which the sentence below renders as "Hasn't run yet" rather than as
- * a guess. When the field lands, this function and its cast are deleted and
- * callers read `agent.activity` directly.
- *
- * @param agent - The roster's agent facts.
- * @returns The activity block, or `null` when this install does not serve one.
- */
-function agentActivity(agent: TeamAgentFacts): ProfileAgentActivity | null {
-  return (agent as TeamAgentFacts & { activity?: ProfileAgentActivity }).activity ?? null;
-}
-
-/**
- * Read a person's last-seen stamp off the roster.
- *
- * The same seam as {@link agentActivity}, for `TeamPersonFacts.lastSeenAt`.
- *
- * @param member - Any roster row.
- * @returns The stamp, or `null` when this install does not serve one.
- */
-function personLastSeenAt(member: TeamMember): string | null {
-  const person = member.person as { lastSeenAt?: string | null } | undefined;
-  return person?.lastSeenAt ?? null;
-}
 
 /**
  * How long something has been going on, in the fewest words that stay true.
@@ -127,14 +83,13 @@ export interface ProfileStatus {
 export function profileStatusText(member: TeamMember, now: Date = new Date()): ProfileStatus {
   const agent = member.agent;
   if (agent) {
-    const activity = agentActivity(agent);
-    const working = activity?.working;
+    const working = agent.activity.working;
     if (working) {
       const elapsed = durationWords(working.since, now);
       const where = working.roomName ? ` in #${working.roomName}` : '';
       return { text: `Working${where}${elapsed ? ` · ${elapsed}` : ''}`, live: true };
     }
-    const last = activity?.lastActiveAt ? agoWords(activity.lastActiveAt, now) : null;
+    const last = agent.activity.lastActiveAt ? agoWords(agent.activity.lastActiveAt, now) : null;
     if (last) return { text: `Last active ${last}`, live: false };
     return { text: 'Hasn’t run yet', live: false };
   }
@@ -142,7 +97,7 @@ export function profileStatusText(member: TeamMember, now: Date = new Date()): P
   if (member.origin !== 'local') {
     return { text: `On ${platformLabel(member.origin.platform)}`, live: false };
   }
-  const seen = member.isSelf ? null : personLastSeenAt(member);
+  const seen = member.isSelf ? null : (member.person?.lastSeenAt ?? null);
   const last = seen ? agoWords(seen, now) : null;
   if (last) return { text: `Last seen ${last}`, live: false };
   return { text: 'On this machine', live: false };

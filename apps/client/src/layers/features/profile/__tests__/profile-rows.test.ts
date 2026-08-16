@@ -27,7 +27,7 @@ const PRIYA: TeamMember = {
   isSelf: false,
   ownerId: null,
   origin: 'local',
-  person: { role: 'Staff architect' },
+  person: { role: 'Staff architect', lastSeenAt: null },
 };
 
 /** Someone else's agent: the cartographer, re-homed onto Priya. */
@@ -96,7 +96,7 @@ describe('another person', () => {
   });
 
   it('leaves the role out entirely rather than guessing at one', () => {
-    const roleless: TeamMember = { ...PRIYA, person: { role: null } };
+    const roleless: TeamMember = { ...PRIYA, person: { role: null, lastSeenAt: null } };
     expect(shape(build(roleless))).toEqual(['Manages nav', 'Rooms nav']);
   });
 
@@ -151,10 +151,11 @@ describe('an agent you manage', () => {
   });
 
   it('drops the Folder row when the roster does not know where the agent lives', () => {
-    // `projectPath` is stripped from the mesh's public listing until W1.1
-    // unstrips it for local agents — a Folder row with nothing to copy is a
-    // control wired to nothing.
-    expect(shape(build(MANAGED))).not.toContain('Folder copy');
+    // The roster fills `projectPath` for every agent on this machine, so the
+    // pathless case is a member whose truth is remote — and a Folder row with
+    // nothing to copy is a control wired to nothing.
+    const { projectPath: _remote, ...unplaced } = MANAGED.agent!;
+    expect(shape(build({ ...MANAGED, agent: unplaced }))).not.toContain('Folder copy');
   });
 
   it('says how it runs in the row itself', () => {

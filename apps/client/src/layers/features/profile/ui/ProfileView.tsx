@@ -15,7 +15,7 @@ import { Skeleton } from '@/layers/shared/ui';
 import { useSafeNavigate } from '@/layers/shared/model';
 import { useCurrentAgent } from '@/layers/entities/agent';
 import { useInteractionStore } from '@/layers/entities/interactions';
-import { findTeamOwner, teamMemberFace } from '@/layers/entities/team';
+import { findTeamOwner, teamMemberFace, useMemberRooms } from '@/layers/entities/team';
 import { deriveRelationship } from '../lib/profile-relationship';
 import { messageTarget } from '../lib/profile-message';
 import type { ProfileRowsContext } from '../lib/profile-rows';
@@ -77,11 +77,18 @@ export function ProfileView({
   // Gated on the roster knowing where the agent lives, so this asks for nothing
   // on a person's profile — or on any agent whose folder is not ours to know.
   const manifest = useCurrentAgent(member.agent?.projectPath ?? null);
+  // The Rooms row's value. Read here rather than in the page, so the row can
+  // say where somebody is before you open it — and so the page it pushes is a
+  // cache hit rather than a second wait.
+  const rooms = useMemberRooms(member.id);
 
   const ctx: ProfileRowsContext = {
     relationship,
     manages: roster.filter((row) => row.kind === 'agent' && row.ownerId === member.id),
     description: manifest.data?.description ?? null,
+    rooms: rooms.data
+      ? { count: rooms.data.rooms.length, names: rooms.data.rooms.map((room) => room.name) }
+      : null,
   };
 
   // Three ways to have no button, and they are all the same answer: don't draw

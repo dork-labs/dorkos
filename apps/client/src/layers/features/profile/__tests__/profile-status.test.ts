@@ -5,25 +5,18 @@
  * of when it last ran, never having run, and — for people — where they are.
  */
 import { describe, it, expect } from 'vitest';
-import type { TeamMember } from '@dorkos/shared/team-schemas';
+import type { TeamAgentActivity, TeamMember } from '@dorkos/shared/team-schemas';
 import { MOCK_TEAM_ROSTER } from '@/dev/mock-samples';
-import { profileStatusText, type ProfileAgentActivity } from '../lib/profile-status';
+import { profileStatusText } from '../lib/profile-status';
 
 const byId = (id: string): TeamMember => MOCK_TEAM_ROSTER.find((member) => member.id === id)!;
 
 const NOW = new Date('2026-08-16T12:00:00.000Z');
 const ago = (ms: number) => new Date(NOW.getTime() - ms).toISOString();
 
-/**
- * Put an activity block on an agent.
- *
- * **Temporary.** `TeamAgentFacts.activity` is W1.1's field (DOR-1249); until it
- * lands the type does not carry it, so the fixture writes it through a cast —
- * the same seam `profile-status.ts` reads it back through. Both go when the
- * field lands.
- */
-function withActivity(member: TeamMember, activity: ProfileAgentActivity): TeamMember {
-  return { ...member, agent: { ...member.agent!, activity } as TeamMember['agent'] };
+/** Put an activity block on an agent. */
+function withActivity(member: TeamMember, activity: TeamAgentActivity): TeamMember {
+  return { ...member, agent: { ...member.agent!, activity } };
 }
 
 describe('an agent', () => {
@@ -63,10 +56,13 @@ describe('an agent', () => {
     expect(profileStatusText(never, NOW).text).toBe('Hasn’t run yet');
   });
 
-  it('says the same thing when the roster serves no activity at all', () => {
-    // The pre-W1.1 install. A guess dressed as a fact ("Active in the last
-    // hour", from a 60-minute mesh window) is what this sentence replaced.
-    expect(profileStatusText(byId('agent-warden'), NOW).text).toBe('Hasn’t run yet');
+  it('never falls back to the mesh’s 60-minute window', () => {
+    // A guess dressed as a fact ("Active in the last hour") is what this
+    // sentence replaced: `recentlyActive` is true of this fixture, and the
+    // sentence still comes from `activity` alone.
+    const never = withActivity(byId('agent-warden'), { working: null, lastActiveAt: null });
+    expect(never.agent?.recentlyActive).toBe(true);
+    expect(profileStatusText(never, NOW).text).toBe('Hasn’t run yet');
   });
 
   it('is live only while a turn is actually running', () => {
@@ -100,7 +96,7 @@ describe('a person', () => {
       isSelf: false,
       ownerId: null,
       origin: 'local',
-      person: { role: null, lastSeenAt: ago(3 * 3_600_000) } as TeamMember['person'],
+      person: { role: null, lastSeenAt: ago(3 * 3_600_000) },
     };
 
     expect(profileStatusText(priya, NOW).text).toBe('Last seen 3 h ago');

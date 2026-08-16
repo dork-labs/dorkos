@@ -37,21 +37,6 @@ vi.mock('sonner', () => ({
 
 const byId = (id: string): TeamMember => MOCK_TEAM_ROSTER.find((member) => member.id === id)!;
 
-/** A live turn on an agent. Temporary shape — see `profile-status.ts`'s seam. */
-function working(member: TeamMember, roomName: string | null = 'team'): TeamMember {
-  return {
-    ...member,
-    agent: {
-      ...member.agent!,
-      projectPath: '/Users/dorian/code/dorkos',
-      activity: {
-        working: { roomId: 'r1', roomName, since: new Date(Date.now() - 120_000).toISOString() },
-        lastActiveAt: new Date(Date.now() - 120_000).toISOString(),
-      },
-    } as TeamMember['agent'],
-  };
-}
-
 /** A second local person, which the shared roster has none of. */
 const PRIYA: TeamMember = {
   id: 'person-priya',
@@ -61,17 +46,29 @@ const PRIYA: TeamMember = {
   isSelf: false,
   ownerId: null,
   origin: 'local',
-  person: { role: 'Staff architect' },
+  person: { role: 'Staff architect', lastSeenAt: null },
 };
 
 const SELF = byId('person-dorian');
 const BRIDGED = byId('person-miguel');
-const MANAGED = working(byId('agent-warden'));
+const MANAGED = byId('agent-warden');
 const OTHERS_AGENT: TeamMember = { ...byId('agent-cartographer'), ownerId: PRIYA.id };
-const DORKBOT: TeamMember = {
-  ...byId('agent-dorkbot'),
-  agent: { ...byId('agent-dorkbot').agent!, projectPath: '/Users/dorian/.dork/agents/dorkbot' },
+const DORKBOT = byId('agent-dorkbot');
+
+/** The same agent between turns: heard from recently, doing nothing now. */
+const IDLE: TeamMember = {
+  ...MANAGED,
+  agent: {
+    ...MANAGED.agent!,
+    activity: { working: null, lastActiveAt: new Date(Date.now() - 40 * 60_000).toISOString() },
+  },
 };
+
+/** An agent whose folder the roster cannot place — a member from somewhere else. */
+const UNPLACED: TeamMember = (() => {
+  const { projectPath: _remote, ...agent } = MANAGED.agent!;
+  return { ...MANAGED, agent };
+})();
 
 const ROSTER: TeamMember[] = [
   SELF,
@@ -168,7 +165,7 @@ describe('the portrait, in one fixed order', () => {
     expect(order.indexOf('identity-avatar')).toBeLessThan(order.indexOf('h2'));
     expect(screen.getByText('Warden')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Copy @handle' })).toBeInTheDocument();
-    expect(screen.getByText('Working in #team · 2 min')).toBeInTheDocument();
+    expect(screen.getByText(/Working in #team ·/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Managed by/ })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Message' })).toBeInTheDocument();
   });
@@ -211,8 +208,9 @@ describe('the status line', () => {
 
     // `recentlyActive` is a 60-minute mesh window, not "right now". The old
     // drawer said "Active in the last hour" from it; a dot keyed on the same
-    // fact would claim a live turn for an agent that finished 40 minutes ago.
-    await renderProfile(byId('agent-warden'));
+    // fact would claim a live turn for an agent that finished 40 minutes ago —
+    // which is exactly this fixture.
+    await renderProfile(IDLE);
     expect(document.querySelector('[data-slot="profile-status-dot"]')).not.toHaveAttribute(
       'data-live'
     );
@@ -267,7 +265,7 @@ describe('the one button', () => {
     // It names a directory, not a session — which conversation opens is
     // resolved afterwards — so the agent is the only honest thing to record.
     expect(Object.keys(useInteractionStore.getState().opened)).toEqual([
-      'agent:/Users/dorian/code/dorkos',
+      `agent:${MANAGED.agent!.projectPath}`,
     ]);
   });
 
@@ -294,8 +292,8 @@ describe('the one button', () => {
     expect(screen.queryByRole('button', { name: 'Message' })).toBeNull();
     cleanup();
 
-    // An agent whose folder the roster does not know is one we cannot open.
-    await renderProfile(byId('agent-warden'));
+    // An agent whose folder the roster cannot place is one we cannot open.
+    await renderProfile(UNPLACED);
     expect(screen.queryByRole('button', { name: 'Message' })).toBeNull();
   });
 });
@@ -303,18 +301,18 @@ describe('the one button', () => {
 describe('the rows', () => {
   it('draws your four fields and what you belong to, as controls', async () => {
     await renderProfile(SELF);
-    // Rooms is absent because its page is not registered yet (W1.2 brings the
-    // data): a row whose destination does not exist is not drawn.
-    expect(rowLabels()).toEqual(['name', 'handle', 'photo', 'email', 'manages']);
+    expect(rowLabels()).toEqual(['name', 'handle', 'photo', 'email', 'manages', 'rooms']);
     expect(renderedRows().every((row) => !row.endsWith('|null'))).toBe(true);
   });
 
-  it('draws someone else’s agent as facts, with no arrows', async () => {
+  it('draws someone else’s agent as facts, plus the rooms you share', async () => {
+    // Nothing private, and nothing to change: About and Runs on are plain
+    // facts. Rooms is the one door, because a room is a shared surface.
     await renderProfile(OTHERS_AGENT);
-    const kinds = [...document.querySelectorAll('[data-profile-row]')].map((row) =>
-      row.getAttribute('data-row-kind')
+    const kinds = [...document.querySelectorAll('[data-profile-row]')].map(
+      (row) => `${row.getAttribute('data-profile-row')}:${row.getAttribute('data-row-kind')}`
     );
-    expect(kinds.every((kind) => kind === 'text')).toBe(true);
+    expect(kinds).toEqual(['runs-on:text', 'rooms:nav']);
   });
 
   it('keeps DorkBot’s locked rows visible, and explains them on tap', async () => {
@@ -335,7 +333,7 @@ describe('the rows', () => {
     // arrive with W2.2's pages. Personality is a `pick` whose popover is also
     // W2.2's, and it carries no value to fall back to — a label with empty
     // space beside it is not a fact, so it waits too.
-    expect(rowLabels()).toEqual(['about', 'runs-on', 'folder']);
+    expect(rowLabels()).toEqual(['about', 'runs-on', 'folder', 'rooms']);
   });
 
   it('draws a pick with no popover behind it yet as the plain fact it carries', async () => {
@@ -363,12 +361,13 @@ describe('the rows', () => {
   });
 
   it('draws no body at all when this build has no row to put in it', async () => {
-    // Somebody bridged in over Telegram has only a Rooms row, whose page W1.2
-    // brings. An empty framed region running the height of the panel is what
-    // the old drawer got wrong.
-    await renderProfile(BRIDGED);
+    // An empty framed region running the height of the panel is what the old
+    // drawer got wrong. Nothing production serves dates a bridged person's
+    // first sighting, so their Rooms row is the only one they have — take it
+    // away and the portrait stands alone rather than over a void.
+    await renderProfile({ ...BRIDGED, id: 'person-nowhere' });
     expect(screen.getByRole('heading', { name: 'Miguel Ferreira-Santos' })).toBeInTheDocument();
-    expect(document.querySelector('[data-slot="profile-rows"]')).toBeNull();
+    expect(rowLabels()).toEqual(['rooms']);
   });
 
   it('pushes the page a nav row names', async () => {

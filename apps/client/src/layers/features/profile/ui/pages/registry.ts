@@ -33,6 +33,10 @@ const PROFILE_PAGES: Partial<Record<ProfilePageId, ProfilePageDefinition>> = {
     title: 'Manages',
     component: lazy(() => import('./ManagesPage').then((m) => ({ default: m.ManagesPage }))),
   },
+  rooms: {
+    title: 'Rooms',
+    component: lazy(() => import('./RoomsPage').then((m) => ({ default: m.RoomsPage }))),
+  },
   name: {
     title: 'Name',
     component: lazy(() => import('./NamePage').then((m) => ({ default: m.NamePage }))),

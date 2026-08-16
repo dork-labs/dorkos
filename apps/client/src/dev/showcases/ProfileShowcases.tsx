@@ -21,57 +21,18 @@ const PRIYA: TeamMember = {
   isSelf: false,
   ownerId: null,
   origin: 'local',
-  person: { role: 'Staff architect' },
+  person: {
+    role: 'Staff architect',
+    lastSeenAt: new Date(Date.now() - 3 * 3_600_000).toISOString(),
+  },
 };
-
-/**
- * Give an agent a live turn and a folder.
- *
- * **Temporary.** `activity` is W1.1's roster field (DOR-1249); until it lands
- * the type does not carry it, so the fixture writes it through a cast and the
- * status sentence has something to say other than "Hasn't run yet". Delete the
- * cast when the field lands.
- */
-function withActivity(
-  member: TeamMember,
-  activity: {
-    working: { roomId: string; roomName: string | null; since: string } | null;
-    lastActiveAt: string | null;
-  }
-): TeamMember {
-  return {
-    ...member,
-    agent: {
-      ...member.agent!,
-      projectPath: '/Users/dorian/code/lifeos',
-      activity,
-    } as TeamMember['agent'],
-  };
-}
 
 /** The roster the six states are drawn against. */
 const FIXTURE_ROSTER: TeamMember[] = [
-  ...MOCK_TEAM_ROSTER.map((member) => {
-    if (member.id === 'agent-warden') {
-      return withActivity(member, {
-        working: {
-          roomId: 'room-team',
-          roomName: 'team',
-          since: new Date(Date.now() - 120_000).toISOString(),
-        },
-        lastActiveAt: new Date(Date.now() - 120_000).toISOString(),
-      });
-    }
-    if (member.id === 'agent-dorkbot') {
-      return withActivity(member, {
-        working: null,
-        lastActiveAt: new Date(Date.now() - 20 * 60_000).toISOString(),
-      });
-    }
-    // Someone else's agent, so the cartographer's owner is on the roster.
-    if (member.id === 'agent-cartographer') return { ...member, ownerId: PRIYA.id };
-    return member;
-  }),
+  // Someone else's agent, so the cartographer's owner is on the roster.
+  ...MOCK_TEAM_ROSTER.map((member) =>
+    member.id === 'agent-cartographer' ? { ...member, ownerId: PRIYA.id } : member
+  ),
   PRIYA,
 ];
 
@@ -101,7 +62,7 @@ export function ProfileShowcases() {
   return (
     <PlaygroundSection
       title="Profile"
-      description="One panel for any identity, in the six shapes it takes: your own row, another person, somebody bridged in over Telegram, an agent you manage, an agent somebody else manages, and DorkBot. What changes between them is which facts are true — the status line, who is above the button, whether the button exists at all, and which rows have arrows. Two things this fixture is richer than a real install: it gives one agent a live turn and a folder (the roster does not serve either until DOR-1249 lands), and it invents a second local person so the 'another person' rows have somebody to be about. Rows whose page has not been built yet are not drawn — that is the registry doing its job, not a gap."
+      description="One panel for any identity, in the six shapes it takes: your own row, another person, somebody bridged in over Telegram, an agent you manage, an agent somebody else manages, and DorkBot. What changes between them is which facts are true — the status line, who is above the button, whether the button exists at all, and which rows have arrows. One thing this fixture invents: a second local person, so the 'another person' rows have somebody to be about. Rows whose page has not been built yet are not drawn — that is the registry doing its job, not a gap."
     >
       <ShowcaseLabel>The six relationships, and one pushed page</ShowcaseLabel>
       <ShowcaseDemo>
