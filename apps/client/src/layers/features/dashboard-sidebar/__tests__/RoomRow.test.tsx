@@ -163,7 +163,7 @@ function renderRow(
   room: RoomSummary,
   opts: {
     transport?: Transport;
-    viewAgentProfile?: (path: string) => (() => void) | undefined;
+    viewAgentProfile?: (path: string) => () => void;
     /** The mark the sidebar's view model resolved for this room. */
     visual?: SidebarItemVisual;
     /** Asked for the inline group-create editor, carrying this room's reference. */

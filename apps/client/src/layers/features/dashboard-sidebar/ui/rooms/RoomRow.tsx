@@ -63,11 +63,13 @@ interface RoomRowProps {
   /** Open the room. */
   onSelect: () => void;
   /**
-   * View an agent's profile, or `undefined` when the fleet cannot name it — the
-   * sidebar's one opener, so a room row and an agent row send you to the same
-   * place.
+   * View an agent's profile — the sidebar's one opener, so a room row and an
+   * agent row send you to the same place.
+   *
+   * Takes a DIRECTORY, which is why the gate below is about resolving one and
+   * nothing else: given a path this always opens something (`viewProfileFor`).
    */
-  viewAgentProfile: (agentPath: string) => (() => void) | undefined;
+  viewAgentProfile: (agentPath: string) => () => void;
   /** Open the inline group-create flow, moving this room into the new group on commit. */
   onRequestNewGroup: (ref: SidebarItemRef) => void;
   /**
@@ -378,8 +380,7 @@ export function RoomRow({
     onNewGroup: () => onRequestNewGroup(roomRef),
     onAddAgents: () => setDetailsFocus('add'),
     onOpenMembers: () => setDetailsFocus('members'),
-    onViewAgentProfile:
-      (soleAgentPath === null ? undefined : viewAgentProfile(soleAgentPath)) ?? null,
+    onViewAgentProfile: soleAgentPath === null ? null : viewAgentProfile(soleAgentPath),
     onRename: startRename,
     onEditTopic: () => setDetailsFocus('topic'),
     onLeave: () => setLeaveOpen(true),

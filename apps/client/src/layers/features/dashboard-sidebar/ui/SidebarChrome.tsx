@@ -42,6 +42,7 @@ import {
   resolveSessionForCwd,
   useStartNewSession,
 } from '@/layers/entities/session';
+import { useProfileStore } from '@/layers/features/profile';
 import type { SidebarTarget, SuggestionId } from '../model/build-sidebar-model';
 import { useCreateFlowStore, type GroupCreationState } from '../model/create-flow-store';
 import { NOW_OVERFLOW_HREF } from '../model/rules/cap-now-items';
@@ -75,15 +76,25 @@ export interface SidebarChromeValue {
   /** Start a session, optionally scoped to one agent's directory. */
   newSession: (dir?: string) => void;
   /**
-   * View an agent's profile, or `undefined` when the mesh cannot name it.
+   * View an agent's profile — the sidebar's one opener, for any directory it
+   * draws a row for.
    *
    * One opener, not two. The sidebar used to offer a second door beside this one
    * that opened the right panel directly; the profile has two homes now and the
    * address decides which (spec `profile-unification` §1.6), so a sidebar that
    * picked the home itself could send the same agent to a different place than
    * every other face in the cockpit.
+   *
+   * **It always returns an opener, and that is the point.** The sheet is
+   * addressed by roster id, which the mesh may not have — an agent retired
+   * mid-session, or a roster whose account source degraded, resolves to nothing.
+   * Returning `undefined` there left the row's face as plain art and its menu
+   * without a profile item, so the one agent you most needed to look at was the
+   * one you could not open. The dock is addressed by DIRECTORY, which a sidebar
+   * row always has, so it is the fallback — the same one `AgentIdentityChip`
+   * keeps, for the same reason.
    */
-  viewProfileFor: (agentPath: string) => (() => void) | undefined;
+  viewProfileFor: (agentPath: string) => () => void;
   /**
    * Begin the inline group-create flow, optionally seeded with a member.
    *
@@ -353,11 +364,15 @@ export function SidebarChrome({ activeTarget, children }: SidebarChromeProps) {
       activeTarget,
       openTarget,
       newSession: (dir?: string) => startNewSession(dir),
-      // `undefined` — never a no-op handler — for an agent the mesh cannot name,
-      // so the face renders as plain art instead of a control that opens nothing.
+      // Sheet when the mesh can name the agent, dock when it cannot. Never a
+      // no-op: both branches open a real profile, they just address it
+      // differently — see `viewProfileFor`'s docs for why the dock is the one
+      // that can always be reached.
       viewProfileFor: (agentPath: string) => {
         const memberId = memberIdByPath.get(agentPath);
-        return memberId === undefined ? undefined : () => openProfile(memberId);
+        return memberId === undefined
+          ? () => useProfileStore.getState().openProfileDocked(agentPath)
+          : () => openProfile(memberId);
       },
       requestNewGroup,
       groupCreation,

@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render, screen, fireEvent, cleanup, within, waitFor, act } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import {
   agentAuthorRef,
   type AuthorRef,
@@ -225,8 +226,15 @@ vi.mock('@/layers/entities/config', async (importOriginal) => {
   };
 });
 
+/**
+ * The docked profile's opener, stable across `getState()` calls so a test can
+ * assert it was reached. A fresh `vi.fn()` per call — which this used to be —
+ * records into an object nobody holds.
+ */
+const mockOpenProfileDocked = vi.fn<(agentPath: string) => void>();
+
 vi.mock('@/layers/features/profile', () => ({
-  useProfileStore: { getState: () => ({ openProfileDocked: vi.fn() }) },
+  useProfileStore: { getState: () => ({ openProfileDocked: mockOpenProfileDocked }) },
 }));
 
 // The room-management slice brings a chip picker, a dialog and their own query
@@ -577,6 +585,53 @@ describe('DashboardSidebar', () => {
     mockSelectedCwd = null;
     mockPathname = '/';
     mockLocation = { pathname: '/', search: {} };
+    mockUnmappedPaths.mockReset();
+    mockUnmappedPaths.mockReturnValue([]);
+    mockOpenProfileDocked.mockReset();
+  });
+
+  // ── One door to a profile, for every agent the panel lists (DOR-1255) ──
+
+  describe('the face on an agent row', () => {
+    /** The fleet, narrowed to one agent so a single face is unambiguous. */
+    function renderOneAgent() {
+      mockMeshPaths.mockReturnValue(['/projects/alpha']);
+      mockResolvedAgents.mockReturnValue({
+        '/projects/alpha': { id: 'a1', name: 'alpha' },
+      });
+      return renderWithProviders(<DashboardSidebar />);
+    }
+
+    it('opens the SHEET by roster id when the fleet can name the agent', async () => {
+      renderOneAgent();
+
+      await userEvent.click(await screen.findByRole('button', { name: 'Open alpha’s profile' }));
+
+      // The sheet is an address: `?profile=<registry id>`, never the path, and
+      // never the docked panel — which is a different home for the same subject.
+      expect(mockNavigate).toHaveBeenCalledWith(
+        expect.objectContaining({ search: expect.any(Function) })
+      );
+      const updater = mockNavigate.mock.calls.at(-1)![0].search as (p: unknown) => unknown;
+      expect(updater({})).toMatchObject({ profile: 'mesh-id/projects/alpha' });
+      expect(mockOpenProfileDocked).not.toHaveBeenCalled();
+    });
+
+    it('still opens a profile — the docked one — when the fleet cannot name it', async () => {
+      // The roster join and the path listing are separate reads and can
+      // genuinely disagree: an agent retired mid-session, or a roster whose
+      // account source degraded, has a directory but no id. Offering nothing
+      // there meant the one agent you most needed to look at was the one you
+      // could not open. The dock is addressed by DIRECTORY, which a row always
+      // has (DOR-1255).
+      mockUnmappedPaths.mockReturnValue(['/projects/alpha']);
+      renderOneAgent();
+
+      const face = await screen.findByRole('button', { name: 'Open alpha’s profile' });
+      await userEvent.click(face);
+
+      expect(mockOpenProfileDocked).toHaveBeenCalledWith('/projects/alpha');
+    });
   });
 
   // ── The shell (spec §A3, R2) ──
