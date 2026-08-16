@@ -73,7 +73,7 @@ export function QueuePanel({
           wants to know — when these go out. */}
       <div className="text-muted-foreground mb-1 flex items-baseline gap-1 text-xs">
         <span className="font-medium">Queued ({queue.length})</span>
-        <span className="truncate">&mdash; {statusNote}</span>
+        <span className="truncate">&middot; {statusNote}</span>
       </div>
       <div className="space-y-0.5">
         <AnimatePresence mode="popLayout">
