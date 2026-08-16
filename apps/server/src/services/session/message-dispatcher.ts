@@ -76,9 +76,20 @@
  * did not start goes back in line instead.
  *
  * The one exception is a refusing caller — `whenBusy: 'refuse'` or
- * `'refuse-foreign'` — whose row IS removed when its launch fails: it has said
- * the message has no value later, and leaving it behind would put a prompt
- * nobody typed into somebody's composer for good.
+ * `'refuse-foreign'` — which is never written to the queue AT ALL. A queue row
+ * is a person's words waiting to be said, and a refusing caller's message is
+ * neither: it is a trigger a machine generated on somebody's behalf, and it has
+ * already said it would rather not run than run late. A row for one would put a
+ * prompt nobody typed into somebody's composer, and — because rows outlive the
+ * process — would still be there to fire days later, into a conversation that
+ * ended. So a refusing dispatch lives in memory only and a restart forgets it,
+ * which is the right amount of memory for a trigger whose reason may not have
+ * survived the wait. It is the same call {@link dispatchCommandIntent} already
+ * makes about a `/compact`, for the same reason.
+ *
+ * A refusing dispatch that was nonetheless ACCEPTED — a `'refuse-foreign'` that
+ * waited out its caller's own turn — is bounded rather than abandoned; see
+ * {@link returnToQueue}.
  *
  * {@link SessionTurnQueue} (DOR-1088) is kept, underneath: it is the
  * intra-process ordering primitive inside `triggerTurn` and this does not
@@ -607,12 +618,18 @@ export interface MessageDispatchResult extends TriggerTurnResult {
    * `1` means it was the head — nothing was ahead of it. `0` means it was never
    * queued at all: either a refusal, or a steer/stage that landed natively
    * through the degradation ladder without becoming a queue row.
+   *
+   * A refusing caller that waits (a `'refuse-foreign'` behind its own turn)
+   * reads `1`, because it is next and nothing durable is ahead of it — it has no
+   * row of its own to be positioned against. See the module doc.
    */
   queuePosition: number;
   /**
-   * True when the message was accepted onto the queue rather than started. Its
-   * turn begins when the session frees up, announced on the session's stream
-   * like every other queue change.
+   * True when the message is waiting rather than running. Its turn begins when
+   * the session frees up, announced on the session's stream like every other
+   * queue change — for the queueing callers that have a row. A refusing caller
+   * waits in memory only and announces nothing, because a person was never shown
+   * it in the first place.
    */
   queued: boolean;
 }
@@ -636,8 +653,8 @@ interface DispatchPlan {
   /**
    * What a launch that started no turn means for this message: go back in line
    * (`'queue'`, the default everywhere except the callers that opt out) or be
-   * dropped with its row (either refusing mode) — unless
-   * {@link DispatchPlan.answered}, which outranks it.
+   * given up on (either refusing mode) — unless {@link DispatchPlan.answered},
+   * which outranks it.
    */
   whenBusy: WhenBusy;
   /**
@@ -648,11 +665,16 @@ interface DispatchPlan {
    * whose original caller was answered by a process that is now gone.
    *
    * It only CHANGES anything for a refusing plan, and there it outranks
-   * `whenBusy`. Dropping the message is the promise `'refuse'` makes about
-   * words nobody has been promised anything about; once an `accepted: true` is
-   * out there it cannot be taken back, so the message goes back in line like
-   * anybody else's rather than evaporating (the DOR-480 rule, in the module doc
-   * above).
+   * `whenBusy`. Giving up is the promise `'refuse'` makes about words nobody
+   * has been promised anything about; once an `accepted: true` is out there it
+   * cannot be taken back, so the message goes back in line like anybody else's
+   * rather than evaporating (the DOR-480 rule, in the module doc above).
+   *
+   * It buys a bounded second chance, not an unlimited one: what it may still
+   * spend is whatever is left of {@link DispatchPlan.budgetMs} measured from the
+   * unmoved {@link DispatchPlan.startedWaitingAt}, and when that runs out the
+   * plan is dropped once and reported. {@link returnToQueue} is where both
+   * halves live.
    */
   answered: boolean;
   /** What the caller passes straight through to the turn. */
@@ -709,15 +731,50 @@ function refusesOpenTurn(
  * later, over a message the model never saw. It goes back in line instead, which
  * is what the acceptance promised.
  *
+ * **A refusing plan's second chance is bounded by its ORIGINAL budget**, and the
+ * bound is what keeps "goes back in line" from meaning "forever". Every
+ * re-park used to arm a fresh {@link DispatchPlan.budgetMs} timer while
+ * `startedWaitingAt` was never reset, so a stranger who kept the session simply
+ * kept the cycle going: refused, re-parked, refused again, once per
+ * `SESSIONS.LOCK_TTL_MS` for as long as the process lived. What is re-parked
+ * here is therefore what is LEFT of the wait the caller was accepted under —
+ * computed from the original `startedWaitingAt`, never restarted — and when
+ * nothing is left the plan is dropped, once, with a warning. A trigger whose
+ * whole point was not to run late has no business running an hour late on its
+ * fourth attempt.
+ *
+ * Dropping is safe HERE in a way it is not at acceptance, because the drop is
+ * terminal and reported: {@link DispatchMessageOpts.onSettled} fires `'failed'`,
+ * which is the caller's cue to take whatever its own "could not answer" path is
+ * (for a room, the wait its collector is already holding). What the acceptance
+ * promised was an answer or an honest failure, and this is the second.
+ *
  * A message already gone from the queue — removed from another window between
  * the launch and its refusal — is left gone.
  */
 function returnToQueue(plan: DispatchPlan): void {
-  const store = getMessageQueueStore();
-  if (plan.whenBusy !== 'queue' && !plan.answered) {
-    if (store?.remove(plan.messageId)) emitQueueUpdate(plan.sessionKey);
+  if (plan.whenBusy !== 'queue') {
+    // No row was ever written for a refusing plan (see the module doc), so
+    // giving up on one is simply declining to re-park it.
+    if (!plan.answered) return;
+    const remainingMs = plan.budgetMs - (Date.now() - plan.startedWaitingAt);
+    if (remainingMs <= 0) {
+      logger.warn('[MessageDispatcher] a refusing trigger spent its whole wait and was dropped', {
+        sessionId: plan.sessionKey,
+        messageId: plan.messageId,
+        budgetMs: plan.budgetMs,
+        waitedMs: Date.now() - plan.startedWaitingAt,
+      });
+      // Reported here or nowhere: this plan's caller was answered
+      // `accepted: true` at acceptance and has been waiting on the turn ever
+      // since, and no turn will now start for it.
+      plan.turn.onSettled?.('failed');
+      return;
+    }
+    parkDispatch(plan, unwatchedSettle(plan), { waitingOnLock: true, budgetMs: remainingMs });
     return;
   }
+  const store = getMessageQueueStore();
   if (store && !store.get(plan.messageId)) return;
   parkDispatch(plan, unwatchedSettle(plan), { waitingOnLock: true });
 }
@@ -854,11 +911,14 @@ function launchDispatch(
  * @param opts.waitingOnLock - This message has already been refused by the
  *   write-lock once, so the pump leaves it alone until a turn boundary; see
  *   {@link PendingDispatch.waitingOnLock}
+ * @param opts.budgetMs - How long THIS park may last, when that is less than the
+ *   plan's whole budget. A re-park passes what is left of the original wait
+ *   rather than the whole of it again; see {@link returnToQueue}.
  */
 function parkDispatch(
   plan: DispatchPlan,
   settle: { resolve(result: TriggerTurnResult): void; reject(err: unknown): void },
-  opts?: { waitingOnLock?: boolean }
+  opts?: { waitingOnLock?: boolean; budgetMs?: number }
 ): void {
   // Taken HERE, where the message was accepted, and applied wherever the pump
   // eventually calls `launch` — which is inside the PREVIOUS turn's scope on
@@ -884,7 +944,10 @@ function parkDispatch(
     // Bounded for the same reason DOR-1088 bounds its chain: the write-lock has
     // a TTL and a queue does not, so a turn that went dark would otherwise hand
     // the session to a stranger while its own client's message waited forever.
-    timer: setTimeout(() => entry.launch({ budgetExhausted: true }), plan.budgetMs),
+    timer: setTimeout(
+      () => entry.launch({ budgetExhausted: true }),
+      opts?.budgetMs ?? plan.budgetMs
+    ),
   };
   entry.timer.unref?.();
   pending.set(plan.messageId, entry);
@@ -952,13 +1015,21 @@ export async function dispatchMessage(opts: DispatchMessageOpts): Promise<Messag
     ...(opts.cwd !== undefined ? { cwd: opts.cwd } : {}),
   });
 
-  const record = getMessageQueueStore()?.enqueue({
-    sessionId: queueKey,
-    content,
-    clientId,
-    disposition: requested,
-    context: opts.context ?? null,
-  });
+  // **Only a queueing caller gets a row.** A refusing one is a machine-generated
+  // trigger, and a row for it is a prompt nobody typed sitting in somebody's
+  // composer — one that outlives the process and fires into a conversation that
+  // ended days ago. See the module doc; the in-memory plan below is all the
+  // memory such a trigger gets.
+  const record =
+    whenBusy === 'queue'
+      ? getMessageQueueStore()?.enqueue({
+          sessionId: queueKey,
+          content,
+          clientId,
+          disposition: requested,
+          context: opts.context ?? null,
+        })
+      : undefined;
   const messageId = record?.id ?? crypto.randomUUID();
   const queuePosition = record
     ? (getMessageQueueStore()

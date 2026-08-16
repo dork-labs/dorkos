@@ -149,6 +149,20 @@ model. See ADR `260726-170127` and `research/20260727_buzz-conversational-behavi
   lock in front of a room turn, decide which of the two questions it answers —
   "is somebody else writing to this session" is the only one that is not already
   answered here.
+  **A room trigger is never a queue row, and its wait is bounded** (DOR-1242).
+  Two things follow from a room trigger not being a person's words. It is not
+  persisted: the durable message queue is what somebody typed and is waiting to
+  say, and a row standing for a room's trigger would show up in that person's
+  composer as a prompt they never wrote — and, because rows outlive the process,
+  would still be there to fire days later into a conversation that ended. So a
+  refusing caller gets no row at all and a restart simply forgets the trigger,
+  which is the honest amount of memory for one. And when such a trigger IS
+  accepted — a `refuse-foreign` waiting out its own tail — and a stranger then
+  takes the session anyway, it goes back in line for what is LEFT of its original
+  wait and no more. Re-arming a fresh budget each time is what made it retry once
+  per lock TTL for the life of the process; when the wait is spent the plan is
+  dropped once, `onSettled('failed')` fires, and the room's ordinary
+  could-not-answer path takes it from there.
   **The guard is re-asked when a held batch finally runs**, and it has to be:
   the ancestry rule is a durable query that could not see the in-flight turn the
   batch was waiting for, and by then it can. That is what still terminates a

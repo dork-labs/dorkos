@@ -43,6 +43,7 @@ import {
   dispatchCommandIntent,
   listQueuedMessages,
   noteSessionOrphaned,
+  noteTurnBoundary,
   resetMessageDispatcher,
   sweepOrphanedMessageQueues,
 } from '../message-dispatcher.js';
@@ -355,12 +356,12 @@ describe('dispatchMessage — a busy session is a queue, not a refusal (task 2.4
     expect(store.list(session)).toEqual([]);
   });
 
-  it('keeps a refuse-foreign message that already waited, when the lock then refuses it', async () => {
+  it('keeps a refuse-foreign trigger that already waited, when the lock then refuses it', async () => {
     // The narrow race the wait above opens: a stranger takes the session in the
     // beat between the trigger being accepted and its launch. The refusal the
     // caller asked for is gone by then — it is holding an `accepted: true` — so
-    // dropping the row would leave it waiting on a turn nothing will start. It
-    // goes back in line, which is what the acceptance promised.
+    // giving up would leave it waiting on a turn nothing will start. It goes
+    // back in line, which is what the acceptance promised.
     const first = gate();
     runtime.withScenarios([heldTurn(first.wait), quickTurn()]);
 
@@ -372,8 +373,100 @@ describe('dispatchMessage — a busy session is a queue, not a refusal (task 2.4
     first.open();
     await settle();
 
+    // Refused at the launch, so no second turn — and it waits IN MEMORY. There
+    // is no row, because a room's trigger is not a person's words and has no
+    // business sitting in their composer (DOR-1242).
     expect(runtime.sendMessage).toHaveBeenCalledTimes(1);
-    expect(store.list(session).map((row) => row.content)).toEqual(['re-mentioned mid-turn']);
+    expect(store.list(session)).toEqual([]);
+
+    // Still armed, which is the half the missing row must not have cost: the
+    // stranger lets go, the next boundary re-arms it, and it runs.
+    runtime.acquireLock.mockReturnValue(true);
+    noteTurnBoundary(session);
+    await settle();
+
+    expect(runtime.sendMessage).toHaveBeenCalledTimes(2);
+    expect(runtime.sendMessage).toHaveBeenLastCalledWith(
+      session,
+      're-mentioned mid-turn',
+      expect.anything()
+    );
+  });
+
+  it('drops a refuse-foreign trigger ONCE when the stranger outlasts its whole budget', async () => {
+    // DOR-1242, the other end of the wait above. Every re-park used to arm a
+    // FRESH budget while `startedWaitingAt` stayed put, so a holder that never
+    // let go kept the cycle turning for the life of the process — a trigger
+    // whose whole point was not to run late, retrying forever. What is re-parked
+    // is now what is LEFT of the original wait, and when nothing is left the
+    // plan is dropped once and reported.
+    const settled: string[] = [];
+    const first = gate();
+    runtime.withScenarios([heldTurn(first.wait), quickTurn()]);
+
+    await send('the turn the room is already running');
+    const held = await send('re-mentioned mid-turn', {
+      whenBusy: 'refuse-foreign',
+      queueWaitMs: 60,
+      onSettled: (outcome: string) => settled.push(outcome),
+    });
+    expect(held.accepted).toBe(true);
+
+    // A stranger takes the session and keeps it.
+    runtime.acquireLock.mockReturnValue(false);
+    first.open();
+
+    // The budget runs out while the holder is still there. One `failed`, not a
+    // stream of them: this is the assertion that the retry stopped.
+    await vi.waitFor(() => expect(settled).toEqual(['failed']), { timeout: 2_000 });
+    expect(runtime.sendMessage).toHaveBeenCalledTimes(1);
+    expect(store.list(session)).toEqual([]);
+
+    // And it is GONE, not merely quiet. Were it still parked, the freed lock and
+    // these boundaries would start its turn — which is exactly what the
+    // unbounded requeue did, days later, into a conversation that had ended.
+    runtime.acquireLock.mockReturnValue(true);
+    noteTurnBoundary(session);
+    await settle();
+    noteTurnBoundary(session);
+    await settle();
+
+    expect(runtime.sendMessage).toHaveBeenCalledTimes(1);
+    expect(settled).toEqual(['failed']);
+  });
+
+  it('writes no queue row for a refusing trigger, so a restart cannot adopt one', async () => {
+    // The restart half of DOR-1242. A row outlives the process, and
+    // `adoptQueuedMessages` re-arms whatever it finds as an ordinary
+    // `whenBusy: 'queue'` plan — so a room prompt from a conversation that ended
+    // days ago would fire into that session with nobody listening, and show in
+    // the composer queue on the way. The fix is upstream of adoption: a refusing
+    // caller never gets a row to leave behind.
+    const first = gate();
+    runtime.withScenarios([heldTurn(first.wait), quickTurn()]);
+
+    // One that RUNS: nothing in the composer while its turn is live either.
+    await send('a room turn', { whenBusy: 'refuse' });
+    expect(store.list(session)).toEqual([]);
+    expect(listQueuedMessages(session)).toEqual([]);
+
+    // ...and one that WAITS, which is the plan that used to survive a restart.
+    const held = await send('re-mentioned mid-turn', { whenBusy: 'refuse-foreign' });
+    expect(held.accepted).toBe(true);
+    expect(held.queued).toBe(true);
+    expect(store.list(session)).toEqual([]);
+
+    // The restart: in-memory state dies, the store is all that carries over.
+    resetMessageDispatcher();
+    expect(
+      adoptQueuedMessages({ sessionId: session, projector: getOrCreateProjector(session), runtime })
+    ).toBe(0);
+    await settle();
+
+    expect(runtime.sendMessage).toHaveBeenCalledTimes(1);
+    first.open();
+    await settle();
+    expect(runtime.sendMessage).toHaveBeenCalledTimes(1);
   });
 
   it('still refuses a turn another client opened (whenBusy: refuse-foreign)', async () => {
