@@ -369,11 +369,15 @@ describe('ConfigManager recovery keeps protections (real conf + Ajv)', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dorkos-safe-recovery-'));
     dirs.push(dir);
     const configPath = path.join(dir, 'config.json');
-    // `server.port` must be an integer; a string is Ajv-invalid while leaving
-    // the rest of the file perfectly readable — the realistic failure shape.
+    // `mesh.scanRoots` is a list; a string there is a SHAPE the schema does not
+    // describe, which is the class Ajv still refuses (DOR-1227 took values on
+    // named scalar leaves out of its hands — `server.port: 'not-a-port'`, which
+    // used to be this fixture, now boots on the default instead of condemning).
+    // The rest of the file stays perfectly readable, which is the realistic
+    // failure shape and what makes salvage both possible and necessary.
     fs.writeFileSync(
       configPath,
-      JSON.stringify({ version: 1, server: { port: 'not-a-port' }, ...stored })
+      JSON.stringify({ version: 1, mesh: { scanRoots: 'not-a-list' }, ...stored })
     );
     return { dir, configPath };
   }
