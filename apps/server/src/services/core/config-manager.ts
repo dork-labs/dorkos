@@ -21,20 +21,23 @@
  *    a protection can be carried across, and it is a stronger guarantee than
  *    any judgement about an error's shape.
  *
- * Two more things are not the file's fault, and neither condemns it. A key this
- * build does not declare belongs to another build — see
+ * Three more things are not the file's fault, and none of them condemns it. A
+ * key this build does not declare belongs to another build — see
  * `config/version-skew.ts`, which is why an unrecognized key is no longer a
- * schema violation at all. And a migration body that throws is a defect in
- * DorkOS, which stops the boot loudly ({@link ConfigMigrationFailedError})
- * rather than replacing anything.
+ * schema violation at all. A named scalar leaf holding a value a NEWER build
+ * widened belongs to that build too — see `config/widened-leaves.ts`, which
+ * takes those leaves away from Ajv and has Zod fall back to the schema default
+ * in memory while the value stays on disk. And a migration body that throws is a
+ * defect in DorkOS, which stops the boot loudly
+ * ({@link ConfigMigrationFailedError}) rather than replacing anything.
  *
- * **One skew this does NOT cover.** A newer build that WIDENS a key both builds
- * declare — a new enum member, a raised bound, a retyped leaf — writes a VALUE
- * the older build's schema refuses (`ui.theme: 'midnight'` is the shape of it).
- * That is still skew rather than damage, and the older build still condemns and
- * replaces the file. Tolerating it means accepting values a build cannot
- * interpret, which is a separate decision with its own risks; it is deliberately
- * not made here.
+ * **What is left, and it is a real residual.** Tolerance stops where
+ * preservation stops: inside a LIST or a RECORD. A new `ui.statusBar.pins` id,
+ * a new `workbench.defaultViewers` viewer, a new `onboarding.completedSteps`
+ * step written by a newer build still condemns the file, because an element has
+ * a position rather than a name and no honest rule carries it back across a
+ * write. So does a change to `version` itself. Both are named in
+ * `contributing/configuration.md`.
  *
  * When a file really is replaced, the copy is timestamped and rotated
  * (`config/backups.ts`), so a second recovery cannot overwrite the settings the
@@ -110,6 +113,12 @@ import { SERVER_VERSION } from '../../lib/version.js';
 import { latestInstant, restoreProtectedState } from './safe-defaults/protected-state.js';
 import { backupConfigFile } from './config/backups.js';
 import { preserveUnknownKeys, schemaNodeAt, tolerateUnknownKeys } from './config/version-skew.js';
+import {
+  preserveWidenedLeaves,
+  relaxWidenedLeaves,
+  repairWidenedLeaves,
+} from './config/widened-leaves.js';
+import type { WidenedLeafPolicy } from './config/widened-leaves.js';
 
 /**
  * The result of reading a config file that `conf` refused, before replacing it.
@@ -174,13 +183,15 @@ function readStoredConfigForSalvage(
  * - `corrupt` — the stored bytes are unusable and only replacing the file gets
  *   past it: the JSON does not parse, the contents fail the schema, or they
  *   cannot be decrypted. Condemned immediately, because re-reading the same
- *   bytes cannot change the answer. Note what is NOT in this class any more: a
- *   key this build does not declare is another build's key, and the validator
- *   no longer treats it as a violation at all (`config/version-skew.ts`). So a
- *   schema violation now always names a key this build DOES declare — which is
- *   not the same as proving the file is damaged. A value a NEWER build wrote
- *   under a key it widened lands here too, and is condemned; see the module
- *   header for why that residual is left open rather than fixed alongside.
+ *   bytes cannot change the answer. Note what is NOT in this class any more.
+ *   A key this build does not declare is another build's key
+ *   (`config/version-skew.ts`), and a named scalar leaf holding a value a newer
+ *   build widened is another build's value (`config/widened-leaves.ts`);
+ *   neither is a violation the validator can even see now. So what reaches this
+ *   class is a SHAPE the schema does not describe — a section that is a list, a
+ *   list that is a string, a required field with no default and nothing in it —
+ *   which is what damage looks like and what a build widening a setting never
+ *   produces.
  * - `io` — the READ failed and the contents were never in question. An `EMFILE`
  *   while the machine is out of file descriptors, an `EACCES` after an
  *   ownership change, an `EBUSY` while another program holds the file, an `EIO`
@@ -266,7 +277,7 @@ export function classifyConfigLoadFailure(error: unknown): ConfigLoadFailureKind
   if (!(error instanceof Error)) return 'unknown';
   // `JSON.parse` inside conf's `_deserialize`.
   if (error.name === 'SyntaxError') return 'corrupt';
-  // conf's Ajv wrapper: `Config schema violation: server.port must be integer`.
+  // conf's Ajv wrapper: `Config schema violation: mesh/scanRoots must be array`.
   if (error.message.startsWith('Config schema violation:')) return 'corrupt';
   // conf's decrypt failure, raised with exactly this message. Unreachable while
   // DorkOS passes no `encryptionKey`, and kept so it stays right if one is ever
@@ -2913,6 +2924,20 @@ tolerateUnknownKeys(jsonSchemaFull);
  */
 export const CONF_JSON_SCHEMA: Record<string, unknown> = jsonSchemaFull.properties ?? {};
 
+/**
+ * The named scalar leaves Ajv no longer checks, so Zod can check them inside
+ * DorkOS instead.
+ *
+ * A value a NEWER build wrote under a setting it widened is skew, not damage,
+ * and condemning the file over it costs everything else the person configured.
+ * See `config/widened-leaves.ts` — this call is what keeps such a value from
+ * ever reaching the recovery path below, and what it returns is the exact list
+ * of leaves {@link ConfigManager} may fall back to a default on.
+ *
+ * @internal Exported for testing only.
+ */
+export const WIDENED_LEAF_POLICY: WidenedLeafPolicy = relaxWidenedLeaves(CONF_JSON_SCHEMA);
+
 // Cast the runtime JSON schema to conf's Schema type. The Zod-generated schema
 // is structurally compatible at runtime but TypeScript cannot verify it statically.
 const confSchema = CONF_JSON_SCHEMA as unknown as Schema<UserConfig>;
@@ -3027,8 +3052,8 @@ export class ConfigManager {
         `[Config] ${configPath} could not be used: ${describeLoadError(opened.corruptedBy)}`
       );
       // Read the doomed file BEFORE deleting it. The common failure is a file
-      // that parses as JSON but no longer satisfies the schema (a skipped
-      // rename, a narrowed enum, a hand edit), so the person's privacy and
+      // that parses as JSON but holds a shape the schema does not describe (a
+      // skipped rename, a hand edit), so the person's privacy and
       // permission choices are sitting right there, perfectly readable, in the
       // file we are about to replace. Losing state must not lose a protection.
       let stored: unknown;
@@ -3123,25 +3148,60 @@ export class ConfigManager {
     return normalized === sidebar ? ui : { ...ui, sidebar: normalized };
   }
 
+  /**
+   * The section this build can actually run on.
+   *
+   * A leaf whose stored value a NEWER build widened is no longer refused by Ajv
+   * (`config/widened-leaves.ts`), so it arrives here intact and meaningless —
+   * `ui.theme: 'midnight'` on a build with three themes. Zod is what still
+   * checks those leaves, and this is where it runs: the unreadable leaf falls
+   * back to its own schema default and everything else is untouched.
+   *
+   * Returns its input by reference when nothing needed repairing, which is every
+   * boot that is not straddling two builds.
+   *
+   * @param key - The top-level section name.
+   * @param value - The section as `conf` handed it over.
+   */
+  private readable<K extends keyof UserConfig>(key: K, value: UserConfig[K]): UserConfig[K] {
+    return repairWidenedLeaves(key as string, value, WIDENED_LEAF_POLICY).value as UserConfig[K];
+  }
+
   /** Get a top-level config section */
   get<K extends keyof UserConfig>(key: K): UserConfig[K] {
-    const value = this.store.get(key);
-    // `ui` is the only section that can carry the pre-DOR-579 sidebar encoding.
-    return key === 'ui' ? (this.canonicalUi(value as UserConfig['ui']) as UserConfig[K]) : value;
+    const stored = this.store.get(key);
+    // `ui` is the only section that can carry the pre-DOR-579 sidebar encoding,
+    // and it has to be canonical before Zod is asked anything about it.
+    const value =
+      key === 'ui' ? (this.canonicalUi(stored as UserConfig['ui']) as UserConfig[K]) : stored;
+    return this.readable(key, value);
   }
 
   /**
    * Get a nested value via dot-path (e.g., 'server.port').
    *
-   * Reads the store verbatim, so a dot-path INTO `ui.sidebar` on a config that
-   * predates DOR-579 reports the stored encoding rather than the canonical one.
-   * That is deliberate: this is the "show me what is on disk" accessor behind
-   * `dorkos config get`, and no code path derives behaviour from it. Everything
-   * that acts on the sidebar goes through {@link ConfigManager.get} or
-   * {@link ConfigManager.getAll}, which normalize.
+   * Reads the store verbatim in one respect: a dot-path INTO `ui.sidebar` on a
+   * config that predates DOR-579 reports the stored encoding rather than the
+   * canonical one, and nothing derives behaviour from that.
+   *
+   * It does NOT report a leaf whose value belongs to a newer build. The CLI
+   * decides real things through this accessor — `server.port`, `logging.level`,
+   * `tunnel.enabled` — so handing back a value this build cannot interpret would
+   * put the CLI and the server on different settings from the same file. What
+   * comes back is what DorkOS is running on, which is also the honest answer to
+   * `dorkos config get`; the file itself is one `dorkos config path` away.
    */
   getDot(key: string): unknown {
-    return this.store.get(key as keyof UserConfig);
+    const section = key.split('.')[0] as keyof UserConfig;
+    const value = this.readable(section, this.store.get(section));
+    const rest = key.slice(section.length + 1);
+    if (rest === '') return value;
+    let node: unknown = value;
+    for (const segment of rest.split('.')) {
+      if (typeof node !== 'object' || node === null) return undefined;
+      node = (node as Record<string, unknown>)[segment];
+    }
+    return node;
   }
 
   /** Set a top-level config section */
@@ -3163,15 +3223,26 @@ export class ConfigManager {
    * same loss as a wipe, just quieter. So the keys the schema does not know
    * about are carried across from what is already on disk.
    *
-   * See `config/version-skew.ts` for what does and does not get carried.
+   * The same is true one level down, of a leaf whose stored VALUE belongs to
+   * another build. This build read it as its schema default, so the value it is
+   * about to write back IS that default, and the person's real choice would go
+   * with the write. So a leaf the caller did not name is carried across too.
+   *
+   * See `config/version-skew.ts` and `config/widened-leaves.ts` for what does
+   * and does not get carried.
    *
    * @param keyPath - A top-level section, or a dot-path into one.
    * @param value - The value to store.
    */
   private write(keyPath: string, value: unknown): void {
-    const node = schemaNodeAt(CONF_JSON_SCHEMA, keyPath);
     const stored = this.store.get(keyPath as keyof UserConfig);
-    const merged = preserveUnknownKeys(node, stored, value);
+    const section = keyPath.split('.')[0]!;
+    const storedSection =
+      section === keyPath ? stored : this.store.get(section as keyof UserConfig);
+    const { skewed } = repairWidenedLeaves(section, storedSection, WIDENED_LEAF_POLICY);
+    const kept = preserveWidenedLeaves(skewed, keyPath, value);
+    const node = schemaNodeAt(CONF_JSON_SCHEMA, keyPath);
+    const merged = preserveUnknownKeys(node, stored, kept);
     this.store.set(keyPath as keyof UserConfig, merged as UserConfig[keyof UserConfig]);
   }
 
@@ -3260,7 +3331,15 @@ export class ConfigManager {
   getAll(): UserConfig {
     const config = this.store.store;
     const ui = this.canonicalUi(config.ui);
-    return ui === config.ui ? config : { ...config, ui };
+    const canonical = ui === config.ui ? config : { ...config, ui };
+    let repaired: Record<string, unknown> | undefined;
+    for (const [key, value] of Object.entries(canonical)) {
+      const readable = repairWidenedLeaves(key, value, WIDENED_LEAF_POLICY).value;
+      if (readable === value) continue;
+      repaired ??= { ...canonical };
+      repaired[key] = readable;
+    }
+    return (repaired ?? canonical) as UserConfig;
   }
 
   /**
@@ -3389,10 +3468,20 @@ export class ConfigManager {
     this.store.set('approvals', { ...approvals, standingGrantsVoidBefore: required });
   }
 
-  /** Validate the current config against the Zod schema */
+  /**
+   * Validate the current config against the Zod schema.
+   *
+   * Asks about the config DorkOS is running on, not the bytes on disk, which is
+   * the difference that matters once a newer build has widened a setting. The
+   * file may hold `ui.theme: 'midnight'`; this build reads that as `system`,
+   * starts normally, and keeps everything else. Reporting it as a validation
+   * failure would send somebody to delete the very file this feature exists to
+   * keep — `dorkos config validate` exits non-zero and prints "validation
+   * failed", which reads as "your settings are broken".
+   */
   validate(): { valid: boolean; errors?: string[] } {
     try {
-      UserConfigSchema.parse(this.store.store);
+      UserConfigSchema.parse(this.getAll());
       return { valid: true };
     } catch (error) {
       if (error instanceof z.ZodError) {

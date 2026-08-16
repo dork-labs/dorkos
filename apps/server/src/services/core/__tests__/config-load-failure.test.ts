@@ -208,7 +208,7 @@ describe('a genuinely damaged config is still replaced', () => {
       configPath,
       JSON.stringify({
         version: 1,
-        server: { port: 'the settings the person actually had' },
+        mesh: { scanRoots: 'the settings the person actually had' },
         auth: { enabled: true },
       })
     );
@@ -220,7 +220,7 @@ describe('a genuinely damaged config is still replaced', () => {
     // The file is damaged a second time, days later as far as this cares.
     fs.writeFileSync(
       configPath,
-      JSON.stringify({ version: 1, server: { port: 'damaged again, much later' } })
+      JSON.stringify({ version: 1, mesh: { scanRoots: 'damaged again, much later' } })
     );
     new ConfigManager(dir, FAST_RETRIES);
 
@@ -232,10 +232,10 @@ describe('a genuinely damaged config is still replaced', () => {
     expect(backups).toHaveLength(2);
     expect(new Set(backups).size).toBe(2);
     const saved = JSON.parse(fs.readFileSync(firstBackup!, 'utf-8')) as {
-      server: { port: string };
+      mesh: { scanRoots: string };
       auth: { enabled: boolean };
     };
-    expect(saved.server.port).toBe('the settings the person actually had');
+    expect(saved.mesh.scanRoots).toBe('the settings the person actually had');
     expect(saved.auth.enabled).toBe(true);
   });
 
@@ -257,13 +257,15 @@ describe('a genuinely damaged config is still replaced', () => {
   it('backs up, resets and salvages a file that parses but violates the schema', () => {
     const dir = makeDir('load-schema');
     const configPath = path.join(dir, 'config.json');
-    // `server.port` must be an integer. The rest of the file is perfectly
-    // readable, which is what makes salvage both possible and necessary.
+    // `mesh.scanRoots` is a list, and a string there is a SHAPE the schema does
+    // not describe — the class that still condemns since DOR-1227. The rest of
+    // the file is perfectly readable, which is what makes salvage both possible
+    // and necessary.
     fs.writeFileSync(
       configPath,
       JSON.stringify({
         version: 1,
-        server: { port: 'not-a-port' },
+        mesh: { scanRoots: 'not-a-list' },
         auth: { enabled: true },
         approvals: { trustWindowMinutes: 15 },
         telemetry: {
@@ -282,7 +284,7 @@ describe('a genuinely damaged config is still replaced', () => {
     const manager = new ConfigManager(dir, FAST_RETRIES);
 
     expect(backupsIn(dir)).toHaveLength(1);
-    expect(manager.get('server').port).toBe(4242);
+    expect(manager.get('mesh').scanRoots).toEqual([]);
     // DOR-584: a wipe may lose preferences, never a protection.
     expect(manager.get('auth').enabled).toBe(true);
     expect(manager.get('approvals').trustWindowMinutes).toBe(15);
