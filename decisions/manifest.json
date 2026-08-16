@@ -4501,6 +4501,22 @@
         "packages/cli/src/commands/room.ts",
         ".claude/rules/room-conduct.md"
       ]
+    },
+    {
+      "id": "260816-143752",
+      "slug": "message-dispositions-at-the-runtime-boundary",
+      "title": "Three message dispositions at the ingress, one optional runtime verb, and interrupt on its own",
+      "status": "accepted",
+      "created": "2026-08-16",
+      "extractedFrom": "persistent-session-runtime",
+      "specSlug": "persistent-session-runtime",
+      "affects": [
+        "packages/shared/src/agent-runtime.ts",
+        "packages/shared/src/schemas.ts",
+        "apps/server/src/services/session/message-dispatcher.ts",
+        "apps/server/src/routes/sessions.ts",
+        "packages/test-utils/src/runtime-conformance.ts"
+      ]
     }
   ]
 }

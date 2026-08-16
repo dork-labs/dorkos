@@ -2,8 +2,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import type { RefObject } from 'react';
 import type { SessionStatusEvent } from '@dorkos/shared/types';
+import type { QueuedMessage } from '@dorkos/shared/schemas';
 import { Composer, type ComposerInputHandle } from '@/layers/features/composer';
 import { InteractiveInputPanel } from './InteractiveInputPanel';
+import { StopConfirmDialog } from './StopConfirmDialog';
 import type {
   FileUploadProps,
   InteractionProps,
@@ -30,6 +32,7 @@ import {
   useDirectoryState,
   useSessionAwaitingDecision,
   useSessionChatState,
+  useSessionChatStore,
   useSessionQueue,
   useSessionRuntime,
   useSessionStreamLifecycle,
@@ -81,7 +84,12 @@ interface ChatInputContainerProps {
    */
   commandPending: boolean;
   status: 'idle' | 'streaming' | 'error';
-  stop: () => void;
+  /**
+   * Interrupt the running turn and empty its queue. Resolves with the messages
+   * the server took off the queue, head first, so this window can return the
+   * words to the composer.
+   */
+  stop: () => Promise<QueuedMessage[]>;
   setInput: (value: string) => void;
   sessionId: string;
   sessionStatus: SessionStatusEvent | null;
@@ -191,6 +199,36 @@ export function ChatInputContainer({
     tryNativeCommand,
     chatInputRef,
   });
+
+  // Stop means stop everything queued. When messages are waiting, the person is
+  // asked first and told the cost, because a Stop that silently emptied a queue
+  // would be a surprise; a Stop with nothing waiting behaves exactly as before,
+  // with no dialog. The words the server hands back land in the composer draft,
+  // after anything already typed, so nothing is lost.
+  const [stopConfirmOpen, setStopConfirmOpen] = useState(false);
+  const restoreToComposer = useCallback(
+    (returned: QueuedMessage[]) => {
+      if (returned.length === 0) return;
+      const restored = returned.map((m) => m.content).join('\n\n');
+      // Read the composer's CURRENT text from the store, not a snapshot captured
+      // before the interrupt round-trip — a person may have typed while Stop was
+      // in flight, and appending to a stale value would drop what they just typed.
+      const existing = useSessionChatStore.getState().getSession(sessionId).input.trim();
+      setInput(existing ? `${existing}\n\n${restored}` : restored);
+    },
+    [sessionId, setInput]
+  );
+  const handleStop = useCallback(() => {
+    if (waiting.length === 0) {
+      void stop();
+      return;
+    }
+    setStopConfirmOpen(true);
+  }, [waiting.length, stop]);
+  const confirmStop = useCallback(() => {
+    setStopConfirmOpen(false);
+    void stop().then(restoreToComposer);
+  }, [stop, restoreToComposer]);
 
   // Background-task detection reads the hydrated stream-store projection (falling
   // back to the legacy send-path messages until the session hydrates) so it sees
@@ -398,7 +436,7 @@ export function ChatInputContainer({
               isUploading={isUploading}
               onCancelUpload={onUploadCancel}
               commandPending={commandPending}
-              onStop={stop}
+              onStop={handleStop}
               onEscape={autocomplete.dismissPalettes}
               onClear={() => {
                 setInput('');
@@ -478,6 +516,12 @@ export function ChatInputContainer({
           </motion.div>
         )}
       </AnimatePresence>
+      <StopConfirmDialog
+        open={stopConfirmOpen}
+        onOpenChange={setStopConfirmOpen}
+        queuedCount={waiting.length}
+        onConfirm={confirmStop}
+      />
     </Composer.Root>
   );
 }

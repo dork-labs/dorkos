@@ -571,6 +571,28 @@ describe('useChatSession — send (trigger-only POST → /events)', () => {
     expect(interruptSession).toHaveBeenCalledWith('s1');
   });
 
+  it('stop() hands back the messages the server took off the queue, in order', async () => {
+    const cancelledQueued = [
+      { id: 'm1', content: 'one', disposition: 'queue', enqueuedAt: 1, enqueuedBy: 'me' },
+      { id: 'm2', content: 'two', disposition: 'queue', enqueuedAt: 2, enqueuedBy: 'me' },
+    ];
+    const interruptSession = vi.fn().mockResolvedValue({ ok: true, cancelledQueued });
+    const transport = createMockTransport({ interruptSession });
+
+    const { result } = renderHook(() => useChatSession('s1'), {
+      wrapper: createWrapper(transport),
+    });
+
+    await waitFor(() => expect(result.current.status).toBe('idle'));
+
+    let returned: unknown;
+    await act(async () => {
+      returned = await result.current.stop();
+    });
+
+    expect(returned).toEqual(cancelledQueued);
+  });
+
   it('holds status at streaming through the trigger round-trip (CLI-B7 double-submit window)', async () => {
     // Real failure mode: POST is a 202 trigger, so the lifecycle still says
     // idle for a full RTT + turn spin-up after Enter — a second Enter in that
