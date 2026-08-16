@@ -3,6 +3,7 @@ covers:
   - 'feat(client): you can now leave a channel from its menu (DOR-1233)'
   - 'fix(client,server): a room you left says so, #team cannot be left, and leaving can be undone (DOR-1233)'
   - 'fix(client): pin the #team and 1:1-DM leave guards to the facts they guard (DOR-1233)'
+  - 'fix(client): the long-press sheet no longer catches the ghost click that opened it (DOR-1233)'
 ---
 
 ### Added

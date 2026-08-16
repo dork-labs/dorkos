@@ -272,6 +272,38 @@ describe('the long-press sheet (P4 AC-3)', () => {
     expect(onSelect).toHaveBeenCalledTimes(1);
   });
 
+  it('does not let the ghost click after a long press choose whatever is now where the row used to be', () => {
+    // **The sheet rises to COVER the row that opened it.** The browser follows
+    // a touch release with a compatibility `click` fired at the press's own
+    // screen position — the same fact `press()`'s trailing `click(target)`
+    // exists to swallow. A long enough node list puts one of its OWN rows
+    // exactly there, so that ghost click can land inside the sheet instead of
+    // on the (now-hidden) row underneath it — and unlike the row, nothing
+    // guarded the sheet's own content against it (DOR-1233).
+    renderSurface();
+    const root = surfaceRoot();
+    fireEvent.pointerDown(root, { button: 0, clientX: 100, clientY: 200 });
+    act(() => {
+      vi.advanceTimersByTime(700);
+    });
+    fireEvent.pointerUp(root);
+    expect(sheet()).not.toBeNull();
+
+    // The ghost click, landing on a real row of the sheet rather than on the
+    // row that opened it.
+    const item = within(sheet()!).getByRole('menuitem', { name: /Pin agent/ });
+    fireEvent.click(item);
+
+    expect(onPin).not.toHaveBeenCalled();
+    expect(sheet()).toHaveAttribute('data-state', 'open');
+
+    // …and the sheet is not left deaf afterwards — a real, later tap on the
+    // same row still runs it, which is what tells this apart from a sheet
+    // that swallows every click forever.
+    fireEvent.click(item);
+    expect(onPin).toHaveBeenCalledTimes(1);
+  });
+
   it('offers exactly what the "⋮" offers — every leaf, submenus included', () => {
     // **The AC, asserted between two renderings rather than against a literal.**
     // The kebab hides a submenu's contents behind its trigger, so the desktop
