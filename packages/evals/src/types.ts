@@ -718,6 +718,18 @@ export const EvalResultSchema = z.object({
    * `test-mode` boot never calls `initLogger`.
    */
   retainedLogsPath: z.string().optional(),
+  /**
+   * The FIRST attempt's retained sandbox `DORK_HOME`, when a retry happened
+   * and that first attempt retained one (DOR-1241 review, Important 2). The
+   * recorded result is always the retry's SECOND attempt (see `retried`), so
+   * without this a double timeout — DOR-1229's hang class, the exact reason
+   * retention exists — would retain attempt 1's evidence on disk with nothing
+   * in `results.json` pointing at it. Set by `runWithInfrastructureRetry`
+   * (`runner/retry.ts`), never by `runEval` directly.
+   */
+  priorAttemptRetainedSandbox: z.string().optional(),
+  /** The first attempt's copied `logs/` directory, alongside {@link priorAttemptRetainedSandbox}. */
+  priorAttemptRetainedLogsPath: z.string().optional(),
 });
 
 /** Inferred type for {@link EvalResultSchema}. */

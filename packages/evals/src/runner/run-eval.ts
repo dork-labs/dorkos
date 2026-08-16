@@ -222,33 +222,46 @@ function applyNonDoneOutcome(result: EvalResult, outcome: TurnOutcome): boolean 
 
 /**
  * Best-effort copy of the sandbox's `logs/` directory into
- * `<runDir>/<caseId>/logs/`, so the evidence a failing case needs survives BOTH
- * a later `pnpm evals:sweep` (which still removes the retained sandbox itself)
- * and the `test-mode` tier, whose in-process boot never calls `initLogger` and
- * so never writes one at all. A missing source directory is not a failure —
- * it means this tier wrote no server log — so that case returns `undefined`
- * silently; anything else propagates, because a copy that fails for another
- * reason is worth knowing about.
+ * `<runDir>/<destName>/logs/`, so the evidence a failing case needs survives
+ * BOTH a later `pnpm evals:sweep` (which still removes the retained sandbox
+ * itself) and the `test-mode` tier, whose in-process boot never calls
+ * `initLogger` and so never writes one at all.
+ *
+ * NEVER THROWS (DOR-1241 review, Blocker 1). A missing source directory means
+ * this tier wrote no server log and is silent; anything else — an EACCES, or
+ * an ENOSPC that retention itself is the likeliest source of — is a warning on
+ * stderr, not a rejection. This is a best-effort debugging aid layered onto a
+ * case that already has a verdict; letting a copy failure reject `runEval`
+ * would crash the run trying to report that verdict (and every other case's
+ * already-written result along with it — `runSuite`'s per-case loop has
+ * nothing that catches this).
  *
  * @param sandbox - The eval's sandbox (source: `<dorkHome>/logs`).
  * @param runDir - The run's output directory (`results.json`'s directory).
- * @param caseId - The eval case id, used as the destination subfolder.
+ * @param destName - The destination subfolder, attempt-scoped (the same name
+ *   `transcriptNameForAttempt` gives the transcript, minus `.jsonl`) so a
+ *   retry's second attempt cannot overwrite the first one's logs.
  * @returns The copied directory's path relative to `runDir`, or `undefined`
- *   when there was no `logs/` directory to copy.
+ *   when there was nothing to copy or the copy failed.
  */
 async function retainLogs(
   sandbox: Pick<Sandbox, 'dorkHome'>,
   runDir: string,
-  caseId: string
+  destName: string
 ): Promise<string | undefined> {
   const source = path.join(sandbox.dorkHome, 'logs');
-  const destRelative = path.join(caseId, 'logs');
+  const destRelative = path.join(destName, 'logs');
   try {
     await cp(source, path.join(runDir, destRelative), { recursive: true });
     return destRelative;
   } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
-    throw err;
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code !== 'ENOENT') {
+      process.stderr.write(
+        `[evals] could not copy logs for ${destName}: ${err instanceof Error ? err.message : String(err)}\n`
+      );
+    }
+    return undefined;
   }
 }
 
@@ -461,7 +474,14 @@ export async function runEval(evalCase: EvalCase, opts: RunEvalOptions): Promise
     // those are the expensive ones, and they were the ones reporting $0.0000.
     result.costUnmetered =
       turnAttempted && opts.tier !== 'test-mode' && evalCostSignal(frames) === null;
-    result.transcript = opts.transcriptName ?? `${evalCase.id}.jsonl`;
+    // Also the name the retained logs land under (below) — attempt-scoped, the
+    // same way `transcriptNameForAttempt` scopes the transcript, so a retry's
+    // second attempt cannot overwrite the first one's evidence (DOR-1241
+    // review, Important 2). Captured in a local rather than re-read off
+    // `result.transcript` so the type stays a plain `string` across the
+    // `await` below.
+    const transcriptName = opts.transcriptName ?? `${evalCase.id}.jsonl`;
+    result.transcript = transcriptName;
     await writeTranscript(opts.runDir, {
       runId: opts.runId,
       evalId: evalCase.id,
@@ -485,13 +505,25 @@ export async function runEval(evalCase: EvalCase, opts: RunEvalOptions): Promise
     // fixes container retention on the docker tier, whose `dispose({ failed
     // })` reads the same flag.
     const retain = failed;
-    await server?.dispose({ failed: retain });
-    if (retain) {
-      result.retainedSandbox = sandbox.dorkHome;
-      result.retainedLogsPath = await retainLogs(sandbox, opts.runDir, evalCase.id);
+    // Nested try/finally (DOR-1241 review, Blocker 1): `retainLogs` no longer
+    // throws, but disposal/retention staying INSIDE its own try means a fault
+    // neither of them anticipated still cannot skip cleanup — a leaked sandbox
+    // and a leaked SIGTERM handler must never be the price of a best-effort
+    // debugging aid going wrong.
+    try {
+      await server?.dispose({ failed: retain });
+      if (retain) {
+        result.retainedSandbox = sandbox.dorkHome;
+        result.retainedLogsPath = await retainLogs(
+          sandbox,
+          opts.runDir,
+          transcriptName.replace(/\.jsonl$/, '')
+        );
+      }
+    } finally {
+      await sandbox.cleanup({ failed: retain });
+      releaseInterrupt();
     }
-    await sandbox.cleanup({ failed: retain });
-    releaseInterrupt();
   }
 
   return result;

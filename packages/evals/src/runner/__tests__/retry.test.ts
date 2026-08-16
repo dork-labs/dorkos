@@ -172,6 +172,49 @@ describe('runWithInfrastructureRetry', () => {
     expect(final.status).toBe('error');
     expect(final.retried).toBe(false);
   });
+
+  it("carries attempt 1's retained sandbox/logs forward onto the recorded (attempt 2) result (DOR-1241 review, Important 2)", async () => {
+    // A double timeout is the DOR-1229 hang class retention exists to
+    // diagnose. Both attempts retain their OWN evidence under their own
+    // attempt-scoped names (run-eval.ts), but the RECORDED result is always
+    // attempt 2's — without this carry-forward, attempt 1's evidence would sit
+    // on disk with nothing in results.json pointing at it.
+    const attempt = vi
+      .fn<(n: number) => Promise<EvalResult>>()
+      .mockResolvedValueOnce(
+        result({
+          retainedSandbox: '/tmp/dorkos-evals-attempt1/.dork',
+          retainedLogsPath: 'x.retry/logs',
+        })
+      )
+      .mockResolvedValueOnce(
+        result({
+          retainedSandbox: '/tmp/dorkos-evals-attempt2/.dork',
+          retainedLogsPath: 'x.retry/logs',
+        })
+      );
+
+    const final = await runWithInfrastructureRetry(attempt);
+
+    // The recorded pointers are attempt 2's own (unchanged from before this
+    // fix)...
+    expect(final.retainedSandbox).toBe('/tmp/dorkos-evals-attempt2/.dork');
+    // ...and attempt 1's are ADDITIONALLY carried forward, never dropped.
+    expect(final.priorAttemptRetainedSandbox).toBe('/tmp/dorkos-evals-attempt1/.dork');
+    expect(final.priorAttemptRetainedLogsPath).toBe('x.retry/logs');
+  });
+
+  it('carries nothing forward when attempt 1 retained nothing (the ordinary retry path)', async () => {
+    const attempt = vi
+      .fn<(n: number) => Promise<EvalResult>>()
+      .mockResolvedValueOnce(result())
+      .mockResolvedValueOnce(result({ status: 'pass', error: undefined, costUnmetered: false }));
+
+    const final = await runWithInfrastructureRetry(attempt);
+
+    expect(final.priorAttemptRetainedSandbox).toBeUndefined();
+    expect(final.priorAttemptRetainedLogsPath).toBeUndefined();
+  });
 });
 
 describe('transcriptNameForAttempt', () => {

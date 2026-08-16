@@ -190,16 +190,42 @@ retention applies:
   what `pnpm evals:sweep` removes later, so treat it as temporary — read it
   before you clean up, not after.
 - **`retainedLogsPath`** — when the sandbox had a `logs/` directory to copy, its
-  copy lands at `<run dir>/<case id>/logs/`, beside `results.json`. This copy is
-  the durable one: a later `pnpm evals:sweep` does not touch the run directory,
-  so it is what survives after the sandbox itself is gone. `test-mode` boots
-  in-process and never calls `initLogger`, so its cases have no server log to
-  copy — `retainedLogsPath` is omitted there, and `retainedSandbox` is the only
-  read left.
+  copy lands beside `results.json`, at `<run dir>/<case name>/logs/` — the SAME
+  attempt-scoped name the transcript uses (`transcriptNameForAttempt`): a plain
+  case is `<case id>/logs/`, a retried second attempt is `<case id>.retry/logs/`,
+  so the two attempts never overwrite each other's evidence. This copy is the
+  durable one: a later `pnpm evals:sweep` does not touch the run directory, so
+  it is what survives after the sandbox itself is gone. Two things omit it: a
+  copy that genuinely had nothing to copy (`test-mode` boots in-process and
+  never calls `initLogger`, so its cases have no server log at all), and a copy
+  that FAILED for some other reason (disk pressure, permissions) — that failure
+  is a warning on stderr, never a crash, and the case's real verdict and its
+  `retainedSandbox` are unaffected either way.
+- **`priorAttemptRetainedSandbox` / `priorAttemptRetainedLogsPath`** — a
+  retried case's recorded result is always the SECOND attempt's (see
+  `retried`), but the FIRST attempt retains under its own rule too whenever it
+  failed — a turn timeout, the exact signature that triggers a retry, is a
+  failure. Without these two fields a double timeout would retain attempt 1's
+  evidence on disk with nothing in `results.json` pointing at it, which is
+  precisely the DOR-1229 hang class this feature exists to diagnose.
 
 `pnpm evals:sweep` is still the cleanup path for every retained sandbox,
 regardless of why it was retained — it keys on the `dorkos-evals-` tmpdir
 prefix every sandbox stamps, not on quarantine or pass/fail.
+
+**Locally vs in CI, this means different things survive.** Run `pnpm
+evals:local` (or `pnpm evals`) on your own machine and the retained sandbox
+itself sits on disk — `sweep` is a deliberate step, not automatic — so
+`retainedSandbox` is a real, walkable path until you run it. Dispatch the
+credentialed workflow (`.github/workflows/evals.yml`) instead and the runner is
+ephemeral: nothing under `retainedSandbox` survives past the job. The uploaded
+`eval-results-credentialed-*` artifact is what does, and its glob deliberately
+includes `**/logs/**` alongside `results.json` and the transcripts — without
+that line, a quarantined case's retained server log (the one CI actually runs
+for real, and the reason this feature exists) would never leave the runner at
+all. The structural job's own upload includes the same line for parity, but it
+is a standing no-op: `--tier test-mode` never writes a `logs/` directory to
+begin with.
 
 ## Answering an approval mid-run
 
