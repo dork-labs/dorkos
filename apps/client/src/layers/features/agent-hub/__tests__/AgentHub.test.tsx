@@ -54,6 +54,11 @@ vi.mock('@/layers/entities/agent', () => ({
   ),
   AgentIdentity: ({ name }: { name: string }) => <span data-testid="agent-identity">{name}</span>,
   AgentAvatar: ({ emoji }: { emoji: string }) => <span data-testid="agent-avatar">{emoji}</span>,
+  // The hero's preset lockup and the avatar picker are entity UI now, so the
+  // mock has to answer for them too.
+  findMatchingPreset: () => null,
+  DEFAULT_PRESET_COLORS: { nebula: '#6366f1', wisp: '#6366f1' },
+  AvatarPickerPanel: () => <div data-testid="avatar-picker-panel" />,
 }));
 
 // Deep-link hooks call TanStack Router internals — stub them out so tests

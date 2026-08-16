@@ -2,7 +2,7 @@ import { useCallback } from 'react';
 import { X } from 'lucide-react';
 import { Button } from '@/layers/shared/ui';
 import { useAgentHubContext } from '../model/agent-hub-context';
-import { PersonalityPicker } from './PersonalityPicker';
+import { PersonalityPicker } from '@/layers/entities/agent';
 import { DEFAULT_TRAITS } from '@dorkos/shared/trait-renderer';
 import type { Traits } from '@dorkos/shared/mesh-schemas';
 

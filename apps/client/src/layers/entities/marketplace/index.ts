@@ -29,3 +29,11 @@ export type { UpdatePackageArgs } from './model/use-update-package';
 export { useAddMarketplaceSource } from './model/use-add-marketplace-source';
 
 export { useRemoveMarketplaceSource } from './model/use-remove-marketplace-source';
+
+// --- UI ---
+// Where a package is installed, and what an agent has installed. Both are
+// package facts with no surface of their own, so they live with the queries
+// that serve them rather than in whichever feature drew them first.
+export { ScopeBadge } from './ui/ScopeBadge';
+export { SkillPacksList } from './ui/SkillPacksList';
+export type { SkillPacksListProps } from './ui/SkillPacksList';

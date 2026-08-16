@@ -1,7 +1,7 @@
 import { useRef, useEffect, useId } from 'react';
 import { cn } from '@/layers/shared/lib';
-import { useIsDark } from '@/layers/entities/agent';
-import { DEFAULT_PRESET_COLORS, type PresetColors } from '../model/personality-presets';
+import { useIsDark } from '../lib/nebula-theme';
+import { DEFAULT_PRESET_COLORS, type PresetColors } from '../lib/personality-presets';
 
 // ---------------------------------------------------------------------------
 // Types

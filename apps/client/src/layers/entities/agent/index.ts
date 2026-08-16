@@ -47,6 +47,21 @@ export { AgentIdentity, agentIdentityVariants } from './ui/AgentIdentity';
 export type { AgentIdentityProps } from './ui/AgentIdentity';
 export { AgentOptionRow } from './ui/AgentOptionRow';
 export { AvatarColorGrid, AvatarEmojiGrid } from './ui/AvatarPickerGrid';
+export { AvatarPickerPanel } from './ui/AvatarPickerPanel';
+export type { AvatarPickerPanelProps } from './ui/AvatarPickerPanel';
+export { AgentExecutionRows } from './ui/AgentExecutionRows';
+export type { AgentExecutionRowsProps } from './ui/AgentExecutionRows';
+export { PersonalityPicker } from './ui/PersonalityPicker';
+export type { PersonalityPickerProps, PersonalityPickerLayout } from './ui/PersonalityPicker';
+export { PersonalityRadar } from './ui/PersonalityRadar';
+export type { PersonalityRadarProps, PersonalityTraits } from './ui/PersonalityRadar';
+export {
+  PERSONALITY_PRESETS,
+  DEFAULT_PRESET_COLORS,
+  findMatchingPreset,
+  type PersonalityPreset,
+  type PresetColors,
+} from './lib/personality-presets';
 export { PresetPill } from './ui/PresetPill';
 export type { PresetPillProps, PresetPillColors } from './ui/PresetPill';
 export { TraitSliders } from './ui/TraitSliders';

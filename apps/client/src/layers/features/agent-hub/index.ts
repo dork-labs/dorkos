@@ -12,18 +12,6 @@ export {
   type AgentHubContextValue,
 } from './model/agent-hub-context';
 export { useAgentHubDeepLink, useAgentDialogRedirect } from './model/use-agent-hub-deep-link';
-export {
-  type PersonalityPreset,
-  type PresetColors,
-  DEFAULT_PRESET_COLORS,
-  PERSONALITY_PRESETS,
-  findMatchingPreset,
-} from './model/personality-presets';
-
-// UI — shared personality picker
-export { PersonalityPicker } from './ui/PersonalityPicker';
-export type { PersonalityPickerProps, PersonalityPickerLayout } from './ui/PersonalityPicker';
-
 // UI — shell components (three-zone layout)
 export { AgentHub } from './ui/AgentHub';
 export { AgentHubHero } from './ui/AgentHubHero';

@@ -54,6 +54,16 @@ const OTHER_MANIFEST = { id: 'other-ulid', name: 'api-bot', isSystem: false };
 
 const mockMutateAsync = vi.fn().mockResolvedValue({});
 vi.mock('@/layers/entities/agent', () => ({
+  PersonalityPicker: ({ onTraitsChange }: { onTraitsChange: (t: unknown) => void }) => (
+    <button
+      data-testid="pick-personality"
+      onClick={() =>
+        onTraitsChange({ verbosity: 3, autonomy: 3, chaos: 3, creativity: 3, humor: 5, spice: 3 })
+      }
+    >
+      pick
+    </button>
+  ),
   useUpdateAgent: () => ({ mutateAsync: mockMutateAsync }),
   useResolvedAgents: () => ({
     data:
@@ -238,19 +248,6 @@ vi.mock('@/layers/features/composer', () => ({
       </div>
     ),
   },
-}));
-
-vi.mock('@/layers/features/agent-hub', () => ({
-  PersonalityPicker: ({ onTraitsChange }: { onTraitsChange: (t: unknown) => void }) => (
-    <button
-      data-testid="pick-personality"
-      onClick={() =>
-        onTraitsChange({ verbosity: 3, autonomy: 3, chaos: 3, creativity: 3, humor: 5, spice: 3 })
-      }
-    >
-      pick
-    </button>
-  ),
 }));
 
 vi.mock('@/layers/shared/lib', async (importActual) => ({

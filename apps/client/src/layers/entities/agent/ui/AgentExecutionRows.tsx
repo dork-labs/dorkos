@@ -161,9 +161,20 @@ function ExecutionRow({
   );
 }
 
+/** What {@link AgentExecutionRows} needs: the agent, and somewhere to put a change. */
+export interface AgentExecutionRowsProps {
+  /** The agent being configured. */
+  agent: AgentManifest;
+  /**
+   * Persist a manifest change. `null` on either key means "go back to
+   * inheriting", which is exactly what the wire's `null` means.
+   */
+  onUpdate: (updates: AgentManifestUpdate) => void;
+}
+
 /**
- * The Model and Effort rows of an agent's Config tab — the two settings that
- * join the Runtime dropdown already there (spec `execution-defaults` §2).
+ * An agent's Model and Effort rows — the two settings that join the Runtime
+ * choice beside them (spec `execution-defaults` §2).
  *
  * Three rows rather than one summary row opening a shared popover: each setting
  * has its own provenance, and provenance is the thing worth seeing at a glance.
@@ -176,17 +187,9 @@ function ExecutionRow({
  * the runtime has none at all, and a plain sentence where the model does not
  * take one. None of the three is a hidden row (§3.4).
  *
- * @param agent - The agent being configured.
- * @param onUpdate - Persist a manifest change. `null` on either key means
- *   "go back to inheriting", which is exactly what the wire's `null` means.
+ * @param props - See {@link AgentExecutionRowsProps}.
  */
-export function AgentExecutionRows({
-  agent,
-  onUpdate,
-}: {
-  agent: AgentManifest;
-  onUpdate: (updates: AgentManifestUpdate) => void;
-}) {
+export function AgentExecutionRows({ agent, onUpdate }: AgentExecutionRowsProps) {
   const isMobile = useIsMobile();
   const { data: config } = useConfig();
   const { data: capabilityMap, isPending: capabilitiesPending } = useRuntimeCapabilities();

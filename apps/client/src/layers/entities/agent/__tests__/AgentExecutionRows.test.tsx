@@ -8,7 +8,7 @@ import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import type { ExecutionDefaults } from '@dorkos/shared/types';
 import { createMockTransport } from '@dorkos/test-utils';
 import { TransportProvider } from '@/layers/shared/model';
-import { AgentExecutionRows } from '../ui/tabs/AgentExecutionRows';
+import { AgentExecutionRows } from '../ui/AgentExecutionRows';
 
 beforeAll(() => {
   Object.defineProperty(window, 'matchMedia', {
