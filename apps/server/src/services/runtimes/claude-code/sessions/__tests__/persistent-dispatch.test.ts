@@ -66,11 +66,15 @@ vi.mock('../../../../../lib/boundary.js', () => ({
   isWithinBoundary: vi.fn().mockResolvedValue(true),
   BoundaryError: class BoundaryError extends Error {},
 }));
+// A class, not `vi.fn().mockImplementation(() => ({…}))` — the runtime `new`s
+// this, and an arrow-function implementation is not constructible. That only
+// surfaces on a message the launch resolver checks against the command list,
+// i.e. one starting with `/`, so it stayed invisible until a `/compact` turn.
 vi.mock('../../tooling/command-registry.js', () => ({
-  CommandRegistryService: vi.fn().mockImplementation(() => ({
-    getCommands: vi.fn().mockResolvedValue({ commands: [], lastScanned: '' }),
-    invalidateCache: vi.fn(),
-  })),
+  CommandRegistryService: class {
+    getCommands = vi.fn().mockResolvedValue({ commands: [], lastScanned: '' });
+    invalidateCache = vi.fn();
+  },
 }));
 vi.mock('../../../../core/event-fan-out.js', () => ({
   eventFanOut: { broadcast: vi.fn(), addClient: vi.fn(), clientCount: 0 },
@@ -733,5 +737,110 @@ describe('deliverIntoTurn — a stage reaches the transcript with no turn (task 
     // Both onto the one warm process, and neither ran a turn.
     expect(cli.launches).toBe(1);
     expect(process.answered).toBe(0);
+  });
+});
+
+// DOR-1235. A `/compact` turn produces no assistant output at all — the SDK
+// compacts, the model has nothing left to say, and the turn closes on the
+// boundary alone. The empty-stream guard used to read that as a dead stream, so
+// a compaction that visibly worked reported "stopped unexpectedly". The verdict
+// has to be the same one the resume path reaches (that half is pinned in
+// `claude-code-runtime.test.ts`), which is why both paths now ask the same
+// `messaging/empty-stream-guard.ts`.
+describe('a compaction is not a silent turn (DOR-1235)', () => {
+  beforeEach(() => {
+    optIn.persistentSession = true;
+  });
+
+  /** The SDK's boundary, snake_case as it arrives on the stream. */
+  const compactBoundary = (trigger: 'manual' | 'auto') =>
+    ({
+      type: 'system',
+      subtype: 'compact_boundary',
+      compact_metadata: { trigger, pre_tokens: 38234, post_tokens: 3035, duration_ms: 19707 },
+      session_id: 'pump-compact',
+      uuid: `boundary-${trigger}`,
+    }) as never;
+
+  /** Run one turn whose only answer is a compaction boundary. */
+  async function compactingTurn(trigger: 'manual' | 'auto'): Promise<StreamEvent[]> {
+    const sessionId = nextSession();
+    await turn(sessionId);
+    const process = cli.processes[0]!;
+    process.goSilent();
+
+    const running = turn(sessionId, trigger === 'manual' ? '/compact' : 'summarise the repo');
+    await vi.waitFor(() => expect(process.received).toHaveLength(2));
+    process.emit(compactBoundary(trigger));
+    process.emit(resultMessage(process.received[1]!));
+    return running;
+  }
+
+  it('does not call a successful /compact a crash', async () => {
+    const events = await compactingTurn('manual');
+
+    expect(events.find((e) => e.type === 'error')).toBeUndefined();
+    expect(events.find((e) => e.type === 'compact_boundary')?.data).toEqual({
+      trigger: 'manual',
+      preTokens: 38234,
+      postTokens: 3035,
+      durationMs: 19707,
+    });
+    expect(events.find((e) => e.type === 'done')).toBeDefined();
+  });
+
+  it('still reports a silent turn when the compaction was automatic', async () => {
+    // An auto boundary is incidental: context pressure fired while the person
+    // was waiting on an answer to something else, so a turn that compacts and
+    // then says nothing still owes them one.
+    const events = await compactingTurn('auto');
+
+    expect(events.find((e) => e.type === 'compact_boundary')).toBeDefined();
+    const error = events.find((e) => e.type === 'error');
+    expect(error).toBeDefined();
+    expect((error!.data as Record<string, unknown>).message).toContain('did not respond');
+  });
+
+  it('lets a failed compaction report its own reason, and nothing vaguer', async () => {
+    // A compaction that cannot run fires NO boundary — just the resolving
+    // status, which becomes `operation_progress` failed carrying the reason.
+    // Neither content nor a typed error, so the turn used to collect a second,
+    // vaguer verdict on top of the one already on screen.
+    const sessionId = nextSession();
+    await turn(sessionId);
+    const process = cli.processes[0]!;
+    process.goSilent();
+
+    const running = turn(sessionId, '/compact');
+    await vi.waitFor(() => expect(process.received).toHaveLength(2));
+    process.emit({
+      type: 'system',
+      subtype: 'status',
+      status: 'compacting',
+      session_id: 'pump-compact',
+      uuid: 'compacting',
+    } as never);
+    process.emit({
+      type: 'system',
+      subtype: 'status',
+      status: null,
+      compact_result: 'failed',
+      compact_error: 'context too large to summarize',
+      session_id: 'pump-compact',
+      uuid: 'compact-failed',
+    } as never);
+    process.emit(resultMessage(process.received[1]!));
+    const events = await running;
+
+    const failure = events.filter(
+      (e) => e.type === 'operation_progress' && (e.data as { state?: string }).state === 'failed'
+    );
+    expect(failure).toHaveLength(1);
+    expect(failure[0]!.data).toMatchObject({
+      operation: 'compaction',
+      error: 'context too large to summarize',
+    });
+    expect(events.filter((e) => e.type === 'error')).toEqual([]);
+    expect(events.find((e) => e.type === 'done')).toBeDefined();
   });
 });

@@ -19,7 +19,8 @@
  *
  * So what is left here is the mapping itself, and it is deliberately the SAME
  * mapping: `mapSdkMessage`, the same canonical-id rebind ordering, the same
- * content-event accounting, the same empty-stream guard, the same terminal
+ * content-event accounting and empty-stream guard (both imported from
+ * `messaging/empty-stream-guard.ts`, so they cannot drift), the same terminal
  * `done`. A person must not be able to tell which path answered them.
  *
  * ## The event queue is raced, not polled
@@ -43,9 +44,15 @@
  * @module services/runtimes/claude-code/sessions/pump-turn-stream
  */
 import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
-import type { ErrorCategory, StreamEvent } from '@dorkos/shared/types';
+import type { StreamEvent } from '@dorkos/shared/types';
 import { logger } from '../../../../lib/logger.js';
 import { createToolState, type AgentSession } from '../agent-types.js';
+import {
+  emptyStreamError,
+  isContentEvent,
+  isInteractiveEvent,
+  isReportedFailure,
+} from '../messaging/empty-stream-guard.js';
 import type { MessageSenderOpts } from '../messaging/message-sender-shared.js';
 import { detectPhantomCancellations } from '../messaging/phantom-cancellation.js';
 import { mapSdkMessage } from '../sdk/sdk-event-mapper.js';
@@ -63,27 +70,6 @@ export interface PumpTurnStreamArgs {
   /** The mesh agent to stamp `response_complete` on, if this directory hosts one. */
   meshAgentId: string | undefined;
 }
-
-/**
- * The typed error surfaced when a turn produced zero content events: the
- * process ran but the agent never said or did anything visible. Identical to
- * the turn path's, so the two cannot be told apart.
- */
-function emptyStreamError(): StreamEvent {
-  return {
-    type: 'error',
-    data: {
-      message: 'The agent did not respond. The service may be temporarily unavailable.',
-      category: 'execution_error' as ErrorCategory,
-    },
-  };
-}
-
-/** Content events, for the empty-stream guard. */
-const CONTENT_EVENTS = new Set(['text_delta', 'tool_call_start', 'tool_result', 'thinking_delta']);
-
-/** Events that mean the turn is legitimately parked on a person. */
-const INTERACTIVE_EVENTS = new Set(['approval_required', 'question_prompt']);
 
 /**
  * Map one turn window into the turn's `StreamEvent`s.
@@ -116,7 +102,7 @@ export async function* streamTurnWindow(args: PumpTurnStreamArgs): AsyncGenerato
       while (session.eventQueue.length > 0) {
         const queued = session.eventQueue.shift()!;
         if (queued.type === 'done') emittedDone = true;
-        if (INTERACTIVE_EVENTS.has(queued.type)) wasInteractive = true;
+        if (isInteractiveEvent(queued)) wasInteractive = true;
         eventCount++;
         yield queued;
       }
@@ -214,9 +200,12 @@ export async function* streamTurnWindow(args: PumpTurnStreamArgs): AsyncGenerato
             yield emptyStreamError();
           }
         }
-        if (event.type === 'error') emittedError = true;
-        if (CONTENT_EVENTS.has(event.type)) contentEventCount++;
-        if (INTERACTIVE_EVENTS.has(event.type)) wasInteractive = true;
+        // A failure the turn has already reported — a typed error, or a named
+        // operation that resolved `failed` — so the guard does not add its
+        // vaguer line on top of it.
+        if (isReportedFailure(event)) emittedError = true;
+        if (isContentEvent(event)) contentEventCount++;
+        if (isInteractiveEvent(event)) wasInteractive = true;
         eventCount++;
         yield event;
       }
