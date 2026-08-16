@@ -3,6 +3,7 @@ covers:
   - "refactor(client): the hub's reusable guts move to the entities that own them (DOR-1253)"
   - 'feat(client): profile pages and pickers for the agents you manage (DOR-1253)'
   - 'fix(client,server): a profile edit changes what it names, and nothing else (DOR-1253)'
+  - 'feat(client): the profile playground draws its pushed pages against a real manifest (DOR-1253)'
 ---
 
 ### Added
