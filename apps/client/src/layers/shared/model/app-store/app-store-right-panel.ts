@@ -75,13 +75,20 @@ export interface RightPanelSlice {
    * for the agent it names; a bind for anybody else leaves the panel alone
    * rather than answering a question it was not asked.
    *
+   * `shielded` is the ONE bind a link for somebody else is allowed to sit
+   * through — the one that happens as it arrives (see
+   * {@link loadRightPanelForAgent}). Without it, "leave the panel alone" applied
+   * to every bind for the rest of the session, so an unrelated agent's stored
+   * layout was ignored on every switch: the same DOR-227 leak the agent name was
+   * added to close, one level up.
+   *
    * The explicit-pick latch the link also sets (`explicitAgentPath`, which is
    * what makes its agent the panel's subject) is NOT released with it in the
    * ordinary case — it stays sticky for the session exactly as a click's does
    * (DOR-227, founder-accepted). Only {@link releaseRightPanelRequest} drops it,
    * for a link naming an agent that does not exist.
    */
-  requestedRightPanel: { tabId: string; agentPath: string | null } | null;
+  requestedRightPanel: { tabId: string; agentPath: string | null; shielded: boolean } | null;
   /**
    * Open the panel on a tab because a LINK said so, not because somebody
    * clicked.
@@ -184,7 +191,7 @@ export const createRightPanelSlice: StateCreator<
   requestRightPanel: (tabId, agentPath) => {
     get().setActiveRightPanelTab(tabId);
     get().setRightPanelOpen(true);
-    set({ requestedRightPanel: { tabId, agentPath } });
+    set({ requestedRightPanel: { tabId, agentPath, shielded: true } });
   },
 
   releaseRightPanelRequest: (agentPath) =>
@@ -237,14 +244,21 @@ export const createRightPanelSlice: StateCreator<
     // is released instead by whoever answers it: the matching bind if you walk
     // into that agent's session, or `ProfileDock` when the agent turns out not
     // to exist ({@link releaseRightPanelRequest}).
+    //
+    // And it sits through exactly ONE such bind — the one that happens as the
+    // link arrives. Every bind after that is a switch you made, so the agent you
+    // switched to gets its own stored layout back and the mark is spent. Left
+    // unscoped, "leave the panel alone" meant every later agent's layout was
+    // ignored for the rest of the session, which is the leak this whole shape
+    // exists to close, one level up from where it was first found.
     const requested = get().requestedRightPanel;
     const forThisAgent =
       requested !== null && (requested.agentPath === null || requested.agentPath === agentPath);
-    const pendingElsewhere = requested !== null && !forThisAgent;
+    const arrivalBind = requested !== null && !forThisAgent && requested.shielded;
     set({
       rightPanelLayoutKey: agentKey,
-      ...(pendingElsewhere
-        ? {}
+      ...(arrivalBind
+        ? { requestedRightPanel: { ...requested, shielded: false } }
         : {
             rightPanelOpen: forThisAgent || (entry?.open ?? false),
             activeRightPanelTab: forThisAgent ? requested.tabId : (entry?.activeTab ?? null),

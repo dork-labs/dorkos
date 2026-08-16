@@ -364,6 +364,52 @@ describe('RightPanelSlice', () => {
       expect(useAppStore.getState().rightPanelLayoutKey).toBe('warden');
     });
 
+    it('sits through the ARRIVAL bind only — the next agent gets its layout back', () => {
+      // The protection above is for the bind that happens as the link lands.
+      // Unscoped, it applied to every bind after it too, so an agent you
+      // switched to later had its stored layout ignored — the same DOR-227 leak
+      // the mark's agent name was added to close, one level up.
+      localStorage.setItem(
+        'dorkos-right-panel-layouts',
+        JSON.stringify({
+          warden: { open: false, activeTab: 'pulse', accessedAt: 1 },
+          ranger: { open: false, activeTab: 'pulse', accessedAt: 1 },
+        })
+      );
+      useAppStore.getState().requestRightPanel('profile', '/repo/scout');
+
+      // Arrival: Warden's session, link for Scout. Panel left as the link set it.
+      useAppStore.getState().loadRightPanelForAgent('warden', '/repo/warden');
+      expect(useAppStore.getState().rightPanelOpen).toBe(true);
+
+      // A switch you made, to somebody the link never named.
+      useAppStore.getState().loadRightPanelForAgent('ranger', '/repo/ranger');
+
+      expect(useAppStore.getState().rightPanelOpen).toBe(false);
+      expect(useAppStore.getState().activeRightPanelTab).toBe('pulse');
+      expect(useAppStore.getState().requestedRightPanel).toBeNull();
+    });
+
+    it('still honours the link if you walk into its agent’s session first', () => {
+      // Expiry is about binds for OTHER agents. The one the link named answers
+      // it whenever it comes, and its own stored layout is the thing outranked.
+      localStorage.setItem(
+        'dorkos-right-panel-layouts',
+        JSON.stringify({
+          warden: { open: false, activeTab: 'pulse', accessedAt: 1 },
+          scout: { open: false, activeTab: 'pulse', accessedAt: 1 },
+        })
+      );
+      useAppStore.getState().requestRightPanel('profile', '/repo/scout');
+      useAppStore.getState().loadRightPanelForAgent('warden', '/repo/warden');
+
+      useAppStore.getState().loadRightPanelForAgent('scout', '/repo/scout');
+
+      expect(useAppStore.getState().rightPanelOpen).toBe(true);
+      expect(useAppStore.getState().activeRightPanelTab).toBe('profile');
+      expect(useAppStore.getState().requestedRightPanel).toBeNull();
+    });
+
     it('is answered when the agent it named turns out not to exist', () => {
       // The ending a bind cannot supply: nothing ever binds an agent whose
       // session you are not in, so `ProfileDock` reports it instead.

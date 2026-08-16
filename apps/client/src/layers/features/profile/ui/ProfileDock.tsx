@@ -69,10 +69,15 @@ export function ProfileDock() {
   const members = roster.data?.members;
   const member = memberId === undefined ? undefined : members?.find((row) => row.id === memberId);
 
-  // Nothing has answered yet, vs everything has answered with nothing. A
-  // disabled roster read reports `isLoading: false`, so a directory the fleet
-  // cannot name settles on "not found" rather than spinning forever.
-  const settled = !fleet.isLoading && !roster.isLoading;
+  // Nothing has answered yet, vs everything has answered with nothing.
+  //
+  // `isFetched`, not `!isLoading`: a query that has not STARTED yet also reports
+  // `isLoading: false`, so asking that alone called the chain settled on the
+  // first render — before a single request had gone out. It read as "this agent
+  // does not exist" for one frame, which was enough to release a link's hold on
+  // the panel and drop its subject. The roster is exempt when the fleet named no
+  // id, because it is disabled then and will never fetch at all.
+  const settled = fleet.isFetched && (memberId === undefined || roster.isFetched);
 
   const display = member ?? null;
 
