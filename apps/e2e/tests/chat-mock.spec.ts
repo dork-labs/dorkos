@@ -4,6 +4,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import { BasePage } from '../pages/BasePage.js';
 import { ChatPage } from '../pages/ChatPage.js';
+import { RightPanelPage } from '../pages/RightPanelPage.js';
 import { caretOffset, composerText, expectComposerText } from '../pages/composer-probe.js';
 import { registerCompactionTests } from './chat/compaction.js';
 import { registerComposerEscapeAndImeTests } from './chat/composer-escape-and-ime.js';
@@ -409,7 +410,11 @@ test.describe('Runtime UX — multi-runtime test server', () => {
       timeout: 10_000,
     });
 
-    await new BasePage(page).ensureSidebarOpen();
+    // The fleet's session rows live on the Profile's Sessions page. They used to
+    // be the Agent Hub's Sessions TAB, which was the right panel's default on
+    // `/session`; the Profile's root is a property list, so `session-row`
+    // resolves to nothing until the page is opened (spec `profile-unification`).
+    await new RightPanelPage(page).openProfilePage('sessions', agentDir);
     const rows = page.getByTestId('session-row');
     await expect(
       rows.filter({ has: page.locator('[aria-label="Runtime: Test Mode"]') })
@@ -539,7 +544,9 @@ test.describe('Fleet context health — per-row gauge + honest unknown', () => {
       timeout: 10_000,
     });
 
-    await new BasePage(page).ensureSidebarOpen();
+    // Same move as the runtime-marks case above: these rows are the Profile's
+    // Sessions page now, not a sidebar or hub list.
+    await new RightPanelPage(page).openProfilePage('sessions', agentDir);
 
     // The session list carries a per-row context gauge.
     const row = page.getByTestId('session-row').first();

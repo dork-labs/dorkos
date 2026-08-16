@@ -175,6 +175,37 @@ export class RightPanelPage {
     await this.basePage.waitForAppReady();
   }
 
+  /**
+   * Open an agent's profile in the panel, on one of its pushed pages.
+   *
+   * Fleet-level session surfaces — the runtime marks, the per-row context gauge
+   * — used to be reachable from the sidebar and then from the Agent Hub's
+   * Sessions tab. Both are gone: the rows live on the Profile's Sessions page
+   * now (spec `profile-unification` §1.5), and this is the address that opens
+   * it. The deep link rather than a click on the row, because that address is
+   * itself a supported entry point and is covered by `dialog-deep-link.spec`;
+   * a caller wanting the click path drives the row's `data-profile-row` instead.
+   *
+   * @param pageId - The `ProfilePageId` to land on (e.g. `'sessions'`).
+   * @param agentDir - The agent's directory; it is both the session's `dir` and
+   *   the profile the link names, so the panel and the page agree on whose.
+   */
+  async openProfilePage(pageId: string, agentDir: string) {
+    const dir = encodeURIComponent(agentDir);
+    await this.page.goto(
+      `/session?panel=profile&profilePage=${pageId}&agentPath=${dir}&dir=${dir}`,
+      { waitUntil: 'domcontentloaded' }
+    );
+    await this.basePage.waitForAppReady();
+    await this.page.locator('[data-slot="profile"][data-home="docked"]').waitFor({
+      state: 'visible',
+      timeout: 15_000,
+    });
+    await this.page
+      .locator('[data-slot="profile-page-title"]')
+      .waitFor({ state: 'visible', timeout: 15_000 });
+  }
+
   /** Open the panel if it is currently closed (idempotent). */
   async open() {
     const label = await this.toggle.getAttribute('aria-label');
