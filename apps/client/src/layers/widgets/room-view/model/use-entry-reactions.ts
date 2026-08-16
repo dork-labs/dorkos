@@ -33,6 +33,13 @@ interface UseEntryReactionsOptions {
    * control that says it cannot be used (design record §4).
    */
   streamStalled?: boolean;
+  /**
+   * Whether the viewer is on this room's roster right now. Reactions go with
+   * the composer for this reason too (DOR-1233): a reaction on a room the
+   * owner left refuses the identical `MEMBER_NOT_FOUND` a post does. Defaults
+   * `true`.
+   */
+  isMember?: boolean;
 }
 
 interface EntryReactions {
@@ -56,8 +63,10 @@ export function useEntryReactions({
   viewerAuthorId,
   reactionFrequents,
   streamStalled,
+  isMember = true,
 }: UseEntryReactionsOptions): EntryReactions {
   const toggleReaction = useToggleReaction();
+  const disabled = streamStalled === true || !isMember;
 
   const reactions = useMemo(() => entry.reactions ?? [], [entry.reactions]);
   const mine = useMemo(
@@ -73,9 +82,9 @@ export function useEntryReactions({
       quick: reactionFrequents,
       mine,
       onToggle: toggle,
-      disabled: streamStalled === true,
+      disabled,
     }),
-    [reactionFrequents, mine, toggle, streamStalled]
+    [reactionFrequents, mine, toggle, disabled]
   );
 
   return { reactions, toggle, quickRow };

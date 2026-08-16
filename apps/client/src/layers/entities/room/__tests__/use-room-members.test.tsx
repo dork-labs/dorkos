@@ -12,6 +12,7 @@ import type { ReactNode } from 'react';
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { renderHook, waitFor, cleanup } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { toast as mockToast } from 'sonner';
 import { createMockTransport } from '@dorkos/test-utils';
 import type { Transport } from '@dorkos/shared/transport';
 import {
@@ -22,7 +23,11 @@ import {
 import { TransportProvider } from '@/layers/shared/model';
 import { createQueryClientConfig } from '@/layers/shared/lib/query-client';
 import { roomKeys } from '../api/query-keys';
-import { useSetMemberResponseMode } from '../model/use-room-members';
+import {
+  useAddRoomMember,
+  useRemoveRoomMember,
+  useSetMemberResponseMode,
+} from '../model/use-room-members';
 
 vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
 
@@ -72,6 +77,10 @@ function seededClient(): QueryClient {
   const client = new QueryClient(createQueryClientConfig());
   client.setQueryData(roomKeys.detail(ROOM_ID), ROSTER);
   client.setQueryData(roomKeys.entries(ROOM_ID), []);
+  // Seeded too, purely so `getQueryState(roomKeys.lists())` has a query to
+  // report on below — `invalidateQueries` marks nothing observable on a key
+  // that was never asked for.
+  client.setQueryData(roomKeys.lists(), []);
   return client;
 }
 
@@ -91,6 +100,7 @@ function cachedMode(client: QueryClient, authorId: string): string | undefined {
 }
 
 afterEach(cleanup);
+afterEach(() => vi.clearAllMocks());
 
 describe('useSetMemberResponseMode', () => {
   it('moves the member to the new mode before the server has answered', async () => {
@@ -190,5 +200,144 @@ describe('useSetMemberResponseMode', () => {
       expect(client.getQueryState(roomKeys.detail(ROOM_ID))?.isInvalidated).toBe(true)
     );
     expect(client.getQueryState(roomKeys.entries(ROOM_ID))?.isInvalidated).toBe(false);
+  });
+});
+
+describe('useRemoveRoomMember', () => {
+  it('takes the default label when the caller names none — for removing an agent', async () => {
+    const client = seededClient();
+    const transport = createMockTransport({
+      removeRoomMember: vi
+        .fn()
+        .mockRejectedValue(new Error('Only you can change who is in a room')),
+    });
+    const { result } = renderHook(() => useRemoveRoomMember(), {
+      wrapper: wrapperFor(transport, client),
+    });
+
+    result.current.mutate({ roomId: ROOM_ID, authorId: 'ana' });
+
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    expect(mockToast.error).toHaveBeenCalledWith(
+      "Couldn't remove that agent — Only you can change who is in a room",
+      expect.anything()
+    );
+  });
+
+  it('leaves a room — same wire route as removing a member, naming the caller as the target', async () => {
+    // "Leaving" is not a second mutation: `DELETE /:id/members/:authorId`
+    // neither knows nor cares whether the target is an agent or the caller's
+    // own id. Only the `errorLabel` a caller passes differs (DOR-1233).
+    const client = seededClient();
+    const transport = createMockTransport({
+      removeRoomMember: vi.fn().mockResolvedValue(undefined),
+    });
+    const { result } = renderHook(() => useRemoveRoomMember({ errorLabel: "Couldn't leave" }), {
+      wrapper: wrapperFor(transport, client),
+    });
+
+    result.current.mutate({ roomId: ROOM_ID, authorId: 'me' });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(transport.removeRoomMember).toHaveBeenCalledWith(ROOM_ID, 'me');
+  });
+
+  it('refreshes the room list and the room detail on success, never the history', async () => {
+    const client = seededClient();
+    const transport = createMockTransport({
+      removeRoomMember: vi.fn().mockResolvedValue(undefined),
+    });
+    const { result } = renderHook(() => useRemoveRoomMember({ errorLabel: "Couldn't leave" }), {
+      wrapper: wrapperFor(transport, client),
+    });
+
+    result.current.mutate({ roomId: ROOM_ID, authorId: 'me' });
+
+    await waitFor(() =>
+      expect(client.getQueryState(roomKeys.detail(ROOM_ID))?.isInvalidated).toBe(true)
+    );
+    expect(client.getQueryState(roomKeys.lists())?.isInvalidated).toBe(true);
+    expect(client.getQueryState(roomKeys.entries(ROOM_ID))?.isInvalidated).toBe(false);
+  });
+
+  it('shows the server’s own reason a leave was refused, not a generic failure', async () => {
+    // Through the REAL mutation cache (`createQueryClientConfig`), which is
+    // what actually composes the caller's `errorLabel` with the server's
+    // sentence — proof this reads the wire message, not an assumption that
+    // it would.
+    const client = seededClient();
+    const transport = createMockTransport({
+      removeRoomMember: vi
+        .fn()
+        .mockRejectedValue(
+          new Error('Two agents share this room — take one of them out before you leave it')
+        ),
+    });
+    const { result } = renderHook(() => useRemoveRoomMember({ errorLabel: "Couldn't leave" }), {
+      wrapper: wrapperFor(transport, client),
+    });
+
+    result.current.mutate({ roomId: ROOM_ID, authorId: 'me' });
+
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    expect(mockToast.error).toHaveBeenCalledWith(
+      "Couldn't leave — Two agents share this room — take one of them out before you leave it",
+      expect.anything()
+    );
+  });
+
+  it('shows #team’s own refusal too — leaving a system room, not just a two-agent one', async () => {
+    const client = seededClient();
+    const transport = createMockTransport({
+      removeRoomMember: vi
+        .fn()
+        .mockRejectedValue(new Error("You can't leave #team — it's your home channel")),
+    });
+    const { result } = renderHook(() => useRemoveRoomMember({ errorLabel: "Couldn't leave" }), {
+      wrapper: wrapperFor(transport, client),
+    });
+
+    result.current.mutate({ roomId: ROOM_ID, authorId: 'me' });
+
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    expect(mockToast.error).toHaveBeenCalledWith(
+      "Couldn't leave — You can't leave #team — it's your home channel",
+      expect.anything()
+    );
+  });
+});
+
+describe('useAddRoomMember', () => {
+  it('rejoins a person by their own author id — the wire call Undo and Rejoin both make', async () => {
+    // `AddRoomMemberRequestSchema` and `RoomService.addMember` never
+    // restricted this to agents; only this hook's input type used to
+    // (DOR-1233 follow-up).
+    const client = seededClient();
+    const transport = createMockTransport({
+      addRoomMember: vi.fn().mockResolvedValue(member('me', 'silent')),
+    });
+    const { result } = renderHook(() => useAddRoomMember(), {
+      wrapper: wrapperFor(transport, client),
+    });
+
+    result.current.mutate({ roomId: ROOM_ID, authorId: 'me' });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(transport.addRoomMember).toHaveBeenCalledWith(ROOM_ID, { authorId: 'me' });
+  });
+
+  it('still adds an agent by its directory, unaffected by the authorId path existing', async () => {
+    const client = seededClient();
+    const transport = createMockTransport({
+      addRoomMember: vi.fn().mockResolvedValue(member('ana', 'engaged')),
+    });
+    const { result } = renderHook(() => useAddRoomMember(), {
+      wrapper: wrapperFor(transport, client),
+    });
+
+    result.current.mutate({ roomId: ROOM_ID, agentPath: '/repo/ana' });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(transport.addRoomMember).toHaveBeenCalledWith(ROOM_ID, { agentPath: '/repo/ana' });
   });
 });

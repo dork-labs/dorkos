@@ -6,6 +6,8 @@ import {
   FolderInput,
   FolderMinus,
   FolderPlus,
+  LogIn,
+  LogOut,
   Pencil,
   Text,
   PanelRight,
@@ -45,6 +47,8 @@ export type RoomMenuActionId =
   | 'agent-profile'
   | 'rename'
   | 'topic'
+  | 'leave'
+  | 'rejoin'
   | 'archive';
 
 /**
@@ -127,6 +131,57 @@ export interface RoomRowMenuModel {
    * Only a 1:1 names an unambiguous agent, so only a 1:1 offers its profile.
    */
   soleAgentPath: string | null;
+  /**
+   * Whether this room IS a 1:1 — decided from the DM's own participants, and
+   * deliberately NOT from `soleAgentPath === null`. That check conflates
+   * three different facts into one `null`: not a 1:1, the fleet has not
+   * resolved a path yet, or the one agent left the mesh entirely — and the
+   * last two are loading/degraded states, not "not a 1:1." A DM whose sole
+   * agent left the mesh is still exactly the room shape Leave has to refuse:
+   * one agent, no human, and re-opening a DM with that same member set mints
+   * a SECOND room rather than reopening this one — `findDmByMemberSet`
+   * (`room-store.ts`) needs an EXACT set match, and `{owner, agent}` matches
+   * nothing once the owner has left, so `createRoom` mints fresh
+   * (`room-service.ts`).
+   */
+  isOneToOne: boolean;
+  /**
+   * Whether this viewer's own author id is known yet — what naming yourself
+   * as the member to remove takes.
+   *
+   * **Not just a loading beat.** It reads `false` while the team roster is
+   * still on the wire, which resolves in a moment on a warm cache — but it
+   * also reads `false`, and stays `false`, whenever the roster's account read
+   * has degraded: `aggregateTeamRoster` still answers 200 with the rest of the
+   * roster and a `warnings[]` entry, but every row's `isSelf` comes back false
+   * because there is no account to match against (`aggregate-team.ts`). That
+   * install never sees "Leave" until the account source recovers, and nothing
+   * on this menu says why — the item is withheld rather than offered and
+   * refused, the same way `soleAgentPath` withholds "Agent profile" instead of
+   * showing it disabled, and the same silent-omission shape every other
+   * data-gated item on this menu already uses.
+   */
+  canLeave: boolean;
+  /**
+   * Whether this room is one DorkOS itself depends on — `room.wellKnown` on
+   * the wire, `'team'` for the one every install gets at boot (team-room-home
+   * spec D3.1). The server refuses removing the owner from one of these
+   * outright (`SYSTEM_ROOM`, DOR-1233 follow-up): #team ships with only one
+   * agent seated, so the three-way rule never catches a direct Leave, and
+   * nothing restores the membership afterwards. The item is withheld here
+   * rather than offered and refused, matching `canLeave`'s own shape.
+   */
+  isSystemRoom: boolean;
+  /**
+   * Whether the viewer currently sits on this room's roster. `false` reads
+   * as "you left" — the server's own tell, carried without a field of its
+   * own: a non-member's `unreadCount` is `null` (a read cursor is a property
+   * of membership), which is exactly the fact the sidebar badge already
+   * reads this same way. Decides which of Leave / Rejoin the slot below
+   * shows, not whether the slot exists at all — that gate is the three
+   * conditions above.
+   */
+  isMember: boolean;
   /** Clear the unread badge without opening the room. */
   onMarkRead: () => void;
   /** Toggle this room's own mute state. */
@@ -145,6 +200,18 @@ export interface RoomRowMenuModel {
   onRename: () => void;
   /** Open the topic editor. */
   onEditTopic: () => void;
+  /**
+   * Ask to leave, which confirms first. The server refuses this while two
+   * agents still share the room and nobody is left to witness them
+   * (`OWNER_MUST_BE_PRESENT`, the three-way rule) — take one out first, or
+   * archive instead.
+   */
+  onLeave: () => void;
+  /**
+   * Rejoin a room you left. No confirm — joining is not destructive, the same
+   * reason "Add agents" below asks for nothing but who.
+   */
+  onRejoin: () => void;
   /** Ask to archive, which confirms first. */
   onArchive: () => void;
 }
@@ -205,13 +272,21 @@ function buildMoveToGroupItems(model: RoomRowMenuModel): RoomRowMenuNode[] {
  * item definitions can be asserted directly and shared by every renderer.
  *
  * The order mirrors the agent row's: state first, then the things that open
- * something, then the destructive one on its own at the bottom.
+ * something, then the two destructive ones together at the bottom — **Leave**,
+ * then **Archive**.
  *
- * Two omissions are deliberate rather than pending. There is no **Leave**:
- * with a single human author, leaving a room you created makes it invisible
- * with no route back, and Archive is the honest verb for that intent. And there
- * is no **Pin**: rooms sort by recent activity and there are few of them, so pin
- * earns its place when the list is long enough to lose something in.
+ * **Leave and Archive are not the same verb wearing two names.** Leaving takes
+ * you off the roster and nothing else: the room keeps running for whoever and
+ * whatever is still on it, and the server refuses it outright
+ * (`OWNER_MUST_BE_PRESENT`) while it would strand two agents alone together —
+ * take one out first, or archive instead. Archiving is the room-wide "put this
+ * away": nothing on it is triggered any more, for anybody, and it is what an
+ * owner who created a room and wants it gone reaches for — reversible, unlike
+ * a delete this product has never offered (spec `rooms` §12.4).
+ *
+ * There is no **Pin**, and that omission is still deliberate: rooms sort by
+ * recent activity and there are few of them, so pin earns its place when the
+ * list is long enough to lose something in.
  *
  * **Mute is one concept, not a room-only copy of one.** It writes the room's
  * reference into the same `ui.sidebar.muted` list an agent writes its path into,
@@ -325,22 +400,65 @@ export function buildRoomRowMenuNodes(model: RoomRowMenuModel): RoomRowMenuNode[
     });
   }
 
-  nodes.push(
-    { kind: 'separator', id: 'sep-archive' },
-    {
-      kind: 'action',
-      id: 'archive',
-      // Named like "Delete group" is: the verb plus the noun it acts on, so the
-      // item still reads correctly out of context.
-      label: isChannel ? 'Archive channel' : 'Archive conversation',
-      icon: Archive,
-      // A confirmation alert does not earn an ellipsis — the command IS complete
-      // when chosen; the alert only asks whether you meant it.
-      opensInput: false,
-      destructive: true,
-      run: model.onArchive,
+  nodes.push({ kind: 'separator', id: 'sep-destructive' });
+
+  // Three independent reasons to withhold the whole slot rather than show it
+  // disabled, all documented on the model: the viewer's own id is not known
+  // yet (`canLeave`), this is #team or another room DorkOS depends on
+  // (`isSystemRoom`), or it is a 1:1 DM — leaving one strands the agent with
+  // no human in it, and re-opening a DM with the same member set mints a
+  // SECOND room rather than reopening this one (`findDmByMemberSet` needs an
+  // exact match, and `{owner, agent}` no longer matches anything once the
+  // owner has left), so there is no honest "back" to offer. The last of
+  // those is `isOneToOne`, decided from the room's own participants —
+  // deliberately NOT `soleAgentPath === null`, which is also true while the
+  // fleet is still loading or once the agent has left the mesh, neither of
+  // which makes this any less the room shape Leave has to refuse.
+  //
+  // ONE slot, not two, once the gate above passes: `isMember` decides which
+  // verb it shows. Leaving offers Rejoin in its place rather than nothing,
+  // and a room you already left never shows a Leave you would only get
+  // refused for having no membership to take yourself off of.
+  if (model.canLeave && !model.isSystemRoom && !model.isOneToOne) {
+    if (model.isMember) {
+      nodes.push({
+        kind: 'action',
+        id: 'leave',
+        label: `Leave ${noun}`,
+        icon: LogOut,
+        // A confirmation alert, not an editor — same reasoning as Archive below.
+        opensInput: false,
+        destructive: true,
+        run: model.onLeave,
+      });
+    } else {
+      nodes.push({
+        kind: 'action',
+        id: 'rejoin',
+        label: `Rejoin ${noun}`,
+        icon: LogIn,
+        opensInput: false,
+        // Getting back in is not destructive — the opposite of the verb it
+        // replaces, styled to match.
+        destructive: false,
+        run: model.onRejoin,
+      });
     }
-  );
+  }
+
+  nodes.push({
+    kind: 'action',
+    id: 'archive',
+    // Named like "Delete group" is: the verb plus the noun it acts on, so the
+    // item still reads correctly out of context.
+    label: isChannel ? 'Archive channel' : 'Archive conversation',
+    icon: Archive,
+    // A confirmation alert does not earn an ellipsis — the command IS complete
+    // when chosen; the alert only asks whether you meant it.
+    opensInput: false,
+    destructive: true,
+    run: model.onArchive,
+  });
 
   return nodes;
 }

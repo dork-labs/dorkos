@@ -383,14 +383,22 @@ describe('Stop reaches a turn, never a process that is merely warm', () => {
   // exactly as the running path does — so a booting Stop crashes the pump the
   // same way a running Stop does when `interrupt()` rejects.
   //
-  // KNOWN GAP (deferred, owned by the message-dispatcher layer): a boot that
-  // ends here produces error+done with NO `turn_start`, and a queued row retires
-  // ONLY on `turn_start` (`message-dispatcher.ts` `onTurnStart` → `store.remove`).
-  // So the stopped message's durable row is not retired and `adoptQueuedMessages`
-  // re-runs it on the next `dispatchMessage`. That re-run is NOT observable here
-  // (this harness wires no `MessageQueueStore`) and cannot be fixed at the
-  // pump/dispatch seam, which sits below retirement and never sees the queue —
-  // the fix belongs in the retirement/adoption layer and is tracked separately.
+  // CLOSED for the Stop path (DOR-1192, task 4.7, at the retirement/adoption
+  // layer where it belongs): a boot that ends here produces error+done with NO
+  // `turn_start`, and a queued row retires ONLY on `turn_start`
+  // (`message-dispatcher.ts` `onTurnStart` → `store.remove`). So on its own the
+  // stopped message's durable row is not retired and `adoptQueuedMessages` would
+  // re-run it on the next `dispatchMessage`. A Stop now clears the DorkOS queue
+  // (`clearQueuedMessages`, the sole caller, driven by the interrupt route BEFORE
+  // the interrupt), which sweeps exactly this un-retired booting row, so nothing
+  // is left to re-adopt. DOR-1192 is Stop-scoped: a boot that fails on its OWN
+  // with no user Stop still leaves the row for `adoptQueuedMessages` to re-run —
+  // that is desired crash recovery (the message never ran), not the bug. The
+  // Stop-clears re-run is not observable HERE (this harness wires no
+  // `MessageQueueStore`, and the fix sits above the pump/dispatch seam this test
+  // drives); it is pinned at the retirement/adoption layer by
+  // `message-dispatcher.test.ts` → 'a Stop during a booting first turn clears the
+  // un-retired row so it does not re-run'.
   it('escalates to a forceful close when interrupt fails on a booting turn', async () => {
     const sessionId = nextSession();
     cli.deferNextInit = true;

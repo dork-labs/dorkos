@@ -112,7 +112,21 @@ function roomWith(id: string, slug: string): RoomWithRoster {
     ambientMaxEntries: 30,
     createdAt: '2026-07-26T09:00:00.000Z',
     lastActivityAt: '2026-07-26T10:00:00.000Z',
-    members: [],
+    // The viewer themselves, on the roster — `RoomComposer` now reads
+    // membership to decide whether to offer a live composer at all
+    // (DOR-1233), and every test below assumes one.
+    members: [
+      {
+        roomId: id,
+        authorId: 'author-you',
+        responseMode: 'always',
+        joinedAt: '2026-07-26T09:00:00.000Z',
+        joinedSeq: 0,
+        lastReadSeq: 0,
+        author: { id: 'author-you', kind: 'human', displayName: 'You', handle: null },
+        origin: 'local',
+      },
+    ],
     viewerAuthorId: 'author-you',
     reactionFrequents: [...REACTION_FREQUENTS_DEFAULT],
   };

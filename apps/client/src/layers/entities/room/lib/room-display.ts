@@ -3,7 +3,7 @@
  *
  * @module entities/room/lib/room-display
  */
-import type { AuthorRef, Room, RoomSummary } from '@dorkos/shared/room-schemas';
+import type { AuthorRef, Room, RoomRosterEntry, RoomSummary } from '@dorkos/shared/room-schemas';
 import { hashToHslColor } from '@/layers/shared/lib';
 
 /** A room object with just enough on it to render a title. */
@@ -130,6 +130,27 @@ export function authorColor(authorId: string): string {
  */
 export function hasUnread(room: RoomSummary): boolean {
   return room.unreadCount !== null && room.unreadCount > 0;
+}
+
+/**
+ * Whether an author sits on a room's roster right now.
+ *
+ * The one check every "can this reader write here" gate needs — the composer
+ * (`RoomComposer`), a message's reactions and its thread panel all read a room
+ * they may not be a member of (the owner sees every room on the install,
+ * DOR-1233), and posting or reacting is `MEMBER_NOT_FOUND` for a non-member on
+ * the server regardless of what the client offers. One function so all three
+ * ask the roster the same way, rather than each re-deriving it from whichever
+ * proxy happens to be in scope (`unreadCount`, `lastReadSeq`, …).
+ *
+ * @param members - The room's roster, as `RoomWithRoster` carries it.
+ * @param viewerAuthorId - The caller's own author id, as the server resolved it.
+ */
+export function isRoomMember(
+  members: readonly Pick<RoomRosterEntry, 'author'>[],
+  viewerAuthorId: string
+): boolean {
+  return members.some((member) => member.author.id === viewerAuthorId);
 }
 
 /** Proper names for the platforms a bridged room or member can come from. */

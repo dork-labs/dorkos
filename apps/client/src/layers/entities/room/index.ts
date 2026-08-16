@@ -83,6 +83,7 @@ export {
 export type {
   AddRoomMemberInput,
   RemoveRoomMemberInput,
+  RemoveRoomMemberOptions,
   SetResponseModeInput,
 } from './model/use-room-members';
 export {
@@ -90,6 +91,7 @@ export {
   directMessageTitle,
   authorColor,
   hasUnread,
+  isRoomMember,
   platformLabel,
 } from './lib/room-display';
 export { profileMemberIdOf } from './lib/profile-target';

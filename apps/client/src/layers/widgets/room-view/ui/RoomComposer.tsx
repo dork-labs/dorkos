@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { AnimatePresence } from 'motion/react';
+import { toast } from 'sonner';
 import { TOUR_ANCHORS } from '@/layers/shared/config';
+import { Button } from '@/layers/shared/ui';
 import { Composer, type ComposerInputHandle } from '@/layers/features/composer';
 import {
   JumpBackInPopover,
@@ -14,9 +16,11 @@ import {
 } from '@/layers/features/mentions';
 import { useInteractionStore } from '@/layers/entities/interactions';
 import {
+  isRoomMember,
   newPendingId,
   roomDisplayTitle,
   threadDraftKey,
+  useAddRoomMember,
   useComposerFocusRequest,
   useRoomDraft,
   useRoomDraftStore,
@@ -126,8 +130,20 @@ export function RoomComposer({
   const text = useRoomDraft(draftKey);
   const post = usePostToRoom();
   const reply = useReplyInThread();
+  const rejoin = useAddRoomMember();
   const focusRequest = useComposerFocusRequest(draftKey);
   const inputRef = useRef<ComposerInputHandle>(null);
+  /**
+   * Whether the viewer is still on this room's roster.
+   *
+   * A room the operator sees but is not a member of is real and reachable —
+   * they left it (DOR-1233) — and posting into one is a definite server
+   * refusal (`MEMBER_NOT_FOUND`), never a maybe. `RoomWithRoster` already
+   * carries both halves of this answer for the CALLER actually looking at
+   * this screen (`viewerAuthorId` is resolved per request, unlike the team
+   * roster's `isSelf`), so there is nothing to fetch for it.
+   */
+  const isMember = isRoomMember(room.members, room.viewerAuthorId);
   /**
    * Whether a send is currently waiting for its files to reach the server.
    *
@@ -373,6 +389,36 @@ export function RoomComposer({
     const sentFileIds = attachments.pendingFiles.map((f) => f.id);
     void deliver(body, clientId, attachmentNames, sentFileIds);
   };
+
+  // Checked before the composer is built at all, not passed down as a reason
+  // string the way `archived` is: `canSubmitReason` is one line of text next
+  // to a field that still LOOKS live, and a field a definite server refusal
+  // is waiting behind should not look live. This replaces it outright, the
+  // same way the archived room's own history stays readable while nothing
+  // here pretends you can add to it.
+  if (!isMember) {
+    return (
+      <div className="flex items-center justify-between gap-3 border-t px-4 py-3">
+        <p className="text-muted-foreground text-sm">
+          You left this channel. You can read it, but not add to it.
+        </p>
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          disabled={rejoin.isPending}
+          onClick={() =>
+            rejoin.mutate(
+              { roomId: room.id, authorId: room.viewerAuthorId },
+              { onSuccess: () => toast.success(`You rejoined ${roomDisplayTitle(room)}`) }
+            )
+          }
+        >
+          Rejoin
+        </Button>
+      </div>
+    );
+  }
 
   const card = (
     // Passing `onFilesDropped` is the whole attach declaration: it is what

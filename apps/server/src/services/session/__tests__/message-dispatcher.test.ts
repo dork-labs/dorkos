@@ -54,7 +54,11 @@ import { currentDispatch, currentDispatchId } from '../../../lib/dispatch-contex
 import { recentDispatches, resetDispatchBuffers } from '../../observability/dispatch-buffers.js';
 // The routes' mutation API, driven here because what it changes is what the
 // dispatcher then RUNS — the edit and the turn are one promise, not two.
-import { cancelQueuedMessage, editQueuedMessage } from '../queued-message-edits.js';
+import {
+  cancelQueuedMessage,
+  clearQueuedMessages,
+  editQueuedMessage,
+} from '../queued-message-edits.js';
 import { MessageQueueStore, setMessageQueueStore } from '../message-queue-store.js';
 import { ROOMS } from '../../../config/constants.js';
 import {
@@ -789,6 +793,84 @@ describe('editing and removing what is waiting', () => {
     expect(editQueuedMessage(session, row.id, { content: 'hijacked' })).toBeUndefined();
     expect(cancelQueuedMessage(session, row.id)).toBeUndefined();
     expect(store.list(other).map((r) => r.content)).toEqual(['not yours']);
+  });
+});
+
+describe('clearing the queue on Stop', () => {
+  it('empties the queue, hands every message back in order, and tells every window', async () => {
+    const first = gate();
+    runtime.withScenarios([heldTurn(first.wait), quickTurn(), quickTurn(), quickTurn()]);
+
+    await send('long turn');
+    await send('one');
+    await send('two');
+    await send('three');
+    expect(listQueuedMessages(session).map((r) => r.content)).toEqual(['one', 'two', 'three']);
+
+    const ingest = vi.spyOn(getOrCreateProjector(session), 'ingest');
+    const returned = clearQueuedMessages(session);
+
+    expect(returned.map((r) => r.content)).toEqual(['one', 'two', 'three']);
+    expect(listQueuedMessages(session)).toEqual([]);
+    // Every window learns the queue is empty on the durable stream.
+    expect(ingest).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'queue_update', queue: [] })
+    );
+  });
+
+  it('disarms the pending dispatches so nothing runs when the turn ends', async () => {
+    // The discriminating half: a store-only clear would leave the pending
+    // entries armed, and the head would fire the moment the running turn ended.
+    const first = gate();
+    runtime.withScenarios([heldTurn(first.wait), quickTurn(), quickTurn()]);
+
+    await send('long turn');
+    await send('one');
+    await send('two');
+
+    clearQueuedMessages(session);
+
+    first.open();
+    await settle();
+
+    // Only the long turn ran; the two cleared messages never reached the model.
+    expect(runtime.sendMessage).toHaveBeenCalledTimes(1);
+    expect(listQueuedMessages(session)).toEqual([]);
+  });
+
+  it('is a no-op on an empty queue and emits no queue_update', async () => {
+    const projector = getOrCreateProjector(session);
+    const ingest = vi.spyOn(projector, 'ingest');
+
+    const returned = clearQueuedMessages(session);
+
+    expect(returned).toEqual([]);
+    expect(ingest).not.toHaveBeenCalled();
+  });
+
+  it('a Stop during a booting first turn clears the un-retired row so it does not re-run (DOR-1192)', async () => {
+    // A first turn that booted but never reached the model leaves its row on the
+    // queue: the row retires only on `turn_start`, which a boot stopped before
+    // it opens never emits. A row in exactly that state is what a boot-Stop
+    // leaves behind. Without the Stop clearing it, `adoptQueuedMessages` picks
+    // it up on the very next dispatch and re-runs the stopped message.
+    store.enqueue({ sessionId: session, content: 'the stopped first message', clientId: TAB });
+    expect(listQueuedMessages(session).map((r) => r.content)).toEqual([
+      'the stopped first message',
+    ]);
+
+    // Stop clears the queue — the same call the interrupt route makes.
+    clearQueuedMessages(session);
+    expect(listQueuedMessages(session)).toEqual([]);
+
+    // The next dispatch's adoption must find nothing to resurrect.
+    runtime.withScenarios([quickTurn()]);
+    await send('a fresh message');
+    await settle();
+
+    const ran = runtime.sendMessage.mock.calls.map((c) => c[1]);
+    expect(ran).not.toContain('the stopped first message');
+    expect(ran).toContain('a fresh message');
   });
 });
 

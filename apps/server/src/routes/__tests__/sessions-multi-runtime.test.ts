@@ -844,7 +844,7 @@ describe('sessions route — multi-runtime routing (real registry + real DB)', (
       expect(testModeSpy).toHaveBeenCalled();
       expect(claudeSpy).not.toHaveBeenCalled();
       expect(res.status).toBe(200);
-      expect(res.body).toEqual({ ok: false });
+      expect(res.body).toEqual({ ok: false, cancelledQueued: [] });
     });
   });
 

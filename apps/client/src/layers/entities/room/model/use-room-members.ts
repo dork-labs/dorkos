@@ -55,16 +55,10 @@ function withMemberMode(
   };
 }
 
-/** Which agent to put in which room. */
-export interface AddRoomMemberInput {
+/** The room, and the mode to join on, shared by both ways of naming who joins. */
+interface AddRoomMemberCommon {
   /** The room being joined. */
   roomId: string;
-  /**
-   * The agent's directory — its stable identity across re-registration
-   * (ADR 260726-170126). An agent that has never been in a room gets its author
-   * row minted in the same transaction.
-   */
-  agentPath: string;
   /**
    * The mode to join on, for a caller putting a member **back** that knows what
    * it held.
@@ -73,13 +67,40 @@ export interface AddRoomMemberInput {
    * only one that reads an agent's own manifest. An undo is the case that must
    * NOT omit it — the seed for a channel is `engaged`, so re-adding without
    * this turns an agent somebody had set to Silent into one that answers, and
-   * calls that "undo".
+   * calls that "undo". Meaningless for a PERSON — nothing ever auto-triggers
+   * one — so a rejoin omits it and the server seeds its inert enum default.
    */
   responseMode?: ResponseMode;
 }
 
 /**
- * Put an agent in a room.
+ * Which agent or person to put in which room — one or the other, never both,
+ * mirroring `AddRoomMemberRequestSchema`'s own `authorId`-or-`agentPath` shape.
+ */
+export type AddRoomMemberInput = AddRoomMemberCommon &
+  (
+    | {
+        /**
+         * The agent's directory — its stable identity across re-registration
+         * (ADR 260726-170126). An agent that has never been in a room gets its
+         * author row minted in the same transaction.
+         */
+        agentPath: string;
+        authorId?: never;
+      }
+    | {
+        /**
+         * An existing author's opaque id — how a PERSON rejoins a room they
+         * left. The server accepts it for any author kind; nothing here
+         * mints a new author row the way `agentPath` can.
+         */
+        authorId: string;
+        agentPath?: never;
+      }
+  );
+
+/**
+ * Put an agent — or rejoin a person who left — into a room.
  *
  * It joins **in place** and can read everything already said there. That is the
  * deliberate difference from Slack, which forks a new conversation instead: its
@@ -94,17 +115,25 @@ export interface AddRoomMemberInput {
  * `mention-only` taxes a person with an `@` on every single message, and
  * `always` is agent dominance by construction — so a new arrival answers when
  * it is spoken to and then decays back to quiet.
+ *
+ * **`authorId` is what a Leave's Undo, and a "Rejoin" action on a room you left,
+ * call with** (DOR-1233 follow-up): `AddRoomMemberRequestSchema` and
+ * `RoomService.addMember` never restricted this to agents — only this hook's
+ * input type used to.
  */
 export function useAddRoomMember(): UseMutationResult<RoomRosterEntry, Error, AddRoomMemberInput> {
   const transport = useTransport();
   const invalidate = useRosterInvalidation();
 
   return useMutation({
-    mutationFn: ({ roomId, agentPath, responseMode }: AddRoomMemberInput) =>
-      transport.addRoomMember(roomId, {
-        agentPath,
-        ...(responseMode === undefined ? {} : { responseMode }),
-      }),
+    mutationFn: (input: AddRoomMemberInput) => {
+      const target =
+        'agentPath' in input ? { agentPath: input.agentPath } : { authorId: input.authorId };
+      return transport.addRoomMember(input.roomId, {
+        ...target,
+        ...(input.responseMode === undefined ? {} : { responseMode: input.responseMode }),
+      });
+    },
     onSuccess: (_member, { roomId }) => invalidate(roomId),
     // The shared mutation toast reads this with the server's own sentence after
     // it: "Couldn't add that agent — Only you can change who is in a room".
@@ -120,23 +149,48 @@ export interface RemoveRoomMemberInput {
   authorId: string;
 }
 
+/** How a {@link useRemoveRoomMember} caller wants a failure named in its toast. */
+export interface RemoveRoomMemberOptions {
+  /**
+   * The label the shared mutation toast puts before the server's own sentence
+   * — "Couldn't remove that agent — …" by default. A caller removing the
+   * VIEWER's own membership (leaving) wants its own words here: "Couldn't
+   * remove that agent" is not a sentence about yourself.
+   */
+  errorLabel?: string;
+}
+
 /**
- * Take a member out of a room.
+ * Take a member out of a room — including yourself, which is what leaving IS.
  *
  * Its per-room session binding goes with it, so an agent added back afterwards
  * starts a fresh session rather than resuming the one it had — which is why the
  * caller confirms first. What the agent already said stays in the log; a room
  * that forgets what was said is not a room.
+ *
+ * The wire call is identical whether the target is an agent or the caller's
+ * own id — `DELETE /:id/members/:authorId` neither knows nor cares — so
+ * "leaving" is not a second mutation, only a second `errorLabel`. A room's own
+ * Leave (DOR-1233) is refused with `OWNER_MUST_BE_PRESENT` while two agents
+ * still share it and nobody would be left to witness them (the three-way rule,
+ * ADR 260814-025326), or with `SYSTEM_ROOM` for #team and any other room
+ * DorkOS itself depends on; either way the server's own sentence is what the
+ * shared mutation toast shows (`errorLabel` composed with `error.message`).
+ *
+ * @param options - See {@link RemoveRoomMemberOptions}.
  */
-export function useRemoveRoomMember(): UseMutationResult<void, Error, RemoveRoomMemberInput> {
+export function useRemoveRoomMember(
+  options: RemoveRoomMemberOptions = {}
+): UseMutationResult<void, Error, RemoveRoomMemberInput> {
   const transport = useTransport();
   const invalidate = useRosterInvalidation();
+  const errorLabel = options.errorLabel ?? "Couldn't remove that agent";
 
   return useMutation({
     mutationFn: ({ roomId, authorId }: RemoveRoomMemberInput) =>
       transport.removeRoomMember(roomId, authorId),
     onSuccess: (_void, { roomId }) => invalidate(roomId),
-    meta: { errorLabel: "Couldn't remove that agent" },
+    meta: { errorLabel },
   });
 }
 
