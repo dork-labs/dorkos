@@ -192,6 +192,13 @@ export async function resumeAfterMcpSignin(event: McpSigninConnectedEvent): Prom
       // agent is idle and waiting for it. On a busy session the server's tools
       // reach the agent on its next turn anyway, so a queued copy would be a
       // prompt nobody typed arriving after it stopped being useful.
+      //
+      // That promise is unchanged by DOR-1239, which lets a `'refuse'` caller
+      // through in the window where a finished turn is still closing its stream.
+      // The agent is idle there — the turn has ended, and every window says so —
+      // and no copy is queued: the nudge waits with no row and is dropped, never
+      // deferred, if the stream outlasts the wait bound. So it either lands while
+      // the agent is waiting for it, exactly as intended, or it does not land.
       whenBusy: 'refuse',
       onError: (err) => {
         logger.warn('[mcp-signin-resume] detached turn error', {
