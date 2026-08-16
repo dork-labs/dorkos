@@ -83,7 +83,7 @@ export interface AvatarColorGridProps {
   /** `'auto'` or a preset's hex right after it was picked — renders the momentary checkmark. Omit to skip. */
   justSelectedKey?: string | null;
   /**
-   * Enables `AvatarPickerPopover`'s celebratory chrome — staggered entrance,
+   * Enables `AvatarPickerPanel`'s celebratory chrome — staggered entrance,
    * per-swatch tooltips, and a hover glow. Defaults to `false`: the plain,
    * static grid `IdentityTab`'s settings-form popover uses. Behavior
    * preservation is this branch's contract (DOR-970) — collapsing the two
@@ -106,7 +106,7 @@ const DEFAULT_AUTO_LABEL = 'Select default color';
 /**
  * The color-swatch row shared by every avatar color picker: the
  * auto-derived default plus the fixed {@link COLOR_PRESETS} palette. Was
- * duplicated near-verbatim between `IdentityTab` and `AvatarPickerPopover`
+ * duplicated near-verbatim between `IdentityTab` and `AvatarPickerPanel`
  * before DOR-970 collapsed it to one implementation. `celebratory` gates
  * every piece of chrome that differed between the two originals; layout,
  * selection-ring logic and sizing are identical either way.
@@ -248,7 +248,7 @@ export interface AvatarEmojiGridProps {
   /** The emoji key (`emoji-<char>`) right after it was picked — renders the momentary checkmark. Omit to skip. */
   justSelectedKey?: string | null;
   /**
-   * Enables `AvatarPickerPopover`'s celebratory chrome — staggered entrance
+   * Enables `AvatarPickerPanel`'s celebratory chrome — staggered entrance
    * and hover/tap scale. Defaults to `false`: the plain grid `IdentityTab`
    * uses. See {@link AvatarColorGridProps.celebratory}.
    */
