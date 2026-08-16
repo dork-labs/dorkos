@@ -65,10 +65,19 @@ export async function writeResults(runDir: string, summary: RunSummary): Promise
  * (`packages/evals/README.md`). A flag that only exists in `results.json` cannot
  * carry a rule that people are supposed to act on: nobody opens the JSON to
  * discover a question they did not know to ask.
+ *
+ * A `skipped-wrong-tier` row NEVER shows `quarantined`, even when the case it
+ * skipped declares one: {@link evaluateRunGate} excludes every wrong-tier
+ * result from `attempted` entirely, so it is not in the quarantined COUNT the
+ * footer prints either. A row reading `quarantined:skipped-wrong-tier` beside
+ * a footer reading "0 quarantined" was the same lie the retried/quarantined
+ * fix above exists to prevent, just in the other direction — the row claiming
+ * coverage the footer says nothing provided.
  */
 function statusLabel(result: EvalResult): string {
+  const showsQuarantined = result.quarantined && result.status !== 'skipped-wrong-tier';
   const qualifiers = [
-    ...(result.quarantined ? ['quarantined'] : []),
+    ...(showsQuarantined ? ['quarantined'] : []),
     ...(result.retried ? ['retried'] : []),
   ];
   return [...qualifiers, result.status].join(':');
@@ -306,10 +315,10 @@ function noCasesStartedReason(summary: RunSummary): string {
     );
   }
   return (
-    `This run started none of its ${count} selected case(s): every one of them declares ` +
-    `\`test-mode\` and this run booted ${summary.tier}, which cannot honor a test-mode-only ` +
-    'case — it relies on a deterministic scenario control no real runtime provides. Run them ' +
-    'with `--tier test-mode` instead.'
+    `This run started none of its ${count} selected case(s): every one of them is marked ` +
+    `test-mode-only and this run booted ${summary.tier}, which cannot honor a case that leans ` +
+    'on a deterministic scenario control no real runtime provides. Run them with ' +
+    '`--tier test-mode` instead.'
   );
 }
 

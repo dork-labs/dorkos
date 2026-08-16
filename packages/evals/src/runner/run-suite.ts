@@ -1,7 +1,8 @@
 /**
- * Run a whole suite: select the cases, SKIP the ones whose declared runtime
- * does not match the tier the run booted — in either direction (DOR-1228) —
- * run the rest through {@link runEval} under a shared per-run
+ * Run a whole suite: select the cases, SKIP the ones that cannot run on the
+ * tier the run booted — a case declaring a credentialed runtime on a
+ * `test-mode` run, or a `testModeOnly` case on a credentialed run (DOR-1228)
+ * — run the rest through {@link runEval} under a shared per-run
  * {@link BudgetTracker}, retry the one measured infrastructure signature once
  * (`runner/retry.ts`), skip the remainder once the run budget is spent, and
  * emit `results.json`. Phase 1 runs cases SERIALLY because the
@@ -85,8 +86,7 @@ function skippedResult(
 }
 
 /**
- * Whether this case's declared tier and the tier the run booted are a
- * mismatch — in EITHER direction — so the case must never be attempted.
+ * Whether this case must be skipped on the tier the run booted.
  *
  * UPWARD (the case needs more than the run has): a case that declares a
  * credentialed runtime is about MODEL behaviour — a real agent choosing a
@@ -97,35 +97,39 @@ function skippedResult(
  * `pass` on a test-mode run because a scripted echo obeys no instructions,
  * injected or otherwise.
  *
- * DOWNWARD (the case needs less than the run has, DOR-1228): a case that
- * declares `test-mode` can lean on a mechanism only the deterministic runtime
- * offers — a scenario control (`POST /api/test/scenario`), for instance —
- * with no equivalent on a real runtime. Before this direction was enforced,
- * forcing a suite onto a credentialed tier ran these cases anyway, and both
- * failures hid the real story rather than telling it: `widget-round-trip` hit
- * a genuine `409 SESSION_LOCKED` and `rooms-halt-stops-and-says-so` threw the
- * scenario guard's own "test-mode only" error. Both landed as `error`, which
- * GATES the run, for a case that was never capable of producing a verdict on
- * a tier it did not declare.
+ * DOWNWARD (the case structurally CANNOT run anywhere but `test-mode`,
+ * DOR-1228): merely declaring `runtimeTier: 'test-mode'` is NOT by itself a
+ * reason to skip downward. `widget-round-trip`'s `/ui-action` trigger is
+ * runtime-agnostic by construction and is MEANT to run — and gate — on a
+ * credentialed tier too; skipping it there would remove coverage rather than
+ * a lie. That coverage caught a real bug: DOR-1239 is a genuine
+ * `409 SESSION_LOCKED` a credentialed `widget-round-trip` run can hit (a race
+ * between a widget action and its own seed turn's lock release), and an
+ * earlier version of this fix skipped the case downward on the strength of
+ * its declared tier alone — which would have hidden that race again, not
+ * reported it. Only a case marked {@link EvalCaseMeta.testModeOnly} — one that
+ * leans on a mechanism only `test-mode` offers, with no real-runtime
+ * equivalent at all — skips downward. `rooms-halt-stops-and-says-so` is the
+ * one case that needs it today: it needs a turn that holds still until Stop
+ * interrupts it, which only the `long-turn` scenario control
+ * (`POST /api/test/scenario`) provides deterministically; without the flag it
+ * used to throw its own "test-mode only" error on a forced credentialed run,
+ * landing as `error` and gating the run for a case that was never asked to
+ * run there.
  *
- * So the declared tier is enforced rather than described, symmetrically.
- * Enforced HERE, at selection, rather than inside {@link runEval}: `runEval`
- * is the single-case primitive that unit tests deliberately drive off-tier,
- * and a guard there would make those tests unable to test anything.
- *
- * Only the boundary between `test-mode` and everything else is checked — the
- * two credentialed tiers (`claude-code-cheap` / `real-provider`) are not
- * distinguished from each other, matching how the rest of the runner treats
- * "credentialed" as one bucket today.
+ * So the declared tier is enforced rather than described. Enforced HERE, at
+ * selection, rather than inside {@link runEval}: `runEval` is the single-case
+ * primitive that unit tests deliberately drive off-tier, and a guard there
+ * would make those tests unable to test anything.
  *
  * @param evalCase - The case being selected.
  * @param tier - The tier the run booted on.
  * @returns True when the case must be skipped.
  */
 function tierMismatch(evalCase: EvalCase, tier: RuntimeTier): boolean {
-  const caseIsTestMode = evalCase.runtimeTier === 'test-mode';
-  const runIsTestMode = tier === 'test-mode';
-  return caseIsTestMode !== runIsTestMode;
+  const needsCredentialedTier = tier === 'test-mode' && evalCase.runtimeTier !== 'test-mode';
+  const needsTestMode = tier !== 'test-mode' && (evalCase.testModeOnly ?? false);
+  return needsCredentialedTier || needsTestMode;
 }
 
 /** Generate a filesystem-safe, sortable run id. */

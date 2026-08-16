@@ -88,6 +88,28 @@ describe('formatSummaryTable', () => {
     expect(table).toMatch(/1 quarantined \(0 of them failing\)/);
   });
 
+  it('never shows `quarantined:` on a skipped-wrong-tier row, matching the footer that excludes it (DOR-1228 review, NIT 5)', () => {
+    // The row and the footer disagreed before this: a quarantined credentialed
+    // case skipped downward or upward showed `quarantined:skipped-wrong-tier`
+    // while `evaluateRunGate` (and the footer's quarantined COUNT) excludes
+    // every wrong-tier result entirely — the row claiming quarantined coverage
+    // the footer said was zero.
+    const table = formatSummaryTable(
+      summary([
+        result({ id: 'widget-round-trip', status: 'pass' }),
+        result({
+          id: 'rooms-recall-member-said',
+          status: 'skipped-wrong-tier',
+          quarantined: true,
+          runtimeTier: 'claude-code-cheap',
+        }),
+      ])
+    );
+    expect(table).toContain('skipped-wrong-tier');
+    expect(table).not.toContain('quarantined:skipped-wrong-tier');
+    expect(table).toMatch(/0 quarantined \(0 of them failing\)/);
+  });
+
   it('states how many cases actually gate the run', () => {
     const table = formatSummaryTable(
       summary([

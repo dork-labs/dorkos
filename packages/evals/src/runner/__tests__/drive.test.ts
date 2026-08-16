@@ -531,11 +531,16 @@ describe('driveWidgetAction', () => {
     expect(capturedPost?.headers['x-client-id']).toBeUndefined();
   });
 
-  it('reuses the SAME client id a seed turn used — the re-entrant lock contract run-eval.ts relies on (DOR-1228)', async () => {
+  it('reuses the SAME client id a seed turn used — what run-eval.ts sends, whether or not it is enough (DOR-1228/DOR-1239)', async () => {
     // widget-round-trip's real shape: driveConversation runs the seed turn,
     // then driveWidgetAction fires a second turn on the SAME session with the
-    // SAME client id, so a real runtime's session lock is re-acquired by its
-    // own holder instead of refused as a stranger's (a `409 SESSION_LOCKED`).
+    // SAME client id — matching what a real cockpit client sends. This is NOT
+    // a re-entrant-lock guarantee the way a same-client `/messages` retry gets
+    // from SessionTurnQueue: `/ui-action` opts out of that queue
+    // (`whenBusy: 'refuse'`) and can still 409 even under a matching client id
+    // if it lands before the runtime's stream fully settles (DOR-1239). This
+    // test only pins that the header is sent and matches; it does not (and
+    // cannot, on a fake server) prove the settle-timing race is absent.
     const runtime = new FakeAgentRuntime();
     runtime.withScenarios([
       async function* () {

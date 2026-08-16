@@ -322,13 +322,17 @@ export const roomsBurstCollectsCase: EvalCase = {
  *
  * **Test-mode only, and structurally so.** It needs a turn that is still running
  * when Stop is pressed, which the `long-turn` scenario provides deterministically
- * (`POST /api/test/scenario`). A real model would make the same case a race.
+ * (`POST /api/test/scenario`). A real model would make the same case a race —
+ * hence `testModeOnly: true` (DOR-1228): it skips downward on a credentialed
+ * run (`skipped-wrong-tier`) instead of throwing the scenario guard's own
+ * error below and gating the run for a verdict it could never produce there.
  */
 export const roomsHaltStopsCase: EvalCase = {
   id: 'rooms-halt-stops-and-says-so',
   title: 'Rooms — Stop interrupts a running turn and the room writes one notice',
   prompt: '',
   runtimeTier: 'test-mode',
+  testModeOnly: true,
   costClass: 'free',
   tags: ['rooms'],
   seed: (sandbox) => seedRoomAgents(sandbox, [ADA]),

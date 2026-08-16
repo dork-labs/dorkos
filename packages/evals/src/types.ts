@@ -454,26 +454,46 @@ export const EvalCaseMetaSchema = z.object({
   /**
    * Backend tier — LOAD-BEARING, not a label.
    *
-   * A case's declared tier must match the tier the run booted, or it is
-   * SKIPPED (`skipped-wrong-tier`) rather than attempted on a runtime it was
-   * never designed for. Enforced symmetrically (DOR-1228):
+   * A case declaring a credentialed tier is SKIPPED (`skipped-wrong-tier`) on a
+   * `test-mode` run rather than being run against the deterministic runtime.
+   * Before that skip existed, `--suite <name> --tier test-mode` ran every case
+   * the tag selected and the adversarial-injection case reported `pass` with no
+   * model attached — a green about a security property nothing had exercised,
+   * which is the worst shape a false green can take.
    *
-   * - a case declaring a CREDENTIALED tier is skipped on a `test-mode` run.
-   *   Before this direction existed, `--suite <name> --tier test-mode` ran
-   *   every case the tag selected and the adversarial-injection case reported
-   *   `pass` with no model attached — a green about a security property
-   *   nothing had exercised, the worst shape a false green can take.
-   * - a case declaring `test-mode` is skipped on a credentialed run. Before
-   *   this direction existed, forcing a suite onto a credentialed tier ran
-   *   `widget-round-trip` into a real `409 SESSION_LOCKED` and
-   *   `rooms-halt-stops-and-says-so` into its own scenario-guard throw — both
-   *   surfaced as `error`, which gates the run, for a case that was never
-   *   asked to run there. `widget-round-trip`'s `/ui-action` trigger IS
-   *   runtime-agnostic by construction, and it still runs — correctly —
-   *   whenever a run's tier matches the `test-mode` it declares; the skip
-   *   only stops it from being attempted on a tier it never declared.
+   * The asymmetry is deliberate: a `test-mode` case is NOT skipped on a
+   * credentialed run by declaring `test-mode` alone. `widget-round-trip` is
+   * runtime-agnostic by construction and is MEANT to run on both — its
+   * `/ui-action` trigger needs no model — and skipping it on a credentialed
+   * tier would remove coverage rather than a lie. That coverage is not
+   * decorative: DOR-1239 is a real `409 SESSION_LOCKED` race between a widget
+   * action and its own seed turn's lock release that a credentialed
+   * `widget-round-trip` run is the only thing that can catch, and an earlier
+   * version of this fix skipped it downward and would have hidden that race
+   * again. A case that genuinely CANNOT run on anything but `test-mode` —
+   * because it leans on a mechanism, such as a scenario control, with no
+   * real-runtime equivalent at all — opts into the downward skip explicitly
+   * via {@link EvalCaseMeta.testModeOnly} instead of relying on `runtimeTier`
+   * alone.
    */
   runtimeTier: RuntimeTierSchema,
+  /**
+   * True when this case structurally CANNOT run on anything but `test-mode` —
+   * it drives a mechanism only the deterministic runtime offers, with no
+   * real-runtime equivalent at all, rather than merely being free to run
+   * there. `rooms-halt-stops-and-says-so` is the one case that needs it today
+   * (DOR-1228): it needs a turn that holds still until Stop interrupts it,
+   * which only `POST /api/test/scenario`'s `long-turn` control provides
+   * deterministically — on a real runtime the same case would either throw its
+   * own scenario-guard error or become a timing race, never a verdict.
+   *
+   * Deliberately NOT inferred from `runtimeTier === 'test-mode'`: most
+   * `test-mode` cases (`widget-round-trip`) are runtime-agnostic by
+   * construction and are meant to run — and gate — on a credentialed tier too.
+   * See `runtimeTier`'s doc for why conflating the two hid a real bug
+   * (DOR-1239).
+   */
+  testModeOnly: z.boolean().optional(),
   /** Cost envelope. */
   costClass: CostClassSchema,
   /** Suite membership; `smoke` is the label-gated PR subset. */
@@ -599,12 +619,13 @@ export interface EvalCase extends EvalCaseMeta {
  * - `error` — a runner/infra error (a `409 SESSION_LOCKED`, a boot timeout, a
  *   thrown exception) distinct from a product regression.
  * - `skipped-over-budget` — the per-run budget cap was hit before this eval ran.
- * - `skipped-wrong-tier` — the case's declared tier and the run's booted tier
- *   do not match, in EITHER direction (DOR-1228), so it was never started. See
- *   {@link EvalCaseMeta}'s `runtimeTier`: without this the tier field was
- *   decorative, and a case whose whole subject is model behaviour could report
- *   `pass` with no model attached, or a case that leans on a test-mode-only
- *   mechanism could error on a tier that has no equivalent for it.
+ * - `skipped-wrong-tier` — the case cannot run on the tier the run booted, so
+ *   it was never started, in either direction: it DECLARES a credentialed
+ *   runtime and the run booted `test-mode` (see {@link EvalCaseMeta}'s
+ *   `runtimeTier`), or it is marked {@link EvalCaseMeta.testModeOnly} and the
+ *   run booted a credentialed tier (DOR-1228). A case that merely declares
+ *   `test-mode` without that flag is NOT skipped downward — see
+ *   `runtimeTier`'s doc for why (DOR-1239).
  */
 export const EvalStatusSchema = z.enum([
   'pass',

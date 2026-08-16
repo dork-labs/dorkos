@@ -133,10 +133,15 @@ export interface DriveTurnOptions extends OpenStreamOptions {
   /**
    * Stable client identity for the session lock, sent as `X-Client-Id`. A
    * multi-turn conversation is ONE client, so every turn must present the same
-   * id — the session lock is re-entrant per client (`session-lock.ts`), so a
-   * later turn re-acquires its own lock instead of colliding with the previous
-   * turn's (a `409 SESSION_LOCKED`). Omitted ⇒ the server mints a fresh id per
-   * turn, which is only safe for a single-turn drive.
+   * id. The session write-lock itself is NEVER re-entrant — even the SAME
+   * client is refused a live lock (`session-lock.ts`, DOR-1088). What actually
+   * keeps a later `/messages` turn from colliding with an earlier one is
+   * `SessionTurnQueue` (`trigger-turn.ts`): a second trigger from the same
+   * client WAITS for the first to settle rather than racing its lock, so by the
+   * time it reaches the lock the prior one is already released. That queue is
+   * specific to `/messages` — see {@link DriveWidgetActionOptions.clientId} for
+   * why `/ui-action` gets no equivalent protection. Omitted ⇒ the server mints
+   * a fresh id per turn, which is only safe for a single-turn drive.
    */
   clientId?: string;
 }
@@ -454,9 +459,19 @@ export interface DriveWidgetActionOptions extends OpenStreamOptions {
   /** Project cwd the turn runs in (the sandbox project dir). */
   cwd: string;
   /**
-   * Stable client identity for the session lock, sent as `X-Client-Id`. Pass the
-   * SAME id the preceding prompt turn(s) used so this widget turn re-acquires
-   * their lock rather than colliding with it. See {@link DriveTurnOptions.clientId}.
+   * Stable client identity for the session lock, sent as `X-Client-Id`. Pass
+   * the SAME id the preceding prompt turn(s) used — it is the correct thing to
+   * do, matching what a real cockpit client sends — but unlike `/messages` it
+   * does NOT guarantee this turn avoids a `409 SESSION_LOCKED`.
+   * `POST /ui-action` asks the dispatcher to `whenBusy: 'refuse'` rather than
+   * queue (`session-ui-action-handler.ts`), which opts OUT of
+   * `SessionTurnQueue`'s same-client wait. The refusal check is
+   * `inFlight.has(sessionKey)` with no client-id comparison at all
+   * (`message-dispatcher.ts`), and `inFlight` is cleared only once the
+   * runtime's stream fully settles — LATER than the `turn_end` frame a
+   * `/events` consumer sees. A widget action fired in that window is refused
+   * even from its own turn's client (DOR-1239). See
+   * {@link DriveTurnOptions.clientId}.
    */
   clientId?: string;
 }
@@ -518,10 +533,14 @@ export async function driveConversation(
   let sessionId = opts.sessionId;
   const allFrames: SseFrame[] = [];
   let outcome: TurnOutcome = 'done';
-  // ONE client for the whole conversation: every turn re-acquires the same
-  // re-entrant session lock, so a later turn never 409s against its own earlier
-  // turn (which happens on a real runtime where a turn holds its lock while it
-  // runs). Callers may pin an id to share the lock with a following widget turn.
+  // ONE client for the whole conversation: SessionTurnQueue makes a later
+  // `/messages` trigger from the SAME client WAIT for the earlier one to
+  // settle rather than race its lock (the lock itself is never re-entrant, not
+  // even same-client — DOR-1088), so a later turn never 409s against its own
+  // earlier one. Callers may pin an id to share it with a following widget
+  // turn — matching what a real client sends — though `/ui-action` opts out of
+  // that queue and can still 409 in a settle-timing window (DOR-1239); see
+  // {@link DriveWidgetActionOptions.clientId}.
   const clientId = opts.clientId ?? randomUUID();
 
   for (const prompt of opts.prompts) {
