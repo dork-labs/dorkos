@@ -5,6 +5,7 @@ covers:
   - 'feat(client): the Rooms row and page, on the real roster data (DOR-1252)'
   - "refactor(client): retire the drawer's name from the profile's neighbours (DOR-1252)"
   - 'fix(client): a room reads the way its address is written, and a page needs a row (DOR-1252)'
+  - 'fix(client): profile header names the owner, and the deep-link docs stop calling it a drawer (DOR-1252)'
 ---
 
 ### Changed
