@@ -10,7 +10,7 @@
  *
  * @module features/profile/ui/ProfileDock
  */
-import { useCallback, useEffect, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useAppStore } from '@/layers/shared/model';
 import { useMeshAgentPaths, useMeshMemberId } from '@/layers/entities/mesh';
 import { useTeamRoster } from '@/layers/entities/team';
@@ -23,6 +23,9 @@ import {
   stackMemberId,
   type ProfileStackEntry,
 } from '../model/profile-stack';
+import { hasUnsavedProfileEdits } from '../model/profile-leave-guard';
+import type { ProfileScopeValue } from '../model/profile-scope';
+import { DiscardChangesDialog } from './DiscardChangesDialog';
 import { AgentNotFound, NoAgentSelected, ProfileDockSkeleton } from './ProfileDockStates';
 import { ProfileView } from './ProfileView';
 
@@ -41,6 +44,13 @@ import { ProfileView } from './ProfileView';
  * are shared caches the sidebar and every agent picker already keep warm, and
  * neither is per-agent — so switching sessions resolves the next identity out of
  * data already in hand, with no gap to paint over.
+ *
+ * **Two exits are deliberately not guarded.** Switching agents unmounts an
+ * editor with the route already changed — a question whose only honest answer is
+ * "yes" is a dead affordance, and the panel cannot cancel a navigation somebody
+ * made in the sidebar. And on a phone the overlay unmounts this component as it
+ * closes, so there is nobody left to ask; the page's own ‹ Profile is the
+ * guarded exit there.
  */
 export function ProfileDock() {
   const agentPath = useDockedAgentPath();
@@ -69,6 +79,9 @@ export function ProfileDock() {
   const entries = useDockedEntries(agentPath);
   const setDockedEntries = useProfileStore((s) => s.setDockedEntries);
   const clearDockedStacks = useProfileStore((s) => s.clearDockedStacks);
+  const setRightPanelOpen = useAppStore((s) => s.setRightPanelOpen);
+  /** The panel has been closed over unsaved text, and has not been answered. */
+  const [confirmingClose, setConfirmingClose] = useState(false);
 
   const stack = useMemo(
     () => (display ? profileStack(display.id, [...entries]) : null),
@@ -106,10 +119,22 @@ export function ProfileDock() {
   // panel is still open, which is why the teardown asks). Not armed while the
   // panel is closed, so a deep link that seeded a page and then lost a race
   // with the per-agent layout restore is not wiped before it is ever seen.
+  //
+  // Unless there is unsaved text on a pushed page, in which case closing the
+  // panel is the same discard the page's ‹ Profile and the sheet's close both
+  // stop to ask about — the toggle, Escape, a drag to the edge and ⌘⇧A all
+  // arrive here as one closed panel, so one question covers them.
+  // Read from a ref inside the teardown: the panel it belongs to is whichever
+  // identity was on screen when the close happened, not whatever renders next.
+  const scopeRef = useRef<ProfileScopeValue | null>(null);
+  scopeRef.current = subject === null ? null : { home: 'docked', memberId: subject.id };
+
   useEffect(() => {
     if (!rightPanelOpen) return;
     return () => {
-      if (!useAppStore.getState().rightPanelOpen) clearDockedStacks();
+      if (useAppStore.getState().rightPanelOpen) return;
+      if (hasUnsavedProfileEdits(scopeRef.current)) return setConfirmingClose(true);
+      clearDockedStacks();
     };
   }, [rightPanelOpen, clearDockedStacks]);
 
@@ -134,6 +159,20 @@ export function ProfileDock() {
         stack={stack}
         onPush={handlePush}
         onPop={handlePop}
+      />
+
+      {/* Portalled, so it is asked even though the panel behind it has already
+          collapsed to nothing — "Keep editing" is what puts that right. */}
+      <DiscardChangesDialog
+        open={confirmingClose}
+        onKeep={() => {
+          setConfirmingClose(false);
+          setRightPanelOpen(true);
+        }}
+        onDiscard={() => {
+          setConfirmingClose(false);
+          clearDockedStacks();
+        }}
       />
     </div>
   );

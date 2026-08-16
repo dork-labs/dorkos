@@ -28,8 +28,8 @@ import {
   type ProfileStackState,
 } from '../model/profile-stack';
 import { ProfileActionsMenu } from './ProfileActionsMenu';
+import { ProfileScope } from '../model/profile-scope';
 import { ProfileBackBar } from './ProfileBackBar';
-import { ProfileFaceScope } from './ProfileFace';
 import { ProfileHeader } from './ProfileHeader';
 import { ProfilePage } from './ProfilePage';
 import { ProfileRows } from './ProfileRows';
@@ -164,10 +164,10 @@ export function ProfileView({
       className="group/profile flex min-h-0 flex-1 flex-col"
     >
       {/* Two homes can be on screen at once — the docked profile of the session
-          you are in, and a sheet over it for somebody else. Their faces must not
-          try to become each other, so the shared-layout id is scoped to the
-          home and the identity rather than being one global name. */}
-      <ProfileFaceScope home={home} memberId={member.id}>
+          you are in, and a sheet over it for somebody else. Everything that
+          would otherwise be "the profile" as a global — the face's shared-layout
+          id, the count of unsaved editors — is keyed on this pair instead. */}
+      <ProfileScope home={home} memberId={member.id}>
         <ProfileStack frameKey={frameKey} depth={stack.entries.length}>
           {definition && PageContent ? (
             <ProfilePage member={member} title={definition.title} onBack={onPop}>
@@ -199,7 +199,7 @@ export function ProfileView({
             </div>
           )}
         </ProfileStack>
-      </ProfileFaceScope>
+      </ProfileScope>
     </div>
   );
 }

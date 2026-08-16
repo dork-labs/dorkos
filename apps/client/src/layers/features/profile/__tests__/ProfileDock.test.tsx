@@ -33,7 +33,33 @@ import { TransportProvider, mergeDialogSearch, useAppStore } from '@/layers/shar
 import { TooltipProvider } from '@/layers/shared/ui';
 import { MOCK_TEAM_ROSTER } from '@/dev/mock-samples';
 import { useProfileStore } from '../model/profile-store';
+import { useProfileLeaveGuard } from '../model/profile-leave-guard';
+import { ProfileScope } from '../model/profile-scope';
 import { ProfileDock } from '../ui/ProfileDock';
+
+/**
+ * Stands in for an editor on a pushed page that has text nobody has saved,
+ * inside the panel it belongs to — the guard counts per panel, so an editor
+ * that named no panel would be counted against none.
+ */
+function UnsavedEditor({
+  home = 'docked',
+  memberId = WARDEN,
+}: {
+  home?: 'docked' | 'sheet';
+  memberId?: string;
+}) {
+  return (
+    <ProfileScope home={home} memberId={memberId}>
+      <DirtyEditor />
+    </ProfileScope>
+  );
+}
+
+function DirtyEditor() {
+  useProfileLeaveGuard(true);
+  return null;
+}
 
 const WARDEN_PATH = '/Users/dorian/agents/warden';
 const WARDEN = 'agent-warden';
@@ -76,11 +102,14 @@ function renderDock({
   url = '/session',
   fleet = FLEET,
   pendingFleet = false,
+  unsaved = false,
 }: {
   url?: string;
   fleet?: typeof FLEET;
   /** Leave the path → id read in flight, the one state that is a skeleton. */
   pendingFleet?: boolean;
+  /** Mount an editor holding unsaved text, in the panel named here. */
+  unsaved?: false | { home: 'docked' | 'sheet'; memberId?: string };
 } = {}) {
   const rootRoute = createRootRoute({ component: () => <Outlet /> });
   const makeRoute = (path: string) =>
@@ -112,6 +141,7 @@ function renderDock({
           <TransportProvider transport={transport}>
             <TooltipProvider>
               <ProfileDock />
+              {unsaved && <UnsavedEditor home={unsaved.home} memberId={unsaved.memberId} />}
             </TooltipProvider>
           </TransportProvider>
         </QueryClientProvider>
@@ -283,6 +313,103 @@ describe('the stack, and how long it lasts', () => {
     await waitFor(() =>
       expect(useProfileStore.getState().dockedEntries[WARDEN_PATH] ?? []).toEqual([])
     );
+  });
+});
+
+describe('closing the panel over unsaved text', () => {
+  it('asks before throwing away what is on a pushed page', async () => {
+    useAppStore.setState({ selectedCwd: WARDEN_PATH });
+    useProfileStore.setState({
+      dockedEntries: { [WARDEN_PATH]: [{ kind: 'page', page: 'rooms' }] },
+    });
+    const harness = renderDock({ unsaved: { home: 'docked' } });
+    await harness.ready();
+    expect(await screen.findByRole('heading', { name: 'Rooms' })).toBeInTheDocument();
+
+    // The toggle, Escape, a drag to the edge and ⌘⇧A all arrive as this.
+    useAppStore.getState().setRightPanelOpen(false);
+
+    expect(await screen.findByText('Discard your changes?')).toBeInTheDocument();
+    // And nothing is thrown away while the question is still on screen.
+    expect(useProfileStore.getState().dockedEntries[WARDEN_PATH]).toEqual([
+      { kind: 'page', page: 'rooms' },
+    ]);
+  });
+
+  it('puts the panel back when you keep editing', async () => {
+    useAppStore.setState({ selectedCwd: WARDEN_PATH });
+    useProfileStore.setState({
+      dockedEntries: { [WARDEN_PATH]: [{ kind: 'page', page: 'rooms' }] },
+    });
+    const harness = renderDock({ unsaved: { home: 'docked' } });
+    await harness.ready();
+    expect(await screen.findByRole('heading', { name: 'Rooms' })).toBeInTheDocument();
+    useAppStore.getState().setRightPanelOpen(false);
+    await screen.findByText('Discard your changes?');
+
+    await userEvent.click(screen.getByRole('button', { name: 'Keep editing' }));
+
+    await waitFor(() => expect(useAppStore.getState().rightPanelOpen).toBe(true));
+    expect(useProfileStore.getState().dockedEntries[WARDEN_PATH]).toEqual([
+      { kind: 'page', page: 'rooms' },
+    ]);
+  });
+
+  it('lets the close stand when you discard', async () => {
+    useAppStore.setState({ selectedCwd: WARDEN_PATH });
+    useProfileStore.setState({
+      dockedEntries: { [WARDEN_PATH]: [{ kind: 'page', page: 'rooms' }] },
+    });
+    const harness = renderDock({ unsaved: { home: 'docked' } });
+    await harness.ready();
+    expect(await screen.findByRole('heading', { name: 'Rooms' })).toBeInTheDocument();
+    useAppStore.getState().setRightPanelOpen(false);
+    await screen.findByText('Discard your changes?');
+
+    await userEvent.click(screen.getByRole('button', { name: 'Discard' }));
+
+    await waitFor(() =>
+      expect(useProfileStore.getState().dockedEntries[WARDEN_PATH] ?? []).toEqual([])
+    );
+    expect(useAppStore.getState().rightPanelOpen).toBe(false);
+  });
+
+  it('asks nothing about a sheet’s unsaved text — that is not this panel’s', async () => {
+    // Both homes are on screen at once on `/session`: the docked profile of the
+    // agent you are in, and a sheet over it for somebody else. One global count
+    // let a half-written SOUL.md in the sheet refuse to close the panel, which
+    // is a confirmation about work that is not in the thing you are closing.
+    useAppStore.setState({ selectedCwd: WARDEN_PATH });
+    useProfileStore.setState({
+      dockedEntries: { [WARDEN_PATH]: [{ kind: 'page', page: 'rooms' }] },
+    });
+    const harness = renderDock({ unsaved: { home: 'sheet', memberId: 'person-dorian' } });
+    await harness.ready();
+    expect(await screen.findByRole('heading', { name: 'Rooms' })).toBeInTheDocument();
+
+    useAppStore.getState().setRightPanelOpen(false);
+
+    await waitFor(() =>
+      expect(useProfileStore.getState().dockedEntries[WARDEN_PATH] ?? []).toEqual([])
+    );
+    expect(screen.queryByText('Discard your changes?')).not.toBeInTheDocument();
+  });
+
+  it('asks nothing when there is nothing unsaved', async () => {
+    useAppStore.setState({ selectedCwd: WARDEN_PATH });
+    useProfileStore.setState({
+      dockedEntries: { [WARDEN_PATH]: [{ kind: 'page', page: 'rooms' }] },
+    });
+    const harness = renderDock();
+    await harness.ready();
+    expect(await screen.findByRole('heading', { name: 'Rooms' })).toBeInTheDocument();
+
+    useAppStore.getState().setRightPanelOpen(false);
+
+    await waitFor(() =>
+      expect(useProfileStore.getState().dockedEntries[WARDEN_PATH] ?? []).toEqual([])
+    );
+    expect(screen.queryByText('Discard your changes?')).not.toBeInTheDocument();
   });
 });
 
