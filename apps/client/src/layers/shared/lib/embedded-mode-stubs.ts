@@ -23,7 +23,7 @@ import type {
   McpSigninPollResult,
 } from '@dorkos/shared/transport';
 import type { RecentSessionsResponse, SessionDailyCountsResponse } from '@dorkos/shared/types';
-import type { TeamRosterResponse } from '@dorkos/shared/team-schemas';
+import type { MemberRoomsResponse, TeamRosterResponse } from '@dorkos/shared/team-schemas';
 import type { UnattendedAutonomyState } from '@dorkos/shared/permission-semantics';
 import type {
   ApprovalDecisionResponse,
@@ -1083,6 +1083,20 @@ export const teamStubs = {
       members: [],
       warnings: [{ source: 'team', message: 'No DorkOS server in embedded mode.' }],
     };
+  },
+
+  /**
+   * The rooms a member is in, with no rooms subsystem behind the plugin.
+   *
+   * An empty list rather than a throw, and — unlike the roster above — with no
+   * warning to carry it, because this envelope has nowhere to put one and
+   * inventing a field for the embed would be the wrong place to decide the
+   * shape. It is honest in the only way it can be: the roster it would have
+   * been read for is empty too, so nothing in the embed ever asks this about
+   * somebody it just listed.
+   */
+  async listMemberRooms(): Promise<MemberRoomsResponse> {
+    return { rooms: [] };
   },
 };
 

@@ -2262,6 +2262,10 @@ async function start() {
     '/api/team',
     createTeamRouter({
       authors: roomAuthors,
+      // `GET /api/team/:memberId/rooms` — where one member can be found (spec
+      // `profile-unification` §3.2). The store rather than `RoomService`: this
+      // is two membership reads and no room behaviour.
+      rooms: roomStore,
       ...(meshCore && { meshCore }),
       // What is working RIGHT NOW, from the one map that knows: the room
       // dispatcher's claims. Nothing else on this install can answer it.

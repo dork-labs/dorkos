@@ -136,6 +136,7 @@ import type {
 import type { RoomTransport } from './transport-rooms.js';
 import type { ReadCursor, ReadCursorThreadKind } from './read-cursor-schemas.js';
 import type {
+  MemberRoomsResponse,
   ProfileAvatarResponse,
   ProfileUpdateResponse,
   TeamRosterResponse,
@@ -1962,6 +1963,23 @@ export interface Transport extends RoomTransport {
    * `warnings` is omitted entirely on a clean read, never `[]`.
    */
   getTeamRoster(): Promise<TeamRosterResponse>;
+
+  /**
+   * The rooms one roster member is in — what their profile's Rooms row counts
+   * and its Rooms page lists (spec `profile-unification` §3.2).
+   *
+   * `memberId` is a roster id from {@link getTeamRoster}, whichever kind of
+   * identity it names; the server owns the translation to whatever the rooms
+   * domain stores. Archived rooms are left out and the newest activity comes
+   * first.
+   *
+   * A member who is in no rooms answers `{ rooms: [] }`. Only an id this
+   * install has never heard of rejects (404), so "nowhere yet" and "nobody by
+   * that name" stay distinguishable — a profile draws different words for each.
+   *
+   * @param memberId - The member's roster id.
+   */
+  listMemberRooms(memberId: string): Promise<MemberRoomsResponse>;
 
   // --- The operator's own profile (spec `identity-consistency` §W3.3, §W3.5) ---
 
