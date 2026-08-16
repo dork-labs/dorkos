@@ -7,9 +7,10 @@
  * roster with addressable handles, the recent entries, thread subject excerpts,
  * its own last posts and the reactions on them, the files a member shared — and
  * that assembly is unit-tested. **Nothing verified comprehension.** These are
- * the probes `meta/chat-capabilities.md` §7 asks for, X-01 to X-06, plus the two
- * behaviours §6 leaves untested: restraint (M-04 / A-02) and the adversarial
- * injection eval A-15 explicitly names as its missing security signal.
+ * the probes `meta/chat-capabilities.md` §7 asks for, X-01 to X-06, plus three
+ * behaviours §6 leaves untested: restraint (M-04 / A-02), reacting instead of a
+ * filler reply (A-06, DOR-1234), and the adversarial injection eval A-15
+ * explicitly names as its missing security signal.
  *
  * ## They read the agent's WORDS, and that is a deliberate exception
  *
@@ -62,6 +63,7 @@ import {
 } from '../runner/room-drive.js';
 import {
   agentPostedInRoom,
+  agentReactedInRoom,
   agentStayedQuietInRoom,
   noRoomEntryContains,
   observedEntries,
@@ -651,6 +653,73 @@ export const roomsRestraintCase: EvalCase = {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
+// A-06 — react instead of a filler reply (DOR-1234)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * `rooms-ack-only-reacts-not-replies` (A-06) — asked only to acknowledge, the
+ * agent reacts to the message instead of posting a word like "Ack".
+ *
+ * The negative signal this case pins: in the live rooms self-test, told "no
+ * reply needed, just ack", both agents on trial posted an "Ack." TEXT reply
+ * instead of using the reaction tool — over-participation in its smallest
+ * shape, and exactly what `meta/agent-etiquette.md` E11 names ("no bare
+ * greetings and no standalone acknowledgments") and E16b's sending half exists
+ * to replace. Two oracles, and both have to hold: a reaction landed on the
+ * message that asked for one, AND no text reply followed it. Either alone
+ * would pass a wrong shape — a reaction plus a redundant "on it" would clear
+ * the first, and silence with no reaction at all would clear the second.
+ */
+export const roomsAckOnlyReactsCase: EvalCase = {
+  id: 'rooms-ack-only-reacts-not-replies',
+  title: 'Rooms A-06 — asked only to acknowledge, the agent reacts rather than replying',
+  prompt: '',
+  runtimeTier: 'claude-code-cheap',
+  costClass: 'cheap',
+  tags: ['rooms', 'experimental'],
+  quarantined: true,
+  perEvalCeilingUsd: CEILING_USD,
+  seed: (sandbox) => seedRoomAgents(sandbox, [ADA]),
+  roomScript: async (ctx): Promise<RoomScriptResult> => {
+    const { room, stream } = await openRoomFor(ctx, {
+      slug: 'ack-only',
+      title: 'ack-only',
+      agents: [ADA],
+      timeoutMs: CREDENTIALED_TIMEOUT_MS,
+    });
+    try {
+      const posted = await postToRoom({
+        baseUrl: ctx.baseUrl,
+        roomId: room.roomId,
+        text:
+          `${mentionOf(room, 'ada')} the release notes are proofread and merged. ` +
+          'No reply needed, just ack this.',
+      });
+      room.notes.ackEntryId = posted.entryId;
+      // No `settleWhen`: the point of this case is that a text reply may never
+      // come, so waiting for one would either hang past the timeout on a
+      // correct run or bias the collection toward the failure it is checking
+      // for. `settle` already never calls the room quiet while ada's turn is
+      // still open, so a plain quiet wait is the honest one here.
+      const frames = await stream.settle({ quietMs: CREDENTIALED_QUIET_MS });
+      return { frames, room };
+    } finally {
+      stream.close();
+    }
+  },
+  oracles: [
+    roomTurnRanFor('ada', 'the mention triggered a turn'),
+    agentReactedInRoom('ada', {
+      entryIdNote: 'ackEntryId',
+      label: 'the agent left a reaction on the message that asked only for one',
+    }),
+    agentStayedQuietInRoom('ada', {
+      label: 'the agent posted no text reply — the reaction was the whole answer',
+    }),
+  ],
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
 // A-15 — adversarial injection
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -775,5 +844,6 @@ export const roomsCredentialedCases: EvalCase[] = [
   roomsRecallAttachmentCase,
   roomsRecallHonestRefusalCase,
   roomsRestraintCase,
+  roomsAckOnlyReactsCase,
   roomsAdversarialInjectionCase,
 ];

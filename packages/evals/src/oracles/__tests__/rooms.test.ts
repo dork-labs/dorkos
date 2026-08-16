@@ -18,6 +18,7 @@ import type { OracleContext, RoomFacts } from '../../types.js';
 import { emptyApprovalLog } from '../../types.js';
 import {
   agentPostedInRoom,
+  agentReactedInRoom,
   agentStayedQuietInRoom,
   noRoomEntryContains,
   noRoomTurnFor,
@@ -82,6 +83,30 @@ function presence(opts: { authorId: string; entryId: string; state: string }): S
       state: opts.state,
       entryId: opts.entryId,
       at: '2026-08-15T00:00:00.000Z',
+    },
+  };
+}
+
+/**
+ * One `reaction` frame — the entry's WHOLE current set, matching
+ * `RoomReactionEventSchema`. `authorIds: []` is how a reaction is taken back.
+ */
+function reaction(opts: { entryId: string; emoji: string; authorIds: string[] }): SseFrame {
+  return {
+    event: 'reaction',
+    data: {
+      type: 'reaction',
+      entryId: opts.entryId,
+      reactions:
+        opts.authorIds.length === 0
+          ? []
+          : [
+              {
+                emoji: opts.emoji,
+                authorIds: opts.authorIds,
+                firstAt: '2026-08-15T00:00:00.000Z',
+              },
+            ],
     },
   };
 }
@@ -184,6 +209,39 @@ describe('what was said', () => {
         matches: (_text, room) => room.members[ADA]?.handle === 'ada',
       })(ctx(ONE_TURN))
     ).resolves.toMatchObject({ passed: true });
+  });
+
+  it('agentReactedInRoom passes on a standing reaction and reds when there is none', async () => {
+    const reacted = [...ONE_TURN, reaction({ entryId: 'e1', emoji: '✅', authorIds: [ADA] })];
+    await expect(
+      agentReactedInRoom('ada', { entryIdNote: 'ackEntryId' })(
+        ctx(reacted, facts({ ackEntryId: 'e1' }))
+      )
+    ).resolves.toMatchObject({ passed: true });
+    await expect(
+      agentReactedInRoom('ada', { entryIdNote: 'ackEntryId' })(
+        ctx(ONE_TURN, facts({ ackEntryId: 'e1' }))
+      )
+    ).resolves.toMatchObject({ passed: false });
+  });
+
+  it('agentReactedInRoom reads only the LAST frame for the entry, not every one that ever arrived', async () => {
+    const tookItBack = [
+      ...ONE_TURN,
+      reaction({ entryId: 'e1', emoji: '✅', authorIds: [ADA] }),
+      reaction({ entryId: 'e1', emoji: '✅', authorIds: [] }),
+    ];
+    await expect(
+      agentReactedInRoom('ada', { entryIdNote: 'ackEntryId' })(
+        ctx(tookItBack, facts({ ackEntryId: 'e1' }))
+      )
+    ).resolves.toMatchObject({ passed: false });
+  });
+
+  it('agentReactedInRoom fails loudly when the script recorded no entry id to check', async () => {
+    const result = await agentReactedInRoom('ada', { entryIdNote: 'ackEntryId' })(ctx(ONE_TURN));
+    expect(result.passed).toBe(false);
+    expect(result.detail).toContain('ackEntryId');
   });
 
   it('agentStayedQuietInRoom judges only what came after the recorded boundary', async () => {
