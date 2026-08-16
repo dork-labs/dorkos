@@ -205,7 +205,24 @@ function transportWithTeamRoom() {
     listRooms: vi.fn().mockResolvedValue([{ ...team, unreadCount: 0, participants: null }]),
     getRoom: vi.fn().mockResolvedValue({
       ...team,
-      members: [],
+      // The operator, on their own team room's roster. The composer reads
+      // membership now (DOR-1233) and draws "You left this channel" instead of
+      // a field for a non-member, so an empty roster here would describe a
+      // #team the operator had left — which the server refuses to let happen,
+      // and which would leave the general tour's composer step with nothing to
+      // spotlight for the wrong reason.
+      members: [
+        {
+          roomId: team.id,
+          authorId: 'author-you',
+          responseMode: 'always',
+          joinedAt: team.createdAt,
+          joinedSeq: 0,
+          lastReadSeq: 0,
+          author: { id: 'author-you', kind: 'human', displayName: 'You', handle: null },
+          origin: 'local',
+        },
+      ],
       viewerAuthorId: 'author-you',
       reactionFrequents: [...REACTION_FREQUENTS_DEFAULT],
     }),
