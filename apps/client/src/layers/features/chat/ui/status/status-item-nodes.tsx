@@ -199,19 +199,31 @@ export function buildStatusItemNodes(
     />
   );
 
-  nodes.permission = (
-    <PermissionModeItem
-      mode={status.permissionMode}
-      onChangeMode={input.onChangeMode}
-      disabled={!sessionId}
-      runtime={runtimeChip.runtime}
-      modelSupportsAutoMode={input.modelSupportsAutoMode}
-      planActive={input.plan?.active}
-      compact={compactItems}
-      makeDefault={input.makeDefault}
-      onOpenChange={input.onPermissionPickerOpenChange}
-    />
-  );
+  // A way of working (Plan) holding the session leaves this item with nothing to
+  // report — the trust dial has no stop selected while Plan runs it (spec
+  // `trust-dial`, decision 1, `specs/trust-dial/04-design-decisions.md:13`).
+  // Omitted here rather than built-but-relabeled: `selectPromotedItems` skips a
+  // key with no node before it ever reaches the promotion rule, so leaving this
+  // key absent is what frees its budget slot for `plan` instead of spending it on
+  // an empty chip (DOR-1236). The two rank the same severity
+  // (`PERMISSION_ELEVATED` / `PLAN_ACTIVE`, both 40) and the stable sort in
+  // `applyStatusBudget` breaks ties by registry order, which lists `permission`
+  // first — so a node built-but-empty here would still win the contested slot
+  // and push the one chip that IS news, `plan`, under the `⋯`.
+  if (!input.plan?.active) {
+    nodes.permission = (
+      <PermissionModeItem
+        mode={status.permissionMode}
+        onChangeMode={input.onChangeMode}
+        disabled={!sessionId}
+        runtime={runtimeChip.runtime}
+        modelSupportsAutoMode={input.modelSupportsAutoMode}
+        compact={compactItems}
+        makeDefault={input.makeDefault}
+        onOpenChange={input.onPermissionPickerOpenChange}
+      />
+    );
+  }
 
   if (input.plan) {
     nodes.plan = (
