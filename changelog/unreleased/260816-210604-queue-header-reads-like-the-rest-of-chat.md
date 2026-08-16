@@ -5,4 +5,4 @@ covers:
 
 ### Changed
 
-- The line above your waiting messages now separates the count from what happens next with a dot, the same mark the rest of chat uses, instead of a long dash (DOR-1246)
+- The queued-messages header now uses a dot instead of a long dash, matching the rest of chat (DOR-1246)
