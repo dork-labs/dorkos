@@ -12,6 +12,7 @@ import type { ShapePackageManifest } from '@dorkos/marketplace';
 import { MarketplacePackageManifestSchema } from '@dorkos/marketplace';
 import { ExtensionSecretStore } from '@dorkos/shared/extension-secrets';
 import { configManager } from '../core/config-manager.js';
+import { logConfigWrite } from '../core/operator/config-write.js';
 import type {
   ShapeConfigStoreLike,
   ShapeManifestResolverLike,
@@ -80,6 +81,7 @@ export function createShapeConfigStore(): ShapeConfigStoreLike {
     setActiveShape: (name) => {
       const ui = configManager.get('ui');
       configManager.set('ui', { ...ui, shapes: { ...ui.shapes, active: name } });
+      logConfigWrite('applying a Shape', 'ui', ui, configManager.get('ui'));
     },
   };
 }
@@ -123,6 +125,7 @@ export function getActiveShapeName(): string | null {
 export function clearActiveShape(): void {
   const ui = configManager.get('ui');
   configManager.set('ui', { ...ui, shapes: { ...ui.shapes, active: null } });
+  logConfigWrite('clearing the active Shape', 'ui', ui, configManager.get('ui'));
 }
 
 /**

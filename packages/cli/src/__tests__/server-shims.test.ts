@@ -54,8 +54,11 @@ function walkAll(dir: string): string[] {
  *
  * The `../server/services/` arm applies the same rewrite as
  * `serverServicesRedirectPlugin` — depth-insensitive, `.js` swapped for `.ts`.
- * `../server/index.js` is the one specifier esbuild leaves external; at runtime
- * it is the sibling bundle of `apps/server/src/index.ts`.
+ * Everything else lands on `apps/server/src/<remainder>`, which is right for
+ * both of the remaining cases: `../server/lib/` is redirected by that same
+ * plugin, and `../server/index.js` is the one specifier esbuild leaves
+ * external, where at runtime it is the sibling bundle of
+ * `apps/server/src/index.ts`.
  *
  * @returns Map from shim path (relative to `packages/cli/server/`) to the
  *   repo-relative server source it must re-export.

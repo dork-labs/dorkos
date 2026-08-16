@@ -129,10 +129,19 @@ function dorkosSourcePlugin(): Plugin {
 }
 
 /**
- * esbuild plugin that redirects the CLI entry's `../server/services/*` imports
- * to the server source tree. Those specifiers only exist relative to the
- * compiled dist layout (`dist/bin/` next to `dist/server/`), so during bundling
- * they must point at `apps/server/src/services/*`. CLI bundle only.
+ * esbuild plugin that redirects the CLI entry's `../server/services/*` and
+ * `../server/lib/*` imports to the server source tree. Those specifiers only
+ * exist relative to the compiled dist layout (`dist/bin/` next to
+ * `dist/server/`), so during bundling they must point at
+ * `apps/server/src/{services,lib}/*`. CLI bundle only.
+ *
+ * `lib/` joined `services/` when `dorkos config set` started writing the config
+ * audit line (DOR-1247): the line goes through the server's own logger, so the
+ * CLI has to call `lib/logger.js`'s `initLogger` to point it at the same
+ * `~/.dork/logs/dorkos.log` the server writes. Anything else under
+ * `apps/server/src` is still unreachable, which is deliberate — the CLI reaches
+ * for narrow, side-effect-free modules, not for the server's composition root
+ * (`../server/index.js` stays external and is the whole server).
  *
  * tsc needs the same rewrite and cannot reuse this plugin, so
  * `packages/cli/server/**.d.ts` mirrors it in declarations. Change the mapping
@@ -146,11 +155,11 @@ function serverServicesRedirectPlugin(): Plugin {
   return {
     name: 'redirect-server-services',
     setup(build) {
-      build.onResolve({ filter: /\.\.\/server\/services\// }, (args) => {
-        const match = args.path.match(/\.\.\/server\/services\/(.+)/);
+      build.onResolve({ filter: /\.\.\/server\/(services|lib)\// }, (args) => {
+        const match = args.path.match(/\.\.\/server\/((?:services|lib)\/.+)/);
         if (!match) return undefined;
         const relativePath = match[1].replace(/\.js$/, '.ts');
-        return { path: path.join(ROOT, 'apps/server/src/services', relativePath) };
+        return { path: path.join(ROOT, 'apps/server/src', relativePath) };
       });
     },
   };

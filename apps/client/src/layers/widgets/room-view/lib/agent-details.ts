@@ -13,7 +13,7 @@
  * @module widgets/room-view/lib/agent-details
  */
 import { agentAuthorRef } from '@dorkos/shared/room-schemas';
-import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
+import type { AgentManifest, AgentPathEntry } from '@dorkos/shared/mesh-schemas';
 import { resolveAgentVisual, type AgentVisual } from '@/layers/shared/lib';
 import { formatRuntimeIdentity } from '@/layers/entities/runtime';
 
@@ -27,26 +27,43 @@ import { formatRuntimeIdentity } from '@/layers/entities/runtime';
  */
 export interface RosterAgentInfo {
   /**
-   * The id the TEAM roster files this agent under — its manifest ULID.
+   * The id the TEAM roster files this agent under — **the id the MESH REGISTRY
+   * holds, and never the id written inside the agent's own manifest.**
    *
-   * The room and the roster do not share an id space for agents, and this is
-   * the only bridge between them. A room entry stores an AUTHOR id, and an
-   * agent's author row is a different ULID from its manifest (they are joined
-   * server-side on `mintedForManifestId`); the roster's agent rows are keyed by
-   * the manifest id. So a mention pill that wants to open a profile cannot use
-   * the id it already has — it has to come through here, off the same manifest
-   * the runtime label does.
+   * Three id spaces meet on one agent, and only two of them are usually equal:
+   *
+   * | id | where it lives | what it is for |
+   * | -- | -------------- | -------------- |
+   * | author ULID | the room's roster (`AuthorRef.id`) | who spoke in this room |
+   * | registry id | `GET /api/mesh/agents/paths` | **the roster's key, so the profile's address** |
+   * | manifest id | `.dork/agent.json` on disk | the agent's own record of itself |
+   *
+   * `GET /api/team` builds its agent rows straight off the registry
+   * (`routes/team.ts` → `mesh.listWithHealth()` → `agentRow`'s `id: agent.id`),
+   * so the registry id IS the roster id by construction. The manifest's own id
+   * merely *usually* agrees: a directory re-registered after its manifest was
+   * rewritten keeps the registry row it already had, and on one real machine 3
+   * of 44 rows diverged. Opening `?profile=<manifest id>` for one of those
+   * resolves to no roster row at all, and the drawer closes itself — a dead
+   * click that looks exactly like a working one until you try it.
+   *
+   * So this field is populated from the mesh entry, not from the manifest, and
+   * the two are deliberately not interchangeable here. See `useMeshMemberIds`,
+   * which makes the same join for the sidebar and states the same rule.
    */
-  manifestId: string;
+  memberId: string;
   /**
    * The agent's face, resolved the way every other surface resolves it.
    *
-   * `resolveAgentVisual` on the MANIFEST, so the emoji is hashed from the
-   * manifest id — the same id the sidebar, the team roster and the member sheet
-   * hash. That is the whole reason a room's faces have to come through here
-   * rather than off the roster: a room entry carries an AUTHOR id, a different
-   * ULID entirely, and hashing that would draw a confident face matching
-   * nothing else on screen.
+   * `resolveAgentVisual` on the MANIFEST — and, unlike {@link
+   * RosterAgentInfo.memberId} above, that is correct: the face is hashed from
+   * whatever id the sidebar and the message gutter hash, which is the manifest's.
+   * The two fields read from different sources ON PURPOSE. One answers "where
+   * does pressing this go", the other "what does this look like", and the
+   * surfaces they have to match are different surfaces.
+   *
+   * Never the path: `resolveAgentVisual({ id: path })` would hash a directory
+   * and land on a face nothing else in the cockpit draws.
    */
   visual: AgentVisual;
   /** Runtime display label, e.g. `'Claude Code'`. */
@@ -69,27 +86,35 @@ export interface RosterAgentInfo {
  * nobody has. Same for the model half: absent means "inherits", and the label
  * is left off instead of guessing which default applies.
  *
- * @param paths - The project directories of every registered agent, from mesh.
+ * **It takes the registry ENTRIES, not just their paths, and that is the whole
+ * reason this signature changed.** The paths were all this needed to reach the
+ * manifests, so the entry's `id` — the one the team roster is keyed by — used to
+ * be dropped on the floor here and reconstructed from the manifest, which is a
+ * different id space (see {@link RosterAgentInfo.memberId}). Taking the entries
+ * whole means the honest id is already in hand at the moment the row is built.
+ *
+ * @param entries - Every registered agent as the mesh lists it, carrying both
+ *   its registry id and its project directory.
  * @param manifests - Manifests keyed by that same path, as `resolveAgents`
  *   returns them; a `null` value is a path that resolved to no agent.
  * @returns `agentRef` → what this room knows about that agent, for every path
  *   that resolved.
  */
 export function agentInfoByRef(
-  paths: readonly string[],
+  entries: readonly AgentPathEntry[],
   manifests: Readonly<Record<string, AgentManifest | null>>
 ): Map<string, RosterAgentInfo> {
   const byRef = new Map<string, RosterAgentInfo>();
-  for (const path of paths) {
-    const manifest = manifests[path];
+  for (const entry of entries) {
+    const manifest = manifests[entry.projectPath];
     if (!manifest) continue;
     // The same formatter the status chip and the session list use, so an agent
     // reads as the same runtime and model everywhere it appears.
     const identity = formatRuntimeIdentity({ runtime: manifest.runtime, model: manifest.model });
-    byRef.set(agentAuthorRef(path), {
-      manifestId: manifest.id,
-      // The manifest, never the path: `resolveAgentVisual({ id: path })` would
-      // hash a directory and land somewhere the sidebar never lands.
+    byRef.set(agentAuthorRef(entry.projectPath), {
+      // The REGISTRY's id, not `manifest.id` — the line above is where a dead
+      // profile link came from. See the field's own doc.
+      memberId: entry.id,
       visual: resolveAgentVisual(manifest),
       runtime: identity.label,
       ...(identity.modelLabel !== null && { model: identity.modelLabel }),

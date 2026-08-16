@@ -19,6 +19,7 @@
  * @module services/core/auth/cloud-link
  */
 import { configManager } from '../config-manager.js';
+import { logConfigWrite } from '../operator/config-write.js';
 import { logger, logError } from '../../../lib/logger.js';
 import { env } from '../../../env.js';
 import { resolveDorkHome } from '../../../lib/dork-home.js';
@@ -82,8 +83,9 @@ function defaultConfigPort(): CloudConfigPort {
       const current = configManager.get('cloud');
       // `cloud.instanceToken` is registered in SENSITIVE_CONFIG_KEYS; the write
       // path mirrors how `tunnel.authtoken` is stored (whole-section set). The
-      // token value is never logged.
+      // token value is never logged — `logConfigWrite` names paths only.
       configManager.set('cloud', { ...current, instanceToken, instanceName });
+      logConfigWrite('the account link', 'cloud', current, configManager.get('cloud'));
     },
     setAccountLabel: (label) => {
       // The heartbeat reports the owning account's label; persist it so
@@ -92,13 +94,17 @@ function defaultConfigPort(): CloudConfigPort {
       const current = configManager.get('cloud');
       if ((current?.linkedAccountLabel ?? null) === label) return;
       configManager.set('cloud', { ...current, linkedAccountLabel: label });
+      logConfigWrite('the account link', 'cloud', current, configManager.get('cloud'));
     },
-    clear: () =>
+    clear: () => {
+      const current = configManager.get('cloud');
       configManager.set('cloud', {
         instanceToken: null,
         instanceName: null,
         linkedAccountLabel: null,
-      }),
+      });
+      logConfigWrite('unlinking this instance', 'cloud', current, configManager.get('cloud'));
+    },
   };
 }
 

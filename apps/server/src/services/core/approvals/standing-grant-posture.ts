@@ -26,11 +26,19 @@
  * ## `PATCH /api/config` is NOT the only write path
  *
  * `dorkos config set approvals.standingGrants false` and `dorkos config reset`
- * write `~/.dork/config.json` through `ConfigStore.setDot` and `ConfigStore.reset`
- * (`packages/cli/src/config-commands.ts`), out of process, and reach nothing in
- * this module. The capability surface genuinely cannot write these (both leaves are
- * `operator-only`); the CLI can, and deliberately, because it has to work with no
- * server running.
+ * write `~/.dork/config.json` OUT OF PROCESS (`packages/cli/src/config-commands.ts`)
+ * and reach nothing in this module. The capability surface genuinely cannot write
+ * these (both leaves are `operator-only`); the CLI can, and deliberately, because
+ * it has to work with no server running.
+ *
+ * Since DOR-1247, `config set` does go through the shared guarded write
+ * (`operator/config-write.ts`) rather than straight to `ConfigManager.setDot`, so
+ * it now runs the same policy and leaves the same audit line as the cockpit. That
+ * changed nothing here: `LOCAL_OPERATOR_AUTHORITY` deliberately clears the login
+ * bar precisely so the protective direction — switching this OFF — keeps working
+ * with no server up, and the guarded write still runs in the CLI's process, where
+ * the store below does not exist. `config reset` is the one that still writes
+ * directly, and it can only move settings to their shipped defaults.
  *
  * So the functions here cover only the writes this process performs. Two more
  * things cover the rest, and it takes all three:

@@ -23,6 +23,7 @@ import { ExtensionServerLifecycle } from './extension-server-lifecycle.js';
 import { testClientExtension, testServerCompilation } from './extension-test-harness.js';
 import { scaffoldExtension, buildCreateResult } from './extension-scaffolder.js';
 import { configManager } from '../core/config-manager.js';
+import { logConfigWrite } from '../core/operator/config-write.js';
 import type { ExtensionTemplate } from './extension-templates.js';
 import {
   toPublic,
@@ -258,8 +259,15 @@ export class ExtensionManager {
     if (ok) {
       // Route through the deviation-list resolver so the correct list is
       // mutated (default-on core → `disabled`; everything else → `enabled`).
-      const next = setEnabled(id, true, configManager.get('extensions'), this.coreExtensions);
+      const before = configManager.get('extensions');
+      const next = setEnabled(id, true, before, this.coreExtensions);
       configManager.set('extensions', next);
+      logConfigWrite(
+        'the extensions manager',
+        'extensions',
+        before,
+        configManager.get('extensions')
+      );
 
       if (record.hasServerEntry || record.hasDataProxy) {
         const serverResult = await this.serverLifecycle.initialize(id, record);
@@ -291,8 +299,10 @@ export class ExtensionManager {
     await this.serverLifecycle.shutdown(id);
 
     // Route through the deviation-list resolver so the correct list is mutated.
-    const next = setEnabled(id, false, configManager.get('extensions'), this.coreExtensions);
+    const before = configManager.get('extensions');
+    const next = setEnabled(id, false, before, this.coreExtensions);
     configManager.set('extensions', next);
+    logConfigWrite('the extensions manager', 'extensions', before, configManager.get('extensions'));
 
     record.status = 'disabled';
     record.bundleReady = false;
@@ -330,6 +340,12 @@ export class ExtensionManager {
         ...extensions,
         approvedToRun: [...extensions.approvedToRun, id],
       });
+      logConfigWrite(
+        'approving an extension to run',
+        'extensions',
+        extensions,
+        configManager.get('extensions')
+      );
     }
 
     if (this.needsServer(record)) {
@@ -386,6 +402,12 @@ export class ExtensionManager {
         ...extensions,
         approvedToRun: extensions.approvedToRun.filter((eid) => eid !== id),
       });
+      logConfigWrite(
+        'withdrawing an extension run approval',
+        'extensions',
+        extensions,
+        configManager.get('extensions')
+      );
       logger.info(`[Extensions] Forgot the run approval for ${id} — its code is being replaced`);
     }
 

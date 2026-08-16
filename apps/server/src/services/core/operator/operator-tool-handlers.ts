@@ -20,13 +20,8 @@ import type { McpToolDeps } from '../../runtimes/claude-code/mcp-tools/types.js'
 import { validateBoundaryOrDorkHome, BoundaryError } from '../../../lib/boundary.js';
 import { SERVER_VERSION } from '../../../lib/version.js';
 import { updateAgentManifest, AgentUpdateError } from './agent-updater.js';
-import { applyConfigPatch, sanitizedConfigSnapshot } from './config-patch.js';
-import {
-  findOperatorOnlyPaths,
-  describeOperatorOnlyRefusal,
-  OPERATOR_ONLY_CONFIG_CODE,
-  OPERATOR_ONLY_CONFIG_ERROR,
-} from './config-write-policy.js';
+import { sanitizedConfigSnapshot } from './config-patch.js';
+import { applyGuardedConfigWrite, OPERATOR_TOOL_AUTHORITY } from './config-write.js';
 import { getLatestVersion } from '../update-checker.js';
 import { listRecentSessions } from '../../session/index.js';
 
@@ -187,19 +182,19 @@ export function createConfigGetHandler() {
 }
 
 /**
- * `config_patch` — deep-merge a partial config and persist it through the shared
- * {@link applyConfigPatch} service (the same Zod-validated path as
- * `PATCH /api/config`). A user-settings mutation: the tool description flags
- * that it requires explicit user intent.
+ * `config_patch` — deep-merge a partial config and persist it through
+ * {@link applyGuardedConfigWrite}, the same guarded step `PATCH /api/config` and
+ * `dorkos config set` go through. A user-settings mutation: the tool description
+ * flags that it requires explicit user intent.
  *
- * Posture-bearing settings are refused here, before anything is written. This is
- * the AGENT surface: tier `act` means no approval is asked, so leaving the patch
+ * Posture-bearing settings are refused before anything is written. This is the
+ * AGENT surface: tier `act` means no approval is asked, so leaving the patch
  * unbounded let an agent turn off login, which is the one setting the destructive
- * approval gate depends on. The guard lives at this layer, not inside
- * {@link applyConfigPatch}, because the cockpit's own enable-login and
- * disable-login flows go through that shared function via `PATCH /api/config` and
- * must keep working. See `config-write-policy.ts` for the classification and its
- * reasoning.
+ * approval gate depends on. The refusal comes from
+ * {@link OPERATOR_TOOL_AUTHORITY} rather than living inside `applyConfigPatch`,
+ * because the cockpit's own enable-login and disable-login flows go through that
+ * shared function via `PATCH /api/config` and must keep working. See
+ * `config-write-policy.ts` for the classification and its reasoning.
  *
  * A patch that touches even one operator-only path is refused whole: no partial
  * write, so an agent cannot smuggle a posture change in behind a legitimate one.
@@ -208,25 +203,20 @@ export function createConfigGetHandler() {
  */
 export function createConfigPatchHandler() {
   return async (args: { patch?: Record<string, unknown> }): Promise<OperatorToolResult> => {
-    const operatorOnly = findOperatorOnlyPaths(args.patch);
-    if (operatorOnly.length > 0) {
-      return jsonResult(
-        {
-          error: OPERATOR_ONLY_CONFIG_ERROR,
-          code: OPERATOR_ONLY_CONFIG_CODE,
-          paths: operatorOnly,
-          message: describeOperatorOnlyRefusal(operatorOnly),
-        },
-        true
-      );
-    }
-
-    const result = applyConfigPatch(args.patch);
+    const result = applyGuardedConfigWrite({
+      patch: args.patch,
+      authority: OPERATOR_TOOL_AUTHORITY,
+      source: 'the config_patch tool',
+    });
     if (!result.ok) {
-      return jsonResult(
-        { error: result.error, ...(result.details ? { details: result.details } : {}) },
-        true
-      );
+      if (result.kind === 'invalid') {
+        return jsonResult(
+          { error: result.error, ...(result.details ? { details: result.details } : {}) },
+          true
+        );
+      }
+      const { error, code, paths, message } = result.refusal;
+      return jsonResult({ error, code, paths, message }, true);
     }
     // Echo the redacted post-write snapshot — never the raw config, which
     // would leak secrets into the model context and the persisted transcript.

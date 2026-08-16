@@ -9,15 +9,16 @@
  *
  * @module widgets/room-view/ui/RoomEntryRow
  */
-import { useId, useMemo, useRef, useState } from 'react';
+import { useCallback, useId, useMemo, useRef, useState } from 'react';
 import {
+  useProfileDeepLink,
   type FeedPosition,
   type MessageGrouping,
   type MessageAuthor,
   type LongPressState,
 } from '@/layers/shared/model';
 import { cn } from '@/layers/shared/lib';
-import type { RoomEntry } from '@/layers/entities/room';
+import { profileMemberIdOf, type RoomEntry } from '@/layers/entities/room';
 import { messageItem } from '@/layers/features/chat';
 import {
   EntryActionMenu,
@@ -30,6 +31,7 @@ import { entryRowArticleProps } from '../lib/entry-row-article';
 import { entrySummary } from '../lib/entry-summary';
 import { formatAbsoluteTime, formatTime } from '../lib/entry-time';
 import type { RosterAuthor } from '../lib/room-timeline';
+import { useAgentInfo } from '../model/agent-info-context';
 import { useEntryReactions } from '../model/use-entry-reactions';
 import { useEntryRowKeys } from '../model/use-entry-row-keys';
 import { RoomEntryActions } from './RoomEntryActions';
@@ -188,7 +190,7 @@ export function RoomEntryRow({
   const rowRef = useRef<HTMLDivElement>(null);
   const barRef = useRef<EntryActionBarHandle>(null);
   const pillsRef = useRef<RovingGroupHandle>(null);
-  const actions = useEntryActions({ roomId, entry, author: authorRef, viewerAuthorId });
+
   // How the touch press is going, so the message can give under the finger
   // (design record §5.6). Idle on a pointer device, which never reports one.
   const [press, setPress] = useState<LongPressState | null>(null);
@@ -198,6 +200,32 @@ export function RoomEntryRow({
     viewerAuthorId,
     reactionFrequents,
     streamStalled,
+  });
+  // Where this row's own face leads, in ROSTER ids — the same two-space join a
+  // mention pill in the body makes, and made in the same place for the same
+  // reason: the row is the part that holds both the roster author and the fleet
+  // answer. An author who has left the room, the room's own voice, and an agent
+  // the fleet could not name all resolve to `undefined`, and the gutter draws
+  // plain art rather than a control that opens an empty profile.
+  const authorAgent = useAgentInfo(authorRef?.agentRef);
+  const { open: openProfile } = useProfileDeepLink();
+  const profileMemberId =
+    authorRef === undefined ? undefined : profileMemberIdOf(authorRef, authorAgent?.memberId);
+  // Stable across renders, because the action set memoises on it: a fresh
+  // closure each pass would rebuild every message's capsule on every render of
+  // the feed.
+  const openAuthorProfile = useCallback(() => {
+    if (profileMemberId !== undefined) openProfile(profileMemberId);
+  }, [openProfile, profileMemberId]);
+  const viewAuthorProfile = profileMemberId === undefined ? undefined : openAuthorProfile;
+  // The capsule carries the same destination as the face, which is what lets the
+  // face stay out of the tab order — see `EntryActionsInput.onViewProfile`.
+  const actions = useEntryActions({
+    roomId,
+    entry,
+    author: authorRef,
+    viewerAuthorId,
+    onViewProfile: viewAuthorProfile,
   });
   const handleKeyDown = useEntryRowKeys({
     barRef,
@@ -291,6 +319,8 @@ export function RoomEntryRow({
           createdAt={entry.createdAt}
           time={time}
           absoluteTime={absoluteTime}
+          onViewProfile={viewAuthorProfile}
+          isSelf={entry.authorId === viewerAuthorId}
           className={styles.gutter()}
           timestampClassName={styles.avatarTimestamp()}
         />

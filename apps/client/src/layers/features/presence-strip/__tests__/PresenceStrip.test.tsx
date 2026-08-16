@@ -44,6 +44,7 @@ function row(overrides: Partial<PresenceRow> = {}): PresenceRow {
     runtime: 'claude-code',
     line: 'tangerines · replying in #release-train',
     detail: 'replying in #release-train',
+    profileMemberId: '01JTANGERINESMANIFESTUL',
     follow: { kind: 'room', roomId: 'room-1' },
     ...overrides,
   };

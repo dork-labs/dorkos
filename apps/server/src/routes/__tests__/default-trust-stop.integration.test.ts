@@ -259,14 +259,18 @@ describe('a standing Full-autonomy default, end to end', () => {
 
     /** The one line this feature exists to write. */
     function patchedLine(lines: string[]): string | undefined {
-      return lines.find((line) => line.startsWith('[Config] Patched:'));
+      return lines.find((line) => line.startsWith('[Config] Patched by'));
     }
 
-    it('names the operator-only leaf that moved, at info', async () => {
+    it('names the operator-only leaf that moved, and the door it came through', async () => {
       // DOR-1237 in one assertion. `runtimes.claudeCode.defaultTrustStop` moved
       // twice on a real install with nothing on disk that could name the write:
       // the line was `debug`, which a production install never writes, and it
       // named only the section. Both halves are fixed here.
+      //
+      // The line names the DOOR as well (DOR-1247), because the same question —
+      // what wrote it? — has three possible answers now that `dorkos config set`
+      // and the `config_patch` tool write the same line through the same step.
       const lines = await infoLines(() =>
         request(app)
           .patch('/api/config')
@@ -274,7 +278,9 @@ describe('a standing Full-autonomy default, end to end', () => {
           .expect(200)
       );
 
-      expect(patchedLine(lines)).toBe('[Config] Patched: runtimes.claudeCode.defaultTrustStop');
+      expect(patchedLine(lines)).toBe(
+        '[Config] Patched by PATCH /api/config: runtimes.claudeCode.defaultTrustStop'
+      );
     });
 
     it('names the leaves the SERVER demoted, not just the ones asked for', async () => {
@@ -298,7 +304,7 @@ describe('a standing Full-autonomy default, end to end', () => {
       );
 
       expect(patchedLine(lines)).toBe(
-        '[Config] Patched: runtimes.defaultTrustStop, ui.autonomyAcknowledgedAt'
+        '[Config] Patched by PATCH /api/config: runtimes.defaultTrustStop, ui.autonomyAcknowledgedAt'
       );
     });
 
@@ -313,7 +319,7 @@ describe('a standing Full-autonomy default, end to end', () => {
           .expect(200)
       );
 
-      expect(patchedLine(lines)).toBe('[Config] Patched: mcp.apiKey');
+      expect(patchedLine(lines)).toBe('[Config] Patched by PATCH /api/config: mcp.apiKey');
       expect(lines.join('\n')).not.toContain('sk-do-not-log-me-4242');
     });
 
@@ -356,9 +362,10 @@ describe('a standing Full-autonomy default, end to end', () => {
       // Reproduced against this route during review. `ui.shapes.agentDefaults`
       // is a `z.record`, so its keys are whatever the caller typed, and it is
       // `agent-writable` — the route's agent bar never applies. A key carrying
-      // a newline and a counterfeit `[Config] Patched: …` line wrote a perfect
+      // a newline and a counterfeit `[Config] Patched by …` line wrote a perfect
       // fake of the record this feature exists to make trustworthy.
-      const forged = 'proj\n[info] [Config] Patched: runtimes.claudeCode.defaultTrustStop';
+      const forged =
+        'proj\n[info] [Config] Patched by PATCH /api/config: runtimes.claudeCode.defaultTrustStop';
 
       const lines = await infoLines(() =>
         request(app)
@@ -374,7 +381,7 @@ describe('a standing Full-autonomy default, end to end', () => {
       expect(line).not.toContain('\n');
       expect(line).toContain('ui.shapes.agentDefaults.');
       expect(line).toContain('\\n');
-      expect(lines.filter((l) => l.startsWith('[Config] Patched:'))).toHaveLength(1);
+      expect(lines.filter((l) => l.startsWith('[Config] Patched by'))).toHaveLength(1);
     });
   });
 });

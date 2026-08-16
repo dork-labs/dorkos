@@ -104,6 +104,12 @@ interface PermissionModeItemProps {
  * same fact is gone, so this is the signal). Everything about *changing* it is
  * in {@link TrustDial}, one popover away.
  *
+ * While a way of working (Plan) holds the session, this item has no trust stop
+ * to report — see the caller (`status-item-nodes.tsx`), which omits it from the
+ * line entirely rather than have it repeat the composer's dedicated Plan switch
+ * (DOR-1236, spec `trust-dial` decision 1). This component stays simple: it
+ * shows whatever mode it is given, in the runtime's own words.
+ *
  * When `caps.permissionModes.supported === false`, the whole item is hidden.
  */
 export function PermissionModeItem({

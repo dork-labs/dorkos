@@ -17,6 +17,7 @@ import {
 } from '@dorkos/shared/room-schemas';
 import type { AgentVisual } from '@/layers/shared/lib';
 import {
+  profileMemberIdOf,
   useLoadedRoomEntries,
   useRoom,
   useRoomPresence,
@@ -24,6 +25,7 @@ import {
   type RoomPresenceAuthor,
 } from '@/layers/entities/room';
 import { useEngagedWindow } from '@/layers/entities/config';
+import { useMeshMemberIds } from '@/layers/entities/mesh';
 import type { AgentRoster } from '@/layers/entities/agent';
 import { useAgentPickerCandidates } from './use-agent-picker-candidates';
 
@@ -69,6 +71,19 @@ export interface RoomDetailsView {
    * both, so the mapping is built here rather than guessed anywhere else.
    */
   agentPathOf: (member: RoomRosterEntry) => string | null;
+  /**
+   * The id the TEAM roster files a member under — what `?profile=` opens — or
+   * `undefined` when nothing here can say.
+   *
+   * A person's roster row IS their author row, so their id passes straight
+   * through. An agent's does not: the roster keys agents by the id the mesh
+   * registered, and this sheet holds only the author ULID minted for it in this
+   * room. The bridge is the fleet read already in hand — directory first
+   * ({@link RoomDetailsView.agentPathOf}), then the mesh's own id for it — so an
+   * agent this client cannot place yields `undefined` and its row stays plain
+   * text rather than a control that opens an empty profile.
+   */
+  profileMemberIdOf: (member: RoomRosterEntry) => string | undefined;
   /** When each author last posted, as far as the loaded page can say. */
   lastSpokeByAuthor: ReadonlyMap<string, string>;
   /** Who is working, when this client is being told at all. */
@@ -161,6 +176,19 @@ export function useRoomDetailsView(roomId: string, open: boolean): RoomDetailsVi
     };
   }, [agents.candidates]);
 
+  // The one join that reaches the roster's id space, shared with the sidebar
+  // face and the Team card — deliberately the MESH's id and not the on-disk
+  // manifest's, because `GET /api/team` builds its agent rows from the same
+  // registry (see `useMeshMemberIds`).
+  const memberIdByPath = useMeshMemberIds();
+  const profileMemberId = useCallback(
+    (member: RoomRosterEntry): string | undefined => {
+      const path = agentPathOf(member);
+      return profileMemberIdOf(member.author, path === null ? undefined : memberIdByPath.get(path));
+    },
+    [agentPathOf, memberIdByPath]
+  );
+
   const participants = useMemo(() => room?.members.map((member) => member.author) ?? null, [room]);
 
   /**
@@ -207,6 +235,7 @@ export function useRoomDetailsView(roomId: string, open: boolean): RoomDetailsVi
     facesByRef,
     isAlreadyIn,
     agentPathOf,
+    profileMemberIdOf: profileMemberId,
     lastSpokeByAuthor,
     working,
     engagedWindow,

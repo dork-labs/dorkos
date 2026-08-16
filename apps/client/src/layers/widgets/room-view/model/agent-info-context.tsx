@@ -91,9 +91,18 @@ export function AgentInfoProvider({
  */
 export function useRoomAgentDirectory(): RoomAgentDirectory {
   const mesh = useMeshAgentPaths();
-  const paths = useMemo(() => (mesh.data?.agents ?? []).map((a) => a.projectPath), [mesh.data]);
+  // The entries whole, not just their paths: each one carries the registry id
+  // the team roster is keyed by, which is what a profile link opens on. Reading
+  // only the paths here is how that id got reconstructed from the manifest
+  // instead — a different id space, and a dead link for any agent whose two
+  // disagree (`RosterAgentInfo.memberId`).
+  const entries = useMemo(() => mesh.data?.agents ?? [], [mesh.data]);
+  const paths = useMemo(() => entries.map((entry) => entry.projectPath), [entries]);
   const resolved = useResolvedAgents(paths);
-  const info = useMemo(() => agentInfoByRef(paths, resolved.data ?? {}), [paths, resolved.data]);
+  const info = useMemo(
+    () => agentInfoByRef(entries, resolved.data ?? {}),
+    [entries, resolved.data]
+  );
   const faces = useMemo(() => agentFacesByRef(info), [info]);
   return useMemo(() => ({ info, faces }), [info, faces]);
 }

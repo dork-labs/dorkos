@@ -379,6 +379,17 @@ export function MessageAuthorAvatarShowcase() {
       <ShowcaseDemo>
         <MessageAuthorAvatar author={SYSTEM_AUTHOR} />
       </ShowcaseDemo>
+
+      <ShowcaseLabel>
+        Agent — as a control, when the surface can name whose profile it opens (Tab to it)
+      </ShowcaseLabel>
+      <ShowcaseDemo>
+        {/* The only state above that is not decoration. The room feed passes a
+            destination when it can join the entry's author to the fleet; every
+            other host leaves the disc exactly as the rows above it. The focus
+            ring rides the disc's own radius, so an agent's square rings square. */}
+        <MessageAuthorAvatar author={AGENT_AUTHOR} onViewProfile={() => {}} />
+      </ShowcaseDemo>
     </PlaygroundSection>
   );
 }

@@ -12,6 +12,20 @@ import { TooltipProvider } from '@/layers/shared/ui';
 import type { MessageGrouping } from '@/layers/shared/model';
 import { RoomEntryRow } from '../ui/RoomEntryRow';
 
+// The row reads route state to decide where its author face and its mention
+// pills lead (`useProfileDeepLink`), and this file mounts it with no router.
+// Where those links actually go has its own file —
+// `RoomEntryRow.click-to-profile.test.tsx`, which mounts a real router and
+// asserts the id that travels. Here it is stubbed so the row renders, which is
+// what this file is about.
+vi.mock('@/layers/shared/model', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/layers/shared/model')>();
+  return {
+    ...actual,
+    useProfileDeepLink: () => ({ isOpen: false, memberId: null, open: vi.fn(), close: vi.fn() }),
+  };
+});
+
 /** The shipped quick row, which is what a fresh install's capsule offers. */
 const FREQUENTS = ['👍', '❤️', '🎉'];
 

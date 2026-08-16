@@ -1,8 +1,14 @@
 /**
  * Shared user-config deep-merge patch — the single implementation of the
- * `PATCH /api/config` write semantics, used by the HTTP route and the
- * `config_patch` MCP tool so both validate through the same Zod path and both
- * persist through the same {@link configManager} calls.
+ * `PATCH /api/config` write SEMANTICS: merge, validate whole, persist per
+ * section.
+ *
+ * It answers "is this a valid config, and what did storing it change", and
+ * nothing about who may ask. That half lives one layer up in `config-write.ts`,
+ * which is the only production caller: every door — the HTTP route, the
+ * `config_patch` tool, `dorkos config set` — reaches this through the guarded
+ * step, so the policy and the consent door cannot be skipped by picking a
+ * different entry point.
  *
  * @module services/core/operator/config-patch
  */
@@ -11,16 +17,53 @@ import {
   SENSITIVE_CONFIG_KEYS,
   type UserConfig,
 } from '@dorkos/shared/config-schema';
+import { logger } from '../../../lib/logger.js';
 import { configManager } from '../config-manager.js';
 import { projectDisclosedConfig } from './config-disclosure.js';
 import { OPERATOR_ONLY_CONFIG_PATHS } from './config-write-policy.js';
-import {
-  applyClaudeAccountChange,
-  claudeAccountsChanged,
-} from '../../runtimes/claude-code/account-switch.js';
+import { claudeAccountsChanged } from '../../runtimes/claude-code/account-switch.js';
 
 /** Keys that must be filtered during deep merge to prevent prototype pollution. */
 const DANGEROUS_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
+
+/**
+ * Re-derive everything a Claude account change invalidates, wired at boot.
+ *
+ * Undefined until {@link initClaudeAccountApplier} runs, which is the point: it
+ * is what tells this module whether it is inside a live server.
+ */
+let applyClaudeAccountChange: (() => void) | undefined;
+
+/**
+ * Wire the live-apply for a Claude account change. Called once at boot, by the
+ * server and nobody else.
+ *
+ * ## Why a boot-wired seam and not a direct import (DOR-1247)
+ *
+ * This used to call `applyClaudeAccountChange` straight from
+ * `runtimes/claude-code/account-switch.js`, which is right in a server and wrong
+ * everywhere else — and `dorkos config set` is everywhere else. In the CLI that
+ * function found an empty runtime registry, dropped no caches because there were
+ * none, told no clients because none were connected, and then wrote
+ * `[claude-accounts] applied an account change without a restart` into the same
+ * `dorkos.log` the server writes. A false success line, while the running
+ * server's caches stayed stale.
+ *
+ * Wiring it instead means the fact "am I the process that can re-derive this?"
+ * is answered by construction rather than guessed at, and the CLI logs what is
+ * actually true (see {@link applyConfigPatch}). Same shape and same reasoning as
+ * `initStandingGrantPosture` and `initCapabilityTierGate`.
+ *
+ * @param apply - The re-derivation to run after an account change lands.
+ */
+export function initClaudeAccountApplier(apply: () => void): void {
+  applyClaudeAccountChange = apply;
+}
+
+/** Drop the wired applier. Test-only seam, mirroring `resetStandingGrantPosture`. */
+export function resetClaudeAccountApplier(): void {
+  applyClaudeAccountChange = undefined;
+}
 
 /**
  * The user-config snapshot an untrusted caller is allowed to read: the curated
@@ -248,7 +291,7 @@ function isOperatorOnlyPath(path: string): boolean {
  * and `providers` — so their leaf segments are CALLER-CHOSEN, and the first is
  * `agent-writable`, meaning the route's agent bar never applies to it. An agent
  * could therefore write a key containing a newline and a counterfeit
- * `[Config] Patched: …` line, forging the exact record this feature exists to
+ * `[Config] Patched by …` line, forging the exact record this feature exists to
  * make trustworthy (reproduced against the real route during review). So every
  * segment goes through {@link renderSegment}, and the forgery arrives as one
  * quoted, escaped, clipped segment on one line.
@@ -283,7 +326,25 @@ export function describeConfigWrite(before: unknown, after: unknown): string {
 
 /** Outcome of {@link applyConfigPatch}: a validated write or a typed rejection. */
 export type ConfigPatchResult =
-  | { ok: true; config: UserConfig; warnings: string[] }
+  | {
+      /** The write landed. */
+      ok: true;
+      /**
+       * The stored config as it was BEFORE the merge, for
+       * {@link describeConfigWrite}.
+       *
+       * Returned rather than re-read by the caller because this function already
+       * holds it: it reads the current config to merge onto, and the snapshot it
+       * merged from is by definition the state the write replaced. A caller that
+       * asked the store again would be paying for a second read AND trusting that
+       * nothing moved in between.
+       */
+      before: UserConfig;
+      /** The stored config after it. */
+      config: UserConfig;
+      /** Non-blocking notes — today, sensitive keys written in the clear. */
+      warnings: string[];
+    }
   | { ok: false; error: string; details?: string[] };
 
 /**
@@ -340,16 +401,28 @@ export function applyConfigPatch(patch: unknown): ConfigPatchResult {
 
   // A write that moved the Claude accounts takes effect without a restart (spec
   // `claude-code-accounts` D5). This lives here, at the shared seam, rather than
-  // in the PATCH route, because the `config_patch` operator tool reaches the same
-  // function — wiring only the route would leave an account switched through the
-  // tool needing a restart.
+  // in the PATCH route, because the `config_patch` operator tool and
+  // `dorkos config set` reach the same function — wiring only the route would
+  // leave an account switched through either of them needing a restart.
   //
   // Fire-and-forget after the write has landed: the setting is already persisted
   // and the caller's answer does not depend on the re-derivation, which is itself
   // best-effort and never throws.
+  //
+  // Unwired means this is not a server process, so there is nothing here holding
+  // a stale cache and nothing connected to tell. The line says the one thing
+  // that is true either way — a DorkOS running somewhere else keeps the account
+  // it started with — rather than claiming an apply that did not happen
+  // (DOR-1247).
   if (claudeAccountsChanged(current.runtimes, validated.runtimes)) {
-    void applyClaudeAccountChange();
+    if (applyClaudeAccountChange) {
+      applyClaudeAccountChange();
+    } else {
+      logger.info(
+        '[Config] The Claude account changed. Any running DorkOS keeps the account it started with until it restarts.'
+      );
+    }
   }
 
-  return { ok: true, config: configManager.getAll(), warnings };
+  return { ok: true, before: current, config: configManager.getAll(), warnings };
 }
