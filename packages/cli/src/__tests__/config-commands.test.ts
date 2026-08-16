@@ -9,6 +9,7 @@ import {
   handleConfigPath,
   handleConfigValidate,
   handleConfigCommand,
+  handleConfigAcknowledgeAutonomy,
 } from '../config-commands.js';
 import type { CliConfigWriter, ConfigStore } from '../config-commands.js';
 import type { GuardedConfigWriteResult } from '../../server/services/core/operator/config-write.js';
@@ -83,7 +84,11 @@ function createMockWriter(outcome?: {
           config: MOCK_CONFIG,
           warnings: outcome?.warnings ?? [],
         };
-  return { guarded: vi.fn(async () => result as GuardedConfigWriteResult) };
+  return {
+    guarded: vi.fn(
+      async (_patch: Record<string, unknown>, _source: string) => result as GuardedConfigWriteResult
+    ),
+  };
 }
 
 describe('parseConfigValue', () => {
@@ -168,9 +173,48 @@ describe('handleConfigSet', () => {
     // The point of DOR-1247: `setDot` is no longer the write path, because it
     // was the one that ran no policy, no consent door and left no log line.
     expect(store.setDot).not.toHaveBeenCalled();
-    expect(writer.guarded).toHaveBeenCalledWith({ server: { port: 8080 } });
-    expect(logSpy).toHaveBeenCalledWith('Set server.port = 8080');
+    expect(writer.guarded).toHaveBeenCalledWith({ server: { port: 8080 } }, 'dorkos config set');
+    expect(logSpy).toHaveBeenCalledWith('Set server.port = 4242');
     logSpy.mockRestore();
+  });
+
+  it('confirms with the value that LANDED, not the one that was typed', async () => {
+    // The mock store holds 4242 and does not accept writes, which is exactly the
+    // discrimination wanted: printing the requested 8080 here would be the
+    // command claiming a write it cannot see. What it prints is the read-back.
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const store = createMockStore();
+    await handleConfigSet(store, 'server.port', '8080', createMockWriter());
+    expect(logSpy).toHaveBeenCalledWith('Set server.port = 4242');
+    expect(logSpy).not.toHaveBeenCalledWith('Set server.port = 8080');
+    logSpy.mockRestore();
+  });
+
+  it('refuses to address one item of a list, and says where to do it instead', async () => {
+    // A patch REPLACES a list rather than reaching into it, so there is no patch
+    // that means "element 0". Sent anyway it came back as "expected array,
+    // received object", which reads like a bad value rather than a thing this
+    // command cannot do.
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.spyOn(process, 'exit').mockImplementation(() => {
+      throw new Error('exit');
+    });
+    const store = createMockStore();
+    const writer = createMockWriter();
+
+    await expect(
+      handleConfigSet(store, 'ui.dismissedUpgradeVersions.0', '1.2.3', writer)
+    ).rejects.toThrow('exit');
+
+    expect(errorSpy.mock.calls[0][0]).toBe(
+      'Cannot set one item of a list: ui.dismissedUpgradeVersions.0'
+    );
+    expect(errorSpy.mock.calls[1][0]).toContain('dorkos config edit');
+    // Refused before anything was attempted, so no write was even proposed.
+    expect(writer.guarded).not.toHaveBeenCalled();
+    expect(logSpy).not.toHaveBeenCalled();
+    vi.restoreAllMocks();
   });
 
   it('keeps a literal dot in a key instead of splitting it into two settings', async () => {
@@ -184,7 +228,10 @@ describe('handleConfigSet', () => {
     const writer = createMockWriter();
     vi.spyOn(console, 'log').mockImplementation(() => {});
     await handleConfigSet(store, 'providers.my\\.provider', 'ref', writer);
-    expect(writer.guarded).toHaveBeenCalledWith({ providers: { 'my.provider': 'ref' } });
+    expect(writer.guarded).toHaveBeenCalledWith(
+      { providers: { 'my.provider': 'ref' } },
+      'dorkos config set'
+    );
     vi.restoreAllMocks();
   });
 
@@ -231,6 +278,9 @@ describe('handleConfigSet', () => {
     ).rejects.toThrow('exit');
 
     expect(errorSpy.mock.calls[0][0]).toContain('confirm what it means first');
+    // A sentence with no next step is a dead end at a terminal: the cockpit can
+    // open its own dialog, a shell cannot.
+    expect(errorSpy.mock.calls[1][0]).toContain('dorkos config acknowledge-autonomy');
     expect(logSpy).not.toHaveBeenCalled();
     expect(exitSpy).toHaveBeenCalledWith(1);
     vi.restoreAllMocks();
@@ -274,6 +324,114 @@ describe('handleConfigSet', () => {
     expect(errorSpy.mock.calls[1][0]).toContain('server.port: expected number');
     expect(logSpy).not.toHaveBeenCalled();
     vi.restoreAllMocks();
+  });
+});
+
+describe('handleConfigAcknowledgeAutonomy', () => {
+  /** A store whose acknowledgement record can be posed. */
+  function storeWithAck(ack: string | null): ConfigStore {
+    const store = createMockStore();
+    (store.getDot as ReturnType<typeof vi.fn>).mockImplementation((key: string) =>
+      key === 'ui.autonomyAcknowledgedAt' ? ack : 'something'
+    );
+    return store;
+  }
+
+  it('prints what is being agreed to before it asks', async () => {
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const asked: string[] = [];
+    const writer = createMockWriter();
+
+    await handleConfigAcknowledgeAutonomy(storeWithAck(null), writer, {
+      available: () => true,
+      ask: async (message) => {
+        asked.push(message);
+        // The text has to be on screen BEFORE the question, or it is a dialog
+        // whose body renders after the button.
+        expect(logSpy.mock.calls.map((c) => String(c[0])).join('\n')).toContain(
+          'your agents stop asking first'
+        );
+        return false;
+      },
+    });
+
+    expect(asked).toHaveLength(1);
+    logSpy.mockRestore();
+  });
+
+  it('records nothing when the answer is no', async () => {
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const writer = createMockWriter();
+
+    await handleConfigAcknowledgeAutonomy(storeWithAck(null), writer, {
+      available: () => true,
+      ask: async () => false,
+    });
+
+    expect(writer.guarded).not.toHaveBeenCalled();
+    expect(logSpy.mock.calls.map((c) => String(c[0]))).toContain('Nothing changed.');
+    logSpy.mockRestore();
+  });
+
+  it('writes the record through the guarded step when the answer is yes', async () => {
+    // Through the guarded step, not straight to the store: agreeing to this is
+    // itself a change worth finding in the log later.
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const writer = createMockWriter();
+
+    await handleConfigAcknowledgeAutonomy(storeWithAck(null), writer, {
+      available: () => true,
+      ask: async () => true,
+    });
+
+    expect(writer.guarded).toHaveBeenCalledTimes(1);
+    const [patch, source] = writer.guarded.mock.calls[0] as [Record<string, unknown>, string];
+    const ui = patch.ui as { autonomyAcknowledgedAt: string };
+    expect(Number.isNaN(Date.parse(ui.autonomyAcknowledgedAt))).toBe(false);
+    expect(source).toBe('dorkos config acknowledge-autonomy');
+    logSpy.mockRestore();
+  });
+
+  it('refuses rather than signing itself when nothing is attached to answer', async () => {
+    // A ritual needs somebody to perform it. A `--yes` here would be a consent
+    // form that signs itself, which is the thing the door exists to prevent.
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.spyOn(process, 'exit').mockImplementation(() => {
+      throw new Error('exit');
+    });
+    const writer = createMockWriter();
+
+    await expect(
+      handleConfigAcknowledgeAutonomy(storeWithAck(null), writer, {
+        available: () => false,
+        ask: async () => true,
+      })
+    ).rejects.toThrow('exit');
+
+    expect(errorSpy.mock.calls[0][0]).toContain('nothing is attached to answer it');
+    expect(writer.guarded).not.toHaveBeenCalled();
+    vi.restoreAllMocks();
+  });
+
+  it('does not ask again once the record exists', async () => {
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const writer = createMockWriter();
+    let asked = false;
+
+    await handleConfigAcknowledgeAutonomy(storeWithAck('2026-08-16T09:00:00.000Z'), writer, {
+      available: () => true,
+      ask: async () => {
+        asked = true;
+        return true;
+      },
+    });
+
+    expect(asked).toBe(false);
+    expect(writer.guarded).not.toHaveBeenCalled();
+    expect(logSpy.mock.calls.map((c) => String(c[0])).join('\n')).toContain(
+      '2026-08-16T09:00:00.000Z'
+    );
+    logSpy.mockRestore();
   });
 });
 
@@ -407,7 +565,7 @@ describe('handleConfigCommand', () => {
     const store = createMockStore();
     const writer = createMockWriter();
     await handleConfigCommand(store, ['set', 'ui.theme', 'dark'], writer);
-    expect(writer.guarded).toHaveBeenCalledWith({ ui: { theme: 'dark' } });
+    expect(writer.guarded).toHaveBeenCalledWith({ ui: { theme: 'dark' } }, 'dorkos config set');
     spy.mockRestore();
   });
 

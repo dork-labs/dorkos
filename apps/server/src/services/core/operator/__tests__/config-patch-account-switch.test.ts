@@ -1,23 +1,33 @@
 /**
- * A Claude account change applies LIVE (spec `claude-code-accounts` D5).
+ * A Claude account change applies LIVE (spec `claude-code-accounts` D5) — and
+ * ONLY in a process that has something to re-derive (DOR-1247).
  *
  * The trigger sits on `applyConfigPatch` rather than on `PATCH /api/config`,
- * because that is the seam BOTH writers share: the HTTP route and the
- * `config_patch` operator MCP tool. Wiring the route alone would mean an account
- * switched through the tool took effect only after a restart.
+ * because that is the seam every writer shares: the HTTP route, the
+ * `config_patch` operator MCP tool, and `dorkos config set`. Wiring the route
+ * alone would mean an account switched through either of the others took effect
+ * only after a restart.
+ *
+ * The applier is BOOT-WIRED rather than imported, because that shared seam is
+ * reached from the CLI too, where re-deriving is meaningless: an empty registry,
+ * no connected clients, and a success line in the operator's log for an apply
+ * that did not happen. So these tests cover both halves — wired fires, unwired
+ * says the true thing instead.
  *
  * What is asserted is the trigger, not the effect — the effect has its own tests
  * in `runtimes/claude-code/__tests__/account-switch.test.ts`.
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { applyConfigPatch } from '../config-patch.js';
-import { applyClaudeAccountChange } from '../../../runtimes/claude-code/account-switch.js';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import {
+  applyConfigPatch,
+  initClaudeAccountApplier,
+  resetClaudeAccountApplier,
+} from '../config-patch.js';
 import { configManager } from '../../config-manager.js';
+import { logger } from '../../../../lib/logger.js';
 
-vi.mock('../../../runtimes/claude-code/account-switch.js', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../../../runtimes/claude-code/account-switch.js')>()),
-  applyClaudeAccountChange: vi.fn().mockResolvedValue(undefined),
-}));
+/** Stands in for the server's own re-derivation, which boot wires in. */
+const applyClaudeAccountChange = vi.fn();
 
 /** The whole config, so `deepMerge` and the schema see a real shape. */
 const stored: Record<string, unknown> = {};
@@ -35,6 +45,7 @@ vi.mock('../../config-manager.js', () => ({
 describe('applyConfigPatch — Claude account live-apply trigger', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    initClaudeAccountApplier(applyClaudeAccountChange);
     for (const key of Object.keys(stored)) delete stored[key];
     Object.assign(stored, {
       version: 1,
@@ -87,5 +98,47 @@ describe('applyConfigPatch — Claude account live-apply trigger', () => {
     expect(applyClaudeAccountChange).not.toHaveBeenCalled();
     // And nothing was persisted, so there is genuinely nothing to apply.
     expect(vi.mocked(configManager.set)).not.toHaveBeenCalled();
+  });
+
+  describe('with no applier wired — `dorkos config set`, not a server', () => {
+    beforeEach(() => {
+      resetClaudeAccountApplier();
+    });
+
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    it('claims no apply, and says what is actually true about a running DorkOS', () => {
+      // Reproduced against the built CLI before the seam existed: the write
+      // logged "[claude-accounts] applied an account change without a restart"
+      // into the operator's own log while the running server's caches stayed
+      // stale — a false success line, in the one place they would go looking.
+      const lines: string[] = [];
+      vi.spyOn(logger, 'info').mockImplementation((...args: unknown[]) => {
+        lines.push(String(args[0]));
+      });
+
+      const result = applyConfigPatch({
+        runtimes: { claudeCode: { activeAccount: '/Users/dev/.claude2' } },
+      });
+
+      expect(result.ok).toBe(true);
+      expect(applyClaudeAccountChange).not.toHaveBeenCalled();
+      expect(lines).toContain(
+        '[Config] The Claude account changed. Any running DorkOS keeps the account it started with until it restarts.'
+      );
+    });
+
+    it('says nothing at all when the accounts did not move', () => {
+      const lines: string[] = [];
+      vi.spyOn(logger, 'info').mockImplementation((...args: unknown[]) => {
+        lines.push(String(args[0]));
+      });
+
+      applyConfigPatch({ ui: { theme: 'light' } });
+
+      expect(lines.filter((line) => line.includes('Claude account'))).toEqual([]);
+    });
   });
 });

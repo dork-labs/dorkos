@@ -138,7 +138,34 @@ export interface ConfigWriteAuthority {
  * runtimes.claudeCode.defaultTrustStop autonomy` is refused with the cockpit's
  * own sentence until the acknowledgement exists. That refusal is the one this
  * whole module was written for: it was reproduced against the built CLI on an
- * install whose `ui.autonomyAcknowledgedAt` was `null` (DOR-1247).
+ * install whose `ui.autonomyAcknowledgedAt` was `null` (DOR-1247). The terminal
+ * has its own way to satisfy it honestly — `dorkos config acknowledge-autonomy`
+ * prints what the person is agreeing to and asks once — and the refusal names
+ * that command, because a sentence with no next step is a dead end in a shell.
+ *
+ * ## THE RESIDUAL: a person with a shell can sign their own consent form
+ *
+ * State it plainly, next to the `curl` one below, because it is the same shape
+ * and the same answer. `ui.autonomyAcknowledgedAt` is `operator-only`, and this
+ * authority clears the operator bar — so `dorkos config set
+ * ui.autonomyAcknowledgedAt <date>` followed by `dorkos config set …
+ * defaultTrustStop autonomy` goes through, with the consent text never on
+ * screen. Reproduced end to end.
+ *
+ * That is the trust model, not a hole in it. The CLI *is* the operator, and an
+ * operator may record their own decision — the cockpit's own "Don't show this
+ * again" checkbox is the same act through a different surface. What a ritual can
+ * buy is that the DEFAULT path shows a person what they are agreeing to; what it
+ * cannot buy is stopping somebody who already knows the field name from writing
+ * it, any more than `dorkos config edit` could be stopped. An agent is a
+ * different matter and is stopped by a different mechanism: `operator-only`
+ * refuses it on the capability surface and over HTTP, and neither of those is
+ * this authority.
+ *
+ * The mitigation is the same one the `curl` residual gets: both writes leave an
+ * audit line naming the door, so the sequence is visible afterwards even though
+ * nothing refuses it at the time. Turning on Require login narrows the HTTP half;
+ * nothing narrows the terminal half, because the terminal is the person.
  */
 export const LOCAL_OPERATOR_AUTHORITY: ConfigWriteAuthority = {
   refuseLoginRequired: () => undefined,
@@ -288,7 +315,9 @@ export function applyGuardedConfigWrite(write: GuardedConfigWrite): GuardedConfi
     };
   }
   if (demotion) {
-    logger.info('[Config] Full-autonomy acknowledgement cleared; standing defaults demoted');
+    logger.info(
+      `[Config] Full-autonomy acknowledgement cleared by ${source}; standing defaults demoted`
+    );
   }
 
   const result = applyConfigPatch(patch);

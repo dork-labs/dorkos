@@ -615,9 +615,31 @@ if (subcommand === 'cleanup') {
   process.exit(process.exitCode ?? 0);
 }
 
-// Ensure data directories exist for all other commands
-fs.mkdirSync(DORK_HOME, { recursive: true });
-fs.mkdirSync(path.join(DORK_HOME, 'logs'), { recursive: true });
+// Ensure the data directory exists for all other commands.
+//
+// Best-effort, because this runs before the command is even chosen and NOT every
+// command needs to write. A data directory DorkOS cannot write to — a root-owned
+// `~/.dork` volume is the ordinary shape of it in the Docker deployment — used to
+// end `dorkos config get` in a raw `EACCES` stack out of `node:fs`, which is
+// precisely the command somebody runs BECAUSE their install is broken. Reads only
+// need the file to be readable, so they carry on; a command that genuinely needs
+// to write fails on its own, after this line has said what the operating system
+// refused. (Introduced 2026-07-29 in #606, found by the DOR-1247 review.)
+//
+// `logs/` is deliberately NOT created here any more. `initLogger` creates it, and
+// only the two callers that are about to write a line reach that: the server at
+// boot, and `dorkos config set` through `openAuditLog`. Creating it eagerly meant
+// `dorkos config path` left a directory behind on a machine that had never run
+// DorkOS.
+try {
+  fs.mkdirSync(DORK_HOME, { recursive: true });
+} catch (err) {
+  const reason = err instanceof Error ? err.message : String(err);
+  console.error(`⚠  DorkOS could not set up ${DORK_HOME}: ${reason}`);
+  console.error(
+    '   Commands that only read, like `dorkos config get`, still work. Anything that saves will not.'
+  );
+}
 process.env.DORK_HOME = DORK_HOME;
 
 /**
@@ -636,19 +658,7 @@ async function openConfigStore() {
   const { initConfigManager, ConfigBootError } =
     await import('../server/services/core/config-manager.js');
   try {
-    const manager = initConfigManager(DORK_HOME);
-    // Point the server's logger at this data directory before any command can
-    // change a setting. `dorkos config set` records what it changed in the same
-    // `~/.dork/logs/dorkos.log` the server writes to, and a line that only
-    // reached the terminal would answer nobody's question tomorrow — which was
-    // the whole complaint behind DOR-1237. The level is the operator's own
-    // `logging.level`, so the CLI and the server agree about what gets written.
-    const { initLogger } = await import('../server/lib/logger.js');
-    initLogger({
-      logDir: path.join(DORK_HOME, 'logs'),
-      level: LOG_LEVEL_MAP[(manager.getDot('logging.level') as string | null) ?? 'info'] ?? 3,
-    });
-    return manager;
+    return initConfigManager(DORK_HOME);
   } catch (err) {
     if (!(err instanceof ConfigBootError)) throw err;
     // The server is bundled in at build time, so its module has no types here
@@ -661,8 +671,19 @@ async function openConfigStore() {
 
 if (subcommand === 'config') {
   const cfgMgr = await openConfigStore();
-  const { handleConfigCommand } = await import('./config-commands.js');
-  await handleConfigCommand(cfgMgr, positionals.slice(1));
+  const { handleConfigCommand, createServerConfigWriter } = await import('./config-commands.js');
+  // The writer carries the data directory and the log level, so a WRITE can open
+  // the audit log and a read never touches it (DOR-1247: opening it for every
+  // subcommand made `dorkos config get` die on a data directory it could not
+  // write to — the command a person runs when their install is already broken).
+  await handleConfigCommand(
+    cfgMgr,
+    positionals.slice(1),
+    createServerConfigWriter(
+      DORK_HOME,
+      LOG_LEVEL_MAP[(cfgMgr.getDot('logging.level') as string | null) ?? 'info'] ?? 3
+    )
+  );
   process.exit(0);
 }
 

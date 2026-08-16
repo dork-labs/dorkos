@@ -39,6 +39,8 @@ import {
   ConfigBootError,
 } from './services/core/config-manager.js';
 import { logConfigWrite } from './services/core/operator/config-write.js';
+import { initClaudeAccountApplier } from './services/core/operator/config-patch.js';
+import { applyClaudeAccountChange } from './services/runtimes/claude-code/account-switch.js';
 import {
   credentialProvider,
   credentialStore,
@@ -445,6 +447,14 @@ async function start() {
   // Credential substrate (ADR-0315): resolves stored credential references to
   // secrets at each runtime's env-injection seam. Must precede any runtime spawn.
   initCredentialProvider(dorkHome);
+
+  // A Claude account change re-derives its caches live, and ONLY in a server
+  // process (spec `claude-code-accounts` D5, seam added by DOR-1247). The same
+  // config write happens from `dorkos config set`, where there is no registry to
+  // re-derive and no client to tell — so the applier is wired here rather than
+  // imported by the write path, and an unwired write says so instead of claiming
+  // an apply that never happened.
+  initClaudeAccountApplier(() => void applyClaudeAccountChange());
 
   // Apply logging config (maxLogSize/maxLogFiles) from user config.
   // initLogger was already called above with defaults — re-init with config values.

@@ -130,9 +130,14 @@ same gap as the one below, and turning on **Require login** is what closes it.
 
 The same is true of `dorkos config set` on your command line. That command is you, at your own
 computer, so it changes any of these settings — and anything else running as you can type it. What
-it cannot do is do it quietly: every change it makes is written to your log at
+it cannot do is do it quietly: every change **that command** makes is written to your log at
 `~/.dork/logs/dorkos.log` by name, and a setting that needs you to confirm what it means still asks
-there. So if one of these ever moves and you do not know why, your log names what changed it.
+there.
+
+Read that as being about `dorkos config set` and nothing wider. DorkOS's other commands still change
+settings without writing a line — `dorkos telemetry`, `dorkos auth`, `dorkos cloud`, `dorkos init`
+and `dorkos config reset` each change the one thing their name says, and none of them records it. So
+a quiet log is not proof a setting never moved.
 
 </Callout>
 
