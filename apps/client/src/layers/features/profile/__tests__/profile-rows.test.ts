@@ -206,11 +206,11 @@ describe('DorkBot', () => {
 
 describe('rooms, wherever they appear', () => {
   /** The Rooms row's value for a given room list. */
-  const roomsValue = (rooms: { name: string; kind: 'channel' | 'dm' }[]) =>
+  const roomsValue = (rooms: { name: string; slug: string | null; kind: 'channel' | 'dm' }[]) =>
     flat(build(SELF, { rooms: { count: rooms.length, rooms } })).find((row) => row.id === 'rooms')!
       .value;
 
-  const channel = (name: string) => ({ name, kind: 'channel' as const });
+  const channel = (slug: string) => ({ name: slug, slug, kind: 'channel' as const });
 
   it('names the first two and counts the rest', () => {
     expect(roomsValue(['team', 'general', 'ops', 'design'].map(channel))).toBe(
@@ -218,12 +218,20 @@ describe('rooms, wherever they appear', () => {
     );
   });
 
-  it('does not give a channel a second # when its own name already carries one', () => {
-    expect(roomsValue([channel('#team'), channel('general')])).toBe('#team, #general');
+  it('writes a channel as its slug, not as its stored title', () => {
+    // The row shares `roomDisplayTitle` with the rest of the cockpit rather
+    // than prefixing a `#` onto whatever string it was handed — which is what
+    // made a channel titled "Team Standup" read as `#Team Standup` here and
+    // `#standup` in the sidebar beside it.
+    expect(roomsValue([{ name: 'Team Standup', slug: 'standup', kind: 'channel' }])).toBe(
+      '#standup'
+    );
   });
 
   it('leaves a DM its plain name — it has no # address to wear', () => {
-    expect(roomsValue([{ name: 'dopel', kind: 'dm' }, channel('team')])).toBe('dopel, #team');
+    expect(roomsValue([{ name: 'dopel', slug: null, kind: 'dm' }, channel('team')])).toBe(
+      'dopel, #team'
+    );
   });
 
   it('says nothing at all rather than "0" while nobody has read them', () => {

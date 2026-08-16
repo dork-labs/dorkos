@@ -3,9 +3,9 @@
  *
  * @module features/agent-settings
  */
-// Tab components — exported for reuse in sibling feature UI (agent-hub).
+// Tab components — exported for reuse in sibling feature UI: the profile
+// composes these as pages (Connections, Tools & MCP).
 export { IdentityTab } from './ui/IdentityTab';
-export { PersonalityTab } from './ui/PersonalityTab';
 export { IntegrationsTab } from './ui/IntegrationsTab';
 export { ToolsTab } from './ui/ToolsTab';
 // The convention-file editor on its own: the profile gives SOUL.md and NOPE.md

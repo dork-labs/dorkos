@@ -319,7 +319,7 @@ function readConnectionsRegion(): string | undefined {
  *
  * This is a real surface, not a hypothetical. `app/init-extensions.ts` registers
  * the profile's Connections page from both the web entry and the embed, and
- * `agent-hub/ui/tabs/ConfigTab.tsx` renders this component inside it.
+ * `features/profile/ui/pages/ConnectionsPage.tsx` renders this component inside it.
  */
 function renderTabWithoutRouter(agent: AgentManifest = baseAgent) {
   const { container } = render(<IntegrationsTab agent={agent} />);
