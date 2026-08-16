@@ -37,6 +37,7 @@
 import { apikey, eq, type Db } from '@dorkos/db';
 import { defaultKeyHasher } from '@better-auth/api-key';
 import { configManager } from '../config-manager.js';
+import { logConfigWrite } from '../operator/config-write.js';
 import { logger, logError } from '../../../lib/logger.js';
 import { findOwnerAccount } from './accounts.js';
 
@@ -90,7 +91,9 @@ export async function seedLegacyMcpApiKey(db: Db): Promise<void> {
     // Clear the legacy value in the same operation so the primary guard trips on
     // every subsequent run. Preserve the rest of the mcp block.
     configManager.set('mcp', { ...mcp, apiKey: null });
-    // Never log the key value itself.
+    // Never log the key value itself — `logConfigWrite` names paths only, which
+    // is exactly why a secret-clearing write can be logged at all.
+    logConfigWrite('the MCP key migration', 'mcp', mcp, configManager.get('mcp'));
     logger.info('[Auth] Seeded legacy MCP API key as an owner-owned Better Auth key');
   } catch (err) {
     logger.error('[Auth] Failed to seed legacy MCP API key', logError(err));

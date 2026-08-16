@@ -38,6 +38,9 @@ import {
   configManager,
   ConfigBootError,
 } from './services/core/config-manager.js';
+import { logConfigWrite } from './services/core/operator/config-write.js';
+import { initClaudeAccountApplier } from './services/core/operator/config-patch.js';
+import { applyClaudeAccountChange } from './services/runtimes/claude-code/account-switch.js';
 import {
   credentialProvider,
   credentialStore,
@@ -446,6 +449,14 @@ async function start() {
   // secrets at each runtime's env-injection seam. Must precede any runtime spawn.
   initCredentialProvider(dorkHome);
 
+  // A Claude account change re-derives its caches live, and ONLY in a server
+  // process (spec `claude-code-accounts` D5, seam added by DOR-1247). The same
+  // config write happens from `dorkos config set`, where there is no registry to
+  // re-derive and no client to tell — so the applier is wired here rather than
+  // imported by the write path, and an unwired write says so instead of claiming
+  // an apply that never happened.
+  initClaudeAccountApplier(() => void applyClaudeAccountChange());
+
   // Apply logging config (maxLogSize/maxLogFiles) from user config.
   // initLogger was already called above with defaults — re-init with config values.
   const loggingConfig = configManager.get('logging');
@@ -648,6 +659,12 @@ async function start() {
       ...current,
       lastPromptedVersion: tier1Boot.lastPromptedVersionToWrite,
     });
+    logConfigWrite(
+      'the first-run telemetry notice',
+      'telemetry',
+      current,
+      configManager.get('telemetry')
+    );
   }
 
   // Register the anonymous feature-usage reporter (DOR-315, ADR 260713-143958
@@ -2311,7 +2328,9 @@ async function start() {
       setAccountImage: (userId, imageUrl) => setUserImage(userId, imageUrl),
       setAccountName: (userId, name) => setUserName(userId, name),
       setProfileDisplayName: (displayName) => {
+        const before = configManager.get('profile');
         configManager.setDot('profile.displayName', displayName);
+        logConfigWrite('the profile route', 'profile', before, configManager.get('profile'));
       },
     })
   );

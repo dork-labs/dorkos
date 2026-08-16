@@ -128,6 +128,17 @@ deliberately hides that it is an agent. That program looks exactly like you clic
 Settings, and with no password anywhere, DorkOS has nothing left to tell the two apart. This is the
 same gap as the one below, and turning on **Require login** is what closes it.
 
+The same is true of `dorkos config set` on your command line. That command is you, at your own
+computer, so it changes any of these settings — and anything else running as you can type it. What
+it cannot do is do it quietly: every change **that command** makes is written to your log at
+`~/.dork/logs/dorkos.log` by name, and a setting that needs you to confirm what it means still asks
+there.
+
+Read that as being about `dorkos config set` and nothing wider. DorkOS's other commands still change
+settings without writing a line — `dorkos telemetry`, `dorkos auth`, `dorkos cloud`, `dorkos init`
+and `dorkos config reset` each change the one thing their name says, and none of them records it. So
+a quiet log is not proof a setting never moved.
+
 </Callout>
 
 One more thing works the same way, though it is not a setting: **where your packages come from**. Agents cannot add or remove a marketplace source, because a source is a place DorkOS will download and run code from. The note just above does not describe it, though: this one is guarded the same way whether **Require login** is on or off, so turning login on does not add a second lock here the way it does for settings. [Marketplace sources](/docs/marketplace#marketplace-sources) explains it, including the part **Require login** does not fix.

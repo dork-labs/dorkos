@@ -75,11 +75,50 @@ const PROTECTED_EFFECTS: ProtectedEffect[] = [
     what: 'writes user config, including the settings that decide who can reach this instance',
     call: 'applyConfigPatch(',
     allowed: {
-      'routes/config.ts':
-        'the cockpit REST route — refuses operator-only paths for any caller that is not a trusted caller (DOR-467), and with login on for any caller without a session cookie (DOR-505)',
-      'services/core/operator/operator-tool-handlers.ts':
-        'the agent capability — refuses operator-only paths unconditionally (DOR-488)',
+      // Narrowed to ONE caller by DOR-1247. It used to be two — the REST route
+      // and the capability handler — each running its own copy of the policy,
+      // which is how `dorkos config set` came to run none of it. Now the bars,
+      // the consent door and the audit line live in one function and every door
+      // goes through it, so the entry below is what this list is really pinning.
+      'services/core/operator/config-write.ts':
+        'the guarded step — runs the login bar, the operator bar, the Full-autonomy consent door and the audit line before this is reached, and cannot be called without a caller authority',
       'services/core/operator/config-patch.ts': 'the definition itself',
+    },
+  },
+  {
+    // This scan reads `apps/server/src` only, so it cannot see the third caller:
+    // `packages/cli/src/config-commands.ts`, which is `dorkos config set`. That
+    // one is covered by the entry below instead — the authority it passes is the
+    // permissive one, and this scan CAN prove no server surface reaches for it.
+    what: 'writes user config through the guarded step, whose bars are only as strong as the authority the caller hands it',
+    call: 'applyGuardedConfigWrite(',
+    allowed: {
+      'routes/config.ts':
+        'the cockpit REST route — builds its authority from the request, refusing operator-only paths for any caller that is not a trusted caller (DOR-467), and with login on for any caller without a session cookie (DOR-505)',
+      'services/core/operator/operator-tool-handlers.ts':
+        'the agent capability — OPERATOR_TOOL_AUTHORITY refuses operator-only paths unconditionally (DOR-488)',
+      'services/core/operator/config-write.ts': 'the definition itself',
+    },
+  },
+  {
+    // The one entry here whose allowlist holds nothing but the definition, and
+    // the reason is worth stating: it is watched for who must NEVER reach it.
+    //
+    // `LOCAL_OPERATOR_AUTHORITY` clears both bars. That is right for
+    // `dorkos config set`, where the caller IS the person at their own terminal
+    // and the alternative is `dorkos config edit` with no policy at all
+    // (`config-write.ts` argues it in full). It is wrong for every surface in
+    // this server, because a request is not a person — that distinction is the
+    // whole subject of DOR-467 and DOR-505. Handing it to an HTTP route would
+    // silently reinstate both defects while every other check here stayed green.
+    //
+    // Matched as a bare identifier rather than a call, because it is a constant
+    // that gets PASSED rather than invoked. Same textual floor as everything
+    // else here: it catches the honest import, not a rebinding.
+    what: "hands the guarded step the CLI's clear-both-bars authority, which is only true of a person at their own terminal",
+    call: 'LOCAL_OPERATOR_AUTHORITY',
+    allowed: {
+      'services/core/operator/config-write.ts': 'the definition itself',
     },
   },
   {

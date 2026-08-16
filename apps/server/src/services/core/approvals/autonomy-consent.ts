@@ -63,6 +63,14 @@ import { configManager } from '../config-manager.js';
  * The refusal code both doors answer with. One code, because a caller's recovery
  * is identical either way: show the person what Full autonomy means, get their
  * acknowledgement, retry the identical request.
+ *
+ * **Its VALUE is depended on as a string literal by two callers outside this
+ * package**, and neither can import it: the cockpit (`ChatStatusSection.tsx`
+ * compares `err.code`) and `dorkos config set` (`packages/cli`, which reaches
+ * the server only through a specifier esbuild rewrites at bundle time). Both
+ * decide what to show a person from it. `__tests__/autonomy-consent.test.ts`
+ * pins the value for exactly that reason — renaming it is a user-visible change
+ * in two places the compiler cannot see.
  */
 export const AUTONOMY_ACK_REQUIRED_CODE = 'AUTONOMY_ACK_REQUIRED';
 
@@ -204,13 +212,18 @@ function patchClearsAutonomyAck(patch: unknown): boolean {
  * could be born bypassed with no record on file, which is the exact state this
  * exists to make unreachable.
  *
- * ## Why the route and not `applyConfigPatch`
+ * ## Why the guarded step and not `applyConfigPatch`
  *
- * `applyConfigPatch` is also reached by the `config_patch` capability, and the
- * agent surface refuses `ui.autonomyAcknowledgedAt` outright (`operator-only`),
- * so no agent can clear the record and nothing there needs this. Keeping the
- * rule beside the door it belongs to — the same route, the same module — is what
- * makes the pair readable as one policy.
+ * This runs in `operator/config-write.ts`, one layer above the merge, so it sits
+ * beside the consent check it is the other half of — the demotion and the 428
+ * are one policy and read as one. Every door reaches it there: the HTTP route,
+ * `dorkos config set`, and the `config_patch` capability (which cannot actually
+ * trigger it, since the agent surface refuses `ui.autonomyAcknowledgedAt`
+ * outright as `operator-only`).
+ *
+ * Below that line, `applyConfigPatch` answers only "is this a valid config",
+ * which is what keeps it reusable and keeps this rule from being something a
+ * future caller could reach around by picking a different entry point.
  *
  * @param patch - The raw patch body.
  * @param runtimes - The stored `runtimes` section; defaults to the live config.

@@ -97,6 +97,7 @@ import {
 } from '../core/approvals/index.js';
 import type { CapabilityTier } from '@dorkos/shared/capabilities';
 import { configManager } from '../core/config-manager.js';
+import { logConfigWrite } from '../core/operator/config-write.js';
 import { logger } from '../../lib/logger.js';
 
 /**
@@ -233,6 +234,7 @@ export function recordHookApproval(request: HookProjectionRequest): void {
   const entry = hookApprovalEntry(request);
   if (harness.approvedHooks.includes(entry)) return;
   configManager.set('harness', { ...harness, approvedHooks: [...harness.approvedHooks, entry] });
+  logConfigWrite('approving a package hook', 'harness', harness, configManager.get('harness'));
 }
 
 /**
