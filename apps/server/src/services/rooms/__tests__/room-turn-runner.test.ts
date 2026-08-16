@@ -114,6 +114,12 @@ interface TriggerCall {
   onTurnStart?: (seq: number) => void;
   /** What the room asked the dispatcher to do with a session already working. */
   whenBusy?: string;
+  /**
+   * How the real dispatcher reports that an ACCEPTED dispatch settled without
+   * ever running — the drop DOR-1242 added. Driving it here is the only way to
+   * model a turn that will never start.
+   */
+  onSettled?: (outcome: 'ok' | 'failed') => void;
 }
 
 /** What the stubbed dispatch does with the projector it is handed. */
@@ -488,6 +494,56 @@ describe('createSessionRoomTurnRunner', () => {
     triggered.length = 0;
     await createSessionRoomTurnRunner().run(request());
     expect(triggered[0]?.whenBusy).toBe('refuse-foreign');
+  });
+
+  it('stops waiting the moment an accepted trigger is reported as never having run', async () => {
+    // DOR-1242. A `refuse-foreign` trigger that waited out its own tail and then
+    // lost the session to a stranger is DROPPED once its original wait is spent,
+    // and `onSettled('failed')` is the dispatcher saying so. Without reading it
+    // the room waits on a turn nothing will ever start: a late notice at `waitMs`
+    // and "something went wrong" at the ceiling, long after the message — which
+    // is worse than what it replaced, so the report has to be acted on.
+    //
+    // The BOUNDS are the assertion. They are set far above the drop, so a run
+    // that resolves quickly can only have resolved because it was told; one that
+    // waited them out is the regression.
+    turnBehaviour = (opts) => {
+      // Accepted, and no turn ever opens — nothing calls `onTurnStart`.
+      setTimeout(() => opts.onSettled?.('failed'), 0);
+      return { accepted: true, canonicalId: opts.sessionId };
+    };
+
+    const startedAt = Date.now();
+    const result = await createSessionRoomTurnRunner({
+      waitMs: () => 5_000,
+      ceilingMs: () => 10_000,
+    }).run(request());
+
+    expect(Date.now() - startedAt).toBeLessThan(1_000);
+    // The room's ordinary could-not-answer path, not a late answer that nothing
+    // will ever resolve.
+    expect(result.text).toBeNull();
+    expect(result.unanswered).toBe('failed');
+    expect(result.late).toBeUndefined();
+  });
+
+  it('keeps waiting on a turn that DID start and then failed, which has its own reporting', async () => {
+    // The other side of the guard above: `onSettled('failed')` also fires for a
+    // turn that really ran and then errored. That one has a `turn_start`, is
+    // being watched by the collector, and must keep its existing path — cutting
+    // it short here would drop an answer the agent had already produced.
+    turnBehaviour = (opts) => {
+      openTurn(opts);
+      opts.projector.ingest({ type: 'text_delta', text: 'Half an answer.' });
+      setTimeout(() => {
+        opts.projector.ingest({ type: 'turn_end' });
+        opts.onSettled?.('failed');
+      }, 0);
+      return { accepted: true, canonicalId: opts.sessionId };
+    };
+
+    const result = await createSessionRoomTurnRunner().run(request());
+    expect(result.text).toBe('Half an answer.');
   });
 
   it('reads a turn whose start arrives after the dispatch has already resolved', async () => {

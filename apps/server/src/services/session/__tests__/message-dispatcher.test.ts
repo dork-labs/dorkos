@@ -56,6 +56,7 @@ import { recentDispatches, resetDispatchBuffers } from '../../observability/disp
 // dispatcher then RUNS — the edit and the turn are one promise, not two.
 import { cancelQueuedMessage, editQueuedMessage } from '../queued-message-edits.js';
 import { MessageQueueStore, setMessageQueueStore } from '../message-queue-store.js';
+import { ROOMS } from '../../../config/constants.js';
 import {
   getOrCreateProjector,
   disposeProjector,
@@ -446,9 +447,11 @@ describe('dispatchMessage — a busy session is a queue, not a refusal (task 2.4
     runtime.withScenarios([heldTurn(first.wait), quickTurn()]);
 
     // One that RUNS: nothing in the composer while its turn is live either.
-    await send('a room turn', { whenBusy: 'refuse' });
+    const ran = await send('a room turn', { whenBusy: 'refuse' });
     expect(store.list(session)).toEqual([]);
     expect(listQueuedMessages(session)).toEqual([]);
+    // On no queue at all, so there is no position to report (DOR-1242).
+    expect(ran.queuePosition).toBe(0);
 
     // ...and one that WAITS, which is the plan that used to survive a restart.
     const held = await send('re-mentioned mid-turn', { whenBusy: 'refuse-foreign' });
@@ -467,6 +470,69 @@ describe('dispatchMessage — a busy session is a queue, not a refusal (task 2.4
     first.open();
     await settle();
     expect(runtime.sendMessage).toHaveBeenCalledTimes(1);
+  });
+
+  it('sweeps a room row an earlier build persisted, rather than adopting it', async () => {
+    // The population this fix is FOR (DOR-1242). A refusing caller gets no row
+    // now, but builds before this wrote one, and adoption re-arms whatever it
+    // finds as an ordinary `whenBusy: 'queue'` plan — so a room prompt from a
+    // conversation that ended days ago would fire into this session with nobody
+    // listening. Nothing is left that wants it, so it is removed.
+    const stale = store.enqueue({
+      sessionId: session,
+      content: '@ada what did we decide about the importer?',
+      clientId: ROOMS.CLIENT_ID,
+    });
+    // A person's own queued words, side by side, to prove the sweep is targeted
+    // rather than a blanket clear of everything a restart found.
+    const mine = store.enqueue({
+      sessionId: session,
+      content: 'my own words, still waiting',
+      clientId: TAB,
+    });
+
+    // One adopted, not two: the room's row is gone from disk before anything is
+    // armed around it, while the person's is still there waiting to run.
+    expect(
+      adoptQueuedMessages({ sessionId: session, projector: getOrCreateProjector(session), runtime })
+    ).toBe(1);
+    expect(store.get(stale.id)).toBeUndefined();
+    expect(store.get(mine.id)).toBeDefined();
+
+    await settle();
+
+    // ...and what actually reached the model is the person's words, once. The
+    // room's prompt was never sent, which is the whole point.
+    expect(runtime.sendMessage).toHaveBeenCalledTimes(1);
+    expect(runtime.sendMessage).toHaveBeenCalledWith(
+      session,
+      'my own words, still waiting',
+      expect.anything()
+    );
+  });
+
+  it('reports a dropped refuse-foreign trigger to the caller that registered for it', async () => {
+    // The BLOCKER the review caught: `returnToQueue` documents the drop as
+    // "terminal and REPORTED", and rooms are the only refuse-foreign caller, so
+    // if `onSettled` never reaches a registered callback the room waits on a turn
+    // nothing will start — a late notice at its wait bound and "something went
+    // wrong" at its ceiling, an hour later. This pins the dispatcher half: the
+    // callback the caller passed is the one that fires.
+    const settled: string[] = [];
+    const first = gate();
+    runtime.withScenarios([heldTurn(first.wait), quickTurn()]);
+
+    await send('the turn the room is already running');
+    await send('re-mentioned mid-turn', {
+      whenBusy: 'refuse-foreign',
+      queueWaitMs: 60,
+      onSettled: (outcome: string) => settled.push(outcome),
+    });
+
+    runtime.acquireLock.mockReturnValue(false);
+    first.open();
+
+    await vi.waitFor(() => expect(settled).toEqual(['failed']), { timeout: 2_000 });
   });
 
   it('still refuses a turn another client opened (whenBusy: refuse-foreign)', async () => {

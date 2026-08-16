@@ -161,8 +161,15 @@ model. See ADR `260726-170127` and `research/20260727_buzz-conversational-behavi
   takes the session anyway, it goes back in line for what is LEFT of its original
   wait and no more. Re-arming a fresh budget each time is what made it retry once
   per lock TTL for the life of the process; when the wait is spent the plan is
-  dropped once, `onSettled('failed')` fires, and the room's ordinary
-  could-not-answer path takes it from there.
+  dropped once and `onSettled('failed')` fires.
+  **A dropped trigger must be ACTED on, not merely reported.** The runner passes
+  `onSettled` and cancels its reply collector when a dispatch settles `failed`
+  having never stamped a `turn_start` — no turn ran, so there is nothing left to
+  hear. Reporting alone was worse than the retry it replaced: the room would sit
+  on a turn nothing would start, post "the answer will post late" at `waitMs`,
+  and reach "something went wrong" at its ceiling an hour later. A turn that DID
+  start and then failed carries a seq and keeps its existing path — do not cut
+  that one short.
   **The guard is re-asked when a held batch finally runs**, and it has to be:
   the ancestry rule is a durable query that could not see the in-flight turn the
   batch was waiting for, and by then it can. That is what still terminates a

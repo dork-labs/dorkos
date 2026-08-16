@@ -264,4 +264,18 @@ export const ROOMS = {
    * `GET /api/rooms/:id/entries?before=<seq>` as the reader scrolls.
    */
   SNAPSHOT_HISTORY_LIMIT: 100,
+
+  /**
+   * Lock identity every room-triggered turn takes. One id, not one per turn: the
+   * session write-lock is per session and a room binds one session per agent, so
+   * two turns for the same agent in the same room are the same writer and the
+   * second must queue rather than be refused as a foreign client.
+   *
+   * It lives HERE rather than in `room-turn-runner.ts` because a second module
+   * has to recognise it: the message dispatcher sweeps legacy queue rows written
+   * under it (`adoptQueuedMessages`), and the dispatcher is the neutral ingress —
+   * it must not import a room. A shared constant is the seam; see the sweep for
+   * why it can only be matched by this id.
+   */
+  CLIENT_ID: 'dorkos-room',
 } as const;

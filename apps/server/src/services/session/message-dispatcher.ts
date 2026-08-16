@@ -91,6 +91,9 @@
  * waited out its caller's own turn — is bounded rather than abandoned; see
  * {@link returnToQueue}.
  *
+ * Rows earlier builds DID write for a room are swept rather than adopted, so the
+ * promise holds for installs that predate this; see {@link adoptQueuedMessages}.
+ *
  * {@link SessionTurnQueue} (DOR-1088) is kept, underneath: it is the
  * intra-process ordering primitive inside `triggerTurn` and this does not
  * replace it. What changed is that no HTTP request waits on it.
@@ -138,7 +141,7 @@ import { onSessionRemoved } from './session-list-broadcaster.js';
 import { holdStagedContext } from './staged-context-store.js';
 import { triggerTurn, type TriggerTurnDeps, type TriggerTurnResult } from './trigger-turn.js';
 import { triggerCommandIntent } from './trigger-command-intent.js';
-import { SESSIONS } from '../../config/constants.js';
+import { ROOMS, SESSIONS } from '../../config/constants.js';
 import { logger } from '../../lib/logger.js';
 import { captureDispatchScope, runInDispatch } from '../../lib/dispatch-context.js';
 import { recordDispatchEnd, recordDispatchStart } from '../observability/dispatch-buffers.js';
@@ -615,13 +618,11 @@ export interface MessageDispatchResult extends TriggerTurnResult {
   outcome: MessageDeliveryOutcome;
   /**
    * Where the message sat in its session's queue at acceptance, 1-based.
-   * `1` means it was the head — nothing was ahead of it. `0` means it was never
-   * queued at all: either a refusal, or a steer/stage that landed natively
-   * through the degradation ladder without becoming a queue row.
-   *
-   * A refusing caller that waits (a `'refuse-foreign'` behind its own turn)
-   * reads `1`, because it is next and nothing durable is ahead of it — it has no
-   * row of its own to be positioned against. See the module doc.
+   * `1` means it was the head — nothing was ahead of it. `0` means it is on no
+   * queue at all: a refusal, a steer/stage that landed natively through the
+   * degradation ladder, or a refusing caller that WAITS (a `'refuse-foreign'`
+   * behind its own turn) — accepted (`queued: true`) but deliberately rowless,
+   * so there is no position to report. See the module doc.
    */
   queuePosition: number;
   /**
@@ -1031,11 +1032,17 @@ export async function dispatchMessage(opts: DispatchMessageOpts): Promise<Messag
         })
       : undefined;
   const messageId = record?.id ?? crypto.randomUUID();
+  // A row gives a real position. Without one the answer depends on WHY there is
+  // no row: a refusing caller is deliberately rowless and reports `0` (it is on
+  // no queue at all), while a host with no store wired — every embedded host and
+  // most unit tests — still has a notional queue of one and reports `1`.
   const queuePosition = record
     ? (getMessageQueueStore()
         ?.list(queueKey)
         .findIndex((row) => row.id === messageId) ?? 0) + 1
-    : 1;
+    : whenBusy === 'queue'
+      ? 1
+      : 0;
   const outcome: MessageDeliveryOutcome = {
     messageId,
     requested,
@@ -1155,8 +1162,26 @@ export function adoptQueuedMessages(opts: AdoptQueuedMessagesOpts): number {
   const sessionKey = primaryOf(opts.sessionId);
   const rows = store.list(queueKeyOf(opts.sessionId));
   let adopted = 0;
+  let swept = 0;
   for (const row of rows) {
     if (pending.has(row.id) || launching.has(row.id)) continue;
+    // **A row a ROOM left behind is swept, never adopted** (DOR-1242). A room's
+    // trigger gets no row any more, but rows written by earlier builds are still
+    // on disk, and adoption would re-arm one as an ordinary `whenBusy: 'queue'`
+    // plan: a prompt from a conversation that ended days ago, fired into a
+    // session with no collector listening, and shown in that person's composer
+    // on the way. Nobody is left to want it, so the honest recovery is to remove
+    // it.
+    //
+    // The lock identity is the only thing that can distinguish these, which is
+    // why it is a shared constant rather than a room import. It also bounds what
+    // this can clean up: a `whenBusy: 'refuse'` UI action enqueues under the
+    // PERSON's own client id, indistinguishable from something they typed, so
+    // those legacy rows are left alone rather than guessed at.
+    if (row.enqueuedBy === ROOMS.CLIENT_ID) {
+      if (store.remove(row.id)) swept += 1;
+      continue;
+    }
     // The dispatch that accepted this row belonged to a process that is gone,
     // and its id went with it. Adoption is a new dispatch — its own id, its own
     // origin — because the alternative is a turn that appears in the log under
@@ -1198,6 +1223,16 @@ export function adoptQueuedMessages(opts: AdoptQueuedMessagesOpts): number {
       parkDispatch(plan, unwatchedSettle(plan))
     );
     adopted += 1;
+  }
+  if (swept > 0) {
+    // The queue really changed, so every window watching it has to be told —
+    // otherwise a ghost row stays drawn in somebody's composer until something
+    // else happens to move the queue.
+    emitQueueUpdate(queueKeyOf(opts.sessionId));
+    logger.info('[MessageDispatcher] swept room triggers an earlier build had persisted', {
+      sessionId: sessionKey,
+      rows: swept,
+    });
   }
   if (adopted > 0) schedulePump(sessionKey);
   return adopted;
