@@ -59,10 +59,11 @@ interface AgentListItemProps {
   /**
    * View this agent's profile — what its face opens, and the menu item beside it.
    *
-   * The sidebar always supplies one (`SidebarChrome.viewProfileFor` falls back
-   * to the docked profile for an agent the roster cannot name). Optional only so
-   * a showcase can draw the row without a destination — and the face is then
-   * plain, unclickable art rather than a control that opens nothing.
+   * The sidebar always supplies one: `SidebarChrome.viewProfileFor` falls back
+   * to the docked PANEL for an agent the fleet cannot name, which opens and says
+   * the agent is gone rather than drawing a profile. Optional only so a showcase
+   * can draw the row without a destination — and the face is then plain,
+   * unclickable art rather than a control that opens nothing.
    */
   onViewProfile?: () => void;
   /** Open the inline group-create flow, moving this agent into the new group on commit. */

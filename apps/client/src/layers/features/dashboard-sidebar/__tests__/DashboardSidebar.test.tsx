@@ -617,13 +617,19 @@ describe('DashboardSidebar', () => {
       expect(mockOpenProfileDocked).not.toHaveBeenCalled();
     });
 
-    it('still opens a profile — the docked one — when the fleet cannot name it', async () => {
+    it('still has a door — the docked panel — when the fleet cannot name it', async () => {
       // The roster join and the path listing are separate reads and can
       // genuinely disagree: an agent retired mid-session, or a roster whose
       // account source degraded, has a directory but no id. Offering nothing
-      // there meant the one agent you most needed to look at was the one you
-      // could not open. The dock is addressed by DIRECTORY, which a row always
-      // has (DOR-1255).
+      // there left the face as plain art and the menu item missing, so the one
+      // agent you most needed to look at was the one that answered you with
+      // nothing at all (DOR-1255).
+      //
+      // **What opens is a panel, not a profile.** `ProfileDock` resolves the
+      // identity through the same path → id map, so it settles on "Agent not
+      // found" and names the dead directory. That is asserted from the other
+      // end, in `ProfileDock.test.tsx` — this half only pins that the row still
+      // reaches for the door.
       mockUnmappedPaths.mockReturnValue(['/projects/alpha']);
       renderOneAgent();
 

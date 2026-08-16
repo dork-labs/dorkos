@@ -85,14 +85,25 @@ export interface SidebarChromeValue {
    * picked the home itself could send the same agent to a different place than
    * every other face in the cockpit.
    *
-   * **It always returns an opener, and that is the point.** The sheet is
-   * addressed by roster id, which the mesh may not have — an agent retired
-   * mid-session, or a roster whose account source degraded, resolves to nothing.
-   * Returning `undefined` there left the row's face as plain art and its menu
-   * without a profile item, so the one agent you most needed to look at was the
-   * one you could not open. The dock is addressed by DIRECTORY, which a sidebar
-   * row always has, so it is the fallback — the same one `AgentIdentityChip`
-   * keeps, for the same reason.
+   * **It always returns an opener, and what the fallback opens is an ANSWER
+   * rather than a profile.** The sheet is addressed by roster id, which the
+   * fleet's path → id map may not have — an agent retired mid-session, or a
+   * roster whose account source degraded, resolves to nothing. Returning
+   * `undefined` there left the row's face as plain art and its menu without a
+   * profile item, so the one agent you most needed to look at was the one that
+   * offered you nothing at all.
+   *
+   * The fallback opens the docked panel on the directory, which a sidebar row
+   * always has. **It will not draw a profile**: `ProfileDock` resolves the
+   * identity through that same map, so it settles on `AgentNotFound` and names
+   * the directory that went dead. That is the whole of what this buys — a panel
+   * that opens and tells you the agent is gone, instead of a control that does
+   * not respond. Pinned from the other end in `ProfileDock.test.tsx`; do not
+   * describe it as opening a working profile.
+   *
+   * In practice the branch is close to unreachable: both this and the row list
+   * derive from the same `useMeshAgentPaths()` payload, so a row usually exists
+   * only for a path the map holds. It is the degraded case, kept honest.
    */
   viewProfileFor: (agentPath: string) => () => void;
   /**
@@ -364,10 +375,9 @@ export function SidebarChrome({ activeTarget, children }: SidebarChromeProps) {
       activeTarget,
       openTarget,
       newSession: (dir?: string) => startNewSession(dir),
-      // Sheet when the mesh can name the agent, dock when it cannot. Never a
-      // no-op: both branches open a real profile, they just address it
-      // differently — see `viewProfileFor`'s docs for why the dock is the one
-      // that can always be reached.
+      // Sheet when the fleet can name the agent, docked panel when it cannot.
+      // Never a no-op — but the second branch opens a panel that says the agent
+      // is gone, not a profile. See `viewProfileFor`'s docs.
       viewProfileFor: (agentPath: string) => {
         const memberId = memberIdByPath.get(agentPath);
         return memberId === undefined
