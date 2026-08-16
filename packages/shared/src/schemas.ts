@@ -464,7 +464,7 @@ export const SEED_CONTEXT_MAX_LENGTH = 10_000;
 
 /**
  * What a sender wants done with a message while a turn is already running
- * (spec `persistent-session-runtime`, ADR-0263).
+ * (spec `persistent-session-runtime`, ADR `260816-143752`).
  *
  * - `queue` — wait for the running turn to end, then run it. Always available:
  *   the SERVER owns the queue, so no runtime has to.
