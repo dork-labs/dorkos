@@ -726,7 +726,7 @@ describe('ClaudeCodeRuntime', () => {
           {
             text: '<command-name>/compact</command-name>\n<command-message>compact</command-message>\n<command-args></command-args>',
           },
-          { text: '<local-command-stdout>[2mCompacted [22m</local-command-stdout>' },
+          { text: '<local-command-stdout>\u001b[2mCompacted \u001b[22m</local-command-stdout>' },
         ].entries()) {
           const { text, ...flags } = record;
           yield {
