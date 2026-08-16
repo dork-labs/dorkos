@@ -325,8 +325,27 @@ describe('a posted message reaches Today', () => {
     expect(todayKeys(result.current)).not.toContain(`room:${ROOM.id}`);
 
     // The composer takes the room WITH its roster; the sidebar takes the
-    // summary. Same room, two views of it, exactly as the app has them.
-    const withRoster = { ...ROOM, members: [], viewerAuthorId: 'author-you' };
+    // summary. Same room, two views of it, exactly as the app has them — and
+    // the operator is on that roster, because the composer reads membership
+    // now (DOR-1233) and offers a Rejoin line rather than a field to anyone
+    // who is not. A poster is a member; an empty roster would describe a room
+    // the server would refuse this post from.
+    const withRoster = {
+      ...ROOM,
+      members: [
+        {
+          roomId: ROOM.id,
+          authorId: 'author-you',
+          responseMode: 'always',
+          joinedAt: ROOM.createdAt,
+          joinedSeq: 0,
+          lastReadSeq: 0,
+          author: { id: 'author-you', kind: 'human', displayName: 'You', handle: null },
+          origin: 'local',
+        },
+      ],
+      viewerAuthorId: 'author-you',
+    };
     render(<RoomComposer room={withRoster as unknown as RoomWithRoster} />, {
       wrapper: wrapper(transport),
     });
