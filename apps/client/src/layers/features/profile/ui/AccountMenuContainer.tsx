@@ -46,10 +46,10 @@ export interface AccountMenuContainerProps {
  * behind it is a control that cannot do its job: the menu's whole content is
  * your name, your handle and your own profile. That also means the Obsidian
  * embed — whose roster is empty by construction — gets no dead button, the same
- * choice `ProfileDrawerContainer` makes about its session action.
+ * choice `ProfileSheetContainer` makes about the profile it cannot resolve.
  *
  * The roster read is unconditional here rather than gated, and it costs nothing
- * extra: it shares one cache entry with the Team page and the profile drawer
+ * extra: it shares one cache entry with the Team page and the profile
  * (`TEAM_ROSTER_KEY`), so the sidebar asking for it once is the request those
  * surfaces would otherwise each make.
  *

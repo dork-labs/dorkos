@@ -132,7 +132,7 @@ export function SidebarChrome({ activeTarget, children }: SidebarChromeProps) {
   const queryClient = useQueryClient();
   const transport = useTransport();
   const startNewSession = useStartNewSession();
-  const { open: openProfileDrawer } = useProfileDeepLink();
+  const { open: openProfile } = useProfileDeepLink();
   const memberIdByPath = useMeshMemberIds();
   const setRightPanelOpen = useAppStore((s) => s.setRightPanelOpen);
   const setActiveRightPanelTab = useAppStore((s) => s.setActiveRightPanelTab);
@@ -357,7 +357,7 @@ export function SidebarChrome({ activeTarget, children }: SidebarChromeProps) {
       // so the face renders as plain art instead of a control that opens nothing.
       viewProfileFor: (agentPath: string) => {
         const memberId = memberIdByPath.get(agentPath);
-        return memberId === undefined ? undefined : () => openProfileDrawer(memberId);
+        return memberId === undefined ? undefined : () => openProfile(memberId);
       },
       requestNewGroup,
       groupCreation,
@@ -383,7 +383,7 @@ export function SidebarChrome({ activeTarget, children }: SidebarChromeProps) {
       setRightPanelOpen,
       setActiveRightPanelTab,
       memberIdByPath,
-      openProfileDrawer,
+      openProfile,
       groupCreation,
       requestNewGroup,
       endNewGroup,

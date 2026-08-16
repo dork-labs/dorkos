@@ -158,7 +158,7 @@ test.describe('Team — the roster @smoke', () => {
     // reads `?profile=` back against the roster, so a card that handed over an
     // id from any other space would open nothing at all.
     await expect(page).toHaveURL(new RegExp(`[?&]profile=${memberId}`));
-    await expect(page.locator('[data-slot="profile-drawer"]')).toHaveAttribute(
+    await expect(page.locator('[data-slot="profile"]')).toHaveAttribute(
       'data-member-id',
       memberId!
     );
@@ -166,7 +166,7 @@ test.describe('Team — the roster @smoke', () => {
     // …and it survives a reload, which is what makes a profile shareable.
     await page.reload();
     await basePage.waitForAppReady();
-    await expect(page.locator('[data-slot="profile-drawer"]')).toHaveAttribute(
+    await expect(page.locator('[data-slot="profile"]')).toHaveAttribute(
       'data-member-id',
       memberId!
     );

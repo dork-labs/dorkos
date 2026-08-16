@@ -7,8 +7,8 @@
  * same size as its neighbours so it joins the row instead of re-laying it out.
  *
  * Presentational, split from {@link AccountMenuContainer} the same way
- * `ProfileDrawer` is split from its container: this half is the menu, that half
- * decides who you are and what its three items do.
+ * `ProfileView` is split from `ProfileSheetContainer`: this half is the menu,
+ * that half decides who you are and what its three items do.
  *
  * @module features/profile/ui/AccountMenu
  */
