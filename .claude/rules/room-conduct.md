@@ -143,6 +143,22 @@ model. See ADR `260726-170127` and `research/20260727_buzz-conversational-behavi
   like any other (spec §10.4), which is exactly why the mechanism cannot live in
   the conversation. `room-stopped-turns.test.ts` pins the guard: a message whose
   text is "stop" runs a normal turn.
+  **A stopped turn posts nothing, and the room is what guarantees that, not the
+  runtime.** `RoomTurnRunner.interrupt` resolving means the interrupt was
+  DELIVERED; the turn's own stream still closes the ordinary way, and a model
+  that had all but finished comes back with the whole answer in it. Measured on
+  a live install (DOR-1232): the room wrote its one `halted` notice and posted
+  that answer two seconds later, so Stop looked like it had done nothing. So the
+  halt marks every dispatch it drops (`RoomTriggerDispatcher.haltedTurns`,
+  synchronously, before its first `await`), and every delivery path — the
+  in-frame one, the late one, the aside — throws that turn's answer away when it
+  lands. It throws the NOTICES away too: the `halted` line is the whole story,
+  and a `turn_failed` under it is the room apologising for obeying. The mark is
+  keyed by dispatch and not by `(room, agent)`, because the claim is already
+  gone by then and the next turn for that pair is a different dispatch that Stop
+  said nothing about. What is NOT discarded is the spend — a turn that ran a
+  model has spent, and `tryReserve` still has no counterpart — nor the turn's
+  own session transcript, where a person can still read what it was saying.
 - **A refusal is visible, and so is a turn that has stopped.** A dropped trigger
   that writes no room entry is indistinguishable from a broken agent, and the
   person who notices is not the person who configured it. If you add a path that

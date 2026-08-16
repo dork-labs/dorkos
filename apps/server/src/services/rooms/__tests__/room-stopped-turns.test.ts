@@ -66,8 +66,16 @@ interface GatedRunner extends ScriptedTurnRunner {
  *   and the turn settles a moment later. `false` is the runtime that does not
  *   come back — a hung subprocess, a lost socket — which is the case the halt's
  *   own claim release exists for.
+ * @param opts.interruptedTurnStillAnswers - Whether the turn an interrupt ends
+ *   comes back WITH what the model had already produced. That is what a real
+ *   runtime does when the interrupt loses its race with a model that had all but
+ *   finished (DOR-1232, measured 2026-08-15) — `interrupt` is delivered, and the
+ *   stream closes a moment later carrying the complete answer.
  */
-function gatedRunner({ interruptEndsTurn = true } = {}): GatedRunner {
+function gatedRunner({
+  interruptEndsTurn = true,
+  interruptedTurnStillAnswers = false,
+} = {}): GatedRunner {
   const turns: ScriptedTurnRunner['turns'] = [];
   const interrupted: ScriptedTurnRunner['interrupted'] = [];
   const held = new Map<
@@ -114,10 +122,13 @@ function gatedRunner({ interruptEndsTurn = true } = {}): GatedRunner {
         queued.push({
           request,
           finish: () => resolve({ sessionId, text: 'on it' }),
-          // Interrupted turns say nothing: the room's `halted` notice is the
-          // durable line, and a stopped turn posting half an answer under it
-          // would be the fragment DOR-621 removed.
-          stop: () => resolve({ sessionId, text: null }),
+          // What a stopped turn hands back. Nothing, for a runtime that dropped
+          // what it was saying — but `interruptedTurnStillAnswers` models the
+          // one that measurably does not: the interrupt is delivered and the
+          // stream still closes with the whole answer in it. The room has to
+          // throw that away either way (DOR-1232), which is what makes the
+          // second shape worth having a fake for.
+          stop: () => resolve({ sessionId, text: interruptedTurnStillAnswers ? 'on it' : null }),
         });
         held.set(request.authorId, queued);
       });
@@ -424,6 +435,156 @@ describe('a room says when a turn has stopped', () => {
         stubborn.release(anaIn(wired));
         await wired.service.triggersIdle();
       }
+    });
+
+    /**
+     * Wire a room of its own, get one agent mid-turn in it, and hand back the
+     * handles these scenarios read.
+     *
+     * A fresh harness per scenario, rather than the suite's, because each one
+     * needs its OWN runner: what a turn does when it is interrupted is the
+     * variable under test, and it is fixed when the runner is built.
+     *
+     * @param runner - The runtime this room runs on.
+     * @param opts.perRoomBudget - The room's hourly ceiling, when the scenario
+     *   is about spending; the harness default otherwise.
+     */
+    async function roomMidTurn(
+      runner: GatedRunner,
+      opts: { perRoomBudget?: number } = {}
+    ): Promise<{
+      wired: ReturnType<typeof createRoomHarness>;
+      roomId: string;
+      agent: string;
+      entries: () => RoomEntry[];
+      /** Everything the AGENT posted — the thing a halt must leave empty. */
+      answers: () => RoomEntry[];
+      /** Ask the agent something and wait until it is really mid-turn. */
+      ask: (text: string) => Promise<void>;
+    }> {
+      const wired = createRoomHarness({
+        agents,
+        runner,
+        ...(opts.perRoomBudget !== undefined && {
+          maxAutomaticTurnsPerRoomPerHour: opts.perRoomBudget,
+        }),
+      });
+      const made = wired.service.createRoom(
+        { kind: 'channel', title: 'Stop', members: [], agentPaths: ['/agents/ana'] },
+        wired.human
+      );
+      const agent = anaIn(wired);
+      const entries = (): RoomEntry[] =>
+        wired.service.listEntries(made.id, wired.human, { limit: 200 });
+      const ask = async (text: string): Promise<void> => {
+        wired.service.post(made.id, { authorId: wired.human, text });
+        await settleUntil(() => runner.holdsFor(agent) > 0, `Ana to be mid-turn for "${text}"`);
+      };
+      await ask('@ana write me a slow, careful poem about lakes');
+      return {
+        wired,
+        roomId: made.id,
+        agent,
+        entries,
+        answers: () => entries().filter((e) => e.kind === 'post' && e.authorId === agent),
+        ask,
+      };
+    }
+
+    it('throws away the answer of a turn that kept talking after it was stopped', async () => {
+      // **The bug, exactly as it was measured** (DOR-1232, the live rooms
+      // self-test of 2026-08-15): the room wrote its one `halted` notice and the
+      // stopped turn's complete, well-formed answer landed two seconds later. An
+      // interrupt is delivered, not obeyed — so the room cannot rely on the
+      // runtime to make Stop mean anything, and has to decline the answer
+      // itself. The runtime here is the stubborn one, whose turn is still
+      // running when the halt returns and then closes normally, which is the
+      // shape that used to post.
+      const stubborn = gatedRunner({ interruptEndsTurn: false });
+      const room = await roomMidTurn(stubborn);
+
+      expect(await room.wired.service.haltRoom(room.roomId, room.wired.human)).toBe(1);
+      expect(stubborn.interrupted).toHaveLength(1);
+      // The turn the halt did not manage to stop, finishing the ordinary way.
+      stubborn.release(room.agent);
+      await room.wired.service.triggersIdle();
+
+      expect(room.answers()).toHaveLength(0);
+      // And the room said nothing ELSE either. A `turn_failed` line under the
+      // halt would be the room apologising for doing what it was told.
+      const notices = room.entries().filter((entry) => entry.kind === 'notice');
+      expect(notices).toHaveLength(1);
+      expect(notices[0].body.notice).toBe('halted');
+      // The claim went with the halt and stayed gone.
+      expect(room.wired.service.listRooms(room.wired.human, {})[0].working).toBe(0);
+    });
+
+    it('throws it away when the answer lands in the same instant as the halt', async () => {
+      // The tightest version of the same race: the interrupt IS what closes the
+      // stream, and the stream still carries the answer the model had finished
+      // producing. Nothing about the ordering of the halt's own steps can help
+      // here — the mark has to be set before the halt does anything that could
+      // let a turn settle, which is why this scenario is separate from the one
+      // above rather than a second assertion in it.
+      const racing = gatedRunner({ interruptedTurnStillAnswers: true });
+      const room = await roomMidTurn(racing);
+
+      expect(await room.wired.service.haltRoom(room.roomId, room.wired.human)).toBe(1);
+      await room.wired.service.triggersIdle();
+
+      expect(room.answers()).toHaveLength(0);
+      expect(room.entries().filter((entry) => entry.body.notice === 'halted')).toHaveLength(1);
+      expect(room.wired.service.listRooms(room.wired.human, {})[0].working).toBe(0);
+    });
+
+    it('leaves the room able to answer the very next message', async () => {
+      // Stop stops this turn, not the conversation. The claim is released, the
+      // gathered messages are dropped, and the next thing somebody says runs a
+      // normal turn that posts a normal answer — which is also the only
+      // end-to-end proof that discarding the halted answer did not wedge
+      // anything the next turn needs.
+      const racing = gatedRunner({ interruptedTurnStillAnswers: true });
+      const room = await roomMidTurn(racing);
+      await room.wired.service.haltRoom(room.roomId, room.wired.human);
+      await room.wired.service.triggersIdle();
+
+      await room.ask('@ana never mind — what is 2 + 2?');
+      racing.release(room.agent);
+      await room.wired.service.triggersIdle();
+
+      expect(racing.turns).toHaveLength(2);
+      expect(room.answers()).toHaveLength(1);
+      expect(room.answers()[0].body.text).toBe('on it');
+    });
+
+    it('charges a halted turn exactly once — no refund, and no second charge', async () => {
+      // A turn that ran a model and was then stopped has SPENT: the work
+      // happened, and `tryReserve` has no counterpart by design. Two mistakes
+      // would make this red, which is what makes it worth asserting: refunding
+      // the halted turn would let the third message run, and charging its
+      // discarded answer a second time would refuse the second.
+      const racing = gatedRunner({ interruptedTurnStillAnswers: true });
+      const room = await roomMidTurn(racing, { perRoomBudget: 2 });
+
+      await room.wired.service.haltRoom(room.roomId, room.wired.human);
+      await room.wired.service.triggersIdle();
+
+      // The second of two, so it must still be affordable.
+      await room.ask('@ana try again, please');
+      racing.release(room.agent);
+      await room.wired.service.triggersIdle();
+      expect(racing.turns).toHaveLength(2);
+
+      // The third is not, so the room says so rather than running it.
+      room.wired.service.post(room.roomId, {
+        authorId: room.wired.human,
+        text: '@ana and once more',
+      });
+      await settleUntil(
+        () => room.entries().some((entry) => entry.body.notice === 'budget_reached'),
+        'the room to say it is out of automatic turns'
+      );
+      expect(racing.turns).toHaveLength(2);
     });
 
     it('does not repeat itself when a quiet room is stopped twice', async () => {

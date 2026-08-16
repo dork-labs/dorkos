@@ -347,6 +347,31 @@ export class RoomTriggerDispatcher {
   private readonly claimed = new Map<string, ActiveClaim>();
 
   /**
+   * The turns a halt stopped, by dispatch id — the answers this room throws
+   * away (DOR-1232).
+   *
+   * **An interrupt is a request, not a guarantee, and this is what makes Stop
+   * mean stop anyway.** {@link RoomTurnRunner.interrupt} resolving says only
+   * that the interrupt was DELIVERED: the turn's own stream still closes the
+   * ordinary way, and a model that had all but finished streams its last words
+   * either side of the signal. Measured on 2026-08-15 against a live install —
+   * the room wrote its one `halted` notice and then posted the stopped turn's
+   * complete, well-formed answer two seconds later, so pressing Stop looked, to
+   * the person who pressed it, like nothing had happened.
+   *
+   * Keyed by DISPATCH rather than by `(room, agent)`, and both halves matter:
+   * the claim that would otherwise carry it is gone by the time the answer
+   * lands — a halt releases every claim it drops — and the NEXT turn for the
+   * same pair is a different dispatch that Stop said nothing about.
+   *
+   * Bounded by construction rather than by a sweep: every claim belongs to a
+   * frame that forgets its mark at its terminal, and a turn handed to
+   * {@link RoomTriggerDispatcher.deliverLate} is forgotten there instead,
+   * because that delivery is still ahead of it.
+   */
+  private readonly haltedTurns = new Set<string>();
+
+  /**
    * The republish loop, alive exactly while {@link RoomTriggerDispatcher.claimed}
    * is non-empty.
    *
@@ -1225,6 +1250,9 @@ export class RoomTriggerDispatcher {
     // terminal here set it; a turn handed to `deliverLate` does not release from
     // this frame at all, so its outcome is that method's to report.
     let outcome: ClaimOutcome = 'quiet';
+    // Whether this turn's last delivery has moved to `deliverLate`, which is
+    // then the frame that owes the halt mark its cleanup.
+    let handedToLate = false;
     try {
       // Built before the request so the context and the projection plan it
       // implies are one value, resolved once.
@@ -1311,7 +1339,20 @@ export class RoomTriggerDispatcher {
       // next refusal for it wrote a second apology. The answer is delivered
       // through `deliverLate` when it actually lands, which is the moment
       // recovery is honest.
-      if (result.late) {
+      if (this.wasHalted(target.dispatchId)) {
+        // Stop reached this turn while it was running, so there is nothing left
+        // to deliver — `deliver` would drop the answer anyway, and this is the
+        // branch that also declines to WAIT for one. A halted turn that outran
+        // the room's patience would otherwise hold a room dispatch open for up
+        // to `rooms.lateReplyCeilingMinutes` to post nothing at the end of it.
+        outcome = 'halted';
+        // The runner's contract is resolve-or-reject, so a promise nobody reads
+        // is still a rejection somebody must catch — the room simply is not
+        // listening to this one any more. The turn itself keeps streaming into
+        // its own session, where a person can still read what it was saying.
+        result.late?.catch(() => undefined);
+      } else if (result.late) {
+        handedToLate = true;
         this.deliverLate({
           room,
           entry,
@@ -1364,7 +1405,12 @@ export class RoomTriggerDispatcher {
         authorId: target.authorId,
         error: err instanceof Error ? err.message : String(err),
       });
-      this.notices.reportSilence(room, entry, target, 'failed', target.dispatchId);
+      // A turn that threw because somebody stopped it did what it was told. The
+      // `halted` notice is already on the log and is the whole story; an
+      // apology under it would be the room reporting the person's own control
+      // action back to them as a fault.
+      if (this.wasHalted(target.dispatchId)) outcome = 'halted';
+      else this.notices.reportSilence(room, entry, target, 'failed', target.dispatchId);
     } finally {
       // `runner.run()` resolving is the end of the WAIT, which is only the end
       // of the TURN when the turn beat the deadline. A late turn is still
@@ -1373,6 +1419,12 @@ export class RoomTriggerDispatcher {
       // {@link RoomTriggerDispatcher.deliverLate} releases it when the answer
       // finally settles, whichever way it settles.
       if (this.claimed.get(key)?.pastDeadline !== true) this.releaseClaim(key, outcome);
+      // Read off the local rather than off the claim, because a halted turn has
+      // no claim left to read: `halt` released it. That is exactly the case this
+      // mark exists for, so deciding whose cleanup it is from the claim map
+      // would forget the mark of every turn that was waiting on a late answer
+      // when Stop was pressed.
+      if (!handedToLate) this.forgetHalt(target.dispatchId);
     }
   }
 
@@ -1399,6 +1451,26 @@ export class RoomTriggerDispatcher {
     late?: { waitedMs: number };
   }): ClaimOutcome {
     const { room, entry, target, reply } = opts;
+    // **A halted turn delivers nothing, and that includes its notices.** Stop
+    // already spoke for this turn — one `halted` line, written before the claims
+    // were dropped — and every other outcome here would speak over it: an answer
+    // makes the halt look like it did nothing, and a `turn_failed` line about an
+    // interrupt the person asked for is the room apologising for obeying.
+    // Checked ahead of `unanswered` for exactly that second reason, since a
+    // runtime that stops promptly ends its turn in an error.
+    if (this.wasHalted(target.dispatchId)) {
+      logger.info('[rooms] dropped a halted turn answer', {
+        roomId: room.id,
+        authorId: target.authorId,
+        entryId: entry.id,
+        dispatchId: target.dispatchId,
+        // Whether there was anything to drop, which is what tells a race the
+        // interrupt won from one it lost. Never the text: a room log line is no
+        // place for what an agent was in the middle of saying.
+        hadAnswer: (reply.text?.trim() ?? '') !== '',
+      });
+      return 'halted';
+    }
     if (reply.unanswered) {
       this.notices.reportSilence(room, entry, target, reply.unanswered, target.dispatchId);
       return reply.unanswered;
@@ -1535,6 +1607,9 @@ export class RoomTriggerDispatcher {
       })
       .finally(() => {
         this.releaseClaim(key, outcome);
+        // The last delivery this turn had, so the halt mark ends here — `runOne`
+        // deliberately left it standing for exactly this frame.
+        this.forgetHalt(opts.target.dispatchId);
         this.settleOne();
       });
   }
@@ -1754,6 +1829,13 @@ export class RoomTriggerDispatcher {
       // still working in its own checkout, and released by the `finally` below
       // once this has an answer to hand back.
       const settled = result.late === undefined ? result : await this.awaitLate(result.late, key);
+      // An offer somebody stopped is not made. The aside path is silent about
+      // every other refusal already, and this one has a durable line of its own:
+      // the room's `halted` notice, written when Stop was pressed.
+      if (this.wasHalted(input.dispatchId)) {
+        outcome = 'halted';
+        return null;
+      }
       if (settled.unanswered) {
         outcome = settled.unanswered;
         return null;
@@ -1789,6 +1871,9 @@ export class RoomTriggerDispatcher {
       // `.claude/rules/room-conduct.md`, because a rule with an undocumented
       // exception is a rule somebody re-derives from scratch.
       this.releaseClaim(key, outcome);
+      // An aside waits out its own late answer inline, so this frame is always
+      // the turn's last one and the halt mark always ends here.
+      this.forgetHalt(input.dispatchId);
     }
   }
 
@@ -1852,6 +1937,36 @@ export class RoomTriggerDispatcher {
       from: entry.seq,
       to: target.lastReadSeq,
     });
+  }
+
+  /**
+   * Whether Stop reached this turn — so its answer belongs nowhere.
+   *
+   * A READ, never a take: the two paths that ask are the in-frame delivery and
+   * the late one, and only one of them ever runs for a given turn, but which one
+   * is not known until the turn settles. The mark is dropped by
+   * {@link RoomTriggerDispatcher.forgetHalt} at the turn's real terminal
+   * instead.
+   *
+   * @param dispatchId - The turn being delivered.
+   * @returns Whether a halt stopped it.
+   */
+  private wasHalted(dispatchId: string): boolean {
+    return this.haltedTurns.has(dispatchId);
+  }
+
+  /**
+   * Forget that a turn was halted, once nothing can deliver it any more.
+   *
+   * Called from every frame that owns a turn's last delivery — never from
+   * `deliver` itself, which cannot tell whether a late delivery is still to
+   * come. Forgetting a mark nobody set is a no-op, which is the ordinary case:
+   * almost no turn is ever halted.
+   *
+   * @param dispatchId - The turn that has finished, however it finished.
+   */
+  private forgetHalt(dispatchId: string): void {
+    this.haltedTurns.delete(dispatchId);
   }
 
   /**
@@ -2157,6 +2272,13 @@ export class RoomTriggerDispatcher {
    */
   async halt(room: Room): Promise<number> {
     const claims = [...this.claimed.values()].filter((claim) => claim.roomId === room.id);
+    // **Marked before anything else, and before the first `await`.** A turn
+    // whose stream closes while this method is still delivering interrupts must
+    // find the mark already there, or it posts the answer Stop was pressed to
+    // prevent — the two-second race measured on 2026-08-15. Nothing after this
+    // line can be reached by a turn that started AFTER the halt, because a new
+    // turn is a new dispatch id (see {@link RoomTriggerDispatcher.haltedTurns}).
+    for (const claim of claims) this.haltedTurns.add(claim.dispatchId);
     logger.info('[rooms] a room was halted', { roomId: room.id, stopped: claims.length });
     // **The durable write comes first, and the whole invariant is in that
     // order.** Releasing a claim publishes `done`, so a halt that stopped the
