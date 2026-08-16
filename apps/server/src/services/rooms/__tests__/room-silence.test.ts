@@ -214,10 +214,11 @@ describe('a room says why an agent did not answer', () => {
       await service.triggersIdle();
 
       expect(runner.turns.filter((turn) => turn.authorId === ana)).toHaveLength(1);
-      // The LAST message is what the turn answers; the two before it ride its
-      // ambient window, so none of the three is lost.
+      // The LAST message is what the turn answers as its own content; the two
+      // before it ride it as gathered messages the same reply owes an answer
+      // to, so none of the three is lost.
       expect(runner.turns[0].prompt).toBe('@ana hello?');
-      expect(runner.turns[0].roomContext.pending.map((entry) => entry.text)).toEqual([
+      expect(runner.turns[0].roomContext.gathered?.map((entry) => entry.text)).toEqual([
         '@ana is the build green?',
         '@ana still there?',
       ]);

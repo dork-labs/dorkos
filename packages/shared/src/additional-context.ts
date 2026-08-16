@@ -407,6 +407,28 @@ export interface RoomContextData {
   /** True when `pending` was capped and older entries were dropped. */
   pendingTruncated: boolean;
   /**
+   * The OTHER messages this turn is answering: everything the collector gathered
+   * behind the triggering one, oldest first (room-participation spec §10.4, RP8).
+   *
+   * **Background and question are not the same thing, and one turn now carries
+   * both.** A turn answers a moment rather than a message, so three questions
+   * typed in one breath are one turn — but only the newest of them reaches the
+   * model as the turn's own content. The other two used to ride
+   * {@link RoomContextData.pending} under "you have not read these yet", which is
+   * how an agent came to answer the last question and silently drop the first
+   * two (DOR-1231). Same messages, different claim: these were addressed to the
+   * agent in the same moment, and the reply owes every one of them an answer.
+   *
+   * **Disjoint from `pending` by construction.** An entry is in exactly one of
+   * them, so nothing reaches the model twice under two headings.
+   *
+   * Absent — not empty — for the ordinary turn nothing was gathered behind, which
+   * is most of them. Bounded by `rooms.collectMaxEntries` rather than by the
+   * room's ambient cap: the cap sizes the background an agent reads, and these
+   * are not background.
+   */
+  gathered?: RoomContextEntry[];
+  /**
    * The last few TOP-LEVEL messages of the channel a thread turn is happening
    * in, oldest first — background, never the conversation being answered.
    *
@@ -734,6 +756,7 @@ export const RoomContextDataSchema = z.object({
   working: z.array(RoomContextAuthorSchema.extend({ since: z.string() })),
   pending: z.array(RoomContextEntrySchema),
   pendingTruncated: z.boolean(),
+  gathered: z.array(RoomContextEntrySchema).optional(),
   channelTail: z.array(RoomContextEntrySchema).optional(),
   channelTailOmitted: z.number().int().nonnegative().optional(),
   ownRecent: z.array(RoomContextEntrySchema),

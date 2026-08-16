@@ -313,7 +313,10 @@ describe('the room context a trigger derives', () => {
 
         expect(bounded).toHaveBeenCalled();
         expect(unbounded).not.toHaveBeenCalled();
-        // And the cap really is the argument, not a slice afterwards.
+        // And the cap really is the argument, not a slice afterwards. It stays
+        // exactly `cap + 1` however much a turn gathered: the gathered messages
+        // are read BY ID in their own query and subtracted from this one in SQL
+        // (DOR-1231), so they neither inflate this bound nor eat into it.
         for (const call of bounded.mock.calls) expect(call[1].limit).toBe(31);
       } finally {
         unbounded.mockRestore();

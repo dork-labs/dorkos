@@ -396,7 +396,7 @@ describe('RoomStore.listUnreadEntries', () => {
       afterSeq: 0,
       throughSeq: Number.MAX_SAFE_INTEGER,
       excludeAuthorId: 'ana',
-      excludeEntryId: 'none',
+      excludeEntryIds: [],
       limit: 3,
     });
     expect(rows.map((e) => e.body.text)).toEqual(['m8', 'm9', 'm10']);
@@ -413,7 +413,7 @@ describe('RoomStore.listUnreadEntries', () => {
       afterSeq: 0,
       throughSeq: Number.MAX_SAFE_INTEGER,
       excludeAuthorId: 'ana',
-      excludeEntryId: 'none',
+      excludeEntryIds: [],
       limit: 31,
     });
     expect(page).toHaveLength(31);
@@ -432,7 +432,7 @@ describe('RoomStore.listUnreadEntries', () => {
       afterSeq: 0,
       throughSeq: Number.MAX_SAFE_INTEGER,
       excludeAuthorId: 'ana',
-      excludeEntryId: 'the-trigger',
+      excludeEntryIds: ['the-trigger'],
       limit: 30,
     });
     expect(rows.map((e) => e.id)).toEqual(['from-human']);
@@ -444,7 +444,7 @@ describe('RoomStore.listUnreadEntries', () => {
       afterSeq: 3,
       throughSeq: Number.MAX_SAFE_INTEGER,
       excludeAuthorId: 'ana',
-      excludeEntryId: 'none',
+      excludeEntryIds: [],
       limit: 30,
     });
     expect(rows.map((e) => e.body.text)).toEqual(['m4', 'm5']);
@@ -461,7 +461,7 @@ describe('RoomStore.listUnreadEntries', () => {
       afterSeq: 3,
       throughSeq: 6,
       excludeAuthorId: 'ana',
-      excludeEntryId: 'none',
+      excludeEntryIds: [],
       limit: 30,
     });
     expect(rows.map((e) => e.body.text)).toEqual(['m4', 'm5', 'm6']);
