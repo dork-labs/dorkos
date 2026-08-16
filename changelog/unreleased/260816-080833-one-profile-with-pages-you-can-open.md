@@ -4,6 +4,7 @@ covers:
   - 'fix(client): quiet the profile — the identity rule, a clear corner, no empty rows (DOR-1252)'
   - 'feat(client): the Rooms row and page, on the real roster data (DOR-1252)'
   - "refactor(client): retire the drawer's name from the profile's neighbours (DOR-1252)"
+  - 'fix(client): a room reads the way its address is written, and a page needs a row (DOR-1252)'
 ---
 
 ### Changed
