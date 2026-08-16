@@ -1,10 +1,14 @@
-import { afterEach } from 'vitest';
+import { afterEach, expect, vi } from 'vitest';
 import { runtimeConformance } from '@dorkos/test-utils';
-import { scenarioStore } from '../scenario-store.js';
+import { scenarioStore, requestFinishTurn } from '../scenario-store.js';
+import { interactionGate } from '../interaction-gate.js';
 import { TestModeRuntime } from '../test-mode-runtime.js';
 import {
   driveDurableTurn,
   drivePresenceTurn,
+  driveDispositionTurn,
+  driveTerminalOnce,
+  driveQueueDurability,
 } from '../../../session/__tests__/durable-turn-harness.js';
 
 // The failing and compacting factories below each flip the module-level
@@ -51,6 +55,22 @@ runtimeConformance(() => new TestModeRuntime(), {
   // through the same projector the trigger path feeds.
   presenceTurn: (runtime, sessionId, content, probes) =>
     drivePresenceTurn(runtime, sessionId, content, '/projects/conformance', probes),
+  // C1 declared arm: test-mode declares BOTH steer and stage, so it owes the
+  // suite a turn held open to deliver into. The `long-turn` scenario streams a
+  // heartbeat and stays `streaming` with no pending interaction — which keeps
+  // `interactionGate.isOpen` true, the exact gate deliverIntoTurn(steer) reads —
+  // and `requestFinishTurn` ends it. The default is restored by the afterEach.
+  dispositionTurn: (runtime, sessionId, content, probes) => {
+    scenarioStore.setDefault('long-turn');
+    return driveDispositionTurn(runtime, sessionId, content, '/projects/conformance', probes, {
+      awaitOpen: () => vi.waitFor(() => expect(interactionGate.isOpen(sessionId)).toBe(true)),
+      endTurn: () => requestFinishTurn(),
+    });
+  },
+  // C2/C3 are server-owned invariants every runtime inherits by construction,
+  // driven through the shared machinery rather than test-mode itself.
+  terminalOnce: () => driveTerminalOnce('/projects/conformance'),
+  queueDurability: () => driveQueueDurability(),
   // BC-16: test-mode keeps session metadata in memory for one process lifetime
   // and writes no transcript, so it has nothing durable to read a person's last
   // message back out of — and being the fixture that omits the field is what

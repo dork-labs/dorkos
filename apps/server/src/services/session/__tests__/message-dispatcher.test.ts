@@ -119,6 +119,20 @@ function heldTurn(hold: Promise<void>, marks?: { order: string[]; label: string 
   };
 }
 
+/**
+ * A turn that ENDS and then keeps its stream open, the way a runtime draining
+ * background work does: `done` closes the turn, and the iterator returns later.
+ */
+function drainingTurn(hold: Promise<void>, marks?: { order: string[]; label: string }) {
+  return async function* (): AsyncGenerator<StreamEvent> {
+    marks?.order.push(`${marks.label}:start`);
+    yield { type: 'text_delta', data: { text: 'here is a widget' } } as StreamEvent;
+    yield { type: 'done', data: {} } as StreamEvent;
+    await hold;
+    marks?.order.push(`${marks.label}:stream-closed`);
+  };
+}
+
 /** A turn that ends immediately. */
 function quickTurn(marks?: { order: string[]; label: string }) {
   return async function* (): AsyncGenerator<StreamEvent> {
@@ -334,6 +348,148 @@ describe('dispatchMessage — a busy session is a queue, not a refusal (task 2.4
     first.open();
     await settle();
     expect(runtime.sendMessage).toHaveBeenCalledTimes(1);
+  });
+
+  it('takes a refusing caller once the turn has ENDED, though the stream is still closing', async () => {
+    // DOR-1239. claude-code keeps its subprocess alive past `done` so a finished
+    // background task can wake the agent again, and the write-lock and the
+    // in-flight slot are both released on that late signal — so for the whole
+    // drain the session LOOKS busy while the agent has stopped and its reply
+    // (widget buttons and all) is on screen. A click there was refused over a
+    // session nothing was using.
+    const drain = gate();
+    runtime.withScenarios([drainingTurn(drain.wait), quickTurn()]);
+
+    await send('render a widget');
+    // The turn has closed on the projector; the stream behind it has not.
+    await vi.waitFor(() => expect(getOrCreateProjector(session).peekInProgressTurn()).toBeNull());
+    expect(projectorStatus()).toBe('idle');
+
+    const clicked = await send('a widget click', { whenBusy: 'refuse' });
+
+    expect(clicked.accepted).toBe(true);
+    // And it waits in nobody's composer. A refusing caller's trigger must never
+    // become a queue row: this one's content is a machine-generated block, and a
+    // row is editable, removable, and what the launch would send.
+    expect(clicked.queuePosition).toBe(0);
+    expect(listQueuedMessages(session)).toEqual([]);
+    expect(store.list(session)).toEqual([]);
+
+    // It runs when the slot clears. Ordering holds — one turn at a time — but
+    // ADJACENCY to the clicked turn is not promised: a self-woken window
+    // (DOR-1100) can open and close inside the same stream first.
+    drain.open();
+    await settle();
+    expect(runtime.sendMessage).toHaveBeenCalledTimes(2);
+    expect(runtime.sendMessage).toHaveBeenLastCalledWith(
+      session,
+      'a widget click',
+      expect.anything()
+    );
+    expect(listQueuedMessages(session)).toEqual([]);
+  });
+
+  it('drops a refusing caller’s trigger rather than forcing it into a stream still open', async () => {
+    // Fast, or never. The wait bound normally FORCE-launches what it is holding,
+    // deliberately skipping the in-flight slot — which here would put a second
+    // `sendMessage` on a session whose first stream has not closed. And a
+    // re-park would hand it a fresh full budget and start the cycle again. So an
+    // expired transient plan is dropped, and says so.
+    const drain = gate();
+    runtime.withScenarios([drainingTurn(drain.wait), quickTurn()]);
+
+    await send('render a widget');
+    await vi.waitFor(() => expect(getOrCreateProjector(session).peekInProgressTurn()).toBeNull());
+
+    const clicked = await send('a widget click', { whenBusy: 'refuse', queueWaitMs: 20 });
+    expect(clicked.accepted).toBe(true);
+
+    // Past the bound, with the stream still open.
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    expect(runtime.sendMessage).toHaveBeenCalledTimes(1);
+
+    // And gone: the slot clearing finds nothing waiting behind it.
+    drain.open();
+    await settle();
+    expect(runtime.sendMessage).toHaveBeenCalledTimes(1);
+    expect(store.list(session)).toEqual([]);
+  });
+
+  it('drops a refusing caller’s waiting trigger when the lock refuses it, rather than saving it for a later turn', async () => {
+    // The mirror of the refuse-foreign case above, and deliberately the opposite
+    // answer. A room's message is a person's words, so it goes back in line; a
+    // machine-generated trigger has no later moment worth running at. Put back,
+    // it would sit in the pending set with nothing to show for it — no row, so
+    // nobody can see it or take it back — until some LATER turn's boundary
+    // pumped it into work it has nothing to do with.
+    //
+    // Driven with no queue store, which is every embedded host: with one wired
+    // the store's own rear-view drops the message anyway, so this is the
+    // configuration where the rule itself is what decides.
+    setMessageQueueStore(undefined);
+    const drain = gate();
+    runtime.withScenarios([drainingTurn(drain.wait), quickTurn(), quickTurn()]);
+
+    await send('render a widget');
+    await vi.waitFor(() => expect(getOrCreateProjector(session).peekInProgressTurn()).toBeNull());
+
+    const clicked = await send('a widget click', { whenBusy: 'refuse' });
+    expect(clicked.accepted).toBe(true);
+
+    // A stranger takes the session in the beat between acceptance and launch.
+    runtime.acquireLock.mockReturnValue(false);
+    drain.open();
+    await settle();
+    expect(runtime.sendMessage).toHaveBeenCalledTimes(1);
+
+    // The session frees up and somebody types. The click must not ride in on
+    // that turn's boundary.
+    runtime.acquireLock.mockReturnValue(true);
+    await send('a later message');
+    await settle();
+
+    expect(runtime.sendMessage).toHaveBeenCalledTimes(2);
+    expect(runtime.sendMessage.mock.calls.map((call) => call[1])).toEqual([
+      'render a widget',
+      'a later message',
+    ]);
+  });
+
+  it('names the turn a refusal was refused for, so a 409 cannot invent a holder', async () => {
+    // The 409 body used to be built from a second authority (the runtime lock,
+    // asked under the request's id rather than the canonical one), which could
+    // report `lockedBy: "unknown"` for a refusal the dispatcher had just made.
+    const first = gate();
+    runtime.withScenarios([heldTurn(first.wait), quickTurn()]);
+
+    await send('long turn');
+    const refused = await send('a widget click', {
+      clientId: 'window-b',
+      whenBusy: 'refuse',
+    });
+
+    expect(refused.accepted).toBe(false);
+    expect(refused.refusedBy?.clientId).toBe(TAB);
+    expect(refused.refusedBy?.since).toBeGreaterThan(0);
+  });
+
+  it('names the LOCK holder when the write-lock is what refused the launch', async () => {
+    // The other refusal path, and the reason the dispatcher answers this rather
+    // than the route: the lock is keyed by the canonical id, which the caller
+    // does not necessarily hold.
+    runtime.getInternalSessionId.mockReturnValue('canonical-id');
+    runtime.acquireLock.mockReturnValue(false);
+    runtime.getLockInfo.mockImplementation((id: string) =>
+      id === 'canonical-id' ? { clientId: 'somebody-else', acquiredAt: 1_700_000_000_000 } : null
+    );
+
+    const refused = await send('a widget click', { whenBusy: 'refuse' });
+
+    expect(refused.accepted).toBe(false);
+    expect(refused.refusedBy).toEqual({
+      clientId: 'somebody-else',
+      since: 1_700_000_000_000,
+    });
   });
 
   it("waits out the caller's OWN turn rather than refusing it (whenBusy: refuse-foreign)", async () => {

@@ -94,6 +94,11 @@
  * Rows earlier builds DID write for a room are swept rather than adopted, so the
  * promise holds for installs that predate this; see {@link adoptQueuedMessages}.
  *
+ * One shape of refusing wait is not bounded but DISPOSABLE: a blanket-`'refuse'`
+ * caller accepted while a FINISHED turn is still closing its stream (DOR-1239) is
+ * waiting on a teardown, not on work, so if it cannot run it is dropped rather
+ * than given a second chance. See {@link DispatchPlan.transient}.
+ *
  * {@link SessionTurnQueue} (DOR-1088) is kept, underneath: it is the
  * intra-process ordering primitive inside `triggerTurn` and this does not
  * replace it. What changed is that no HTTP request waits on it.
@@ -162,6 +167,18 @@ interface InFlightTurn {
   clientId: string;
   /** Identity of this particular launch, so a stale settle cannot clear a newer turn. */
   token: symbol;
+  /** When the launch claimed the session — what a refusal reports as `since`. */
+  startedAt: number;
+  /**
+   * Whether this launch's turn has appeared on the projector yet.
+   *
+   * Until it has, the slot is the ONLY evidence about the session, and it says
+   * busy: a launch between claiming the slot and its `turn_start` is assembling
+   * context, and no `turn_end` can have been seen for a turn that has not
+   * started. Once it is true the projector takes over as the authority on
+   * whether the turn is still producing — see {@link isStillProducing}.
+   */
+  sawTurnStart: boolean;
 }
 
 /** One accepted message waiting for its turn to come round. */
@@ -579,10 +596,14 @@ export interface DispatchMessageOpts {
    *   answer for a message a person typed and is watching: it is theirs, it is
    *   durable, every window can see it, and they can edit or remove it while it
    *   waits.
-   * - `'refuse'` — answer `{ accepted: false }` and write nothing. For a trigger
-   *   a machine generated on somebody's behalf (an MCP sign-in resume, a UI
-   *   action), where the reason it was sent may not survive the wait and firing
-   *   it late is worse than not firing it.
+   * - `'refuse'` — answer `{ accepted: false }` and write nothing, while the
+   *   agent is still producing. For a trigger a machine generated on somebody's
+   *   behalf (an MCP sign-in resume, a UI action), where the reason it was sent
+   *   may not survive the wait and firing it late is worse than not firing it.
+   *   Once the turn has ENDED there is nothing to fire late into, so the message
+   *   is accepted and runs as the stream finishes closing — with no queue row
+   *   behind it, and dropped rather than deferred if that stream outlasts the
+   *   wait bound ({@link DispatchPlan.transient}).
    * - `'refuse-foreign'` — refuse a turn ANOTHER client opened, and wait behind
    *   one of the caller's own. For a caller that already sequences its own turns
    *   and only needs protecting from a stranger; see {@link WhenBusy}.
@@ -592,6 +613,12 @@ export interface DispatchMessageOpts {
 
 /**
  * What a caller wants done when the session is already working.
+ *
+ * **"Already working" means the agent is still PRODUCING**, not that the last
+ * turn's stream has finished closing. Both refusing modes ask
+ * {@link isStillProducing} first, so neither of them refuses over a turn that has
+ * already ended — see that function for the window this cost the product
+ * (DOR-1239).
  *
  * **`'refuse-foreign'` is the same promise as `'refuse'`, asked of the right
  * question.** A refusing caller is saying "do not queue my trigger behind
@@ -620,9 +647,10 @@ export interface MessageDispatchResult extends TriggerTurnResult {
    * Where the message sat in its session's queue at acceptance, 1-based.
    * `1` means it was the head — nothing was ahead of it. `0` means it is on no
    * queue at all: a refusal, a steer/stage that landed natively through the
-   * degradation ladder, or a refusing caller that WAITS (a `'refuse-foreign'`
-   * behind its own turn) — accepted (`queued: true`) but deliberately rowless,
-   * so there is no position to report. See the module doc.
+   * degradation ladder, or any refusing caller that WAITS — a `'refuse-foreign'`
+   * behind its own turn, or a {@link DispatchPlan.transient} behind a closing
+   * stream. Those are accepted (`queued: true`) and deliberately rowless, so
+   * there is no position to report. See the module doc.
    */
   queuePosition: number;
   /**
@@ -633,6 +661,24 @@ export interface MessageDispatchResult extends TriggerTurnResult {
    * it in the first place.
    */
   queued: boolean;
+  /**
+   * Who holds the turn this message was refused for, when the dispatcher could
+   * name them. Present only on a refusal, and absent when the holder let go in
+   * the same beat it said no.
+   *
+   * It exists so a caller answering `409 SESSION_LOCKED` can name a holder that
+   * really exists. A route asking its own authority instead — `getLockInfo`,
+   * under the id the REQUEST used rather than the canonical one the lock is
+   * keyed by — could not see the turn the dispatcher had just refused it for, so
+   * it reported `lockedBy: "unknown"`: a locked session with nobody holding it
+   * (DOR-1239).
+   */
+  refusedBy?: {
+    /** The lock identity of the turn that caused the refusal. */
+    clientId: string;
+    /** Epoch ms at which that turn claimed the session. */
+    since: number;
+  };
 }
 
 /** Everything one accepted message needs to become a running turn. */
@@ -678,6 +724,40 @@ interface DispatchPlan {
    * halves live.
    */
   answered: boolean;
+  /**
+   * This message is DROPPED rather than deferred the moment it cannot run —
+   * fast, or never.
+   *
+   * True for exactly one shape: a blanket-`'refuse'` caller accepted while the
+   * session's slot is still held by a turn that has ALREADY ENDED (the drain
+   * window, DOR-1239). It is waiting out a stream that is closing, not queueing
+   * behind work, so there is no later moment worth running at.
+   *
+   * **This is a DISPOSAL flag, and only that.** It used to carry rowlessness
+   * too, which is no longer its to carry: no refusing caller gets a row at all
+   * now, whichever mode it asked for (DOR-1242, module doc above). What is left
+   * here is the narrower claim — that this particular wait must not be re-parked
+   * and must not be forced through:
+   *
+   * - {@link returnToQueue} must not re-park it. It is `answered: true` by
+   *   construction, so the bounded second chance a `'refuse-foreign'` gets would
+   *   otherwise apply to it, and this one has nothing to come back for.
+   * - The budget bound must not FORCE it through. A budget-exhausted launch
+   *   deliberately skips the in-flight slot, which for a stream that is still
+   *   open means a second `sendMessage` racing the first on one session.
+   *
+   * **`'refuse-foreign'` is deliberately NOT this**, though it can wait in the
+   * same window. What the two carry is different: a `'refuse'` trigger is
+   * machine-generated (a widget click, a sign-in nudge) and belongs to nobody,
+   * while a `'refuse-foreign'` message is a person's words in a room, which
+   * DOR-1230 accepts precisely so the room answers them. Those keep their PLACE
+   * IN LINE — bounded by what is left of their original wait — rather than being
+   * dropped at the first refusal.
+   *
+   * It sorts behind anything with a row ({@link orderedWaiting}), which is
+   * anything a person typed — the right way round, since those words came first.
+   */
+  transient: boolean;
   /** What the caller passes straight through to the turn. */
   turn: Pick<
     DispatchMessageOpts,
@@ -694,25 +774,80 @@ interface DispatchPlan {
 }
 
 /**
+ * Whether the turn holding the in-flight slot is STILL PRODUCING — the question
+ * a refusal is really asking (DOR-1239).
+ *
+ * The slot answers a different question: "has the stream closed and been handed
+ * back". Those two moments are not the same one. A runtime keeps its stream open
+ * past the end of the turn to drain background work — claude-code's subprocess
+ * stays alive after `done` precisely so a finished task can wake the agent again
+ * (`session-event-normalizer.ts`) — and the write-lock is released on the same
+ * late signal, so asking the REAL lock instead would give the same wrong answer.
+ * Through that whole window the agent has stopped: the projector has already been
+ * told `turn_end`, every window draws the session as idle, and a widget button
+ * rendered in the reply is on screen and clickable. A click there was answered
+ * `409 SESSION_LOCKED` over a session nothing was using.
+ *
+ * So the projector is the authority once the turn has reached it: its in-progress
+ * turn opens at `turn_start` and closes at `turn_end`, which is exactly "the
+ * agent is producing". It re-opens on its own if the agent wakes itself up
+ * (DOR-1100), so a session that starts producing again refuses again without
+ * this needing to know that happened.
+ *
+ * **What accepting here does NOT promise is adjacency.** The message runs when
+ * the slot clears, and one turn at a time still holds — but a self-woken window
+ * (DOR-1100) can open and close inside that same stream, so the accepted message
+ * can land after a window the person never asked for, rather than immediately
+ * after the turn it was clicked in. That is measured behavior, not a hypothesis.
+ * It is still the better answer than a hard refusal: the alternative was 409 over
+ * a session nothing was using, and every ordering guarantee is unchanged.
+ *
+ * @param open - The turn holding the session's in-flight slot.
+ * @param sessionKey - The id that turn's dispatcher state is filed under.
+ * @param fallback - The caller's projector, used when the registry has none.
+ * @returns True while the turn is producing; false in the post-`turn_end` drain.
+ */
+function isStillProducing(
+  open: InFlightTurn,
+  sessionKey: string,
+  fallback: SessionStateProjector
+): boolean {
+  if (!open.sawTurnStart) return true;
+  // The registry's projector, which is the one the pump's own gate reads and the
+  // one the turn is ingesting into whichever id the caller happens to hold.
+  const projector = projectorFor(sessionKey) ?? fallback;
+  return projector.peekInProgressTurn() !== null;
+}
+
+/**
  * Whether the turn that is open right now is one this caller refuses to wait
  * behind.
  *
- * The whole difference between the two refusing modes lives here, and it is a
- * question about WHOSE turn is open rather than about whether one is. See
- * {@link WhenBusy} for why a caller that sequences its own turns — a room —
+ * Two questions, and a refusal needs both to be yes. Is the session still
+ * PRODUCING ({@link isStillProducing}) — a turn that has ended is not something
+ * to refuse over, whoever it belonged to. And is it a turn this caller refuses to
+ * wait behind, which is where the whole difference between the two refusing modes
+ * lives: a question about WHOSE turn is open rather than about whether one is.
+ * See {@link WhenBusy} for why a caller that sequences its own turns — a room —
  * must not be told its own tail is a stranger.
  *
- * @param whenBusy - What the caller asked for.
- * @param open - The turn holding the session's in-flight slot, if any.
- * @param clientId - The caller's lock identity.
+ * @param opts.whenBusy - What the caller asked for.
+ * @param opts.open - The turn holding the session's in-flight slot, if any.
+ * @param opts.clientId - The caller's lock identity.
+ * @param opts.sessionKey - The id the session's dispatcher state is filed under.
+ * @param opts.projector - The caller's projector, for the producing probe.
  * @returns True when this message should be refused rather than accepted.
  */
-function refusesOpenTurn(
-  whenBusy: WhenBusy,
-  open: InFlightTurn | undefined,
-  clientId: string
-): boolean {
+function refusesOpenTurn(opts: {
+  whenBusy: WhenBusy;
+  open: InFlightTurn | undefined;
+  clientId: string;
+  sessionKey: string;
+  projector: SessionStateProjector;
+}): boolean {
+  const { whenBusy, open, clientId } = opts;
   if (open === undefined || whenBusy === 'queue') return false;
+  if (!isStillProducing(open, opts.sessionKey, opts.projector)) return false;
   return whenBusy === 'refuse' || open.clientId !== clientId;
 }
 
@@ -754,6 +889,14 @@ function refusesOpenTurn(
  * the launch and its refusal — is left gone.
  */
 function returnToQueue(plan: DispatchPlan): void {
+  // **Checked FIRST** (DOR-1239). A transient plan has no later moment worth
+  // running at, and it is `answered: true` by construction — so the bounded
+  // second chance below would otherwise re-park it and, at the bound, force it
+  // through with `budgetExhausted` into a stream that is still open.
+  if (plan.transient) {
+    dropTransient(plan, 'the launch could not start it');
+    return;
+  }
   if (plan.whenBusy !== 'queue') {
     // No row was ever written for a refusing plan (see the module doc), so
     // giving up on one is simply declining to re-park it.
@@ -778,6 +921,29 @@ function returnToQueue(plan: DispatchPlan): void {
   const store = getMessageQueueStore();
   if (store && !store.get(plan.messageId)) return;
   parkDispatch(plan, unwatchedSettle(plan), { waitingOnLock: true });
+}
+
+/**
+ * Give up on a {@link DispatchPlan.transient} message, and say so.
+ *
+ * The whole disposal: there is no row to remove and nobody holding a request
+ * open, so the log line is the only trace it leaves. It is a `warn` because a
+ * trigger somebody's click generated did not reach the model, even though the
+ * caller was told it was accepted — rare (it needs a stream that stays open past
+ * the wait bound, or a stranger taking the session in the same beat), and
+ * invisible without this.
+ *
+ * @param plan - The transient plan being dropped
+ * @param why - What stopped it, for the log line
+ */
+function dropTransient(plan: DispatchPlan, why: string): void {
+  pending.delete(plan.messageId);
+  logger.warn('[MessageDispatcher] a refusing caller’s trigger was dropped rather than run late', {
+    sessionId: plan.sessionKey,
+    messageId: plan.messageId,
+    clientId: plan.clientId,
+    why,
+  });
 }
 
 /**
@@ -833,7 +999,8 @@ function launchDispatch(
     ? 0
     : Math.max(0, plan.budgetMs - (Date.now() - plan.startedWaitingAt));
   const token = Symbol('dispatcher-turn');
-  if (!opts.budgetExhausted) inFlight.set(sessionKey, { clientId, token });
+  if (!opts.budgetExhausted)
+    inFlight.set(sessionKey, { clientId, token, startedAt: Date.now(), sawTurnStart: false });
   // Held from here until this launch is done with the message, whichever way it
   // ends. Every exit below routes through `clearIfOurs` — the sync throw, the
   // rejection, the refusal, and the settle — so there is no path that leaves an
@@ -867,6 +1034,12 @@ function launchDispatch(
       // the message it stands for is a lie about what is still waiting.
       onTurnStart: (seq) => {
         if (getMessageQueueStore()?.remove(messageId)) emitQueueUpdate(sessionKey);
+        // The turn is on the projector now, so the projector — not this slot —
+        // becomes the authority on whether it is still producing
+        // ({@link isStillProducing}). Only for OUR launch: a stale settle must
+        // not annotate a newer turn's slot.
+        const slot = inFlight.get(sessionKey);
+        if (slot?.token === token) slot.sawTurnStart = true;
         turn.onTurnStart?.(seq);
       },
       projector: plan.projector,
@@ -945,10 +1118,22 @@ function parkDispatch(
     // Bounded for the same reason DOR-1088 bounds its chain: the write-lock has
     // a TTL and a queue does not, so a turn that went dark would otherwise hand
     // the session to a stranger while its own client's message waited forever.
-    timer: setTimeout(
-      () => entry.launch({ budgetExhausted: true }),
-      opts?.budgetMs ?? plan.budgetMs
-    ),
+    //
+    // The bound ends two different ways, because the two kinds of waiting made
+    // two different promises. A queued message is somebody's words: it launches
+    // anyway, meeting the write-lock as a stranger would. A transient one is a
+    // refusing caller's trigger: forcing it through would put a second
+    // `sendMessage` on a session whose stream is still open, so it is dropped.
+    //
+    // How LONG the bound is, is the other half: a re-park spends what is left of
+    // the original wait rather than a fresh copy of it (DOR-1242).
+    timer: setTimeout(() => {
+      if (plan.transient) {
+        dropTransient(plan, 'the stream it was waiting on had not closed within the wait budget');
+        return;
+      }
+      entry.launch({ budgetExhausted: true });
+    }, opts?.budgetMs ?? plan.budgetMs),
   };
   entry.timer.unref?.();
   pending.set(plan.messageId, entry);
@@ -992,7 +1177,8 @@ export async function dispatchMessage(opts: DispatchMessageOpts): Promise<Messag
 
   // Asked and answered before anything is written: a caller that refuses rather
   // than waits must not leave a row behind for a message it is about to disown.
-  if (refusesOpenTurn(whenBusy, inFlight.get(sessionKey), clientId)) {
+  const open = inFlight.get(sessionKey);
+  if (open && refusesOpenTurn({ whenBusy, open, clientId, sessionKey, projector })) {
     return {
       accepted: false,
       queued: false,
@@ -1003,6 +1189,9 @@ export async function dispatchMessage(opts: DispatchMessageOpts): Promise<Messag
         ...(degradedBecause ? { degradedBecause } : {}),
       },
       queuePosition: 0,
+      // The turn this was refused for, named by the same authority that refused
+      // it — so a 409 built from this cannot invent a holder (DOR-1239).
+      refusedBy: { clientId: open.clientId, since: open.startedAt },
     };
   }
 
@@ -1016,7 +1205,17 @@ export async function dispatchMessage(opts: DispatchMessageOpts): Promise<Messag
     ...(opts.cwd !== undefined ? { cwd: opts.cwd } : {}),
   });
 
-  // **Only a queueing caller gets a row.** A refusing one is a machine-generated
+  // A blanket-`'refuse'` caller that got past the gate with the slot still held
+  // got past it for exactly one reason — the turn holding it has ENDED — so it is
+  // waiting out a stream that is closing rather than queueing behind work. That
+  // is what makes it DISPOSABLE rather than deferrable; see
+  // {@link DispatchPlan.transient}. Rowlessness it shares with every refusing
+  // caller, below.
+  const transient =
+    whenBusy === 'refuse' && open !== undefined && !isStillProducing(open, sessionKey, projector);
+
+  // **Only a queueing caller gets a row** (DOR-1242), which subsumes the rowless
+  // half of `transient`. A refusing caller's message is a machine-generated
   // trigger, and a row for it is a prompt nobody typed sitting in somebody's
   // composer — one that outlives the process and fires into a conversation that
   // ended days ago. See the module doc; the in-memory plan below is all the
@@ -1034,8 +1233,9 @@ export async function dispatchMessage(opts: DispatchMessageOpts): Promise<Messag
   const messageId = record?.id ?? crypto.randomUUID();
   // A row gives a real position. Without one the answer depends on WHY there is
   // no row: a refusing caller is deliberately rowless and reports `0` (it is on
-  // no queue at all), while a host with no store wired — every embedded host and
-  // most unit tests — still has a notional queue of one and reports `1`.
+  // no queue at all, transient or not), while a host with no store wired — every
+  // embedded host and most unit tests — still has a notional queue of one and
+  // reports `1`.
   const queuePosition = record
     ? (getMessageQueueStore()
         ?.list(queueKey)
@@ -1066,6 +1266,7 @@ export async function dispatchMessage(opts: DispatchMessageOpts): Promise<Messag
     startedWaitingAt: Date.now(),
     whenBusy,
     answered: false,
+    transient,
     turn: opts,
   };
 
@@ -1110,7 +1311,16 @@ export async function dispatchMessage(opts: DispatchMessageOpts): Promise<Messag
   // construction. For everybody else the message kept its place in the queue and
   // runs when the holder lets go.
   if (whenBusy !== 'queue') {
-    return { accepted: false, queued: false, outcome, queuePosition: 0 };
+    // Named from the lock that just said no, asked under the id it is actually
+    // keyed by — the canonical one, which a route does not necessarily hold.
+    const held = runtime.getLockInfo(runtime.getInternalSessionId(sessionId) ?? sessionId);
+    return {
+      accepted: false,
+      queued: false,
+      outcome,
+      queuePosition: 0,
+      ...(held ? { refusedBy: { clientId: held.clientId, since: held.acquiredAt } } : {}),
+    };
   }
   return waiting();
 }
@@ -1206,6 +1416,9 @@ export function adoptQueuedMessages(opts: AdoptQueuedMessagesOpts): number {
       // exists, which is the strongest form of the reason the `'queue'` above
       // gives: there is nobody left to retype it.
       answered: true,
+      // A recovered row is a row by definition, and somebody's words: it waits
+      // as long as the queue waits.
+      transient: false,
       turn: {
         ...(opts.cwd !== undefined ? { cwd: opts.cwd } : {}),
         ...(row.context !== null ? { context: row.context } : {}),
@@ -1284,7 +1497,15 @@ export async function dispatchCommandIntent(
   // Claim the session only if nothing already holds it. A compact arriving on a
   // busy session answers for itself at the chain and the lock; overwriting the
   // running turn's claim here would tell the pump that turn had ended.
-  if (!inFlight.has(sessionKey)) inFlight.set(sessionKey, { clientId, token });
+  //
+  // `sawTurnStart` stays false for the whole run, which is the conservative
+  // answer and the deliberate one: a command intent reports no turn start to
+  // this module, so nothing could ever flip it, and a slot that never claims to
+  // have started reads as producing for as long as it is held
+  // ({@link isStillProducing}). A refusing caller therefore keeps meeting a
+  // refusal across a compact — which is what a compact is.
+  if (!inFlight.has(sessionKey))
+    inFlight.set(sessionKey, { clientId, token, startedAt: Date.now(), sawTurnStart: false });
   const clearIfOurs = (): void => {
     if (inFlight.get(sessionKey)?.token === token) inFlight.delete(sessionKey);
     schedulePump(sessionKey);

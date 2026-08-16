@@ -460,18 +460,18 @@ export interface DriveWidgetActionOptions extends OpenStreamOptions {
   cwd: string;
   /**
    * Stable client identity for the session lock, sent as `X-Client-Id`. Pass
-   * the SAME id the preceding prompt turn(s) used — it is the correct thing to
-   * do, matching what a real cockpit client sends — but unlike `/messages` it
-   * does NOT guarantee this turn avoids a `409 SESSION_LOCKED`.
+   * the SAME id the preceding prompt turn(s) used, matching what a real cockpit
+   * client sends.
+   *
+   * Unlike `/messages` this does not buy a place in `SessionTurnQueue`:
    * `POST /ui-action` asks the dispatcher to `whenBusy: 'refuse'` rather than
-   * queue (`session-ui-action-handler.ts`), which opts OUT of
-   * `SessionTurnQueue`'s same-client wait. The refusal check is
-   * `inFlight.has(sessionKey)` with no client-id comparison at all
-   * (`message-dispatcher.ts`), and `inFlight` is cleared only once the
-   * runtime's stream fully settles — LATER than the `turn_end` frame a
-   * `/events` consumer sees. A widget action fired in that window is refused
-   * even from its own turn's client (DOR-1239). See
-   * {@link DriveTurnOptions.clientId}.
+   * queue (`session-ui-action-handler.ts`), so a widget action fired while the
+   * agent is still PRODUCING is refused whoever sends it. What it is no longer
+   * refused for is the window this driver sits in — a `/events` consumer sees
+   * `turn_end` before the runtime's stream finishes settling, and an action sent
+   * in that gap used to 409 even from its own turn's client (DOR-1239, fixed:
+   * the refusal asks whether the turn is still producing, not whether the stream
+   * has closed). See {@link DriveTurnOptions.clientId}.
    */
   clientId?: string;
 }

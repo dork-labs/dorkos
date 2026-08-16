@@ -1,0 +1,646 @@
+<style>
+  .wrap {
+    max-width: 1240px;
+    margin: 0 auto;
+  }
+  .cuts {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 0.6rem;
+    margin: 0.5rem 0 1.75rem;
+  }
+  .cut {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 0.6rem 0.8rem;
+    font-size: 0.8rem;
+  }
+  .cut b {
+    display: block;
+    margin-bottom: 0.1rem;
+  }
+  .cut b s {
+    color: var(--text-tertiary);
+    font-weight: 400;
+    margin-right: 0.25rem;
+  }
+  .cut span {
+    color: var(--text-secondary);
+  }
+  .three {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1.1rem;
+    align-items: start;
+  }
+  @media (max-width: 1000px) {
+    .three {
+      grid-template-columns: 1fr;
+    }
+  }
+  .pane {
+    background: var(--bg-secondary);
+    border: 2px solid var(--border);
+    border-radius: 14px;
+    padding: 0.9rem;
+    cursor: pointer;
+    transition: border-color 0.15s;
+  }
+  .pane:hover {
+    border-color: var(--accent);
+  }
+  .pane.selected {
+    border-color: var(--selected-border);
+    background: var(--selected-bg);
+  }
+  .pane h3 {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 1rem;
+  }
+  .pane h3 .letter {
+    background: var(--bg-tertiary);
+    width: 1.6rem;
+    height: 1.6rem;
+    border-radius: 6px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.8rem;
+  }
+  .pane.selected h3 .letter {
+    background: var(--accent);
+    color: #fff;
+  }
+  .pane > p {
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+    margin: 0.25rem 0 0.8rem;
+    min-height: 3.6em;
+  }
+  .why {
+    font-size: 0.78rem;
+    color: var(--text-secondary);
+    margin-top: 0.8rem;
+  }
+  .why b {
+    color: var(--text-primary);
+  }
+  .why ul {
+    margin: 0.25rem 0 0 1.1rem;
+  }
+  .why li {
+    margin-bottom: 0.15rem;
+  }
+
+  /* ===== dark mock ===== */
+  .prof {
+    width: 100%;
+    max-width: 360px;
+    margin: 0 auto;
+    background: #111113;
+    color: #e7e7ea;
+    border: 1px solid #2a2a2e;
+    border-radius: 12px;
+    overflow: hidden;
+    font-size: 12.5px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+    font-family:
+      system-ui,
+      -apple-system,
+      sans-serif;
+  }
+  .prof * {
+    box-sizing: border-box;
+  }
+  .ptabs {
+    display: flex;
+    gap: 6px;
+    padding: 8px 10px;
+    border-bottom: 1px solid #1e1e22;
+    font-size: 10.5px;
+    color: #8a8a92;
+  }
+  .ptabs span {
+    padding: 3px 8px;
+    border-radius: 6px;
+  }
+  .ptabs span.on {
+    background: #26262b;
+    color: #fff;
+  }
+  .ptabs .x {
+    margin-left: auto;
+  }
+  .hero {
+    position: relative;
+    padding: 26px 18px 18px;
+    text-align: center;
+  }
+  .hero::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(55% 60% at 50% 0%, rgba(62, 193, 211, 0.2), transparent 70%);
+    pointer-events: none;
+  }
+  .kebab {
+    position: absolute;
+    top: 8px;
+    right: 12px;
+    color: #6f6f78;
+    font-size: 16px;
+    line-height: 1;
+  }
+  .face {
+    width: 72px;
+    height: 72px;
+    margin: 0 auto 12px;
+    border-radius: 18px;
+    background: #3ec1d3;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 38px;
+    position: relative;
+  }
+  .face .bot {
+    position: absolute;
+    right: -4px;
+    bottom: -4px;
+    width: 17px;
+    height: 17px;
+    border-radius: 5px;
+    background: #1c1c20;
+    border: 1px solid #3a3a40;
+    font-size: 9px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .name {
+    font-size: 17px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+  .handle {
+    color: #8a8a92;
+    font-size: 12px;
+    margin-top: 1px;
+  }
+  .status {
+    margin-top: 10px;
+    font-size: 12.5px;
+    color: #d7d7dc;
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+  }
+  .dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #34c759;
+    box-shadow: 0 0 0 3px rgba(52, 199, 89, 0.16);
+  }
+  .icons {
+    display: flex;
+    justify-content: center;
+    gap: 22px;
+    margin-top: 16px;
+  }
+  .icons div {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 5px;
+    font-size: 10.5px;
+    color: #b7b7bf;
+  }
+  .icons i {
+    width: 42px;
+    height: 42px;
+    border-radius: 50%;
+    background: #1e1e23;
+    border: 1px solid #2c2c32;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-style: normal;
+    font-size: 17px;
+  }
+  .icons div.pri i {
+    background: #e7e7ea;
+    border-color: #e7e7ea;
+  }
+  .btn {
+    display: block;
+    margin: 14px auto 0;
+    width: 100%;
+    text-align: center;
+    padding: 8px;
+    border-radius: 9px;
+    background: #e7e7ea;
+    color: #111;
+    font-weight: 500;
+    font-size: 12.5px;
+  }
+  .rows {
+    border-top: 1px solid #1e1e22;
+  }
+  .row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+    padding: 11px 18px;
+    border-bottom: 1px solid #1a1a1e;
+    font-size: 12.5px;
+  }
+  .row:last-child {
+    border-bottom: 0;
+  }
+  .row .l {
+    color: #8a8a92;
+    flex: 0 0 auto;
+  }
+  .row .v {
+    color: #e0e0e5;
+    text-align: right;
+  }
+  .row .v small {
+    color: #6f6f78;
+    margin-left: 6px;
+  }
+  .row .c {
+    color: #5c5c66;
+    margin-left: 6px;
+  }
+  .row.desc {
+    display: block;
+    color: #b7b7bf;
+    line-height: 1.45;
+  }
+  .row.quiet .v,
+  .row.quiet .l {
+    color: #9a9aa3;
+  }
+  code {
+    font-family: ui-monospace, Menlo, monospace;
+    font-size: 11px;
+  }
+  .seg {
+    display: flex;
+    margin: 14px 18px 0;
+    background: #1a1a1f;
+    border-radius: 8px;
+    padding: 3px;
+  }
+  .seg span {
+    flex: 1;
+    text-align: center;
+    padding: 5px;
+    border-radius: 6px;
+    font-size: 12px;
+    color: #8a8a92;
+  }
+  .seg span.on {
+    background: #2b2b31;
+    color: #fff;
+  }
+  .grp {
+    padding: 10px 18px 4px;
+    font-size: 9.5px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #5f5f68;
+  }
+  .stack {
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+  }
+  .stack .prof {
+    max-width: 100%;
+  }
+  .stack .mini {
+    flex: 0 0 46%;
+    opacity: 0.92;
+  }
+  .stack .mini .row {
+    padding: 8px 12px;
+    font-size: 11px;
+  }
+  .stack .mini .grp {
+    padding: 8px 12px 2px;
+  }
+  .nav {
+    margin-top: 0.6rem;
+    font-size: 0.72rem;
+    color: var(--text-secondary);
+    text-align: center;
+  }
+  .nav b {
+    color: var(--text-primary);
+  }
+  .verdict {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    margin-top: 1.25rem;
+  }
+  .verdict b {
+    color: var(--text-primary);
+  }
+</style>
+
+<div class="wrap">
+  <h2>Simplify: three shapes for the Profile</h2>
+  <p class="subtitle">
+    Portrait header stays. Everything else is on trial. First, what an S-tier designer would cut no
+    matter which shape we pick:
+  </p>
+
+  <div class="cuts">
+    <div class="cut">
+      <b><s>4 nav systems</s> → 1</b
+      ><span>Inner tabs, section labels, chips, and buttons all competed. One way to move.</span>
+    </div>
+    <div class="cut">
+      <b><s>Chips</s> → one sentence</b
+      ><span>“Working in #team · 2 min” beats dot + chip + badge + pill.</span>
+    </div>
+    <div class="cut">
+      <b><s>Sessions list</s> → one row</b
+      ><span>The sidebar already lists sessions. The profile says “12 · last 2 h →”.</span>
+    </div>
+    <div class="cut">
+      <b><s>Schedule presets</s> → gone</b
+      ><span>Selling presets is Tasks’ job. Show a schedule only if one exists.</span>
+    </div>
+    <div class="cut">
+      <b><s>Personality pill</s> → behind the face</b
+      ><span>Tap the face → face + personality picker. Not a status.</span>
+    </div>
+    <div class="cut">
+      <b><s>Model/effort controls</s> → one row</b
+      ><span>The composer already has live pickers. Profile shows the default; tap to change.</span>
+    </div>
+    <div class="cut">
+      <b><s>Section labels</s> → none</b
+      ><span>NOW / ABOUT / RECENT explain nothing the rows don’t. Rams: less, but better.</span>
+    </div>
+    <div class="cut">
+      <b><s>Kebab of everything</s> → rare only</b
+      ><span>Set default · Block · Unregister · Delete. Nothing else hides there.</span>
+    </div>
+  </div>
+
+  <div class="three">
+    <!-- A: CONTACT CARD -->
+    <div class="pane" data-choice="A-contact-card" onclick="toggleSelect(this)">
+      <h3><span class="letter">A</span> Contact card</h3>
+      <p>
+        iOS Contacts / Slack mobile. Header, three round actions, then plain rows.
+        <b>Manage pushes in</b> (back arrow) — the profile itself never shows settings.
+      </p>
+      <div class="prof">
+        <div class="ptabs">
+          <span>Pulse</span><span class="on">Profile</span><span>Session</span><span>Files</span
+          ><span class="x">✕</span>
+        </div>
+        <div class="hero">
+          <div class="kebab">⋮</div>
+          <div class="face">🐧<span class="bot">🤖</span></div>
+          <div class="name">lifeos-starter</div>
+          <div class="handle">@lifeos-starter</div>
+          <div class="status"><span class="dot"></span> Replying to you in #team · 2 min</div>
+          <div class="icons">
+            <div class="pri"><i>💬</i>Message</div>
+            <div><i>🗂</i>Sessions</div>
+            <div><i>⚙︎</i>Manage</div>
+          </div>
+        </div>
+        <div class="rows">
+          <div class="row desc">
+            Starter agent for the LifeOS app. Knows the repo, writes the weekly digest.
+          </div>
+          <div class="row">
+            <span class="l">Runs on</span><span class="v">Claude Code · Opus 4.8</span>
+          </div>
+          <div class="row">
+            <span class="l">Folder</span
+            ><span class="v"
+              ><code>~/.dork/agents/lifeos-starter</code><span class="c">⧉</span></span
+            >
+          </div>
+          <div class="row">
+            <span class="l">Rooms</span
+            ><span class="v">#team, #general<span class="c">›</span></span>
+          </div>
+          <div class="row">
+            <span class="l">Schedule</span
+            ><span class="v">Weekdays 9:00<span class="c">›</span></span>
+          </div>
+          <div class="row">
+            <span class="l">Managed by</span><span class="v">You<span class="c">›</span></span>
+          </div>
+        </div>
+      </div>
+      <div class="nav">
+        Profile → <b>Manage</b> (push-in list: identity · model · toolkit · connections ·
+        instructions) → editors
+      </div>
+      <div class="why">
+        <b>Why it works</b>
+        <ul>
+          <li>Same shape for a person, DorkBot, a Telegram guest — rows just differ.</li>
+          <li>Kai gets Sessions + Manage in one tap; Ikechi never sees config unless he asks.</li>
+          <li>Full-screen on a phone with zero changes.</li>
+        </ul>
+        <b>Risk</b>
+        <ul>
+          <li>Config is one level deeper than today.</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- B: PROPERTIES -->
+    <div class="pane" data-choice="B-properties" onclick="toggleSelect(this)">
+      <h3><span class="letter">B</span> Properties</h3>
+      <p>
+        Linear’s issue sidebar. Header + one button, then a flat property list. If you manage the
+        agent, <b>every row is the control</b> — there is no “Manage” at all.
+      </p>
+      <div class="prof">
+        <div class="ptabs">
+          <span>Pulse</span><span class="on">Profile</span><span>Session</span><span>Files</span
+          ><span class="x">✕</span>
+        </div>
+        <div class="hero">
+          <div class="kebab">⋮</div>
+          <div class="face">🐧<span class="bot">🤖</span></div>
+          <div class="name">lifeos-starter</div>
+          <div class="handle">@lifeos-starter</div>
+          <div class="status"><span class="dot"></span> Replying to you in #team · 2 min</div>
+          <div class="btn">Message</div>
+        </div>
+        <div class="rows">
+          <div class="row">
+            <span class="l">About</span
+            ><span class="v">Starter agent for LifeOS…<span class="c">›</span></span>
+          </div>
+          <div class="row">
+            <span class="l">Runs on</span
+            ><span class="v">Claude Code · Opus 4.8<span class="c">▾</span></span>
+          </div>
+          <div class="row">
+            <span class="l">Personality</span
+            ><span class="v">Balanced<span class="c">▾</span></span>
+          </div>
+          <div class="row">
+            <span class="l">Folder</span
+            ><span class="v"
+              ><code>~/.dork/agents/lifeos-starter</code><span class="c">⧉</span></span
+            >
+          </div>
+          <div class="row">
+            <span class="l">Sessions</span
+            ><span class="v">12<small>last 2 h</small><span class="c">›</span></span>
+          </div>
+          <div class="row">
+            <span class="l">Rooms</span
+            ><span class="v">#team, #general<span class="c">›</span></span>
+          </div>
+          <div class="row">
+            <span class="l">Schedule</span
+            ><span class="v">Weekdays 9:00<span class="c">›</span></span>
+          </div>
+          <div class="row">
+            <span class="l">Skills</span><span class="v">1 pack<span class="c">›</span></span>
+          </div>
+          <div class="row">
+            <span class="l">Tools &amp; MCP</span
+            ><span class="v">2 servers<span class="c">›</span></span>
+          </div>
+          <div class="row">
+            <span class="l">Connections</span><span class="v">Slack<span class="c">›</span></span>
+          </div>
+          <div class="row">
+            <span class="l">Instructions</span
+            ><span class="v">SOUL.md<span class="c">›</span></span>
+          </div>
+          <div class="row">
+            <span class="l">Managed by</span><span class="v">You<span class="c">›</span></span>
+          </div>
+        </div>
+      </div>
+      <div class="nav">Profile <b>is</b> the settings. Deep editors (SOUL.md, MCP) push in.</div>
+      <div class="why">
+        <b>Why it works</b>
+        <ul>
+          <li>
+            Densest, quietest. Priya and Kai love this — everything one tap, editable in place.
+          </li>
+          <li>Kills the word “Manage” entirely.</li>
+        </ul>
+        <b>Risk</b>
+        <ul>
+          <li>
+            A managed agent’s profile is 12 rows; a person’s is 4. It’s an inspector, not a face.
+          </li>
+          <li>Ikechi sees SOUL.md and MCP on first look.</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- C: LOOK / MANAGE -->
+    <div class="pane" data-choice="C-look-manage" onclick="toggleSelect(this)">
+      <h3><span class="letter">C</span> Look / Manage</h3>
+      <p>
+        Two calm screens instead of one busy one. A segmented switch flips the same panel from
+        <b>Profile</b> (4 rows) to <b>Manage</b> (grouped settings). Sessions leave the profile
+        entirely.
+      </p>
+      <div class="stack">
+        <div class="prof">
+          <div class="ptabs">
+            <span>Pulse</span><span class="on">Profile</span><span>Session</span
+            ><span class="x">✕</span>
+          </div>
+          <div class="hero">
+            <div class="kebab">⋮</div>
+            <div class="face">🐧<span class="bot">🤖</span></div>
+            <div class="name">lifeos-starter</div>
+            <div class="handle">@lifeos-starter</div>
+            <div class="status"><span class="dot"></span> Replying in #team · 2 min</div>
+            <div class="btn">Message</div>
+          </div>
+          <div class="seg"><span class="on">Profile</span><span>Manage</span></div>
+          <div class="rows" style="margin-top: 10px">
+            <div class="row desc">
+              Starter agent for the LifeOS app. Knows the repo, writes the weekly digest.
+            </div>
+            <div class="row">
+              <span class="l">Runs on</span><span class="v">Claude Code · Opus 4.8</span>
+            </div>
+            <div class="row">
+              <span class="l">Rooms</span><span class="v">#team, #general</span>
+            </div>
+            <div class="row"><span class="l">Managed by</span><span class="v">You</span></div>
+          </div>
+        </div>
+        <div class="prof mini">
+          <div class="seg" style="margin-top: 12px">
+            <span>Profile</span><span class="on">Manage</span>
+          </div>
+          <div class="grp">Identity</div>
+          <div class="rows">
+            <div class="row"><span class="l">Name</span><span class="v">lifeos-starter</span></div>
+            <div class="row"><span class="l">Face</span><span class="v">🐧</span></div>
+            <div class="row"><span class="l">Personality</span><span class="v">Balanced</span></div>
+          </div>
+          <div class="grp">Model</div>
+          <div class="rows">
+            <div class="row"><span class="l">Runs on</span><span class="v">Claude Code</span></div>
+            <div class="row"><span class="l">Model</span><span class="v">Opus 4.8</span></div>
+            <div class="row"><span class="l">Effort</span><span class="v">Default</span></div>
+          </div>
+          <div class="grp">Toolkit</div>
+          <div class="rows">
+            <div class="row"><span class="l">Skills</span><span class="v">1 ›</span></div>
+            <div class="row"><span class="l">MCP</span><span class="v">2 ›</span></div>
+            <div class="row"><span class="l">Tools</span><span class="v">2 on ›</span></div>
+          </div>
+          <div class="grp">Connections · Instructions · Danger</div>
+          <div class="rows">
+            <div class="row"><span class="l">…</span><span class="v"></span></div>
+          </div>
+        </div>
+      </div>
+      <div class="nav">
+        Two modes of one panel. <b>Manage</b> only exists for agents you manage.
+      </div>
+      <div class="why">
+        <b>Why it works</b>
+        <ul>
+          <li>Profile stays a face; Manage stays a settings list. Neither pollutes the other.</li>
+          <li>Grouped settings are the pattern people already know (iOS Settings).</li>
+        </ul>
+        <b>Risk</b>
+        <ul>
+          <li>A segmented control is a tab bar wearing a hat.</li>
+          <li>Sessions have no home in the profile — you go to the sidebar.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <p class="verdict">
+    <b>My pick: A</b>, with C’s grouped list as what “Manage” pushes into. A keeps the profile a
+    <i>face</i> for every identity kind, puts the three things people actually do (message, see
+    work, manage) as one calm row, and hides settings until asked — without inventing a mode switch.
+    B is the right shape for the <i>Manage</i> screen itself, not for the profile.
+  </p>
+</div>

@@ -309,20 +309,6 @@ export function createSessionRoomTurnRunner(options: RoomTurnRunnerOptions = {})
         // there is nothing left to hear. A turn that ran and genuinely FAILED
         // has a seq, keeps its existing path, and is reported by the collector
         // that watched it — this must not cut that short.
-        // **The one signal that an ACCEPTED trigger will never run** (DOR-1242).
-        // A `refuse-foreign` trigger that waited out its own tail and then lost
-        // the session to a stranger is dropped once its original wait is spent,
-        // and `onSettled('failed')` is how the dispatcher says so. Without this
-        // the room would keep waiting on a turn nothing would ever start: the
-        // collector would report a late answer at `waitMs` and then "something
-        // went wrong" at its ceiling, an hour after the message, over words the
-        // model never saw.
-        //
-        // `startSeq === null` is what makes this safe to act on. It means no
-        // `turn_start` was ever stamped for this dispatch, so no turn ran and
-        // there is nothing left to hear. A turn that ran and genuinely FAILED
-        // has a seq, keeps its existing path, and is reported by the collector
-        // that watched it — this must not cut that short.
         onSettled: (outcome) => {
           if (outcome === 'failed' && ownTurn.startSeq === null) collecting.cancel();
         },
