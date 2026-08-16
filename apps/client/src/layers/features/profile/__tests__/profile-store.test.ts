@@ -85,7 +85,9 @@ describe('what each agent remembers', () => {
     }
 
     const kept = Object.keys(useProfileStore.getState().dockedEntries);
-    expect(kept.length).toBeLessThanOrEqual(8);
+    // Exactly the cap, not "at most" it: twelve went in, so a bound that also
+    // passed for four would not notice the map being emptied by mistake.
+    expect(kept).toHaveLength(8);
     expect(kept).toContain('/repo/agent-11');
     expect(kept).not.toContain('/repo/agent-0');
   });

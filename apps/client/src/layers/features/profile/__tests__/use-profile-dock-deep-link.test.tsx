@@ -69,6 +69,13 @@ function renderHooks(url: string) {
   return {
     search: () => router.state.location.search as Record<string, unknown>,
     ready: () => waitFor(() => expect(router.state.status).toBe('idle')),
+    /**
+     * How many entries the ROUTER's history holds.
+     *
+     * The router runs on `createMemoryHistory`, so `window.history` never moves
+     * here and reading it would assert nothing at all.
+     */
+    historyLength: () => router.history.length,
   };
 }
 
@@ -217,6 +224,8 @@ describe('links minted by the agent dialog, before the hub', () => {
     await harness.ready();
     await waitFor(() => expect(harness.search().panel).toBe('profile'));
 
-    expect(window.history.length).toBeLessThanOrEqual(2);
+    // The one entry the test started with. A push instead of a replace would
+    // make this 2 and leave the dead URL one Back press away.
+    expect(harness.historyLength()).toBe(1);
   });
 });
