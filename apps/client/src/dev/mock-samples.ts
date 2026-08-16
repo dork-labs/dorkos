@@ -1,6 +1,7 @@
 import type { ChatMessage, ToolCallState } from '@/layers/features/chat/model/chat-types';
 import type { PendingFile } from '@/layers/features/composer';
 import type { QueueItem } from '@/layers/features/chat/model/use-message-queue';
+import { queueDowngradeNotice } from '@/layers/features/chat/lib/queue-chips';
 import type {
   TaskItem,
   QuestionItem,
@@ -469,7 +470,14 @@ export const SAMPLE_QUEUE_MIXED_ORIGINS: QueueItem[] = [
   createQueueItem({ content: 'Finally, update the API docs', mine: false }),
   createQueueItem({
     content: 'And change course on the migration',
-    notice: 'Queued — this agent cannot take a message mid-task',
+    // The real notice, through the real mapping — so the showcase shows exactly
+    // what a person sees when a steer is queued because the runtime cannot steer.
+    notice: queueDowngradeNotice({
+      messageId: 'demo-downgraded',
+      requested: 'steer',
+      applied: 'queue',
+      degradedBecause: 'unsupported',
+    }),
   }),
 ];
 

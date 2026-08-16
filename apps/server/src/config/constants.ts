@@ -167,6 +167,39 @@ export const SESSIONS = {
    */
   TURN_STALL_TIMEOUT_MS: 10 * 60 * 1000,
   /**
+   * The same watchdog's window for a turn's FIRST event, which is shorter, and
+   * shorter for a reason the ten minutes above cannot cover (DOR-1229).
+   *
+   * `TURN_STALL_TIMEOUT_MS` is generous because a running agent's quiet is often
+   * honest work — a long tool call, a big read. That argument rests on evidence
+   * the turn is alive, and before the first event there is none: nothing has
+   * started, nothing has been spent, and there is no work to lose by giving up.
+   * A launch that never yields (a runtime binary that will not start, a subprocess
+   * wedged on its own boot, an MCP handshake that never completes) is a failure
+   * from its first second, and ten minutes of an agent shown as "working" with
+   * literally nothing having happened is not something to make anyone sit through.
+   *
+   * Two minutes because a real cold launch is nowhere near it: the measured
+   * claude-code launch on 2026-08-16 — fresh session, MCP servers connecting, 88
+   * commands and 9 subagents cached — produced its first event 4 seconds in,
+   * leaving thirty times that headroom for a machine already running ten agents.
+   *
+   * **What that 4 seconds actually was, because it is conditional.** The SDK's
+   * `system`/`init` message is the earliest thing a turn can emit, and
+   * `system-event-mapper.ts` turns it into a `session_status` ONLY when that
+   * message carries a model (`if (initModel)`). So on an SDK build that omits the
+   * model, the first event is instead whatever the turn produces next — its first
+   * assistant delta or tool call — and the margin is the model's time-to-first-
+   * token rather than process boot. That is still seconds, not minutes, on every
+   * runtime here; the number is sized for the slower of the two on purpose, and
+   * this is the dependency to re-measure if it is ever tightened.
+   *
+   * A turn parked on a person cannot trip it, and not by luck: an approval,
+   * question or elicitation IS an event, so a turn that has one has already left
+   * this window behind.
+   */
+  TURN_FIRST_EVENT_TIMEOUT_MS: 2 * 60 * 1000,
+  /**
    * How long the stall watchdog waits for the runtime's interrupt to settle
    * before closing the turn anyway (DOR-782). `interruptQuery` reaches a
    * possibly-wedged subprocess, so the call that is meant to unstick a hung turn
@@ -231,4 +264,18 @@ export const ROOMS = {
    * `GET /api/rooms/:id/entries?before=<seq>` as the reader scrolls.
    */
   SNAPSHOT_HISTORY_LIMIT: 100,
+
+  /**
+   * Lock identity every room-triggered turn takes. One id, not one per turn: the
+   * session write-lock is per session and a room binds one session per agent, so
+   * two turns for the same agent in the same room are the same writer and the
+   * second must queue rather than be refused as a foreign client.
+   *
+   * It lives HERE rather than in `room-turn-runner.ts` because a second module
+   * has to recognise it: the message dispatcher sweeps legacy queue rows written
+   * under it (`adoptQueuedMessages`), and the dispatcher is the neutral ingress —
+   * it must not import a room. A shared constant is the seam; see the sweep for
+   * why it can only be matched by this id.
+   */
+  CLIENT_ID: 'dorkos-room',
 } as const;

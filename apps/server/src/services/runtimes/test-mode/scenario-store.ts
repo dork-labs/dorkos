@@ -69,8 +69,11 @@ export function requestFinishTurn(): void {
  *
  * @param ticks - Heartbeats to stream, one a second, before the turn gives up
  *   waiting to be told and finishes anyway.
+ * @param closeDelayMs - How long the stream stays OPEN after its terminal event;
+ *   see {@link SLOW_CLOSE_MS}. `0` closes immediately, which is every scenario
+ *   that predates it.
  */
-function workingTurn(ticks: number): ScenarioFn {
+function workingTurn(ticks: number, closeDelayMs = 0): ScenarioFn {
   return async function* (_content, ctx) {
     yield {
       type: 'session_status',
@@ -82,8 +85,44 @@ function workingTurn(ticks: number): ScenarioFn {
       yield { type: 'text_delta', data: { text: '.' } } as StreamEvent;
     }
     yield { type: 'done', data: { sessionId: 'test-mode' } } as StreamEvent;
+    if (closeDelayMs > 0) {
+      try {
+        await ctx.delay(closeDelayMs);
+      } catch {
+        // A stop during the teardown window. The turn has ALREADY produced its
+        // terminal event, so letting the abort propagate would rewrite a
+        // finished turn as a failed one — the close is over, and there is
+        // nothing left to interrupt.
+      }
+    }
   };
 }
+
+/**
+ * How long {@link SLOW_CLOSE_SCENARIO} keeps its stream open after the terminal
+ * event that ends the turn.
+ *
+ * **A real runtime's stream does not end WITH its terminal event, and one gap in
+ * the product depends on that.** `feedProjector` maps the terminal to
+ * `turn_end` — which is what ends a room's wait and releases its claim — and
+ * only then asks the source for its next value; for the Claude adapter that is
+ * SDK teardown, hundreds of milliseconds later, and the dispatcher's in-flight
+ * slot is not handed back until it finishes (`trigger-turn.ts`, the
+ * `feedProjector(...).finally` that calls `onSettled`).
+ *
+ * Every other test-mode scenario returns in the same microtask as its terminal,
+ * so that window is NEGATIVE here: anything downstream of `turn_end` sees the
+ * slot already free. DOR-1230 lived in exactly that window — a room dispatching
+ * its held next turn into a slot the finished turn still held — and no
+ * test-mode scenario could reproduce it. This one can. 750ms is comfortably
+ * wider than the room's post-turn work (post the answer, release the claim,
+ * resume the collector, dispatch) so the ordering is deterministic rather than
+ * lucky, and short enough to cost a case under a second.
+ */
+const SLOW_CLOSE_MS = 750;
+
+/** The scenario name {@link SLOW_CLOSE_MS} documents. */
+const SLOW_CLOSE_SCENARIO = 'long-turn-slow-close';
 
 /**
  * How long a held compaction waits to be told the turn is over before ending
@@ -175,6 +214,14 @@ const BUILT_IN_SCENARIOS: Record<string, ScenarioFn> = {
    * and gives up after three minutes regardless — see {@link workingTurn}.
    */
   'long-turn': workingTurn(180),
+  /**
+   * `long-turn`, but its stream stays open for a beat AFTER the terminal event —
+   * the shape a real runtime has and the one every other scenario here lacks.
+   * See {@link SLOW_CLOSE_MS} for what depends on it. Deliberately NOT advertised
+   * in `features.testModeScenarios`: it is a fixture the rooms eval names
+   * explicitly, not something a reader should pick off a list.
+   */
+  [SLOW_CLOSE_SCENARIO]: workingTurn(180, SLOW_CLOSE_MS),
   'simple-text': async function* (content) {
     // session_status data cast needed because data union requires sessionId
     yield {

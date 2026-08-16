@@ -33,6 +33,8 @@ import { makeMockThread, codexFailedTurn, codexSimpleTurn } from './codex-scenar
 import {
   driveDurableTurn,
   drivePresenceTurn,
+  driveTerminalOnce,
+  driveQueueDurability,
 } from '../../../session/__tests__/durable-turn-harness.js';
 
 /** Hoisted so the (also hoisted) vi.mock factories can branch on it. */
@@ -129,6 +131,14 @@ runtimeConformance(
     // through the same projector the trigger path feeds.
     presenceTurn: (runtime, sessionId, content, probes) =>
       drivePresenceTurn(runtime, sessionId, content, projectDir, probes),
+    // C2/C3 are server-owned invariants every runtime inherits by construction
+    // (feedProjector collapses a multi-result window; the server owns the queue),
+    // so both drivers exercise the shared machinery rather than the codex binary —
+    // safe to wire in LIVE mode too. Codex declares neither steer nor stage, so it
+    // wires NO dispositionTurn: its C1 is the not-declared arm, and the declared
+    // half is skipped by name.
+    terminalOnce: () => driveTerminalOnce(projectDir),
+    queueDurability: () => driveQueueDurability(),
     // BC-16: the Codex SDK exposes no thread read or listing API, so everything
     // a codex session knows about itself is what DorkOS wrote down. Its
     // in-memory registry does see each delivered message — but `recordMessage`

@@ -1,6 +1,7 @@
 import { AnimatePresence, motion } from 'motion/react';
 import { ArrowUp, CornerDownLeft, Square, Clock, Check, X, Loader2 } from 'lucide-react';
 import { cn } from '@/layers/shared/lib';
+import { DispositionMenu } from './DispositionMenu';
 
 type ButtonState =
   | 'send'
@@ -43,6 +44,19 @@ interface InputActionButtonProps {
    * the upload here (see `ComposerInput`).
    */
   onCancelUpload?: () => void;
+  /**
+   * Send the message into the running task now (steer). Passed ONLY when the
+   * agent can take a message mid-task, so the caret beside Queue shows a Steer
+   * row; omitted, the row is absent, never greyed. Only ever offered in the
+   * `queue` state — an idle send never splits.
+   */
+  onSteer?: () => void;
+  /**
+   * Add the message as context the agent uses next, without cutting in (stage).
+   * Passed ONLY when the agent can take added context. Same "hidden, not
+   * disabled" rule as {@link onSteer}.
+   */
+  onStage?: () => void;
 }
 
 const BUTTON_CONFIG = {
@@ -173,6 +187,8 @@ export function InputActionButton({
   onSaveEdit,
   onCancelEdit,
   onCancelUpload,
+  onSteer,
+  onStage,
 }: InputActionButtonProps) {
   const buttonState = resolveButtonState(
     hasText,
@@ -234,6 +250,12 @@ export function InputActionButton({
           </motion.button>
         )}
       </AnimatePresence>
+
+      {/* The alternates to Queue — Steer and Add context — sit to its LEFT so
+          Queue stays the rightmost, primary tap target. Only in the queue state,
+          and only when the agent supports at least one: an idle send never
+          splits, and a queue-only runtime shows no caret at all. */}
+      {buttonState === 'queue' && <DispositionMenu onSteer={onSteer} onStage={onStage} />}
 
       {/* The slot is always here, even at rest with nothing to offer. It used to
           appear with the first character, so the composer's right edge — and the

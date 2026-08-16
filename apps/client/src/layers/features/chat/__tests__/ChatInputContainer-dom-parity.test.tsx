@@ -116,6 +116,7 @@ vi.mock('@/layers/entities/session', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/layers/entities/session')>()),
   useDirectoryState: () => [null, vi.fn()],
   useSessionChatState: () => ({ messages: [] }),
+  useSessionRuntime: () => 'claude-code',
   useSessionStreamState: () => ({
     messages: [],
     inProgressTurn: [],
@@ -125,6 +126,12 @@ vi.mock('@/layers/entities/session', async (importOriginal) => ({
     streamReadyCursor: null,
     connectionState: 'connecting',
   }),
+}));
+
+// This file renders the REAL composer to assert DOM parity, so its runtime
+// capabilities are stubbed to a steer-capable runtime rather than fetched.
+vi.mock('@/layers/entities/runtime', () => ({
+  useCapabilitiesForRuntime: () => ({ supportsSteer: true, supportsContextStaging: true }),
 }));
 
 import { ChatInputContainer } from '../ui/input/ChatInputContainer';
@@ -164,6 +171,8 @@ function baseProps(autocomplete = makeAutocomplete()) {
     autocomplete: autocomplete as never,
     handleSubmit: vi.fn(),
     enqueueContent: vi.fn().mockResolvedValue(true),
+    steerContent: vi.fn().mockResolvedValue(true),
+    addContextContent: vi.fn().mockResolvedValue(true),
     tryNativeCommand: vi.fn(() => ({ handled: false }) as const),
     commandPending: false,
     status: 'idle' as 'idle' | 'streaming' | 'error',

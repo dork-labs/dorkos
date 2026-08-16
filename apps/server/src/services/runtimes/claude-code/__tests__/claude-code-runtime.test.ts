@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import type { StreamEvent } from '@dorkos/shared/types';
+import type { Options } from '@anthropic-ai/claude-agent-sdk';
 import { wrapSdkQuery, sdkSimpleText, sdkToolCall } from './sdk-scenarios.js';
 import { DEFAULT_CWD } from '../../../../lib/resolve-root.js';
 
@@ -889,6 +890,74 @@ describe('ClaudeCodeRuntime', () => {
       });
       // The only verdict. No generic error piled on top of the specific one.
       expect(events.filter((e) => e.type === 'error')).toEqual([]);
+      expect(events.find((e) => e.type === 'done')).toBeDefined();
+    });
+
+    // DOR-1240. An MCP elicitation reaches the SDK consumer via the
+    // `onElicitation` option the launch resolver registers — real
+    // `interactive-handlers.ts` code, which pushes an `elicitation_prompt`
+    // event straight onto `session.eventQueue` and holds its returned promise
+    // open until a person answers. Nobody answers here, mirroring the module's
+    // own reachability note: the underlying CLI is expected to stay blocked on
+    // that promise, so a stream that closes with nothing but the prompt is
+    // exactly the shape the guard has to tell apart from real silence, not a
+    // shape today's SDK is expected to produce on its own.
+    it('does not call an elicitation-only turn a crash', async () => {
+      const { query: mockedQuery } = await import('@anthropic-ai/claude-agent-sdk');
+      (mockedQuery as ReturnType<typeof vi.fn>).mockClear();
+      (mockedQuery as ReturnType<typeof vi.fn>).mockImplementation((args: { options: Options }) =>
+        wrapSdkQuery(
+          (async function* () {
+            yield {
+              type: 'system',
+              subtype: 'init',
+              session_id: 'elicit-only',
+              tools: [],
+              mcp_servers: [],
+              model: 'test',
+              permissionMode: 'default',
+              slash_commands: [],
+              output_style: 'text',
+              skills: [],
+              plugins: [],
+              cwd: '/test',
+              apiKeySource: 'user',
+              uuid: 'uuid-init',
+            };
+            // Fire the callback without awaiting its promise — nothing in this
+            // test ever answers it, matching an elicitation left pending.
+            void args.options.onElicitation?.(
+              { serverName: 'test-server', message: 'Which environment?' },
+              { signal: new AbortController().signal }
+            );
+            yield {
+              type: 'result',
+              subtype: 'success',
+              duration_ms: 100,
+              duration_api_ms: 80,
+              is_error: false,
+              num_turns: 1,
+              result: '',
+              stop_reason: 'end_turn',
+              total_cost_usd: 0.001,
+              usage: { input_tokens: 10, output_tokens: 5 },
+              modelUsage: {},
+              permission_denials: [],
+              uuid: 'uuid-result',
+              session_id: 'elicit-only',
+            };
+          })()
+        )
+      );
+
+      agentManager.ensureSession('elicit-only', { permissionMode: 'default' });
+      const events: StreamEvent[] = [];
+      for await (const event of agentManager.sendMessage('elicit-only', 'hello')) {
+        events.push(event);
+      }
+
+      expect(events.find((e) => e.type === 'error')).toBeUndefined();
+      expect(events.find((e) => e.type === 'elicitation_prompt')).toBeDefined();
       expect(events.find((e) => e.type === 'done')).toBeDefined();
     });
 

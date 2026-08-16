@@ -213,6 +213,7 @@ export {
   sum,
   max,
   inArray,
+  notInArray,
   isNull,
   isNotNull,
   or,

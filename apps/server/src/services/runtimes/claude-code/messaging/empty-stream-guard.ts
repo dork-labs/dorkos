@@ -13,6 +13,7 @@
  *
  * @module services/runtimes/claude-code/messaging/empty-stream-guard
  */
+import { isBlockingInteractionEventType } from '@dorkos/shared/session-stream';
 import type {
   CompactBoundaryEvent,
   ErrorCategory,
@@ -30,9 +31,6 @@ const CONTENT_EVENT_TYPES = new Set<string>([
   'tool_result',
   'thinking_delta',
 ]);
-
-/** Events that mean the turn is legitimately parked on a person, not empty. */
-const INTERACTIVE_EVENT_TYPES = new Set<string>(['approval_required', 'question_prompt']);
 
 /**
  * The typed error surfaced when a turn produced zero content events: the
@@ -83,12 +81,22 @@ export function isContentEvent(event: StreamEvent): boolean {
 
 /**
  * Whether this event means the turn is waiting on a person (an approval card, a
- * question prompt) rather than having finished empty.
+ * question prompt, an MCP elicitation) rather than having finished empty.
+ *
+ * Derived from {@link isBlockingInteractionEventType} — the SAME canonical set
+ * the session projector folds into lifecycle `blocked` and the Telegram
+ * adapter stops its typing indicator for (`@dorkos/shared/session-stream`) —
+ * rather than a second hand-kept list. A local copy here once dropped
+ * `elicitation_prompt` (DOR-1240): `interactive-handlers.ts` pushes it onto
+ * `session.eventQueue` exactly like the other two, so the two-member literal
+ * made an elicitation-only turn (no text, no thinking, no tool call, just a
+ * person left holding an unanswered prompt) read as a dead stream on both
+ * dispatch paths — the last thing "The agent did not respond" should say.
  *
  * @param event - A mapped stream event, before it leaves the server.
  */
 export function isInteractiveEvent(event: StreamEvent): boolean {
-  return INTERACTIVE_EVENT_TYPES.has(event.type);
+  return isBlockingInteractionEventType(event.type);
 }
 
 /**

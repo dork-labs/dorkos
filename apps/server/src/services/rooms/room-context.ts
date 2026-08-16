@@ -202,6 +202,22 @@ export interface RoomContextInput {
    * is for the ones BEHIND it.
    */
   arrivedDuringPrevTurn?: ReadonlySet<string>;
+  /**
+   * The ids of the messages the collector gathered BEHIND the trigger — the rest
+   * of what this one turn is answering (room-participation spec §10.4).
+   *
+   * A fact about the DISPATCH, exactly like
+   * {@link RoomContextInput.arrivedDuringPrevTurn} beside it: the log says these
+   * entries are unread, and only the dispatcher knows they were gathered into
+   * this turn rather than merely missed. Omitted for every turn nothing was
+   * gathered behind.
+   *
+   * **Not the same set as `arrivedDuringPrevTurn`, and the difference is which
+   * question each answers.** That one says WHEN a message landed — while the
+   * agent was working — and it is a subset of this one. This says WHAT the turn
+   * owes an answer to.
+   */
+  gathered?: ReadonlySet<string>;
 }
 
 /**
@@ -288,6 +304,32 @@ export function buildRoomContext(
   // entire window instead. Zero is a legitimate setting and survives the clamp:
   // a room that replays nothing.
   const cap = Math.max(0, input.room.ambientMaxEntries);
+  // The rest of what this turn is answering, if anything (§10.4). An empty set
+  // for the ordinary turn, which keeps every expression below reading the same
+  // way whether or not a burst was gathered.
+  const gatheredIds: ReadonlySet<string> = input.gathered ?? new Set<string>();
+  // THE GATHERED MESSAGES (§10.4), read BY ID and never sliced out of the
+  // ambient page below.
+  //
+  // **The cap sizes the background, and it may not decide whether a question the
+  // turn was ASKED reaches the model.** Taking them out of the windowed read
+  // looked equivalent and was not: with `ambientMaxEntries: 30`, one question,
+  // thirty-five other messages and a second question inside one collect window,
+  // the first question fell off the front of the page — out of `gathered`, out
+  // of `pending`, and the block reverted to telling the model that the only
+  // message it was answering sat outside the fence. They are bounded already,
+  // by `rooms.collectMaxEntries`, which is the ceiling that belongs to them.
+  //
+  // Scoped to the conversation this turn answers, exactly as the window below
+  // is. A collection is keyed `(room, agent)` and NOT by thread, so a burst can
+  // mix a channel post into a thread turn — and a message this turn cannot
+  // answer must not be presented as one it must answer, because its reply goes
+  // to the thread. What is dropped here is the loss DOR-1207 already declares:
+  // still unread, still delivered by `channelTail`, still counted in
+  // `channelTailOmitted`.
+  const gathered = deps.store
+    .listEntriesByIds(input.room.id, [...gatheredIds])
+    .filter((entry) => (threadRootEntryId ? entry.threadRootEntryId === threadRootEntryId : true));
   // Read one more than the cap: a full page means older entries were dropped,
   // and that is what `pendingTruncated` reports. The cap, both bounds and both
   // exclusions are in SQL — see the store method for why that matters.
@@ -307,9 +349,11 @@ export function buildRoomContext(
     // Its own posts are reported separately as `ownRecent`, outside the
     // untrusted fence, because it wrote them.
     excludeAuthorId: input.agentAuthorId,
-    // The triggering entry is the message the agent is answering; it arrives as
-    // the turn's `content`, not as history.
-    excludeEntryId: input.entry.id,
+    // Everything that reaches the model somewhere else: the triggering entry,
+    // which arrives as the turn's `content` rather than as history, and the
+    // gathered ones, which were read above. Subtracted in SQL, so `limit` still
+    // counts what is actually shown and `pendingTruncated` stays honest.
+    excludeEntryIds: [input.entry.id, ...gathered.map((entry) => entry.id)],
     limit: cap + 1,
     // `undefined` for a top-level turn, which is the whole room — the same
     // window it has always read.
@@ -343,7 +387,7 @@ export function buildRoomContext(
   // Every entry that reaches the model, whichever heading it reaches it under —
   // the tail included, because a tail line naming a file it cannot open is the
   // same broken promise as a windowed one doing it (ADR 260807-233816).
-  const rendered = [...missed, ...(channelTail?.entries ?? []), ...ownRecent];
+  const rendered = [...missed, ...gathered, ...(channelTail?.entries ?? []), ...ownRecent];
 
   // The forum-topic label for every candidate this turn might render, in ONE
   // query — gated on `framing` so an unbridged room's turn never touches the
@@ -536,6 +580,10 @@ export function buildRoomContext(
       .map((claim) => ({ ...nameOf(claim.authorId), since: claim.since })),
     pending: missed.map(flatten),
     pendingTruncated,
+    // Omitted rather than sent empty, like `channelTail` below: the field means
+    // "this turn is answering these too", and a turn that gathered nothing is
+    // answering exactly one message.
+    ...(gathered.length > 0 ? { gathered: gathered.map(flatten) } : {}),
     // Omitted entirely for a top-level turn, rather than sent as an empty array:
     // the field means "here is the rest of the channel", and a top-level turn is
     // already reading it.

@@ -4,7 +4,7 @@
  * Two tiers, doing two different jobs (`specs/engaged-response-gate/01-ideation.md`
  * §13.2 and `meta/chat-capabilities.md` §7):
  *
- * - **This file is the STRUCTURAL tier**: four mechanism cases on `test-mode`.
+ * - **This file is the STRUCTURAL tier**: five mechanism cases on `test-mode`.
  *   No model, no spend, seconds, and they GATE — they are the only cases in the
  *   suite that do. Run them with
  *   `pnpm evals -- --suite rooms --tier test-mode`.
@@ -73,12 +73,12 @@
  *
  * 3. **what to expect.** `rooms-addressed-runs-a-turn` fails with ALL THREE of
  *    its oracles red — no indicator, nothing posted, nothing charged — and the
- *    burst and halt cases fail too, since both address the agent to get a turn at
- *    all. `rooms-unaddressed-is-free` stays GREEN, which is the half of the
- *    result that says the oracles discriminate rather than failing together. The
- *    suite's eight credentialed cases take no part in the drill: a `test-mode`
- *    run does not start them (`skipped-wrong-tier`). Measured on 2026-08-15, not
- *    predicted;
+ *    burst, halt and re-mention cases fail too, since all of them address the
+ *    agent to get a turn at all. `rooms-unaddressed-is-free` stays GREEN, which
+ *    is the half of the result that says the oracles discriminate rather than
+ *    failing together. The suite's eight credentialed cases take no part in the
+ *    drill: a `test-mode` run does not start them (`skipped-wrong-tier`).
+ *    Measured on 2026-08-15, not predicted;
  * 4. **reproduction versus noise**: a real drill red names the agent's author id
  *    in oracle 1's detail (`no working indicator named ada (01M…)`). A run where
  *    the case ERRORS instead — a stream that never settled, a boot fault — proves
@@ -87,7 +87,17 @@
  *    because these cases gate; per-oracle details are in
  *    `.evals-runs/<run id>/results.json`.
  *
- * Then remove the seed and confirm all four go green again.
+ * Then remove the seed and confirm all five go green again.
+ *
+ * {@link roomsRementionAfterTurnStartCase} owes a second, narrower drill, because
+ * the seed above cannot distinguish it from the other addressed cases: revert
+ * `whenBusy: 'refuse-foreign'` to `'refuse'` in
+ * `apps/server/src/services/rooms/room-turn-runner.ts` and run the same command.
+ * It is the ONLY case that goes red, on its notice oracle —
+ * `expected 0 "agent_busy" notice(s), observed 1` — which is DOR-1230 itself,
+ * reproduced end to end from the room's own stream. The other four stay green,
+ * which is the half that says this case is measuring the seam rather than
+ * addressing. Measured on 2026-08-16, not predicted.
  *
  * @module evals/suite/rooms
  */
@@ -312,13 +322,20 @@ export const roomsBurstCollectsCase: EvalCase = {
  * `rooms-halt-stops-and-says-so` — Stop reaches a running turn, and the room
  * says so exactly once (A-16 / RP8, `room-participation` §10.4).
  *
- * Two things are asserted and the second is the one with a rule behind it. The
- * halt must reach a LIVE turn (`stopped >= 1`, which only the route's answer
- * carries), and the room must write ONE `halted` notice — written BEFORE the
- * claims are dropped, because an indicator that vanishes ahead of the entry
- * explaining it is a room going quiet for no visible reason, which
- * `.claude/rules/room-conduct.md` forbids. The notice is damped per room, so
- * "exactly one" is the assertion rather than "at least one".
+ * Three things are asserted and each has a rule behind it. The halt must reach a
+ * LIVE turn (`stopped >= 1`, which only the route's answer carries); the room
+ * must write ONE `halted` notice — written BEFORE the claims are dropped,
+ * because an indicator that vanishes ahead of the entry explaining it is a room
+ * going quiet for no visible reason, which `.claude/rules/room-conduct.md`
+ * forbids, and damped per room, so "exactly one" is the assertion rather than
+ * "at least one"; and **the stopped turn must post nothing at all**.
+ *
+ * That third one is the one a person would notice missing. An interrupt is
+ * delivered rather than obeyed, so the scripted turn here keeps running after
+ * the halt and closes normally when the case winds it down — and until DOR-1232
+ * the room posted the answer it came back with, two seconds under its own
+ * "everything here was stopped" line. The case therefore judges the frames from
+ * after that wind-down, not the ones from the halt.
  *
  * **Test-mode only, and structurally so.** It needs a turn that is still running
  * when Stop is pressed, which the `long-turn` scenario provides deterministically
@@ -362,19 +379,28 @@ export const roomsHaltStopsCase: EvalCase = {
         timeoutMs: 20_000,
       });
       room.notes.stopped = await haltRoom({ baseUrl: ctx.baseUrl, roomId: room.roomId });
-      const frames = await stream.settle({ quietMs: QUIET_MS });
+      await stream.settle({ quietMs: QUIET_MS });
 
       // **Wind the scripted turn down BEFORE this case returns, and wait for it.**
       // A halt interrupts the room's WAIT; the runtime's own stream still closes
-      // the ordinary way, and `TestModeRuntime.interruptQuery` answers false
-      // because there is no process to signal — so the `long-turn` scenario is
-      // still ticking here. Left running, it outlives the eval: the runner
+      // the ordinary way, and `TestModeRuntime.interruptQuery` reports `true`
+      // for aborting the interaction gate without stopping the scripted turn
+      // behind it — so the `long-turn` scenario is still ticking here, and it
+      // still has its whole answer to deliver. Left running, it outlives the
+      // eval: the runner
       // disposes the server, closes the sandbox database, and the turn's own
       // completion path then writes into a closed handle and takes the whole run
       // down with an uncaught `The database connection is not open`. Measured,
       // not theorised — that is exactly how this case first failed.
       await finishTestTurns({ baseUrl: ctx.baseUrl });
-      await stream.settle({ quietMs: WIND_DOWN_QUIET_MS });
+      // **The frames the oracles judge are the ones from AFTER the wind-down**,
+      // and that is the whole of what makes the third oracle able to fail. The
+      // stopped turn's answer arrives when its stream closes, which is here —
+      // seconds after the halt — so a frame set collected at the halt could not
+      // see the post it is asserting the absence of (DOR-1232). `settle` returns
+      // every frame since the subscribe, so nothing from the earlier window is
+      // lost by reading the later one.
+      const frames = await stream.settle({ quietMs: WIND_DOWN_QUIET_MS });
       return { frames, room };
     } finally {
       // Hand the scenario store back the way it was found: it is a module
@@ -392,6 +418,123 @@ export const roomsHaltStopsCase: EvalCase = {
       'the halt reached at least one live turn'
     ),
     roomNoticeCount('halted', 1, 'the room said it was stopped, exactly once'),
+    agentStayedQuietInRoom('ada', {
+      label: 'the stopped turn posted no answer',
+    }),
+  ],
+};
+
+/**
+ * `rooms-remention-after-turn-start-runs` — a second mention that lands AFTER
+ * the turn started gets its own turn, and the room never says the agent was
+ * busy with its own work (DOR-1230).
+ *
+ * **The one case in this suite that crosses the room→dispatcher seam.** Every
+ * other case here posts into a room that is idle or gathering, so the room's
+ * claim and the dispatcher's in-flight slot agree about whether the agent is
+ * working. This case is built on the moment they DISAGREE, which is the only
+ * moment the bug lived in:
+ *
+ * 1. the turn is genuinely running, so the second mention is HELD rather than
+ *    gathered (RP8 — a burst case cannot reach this, because it posts inside the
+ *    gathering window, before any turn exists);
+ * 2. the turn ends, which releases the room's claim and immediately dispatches
+ *    the held message;
+ * 3. that dispatch meets a dispatcher in-flight slot the finished turn has NOT
+ *    handed back yet — it is cleared a beat later, when the turn settles.
+ *
+ * A blanket `whenBusy: 'refuse'` refused at step 3 and the room posted "didn't
+ * pick this up, send it again" over a message it was about to answer.
+ *
+ * **Which oracle catches which failure, measured rather than assumed.** Reverting
+ * to `'refuse'` reddens the NOTICE oracle alone: the room still answers the held
+ * message — a busy refusal rewinds the claim cursor, so it comes back around —
+ * and the damage is the apology it wrote in the meantime, which is exactly what
+ * a person complained about. The turn-count oracle guards the opposite failure,
+ * a held message quietly dropped rather than answered late, and is what the
+ * addressing drill in the module doc reddens. Neither is redundant and neither
+ * covers the other.
+ *
+ * **Test-mode only, and structurally so**, for the same reason the halt case is:
+ * step 1 needs a turn that is still running when the second message lands, which
+ * only the `long-turn` scenario makes deterministic. Against a real model the
+ * same script is a race, so it skips downward (`skipped-wrong-tier`) rather than
+ * gating a credentialed run on a verdict it could not produce.
+ */
+export const roomsRementionAfterTurnStartCase: EvalCase = {
+  id: 'rooms-remention-after-turn-start-runs',
+  title: 'Rooms — a mention during a live turn is answered next, and never called busy',
+  prompt: '',
+  runtimeTier: 'test-mode',
+  testModeOnly: true,
+  costClass: 'free',
+  tags: ['rooms'],
+  seed: (sandbox) => seedRoomAgents(sandbox, [ADA]),
+  roomScript: async (ctx): Promise<RoomScriptResult> => {
+    // **Both halves of this scenario name are load-bearing.** `long-turn` is
+    // what makes the second message land mid-turn instead of on an idle room.
+    // `slow-close` is what makes step 3 REACHABLE: every other test-mode
+    // scenario returns in the same microtask as its terminal event, so the
+    // in-flight slot is already free by the time the room dispatches and the
+    // case would pass on a build that still had the bug. Measured — this case
+    // did exactly that before the scenario existed. See `SLOW_CLOSE_MS` in
+    // `apps/server/src/services/runtimes/test-mode/scenario-store.ts`.
+    const scripted = await selectTestScenario({
+      baseUrl: ctx.baseUrl,
+      scenario: 'long-turn-slow-close',
+    });
+    if (!scripted) {
+      throw new Error('this case needs the test-mode scenario control; it is test-mode only');
+    }
+    const { room, stream } = await openRoomFor(ctx, {
+      slug: 'remention',
+      title: 'Remention',
+      agents: [ADA],
+      timeoutMs: STRUCTURAL_TIMEOUT_MS,
+    });
+    try {
+      const mention = mentionOf(room, 'ada');
+      await postToRoom({
+        baseUrl: ctx.baseUrl,
+        roomId: room.roomId,
+        text: `${mention} start on the release notes, please.`,
+      });
+      // The whole point of the case: the second message must land while the
+      // first turn is genuinely running, so the collector HOLDS it behind the
+      // live claim instead of gathering it into the turn that has not started.
+      await waitForRoomFrames(stream, (frames) => observedTurns(frames).length > 0, {
+        timeoutMs: 20_000,
+      });
+      await postToRoom({
+        baseUrl: ctx.baseUrl,
+        roomId: room.roomId,
+        text: `${mention} one more thing while you are on it: who signs it off?`,
+      });
+
+      // End the first turn on this case's schedule rather than a stopwatch's.
+      // The flag is sticky, so the held message's own turn finishes at once too
+      // and nothing is left ticking inside the harness process — the failure the
+      // halt case documents.
+      await finishTestTurns({ baseUrl: ctx.baseUrl });
+      await stream.settle({
+        settleWhen: (collected) => observedTurns(collected).length >= 2,
+        quietMs: QUIET_MS,
+      });
+      // A second window, so "two turns and no busy notice" is judged over frames
+      // that waited for a notice which could still have arrived.
+      const frames = await stream.settle({ quietMs: QUIET_MS });
+      return { frames, room };
+    } finally {
+      // The scenario store is a module singleton shared by every in-process eval
+      // in this runner, so a case that selects one owes the reset.
+      await resetTestMode({ baseUrl: ctx.baseUrl });
+      stream.close();
+    }
+  },
+  oracles: [
+    roomTurnsRanFor('ada', 2, 'the mention during the turn got a turn of its own'),
+    roomNoticeCount('agent_busy', 0, 'the room never said the agent was busy with its own turn'),
+    agentPostedInRoom('ada', { label: 'the room got answers rather than an apology' }),
   ],
 };
 
@@ -401,4 +544,5 @@ export const roomsStructuralCases: EvalCase[] = [
   roomsUnaddressedIsFreeCase,
   roomsBurstCollectsCase,
   roomsHaltStopsCase,
+  roomsRementionAfterTurnStartCase,
 ];

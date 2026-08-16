@@ -106,6 +106,15 @@ export interface InfrastructureRetryOptions {
  * including when it is worse than the first. The retry buys the case another
  * chance to reach its oracles; whatever the oracles then say is the answer.
  *
+ * The infrastructure signature this retries is a turn timeout — a `failed`
+ * outcome — so attempt 1 retains its OWN sandbox/logs under its OWN
+ * attempt-scoped name exactly like any other failure (DOR-1241, `run-eval.ts`).
+ * But the RECORDED result is always attempt 2's, so without carrying attempt
+ * 1's pointers forward, a double timeout (DOR-1229's hang class — the exact
+ * reason retention exists) would retain attempt 1's evidence on disk with
+ * nothing in `results.json` pointing at it. `priorAttempt*` on the merged
+ * result is that pointer (DOR-1241 review, Important 2).
+ *
  * @param attempt - Runs one attempt; receives the 1-based attempt number.
  * @param opts - See {@link InfrastructureRetryOptions}.
  * @returns The result to record for this case.
@@ -119,5 +128,10 @@ export async function runWithInfrastructureRetry(
   if (opts.canRetry && !opts.canRetry()) return first;
 
   const second = await attempt(2);
-  return { ...second, retried: true };
+  return {
+    ...second,
+    retried: true,
+    ...(first.retainedSandbox ? { priorAttemptRetainedSandbox: first.retainedSandbox } : {}),
+    ...(first.retainedLogsPath ? { priorAttemptRetainedLogsPath: first.retainedLogsPath } : {}),
+  };
 }

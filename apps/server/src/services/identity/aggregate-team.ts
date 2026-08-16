@@ -380,15 +380,20 @@ function personRow(
 /**
  * The later of two possibly-absent, possibly-unparseable ISO timestamps.
  *
- * `Date.parse` answers `NaN` for anything it cannot read, and a `NaN` compared
- * with `>` is always false — so a corrupt stamp loses to a good one rather than
- * poisoning the answer. Two bad stamps leave the first, which is as honest as
- * this function can be about input it cannot order.
+ * `Date.parse` answers `NaN` for anything it cannot read, and a corrupt stamp
+ * loses to a good one **in either position**. The comparison alone does not get
+ * there: every `>` against `NaN` is false, so a bare `b > a` keeps `a` even when
+ * `a` is the unreadable one, and the roster would put `"not-a-date"` on the wire
+ * for the client to render. Two bad stamps leave the first, which is as honest
+ * as this function can be about input it cannot order.
  */
 function laterOf(a: string | null, b: string | null): string | null {
   if (a === null) return b;
   if (b === null) return a;
-  return Date.parse(b) > Date.parse(a) ? b : a;
+  const left = Date.parse(a);
+  const right = Date.parse(b);
+  if (Number.isNaN(left)) return Number.isNaN(right) ? a : b;
+  return right > left ? b : a;
 }
 
 /**

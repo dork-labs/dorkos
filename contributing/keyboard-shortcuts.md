@@ -57,6 +57,27 @@ because it is the one case where an open palette does not swallow `Enter`.
 `Shift+Enter` is a newline on both fields, and a trailing `\` plus `Enter` is a newline on both.
 Neither is affected by the setting.
 
+### Steer and Add context chords (composer, `use-input-keyboard.ts`)
+
+While a turn is streaming, the composer offers two more dispositions beside Queue, each on a
+modifier + `Enter` chord (fine pointer only; on a touch-only device these live on the send menu
+because `Enter` is a newline there):
+
+| Chord                          | Disposition | Reaches                                       |
+| ------------------------------ | ----------- | --------------------------------------------- |
+| `⌘Enter` / `Ctrl+Enter`        | `steer`     | `onSteer` — deliver into the live turn now    |
+| `⌘⇧Enter` / `Ctrl+Shift+Enter` | `stage`     | `onStage` — add context for the next dispatch |
+
+Both are **capability-gated by presence, not by a disabled state.** The host wires `onSteer` /
+`onStage` only when the session's runtime declares `supportsSteer` / `supportsContextStaging`
+(`ChatInputContainer` reads them via `useCapabilitiesForRuntime`). When a callback is absent the
+chord resolves to **Queue** (`onSteer ?? onQueue`, `onStage ?? onQueue`) — a shortcut never does
+something the button cannot, and it is never swallowed. The chords sit downstream of the
+backslash-continuation rule and only fire with `isStreaming`, `value.trim()`, no open queue-item
+edit, and no pending command. The composer's split action (`InputActionButton` → `DispositionMenu`)
+is the pointer equivalent: a caret beside Queue, shown under the same capability rule, absent on a
+queue-only runtime.
+
 ### Why Global Shortcuts Work
 
 The chat textarea is `disabled={isLoading}` during streaming. Interactive tools only appear while the SSE connection is open (i.e., during streaming). Because the textarea is disabled, it cannot receive focus or keystrokes, so `document.addEventListener('keydown', ...)` handlers fire without conflicting with text input.

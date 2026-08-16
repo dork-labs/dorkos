@@ -315,6 +315,17 @@ export default defineConfig({
       ),
       url: `http://localhost:${PORT}/api/health`,
       name: 'Express API',
+      // Every leg below carries a DISTINCT timeout, on purpose (DOR-1243).
+      // Playwright's own readiness-timeout error names only the millisecond
+      // number — `Timed out waiting 180000ms from config.webServer.` — never
+      // the leg (verified against installed playwright@1.59.1:
+      // webServerPlugin.js's `_waitForProcess` throws that string with no
+      // access to `this._options.name`, which is used only to prefix piped
+      // stdout/stderr lines). So the leg's `name` field, though set on every
+      // entry below for that log-prefixing, cannot disambiguate a bare
+      // timeout number by itself. Giving each leg its own value is what lets
+      // a future "Timed out waiting N" be grepped straight back to the one
+      // config line that set N.
       timeout: 240_000,
       reuseExistingServer: REUSE_EXISTING_SERVER,
       stdout: 'pipe',
@@ -367,7 +378,10 @@ export default defineConfig({
       ),
       url: `http://localhost:${MOCK_PORT}/api/health`,
       name: 'Express API (test-mode)',
-      timeout: 240_000,
+      // Same boot path and the same 240s budget as the cockpit Express leg
+      // above — offset by +1s so the two are still distinct timeout VALUES
+      // (see that leg's comment for why a distinct number matters).
+      timeout: 241_000,
       reuseExistingServer: REUSE_EXISTING_SERVER,
       stdout: 'pipe',
       stderr: 'pipe',
@@ -379,7 +393,9 @@ export default defineConfig({
       command: `DORKOS_PORT=${MOCK_PORT} VITE_PORT=${MOCK_VITE_PORT} dotenv -- turbo dev --filter=@dorkos/client`,
       url: `http://localhost:${MOCK_VITE_PORT}`,
       name: 'Vite Client (test-mode)',
-      timeout: 120_000,
+      // Same reasoning as the test-mode Express leg above: same budget as the
+      // cockpit Vite leg, offset +1s so the two timeout VALUES stay distinct.
+      timeout: 121_000,
       reuseExistingServer: REUSE_EXISTING_SERVER,
       stdout: 'pipe',
     },
@@ -404,7 +420,33 @@ export default defineConfig({
             command: `SITE_PORT=${SITE_PORT} dotenv -- pnpm --filter @dorkos/site dev`,
             url: `http://localhost:${SITE_PORT}`,
             name: 'Marketing Site',
-            timeout: 180_000,
+            // Was 180_000 (DOR-1243). The readiness probe is a GET on `/`,
+            // which needs a cold-cache Turbopack compile of the marketing
+            // homepage — measured 12.8s on a warm laptop, but that says
+            // nothing about a cold ubuntu-latest runner under load, which is
+            // what CI always is. `Error: Timed out waiting 180000ms from
+            // config.webServer.` hit PR #1032 twice and one main push (run
+            // 31922834734); nothing about the product was broken either
+            // time, only the runner losing the race against 180s.
+            //
+            // 180s was never a measured number for THIS leg. 240s is: it is
+            // what the two Express legs already run at, and they boot a
+            // heavier `turbo run build` + `tsx` chain than a Next dev server
+            // compiling one page. Matching that budget, instead of inventing
+            // a third number, borrows a margin already proven adequate for
+            // the suite's slower legs. +2s over the test-mode Express leg's
+            // 241_000 keeps every timeout in this array a distinct value
+            // (see the cockpit Express leg's comment for why that matters)
+            // while staying visibly in the "≈240s" family rather than
+            // reading as its own tuned number.
+            //
+            // The probe stays on `/`, not a cheaper route: this leg's whole
+            // point is proving the live marketing pages render, and the
+            // specs that need it (marketplace.spec.ts, features.spec.ts)
+            // exercise pages behind the same root layout that `/` already
+            // forces Turbopack to compile. A cheaper probe would only hide a
+            // slow or broken homepage behind a green webServer gate.
+            timeout: 242_000,
             reuseExistingServer: REUSE_EXISTING_SERVER,
             stdout: 'pipe' as const,
             stderr: 'pipe' as const,

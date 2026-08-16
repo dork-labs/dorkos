@@ -295,17 +295,27 @@ import { TooltipProvider } from '@/layers/shared/ui';
 
 const SESSION_ID = 'make-default-session';
 
-function renderSection() {
-  return render(
+/**
+ * The status section for one conversation. Built as an element rather than
+ * rendered here so a test can hand the SAME tree a different `sessionId` — the
+ * cockpit switches conversations without remounting `ChatPanel`, and that is a
+ * state the offer has to survive correctly.
+ */
+function section(sessionId: string = SESSION_ID) {
+  return (
     <TooltipProvider>
       <ChatStatusSection
-        sessionId={SESSION_ID}
+        sessionId={sessionId}
         sessionStatus={null}
         isStreaming={false}
         syncConnectionState="connected"
       />
     </TooltipProvider>
   );
+}
+
+function renderSection(sessionId: string = SESSION_ID) {
+  return render(section(sessionId));
 }
 
 beforeEach(() => {
@@ -548,6 +558,94 @@ describe('the offer writes the leaf it compared', () => {
     fireEvent.click(await screen.findByTestId('make-default-confirm'));
 
     expect(updateConfig.mock.calls[0]![0]).toEqual({ runtimes: { defaultTrustStop: 'act' } });
+  });
+});
+
+describe('the offer belongs to the conversation it was made about (DOR-1237)', () => {
+  // `ChatPanel` is not keyed by session id — switching conversations changes a
+  // prop and keeps every piece of component state. So an offer armed by a dial
+  // move in one conversation used to still be standing, one click from a
+  // durable write, in the next one: the person answers a question they were
+  // never asked here, about a stop they chose somewhere else, and their
+  // standing default moves. That is the drift DOR-1237 recorded on a real
+  // install (`runtimes.claudeCode.defaultTrustStop` went `autonomy` → `act`
+  // between two sign-offs, with nothing on the wire that admits to it).
+
+  /** An install whose claude-code override is at Full autonomy, as DOR-1237's was. */
+  function overrideAtAutonomy() {
+    executionDefaults.current = {
+      runtime: 'claude-code',
+      trustStop: null,
+      perRuntime: [
+        {
+          runtime: 'claude-code',
+          model: null,
+          effort: null,
+          supportsEffort: true,
+          trustStop: 'autonomy',
+        },
+      ],
+    };
+  }
+
+  it('withdraws when the person moves to another conversation', async () => {
+    overrideAtAutonomy();
+    const { rerender } = renderSection();
+    fireEvent.click(screen.getByTestId('select-act'));
+    expect(await screen.findByTestId('make-default-offer')).toBeInTheDocument();
+
+    rerender(section('some-other-session'));
+
+    expect(screen.queryByTestId('make-default-offer')).not.toBeInTheDocument();
+  });
+
+  it('cannot be accepted after the switch, so no stop chosen elsewhere becomes the default', async () => {
+    // The assertion with teeth: the button is what writes, so its absence is
+    // what keeps `runtimes.claudeCode.defaultTrustStop` where the operator put
+    // it. Left standing, one click here wrote `act` over `autonomy`.
+    overrideAtAutonomy();
+    const { rerender } = renderSection();
+    fireEvent.click(screen.getByTestId('select-act'));
+    await screen.findByTestId('make-default-confirm');
+
+    rerender(section('some-other-session'));
+
+    expect(screen.queryByTestId('make-default-confirm')).not.toBeInTheDocument();
+    expect(updateConfig).not.toHaveBeenCalled();
+  });
+
+  it('takes the Full-autonomy consent dialog with it', async () => {
+    // The dialog whose answer IS the standing record. Surviving a switch, it
+    // would ask about one conversation and be answered from another — and its
+    // confirmation writes the default outright.
+    const { rerender } = renderSection();
+    fireEvent.click(screen.getByTestId('select-autonomy'));
+    fireEvent.click(screen.getByRole('button', { name: 'Turn on Full autonomy' }));
+    fireEvent.click(await screen.findByTestId('make-default-confirm'));
+    expect(screen.getByTestId('autonomy-consent-note')).toBeInTheDocument();
+
+    rerender(section('some-other-session'));
+
+    expect(screen.queryByTestId('autonomy-consent-note')).not.toBeInTheDocument();
+    expect(updateConfig).not.toHaveBeenCalled();
+  });
+
+  it('still offers in the conversation it was made about', async () => {
+    // The guard is the SESSION changing, never a re-render — an offer that
+    // withdrew on every parent render would never survive long enough to be
+    // answered.
+    overrideAtAutonomy();
+    const { rerender } = renderSection();
+    fireEvent.click(screen.getByTestId('select-act'));
+    await screen.findByTestId('make-default-offer');
+
+    rerender(section());
+
+    expect(screen.getByTestId('make-default-offer')).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('make-default-confirm'));
+    expect(updateConfig.mock.calls[0]![0]).toEqual({
+      runtimes: { claudeCode: { defaultTrustStop: 'act' } },
+    });
   });
 });
 

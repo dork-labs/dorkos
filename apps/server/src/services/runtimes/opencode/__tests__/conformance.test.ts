@@ -70,6 +70,8 @@ import { OpenCodeRuntime } from '../opencode-runtime.js';
 import {
   driveDurableTurn,
   drivePresenceTurn,
+  driveTerminalOnce,
+  driveQueueDurability,
 } from '../../../session/__tests__/durable-turn-harness.js';
 import { TurnEventQueue } from '../global-event-hub.js';
 import type { OpenCodeWireEvent } from '../event-mapper.js';
@@ -222,6 +224,12 @@ runtimeConformance(
     // through the same projector the trigger path feeds.
     presenceTurn: (runtime, sessionId, content, probes) =>
       drivePresenceTurn(runtime, sessionId, content, PROJECT_DIR, probes),
+    // C2/C3 are server-owned invariants every runtime inherits by construction,
+    // so both drivers exercise the shared machinery rather than the sidecar —
+    // safe in LIVE mode too. OpenCode declares neither steer nor stage, so it
+    // wires NO dispositionTurn: its C1 is the not-declared arm.
+    terminalOnce: () => driveTerminalOnce(PROJECT_DIR),
+    queueDurability: () => driveQueueDurability(),
     // BC-16: the sidecar's session list reports only created/updated times, and
     // ADR-0308 forbids reading its store directly, so the person's last message
     // could only be found by fetching every session's full message history —

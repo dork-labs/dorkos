@@ -10,7 +10,12 @@
  */
 import { describe, it, expect } from 'vitest';
 import path from 'node:path';
-import { configFailureCheck, describeConfigFailure } from '../commands/doctor.js';
+import {
+  checkUnreadableSettings,
+  configFailureCheck,
+  describeConfigFailure,
+} from '../commands/doctor.js';
+import type { ConfigStore } from '../config-commands.js';
 
 /** A stand-in for `ConfigUnreadableError`, which lives in the bundled server. */
 function unreadableError(advice: string): Error {
@@ -102,5 +107,54 @@ describe('configFailureCheck', () => {
     const check = configFailureCheck(new Error('something else entirely'), dorkHome);
     expect(check.status).toBe('fail');
     expect(check.fix).toContain('Start DorkOS again');
+  });
+});
+
+/**
+ * Settings a NEWER version of DorkOS wrote and this one cannot read (DOR-1227).
+ *
+ * Falling back to the default is the right behaviour and the wrong secret. The
+ * tolerated set includes `auth.enabled` and `approvals.trustWindowMinutes`, and
+ * before DOR-1227 a file holding a value one of those could not take was
+ * condemned loudly, with a backup a person could see. Doctor is where somebody
+ * looks when something feels off, so it has to be able to say so.
+ */
+describe('checkUnreadableSettings', () => {
+  /** A store that reports exactly these validate warnings. */
+  function storeWarning(...warnings: string[]): ConfigStore {
+    return {
+      getAll: () => ({}) as never,
+      getDot: () => undefined,
+      setDot: () => ({}),
+      reset: () => {},
+      validate: () => (warnings.length > 0 ? { valid: true, warnings } : { valid: true }),
+      path: '/x/.dork/config.json',
+    };
+  }
+
+  it('says nothing on a machine with nothing to say', () => {
+    // Every other row answers a question worth asking everywhere; this one only
+    // has news sometimes, and a line of reassurance nobody needed is noise.
+    expect(checkUnreadableSettings(storeWarning())).toEqual([]);
+    expect(checkUnreadableSettings(null)).toEqual([]);
+  });
+
+  it('warns, names each setting, and never fails the run', () => {
+    const [check] = checkUnreadableSettings(
+      storeWarning('auth.enabled: "sso" (using false)', 'ui.theme: "midnight" (using "system")')
+    );
+
+    expect(check?.label).toContain('2 settings were saved by a newer version');
+    // A warn, not a fail: the file is fine, DorkOS started, and every other
+    // setting in it is being used — `dorkos doctor` must still exit 0.
+    expect(check?.status).toBe('warn');
+    expect(check?.detail).toContain('auth.enabled');
+    expect(check?.detail).toContain('ui.theme');
+    expect(check?.fix).toContain('still in the file');
+  });
+
+  it('counts one setting in the singular', () => {
+    const [check] = checkUnreadableSettings(storeWarning('ui.theme: "midnight" (using "system")'));
+    expect(check?.label).toContain('1 setting was saved');
   });
 });

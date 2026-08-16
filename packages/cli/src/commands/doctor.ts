@@ -266,6 +266,7 @@ async function gatherResults(dorkHome: string, store: ConfigStore | null): Promi
     checkFileDescriptors(readFileDescriptorLimit()),
     checkClaudeCli(),
     checkClaudeAuth(homeDir),
+    ...checkUnreadableSettings(store),
     ...checkRuntimeAuth({
       codexEnabled: readBool(store, 'runtimes.codex.enabled', true),
       codexCredentialRef: readString(store, 'runtimes.codex.credentialRef'),
@@ -340,6 +341,42 @@ function resolvePort(store: ConfigStore | null): number {
   if (envPort && /^\d+$/.test(envPort)) return Number(envPort);
   const configPort = readNumber(store, 'server.port');
   return configPort ?? DEFAULT_PORT;
+}
+
+/**
+ * The row for settings a newer version of DorkOS wrote and this one cannot read.
+ *
+ * **Absent when there is nothing to say.** Every other row here answers a
+ * question worth asking on every machine; this one answers "is anything on this
+ * machine being ignored", and on a machine where the answer is no, printing it
+ * would be a line of reassurance nobody needed. It appears exactly when it has
+ * news, which is the same reason the runtime-auth group spreads rather than
+ * always showing.
+ *
+ * A `warn`, never a `fail`: the file is fine, DorkOS started, and every OTHER
+ * setting in it is being used. It exists so that a login gate this build read as
+ * off, or a bound it read back at its default, is something a person can find
+ * rather than something they discover.
+ *
+ * @param store - The config store, or `null` when it would not open.
+ * @returns One row, or none.
+ * @internal Exported for testing.
+ */
+export function checkUnreadableSettings(store: ConfigStore | null): CheckResult[] {
+  const warnings = store?.validate().warnings ?? [];
+  if (warnings.length === 0) return [];
+  const what = warnings.length === 1 ? 'setting was' : 'settings were';
+  return [
+    {
+      label: `${warnings.length} ${what} saved by a newer version of DorkOS`,
+      status: 'warn',
+      detail: warnings.join('; '),
+      fix:
+        `This version does not know those values, so it is using its own defaults for them.\n` +
+        `Everything else in your settings is being used as normal, and the values above are\n` +
+        `still in the file — update DorkOS and it will pick them up again.`,
+    },
+  ];
 }
 
 function readBool(store: ConfigStore | null, key: string, fallback: boolean): boolean {

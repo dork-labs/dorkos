@@ -172,6 +172,84 @@ describe('createCanUseTool — approval gate', () => {
     expect(session.pendingInteractions.has('subagent-tool-1')).toBe(true);
   });
 
+  // DOR-1229, both directions. A room triggers a turn INTO THE DARK — nobody
+  // holds that session's stream — under `default`, the strictest mode, so a card
+  // raised for the agent's own room verbs is a card nobody is positioned to
+  // answer: measured live on 2026-08-16, `search_room_history` asked at 15s and
+  // the turn made no further progress until the interaction window auto-denied it
+  // ten minutes later.
+  //
+  // But the auto-allow is only honest while the session HAS an identity. Without
+  // one, `callerAuthor` falls back to the person who owns the install — who sees
+  // every room on the machine, their DMs included, and posts as a human at
+  // cascade depth zero. So both halves are pinned, per verb, by name: a shrinking
+  // safe-list or a dropped gate is red here rather than quiet.
+  const ROOM_VERBS: [string, Record<string, unknown>][] = [
+    ['mcp__dorkos__post_to_room', { roomId: 'room-1', text: 'on it' }],
+    ['mcp__dorkos__react_to_room_entry', { roomId: 'room-1', entryId: 'e-1', emoji: '🎉' }],
+    ['mcp__dorkos__read_room_history', { roomId: 'room-1' }],
+    ['mcp__dorkos__search_room_history', { roomId: 'room-1', query: 'deploy' }],
+  ];
+
+  /** A session whose cwd hosts a registered agent, as the resolver reports it. */
+  const withIdentity = () => Promise.resolve({ identity: { agentPath: '/agents/ada' } });
+  /** A plain project directory: the resolver names nobody. */
+  const withoutIdentity = () => Promise.resolve(undefined);
+
+  it.each(ROOM_VERBS)(
+    'lets an agent-identified session use its own room verb %s without a card nobody can answer',
+    async (toolName, input) => {
+      const session = makeSession('default');
+      const canUseTool = createCanUseTool(session, noopLog, undefined, withIdentity);
+
+      const result = await canUseTool(toolName, input, makeContext(`rooms-${toolName}`));
+
+      expect(result).toEqual({ behavior: 'allow', updatedInput: input });
+      expect(session.eventQueue).toHaveLength(0);
+      expect(session.pendingInteractions.size).toBe(0);
+    }
+  );
+
+  it.each(ROOM_VERBS)(
+    'still raises a card for %s when the session names nobody, because it would act as the owner',
+    async (toolName, input) => {
+      const session = makeSession('default');
+      const canUseTool = createCanUseTool(session, noopLog, undefined, withoutIdentity);
+
+      const result = canUseTool(toolName, input, makeContext(`anon-${toolName}`));
+      const settled = await Promise.race([
+        result.then(() => 'settled' as const),
+        Promise.resolve('pending' as const),
+      ]);
+
+      expect(settled).toBe('pending');
+      expect(session.eventQueue[0].type).toBe('approval_required');
+      expect(session.pendingInteractions.has(`anon-${toolName}`)).toBe(true);
+    }
+  );
+
+  it('asks rather than skipping the card when the identity lookup throws', async () => {
+    // Fail-closed: the fallback caller on the other side of these verbs is the
+    // person who owns the install, so "could not tell" must never mean "allow".
+    const session = makeSession('default');
+    const canUseTool = createCanUseTool(session, noopLog, undefined, () =>
+      Promise.reject(new Error('the agent index is gone'))
+    );
+
+    const result = canUseTool(
+      'mcp__dorkos__read_room_history',
+      { roomId: 'r' },
+      makeContext('e-1')
+    );
+    const settled = await Promise.race([
+      result.then(() => 'settled' as const),
+      Promise.resolve('pending' as const),
+    ]);
+
+    expect(settled).toBe('pending');
+    expect(session.eventQueue[0].type).toBe('approval_required');
+  });
+
   it('logs an approval request at info and routine verdicts at debug', async () => {
     // A turn parked on a card makes no further progress, so the line explaining
     // WHY has to survive the default production log level (DOR-782). The

@@ -21,17 +21,28 @@
  *
  * An unrecognized key never condemns a file. It is ignored in memory — nothing
  * reads it, and it is absent from the `UserConfig` type — and preserved on disk
- * for the build that owns it. A schema violation on a key this build DOES
- * declare still means what it always meant, and still reaches the recovery path
- * in `config-manager.ts`: those two cases are told apart structurally, by making
- * the validator stop treating unknown keys as violations at all, rather than by
- * reading Ajv's error text after the fact.
+ * for the build that owns it. Those two cases are told apart structurally, by
+ * making the validator stop treating unknown keys as violations at all, rather
+ * than by reading Ajv's error text after the fact.
+ *
+ * ## The other direction
+ *
+ * This module covers a key this build does not DECLARE. A key it declares whose
+ * stored VALUE a newer build widened — a new enum member, a raised bound, a
+ * retyped leaf — is the same argument at the other end, and lives next door in
+ * `widened-leaves.ts` (DOR-1227). Together they are the whole of "settings
+ * written by a build that is not this one"; anything left over really is damage.
  *
  * @module services/core/config/version-skew
  */
 
-/** Whether a value is a JSON object rather than an array, `null`, or a scalar. */
-function isPlainObject(value: unknown): value is Record<string, unknown> {
+/**
+ * Whether a value is a JSON object rather than an array, `null`, or a scalar.
+ *
+ * @param value - The value to test.
+ * @returns `true` when it is a plain object.
+ */
+export function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
@@ -44,10 +55,12 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
  * left alone: that is a record type, where the extra keys are the data and their
  * shape is still worth checking.
  *
- * Everything else the schema says still applies. A declared key with the wrong
- * type, an enum with a value outside it, a missing required field — all still
- * fail validation, which is what keeps this tolerance from becoming "validate
- * nothing".
+ * Everything else this function sees still applies — a wrong-shaped section, a
+ * list where an object belongs, a missing required field all still fail, which
+ * is what keeps this tolerance from becoming "validate nothing". The one further
+ * relaxation is `relaxWidenedLeaves` in `widened-leaves.ts`, which opens named
+ * scalar leaves and hands their checking to Zod inside DorkOS; it is applied
+ * after this one and is deliberately a separate, narrower cut.
  *
  * @param schema - The generated schema, mutated in place.
  */

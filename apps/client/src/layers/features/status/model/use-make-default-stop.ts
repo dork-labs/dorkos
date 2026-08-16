@@ -98,7 +98,9 @@ export interface MakeDefaultStop {
  * accept the offer, nothing about their sessions would change, and the same
  * question would come back on the next stop change, forever.
  *
- * @param opts.sessionId - The session whose dial was moved.
+ * @param opts.sessionId - The session whose dial was moved. A change withdraws
+ *   any standing offer: it was made about that conversation, and the cockpit
+ *   switches conversations without remounting anything (DOR-1237).
  * @param opts.runtime - The runtime this session is bound to, or nullish before
  *   it resolves (the server default answers for it, as everywhere else).
  * @param opts.declaredModes - That runtime's declared modes, in declared order.
@@ -121,6 +123,30 @@ export function useMakeDefaultStop(opts: {
   const [offeredStop, setOfferedStop] = useState<PermissionStop | null>(null);
   const [pendingDescriptor, setPendingDescriptor] = useState<PermissionModeDescriptor | null>(null);
   const [writeError, setWriteError] = useState<string | null>(null);
+
+  // ## The offer belongs to the conversation it was made about (DOR-1237)
+  //
+  // The cockpit switches conversations by changing this prop — `ChatPanel` is
+  // not keyed by session id — so nothing unmounts and every piece of state
+  // below outlives the session that produced it. An offer left standing across
+  // that switch is a question the person was never asked here, sitting one
+  // click from a DURABLE write: accept it and `runtimes.<runtime>.defaultTrustStop`
+  // moves to a stop chosen in a different conversation, on a runtime that may
+  // not even be this one. That is the drift DOR-1237 recorded on a real install,
+  // where the leaf went `autonomy` → `act` between two sign-offs.
+  //
+  // The dismissal was already session-scoped (`useHasDismissedDefaultStopOffer`),
+  // which is the same rule stated for the "no" answer; this states it for the
+  // offer itself. Adjusted during render on the change rather than in an effect
+  // — the same idiom `AutonomyConfirmDialog` uses to reset its checkbox — so
+  // there is never a paint in which the stale offer is on screen and clickable.
+  const [offerSession, setOfferSession] = useState(sessionId);
+  if (offerSession !== sessionId) {
+    setOfferSession(sessionId);
+    setOfferedStop(null);
+    setPendingDescriptor(null);
+    setWriteError(null);
+  }
 
   const defaults = config?.executionDefaults;
   // A session that has not bound to a runtime yet is read against the server's

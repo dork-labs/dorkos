@@ -86,6 +86,8 @@ function ComposerInputDemo({
   isStreaming = false,
   queueDepth = 0,
   richText = false,
+  canSteer = false,
+  canAddContext = false,
 }: {
   label: string;
   initialValue?: string;
@@ -97,6 +99,14 @@ function ComposerInputDemo({
    * changes — whoever is looking at it.
    */
   richText?: boolean;
+  /**
+   * Offer the Steer choice beside Queue. Modelled on the runtime capability the
+   * real composer reads: on the playground it is a prop, so both the supported
+   * and the queue-only busy states are visible side by side.
+   */
+  canSteer?: boolean;
+  /** Offer the Add context choice beside Queue. Same modelling as {@link canSteer}. */
+  canAddContext?: boolean;
 }) {
   const [value, setValue] = useState(initialValue);
   return (
@@ -113,6 +123,11 @@ function ComposerInputDemo({
             queueDepth={queueDepth}
             onStop={() => {}}
             onQueue={() => {}}
+            // Present ONLY when the capability is, exactly as the real host wires
+            // them — so the queue-only busy state shows a plain Queue button and
+            // the supported one shows the caret. Never greyed.
+            onSteer={canSteer ? () => {} : undefined}
+            onStage={canAddContext ? () => {} : undefined}
             // The composer only renders its clear affordance when a host wires
             // one; without this every showcase silently lost the X.
             onClear={() => setValue('')}
@@ -213,6 +228,40 @@ export function InputShowcases() {
           richText
           initialValue={'# Ship notes\n\n- **check** the `build`\n- then the *docs*'}
         />
+      </PlaygroundSection>
+
+      <PlaygroundSection
+        title="Composer dispositions"
+        description="What the send action offers while the agent is working. Idle sessions get a plain Send. Busy sessions get Queue, plus Steer and Add context when the runtime can take them — Claude Code can, Codex and OpenCode cannot, and there the caret is absent rather than greyed. A steer that has to be queued says so once on its chip."
+      >
+        <ComposerInputDemo
+          label="Idle — one plain Send (every disposition would just run now)"
+          initialValue="Refactor the auth module"
+        />
+        <ComposerInputDemo
+          label="Busy, runtime can steer (Claude Code) — Queue plus the caret for Steer and Add context"
+          isStreaming
+          initialValue="Also check the tests"
+          canSteer
+          canAddContext
+        />
+        <ComposerInputDemo
+          label="Busy, queue-only runtime (Codex / OpenCode) — a plain Queue button, no caret"
+          isStreaming
+          initialValue="Also check the tests"
+        />
+        <ShowcaseLabel>Downgraded chip — a steer that had to be queued, said once</ShowcaseLabel>
+        <ShowcaseDemo>
+          <QueuePanel
+            queue={SAMPLE_QUEUE_MIXED_ORIGINS}
+            editingId={null}
+            onEdit={() => {}}
+            onRemove={() => {}}
+            onSend={() => {}}
+            onMoveUp={() => {}}
+            statusNote="Sending one at a time as the agent finishes"
+          />
+        </ShowcaseDemo>
       </PlaygroundSection>
 
       <PlaygroundSection

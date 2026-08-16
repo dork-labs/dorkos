@@ -10,6 +10,14 @@
  * hung `codex exec`) stops yielding entirely, so an idle-gap clock catches
  * exactly the pathological case while never bounding honest work.
  *
+ * Why the FIRST gap gets its own, shorter window (`firstEventTimeoutMs`,
+ * DOR-1229): the sentence above buys room for a RUNNING agent, and a turn that
+ * has yielded nothing has not shown it is running. Nothing has started and
+ * nothing has been spent, so there is no honest work to protect — only a launch
+ * that failed, shown to a person as an agent "working". The two windows are
+ * otherwise the same clock, and a caller that supplies no first-event window
+ * gets the single-window behavior this guard has always had.
+ *
  * Why the clock CAN be armed by turn windows rather than by the stream (task
  * 3.7): the guard owns its whole lifetime only while the generator it wraps is
  * born with the turn and dies with it. Where that identity breaks — one stream
@@ -66,11 +74,48 @@ const STALL_TIMEOUT = Symbol('stall-timeout');
 /** Race sentinel: the interrupt did not settle inside its own bound. */
 const INTERRUPT_TIMEOUT = Symbol('stall-interrupt-timeout');
 
+/**
+ * The window that applies before a turn's first event.
+ *
+ * The SHORTER of the two, never just the first-event one: a caller that asked
+ * for a tighter inactivity window than the first-event default means it, and
+ * silently lengthening the very first gap would make an explicit bound weaker
+ * than it reads. So this only ever tightens, which is also what keeps every
+ * existing caller's semantics intact when it supplies no first-event window.
+ */
+function firstEventWindowMs(opts: StallGuardOpts): number {
+  const first = opts.firstEventTimeoutMs;
+  return first === undefined ? opts.timeoutMs : Math.min(first, opts.timeoutMs);
+}
+
 /** Configuration for {@link withStallGuard}. */
 export interface StallGuardOpts {
   sessionId: string;
   /** Inactivity window (ms) between source events before the turn is declared stalled. */
   timeoutMs: number;
+  /**
+   * The window (ms) that applies BEFORE the turn's first event, when a shorter
+   * one is wanted. Defaults to {@link StallGuardOpts.timeoutMs}.
+   *
+   * Omitting it leaves the TIMING exactly as this guard shipped it — one window,
+   * one bound. It does not leave the COPY unchanged: the injected error names
+   * which of the two faults happened, so a caller with no first-event window
+   * whose source never yielded now reads "the agent never started working after
+   * 10 minutes" where it used to read "no activity … for 10 minutes". That is a
+   * more accurate sentence for the same event, and the fixtures that pin it were
+   * updated rather than the wording being made conditional on the option.
+   *
+   * See {@link SESSIONS.TURN_FIRST_EVENT_TIMEOUT_MS} for why the two differ: the
+   * generous window buys a RUNNING agent room to be quiet, and a turn that has
+   * yielded nothing has produced no evidence it is running.
+   *
+   * "First" is the STREAM's first event, not each turn's, which only differs
+   * where {@link StallGuardOpts.windows} makes one stream carry many turns — and
+   * there it is the answer you want anyway: a process that has already produced
+   * output is not a launch that never started, so the second turn on it keeps the
+   * full window from its own first moment.
+   */
+  firstEventTimeoutMs?: number;
   /**
    * True while the stall clock must not fire — the turn is legitimately waiting
    * on a person (a pending approval, question, or elicitation), not hung.
@@ -188,6 +233,12 @@ class StallClock {
   private waiting = false;
   /** True while a turn window is open; always true with no `windows` supplied. */
   private armed: boolean;
+  /**
+   * False until the source has yielded once, which is what selects the window
+   * {@link StallClock.windowMs} times with. It never goes back: a turn proves it
+   * started once, not once per quiet stretch.
+   */
+  private started = false;
   private readonly unwatch: (() => void) | undefined;
   private fire!: () => void;
   /** Resolves once, when the source has gone silent past the bound. */
@@ -213,6 +264,25 @@ class StallClock {
   beginWait(): void {
     this.waiting = true;
     this.sync();
+  }
+
+  /**
+   * The source yielded: from here the ordinary inactivity window applies. Called
+   * on EVERY event and idempotent, so the guard's loop does not have to know
+   * which one was first.
+   */
+  noteEvent(): void {
+    this.started = true;
+  }
+
+  /** The window this clock is currently timing against. */
+  private windowMs(): number {
+    return this.started ? this.opts.timeoutMs : firstEventWindowMs(this.opts);
+  }
+
+  /** True when the clock fired before the source ever yielded. */
+  get neverStarted(): boolean {
+    return !this.started;
   }
 
   /** The race settled: stop timing until the guard waits again. */
@@ -247,7 +317,7 @@ class StallClock {
     if (this.timer !== undefined) return;
     const timer = setTimeout(() => {
       this.onExpiry();
-    }, this.opts.timeoutMs);
+    }, this.windowMs());
     // Never hold the process open for a watchdog.
     timer.unref();
     this.timer = timer;
@@ -332,6 +402,9 @@ export async function* withStallGuard(
         // Event won the race: forward it and re-arm against the next one.
         if (winner.done) return;
         lastActivityAt = Date.now();
+        // Before the yield, so a consumer that never comes back for a second
+        // event cannot leave the clock believing the turn never started.
+        clock.noteEvent();
         yield winner.value;
         pending = iterator.next();
         continue;
@@ -353,10 +426,17 @@ export async function* withStallGuard(
       // threshold: a turn parked on an operator prompt for an hour that then
       // went dark reports the hour, so the two shapes are distinguishable in a
       // log (DOR-782).
+      // Which of the two windows expired is carried into the log and into the
+      // message a person reads, because they are different faults: a turn that
+      // went quiet halfway through failed at something, and one that never
+      // yielded never started at all.
+      const neverStarted = clock.neverStarted;
+      const windowMs = neverStarted ? firstEventWindowMs(opts) : opts.timeoutMs;
       logger.warn('[stall-guard] no activity from the runtime; interrupting the turn', {
         sessionId: opts.sessionId,
         inactivityMs: Date.now() - lastActivityAt,
-        timeoutMs: opts.timeoutMs,
+        timeoutMs: windowMs,
+        neverStarted,
       });
       const outcome = await attemptInterrupt(opts);
       const outcomeContext = {
@@ -374,7 +454,9 @@ export async function* withStallGuard(
       yield {
         type: 'error',
         data: {
-          message: `No activity from the agent for ${formatWindow(opts.timeoutMs)}, so the turn was interrupted.`,
+          message: neverStarted
+            ? `The agent never started working after ${formatWindow(windowMs)}, so the turn was ended.`
+            : `No activity from the agent for ${formatWindow(windowMs)}, so the turn was interrupted.`,
           code: 'turn_stalled',
           category: 'execution_error',
           details: outcome.details,
