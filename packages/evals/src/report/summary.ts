@@ -181,10 +181,17 @@ export function formatSummaryTable(summary: RunSummary): string {
   const errored = summary.results.filter((r) => r.status === 'error' && !r.quarantined).length;
   const skipped = summary.results.filter((r) => r.status === 'skipped-over-budget').length;
   const wrongTier = summary.results.filter(isWrongTier).length;
+  // Direction-aware (DOR-1228): every wrong-tier case in ONE run shares the
+  // same missing direction relative to the tier the run booted, because a
+  // case's declared tier only ever mismatches upward (needs a model this
+  // `test-mode` run has none of) or downward (needs `test-mode`'s deterministic
+  // controls, which a credentialed run has none of) — never both in one run.
+  const wrongTierLabel =
+    summary.tier === 'test-mode' ? 'needing a credentialed tier' : 'needing test-mode';
 
   const footer =
     `${passed} passed, ${failed} failed, ${errored} errored, ${skipped} skipped, ` +
-    (wrongTier > 0 ? `${wrongTier} needing a credentialed tier, ` : '') +
+    (wrongTier > 0 ? `${wrongTier} ${wrongTierLabel}, ` : '') +
     `${gate.quarantinedCases} quarantined (${gate.failingQuarantinedCases} of them failing)` +
     ` · $${summary.totalCostUsd.toFixed(4)} / $${summary.budgetUsd.toFixed(2)} budget`;
 
@@ -280,6 +287,32 @@ function unmeteredSpendLine(summary: RunSummary): string | undefined {
   );
 }
 
+/**
+ * Why a run that started NONE of its selected cases has nothing to show,
+ * phrased for the direction the mismatch actually ran (DOR-1228): a
+ * `test-mode` run whose every selected case needs a model, or a credentialed
+ * run whose every selected case is `test-mode`-only.
+ *
+ * @param summary - The run summary.
+ * @returns The operator-facing reason.
+ */
+function noCasesStartedReason(summary: RunSummary): string {
+  const count = summary.results.length;
+  if (summary.tier === 'test-mode') {
+    return (
+      `This run started none of its ${count} selected case(s): every one of them declares a ` +
+      `credentialed runtime and this run booted ${summary.tier}. Run them with ` +
+      '`pnpm evals:local --suite <case-id>`, which pays for a real model.'
+    );
+  }
+  return (
+    `This run started none of its ${count} selected case(s): every one of them declares ` +
+    `\`test-mode\` and this run booted ${summary.tier}, which cannot honor a test-mode-only ` +
+    'case — it relies on a deterministic scenario control no real runtime provides. Run them ' +
+    'with `--tier test-mode` instead.'
+  );
+}
+
 /** How much of a run actually gated, and whether the run must be treated as failed. */
 export interface RunGateVerdict {
   /**
@@ -343,10 +376,7 @@ export function evaluateRunGate(summary: RunSummary): RunGateVerdict {
     return {
       ...base,
       failed: true,
-      reason:
-        `This run started none of its ${summary.results.length} selected case(s): every one of ` +
-        `them declares a credentialed runtime and this run booted ${summary.tier}. Run them with ` +
-        '`pnpm evals:local --suite <case-id>`, which pays for a real model.',
+      reason: noCasesStartedReason(summary),
     };
   }
   if (gating.length === 0) {

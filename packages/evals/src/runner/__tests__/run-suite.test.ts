@@ -16,17 +16,33 @@
  * injected attempt function in `retry.test.ts`; this file only pins that
  * threading it through did not disturb the ordinary path.
  */
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest';
 import { mkdtemp, readFile, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { RunSummarySchema } from '../../types.js';
+import { hasLocalClaudeLogin } from '@dorkos/server/services/runtimes/claude-code/auth-probe';
+import { RunSummarySchema, type EvalCase, type RuntimeTier } from '../../types.js';
 import { selfTestCase } from '../../suite/selftest.js';
 import { runSuite } from '../run-suite.js';
+import { evaluateRunGate } from '../../report/summary.js';
+
+// The local-sign-in probe shells out to the real `claude` binary; left real, a
+// tier-mismatch test that boots a credentialed run on a machine that happens to
+// be signed in could probe it for no reason (the case never runs either way,
+// but resolveModelCredential still runs once per run before the per-case skip).
+vi.mock('@dorkos/server/services/runtimes/claude-code/auth-probe', () => ({
+  hasLocalClaudeLogin: vi.fn(async () => false),
+}));
+const mockedLocalLogin = vi.mocked(hasLocalClaudeLogin);
 
 let outDir: string | undefined;
 
+beforeEach(() => {
+  mockedLocalLogin.mockResolvedValue(false);
+});
+
 afterEach(async () => {
+  vi.unstubAllEnvs();
   if (outDir) await rm(outDir, { recursive: true, force: true });
   outDir = undefined;
 });
@@ -52,5 +68,71 @@ describe('runSuite', () => {
     // The transcript pointer resolves to a file that is actually there.
     expect(result.transcript).toBe('harness-selftest.jsonl');
     expect((await stat(path.join(runDir, result.transcript ?? ''))).isFile()).toBe(true);
+  });
+});
+
+/** A minimal case that never actually drives anything — only its declared tier matters. */
+function fixtureCase(id: string, tier: RuntimeTier): EvalCase {
+  return {
+    id,
+    title: `Fixture (${tier})`,
+    prompt: '',
+    runtimeTier: tier,
+    costClass: tier === 'test-mode' ? 'free' : 'cheap',
+    tags: ['core'],
+    oracles: [],
+  };
+}
+
+describe('tier mismatch classification (DOR-1228)', () => {
+  it('skips a test-mode-only case on a credentialed request (downward) as skipped-wrong-tier, non-gating', async () => {
+    // The regression this pins: `--suite core --tier claude-code-cheap` used to
+    // run `widget-round-trip`-shaped cases anyway and let them fail as `error`
+    // (a `409 SESSION_LOCKED`, or a case's own "test-mode only" throw) — which
+    // GATES the run. A tier the case never declared must be an honest skip.
+    vi.stubEnv('ANTHROPIC_API_KEY', 'fixture-key');
+    outDir = await mkdtemp(path.join(tmpdir(), 'evals-suite-downward-'));
+    const { summary } = await runSuite([fixtureCase('needs-test-mode', 'test-mode')], {
+      tier: 'claude-code-cheap',
+      outDir,
+      runId: 'downward',
+      notify: () => {},
+    });
+
+    const [result] = summary.results;
+    expect(result.status).toBe('skipped-wrong-tier');
+    expect(result.oracleResults).toEqual([]);
+    expect(result.costUsd).toBe(0);
+    // The row names the tier the case NEEDS, not the one the run booted.
+    expect(result.runtimeTier).toBe('test-mode');
+    // And it does not GATE — a mismatched case is coverage for nothing,
+    // never a case the run could fail.
+    const gate = evaluateRunGate(summary);
+    expect(gate.totalCases).toBe(0);
+    expect(gate.gatingCases).toBe(0);
+  });
+
+  it('still skips a credentialed case on a test-mode request (upward) as skipped-wrong-tier', async () => {
+    outDir = await mkdtemp(path.join(tmpdir(), 'evals-suite-upward-'));
+    const { summary } = await runSuite([fixtureCase('needs-credentialed', 'claude-code-cheap')], {
+      tier: 'test-mode',
+      outDir,
+      runId: 'upward',
+    });
+
+    const [result] = summary.results;
+    expect(result.status).toBe('skipped-wrong-tier');
+    expect(result.runtimeTier).toBe('claude-code-cheap');
+  });
+
+  it('runs a case normally when its declared tier matches the requested one (no false skip)', async () => {
+    outDir = await mkdtemp(path.join(tmpdir(), 'evals-suite-match-'));
+    const { summary } = await runSuite([selfTestCase], {
+      tier: 'test-mode',
+      outDir,
+      runId: 'matched',
+    });
+
+    expect(summary.results[0]?.status).not.toBe('skipped-wrong-tier');
   });
 });

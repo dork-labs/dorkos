@@ -1,8 +1,9 @@
 /**
- * Run a whole suite: select the cases, SKIP the ones whose declared runtime the
- * run cannot provide, run the rest through {@link runEval} under a shared
- * per-run {@link BudgetTracker}, retry the one measured infrastructure signature
- * once (`runner/retry.ts`), skip the remainder once the run budget is spent, and
+ * Run a whole suite: select the cases, SKIP the ones whose declared runtime
+ * does not match the tier the run booted — in either direction (DOR-1228) —
+ * run the rest through {@link runEval} under a shared per-run
+ * {@link BudgetTracker}, retry the one measured infrastructure signature once
+ * (`runner/retry.ts`), skip the remainder once the run budget is spent, and
  * emit `results.json`. Phase 1 runs cases SERIALLY because the
  * in-process server is a process-level singleton; bounded concurrency arrives
  * with the child-process tier (Phase 2).
@@ -84,30 +85,47 @@ function skippedResult(
 }
 
 /**
- * Whether this case cannot run on the tier the run booted.
+ * Whether this case's declared tier and the tier the run booted are a
+ * mismatch — in EITHER direction — so the case must never be attempted.
  *
- * A case that declares a credentialed runtime is about MODEL behaviour — a real
- * agent choosing a tool, recalling a conversation, refusing an injected
- * instruction. Run against the deterministic `test-mode` runtime it does not
- * become a weaker test; it becomes a different one whose verdict means nothing,
- * and the `rooms-adversarial-injection` case measured that the hard way: it
- * reported `pass` on a test-mode run because a scripted echo obeys no
- * instructions, injected or otherwise.
+ * UPWARD (the case needs more than the run has): a case that declares a
+ * credentialed runtime is about MODEL behaviour — a real agent choosing a
+ * tool, recalling a conversation, refusing an injected instruction. Run
+ * against the deterministic `test-mode` runtime it does not become a weaker
+ * test; it becomes a different one whose verdict means nothing, and the
+ * `rooms-adversarial-injection` case measured that the hard way: it reported
+ * `pass` on a test-mode run because a scripted echo obeys no instructions,
+ * injected or otherwise.
  *
- * So the declared tier is enforced rather than described. Enforced HERE, at
- * selection, rather than inside {@link runEval}: `runEval` is the single-case
- * primitive that unit tests deliberately drive off-tier, and a guard there would
- * make those tests unable to test anything.
+ * DOWNWARD (the case needs less than the run has, DOR-1228): a case that
+ * declares `test-mode` can lean on a mechanism only the deterministic runtime
+ * offers — a scenario control (`POST /api/test/scenario`), for instance —
+ * with no equivalent on a real runtime. Before this direction was enforced,
+ * forcing a suite onto a credentialed tier ran these cases anyway, and both
+ * failures hid the real story rather than telling it: `widget-round-trip` hit
+ * a genuine `409 SESSION_LOCKED` and `rooms-halt-stops-and-says-so` threw the
+ * scenario guard's own "test-mode only" error. Both landed as `error`, which
+ * GATES the run, for a case that was never capable of producing a verdict on
+ * a tier it did not declare.
  *
- * One direction only — see {@link EvalCaseMeta}'s `runtimeTier` for why a
- * `test-mode` case still runs on a credentialed tier.
+ * So the declared tier is enforced rather than described, symmetrically.
+ * Enforced HERE, at selection, rather than inside {@link runEval}: `runEval`
+ * is the single-case primitive that unit tests deliberately drive off-tier,
+ * and a guard there would make those tests unable to test anything.
+ *
+ * Only the boundary between `test-mode` and everything else is checked — the
+ * two credentialed tiers (`claude-code-cheap` / `real-provider`) are not
+ * distinguished from each other, matching how the rest of the runner treats
+ * "credentialed" as one bucket today.
  *
  * @param evalCase - The case being selected.
  * @param tier - The tier the run booted on.
  * @returns True when the case must be skipped.
  */
-function needsCredentialedTier(evalCase: EvalCase, tier: RuntimeTier): boolean {
-  return tier === 'test-mode' && evalCase.runtimeTier !== 'test-mode';
+function tierMismatch(evalCase: EvalCase, tier: RuntimeTier): boolean {
+  const caseIsTestMode = evalCase.runtimeTier === 'test-mode';
+  const runIsTestMode = tier === 'test-mode';
+  return caseIsTestMode !== runIsTestMode;
 }
 
 /** Generate a filesystem-safe, sortable run id. */
@@ -159,8 +177,8 @@ export async function runSuite(cases: EvalCase[], opts: RunSuiteOptions): Promis
   for (const evalCase of cases) {
     // Before the budget check: a case that cannot run on this tier was never a
     // spend question, and reporting it as "skipped over budget" would say the
-    // run ran out of money rather than that the case needs a model.
-    if (needsCredentialedTier(evalCase, opts.tier)) {
+    // run ran out of money rather than that the tiers do not match.
+    if (tierMismatch(evalCase, opts.tier)) {
       results.push(skippedResult(evalCase, opts.tier, 'skipped-wrong-tier'));
       continue;
     }
