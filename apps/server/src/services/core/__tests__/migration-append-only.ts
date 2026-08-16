@@ -92,9 +92,11 @@ const HASH_LENGTH = 16;
  *
  * `async` and `*` are matched even though this file has neither today. A form
  * this pattern does not know is not skipped loudly — it is simply never seen, so
- * a migration reaching it would be pinned with a hole in the middle. The count
- * cross-check in {@link extractTopLevelDeclarations} is what makes that class of
- * miss impossible to have silently, but only for forms the pattern can express.
+ * a migration reaching it would be pinned with a hole in the middle. Note what
+ * the count cross-check in {@link extractTopLevelDeclarations} does and does not
+ * cover here: it compares this pattern against itself on two inputs, so it
+ * catches the MASK losing a declaration and is blind, by construction, to a
+ * declaration form the pattern never expresses.
  */
 const TOP_LEVEL_FUNCTION = /^(?:export )?(?:async )?function\s*\*?\s*([A-Za-z_$][\w$]*)\s*\(/gm;
 
@@ -197,6 +199,18 @@ export function stripComments(source: string): string {
   return blankOut(source, false);
 }
 
+/**
+ * Every family of top-level declaration the closure can reach, as a list.
+ *
+ * A list rather than two call sites, because the mask cross-check below walks
+ * it: covering one family and not the other is the same hole half-fixed, and a
+ * third family added here cannot forget to be checked.
+ */
+const DECLARATION_PATTERNS: readonly { label: string; pattern: RegExp }[] = [
+  { label: 'top-level functions', pattern: TOP_LEVEL_FUNCTION },
+  { label: 'top-level bindings', pattern: TOP_LEVEL_BINDING },
+];
+
 /** A line that is exactly `}` — the end of a top-level declaration. */
 const CLOSING_LINE = /\n\}(?=\n|$)/;
 
@@ -246,24 +260,39 @@ export function extractTopLevelDeclarations(source: string): Record<string, stri
   const masked = maskNonCode(source);
   const found: Record<string, string> = {};
 
-  // The mask is the guard's one silent failure mode, so it is cross-checked
-  // rather than trusted. `blankOut` does not understand REGEX LITERALS: a quote
-  // inside one (`/it's/`) reads as a string opening, and everything to the next
-  // quote — possibly several declarations — is blanked away. Nothing throws;
-  // the guard simply stops seeing part of the file, and every pin still passes.
-  // Counting the same pattern over the RAW source and demanding agreement turns
-  // that into a loud failure. A raw match the mask correctly excluded (a
-  // declaration inside a template literal) also lands here, and stopping to look
-  // is the right answer there too.
-  const rawCount = countMatches(TOP_LEVEL_FUNCTION, source);
-  const maskedCount = countMatches(TOP_LEVEL_FUNCTION, masked);
-  if (rawCount !== maskedCount) {
-    throw new Error(
-      `the append-only guard sees ${maskedCount} top-level functions after masking but ` +
-        `${rawCount} in the raw source. Something in this file confuses the comment/string ` +
-        'scanner — a regex literal containing a quote is the usual cause — so declarations are ' +
-        'invisible to the pins. Fix the scanner; do not repin around it.'
-    );
+  // The mask is the part of this guard most likely to be wrong, so it is
+  // cross-checked rather than trusted. `blankOut` does not understand REGEX
+  // LITERALS: a quote inside one (`/it's/`) reads as a string opening, and
+  // everything to the next quote — often the whole rest of the file, since the
+  // parity stays flipped — is blanked away. Counting the same pattern over the
+  // RAW source and demanding agreement catches that. A raw match the mask
+  // correctly excluded (a declaration inside a template literal) also lands
+  // here, and stopping to look is the right answer there too.
+  //
+  // What it buys, stated as measured rather than as hoped. Four shapes of
+  // quote-bearing regex were tried against this extractor with the check
+  // removed, and every one of them still threw — because the same blanking that
+  // hides a declaration also eats some later terminator. But it threw the WRONG
+  // error: "function ok has no closing line of its own", or "binding PATTERN
+  // never terminates", naming a declaration that is perfectly well-formed and
+  // sending the reader to fix a file that is not broken. This check runs first
+  // and names the scanner. A genuinely silent drop was not reproduced — and is
+  // not ruled out either, which is the other reason the cheap check stays.
+  //
+  // Every declaration family is checked, not just functions: covering one and
+  // not the other is the same hole half-fixed, which is exactly what the first
+  // version of this shipped as.
+  for (const { label, pattern } of DECLARATION_PATTERNS) {
+    const rawCount = countMatches(pattern, source);
+    const maskedCount = countMatches(pattern, masked);
+    if (rawCount !== maskedCount) {
+      throw new Error(
+        `the append-only guard sees ${maskedCount} ${label} after masking but ${rawCount} in ` +
+          'the raw source. Something in this file confuses the comment/string scanner — a regex ' +
+          'literal containing a quote is the usual cause — so declarations are invisible to the ' +
+          'pins. Fix the scanner; do not repin around it.'
+      );
+    }
   }
 
   TOP_LEVEL_FUNCTION.lastIndex = 0;
