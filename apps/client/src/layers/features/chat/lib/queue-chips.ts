@@ -54,20 +54,22 @@ const DOWNGRADE_NOTICE: Record<
 > = {
   // "It ran immediately" is not a loss, and nobody needs telling about it.
   'session-idle': null,
-  unsupported: 'Queued — this agent cannot take a message mid-task',
-  'no-open-turn': 'Queued — the task had already finished',
-  'pending-interaction': 'Queued — the agent is waiting on your answer first',
+  unsupported: "Queued. This agent can't take a message mid-task.",
+  'no-open-turn': 'Queued. The task had already finished.',
+  'pending-interaction': 'Queued. The agent needs your answer first.',
 };
 
 /**
  * What to say on a chip about a message that was not delivered the way it was
  * asked for, or `null` when there is nothing worth saying.
  *
- * Nothing says anything yet: every disposition resolves to `queue` until phase
- * 4 gives `steer` and `stage` real mechanisms, so the only reason in
- * circulation today is one this deliberately stays quiet about. The slot is
- * here so that when a downgrade becomes possible the chip already knows how to
- * own up to it, rather than quietly doing something other than what was asked.
+ * Now that steer and stage have real mechanisms (P4), a downgrade is a live
+ * event: a steer or a stage the runtime could not honour is queued instead, and
+ * the chip owns up to it once — `unsupported`, `no-open-turn`, and
+ * `pending-interaction` each get one plain line. `session-idle` is the one this
+ * deliberately stays quiet about, because "it ran immediately" is not a loss
+ * anybody needs told. Returns `null` for a clean delivery and for that quiet
+ * case alike.
  *
  * @param outcome - The delivery receipt for a waiting message, if one was kept.
  */

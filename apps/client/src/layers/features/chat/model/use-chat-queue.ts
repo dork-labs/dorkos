@@ -27,6 +27,20 @@ interface UseChatQueueOptions {
    */
   onEnqueue: (content: string) => Promise<boolean>;
   /**
+   * Send the composer's text into the running turn now (steer). Passed ONLY when
+   * the session's runtime can take a message mid-task; omitted, {@link
+   * UseChatQueueReturn.handleSteer} is inert and the host offers no Steer
+   * affordance. Resolves `true` once the server has it, exactly like
+   * {@link onEnqueue}.
+   */
+  onSteer?: (content: string) => Promise<boolean>;
+  /**
+   * Add the composer's text as context the agent uses next, without cutting into
+   * the running turn (stage). Passed ONLY when the runtime can take added
+   * context. Same shape and rule as {@link onSteer}.
+   */
+  onStage?: (content: string) => Promise<boolean>;
+  /**
    * Native (client-side) command interceptor. Checked at the queue decision so a
    * native command (e.g. `/rename`) typed while a turn streams runs instantly and
    * never enters the queue — a queued command is not words for the agent, and
@@ -43,6 +57,14 @@ interface UseChatQueueReturn {
   /** Position of that item, for the composer's "message 2 of 3" and for arrow-key navigation. */
   editingIndex: number | null;
   handleQueue: () => void;
+  /**
+   * Steer: send the composer's text into the running turn now. Inert when the
+   * runtime cannot steer — the host gates the affordance on the same capability,
+   * so this is never reached without one behind it.
+   */
+  handleSteer: () => void;
+  /** Add context: stage the composer's text for the next turn, without cutting in. */
+  handleStage: () => void;
   handleQueueEdit: (id: string) => void;
   handleQueueSaveEdit: () => void;
   handleQueueCancelEdit: () => void;
@@ -81,6 +103,8 @@ export function useChatQueue({
   selectedCwd,
   waiting,
   onEnqueue,
+  onSteer,
+  onStage,
   tryNativeCommand,
   chatInputRef,
 }: UseChatQueueOptions): UseChatQueueReturn {
@@ -184,58 +208,82 @@ export function useChatQueue({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- `contextKey` IS (sessionId, cwd); listing sessionId too would re-run this on nothing new
   }, [contextKey]);
 
-  const handleQueue = useCallback(() => {
-    const trimmed = input.trim();
-    if (!trimmed) return;
-    // A native command must run instantly (even mid-stream) and must never enter
-    // the queue. Clear the composer only when it actually ran — a rejected
-    // command keeps its text.
-    const native = tryNativeCommand(trimmed);
-    if (native.handled) {
-      if (!native.ran) return;
-      // `ran` is only "the dispatch started" for a command that finishes
-      // asynchronously. `/compact <instructions>` typed mid-stream is exactly
-      // that, so settle the clear on the same signal the enqueue settles on.
-      if (native.confirmed) {
-        clearComposerOnConfirmed(sessionId, trimmed, native.confirmed);
-      } else {
-        setInput('');
+  // Deliver the composer's text to a working session — queue, steer, or add
+  // context — through one flow, because the three differ only in `run`. The
+  // native-command intercept, the duplicate-send latch, the keystroke record,
+  // and the "hold the words until the server has them" clear are identical for
+  // all three: a `/rename` typed mid-stream runs instantly whichever verb was
+  // pressed, and steering or staging is as much an operator act as queueing.
+  const deliver = useCallback(
+    (run: (content: string) => Promise<boolean>) => {
+      const trimmed = input.trim();
+      if (!trimmed) return;
+      // A native command must run instantly (even mid-stream) and must never
+      // reach the agent as a message. Clear the composer only when it actually
+      // ran — a rejected command keeps its text.
+      const native = tryNativeCommand(trimmed);
+      if (native.handled) {
+        if (!native.ran) return;
+        // `ran` is only "the dispatch started" for a command that finishes
+        // asynchronously. `/compact <instructions>` typed mid-stream is exactly
+        // that, so settle the clear on the same signal the delivery settles on.
+        if (native.confirmed) {
+          clearComposerOnConfirmed(sessionId, trimmed, native.confirmed);
+        } else {
+          setInput('');
+        }
+        return;
       }
-      return;
-    }
-    // These exact words are already on their way; a second Enter must not send
-    // them again. See {@link enqueueInFlightRef}.
-    if (enqueueInFlightRef.current === trimmed) return;
-    enqueueInFlightRef.current = trimmed;
-    // **Queued at the KEYSTROKE, and recorded at the keystroke — the only
-    // instant in this message's life that belongs to the operator** (DOR-1156).
-    //
-    // Nothing records when the message is finally said. The SERVER dispatches
-    // the queue now (`persistent-session-runtime`), and it dispatches when the
-    // running turn ends — the agent's moment, not the person's. A record made
-    // then would time this row's place in Today to the instant an agent stopped
-    // talking, which is the one thing BC-16 forbids: "a `session_status` event,
-    // a tool call or an agent's post changes nothing here, because none of them
-    // is an input." Pressing Enter is the submission; what happens afterwards is
-    // the system's business.
-    //
-    // Below the duplicate-Enter latch on purpose. `recordOpened` advances a use
-    // COUNT as well as an instant (P3.3), so recording above the latch would
-    // rank a conversation by how impatient somebody was with one message.
+      // These exact words are already on their way; a second press must not send
+      // them again. See {@link enqueueInFlightRef}.
+      if (enqueueInFlightRef.current === trimmed) return;
+      enqueueInFlightRef.current = trimmed;
+      // **Delivered at the KEYSTROKE, and recorded at the keystroke — the only
+      // instant in this message's life that belongs to the operator** (DOR-1156).
+      //
+      // Nothing records when the message is finally said. The SERVER dispatches
+      // the queue now (`persistent-session-runtime`), and it dispatches when the
+      // running turn ends — the agent's moment, not the person's. A record made
+      // then would time this row's place in Today to the instant an agent stopped
+      // talking, which is the one thing BC-16 forbids: "a `session_status` event,
+      // a tool call or an agent's post changes nothing here, because none of them
+      // is an input." Pressing the key is the submission; what happens afterwards
+      // is the system's business.
+      //
+      // Below the duplicate-send latch on purpose. `recordOpened` advances a use
+      // COUNT as well as an instant (P3.3), so recording above the latch would
+      // rank a conversation by how impatient somebody was with one message.
+      useInteractionStore.getState().recordOpened('session', sessionId);
+      if (selectedCwd) useInteractionStore.getState().recordOpened('agent', selectedCwd);
+      // The composer keeps the words until the server has them. That is the whole
+      // of "nothing typed is ever lost" now: the old queue dequeued optimistically
+      // and needed an undo handle for every refusal path (DOR-480), and a message
+      // that was never taken out of the composer cannot fail to be put back.
+      const accepted = run(trimmed);
+      void accepted.finally(() => {
+        // Only clear the latch this call set — a newer delivery owns it now.
+        if (enqueueInFlightRef.current === trimmed) enqueueInFlightRef.current = null;
+      });
+      clearComposerOnConfirmed(sessionId, trimmed, accepted);
+    },
+    [input, selectedCwd, sessionId, setInput, tryNativeCommand]
+  );
 
-    useInteractionStore.getState().recordOpened('session', sessionId);
-    if (selectedCwd) useInteractionStore.getState().recordOpened('agent', selectedCwd);
-    // The composer keeps the words until the server has them. That is the whole
-    // of "nothing typed is ever lost" now: the old queue dequeued optimistically
-    // and needed an undo handle for every refusal path (DOR-480), and a message
-    // that was never taken out of the composer cannot fail to be put back.
-    const accepted = messageQueue.addToQueue(trimmed);
-    void accepted.finally(() => {
-      // Only clear the latch this call set — a newer enqueue owns it now.
-      if (enqueueInFlightRef.current === trimmed) enqueueInFlightRef.current = null;
-    });
-    clearComposerOnConfirmed(sessionId, trimmed, accepted);
-  }, [input, messageQueue, selectedCwd, sessionId, setInput, tryNativeCommand]);
+  const handleQueue = useCallback(
+    () => deliver((content) => messageQueue.addToQueue(content)),
+    [deliver, messageQueue]
+  );
+
+  // Steer and Add context are inert unless the host wired their delivery — which
+  // it does exactly when the session's runtime declares the capability, so a
+  // no-op here means the affordance was never offered in the first place.
+  const handleSteer = useCallback(() => {
+    if (onSteer) deliver(onSteer);
+  }, [deliver, onSteer]);
+
+  const handleStage = useCallback(() => {
+    if (onStage) deliver(onStage);
+  }, [deliver, onStage]);
 
   const handleQueueEdit = useCallback(
     (id: string) => {
@@ -378,6 +426,8 @@ export function useChatQueue({
     editingId: messageQueue.editingId,
     editingIndex: messageQueue.editingIndex,
     handleQueue,
+    handleSteer,
+    handleStage,
     handleQueueEdit,
     handleQueueSaveEdit,
     handleQueueCancelEdit,

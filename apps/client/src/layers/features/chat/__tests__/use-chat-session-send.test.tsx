@@ -201,3 +201,67 @@ describe('useChatSession — enqueueContent (a message that waits its turn)', ()
     expect(result.current.error?.retryable).toBe(false);
   });
 });
+
+describe('useChatSession — steer and add context (the other two dispositions)', () => {
+  it('steerContent posts the steer disposition, WITHOUT the queue signal', async () => {
+    const postMessage = vi
+      .fn()
+      .mockImplementation((sessionId: string) => Promise.resolve({ sessionId }));
+    const transport = createMockTransport({ postMessage });
+
+    const { result } = renderHook(() => useChatSession('busy-session'), {
+      wrapper: createWrapper(transport),
+    });
+    await waitFor(() => expect(result.current.status).toBe('idle'));
+
+    let accepted: boolean | undefined;
+    await act(async () => {
+      accepted = await result.current.steerContent('also check the tests');
+    });
+
+    expect(accepted).toBe(true);
+    const options = postMessage.mock.calls.at(-1)?.[3] as Record<string, unknown>;
+    expect(options.disposition).toBe('steer');
+    // A steer joins the live turn — it is not a queued message, so it carries no
+    // `<queue_note>`.
+    expect((options.context as { queued?: boolean } | undefined)?.queued).toBeUndefined();
+  });
+
+  it('addContextContent posts the stage disposition, WITHOUT the queue signal', async () => {
+    const postMessage = vi
+      .fn()
+      .mockImplementation((sessionId: string) => Promise.resolve({ sessionId }));
+    const transport = createMockTransport({ postMessage });
+
+    const { result } = renderHook(() => useChatSession('busy-session'), {
+      wrapper: createWrapper(transport),
+    });
+    await waitFor(() => expect(result.current.status).toBe('idle'));
+
+    await act(async () => {
+      await result.current.addContextContent('for later: keep the API stable');
+    });
+
+    const options = postMessage.mock.calls.at(-1)?.[3] as Record<string, unknown>;
+    expect(options.disposition).toBe('stage');
+    expect((options.context as { queued?: boolean } | undefined)?.queued).toBeUndefined();
+  });
+
+  it('names the right failure when a steer does not go through', async () => {
+    const postMessage = vi.fn().mockRejectedValue(new Error('Failed to fetch'));
+    const transport = createMockTransport({ postMessage });
+
+    const { result } = renderHook(() => useChatSession('busy-session'), {
+      wrapper: createWrapper(transport),
+    });
+    await waitFor(() => expect(result.current.status).toBe('idle'));
+
+    let accepted: boolean | undefined;
+    await act(async () => {
+      accepted = await result.current.steerContent('also check the tests');
+    });
+
+    expect(accepted).toBe(false);
+    expect(result.current.error?.heading).toBe('Could not steer the agent');
+  });
+});

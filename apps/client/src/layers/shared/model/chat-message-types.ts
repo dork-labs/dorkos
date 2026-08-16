@@ -29,6 +29,13 @@ export interface ChatMessage {
   commandArgs?: string;
   /** @internal Client-only tag for streaming messages awaiting server ID reconciliation. */
   _streaming?: boolean;
+  /**
+   * @internal Client-only tag for a STAGED-context note (spec
+   * `persistent-session-runtime` §2.5). A person added this for the agent to use
+   * next without cutting into the running turn, so it renders as a quiet
+   * transcript entry — visibly not a turn — rather than a message bubble.
+   */
+  _stagedContext?: boolean;
 }
 
 /** Client-side view of a single hook execution attached to a tool call. */

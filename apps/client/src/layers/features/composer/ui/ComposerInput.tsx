@@ -89,6 +89,19 @@ export interface ComposerInputProps {
   onStop?: () => void;
   /** Queue the current input for sending after streaming completes. */
   onQueue?: () => void;
+  /**
+   * Send the current input into the running task now (steer). Passed ONLY when
+   * the agent can take a message mid-task — so the Steer choice, and its
+   * keyboard shortcut, exist exactly when the runtime can honour them and are
+   * absent (never greyed) otherwise. Only reachable while the agent is working.
+   */
+  onSteer?: () => void;
+  /**
+   * Add the current input as context the agent uses next, without cutting into
+   * the running task (stage). Passed ONLY when the agent can take added
+   * context. Same "present only when honoured" rule as {@link onSteer}.
+   */
+  onStage?: () => void;
   /** Save the queue item currently being edited. */
   onSaveEdit?: () => void;
   /** Cancel editing the current queue item and restore draft. */
@@ -234,6 +247,8 @@ export const ComposerInput = forwardRef<ComposerInputHandle, ComposerInputProps>
       queueDepth = 0,
       onStop,
       onQueue,
+      onSteer,
+      onStage,
       onSaveEdit,
       onCancelEdit,
       onEscape,
@@ -313,6 +328,8 @@ export const ComposerInput = forwardRef<ComposerInputHandle, ComposerInputProps>
       onArrowDown,
       onCommandSelect,
       onQueue,
+      onSteer,
+      onStage,
       onSaveEdit,
       onCancelEdit,
       onQueueNavigateUp,
@@ -453,6 +470,8 @@ export const ComposerInput = forwardRef<ComposerInputHandle, ComposerInputProps>
             onSubmit={onSubmit}
             onStop={onStop}
             onQueue={onQueue}
+            onSteer={onSteer}
+            onStage={onStage}
             onSaveEdit={onSaveEdit}
             onCancelEdit={onCancelEdit}
           />
