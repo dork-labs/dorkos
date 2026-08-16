@@ -48,14 +48,24 @@ export function useManagedAgentFacts(member: TeamMember, enabled: boolean): Prof
   const projectPath = enabled ? (member.agent?.projectPath ?? null) : null;
   const agentId = enabled ? (member.agent?.manifestId ?? null) : null;
 
-  const { sessions } = useAgentSessions(projectPath);
+  const {
+    sessions,
+    isLoading: sessionsLoading,
+    isError: sessionsFailed,
+  } = useAgentSessions(projectPath);
   const toolStatus = useAgentToolStatus(projectPath);
   // `useTasks` takes one flag for the whole query. Off when the server has
   // tasks disabled — there is nothing to count — and off on a profile that
   // shows no tasks row at all.
   const tasksEnabled = projectPath !== null && toolStatus.tasks !== 'disabled-by-server';
   const { data: schedules } = useTasks(tasksEnabled);
-  const { data: packages } = useInstalledPackages(projectPath ?? '');
+  // Gated like every other read here. Without the flag this fired
+  // `GET /api/marketplace/installed` from a PERSON's profile, which is exactly
+  // the "asks for nothing" promise above being broken by the one hook that had
+  // no way to be told.
+  const { data: packages } = useInstalledPackages(projectPath ?? '', {
+    enabled: projectPath !== null,
+  });
   const { data: mcpServers } = useAgentMcpServers(agentId);
   // A cache hit: the profile root reads the same manifest for the About row.
   const { data: manifest } = useCurrentAgent(projectPath);
@@ -78,13 +88,20 @@ export function useManagedAgentFacts(member: TeamMember, enabled: boolean): Prof
     .at(0);
 
   return {
-    sessions: {
-      count: sessions.length,
-      // The list arrives newest-first, so the head is the most recent — and on
-      // an agent mid-turn, the live one.
-      newestAt: sessions.at(0)?.updatedAt ?? null,
-    },
-    tasks: { count: mine.length, nextRunAt: next ?? null },
+    // `null` until the answer is real. An in-flight list is an empty array, and
+    // building a summary out of it made the row say "0 conversations" about an
+    // agent with a hundred — the same invention `countValue` exists to prevent
+    // (`profile-rows.ts`). A failed read is not "none" either.
+    sessions:
+      sessionsLoading || sessionsFailed
+        ? null
+        : {
+            count: sessions.length,
+            // The list arrives newest-first, so the head is the most recent —
+            // and on an agent mid-turn, the live one.
+            newestAt: sessions.at(0)?.updatedAt ?? null,
+          },
+    tasks: schedules ? { count: mine.length, nextRunAt: next ?? null } : null,
     skills: packages ? packages.filter((pkg) => pkg.type === 'skill-pack').length : null,
     tools: mcpServers ? mcpServers.filter((server) => server.enabled).length : null,
     personality,

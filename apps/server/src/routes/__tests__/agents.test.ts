@@ -31,6 +31,11 @@ const mockWriteConventionFile = vi.fn().mockResolvedValue(undefined);
 vi.mock('@dorkos/shared/convention-files', () => ({
   readConventionFile: (...args: unknown[]) => mockReadConventionFile(...args),
   writeConventionFile: (...args: unknown[]) => mockWriteConventionFile(...args),
+  // The real budgets: `agent-updater` names them when it refuses a file, and a
+  // mock that left them undefined would fail on the message rather than on the
+  // rule under test.
+  SOUL_MAX_CHARS: 4000,
+  NOPE_MAX_CHARS: 2000,
   buildSoulContent: vi.fn(
     (traitBlock: string, prose: string) =>
       `<!-- TRAITS:START -->\n${traitBlock}\n<!-- TRAITS:END -->\n\n${prose}`
@@ -415,6 +420,23 @@ describe('Agents Routes', () => {
 
       expect(res.status).toBe(400);
       expect(res.body.error).toBe('Validation failed');
+    });
+
+    it('refuses an over-budget SOUL.md with a 400 and writes nothing', async () => {
+      // It used to answer 200: the convention parse failed, was swallowed, and
+      // the manifest half of the patch was applied anyway — so the profile said
+      // "Saved" over a file that never reached the disk (DOR-1253).
+      mockReadManifest.mockResolvedValue(mockManifest);
+
+      const res = await request(app)
+        .patch('/api/agents/current')
+        .query({ path: '/home/user/project' })
+        .send({ soulContent: 'x'.repeat(4001), displayName: 'Renamed' });
+
+      expect(res.status).toBe(400);
+      expect(res.body.error).toContain('SOUL.md');
+      expect(mockWriteConventionFile).not.toHaveBeenCalled();
+      expect(mockWriteManifest).not.toHaveBeenCalled();
     });
 
     it('returns 403 when modifying protected fields on a system agent', async () => {

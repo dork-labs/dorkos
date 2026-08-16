@@ -54,10 +54,15 @@ export interface ProfileAgentActionsProps {
  * Exported so the kebab can label its item "Block" or "Unblock" without
  * duplicating the lookup the dialog does.
  *
- * @param projectPath - The agent's project directory.
+ * **Asks for nothing without a path.** `GET /api/mesh/denied` is a question
+ * about an agent's folder, and it was being asked on "You" — a profile with no
+ * folder and no Block item to label. Callers that only offer blocking on some
+ * relationships pass `null` on the others.
+ *
+ * @param projectPath - The agent's project directory, or `null` to ask nothing.
  */
 export function useIsAgentBlocked(projectPath: string | null): boolean {
-  const { data } = useDeniedAgents();
+  const { data } = useDeniedAgents(projectPath !== null);
   if (projectPath === null) return false;
   return data?.denied?.some((entry) => entry.path === projectPath) ?? false;
 }

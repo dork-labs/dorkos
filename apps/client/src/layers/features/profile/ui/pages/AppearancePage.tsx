@@ -17,6 +17,7 @@ import { hashToEmoji, hashToHslColor } from '@/layers/shared/lib';
 import { IdentityAvatar, Skeleton } from '@/layers/shared/ui';
 import { AvatarPickerPanel, PersonalityPicker } from '@/layers/entities/agent';
 import { teamMemberFace } from '@/layers/entities/team';
+import { personalityUpdate } from '../../lib/soul-file';
 import { useProfileAgent } from '../../model/use-profile-agent';
 import type { ProfilePageContentProps } from './types';
 
@@ -71,7 +72,9 @@ export function AppearancePage({ member }: ProfilePageContentProps) {
         <SectionLabel>Personality</SectionLabel>
         <PersonalityPicker
           traits={(agent.traits ?? DEFAULT_TRAITS) as Traits}
-          onTraitsChange={(traits) => update({ traits })}
+          // Manifest AND SOUL.md, or the change never reaches a turn — see
+          // `personalityUpdate`.
+          onTraitsChange={(traits) => update(personalityUpdate(agent, traits))}
           compact
         />
       </div>

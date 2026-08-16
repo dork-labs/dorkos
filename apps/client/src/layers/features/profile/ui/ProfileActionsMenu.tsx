@@ -66,7 +66,9 @@ export function ProfileActionsMenu({ member, relationship }: ProfileActionsMenuP
 
   const projectPath = member.agent?.projectPath ?? null;
   const isAgent = relationship === 'managed' || relationship === 'system';
-  const isBlocked = useIsAgentBlocked(projectPath);
+  // Only the relationship that HAS a Block item asks whether it is blocked —
+  // the read is a request, and a profile with no such item must not make it.
+  const isBlocked = useIsAgentBlocked(relationship === 'managed' ? projectPath : null);
   // The slug, which is what `config.agents.defaultAgent` stores — the roster
   // carries a display name, and the two are not the same string. A cache hit:
   // the profile root has already read this manifest for the About row.

@@ -117,10 +117,15 @@ function CommitField({
   placeholder: string;
   multiline?: boolean;
   testId: string;
-  onCommit: (next: string) => void;
+  /**
+   * Save what was typed — or **return a sentence to refuse it**, which puts the
+   * old value back in the field and says why underneath.
+   */
+  onCommit: (next: string) => string | void;
 }) {
   const [draft, setDraft] = useState(value);
   const [seen, setSeen] = useState(value);
+  const [refusal, setRefusal] = useState<string | null>(null);
 
   // Somebody else moved this field — another window, or the agent itself. Adjust
   // during render rather than in an effect, so the new value never renders for a
@@ -133,11 +138,23 @@ function CommitField({
   function commit() {
     const trimmed = draft.trim();
     if (trimmed === value.trim()) return;
-    onCommit(trimmed);
+    const refused = onCommit(trimmed);
+    if (typeof refused !== 'string') return setRefusal(null);
+    // Not left blank and not left saying something that was never stored: the
+    // field goes back to what the agent is actually called, and the reason sits
+    // under it until the next keystroke.
+    setDraft(value);
+    setRefusal(refused);
   }
 
   const className =
     'border-input bg-background placeholder:text-muted-foreground focus-visible:ring-ring w-full rounded-md border px-3 py-2 text-sm focus-visible:ring-2 focus-visible:outline-none';
+
+  const hint = refusal ? (
+    <p role="status" className="text-destructive text-xs">
+      {refusal}
+    </p>
+  ) : null;
 
   return (
     <div className="space-y-1">
@@ -149,7 +166,10 @@ function CommitField({
           data-testid={testId}
           aria-label={label}
           placeholder={placeholder}
-          onChange={(event) => setDraft(event.target.value)}
+          onChange={(event) => {
+            setRefusal(null);
+            setDraft(event.target.value);
+          }}
           onBlur={commit}
           onKeyDown={(event) => {
             // Enter commits, Shift+Enter is a new paragraph — the same bargain
@@ -167,7 +187,10 @@ function CommitField({
           data-testid={testId}
           aria-label={label}
           placeholder={placeholder}
-          onChange={(event) => setDraft(event.target.value)}
+          onChange={(event) => {
+            setRefusal(null);
+            setDraft(event.target.value);
+          }}
           onBlur={commit}
           onKeyDown={(event) => {
             if (event.key === 'Enter') commit();
@@ -175,6 +198,7 @@ function CommitField({
           className={className}
         />
       )}
+      {hint}
     </div>
   );
 }
@@ -203,7 +227,14 @@ export function AboutPage({ member, roster }: ProfilePageContentProps) {
         value={agent.displayName ?? agent.name}
         placeholder="What you call this agent"
         testId="agent-name-field"
-        onCommit={(displayName) => displayName && update({ displayName })}
+        // An agent with no name is not something this page can save — the
+        // roster, the header and every mention of it are drawn from this
+        // string. It used to swallow the empty commit and leave the field
+        // blank, which looked exactly like a rename that worked.
+        onCommit={(displayName) => {
+          if (!displayName) return 'An agent needs a name, so this one kept the one it had.';
+          update({ displayName });
+        }}
       />
       <CommitField
         multiline

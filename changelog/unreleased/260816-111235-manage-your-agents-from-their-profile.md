@@ -4,6 +4,7 @@ covers:
   - 'feat(client): profile pages and pickers for the agents you manage (DOR-1253)'
   - 'fix(client,server): a profile edit changes what it names, and nothing else (DOR-1253)'
   - 'feat(client): the profile playground draws its pushed pages against a real manifest (DOR-1253)'
+  - 'fix(client,server): a profile only says "Saved" when the server stored it (DOR-1253)'
 ---
 
 ### Added
@@ -19,3 +20,9 @@ covers:
 - Writing an agent's instructions (SOUL.md) or boundaries (NOPE.md) now actually saves them. The old Agent Hub let you type in both editors and quietly threw the text away (DOR-1253)
 - Changing one thing about an agent no longer erases another. Setting its model used to wipe its description and everything in its capabilities list (DOR-1253)
 - Renaming an agent updates its name everywhere at once — the profile, the team page and the sidebar (DOR-1253)
+- "Saved" now means saved. If a save is refused — most often because the file is too long — you get told why, and what you wrote stays in the editor to fix rather than being replaced (DOR-1253)
+- The instructions editor counts the whole file, personality block included, so it can tell you how much is over before you try to save it (DOR-1253)
+- Leaving the instructions or boundaries editor with unsaved writing now asks before it is thrown away (DOR-1253)
+- Changing an agent's personality from its profile now reaches the agent itself, not just the setting. It used to be possible for the profile to show one personality and the agent to keep talking in another (DOR-1253)
+- A profile no longer says "0 conversations" or "0 scheduled" while it is still counting, and the conversation list no longer says there are none while it is still loading (DOR-1253)
+- Clearing an agent's name no longer leaves the field blank and the name unchanged — the name it had comes back, with a line saying why (DOR-1253)

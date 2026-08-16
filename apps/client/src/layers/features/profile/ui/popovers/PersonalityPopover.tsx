@@ -8,6 +8,7 @@ import type { Traits } from '@dorkos/shared/mesh-schemas';
 import { DEFAULT_TRAITS } from '@dorkos/shared/trait-renderer';
 import { Skeleton } from '@/layers/shared/ui';
 import { PersonalityPicker } from '@/layers/entities/agent';
+import { personalityUpdate } from '../../lib/soul-file';
 import { useProfileAgent } from '../../model/use-profile-agent';
 import type { ProfilePickContentProps } from './types';
 
@@ -18,9 +19,11 @@ import type { ProfilePickContentProps } from './types';
  * phone — the roomy layout belongs to onboarding, where picking a personality is
  * the whole screen rather than one row of a profile.
  *
- * Traits are written to the manifest only. The trait block inside SOUL.md is
- * rendered from them server-side when the agent next runs, so the picker does
- * not have to compose a file to change a voice.
+ * The traits go to the manifest **and** to SOUL.md, through the same update the
+ * Agent Hub always sent (`personalityUpdate`). Writing the manifest alone is
+ * what a turn does not necessarily read: the trait block is regenerated in
+ * place only where markers already exist, so an agent whose SOUL.md was
+ * hand-written or absent kept its old voice while this panel showed the new one.
  */
 export function PersonalityPopover({ member }: ProfilePickContentProps) {
   const { agent, isPending, update } = useProfileAgent(member);
@@ -35,7 +38,7 @@ export function PersonalityPopover({ member }: ProfilePickContentProps) {
   return (
     <PersonalityPicker
       traits={(agent.traits ?? DEFAULT_TRAITS) as Traits}
-      onTraitsChange={(traits) => update({ traits })}
+      onTraitsChange={(traits) => update(personalityUpdate(agent, traits))}
       compact
       className="p-1"
     />

@@ -20,6 +20,7 @@ import {
 import type { AgentManifest } from '@dorkos/shared/mesh-schemas';
 import type { SyncFromDiskResult } from '@dorkos/mesh';
 import { writeConventionFile } from '@dorkos/shared/convention-files-io';
+import { SOUL_MAX_CHARS, NOPE_MAX_CHARS } from '@dorkos/shared/convention-files';
 
 /**
  * Identity fields that cannot be changed on a system agent (`isSystem: true`).
@@ -63,6 +64,30 @@ export class AgentUpdateError extends Error {
     super(message);
     this.name = 'AgentUpdateError';
   }
+}
+
+/**
+ * Why a convention file was refused, in words an editor can put on screen.
+ *
+ * The one refusal a person actually hits is a file over its budget, and the
+ * number that matters is the budget — the editor bounds the prose it shows,
+ * while the limit is on the whole file, personality block included. Anything
+ * else falls back to the generic message, with the Zod issues on `details`.
+ *
+ * @param error - The failed `UpdateAgentConventionsSchema` parse.
+ */
+function conventionRefusal(error: z.ZodError): string {
+  const issue = error.issues.find(
+    (candidate) =>
+      candidate.code === 'too_big' &&
+      (candidate.path[0] === 'soulContent' || candidate.path[0] === 'nopeContent')
+  );
+  if (!issue) return 'Validation failed';
+
+  const isSoul = issue.path[0] === 'soulContent';
+  const file = isSoul ? 'SOUL.md' : 'NOPE.md';
+  const max = isSoul ? SOUL_MAX_CHARS : NOPE_MAX_CHARS;
+  return `${file} is too long — the whole file has to fit in ${max.toLocaleString('en-US')} characters.`;
 }
 
 /** Minimal MeshCore surface needed for the post-write DB sync (ADR-0043). */
@@ -128,8 +153,21 @@ export async function updateAgentManifest(opts: {
   }
 
   // Write convention files if provided alongside manifest fields.
+  //
+  // A failed parse is a REFUSAL, not a silent skip. This used to fall back to
+  // `{}` and carry on: the manifest half of the patch was applied, the route
+  // answered 200, and the editor said "Saved" over a SOUL.md the server had
+  // thrown away (DOR-1253). Thrown before any write, so an over-budget file
+  // leaves nothing half-applied behind it.
   const conventionsResult = UpdateAgentConventionsSchema.safeParse(body);
-  const conventionUpdates = conventionsResult.success ? conventionsResult.data : {};
+  if (!conventionsResult.success) {
+    throw new AgentUpdateError(
+      'VALIDATION',
+      conventionRefusal(conventionsResult.error),
+      z.flattenError(conventionsResult.error)
+    );
+  }
+  const conventionUpdates = conventionsResult.data;
 
   if (conventionUpdates.soulContent !== undefined) {
     await writeConventionFile(agentPath, 'SOUL.md', conventionUpdates.soulContent);

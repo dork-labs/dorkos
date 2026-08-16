@@ -5,10 +5,12 @@
  *
  * @module features/profile/ui/ProfilePage
  */
-import { useEffect, useRef, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { ChevronLeft } from 'lucide-react';
 import type { TeamMember } from '@dorkos/shared/team-schemas';
 import { profileStatusText } from '../lib/profile-status';
+import { hasUnsavedProfileEdits } from '../model/profile-leave-guard';
+import { DiscardChangesDialog } from './DiscardChangesDialog';
 import { ProfileFace } from './ProfileFace';
 
 export interface ProfilePageProps {
@@ -37,10 +39,19 @@ export interface ProfilePageProps {
 export function ProfilePage({ member, title, meta, onBack, children }: ProfilePageProps) {
   const heading = useRef<HTMLHeadingElement>(null);
   const status = profileStatusText(member);
+  // Asked at the moment you leave, not held as state: the pages that save on a
+  // button are the only ones that can have anything pending, and they register
+  // it themselves (`profile-leave-guard`).
+  const [confirming, setConfirming] = useState(false);
 
   useEffect(() => {
     heading.current?.focus();
   }, []);
+
+  function back() {
+    if (hasUnsavedProfileEdits()) return setConfirming(true);
+    onBack();
+  }
 
   return (
     <div data-slot="profile-page" className="flex min-h-0 flex-1 flex-col">
@@ -52,7 +63,7 @@ export function ProfilePage({ member, title, meta, onBack, children }: ProfilePa
       <div className="flex items-center gap-2 px-2 pt-2 pb-1 group-data-[home=sheet]/profile:pr-9">
         <button
           type="button"
-          onClick={onBack}
+          onClick={back}
           aria-label="Back to profile"
           className="focus-ring text-muted-foreground hover:text-foreground -ml-1 flex shrink-0 items-center gap-0.5 rounded-md py-1 pr-1.5 pl-0.5 text-sm transition-colors"
         >
@@ -88,6 +99,15 @@ export function ProfilePage({ member, title, meta, onBack, children }: ProfilePa
           `flex-1` means something. A page that only wants its content height is
           unaffected; it simply does not ask to grow. */}
       <div className="flex min-h-0 flex-1 flex-col overflow-auto px-3 pb-4">{children}</div>
+
+      <DiscardChangesDialog
+        open={confirming}
+        onKeep={() => setConfirming(false)}
+        onDiscard={() => {
+          setConfirming(false);
+          onBack();
+        }}
+      />
     </div>
   );
 }
