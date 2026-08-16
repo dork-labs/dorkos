@@ -50,7 +50,7 @@ export function ProfileSheetContainer({ open, onOpenChange }: ProfileSheetContai
   const roster = useTeamRoster({ enabled: open && memberId !== null });
   const pathname = useSafePathname();
   const session = useSessionAgent();
-  const openProfileDocked = useProfileStore((s) => s.openProfileDocked);
+  const openProfileDockedFromLink = useProfileStore((s) => s.openProfileDockedFromLink);
   const chain = useProfileStore((s) => s.sheetChain);
   const pushSheetChain = useProfileStore((s) => s.pushSheetChain);
   const popSheetChain = useProfileStore((s) => s.popSheetChain);
@@ -147,13 +147,20 @@ export function ProfileSheetContainer({ open, onOpenChange }: ProfileSheetContai
 
   // Hand the link to the panel and clear it. In an effect for the same reason
   // the self-heal above is: both navigate, and neither may run during render.
+  //
+  // A `?profile=` address IS a link, so it goes through the LINK opener: that
+  // sets the pending mark that outranks the per-agent layout which hydrates a
+  // beat later (`loadRightPanelForAgent`). The click opener would leave the
+  // panel to be shut again by a stored `{open:false}` — the exact race the
+  // `?panel=profile` link already guards against — and, with the URL stripped
+  // below, nothing would be left to retell it.
   const dockPath = docked ? session.agentPath : null;
   const dockPage = asProfilePageId(page) ?? undefined;
   useEffect(() => {
     if (dockPath === null) return;
-    openProfileDocked(dockPath, dockPage);
+    openProfileDockedFromLink(dockPath, dockPage);
     close();
-  }, [dockPath, dockPage, openProfileDocked, close]);
+  }, [dockPath, dockPage, openProfileDockedFromLink, close]);
 
   if (!member || !stack || docked) return null;
 
