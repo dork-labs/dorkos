@@ -211,7 +211,9 @@ describe('RoomEntryRow — touch gesture priority between a mention pill and the
 
     await realLongPress(pillOf());
 
-    expect(await screen.findByText('View profile')).toBeInTheDocument();
+    await waitFor(() =>
+      expect(document.querySelector('[data-slot="identity-hover-card"]')).not.toBeNull()
+    );
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
@@ -225,7 +227,10 @@ describe('RoomEntryRow — touch gesture priority between a mention pill and the
     await realLongPress(content());
 
     expect(await screen.findByRole('dialog')).toBeInTheDocument();
-    expect(screen.queryByText('View profile')).not.toBeInTheDocument();
+    // The CARD, by its slot — the drawer that just opened carries a "View
+    // profile" action of its own now (DOR-1251), so the words alone no longer
+    // tell the two surfaces apart.
+    expect(document.querySelector('[data-slot="identity-hover-card"]')).toBeNull();
   });
 
   it('a touch press on the mention pill still dismisses an unrelated, already-open Radix popover', async () => {

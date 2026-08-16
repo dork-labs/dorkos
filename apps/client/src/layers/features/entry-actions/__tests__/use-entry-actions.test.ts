@@ -60,7 +60,11 @@ function author(overrides: Partial<AuthorRef> = {}): AuthorRef {
  */
 function actionsFor(
   target: RoomEntry,
-  options: { author: AuthorRef | undefined; viewerAuthorId?: string } = { author: author() }
+  options: {
+    author: AuthorRef | undefined;
+    viewerAuthorId?: string;
+    onViewProfile?: () => void;
+  } = { author: author() }
 ) {
   const { result } = renderHook(() =>
     useEntryActions({
@@ -68,6 +72,7 @@ function actionsFor(
       entry: target,
       author: options.author,
       viewerAuthorId: options.viewerAuthorId ?? VIEWER,
+      onViewProfile: options.onViewProfile,
     })
   );
   return result;
@@ -83,6 +88,18 @@ describe('useEntryActions — the action set', () => {
     // BUILDS its output by mapping over that constant, so asserting against it
     // would compare the constant with itself and pass through any reordering.
     expect(actionsFor(entry()).current.map((a) => a.id)).toEqual(['reply', 'copy', 'mention']);
+  });
+
+  it('adds View profile LAST, so no finger already trained on this row moves', () => {
+    // Position is the contract here, not just membership: `room-entry-actions`
+    // walks this row with arrow keys and counts presses to reach Reply, and the
+    // profile action arrived after every other command had been there for
+    // months. It is also withheld entirely when the caller cannot name the
+    // author to the roster — see `EntryActionsInput.onViewProfile`.
+    const withProfile = actionsFor(entry(), { author: author(), onViewProfile: () => {} });
+
+    expect(withProfile.current.map((a) => a.id)).toEqual(['reply', 'copy', 'mention', 'profile']);
+    expect(withProfile.current.at(-1)?.label).toBe('View profile');
   });
 
   it('opens the thread panel on the entry itself when that entry heads its own thread', () => {

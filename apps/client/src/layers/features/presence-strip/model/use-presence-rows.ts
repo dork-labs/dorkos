@@ -158,6 +158,17 @@ export function usePresenceRows(excludeRoomIds: readonly string[] = []): readonl
     () => resolvedAgents ?? {},
     [resolvedAgents]
   );
+  // The other half of the same mesh read, which this hook used to throw away:
+  // each entry's registry id, which is what the team roster keys agents by and
+  // so what a profile opens on. Reading it off the manifest instead — the
+  // obvious shortcut, since the manifest is right there — is a different id
+  // space and produces a link to a row that does not exist
+  // (`PresenceRowsInput.meshIdByPath`).
+  const meshIdByPath = useMemo<Record<string, string>>(() => {
+    const byPath: Record<string, string> = {};
+    for (const agent of meshAgents?.agents ?? []) byPath[agent.projectPath] = agent.id;
+    return byPath;
+  }, [meshAgents]);
 
   // Joined for the same reason the room ids are: a caller writing
   // `usePresenceStrip([teamRoomId])` builds a fresh array on every render, and
@@ -172,8 +183,9 @@ export function usePresenceRows(excludeRoomIds: readonly string[] = []): readonl
       rooms,
       sessions,
       agents,
+      meshIdByPath,
       excludeRoomIds: excludeKey.length === 0 ? [] : excludeKey.split(RECORD),
     });
     return rows.length === 0 ? NOBODY : rows;
-  }, [claims, rosters, rooms, sessions, agents, excludeKey]);
+  }, [claims, rosters, rooms, sessions, agents, meshIdByPath, excludeKey]);
 }

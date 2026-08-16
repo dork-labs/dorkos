@@ -3,11 +3,16 @@
  *
  * @module features/room-management/ui/RoomMemberRow
  */
-import { useEffect, useId, useRef } from 'react';
+import { useEffect, useId, useRef, type ReactNode } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { ChevronDown, MoreHorizontal } from 'lucide-react';
 import type { RoomKind, RoomRosterEntry } from '@dorkos/shared/room-schemas';
-import { cn, resolveIdentityFace, type AgentVisual } from '@/layers/shared/lib';
+import {
+  cn,
+  resolveIdentityFace,
+  LONG_PRESS_DRIFT_PX,
+  type AgentVisual,
+} from '@/layers/shared/lib';
 import { useIsMobile } from '@/layers/shared/model';
 import {
   Button,
@@ -53,6 +58,17 @@ export interface RoomMemberRowProps {
   visual: AgentVisual | null;
   /** This member's live work signal, or `null` when there is nothing to know. */
   presence: RoomPresenceAuthor | null;
+  /**
+   * Open this member's profile, or `undefined` for one the roster cannot
+   * address — an agent the fleet could not name, or the room's own voice.
+   *
+   * Handed in rather than resolved here, because an agent's roster id lives in
+   * a different id space from the author id this row holds (see
+   * `profileMemberIdOf`) and only the sheet has the fleet join that bridges
+   * them. Without it the face and name stay plain text: never a control that
+   * opens an empty profile.
+   */
+  onViewProfile?: () => void;
   /** When this member last posted, if a post of theirs is in the loaded page. */
   lastSpokeAt: string | null;
   /** Whether this row's loudness control is open. */
@@ -102,6 +118,109 @@ export interface RoomMemberRowProps {
 }
 
 /**
+ * The face-and-name half of a row, as a control when there is a profile behind
+ * it and as plain markup when there is not.
+ *
+ * **A sibling of the row's other controls, never a parent of them.** The
+ * loudness pill and the `⋯` sit beside this, not inside it — a button nested in
+ * a button is invalid HTML that assistive technology announces unpredictably,
+ * which is the same reason `AgentListItem` draws its face control as an overlay
+ * rather than wrapping the lockup.
+ *
+ * **The label names the action; the second line survives as a description.** An
+ * `aria-label` wins over content, so the "last spoke 3 min ago" line inside this
+ * control would simply vanish for a screen reader — `aria-describedby` points
+ * back at it so the row still says who, what they did, and where pressing goes.
+ *
+ * **A press that travelled is a drag, and a drag is not a tap.** On a phone this
+ * sheet is a vaul drawer: a downward drag over the roster moves the whole
+ * drawer WITH the pointer, so the element under the finger at the end of the
+ * gesture is the same one it started on — and the browser fires a click. Before
+ * this control existed the lockup was an inert `<div>` and that click landed on
+ * nothing; as a button it opened a profile every time somebody tried to put the
+ * sheet away, which is how `room-sheet-phone.spec.ts` found it. The same
+ * {@link LONG_PRESS_DRIFT_PX} the long-press gesture uses decides here: past it,
+ * the reader was moving the sheet, not choosing a member.
+ *
+ * @param props.onViewProfile - Open this member's profile, or `undefined` for a
+ *   member with none to open.
+ * @param props.displayName - Whose profile it is, for the accessible name.
+ * @param props.isReader - True when that is the person reading, who is named in
+ *   the second person rather than by a display name that is literally "You".
+ * @param props.describedById - The id of the row's secondary line.
+ * @param props.children - The face and the name lines.
+ */
+function ProfileLink({
+  onViewProfile,
+  displayName,
+  isReader,
+  describedById,
+  children,
+}: {
+  onViewProfile: (() => void) | undefined;
+  displayName: string;
+  isReader: boolean;
+  describedById: string;
+  children: ReactNode;
+}) {
+  // Where the press started, so a click can be told from the tail of a drag.
+  // Read at `pointerdown` because that is the only moment the origin exists.
+  const pressedAt = useRef<{ x: number; y: number } | null>(null);
+
+  if (onViewProfile === undefined) return <>{children}</>;
+
+  return (
+    <button
+      type="button"
+      onPointerDown={(event) => {
+        pressedAt.current = { x: event.clientX, y: event.clientY };
+      }}
+      onClick={(event) => {
+        const from = pressedAt.current;
+        pressedAt.current = null;
+        // `detail > 0` is a click a POINTER made. A keyboard's click reports 0
+        // and carries no coordinates, so it is never measured against a stale
+        // origin left behind by a press that ended somewhere else.
+        const travelled =
+          event.detail > 0 &&
+          from !== null &&
+          (Math.abs(event.clientX - from.x) > LONG_PRESS_DRIFT_PX ||
+            Math.abs(event.clientY - from.y) > LONG_PRESS_DRIFT_PX);
+        if (travelled) return;
+        onViewProfile();
+      }}
+      // Names the ACTION with the name inside it, the shape the sidebar face,
+      // the Team card and the mention pill all use — so "open Ana's profile" is
+      // sayable by voice and the visible text is a prefix of what is spoken.
+      // Second person for your own row. The reader's display name is the
+      // literal string "You", so the ordinary template says "Open You’s
+      // profile" — which is the row every operator sees about themselves.
+      aria-label={isReader ? 'Open your profile' : `Open ${displayName}’s profile`}
+      aria-describedby={describedById}
+      // **Occupies exactly the space the lockup already did.** No padding of
+      // its own, so the row keeps the height it had before this control existed
+      // — the sheet's own rhythm, the loudness scale's indent, and everything
+      // the phone spec measures are all downstream of that. A `py-1` here read
+      // as harmless and made every row 8px taller, which moved the scale out
+      // from under a resting pointer and cost the room-sheet specs two reds.
+      className={cn(
+        'focus-visible:ring-ring hover:bg-accent/60 relative -mx-1 flex min-w-0 flex-1 items-center gap-3 rounded-md px-1 text-left outline-hidden transition-colors focus-visible:ring-2',
+        // The house recipe for a control shorter than a thumb (`PresenceStrip`,
+        // the loudness pill): invisible reach rather than real height, so the
+        // 44px target costs the row none of its own rhythm. VERTICAL only — the
+        // 12px gap to the loudness pill is all that keeps the two apart, and the
+        // pill spends 7px of it on its own outset. The row is 56px under a thumb
+        // and this lockup about 36, so 8px each way stays inside the row and
+        // cannot steal a tap from the member above or below.
+        'after:absolute after:-inset-y-2 after:right-0 after:left-0 md:after:hidden'
+      )}
+    >
+      {children}
+    </button>
+  );
+}
+
+/**
  * A member as a line: face, name, what it has done here, how loud it is.
  *
  * It replaces a 76px bordered card whose dropdown outweighed the person it
@@ -123,6 +242,13 @@ export interface RoomMemberRowProps {
  * is an emoji: a letter admits the face is unknown, where a hashed emoji would
  * look like a face somebody chose.
  *
+ * **The face and the name are the door to who this is.** Pressing them opens
+ * that member's profile — the same `?profile=<id>` address a Team card, a
+ * sidebar face and a mention pill open (spec `profile-unification` §3, bug 7).
+ * It is one control covering both, because they are one lockup and one
+ * question; the loudness pill and the `⋯` stay beside it rather than inside it.
+ * A member whose profile this client cannot address keeps the plain lockup.
+ *
  * **The `⋯` is desktop only.** Below 768px the sheet is a vaul drawer, and a
  * dropdown portalled inside one is a known-hazard nesting — so Remove moves to
  * the foot of the expanded row, where a touch reader is already looking.
@@ -140,6 +266,7 @@ export function RoomMemberRow({
   isReader,
   visual,
   presence,
+  onViewProfile,
   lastSpokeAt,
   expanded,
   onExpandedChange,
@@ -158,6 +285,9 @@ export function RoomMemberRow({
   const isMobile = useIsMobile();
   const reduced = useReducedMotion();
   const controlId = useId();
+  // The row's second line, named so the profile control above can point at it —
+  // see {@link ProfileLink}.
+  const secondaryId = `${controlId}-secondary`;
   const confirmRef = useRef<HTMLButtonElement>(null);
   const { author } = member;
   const isAgent = author.kind === 'agent';
@@ -191,42 +321,49 @@ export function RoomMemberRow({
           Above 768px the contents decide, the way every other list in the
           cockpit lets them. */}
       <div className="flex min-h-14 items-center gap-3 md:min-h-0">
-        <IdentityAvatar
-          // Named one at a time rather than spread. A spread reads as if the
-          // compiler is checking the two shapes agree, and it is not: extra
-          // props land on the DOM as lowercase attributes with a console
-          // warning, so the day `IdentityFace` grows a field every roster disc
-          // would quietly carry it. The cost is that a NEW field has to be
-          // added here by hand — `imageUrl` was, in DOR-975 — and the compiler
-          // cannot remind you, because every one of them is optional.
-          kind={face.kind}
-          color={face.color}
-          emoji={face.emoji}
-          imageUrl={face.imageUrl}
-          fallback={face.fallback}
-          origin={face.origin}
-          status={working ? 'working' : 'idle'}
-          // 32px under a thumb, 28px under a pointer — the disc is not a
-          // control, but it is the thing a finger lands on when aiming at the
-          // row, and a roster of 28px discs on a phone reads as a list of dots.
-          className="size-8 md:size-7"
-        />
+        <ProfileLink
+          onViewProfile={onViewProfile}
+          displayName={author.displayName}
+          isReader={isReader}
+          describedById={secondaryId}
+        >
+          <IdentityAvatar
+            // Named one at a time rather than spread. A spread reads as if the
+            // compiler is checking the two shapes agree, and it is not: extra
+            // props land on the DOM as lowercase attributes with a console
+            // warning, so the day `IdentityFace` grows a field every roster disc
+            // would quietly carry it. The cost is that a NEW field has to be
+            // added here by hand — `imageUrl` was, in DOR-975 — and the compiler
+            // cannot remind you, because every one of them is optional.
+            kind={face.kind}
+            color={face.color}
+            emoji={face.emoji}
+            imageUrl={face.imageUrl}
+            fallback={face.fallback}
+            origin={face.origin}
+            status={working ? 'working' : 'idle'}
+            // 32px under a thumb, 28px under a pointer — a roster of 28px discs
+            // on a phone reads as a list of dots. It is the thing a finger lands
+            // on when aiming at the row, which is now also where the row leads.
+            className="size-8 md:size-7"
+          />
 
-        <div className="min-w-0 flex-1">
-          <p className="flex min-w-0 items-center truncate text-sm font-medium">
-            <span className="truncate">{author.displayName}</span>
-            {isReader && <span className="text-muted-foreground font-normal">&nbsp;(you)</span>}
-            {/* A bridged person now wears their platform twice — the disc's
-                badge and this labelled mark — and that is the intent, not a
-                leftover: the badge is the glance and this is the one that says
-                which platform in words. The message gutter pairs them the same
-                way. */}
-            <OriginMark origin={member.origin} className="ml-1 shrink-0" />
-          </p>
-          <p className="text-muted-foreground truncate text-xs">
-            {memberSecondaryLine({ presence, lastSpokeAt, joinedAt: member.joinedAt })}
-          </p>
-        </div>
+          <div className="min-w-0 flex-1">
+            <p className="flex min-w-0 items-center truncate text-sm font-medium">
+              <span className="truncate">{author.displayName}</span>
+              {isReader && <span className="text-muted-foreground font-normal">&nbsp;(you)</span>}
+              {/* A bridged person now wears their platform twice — the disc's
+                  badge and this labelled mark — and that is the intent, not a
+                  leftover: the badge is the glance and this is the one that says
+                  which platform in words. The message gutter pairs them the same
+                  way. */}
+              <OriginMark origin={member.origin} className="ml-1 shrink-0" />
+            </p>
+            <p id={secondaryId} className="text-muted-foreground truncate text-xs">
+              {memberSecondaryLine({ presence, lastSpokeAt, joinedAt: member.joinedAt })}
+            </p>
+          </div>
+        </ProfileLink>
 
         {isAgent && (
           <button

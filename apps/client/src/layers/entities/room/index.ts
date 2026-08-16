@@ -92,6 +92,7 @@ export {
   hasUnread,
   platformLabel,
 } from './lib/room-display';
+export { profileMemberIdOf } from './lib/profile-target';
 export { roomIdentityMark, identityMarkFaces, rosterAgentFaces } from './lib/identity-mark';
 export type { IdentityMark, RoomIdentityMarkInput } from './lib/identity-mark';
 export { replyRootFor, threadReplySummary, threadRootIdOf } from './lib/thread';

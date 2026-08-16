@@ -74,6 +74,19 @@ vi.mock('@/layers/features/room-management/model/use-agent-picker-candidates', (
   useAgentPickerCandidates: () => mockRosterRef.current,
 }));
 
+// The room sheet this row opens reads route state to decide where each member
+// row's face leads (`useProfileDeepLink`), and this file mounts it with no
+// router. Where that link goes has its own file —
+// `features/room-management/__tests__/RoomMemberRow.click-to-profile.test.tsx`,
+// which mounts a real router and asserts the id that travels.
+vi.mock('@/layers/shared/model', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/layers/shared/model')>();
+  return {
+    ...actual,
+    useProfileDeepLink: () => ({ isOpen: false, memberId: null, open: vi.fn(), close: vi.fn() }),
+  };
+});
+
 /** A fleet that has been read successfully. The state is named, never defaulted. */
 function settled(candidates: { agentPath: string; displayName: string }[]) {
   return { candidates, isLoading: false, isError: false, retry: vi.fn() };
