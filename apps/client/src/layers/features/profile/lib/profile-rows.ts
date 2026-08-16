@@ -107,8 +107,18 @@ export interface ProfileRowsContext {
   facts?: ProfileAgentFacts;
 }
 
-/** Why DorkBot's identity rows do not open. */
-const SYSTEM_LOCK_REASON = 'DorkBot’s name, face and personality are part of DorkOS.';
+/**
+ * Why DorkBot's identity rows do not open.
+ *
+ * **Personality is deliberately NOT in this list.** Onboarding asks you to pick
+ * DorkBot's voice on the first run and writes it, and the server's
+ * `SYSTEM_PROTECTED_FIELDS` (`name`, `displayName`, `description`, `namespace`,
+ * `isSystem`) never covered `traits` — so locking it here was the profile being
+ * stricter than the product, and it broke a promise onboarding had already made.
+ * What is genuinely fixed is who DorkBot IS: its name, its face and what it says
+ * it does.
+ */
+const SYSTEM_LOCK_REASON = 'DorkBot’s name, face and description are part of DorkOS.';
 
 /** Why your email is not editable here. */
 const EMAIL_LOCK_REASON =
@@ -413,11 +423,14 @@ function systemAgentRows(member: TeamMember, ctx: ProfileRowsContext): ProfileRo
           pick: 'runs-on',
         },
         {
+          // The same control an agent you manage gets, and the same write:
+          // `personalityUpdate` puts the traits in the manifest AND regenerates
+          // SOUL.md's trait block, so DorkBot's next turn actually hears it.
           id: 'personality',
-          kind: 'locked',
+          kind: 'pick',
           label: 'Personality',
           value: ctx.facts?.personality ?? null,
-          lockedReason: SYSTEM_LOCK_REASON,
+          pick: 'personality',
         },
       ],
     },

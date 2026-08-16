@@ -376,8 +376,8 @@ describe('the rows', () => {
 
   it('gives DorkBot the same work rows and none of the identity ones', async () => {
     await renderProfile(DORKBOT);
-    // Its personality and its About are part of DorkOS; what it has been doing
-    // is not, and neither is what it runs on.
+    // Who DorkBot IS is part of DorkOS; how it SOUNDS is yours, and so is what
+    // it runs on and what it has been doing.
     expect(rowLabels()).toEqual([
       'about',
       'runs-on',
@@ -391,7 +391,10 @@ describe('the rows', () => {
     const kind = (id: string) =>
       document.querySelector(`[data-profile-row="${id}"]`)!.getAttribute('data-row-kind');
     expect(kind('about')).toBe('locked');
-    expect(kind('personality')).toBe('locked');
+    // Not locked: onboarding asks you to pick DorkBot's voice on the first run
+    // and the server has never protected `traits`, so a locked row here was the
+    // profile refusing a change the product had already invited (DOR-1255).
+    expect(kind('personality')).toBe('pick');
     // The one thing that IS yours to set on it: the model it runs on.
     expect(kind('runs-on')).toBe('pick');
   });

@@ -180,20 +180,35 @@ describe('DorkBot', () => {
     expect(shape(build(DORKBOT))).toEqual([
       'About locked',
       'Runs on pick',
-      'Personality locked',
+      'Personality pick',
       'Sessions nav',
       'Tasks nav',
       'Rooms nav',
       'Skills nav',
       'Tools & MCP nav',
     ]);
+    // ONE locked row, not two. What is fixed about DorkBot is who it is — its
+    // name, its face, its description — and the reason has to say exactly that,
+    // or it goes stale the next time something is unlocked.
     const locked = flat(build(DORKBOT)).filter((row) => row.kind === 'locked');
-    expect(locked).toHaveLength(2);
-    for (const row of locked) expect(row.lockedReason).toContain('part of DorkOS');
+    expect(locked).toHaveLength(1);
+    expect(locked[0]!.lockedReason).toBe(
+      'DorkBot’s name, face and description are part of DorkOS.'
+    );
   });
 
   it('still lets you set the model — it runs on your machine', () => {
     expect(flat(build(DORKBOT)).find((row) => row.id === 'runs-on')!.kind).toBe('pick');
+  });
+
+  it('lets you change its voice — onboarding already asked you to pick one', () => {
+    // The first-run beat writes DorkBot's traits and tells you it can change,
+    // and `SYSTEM_PROTECTED_FIELDS` on the server never covered `traits`. A
+    // locked row here made the profile the only thing refusing (DOR-1255).
+    const personality = flat(build(DORKBOT)).find((row) => row.id === 'personality')!;
+    expect(personality.kind).toBe('pick');
+    expect(personality.pick).toBe('personality');
+    expect(personality.lockedReason).toBeUndefined();
   });
 
   it('offers no Connections, Instructions or Boundaries', () => {
