@@ -12,9 +12,15 @@
  * `/events`, ADR-0264). Like `/messages`, a session absent from the live map
  * but present in runtime storage cold-starts (the map empties on restart and
  * eviction — DOR-302); unlike `/messages`, this route never CREATES sessions,
- * so an id that exists nowhere 404s. Busy-session handling matches `/messages`:
- * a lock held by another turn 409s SESSION_LOCKED (there is no server-side
- * message queue — the client surfaces the busy state and lets the user retry).
+ * so an id that exists nowhere 404s.
+ *
+ * **Busy means the agent is still producing.** A click that lands while a turn
+ * is running 409s SESSION_LOCKED — the person can see the agent working, and a
+ * widget action run against a later turn is not the action they clicked. A click
+ * that lands after the turn ENDED does not: the reply is finished and its buttons
+ * are on screen, so the action is accepted and runs, even though the runtime may
+ * still be closing the stream behind it (DOR-1239; the dispatcher's
+ * `isStillProducing` draws that line).
  *
  * @module routes/session-ui-action-handler
  */
@@ -106,16 +112,26 @@ export async function sessionUiActionHandler(req: Request, res: Response): Promi
   });
 
   if (!result.accepted) {
-    const lockInfo = runtime.getLockInfo(sessionId);
-    logger.warn('[POST /ui-action] session locked', {
+    // Named by whatever actually refused it. Asking the runtime's lock here
+    // instead — a DIFFERENT authority, under the id this request happened to
+    // use rather than the canonical one the lock is keyed by — is how a 409
+    // came to report `lockedBy: "unknown"` over a session somebody was using
+    // (DOR-1239).
+    const holder = result.refusedBy;
+    logger.warn('[POST /ui-action] session busy', {
       sessionId,
-      lockedBy: lockInfo?.clientId ?? 'unknown',
+      heldBy: holder?.clientId ?? 'unknown',
+      // Usually the clicker's own tab: a person clicking a button in a reply
+      // while the agent is working on the NEXT turn is the ordinary shape of
+      // this refusal, not a cross-window conflict. Worth saying, so the line
+      // does not read as a session locked against itself by mistake.
+      ownTurn: holder?.clientId === clientId,
     });
     res.status(409).json({
       error: 'Session locked',
       code: 'SESSION_LOCKED',
-      lockedBy: lockInfo?.clientId ?? 'unknown',
-      lockedAt: lockInfo ? new Date(lockInfo.acquiredAt).toISOString() : new Date().toISOString(),
+      lockedBy: holder?.clientId ?? 'unknown',
+      lockedAt: new Date(holder?.since ?? Date.now()).toISOString(),
     });
     return;
   }

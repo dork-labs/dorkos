@@ -1,4 +1,4 @@
-import { afterAll, afterEach, beforeEach, vi } from 'vitest';
+import { afterAll, afterEach, beforeEach, expect, vi } from 'vitest';
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -168,7 +168,12 @@ vi.mock('../tooling/check-dependency.js', () => ({
 import { query } from '@anthropic-ai/claude-agent-sdk';
 import type { AgentRuntime } from '@dorkos/shared/agent-runtime';
 import { ClaudeCodeRuntime } from '../claude-code-runtime.js';
-import { drivePresenceTurn } from '../../../session/__tests__/durable-turn-harness.js';
+import {
+  drivePresenceTurn,
+  driveDispositionTurn,
+  driveTerminalOnce,
+  driveQueueDurability,
+} from '../../../session/__tests__/durable-turn-harness.js';
 import { FakeCli } from '../sessions/__tests__/fake-persistent-cli.js';
 
 const mockedQuery = vi.mocked(query);
@@ -302,6 +307,37 @@ runtimeConformance(
         // session warm, and the suite makes its own assertions afterwards.
       }
     },
+    // C1 declared arm: claude-code declares BOTH steer and stage after P4, so it
+    // owes the suite a turn held open to deliver into. Same persistent double the
+    // warmth cases use: warm a process, open a second turn, go silent so it stays
+    // unanswered (the window is open), let the suite steer and stage into it, then
+    // answer — which coalesces into ONE result and closes the turn. Answering the
+    // LAST pushed message (the steer) is what the persistent CLI takes to close
+    // the whole coalesced turn (persistent-dispatch.test.ts).
+    dispositionTurn: async (runtime: AgentRuntime, sessionId, content, probes) => {
+      persistent.on = true;
+      warmCli = new FakeCli();
+      mockedQuery.mockImplementation(warmCli.query as unknown as typeof query);
+      for await (const _event of runtime.sendMessage(sessionId, 'warm the process', {
+        cwd: '/projects/conformance',
+      })) {
+        // Drained to leave the session warm — the held turn below joins it.
+      }
+      const process = warmCli.processes[0]!;
+      const warmReceived = process.received.length;
+      process.goSilent();
+      await driveDispositionTurn(runtime, sessionId, content, '/projects/conformance', probes, {
+        // The held turn's message has reached the process — its window is open.
+        awaitOpen: () => vi.waitFor(() => expect(process.received.length).toBe(warmReceived + 1)),
+        // Answer the last thing pushed (the steer if one was delivered, else the
+        // turn's own message): the CLI coalesces it into one result and closes.
+        endTurn: () => process.answer(process.received.at(-1)),
+      });
+    },
+    // C2/C3 are server-owned invariants every runtime inherits by construction,
+    // driven through the shared machinery rather than claude-code itself.
+    terminalOnce: () => driveTerminalOnce('/projects/conformance'),
+    queueDurability: () => driveQueueDurability(),
     // Claude-code CAN say when the person last wrote: it rides the transcript
     // tail read the session list already performs. Read back through
     // `listSessions` rather than `getSession`, because the recents LIST is the

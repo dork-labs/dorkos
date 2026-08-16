@@ -96,13 +96,16 @@ vi.mock('@/layers/entities/agent', () => ({
   useAgentVisual: () => ({ color: '#3b82f6', emoji: '' }),
 }));
 
-// Only the three read-hooks the container itself calls are stubbed. Everything
-// else — the session stores, `useSessionQueue`, `useSessionAwaitingDecision` —
-// stays real, so the un-mocked `useChatQueue` above operates on real state.
+// Only the read-hooks the container itself calls are stubbed. Everything else —
+// the session stores, `useSessionQueue`, `useSessionAwaitingDecision` — stays
+// real, so the un-mocked `useChatQueue` above operates on real state.
+// `useSessionRuntime` is stubbed to a fixed runtime so its real body does not
+// reach the session-list search chain this file does not mount.
 vi.mock('@/layers/entities/session', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/layers/entities/session')>()),
   useDirectoryState: () => [null, vi.fn()],
   useSessionChatState: () => ({ messages: [] }),
+  useSessionRuntime: () => 'claude-code',
   useSessionStreamState: () => ({
     messages: [],
     inProgressTurn: [],
@@ -112,6 +115,18 @@ vi.mock('@/layers/entities/session', async (importOriginal) => ({
     streamReadyCursor: null,
     connectionState: 'connecting',
   }),
+}));
+
+// What the resolved runtime can do mid-turn. Mutable so a test can model a
+// steer-capable runtime (claude-code) or a queue-only one (codex/opencode) and
+// assert the container hides the extras rather than greying them.
+const mockCapabilities = vi.hoisted(() => ({
+  value: { supportsSteer: true, supportsContextStaging: true } as
+    | { supportsSteer: boolean; supportsContextStaging: boolean }
+    | undefined,
+}));
+vi.mock('@/layers/entities/runtime', () => ({
+  useCapabilitiesForRuntime: () => mockCapabilities.value,
 }));
 
 import { ChatInputContainer } from '../ui/input/ChatInputContainer';
@@ -181,6 +196,8 @@ const baseProps = {
   } as never,
   handleSubmit: vi.fn(),
   enqueueContent: vi.fn().mockResolvedValue(true),
+  steerContent: vi.fn().mockResolvedValue(true),
+  addContextContent: vi.fn().mockResolvedValue(true),
   tryNativeCommand: vi.fn(() => ({ handled: false }) as const),
   commandPending: false,
   status: 'idle' as const,
@@ -462,5 +479,62 @@ describe('ChatInputContainer — sending takes the palette down with it (DOR-479
     lastChatInputProps().onQueue!();
 
     expect(dismissPalettes).toHaveBeenCalledOnce();
+  });
+});
+
+describe('ChatInputContainer — the composer only gets the verbs the runtime honours', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockCapabilities.value = { supportsSteer: true, supportsContextStaging: true };
+  });
+
+  it('passes Steer and Add context when the runtime declares both (claude-code)', () => {
+    render(<ChatInputContainer {...baseProps} status="streaming" input="Also check the tests" />);
+    const props = lastChatInputProps();
+    expect(props.onSteer).toBeInstanceOf(Function);
+    expect(props.onStage).toBeInstanceOf(Function);
+  });
+
+  it('withholds BOTH on a queue-only runtime (codex / opencode)', () => {
+    mockCapabilities.value = { supportsSteer: false, supportsContextStaging: false };
+    render(<ChatInputContainer {...baseProps} status="streaming" input="Also check the tests" />);
+    const props = lastChatInputProps();
+    // Absent, not a no-op function the composer would then have to hide itself.
+    expect(props.onSteer).toBeUndefined();
+    expect(props.onStage).toBeUndefined();
+  });
+
+  it('withholds each verb independently', () => {
+    mockCapabilities.value = { supportsSteer: true, supportsContextStaging: false };
+    render(<ChatInputContainer {...baseProps} status="streaming" input="Also check the tests" />);
+    const props = lastChatInputProps();
+    expect(props.onSteer).toBeInstanceOf(Function);
+    expect(props.onStage).toBeUndefined();
+  });
+
+  it('withholds both while the capabilities map is still loading', () => {
+    mockCapabilities.value = undefined;
+    render(<ChatInputContainer {...baseProps} status="streaming" input="Also check the tests" />);
+    const props = lastChatInputProps();
+    expect(props.onSteer).toBeUndefined();
+    expect(props.onStage).toBeUndefined();
+  });
+
+  it('routes the composer Steer action through the steer delivery, and clears', async () => {
+    const steerContent = vi.fn().mockResolvedValue(true);
+    const setInput = vi.fn();
+    render(
+      <ChatInputContainer
+        {...baseProps}
+        steerContent={steerContent}
+        setInput={setInput}
+        status="streaming"
+        input="Also check the tests"
+      />
+    );
+    await act(async () => {
+      lastChatInputProps().onSteer!();
+    });
+    expect(steerContent).toHaveBeenCalledWith('Also check the tests');
   });
 });

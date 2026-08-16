@@ -321,6 +321,11 @@ const TURN_EVENT_TYPES: ReadonlySet<SessionEvent['type']> = new Set([
   // (`projectSessionMessages`) splits the turn at it into an inline user bubble.
   // It never opens or closes a turn — the default arm just pushes it.
   'turn_input',
+  // A staged-context receipt (spec `persistent-session-runtime` §2.5, task 4.2).
+  // Staging is only ever offered while a turn is open, so it rides that turn like
+  // a steer does — but the projection renders it as a QUIET note, not a bubble:
+  // the person added context for the next turn without cutting into this one.
+  'context_staged',
 ]);
 
 /** The two event types that make up a sign-in card and its receipt (DOR-1004). */

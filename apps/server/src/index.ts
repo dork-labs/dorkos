@@ -284,6 +284,7 @@ import {
   onProjectorRekey,
   sweepOrphanedMessageQueues,
   sessionOriginResolvers,
+  listRecentSessions,
 } from './services/session/index.js';
 import { aggregateSessionList } from './services/session/aggregate-session-list.js';
 import { env } from './env.js';
@@ -2266,6 +2267,27 @@ async function start() {
       // is two membership reads and no room behaviour.
       rooms: roomStore,
       ...(meshCore && { meshCore }),
+      // What is working RIGHT NOW, from the one map that knows: the room
+      // dispatcher's claims. Nothing else on this install can answer it.
+      activeClaims: () => roomService.listActiveClaims(),
+      // Archived included on purpose — a room can be archived while an agent is
+      // still mid-turn in it, and the status sentence should still name it.
+      listRooms: () =>
+        roomStore
+          .listRooms({ includeArchived: true })
+          .map((room) => ({ id: room.id, name: room.title })),
+      // When each agent last ran, for the agents mesh health cannot speak for
+      // (it is stamped by the claude-code turn paths only). `limit: 1` because
+      // only the `agentActivity` map is wanted here — it is computed across
+      // every session before that trim, so the map is complete either way.
+      sessionActivity: async () => {
+        const { agentActivity } = await listRecentSessions({
+          runtimes: runtimeRegistry.listRuntimes(),
+          agentPaths: meshCore ? meshCore.listWithPaths().map((a) => a.projectPath) : [],
+          limit: 1,
+        });
+        return agentActivity;
+      },
       ownerAccount: () => readOwnerAccount(),
       ownerEmail: (userId) => getUserById(userId)?.email ?? null,
       // `config.profile.displayName` is what the user likes to be called — the

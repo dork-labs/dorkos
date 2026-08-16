@@ -31,9 +31,11 @@ import {
   useSessionAwaitingDecision,
   useSessionChatState,
   useSessionQueue,
+  useSessionRuntime,
   useSessionStreamLifecycle,
   useSessionStreamState,
 } from '@/layers/entities/session';
+import { useCapabilitiesForRuntime } from '@/layers/entities/runtime';
 import { selectRenderedMessages } from '../../model/stream/derive-rendered-state';
 import { useRotatingPlaceholder } from '../../model/use-rotating-placeholder';
 import { AnimatedPlaceholder } from './AnimatedPlaceholder';
@@ -53,6 +55,19 @@ interface ChatInputContainerProps {
    * words until then.
    */
   enqueueContent: (content: string) => Promise<boolean>;
+  /**
+   * Send the composer's text into the running turn now (steer). Wired to the
+   * Steer affordance only when the session's runtime declares it can take a
+   * message mid-task; the affordance is hidden otherwise. Resolves `true` once
+   * the server has it, exactly like {@link enqueueContent}.
+   */
+  steerContent: (content: string) => Promise<boolean>;
+  /**
+   * Add the composer's text as context the agent uses next, without cutting into
+   * the running turn (stage). Wired to the Add context affordance only when the
+   * runtime declares it can take added context.
+   */
+  addContextContent: (content: string) => Promise<boolean>;
   /**
    * Native (client-side) command interceptor. Used at the queue decision so a
    * native command typed while a turn streams runs instantly instead of being
@@ -105,6 +120,8 @@ export function ChatInputContainer({
   autocomplete,
   handleSubmit,
   enqueueContent,
+  steerContent,
+  addContextContent,
   tryNativeCommand,
   commandPending,
   status,
@@ -151,6 +168,17 @@ export function ChatInputContainer({
     [serverQueue, lifecycle]
   );
 
+  // What THIS session's runtime can do with a message sent mid-task. Steer and
+  // Add context appear only when the runtime declares them (claude-code does,
+  // codex and opencode do not) — a hidden choice is honest, a dead one is not.
+  // A pure map lookup over the static capabilities, keyed by the session's
+  // resolved runtime; `undefined` while it loads leaves both off, which is the
+  // safe default.
+  const sessionRuntime = useSessionRuntime(sessionId);
+  const capabilities = useCapabilitiesForRuntime(sessionRuntime);
+  const canSteer = capabilities?.supportsSteer ?? false;
+  const canAddContext = capabilities?.supportsContextStaging ?? false;
+
   const chatQueue = useChatQueue({
     input,
     setInput,
@@ -158,6 +186,8 @@ export function ChatInputContainer({
     selectedCwd,
     waiting,
     onEnqueue: enqueueContent,
+    onSteer: steerContent,
+    onStage: addContextContent,
     tryNativeCommand,
     chatInputRef,
   });
@@ -240,6 +270,16 @@ export function ChatInputContainer({
   const queueAndDismiss = useCallback(() => {
     autocomplete.dismissPalettes();
     chatQueue.handleQueue();
+  }, [autocomplete, chatQueue]);
+
+  const steerAndDismiss = useCallback(() => {
+    autocomplete.dismissPalettes();
+    chatQueue.handleSteer();
+  }, [autocomplete, chatQueue]);
+
+  const addContextAndDismiss = useCallback(() => {
+    autocomplete.dismissPalettes();
+    chatQueue.handleStage();
   }, [autocomplete, chatQueue]);
 
   return (
@@ -392,6 +432,11 @@ export function ChatInputContainer({
               }
               queueDepth={chatQueue.queue.length}
               onQueue={queueAndDismiss}
+              // Present ONLY when the runtime can honour them, so the composer
+              // hides Steer / Add context (never greys them) on a runtime that
+              // can only queue. Presence of the callback IS the capability.
+              onSteer={canSteer ? steerAndDismiss : undefined}
+              onStage={canAddContext ? addContextAndDismiss : undefined}
               onSaveEdit={chatQueue.handleQueueSaveEdit}
               onCancelEdit={chatQueue.handleQueueCancelEdit}
               onQueueNavigateUp={chatQueue.handleQueueNavigateUp}

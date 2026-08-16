@@ -23,13 +23,20 @@ environment (a worktree, or any machine whose default ports are busy).
 Playwright's `webServer` array is global: whatever legs are listed boot for
 every run, regardless of `--project`. The legs are:
 
-| Leg                     | Default port | Env override                           |
-| ----------------------- | ------------ | -------------------------------------- |
-| Express API             | 4245         | `DORKOS_COCKPIT_PORT`                  |
-| Vite client             | 4244         | `DORKOS_COCKPIT_VITE_PORT`             |
-| Express API (test-mode) | 4243         | `DORKOS_MOCK_PORT`                     |
-| Vite client (test-mode) | 4248         | `DORKOS_MOCK_VITE_PORT`                |
-| Marketing site          | 6244         | `DORKOS_SITE_PORT` (opt-in, see below) |
+| Leg                     | Default port | Env override                           | Readiness timeout |
+| ----------------------- | ------------ | -------------------------------------- | ----------------- |
+| Express API             | 4245         | `DORKOS_COCKPIT_PORT`                  | 240s              |
+| Vite client             | 4244         | `DORKOS_COCKPIT_VITE_PORT`             | 120s              |
+| Express API (test-mode) | 4243         | `DORKOS_MOCK_PORT`                     | 241s              |
+| Vite client (test-mode) | 4248         | `DORKOS_MOCK_VITE_PORT`                | 121s              |
+| Marketing site          | 6244         | `DORKOS_SITE_PORT` (opt-in, see below) | 242s              |
+
+Every timeout is a distinct value on purpose (DOR-1243): Playwright's own
+readiness-timeout error names only the millisecond number — `Timed out
+waiting 180000ms from config.webServer.` — never the leg, so a distinct value
+per leg is what lets that number be grepped straight back to this table.
+See the comment on each leg in `playwright.config.ts` for the reasoning
+behind its specific value.
 
 Note the override names: the cockpit leg reads `DORKOS_COCKPIT_PORT`, **not**
 `DORKOS_PORT`. That is deliberate. `DORKOS_PORT` is what the root `.env` sets for
@@ -82,7 +89,8 @@ many recursive file watchers already running (several worktrees, several dev
 servers), the site's watcher hits `EMFILE` ("too many open files"). Turbopack
 then fails to discover the `src/app` routes, so every route — including `/` —
 falls through to `_not-found` and returns **404**. The site leg's readiness gate
-polls `/`, so it never clears and the whole run stalls for 180s. This is what
+polls `/`, so it never clears and the whole run stalls for the leg's full
+readiness timeout (242s — see the webServer legs table above). This is what
 blocked isolated runs in DOR-407.
 
 If you do need the site leg under watcher pressure, run it with polling watchers,

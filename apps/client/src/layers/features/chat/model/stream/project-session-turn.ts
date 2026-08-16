@@ -74,6 +74,30 @@ function buildSteerUserMessage(event: Extract<SessionEvent, { type: 'turn_input'
   };
 }
 
+/**
+ * Build the quiet note for a staged message (`context_staged`).
+ *
+ * A stage did NOT steer the agent — it added context for the next turn without
+ * cutting into this one — so it must not read as a message the agent replied to.
+ * It renders as a quiet transcript entry (`_stagedContext`), keyed by its
+ * server-minted `messageId` so it is stable across re-renders and replays, and
+ * carries `_streaming` because it is a live-turn synthetic: the post-turn history
+ * reload replaces it with whatever the runtime's own transcript recorded.
+ */
+function buildStagedContextMessage(
+  event: Extract<SessionEvent, { type: 'context_staged' }>
+): ChatMessage {
+  return {
+    id: `staged-${event.messageId}`,
+    role: 'user',
+    content: event.content,
+    parts: [{ type: 'text', text: event.content }],
+    timestamp: '',
+    _streaming: true,
+    _stagedContext: true,
+  };
+}
+
 /** Find the last `tool_call` part matching `toolCallId`, or `undefined`. */
 function findToolCallPart(
   parts: MessagePart[],
@@ -803,16 +827,18 @@ function buildInProgressMessage(parts: MessagePart[], id: string): ChatMessage |
 
 /**
  * Fold the in-progress turn into rendered {@link ChatMessage}s, splitting it at
- * each steer (`turn_input`) so a steer renders as an inline user bubble in
- * reading order rather than being folded into the assistant bubble.
+ * each person's mid-turn entry — a steer (`turn_input`) or a staged note
+ * (`context_staged`) — so each renders in reading order rather than being folded
+ * into the assistant bubble: a steer as an inline user bubble, a staged note as
+ * a quiet transcript entry.
  *
- * With no steer this is one assistant bubble, byte-for-byte the pre-steer
+ * With no such entry this is one assistant bubble, byte-for-byte the earlier
  * behaviour: the single trailing segment keeps {@link IN_PROGRESS_ASSISTANT_ID}
- * and takes the snapshot's pending interactions. With steers the turn becomes
- * assistant-segment / user-steer / assistant-segment…: each run of assistant
- * events before a steer is its own bubble, the steer is a user bubble between
- * them, and the snapshot's pending interactions fold into the TRAILING segment —
- * the one still open — exactly as they did when the turn was one bubble.
+ * and takes the snapshot's pending interactions. With one the turn becomes
+ * assistant-segment / entry / assistant-segment…: each run of assistant events
+ * before an entry is its own bubble, the entry sits between them, and the
+ * snapshot's pending interactions fold into the TRAILING segment — the one still
+ * open — exactly as they did when the turn was one bubble.
  *
  * @param inProgressTurn - The in-progress turn's events, in seq order.
  * @param pendingInteractions - Snapshot's recoverable pending interactions.
@@ -825,11 +851,15 @@ function projectInProgressSegments(
   let run: SessionEvent[] = [];
   let precedingSegments = 0;
   for (const event of inProgressTurn) {
-    if (event.type !== 'turn_input') {
+    // Both a steer (`turn_input`) and a staged note (`context_staged`) arrive
+    // mid-turn and split it: the run of assistant events before them closes as
+    // its own bubble, then the person's entry renders in reading order — a user
+    // bubble for a steer, a quiet note for a stage.
+    if (event.type !== 'turn_input' && event.type !== 'context_staged') {
       run.push(event);
       continue;
     }
-    // Close the assistant run that arrived before this steer as its own bubble.
+    // Close the assistant run that arrived before this entry as its own bubble.
     // No pending-interaction fold here — those belong to the turn's OPEN tail,
     // which is a later segment.
     const parts = projectInProgressTurn(run);
@@ -839,7 +869,9 @@ function projectInProgressSegments(
     );
     if (bubble) out.push(bubble);
     precedingSegments += 1;
-    out.push(buildSteerUserMessage(event));
+    out.push(
+      event.type === 'turn_input' ? buildSteerUserMessage(event) : buildStagedContextMessage(event)
+    );
     run = [];
   }
   // The trailing (open) segment: it takes the pending interactions and keeps the

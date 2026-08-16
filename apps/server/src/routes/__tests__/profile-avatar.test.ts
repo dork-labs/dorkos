@@ -79,6 +79,9 @@ describe('/api/profile/avatar', () => {
         // The roster is what these tests read back; the rooms reader is a
         // required dependency of the router and answers nothing here.
         rooms: { listRoomsForMember: () => [], listMembersForRooms: () => [] },
+        activeClaims: () => [],
+        listRooms: () => [],
+        sessionActivity: () => Promise.resolve({}),
         ownerAccount: () => ({ id: OWNER_USER_ID, name: 'Dorian' }),
         ownerEmail: () => 'dorian@dorkos.ai',
         configDisplayName: () => null,

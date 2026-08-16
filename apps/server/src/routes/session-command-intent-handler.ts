@@ -152,6 +152,11 @@ export async function sessionCommandIntentHandler(req: Request, res: Response): 
   });
 
   if (!result.accepted) {
+    // This asks the lock under the REQUEST's id, while the lock is keyed by the
+    // canonical one — the mismatch that made `/ui-action` report a holder nobody
+    // held (DOR-1239). Left as-is deliberately: `dispatchCommandIntent` answers
+    // `{ accepted }` alone, so carrying the holder back would change its
+    // signature, and a compact is never triggered by a click nobody can explain.
     const lockInfo = runtime.getLockInfo(sessionId);
     logger.warn('[POST /command-intents] session locked', {
       sessionId,

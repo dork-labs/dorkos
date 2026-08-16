@@ -18,7 +18,7 @@ import { Feed } from '@/layers/shared/ui';
 import { useCurrentAgent } from '@/layers/entities/agent';
 import { useSessionRuntime } from '@/layers/entities/session';
 import { WIDGET_FENCE_MARKER } from '@/layers/features/gen-ui';
-import { MessageItem, DayDivider, UnreadDivider } from './message';
+import { MessageItem, DayDivider, UnreadDivider, StagedContextNote } from './message';
 import type { InteractiveToolHandle } from './message';
 import { buildListRows } from '../lib/build-list-rows';
 import type { ListRow } from '../lib/build-list-rows';
@@ -413,6 +413,14 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(funct
     if (row.kind === 'unread-divider') return <UnreadDivider />;
 
     const { message, messageIndex } = row;
+
+    // A staged-context note is not a turn: it renders as a quiet standalone row,
+    // never a message bubble with an avatar and grouping. Branch before
+    // MessageItem so none of that chrome applies to it.
+    if (message._stagedContext) {
+      return <StagedContextNote content={message.content} />;
+    }
+
     const isLastAssistant = messageIndex === messages.length - 1 && message.role === 'assistant';
     // Fence-based supersede (DOR-302): a widget in this message is stale only
     // when a NEWER fence-bearing message exists. Fence-less messages get `true`

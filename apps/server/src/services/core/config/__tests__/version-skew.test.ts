@@ -140,16 +140,21 @@ describe('a config carrying keys this build does not declare', () => {
     expect(manager.get('auth').enabled).toBe(true);
   });
 
-  it('still condemns a file whose declared keys are wrong', () => {
-    // The guard against tolerance becoming "validate nothing". `server.port`
-    // exists and must be an integer, so this file really is unusable and the
-    // recovery path is still the right answer.
-    const { dir } = seed({ version: 1, server: { port: 'not-a-port' }, auth: { enabled: true } });
+  it('still condemns a file whose SHAPE is wrong', () => {
+    // The guard against tolerance becoming "validate nothing". `mesh.scanRoots`
+    // is a list, so a string there is not a value another build widened — it is
+    // a shape the schema does not describe, and the recovery path is still the
+    // right answer. See `widened-leaves.test.ts` for the other side of the line.
+    const { dir } = seed({
+      version: 1,
+      mesh: { scanRoots: 'not-a-list' },
+      auth: { enabled: true },
+    });
 
     const manager = new ConfigManager(dir, FAST_RETRIES);
 
     expect(backupsIn(dir)).toHaveLength(1);
-    expect(manager.get('server').port).toBe(4242);
+    expect(manager.get('mesh').scanRoots).toEqual([]);
     // DOR-584 still holds on that path: a wipe may lose preferences, never a
     // protection.
     expect(manager.get('auth').enabled).toBe(true);

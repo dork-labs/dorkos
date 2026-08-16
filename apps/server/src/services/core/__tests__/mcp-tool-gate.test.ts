@@ -86,8 +86,14 @@ import { MCP_TOOL_TIERS, gatedActionForMcpTool } from '../mcp-tool-tiers.js';
 import { READ_ONLY_MCP_TOOL_NAMES } from '../external-mcp/tool-security.js';
 import { SESSION_CORE_TOOL_NAMES } from '@dorkos/shared/mcp-tool-groups';
 import { UI_COMMAND_REACH, UiCommandSchema } from '@dorkos/shared/schemas';
-import { DORKOS_AGENT_TOOLS } from '../../runtimes/claude-code/messaging/interactive-handlers.js';
-import { composeDorkOsCapabilityRegistry } from '../self-description/dorkos-registry.js';
+import {
+  DORKOS_AGENT_TOOLS,
+  IDENTITY_SCOPED_TOOLS,
+} from '../../runtimes/claude-code/messaging/interactive-handlers.js';
+import {
+  composeCapabilityRegistryForDocs,
+  composeDorkOsCapabilityRegistry,
+} from '../self-description/dorkos-registry.js';
 import {
   initCapabilityTierGate,
   resetCapabilityTierGate,
@@ -232,6 +238,35 @@ function payloadOf(result: CallToolResult): Record<string, unknown> {
 
 /** Every tool the table declares a tier for. */
 const declaredNames = Object.keys(MCP_TOOL_TIERS).sort();
+
+/**
+ * The tier of ANY agent-facing tool, hand-registered or registry-generated.
+ *
+ * `MCP_TOOL_TIERS` covers only the hand-registered surface, which was enough
+ * while the interactive auto-allow list held nothing else. The `rooms` domain put
+ * capability-generated names on that list (DOR-1229), and a lookup that could not
+ * see them would have reported them as naming no real tool — the pin below going
+ * red for the opposite of the reason it exists. So the resolver reads the real
+ * capability metadata, which is the same declaration `registry.invoke` gates on.
+ *
+ * The all-domains projection rather than {@link composeDorkOsCapabilityRegistry}:
+ * that one includes a domain only when its live service handle is present, so a
+ * tier lookup built from it would answer "no such tool" for every domain this
+ * file does not happen to wire — which is exactly the false red above, moved.
+ */
+const capabilityTiers = new Map(
+  composeCapabilityRegistryForDocs()
+    .capabilities.filter((cap) => cap.surfaces.mcp !== undefined)
+    .map((cap) => [cap.surfaces.mcp!.toolName, cap.tier] as const)
+);
+
+/** A tool's declared tier, or `undefined` when no surface declares one. */
+function tierOf(bareName: string): string | undefined {
+  return (
+    (MCP_TOOL_TIERS as Record<string, { tier: string } | undefined>)[bareName]?.tier ??
+    capabilityTiers.get(bareName)
+  );
+}
 
 /** The tools each server really registers by hand, resolved once. */
 const registeredByServer = {
@@ -390,15 +425,13 @@ describe('hand-registered MCP tools carry a permission tier', () => {
       // A renamed tool leaves a dead entry behind, which silently starts prompting
       // for something meant to be frictionless. Safe, but nobody would notice.
       expect(
-        bare.filter((name) => !(name in MCP_TOOL_TIERS)),
+        bare.filter((name) => tierOf(name) === undefined),
         'these auto-allow entries name no real tool, so they do nothing'
       ).toEqual([]);
 
       // The direction that actually costs something.
       expect(
-        bare.filter(
-          (name) => MCP_TOOL_TIERS[name as keyof typeof MCP_TOOL_TIERS]?.tier === 'destructive'
-        ),
+        bare.filter((name) => tierOf(name) === 'destructive'),
         'a destructive tool is auto-allowed with no prompt in interactive sessions'
       ).toEqual([]);
     });
@@ -425,13 +458,31 @@ describe('hand-registered MCP tools carry a permission tier', () => {
      * **every `act` tool named, one line each, saying why it may skip the prompt**.
      * A tool cannot join the no-prompt path as a side effect of a tier choice — a
      * human has to write the sentence.
+     *
+     * **`observe` is not automatically exempt either (DOR-1229).** The rule used
+     * to be "mutating tools need a sentence" on the unstated premise that every
+     * `observe` entry reads local machine state — true of `mesh_list`,
+     * `mesh_status`, `get_agent`, `get_ui_state`. The rooms reads broke it: they
+     * return OTHER PEOPLE'S MESSAGES, which is not machine state and is not
+     * harmless to hand over without asking. So the requirement is the union: every
+     * `act` entry, plus every entry whose auto-allow is only sound under an
+     * identity ({@link IDENTITY_SCOPED_TOOLS}), whatever its tier.
      */
-    it('makes every mutating auto-allow entry say out loud why it may skip the prompt', () => {
+    it('makes every mutating or identity-scoped auto-allow entry say out loud why it may skip the prompt', () => {
       /**
-       * Each `act` tool on the auto-allow list, and the argument for it. Adding a
-       * mutating tool to `DORKOS_AGENT_TOOLS` fails this until it is written up.
+       * Each auto-allowed tool that mutates or reads third-party content, and the
+       * argument for it. Adding one to `DORKOS_AGENT_TOOLS` fails this until it is
+       * written up.
        */
       const AUTO_ALLOW_ACT_REASONS: Record<string, string> = {
+        post_to_room:
+          "ONLY under a resolved agent identity (IDENTITY_SCOPED_TOOLS): with one, this is an agent speaking in a room it is a member of, which is what its room turn already does with no card at all — the turn's own answer is posted for it, so the tool is the same act through a different door and a card bounds nothing it does not already permit. Membership is resolved first, posting is channels and threads only, and what bounds it is mechanism rather than prompt — the cascade guard and the two-ceiling turn budget. WITHOUT an identity the caller resolves to the person who owns the install, so it would post as a human at cascade depth zero and trigger every agent in the channel; the gate raises the ordinary card there.",
+        react_to_room_entry:
+          'ONLY under a resolved agent identity: one emoji on one message in a room that agent belongs to. It writes no entry, takes no turn, sends no notice and does not move the room in the activity order, and `ReactionBudget` caps it at 20 per agent per room per rolling hour, recovered from the reaction rows so a restart cannot clear it. Without an identity it would react as the owner, and asks instead.',
+        read_room_history:
+          'ONLY under a resolved agent identity, and it is on this list DESPITE being `observe`, because what it returns is other people conversation rather than machine state. With an identity the bound is real: membership is resolved first, "not a member" is answered exactly as "no such room", and nothing below the agent `joinedSeq` is ever returned. Without one the caller is the install owner, who sees EVERY room on the machine including their own DMs with agents — so that case asks.',
+        search_room_history:
+          'ONLY under a resolved agent identity, same reasoning as `read_room_history` and the same membership bound — this is the verb that caused DOR-1229, where a room turn asked for it and nobody was there to answer. Without an identity it would search every room the owner can see, and asks instead.',
         relay_send:
           'agent-to-agent messaging, which is the feature. The server injects the sender identity rather than trusting the model, so a message cannot be forged as another agent. Who may message whom is authorized in relay/access-rules.json — but note that `AccessControl.checkAccess` DEFAULT-ALLOWS when no rule matches and the shipped default ships no rules, so out of the box that control authorizes everything. It bounds who a message claims to be from, not who may be reached.',
         mesh_discover:
@@ -447,14 +498,18 @@ describe('hand-registered MCP tools carry a permission tier', () => {
       };
 
       const bare = [...DORKOS_AGENT_TOOLS].map((name) => name.replace('mcp__dorkos__', ''));
-      const mutating = bare
-        .filter((name) => MCP_TOOL_TIERS[name as keyof typeof MCP_TOOL_TIERS]?.tier === 'act')
+      const identityScoped = new Set(
+        [...IDENTITY_SCOPED_TOOLS].map((name) => name.replace('mcp__dorkos__', ''))
+      );
+      const needsAReason = bare
+        .filter((name) => tierOf(name) === 'act' || identityScoped.has(name))
         .sort();
 
       expect(
-        mutating,
-        'an auto-allowed tool MUTATES and is not justified above. Nothing reaches the ' +
-          'no-prompt path by inheriting a tier: write the sentence, or take it off the list.'
+        needsAReason,
+        'an auto-allowed tool MUTATES or reads third-party content and is not justified ' +
+          'above. Nothing reaches the no-prompt path by inheriting a tier: write the ' +
+          'sentence, or take it off the list.'
       ).toEqual(Object.keys(AUTO_ALLOW_ACT_REASONS).sort());
     });
 
