@@ -313,8 +313,16 @@ describe('the room context a trigger derives', () => {
 
         expect(bounded).toHaveBeenCalled();
         expect(unbounded).not.toHaveBeenCalled();
-        // And the cap really is the argument, not a slice afterwards.
-        for (const call of bounded.mock.calls) expect(call[1].limit).toBe(31);
+        // And the cap really is the argument, not a slice afterwards. The read
+        // covers the ambient cap PLUS whatever this turn gathered, because a
+        // gathered message is not background and the cap must not drop it
+        // (DOR-1231) — so the bound is two configured ceilings, never the log's
+        // length. 40 messages land here, and no read reaches for them all.
+        const ceiling = 30 + 20 + 1;
+        for (const call of bounded.mock.calls) {
+          expect(call[1].limit).toBeGreaterThanOrEqual(31);
+          expect(call[1].limit).toBeLessThanOrEqual(ceiling);
+        }
       } finally {
         unbounded.mockRestore();
         bounded.mockRestore();

@@ -110,9 +110,16 @@ model. See ADR `260726-170127` and `research/20260727_buzz-conversational-behavi
   it. A future fallback room reuses all of this; nothing here elects a speaker.
 - **A turn answers a MOMENT, not a message** (RP8, `room-collect.ts`). Messages
   for one `(room, agent)` pair gather for `rooms.collectDebounceMs`, capped at
-  `rooms.collectMaxEntries`, and become ONE turn: the newest is what the agent
-  answers and the ones behind it ride its ambient window. One budget
-  reservation, one claim, one cursor advance over the whole batch. The window
+  `rooms.collectMaxEntries`, and become ONE turn: the newest reaches the model
+  as the turn's own content and the ones behind it ride `room_context.gathered`.
+  One budget reservation, one claim, one cursor advance over the whole batch.
+  **Gathered is not ambient, and the difference is the whole point.** They ride
+  their own nonced heading, numbered, under a note saying the one reply owes
+  every one of them an answer — because when they rode `pending` under "you have
+  not read these yet" a live room measured exactly what that heading invites: one
+  turn, three questions, an answer to the last (DOR-1231). Anything that moves
+  them back into the background, or that tells the model the only message it is
+  answering is the one outside the fence, restores the bug. The window
   **opens once and does not slide** — a resetting timer starves the answer for
   as long as the chatter lasts, which is the opposite of gathering it — and the
   cap closes it early rather than letting a busy room never be answered.

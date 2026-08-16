@@ -29,8 +29,8 @@
  *
  * 3. **A collection is keyed `(room, agent)` and NOT by thread**, so a burst can
  *    mix a thread reply with a channel post. The turn takes the scope of the
- *    message it answers — the newest one — and the rest ride whatever window
- *    that scope reads. In one direction that is free: a channel turn's window is
+ *    message it answers — the newest one — and the rest reach it as
+ *    `room_context.gathered`, read out of whatever window that scope reads. In one direction that is free: a channel turn's window is
  *    the whole room, thread replies included. In the other it is the loss
  *    DOR-1207 already bounds and DECLARES rather than hides — a thread turn
  *    reads its thread, and the top-level messages it did not show ride
@@ -48,9 +48,12 @@
  *    — the messages themselves are committed room entries, and they stay behind
  *    the agent's read cursor until a turn is actually shown them, so the ambient
  *    window (spec §8.3) delivers them whenever the next turn runs. That is why
- *    dropping the oldest entry when a parked collection overflows costs nothing
- *    but the `arrivedDuringPrevTurn` mark on that one line, and why a halt can
- *    drop every collection outright.
+ *    dropping the oldest entry when a parked collection overflows costs only its
+ *    MARKS — `arrivedDuringPrevTurn`, and the `gathered` heading that says the
+ *    turn owes it an answer — rather than the line itself, and why a halt can
+ *    drop every collection outright. The dropped line arrives as ambient
+ *    background instead of as a question, which is the honest cost of a cap
+ *    somebody set: it is still read, and it is no longer counted.
  *
  *    The pending TURN is process memory, and a restart loses it. Nothing here is
  *    persisted: a server that goes down holding a parked collection comes back

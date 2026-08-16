@@ -950,6 +950,11 @@ export class RoomTriggerDispatcher {
           .filter((held) => held.arrivedDuringTurn)
           .map((held) => held.entry.id)
       ),
+      // Everything gathered behind the trigger, whenever it arrived — the rest
+      // of what this one turn is being asked (DOR-1231). Bounded the same way:
+      // above the chosen index is refused and unread, so marking it would be a
+      // claim about a line nobody will read.
+      gathered: new Set(collection.entries.slice(0, chosen.index).map((held) => held.entry.id)),
     };
 
     // The cascade guard allowed these on the merits, one message at a time. The
@@ -1245,6 +1250,12 @@ export class RoomTriggerDispatcher {
         // repeating themselves, when what actually happened is that they carried
         // on talking while the agent was busy.
         arrivedDuringPrevTurn: target.arrivedDuringPrevTurn,
+        // And which of them this turn OWES AN ANSWER TO. The two sets answer
+        // different questions and only this one decides what the reply has to
+        // cover: without it a gathered burst rendered as unread background, and
+        // an agent handed three questions answered the newest and dropped the
+        // rest (DOR-1231).
+        gathered: target.gathered,
       });
       const result = await this.deps.runner.run({
         room,

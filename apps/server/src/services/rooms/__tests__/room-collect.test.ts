@@ -28,6 +28,7 @@ import type { RoomEntry, RoomWithRoster } from '@dorkos/shared/room-schemas';
 import type { AuthorRegistry } from '../author-registry.js';
 import type { RoomService } from '../room-service.js';
 import type { RoomTurnRequest, RoomTurnResult } from '../room-trigger.js';
+import { formatRoomContext } from '../../runtimes/shared/room-context-block.js';
 import {
   agentLookupFor,
   createRoomHarness,
@@ -189,17 +190,73 @@ describe('a room gathers a burst into one turn', () => {
       await service.triggersIdle();
 
       expect(runner.turns).toHaveLength(1);
-      // The newest message is what the turn answers; the two before it ride its
-      // ambient window, so all three are in front of the model exactly once.
+      // The newest message is what the turn answers as its own content; the two
+      // before it ride the turn as `gathered` — the rest of what this one reply
+      // owes an answer to, NOT the ambient background it used to be filed under
+      // (DOR-1231).
       expect(runner.turns[0].prompt).toBe('@ana can you look?');
-      expect(runner.turns[0].roomContext.pending.map((entry) => entry.text)).toEqual([
+      expect(runner.turns[0].roomContext.gathered?.map((entry) => entry.text)).toEqual([
         '@ana the build is red',
         '@ana it is the migration step',
       ]);
+      // And they are in exactly one place: a message under two headings is a
+      // message the model can answer twice or discount as background.
+      expect(runner.turns[0].roomContext.pending).toEqual([]);
       // One answer, not three.
       expect(log().filter((entry) => entry.kind === 'post' && entry.authorId === ana)).toHaveLength(
         1
       );
+    });
+
+    it('puts all three questions in the turn input, as the thing being answered', async () => {
+      // **The defect this test exists for (DOR-1231).** Measured on a live room
+      // on 2026-08-15: three questions inside one gathering window produced one
+      // turn — the collector working — and an answer to the third only
+      // ("Wednesday."), with the other two silently dropped. Both were in the
+      // turn input the whole time, under "you have not read these yet", which is
+      // a heading that says background.
+      //
+      // Asserted on the RENDERED input, not on the data alone, because the data
+      // was never the problem: this pins the whole chain the model sees — the
+      // collector gathers, the dispatcher marks, the context partitions, and the
+      // block says out loud that every one of them is owed an answer.
+      open(scriptedRunner(), { debounceMs: 1_000, maxEntries: 20 });
+      const typingPause = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 40));
+
+      service.post(room.id, { authorId: human, text: '@ana what is 2+2?' });
+      await typingPause();
+      service.post(room.id, { authorId: human, text: '@ana name a primary colour' });
+      await typingPause();
+      service.post(room.id, { authorId: human, text: '@ana what day comes after Tuesday?' });
+      await service.triggersIdle();
+
+      expect(runner.turns).toHaveLength(1);
+      const turn = runner.turns[0];
+      const input = formatRoomContext(turn.roomContext, { nonce: 'aaaa1111' });
+
+      // Every one of the three reaches the model exactly once: two quoted and
+      // numbered under the gathered heading, the newest as the turn's own
+      // content.
+      expect(turn.prompt).toBe('@ana what day comes after Tuesday?');
+      const mark = input.indexOf('--- aaaa1111 SENT TO YOU IN THE SAME MOMENT ---');
+      expect(mark).toBeGreaterThan(-1);
+      expect(input.indexOf('(1 of 2) ')).toBeGreaterThan(mark);
+      expect(input.indexOf('@ana what is 2+2?')).toBeGreaterThan(mark);
+      expect(input.indexOf('(2 of 2) ')).toBeGreaterThan(mark);
+      expect(input.indexOf('@ana name a primary colour')).toBeGreaterThan(mark);
+      expect(input).not.toContain('@ana what day comes after Tuesday?');
+
+      // And the input SAYS all three are owed an answer, rather than leaving a
+      // model to infer it from two lines it was told are context.
+      expect(input).toContain(
+        '2 more messages arrived here in the same moment as the one you are answering'
+      );
+      expect(input).toContain('this turn is your ONE reply to all of them');
+      expect(input).not.toContain('The message you are answering is outside this block.');
+      // Each one is attributed and clock-stamped, so a burst from two people is
+      // not one voice.
+      expect(input).toMatch(/\(1 of 2\) \[\d\d:\d\d\] You \(person/);
+      expect(input).toMatch(/\(2 of 2\) \[\d\d:\d\d\] You \(person/);
     });
 
     it('starts a second turn for a post that lands after the window closed', async () => {
@@ -230,7 +287,7 @@ describe('a room gathers a burst into one turn', () => {
       await settleUntil(() => runner.turns.length === 1, 'the cap to close the first window');
 
       expect(runner.turns[0].prompt).toBe('@ana three');
-      expect(runner.turns[0].roomContext.pending.map((entry) => entry.text)).toEqual([
+      expect(runner.turns[0].roomContext.gathered?.map((entry) => entry.text)).toEqual([
         '@ana one',
         '@ana two',
       ]);
@@ -256,7 +313,10 @@ describe('a room gathers a burst into one turn', () => {
       await settleUntil(() => runner.turns.length === 2, 'one turn per message');
 
       expect(runner.turns.map((turn) => turn.prompt)).toEqual(['@ana one', '@ana two']);
-      // Each answer covers its own message and gathers nothing behind it.
+      // Each answer covers its own message and gathers nothing behind it — so
+      // the field is ABSENT rather than empty, which is what tells a turn that
+      // answers one message from one that gathered a burst of one.
+      expect(runner.turns.every((turn) => turn.roomContext.gathered === undefined)).toBe(true);
       expect(runner.turns.every((turn) => turn.roomContext.pending.length === 0)).toBe(true);
     });
 
@@ -364,7 +424,7 @@ describe('a room gathers a burst into one turn', () => {
       const ambient = runner.turns.at(-1);
       expect(runner.turns).toHaveLength(2);
       expect(ambient?.prompt).toBe('what do you think?');
-      expect(ambient?.roomContext.pending.map((entry) => entry.text)).toEqual([
+      expect(ambient?.roomContext.gathered?.map((entry) => entry.text)).toEqual([
         'the logs are in the ticket',
       ]);
       expect(ambient?.roomContext.addressing.responseMode).toBe('engaged');
@@ -397,7 +457,7 @@ describe('a room gathers a burst into one turn', () => {
       const threadTurn = runner.turns.at(-1);
       expect(threadTurn?.prompt).toBe('@ana and step four');
       expect(threadTurn?.roomContext.thread?.rootEntryId).toBe(root.id);
-      expect(threadTurn?.roomContext.pending.map((entry) => entry.text)).toEqual([
+      expect(threadTurn?.roomContext.gathered?.map((entry) => entry.text)).toEqual([
         '@ana step two looks wrong',
       ]);
     });
@@ -547,7 +607,11 @@ describe('a room gathers a burst into one turn', () => {
 
       const steered = runner.turns[1];
       expect(steered.prompt).toBe('@ana what do you think?');
-      expect(steered.roomContext.pending).toEqual([
+      // The mark rides the GATHERED message, which is where it has to be: a
+      // message this turn owes an answer to and that landed while the agent was
+      // working is both things at once, and the two are separate fields
+      // precisely so neither has to stand in for the other.
+      expect(steered.roomContext.gathered).toEqual([
         expect.objectContaining({
           text: '@ana the logs are in the ticket',
           arrivedDuringPrevTurn: true,
@@ -566,7 +630,10 @@ describe('a room gathers a burst into one turn', () => {
       service.post(room.id, { authorId: human, text: '@ana can you look?' });
       await service.triggersIdle();
 
-      expect(runner.turns[0].roomContext.pending[0].arrivedDuringPrevTurn).toBeUndefined();
+      expect(runner.turns[0].roomContext.gathered?.[0]).toEqual(
+        expect.objectContaining({ text: '@ana the build is red' })
+      );
+      expect(runner.turns[0].roomContext.gathered?.[0].arrivedDuringPrevTurn).toBeUndefined();
     });
 
     it('never shows an agent a colleague partial text, only that it is working', async () => {
