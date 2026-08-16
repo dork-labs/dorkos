@@ -42,7 +42,6 @@ import {
   resolveSessionForCwd,
   useStartNewSession,
 } from '@/layers/entities/session';
-import { useProfileStore } from '@/layers/features/profile';
 import type { SidebarTarget, SuggestionId } from '../model/build-sidebar-model';
 import { useCreateFlowStore, type GroupCreationState } from '../model/create-flow-store';
 import { NOW_OVERFLOW_HREF } from '../model/rules/cap-now-items';
@@ -75,9 +74,15 @@ export interface SidebarChromeValue {
   openTarget: (target: SidebarTarget) => void;
   /** Start a session, optionally scoped to one agent's directory. */
   newSession: (dir?: string) => void;
-  /** Open an agent's hub in the right panel. */
-  openHub: (agentPath: string) => void;
-  /** Open an agent's identity drawer, or `undefined` when the mesh cannot name it. */
+  /**
+   * View an agent's profile, or `undefined` when the mesh cannot name it.
+   *
+   * One opener, not two. The sidebar used to offer a second door beside this one
+   * that opened the right panel directly; the profile has two homes now and the
+   * address decides which (spec `profile-unification` §1.6), so a sidebar that
+   * picked the home itself could send the same agent to a different place than
+   * every other face in the cockpit.
+   */
   viewProfileFor: (agentPath: string) => (() => void) | undefined;
   /**
    * Begin the inline group-create flow, optionally seeded with a member.
@@ -348,9 +353,6 @@ export function SidebarChrome({ activeTarget, children }: SidebarChromeProps) {
       activeTarget,
       openTarget,
       newSession: (dir?: string) => startNewSession(dir),
-      openHub: (agentPath: string) => {
-        useProfileStore.getState().openProfileDocked(agentPath);
-      },
       // `undefined` — never a no-op handler — for an agent the mesh cannot name,
       // so the face renders as plain art instead of a control that opens nothing.
       viewProfileFor: (agentPath: string) => {

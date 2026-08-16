@@ -56,10 +56,8 @@ interface AgentListItemProps {
    */
   isMuted?: boolean;
   onSelect: () => void;
-  /** Open agent profile in the right panel hub. */
-  onOpenProfile: () => void;
   /**
-   * Open this agent's identity profile — the drawer, from its face.
+   * View this agent's profile — what its face opens, and the menu item beside it.
    *
    * Absent when the mesh cannot name this agent to the roster (an id the drawer
    * would find nothing for), and the face is then plain, unclickable art rather
@@ -101,7 +99,6 @@ export function AgentListItem({
   isActive,
   isMuted = false,
   onSelect,
-  onOpenProfile,
   onViewProfile,
   onRequestNewGroup,
   onSessionClick,
@@ -158,14 +155,13 @@ export function AgentListItem({
   // three renderings at once, rather than once per Radix family as it used to
   // be.
   //
-  // The switcher and the profile drawer are in here because a thumb has no
+  // The switcher and the profile are in here because a thumb has no
   // other way to them: both are satellites of the row on desktop — the "N live"
   // chip and the face — and both are targets a phone cannot make big enough
   // without eating the row's own words. The menu is the one surface that grows
   // for free.
   const menuNodes = useAgentRowMenuNodes({
     path,
-    onOpenProfile,
     onOpenSessions: openSwitcher,
     onViewProfile: onViewProfile ?? null,
     onNewSession,

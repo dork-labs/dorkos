@@ -12,14 +12,13 @@ function model(overrides: Partial<RoomRowMenuModel> = {}): RoomRowMenuModel {
     isMuted: false,
     currentGroupId: null,
     groups: [],
-    soleAgentPath: null,
     onMarkRead: vi.fn(),
     onToggleMute: vi.fn(),
     onMoveToGroup: vi.fn(),
     onNewGroup: vi.fn(),
     onAddAgents: vi.fn(),
     onOpenMembers: vi.fn(),
-    onOpenAgentProfile: vi.fn(),
+    onViewAgentProfile: null,
     onRename: vi.fn(),
     onEditTopic: vi.fn(),
     onArchive: vi.fn(),
@@ -79,8 +78,8 @@ describe('buildRoomRowMenuNodes', () => {
     ]);
   });
 
-  it('offers Agent profile on a one-to-one, where exactly one agent is named', () => {
-    expect(ids({ kind: 'dm', soleAgentPath: '/repo/ana' })).toEqual([
+  it('offers View profile on a one-to-one, where exactly one agent is named', () => {
+    expect(ids({ kind: 'dm', onViewAgentProfile: vi.fn() })).toEqual([
       'mute',
       'move-to-group',
       'sep-organize',
@@ -94,8 +93,8 @@ describe('buildRoomRowMenuNodes', () => {
     ]);
   });
 
-  it('withholds Agent profile from a group conversation, which names no single agent', () => {
-    expect(ids({ kind: 'dm', soleAgentPath: null })).not.toContain('agent-profile');
+  it('withholds View profile from a group conversation, which names no single agent', () => {
+    expect(ids({ kind: 'dm', onViewAgentProfile: null })).not.toContain('agent-profile');
   });
 
   it('names the room in the archive label so the item reads out of context', () => {
@@ -106,7 +105,7 @@ describe('buildRoomRowMenuNodes', () => {
   });
 
   it('marks exactly the items that need more input, and only those', () => {
-    const opening = buildRoomRowMenuNodes(model({ hasUnread: true, soleAgentPath: '/repo/ana' }))
+    const opening = buildRoomRowMenuNodes(model({ hasUnread: true, onViewAgentProfile: vi.fn() }))
       .filter((node) => node.kind === 'action' && node.opensInput)
       .map((node) => node.id);
     // Archive is absent on purpose: a confirmation alert asks whether you meant
@@ -131,21 +130,19 @@ describe('buildRoomRowMenuNodes', () => {
   });
 
   it('marks only Archive destructive', () => {
-    const destructive = buildRoomRowMenuNodes(model({ hasUnread: true, soleAgentPath: '/repo/x' }))
+    const destructive = buildRoomRowMenuNodes(model({ hasUnread: true, onViewAgentProfile: vi.fn() }))
       .filter((node) => node.kind === 'action' && node.destructive)
       .map((node) => node.id);
     expect(destructive).toEqual(['archive']);
   });
 
-  it('hands Agent profile the agent path rather than making the caller find it', () => {
-    const onOpenAgentProfile = vi.fn();
-    const nodes = buildRoomRowMenuNodes(
-      model({ kind: 'dm', soleAgentPath: '/repo/ana', onOpenAgentProfile })
-    );
+  it('runs the opener the caller resolved, rather than resolving an agent itself', () => {
+    const onViewAgentProfile = vi.fn();
+    const nodes = buildRoomRowMenuNodes(model({ kind: 'dm', onViewAgentProfile }));
     const profile = nodes.find((node) => node.id === 'agent-profile');
     if (profile?.kind !== 'action') throw new Error('expected an action node');
     profile.run();
-    expect(onOpenAgentProfile).toHaveBeenCalledWith('/repo/ana');
+    expect(onViewAgentProfile).toHaveBeenCalledOnce();
   });
 
   // -------------------------------------------------------------------------

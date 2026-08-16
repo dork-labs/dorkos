@@ -58,8 +58,12 @@ interface RoomRowProps {
   isActive: boolean;
   /** Open the room. */
   onSelect: () => void;
-  /** Open an agent's profile in the right-panel hub. */
-  onOpenAgentProfile: (agentPath: string) => void;
+  /**
+   * View an agent's profile, or `undefined` when the fleet cannot name it — the
+   * sidebar's one opener, so a room row and an agent row send you to the same
+   * place.
+   */
+  viewAgentProfile: (agentPath: string) => (() => void) | undefined;
   /** Open the inline group-create flow, moving this room into the new group on commit. */
   onRequestNewGroup: (ref: SidebarItemRef) => void;
   /**
@@ -95,7 +99,7 @@ export function RoomRow({
   visual,
   isActive,
   onSelect,
-  onOpenAgentProfile,
+  viewAgentProfile,
   onRequestNewGroup,
   sortable = DISABLED_SORTABLE_BINDINGS,
 }: RoomRowProps) {
@@ -250,7 +254,6 @@ export function RoomRow({
   const menuModel = {
     kind: room.kind,
     hasUnread: unread,
-    soleAgentPath,
     isMuted,
     currentGroupId,
     groups: moveTargetGroups,
@@ -262,7 +265,7 @@ export function RoomRow({
     onNewGroup: () => onRequestNewGroup(roomRef),
     onAddAgents: () => setDetailsFocus('add'),
     onOpenMembers: () => setDetailsFocus('members'),
-    onOpenAgentProfile,
+    onViewAgentProfile: (soleAgentPath === null ? undefined : viewAgentProfile(soleAgentPath)) ?? null,
     onRename: startRename,
     onEditTopic: () => setDetailsFocus('topic'),
     onArchive: () => setArchiveOpen(true),
