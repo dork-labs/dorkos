@@ -495,10 +495,14 @@ export type MessageDisposition = z.infer<typeof MessageDispositionSchema>;
  * "queued instead of steered — this runtime cannot steer mid-turn" rather than
  * quietly doing something other than what was asked.
  *
- * - `unsupported` — the session's runtime does not declare the capability.
+ * - `unsupported` — the session's runtime does not declare the capability, or a
+ *   stage folded into the next dispatch instead of reaching the transcript
+ *   natively (to the person a stage landed either way; this says how).
  * - `session-idle` — no turn was running, so the message ran immediately. The
  *   one downgrade worth staying quiet about: "it ran now" is not a loss.
- * - `no-open-turn` — the turn ended between the request and the delivery.
+ * - `no-open-turn` — there is no turn this caller may join: it ended between the
+ *   request and the delivery, its input stream had closed, or a DIFFERENT client
+ *   owns the live turn. The message waits in the queue instead.
  * - `pending-interaction` — the turn is waiting on a person (a permission ask,
  *   a question), and delivering into that would answer something nobody was
  *   asked.

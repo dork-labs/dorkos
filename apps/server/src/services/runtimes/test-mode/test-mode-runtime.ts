@@ -1,7 +1,9 @@
 import type {
   AgentRuntime,
   DependencyCheck,
+  DeliverIntoTurnOpts,
   RuntimeCapabilities,
+  RuntimeDeliveryResult,
   SessionOpts,
   MessageOpts,
   CommandIntentOpts,
@@ -443,6 +445,40 @@ export class TestModeRuntime implements AgentRuntime {
 
   async stopTask(_sessionId: string, _taskId: string): Promise<boolean> {
     return false;
+  }
+
+  /**
+   * @inheritdoc
+   *
+   * The deterministic double for the two non-turn-opening dispositions
+   * (spec `persistent-session-runtime` §2.3, task 4.4). Test-mode declares both
+   * capabilities, so it answers with a TRUTHFUL receipt and opens no turn of its
+   * own — the whole point of the double is to exercise the contract, not to
+   * pretend a scripted generator changed course.
+   *
+   * - `'steer'` reaches a turn that is ALREADY running, so it delivers only while
+   *   one is open ({@link interactionGate.isOpen}); with none open it reports
+   *   `no-open-turn`, exactly as a real steer arriving on an idle session does.
+   *   The steered content SURFACES via the dispatcher's `turn_input` carrier, not
+   *   here — a runtime never mints that event (it rides the open turn's stream).
+   * - `'stage'` needs no open turn, so it always accepts; the dispatcher emits the
+   *   `context_staged` receipt onto the durable stream.
+   *
+   * Never throws for an ordinary refusal, per the `deliverIntoTurn` contract.
+   *
+   * @param sessionId - Target session.
+   * @param _content - The person's text; test-mode records nothing of its own.
+   * @param opts - The delivery mode and its correlation id.
+   */
+  async deliverIntoTurn(
+    sessionId: string,
+    _content: string,
+    opts: DeliverIntoTurnOpts
+  ): Promise<RuntimeDeliveryResult> {
+    if (opts.mode === 'steer' && !interactionGate.isOpen(sessionId)) {
+      return { delivered: false, reason: 'no-open-turn' };
+    }
+    return { delivered: true };
   }
 
   /**

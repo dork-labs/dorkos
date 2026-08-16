@@ -45,11 +45,12 @@ export const CLAUDE_CODE_CAPABILITIES: RuntimeCapabilities = {
   // warm-ceiling reclaim, or a restart. A measurement run that flips the flag
   // off must reap or restart before it can claim it is measuring the other path.
   supportsPersistentSession: true,
-  // The SDK can do both (`streamInput`, `shouldQuery`) but DorkOS does not yet —
-  // a capability is what this adapter DOES, not what its SDK could. P4 flips
-  // these two.
-  supportsSteer: false,
-  supportsContextStaging: false,
+  // Both land in P4: `deliverIntoTurn(mode: 'steer')` rides the persistent pump's
+  // held `streamInput` (task 4.1), and `deliverIntoTurn(mode: 'stage')` reaches
+  // the transcript with `shouldQuery: false` (task 4.2). A capability is what this
+  // adapter DOES, and it now does both.
+  supportsSteer: true,
+  supportsContextStaging: true,
   // Native git is suppressed via `excludeDynamicSections` (ADR-0273 A2), so the
   // server injects all context kinds from the bag — none are runtime-native.
   nativeContext: [],

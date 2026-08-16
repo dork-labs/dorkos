@@ -13,12 +13,12 @@
  * ## What it decides
  *
  * 1. **The disposition.** A sender asks for `queue`, `steer` or `stage`; the
- *    dispatcher resolves that against the resolved runtime's capabilities and
- *    answers with a {@link MessageDeliveryOutcome} saying what actually
- *    happened. Every runtime declares all three capability flags `false` today
- *    (task 2.1), so `steer` and `stage` come back as `applied: 'queue'` with
- *    `degradedBecause: 'unsupported'`. The ladder's shape is here; its native
- *    rungs land in P4.
+ *    dispatcher runs the degradation ladder ({@link deliverByDisposition}) and
+ *    answers with a {@link MessageDeliveryOutcome} saying what actually happened.
+ *    A `steer` reaches a runtime that declares it and joins the live turn; a
+ *    `stage` reaches the transcript or folds into the next dispatch; anything a
+ *    runtime cannot do degrades to the queue floor and says why. `queue` is the
+ *    floor and always available — the server owns the queue.
  * 2. **Whether it runs now.** A message arriving while the session has a turn
  *    open waits in the durable queue ({@link MessageQueueStore}) instead of
  *    starting a second stream beside it — whichever window sent it. A busy
@@ -91,6 +91,7 @@ import type {
   RuntimeDeliveryResult,
 } from '@dorkos/shared/agent-runtime';
 import type {
+  DispositionDowngradeReason,
   MessageDeliveryOutcome,
   MessageDisposition,
   QueuedMessage,
@@ -232,36 +233,153 @@ export async function withDispatchMutex<T>(
 }
 
 /**
- * Resolve what a sender asked for against what the runtime can actually do.
- *
- * The ladder has exactly one rung today. `queue` is the floor and is always
- * available, because the server owns the queue — that is why there is no
- * `supportsQueue` flag. `steer` and `stage` need a runtime that declares them,
- * and no runtime does (task 2.1 lands all three flags `false` everywhere and the
- * conformance suite holds them there), so both degrade to the floor and say so.
- *
- * P4 adds the native rungs ABOVE this fallback. Until they exist, a runtime that
- * declared the capability early would be promising something the server has no
- * mechanism for, so the honest answer is still "we queued it" — logged, because
- * a declaration arriving ahead of its mechanism is a bug in the adapter.
- *
- * @param requested - What the sender asked for; absent means `queue`
- * @param capabilities - The resolved runtime's declarations
+ * One rung of the degradation ladder: either the disposition LANDED natively (a
+ * steer joined the live turn, a stage reached the transcript or folded into the
+ * next dispatch) and answers its caller here, or it must DEGRADE to the queue,
+ * carrying the reason it could not be delivered as asked.
  */
-function resolveDisposition(
-  requested: MessageDisposition,
-  capabilities: RuntimeCapabilities
-): Pick<MessageDeliveryOutcome, 'applied' | 'degradedBecause'> {
-  if (requested === 'queue') return { applied: 'queue' };
-  const declared =
-    requested === 'steer' ? capabilities.supportsSteer : capabilities.supportsContextStaging;
-  if (declared) {
-    logger.error('[MessageDispatcher] runtime declares a disposition the server cannot deliver', {
-      runtime: capabilities.type,
-      requested,
-    });
+type LadderRung = { landed: MessageDispatchResult } | { degrade: DispositionDowngradeReason };
+
+/**
+ * The degradation ladder (spec `persistent-session-runtime` §P4, task 4.4).
+ *
+ * ```
+ * steer -> supportsSteer AND no pending interaction AND a turn is open
+ *            -> deliverIntoTurn({ mode: 'steer' })   (joins the live turn)
+ *          else -> queue, and say why
+ * stage -> supportsContextStaging -> deliverIntoTurn({ mode: 'stage' })
+ *          else -> fold into the next dispatch as additional context
+ * ```
+ *
+ * `queue` is the floor and never reaches here — the server owns the queue, so it
+ * is always available. This resolves the two dispositions that need a runtime to
+ * declare them, reusing the primitives {@link deliverSteer} and
+ * {@link deliverStage} rather than re-deciding what they already decide: the flag
+ * is the ROUTING authority (which rung to try), the receipt is the DELIVERY
+ * authority (what actually happened).
+ *
+ * The one downgrade the person is not told about is `session-idle`: a steer on an
+ * idle session simply runs now, which lost nothing. Every other degrade sets
+ * `degradedBecause` so the sender's window can say what happened instead of it.
+ *
+ * @param opts - The dispatch request (session, client, content, projector, runtime)
+ * @param requested - The disposition asked for; never `queue` (the caller gates that)
+ * @param caps - The resolved runtime's declared capabilities
+ */
+async function deliverByDisposition(
+  opts: DispatchMessageOpts,
+  requested: Exclude<MessageDisposition, 'queue'>,
+  caps: RuntimeCapabilities
+): Promise<LadderRung> {
+  const { sessionId, clientId, content, projector, runtime } = opts;
+  const messageId = crypto.randomUUID();
+  const canonicalId = runtime.getInternalSessionId(sessionId) ?? sessionId;
+  const queueKey = queueKeyOf(sessionId);
+  const landed = (outcome: MessageDeliveryOutcome): LadderRung => ({
+    landed: { accepted: true, queued: false, canonicalId, outcome, queuePosition: 0 },
+  });
+
+  if (requested === 'steer') {
+    // The flag is the routing authority, and it is checked FIRST so a runtime
+    // that cannot steer reads `unsupported` rather than whatever the session
+    // happens to be doing (AC2). A steer it cannot take rides the queue instead.
+    if (!caps.supportsSteer) return { degrade: 'unsupported' };
+    // Firing a steer into an open approval or question is the failure the pump's
+    // own gate exists for — the agent is parked on a person, and words arriving
+    // now are read as their reply. So a steer never reaches a turn parked on an
+    // interaction; it queues and waits for the resolution, exactly as a queued
+    // message does (AC4). {@link deliverSteer} does not probe this, so the router
+    // must.
+    if (projector.hasPendingInteractions()) return { degrade: 'pending-interaction' };
+    const result = await deliverSteer({ sessionId, clientId, content, messageId, runtime });
+    if (result.delivered) return landed({ messageId, requested, applied: 'steer' });
+    // Declared the capability but could not deliver it — a declaration arriving
+    // ahead of its mechanism is an adapter bug, logged as one, and degraded
+    // honestly rather than lost.
+    if (result.reason === 'unsupported') {
+      logger.error('[MessageDispatcher] runtime declares steer but did not deliver it', {
+        runtime: caps.type,
+      });
+      return { degrade: 'unsupported' };
+    }
+    // No turn was open to join, so the message just runs now — the one downgrade
+    // the UI stays quiet about, because running immediately lost nothing (AC3).
+    if (result.authorized && result.reason === 'no-open-turn') return { degrade: 'session-idle' };
+    // A DIFFERENT client owns the live turn (unauthorized), or its input stream
+    // had already closed: there is no turn THIS caller may join, so it waits.
+    return { degrade: 'no-open-turn' };
   }
-  return { applied: 'queue', degradedBecause: 'unsupported' };
+
+  // stage. The flag routes: a runtime that declares staging is asked to append to
+  // its transcript natively; one that does not folds the words into the next
+  // dispatch (ADR-0273) WITHOUT a native attempt that would contradict the flag.
+  if (!caps.supportsContextStaging) {
+    return landed(foldStage(sessionId, content, messageId, queueKey));
+  }
+  // {@link deliverStage} is the native primitive, reused whole. It should deliver
+  // natively here (flag true, method present); a fold receipt would mean the
+  // adapter declared ahead of its mechanism, so it is logged and recorded as one.
+  const result = await deliverStage({ sessionId, clientId, content, messageId, runtime });
+  if (result.delivered) {
+    if (result.viaFallback === true) {
+      // deliverStage ALREADY folded — it held the text and emitted the
+      // `context_staged` receipt before returning `viaFallback`. Do NOT fold
+      // again (that would hold the words twice and send two receipts). Only log
+      // the declared-ahead-of-mechanism adapter bug and announce the downgrade
+      // the fold produced.
+      logger.error('[MessageDispatcher] runtime declares context staging but had to fold', {
+        runtime: caps.type,
+      });
+      const outcome: MessageDeliveryOutcome = {
+        messageId,
+        requested,
+        applied: 'stage',
+        degradedBecause: 'unsupported',
+      };
+      emitQueueUpdate(queueKey, outcome);
+      return landed(outcome);
+    }
+    return landed({ messageId, requested, applied: 'stage' });
+  }
+  // A DIFFERENT client owns the live turn, so the runtime refused the write. The
+  // message waits in line rather than being lost — a rare cross-client race.
+  return { degrade: 'no-open-turn' };
+}
+
+/**
+ * Fold a staged message into the next dispatch and build its receipt — the
+ * fallback for a runtime that cannot append to its own transcript (spec
+ * `persistent-session-runtime` §2.5, ADR-0273). The words are held
+ * ({@link holdStagedContext}) to ride the next turn as a `staged_context` entry,
+ * the `context_staged` receipt is emitted so a successful fold is not
+ * indistinguishable from a dropped message, and the outcome is announced on the
+ * durable stream because no queue row backs a fold.
+ *
+ * The same two steps {@link deliverStage} takes on its own fallback, reached here
+ * by the routing flag instead of by a native attempt. To the person a stage
+ * landed either way; `degradedBecause: 'unsupported'` on the receipt is only how.
+ *
+ * @param sessionId - Either id a caller might hold (request uuid or canonical)
+ * @param content - The person's staged text, pristine
+ * @param messageId - The server-minted correlation id for the staged message
+ * @param queueKey - The session's queue key, for the durable-stream announcement
+ */
+function foldStage(
+  sessionId: string,
+  content: string,
+  messageId: string,
+  queueKey: string
+): MessageDeliveryOutcome {
+  holdStagedContext(sessionId, content, messageId);
+  emitContextStaged(sessionId, content, messageId);
+  const outcome: MessageDeliveryOutcome = {
+    messageId,
+    requested: 'stage',
+    applied: 'stage',
+    degradedBecause: 'unsupported',
+  };
+  emitQueueUpdate(queueKey, outcome);
+  return outcome;
 }
 
 /**
@@ -468,7 +586,8 @@ export interface MessageDispatchResult extends TriggerTurnResult {
   /**
    * Where the message sat in its session's queue at acceptance, 1-based.
    * `1` means it was the head — nothing was ahead of it. `0` means it was never
-   * queued at all, which only a refusal is.
+   * queued at all: either a refusal, or a steer/stage that landed natively
+   * through the degradation ladder without becoming a queue row.
    */
   queuePosition: number;
   /**
@@ -724,11 +843,22 @@ function parkDispatch(
 export async function dispatchMessage(opts: DispatchMessageOpts): Promise<MessageDispatchResult> {
   const { sessionId, clientId, content, projector, runtime } = opts;
   const requested = opts.disposition ?? 'queue';
-  const resolved = resolveDisposition(requested, runtime.getCapabilities());
+  const caps = runtime.getCapabilities();
   const sessionKey = primaryOf(runtime.getInternalSessionId(sessionId) ?? sessionId);
   const queueKey = queueKeyOf(sessionId);
   const budgetMs = opts.queueWaitMs ?? SESSIONS.LOCK_TTL_MS;
   const whenBusy = opts.whenBusy ?? 'queue';
+
+  // The degradation ladder (task 4.4). A steer or stage that can land natively
+  // does so here and answers its caller without ever becoming a queue row;
+  // everything else — and every downgrade — falls through to the queue below,
+  // carrying the reason it could not be delivered as asked.
+  let degradedBecause: DispositionDowngradeReason | undefined;
+  if (requested !== 'queue') {
+    const rung = await deliverByDisposition(opts, requested, caps);
+    if ('landed' in rung) return rung.landed;
+    degradedBecause = rung.degrade;
+  }
 
   // Asked and answered before anything is written: a caller that refuses rather
   // than waits must not leave a row behind for a message it is about to disown.
@@ -736,7 +866,12 @@ export async function dispatchMessage(opts: DispatchMessageOpts): Promise<Messag
     return {
       accepted: false,
       queued: false,
-      outcome: { messageId: crypto.randomUUID(), requested, ...resolved },
+      outcome: {
+        messageId: crypto.randomUUID(),
+        requested,
+        applied: 'queue',
+        ...(degradedBecause ? { degradedBecause } : {}),
+      },
       queuePosition: 0,
     };
   }
@@ -764,7 +899,12 @@ export async function dispatchMessage(opts: DispatchMessageOpts): Promise<Messag
         ?.list(queueKey)
         .findIndex((row) => row.id === messageId) ?? 0) + 1
     : 1;
-  const outcome: MessageDeliveryOutcome = { messageId, requested, ...resolved };
+  const outcome: MessageDeliveryOutcome = {
+    messageId,
+    requested,
+    applied: 'queue',
+    ...(degradedBecause ? { degradedBecause } : {}),
+  };
   // The acceptance is a queue change like any other, and it carries the outcome:
   // this is what lets the sender's window say "queued, because Codex cannot take
   // messages mid-turn" instead of silently doing something else.
