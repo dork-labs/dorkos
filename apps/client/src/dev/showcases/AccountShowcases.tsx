@@ -110,7 +110,9 @@ export function ProfileTabShowcases() {
 
       <ShowcaseLabel>No photo, no handle, no login</ShowcaseLabel>
       <ShowcaseDemo>
-        <ProfilePanelDemo member={{ ...SELF, handle: null, person: { role: null } }} />
+        <ProfilePanelDemo
+          member={{ ...SELF, handle: null, person: { role: null, lastSeenAt: null } }}
+        />
       </ShowcaseDemo>
 
       <ShowcaseLabel>What the handle field says when a save is refused</ShowcaseLabel>

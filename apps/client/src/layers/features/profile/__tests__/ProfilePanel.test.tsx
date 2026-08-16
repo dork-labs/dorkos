@@ -196,7 +196,7 @@ describe('ProfilePanel — name and email', () => {
   });
 
   it('says where to turn login on when this machine has no account', () => {
-    const noAccount: TeamMember = { ...SELF, person: { role: null } };
+    const noAccount: TeamMember = { ...SELF, person: { role: null, lastSeenAt: null } };
     renderPanel(noAccount);
     expect(screen.getByLabelText('Email')).toHaveValue('');
     expect(screen.getByText(/no login on this machine/i)).toBeInTheDocument();

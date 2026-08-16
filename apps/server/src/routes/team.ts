@@ -19,11 +19,27 @@ import { Router } from 'express';
 import { logError, logger } from '../lib/logger.js';
 import { sendError } from '../lib/route-utils.js';
 import type { AuthorRegistry } from '../services/rooms/author-registry.js';
-import { aggregateTeamRoster, type TeamAgentSource } from '../services/identity/aggregate-team.js';
+import {
+  aggregateTeamRoster,
+  type TeamAgentSource,
+  type TeamClaimSource,
+  type TeamRoomSource,
+} from '../services/identity/aggregate-team.js';
 
-/** The mesh read this router needs, narrowed to it. */
+/** The mesh reads this router needs, narrowed to them. */
 export interface TeamMeshReader {
   listWithHealth(filters?: Record<string, never>): TeamAgentSource[];
+  /**
+   * The registry's project directories, which `listWithHealth()` strips.
+   *
+   * A SECOND read rather than a reach into the registry behind the mesh: both
+   * are already-public, already-cheap listings of the same small table, and
+   * joining them here keeps the strip that protects every OTHER consumer of the
+   * mesh exactly where it is. The roster is the operator's own cockpit, so it is
+   * entitled to the path (spec `profile-unification` §3.1); a room is not, and
+   * nothing about that changes here.
+   */
+  listWithPaths(): Array<{ id: string; projectPath: string }>;
 }
 
 /** What the roster router reads. Every dependency is a reader; none of them writes. */
@@ -36,6 +52,24 @@ export interface TeamRouterDeps {
    * is still on it.
    */
   meshCore?: TeamMeshReader;
+  /**
+   * `RoomService.listActiveClaims()` — every room turn in flight right now.
+   *
+   * The one signal that says an agent is WORKING rather than merely seen
+   * recently.
+   */
+  activeClaims: () => TeamClaimSource[];
+  /**
+   * Every room, archived ones included, for naming the room a claim is held in.
+   *
+   * Called only when a claim exists, so an idle install never runs it.
+   */
+  listRooms: () => TeamRoomSource[];
+  /**
+   * Project directory → the newest session `updatedAt` there, across every
+   * runtime (`listRecentSessions().agentActivity`).
+   */
+  sessionActivity: () => Promise<Record<string, string>>;
   /** `readOwnerAccount()` — the account that owns this install, or `null`. */
   ownerAccount: () => { id: string; name: string } | null;
   /** The owner's address, looked up by user id. */
@@ -77,8 +111,19 @@ export function createTeamRouter(deps: TeamRouterDeps): Router {
         listAgentAuthors: () => deps.authors.listActive('agent'),
         listAgents: () => {
           if (!mesh) throw new Error('The agent registry is not running.');
-          return mesh.listWithHealth();
+          // The public listing strips the project directory; the profile needs
+          // it. Joined here, from the mesh's own paths listing, so the strip
+          // that keeps `/Users/…` out of a shared room stays exactly where it
+          // is and this one entitled reader puts it back for itself.
+          const pathById = new Map(mesh.listWithPaths().map((a) => [a.id, a.projectPath]));
+          return mesh.listWithHealth().map((agent) => {
+            const projectPath = pathById.get(agent.id);
+            return projectPath ? { ...agent, projectPath } : agent;
+          });
         },
+        listClaims: () => deps.activeClaims(),
+        listRooms: () => deps.listRooms(),
+        sessionActivity: () => deps.sessionActivity(),
         account: () => {
           const owner = deps.ownerAccount();
           if (!owner) return null;

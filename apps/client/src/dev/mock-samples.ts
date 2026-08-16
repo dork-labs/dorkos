@@ -1006,7 +1006,7 @@ export const MOCK_TEAM_ROSTER: TeamMember[] = [
     isSelf: true,
     ownerId: null,
     origin: 'local',
-    person: { role: null, email: 'dorian@dorkos.ai' },
+    person: { role: null, email: 'dorian@dorkos.ai', lastSeenAt: new Date().toISOString() },
   },
   {
     id: 'person-miguel',
@@ -1025,7 +1025,10 @@ export const MOCK_TEAM_ROSTER: TeamMember[] = [
     isSelf: false,
     ownerId: null,
     origin: { platform: 'telegram' },
-    person: { role: null },
+    // Nothing on this install dates a bridged person's presence, so the roster
+    // says `null` rather than guessing — the case the header renders as the
+    // platform line instead of "Last seen …".
+    person: { role: null, lastSeenAt: null },
   },
   {
     id: 'agent-warden',
@@ -1043,6 +1046,17 @@ export const MOCK_TEAM_ROSTER: TeamMember[] = [
       model: 'opus-4.8',
       healthStatus: 'active',
       recentlyActive: true,
+      projectPath: '/Users/dorian/agents/warden',
+      // Mid-turn: the state the status sentence renders as
+      // "Working in #team · 5 min".
+      activity: {
+        working: {
+          roomId: 'room-team',
+          roomName: 'team',
+          since: new Date(Date.now() - 5 * 60 * 1000).toISOString(),
+        },
+        lastActiveAt: new Date(Date.now() - 5 * 60 * 1000).toISOString(),
+      },
       isDefault: true,
       isSystem: false,
       registeredAt: '2026-07-01T09:00:00.000Z',
@@ -1063,6 +1077,12 @@ export const MOCK_TEAM_ROSTER: TeamMember[] = [
       runtime: 'codex',
       healthStatus: 'stale',
       recentlyActive: false,
+      projectPath: '/Users/dorian/agents/scout',
+      // Idle: "Last active 3 h ago".
+      activity: {
+        working: null,
+        lastActiveAt: new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString(),
+      },
       isDefault: false,
       isSystem: false,
       registeredAt: '2026-07-04T14:20:00.000Z',
@@ -1085,6 +1105,8 @@ export const MOCK_TEAM_ROSTER: TeamMember[] = [
       model: 'qwen3-coder',
       healthStatus: 'inactive',
       recentlyActive: false,
+      // Never run: "Hasn't run yet", which is a different sentence from idle.
+      activity: { working: null, lastActiveAt: null },
       isDefault: false,
       isSystem: false,
       registeredAt: '2026-07-06T11:05:00.000Z',
@@ -1106,6 +1128,11 @@ export const MOCK_TEAM_ROSTER: TeamMember[] = [
       runtime: 'claude-code',
       healthStatus: 'active',
       recentlyActive: true,
+      projectPath: '/Users/dorian/.dork/agents/dorkbot',
+      activity: {
+        working: null,
+        lastActiveAt: new Date(Date.now() - 12 * 60 * 1000).toISOString(),
+      },
       isDefault: false,
       isSystem: true,
       registeredAt: '2026-06-20T08:00:00.000Z',

@@ -76,6 +76,9 @@ describe('/api/profile/avatar', () => {
       '/api/team',
       createTeamRouter({
         authors: registry,
+        activeClaims: () => [],
+        listRooms: () => [],
+        sessionActivity: () => Promise.resolve({}),
         ownerAccount: () => ({ id: OWNER_USER_ID, name: 'Dorian' }),
         ownerEmail: () => 'dorian@dorkos.ai',
         configDisplayName: () => null,
